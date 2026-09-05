@@ -172,11 +172,21 @@ describe('connectContainerToServiceBridge', () => {
 });
 
 describe('reapTraefikNetworks', () => {
+  // Regression (round-001): Docker's `--filter name=<value>` is a SUBSTRING
+  // match, not a regex. The old filter strings `^nd-svc-` and `^ndcmp-`
+  // treated the `^` as a literal character, so the filter looked for the
+  // string `^nd-svc-` inside a bridge name and matched nothing — Traefik
+  // was never re-attached after a restart. The fixed code passes the
+  // substring `nd-svc-` / `ndcmp-` so the filter matches the real bridge
+  // shapes NineDeploy creates (`nd-svc-<slug>`, `ndcmp-<slug>_default`).
+  const PER_SLUG_FILTER = 'docker network ls --filter name=nd-svc- --format {{.Name}}';
+  const COMPOSE_FILTER = 'docker network ls --filter name=ndcmp- --format {{.Name}}';
+
   it('re-attaches Traefik to every per-slug and compose bridge', async () => {
-    execState.byArgs.set('docker network ls --filter name=^nd-svc- --format {{.Name}}', {
+    execState.byArgs.set(PER_SLUG_FILTER, {
       stdout: 'nd-svc-foo\nnd-svc-bar\n',
     });
-    execState.byArgs.set('docker network ls --filter name=^ndcmp- --format {{.Name}}', {
+    execState.byArgs.set(COMPOSE_FILTER, {
       stdout: 'ndcmp-baz_default\n',
     });
     execState.byArgs.set('docker inspect nd-traefik --format {{json .NetworkSettings.Networks}}', {
@@ -193,8 +203,8 @@ describe('reapTraefikNetworks', () => {
   });
 
   it('tolerates a missing Traefik (inspect throws) and skips the connect', async () => {
-    execState.byArgs.set('docker network ls --filter name=^nd-svc- --format {{.Name}}', { stdout: 'nd-svc-foo\n' });
-    execState.byArgs.set('docker network ls --filter name=^ndcmp- --format {{.Name}}', { stdout: '' });
+    execState.byArgs.set(PER_SLUG_FILTER, { stdout: 'nd-svc-foo\n' });
+    execState.byArgs.set(COMPOSE_FILTER, { stdout: '' });
     execState.byArgs.set('docker inspect nd-traefik --format {{json .NetworkSettings.Networks}}', {
       throw: new Error('No such container'),
     });
@@ -202,6 +212,42 @@ describe('reapTraefikNetworks', () => {
     expect(
       execState.runCalls.find((c) => c.args[0] === 'network' && c.args[1] === 'connect'),
     ).toBeUndefined();
+  });
+
+  it('issues substring-only Docker filters — no regex anchors in the network ls call', async () => {
+    // Guard against the regression coming back: a future edit that puts the
+    // `^` / `$` regex anchors back into the filter string would silently
+    // break Traefik re-attach after a restart. Assert the exact filter
+    // substrings the production code uses today.
+    execState.byArgs.set(PER_SLUG_FILTER, { stdout: 'nd-svc-foo\n' });
+    execState.byArgs.set(COMPOSE_FILTER, { stdout: '' });
+    execState.byArgs.set('docker inspect nd-traefik --format {{json .NetworkSettings.Networks}}', {
+      stdout: TRAEFIK_NO_BRIDGE,
+    });
+    await reapTraefikNetworks(vi.fn());
+    // reapTraefikNetworks uses `capture` for the `docker network ls` calls
+    // (read-only listing), not `run`. Inspect the `capture` mock directly.
+    const captureMock = (await import('../../src/lib/exec.js')).capture as unknown as {
+      mock: { calls: Array<[string, string[]]> };
+    };
+    const lsCalls = captureMock.mock.calls.filter(
+      ([, args]) => args[0] === 'network' && args[1] === 'ls',
+    );
+    // The filter is passed as a single argument `--filter name=<value>`, so
+    // split it to recover the actual `name=<value>` token.
+    const filterFlags = lsCalls
+      .map(([, args]) => {
+        const filterArg = args.find((a) => typeof a === 'string' && a.startsWith('name='));
+        return filterArg ?? null;
+      });
+    // No filter may start with `^` (regex anchor) or contain a bare `$`
+    // (end anchor) — both are literal characters in Docker's substring
+    // filter and would silently match nothing useful.
+    expect(filterFlags).toContain('name=nd-svc-');
+    expect(filterFlags).toContain('name=ndcmp-');
+    for (const f of filterFlags) {
+      expect(f).not.toMatch(/^\^/);
+    }
   });
 });
 

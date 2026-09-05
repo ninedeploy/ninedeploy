@@ -76,7 +76,14 @@ export async function connectContainerToServiceBridge(
 export async function reapTraefikNetworks(log: (line: string) => void): Promise<void> {
   // Per-slug bridges (`nd-svc-*`) plus compose project defaults
   // (`ndcmp-<slug>_default`) — both must survive a Traefik restart.
-  const nameFilters = ['^nd-svc-', '^ndcmp-'];
+  //
+  // Docker's `--filter name=<value>` is a SUBSTRING match, not a regex:
+  // the `^` and `$` anchors are literal characters. `name=^nd-svc-` would
+  // only match a network whose name literally contains the string `^nd-svc-`
+  // (none in practice), so the filter silently returned zero bridges and
+  // Traefik was never re-attached after a restart. Strip the anchors and
+  // match the real bridge shapes NineDeploy creates.
+  const nameFilters = ['nd-svc-', 'ndcmp-'];
   const bridges: string[] = [];
   for (const filter of nameFilters) {
     const ls = await capture('docker', [
