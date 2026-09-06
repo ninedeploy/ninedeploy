@@ -41,7 +41,10 @@ export const config = {
       ? true
       : env.NINEDEPLOY_TRUST_PROXY === 'false'
         ? false
-        : (_addr: string, hop: number) => hop < Number(env.NINEDEPLOY_TRUST_PROXY),
+        : (_addr: string, hop: number) => {
+          const n = Number(env.NINEDEPLOY_TRUST_PROXY);
+          return Number.isNaN(n) ? false : hop < n;
+        },
   paths: {
     dataDir,
     dbFile,
