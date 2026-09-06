@@ -56,7 +56,16 @@ class EventBus extends EventEmitter {
     };
     this.recent.push(event);
     if (this.recent.length > this.MAX_RECENT) this.recent = this.recent.slice(-this.MAX_RECENT);
-    this.emit('event', event);
+    // node:events dispatches listeners SYNCHRONOUSLY and propagates a throwing
+    // listener out of emit(). audit() publishes here under a "never throws"
+    // contract (lib/audit.ts), and its `void audit(...)` call sites would turn
+    // a rejection into an unhandledRejection — so a broken listener stays
+    // isolated instead of escaping the publish.
+    try {
+      this.emit('event', event);
+    } catch (err) {
+      console.error(`[events] listener for "event" threw:`, err);
+    }
   }
 
   /**
@@ -68,7 +77,13 @@ class EventBus extends EventEmitter {
    * top-level route.
    */
   emitCustom(name: string, payload: unknown): void {
-    this.emit(name, payload);
+    // Same listener isolation as publish(): a throwing subscriber must not
+    // break the emitting call site.
+    try {
+      this.emit(name, payload);
+    } catch (err) {
+      console.error(`[events] listener for "${name}" threw:`, err);
+    }
   }
 
   backlog(): AppEvent[] {
