@@ -185,27 +185,29 @@ export const serviceMigrationRoutes: FastifyPluginAsync = async (app) => {
     }
 
     // Domains (only custom ones, skip wildcard auto-domains)
-    for (const d of bundle.domains) {
-      if (d.hostname.includes('.')) {
-        await app.db.insert(domains).values({
-          serviceId: svc.id,
-          hostname: d.hostname,
-          path: d.path,
-          ssl: d.ssl,
-          status: 'active',
-        });
-      }
+    const domainRows = bundle.domains
+      .filter((d) => d.hostname.includes('.'))
+      .map((d) => ({
+        serviceId: svc.id,
+        hostname: d.hostname,
+        path: d.path,
+        ssl: d.ssl,
+        status: 'active' as const,
+      }));
+    if (domainRows.length > 0) {
+      await app.db.insert(domains).values(domainRows);
     }
 
     // Webhooks (re-encrypt secrets)
-    for (const w of bundle.webhooks) {
-      await app.db.insert(webhooks).values({
-        serviceId: svc.id,
-        branch: w.branch,
-        events: w.events,
-        secretEncrypted: encrypt(w.secret),
-        active: true,
-      });
+    const webhookRows = bundle.webhooks.map((w) => ({
+      serviceId: svc.id,
+      branch: w.branch,
+      events: w.events,
+      secretEncrypted: encrypt(w.secret),
+      active: true,
+    }));
+    if (webhookRows.length > 0) {
+      await app.db.insert(webhooks).values(webhookRows);
     }
 
     // Attachments (best-effort: match the database by name AND engine — a
