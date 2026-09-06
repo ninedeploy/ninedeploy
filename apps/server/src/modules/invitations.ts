@@ -305,7 +305,7 @@ export const invitationRoutes: FastifyPluginAsync = async (app) => {
       // should use the direct add-member endpoint instead. We return the same
       // 404 shape the member-add route does so the L-12 enumeration channel
       // stays closed.
-      const existingUser = await app.db.query.users.findFirst({ where: eq(users.email, input.email) });
+      const existingUser = await app.db.query.users.findFirst({ where: sql`lower(${users.email}) = ${input.email.toLowerCase()}` });
       if (existingUser) throw notFound('That email address cannot be invited to this workspace');
 
       const { token, invitation: created } = await createOrRefreshInvitation(app.db, {
