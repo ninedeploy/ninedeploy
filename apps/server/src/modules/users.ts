@@ -75,7 +75,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
   // disabled (otherwise /v1/auth/register is the self-service route).
   app.post('/', async (req) => {
     const input = userCreate.parse(req.body);
-    const existing = await app.db.query.users.findFirst({ where: eq(users.email, input.email) });
+    const existing = await app.db.query.users.findFirst({ where: sql`lower(${users.email}) = ${input.email.toLowerCase()}` });
     if (existing) throw badRequest('Email is already registered', 'email_taken');
     const [created] = await app.db
       .insert(users)
