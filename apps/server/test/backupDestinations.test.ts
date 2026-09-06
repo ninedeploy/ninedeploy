@@ -176,7 +176,7 @@ describe('backup destinations routes', () => {
   });
 
   it('deletes a destination', async () => {
-    const app = await appWith({});
+    const app = await appWith({ findFirst: { backupDestinations: row() } });
     const res = await app.inject({ method: 'DELETE', url: '/backup-destinations/1', headers: asAdmin() });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ok: true });

@@ -1,5 +1,5 @@
 ﻿import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { and, eq, gt, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import {
   type DB,
   users,
@@ -62,7 +62,7 @@ export async function createOrRefreshInvitation(
   const existing = await db.query.workspaceInvitations.findFirst({
     where: and(
       eq(workspaceInvitations.workspaceId, args.workspaceId),
-      eq(workspaceInvitations.email, args.email),
+      sql`lower(${workspaceInvitations.email}) = lower(${args.email})`,
       isNull(workspaceInvitations.revokedAt),
       isNull(workspaceInvitations.acceptedAt),
     ),
@@ -233,7 +233,7 @@ export async function acceptInvitationsForUser(
     .from(workspaceInvitations)
     .where(
       and(
-        eq(workspaceInvitations.email, user.email),
+        sql`lower(${workspaceInvitations.email}) = lower(${user.email})`,
         isNull(workspaceInvitations.revokedAt),
         isNull(workspaceInvitations.acceptedAt),
         gt(workspaceInvitations.expiresAt, now),

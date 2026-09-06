@@ -272,7 +272,9 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     // Per-account lockout (complements the per-IP rate limit): the response is
     // deliberately identical to a wrong password so the lock state isn't a probe.
     if (isLocked(input.email)) throw unauthorized('Invalid email or password');
-    const user = await app.db.query.users.findFirst({ where: eq(users.email, input.email) });
+    const user = await app.db.query.users.findFirst({
+      where: sql`lower(${users.email}) = lower(${input.email})`,
+    });
     if (!user || !(await verifyPassword(user.passwordHash, input.password))) {
       const locked = recordFailure(input.email);
       if (locked) void audit(app.db, null, 'auth.lockout', input.email);
@@ -493,7 +495,9 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   // Without SMTP the token is still consumable via an admin-issued link.
   app.post('/forgot-password', { config: { rateLimit: FORGOT_LIMIT } }, async (req) => {
     const input = forgotPassword.parse(req.body);
-    const user = await app.db.query.users.findFirst({ where: eq(users.email, input.email) });
+    const user = await app.db.query.users.findFirst({
+      where: sql`lower(${users.email}) = lower(${input.email})`,
+    });
     if (user) {
       const { token } = await issueResetToken(app.db, user, req.ip);
       const link = `${config.publicUrl}/reset-password?token=${encodeURIComponent(token)}`;
@@ -811,7 +815,9 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       userInfo = await fetchOidcUserInfo(userinfoEndpoint, tokens.access_token);
     }
 
-    let user = await app.db.query.users.findFirst({ where: eq(users.email, userInfo.email) });
+    let user = await app.db.query.users.findFirst({
+      where: sql`lower(${users.email}) = lower(${userInfo.email})`,
+    });
     if (userInfo.emailVerified === false) {
       // Never admit an unverified (e.g. synthetic-namespace or unconfirmed
       // secondary) SSO identity, in either direction: linking it to a

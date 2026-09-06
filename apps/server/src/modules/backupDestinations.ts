@@ -74,6 +74,10 @@ export const backupDestinationRoutes: FastifyPluginAsync = async (app) => {
 
   app.delete('/:id', async (req) => {
     const id = parseId((req.params as { id: string }).id);
+    const row = await app.db.query.backupDestinations.findFirst({
+      where: eq(backupDestinations.id, id),
+    });
+    if (!row) throw notFound('Destination not found');
     await app.db.delete(backupDestinations).where(eq(backupDestinations.id, id));
     void audit(app.db, req.user!.id, 'backup.destination.delete', `#${id}`);
     return { ok: true };
