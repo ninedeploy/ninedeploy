@@ -554,6 +554,90 @@ describe('webhook receiver', () => {
     });
   });
 
+  it('cleans up the evicted preview when the preview cap is exceeded (r036)', async () => {
+    // The cap-eviction path removes a live preview exactly like a PR close
+    // does — so it owes the same teardown: stop the runtime, delete the row,
+    // remove the log files, rewrite the Traefik config and reap the private
+    // bridge network. (Pre-fix it stopped and deleted only, leaking a Docker
+    // network + log files + a stale route per eviction.)
+    const parentService = svcRow({
+      id: 1,
+      slug: 'my-app',
+      name: 'My App',
+      repoUrl: 'https://github.com/org/repo.git',
+      previewDeploymentsEnabled: true,
+      previewAutoDestroyOnClose: true,
+      previewMaxActive: 1, // already at cap: the new PR must evict the old preview
+    });
+    const oldest = svcRow({
+      id: 99,
+      slug: 'my-app-pr-41',
+      previewParentServiceId: 1,
+      prNumber: 41,
+      isEphemeralPreview: true,
+      runtimeId: 'old-pr-41',
+    });
+
+    let svcLookup = 0;
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: {
+          webhooks: hook({ serviceId: 1 }),
+          // Call order: (1) parent lookup, (2) no existing preview for PR 42.
+          services: () => {
+            svcLookup++;
+            return svcLookup === 1 ? parentService : undefined;
+          },
+        },
+        findMany: {
+          services: [oldest], // the cap query sees one active preview
+          envVars: [],
+        },
+        select: {
+          // The evicted preview's deployment rows (log FILES are not cascaded).
+          deployments: [{ id: 51 }, { id: 52 }],
+        },
+        insert: {
+          services: [svcRow({ id: 100, slug: 'my-app-pr-42', prNumber: 42, isEphemeralPreview: true })],
+          deployments: [depRow({ id: 22, serviceId: 100, trigger: 'webhook', commitSha: 'sha-42' })],
+        },
+      }),
+      rawBody: true,
+    });
+    await app.register(hookReceiveRoutes);
+
+    const body = JSON.stringify({
+      action: 'opened',
+      number: 42,
+      pull_request: {
+        number: 42,
+        title: 'Add feature',
+        head: { ref: 'feature-pr-42', sha: 'sha-42', repo: { clone_url: 'https://github.com/org/repo.git' } },
+        user: { login: 'alice' },
+        merged: false,
+      },
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/1',
+      headers: { 'content-type': 'application/json', 'x-github-event': 'pull_request', 'x-hub-signature-256': sig(body) },
+      payload: body,
+    });
+    // The eviction itself worked: the new preview was created and queued.
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      ok: true,
+      action: 'preview_deployment_queued',
+      prNumber: 42,
+      previewServiceId: 100,
+    });
+    // r036: the EVICTED preview gets the same teardown as a closed PR — the
+    // bridge network is reaped and its log files are removed.
+    expect(teardownMocks.removeServiceBridgeIfEmpty).toHaveBeenCalledWith('my-app-pr-41', expect.any(Function));
+    expect(teardownMocks.deleteLog).toHaveBeenCalledWith(51);
+    expect(teardownMocks.deleteLog).toHaveBeenCalledWith(52);
+  });
+
   it('rejects fork preview builds before parent secrets are copied', async () => {
     const app = await buildTestApp({
       db: createFakeDb({

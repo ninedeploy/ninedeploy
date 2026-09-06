@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { buildConfigs, deployments, domains, envVars, services, webhooks, type DB } from '@ninedeploy/db';
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyBaseLogger, FastifyPluginAsync } from 'fastify';
 import { gitBranch, gitRepoUrl, webhookCreate } from '@ninedeploy/schemas';
 import { config } from '../config.js';
 import { decrypt, encrypt, randomToken } from '../lib/crypto.js';
@@ -63,6 +63,48 @@ async function assertWebhookMayDeploy(
   await assertMayDeployStoredService(db, { id: ownerId, isOperator: ownerIsOperator }, svc);
 }
 
+/**
+ * Full teardown for one ephemeral preview: the service row cascades its
+ * deployments/domains, but the log files on disk, the Traefik route and the
+ * private bridge network are ours to clean up. Shared by the PR-close path
+ * and the preview-cap eviction path (r036: eviction stopped and deleted only,
+ * leaking a Docker network + log files + a stale route per eviction).
+ */
+async function destroyPreviewService(
+  db: DB,
+  log: FastifyBaseLogger,
+  preview: { id: number; slug: string; runtimeId: string | null; type: string },
+): Promise<void> {
+  await stopRuntimeFor(preview);
+  // The FK cascade takes the deployment ROWS; the log files on disk are
+  // ours to remove. Read them before the row goes.
+  let previewLogs: Array<{ id: number }> = [];
+  try {
+    previewLogs = await db
+      .select({ id: deployments.id })
+      .from(deployments)
+      .where(eq(deployments.serviceId, preview.id));
+  } catch (err) {
+    log.warn({ err, serviceId: preview.id }, 'could not list preview deploy logs to clean up');
+  }
+  await db.delete(services).where(eq(services.id, preview.id));
+  for (const row of previewLogs) deleteLog(row.id);
+  try {
+    await writeDynamicConfig(db);
+  } catch {
+    /* best effort */
+  }
+  // Every deployed service gets a private bridge network
+  // (`ensureServiceBridge`, called by the docker builder). Only the panel's
+  // DELETE route reaped it, so this path — the one designed for high churn,
+  // one preview per pull request — leaked a Docker network per closed PR.
+  try {
+    await removeServiceBridgeIfEmpty(preview.slug, (line) => log.info({ bridge: preview.slug }, line));
+  } catch (err) {
+    log.warn({ err, slug: preview.slug }, 'failed to reap preview bridge');
+  }
+}
+
 /** Public webhook receiver — auto-deploys on verified provider push & PR events. */
 export const hookReceiveRoutes: FastifyPluginAsync = async (app) => {
   // Public endpoint (auth bypassed, verified by HMAC) — cap flood attempts.
@@ -110,36 +152,7 @@ export const hookReceiveRoutes: FastifyPluginAsync = async (app) => {
         if (!parent.previewAutoDestroyOnClose || !existingPreview) {
           return { ok: 'skipped', reason: existingPreview ? 'auto_destroy_disabled' : 'no_preview_found' };
         }
-        await stopRuntimeFor(existingPreview);
-        // The FK cascade takes the deployment ROWS; the log files on disk are
-        // ours to remove. Read them before the row goes.
-        let previewLogs: Array<{ id: number }> = [];
-        try {
-          previewLogs = await app.db
-            .select({ id: deployments.id })
-            .from(deployments)
-            .where(eq(deployments.serviceId, existingPreview.id));
-        } catch (err) {
-          req.log.warn({ err, serviceId: existingPreview.id }, 'could not list preview deploy logs to clean up');
-        }
-        await app.db.delete(services).where(eq(services.id, existingPreview.id));
-        for (const row of previewLogs) deleteLog(row.id);
-        try {
-          await writeDynamicConfig(app.db);
-        } catch {
-          /* best effort */
-        }
-        // Every deployed service gets a private bridge network
-        // (`ensureServiceBridge`, called by the docker builder). Only the panel's
-        // DELETE route reaped it, so this path — the one designed for high churn,
-        // one preview per pull request — leaked a Docker network per closed PR.
-        try {
-          await removeServiceBridgeIfEmpty(existingPreview.slug, (line) =>
-            req.log.info({ bridge: existingPreview.slug }, line),
-          );
-        } catch (err) {
-          req.log.warn({ err, slug: existingPreview.slug }, 'failed to reap preview bridge');
-        }
+        await destroyPreviewService(app.db, req.log, existingPreview);
         return { ok: true, action: 'preview_destroyed', prNumber: pr.prNumber, serviceId: existingPreview.id };
       }
 
@@ -181,8 +194,9 @@ export const hookReceiveRoutes: FastifyPluginAsync = async (app) => {
         });
         if (activePreviews.length >= parent.previewMaxActive && activePreviews.length > 0) {
           const oldest = activePreviews[activePreviews.length - 1]!;
-          await stopRuntimeFor(oldest);
-          await app.db.delete(services).where(eq(services.id, oldest.id));
+          // Same teardown as a PR close — otherwise every cap eviction leaks
+          // the preview's bridge network, log files and Traefik route (r036).
+          await destroyPreviewService(app.db, req.log, oldest);
         }
 
         const previewSlug = `${parent.slug}-pr-${pr.prNumber}`;
