@@ -57,6 +57,42 @@ function replaceInFile(rel, regex, replacement) {
 }
 
 replaceInFile('apps/server/src/version.ts', /export const VERSION = '.*?';/, `export const VERSION = '${newVersion}';`);
+
+// 3. Prepend a new ChangelogEntry stub so CHANGELOG[0].version === VERSION
+//    (guarded by test/version.test.ts: "ABOUT links to the changelog")
+function prependChangelogEntry() {
+  const file = resolveInRoot('apps/server/src/version.ts');
+  const content = readFileSync(file, 'utf8');
+  const today = new Date().toISOString().slice(0, 10);
+  const stub = `{\n    version: '${newVersion}',\n    date: '${today}',\n    title: 'Release ${newVersion}',\n    changes: [\n      'Placeholder — fill in from CHANGELOG.md before tagging',\n    ],\n  },\n`;
+  // Insert BEFORE the first object in the CHANGELOG array by matching the start
+  // of the array. The pattern `changes: [` is unambiguous — it appears at the
+  // ChangelogEntry interface boundary, not inside the `changes` string array.
+  // Using `indexOf` avoids any regex anchoring issues across OS line endings.
+  const marker = 'changes: [';
+  const markerPos = content.indexOf(marker);
+  if (markerPos === -1) {
+    console.warn('⚠ version.ts: could not find "changes: [" in version.ts — skipping CHANGELOG stub');
+    return;
+  }
+  // Walk back to the opening `{` of the first ChangelogEntry.
+  // The `{` of the first entry is always immediately before `\n    version:`.
+  const beforeVersion = content.lastIndexOf('\n    version:', markerPos);
+  if (beforeVersion === -1) {
+    console.warn('⚠ version.ts: could not find start of first ChangelogEntry — skipping CHANGELOG stub');
+    return;
+  }
+  const entryStart = content.lastIndexOf('{', beforeVersion);
+  if (entryStart === -1) {
+    console.warn('⚠ version.ts: could not find opening brace of first ChangelogEntry — skipping CHANGELOG stub');
+    return;
+  }
+  const newContent = content.slice(0, entryStart) + stub + content.slice(entryStart);
+  writeFileSync(file, newContent);
+  console.log(`✓ Prepended ChangelogEntry stub for v${newVersion} to version.ts`);
+}
+prependChangelogEntry();
+
 // NOTE: do NOT add a `/version: '.*?',/` rule for version.ts here — that shape
 // is the ChangelogEntry literal inside the file, and rewriting its FIRST
 // occurrence would relabel the newest changelog entry instead of anything
