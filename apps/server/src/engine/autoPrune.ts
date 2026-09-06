@@ -2,7 +2,7 @@ import { statfsSync } from 'node:fs';
 import type { DB } from '@ninedeploy/db';
 import type { AutoPruneConfig, AutoPruneRunResult, AutoPruneStatus } from '@ninedeploy/schemas';
 import { getSettingJson, getSettingString, setSettingJson, setSettingString } from '../lib/settings.js';
-import { capture } from '../lib/exec.js';
+import { run } from '../lib/exec.js';
 import { config } from '../config.js';
 
 export const DEFAULT_AUTOPRUNE_CONFIG: AutoPruneConfig = {
@@ -103,7 +103,10 @@ export async function executeAutoPrune(
   runner?: AutoPruneRunner,
 ): Promise<AutoPruneRunResult> {
   const defaultRunner: AutoPruneRunner = async (cmd, args) => {
-    return await capture(cmd, args);
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    await run(cmd, args, {}, (line) => stdout.push(line), undefined);
+    return { stdout: stdout.join('\n'), stderr: stderr.join('\n') };
   };
 
   const actualRunner = runner ?? defaultRunner;
