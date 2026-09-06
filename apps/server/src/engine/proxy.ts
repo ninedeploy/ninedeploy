@@ -519,6 +519,9 @@ export async function renderDynamicConfig(
   const svcBlocks: string[] = [];
   const middlewares: string[] = [];
   const seen = new Set<string>();
+  // Sticky middleware blocks are keyed by SERVICE, not domain — track what has
+  // been emitted so a multi-domain service cannot produce a duplicate key.
+  const stickyEmitted = new Set<number>();
 
   for (const d of all) {
     // H-2 layer 2: a domain awaiting DNS ownership proof must not route. This
@@ -590,19 +593,24 @@ export async function renderDynamicConfig(
       middlewares.push(`    ${mw}:\n      rateLimit:\n        average: ${avg}\n        burst: ${burst}\n`);
     }
     // G-28 sticky session — one middleware per service so every domain the
-    // service owns shares the same cookie. The middleware block is only
-    // emitted once (the `seen` set on a sticky-keyed key would be cheaper
-    // but the per-domain block is harmless and keeps the diff obvious).
+    // service owns shares the same cookie. Every router references
+    // `mw_sticky_<id>`, but the block itself is emitted AT MOST ONCE per
+    // render: YAML forbids duplicate mapping keys, and Traefik's file
+    // provider (go-yaml v3) refuses the whole dynamic config over one, which
+    // would silently freeze that proxy's route table.
     if (await getStickyEnabledForService(db, svc.id)) {
       const stickyKey = `mw_sticky_${svc.id}`;
       mwList.push(stickyKey);
-      middlewares.push(
-        `    ${stickyKey}:\n` +
-          '      sticky:\n' +
-          '        cookie:\n' +
-          '          name: "ninedeploy_sticky"\n' +
-          '          maxAge: 86400\n',
-      );
+      if (!stickyEmitted.has(svc.id)) {
+        stickyEmitted.add(svc.id);
+        middlewares.push(
+          `    ${stickyKey}:\n` +
+            '      sticky:\n' +
+            '        cookie:\n' +
+            '          name: "ninedeploy_sticky"\n' +
+            '          maxAge: 86400\n',
+        );
+      }
     }
 
     const fullRule =

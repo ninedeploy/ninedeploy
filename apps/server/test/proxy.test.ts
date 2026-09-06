@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { domains, services } from '@ninedeploy/db';
 import { encryptDnsToken, ensureNetwork, ensureTraefik, getAcmeEmail, getDnsConfig, NETWORK, parseBasicAuth, parseCertExpiry, parseIpAllowlist, readCertificates, renderDynamicConfig, renderStaticConfig, traefikConfigFingerprint, writeDynamicConfig } from '../src/engine/proxy.js';
+import { load } from 'js-yaml';
 
 const h = vi.hoisted(() => {
   const capture = vi.fn(async () => '');
@@ -1069,5 +1070,120 @@ describe('renderDynamicConfig scoping', () => {
     };
     const yaml = await renderDynamicConfig(withPanelDomain as never, { serverId: null });
     expect(yaml).toContain('ninedeploy_panel');
+  });
+});
+
+/**
+ * r034 regression — the sticky middleware block is keyed by SERVICE
+ * (`mw_sticky_<id>`) but used to be emitted once PER DOMAIN. A service with
+ * two domains produced duplicate YAML mapping keys, and Traefik's file
+ * provider (go-yaml v3) refuses the whole dynamic config over a duplicate
+ * key — silently freezing that proxy's route table. js-yaml v4 enforces the
+ * same duplicate-key rule and stands in as the validator here.
+ */
+describe('sticky session middleware (r034 regression)', () => {
+  /** Extract the settings key from a drizzle eq(settings.key, key) predicate. */
+  const keyFromWhere = (where: unknown): string | undefined => {
+    let found: string | undefined;
+    const visited = new Set<object>();
+    const walk = (node: unknown): void => {
+      if (node == null || found !== undefined || typeof node !== 'object') return;
+      if (visited.has(node)) return;
+      visited.add(node);
+      if (Array.isArray(node)) {
+        for (const child of node) walk(child);
+        return;
+      }
+      const rec = node as { encoder?: unknown; value?: unknown; queryChunks?: unknown };
+      // Param chunks carry .value + .encoder; StringChunk also has .value.
+      if ('encoder' in rec && 'value' in rec) {
+        found ??= String(rec.value);
+        return;
+      }
+      if (rec.queryChunks) walk(rec.queryChunks);
+    };
+    try {
+      walk((where as { queryChunks?: unknown } | undefined)?.queryChunks ?? where);
+    } catch {
+      /* predicate shape not understood — answer "absent" */
+    }
+    return found;
+  };
+
+  const stickyDb = (domainRows: unknown[], serviceRows: unknown[], enabled: Record<number, boolean>) => ({
+    ...makeDb(domainRows, serviceRows),
+    query: {
+      settings: {
+        findFirst: async (args?: { where?: unknown }) => {
+          const match = /^sticky_session:(\d+):enabled$/.exec(keyFromWhere(args?.where) ?? '');
+          if (match && enabled[Number(match[1])]) return { value: 'true' };
+          return undefined;
+        },
+      },
+    },
+  });
+
+  const svc = (id: number, slug: string) => ({
+    id,
+    slug,
+    port: 3000,
+    runtimeId: `nd-svc-${slug}`,
+    type: 'docker',
+    serverId: null,
+  });
+  const dom = (id: number, serviceId: number, hostname: string) => ({
+    id,
+    serviceId,
+    hostname,
+    path: null,
+    ssl: true,
+    status: 'active',
+  });
+
+  const countStickyBlocks = (yaml: string, id: number) => (yaml.match(new RegExp(`^    mw_sticky_${id}:$`, 'gm')) ?? []).length;
+  const countStickyRefs = (yaml: string, id: number) => (yaml.match(new RegExp(`^        - mw_sticky_${id}$`, 'gm')) ?? []).length;
+
+  it('emits one middleware block for a multi-domain sticky service — no duplicate YAML keys', async () => {
+    const db = stickyDb(
+      [dom(1, 1, 'a.example.com'), dom(2, 1, 'b.example.com')],
+      [svc(1, 'web')],
+      { 1: true },
+    );
+    const yaml = await renderDynamicConfig(db as never, { serverId: null });
+    expect(countStickyBlocks(yaml, 1)).toBe(1);
+    // Every router still references the shared middleware.
+    expect(countStickyRefs(yaml, 1)).toBe(2);
+    // js-yaml (same duplicate-key rule as Traefik v3's go-yaml) must accept it.
+    const doc = load(yaml) as { http: { middlewares: Record<string, unknown> } };
+    expect(Object.keys(doc.http.middlewares ?? {})).toContain('mw_sticky_1');
+  });
+
+  it('keeps a single-domain sticky service unchanged', async () => {
+    const db = stickyDb([dom(1, 1, 'a.example.com')], [svc(1, 'web')], { 1: true });
+    const yaml = await renderDynamicConfig(db as never, { serverId: null });
+    expect(countStickyBlocks(yaml, 1)).toBe(1);
+    expect(countStickyRefs(yaml, 1)).toBe(1);
+  });
+
+  it('emits one block per sticky service when several services are sticky', async () => {
+    const db = stickyDb(
+      [dom(1, 1, 'a.example.com'), dom(2, 2, 'b.example.com')],
+      [svc(1, 'web'), svc(2, 'api')],
+      { 1: true, 2: true },
+    );
+    const yaml = await renderDynamicConfig(db as never, { serverId: null });
+    expect(countStickyBlocks(yaml, 1)).toBe(1);
+    expect(countStickyBlocks(yaml, 2)).toBe(1);
+  });
+
+  it('emits no sticky block when the flag is off', async () => {
+    const db = stickyDb(
+      [dom(1, 1, 'a.example.com'), dom(2, 1, 'b.example.com')],
+      [svc(1, 'web')],
+      { 1: false },
+    );
+    const yaml = await renderDynamicConfig(db as never, { serverId: null });
+    expect(countStickyBlocks(yaml, 1)).toBe(0);
+    expect(countStickyRefs(yaml, 1)).toBe(0);
   });
 });
