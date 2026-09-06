@@ -47,6 +47,34 @@ describe('assertCloneTargetAllowed (git SSRF gate)', () => {
     await expect(assertCloneTargetAllowed('not a url at all')).resolves.toBeUndefined();
   });
 
+  it('blocks git:// remotes aimed at the cloud metadata service (SSRF guard)', async () => {
+    // git:// (Git protocol, port 9418) to 169.254.169.254 reaches the instance
+    // metadata service and can leak IAM credentials and instance metadata.
+    await expect(assertCloneTargetAllowed('git://169.254.169.254/team/repo')).rejects.toBeInstanceOf(
+      EgressBlockedError,
+    );
+  });
+
+  it('blocks git:// remotes on private LAN addresses (SSRF guard)', async () => {
+    await expect(assertCloneTargetAllowed('git://10.0.0.5/team/repo.git')).rejects.toBeInstanceOf(
+      EgressBlockedError,
+    );
+    await expect(assertCloneTargetAllowed('git://192.168.1.100/repo.git')).rejects.toBeInstanceOf(
+      EgressBlockedError,
+    );
+  });
+
+  it('blocks git:// remotes on localhost (SSRF guard)', async () => {
+    await expect(assertCloneTargetAllowed('git://localhost/team/repo.git')).rejects.toBeInstanceOf(
+      EgressBlockedError,
+    );
+  });
+
+  it('allows git:// remotes when the host resolves to a public address', async () => {
+    h.lookup.mockResolvedValue([{ address: '140.82.121.4' }, { address: '2606:50c0:8000::153' }]);
+    await expect(assertCloneTargetAllowed('git://github.com/owner/repo.git')).resolves.toBeUndefined();
+  });
+
   it('is disabled by NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1 (self-hosted LAN remotes)', async () => {
     process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'] = '1';
     // No DNS lookup needed — the escape hatch short-circuits before parsing.

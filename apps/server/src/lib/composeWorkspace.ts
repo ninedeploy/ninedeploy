@@ -22,7 +22,10 @@ const stackRoot = (): string => path.resolve(config.paths.reposDir);
 /** Workspace path for a service id, hard-locked to the repos root. */
 export function stackWorkspace(serviceId: number): string {
   const STACK_ROOT = stackRoot();
-  const target = path.resolve(STACK_ROOT, path.join(STACK_ROOT, String(Number(serviceId))));
+  // Single join: path.resolve alone is sufficient — path.join(STACK_ROOT, id)
+  // was a redundant wrapper that coincidentally produces the same result only
+  // when STACK_ROOT has no trailing separator; it has no role in this function.
+  const target = path.resolve(STACK_ROOT, String(Number(serviceId)));
   if (!Number.isInteger(serviceId) || !target.startsWith(STACK_ROOT + path.sep)) {
     throw new Error('invalid workspace id');
   }

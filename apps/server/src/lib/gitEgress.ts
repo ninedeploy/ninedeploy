@@ -59,6 +59,21 @@ export async function assertCloneTargetAllowed(repoUrl: string): Promise<void> {
     await assertPublicHttpUrl(repoUrl);
     return;
   }
+  if (repoUrl.startsWith('git://')) {
+    // Git protocol (port 9418) — simple-git supports it. Without this guard a
+    // user-supplied git:// URL to a private host bypasses the DNS-resolution
+    // check entirely, enabling SSRF: git://169.254.169.254/… reaches the cloud
+    // metadata service, and git://<private-LAN>/… reaches internal Git servers.
+    let url: URL;
+    try {
+      url = new URL(repoUrl);
+    } catch {
+      return; // malformed URL is the schema's job, not a dial risk
+    }
+    await rejectIfPrivateHost(url.hostname, repoUrl);
+    return;
+  }
+
   if (repoUrl.startsWith('ssh://')) {
     let url: URL;
     try {
