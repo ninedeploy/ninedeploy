@@ -9,21 +9,31 @@ import { useManifestForm, SECTIONS } from '../src/routes/manifestCreator/state.j
 import { lintManifest } from '../src/routes/manifestCreator/secretScan.js';
 import './web-utils.js';
 
-const originalLocalStorage = window.localStorage;
+// Guard window access so the file parses under Vitest's module loader before jsdom is live.
+const originalLocalStorage: Storage | undefined =
+  typeof window !== 'undefined' ? window.localStorage : undefined;
+
+function getOriginalLocalStorage(): Storage | undefined {
+  return originalLocalStorage;
+}
 
 beforeEach(() => {
-  Object.defineProperty(window, 'localStorage', {
-    configurable: true,
-    value: originalLocalStorage,
-  });
-  window.localStorage.clear();
+  if (typeof window !== 'undefined') {
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: getOriginalLocalStorage(),
+    });
+    window.localStorage.clear();
+  }
 });
 
 afterEach(() => {
-  Object.defineProperty(window, 'localStorage', {
-    configurable: true,
-    value: originalLocalStorage,
-  });
+  if (typeof window !== 'undefined') {
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: getOriginalLocalStorage(),
+    });
+  }
 });
 
 describe('useManifestForm', () => {

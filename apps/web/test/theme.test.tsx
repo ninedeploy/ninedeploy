@@ -1,6 +1,7 @@
 ﻿import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './web-utils.js';
 import { ACCENTS, ThemeProvider, useTheme } from '../src/lib/theme.js';
@@ -166,7 +167,7 @@ describe('useTheme', () => {
 });
 
 describe('accent tokens (index.css)', () => {
-  const css = readFileSync('src/index.css', 'utf8');
+  const css = readFileSync(resolve(import.meta.dirname, '../src/index.css'), 'utf8');
 
   it('defines the full token set for the default (phosphor) accent', () => {
     for (const token of [

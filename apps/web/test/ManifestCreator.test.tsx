@@ -27,21 +27,41 @@ function renderPage(initialRoute = '/manifest-creator') {
   });
 }
 
-const originalLocalStorage = window.localStorage;
-const originalCreateElement = document.createElement.bind(document);
-const originalClipboard = (navigator as { clipboard?: unknown }).clipboard;
+// Defer all jsdom/global access so the file parses under Vitest's module loader.
+// typeof guards are safe in both Node.js (no jsdom) and jsdom environments.
+const getOriginalGlobals = () => ({
+  localStorage:
+    typeof window !== 'undefined' ? window.localStorage : undefined,
+  createElement:
+    typeof document !== 'undefined'
+      ? document.createElement.bind(document)
+      : undefined,
+  clipboard:
+    typeof navigator !== 'undefined'
+      ? (navigator as { clipboard?: unknown }).clipboard
+      : undefined,
+});
 
 beforeEach(() => {
-  window.localStorage.clear();
+  if (typeof window !== 'undefined') {
+    window.localStorage.clear();
+  }
 });
 
 afterEach(() => {
-  window.localStorage = originalLocalStorage;
-  document.createElement = originalCreateElement;
-  Object.defineProperty(navigator, 'clipboard', {
-    configurable: true,
-    value: originalClipboard,
-  });
+  const { localStorage, createElement, clipboard } = getOriginalGlobals();
+  if (typeof window !== 'undefined') {
+    if (localStorage) window.localStorage = localStorage;
+  }
+  if (typeof document !== 'undefined') {
+    if (createElement) document.createElement = createElement;
+  }
+  if (typeof navigator !== 'undefined') {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: clipboard,
+    });
+  }
 });
 
 describe('ManifestCreator', () => {
@@ -145,9 +165,10 @@ describe('ManifestCreator', () => {
     let anchorClickCount = 0;
     // The download flow calls `document.createElement('a')` and clicks it.
     // Intercept the click to count invocations without actually downloading.
+    const realCreateElement = document.createElement.bind(document);
     const createElementSpy = vi.spyOn(document, 'createElement');
     createElementSpy.mockImplementation((tag: string, options?: ElementCreationOptions) => {
-      const el = originalCreateElement(tag, options);
+      const el = realCreateElement(tag, options);
       if (tag.toLowerCase() === 'a') {
         const originalClick = el.click.bind(el);
         el.click = () => {
@@ -386,9 +407,10 @@ describe('ManifestCreator', () => {
   it('renders the preview modal Download button', async () => {
     const user = userEvent.setup();
     let anchorClickCount = 0;
+    const realCreateElement = document.createElement.bind(document);
     const createElementSpy = vi.spyOn(document, 'createElement');
     createElementSpy.mockImplementation((tag: string, options?: ElementCreationOptions) => {
-      const el = originalCreateElement(tag, options);
+      const el = realCreateElement(tag, options);
       if (tag.toLowerCase() === 'a') {
         const originalClick = el.click.bind(el);
         el.click = () => {
