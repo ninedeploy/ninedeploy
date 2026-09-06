@@ -52,7 +52,12 @@ export function spawnValidated(
       for (const tail of [outSplitter.flush(), errSplitter.flush()]) {
         if (tail) onLine(tail);
       }
-      resolve(code ?? 0);
+      // `code` is null when the child died to a SIGNAL (supervisor stop, OOM
+      // kill, external terminate) — an abnormal termination. Reporting 0 told
+      // the agent's callers the op had succeeded while exec.ts's run() and
+      // capture() treat the same condition as failure (r035). Numeric exit
+      // codes pass through untouched.
+      resolve(code ?? 1);
     });
   });
 }

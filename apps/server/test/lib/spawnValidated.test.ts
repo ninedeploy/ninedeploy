@@ -59,10 +59,14 @@ describe('spawnValidated', () => {
     await expect(promise).resolves.toBe(127);
   });
 
-  it('treats a null exit code as 0', async () => {
-    const promise = spawnValidated('docker', ['ps'], () => {});
+  it('reports failure when the child dies to a signal (r035 — a null exit code is signal death, not success)', async () => {
+    // `close` fires with code=null when the child was killed by a signal
+    // (supervisor stop, OOM kill, external terminate). Reporting 0 told the
+    // agent's callers the op had succeeded — exec.ts's run()/capture() treat
+    // the identical condition as failure.
+    const promise = spawnValidated('git', ['reset', '--hard', 'abc123'], () => {});
     childMocks.current!.emit('close', null);
-    await expect(promise).resolves.toBe(0);
+    await expect(promise).resolves.toBe(1);
   });
 
   it('swallows stdin EPIPE races', async () => {
