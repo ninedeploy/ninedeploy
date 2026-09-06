@@ -3,14 +3,14 @@ import { executeAutoPrune, getAutoPruneStatus, getDiskUsage, parseReclaimedBytes
 import { createFakeDb } from '../helpers.js';
 
 const execMock = vi.hoisted(() => ({
-  run: vi.fn(async (_cmd: string, _args: string[], _opts: unknown, onOutput?: (chunk: string, isErr: boolean) => void) => {
-    onOutput?.('Total reclaimed space: 50MB\n', false);
-    onOutput?.('warning: test\n', true);
-  }),
+  capture: vi.fn(async (_cmd: string, _args: string[]) => ({
+    stdout: 'Total reclaimed space: 50MB\nwarning: test\n',
+    stderr: '',
+  })),
 }));
 
 vi.mock('../../src/lib/exec.js', () => ({
-  run: execMock.run,
+  capture: execMock.capture,
 }));
 
 describe('autoPrune engine', () => {
@@ -123,7 +123,7 @@ describe('autoPrune engine', () => {
     // Default runner execution using mocked exec.run without overrideConfig
     const defaultRunnerResult = await executeAutoPrune(db);
     expect(defaultRunnerResult.ok).toBe(true);
-    expect(execMock.run).toHaveBeenCalled();
+    expect(execMock.capture).toHaveBeenCalled();
 
     // Prune with all options disabled
     const allDisabledResult = await executeAutoPrune(
