@@ -414,7 +414,7 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     // Workspace guard: match the deploy handler — the operator must have membership
     // in the service's workspace before they can open a shell in any of its containers.
     // Without this, an instance operator could exec into any workspace's service.
-    await loadServiceForUser(app.db, user, id);
+    await loadServiceForUser(app.db, id, user);
     const svc = await app.db.query.services.findFirst({ where: eq(services.id, id) });
     if (!svc) {
       socket.close(1008, 'service not found');
