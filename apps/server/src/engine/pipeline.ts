@@ -76,15 +76,17 @@ export async function reconcileDeploymentHistory(db: DB): Promise<number> {
     .where(inArray(services.id, [...newestByService.keys()]));
   const liveServices = new Set(svcRows.filter((s) => s.status === 'running').map((s) => s.id));
 
-  let demoted = 0;
+  const supersededIds: number[] = [];
   for (const [serviceId, keepId] of newestByService) {
     const live = liveServices.has(serviceId);
     for (const r of running.filter((x) => x.serviceId === serviceId && (!live || x.id !== keepId))) {
-      await db.update(deployments).set({ status: 'superseded' }).where(eq(deployments.id, r.id));
-      demoted++;
+      supersededIds.push(r.id);
     }
   }
-  return demoted;
+  if (supersededIds.length > 0) {
+    await db.update(deployments).set({ status: 'superseded' }).where(inArray(deployments.id, supersededIds));
+  }
+  return supersededIds.length;
 }
 
 /** Execute a lifecycle hook command in the service workDir with resolved environment. */
