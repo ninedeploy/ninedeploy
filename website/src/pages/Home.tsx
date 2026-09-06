@@ -124,8 +124,8 @@ export function Home() {
               <span className="tag tag-accent">
                 self-hosted PaaS
               </span>
-              <span className="tag font-bold">v0.7.1</span>
-              <span className="tag">4,882 tests in CI</span>
+              <span className="tag font-bold">v0.7.2</span>
+              <span className="tag">6,460 tests in CI</span>
             </div>
             <h1 className="text-5xl md:text-7xl font-bold leading-[0.95] tracking-tight">
               Ship like you
@@ -286,7 +286,7 @@ export function Home() {
         {[
           { icon: LayoutGrid, k: certifiedCount, suffix: "", v: "runtime-certified templates" },
           { icon: Boxes, k: 41, suffix: "", v: "tables, one SQLite file" },
-          { icon: RotateCcw, k: 4882, suffix: "", v: "tests in CI" },
+          { icon: RotateCcw, k: 6460, suffix: "", v: "tests in CI" },
           { icon: KeyRound, k: 95, suffix: "%+", v: "enforced coverage floor" },
         ].map((s, i) => (
           <Reveal key={s.v} delay={i * 60}>

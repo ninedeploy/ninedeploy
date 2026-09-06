@@ -1,8 +1,29 @@
 const releases = [
   {
+    version: "0.7.2",
+    date: "2026-09-06",
+    status: "current",
+    notes: [
+      {
+        t: "Fixed — `git://` URLs Are Now Part of the Egress SSRF Guard",
+        items: [
+          "The `lib/gitEgress` SSRF guard handled only `http://`, `https://`, and `ssh://` repository URLs, leaving `git://` (port 9418, supported by `simple-git`) with no check at all. A repository URL of `git://169.254.169.254/...` could reach the cloud metadata service and leak instance credentials, and `git://<private-LAN>/...` could reach internal Git servers",
+          "The `git://` branch parses the URL and calls `rejectIfPrivateHost`, mirroring the `ssh://` guard. Four new regression cases cover the metadata service, RFC1918 LAN, loopback, and the positive public case so the gap cannot reopen",
+        ],
+      },
+      {
+        t: "Fixed — The Traefik Bridge Reaper Actually Reaps",
+        items: [
+          "Docker's `--filter name=<value>` is a substring match, not a regex. The `^` anchors in `name=^nd-svc-` and `name=^ndcmp-` were treated as literal characters, so the reaper matched no bridge at all and Traefik was never re-attached to the per-slug `nd-svc-<slug>` meshes or the `ndcmp-<slug>_default` compose defaults after a restart (deploy, host reboot, image update). Every domain on those meshes answered 502 until a full service redeploy ran `ensureServiceBridge` for that slug",
+          "The anchors are gone. A regression test pins the substring-not-regex invariant so the next person to add an `^` anchor catches it at unit-test time",
+        ],
+      },
+    ],
+  },
+  {
     version: "0.7.1",
     date: "2026-09-05",
-    status: "current",
+    status: "stable",
     notes: [
       {
         t: "Fixed — Remote Compose stop() No Longer Tears Down the Wrong Project",

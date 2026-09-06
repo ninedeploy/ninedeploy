@@ -1,4 +1,4 @@
-export const VERSION = '0.7.1';
+export const VERSION = '0.7.2';
 
 export interface ChangelogEntry {
   version: string;
@@ -8,6 +8,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.7.2',
+    date: '2026-09-06',
+    title: 'Two Quiet Reliability Fixes Caught by 0.7.1 Going Out',
+    changes: [
+      'The `git://` protocol is now part of the egress SSRF guard. `lib/gitEgress.ts` handled only `http://`, `https://`, and `ssh://` URLs, leaving `git://` (port 9418, supported by `simple-git`) with no check — a repository URL of `git://169.254.169.254/...` could reach the cloud metadata service and leak instance credentials, and `git://<private-LAN>/...` could reach internal Git servers. The `git://` branch parses the URL and calls `rejectIfPrivateHost`, mirroring the `ssh://` guard; four new regression cases cover the metadata service, RFC1918 LAN, loopback, and the positive public case',
+      'The Traefik bridge reaper actually reaps. Docker\'s `--filter name=<value>` is a substring match, not a regex, so the `^` anchors in `name=^nd-svc-` and `name=^ndcmp-` were treated as literal characters and the filter matched no bridge — after any Traefik restart (deploy, host reboot, image update) the reaper silently returned zero bridges and Traefik was never re-attached to the per-slug `nd-svc-<slug>` meshes or the `ndcmp-<slug>_default` compose defaults, so every domain on those meshes answered 502 until a full service redeploy ran `ensureServiceBridge` for that slug. The anchors are gone and a regression test pins the substring-not-regex invariant so it cannot silently regress',
+    ],
+  },
   {
     version: '0.7.1',
     date: '2026-09-05',

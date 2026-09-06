@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.2] - 2026-09-06
+
+> A narrow post-0.7.1 patch: two reliability gaps caught once 0.7.1 went
+> out, both narrow in scope. The `git://` protocol was not part of the
+> `lib/gitEgress` SSRF guard, so a repository URL of
+> `git://169.254.169.254/...` could reach the cloud metadata service; and
+> the Traefik reaper's `docker network ls --filter` query used `^` anchors
+> that Docker treats as literal characters, so the reaper matched no
+> bridge and Traefik was never re-attached to the per-slug `nd-svc-<slug>`
+> or `ndcmp-<slug>_default` bridges after a restart, leaving every domain
+> on those meshes answering 502 until a full service redeploy ran
+> `ensureServiceBridge` for that slug. No new features — just two holes
+> closed.
+
+### Fixed
+
+- **The `git://` protocol is now part of the egress SSRF guard.**
+  `lib/gitEgress.ts` handled only `http://`, `https://`, and `ssh://` URLs,
+  leaving `git://` (port 9418, supported by `simple-git`) with no check. A
+  repository URL of `git://169.254.169.254/...` could reach the cloud
+  metadata service and leak instance credentials, and
+  `git://<private-LAN>/...` could reach internal Git servers. The `git://`
+  branch parses the URL and calls `rejectIfPrivateHost`, mirroring the
+  `ssh://` guard. Four new regression cases cover the metadata service,
+  RFC1918 LAN, loopback, and the positive public case.
+- **The Traefik bridge reaper actually reaps.** Docker's
+  `--filter name=<value>` is a substring match, not a regex, so the `^`
+  anchors in `name=^nd-svc-` and `name=^ndcmp-` were treated as literal
+  characters and the filter matched no bridge. After any Traefik restart
+  (deploy, host reboot, image update), the reaper silently returned zero
+  bridges and Traefik was never re-attached to the per-slug
+  `nd-svc-<slug>` meshes or the `ndcmp-<slug>_default` compose defaults —
+  every domain on those meshes answered 502 until a full service redeploy
+  ran `ensureServiceBridge` for that slug. The anchors are gone and a
+  regression test pins the substring-not-regex invariant so it cannot
+  silently regress.
+
+---
+
 ## [0.7.1] - 2026-09-05
 
 > A quiet post-0.7.0 patch: three reliability gaps caught once 0.7.0 went
