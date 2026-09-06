@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import {
   projects,
   users,
@@ -332,7 +332,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
     const canInvite = req.user!.isOperator || callerMembership?.role === 'owner' || callerMembership?.role === 'admin';
     if (!canInvite) throw forbidden('Admin or Owner role required to invite workspace members');
 
-    const targetUser = await app.db.query.users.findFirst({ where: eq(users.email, input.email) });
+    const targetUser = await app.db.query.users.findFirst({ where: sql`lower(${users.email}) = ${input.email.toLowerCase()}` });
 
     // Already a member: collapse the L-12 error the same way the unknown-user
     // case does so an outsider cannot enumerate which addresses are
