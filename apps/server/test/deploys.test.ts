@@ -629,6 +629,32 @@ describe('deploys routes', () => {
     await app.close();
   });
 
+  it('rejects an operator token whose workspace list does not include the target service (workspace RBAC)', async () => {
+    // r050 regression: the exec WebSocket previously called services.findFirst(id)
+    // without loadServiceForUser, letting an instance operator exec into any
+    // workspace's containers. With the fix, loadServiceForUser throws notFound()
+    // when the caller's workspace list has no entry in service_workspaces.
+    const app = await buildTestApp({
+      websocket: true,
+      // The operator is a member of workspace 2 only.
+      db: createFakeDb({
+        findFirst: {
+          services: svcRow({ id: 1, workspaceId: 1, runtimeId: 'c1' }),
+          // No service_workspaces row linking workspace 2 → service 1.
+          // loadServiceForUser will find zero rows and throw notFound().
+        },
+      }),
+    });
+    await app.register(deploysRoutes, { prefix: '/services' });
+    const port = await listen(app);
+    const ws = await openWs(wsUrl(port, '/services/1/exec'), 'ninedeploy.bearer.operator-w2');
+    sockets.push(ws);
+    const closed = new Promise<number>((resolve) => ws.addEventListener('close', (ev) => resolve(ev.code)));
+    expect(await closed).toBe(1008); // loadServiceForUser threw notFound()
+    expect(childProc.spawn).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it('absorbs an EPIPE on the exec child stdin (a late keystroke must not crash)', async () => {
     const app = await buildTestApp({
       websocket: true,
