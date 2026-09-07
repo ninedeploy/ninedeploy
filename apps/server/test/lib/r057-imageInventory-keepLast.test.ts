@@ -21,7 +21,7 @@ describe('r057 — pruneImages ignores keepLast when danglingOnly=true', () => {
     // Read the module source so this test is immune to mock/import issues.
     // pnpm --filter server runs from apps/server/, so process.cwd() there.
     const src = readFileSync(
-      `${process.cwd().replace(/\\/g, '/')}/src/lib/imageInventory.ts`,
+      `${process.cwd().replace(/\\/g, '/')}/apps/server/src/lib/imageInventory.ts`,
       'utf8',
     );
 

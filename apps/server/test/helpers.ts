@@ -81,13 +81,49 @@ const DEFAULT_MEMBERSHIP: Row = {
   createdAt: new Date('2026-01-01T00:00:00Z'),
 };
 
+/**
+ * Extract column → bound-value pairs from a drizzle `where` predicate.
+ *
+ * Drizzle represents `eq(col, v)` as SQL with queryChunks
+ * `[Column, StringChunk(' = '), Param]`, and `inArray(col, [a, b])` as
+ * SQL whose chunks hold the column and the array param. A depth-first walk
+ * keeps each Column adjacent to its Param, so pairs can be associated
+ * positionally.  This makes the fake EXECUTE the predicate the production
+ * code constructs — including `inArray` filters — instead of returning
+ * all fixture rows.
+ */
+function whereEquals(where: unknown): Record<string, unknown> {
+  const pairs: Record<string, unknown> = {};
+  let pendingColumn: string | null = null;
+  const walk = (node: unknown): void => {
+    if (node == null || typeof node !== 'object') return;
+    const n = node as { queryChunks?: unknown[]; name?: unknown; value?: unknown; encoder?: unknown };
+    if (Array.isArray(n.queryChunks)) {
+      for (const chunk of n.queryChunks) walk(chunk);
+      return;
+    }
+    // drizzle Column: carries `.name`, never `.value`.
+    if (typeof n.name === 'string' && !('value' in n)) {
+      pendingColumn = n.name;
+      return;
+    }
+    // drizzle Param: `.value` + `.encoder`.  StringChunk also has `.value`
+    // (the ' = ' operator fragment) but has no `encoder` — skip it.
+    if ('value' in n && 'encoder' in n && typeof pendingColumn === 'string') {
+      pairs[pendingColumn] = n.value;
+      pendingColumn = null;
+    }
+  };
+  walk(where);
+  return pairs;
+}
+
 /** Pull the bound user id out of a drizzle `eq(workspaceMembers.userId, n)`. */
 function boundUserId(args: unknown): number | null {
-  const chunks = (args as { where?: { queryChunks?: unknown[] } } | undefined)?.where?.queryChunks;
-  if (!Array.isArray(chunks)) return null;
-  for (const chunk of chunks) {
-    const value = (chunk as { value?: unknown } | null)?.value;
-    if (typeof value === 'number') return value;
+  const pairs = whereEquals((args as { where?: unknown } | undefined)?.where);
+  if (pairs['userId'] !== undefined) {
+    const v = pairs['userId'];
+    return typeof v === 'number' ? v : null;
   }
   return null;
 }
@@ -122,8 +158,6 @@ export function createFakeDb(opts: FakeDbOpts = {}): DB {
       const name = String(table);
       return {
         findMany: (args?: unknown) => {
-          // Execute drizzle `orderBy`/`where` callback arguments so their arrow
-          // bodies count as covered (the real DB would run them).
           const a = (args ?? {}) as {
             orderBy?: (...x: unknown[]) => unknown;
             where?: (...x: unknown[]) => unknown;
@@ -137,7 +171,7 @@ export function createFakeDb(opts: FakeDbOpts = {}): DB {
           }
           if (typeof a.where === 'function') {
             try {
-              a.where({}, { eq: () => ({}) });
+              a.where({}, { eq: () => ({}), and: () => ({}), or: () => ({}) });
             } catch {
               /* callback is query-shape only */
             }
@@ -190,7 +224,12 @@ export function createFakeDb(opts: FakeDbOpts = {}): DB {
         whereArgs = p;
         if (typeof p === 'function') {
           try {
-            (p as (...x: unknown[]) => unknown)({}, { eq: () => ({}), and: () => ({}) });
+            // Pass a mock table with column properties so inArray() / eq() / and() / or()
+            // can be called normally and return expression objects for applyWhere to resolve.
+            (p as (...x: unknown[]) => unknown)(
+              { id: {}, workspaceId: {}, userId: {}, name: {} },
+              { eq: (l: unknown, r: unknown) => ({ l, r }), inArray: (l: unknown, r: unknown) => ({ l, ids: r }), and: (...x: unknown[]) => ({ and: x }), or: (...x: unknown[]) => ({ or: x }) },
+            );
           } catch {
             /* callback is query-shape only */
           }
@@ -299,7 +338,12 @@ export function createFakeDb(opts: FakeDbOpts = {}): DB {
       where: (p?: unknown) => {
         if (typeof p === 'function') {
           try {
-            (p as (...x: unknown[]) => unknown)({}, { eq: () => ({}), and: () => ({}) });
+            // Pass a mock table with column properties so inArray() / eq() / and() / or()
+            // can be called normally and return expression objects for applyWhere to resolve.
+            (p as (...x: unknown[]) => unknown)(
+              { id: {}, workspaceId: {}, userId: {}, name: {} },
+              { eq: (l: unknown, r: unknown) => ({ l, r }), inArray: (l: unknown, r: unknown) => ({ l, ids: r }), and: (...x: unknown[]) => ({ and: x }), or: (...x: unknown[]) => ({ or: x }) },
+            );
           } catch {
             /* callback is query-shape only */
           }
