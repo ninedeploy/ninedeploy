@@ -4,7 +4,7 @@ import { prompt } from '../prompts.js';
 
 const num = (v: string, usage: string): number => {
   const n = Number(v);
-  if (!n) {
+  if (Number.isNaN(n)) {
     error(usage);
     // error() sets the exit code; throw so execution never continues with
     // NaN (and tests can observe the failure).

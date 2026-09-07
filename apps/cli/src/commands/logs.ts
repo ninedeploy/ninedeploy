@@ -9,7 +9,7 @@ import { c, error, header, info, spinner } from '../lib/format.js';
 
 const num = (v: string, usage: string): number => {
   const n = Number(v);
-  if (!n) {
+  if (Number.isNaN(n)) {
     error(usage);
     throw new Error(usage);
   }

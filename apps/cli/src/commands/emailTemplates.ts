@@ -13,7 +13,7 @@ import { c, error, header, info, spinner, success, table } from '../lib/format.j
 
 const num = (v: string, usage: string): number => {
   const n = Number(v);
-  if (!n) {
+  if (Number.isNaN(n)) {
     error(usage);
     throw new Error(usage);
   }
