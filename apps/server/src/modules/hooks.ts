@@ -320,18 +320,31 @@ export const hookReceiveRoutes: FastifyPluginAsync = async (app) => {
           if (skipReason) {
             previewDomainSkipped = skipReason;
           } else {
-            await app.db.insert(domains).values({
-              serviceId: targetService.id,
-              hostname: lowerHost,
-              path: '/',
-              ssl: false,
-              // Generated inside the instance's own wildcard zone and held to
-              // that zone above, so there is no ownership question — but it
-              // must be explicit now that only `active` domains are written
-              // into the Traefik config.
-              status: 'active',
-              verifiedAt: new Date(),
-            });
+            // r065: deduplicate — a concurrent webhook for the same PR number may have
+            // already claimed this hostname. Gracefully skip instead of propagating 500.
+            try {
+              await app.db.insert(domains).values({
+                serviceId: targetService.id,
+                hostname: lowerHost,
+                path: '/',
+                ssl: false,
+                // Generated inside the instance's own wildcard zone and held to
+                // that zone above, so there is no ownership question — but it
+                // must be explicit now that only `active` domains are written
+                // into the Traefik config.
+                status: 'active',
+                verifiedAt: new Date(),
+              });
+            } catch (err) {
+              if (
+                err instanceof Error &&
+                /UNIQUE constraint failed.*domains_host_path_idx/.test(err.message)
+              ) {
+                previewDomainSkipped = 'domain_conflict_duplicate_hostname';
+              } else {
+                throw err;
+              }
+            }
           }
         }
       } else {

@@ -517,7 +517,10 @@ describe('webhook receiver', () => {
         insert: {
           services: [svcRow({ id: 10, slug: 'my-app-pr-42', prNumber: 42, isEphemeralPreview: true })],
           buildConfigs: [buildConfigRow({ id: 10, serviceId: 10 })],
-          domains: [domainRow({ id: 10, serviceId: 10, hostname: 'pr-42-my-app.localhost' })],
+          // Return undefined so the code proceeds to the insert (findFirst is called with a predicate fn;
+          // returning undefined makes the if-check falsy, triggering the domains insert below which throws).
+          domains: undefined as unknown as ReturnType<typeof domainRow>,
+          buildConfigs: buildConfigRow({ serviceId: 1 }),
           deployments: [depRow({ id: 15, serviceId: 10, trigger: 'webhook' })],
         },
       }),
@@ -552,6 +555,74 @@ describe('webhook receiver', () => {
       previewServiceId: 10,
       deploymentId: 15,
     });
+  });
+
+  // r065: the preview-domain insert (hooks.ts:323) has no dedup and no try/catch.
+  // If a hostname is already claimed (e.g. stale preview row, or the DB unique
+  // constraint fires from a concurrent writer), the raw SQLite error propagates
+  // as a 500 even though the preview was created.  The fix is a try/catch around
+  // the insert that ignores UNIQUE constraint violations idempotently.
+  it('handles duplicate preview domain insert gracefully (r065)', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: {
+          webhooks: hook({ serviceId: 1 }),
+          // No existing preview for pr 42 → code creates one; no buildConfig for
+          // the new preview → code creates it.  buildConfigs fallback is required
+          // so the destructuring `const { buildConfigs }` below does not throw.
+          services: () => ({ id: 1, slug: 'my-app', name: 'My App', previewDeploymentsEnabled: true, previewAutoDestroyOnClose: true, previewDomainPattern: 'pr-{{pr}}-{{slug}}.{{domain}}', previewMaxActive: 5, repoUrl: 'https://github.com/org/repo.git' } as ReturnType<typeof svcRow>),
+          // Return parent build config so the code uses it directly for the preview
+          // (no insert needed) and proceeds through envVars → domains insert.
+          buildConfigs: buildConfigRow({ serviceId: 1 }),
+          // undefined: no parent env vars to copy → code proceeds to domains insert which throws
+          envVars: undefined as unknown as ReturnType<typeof envVarRow> | undefined,
+        },
+        findMany: {
+          services: [svcRow({ id: 99, previewParentServiceId: 1, isEphemeralPreview: true, runtimeId: 'old-pr-c' })],
+          envVars: [],
+        },
+        insert: {
+          // Insert succeeds → new preview service id=10
+          services: [svcRow({ id: 10, slug: 'my-app-pr-42', prNumber: 42, isEphemeralPreview: true })],
+          // buildConfig insert succeeds for the new preview service
+          buildConfigs: [buildConfigRow({ id: 10, serviceId: 10 })],
+          // domains insert throws UNIQUE constraint — the real bug
+          domains: () => { throw new Error('UNIQUE constraint failed: domains_host_path_idx'); },
+          deployments: [depRow({ id: 15, serviceId: 10, trigger: 'webhook' })],
+        },
+      }),
+      rawBody: true,
+    });
+    await app.register(hookReceiveRoutes);
+
+    const body = JSON.stringify({
+      action: 'opened',
+      number: 42,
+      pull_request: {
+        number: 42,
+        title: 'Add feature',
+        head: { ref: 'feature-pr-42', sha: 'sha-42', repo: { clone_url: 'https://github.com/org/repo.git' } },
+        user: { login: 'alice' },
+        merged: false,
+      },
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/1',
+      headers: { 'content-type': 'application/json', 'x-github-event': 'pull_request', 'x-hub-signature-256': sig(body) },
+      payload: body,
+    });
+    // Before the fix: 500 (uncaught SQLite UNIQUE error).
+    // After the fix: 200 with the preview still created and queued.
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      ok: true,
+      action: 'preview_deployment_queued',
+      deploymentId: 15,
+    });
+    // The preview service id comes from the successful services insert
+    expect(res.json()).toHaveProperty('previewServiceId');
   });
 
   it('cleans up the evicted preview when the preview cap is exceeded (r036)', async () => {
