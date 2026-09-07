@@ -63,7 +63,10 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
         isSecret: input.isSecret ?? false,
       })
       .returning()
-      .catch(() => [] as typeof envVars.$inferSelect[]);
+      .catch((err: unknown) => {
+        if (err instanceof Error && /UNIQUE constraint/.test(err.message)) return [] as typeof envVars.$inferSelect[];
+        throw err;
+      });
     if (!created) throw badRequest('Env var with that key already exists');
     return serialize(created);
   });
@@ -134,7 +137,10 @@ export const projectEnvRoutes: FastifyPluginAsync = async (app) => {
         isSecret: input.isSecret ?? false,
       })
       .returning()
-      .catch(() => [] as typeof envVars.$inferSelect[]);
+      .catch((err: unknown) => {
+        if (err instanceof Error && /UNIQUE constraint/.test(err.message)) return [] as typeof envVars.$inferSelect[];
+        throw err;
+      });
     if (!created) throw badRequest('Env var with that key already exists');
     return serialize(created);
   });
