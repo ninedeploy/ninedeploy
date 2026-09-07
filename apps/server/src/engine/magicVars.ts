@@ -140,7 +140,7 @@ function randomString(length: number): string {
   return out;
 }
 
-function generateValue(spec: ParsedMagicToken): string {
+export function generateValue(spec: ParsedMagicToken): string {
   switch (spec.kind) {
     case 'user':
       return randomString(16);
