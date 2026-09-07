@@ -146,8 +146,29 @@ export async function pruneImages(opts: PruneOptions = {}): Promise<PruneResult>
 
   const images = await listImages();
 
-  // 1. Dangling-only path: a single docker call.
+  // 1. Dangling-only path.
   if (danglingOnly) {
+    // When keepLast is set, docker image prune -f cannot honour the keep window —
+    // it has no --keep-last equivalent. Filter dangling candidates client-side
+    // and delete only the unprotected ones via docker image rm.
+    if (keepLast > 0) {
+      const dangling = images.filter(img => img.repository === '<none>');
+      dangling.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const toDelete = keepLast < dangling.length ? dangling.slice(keepLast) : [];
+      const freedBytes = toDelete.reduce((sum, img) => sum + img.size, 0);
+      const removed: string[] = [];
+      if (!dryRun && toDelete.length > 0) {
+        try {
+          await run('docker', ['image', 'rm', ...toDelete.map(img => img.id)]);
+          removed.push(...toDelete.map(img => img.id));
+        } catch (err) {
+          throw new Error(`docker image rm failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      return { freedBytes, removed, removedLabels: [], dryRun, output: '' };
+    }
+
+    // keepLast === 0: the simple prune path is correct.
     const args = ['image', 'prune', '-f'];
     if (olderThanHours > 0) args.push('--filter', `until=${olderThanHours}h`);
     let out: string;

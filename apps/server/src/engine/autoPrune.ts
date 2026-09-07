@@ -80,12 +80,16 @@ export async function saveAutoPruneConfig(db: DB, input: Partial<AutoPruneConfig
   const current = await getAutoPruneStatus(db);
   const updated: AutoPruneConfig = {
     enabled: input.enabled ?? current.enabled,
-    thresholdPercent: input.thresholdPercent ?? current.thresholdPercent,
+    thresholdPercent:
+      input.thresholdPercent !== undefined
+        ? input.thresholdPercent
+        : current.thresholdPercent,
     pruneImages: input.pruneImages ?? current.pruneImages,
     pruneVolumes: input.pruneVolumes ?? current.pruneVolumes,
     pruneContainers: input.pruneContainers ?? current.pruneContainers,
     pruneBuildCache: input.pruneBuildCache ?? current.pruneBuildCache,
-    maxAgeHours: input.maxAgeHours ?? current.maxAgeHours,
+    maxAgeHours:
+      input.maxAgeHours !== undefined ? input.maxAgeHours : current.maxAgeHours,
   };
 
   await setSettingJson(db, 'autoprune_config', updated);
