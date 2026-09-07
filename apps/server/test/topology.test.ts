@@ -1,7 +1,13 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const execMocks = vi.hoisted(() => ({ capture: vi.fn() }));
+const visibleServiceIdSetMock = vi.hoisted(() => vi.fn().mockResolvedValue(new Set<number>()));
+const visibleDatabaseIdsMock = vi.hoisted(() => vi.fn().mockResolvedValue(new Set<number>()));
 vi.mock('../src/lib/exec.js', () => execMocks);
+vi.mock('../src/lib/resourceAccess.js', () => ({
+  visibleServiceIdSet: visibleServiceIdSetMock,
+  visibleDatabaseIds: visibleDatabaseIdsMock,
+}));
 
 import { topologyRoutes } from '../src/modules/topology.js';
 import { asUser, attachmentRow, buildTestApp, createFakeDb, dbRow, domainRow, svcRow } from './helpers.js';
@@ -11,6 +17,8 @@ describe('topology routes', () => {
     execMocks.capture.mockReset();
     // Default: docker daemon present but empty runtime layers.
     execMocks.capture.mockResolvedValue('');
+    visibleServiceIdSetMock.mockResolvedValue(null);
+    visibleDatabaseIdsMock.mockResolvedValue(null);
   });
 
   it('assembles the workspace graph from all four tables', async () => {
@@ -67,6 +75,8 @@ describe('topology routes', () => {
   });
 
   it('hides other tenants resources and runtime inventory from members', async () => {
+    // visibleServiceIdSet returns {1} — user 7 owns service 1, not service 2.
+    visibleServiceIdSetMock.mockResolvedValue(new Set([1]));
     const app = await buildTestApp({
       db: createFakeDb({
         select: {

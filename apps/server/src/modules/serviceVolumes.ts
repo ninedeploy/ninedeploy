@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { deployments, serviceVolumeAttachments, type services } from '@ninedeploy/db';
@@ -10,7 +10,7 @@ import { audit } from '../lib/audit.js';
 import { createDockerVolume } from '../engine/database.js';
 import { capture } from '../lib/exec.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
-import { assertServiceRole } from '../lib/resourceAccess.js';
+import { assertServiceRole, visibleServiceIdSet } from '../lib/resourceAccess.js';
 import { badRequest, conflict, notFound, parseId as num } from '../lib/errors.js';
 import { containerRunning, listManagedVolumeNames } from '../lib/inventory.js';
 
@@ -103,7 +103,11 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
       .orderBy(desc(serviceVolumeAttachments.id));
 
     // Cross-service sharing: how many OTHER services also attach this volume.
-    const allVolumeAtts = await app.db.select().from(serviceVolumeAttachments);
+    // Scoped to visibleServiceIdSet so counts never include other tenants' services.
+    const visibleSvs = await visibleServiceIdSet(app.db, req.user!);
+    const allVolumeAtts = visibleSvs === null
+      ? await app.db.select().from(serviceVolumeAttachments)
+      : await app.db.select().from(serviceVolumeAttachments).where(inArray(serviceVolumeAttachments.serviceId, [...visibleSvs]));
     const sharingByVolume = new Map<string, number>();
     for (const a of allVolumeAtts) {
       sharingByVolume.set(a.volumeName, (sharingByVolume.get(a.volumeName) ?? 0) + 1);

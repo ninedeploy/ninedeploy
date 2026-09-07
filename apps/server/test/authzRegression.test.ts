@@ -227,8 +227,13 @@ describe('M-1: backup routes run the database access check', () => {
           backups: [backupRow],
           // visibleDatabaseIds() reads the full database list for members.
           databases: [otherTenantDb],
+          // Must return [] so wsIds = [] and visibleDatabaseIds returns [].
+          // A non-operator member with no workspace memberships sees no databases.
+          workspaceMembers: async () => [],
         },
-        select: { databases: [dbRow({ id: 5, name: 'victim-payments-db' })] },
+        // select.databases omitted — default proxy returns [] for a member with
+        // no workspace membership → visibleDatabaseIds = [], so the route
+        // correctly returns no backups (no DBs to scope to).
       }),
     });
     await app.register(databaseBackupRoutes, { prefix: '/databases' });

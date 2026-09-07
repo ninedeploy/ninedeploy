@@ -8,7 +8,7 @@ import {
   networkMembers,
   resolveVolumeOwner,
 } from '../lib/inventory.js';
-import { visibleDatabaseIds } from '../lib/resourceAccess.js';
+import { visibleDatabaseIds, visibleServiceIdSet } from '../lib/resourceAccess.js';
 
 /** Whole-workspace graph for the topology view. Mounted under /topology.
  *
@@ -20,18 +20,19 @@ export const topologyRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', app.authenticate);
 
   app.get('/', async (req) => {
-    const [allServices, allDatabases, allAttachments, allDomains, visibleDatabases] = await Promise.all([
+    const [allServices, allDatabases, allAttachments, allDomains, visibleDatabases, visibleServiceIds] = await Promise.all([
       app.db.select().from(services),
       app.db.select().from(databases),
       app.db.select().from(databaseAttachments),
       app.db.select().from(domains),
       visibleDatabaseIds(app.db, req.user!),
+      visibleServiceIdSet(app.db, req.user!),
     ]);
     // Authorization is workspace-derived now; `users.role` is gone.
     const isAdmin = req.user!.isOperator === true;
     const svcs = isAdmin
       ? allServices
-      : allServices.filter((service) => service.ownerUserId === req.user!.id);
+      : allServices.filter((service) => visibleServiceIds.has(service.id));
     const dbs = visibleDatabases === null
       ? allDatabases
       : allDatabases.filter((database) => visibleDatabases.includes(database.id));

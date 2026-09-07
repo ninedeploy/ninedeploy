@@ -245,8 +245,16 @@ describe('K6: database credentials are admin-only', () => {
   async function dbApp() {
     const app = await buildTestApp({
       db: createFakeDb({
-        findMany: { databases: [dbRow({ id: 1, ownerUserId: MEMBER, status: 'running', passwordEncrypted: encrypt('pw') })] },
+        findMany: {
+          databases: [dbRow({ id: 1, ownerUserId: MEMBER, status: 'running', passwordEncrypted: encrypt('pw') })],
+          // visibleDatabaseIds() requires workspace membership for visibility.
+          // The member sees their owned DB (id=1) via the workspace join.
+          workspaceMembers: async () => [
+            { workspaceId: 1, userId: MEMBER, role: 'member', id: 1 },
+          ],
+        },
         findFirst: { databases: dbRow({ id: 1, ownerUserId: MEMBER, status: 'running', passwordEncrypted: encrypt('pw') }) },
+        select: { databases: [dbRow({ id: 1, name: 'my-db' })] },
       }),
     });
     await app.register(databasesRoutes, { prefix: '/databases' });
