@@ -155,11 +155,11 @@ export async function pruneImages(opts: PruneOptions = {}): Promise<PruneResult>
       const dangling = images.filter(img => img.repository === '<none>');
       dangling.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const toDelete = keepLast < dangling.length ? dangling.slice(keepLast) : [];
-      const freedBytes = toDelete.reduce((sum, img) => sum + img.size, 0);
+      const freedBytes = toDelete.reduce((sum, img) => sum + parseHumanBytes(img.size), 0);
       const removed: string[] = [];
       if (!dryRun && toDelete.length > 0) {
         try {
-          await run('docker', ['image', 'rm', ...toDelete.map(img => img.id)]);
+          await run('docker', ['image', 'rm', ...toDelete.map(img => img.id)], {}, () => {});
           removed.push(...toDelete.map(img => img.id));
         } catch (err) {
           throw new Error(`docker image rm failed: ${err instanceof Error ? err.message : String(err)}`);
