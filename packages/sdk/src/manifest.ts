@@ -151,7 +151,7 @@ export function formatManifestYaml(manifest: NinedeployManifest): string {
   if (manifest.routes) {
     lines.push('routes:');
     for (const r of manifest.routes) {
-      lines.push(`  - host: ${r.host}`);
+      lines.push(`  - host: ${quote(r.host)}`);
       lines.push(`    path: ${quote(r.path)}`);
       lines.push(`    ssl: ${r.ssl}`);
       if (r.redirectWww) lines.push(`    redirectWww: ${r.redirectWww}`);
@@ -191,8 +191,8 @@ export function formatManifestYaml(manifest: NinedeployManifest): string {
 
   if (manifest.database) {
     lines.push('database:');
-    lines.push(`  ref: ${manifest.database.ref}`);
-    lines.push(`  env: ${manifest.database.env}`);
+    lines.push(`  ref: ${quote(manifest.database.ref)}`);
+    lines.push(`  env: ${quote(manifest.database.env)}`);
   }
 
   if (manifest.network) {
