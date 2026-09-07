@@ -172,7 +172,10 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
         verifiedAt: needsProof ? null : new Date(),
       })
       .returning()
-      .catch(() => [] as Domain[]);
+      .catch((err: unknown) => {
+        if (err instanceof Error && /UNIQUE constraint/.test(err.message)) return [] as Domain[];
+        throw err;
+      });
     if (!d) throw conflict('A domain with that host already exists');
     // Cloudflare integration: create the DNS record for this hostname. The
     // domain is already usable (manual DNS); a provider failure is surfaced as
