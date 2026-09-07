@@ -803,7 +803,7 @@ describe('attachment routes', () => {
     const app = await buildTestApp({
       db: createFakeDb({
         findFirst: { services: svcRow(), databases: dbRow() },
-        insert: { database_attachments: () => { throw new Error('UNIQUE'); } },
+        insert: { database_attachments: () => { throw new Error('UNIQUE constraint failed: database_attachments_service_database_idx'); } },
       }),
     });
     await app.register(attachmentRoutes);

@@ -254,7 +254,7 @@ describe('domains routes', () => {
     const app = await buildTestApp({
       db: createFakeDb({
         findFirst: { services: svcRow() },
-        insert: { domains: () => { throw new Error('UNIQUE'); } },
+        insert: { domains: () => { throw new Error('UNIQUE constraint failed: domains_host_path_idx'); } },
       }),
     });
     await app.register(domainsRoutes);

@@ -93,7 +93,7 @@ describe('auth module helpers', () => {  it('createFirstAdmin succeeds when no u
   it('registerAccount reports duplicate emails', async () => {
     const db = createFakeDb({
       counts: { users: [{ n: 2 }] },
-      insert: { users: () => { throw new Error('UNIQUE'); } },
+      insert: { users: () => { throw new Error('UNIQUE constraint failed: users_email_unique'); } },
     });
     await expect(registerAccount(db, validRegister as never)).rejects.toMatchObject({
       statusCode: 400,

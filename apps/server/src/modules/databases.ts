@@ -524,7 +524,10 @@ export const attachmentRoutes: FastifyPluginAsync = async (app) => {
       .insert(databaseAttachments)
       .values({ serviceId: id, databaseId: input.databaseId, envAlias })
       .returning()
-      .catch(() => [] as typeof databaseAttachments.$inferSelect[]);
+      .catch((err: unknown) => {
+        if (err instanceof Error && /UNIQUE constraint/.test(err.message)) return [] as typeof databaseAttachments.$inferSelect[];
+        throw err;
+      });
     if (!a) throw badRequest('Already attached');
     return { id: a.id, databaseId: input.databaseId, envAlias };
   });
