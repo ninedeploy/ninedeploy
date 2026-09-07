@@ -455,6 +455,12 @@ export const hookReceiveRoutes: FastifyPluginAsync = async (app) => {
         return { ok: 'skipped', reason: 'duplicate', deploymentId: other.id };
       }
     }
+    // r070: after a push-triggered deploy, sync the service row so the UI shows
+    // the current branch + sha immediately without waiting for the deploy to finish.
+    await app.db
+      .update(services)
+      .set({ branch: push.branch.replace(/^refs\/heads\//, ''), commitSha: push.sha || pushedService.commitSha })
+      .where(eq(services.id, hook.serviceId));
     return { ok: true, provider, deploymentId: dep!.id };
   });
 };

@@ -121,6 +121,40 @@ describe('webhook receiver', () => {
     expect(res.json()).toEqual({ ok: true, provider: 'github', deploymentId: 7 });
   });
 
+  // r070 regression: push webhook must sync service.branch and service.commitSha
+  // after inserting the deployment record, so the UI shows the current branch immediately.
+  it('push webhook syncs service.branch and service.commitSha after insert (r070)', async () => {
+    let updatedService: Record<string, unknown> | undefined;
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: {
+          webhooks: webhookRow({ id: 1, secretEncrypted: encrypt(SECRET), branch: 'main', events: 'push', sourceId: null }),
+          services: svcRow({ id: 1, type: 'static', branch: 'old-branch', commitSha: 'aaaaaaa' }),
+        },
+        insert: {
+          deployments: [depRow({ id: 7, trigger: 'webhook', commitSha: 'deadbeef' })],
+        },
+        update: {
+          services: (values) => { updatedService = values as Record<string, unknown>; return []; },
+        },
+      }),
+      rawBody: true,
+    });
+    await app.register(hookReceiveRoutes);
+    const body = JSON.stringify(pushPayload('main'));
+    const res = await app.inject({
+      method: 'POST',
+      url: '/1',
+      headers: { 'content-type': 'application/json', 'x-github-event': 'push', 'x-hub-signature-256': sig(body) },
+      payload: body,
+    });
+    expect(res.statusCode).toBe(200, `unexpected: ${res.statusCode} body: ${res.body}`);
+    expect(res.json()).toEqual({ ok: true, provider: 'github', deploymentId: 7 });
+    // r070 fix: service row must be updated to reflect the new branch + sha
+    // (the code strips the refs/heads/ prefix when storing)
+    expect(updatedService).toMatchObject({ branch: 'main', commitSha: 'deadbeef' });
+  });
+
   it('skips a replayed push whose commit is already deployed (dedup)', async () => {
     const existing = depRow({ id: 42, trigger: 'webhook', commitSha: 'deadbeef', status: 'running' });
     const app = await buildTestApp({
