@@ -949,9 +949,9 @@ describe('restoreDatabase', () => {
     const { studioImageForEngine, isDatabaseStudioRunning, startDatabaseStudio, stopDatabaseStudio } = await import(
       '../src/engine/database.js'
     );
-    expect(studioImageForEngine('postgres')).toEqual({ image: 'adminer:latest', containerPort: 8080 });
-    expect(studioImageForEngine('redis')).toEqual({ image: 'rediscommander/redis-commander:latest', containerPort: 8081 });
-    expect(studioImageForEngine('valkey')).toEqual({ image: 'rediscommander/redis-commander:latest', containerPort: 8081 });
+    expect(studioImageForEngine('postgres')).toEqual({ image: 'adminer:6.0.1', containerPort: 8080 });
+    expect(studioImageForEngine('redis')).toEqual({ image: 'rediscommander/redis-commander@sha256:19cd0c49f418779fa2822a0496c5e6516d0c792effc39ed20089e6268477e40a', containerPort: 8081 });
+    expect(studioImageForEngine('valkey')).toEqual({ image: 'rediscommander/redis-commander@sha256:19cd0c49f418779fa2822a0496c5e6516d0c792effc39ed20089e6268477e40a', containerPort: 8081 });
 
     h.capture.mockResolvedValueOnce('running');
     expect(await isDatabaseStudioRunning(dbRow({ slug: 'my-db' }))).toBe(true);
@@ -970,7 +970,7 @@ describe('restoreDatabase', () => {
       18001,
       vi.fn(),
     );
-    expect(h.ensureDockerImage).toHaveBeenCalledWith('rediscommander/redis-commander:latest', expect.any(Function));
+    expect(h.ensureDockerImage).toHaveBeenCalledWith('rediscommander/redis-commander@sha256:19cd0c49f418779fa2822a0496c5e6516d0c792effc39ed20089e6268477e40a', expect.any(Function));
     expect(h.run).toHaveBeenCalledWith(
       'docker',
       expect.arrayContaining(['run', '-d', '--name', 'nd-studio-my-redis', '-p', '127.0.0.1:18001:8081', '-e', 'REDIS_HOSTS=local:my-redis:6379']),

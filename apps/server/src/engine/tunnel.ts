@@ -5,7 +5,9 @@ import { ensureDockerImage } from '../lib/dockerPull.js';
 import { writeSecretFile } from '../lib/secretFile.js';
 import { NETWORK } from './proxy.js';
 
-const CLOUDFLARED_IMAGE = 'cloudflare/cloudflared:latest';
+// Version-pinned: cloudflared holds the TUNNEL_TOKEN (origin access), so a
+// floating :latest would let a registry-tag swap silently re-route traffic.
+const CLOUDFLARED_IMAGE = 'cloudflare/cloudflared:2026.8.3';
 
 /** Run a Cloudflare Tunnel (cloudflared) connected to the shared network. */
 export async function startTunnel(t: Tunnel, log: (line: string) => void): Promise<void> {

@@ -299,11 +299,11 @@ describe('Edge Cases — Database Engines & Connection Strings with Special Char
   });
 
   it('correctly resolves studio images for Redis Commander vs Adminer', () => {
-    expect(studioImageForEngine('redis').image).toBe('rediscommander/redis-commander:latest');
-    expect(studioImageForEngine('valkey').image).toBe('rediscommander/redis-commander:latest');
-    expect(studioImageForEngine('postgres').image).toBe('adminer:latest');
-    expect(studioImageForEngine('mysql').image).toBe('adminer:latest');
-    expect(studioImageForEngine('clickhouse').image).toBe('adminer:latest');
+    expect(studioImageForEngine('redis').image).toBe('rediscommander/redis-commander@sha256:19cd0c49f418779fa2822a0496c5e6516d0c792effc39ed20089e6268477e40a');
+    expect(studioImageForEngine('valkey').image).toBe('rediscommander/redis-commander@sha256:19cd0c49f418779fa2822a0496c5e6516d0c792effc39ed20089e6268477e40a');
+    expect(studioImageForEngine('postgres').image).toBe('adminer:6.0.1');
+    expect(studioImageForEngine('mysql').image).toBe('adminer:6.0.1');
+    expect(studioImageForEngine('clickhouse').image).toBe('adminer:6.0.1');
   });
 });
 

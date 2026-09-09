@@ -316,12 +316,22 @@ export const ENGINES: Record<string, EngineConfig> = {
   },
 };
 
-/** Studio image for the given database engine. */
+/** Studio image for the given database engine.
+ *
+ *  Privileged third-party images are pinned to IMMUTABLE references — a
+ *  floating `:latest` let a registry-tag compromise swap the image every
+ *  studio start runs through (Redis Commander additionally holds live
+ *  database credentials). The redis-commander ref is digest-pinned because
+ *  the project publishes no version tags to Docker Hub; bump the digest
+ *  deliberately (registry-1.docker.io manifest of `latest` as of 2026-09). */
 export function studioImageForEngine(engine: string): { image: string; containerPort: number } {
   if (engine === 'redis' || engine === 'valkey') {
-    return { image: 'rediscommander/redis-commander:latest', containerPort: 8081 };
+    return {
+      image: 'rediscommander/redis-commander@sha256:19cd0c49f418779fa2822a0496c5e6516d0c792effc39ed20089e6268477e40a',
+      containerPort: 8081,
+    };
   }
-  return { image: 'adminer:latest', containerPort: 8080 };
+  return { image: 'adminer:6.0.1', containerPort: 8080 };
 }
 
 /** Check if database studio container is running. */

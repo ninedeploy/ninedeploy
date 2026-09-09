@@ -43,14 +43,14 @@ describe('startTunnel', () => {
 
     await startTunnel(tunnel, log);
 
-    expect(dockerPullMocks.ensureDockerImage).toHaveBeenCalledWith('cloudflare/cloudflared:latest', log);
+    expect(dockerPullMocks.ensureDockerImage).toHaveBeenCalledWith('cloudflare/cloudflared:2026.8.3', log);
     expect(h.decrypt).toHaveBeenCalledWith('enc-token');
     expect(log).toHaveBeenCalledWith('Starting Cloudflare Tunnel web (nd-tunnel-web) …');
     const args = h.run.mock.calls[0]![1] as unknown[];
     expect(args).toEqual([
       'run', '-d', '--name', 'nd-tunnel-web', '--network', 'ninedeploy', '--restart', 'unless-stopped',
       '--env-file', expect.any(String),
-      'cloudflare/cloudflared:latest', 'tunnel', '--no-autoupdate', 'run',
+      'cloudflare/cloudflared:2026.8.3', 'tunnel', '--no-autoupdate', 'run',
     ]);
     // The decrypted token is never present in the docker argv.
     expect(args).not.toContain('tok:enc-token');
