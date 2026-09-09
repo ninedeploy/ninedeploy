@@ -4,12 +4,14 @@ import type { FastifyPluginAsync } from 'fastify';
 import {
   buildConfigs,
   deployments,
+  environments,
   envVars,
   serviceLabels,
   serviceProjects,
   services,
   serviceWorkspaces,
   sources,
+  workspaceMembers,
   type DB,
   type Service,
 } from '@ninedeploy/db';
@@ -120,6 +122,7 @@ function serialize(s: Service, sourceName: string | null = null, tags: TagIds = 
     isEphemeralPreview: s.isEphemeralPreview,
     previewParentServiceId: s.previewParentServiceId,
     prNumber: s.prNumber,
+    environmentId: s.environmentId ?? null,
     createdAt: s.createdAt.toISOString(),
     updatedAt: s.updatedAt.toISOString(),
   };
@@ -162,6 +165,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       tagProjectIds?: string;
       tagWorkspaceIds?: string;
       tagLabelIds?: string;
+      environmentId?: string;
     };
     const ids = (raw: string | undefined): number[] =>
       (raw ?? '')
@@ -191,6 +195,12 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       wanted.length === 0 || wanted.some((id) => have.includes(id));
     const visible = rows.filter((s) => {
       const tags = tagsById.get(s.id) ?? NO_TAGS;
+      // Deployment lane filter: the query names an environment id; a service
+      // matches when its own lane matches (or the filter names every lane).
+      if (query.environmentId !== undefined) {
+        const wanted = Number(query.environmentId);
+        if ((s.environmentId ?? null) !== wanted) return false;
+      }
       return (
         matches(tags.projectIds, wantedProjects) &&
         matches(tags.workspaceIds, wantedWorkspaces) &&
@@ -425,6 +435,28 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     } else {
       await applyDefaultTags(app.db, req.user!, svc!.id);
     }
+    // Deployment lane at create time: the environment must belong to a
+    // workspace the caller holds a seat in (same rule as PATCH). Operators
+    // skip the seat check.
+    if (input.environmentId !== undefined) {
+      const envRow = await app.db.query.environments.findFirst({
+        where: eq(environments.id, input.environmentId),
+      });
+      if (!envRow) throw badRequest('Environment not found');
+      if (!req.user!.isOperator) {
+        const seat = await app.db.query.workspaceMembers.findFirst({
+          where: and(
+            eq(workspaceMembers.workspaceId, envRow.workspaceId),
+            eq(workspaceMembers.userId, req.user!.id),
+          ),
+        });
+        if (!seat) throw forbidden('You do not have access to this environment');
+      }
+      await app.db
+        .update(services)
+        .set({ environmentId: envRow.id })
+        .where(eq(services.id, svc!.id));
+    }
     void audit(app.db, req.user!.id, 'service.create', input.name);
     app.kernel?.events.emit('service.created', {
       serviceId: svc!.id,
@@ -478,6 +510,27 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // onto it afterwards.
     if (patch.sourceId !== undefined && patch.sourceId !== null && !req.user!.isOperator) {
       throw forbidden('Only operators may attach a managed source to a service');
+    }
+    // Deployment lane assignment: the environment must belong to a workspace
+    // the caller holds a seat in. null clears the lane (ungrouped).
+    if (patch.environmentId !== undefined) {
+      if (patch.environmentId === null) {
+        patch.environmentId = null;
+      } else {
+        const envRow = await app.db.query.environments.findFirst({
+          where: eq(environments.id, patch.environmentId),
+        });
+        if (!envRow) throw badRequest('Environment not found');
+        if (!req.user!.isOperator) {
+          const seat = await app.db.query.workspaceMembers.findFirst({
+            where: and(
+              eq(workspaceMembers.workspaceId, envRow.workspaceId),
+              eq(workspaceMembers.userId, req.user!.id),
+            ),
+          });
+          if (!seat) throw forbidden('You do not have access to this environment');
+        }
+      }
     }
     // The gate has to consider the MERGED result, not just the payload: a
     // member could otherwise switch `type` to pm2 on its own, or add a single

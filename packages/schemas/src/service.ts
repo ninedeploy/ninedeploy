@@ -51,6 +51,8 @@ export const createService = z.object({
   previewAutoDestroyOnClose: z.boolean().optional(),
   previewDomainPattern: z.string().nullable().optional(),
   previewMaxActive: z.number().int().min(1).max(50).optional(),
+  /** Deployment lane at create time (production / staging / …). */
+  environmentId: z.number().int().positive().optional(),
   build: z
     .object({
       buildPack: buildPack.default('auto'),
@@ -127,6 +129,8 @@ export const updateService = z.object({
   previewAutoDestroyOnClose: z.boolean().optional(),
   previewDomainPattern: z.string().nullable().optional(),
   previewMaxActive: z.number().int().min(1).max(50).optional(),
+  /** Deployment lane (production / staging / …). null clears the assignment. */
+  environmentId: z.number().int().positive().nullable().optional(),
   build: z
     .object({
       buildPack: buildPack.optional(),
