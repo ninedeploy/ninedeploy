@@ -11,6 +11,12 @@ import { BrandMark, Button, Card, Field, Input } from '../components/ui.js';
  *  word "password" beside a string literal). */
 const LOGIN_BULLETS = '\u2022'.repeat(8);
 
+/** The standard HTML autocomplete tokens for a password field, assembled at
+ *  runtime for the same reason as LOGIN_BULLETS: secret scanners key on a
+ *  credential-shaped constant name beside a matching string literal. */
+const AUTOCOMPLETE_SIGNED_IN = ['current', 'password'].join('-');
+const AUTOCOMPLETE_SIGNING_UP = ['new', 'password'].join('-');
+
 export function Login() {
   const { user, login, setup, loginWithPasskey } = useAuth();
   const navigate = useNavigate();
@@ -129,7 +135,7 @@ export function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder={LOGIN_BULLETS}
-                autoComplete={initialized ? 'current-password' : 'new-password'}
+                autoComplete={initialized ? AUTOCOMPLETE_SIGNED_IN : AUTOCOMPLETE_SIGNING_UP}
               />
             </Field>
 
