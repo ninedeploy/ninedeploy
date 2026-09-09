@@ -6,6 +6,7 @@ import type { Database } from '@ninedeploy/db';
 import { createBackupCipher, createBackupDecipher, decrypt } from '../lib/crypto.js';
 import { ensureDockerImage, pullDockerImage } from '../lib/dockerPull.js';
 import { capture, run } from '../lib/exec.js';
+import { HELPER_IMAGE } from '../lib/inventory.js';
 import { connectContainerToServiceBridge, ensureServiceBridge } from '../lib/serviceBridge.js';
 import { writeSecretFile } from '../lib/secretFile.js';
 import { NETWORK } from './proxy.js';
@@ -339,7 +340,13 @@ export async function startDatabaseStudio(d: Database, port: number, log: (line:
   await ensureDockerImage(studio.image, log);
   const args = [
     'run', '-d', '--name', name, '--network', NETWORK, '--restart', 'unless-stopped',
-    '-p', `${port}:${studio.containerPort}`,
+    // Bind the Studio to LOOPBACK only. Adminer / Redis Commander speak plain
+    // HTTP with no NineDeploy authentication in front of them, and Redis
+    // Commander pre-holds the database's credentials — publishing them on all
+    // interfaces turned every host port into an unauthenticated, network-
+    // reachable database client. Loopback keeps the panel's iframe usable on
+    // the host while closing the exposure to the outside network.
+    '-p', `127.0.0.1:${port}:${studio.containerPort}`,
   ];
   if (d.engine === 'redis' || d.engine === 'valkey') {
     const host = d.internalHost || d.containerName;
@@ -671,9 +678,10 @@ export async function removeVolume(name: string, log: (line: string) => void): P
 // neither side bind-mounts a host directory (which would have to be resolvable
 // by the daemon rather than by this process).
 
-/** Sidecar image for the tar work. Same tag the rest of the volume tooling
- *  already prepares, so the pull is usually a no-op. */
-const VOLUME_TAR_IMAGE = 'alpine:latest';
+/** Sidecar image for the tar work. Same PINNED tag the rest of the volume
+ *  tooling already prepares (see lib/inventory HELPER_IMAGE), so the pull is
+ *  usually a no-op and the tag cannot float under us. */
+const VOLUME_TAR_IMAGE = HELPER_IMAGE;
 /** Archive path inside the sidecar. */
 const VOLUME_TMP_ARCHIVE = '/tmp/ninedeploy-volume.tar.gz';
 

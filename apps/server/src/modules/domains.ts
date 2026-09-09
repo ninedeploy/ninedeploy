@@ -214,7 +214,11 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
   app.post('/:id/domains/:domainId/verify', async (req) => {
     const id = num((req.params as { id: string }).id);
     const domainId = num((req.params as { domainId: string }).domainId);
-    await loadServiceForUser(app.db, id, req.user!);
+    const verifySvc = await loadServiceForUser(app.db, id, req.user!);
+    // Verification flips the domain live (and can mint provider DNS records):
+    // a write on the service, so the `member` floor applies — a viewer seat
+    // stays read-only.
+    await assertServiceRole(app.db, verifySvc, req.user!, 'member');
     const d = await app.db.query.domains.findFirst({
       where: and(eq(domains.id, domainId), eq(domains.serviceId, id)),
     });
