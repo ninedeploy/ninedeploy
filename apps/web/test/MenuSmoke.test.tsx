@@ -176,10 +176,16 @@ describe('Sidebar menu — every nav item opens the right group and lights up th
       // as the GROUPS array and renders inside an .uppercase span. If the
       // findGroup() resolution or the auto-open effect regressed, the
       // panel would either be missing or show a different group.
-      await waitFor(() => {
-        const header = findPanelHeader(container, group);
-        expect(header, `panel header "${group}" should be visible at ${path}`).not.toBeNull();
-      });
+      // The generous timeout also absorbs the lazy route chunk compiling
+      // under a loaded parallel worker (routes are code-split since the
+      // bundle split — the FIRST navigation to a route pays the compile).
+      await waitFor(
+        () => {
+          const header = findPanelHeader(container, group);
+          expect(header, `panel header "${group}" should be visible at ${path}`).not.toBeNull();
+        },
+        { timeout: 10_000 },
+      );
 
       // The link inside the panel must be active. The active class is
       // `bg-indigo-500/15` (Layout.tsx:254). We don't assert on the class
@@ -204,10 +210,13 @@ describe('Sidebar menu — every nav item opens the right group and lights up th
     // not leave the panel empty. The second group is "Organize" and is
     // the default landing pad.
     const { container, unmount } = renderAppAt('/this-route-does-not-exist');
-    await waitFor(() => {
-      const header = findPanelHeader(container, 'Organize');
-      expect(header).not.toBeNull();
-    });
+    await waitFor(
+      () => {
+        const header = findPanelHeader(container, 'Organize');
+        expect(header).not.toBeNull();
+      },
+      { timeout: 10_000 },
+    );
     unmount();
   });
 });

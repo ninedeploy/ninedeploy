@@ -17,13 +17,10 @@ export default defineConfig({
     },
   },
   build: {
-    // The route bundle is the largest chunk left after the vendor split below
-    // (967 kB raw, 230 kB gzipped) — well within HTTP/2's first-paint budget.
-    // Vite's default 500 kB warning is a heuristic, not a hard limit, so raise
-    // it to 1024 kB rather than splitting every route into a lazy chunk (the
-    // latter would change Suspense semantics for every test that hits a route
-    // directly, with no measurable UX win for the 28 routes here).
-    chunkSizeWarningLimit: 1024,
+    // Every route is a lazy chunk (see App.tsx), so the landing index bundle
+    // stays small; 600 kB keeps the size warning meaningful against any
+    // FUTURE regression where a heavy dependency sneaks back into the shell.
+    chunkSizeWarningLimit: 600,
     // Split heavy vendor code into its own chunk so the route bundle stays
     // under the warning threshold and the browser can cache vendor code
     // independently across deploys. Vite 8 / Rolldown only accepts the
