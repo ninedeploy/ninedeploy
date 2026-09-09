@@ -76,7 +76,7 @@ describe('DeploysTab (per-service)', () => {
       baseDeploy({ id: 11, status: 'queued' }),
     ];
     renderWithProviders(
-      <DeploysTab serviceId={1} deploys={deploys} loading={false} activeId={null} onSelect={() => {}} />,
+      <DeploysTab serviceId={1} repoUrl={null} deploys={deploys} loading={false} activeId={null} onSelect={() => {}} />,
     );
     // All three position badges render, in id-desc order on screen.
     expect(await screen.findByText('#1 of 3')).toBeInTheDocument();
@@ -87,7 +87,7 @@ describe('DeploysTab (per-service)', () => {
   it('does not show a queue position on a running row', async () => {
     const deploys: Deployment[] = [baseDeploy({ id: 1, status: 'running' })];
     renderWithProviders(
-      <DeploysTab serviceId={1} deploys={deploys} loading={false} activeId={null} onSelect={() => {}} />,
+      <DeploysTab serviceId={1} repoUrl={null} deploys={deploys} loading={false} activeId={null} onSelect={() => {}} />,
     );
     // The status badge shows, but no position marker — only queued rows
     // carry it.
@@ -100,7 +100,7 @@ describe('DeploysTab (per-service)', () => {
     mockOf(api.deploys.cancel).mockImplementation(cancelSpy);
     const deploys: Deployment[] = [baseDeploy({ id: 21, status: 'queued' })];
     renderWithProviders(
-      <DeploysTab serviceId={1} deploys={deploys} loading={false} activeId={null} onSelect={() => {}} />,
+      <DeploysTab serviceId={1} repoUrl={null} deploys={deploys} loading={false} activeId={null} onSelect={() => {}} />,
     );
     const user = userEvent.setup();
     const card = await screen.findByText('#21');
@@ -110,5 +110,53 @@ describe('DeploysTab (per-service)', () => {
     await waitFor(() => {
       expect(cancelSpy).toHaveBeenCalledWith(1, 21);
     });
+  });
+
+  it('offers promotion only to same-repo services and queues it', async () => {
+    const REPO = 'https://github.com/acme/web.git';
+    mockOf(api.services.list).mockResolvedValue([
+      { id: 1, name: 'web-staging', repoUrl: REPO },
+      { id: 2, name: 'web-prod', repoUrl: REPO },
+      { id: 3, name: 'api', repoUrl: 'https://github.com/acme/api.git' },
+    ] as never);
+    const promoteSpy = vi.fn().mockResolvedValue({ ok: true, deploymentId: 30, commitSha: 'abcdef12345', promotedFrom: 'web-staging' });
+    mockOf(api.deploys.promote).mockImplementation(promoteSpy);
+    renderWithProviders(
+      <DeploysTab
+        serviceId={1}
+        repoUrl={REPO}
+        deploys={[baseDeploy({ id: 7, status: 'running' })]}
+        loading={false}
+        activeId={null}
+        onSelect={() => {}}
+      />,
+    );
+    const user = userEvent.setup();
+    // Card renders only because a running pinned commit + same-repo siblings exist.
+    await screen.findByText('Promote this commit');
+    const select = screen.getByLabelText('Promotion target service');
+    // Same-repo sibling is offered; the self and cross-repo services are not.
+    expect(select).toHaveTextContent('web-prod');
+    expect(select).not.toHaveTextContent('web-staging');
+    expect(select).not.toHaveTextContent('api');
+    await user.selectOptions(select, '2');
+    await user.click(screen.getByRole('button', { name: 'Promote' }));
+    await waitFor(() => expect(promoteSpy).toHaveBeenCalledWith(1, 2));
+  });
+
+  it('hides the promote card without a running pinned commit', async () => {
+    mockOf(api.services.list).mockResolvedValue([{ id: 2, name: 'web-prod' }] as never);
+    renderWithProviders(
+      <DeploysTab
+        serviceId={1}
+        repoUrl="https://github.com/acme/web.git"
+        deploys={[baseDeploy({ id: 7, status: 'failed' })]}
+        loading={false}
+        activeId={null}
+        onSelect={() => {}}
+      />,
+    );
+    await screen.findByText('#7');
+    expect(screen.queryByText('Promote this commit')).not.toBeInTheDocument();
   });
 });

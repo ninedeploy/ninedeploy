@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { and, asc, desc, eq, inArray, isNotNull, lt, notInArray } from 'drizzle-orm';
+import { z } from 'zod';
 import { deployments, services } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import { diffLines, renderDiff } from '../lib/diff.js';
@@ -24,6 +25,11 @@ const IN_FLIGHT_STATUSES = ['queued', 'building', 'deploying'] as const;
 /** True while the worker or the pipeline may still write to this row. */
 const isInFlight = (status: string): boolean =>
   (IN_FLIGHT_STATUSES as readonly string[]).includes(status);
+
+const promoteInput = z.object({
+  /** The service to redeploy at this lane's pinned commit. */
+  targetServiceId: z.number().int().positive(),
+});
 
 export const deploysRoutes: FastifyPluginAsync = async (app) => {
   // Trigger a new deployment (enqueues a `queued` row the worker picks up).
@@ -71,6 +77,54 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
       .values({ serviceId: id, status: 'queued', trigger: 'user', message: 'Manual deploy' })
       .returning();
     return { deploymentId: dep!.id };
+  });
+
+  // Promote: deploy ANOTHER service at this service's exact running commit —
+  // the canonical staging → production flow. The source lane soaks a commit;
+  // one call re-deploys the target at the same SHA.
+  app.post('/:id/promote', { onRequest: [app.authenticate] }, async (req) => {
+    const id = num((req.params as { id: string }).id);
+    const input = promoteInput.parse(req.body ?? {});
+    if (input.targetServiceId === id) throw badRequest('Cannot promote a service to itself');
+    const source = await loadServiceForUser(app.db, id, req.user!);
+    // Triggering a promotion deploys the target: member floor on both sides.
+    await assertServiceRole(app.db, source, req.user!, 'member');
+    const target = await loadServiceForUser(app.db, input.targetServiceId, req.user!);
+    await assertServiceRole(app.db, target, req.user!, 'member');
+    await assertMayDeployStoredService(app.db, req.user!, target);
+    assertRemoteDeploySupported(target);
+    // Same repository is the promotion invariant: the target redeploys at the
+    // source's pinned SHA, which only makes sense over a shared history.
+    if (source.repoUrl && target.repoUrl && source.repoUrl !== target.repoUrl) {
+      throw badRequest('Promotion requires both services to track the same repository');
+    }
+    const latest = await app.db.query.deployments.findFirst({
+      where: and(eq(deployments.serviceId, source.id), eq(deployments.status, 'running')),
+      orderBy: desc(deployments.id),
+    });
+    if (!latest?.commitSha) {
+      throw badRequest('Source has no running deployment with a pinned commit — deploy it first');
+    }
+    const MAX_QUEUED_PER_SERVICE = 50;
+    const queuedRows = await app.db.query.deployments.findMany({
+      where: and(eq(deployments.serviceId, target.id), eq(deployments.status, 'queued')),
+      columns: { id: true },
+    });
+    if (queuedRows.length >= MAX_QUEUED_PER_SERVICE) {
+      throw badRequest(`Target already has ${queuedRows.length} queued deploys (max ${MAX_QUEUED_PER_SERVICE}).`);
+    }
+    void audit(app.db, req.user!.id, 'deploy.promote', `${source.name} → ${target.name} @ ${latest.commitSha.slice(0, 7)}`);
+    const [dep] = await app.db
+      .insert(deployments)
+      .values({
+        serviceId: target.id,
+        status: 'queued',
+        trigger: 'user',
+        commitSha: latest.commitSha,
+        message: `Promoted from ${source.name} @ ${latest.commitSha.slice(0, 7)}`,
+      })
+      .returning({ id: deployments.id });
+    return { ok: true, deploymentId: dep!.id, commitSha: latest.commitSha, promotedFrom: source.name };
   });
 
   // List deployments for a service.

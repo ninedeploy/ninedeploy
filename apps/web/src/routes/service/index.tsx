@@ -382,6 +382,7 @@ export function ServiceDetail() {
           {tab === 'deploys' && (
             <DeploysTab
               serviceId={id}
+              repoUrl={svc.repoUrl ?? null}
               deploys={deploys.data ?? []}
               loading={deploys.isLoading}
               activeId={activeDeploy}

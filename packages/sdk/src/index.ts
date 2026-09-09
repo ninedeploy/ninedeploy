@@ -607,6 +607,12 @@ export interface NineDeployClient {
     remove: (serviceId: number, deploymentId: number) => Promise<{ ok: boolean; id: number }>;
     /** Build-config + env-key diff against the previous deployment. */
     configDiff: (serviceId: number, deploymentId: number) => Promise<{ deploymentId: number; previousDeploymentId: number | null; changed: boolean; diff: string }>;
+    /**
+     * Promote: deploy ANOTHER service at this service's exact running
+     * commit — the staging → production lane hop. Both services must
+     * track the same repository and the caller needs `member` on both.
+     */
+    promote: (serviceId: number, targetServiceId: number) => Promise<{ ok: boolean; deploymentId: number; commitSha: string; promotedFrom: string }>;
   };
   domains: {
     list: (serviceId: number) => Promise<Domain[]>;
@@ -1516,6 +1522,12 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       configDiff: (serviceId, deploymentId) =>
         get<{ deploymentId: number; previousDeploymentId: number | null; changed: boolean; diff: string }>(
           `/v1/services/${serviceId}/deploys/${deploymentId}/diff`,
+        ),
+      promote: (serviceId, targetServiceId) =>
+        send<{ ok: boolean; deploymentId: number; commitSha: string; promotedFrom: string }>(
+          'POST',
+          `/v1/services/${serviceId}/promote`,
+          { targetServiceId },
         ),
     },
     domains: {

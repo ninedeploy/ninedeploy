@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, GitCompare, RotateCcw, Trash2, X } from 'lucide-react';
+import { Activity, ArrowUpRight, GitCompare, RotateCcw, Trash2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { Deployment } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
@@ -19,12 +19,15 @@ export const isRemovable = (status: string): boolean => !IN_FLIGHT.includes(stat
 /** Deployment history + the live build log for the selected deployment. */
 export function DeploysTab({
   serviceId,
+  repoUrl,
   deploys,
   loading,
   activeId,
   onSelect,
 }: {
   serviceId: number;
+  /** Services sharing this repository are promotion targets. */
+  repoUrl: string | null;
   deploys: Deployment[];
   loading: boolean;
   activeId: number | null;
@@ -104,6 +107,8 @@ export function DeploysTab({
         loading={loading}
         positionById={positionById}
       />
+
+      <PromoteCard serviceId={serviceId} repoUrl={repoUrl} deploys={deploys} />
 
       <Card>
         <CardBody className="flex h-full flex-col">
@@ -193,6 +198,92 @@ function ConfigDiffCard({ serviceId, deploymentId }: { serviceId: number; deploy
             )}
           </div>
         )}
+      </CardBody>
+    </Card>
+  );
+}
+
+// ── Promote (staging → production lane hop) ───────────────────────────────
+// Visible only when this service has a running deployment with a pinned
+// commit AND at least one sibling service tracks the same repository — the
+// server enforces the same invariants, this just decides whether to offer it.
+function PromoteCard({
+  serviceId,
+  repoUrl,
+  deploys,
+}: {
+  serviceId: number;
+  repoUrl: string | null;
+  deploys: Deployment[];
+}) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [targetId, setTargetId] = useState('');
+  const running = deploys.find((d) => d.status === 'running' && d.commitSha);
+  const candidatesQ = useQuery({
+    queryKey: ['services'],
+    queryFn: () => api.services.list(),
+    // Only worth a services round-trip when promotion is actually possible.
+    enabled: !!running && !!repoUrl,
+  });
+  const candidates = (candidatesQ.data ?? []).filter(
+    (s) => s.id !== serviceId && !!s.repoUrl && s.repoUrl === repoUrl,
+  );
+
+  const promote = useMutation({
+    mutationFn: (target: number) => api.deploys.promote(serviceId, target),
+    onSuccess: (res, target) => {
+      qc.invalidateQueries({ queryKey: ['deploys', target] });
+      toast(
+        `Promotion queued — deploying service #${target} @ ${res.commitSha.slice(0, 7)}`,
+        'info',
+      );
+      setTargetId('');
+    },
+    onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Promotion failed', 'error'),
+  });
+
+  if (!running || !repoUrl || candidates.length === 0) return null;
+
+  return (
+    <Card>
+      <CardBody className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.03] text-slate-400">
+            <ArrowUpRight size={15} />
+          </span>
+          <div>
+            <div className="text-sm font-medium text-slate-200">Promote this commit</div>
+            <div className="mt-0.5 text-[11px] text-slate-500">
+              Re-deploy another service at <span className="font-mono">{running.commitSha?.slice(0, 7)}</span> — the
+              staging → production hop.
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <select
+            value={targetId}
+            onChange={(e) => setTargetId(e.target.value)}
+            aria-label="Promotion target service"
+            className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 text-xs text-slate-300 outline-none focus:border-indigo-500/40"
+          >
+            <option value="">Select service…</option>
+            {candidates.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={!targetId || promote.isPending}
+            onClick={() => promote.mutate(Number(targetId))}
+            className="flex items-center gap-1.5 rounded-lg bg-indigo-500/15 px-3 py-1.5 text-xs font-medium text-indigo-200 ring-1 ring-inset ring-indigo-500/30 transition hover:bg-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {promote.isPending && <Spinner className="h-3 w-3" />}
+            Promote
+          </button>
+        </div>
       </CardBody>
     </Card>
   );
