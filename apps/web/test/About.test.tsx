@@ -1,5 +1,6 @@
 ﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, fireEvent } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { About } from '../src/routes/About.js';
 import { api } from '../src/lib/api.js';
 import { renderWithProviders, mockOf } from './helpers.js';
@@ -8,6 +9,36 @@ vi.mock('../src/lib/api.js', async () => {
   // Must be './apiMock.js', not './helpers.js' — see the note in apiMock.ts.
   const { createFakeApiModule } = await import('./apiMock.js');
   return createFakeApiModule();
+});
+
+// The update flow is operator-gated — usePanelUpdate enables its queries only
+// for isOperator users — so hand out a signed-in operator.
+vi.mock('../src/lib/auth.js', () => ({
+  AuthProvider: ({ children }: { children?: ReactNode }) => children,
+  useAuth: () => ({ user: { id: 1, email: 'admin@test', name: 'Admin', isOperator: true }, loading: false }),
+}));
+
+// ConfirmDialog is a generic ui primitive; stub it to observe the
+// About-specific confirm/cancel handlers (mirrors the wizard stub in
+// NotificationsSection.test.tsx).
+vi.mock('../src/components/ui.js', async () => {
+  const actual = await vi.importActual<typeof import('../src/components/ui.js')>('../src/components/ui.js');
+  return {
+    ...actual,
+    ConfirmDialog: (props: {
+      open: boolean;
+      title: string;
+      confirmLabel: string;
+      onClose: () => void;
+      onConfirm: () => void;
+    }) =>
+      props.open ? (
+        <div role="dialog" aria-label={props.title}>
+          <button type="button" onClick={props.onConfirm}>{props.confirmLabel}</button>
+          <button type="button" onClick={props.onClose}>cancel update</button>
+        </div>
+      ) : null,
+  };
 });
 
 const aboutData = {
@@ -30,6 +61,10 @@ const aboutData = {
 describe('About', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // usePanelUpdate tracks a started update in localStorage; a leftover
+    // target from a previous test forces phase 'updating', which disables
+    // the update button and breaks the dialog tests below.
+    window.localStorage.clear();
   });
 
   it('shows skeleton while loading', () => {
@@ -143,5 +178,33 @@ describe('About', () => {
       await new Promise((r) => setTimeout(r, 50));
     }
     throw new Error('update badge did not render');
+  });
+
+  it('offers the one-click update and starts it after explicit confirmation', async () => {
+    mockOf(api.about.get).mockResolvedValue(aboutData as never);
+    mockOf(api.system.updateCheck).mockResolvedValue({
+      current: '0.0.1', latest: '0.1.0', updateAvailable: true, notesUrl: null, checkedAt: '2026-08-15T00:00:00Z',
+    } as never);
+    mockOf(api.system.updateStatus).mockResolvedValue({ supported: true, phase: 'idle' } as never);
+    mockOf(api.system.updateStart).mockResolvedValue({ started: true } as never);
+    renderWithProviders(<About />);
+    // The button only renders once the operator-gated status query resolves.
+    fireEvent.click(await screen.findByRole('button', { name: 'Update & Restart' }));
+    expect(screen.getByRole('dialog', { name: 'Update NineDeploy to 0.1.0' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Update and Restart' }));
+    await waitFor(() => expect(api.system.updateStart).toHaveBeenCalledWith('0.1.0'));
+  });
+
+  it('keeps the current release when the operator cancels the update dialog', async () => {
+    mockOf(api.about.get).mockResolvedValue(aboutData as never);
+    mockOf(api.system.updateCheck).mockResolvedValue({
+      current: '0.0.1', latest: '0.1.0', updateAvailable: true, notesUrl: null, checkedAt: '2026-08-15T00:00:00Z',
+    } as never);
+    mockOf(api.system.updateStatus).mockResolvedValue({ supported: true, phase: 'idle' } as never);
+    renderWithProviders(<About />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Update & Restart' }));
+    fireEvent.click(screen.getByRole('button', { name: 'cancel update' }));
+    expect(screen.queryByRole('dialog', { name: 'Update NineDeploy to 0.1.0' })).not.toBeInTheDocument();
+    expect(api.system.updateStart).not.toHaveBeenCalled();
   });
 });

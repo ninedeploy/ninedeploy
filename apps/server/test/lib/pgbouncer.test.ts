@@ -584,4 +584,41 @@ describe('pgbouncerStatusFor', () => {
       expect(src).not.toMatch(/\brequire\s*\(/);
     });
   });
+
+  describe('pure helpers (r039 coverage)', () => {
+    it('pgbouncerContainerName prefers the row override and falls back to the slug', () => {
+      expect(pgbouncerContainerName({ slug: 'mydb', pgbouncerContainerName: 'custom-pgb' } as never)).toBe('custom-pgb');
+      expect(pgbouncerContainerName({ slug: 'mydb', pgbouncerContainerName: null } as never)).toBe('nd-pgb-mydb');
+    });
+
+    it('pooledConnectionString keeps the direct shape when the sidecar is off', () => {
+      const url = pooledConnectionString({
+        pgbouncerEnabled: false, slug: 'mydb', username: 'nine',
+        passwordEncrypted: 'cipher', containerName: 'nd-db-mydb', internalPort: 5433, dbName: 'appdb',
+      } as never);
+      // Shape-only assertions: never pin the credential-bearing template.
+      expect(url).toContain('5433');
+      expect(url).toContain('/appdb');
+      expect(url).not.toContain('nd-pgb-');
+    });
+
+    it('pooledConnectionString routes through the sidecar when enabled', () => {
+      const url = pooledConnectionString({
+        pgbouncerEnabled: true, pgbouncerContainerName: 'nd-pgb-mydb', slug: 'mydb',
+        username: 'nine', passwordEncrypted: 'cipher', dbName: 'appdb',
+      } as never);
+      expect(url).toContain('nd-pgb-mydb');
+      expect(url).toContain('/appdb');
+    });
+
+    it('enablePgbouncer refuses non-postgres engines', async () => {
+      await expect(enablePgbouncer(createFakeDb({}) as never, { engine: 'mysql' } as never, () => {}))
+        .rejects.toThrow(/only supported for the postgres engine/);
+    });
+
+    it('enablePgbouncer refuses a database without a container name', async () => {
+      await expect(enablePgbouncer(createFakeDb({}) as never, { engine: 'postgres', containerName: null } as never, () => {}))
+        .rejects.toThrow(/no container name/);
+    });
+  });
 });

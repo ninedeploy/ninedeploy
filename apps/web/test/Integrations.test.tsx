@@ -241,4 +241,39 @@ describe('IntegrationsSection', () => {
     fireEvent.click(dnsTest);
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('denied', 'error'));
   });
+
+  it('saves Namecheap credentials trimmed and clears the key on success', async () => {
+    const user = userEvent.setup();
+    mockOf(api.settings.namecheap.get).mockResolvedValue({ apiUser: '', hasKey: false } as never);
+    mockOf(api.settings.namecheap.set).mockResolvedValue(undefined as never);
+    renderWithProviders(<IntegrationsSection />);
+
+    await user.type(screen.getByPlaceholderText('account-owner-username'), '  ncuser ');
+    await user.type(screen.getByPlaceholderText('Namecheap API key'), ' nck3y ');
+    await user.type(screen.getByPlaceholderText('203.0.113.10'), '203.0.113.10');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[2]!);
+    await waitFor(() =>
+      expect(api.settings.namecheap.set).toHaveBeenCalledWith({
+        apiUser: 'ncuser',
+        apiKey: 'nck3y',
+        clientIp: '203.0.113.10',
+      }),
+    );
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Namecheap credentials saved', 'success'));
+    // The key is never pre-populated from the server — cleared after a save.
+    expect(screen.getByPlaceholderText('Namecheap API key')).toHaveValue('');
+  });
+
+  it('reports Namecheap save failures', async () => {
+    const user = userEvent.setup();
+    mockOf(api.settings.namecheap.get).mockResolvedValue({ apiUser: '', hasKey: false } as never);
+    mockOf(api.settings.namecheap.set).mockRejectedValue(new Error('IP not whitelisted') as never);
+    renderWithProviders(<IntegrationsSection />);
+
+    await user.type(screen.getByPlaceholderText('account-owner-username'), 'ncuser');
+    await user.type(screen.getByPlaceholderText('Namecheap API key'), 'nck3y');
+    await user.type(screen.getByPlaceholderText('203.0.113.10'), '203.0.113.10');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[2]!);
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('IP not whitelisted', 'error'));
+  });
 });

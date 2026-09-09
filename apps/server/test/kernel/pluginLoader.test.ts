@@ -8,6 +8,26 @@ import {
 } from '../../src/kernel/pluginLoader.js';
 import { NineDeployKernel } from '../../src/kernel/kernel.js';
 
+// Sandbox plugins spawn a real Worker during init. The default bootstrap
+// script only exists as compiled .js next to the source — unavailable under
+// vitest — so substitute a Worker that reports READY as soon as the main
+// side attaches a message listener.
+vi.mock('node:worker_threads', async () => {
+  const { EventEmitter } = await import('node:events');
+  class FakeWorker extends EventEmitter {
+    postMessage = vi.fn();
+    terminate = vi.fn(async () => 0);
+    override on(event: string, cb: (...args: never[]) => void): this {
+      super.on(event, cb as never);
+      if (event === 'message') {
+        queueMicrotask(() => this.emit('message', { type: 'READY', payload: {} }));
+      }
+      return this;
+    }
+  }
+  return { Worker: FakeWorker, parentPort: null };
+});
+
 describe('PluginLoader', () => {
   const mockDb = {
     query: {
@@ -119,6 +139,25 @@ describe('PluginLoader', () => {
       });
       expect(p.id).toBe('custom-local-plugin');
       expect(p.version).toBe('2.0.0');
+    });
+
+    it('builds a sandbox plugin that carries its code and manifest', () => {
+      const p = createDynamicPlugin({
+        source: 'sandbox',
+        target: 'sb-1',
+        name: 'My Sandbox',
+        code: 'module.exports = { init() {} };',
+        manifest: { menuItems: [{ label: 'X' }] },
+      });
+      expect(p.id).toBe('sb-1');
+      // SandboxPlugin keeps the payload for the worker: an install that lost
+      // its code used to register as "active" while executing nothing.
+      expect((p as unknown as { code: string }).code).toBe('module.exports = { init() {} };');
+      expect((p as unknown as { manifest: unknown }).manifest).toEqual({ menuItems: [{ label: 'X' }] });
+    });
+
+    it('refuses a sandbox plugin that ships no code', () => {
+      expect(() => createDynamicPlugin({ source: 'sandbox', target: 'sb-empty' })).toThrow(/carries no code/);
     });
   });
 
@@ -358,6 +397,36 @@ describe('PluginLoader', () => {
       expect(errSpy).toHaveBeenCalled();
       warnSpy.mockRestore();
       errSpy.mockRestore();
+    });
+
+    it('restores a sandbox plugin WITH its persisted code and manifest', async () => {
+      const { loadInstalledPlugins } = await import('../../src/kernel/pluginLoader.js');
+      const kernel = new NineDeployKernel(mockDb as never, mockConfig);
+      const code = 'module.exports = { hooks: { onDeploy() {} } };';
+      mockDb.query.installedPlugins.findMany.mockResolvedValue([
+        {
+          id: 'sb-1',
+          name: 'My Sandbox',
+          version: '1.0.0',
+          enabled: true,
+          manifest: { source: 'sandbox', target: 'sb-1', code, sandboxManifest: { menuItems: [] } },
+        },
+      ]);
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const count = await loadInstalledPlugins(mockDb as never, kernel);
+
+      expect(count).toBe(1);
+      const restored = kernel.getPlugin('sb-1');
+      expect(restored).toBeDefined();
+      // The persisted payload must survive the restart: a restore that loses
+      // the code re-registers an "active" plugin that executes nothing.
+      expect((restored as unknown as { code: string }).code).toBe(code);
+      expect((restored as unknown as { manifest: unknown }).manifest).toEqual({ menuItems: [] });
+      expect(warnSpy).not.toHaveBeenCalled();
+      errSpy.mockRestore();
+      warnSpy.mockRestore();
     });
   });
 });

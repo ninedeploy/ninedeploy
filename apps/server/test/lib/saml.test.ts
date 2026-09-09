@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   canonicalDigest,
+  checkAssertionNotReplayed,
   decodeSamlResponse,
   extractSamlSubject,
   parseIdpMetadata,
+  readIssuer,
   verifySignedInfo,
   wrapPem,
 } from '../../src/lib/saml.js';
@@ -322,6 +324,40 @@ describe('lib/saml', () => {
         <saml:Assertion><saml:NameID>   </saml:NameID></saml:Assertion>
       </samlp:Response>`;
       expect(() => extractSamlSubject(xml)).toThrow(/empty <NameID>/);
+    });
+  });
+
+  describe('assertion replay cache', () => {
+    const assertionWithId = (id: string) => `<saml:Assertion ID="${id}"><saml:NameID>a@b.c</saml:NameID></saml:Assertion>`;
+
+    it('accepts an assertion once and refuses the second acceptance', () => {
+      const xml = assertionWithId('_once');
+      const t0 = 1_000_000;
+      expect(() => checkAssertionNotReplayed(xml, t0)).not.toThrow();
+      expect(() => checkAssertionNotReplayed(xml, t0 + 1)).toThrow(/replay/);
+    });
+
+    it('refuses an assertion that carries no ID attribute', () => {
+      expect(() => checkAssertionNotReplayed('<saml:Assertion><saml:NameID>x</saml:NameID></saml:Assertion>', 0))
+        .toThrow(/no ID attribute/);
+    });
+
+    it('prunes aged entries so the cache stays bounded and old IDs free up', () => {
+      const hour = 60 * 60 * 1000;
+      // Fill past the age window with distinct IDs at t=0, then re-use the
+      // FIRST id well past the TTL: the prune must have evicted it.
+      for (let i = 0; i < 50; i++) {
+        checkAssertionNotReplayed(assertionWithId(`_old-${i}`), i * 1000);
+      }
+      const t = 7 * hour + 1000;
+      expect(() => checkAssertionNotReplayed(assertionWithId('_old-0'), t)).not.toThrow();
+    });
+
+    it('readIssuer extracts the Issuer element and returns null when absent', () => {
+      expect(readIssuer('<samlp:Response><saml:Issuer> https://idp.example.com </saml:Issuer></samlp:Response>')).toBe(
+        'https://idp.example.com',
+      );
+      expect(readIssuer('<samlp:Response />')).toBeNull();
     });
   });
 });

@@ -138,4 +138,27 @@ describe('NotificationsSection', () => {
       ),
     );
   });
+
+  it('edits the discord embed title, username and avatar url fields', async () => {
+    mockOf(api.notifications.listChannels).mockResolvedValue([
+      channel({ type: 'discord', name: 'alerts', configJson: '{}' }),
+    ] as never);
+    mockOf(api.notifications.updateChannel).mockResolvedValue({} as never);
+    renderWithProviders(<NotificationsSection />);
+    await screen.findByText('alerts');
+
+    fireEvent.click(screen.getByTitle('Edit'));
+    fireEvent.change(screen.getByLabelText('Embed title'), { target: { value: 'Deploy finished' } });
+    fireEvent.change(screen.getByLabelText('Webhook username'), { target: { value: 'ci-bot' } });
+    fireEvent.change(screen.getByLabelText('Webhook avatar URL'), { target: { value: 'https://cdn.example.com/bot.png' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.notifications.updateChannel).toHaveBeenCalled());
+    const patch = vi.mocked(api.notifications.updateChannel).mock.calls[0]![1] as { configJson: string };
+    // All three typed fields survive the round-trip into the stored blob.
+    expect(JSON.parse(patch.configJson)).toEqual({
+      title: 'Deploy finished',
+      username: 'ci-bot',
+      avatarUrl: 'https://cdn.example.com/bot.png',
+    });
+  });
 });

@@ -121,6 +121,7 @@ export function createFakeApiModule() {
       setTemplatesSource: vi.fn(),
       setDns: vi.fn(),
       dnsRecords: { get: vi.fn(), set: vi.fn(), test: vi.fn() },
+      namecheap: { get: vi.fn(), set: vi.fn() },
       vault: { get: vi.fn(), set: vi.fn(), test: vi.fn() },
     },
     about: { get: vi.fn() },

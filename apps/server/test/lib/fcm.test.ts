@@ -298,5 +298,25 @@ describe('lib/fcm', () => {
       const tokenCalls = fetchState.captured.filter((c) => c.url === 'https://oauth2.googleapis.com/token');
       expect(tokenCalls).toHaveLength(2);
     });
+
+    it('delivers a happy-path send and defaults a missing expires_in', async () => {
+      // A distinct client_email forces a real token exchange; the token
+      // response intentionally omits expires_in (the ?? 3600 default branch).
+      const sa = JSON.stringify({
+        project_id: 'proj-1',
+        client_email: 'fresh-bearer@proj-1.iam.gserviceaccount.com',
+        private_key: privateKeyPem,
+      });
+      fetchState.responses.set('https://oauth2.googleapis.com/token', {
+        body: { access_token: 'tok-123' },
+      });
+      fetchState.responses.set('https://fcm.googleapis.com/v1/projects/proj-1/messages:send', {
+        body: { name: 'projects/proj-1/messages/42' },
+      });
+      await expect(
+        sendFcm({ deviceToken: 'dev', serviceAccountJson: sa, body: 'ping' }),
+      ).resolves.toEqual({ messageId: 'projects/proj-1/messages/42' });
+      expect(fetchState.captured.some((c) => c.url === 'https://oauth2.googleapis.com/token')).toBe(true);
+    });
   });
 });

@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPrivateKey, generateKeyPairSync, sign as cryptoSign } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { verifyIdToken, type OidcConfig, type OidcDiscovery } from '../../src/lib/oidc.js';
+import { generateOpaqueToken, hashState, hmacSha256, timingSafeStringEqual, verifyIdToken, type OidcConfig, type OidcDiscovery } from '../../src/lib/oidc.js';
 
 interface TestKey {
   kid: string;
@@ -166,5 +166,32 @@ describe('ESM purity (r018 regression)', () => {
   it('never references CJS require — the runtime is `node dist/server.js`', async () => {
     const src = await readFile(new URL('../../src/lib/oidc.ts', import.meta.url), 'utf8');
     expect(src).not.toMatch(/\brequire\s*\(/);
+  });
+});
+
+describe('pure helpers (r039 coverage)', () => {
+  it('generateOpaqueToken returns unpadded url-safe base64 of the requested bytes', () => {
+    const token = generateOpaqueToken(32);
+    // 32 bytes → 43 base64url chars with padding stripped.
+    expect(token).toHaveLength(43);
+    expect(token).not.toMatch(/[+/=]/);
+    expect(generateOpaqueToken(16)).toHaveLength(22);
+  });
+
+  it('hashState is a deterministic sha256 hex digest', () => {
+    expect(hashState('state-1')).toMatch(/^[0-9a-f]{64}$/);
+    expect(hashState('state-1')).toBe(hashState('state-1'));
+    expect(hashState('state-2')).not.toBe(hashState('state-1'));
+  });
+
+  it('timingSafeStringEqual accepts equal strings and rejects unequal ones', () => {
+    expect(timingSafeStringEqual('same', 'same')).toBe(true);
+    expect(timingSafeStringEqual('same', 'other')).toBe(false);
+  });
+
+  it('hmacSha256 is deterministic, url-safe and key-sensitive', () => {
+    expect(hmacSha256('secret', 'payload')).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(hmacSha256('secret', 'payload')).toBe(hmacSha256('secret', 'payload'));
+    expect(hmacSha256('secret', 'payload')).not.toBe(hmacSha256('other', 'payload'));
   });
 });
