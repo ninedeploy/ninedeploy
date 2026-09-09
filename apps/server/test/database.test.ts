@@ -963,9 +963,13 @@ describe('restoreDatabase', () => {
     h.capture.mockResolvedValueOnce('running');
     await startDatabaseStudio(dbRow({ slug: 'my-db', engine: 'postgres', name: 'my-db' }), 18000, vi.fn());
 
-    // Starts Redis commander with REDIS_HOSTS
+    // Starts Redis commander with REDIS_HOSTS (passwordless local instance)
     h.capture.mockResolvedValueOnce('exited');
-    await startDatabaseStudio(dbRow({ slug: 'my-redis', engine: 'redis', name: 'my-redis', internalHost: 'my-redis' }), 18001, vi.fn());
+    await startDatabaseStudio(
+      dbRow({ slug: 'my-redis', engine: 'redis', name: 'my-redis', internalHost: 'my-redis', passwordEncrypted: '' }),
+      18001,
+      vi.fn(),
+    );
     expect(h.ensureDockerImage).toHaveBeenCalledWith('rediscommander/redis-commander:latest', expect.any(Function));
     expect(h.run).toHaveBeenCalledWith(
       'docker',
@@ -974,9 +978,31 @@ describe('restoreDatabase', () => {
       expect.any(Function),
     );
 
+    // A managed (password-protected) instance goes through REDIS_URL —
+    // REDIS_HOSTS cannot carry a password, so the studio would boot and list
+    // zero databases without this.
+    h.capture.mockResolvedValueOnce('exited');
+    await startDatabaseStudio(
+      dbRow({ slug: 'my-redis-sec', engine: 'redis', name: 'my-redis-sec', internalHost: 'my-redis', passwordEncrypted: 'v0:sekr3t' }),
+      18004,
+      vi.fn(),
+    );
+    expect(h.run).toHaveBeenCalledWith(
+      'docker',
+      expect.arrayContaining(['-e', 'REDIS_URL=redis://default:sekr3t@my-redis:6379/0']),
+      {},
+      expect.any(Function),
+    );
+    const secArgs = h.run.mock.calls.find((c) => (c[1] as unknown[]).includes('nd-studio-my-redis-sec'))?.[1] as unknown[];
+    expect(secArgs.join(' ')).not.toContain('REDIS_HOSTS');
+
     // Starts Valkey studio container using containerName fallback
     h.capture.mockResolvedValueOnce('exited');
-    await startDatabaseStudio(dbRow({ slug: 'my-valkey', engine: 'valkey', name: 'my-valkey', internalHost: null, containerName: 'nd-valkey' }), 18002, vi.fn());
+    await startDatabaseStudio(
+      dbRow({ slug: 'my-valkey', engine: 'valkey', name: 'my-valkey', internalHost: null, containerName: 'nd-valkey', passwordEncrypted: '' }),
+      18002,
+      vi.fn(),
+    );
     expect(h.run).toHaveBeenCalledWith(
       'docker',
       expect.arrayContaining(['run', '-d', '--name', 'nd-studio-my-valkey', '-p', '127.0.0.1:18002:8081', '-e', 'REDIS_HOSTS=local:nd-valkey:6379']),

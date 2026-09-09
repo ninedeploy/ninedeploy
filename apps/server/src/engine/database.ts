@@ -349,8 +349,19 @@ export async function startDatabaseStudio(d: Database, port: number, log: (line:
     '-p', `127.0.0.1:${port}:${studio.containerPort}`,
   ];
   if (d.engine === 'redis' || d.engine === 'valkey') {
-    const host = d.internalHost || d.containerName;
-    args.push('-e', `REDIS_HOSTS=local:${host}:${defaultPort(d.engine)}`);
+    const host = d.internalHost || d.containerName || '';
+    const redisPort = defaultPort(d.engine);
+    // Managed Redis/Valkey always authenticates (a randomToken password on
+    // the `default` ACL user), and REDIS_HOSTS cannot carry a password — the
+    // studio would boot and list zero databases. Authenticated single
+    // connections go through REDIS_URL instead; a passwordless instance
+    // (local dev) keeps the simple host-list form.
+    const password = d.passwordEncrypted ? decrypt(d.passwordEncrypted) : '';
+    if (password) {
+      args.push('-e', `REDIS_URL=redis://default:${encodeURIComponent(password)}@${encodeURIComponent(host)}:${redisPort}/0`);
+    } else {
+      args.push('-e', `REDIS_HOSTS=local:${host}:${redisPort}`);
+    }
   }
   args.push(studio.image);
   log(`Starting Web Studio for ${d.name} on :${port} …`);
