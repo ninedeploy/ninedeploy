@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm';
+import { randomBytes } from 'node:crypto';
 import { servers, type DB } from '@ninedeploy/db';
 import { decrypt, randomToken } from './crypto.js';
 import { open as openSealed, seal } from './agentSeal.js';
@@ -31,26 +32,33 @@ export function tokenMatches(rawToken: string, storedSha256: string): boolean {
 }
 
 /**
- * Per-process cache of "does this agent understand the sealed transport?".
+ * Per-process cache of "this agent DEFINITELY speaks the sealed transport".
  *
- * Answered by an unauthenticated `GET /agent/ping`. Cached because it is asked
- * before every operation and the answer only changes when the agent is
- * upgraded — which restarts it, and this process along with it soon enough.
- * Only an answer the agent actually gave is cached; see `supportsSealed`.
- * Exported for tests, which need to reset it between cases.
+ * Only a `sealed: true` answer is ever cached, and the probe endpoint is
+ * unauthenticated — an on-path attacker can answer it however they like. With
+ * the cleartext fallback off (the default), a forged `sealed: false` can only
+ * make the operation fail closed, never downgrade it; caching the forgery
+ * would change nothing security-wise, but re-probing keeps a transiently
+ * broken probe from poisoning every later decision. Exported for tests, which
+ * need to reset it between cases.
  */
 const sealedSupport = new Map<number, boolean>();
 export const _resetSealedSupportCache = (): void => void sealedSupport.clear();
 
 /**
- * When set, the core refuses to fall back to the legacy cleartext transport.
+ * Cleartext fallback to the legacy plaintext transport is OPT-IN.
  *
- * The fallback exists so a core upgraded ahead of its agents keeps working, but
- * it is also the one thing an active on-path attacker could force by stripping
- * `sealed` from a ping response. An operator who has upgraded the whole fleet
- * should close that door.
+ * Whether the agent supports encryption was decided by an unauthenticated
+ * `GET /agent/ping`, and the fallback fired by default — so one forged probe
+ * answer silently sent the raw agent token (full remote-execution authority)
+ * and the decrypted service secrets in `file.writeEnv` over plaintext HTTP.
+ * The door is now closed unless the operator opens it explicitly with
+ * `NINEDEPLOY_AGENT_ALLOW_CLEARTEXT=1`; `NINEDEPLOY_AGENT_REQUIRE_SEALED=1`
+ * keeps working as the stricter alias and always wins.
  */
-const requireSealed = (): boolean => process.env['NINEDEPLOY_AGENT_REQUIRE_SEALED'] === '1';
+const cleartextFallbackAllowed = (): boolean =>
+  process.env['NINEDEPLOY_AGENT_ALLOW_CLEARTEXT'] === '1' &&
+  process.env['NINEDEPLOY_AGENT_REQUIRE_SEALED'] !== '1';
 
 /** Ask an agent whether it speaks the sealed protocol (cached per server). */
 async function supportsSealed(serverId: number, host: string, port: number): Promise<boolean> {
@@ -61,12 +69,11 @@ async function supportsSealed(serverId: number, host: string, port: number): Pro
     if (!res.ok) return false;
     const body = (await res.json()) as { sealed?: unknown };
     const supported = body.sealed === true;
-    // Only a DEFINITIVE answer is cached. A transient failure — the agent
-    // restarting, a dropped packet, or an on-path attacker dropping exactly one
-    // probe — must not pin this server to the cleartext fallback for the rest
-    // of the process's life. Caching a `false` we merely failed to disprove is
-    // a permanent protocol downgrade an attacker gets to choose.
-    sealedSupport.set(serverId, supported);
+    // Only the AFFIRMATIVE answer is cached. `sealed: false` (or a dropped
+    // probe) must not pin this server to anything for the rest of the
+    // process's life — with the fallback off by default, a forged `false`
+    // just fails this one operation closed and the next call re-probes.
+    if (supported) sealedSupport.set(serverId, true);
     return supported;
   } catch {
     // Unreachable right now just means "cannot confirm"; the operation itself
@@ -81,8 +88,9 @@ async function supportsSealed(serverId: number, host: string, port: number): Pro
  *
  * The request is SEALED when the agent supports it (see lib/agentSeal.ts): the
  * token stops crossing the network, and so do the decrypted service secrets
- * that `file.writeEnv` carries. Older agents still get the legacy plaintext
- * request, with a warning naming the host.
+ * that `file.writeEnv` carries. An agent that does not advertise sealing fails
+ * the operation closed unless the operator opted into the plaintext fallback
+ * with NINEDEPLOY_AGENT_ALLOW_CLEARTEXT=1 (a warning names the host).
  */
 export async function agentOp(
   db: DB,
@@ -101,34 +109,59 @@ export async function agentOp(
 
   const sealedOk = await supportsSealed(serverId, row.host, row.port);
   if (!sealedOk) {
-    if (requireSealed()) {
+    if (!cleartextFallbackAllowed()) {
       throw new Error(
-        `agent ${row.host}:${row.port} does not support the encrypted transport and ` +
-          'NINEDEPLOY_AGENT_REQUIRE_SEALED=1 forbids the cleartext fallback — upgrade the agent',
+        `agent ${row.host}:${row.port} does not support the encrypted transport. The cleartext ` +
+          'fallback is disabled by default because the request carries the agent token and ' +
+          'decrypted service secrets; upgrade the agent, or set NINEDEPLOY_AGENT_ALLOW_CLEARTEXT=1 ' +
+          'to explicitly accept plaintext for a not-yet-upgraded fleet.',
       );
     }
     sink(
       `⚠ agent ${row.host}:${row.port} is running an older build: this request (and any secrets in it) ` +
-        'travels unencrypted. Upgrade the agent to close this.',
+        'travels unencrypted. Upgrade the agent, or unset NINEDEPLOY_AGENT_ALLOW_CLEARTEXT to stop.',
     );
   }
+
+  // Request-response binding: a fresh nonce travels inside the sealed request
+  // and must come back inside the sealed reply. Without it, any envelope
+  // captured within the five-minute replay window could be replayed as a
+  // "successful" answer to a different operation.
+  const nonce = randomBytes(16).toString('hex');
 
   const res = await fetch(`http://${row.host}:${row.port}/agent/exec`, {
     method: 'POST',
     headers: sealedOk
       ? { 'content-type': 'application/json' }
       : { 'content-type': 'application/json', 'x-agent-token': token },
-    body: JSON.stringify(sealedOk ? { sealed: seal(shared, { op, params }) } : { op, params }),
+    body: JSON.stringify(sealedOk ? { sealed: seal(shared, { op, params, nonce }) } : { op, params }),
     signal: AbortSignal.timeout(600_000),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`agent ${op} failed (${res.status}): ${text.slice(0, 200)}`);
   }
-  const raw = (await res.json()) as { sealed?: unknown; lines?: unknown; exitCode?: unknown };
-  const body = (
-    raw.sealed !== undefined ? openSealed<{ lines?: unknown; exitCode?: unknown }>(shared, raw.sealed) : raw
-  ) as { lines?: unknown; exitCode?: unknown };
+  const raw = (await res.json()) as { sealed?: unknown; lines?: unknown; exitCode?: unknown; nonce?: unknown };
+  // Fail closed on a response that does not honour the transport the request
+  // used: a sealed request MUST get a sealed, verifying reply. Accepting
+  // whatever came back would let an on-path attacker fabricate success and
+  // fake command output for a deployment the panel then reports as live.
+  if (sealedOk && raw.sealed === undefined) {
+    throw new Error(`agent ${op}: response to a sealed request was not sealed — possible tampering, refusing it`);
+  }
+  let body: { lines?: unknown; exitCode?: unknown; nonce?: unknown };
+  if (raw.sealed !== undefined) {
+    try {
+      body = openSealed<{ lines?: unknown; exitCode?: unknown; nonce?: unknown }>(shared, raw.sealed);
+    } catch {
+      throw new Error(`agent ${op}: sealed response failed verification — refusing it`);
+    }
+    if (sealedOk && body.nonce !== nonce) {
+      throw new Error(`agent ${op}: sealed response does not match this request (bad nonce) — refusing it`);
+    }
+  } else {
+    body = raw;
+  }
   const lines = Array.isArray(body.lines) ? body.lines.map(String) : [];
   for (const l of lines) sink(l);
   const exitCode = Number(body.exitCode) || 0;

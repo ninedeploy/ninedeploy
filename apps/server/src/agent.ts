@@ -669,11 +669,11 @@ export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: 
     // derived from the shared secret, so opening it IS the authentication —
     // the token never crosses the network, and neither do the service secrets
     // that `file.writeEnv` carries. See lib/agentSeal.ts.
-    let input: { op?: unknown; params?: unknown };
+    let input: { op?: unknown; params?: unknown; nonce?: unknown };
     let sealedRequest = false;
     if (raw.sealed !== undefined) {
       try {
-        input = openSealed<{ op?: unknown; params?: unknown }>(tokenHash, raw.sealed);
+        input = openSealed<{ op?: unknown; params?: unknown; nonce?: unknown }>(tokenHash, raw.sealed);
         sealedRequest = true;
       } catch {
         // Same answer as a bad token: a caller who cannot produce a valid
@@ -706,15 +706,27 @@ export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: 
     } catch (err) {
       return reply.code(400).send({ error: { code: 'bad_params', message: err instanceof Error ? err.message : 'Invalid params' } });
     }
-    const result = { lines, exitCode, envFile };
+    const result: {
+      lines: string[];
+      exitCode: number;
+      envFile: string | null;
+      nonce?: string;
+    } = { lines, exitCode, envFile };
+    // Echo the caller's nonce back inside the sealed reply so the core can
+    // bind this response to ITS request — a captured envelope replayed within
+    // the seal window carries a stale nonce and is refused. Legacy plaintext
+    // callers do not send one, so there is nothing to echo.
+    const reqNonce = typeof input.nonce === 'string' ? input.nonce : undefined;
+    if (sealedRequest && reqNonce !== undefined) result.nonce = reqNonce;
     // Seal the reply too: command output routinely echoes configuration, and a
     // plaintext response would undo half the point.
     return sealedRequest ? { sealed: sealResponse(tokenHash, result) } : result;
   });
 
-  // Unauthenticated capability probe. `sealed: true` is how a core learns it
-  // may use the sealed transport; without it the core falls back to the legacy
-  // path and logs a warning naming this agent.
+  // Unauthenticated capability probe. `sealed: true` is how a current core
+  // learns it may use the sealed transport; a missing or forged answer no
+  // longer downgrades anything — the core fails the operation closed unless
+  // the operator explicitly enabled the plaintext fallback.
   app.get('/agent/ping', async () => ({
     ok: true,
     agent: true,

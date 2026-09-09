@@ -54,15 +54,34 @@ function routeFetch(opts: { sealed: boolean; exec: unknown; pingOk?: boolean }) 
   });
 }
 
+/**
+ * An honest sealed agent: opens the request envelope, echoes the request's
+ * nonce back (the core refuses a sealed reply that does not bind to ITS
+ * request), and seals the reply with the same shared secret.
+ */
+function honestSealedAgent(
+  result: { lines?: string[]; exitCode?: number } = { lines: [], exitCode: 0 },
+  pingSealed = true,
+) {
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (String(url).endsWith('/agent/ping')) {
+      return { ok: true, json: async () => ({ ok: true, agent: true, sealed: pingSealed }) };
+    }
+    const request = openSealed<{ nonce?: string }>(SHARED, (JSON.parse(String(init?.body)) as { sealed: unknown }).sealed);
+    return { ok: true, json: async () => ({ sealed: seal(SHARED, { ...result, nonce: request.nonce }) }) };
+  });
+}
+
 describe('agentOp', () => {
   beforeEach(() => {
     fetchMock.mockReset();
     _resetSealedSupportCache();
     delete process.env['NINEDEPLOY_AGENT_REQUIRE_SEALED'];
+    delete process.env['NINEDEPLOY_AGENT_ALLOW_CLEARTEXT'];
   });
 
   it('seals the request so neither the token nor the params cross in cleartext', async () => {
-    routeFetch({ sealed: true, exec: { sealed: seal(SHARED, { lines: ['a', 'b'], exitCode: 0 }) } });
+    honestSealedAgent({ lines: ['a', 'b'], exitCode: 0 });
     const lines: string[] = [];
     const res = await agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'docker.pull', { image: 'nginx' }, (l) => lines.push(l));
     expect(res).toEqual({ exitCode: 0, lines: ['a', 'b'] });
@@ -75,14 +94,17 @@ describe('agentOp', () => {
     const body = String(init.body);
     expect(body).not.toContain('raw-token');
     expect(body).not.toContain('nginx');
-    // ...but the agent, holding the same secret, reads them back exactly.
+    // ...but the agent, holding the same secret, reads them back exactly —
+    // including the fresh request nonce it must echo in its reply.
     expect(openSealed(SHARED, JSON.parse(body).sealed)).toEqual({
       op: 'docker.pull',
       params: { image: 'nginx' },
+      nonce: expect.any(String),
     });
   });
 
-  it('falls back to the legacy transport for an older agent, and says so out loud', async () => {
+  it('falls back to the legacy transport only when the operator opted in, and says so out loud', async () => {
+    process.env['NINEDEPLOY_AGENT_ALLOW_CLEARTEXT'] = '1';
     routeFetch({ sealed: false, exec: { lines: ['a'], exitCode: 0 } });
     const lines: string[] = [];
     const res = await agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'docker.pull', { image: 'nginx' }, (l) => lines.push(l));
@@ -94,25 +116,36 @@ describe('agentOp', () => {
     expect(JSON.parse(String(init.body))).toEqual({ op: 'docker.pull', params: { image: 'nginx' } });
   });
 
-  it('refuses the cleartext fallback when the operator has forbidden it', async () => {
-    // Closes the one downgrade an on-path attacker could force, by stripping
-    // `sealed` from the ping response.
+  it('refuses the cleartext fallback by default', async () => {
+    // The fallback decision came from an UNAUTHENTICATED probe, so a forged
+    // `sealed: false` must fail the operation closed — never silently send
+    // the agent token and decrypted service secrets over plaintext HTTP.
+    routeFetch({ sealed: false, exec: { lines: [], exitCode: 0 } });
+    await expect(
+      agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'docker.pull', {}, () => {}),
+    ).rejects.toThrow(/does not support the encrypted transport/);
+  });
+
+  it('NINEDEPLOY_AGENT_REQUIRE_SEALED=1 wins even when the fallback is allowed', async () => {
+    process.env['NINEDEPLOY_AGENT_ALLOW_CLEARTEXT'] = '1';
     process.env['NINEDEPLOY_AGENT_REQUIRE_SEALED'] = '1';
     routeFetch({ sealed: false, exec: { lines: [], exitCode: 0 } });
     await expect(
       agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'docker.pull', {}, () => {}),
-    ).rejects.toThrow(/REQUIRE_SEALED=1 forbids the cleartext fallback/);
+    ).rejects.toThrow(/does not support the encrypted transport/);
   });
 
-  it('treats an unreachable ping as assume-legacy rather than failing early', async () => {
+  it('fails closed when the ping is unreachable instead of assuming legacy', async () => {
+    // Without cleartext opt-in, "cannot confirm" must not become "send
+    // secrets anyway" — the operation fails and names the fix.
     routeFetch({ sealed: true, exec: { lines: [], exitCode: 0 }, pingOk: false });
-    const lines: string[] = [];
-    await agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'docker.pull', {}, (l) => lines.push(l));
-    expect(lines[0]).toMatch(/older build/);
+    await expect(
+      agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'docker.pull', {}, () => {}),
+    ).rejects.toThrow(/does not support the encrypted transport/);
   });
 
   it('probes each server once and reuses the answer', async () => {
-    routeFetch({ sealed: true, exec: { sealed: seal(SHARED, { lines: [], exitCode: 0 }) } });
+    honestSealedAgent();
     const db = createFakeDb({ findFirst: { servers: serverRow } });
     await agentOp(db, 1, 'docker.pull', {}, () => {});
     await agentOp(db, 1, 'docker.pull', {}, () => {});
@@ -123,28 +156,27 @@ describe('agentOp', () => {
   it('re-probes after a failed ping instead of pinning the server to cleartext', async () => {
     // A negative answer we merely failed to obtain must NOT be cached. One
     // dropped probe — an agent restarting, a lost packet, or an on-path
-    // attacker killing exactly one request — would otherwise downgrade this
-    // server to the plaintext transport for the rest of the process's life,
-    // which is a permanent protocol downgrade an attacker gets to choose.
+    // attacker killing exactly one request — fails that operation closed and
+    // the next call probes again.
     let pings = 0;
-    fetchMock.mockImplementation(async (url: string) => {
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       if (String(url).endsWith('/agent/ping')) {
         pings++;
         if (pings === 1) throw new Error('unreachable');
         return { ok: true, json: async () => ({ ok: true, agent: true, sealed: true }) };
       }
-      return { ok: true, json: async () => ({ sealed: seal(SHARED, { lines: [], exitCode: 0 }) }) };
+      const request = openSealed<{ nonce?: string }>(SHARED, (JSON.parse(String(init?.body)) as { sealed: unknown }).sealed);
+      return { ok: true, json: async () => ({ sealed: seal(SHARED, { lines: [], exitCode: 0, nonce: request.nonce }) }) };
     });
     const db = createFakeDb({ findFirst: { servers: serverRow } });
 
-    const first: string[] = [];
-    await agentOp(db, 1, 'docker.pull', {}, (l) => first.push(l));
-    expect(first[0]).toMatch(/older build/);
+    await expect(
+      agentOp(db, 1, 'docker.pull', {}, () => {}),
+    ).rejects.toThrow(/does not support the encrypted transport/);
+    expect(pings).toBe(1);
 
-    // Second call probes again and gets the real answer: sealed, no warning.
-    const second: string[] = [];
-    await agentOp(db, 1, 'docker.pull', {}, (l) => second.push(l));
-    expect(second).toEqual([]);
+    // Second call probes again, gets the real answer, and succeeds sealed.
+    await agentOp(db, 1, 'docker.pull', {}, () => {});
     expect(pings).toBe(2);
   });
 
@@ -158,12 +190,16 @@ describe('agentOp', () => {
       return { ok: true, json: async () => ({ lines: [], exitCode: 0 }) };
     });
     const db = createFakeDb({ findFirst: { servers: serverRow } });
-    await agentOp(db, 1, 'docker.pull', {}, () => {});
-    await agentOp(db, 1, 'docker.pull', {}, () => {});
+    await expect(agentOp(db, 1, 'docker.pull', {}, () => {})).rejects.toThrow(/encrypted transport/);
+    await expect(agentOp(db, 1, 'docker.pull', {}, () => {})).rejects.toThrow(/encrypted transport/);
     expect(pings).toBe(2);
   });
 
   it('throws on transport errors', async () => {
+    // Cleartext opt-in keeps these tests about the EXEC transport error: the
+    // probe itself is answered 401 by the blanket mock, which (by design,
+    // with the default) would otherwise fail closed as a downgrade refusal.
+    process.env['NINEDEPLOY_AGENT_ALLOW_CLEARTEXT'] = '1';
     routeFetch({ sealed: true, exec: {} });
     fetchMock.mockResolvedValue({ ok: false, status: 401, text: async () => 'unauthorized' });
     await expect(
@@ -171,7 +207,8 @@ describe('agentOp', () => {
     ).rejects.toThrow('agent docker.pull failed (401)');
   });
 
-  it('throws on non-zero exit codes', async () => {
+  it('throws on non-zero exit codes (cleartext opt-in)', async () => {
+    process.env['NINEDEPLOY_AGENT_ALLOW_CLEARTEXT'] = '1';
     routeFetch({ sealed: false, exec: { lines: [], exitCode: 1 } });
     await expect(
       agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'docker.pull', {}, () => {}),
@@ -185,14 +222,68 @@ describe('agentOp', () => {
   });
 
   it('handles responses without a lines array', async () => {
-    routeFetch({ sealed: true, exec: { sealed: seal(SHARED, {}) } });
+    honestSealedAgent({ exitCode: 0 });
     const lines: string[] = [];
     const res = await agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'docker.ping', {}, (l) => lines.push(l));
     expect(res).toEqual({ exitCode: 0, lines: [] });
     expect(lines).toEqual([]);
   });
 
+  it('refuses a plaintext reply to a sealed request', async () => {
+    // An on-path attacker can strip `sealed` from the RESPONSE body. The core
+    // sent a sealed request, so anything unsealed back is tampering — never
+    // "success" the panel would report as a live deployment.
+    fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).endsWith('/agent/ping')) {
+        return { ok: true, json: async () => ({ ok: true, agent: true, sealed: true }) };
+      }
+      return { ok: true, json: async () => ({ lines: ['ok'], exitCode: 0 }) };
+    });
+    await expect(
+      agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'docker.pull', {}, () => {}),
+    ).rejects.toThrow(/response to a sealed request was not sealed/);
+  });
+
+  it('refuses a sealed reply that fails verification', async () => {
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith('/agent/ping')) {
+        return { ok: true, json: async () => ({ ok: true, agent: true, sealed: true }) };
+      }
+      const request = openSealed<{ nonce?: string }>(SHARED, (JSON.parse(String(init?.body)) as { sealed: unknown }).sealed);
+      // Sealed with the WRONG secret — a tampered or replayed envelope.
+      return { ok: true, json: async () => ({ sealed: seal('not-the-secret', { lines: [], exitCode: 0, nonce: request.nonce }) }) };
+    });
+    await expect(
+      agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'docker.pull', {}, () => {}),
+    ).rejects.toThrow(/sealed response failed verification/);
+  });
+
+  it('refuses a sealed reply that does not bind to this request (replay)', async () => {
+    // A captured envelope from an earlier operation replays fine within the
+    // five-minute seal window — unless the reply must echo THIS request's
+    // nonce.
+    let firstRequestNonce = '';
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith('/agent/ping')) {
+        return { ok: true, json: async () => ({ ok: true, agent: true, sealed: true }) };
+      }
+      const request = openSealed<{ nonce?: string }>(SHARED, (JSON.parse(String(init?.body)) as { sealed: unknown }).sealed);
+      if (!firstRequestNonce) {
+        firstRequestNonce = request.nonce ?? '';
+        return { ok: true, json: async () => ({ sealed: seal(SHARED, { lines: [], exitCode: 0, nonce: request.nonce }) }) };
+      }
+      // Every later op gets a reply sealed for the FIRST request's nonce.
+      return { ok: true, json: async () => ({ sealed: seal(SHARED, { lines: ['stale'], exitCode: 0, nonce: firstRequestNonce }) }) };
+    });
+    const db = createFakeDb({ findFirst: { servers: serverRow } });
+    await agentOp(db, 1, 'docker.pull', {}, () => {});
+    await expect(
+      agentOp(db, 1, 'docker.pull', {}, () => {}),
+    ).rejects.toThrow(/bad nonce/);
+  });
+
   it('tolerates unreadable error bodies', async () => {
+    process.env['NINEDEPLOY_AGENT_ALLOW_CLEARTEXT'] = '1';
     routeFetch({ sealed: true, exec: {} });
     fetchMock.mockResolvedValue({ ok: false, status: 500, text: () => Promise.reject(new Error('stream gone')) });
     await expect(
