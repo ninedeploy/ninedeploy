@@ -18,6 +18,10 @@ export const updateCheckResult = z.object({
   updateAvailable: z.boolean().nullable(),
   notesUrl: z.string().nullable(),
   checkedAt: z.string().datetime(),
+  /** Present only when updateAvailable is null: why no verdict exists. */
+  reason: z.enum(['disabled', 'unreachable']).optional(),
+  /** Short feed-side detail (status line / abort reason). */
+  detail: z.string().max(200).optional(),
 });
 export type UpdateCheckResult = z.infer<typeof updateCheckResult>;
 

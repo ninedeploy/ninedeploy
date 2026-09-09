@@ -135,14 +135,27 @@ describe('About', () => {
     }
     throw new Error('update badge did not render');
   });
-
   it('degrades gracefully when the update check is unavailable', async () => {
     mockOf(api.about.get).mockResolvedValue(aboutData as never);
     mockOf(api.system.updateCheck).mockResolvedValue({
       current: '0.0.1', latest: null, updateAvailable: null, notesUrl: null, checkedAt: '2026-08-15T00:00:00Z',
+      reason: 'unreachable', detail: 'update feed 500',
     } as never);
     renderWithProviders(<About />);
     expect(await screen.findByText(/Update check unavailable/)).toBeInTheDocument();
+    expect(screen.getByText(/Feed said: update feed 500/)).toBeInTheDocument();
+    // The feed failure is transient — the operator gets a manual re-check.
+    expect(screen.getByRole('button', { name: /Check again/ })).toBeInTheDocument();
+  });
+
+  it('says so plainly when update checks are switched off', async () => {
+    mockOf(api.about.get).mockResolvedValue(aboutData as never);
+    mockOf(api.system.updateCheck).mockResolvedValue({
+      current: '0.0.1', latest: null, updateAvailable: null, notesUrl: null, checkedAt: '2026-08-15T00:00:00Z',
+      reason: 'disabled',
+    } as never);
+    renderWithProviders(<About />);
+    expect(await screen.findByText(/switched off/)).toBeInTheDocument();
   });
 
   it('shows the update skeleton while the check is in flight and hides the badge', async () => {

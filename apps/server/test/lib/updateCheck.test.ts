@@ -68,9 +68,46 @@ describe('checkForUpdate', () => {
       const { checkForUpdate } = await import('../../src/lib/updateCheck.js');
       const res = await checkForUpdate(true);
       expect(res.updateAvailable).toBeNull();
+      expect(res.reason).toBe('disabled');
       expect(f).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllEnvs();
+    }
+  });
+
+  it('exposes the unreachable reason and the feed detail when the fetch fails', async () => {
+    vi.stubGlobal('fetch', feed({}, false));
+    const { checkForUpdate } = await import('../../src/lib/updateCheck.js');
+    const res = await checkForUpdate(true);
+    expect(res.reason).toBe('unreachable');
+    expect(res.detail).toBe('update feed 500');
+  });
+
+  it('re-probes failures after 10 minutes but keeps successes cached for 6 hours', async () => {
+    vi.useFakeTimers();
+    try {
+      const start = Date.now();
+      const failing = feed({}, false);
+      vi.stubGlobal('fetch', failing);
+      const { checkForUpdate } = await import('../../src/lib/updateCheck.js');
+
+      await checkForUpdate(true); // failure cached at `start`
+      await checkForUpdate(); // within the 10-minute failure TTL → served from cache
+      expect(failing).toHaveBeenCalledTimes(1);
+
+      vi.setSystemTime(start + 11 * 60 * 1000); // failure TTL passed → re-probe
+      await checkForUpdate();
+      expect(failing).toHaveBeenCalledTimes(2);
+
+      const success = feed({ tag_name: 'v99.0.0' });
+      vi.stubGlobal('fetch', success);
+      vi.setSystemTime(start + 12 * 60 * 1000);
+      await checkForUpdate(true); // success cached at start+12m
+      vi.setSystemTime(start + 30 * 60 * 1000); // 18 min later — still inside 6h
+      await checkForUpdate();
+      expect(success).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
     }
   });
 });

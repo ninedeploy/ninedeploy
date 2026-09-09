@@ -1,15 +1,30 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { ExternalLink, GitBranch, Heart, Layers, Package, Shield, Sparkles, Terminal } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ExternalLink, GitBranch, Heart, Layers, Package, RefreshCw, Shield, Sparkles, Terminal } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { usePanelUpdate } from '../lib/usePanelUpdate.js';
 import { Button, ConfirmDialog, Card, CardBody, Skeleton } from '../components/ui.js';
 
 export function About() {
   const about = useQuery({ queryKey: ['about'], queryFn: () => api.about.get(), staleTime: 60000 });
+  const queryClient = useQueryClient();
   const update = useQuery({ queryKey: ['update-check'], queryFn: () => api.system.updateCheck(), staleTime: 60000 });
   const upd = usePanelUpdate();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [rechecking, setRechecking] = useState(false);
+  // force=1 bypasses the server-side cache (a failure is only cached 10 min,
+  // but the operator should not have to wait for that window either).
+  const recheck = async () => {
+    setRechecking(true);
+    try {
+      const fresh = await api.system.updateCheck(true);
+      queryClient.setQueryData(['update-check'], fresh);
+    } catch {
+      /* keep the previous result on screen */
+    } finally {
+      setRechecking(false);
+    }
+  };
 
   if (about.isLoading) {
     return (
@@ -128,14 +143,27 @@ export function About() {
           {update.isLoading ? (
             <Skeleton className="h-5 w-40" />
           ) : update.data ? (
-            <p className="mb-3 text-sm text-slate-400">
-              You're running <span className="font-mono font-medium text-indigo-300">v{update.data.current}</span>.{' '}
-              {update.data.updateAvailable == null
-                ? 'Update check unavailable (offline or disabled).'
-                : update.data.updateAvailable
+            update.data.updateAvailable == null ? (
+              <>
+                <p className="mb-3 text-sm text-slate-400">
+                  {update.data.reason === 'disabled'
+                    ? 'Update checks are switched off on this instance (NINEDEPLOY_UPDATE_CHECK_URL=disabled).'
+                    : `Update check unavailable (offline or disabled).${
+                        update.data.detail ? ` Feed said: ${update.data.detail}` : ''
+                      }`}
+                </p>
+                <Button size="sm" onClick={recheck} disabled={rechecking}>
+                  <RefreshCw size={14} className={rechecking ? 'animate-spin' : undefined} /> Check again
+                </Button>
+              </>
+            ) : (
+              <p className="mb-3 text-sm text-slate-400">
+                You're running <span className="font-mono font-medium text-indigo-300">v{update.data.current}</span>.{' '}
+                {update.data.updateAvailable
                   ? <>A new release is out: <span className="font-mono font-medium text-amber-300">{update.data.latest}</span>.</>
                   : 'This is the latest release.'}
-            </p>
+              </p>
+            )
           ) : (
             <p className="mb-3 text-sm text-slate-400">
               You're running <span className="font-mono font-medium text-indigo-300">v{data.version}</span>.
