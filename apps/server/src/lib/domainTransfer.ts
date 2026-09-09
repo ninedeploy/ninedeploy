@@ -29,7 +29,7 @@
  * background sweep.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, gt, sql } from 'drizzle-orm';
 import { domainTransfers, domains, services, users, type DB } from '@ninedeploy/db';
 
 const TOKEN_BYTES = 32;
@@ -106,14 +106,24 @@ export async function startTransfer(
   const domain = await db.query.domains.findFirst({ where: eq(domains.id, input.domainId) });
   if (!domain) throw new Error('Domain not found');
 
-  // Refuse if there's already a live transfer on the same
+  // Refuse if there's already a LIVE transfer on the same
   // domain — accepting the second one would race with the
-  // first. The operator must cancel / wait for the first to
-  // expire.
+  // first. Expiry is lazy (see effectiveStatus): a row whose
+  // `expires_at` has passed keeps `status='pending'` in the DB
+  // forever, so the check filters on the clock, not the column —
+  // otherwise an expired transfer would block every future
+  // transfer of that domain until someone cancelled it by hand.
+  const nowSeconds = Math.floor(Date.now() / 1000);
   const existing = await db
     .select({ id: domainTransfers.id })
     .from(domainTransfers)
-    .where(and(eq(domainTransfers.domainId, input.domainId), eq(domainTransfers.status, 'pending')))
+    .where(
+      and(
+        eq(domainTransfers.domainId, input.domainId),
+        eq(domainTransfers.status, 'pending'),
+        gt(domainTransfers.expiresAt, nowSeconds),
+      ),
+    )
     .limit(1);
   if (existing.length > 0) {
     throw new Error('A pending transfer already exists for this domain; cancel it first or wait for expiry');
@@ -199,6 +209,23 @@ export async function acceptTransfer(db: DB, input: AcceptTransferInput): Promis
   if (!domain) throw new Error('Domain no longer exists');
   const fromServiceId = domain.serviceId;
 
+  // Claim the transfer FIRST, conditionally on it still being `pending`: two
+  // concurrent accepts — or an accept racing a cancel — then cannot both move
+  // the domain row. Exactly one caller wins the conditional flip; the loser
+  // gets a clean "no longer pending" error instead of a double move.
+  const now = Math.floor(Date.now() / 1000);
+  const claimed = await db
+    .update(domainTransfers)
+    .set({
+      status: 'accepted',
+      targetUserId: input.userId,
+      targetServiceId: input.targetServiceId,
+      acceptedAt: now,
+    })
+    .where(and(eq(domainTransfers.id, row.id), eq(domainTransfers.status, 'pending')))
+    .returning({ id: domainTransfers.id });
+  if (claimed.length === 0) throw new Error('Transfer is no longer pending');
+
   // Move the domain row. The (hostname, path) unique index
   // could collide if the target service already has the
   // same host:path; let drizzle raise the error and the
@@ -207,17 +234,6 @@ export async function acceptTransfer(db: DB, input: AcceptTransferInput): Promis
     .update(domains)
     .set({ serviceId: input.targetServiceId, updatedAt: new Date() })
     .where(eq(domains.id, row.domainId));
-
-  const now = Math.floor(Date.now() / 1000);
-  await db
-    .update(domainTransfers)
-    .set({
-      status: 'accepted',
-      targetUserId: input.userId,
-      targetServiceId: input.targetServiceId,
-      acceptedAt: now,
-    })
-    .where(eq(domainTransfers.id, row.id));
 
   return {
     transferId: row.id,

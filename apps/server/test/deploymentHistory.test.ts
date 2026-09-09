@@ -17,7 +17,6 @@ interface UpdateRec {
 
 function makeDb(runningRows: Array<{ id: number; serviceId: number }>, serviceStates: Array<{ id: number; status: string }>) {
   const updates: UpdateRec[] = [];
-  let lastWhereArgs: unknown[] = [];
   const db = {
     select: vi.fn(() => ({
       from: (table: unknown) => ({
@@ -33,7 +32,7 @@ function makeDb(runningRows: Array<{ id: number; serviceId: number }>, serviceSt
         updates.push({ table, values });
         return {
           where: vi.fn(function whereMock(...args: unknown[]) {
-            lastWhereArgs = args;
+            void args;
             return Promise.resolve([]);
           }),
         };

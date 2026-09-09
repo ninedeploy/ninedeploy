@@ -14,14 +14,16 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 describe('r057 — pruneImages ignores keepLast when danglingOnly=true', () => {
   it('keepLast is honoured in the danglingOnly branch (regression r057)', () => {
     // Read the module source so this test is immune to mock/import issues.
-    // pnpm --filter server runs from apps/server/, so process.cwd() there.
+    // Resolved from THIS file's location — process.cwd() depends on which
+    // directory the runner was launched from and doubled the prefix here.
     const src = readFileSync(
-      `${process.cwd().replace(/\\/g, '/')}/apps/server/src/lib/imageInventory.ts`,
+      resolve(dirname(fileURLToPath(import.meta.url)), '../../src/lib/imageInventory.ts'),
       'utf8',
     );
 

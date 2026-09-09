@@ -29,6 +29,16 @@ async function assertJobMayDeploy(
 }
 
 /**
+ * One execution at a time per job, process-wide. Both the cron scheduler and
+ * the run-now route funnel through `runJob`, so this covers every entry: a
+ * cron tick landing while the previous run is still going (long backup, slow
+ * container) — or a double-clicked run-now — must not run the same job
+ * twice concurrently. Two parallel volume backups of one service are worse
+ * than a skipped tick.
+ */
+const runningJobIds = new Set<number>();
+
+/**
  * Execute one scheduled job now (used by both the cron scheduler and the
  * run-now route). `deploy` jobs enqueue a deployment (trigger: schedule);
  * `exec` jobs run a command inside the service's runtime container with the
@@ -36,6 +46,16 @@ async function assertJobMayDeploy(
  * every volume currently attached to the service.
  */
 export async function runJob(db: DB, jobId: number): Promise<void> {
+  if (runningJobIds.has(jobId)) return;
+  runningJobIds.add(jobId);
+  try {
+    await runJobInner(db, jobId);
+  } finally {
+    runningJobIds.delete(jobId);
+  }
+}
+
+async function runJobInner(db: DB, jobId: number): Promise<void> {
   const job = await db.query.scheduledJobs.findFirst({ where: eq(scheduledJobs.id, jobId) });
   if (!job) return;
 
