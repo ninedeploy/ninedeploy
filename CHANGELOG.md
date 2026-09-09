@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.4] - 2026-09-09
+
+> Post-remediation polish: the database Web Studio is now served through
+> the panel itself (fixing the broken embedded iframe under HTTPS), the
+> update banner is honest about WHY it could not check for updates and
+> recovers from transient failures in minutes instead of hours, and the
+> installer verifies that what it downloaded is actually the release it
+> asked for.
+
+### Added
+
+- **The database Web Studio is served through the panel origin.** A
+  same-origin reverse proxy (`/v1/databases/:id/studio-proxy/`) fronts the
+  loopback-bound Adminer / Redis Commander container: the embedded iframe
+  finally works under HTTPS and CSP, the studio port stays off the network
+  entirely, and access rides an HMAC-signed, path-scoped, 8-hour
+  operator-only cookie instead of nothing at all. Upstream cookie paths are
+  rewritten into the proxy scope so parallel studios never share sessions.
+- **The About page tells you WHY an update check failed** (checks switched
+  off vs feed unreachable, with the feed's own status line) and offers a
+  **Check again** button instead of waiting out the cache.
+- **Installer provenance checks:** the release tarball's content must match
+  the requested tag (version binding, no symlinks, no setuid bits) and the
+  docker-mode compose file must parse with the compose engine, reference
+  exactly one image — the panel's own — before it is deployed.
+
+### Fixed
+
+- **Update-check failures are cached 10 minutes, not 6 hours.** A single
+  boot-time blip (network not up yet, one API rate-limit 403) used to pin
+  "unavailable" on the dashboard for six hours.
+- The failed-check result now carries a machine-readable reason, so future
+  UIs can distinguish disabled from unreachable.
+
+---
+
 ## [0.7.3] - 2026-09-09
 
 > The September 2026 security-audit remediation release. Three critical

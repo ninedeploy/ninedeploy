@@ -1,6 +1,6 @@
 {
   "name": "ninedeploy-monorepo",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "private": true,
   "description": "Self-hosted, one-click deployment platform with PM2 + Docker, Traefik, webhooks, secrets, backups and monitoring.",
   "license": "MIT",
