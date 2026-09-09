@@ -83,6 +83,12 @@ export function createFakeApiModule() {
       exportUrl: vi.fn(),
       importBundle: vi.fn(),
     },
+    environments: {
+      list: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      rename: vi.fn(),
+      remove: vi.fn(),
+    },
     deploys: {
       trigger: vi.fn(),
       list: vi.fn(),
@@ -91,6 +97,7 @@ export function createFakeApiModule() {
       cancel: vi.fn(),
       remove: vi.fn(),
       configDiff: vi.fn(),
+      promote: vi.fn(),
     },
     domains: { list: vi.fn(), create: vi.fn(), remove: vi.fn(), all: vi.fn().mockResolvedValue([]), setSsl: vi.fn(), update: vi.fn() },
     volumes: { list: vi.fn(), remove: vi.fn(), prune: vi.fn(), listFiles: vi.fn(), readFile: vi.fn(), writeFile: vi.fn(), mkdir: vi.fn(), deleteFile: vi.fn() },

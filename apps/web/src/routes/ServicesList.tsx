@@ -1,15 +1,17 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { Cpu, GitBranch, HardDrive, MemoryStick, Plus, Search, Server } from 'lucide-react';
+import { Cpu, GitBranch, HardDrive, Layers, MemoryStick, Plus, Search, Server } from 'lucide-react';
 import { Link } from 'react-router';
 import { api } from '../lib/api.js';
 import { useTagScope } from '../lib/projects.js';
 import { Button, Card, EmptyState, ErrorCard, Input, PageHeader, Skeleton, StatusBadge } from '../components/ui.js';
 import { DeployWizard } from '../components/DeployWizard.js';
+import { LanesModal } from '../components/LanesModal.js';
 import { ServiceDomainLauncher } from '../components/ServiceDomainLauncher.js';
 
 export function ServicesList() {
   const [wizard, setWizard] = useState(false);
+  const [lanesModal, setLanesModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'running' | 'stopped' | 'errored'>('all');
   // Deployment lane filter: 'all' or an environment id as a string.
@@ -79,6 +81,7 @@ export function ServicesList() {
       />
 
       {wizard && <DeployWizard onClose={() => setWizard(false)} />}
+      {lanesModal && <LanesModal onClose={() => setLanesModal(false)} />}
 
       {isLoading ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -119,6 +122,15 @@ export function ServicesList() {
               />
             </div>
             <div className="flex items-center gap-1.5 overflow-x-auto">
+              <button
+                type="button"
+                onClick={() => setLanesModal(true)}
+                className="flex items-center gap-1.5 rounded-lg bg-white/[0.03] px-2.5 py-1 text-xs font-medium text-slate-400 transition hover:text-slate-200"
+                title="Manage deployment lanes"
+                aria-label="Manage deployment lanes"
+              >
+                <Layers size={12} /> Lanes
+              </button>
               {environments && environments.length > 0 && (
                 <select
                   value={envFilter}
