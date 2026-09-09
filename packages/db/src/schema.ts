@@ -298,6 +298,30 @@ export const labels = sqliteTable(
   }),
 );
 
+/**
+ * Environment = a named deployment lane (production / staging / development)
+ * inside a workspace. Services opt in via `services.environment_id`
+ * (nullable — ungrouped services are not part of any lane). The promote
+ * flow (copying a build from one lane to the next) builds on this.
+ */
+export const environments = sqliteTable(
+  'environments',
+  {
+    id: id(),
+    workspaceId: integer('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    slug: text('slug').notNull(),
+    createdAt: ts('created_at'),
+    updatedAt: tsUpdatable('updated_at'),
+  },
+  (t) => ({
+    workspaceNameIdx: uniqueIndex('environments_workspace_name_idx').on(t.workspaceId, t.name),
+    workspaceIdx: index('environments_workspace_idx').on(t.workspaceId),
+  }),
+);
+
 // N-N: services ↔ projects. Replaces the legacy single `services.project_id`
 // FK. A service can be linked to multiple projects (and live in multiple
 // workspaces via `service_workspaces`) so the top-bar filter can compose
@@ -416,6 +440,8 @@ export const services = sqliteTable(
     isEphemeralPreview: integer('is_ephemeral_preview', { mode: 'boolean' }).notNull().default(false),
     previewParentServiceId: integer('preview_parent_service_id').references((): AnySQLiteColumn => services.id, { onDelete: 'cascade' }),
     prNumber: integer('pr_number'),
+    /** Deployment lane (production / staging / …). Null = ungrouped. */
+    environmentId: integer('environment_id').references((): AnySQLiteColumn => environments.id, { onDelete: 'set null' }),
     createdAt: ts('created_at'),
     updatedAt: tsUpdatable('updated_at'),
   },
