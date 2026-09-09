@@ -29,6 +29,15 @@ on:
         required: true
         type: string
 
+# The release tag the whole job operates on. A tag push carries it in
+# github.ref_name; a manual run does NOT — there github.ref_name is the
+# BRANCH the workflow was dispatched from, and every step below used to read
+# that branch name: the semver gate failed (or, worse, a validation bypass
+# would have published :latest built from a branch while labelling it with
+# the input tag). Every step now reads this single resolved value.
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
 # L-14: least privilege at the workflow level; `packages: write` is granted
 # only to the job that actually pushes the image.
 permissions:
@@ -47,6 +56,10 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # A manual run is dispatched from a BRANCH; without this pin the
+          # job would build that branch's HEAD instead of the requested tag.
+          ref: ${{ env.RELEASE_TAG }}
 
       # Fail fast on a non-semver tag (e.g. v0.4.0-foo, v0.4.0+meta).
       # The trigger filter `v*` accepts any v-prefixed ref, but
@@ -56,12 +69,12 @@ jobs:
       # install / build / push pipeline runs.
       - name: Validate tag format (^v\d+\.\d+\.\d+$)
         run: |
-          if [ ! -n "${GITHUB_REF_NAME:-}" ] || ! echo "$GITHUB_REF_NAME" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::Ref '$GITHUB_REF_NAME' is not a strict semver tag (expected vX.Y.Z, got '$GITHUB_REF_NAME')"
+          if [ ! -n "${RELEASE_TAG:-}" ] || ! echo "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Ref '$RELEASE_TAG' is not a strict semver tag (expected vX.Y.Z, got '$RELEASE_TAG')"
             echo "Hint: install.sh and selfUpdate.ts only resolve ^v\\d+\\.\\d+\\.\\d+\$ — pushing a different shape would ship a tag no install path can reach."
             exit 1
           fi
-          echo "Tag '$GITHUB_REF_NAME' is a valid semver release."
+          echo "Tag '$RELEASE_TAG' is a valid semver release."
 
       - name: Setup pnpm
         # Derived from "packageManager" in package.json — see ci.yml.
@@ -115,7 +128,11 @@ jobs:
             # anyone pinning to "the latest 0.4.x" into
             # thinking a 0.4.1 release exists. Only
             # `:v0.4.0` and `:latest` are produced.
-            type=semver,pattern=v{{version}}
+            # `type=raw` with the resolved RELEASE_TAG instead
+            # of `type=semver`: metadata-action derives the
+            # semver from the GIT REF, which on a manual run
+            # is the dispatch branch, not the tag.
+            type=raw,value=${{ env.RELEASE_TAG }}
             type=raw,value=latest
 
       - name: Set up Docker Buildx
@@ -147,7 +164,7 @@ jobs:
         if: success()
         run: |
           set -euo pipefail
-          canonical="${{ github.ref_name }} latest"
+          canonical="${{ env.RELEASE_TAG }} latest"
           echo "Canonical tag set: ${canonical}"
           gh api "/orgs/${{ github.repository_owner }}/packages/container/ninedeploy/versions?per_page=100" \
             | jq -r '.[] | "\(.id)\t\(.metadata.container.tags | join(","))"' \
@@ -197,12 +214,35 @@ jobs:
           push: true
           # Multi-arch mirrors the ci.yml `publish-image` job:
           # every install path (amd64 VPS, arm64 Raspberry
-          # Pi / AWS Graviton / Apple-Silicon-as-target) can
+          # Pi / AWS Graviton, Apple-Silicon-as-target) can
           # pull a single tag without having to pin a
           # platform-specific digest.
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      # Docker integration gate: the tag this release is about must exist in
+      # the registry with BOTH platform manifests present. Without this, a
+      # half-pushed build (one platform failing after the other succeeded)
+      # would leave a tag that installs fine on one arch and 404s on the
+      # other, with no check between push and release.
+      - name: Smoke-check the pushed multi-arch manifest
+        if: success()
+        run: |
+          set -euo pipefail
+          for i in 1 2 3 4 5; do
+            if docker buildx imagetools inspect "ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" \
+                | grep -Eq 'linux/amd64' \
+              && docker buildx imagetools inspect "ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" \
+                | grep -Eq 'linux/arm64'; then
+              echo "Multi-arch manifest verified for ${RELEASE_TAG}."
+              exit 0
+            fi
+            echo "Manifest not complete yet (attempt $i/5) — retrying in 10s…"
+            sleep 10
+          done
+          echo "::error::ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG} is missing an amd64/arm64 manifest"
+          exit 1
 
       # Create the GitHub Release for this tag. Without this
       # step the tag exists in git but the Releases page stays
@@ -216,14 +256,14 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
           body: |
-            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md) for the full release notes.
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ env.RELEASE_TAG }}/CHANGELOG.md) for the full release notes.
 
             **Pull the image:**
             ```
-            docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            docker pull ghcr.io/${{ github.repository }}:${{ env.RELEASE_TAG }}
             docker pull ghcr.io/${{ github.repository }}:latest
             ```
           files: |
