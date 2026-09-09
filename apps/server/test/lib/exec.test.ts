@@ -495,3 +495,40 @@ describe('DEFAULT_HEARTBEAT_MS', () => {
     expect(DEFAULT_HEARTBEAT_MS).toBe(20 * 1000);
   });
 });
+
+describe('error labels redact credential argv (audit fix)', () => {
+  // Secrets travel as argv (`mysqldump --password=…`, `mongodump -p …`,
+  // `redis-cli -a …`). A rejected run used to embed the RAW argv, shipping
+  // database passwords into journald, the audit log and notifications via the
+  // error message.
+  it('masks --password= values in run/capture error labels', async () => {
+    const child = makeChild();
+    mockSpawn.mockReturnValue(child);
+    const promise = run(
+      'docker',
+      ['exec', 'cn', 'mysqldump', '-uroot', '--password=sup3rs3kr3t', '--all-databases'],
+      {},
+      vi.fn(),
+    );
+    emitClose(child, 1);
+    await expect(promise).rejects.toThrow(/--password=\*\*\*/);
+    await expect(promise).rejects.not.toThrow(/sup3rs3kr3t/);
+  });
+
+  it('masks the value following -p / -a style flags', async () => {
+    const child = makeChild();
+    mockSpawn.mockReturnValue(child);
+    const promise = capture('docker', ['exec', 'cn', 'mongodump', '-u', 'nine', '-p', 'p4ssw0rd']);
+    emitClose(child, 1);
+    await expect(promise).rejects.toThrow(/-p \*\*\*/);
+    await expect(promise).rejects.not.toThrow(/p4ssw0rd/);
+  });
+
+  it('leaves non-credential operands readable for debugging', async () => {
+    const child = makeChild();
+    mockSpawn.mockReturnValue(child);
+    const promise = run('docker', ['exec', 'cn', 'pg_dump', '-U', 'nine', '-d', 'app'], {}, vi.fn());
+    emitClose(child, 1);
+    await expect(promise).rejects.toThrow(/pg_dump -U nine -d app/);
+  });
+});

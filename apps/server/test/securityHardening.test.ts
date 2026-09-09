@@ -1,6 +1,6 @@
 ﻿import { describe, expect, it } from 'vitest';
 import { createService, serverSshBootstrap } from '@ninedeploy/schemas';
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { secretEquals } from '../src/lib/crypto.js';
@@ -162,5 +162,33 @@ describe('L-13: build paths cannot escape the checkout', () => {
   it('refuses a path that climbs out of the checkout', () => {
     expect(() => resolveInRepo(workDir, '../../etc/passwd')).toThrow(/outside the repository/);
     expect(() => repoRelative(workDir, '../..')).toThrow(/outside the repository/);
+  });
+
+  it('refuses a path that walks through a symlink inside the checkout', () => {
+    // Lexical containment is not enough: `ln -s /etc evil` + `baseDir: "evil"`
+    // escapes the checkout through the filesystem — and on a bare-metal panel
+    // the writer runs as root, so a dangling absolute symlink is root-owned
+    // file creation anywhere on the host. Creating symlinks needs privileges
+    // on Windows; when the OS refuses, CI (linux) covers this case.
+    const realWork = mkdtempSync(join(tmpdir(), 'nd-repopath-'));
+    try {
+      const link = join(realWork, 'evil');
+      try {
+        symlinkSync(
+          process.platform === 'win32' ? tmpdir() : '/etc',
+          link,
+          process.platform === 'win32' ? 'junction' : 'dir',
+        );
+      } catch {
+        return;
+      }
+      expect(() => resolveInRepo(realWork, 'evil', 'nixpacks.toml')).toThrow(/through a symlink/);
+      expect(() => repoRelative(realWork, 'evil')).toThrow(/through a symlink/);
+      // Ordinary files still resolve — the guard is not a blanket ban.
+      writeFileSync(join(realWork, 'Dockerfile'), 'FROM scratch\n');
+      expect(repoRelative(realWork, 'Dockerfile')).toBe('Dockerfile');
+    } finally {
+      rmSync(realWork, { recursive: true, force: true });
+    }
   });
 });

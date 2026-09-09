@@ -56,6 +56,18 @@ describe('generateNixpacksToml', () => {
       '"echo \\"hi\\" \\\\path"',
     );
   });
+
+  it('escapes newlines and control characters inside command strings', () => {
+    // The values come from a repo-controlled manifest. A raw newline must not
+    // terminate the TOML string and let the next line parse as a fresh key —
+    // otherwise a commit rewrites the structure of the generated file.
+    const hostile = 'echo one\n[phases.pwn]\nflag = true\tand\rdone\x00.';
+    const out = toml({ build: { build: hostile } })!;
+    expect(out).toContain('echo one\\n[phases.pwn]\\nflag = true\\tand\\rdone\\u0000.');
+    // The hostile payload stays inside the one quoted string: no raw newline
+    // directly precedes what would otherwise be a new TOML table header.
+    expect(out).not.toContain('\n[phases.pwn]');
+  });
 });
 
 describe('generateNixpacksToml — extra nix packages', () => {

@@ -155,12 +155,44 @@ function armTimeout(child: ChildProcess, timeoutMs: number, onTimeout: () => voi
 }
 
 /**
+ * Build the human-readable `cmd args…` label used in error messages, with
+ * credential-carrying argv values masked.
+ *
+ * Secrets travel as argv values by design (no shell interpolation), which is
+ * safe for execution but NOT for logging: a failed `mysqldump --password=…`
+ * would otherwise carry the database password into journald, the SQLite audit
+ * log and notification channels via this label. `--password=x` masks the
+ * value in place; `-p` / `-a` style flags mask the NEXT argv element (the
+ * same flag doubles as docker publish, where masking a port is a cosmetic
+ * cost next to leaking a password).
+ */
+const REDACT_NEXT_FLAGS = new Set(['-p', '-a', '--password']);
+function redactedLabel(cmd: string, args: string[]): string {
+  const parts: string[] = [cmd];
+  let maskNext = false;
+  for (const arg of args) {
+    if (maskNext) {
+      parts.push('***');
+      maskNext = false;
+      continue;
+    }
+    if (arg.startsWith('--password=')) {
+      parts.push('--password=***');
+      continue;
+    }
+    parts.push(arg);
+    maskNext = REDACT_NEXT_FLAGS.has(arg);
+  }
+  return parts.join(' ');
+}
+
+/**
  * Run a command, streaming each stdout/stderr line to `sink`.
  * Rejects with an Error (or {@link ExecTimeoutError}) if the process exits
  * non-zero or exceeds its timeout.
  */
 export function run(cmd: string, args: string[], opts: ExecOptions, sink: (line: string) => void, input?: Buffer): Promise<void> {
-  const label = [cmd, ...args].join(' ');
+  const label = redactedLabel(cmd, args);
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
@@ -234,7 +266,7 @@ export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
  *  as {@link run}) — commands that consume a script from stdin (`docker run -i …
  *  postgres --single`) need it, and their stdout is the verification channel. */
 export function capture(cmd: string, args: string[], opts: ExecOptions = {}, input?: Buffer): Promise<string> {
-  const label = [cmd, ...args].join(' ');
+  const label = redactedLabel(cmd, args);
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {

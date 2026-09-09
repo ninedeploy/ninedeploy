@@ -148,10 +148,29 @@ const NO_PIN_PATH: Partial<Record<RuntimeType, string>> = {
 const KEEP_PROVIDER_PKGS = '...';
 
 function formatTomlString(value: string): string {
-  // TOML basic strings: escape backslash and double-quote, then wrap in
-  // double quotes. The values we serialize here are command lines and
-  // version strings — neither contains literal newlines or non-ASCII.
-  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  // TOML basic strings: escape backslash, double-quote and every control
+  // character (TOML v1.0 §2.1 — raw control chars are illegal in basic
+  // strings). The values serialized here are repo-controlled command lines
+  // and version strings: without the escapes, a literal newline inside a
+  // manifest command would terminate the string and let the next line parse
+  // as a fresh TOML key, rewriting the generated file's structure.
+  let out = '';
+  for (const ch of value) {
+    switch (ch) {
+      case '\\': out += '\\\\'; break;
+      case '"': out += '\\"'; break;
+      case '\b': out += '\\b'; break;
+      case '\t': out += '\\t'; break;
+      case '\n': out += '\\n'; break;
+      case '\f': out += '\\f'; break;
+      case '\r': out += '\\r'; break;
+      default: {
+        const code = ch.codePointAt(0)!;
+        out += code < 0x20 || code === 0x7f ? `\\u${code.toString(16).padStart(4, '0')}` : ch;
+      }
+    }
+  }
+  return `"${out}"`;
 }
 
 function formatTomlArray(values: string[]): string {
