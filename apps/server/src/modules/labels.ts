@@ -3,7 +3,7 @@ import { labels, serviceLabels } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import { createLabel, labelPatch, type Label, type LabelColor } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
-import { assertWorkspaceMember } from '../lib/resourceAccess.js';
+import { assertWorkspaceRole } from '../lib/resourceAccess.js';
 import { badRequest, forbidden, notFound, parseId } from '../lib/errors.js';
 import { iso } from '../lib/serialize.js';
 
@@ -115,7 +115,9 @@ export const labelRoutes: FastifyPluginAsync = async (app) => {
         throw forbidden('Personal labels are operator-only; pick a workspace');
       }
     } else {
-      await assertWorkspaceMember(app.db, input.workspaceId, user);
+      // Writing labels into a workspace is a write, not a read: the floor is
+      // `member` — a viewer seat stays read-only (docs/WORKSPACES_RBAC.md).
+      await assertWorkspaceRole(app.db, input.workspaceId, user, 'member');
     }
     const [row] = await app.db
       .insert(labels)
@@ -147,7 +149,7 @@ export const labelRoutes: FastifyPluginAsync = async (app) => {
     if (existing.workspaceId == null) {
       if (!user.isOperator) throw forbidden('Personal labels are operator-only');
     } else {
-      await assertWorkspaceMember(app.db, existing.workspaceId, user);
+      await assertWorkspaceRole(app.db, existing.workspaceId, user, 'member');
     }
     const [updated] = await app.db
       .update(labels)
@@ -182,7 +184,7 @@ export const labelRoutes: FastifyPluginAsync = async (app) => {
     if (existing.workspaceId == null) {
       if (!user.isOperator) throw forbidden('Personal labels are operator-only');
     } else {
-      await assertWorkspaceMember(app.db, existing.workspaceId, user);
+      await assertWorkspaceRole(app.db, existing.workspaceId, user, 'member');
     }
     await app.db.delete(labels).where(eq(labels.id, id));
     void audit(app.db, user.id, 'label.delete', existing.name);

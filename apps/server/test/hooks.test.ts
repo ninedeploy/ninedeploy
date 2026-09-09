@@ -2,7 +2,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { encrypt } from '../src/lib/crypto.js';
 import { hookReceiveRoutes, webhookMgmtRoutes } from '../src/modules/hooks.js';
-import { asUser, buildConfigRow, buildTestApp, createFakeDb, depRow, domainRow, svcRow, webhookRow } from './helpers.js';
+import { asUser, buildConfigRow, buildTestApp, createFakeDb, depRow, svcRow, webhookRow } from './helpers.js';
+import type { domainRow } from './helpers.js';
 
 // Destroying a preview also removes its deploy log files and reaps its private
 // bridge network. Both touch the host, so they are stubbed and asserted on.
@@ -121,9 +122,9 @@ describe('webhook receiver', () => {
     expect(res.json()).toEqual({ ok: true, provider: 'github', deploymentId: 7 });
   });
 
-  // r070 regression: push webhook must sync service.branch and service.commitSha
-  // after inserting the deployment record, so the UI shows the current branch immediately.
-  it('push webhook syncs service.branch and service.commitSha after insert (r070)', async () => {
+  // r070 regression: push webhook must sync service.branch after inserting
+  // the deployment record, so the UI shows the current branch immediately.
+  it('push webhook syncs service.branch (but NOT commitSha) after insert (r070)', async () => {
     let updatedService: Record<string, unknown> | undefined;
     const app = await buildTestApp({
       db: createFakeDb({
@@ -150,9 +151,13 @@ describe('webhook receiver', () => {
     });
     expect(res.statusCode).toBe(200, `unexpected: ${res.statusCode} body: ${res.body}`);
     expect(res.json()).toEqual({ ok: true, provider: 'github', deploymentId: 7 });
-    // r070 fix: service row must be updated to reflect the new branch + sha
-    // (the code strips the refs/heads/ prefix when storing)
-    expect(updatedService).toMatchObject({ branch: 'main', commitSha: 'deadbeef' });
+    // r070 fix: the service row reflects the new branch (refs/heads/ stripped)
+    // immediately. commitSha must NOT be written here: services.commitSha is
+    // "the code actually running", and only the pipeline's SUCCESS finalize
+    // knows that — an early write would report a commit the deploy may never
+    // produce.
+    expect(updatedService).toMatchObject({ branch: 'main' });
+    expect(updatedService).not.toHaveProperty('commitSha');
   });
 
   it('skips a replayed push whose commit is already deployed (dedup)', async () => {
@@ -550,7 +555,6 @@ describe('webhook receiver', () => {
         },
         insert: {
           services: [svcRow({ id: 10, slug: 'my-app-pr-42', prNumber: 42, isEphemeralPreview: true })],
-          buildConfigs: [buildConfigRow({ id: 10, serviceId: 10 })],
           // Return undefined so the code proceeds to the insert (findFirst is called with a predicate fn;
           // returning undefined makes the if-check falsy, triggering the domains insert below which throws).
           domains: undefined as unknown as ReturnType<typeof domainRow>,

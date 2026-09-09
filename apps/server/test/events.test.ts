@@ -5,9 +5,21 @@ import { eventRoutes } from '../src/modules/events.js';
 import { buildTestApp, collectMessages, listen, openWs, waitFor, wsUrl } from './helpers.js';
 
 const authMocks = vi.hoisted(() => ({
-  resolveUser: vi.fn(async (_db: unknown, token: string) => (token === 'valid' ? { id: 1, isOperator: true as const } : null)),
+  resolveUser: vi.fn(async (_db: unknown, token: string) => {
+    if (token === 'valid') return { id: 1, isOperator: true as const };
+    // An API token with restricted scopes owned by an operator: the route
+    // must narrow the operator flag (see the narrowing test below).
+    if (token === 'scoped') return { id: 7, isOperator: true as const, tokenScopes: ['read'] };
+    return null;
+  }),
 }));
-vi.mock('../src/lib/auth.js', () => authMocks);
+// Keep the REAL narrowScopes (only resolveUser is faked here): the events
+// route must apply the production operator-narrowing, and the fixture users
+// carry no scope list, so they stay unrestricted operators.
+vi.mock('../src/lib/auth.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/lib/auth.js')>();
+  return { ...actual, resolveUser: authMocks.resolveUser };
+});
 
 const sockets: WebSocket[] = [];
 
@@ -63,6 +75,29 @@ describe('events websocket', () => {
       ws.addEventListener('close', (ev) => resolve(ev.code));
     });
     expect(await closed).toBe(1008);
+    await app.close();
+  });
+
+  it('narrows a scope-restricted operator token to its own events', async () => {
+    // The HTTP plugin narrows a restricted token's operator flag on every
+    // request; the WebSocket resolves its own bearer, so it must apply the
+    // same rule — otherwise an operator's limited CI token sees the global
+    // feed (system events ship to operators only) for every tenant.
+    const app = await buildTestApp({ websocket: true });
+    await app.register(eventRoutes);
+    const port = await listen(app);
+    const ws = await openWs(wsUrl(port, '/v1/events'), 'ninedeploy.bearer.scoped');
+    sockets.push(ws);
+    const messages = collectMessages(ws);
+
+    // Both published AFTER subscription (live path — no backlog ambiguity):
+    // the own-actor event must arrive, the system event must not.
+    eventBus.publish('system.only', 'infra');
+    eventBus.publish('deploy.owned', 'mine', 7);
+    await waitFor(() => messages.some((m) => m.includes('deploy.owned')));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(messages.some((m) => m.includes('system.only'))).toBe(false);
+    ws.close();
     await app.close();
   });
 

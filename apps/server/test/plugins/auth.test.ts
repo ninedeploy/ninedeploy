@@ -383,7 +383,7 @@ describe('auth plugin — requireScope / scopeCovers', () => {
     app.decorate('db', db as never);
     await app.register(authPlugin);
     app.get(
-      '/x',
+      '/v1/services',
       { preHandler: [app.authenticate, app.requireScope(required)] },
       async () => ({ ok: true }),
     );
@@ -394,7 +394,7 @@ describe('auth plugin — requireScope / scopeCovers', () => {
     const app = await buildScopeApp(scopeDb(['operator']), 'nd://scope/admin/services');
     const res = await app.inject({
       method: 'GET',
-      url: '/x',
+      url: '/v1/services',
       headers: { authorization: 'Bearer operator-token' },
     });
     expect(res.statusCode).toBe(200);
@@ -408,7 +408,7 @@ describe('auth plugin — requireScope / scopeCovers', () => {
     );
     const res = await app.inject({
       method: 'GET',
-      url: '/x',
+      url: '/v1/services',
       headers: { authorization: 'Bearer exact-token' },
     });
     expect(res.statusCode).toBe(200);
@@ -420,7 +420,7 @@ describe('auth plugin — requireScope / scopeCovers', () => {
     const app = await buildScopeApp(scopeDb(['write']), 'nd://scope/admin/services');
     const res = await app.inject({
       method: 'GET',
-      url: '/x',
+      url: '/v1/services',
       headers: { authorization: 'Bearer write-token' },
     });
     expect(res.statusCode).toBe(200);
@@ -431,7 +431,7 @@ describe('auth plugin — requireScope / scopeCovers', () => {
     const app = await buildScopeApp(scopeDb(['write']), 'nd://scope/write/services');
     const res = await app.inject({
       method: 'GET',
-      url: '/x',
+      url: '/v1/services',
       headers: { authorization: 'Bearer write-token' },
     });
     expect(res.statusCode).toBe(200);
@@ -442,7 +442,7 @@ describe('auth plugin — requireScope / scopeCovers', () => {
     const app = await buildScopeApp(scopeDb(['read']), 'nd://scope/read/services');
     const res = await app.inject({
       method: 'GET',
-      url: '/x',
+      url: '/v1/services',
       headers: { authorization: 'Bearer read-token' },
     });
     expect(res.statusCode).toBe(200);
@@ -456,7 +456,7 @@ describe('auth plugin — requireScope / scopeCovers', () => {
     );
     const res = await app.inject({
       method: 'GET',
-      url: '/x',
+      url: '/v1/services',
       headers: { authorization: 'Bearer admin-svc-token' },
     });
     expect(res.statusCode).toBe(200);
@@ -470,7 +470,7 @@ describe('auth plugin — requireScope / scopeCovers', () => {
     );
     const res = await app.inject({
       method: 'GET',
-      url: '/x',
+      url: '/v1/services',
       headers: { authorization: 'Bearer admin-svc-token' },
     });
     expect(res.statusCode).toBe(200);
@@ -484,7 +484,7 @@ describe('auth plugin — requireScope / scopeCovers', () => {
     );
     const res = await app.inject({
       method: 'GET',
-      url: '/x',
+      url: '/v1/services',
       headers: { authorization: 'Bearer write-svc-token' },
     });
     expect(res.statusCode).toBe(200);
@@ -498,7 +498,7 @@ describe('auth plugin — requireScope / scopeCovers', () => {
     );
     const res = await app.inject({
       method: 'GET',
-      url: '/x',
+      url: '/v1/services',
       headers: { authorization: 'Bearer admin-services-token' },
     });
     expect(res.statusCode).toBe(403);
@@ -512,7 +512,7 @@ describe('auth plugin — requireScope / scopeCovers', () => {
     );
     const res = await app.inject({
       method: 'GET',
-      url: '/x',
+      url: '/v1/services',
       headers: { authorization: 'Bearer unrelated-token' },
     });
     expect(res.statusCode).toBe(403);
@@ -520,5 +520,75 @@ describe('auth plugin — requireScope / scopeCovers', () => {
       message: expect.stringMatching(/missing the required scope/i),
     });
     await app.close();
+  });
+});
+
+/**
+ * Central fine-grained scope narrowing (audit fix): `nd://scope/...` URIs used
+ * to be stored but never enforced, so a token holding only
+ * `nd://scope/read/services` could still write every resource. Now any token
+ * carrying a fine-grained scope must have EVERY request covered by its
+ * resource+method, and unclassified paths fail closed.
+ */
+describe('auth plugin — fine-grained URI scopes narrow centrally', () => {
+  async function scopedApp(scopes: string[]) {
+    const db = makeDb([{ userId: 1, expiresAt: null, scopes } as never], { id: 1 });
+    const app = Fastify();
+    app.decorate('db', db as never);
+    await app.register(authPlugin);
+    app.get('/v1/services', { preHandler: [app.authenticate] }, async () => ({ ok: true }));
+    app.post('/v1/services', { preHandler: [app.authenticate] }, async () => ({ ok: true }));
+    app.post('/v1/databases', { preHandler: [app.authenticate] }, async () => ({ ok: true }));
+    app.get('/v1/unmapped-thing', { preHandler: [app.authenticate] }, async () => ({ ok: true }));
+    return app;
+  }
+
+  it('lets a read-scoped token read its resource', async () => {
+    const app = await scopedApp(['nd://scope/read/services']);
+    const res = await app.inject({ method: 'GET', url: '/v1/services', headers: { authorization: 'Bearer t' } });
+    expect(res.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it('refuses a read-scoped token writing its own resource', async () => {
+    const app = await scopedApp(['nd://scope/read/services']);
+    const res = await app.inject({ method: 'POST', url: '/v1/services', headers: { authorization: 'Bearer t' } });
+    expect(res.statusCode).toBe(403);
+    await app.close();
+  });
+
+  it('lets a write-scoped token write its resource', async () => {
+    const app = await scopedApp(['nd://scope/write/services']);
+    const res = await app.inject({ method: 'POST', url: '/v1/services', headers: { authorization: 'Bearer t' } });
+    expect(res.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it('refuses a write-scoped token reaching a DIFFERENT resource', async () => {
+    // The old behaviour: fine-grained scopes were decoration and this request
+    // went through. Resource scopes do not cross resources.
+    const app = await scopedApp(['nd://scope/write/services']);
+    const res = await app.inject({ method: 'POST', url: '/v1/databases', headers: { authorization: 'Bearer t' } });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({
+      message: expect.stringMatching(/nd:\/\/scope\/write\/databases/),
+    });
+    await app.close();
+  });
+
+  it('fails closed on a path the resource map does not classify', async () => {
+    const app = await scopedApp(['nd://scope/read/services']);
+    const res = await app.inject({ method: 'GET', url: '/v1/unmapped-thing', headers: { authorization: 'Bearer t' } });
+    expect(res.statusCode).toBe(403);
+    await app.close();
+  });
+
+  it('classifies service sub-resources (env, webhooks, deploys) on their own', async () => {
+    const { requiredFineGrainedScope } = await import('../../src/plugins/auth.js');
+    expect(requiredFineGrainedScope('/v1/services?x=1', 'GET')).toBe('nd://scope/read/services');
+    expect(requiredFineGrainedScope('/v1/services/7/env', 'PUT')).toBe('nd://scope/write/env');
+    expect(requiredFineGrainedScope('/v1/services/7/webhooks', 'POST')).toBe('nd://scope/write/webhooks');
+    expect(requiredFineGrainedScope('/v1/services/7/deploys', 'GET')).toBe('nd://scope/read/deploys');
+    expect(requiredFineGrainedScope('/v1/menus', 'GET')).toBeNull();
   });
 });

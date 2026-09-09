@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { canReceiveEvent, eventBus } from '../lib/events.js';
-import { resolveUser } from '../lib/auth.js';
+import { narrowScopes, resolveUser } from '../lib/auth.js';
 import { websocketBearerToken } from '../lib/websocketAuth.js';
 
 /** Real-time event stream over WebSocket. Mounted at root level. */
@@ -12,6 +12,11 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       socket.close(1008, 'unauthorized');
       return;
     }
+    // Same narrowing the HTTP auth plugin applies: a scope-restricted API
+    // token must not inherit its owner's operator flag here, or it would see
+    // the global feed (system events are delivered to operators only) plus
+    // every tenant's activity.
+    narrowScopes(user);
 
     // Replay recent events, then stream live — both filtered to what this
     // subscriber may see. The bus is process-wide and carries every tenant's

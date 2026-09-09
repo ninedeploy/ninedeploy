@@ -73,7 +73,11 @@ export const brandingRoutes: FastifyPluginAsync = async (app) => {
     return value;
   });
 
-  app.patch<{ Body: Partial<BrandingStatus> }>('/', async (req) => {
+  // Instance-wide branding rewrites what EVERY tenant's panel looks like
+  // (footer HTML is rendered content) — a write on the instance, not on a
+  // workspace, so it sits behind the operator flag like the rest of the
+  // instance-wide configuration surface.
+  app.patch<{ Body: Partial<BrandingStatus> }>('/', { preHandler: app.requireOperator }, async (req) => {
     const body = req.body ?? {};
     const userId = req.user?.id;
     const fields: Array<keyof BrandingStatus> = ['logoUrl', 'primaryColor', 'supportEmail', 'footerHtml'];

@@ -9,7 +9,7 @@ import { parseId, notFound, unauthorized } from '../lib/errors.js';
 import { isPing, isPullRequest, isReplayedDelivery, parsePullRequest, parsePush, verifyWebhook } from '../lib/webhooks.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { assertMayDeployStoredService } from '../lib/hostPrivilege.js';
-import { isOperator } from '../lib/resourceAccess.js';
+import { assertServiceRole, isOperator } from '../lib/resourceAccess.js';
 
 /** GitHub caps the push payload's `commits` array at this size; a list at the
  *  cap may be truncated, so watch-path filtering fails open (see below). */
@@ -456,10 +456,14 @@ export const hookReceiveRoutes: FastifyPluginAsync = async (app) => {
       }
     }
     // r070: after a push-triggered deploy, sync the service row so the UI shows
-    // the current branch + sha immediately without waiting for the deploy to finish.
+    // the current branch immediately without waiting for the deploy to finish.
+    // commitSha deliberately stays UNTOUCHED here: it is the SHA of the code
+    // actually running, and the pipeline stamps it on SUCCESS
+    // (engine/pipeline.ts success finalize). Writing it up-front would make a
+    // failed build report a "current" commit that was never deployed.
     await app.db
       .update(services)
-      .set({ branch: push.branch.replace(/^refs\/heads\//, ''), commitSha: push.sha || pushedService.commitSha })
+      .set({ branch: push.branch.replace(/^refs\/heads\//, '') })
       .where(eq(services.id, hook.serviceId));
     return { ok: true, provider, deploymentId: dep!.id };
   });
@@ -489,6 +493,12 @@ export const webhookMgmtRoutes: FastifyPluginAsync = async (app) => {
     const id = parseId((req.params as { id: string }).id);
     const input = webhookCreate.parse(req.body ?? {});
     const svc = await loadServiceForUser(app.db, id, req.user!);
+    // The returned secret is a STANDING deploy credential: anyone holding it
+    // can trigger HMAC-valid deployments forever, without authenticating.
+    // Handing that out is not an ordinary config write (member) — it sits at
+    // the `admin` tier, like transfer and re-homing. The service's owner and
+    // operators still pass; an ordinary member seat no longer does.
+    await assertServiceRole(app.db, svc, req.user!, 'admin');
     const branch = input.branch?.trim() || svc.branch;
     const secret = randomToken(24);
     // Inherit the parent service's sourceId so the webhook record matches the
@@ -513,7 +523,10 @@ export const webhookMgmtRoutes: FastifyPluginAsync = async (app) => {
   app.delete('/:id/webhooks/:hookId', async (req) => {
     const id = parseId((req.params as { id: string }).id);
     const hookId = parseId((req.params as { hookId: string }).hookId);
-    await loadServiceForUser(app.db, id, req.user!);
+    const hookSvc = await loadServiceForUser(app.db, id, req.user!);
+    // Same tier as create: revoking (or keeping) a standing deploy credential
+    // is an admin decision on the service.
+    await assertServiceRole(app.db, hookSvc, req.user!, 'admin');
     await app.db.delete(webhooks).where(and(eq(webhooks.id, hookId), eq(webhooks.serviceId, id)));
     return { ok: true };
   });

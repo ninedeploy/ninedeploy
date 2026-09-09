@@ -10,6 +10,7 @@ import { checkoutCommit, type CloneCreds } from '../lib/git.js';
 import { decrypt } from '../lib/crypto.js';
 import { config } from '../config.js';
 import { badRequest, forbidden, notFound, parseId } from '../lib/errors.js';
+import { assertServiceRole } from '../lib/resourceAccess.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { EgressBlockedError } from '../lib/egressGuard.js';
 import { serializeInsights, upsertInsights } from '../engine/repoInsights.js';
@@ -83,6 +84,10 @@ export const serviceInsightsRoutes: FastifyPluginAsync = async (app) => {
   app.post('/:id/insights/refresh', async (req) => {
     const id = parseId((req.params as { id: string }).id);
     const svc = await loadServiceForUser(app.db, id, req.user!);
+    // Refresh re-clones the repository into the service's canonical checkout
+    // dir and rewrites the stored analysis — a write on the service, so the
+    // `member` floor applies (a viewer seat stays read-only).
+    await assertServiceRole(app.db, svc, req.user!, 'member');
     if (!svc.repoUrl) throw badRequest('Service has no repository URL to analyze');
     const build = await app.db.query.buildConfigs.findFirst({ where: eq(buildConfigs.serviceId, id) });
 

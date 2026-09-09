@@ -355,17 +355,20 @@ describe('database attachments: a workspace viewer is read-only', () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it('a plain member can still attach (the floor is member, not admin)', async () => {
+  it('a member with an ADMIN seat on the database workspace can still attach', async () => {
+    // Attaching ships the database's admin-only password into the service env
+    // at deploy time, so the DATABASE side of the check sits at `admin`
+    // (matching /credentials) — a member seat there is no longer enough.
     const db = createFakeDb({
       findFirst: {
         services: svcRow({ id: 3, ownerUserId: OWNER, runtimeId: 'nd-svc-web' }),
         databases: dbRow({ id: 1, ownerUserId: OWNER, projectId: 5, status: 'running', passwordEncrypted: encrypt('pw') }),
         projects: { id: 5, workspaceId: 1, name: 'P', slug: 'p' },
-        workspaceMembers: { id: 1, workspaceId: 1, userId: MEMBER, role: 'member' },
+        workspaceMembers: { id: 1, workspaceId: 1, userId: MEMBER, role: 'admin' },
       },
       findMany: {
         serviceWorkspaces: [{ id: 1, serviceId: 3, workspaceId: 1 }],
-        workspaceMembers: [{ id: 1, workspaceId: 1, userId: MEMBER, role: 'member' }],
+        workspaceMembers: [{ id: 1, workspaceId: 1, userId: MEMBER, role: 'admin' }],
       },
       insert: { database_attachments: [{ id: 9, serviceId: 3, databaseId: 1, envAlias: 'DATABASE_URL' }] },
     });
@@ -379,5 +382,99 @@ describe('database attachments: a workspace viewer is read-only', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ id: 9, databaseId: 1 });
+  });
+
+  it('a member seat on the database workspace cannot attach (credentials are admin-tier)', async () => {
+    // The audit path: a plain member could attach a database they can merely
+    // SEE and read its admin-only password out of their container env.
+    const db = createFakeDb({
+      findFirst: {
+        services: svcRow({ id: 3, ownerUserId: OWNER, runtimeId: 'nd-svc-web' }),
+        databases: dbRow({ id: 1, ownerUserId: OWNER, projectId: 5, status: 'running', passwordEncrypted: encrypt('pw') }),
+        projects: { id: 5, workspaceId: 1, name: 'P', slug: 'p' },
+        workspaceMembers: { id: 1, workspaceId: 1, userId: MEMBER, role: 'member' },
+      },
+      findMany: {
+        serviceWorkspaces: [{ id: 1, serviceId: 3, workspaceId: 1 }],
+        workspaceMembers: [{ id: 1, workspaceId: 1, userId: MEMBER, role: 'member' }],
+      },
+    });
+    const app = await buildTestApp({ db });
+    await app.register(attachmentRoutes, { prefix: '/services' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/services/3/attachments',
+      headers: asUser({ id: MEMBER, isOperator: false }),
+      payload: { databaseId: 1 },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+});
+
+describe('viewer stays read-only on instance-wide writes (audit fix)', () => {
+  it('a user whose only seats are viewer cannot create a service', async () => {
+    // Creating a service provisions a runtime and (by default) makes it
+    // visible in every workspace the creator sits in — a write, so a
+    // viewer-only account is refused.
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findMany: {
+          workspaceMembers: [{ id: 1, workspaceId: 1, userId: MEMBER, role: 'viewer', createdAt: new Date() }],
+        },
+      }),
+    });
+    await app.register(servicesRoutes);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/',
+      headers: asUser({ id: MEMBER, isOperator: false }),
+      payload: {
+        name: 'Viewer App',
+        type: 'docker',
+        repoUrl: 'https://github.com/acme/app.git',
+        branch: 'main',
+        build: { buildPack: 'auto', baseDir: '/' },
+      },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ error: { message: expect.stringMatching(/member.*role/i) } });
+  });
+
+  it('webhook creation (a standing deploy secret) is admin-tier on the service', async () => {
+    // The returned secret triggers HMAC-valid deployments forever without
+    // authenticating — handing it out is not a member-level config write.
+    const base = (role: string): FakeDbOpts => ({
+      findFirst: { services: svcRow({ id: 3, ownerUserId: OWNER, branch: 'dev' }) },
+      findMany: {
+        serviceWorkspaces: [{ id: 1, serviceId: 3, workspaceId: 1 }],
+        workspaceMembers: [{ id: 1, workspaceId: 1, userId: MEMBER, role }],
+      },
+    });
+
+    const memberApp = await buildTestApp({ db: createFakeDb(base('member')) });
+    await memberApp.register(webhookMgmtRoutes, { prefix: '/services' });
+    const denied = await memberApp.inject({
+      method: 'POST',
+      url: '/services/3/webhooks',
+      headers: asUser({ id: MEMBER, isOperator: false }),
+      payload: {},
+    });
+    expect(denied.statusCode).toBe(403);
+
+    const adminApp = await buildTestApp({
+      db: createFakeDb({
+        ...base('admin'),
+        insert: { webhooks: [{ id: 9, serviceId: 3, branch: 'dev', active: true, sourceId: null }] },
+      }),
+    });
+    await adminApp.register(webhookMgmtRoutes, { prefix: '/services' });
+    const allowed = await adminApp.inject({
+      method: 'POST',
+      url: '/services/3/webhooks',
+      headers: asUser({ id: MEMBER, isOperator: false }),
+      payload: {},
+    });
+    expect(allowed.statusCode).toBe(200);
+    expect(allowed.json()).toMatchObject({ id: 9, secret: expect.any(String) });
   });
 });

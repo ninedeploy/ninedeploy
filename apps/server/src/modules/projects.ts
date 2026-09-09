@@ -79,8 +79,9 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
     const input = createProject.parse(req.body);
     // A project may only be created inside a workspace the caller belongs to —
     // otherwise a member could plant a project (and its shared env) in someone
-    // else's workspace.
-    if (input.workspaceId != null) await assertWorkspaceMember(app.db, input.workspaceId, req.user!);
+    // else's workspace. Any seat is NOT enough: creating is a write, so the
+    // floor is `member` and a viewer seat stays read-only.
+    if (input.workspaceId != null) await assertWorkspaceRole(app.db, input.workspaceId, req.user!, 'member');
     const slug = input.slug ?? slugify(input.name);
     const exists = await app.db.query.projects.findFirst({ where: eq(projects.slug, slug) });
     if (exists) throw conflict(`Project slug "${slug}" is already taken`);

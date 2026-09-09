@@ -6,6 +6,22 @@ import { sha256 } from './crypto.js';
 import { verifyJwt, type AppJwtPayload } from './jwt.js';
 
 /**
+ * Narrow an API-token-authed user in place: only an explicit `operator` scope
+ * may carry the instance-operator flag. The HTTP `authenticate` hook applies
+ * this to every request; the `/v1/events` WebSocket resolves the bearer
+ * itself and must apply it too — without it, a scope-restricted token of an
+ * operator sees the global event feed, including operator-only system events
+ * and every other tenant's activity.
+ */
+export function narrowScopes(user: { isOperator: boolean; tokenScopes?: string[] | null }): void {
+  // Only a PRESENT scope list narrows: `null`/undefined means an interactive
+  // session or a legacy unrestricted token, which keep the owner's flag.
+  if (Array.isArray(user.tokenScopes) && !user.tokenScopes.includes('operator')) {
+    user.isOperator = false;
+  }
+}
+
+/**
  * Resolve a raw bearer credential to a user (id only) + the instance-operator
  * flag read from `users.is_instance_operator`.
  *

@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { apiTokens } from '@ninedeploy/db';
 import fp from 'fastify-plugin';
-import { resolveUser } from '../lib/auth.js';
+import { narrowScopes, resolveUser } from '../lib/auth.js';
 import { sha256 } from '../lib/crypto.js';
 import { forbidden, unauthorized } from '../lib/errors.js';
 
@@ -25,6 +25,79 @@ export interface AuthUser {
 
 /** Methods that cannot change server state. */
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/**
+ * `/v1/<first-segment>` → the fine-grained scopes [read, write] the mount
+ * requires. All values are literals on purpose. Anything absent from this
+ * table is unreachable for a fine-grained token — the table failing closed is
+ * the point: a new mount is out of bounds for restricted tokens until someone
+ * names its resource here.
+ */
+const PREFIX_SCOPES: Record<string, readonly [string, string]> = {
+  services: ['nd://scope/read/services', 'nd://scope/write/services'],
+  projects: ['nd://scope/read/projects', 'nd://scope/write/projects'],
+  databases: ['nd://scope/read/databases', 'nd://scope/write/databases'],
+  domains: ['nd://scope/read/domains', 'nd://scope/write/domains'],
+  'domain-transfers': ['nd://scope/read/domains_transfer', 'nd://scope/write/domains_transfer'],
+  'domain-presets': ['nd://scope/read/domains', 'nd://scope/write/domains'],
+  'config-presets': ['nd://scope/read/config', 'nd://scope/write/config'],
+  alerts: ['nd://scope/read/alerts', 'nd://scope/write/alerts'],
+  notifications: ['nd://scope/read/notifications', 'nd://scope/write/notifications'],
+  backups: ['nd://scope/read/backups', 'nd://scope/write/backups'],
+  'backup-destinations': ['nd://scope/read/backups', 'nd://scope/write/backups'],
+  volumes: ['nd://scope/read/volumes', 'nd://scope/write/volumes'],
+  users: ['nd://scope/read/users', 'nd://scope/write/users'],
+  settings: ['nd://scope/read/settings', 'nd://scope/write/settings'],
+  config: ['nd://scope/read/config', 'nd://scope/write/config'],
+  topology: ['nd://scope/read/topology', 'nd://scope/write/topology'],
+  insights: ['nd://scope/read/manifests', 'nd://scope/write/manifests'],
+  firewall: ['nd://scope/read/firewall', 'nd://scope/write/firewall'],
+  sso: ['nd://scope/read/sso', 'nd://scope/write/sso'],
+  egress: ['nd://scope/read/egress', 'nd://scope/write/egress'],
+  orchestrators: ['nd://scope/read/orchestrators', 'nd://scope/write/orchestrators'],
+  housekeeping: ['nd://scope/read/housekeeping', 'nd://scope/write/housekeeping'],
+  system: ['nd://scope/read/health', 'nd://scope/write/health'],
+  env: ['nd://scope/read/env', 'nd://scope/write/env'],
+};
+
+/**
+ * Sub-resources mounted under a parent prefix but scoped on their own
+ * (api.ts registers `webhookMgmtRoutes` under `/services`, for example).
+ * Checked BEFORE the prefix table, most specific first.
+ */
+const ROUTE_SCOPE_OVERRIDES: Array<[RegExp, readonly [string, string]]> = [
+  [/^services\/\d+\/env\b/, ['nd://scope/read/env', 'nd://scope/write/env']],
+  [/^services\/\d+\/webhooks\b/, ['nd://scope/read/webhooks', 'nd://scope/write/webhooks']],
+  [/^services\/\d+\/deploys\b/, ['nd://scope/read/deploys', 'nd://scope/write/deploys']],
+  [/^services\/\d+\/volumes\b/, ['nd://scope/read/volumes', 'nd://scope/write/volumes']],
+  [/^services\/\d+\/insights\b/, ['nd://scope/read/manifests', 'nd://scope/write/manifests']],
+  [/^services\/\d+\/domains\b/, ['nd://scope/read/domains', 'nd://scope/write/domains']],
+];
+
+/**
+ * The fine-grained scope a request requires — always one of the literal
+ * table values above, never assembled from the URL — or `null` when the URL
+ * does not map to a scoped resource (which a fine-grained token may not
+ * access). Exported for tests.
+ */
+export function requiredFineGrainedScope(url: string, method: string): string | null {
+  const query = url.indexOf('?');
+  let path = query === -1 ? url : url.slice(0, query);
+  while (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1);
+  const apiRoot = '/v1/';
+  if (!path.startsWith(apiRoot)) return null;
+  const rest = path.slice(apiRoot.length);
+  if (rest.length === 0) return null;
+  const isRead = SAFE_METHODS.has(method);
+  for (const [pattern, pair] of ROUTE_SCOPE_OVERRIDES) {
+    if (pattern.test(rest)) return isRead ? pair[0] : pair[1];
+  }
+  const firstSlash = rest.indexOf('/');
+  const top = firstSlash === -1 ? rest : rest.slice(0, firstSlash);
+  const pair = PREFIX_SCOPES[top];
+  if (!pair) return null;
+  return isRead ? pair[0] : pair[1];
+}
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -83,13 +156,33 @@ export default fp(
       // carried its owner's full authority, operator flag included.
       if (user.tokenScopes !== null) {
         const scopes = user.tokenScopes;
-        // Only an explicit `operator` scope may act as an operator. A `write`
-        // token owned by an operator still runs as a normal user, which is what
-        // keeps a leaked CI token away from PM2/compose/host hooks.
-        if (!scopes.includes('operator')) user.isOperator = false;
-        const mayWrite = scopes.includes('write') || scopes.includes('operator');
+        narrowScopes(user);
+        // A fine-grained `nd://scope/write/<resource>` token IS a write token —
+        // but only for the resources it names (checked below). The coarse
+        // legacy scopes and `operator` keep their any-resource meaning.
+        const mayWrite =
+          scopes.includes('write') ||
+          scopes.includes('operator') ||
+          scopes.some((s) => /^nd:\/\/scope\/(write|admin)\//.test(s));
         if (!mayWrite && !SAFE_METHODS.has(req.method)) {
           throw forbidden('This API token is read-only');
+        }
+        // Fine-grained URI scopes must actually NARROW. Stored-but-never-checked
+        // `nd://scope/...` values were decoration: a token holding only
+        // `nd://scope/read/services` could still write every resource. When a
+        // token carries any fine-grained scope, every request must be covered
+        // for its resource+method; anything the route map cannot classify is
+        // out of reach (fail closed). Coarse-only tokens keep the behaviour
+        // above.
+        if (scopes.some((s) => s.startsWith('nd://scope/'))) {
+          const required = requiredFineGrainedScope(req.url, req.method);
+          if (required === null || !scopeCovers(user, required)) {
+            throw forbidden(
+              required === null
+                ? 'This API token is not scoped for this resource'
+                : `This token is missing the required scope: ${required}`,
+            );
+          }
         }
       }
       req.user = user;
