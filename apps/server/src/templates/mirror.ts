@@ -150,7 +150,18 @@ export function convertCoolifyComposeFile(fileName: string, raw: string): Mirror
     if (typeof entry.build !== 'undefined' && typeof entry.image === 'undefined') {
       return { skip: true, reason: `service '${name}' requires a build context` };
     }
-    if (Array.isArray(entry.ports) && entry.ports.some((p) => typeof p === 'string' && (p.includes(':') || p.includes('$')))) {
+    if (
+      Array.isArray(entry.ports)
+      && entry.ports.some(
+        (p) =>
+          // Short syntax: `host:container` mappings (and `$` interpolation,
+          // which can smuggle a host port past a literal review).
+          (typeof p === 'string' && (p.includes(':') || p.includes('$')))
+          // Long syntax: a `published` port or an explicit `host_ip` is a
+          // deterministic host binding — exactly what this guard refuses.
+          || (typeof p === 'object' && p !== null && ('published' in p || 'host_ip' in p)),
+      )
+    ) {
       return { skip: true, reason: `service '${name}' publishes host ports` };
     }
   }

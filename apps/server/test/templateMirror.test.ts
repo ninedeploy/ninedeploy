@@ -109,8 +109,42 @@ describe('upstream file conversion', () => {
 
   it('skips build-context-only services', () => {
     const raw = '# port: 80\nservices:\n  a:\n    build: ./docker\n';
-    const result = convertCoolifyComposeFile('a.yaml', raw);
+    const result = convertCoolifyComposeFile('build.yaml', raw);
     expect(result.skip).toBe(true);
     if (result.skip) expect(result.reason).toContain('build context');
+  });
+
+  // r041: the guard used to inspect only SHORT-syntax port entries (strings).
+  // The compose LONG syntax expresses the same deterministic host binding as
+  // an object — `{ target: 80, published: 8080 }` or an explicit `host_ip` —
+  // and those slipped past the check, letting a mirrored third-party template
+  // grab an arbitrary host port (80/443/panel included) at deploy time.
+  it('skips long-syntax port entries that publish deterministic host ports', () => {
+    const published = [
+      '# port: 80',
+      'services:',
+      '  a:',
+      '    image: a:1',
+      '    ports:',
+      '      - target: 80',
+      '        published: 8080',
+      '',
+    ].join('\n');
+    const hostIp = [
+      '# port: 80',
+      'services:',
+      '  a:',
+      '    image: a:1',
+      '    ports:',
+      '      - target: 80',
+      '        host_ip: 127.0.0.1',
+      '',
+    ].join('\n');
+    const viaPublished = convertCoolifyComposeFile('published.yaml', published);
+    expect(viaPublished.skip).toBe(true);
+    if (viaPublished.skip) expect(viaPublished.reason).toContain('host ports');
+    const viaHostIp = convertCoolifyComposeFile('hostip.yaml', hostIp);
+    expect(viaHostIp.skip).toBe(true);
+    if (viaHostIp.skip) expect(viaHostIp.reason).toContain('host ports');
   });
 });
