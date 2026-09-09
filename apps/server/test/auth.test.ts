@@ -443,14 +443,16 @@ describe('auth routes', () => {
       payload: { name: 'ci' },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({
+    const body = res.json() as { scopes: string[]; expiresAt: string | null };
+    // A token created WITHOUT explicit scopes is read-only by default — never
+    // an unrestricted legacy token ([]), and it always carries a lifetime so
+    // a leaked CI credential cannot outlive a year.
+    expect(body.scopes).toEqual(['read']);
+    expect(body.expiresAt).toEqual(expect.any(String));
+    expect(res.json()).toMatchObject({
       id: 5,
       name: 'ci',
       token: 'raw-token',
-      // An empty scope list is a legacy, unrestricted token — the response
-      // says so rather than implying the token is scoped.
-      scopes: [],
-      expiresAt: null,
       createdAt: '2026-01-01T00:00:00.000Z',
     });
   });

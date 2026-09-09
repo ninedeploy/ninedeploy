@@ -10,9 +10,11 @@ import {
 } from '../lib/oidc.js';
 import {
   checkAssertionConditions,
+  checkAssertionNotReplayed,
   decodeSamlResponse,
   extractSamlSubject,
   parseIdpMetadata,
+  readIssuer,
   verifyAssertionDigest,
   verifySignedInfo,
 } from '../lib/saml.js';
@@ -265,15 +267,32 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
       let decoded: string;
       let subject: ReturnType<typeof extractSamlSubject>;
       let certPem: string;
+      let idpEntityId: string | null = null;
+      let spEntityId: string | null = null;
+      let spAcsUrl: string | null = null;
       try {
         decoded = decodeSamlResponse(samlResponseB64);
         subject = extractSamlSubject(decoded);
         // The IdP cert comes from the metadata the operator registered.
-        const metadata = JSON.parse(provider.configJson) as { idpMetadata?: string };
+        const metadata = JSON.parse(provider.configJson) as {
+          idpMetadata?: string;
+          spEntityId?: string;
+          spAcsUrl?: string;
+        };
         if (!metadata.idpMetadata) {
           return { ok: false, error: 'SAML provider has no idpMetadata configured' };
         }
+        // Operator-declared SP bindings: when set, the assertion Audience and
+        // the response Destination/Recipient are validated against them
+        // below. Unset means the corresponding check is skipped.
+        spEntityId = typeof metadata.spEntityId === 'string' && metadata.spEntityId.trim() !== ''
+          ? metadata.spEntityId.trim()
+          : null;
+        spAcsUrl = typeof metadata.spAcsUrl === 'string' && metadata.spAcsUrl.trim() !== ''
+          ? metadata.spAcsUrl.trim()
+          : null;
         const parsed = parseIdpMetadata(metadata.idpMetadata);
+        idpEntityId = parsed.entityId;
         certPem = `-----BEGIN CERTIFICATE-----\n${parsed.signingCert.replace(/\s+/g, '')}\n-----END CERTIFICATE-----`;
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -306,9 +325,55 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
       try {
         verifyAssertionDigest({ decodedXml: decoded, signedInfo });
         const assertionBlock = decoded.match(/<(?:[A-Za-z0-9]+:)?Assertion\b[^>]*>[\s\S]*?<\/(?:[A-Za-z0-9]+:)?Assertion>/)?.[0];
-        if (assertionBlock) checkAssertionConditions(assertionBlock);
+        if (assertionBlock) {
+          checkAssertionConditions(assertionBlock);
+          // Replay defence: the conditions window is minutes wide, so a
+          // captured (correctly signed) response replays as a fresh sign-in
+          // within it. The cache refuses a second acceptance of the same
+          // assertion ID.
+          checkAssertionNotReplayed(assertionBlock);
+        }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+      // Issuer binding: both the response and the assertion must name the
+      // entity the operator's metadata declares. Without this, a second IdP
+      // the same trust chain touches (or a crafted response naming another
+      // issuer) could ride on an unrelated signature.
+      const responseIssuer = readIssuer(decoded);
+      const assertionIssuer = readIssuer(decoded.match(/<(?:[A-Za-z0-9]+:)?Assertion\b[^>]*>[\s\S]*?<\/(?:[A-Za-z0-9]+:)?Assertion>/)?.[0] ?? '');
+      if (idpEntityId !== null && (responseIssuer !== idpEntityId || assertionIssuer !== idpEntityId)) {
+        return { ok: false, error: 'SAML response: issuer does not match the configured IdP entityID' };
+      }
+      // This panel only accepts IdP-initiated (unsolicited) responses — it
+      // never emits an AuthnRequest, so a response answering SOME OTHER SP's
+      // request (InResponseTo present) has no valid flow here.
+      if (/\bInResponseTo="/.test(decoded)) {
+        return { ok: false, error: 'SAML response carries InResponseTo, but this panel never initiates SAML requests' };
+      }
+      // Audience restriction: enforced when the operator declared the SP
+      // entity id in the provider config (`spEntityId`). An assertion scoped
+      // to a different service provider must not sign this panel in.
+      if (spEntityId !== null) {
+        const audiences = [...decoded.matchAll(/<(?:[A-Za-z0-9]+:)?Audience\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z0-9]+:)?Audience>/g)]
+          .map((m) => m[1]?.trim() ?? '');
+        if (audiences.length > 0 && !audiences.includes(spEntityId)) {
+          return { ok: false, error: 'SAML response: assertion Audience does not include this panel’s entity ID' };
+        }
+      }
+      // Destination / Recipient binding: enforced when the operator declared
+      // this panel's ACS URL (`spAcsUrl`). A response handed to a DIFFERENT
+      // service provider's endpoint — even correctly signed and scoped — must
+      // not replay here.
+      if (spAcsUrl !== null) {
+        const destination = decoded.match(/<(?:[A-Za-z0-9]+:)?Response\b[^>]*\bDestination="([^"]*)"/)?.[1];
+        if (destination !== undefined && destination !== spAcsUrl) {
+          return { ok: false, error: 'SAML response: Destination is not this panel’s ACS URL' };
+        }
+        const recipient = decoded.match(/\bRecipient="([^"]*)"/)?.[1];
+        if (recipient !== undefined && recipient !== spAcsUrl) {
+          return { ok: false, error: 'SAML response: SubjectConfirmationData Recipient is not this panel’s ACS URL' };
+        }
       }
       // Map the federated identity to a local user. The IdP's
       // `email` attribute is the canonical join key; if the IdP

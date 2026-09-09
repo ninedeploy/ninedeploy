@@ -45,27 +45,50 @@ export async function issueSessionTokens(
 
 /**
  * Refresh-rotation issue: keep the same session jti (so revocation survives
- * refreshes) but stamp lastUsedAt. The session row must already exist and be
- * live — callers verify that before calling.
+ * refreshes) but advance the row's expiry and bind the NEW refresh token to
+ * that expiry via its `gen` claim.
+ *
+ * The generation binding is what makes rotation real: a refresh token from a
+ * PREVIOUS generation carries the expiry value that was live when it was
+ * minted, which no longer matches the row — so a replayed or stolen old
+ * refresh token is refused before any DB write, and cannot slide the session
+ * forward or mint a fresh pair. Tokens minted before this claim existed have
+ * no `gen`; they are accepted once (and immediately re-minted with one), so
+ * the rollout does not log every existing session out.
+ *
+ * The session row must already exist and be live — callers verify that before
+ * calling.
  */
 export async function refreshSessionTokens(
-  db: Pick<DB, 'update'>,
+  db: Pick<DB, 'query' | 'update'>,
   user: Pick<User, 'id' | 'tokenVersion'>,
   jti: string,
+  tokenGen?: number,
 ): Promise<TokenPair> {
+  if (tokenGen !== undefined) {
+    // Generation check FIRST: a stale refresh token must not even slide the
+    // session's expiry (that would hand whoever holds the old token a
+    // session-extension oracle).
+    const row = await db.query.sessions.findFirst({ where: eq(sessions.jti, jti) });
+    if (!row || row.revokedAt || row.expiresAt.getTime() !== tokenGen) {
+      throw new Error('session_revoked');
+    }
+  }
   // Rotate the row FIRST, conditioned on it still being live: if a concurrent
   // revoke (logout / session delete) lands between the caller's check and
   // here, no token pair is issued for the revoked session.
   const refreshTtl = ttlSeconds(config.jwt.refreshTtl);
+  const expiresAt = new Date(Date.now() + refreshTtl * 1000);
   const rotated = await db
     .update(sessions)
-    .set({ lastUsedAt: new Date(), expiresAt: new Date(Date.now() + refreshTtl * 1000) })
+    .set({ lastUsedAt: new Date(), expiresAt })
     .where(and(eq(sessions.jti, jti), isNull(sessions.revokedAt)))
     .returning();
   if (!rotated.length) throw new Error('session_revoked');
+  const nextGen = expiresAt.getTime();
   const [accessToken, refreshToken] = await Promise.all([
     signAccessToken(user.id, user.tokenVersion, jti),
-    signRefreshToken(user.id, user.tokenVersion, jti),
+    signRefreshToken(user.id, user.tokenVersion, jti, nextGen),
   ]);
   return { accessToken, refreshToken, expiresIn: ttlSeconds(config.jwt.accessTtl) };
 }

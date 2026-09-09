@@ -213,6 +213,61 @@ export function checkAssertionConditions(assertionXml: string, now: Date = new D
   }
 }
 
+// ── assertion replay cache ─────────────────────────────────────────────────
+//
+// The validity window above is minutes wide; within it a captured (correctly
+// signed) response replays as a fresh sign-in. The cache remembers every
+// accepted assertion ID for the longest window we are willing to honour and
+// refuses duplicates. Process-local by design: a restarted panel forgets —
+// the acceptable residual is one replay per panel restart, not one per
+// attacker attempt.
+
+const SEEN_ASSERTION_IDS = new Map<string, number>();
+const REPLAY_TTL_MS = 6 * 60 * 60 * 1000;
+const REPLAY_CACHE_MAX = 10_000;
+
+function pruneReplayCache(now: number): void {
+  for (const [id, seenAt] of SEEN_ASSERTION_IDS) {
+    if (now - seenAt > REPLAY_TTL_MS) SEEN_ASSERTION_IDS.delete(id);
+  }
+  // Hard size bound regardless of age (an ID-flooding peer must not grow the
+  // map without limit).
+  while (SEEN_ASSERTION_IDS.size >= REPLAY_CACHE_MAX) {
+    let oldestId: string | null = null;
+    let oldestSeenAt = Number.POSITIVE_INFINITY;
+    for (const [id, seenAt] of SEEN_ASSERTION_IDS) {
+      if (seenAt < oldestSeenAt) {
+        oldestId = id;
+        oldestSeenAt = seenAt;
+      }
+    }
+    if (oldestId === null) break;
+    SEEN_ASSERTION_IDS.delete(oldestId);
+  }
+}
+
+/**
+ * Refuse an assertion whose ID was already accepted, and record it otherwise.
+ * SAMLCore requires the ID attribute, so its absence is itself a refusal.
+ * Call this ONLY after signature and digest verification — the cache assumes
+ * everything reaching it is authentically signed.
+ */
+export function checkAssertionNotReplayed(assertionXml: string, now: number = Date.now()): void {
+  const id = assertionXml.match(/<(?:[A-Za-z0-9]+:)?Assertion\b[^>]*\bID="([^"]+)"/)?.[1];
+  if (!id) throw new Error('SAML response: assertion carries no ID attribute');
+  pruneReplayCache(now);
+  if (SEEN_ASSERTION_IDS.has(id)) {
+    throw new Error('SAML response: assertion was already used (replay refused)');
+  }
+  SEEN_ASSERTION_IDS.set(id, now);
+}
+
+/** Read the `<Issuer>` element of an XML block (response-level or assertion-level). */
+export function readIssuer(xml: string): string | null {
+  const m = xml.match(/<(?:[A-Za-z0-9]+:)?Issuer\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z0-9]+:)?Issuer>/);
+  return m?.[1]?.trim() ?? null;
+}
+
 /** Helper: decode a SAML response base64 blob (IdPs POST
  *  base64-encoded SAMLResponse parameter). */
 export function decodeSamlResponse(b64: string): string {

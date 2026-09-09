@@ -50,7 +50,24 @@ describe('lib/sessions', () => {
     jwtMocks.signRefreshToken.mockClear();
     const db = createFakeDb();
     await refreshSessionTokens(db, userRow({ id: 2, tokenVersion: 0 }), 'jti-x');
-    expect(jwtMocks.signRefreshToken).toHaveBeenCalledWith(2, 0, 'jti-x');
+    // The 4th argument is the generation marker: the session row's NEW
+    // expiresAt. A replayed refresh token from a previous generation carries
+    // the old value and fails the match.
+    expect(jwtMocks.signRefreshToken).toHaveBeenCalledWith(2, 0, 'jti-x', expect.any(Number));
+  });
+
+  it('refuses a refresh token from a previous generation before touching the row', async () => {
+    // The gen check runs BEFORE the rotation write: a replayed old token must
+    // neither slide the session's expiry nor mint a pair.
+    jwtMocks.signAccessToken.mockClear();
+    jwtMocks.signRefreshToken.mockClear();
+    const db = createFakeDb({
+      findFirst: { sessions: { jti: 'jti-x', revokedAt: null, expiresAt: new Date(111) } },
+      update: { sessions: [{ id: 1 }] },
+    });
+    await expect(refreshSessionTokens(db, userRow(), 'jti-x', 999)).rejects.toThrow('session_revoked');
+    expect(jwtMocks.signAccessToken).not.toHaveBeenCalled();
+    expect(jwtMocks.signRefreshToken).not.toHaveBeenCalled();
   });
 
   it('refresh refuses to mint tokens for a session revoked mid-flight', async () => {

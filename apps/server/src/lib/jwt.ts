@@ -9,6 +9,13 @@ export interface AppJwtPayload extends JWTPayload {
   ver?: number;
   /** Refresh-token session id — must reference a live row in `sessions`. */
   jti?: string;
+  /**
+   * Refresh-generation marker: the `sessions.expiresAt` value (epoch ms) this
+   * refresh token was minted against. Rotation advances the row's expiry, so
+   * a refresh token from a PREVIOUS generation fails the match — a replayed
+   * or stolen old refresh token cannot mint new pairs.
+   */
+  gen?: number;
 }
 
 function sign(
@@ -17,10 +24,12 @@ function sign(
   ttl: string,
   ver?: number,
   jti?: string,
+  gen?: number,
 ): Promise<string> {
   const claims: Record<string, unknown> = { type };
   if (ver !== undefined) claims['ver'] = ver;
   if (jti !== undefined) claims['jti'] = jti;
+  if (gen !== undefined) claims['gen'] = gen;
   return new SignJWT(claims)
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(String(userId))
@@ -31,8 +40,8 @@ function sign(
 
 export const signAccessToken = (userId: number, ver?: number, jti?: string) =>
   sign(userId, 'access', config.jwt.accessTtl, ver, jti);
-export const signRefreshToken = (userId: number, ver?: number, jti?: string) =>
-  sign(userId, 'refresh', config.jwt.refreshTtl, ver, jti);
+export const signRefreshToken = (userId: number, ver?: number, jti?: string, gen?: number) =>
+  sign(userId, 'refresh', config.jwt.refreshTtl, ver, jti, gen);
 
 export async function verifyJwt(token: string): Promise<AppJwtPayload> {
   // Pin the algorithm explicitly. jose already refuses a non-HMAC `alg` for a

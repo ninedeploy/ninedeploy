@@ -209,10 +209,21 @@ export const createApiToken = z.object({
     .string()
     .optional()
     .transform((v) => (v ?? '').slice(0, 100) || 'cli'),
-  /** Empty = unrestricted (legacy behaviour). See `apiTokenScope`. */
-  scopes: z.array(apiTokenScope).max(3).default([]),
-  /** Optional lifetime; omitted = never expires (the pre-0.3.5 behaviour). */
-  expiresInDays: z.number().int().min(1).max(3650).optional(),
+  /**
+   * Defaults to `['read']` — a NEW token without explicit scopes is a
+   * read-only token, not an unrestricted one. The unrestricted meaning of an
+   * EMPTY list survives only for legacy rows created before 0.3.5 (the
+   * resolver still maps `[]` → unrestricted); new tokens are never handed
+   * their owner's full authority by default.
+   */
+  scopes: z.array(apiTokenScope).max(3).default(['read']),
+  /**
+   * Defaults to a one-year lifetime. A standing credential that never expires
+   * was the pre-0.3.5 behaviour and is what made a leaked CI token
+   * effectively permanent; an operator who wants that must now say so
+   * explicitly (3650).
+   */
+  expiresInDays: z.number().int().min(1).max(3650).default(365),
 });
 /** Parsed shape (post-defaults) — what the route handler works with. */
 export type CreateApiToken = z.infer<typeof createApiToken>;

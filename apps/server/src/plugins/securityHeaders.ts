@@ -14,8 +14,10 @@ import { config } from '../config.js';
  *   • `default-src 'self'`      — no third-party origins are used at runtime.
  *   • `style-src` allows inline — the bundler emits inline style attributes.
  *   • `img-src` allows data:    — icons/avatars are inlined by the bundler.
- *   • `connect-src 'self'` + ws/wss — the log stream and event bus are
- *     same-origin WebSockets; `ws:` covers a plain-HTTP LAN deployment.
+ *   • `connect-src 'self'`      — the log stream and event bus are same-origin
+ *     WebSockets, and 'self' matches ws:// and wss:// on the document's own
+ *     host. A bare `ws:` would let even an injected script open a WebSocket
+ *     to ANY host, exfiltrating anything it can read.
  *   • `frame-ancestors 'none'`  — the real prize: the panel drives deploys,
  *     deletions and node approvals, so it must never be framed.
  * No `'unsafe-eval'`: nothing in the app needs it, and leaving it out is most
@@ -27,7 +29,7 @@ const CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  "connect-src 'self' ws: wss:",
+  "connect-src 'self'",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",

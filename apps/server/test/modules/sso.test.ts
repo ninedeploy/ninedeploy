@@ -959,16 +959,24 @@ describe('POST /v1/sso/:name/saml-callback', () => {
 </EntityDescriptor>`;
   }
 
-  function samlResponse(email: string, opts: { digestOverride?: string; omitDigest?: boolean; notOnOrAfter?: string } = {}): string {
+  // Every generated assertion gets a UNIQUE ID: the route's replay cache
+  // refuses a second acceptance of the same assertion ID across tests.
+  let assertionSeq = 0;
+
+  function samlResponse(
+    email: string,
+    opts: { digestOverride?: string; omitDigest?: boolean; notOnOrAfter?: string; assertionId?: string; audience?: string } = {},
+  ): string {
     // The DigestValue must be the sha256 (base64) of the FULL assertion
     // element — the route now binds the signature to the assertion bytes,
     // so a response whose assertion was swapped after signing must fail.
-    const assertion = assertionXml(email, opts.notOnOrAfter);
+    const assertion = assertionXml(email, opts.notOnOrAfter, opts.assertionId, opts.audience);
     const digestValue = opts.omitDigest ? '' : opts.digestOverride ?? sha256b64(assertion);
     const digestBlock = opts.omitDigest
       ? '<ds:Reference />'
       : `<ds:Reference><ds:DigestValue>${digestValue}</ds:DigestValue></ds:Reference>`;
     return `<samlp:Response>
+  <saml:Issuer>https://idp.example.com</saml:Issuer>
   <ds:Signature>
     <ds:SignedInfo>${digestBlock}</ds:SignedInfo>
     <ds:SignatureValue>AAAA</ds:SignatureValue>
@@ -977,13 +985,17 @@ describe('POST /v1/sso/:name/saml-callback', () => {
 </samlp:Response>`;
   }
 
-  function assertionXml(email: string, notOnOrAfter?: string): string {
+  function assertionXml(email: string, notOnOrAfter?: string, assertionId?: string, audience?: string): string {
     // <Conditions> lives INSIDE the assertion per the SAML schema, and its
-    // NotOnOrAfter attribute defines the replay window.
-    const conditions = notOnOrAfter
-      ? `  <saml:Conditions NotBefore="2020-01-01T00:00:00Z" NotOnOrAfter="${notOnOrAfter}"></saml:Conditions>\n`
+    // NotOnOrAfter attribute defines the replay window. The ID + Issuer are
+    // mandatory in real SAML: the route refuses an assertion without an ID
+    // (replay cache) and binds both issuers to the IdP entityID.
+    const id = assertionId ?? `_a${++assertionSeq}`;
+    const conditions = notOnOrAfter || audience
+      ? `  <saml:Conditions${notOnOrAfter ? ` NotBefore="2020-01-01T00:00:00Z" NotOnOrAfter="${notOnOrAfter}"` : ''}>${audience ? `<saml:AudienceRestriction><saml:Audience>${audience}</saml:Audience></saml:AudienceRestriction>` : ''}</saml:Conditions>\n`
       : '';
-    return `<saml:Assertion>
+    return `<saml:Assertion ID="${id}">
+    <saml:Issuer>https://idp.example.com</saml:Issuer>
     ${conditions}<saml:Subject>
       <saml:NameID>${email}</saml:NameID>
     </saml:Subject>
@@ -1190,12 +1202,14 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     // Build a SAML response with NO <AttributeStatement> — the
     // route should still locate the user by the NameID, since it
     // is itself an email address.
-    const assertion = `<saml:Assertion>
+    const assertion = `<saml:Assertion ID="_nameid-fallback">
+    <saml:Issuer>https://idp.example.com</saml:Issuer>
     <saml:Subject>
       <saml:NameID>operator@example.com</saml:NameID>
     </saml:Subject>
   </saml:Assertion>`;
     const xml = `<samlp:Response>
+  <saml:Issuer>https://idp.example.com</saml:Issuer>
   <ds:Signature>
     <ds:SignedInfo><ds:Reference><ds:DigestValue>${sha256b64(assertion)}</ds:DigestValue></ds:Reference></ds:SignedInfo>
     <ds:SignatureValue>AAAA</ds:SignatureValue>
@@ -1223,15 +1237,18 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     const app = await buildTestApp({ db });
     await app.register(ssoRoutes);
     const xml = `<samlp:Response>
+  <saml:Issuer>https://idp.example.com</saml:Issuer>
   <ds:Signature>
-    <ds:SignedInfo><ds:Reference><ds:DigestValue>${sha256b64(`<saml:Assertion>
+    <ds:SignedInfo><ds:Reference><ds:DigestValue>${sha256b64(`<saml:Assertion ID="_opaque">
+    <saml:Issuer>https://idp.example.com</saml:Issuer>
     <saml:Subject>
       <saml:NameID>opaque-transient-id-12345</saml:NameID>
     </saml:Subject>
   </saml:Assertion>`)}</ds:DigestValue></ds:Reference></ds:SignedInfo>
     <ds:SignatureValue>AAAA</ds:SignatureValue>
   </ds:Signature>
-  <saml:Assertion>
+  <saml:Assertion ID="_opaque">
+    <saml:Issuer>https://idp.example.com</saml:Issuer>
     <saml:Subject>
       <saml:NameID>opaque-transient-id-12345</saml:NameID>
     </saml:Subject>
@@ -1288,12 +1305,148 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/corp-saml/saml-callback',
-      headers: asUser(),
       payload: { SAMLResponse: b64(xml) },
+      headers: asUser(),
     });
     const body = res.json() as { ok: boolean; error?: string };
     expect(body.ok).toBe(false);
     expect(body.error).toMatch(/digest/i);
+    await app.close();
+  });
+
+  it('refuses to accept the SAME assertion twice (replay cache)', async () => {
+    // Within the NotOnOrAfter window a captured, correctly signed response
+    // would otherwise replay as a fresh sign-in every time.
+    verifyResult = true;
+    const meta = idpMetadata();
+    const { db, seedProvider, insert } = wiredDb('alice@example.com', meta);
+    seedProvider('corp-saml', 'saml', { idpMetadata: meta });
+    const app = await buildTestApp({ db });
+    await app.register(ssoRoutes);
+    const xml = samlResponse('alice@example.com', {
+      notOnOrAfter: new Date(Date.now() + 5 * 60_000).toISOString(),
+      assertionId: '_replayed-once',
+    });
+    const first = await app.inject({
+      method: 'POST',
+      url: '/corp-saml/saml-callback',
+      payload: { SAMLResponse: b64(xml) },
+      headers: asUser(),
+    });
+    expect(first.json()).toMatchObject({ ok: true });
+    const second = await app.inject({
+      method: 'POST',
+      url: '/corp-saml/saml-callback',
+      payload: { SAMLResponse: b64(xml) },
+      headers: asUser(),
+    });
+    const body = second.json() as { ok: boolean; error?: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toMatch(/replay/i);
+    expect(insert).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
+  it('rejects a response whose Issuer does not match the IdP entityID', async () => {
+    // A second IdP riding the same trust chain (or a crafted issuer) must not
+    // pass just because SOME signature verifies.
+    verifyResult = true;
+    const meta = idpMetadata();
+    const { db, seedProvider, insert } = wiredDb('alice@example.com', meta);
+    seedProvider('corp-saml', 'saml', { idpMetadata: meta });
+    const app = await buildTestApp({ db });
+    await app.register(ssoRoutes);
+    const xml = samlResponse('alice@example.com').replace(
+      '<saml:Issuer>https://idp.example.com</saml:Issuer>',
+      '<saml:Issuer>https://evil.example.com</saml:Issuer>',
+    );
+    const res = await app.inject({
+      method: 'POST',
+      url: '/corp-saml/saml-callback',
+      payload: { SAMLResponse: b64(xml) },
+      headers: asUser(),
+    });
+    const body = res.json() as { ok: boolean; error?: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toMatch(/issuer/i);
+    expect(insert).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('rejects a response carrying InResponseTo (this panel never initiates SAML)', async () => {
+    // A response that answers SOME OTHER SP's auth request has no valid flow
+    // here — accepting it would let a response minted for a different
+    // service provider sign this panel in.
+    verifyResult = true;
+    const meta = idpMetadata();
+    const { db, seedProvider, insert } = wiredDb('alice@example.com', meta);
+    seedProvider('corp-saml', 'saml', { idpMetadata: meta });
+    const app = await buildTestApp({ db });
+    await app.register(ssoRoutes);
+    const xml = samlResponse('alice@example.com', { assertionId: '_inresponseto' }).replace(
+      '<samlp:Response>',
+      '<samlp:Response InResponseTo="_other-sp-request-42">',
+    );
+    const res = await app.inject({
+      method: 'POST',
+      url: '/corp-saml/saml-callback',
+      payload: { SAMLResponse: b64(xml) },
+      headers: asUser(),
+    });
+    const body = res.json() as { ok: boolean; error?: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toMatch(/InResponseTo/i);
+    expect(insert).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('enforces the Audience restriction when the provider declares spEntityId', async () => {
+    verifyResult = true;
+    const meta = idpMetadata();
+    const { db, seedProvider, insert } = wiredDb('alice@example.com', meta);
+    seedProvider('corp-saml', 'saml', { idpMetadata: meta, spEntityId: 'https://panel.example.com' });
+    const app = await buildTestApp({ db });
+    await app.register(ssoRoutes);
+    const scopedElsewhere = samlResponse('alice@example.com', {
+      assertionId: '_audience',
+      audience: 'https://other-sp.example.com',
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/corp-saml/saml-callback',
+      payload: { SAMLResponse: b64(scopedElsewhere) },
+      headers: asUser(),
+    });
+    const body = res.json() as { ok: boolean; error?: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toMatch(/Audience/i);
+    expect(insert).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('rejects a response whose Destination is another SP’s ACS URL when spAcsUrl is configured', async () => {
+    // Even a correctly signed, correctly scoped response handed to a
+    // different endpoint must not replay here.
+    verifyResult = true;
+    const meta = idpMetadata();
+    const { db, seedProvider, insert } = wiredDb('alice@example.com', meta);
+    seedProvider('corp-saml', 'saml', { idpMetadata: meta, spAcsUrl: 'https://panel.example.com/v1/sso/corp-saml/saml-callback' });
+    const app = await buildTestApp({ db });
+    await app.register(ssoRoutes);
+    const misaddressed = samlResponse('alice@example.com', { assertionId: '_destination' }).replace(
+      '<samlp:Response>',
+      '<samlp:Response Destination="https://other-sp.example.com/acs">',
+    );
+    const res = await app.inject({
+      method: 'POST',
+      url: '/corp-saml/saml-callback',
+      payload: { SAMLResponse: b64(misaddressed) },
+      headers: asUser(),
+    });
+    const body = res.json() as { ok: boolean; error?: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toMatch(/Destination/i);
+    expect(insert).not.toHaveBeenCalled();
     await app.close();
   });
 

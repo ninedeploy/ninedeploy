@@ -269,14 +269,17 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
   app.post('/login', { config: { rateLimit: AUTH_LIMIT } }, async (req) => {
     const input = login.parse(req.body);
-    // Per-account lockout (complements the per-IP rate limit): the response is
+    // Failed-login lockout (complements the per-IP rate limit): the response is
     // deliberately identical to a wrong password so the lock state isn't a probe.
-    if (isLocked(input.email)) throw unauthorized('Invalid email or password');
+    // The lock is keyed per (account, source IP): a single host guessing
+    // passwords locks ITSELF out, not the victim — otherwise 5 wrong
+    // passwords from anyone would hold a known account hostage (DoS).
+    if (isLocked(input.email, req.ip)) throw unauthorized('Invalid email or password');
     const user = await app.db.query.users.findFirst({
       where: sql`lower(${users.email}) = lower(${input.email})`,
     });
     if (!user || !(await verifyPassword(user.passwordHash, input.password))) {
-      const locked = recordFailure(input.email);
+      const locked = recordFailure(input.email, req.ip);
       if (locked) void audit(app.db, null, 'auth.lockout', input.email);
       throw unauthorized('Invalid email or password');
     }
@@ -287,7 +290,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       // L-10: consume, don't just verify — a replayed code is refused even
       // though it is still inside its drift window.
       if (!(await consumeTotpCode(app.db, user, input.totpCode))) {
-        const locked = recordFailure(input.email);
+        const locked = recordFailure(input.email, req.ip);
         if (locked) void audit(app.db, null, 'auth.lockout', input.email);
         throw unauthorized('Invalid two-factor code', 'totp_invalid');
       }
@@ -544,7 +547,12 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       throw unauthorized('Invalid refresh token');
     }
     if (session.userId !== user.id) throw unauthorized('Invalid refresh token');
-    return { user: toUser(user, await isOperator(app.db, user)), tokens: await refreshSessionTokens(app.db, user, payload.jti) };
+    // `payload.gen` binds this refresh token to the generation it was minted
+    // against — see refreshSessionTokens. Absent on pre-rotation tokens.
+    return {
+      user: toUser(user, await isOperator(app.db, user)),
+      tokens: await refreshSessionTokens(app.db, user, payload.jti, payload.gen),
+    };
   });
 
   app.get('/me', { onRequest: [app.authenticate] }, async (req) => {
