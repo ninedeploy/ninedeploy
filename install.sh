@@ -775,6 +775,30 @@ fetch_release_tarball() {
     rm -rf "${_dest:?}"
     return 1
   fi
+
+  # ── Provenance: bind the extracted tree to the requested tag. ──────────
+  # TLS proves the transport; these checks prove the CONTENT is the release
+  # the operator asked for (a swapped, stale or tampered archive fails here
+  # instead of becoming a root-built service).
+  _tar_version=$(sed -n 's/.*"version":[[:space:]]*"\([^"]*\)".*/\1/p' "$_dest/package.json" | head -1)
+  if [ "v$_tar_version" != "$_ref" ]; then
+    warn "Tarball for $_ref carries version '${_tar_version:-?}' — content does not match the tag, refusing"
+    rm -rf "${_dest:?}"
+    return 1
+  fi
+  # A source tree must carry no symlinks (extraction-time escapes) and no
+  # setuid/setgid bits (privilege seeds for the root-built service).
+  if find "$_dest" -type l -print -quit 2>/dev/null | grep -q .; then
+    warn "Tarball for $_ref contains symlinks — refusing"
+    rm -rf "${_dest:?}"
+    return 1
+  fi
+  if find "$_dest" -type f -perm /6000 -print -quit 2>/dev/null | grep -q .; then
+    warn "Tarball for $_ref contains setuid/setgid files — refusing"
+    rm -rf "${_dest:?}"
+    return 1
+  fi
+  info "Tarball provenance verified: $_ref, version $_tar_version, no symlinks, no setuid bits"
   return 0
 }
 
@@ -833,8 +857,20 @@ install_docker_mode() {
       -o "$DOCKER_INSTALL_DIR/docker-compose.yml.new" \
       || fail "Could not fetch docker-compose.prod.yml for $REF"
   fi
+  # The compose file drives a root-equivalent container deployment, so the
+  # fetched content is validated BEFORE it is trusted: the services key must
+  # exist, the project must reference exactly ONE image and it must be this
+  # panel's own repository, and the compose engine itself must accept the
+  # file (dummy values satisfy the required-variable defaults at parse time).
   grep -q '^services:' "$DOCKER_INSTALL_DIR/docker-compose.yml.new" \
     || fail "The fetched compose file does not look right (missing 'services:') — refusing to deploy it"
+  if [ "$(grep -cE '^[[:space:]]*image:[[:space:]]*' "$DOCKER_INSTALL_DIR/docker-compose.yml.new")" != "1" ] \
+    || ! grep -Eq "image:[[:space:]]*ghcr\.io/${REPO_SLUG//./\\.}:" "$DOCKER_INSTALL_DIR/docker-compose.yml.new"; then
+    fail "The fetched compose file references an unexpected image — refusing to deploy it"
+  fi
+  NINEDEPLOY_JWT_SECRET=provenance-check DOCKER_GID=1 docker_cmd compose \
+    --file "$DOCKER_INSTALL_DIR/docker-compose.yml.new" config --quiet \
+    || fail "The fetched compose file is not a valid compose project — refusing to deploy it"
   mv "$DOCKER_INSTALL_DIR/docker-compose.yml.new" "$DOCKER_INSTALL_DIR/docker-compose.yml"
 
   # Substitute the image tag the release workflow tagged for this ref.
