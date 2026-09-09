@@ -31,6 +31,10 @@ TimeoutStopSec=30
 # Hardening & Permissions
 NoNewPrivileges=true
 ProtectSystem=full
+# The install tree may sit under the invoking user's HOME; the service only
+# ever READS its own code from there (writes go to the paths below), so the
+# rest of /home stays out of a compromised service's reach.
+ProtectHome=read-only
 ReadWritePaths=@INSTALL_DIR@ @DATA_DIR@ /tmp -/var/run/docker.sock -/run/docker.sock
 PrivateTmp=true
 

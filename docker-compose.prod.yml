@@ -38,9 +38,12 @@ services:
     restart: unless-stopped
     ports:
       # Host-side port is variable; the container always listens on 3000.
-      # Drop this mapping and route the panel through Traefik instead if you
-      # don't want the API directly exposed (set the panel domain in settings).
-      - "${NINEDEPLOY_PORT:-3000}:3000"
+      # Bound to LOOPBACK by default: this port speaks plain HTTP, and login
+      # plus bearer/refresh tokens cross it — anyone on the network could
+      # read them. Terminate TLS (Traefik on :80/:443, or your own proxy) and
+      # reach the panel through it; set NINEDEPLOY_BIND=0.0.0.0 only if you
+      # explicitly accept plaintext exposure on the LAN.
+      - "${NINEDEPLOY_BIND:-127.0.0.1}:${NINEDEPLOY_PORT:-3000}:3000"
     environment:
       NODE_ENV: production
       # A strong secret is mandatory — production refuses to boot on the

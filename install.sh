@@ -890,8 +890,12 @@ install_docker_mode() {
       printf '%s=%s\n' "$_var" "$_val" >> .env
     fi
   done
+  # The direct port is LOOPBACK-bound (see docker-compose.prod.yml), so the
+  # truthful default panel URL is localhost:port — not the host's LAN name.
+  # Once the operator attaches a domain and an ACME email, Traefik serves
+  # HTTPS on :443 and NINEDEPLOY_PUBLIC_URL should be set to that origin.
   grep -q '^NINEDEPLOY_PUBLIC_URL=' .env \
-    || upsert_env NINEDEPLOY_PUBLIC_URL "http://$(hostname 2>/dev/null || echo localhost):${NINEDEPLOY_PORT:-3000}"
+    || upsert_env NINEDEPLOY_PUBLIC_URL "http://localhost:${NINEDEPLOY_PORT:-3000}"
   chmod 600 .env
   umask "$old_umask"
 
@@ -1219,10 +1223,19 @@ fi
 # failure log tail.
 
 info "Installing dependencies… (silent — heartbeats every 30s; often 10-20 min on a cold host)"
+# Fail-CLOSED on lockfile drift. The previous behaviour fell back to a bare
+# `pnpm install`, which re-resolves the whole dependency graph ON A PRODUCTION
+# HOST and immediately runs the lifecycle scripts of whatever versions the
+# registry hands out — turning a mismatched lockfile into a supply-chain
+# event. The loose path is now an explicit operator decision.
 if ! run_quiet_step "pnpm install" pnpm install --frozen-lockfile; then
-  info "Frozen install failed — retrying with a regenerated lockfile…"
-  run_quiet_step "pnpm install (retry)" pnpm install \
-    || fail "pnpm install failed — see the log tail above"
+  if [ "${NINEDEPLOY_ALLOW_LOOSE_INSTALL:-0}" = "1" ]; then
+    warn "Frozen install failed — retrying with a regenerated lockfile (NINEDEPLOY_ALLOW_LOOSE_INSTALL=1)."
+    run_quiet_step "pnpm install (retry)" pnpm install \
+      || fail "pnpm install failed — see the log tail above"
+  else
+    fail "pnpm install --frozen-lockfile failed: the lockfile does not match package.json (or the registry is unreachable). Fix the checkout, or re-run with NINEDEPLOY_ALLOW_LOOSE_INSTALL=1 to explicitly accept a re-resolved dependency graph on this host."
+  fi
 fi
 
 info "Building the panel, API and CLI… (silent — often 5-10 min)"
@@ -1383,6 +1396,24 @@ if [ "$(uname -s)" = "Linux" ] && command -v systemctl &>/dev/null; then
     *) fail "Unsafe effective systemd watchdog $EFFECTIVE_WATCHDOG (expected disabled); inspect: systemctl cat ninedeploy" ;;
   esac
   ok "systemd runtime policy verified (Type=simple, watchdog disabled)"
+
+  # The service runs as root. When the code tree lives inside the invoking
+  # user's HOME, everything root executes — and the .env it reads — is
+  # writable by that user, which is a quiet path from "panel user" to "root
+  # code execution" on the next restart. Locking ownership is a deliberate,
+  # opt-in step because it also requires future updates to run under sudo.
+  case "$INSTALL_DIR" in
+    "$HOME"/*)
+      if [ "${NINEDEPLOY_HARDEN_OWNERSHIP:-0}" = "1" ]; then
+        sudo chown -R root:root "$INSTALL_DIR"
+        ok "Install tree handed to root (NINEDEPLOY_HARDEN_OWNERSHIP=1)."
+        warn "Future updates must run the installer under sudo: sudo -E ./install.sh"
+      else
+        warn "The root service runs code from a user-writable tree: $INSTALL_DIR"
+        warn "Harden it by re-running with NINEDEPLOY_HARDEN_OWNERSHIP=1 (future updates then need sudo)."
+      fi
+      ;;
+  esac
 
   sudo systemctl enable ninedeploy
   sudo systemctl restart ninedeploy
