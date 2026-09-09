@@ -26,6 +26,7 @@ import {
   loadServiceForUser,
   visibleDatabaseIds,
 } from '../lib/resourceAccess.js';
+import { studioCookieName, studioCookieSetHeader, studioProxyPathFor } from './studioProxy.js';
 import { badRequest, notFound, parseId as num } from '../lib/errors.js';
 import { slugify } from '../lib/slug.js';
 
@@ -277,8 +278,11 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
   // Start Web Studio (Adminer / Redis Commander GUI) for this database.
   // Studio binds a HOST port serving a database GUI, so it stays operator-only
   // even for a workspace admin: publishing on the host is a host-wide resource
-  // (same reasoning as lib/hostPort.ts).
-  app.post('/:id/studio', { preHandler: [app.requireAdmin] }, async (req) => {
+  // (same reasoning as lib/hostPort.ts). The port is LOOPBACK-bound (the
+  // container is only ever reached through this panel, never directly), and
+  // the response hands back a same-origin proxy path plus an HttpOnly,
+  // path-scoped cookie so the embedded GUI rides the panel's own auth.
+  app.post('/:id/studio', { preHandler: [app.requireAdmin] }, async (req, reply) => {
     const id = num((req.params as { id: string }).id);
     const d = await loadDatabaseForUser(app.db, id, req.user!);
     const bodyPort = (req.body as { port?: number } | undefined)?.port;
@@ -289,16 +293,18 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
     await startDatabaseStudio(d, port, (line) => app.log.info({ component: 'database-studio' }, line));
     await app.db.update(databases).set({ webGuiEnabled: true, webGuiPort: port }).where(eq(databases.id, d.id));
     void audit(app.db, req.user!.id, 'database.studio.start', `${d.name} on :${port}`);
-    return { ok: true, port, url: `http://${req.hostname.split(':')[0]}:${port}` };
+    reply.header('set-cookie', studioCookieSetHeader(id, req.protocol === 'https'));
+    return { ok: true, port, url: studioProxyPathFor(id) };
   });
 
   // Stop Web Studio for this database
-  app.delete('/:id/studio', { preHandler: [app.requireAdmin] }, async (req) => {
+  app.delete('/:id/studio', { preHandler: [app.requireAdmin] }, async (req, reply) => {
     const id = num((req.params as { id: string }).id);
     const d = await loadDatabaseForUser(app.db, id, req.user!);
     await stopDatabaseStudio(d, (line) => app.log.info({ component: 'database-studio' }, line));
     await app.db.update(databases).set({ webGuiEnabled: false }).where(eq(databases.id, d.id));
     void audit(app.db, req.user!.id, 'database.studio.stop', d.name);
+    reply.header('set-cookie', `${studioCookieName(id)}=; Path=/v1/databases/${id}/studio-proxy/; HttpOnly; SameSite=Strict; Max-Age=0`);
     return { ok: true };
   });
 

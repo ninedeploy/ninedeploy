@@ -7,6 +7,7 @@ import { activityRoutes } from './activity.js';
 import { alertRoutes } from './alerts.js';
 import { dashboardRoutes } from './dashboard.js';
 import { attachmentRoutes, databasesRoutes } from './databases.js';
+import { studioProxyRoutes } from './studioProxy.js';
 import { backupRoutes, databaseBackupRoutes } from './backups.js';
 import { pgbouncerRoutes } from './pgbouncer.js';
 import { logSearchRoutes } from './logSearch.js';
@@ -99,6 +100,10 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(notificationRoutes, { prefix: '/notifications' });
   await app.register(databasesRoutes, { prefix: '/databases' });
   await app.register(databaseBackupRoutes, { prefix: '/databases' });
+  // Same-origin reverse proxy for the database Web Studio — serves the
+  // loopback-bound studio container through the panel origin so the
+  // embedded iframe works under HTTPS and CSP, and rides the panel auth.
+  await app.register(studioProxyRoutes, { prefix: '/databases' });
   // PgBouncer sidecar (G-32) — per-database enable /
   // disable / status. Mounted under the same /databases
   // prefix as the rest of the per-DB routes.
