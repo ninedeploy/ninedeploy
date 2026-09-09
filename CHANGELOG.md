@@ -7,6 +7,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.3] - 2026-09-09
+
+> The September 2026 security-audit remediation release. Three critical
+> cross-tenant chains, eleven high-severity findings and the full
+> installer/supply-chain cluster were closed across four remediation
+> sessions — every fix regression-locked with tests. Several defaults
+> changed in a securing direction (see **Changed**); a self-hosted
+> operator upgrading should read the entries marked ⚠ before deploying.
+
+### Security
+
+- **Cross-tenant project-tag exfiltration closed.** Creating a service with
+  another tenant's project id no longer passes validation, so the deploy
+  pipeline can no longer decrypt a foreign project's shared env into an
+  attacker-controlled container; the pipeline additionally re-verifies
+  every project link against the owner's workspace seats before decrypting.
+- **Cross-tenant volume mounts closed.** Attaching an `nd-svc-*` /
+  `nd-db-*` volume (or config-repairing it) now requires every owner of
+  the volume to be visible to the caller, `admin` on the database for
+  `nd-db-*`, and refuses orphaned names.
+- **Database attachments require the admin tier.** The attachment ships
+  the database's admin-only password into the service env — visibility
+  alone was never enough.
+- **The agent transport fails closed.** The plaintext fallback now
+  requires `NINEDEPLOY_AGENT_ALLOW_CLEARTEXT=1` on the core (a forged
+  capability probe can no longer downgrade it), sealed requests demand
+  sealed verifying replies, and replies must echo a fresh request nonce —
+  captured envelopes cannot be replayed. Upgrade node agents together with
+  the core; the fallback knob covers mixed-version fleets temporarily.
+- **Fine-grained API-token scopes are enforced.** A token holding only
+  `nd://scope/read/services` can no longer write other resources;
+  unclassified endpoints fail closed. **New tokens default to read-only
+  scopes with a 365-day lifetime** — pass explicit scopes/expiry when
+  creating write-capable CI tokens.
+- **`viewer` is read-only.** Service/project/label/database creation,
+  domain verification, repo-insight refresh and webhook management
+  (create/delete sits at the admin tier — the secret is a standing deploy
+  credential) all require their documented role floors.
+- **Refresh tokens rotate for real** (generation-bound: a replayed old
+  refresh token is refused before any DB write); SAML assertions gain a
+  replay cache plus Issuer / `InResponseTo` / Audience / Destination /
+  Recipient validation; login lockout moved to a per-(account, IP) pair
+  tier so an attacker can no longer hold a known account hostage;
+  `connect-src` drops the bare `ws:`/`wss:` grants.
+- **Privileged third-party images pinned** (alpine helper sidecars →
+  `3.21`, cloudflared → `2026.8.3`, Adminer → `6.0.1`, Redis Commander →
+  digest, remote-node agent → the core's own release tag). The
+  remote-node agent image reference also stopped pointing at a
+  repository that does not exist — remote provisioning works again.
+- **Installer hardening:** a failed `--frozen-lockfile` no longer falls
+  back to a re-resolved install (`NINEDEPLOY_ALLOW_LOOSE_INSTALL=1` to
+  opt in); the compose panel port binds loopback by default
+  (`NINEDEPLOY_BIND`); the systemd unit adds `ProtectHome=read-only`
+  (tree-ownership lockdown available via `NINEDEPLOY_HARDEN_OWNERSHIP=1`).
+- **Studio/pooler exposure:** the database Web Studio publishes on
+  127.0.0.1 only and Redis Commander receives the database password
+  (`REDIS_URL`); PgBouncer sidecars bind explicit ports to loopback and
+  authenticate with SCRAM-SHA-256 instead of MD5.
+- Exec error labels redact `--password=` / `-p` / `-a` argv values;
+  build paths refuse symlinks; the generated `nixpacks.toml` escapes
+  control characters.
+
+### Fixed
+
+- Push webhooks no longer write `services.commitSha` before the deploy
+  succeeds — the branch still syncs immediately.
+- Domain transfers: expired transfers stop blocking new ones; acceptance
+  claims the row conditionally, closing the accept/accept and
+  accept/cancel races.
+- Scheduled jobs hold a per-job lock (no more parallel double-runs from
+  overlapping ticks or run-now).
+- Sandbox plugins persist their code/manifest across restarts; installing
+  one without code is refused instead of registering an "active" no-op.
+- The release workflow honors the `workflow_dispatch.tag` input in every
+  step and smoke-checks the pushed multi-arch manifest before going
+  green.
+- The remote-node provisioner's agent pull failed against a
+  non-existent image repository (see Security).
+
+### Performance
+
+- The web landing bundle was code-split per route: **1,010 kB → 125 kB
+  raw (240 kB → 38 kB gzip)**.
+
+---
+
 ## [0.7.2] - 2026-09-06
 
 > A narrow post-0.7.1 patch: two reliability gaps caught once 0.7.1 went

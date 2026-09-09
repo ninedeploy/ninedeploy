@@ -567,7 +567,7 @@ export async function renderDynamicConfig(
       const mw = `mw_${key}_headers`;
       mwList.push(mw);
       const lines = headerList
-        .map((h) => `        ${yamlKey(h.name)}: "${yamlValue(h.value)}"`)
+        .map((h) => `          ${yamlKey(h.name)}: "${yamlValue(h.value)}"`)
         .join('\n');
       middlewares.push(`    ${mw}:\n      headers:\n        customResponseHeaders:\n${lines}\n`);
     }
@@ -738,8 +738,10 @@ export function parseHeaders(raw: string | null | undefined): Array<{ name: stri
     if (typeof h?.name !== 'string' || typeof h?.value !== 'string') continue;
     const name = h.name.replace(/[^A-Za-z0-9-]/g, '');
     if (!name) continue;
-    // Strip YAML-breaking characters from the value.
-    out.push({ name, value: h.value.replace(/["\\\n\r]/g, '') });
+    // Strip YAML-breaking characters from the value: quotes/backslashes plus
+    // every control character (\p{Cc} = C0, C1 and DEL) — go-yaml v3 rejects
+    // the whole stream over a raw control byte, even inside a quoted scalar.
+    out.push({ name, value: h.value.replace(/["\\\p{Cc}]/gu, '') });
   }
   return out;
 }
@@ -760,7 +762,10 @@ export function parseBasicAuth(raw: string | null | undefined): string[] {
   }
   const out: string[] = [];
   for (const item of entries) {
-    const trimmed = item.trim().replace(/[\r\n\0]/g, '');
+    // Controls must go: go-yaml v3 refuses the whole dynamic config over a
+    // raw control byte, quoted or not. \p{Cc} covers C0, C1 and DEL
+    // (superset of the old \r\n\0 strip).
+    const trimmed = item.trim().replace(/\p{Cc}/gu, '');
     if (trimmed.includes(':')) {
       out.push(trimmed);
     }

@@ -320,10 +320,13 @@ describe('auth', () => {
       expect(createApiToken.parse({ name: 'x'.repeat(150) }).name).toHaveLength(100);
     });
 
-    it('createApiToken defaults to an unrestricted (empty) scope list', () => {
-      // Empty = legacy behaviour, i.e. the owner's full authority. New callers
-      // are expected to pass an explicit scope.
-      expect(createApiToken.parse({ name: 'ci' }).scopes).toEqual([]);
+    it('createApiToken defaults to a read-scoped (["read"]) scope list', () => {
+      // A NEW token without explicit scopes is read-only, not unrestricted
+      // (1a6313b): omitting a scope must not mint the owner's full authority.
+      // The default only fills a MISSING key — an explicit `[]` still parses
+      // through for callers that deliberately want the legacy behaviour.
+      expect(createApiToken.parse({ name: 'ci' }).scopes).toEqual(['read']);
+      expect(createApiToken.parse({ name: 'ci', scopes: [] }).scopes).toEqual([]);
       expect(createApiToken.parse({ name: 'ci', scopes: ['read'] }).scopes).toEqual(['read']);
       bad(createApiToken, { name: 'ci', scopes: ['root'] });
       bad(createApiToken, { name: 'ci', expiresInDays: 0 });

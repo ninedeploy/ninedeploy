@@ -1187,3 +1187,89 @@ describe('sticky session middleware (r034 regression)', () => {
     expect(countStickyRefs(yaml, 1)).toBe(0);
   });
 });
+
+// ── r036 regression: the custom-response-headers middleware must render a
+// Traefik-parseable block with the headers INSIDE customResponseHeaders. ────
+// Two defects shipped together here:
+//   1. The header entries were indented at the same level as
+//      `customResponseHeaders:` itself, so YAML parsed customResponseHeaders
+//      as null and exposed each header as an unknown sibling field of the
+//      `headers` middleware — the feature was inert, and Traefik's strict
+//      dynamic-config parser refuses unknown fields.
+//   2. parseHeaders/parseBasicAuth left raw C0 control bytes (e.g. \x0B) in
+//      the emitted YAML. go-yaml v3's READER rejects the whole document over
+//      any non-printable rune ("control characters are not allowed"),
+//      freezing the proxy's route table. js-yaml is lenient on that rule, so
+//      the oracle below pairs load() with an explicit printable-rune scan
+//      encoding go-yaml readerc.go's allowed set.
+describe('domain headers middleware is Traefik-parseable (r036 regression)', () => {
+  function firstUnprintable(s: string): string | null {
+    for (const ch of s) {
+      const cp = ch.codePointAt(0)!;
+      const printable =
+        cp === 0x09 || cp === 0x0a || cp === 0x0d ||
+        (cp >= 0x20 && cp <= 0x7e) || cp === 0x85 ||
+        (cp >= 0xa0 && cp <= 0xd7ff) ||
+        (cp >= 0xe000 && cp <= 0xfffd) ||
+        (cp >= 0x10000 && cp <= 0x10ffff);
+      if (!printable) return ch;
+    }
+    return null;
+  }
+
+  const baseDomain = {
+    id: 1, serviceId: 1, hostname: 'app.example.com', path: '/', ssl: false, status: 'active',
+  };
+  const svcRow = { id: 1, slug: 'web', port: 3000, runtimeId: 'web-1' };
+
+  it('nests headers inside customResponseHeaders so the middleware parses', async () => {
+    const db = makeDb(
+      [{
+        ...baseDomain,
+        headers: JSON.stringify([{ name: 'X-Frame-Options', value: 'DENY' }]),
+      }],
+      [svcRow],
+    );
+    const yaml = await renderDynamicConfig(db as never, { serverId: null });
+    expect(firstUnprintable(yaml)).toBeNull();
+    const doc = load(yaml) as {
+      http: { middlewares: Record<string, { headers?: { customResponseHeaders?: Record<string, string> } }> };
+    };
+    expect(doc.http.middlewares['mw_web_1_headers']?.headers?.customResponseHeaders)
+      .toEqual({ 'X-Frame-Options': 'DENY' });
+  });
+
+  it('strips control characters from header values, keeping benign text', async () => {
+    const db = makeDb(
+      [{
+        ...baseDomain,
+        headers: JSON.stringify([{ name: 'X-Debug', value: 'ok\u000Bvalue' }]),
+      }],
+      [svcRow],
+    );
+    const yaml = await renderDynamicConfig(db as never, { serverId: null });
+    // go-yaml v3 would refuse the whole file over the raw byte pre-fix.
+    expect(firstUnprintable(yaml)).toBeNull();
+    const doc = load(yaml) as {
+      http: { middlewares: Record<string, { headers?: { customResponseHeaders?: Record<string, string> } }> };
+    };
+    expect(doc.http.middlewares['mw_web_1_headers']?.headers?.customResponseHeaders)
+      .toEqual({ 'X-Debug': 'okvalue' });
+  });
+
+  it('strips control characters from basicAuth entries, keeping benign text', async () => {
+    const db = makeDb(
+      [{
+        ...baseDomain,
+        basicAuth: JSON.stringify(['alice:pw\u001Bhash']),
+      }],
+      [svcRow],
+    );
+    const yaml = await renderDynamicConfig(db as never, { serverId: null });
+    expect(firstUnprintable(yaml)).toBeNull();
+    const doc = load(yaml) as {
+      http: { middlewares: Record<string, { basicAuth?: { users?: string[] } }> };
+    };
+    expect(doc.http.middlewares['mw_web_1_auth']?.basicAuth?.users).toContain('alice:pwhash');
+  });
+});
