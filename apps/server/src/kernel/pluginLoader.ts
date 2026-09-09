@@ -575,7 +575,14 @@ export class UnimplementedPluginError extends Error {
 export type Catalog = ReadonlyArray<Omit<MarketplacePluginItem, 'isInstalled'>>;
 
 export function createDynamicPlugin(input: InstallPluginInput, catalog: Catalog = MARKETPLACE_CATALOG): KernelPlugin {
-  if (input.source === 'sandbox' || (input as any).source === 'sandbox') {
+  if (input.source === 'sandbox') {
+    // `code` arrives through the schema now; a sandbox install without one
+    // would register as "active" while running nothing — refuse it instead.
+    if (!input.code) {
+      throw new Error(
+        `Sandbox plugin "${input.name || input.target}" carries no code — pass \`code\` with the install`,
+      );
+    }
     return new SandboxPlugin({
       id: input.target,
       name: input.name || input.target,
@@ -583,8 +590,8 @@ export function createDynamicPlugin(input: InstallPluginInput, catalog: Catalog 
       description: input.description,
       author: input.author,
       icon: input.icon,
-      code: (input as any).code,
-      manifest: (input as any).manifest,
+      code: input.code,
+      manifest: input.manifest,
     });
   }
 
@@ -683,6 +690,12 @@ export async function installPlugin(
       author: dynamicPlugin.author,
       source: input.source,
       target: input.target,
+      // Sandbox payloads ride in the SAME JSON record so the boot restore can
+      // rebuild the plugin exactly as installed. Without them, a restart
+      // silently re-registered an "active" sandbox plugin with no code.
+      ...(input.source === 'sandbox'
+        ? { code: input.code, sandboxManifest: input.manifest }
+        : {}),
     },
   }).onConflictDoUpdate({
     target: installedPlugins.id,
@@ -758,6 +771,12 @@ export async function loadInstalledPlugins(db: DB, kernel: KernelContext): Promi
           configSchema: manifest.configSchema,
           menuItems: manifest.menuItems,
           dependencies: manifest.dependencies,
+          // Restored sandbox payloads — written by installPlugin at install
+          // time. A row from before this column carried them registers as a
+          // sandbox plugin with no code, which createDynamicPlugin now
+          // refuses with a pointed error instead of a silent no-op.
+          code: manifest.code as string | undefined,
+          manifest: manifest.sandboxManifest as Record<string, unknown> | undefined,
         });
         await kernel.registerPlugin(plugin);
         loaded++;

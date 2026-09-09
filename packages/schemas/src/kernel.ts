@@ -66,6 +66,15 @@ export const installPluginSchema = z.object({
   dependencies: z.array(z.string()).optional(),
   configSchema: z.array(z.record(z.string(), z.unknown())).optional(),
   menuItems: z.array(z.record(z.string(), z.unknown())).optional(),
+  /**
+   * Sandbox-source only: the worker script the plugin runs. This field (and
+   * `manifest`) MUST travel with the install — a sandbox plugin installed
+   * without its code used to register as "active" while silently executing
+   * nothing, and after a restart the restored row had no way to reload the
+   * code at all. Bounded so one install cannot balloon the SQLite row.
+   */
+  code: z.string().min(1).max(256 * 1024).optional(),
+  manifest: z.record(z.string(), z.unknown()).optional(),
 });
 export type InstallPluginInput = z.infer<typeof installPluginSchema>;
 
