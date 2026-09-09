@@ -48,6 +48,8 @@ import type {
   Label,
   CreateLabelInput,
   LabelPatchInput,
+  Environment,
+  EnvironmentCreateInput,
   Login,
   ManagedDatabase,
   DatabaseDetail,
@@ -569,6 +571,13 @@ export interface NineDeployClient {
     list: (query?: string) => Promise<Label[]>;
     create: (input: CreateLabelInput) => Promise<Label>;
     update: (id: number, input: LabelPatchInput) => Promise<Label>;
+    remove: (id: number) => Promise<{ ok: boolean }>;
+  };
+  /** Deployment lanes (production / staging / development) per workspace. */
+  environments: {
+    list: () => Promise<Environment[]>;
+    create: (input: EnvironmentCreateInput) => Promise<Environment>;
+    rename: (id: number, name: string) => Promise<Environment>;
     remove: (id: number) => Promise<{ ok: boolean }>;
   };
   serviceTags: {
@@ -1481,6 +1490,12 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       create: (input) => send<Label>('POST', '/v1/labels', input),
       update: (id, input) => send<Label>('PATCH', `/v1/labels/${id}`, input),
       remove: (id) => send<{ ok: boolean }>('DELETE', `/v1/labels/${id}`),
+    },
+    environments: {
+      list: () => get<Environment[]>('/v1/environments'),
+      create: (input) => send<Environment>('POST', '/v1/environments', input),
+      rename: (id, name) => send<Environment>('PATCH', `/v1/environments/${id}`, { name }),
+      remove: (id) => send<{ ok: boolean }>('DELETE', `/v1/environments/${id}`),
     },
     serviceTags: {
       get: (id) => get<ServiceTags>(`/v1/services/${id}/tags`),

@@ -204,6 +204,8 @@ export const service = z.object({
   isEphemeralPreview: z.boolean().optional(),
   previewParentServiceId: z.number().int().nullable().optional(),
   prNumber: z.number().int().nullable().optional(),
+  /** Deployment lane id (production / staging / …). Null = ungrouped. */
+  environmentId: z.number().int().nullable().optional(),
   build: z
     .object({
       buildPack: buildPack,

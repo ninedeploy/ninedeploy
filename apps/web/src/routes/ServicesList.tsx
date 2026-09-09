@@ -12,6 +12,8 @@ export function ServicesList() {
   const [wizard, setWizard] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'running' | 'stopped' | 'errored'>('all');
+  // Deployment lane filter: 'all' or an environment id as a string.
+  const [envFilter, setEnvFilter] = useState<'all' | string>('all');
   // The top-bar `TopBarFilters` chip groups drive these query parameters.
   // Empty arrays mean "no constraint" — the server returns every service
   // the caller is allowed to see, just like the unfiltered legacy mode.
@@ -28,6 +30,12 @@ export function ServicesList() {
     queryFn: () => api.services.list(buildQuery()),
   });
 
+  // Deployment lanes (production / staging / …) for the filter dropdown.
+  const { data: environments } = useQuery({
+    queryKey: ['environments'],
+    queryFn: () => api.environments.list(),
+  });
+
   const snapshot = useQuery({
     queryKey: ['live-stats-snapshot'],
     queryFn: () => api.stats.snapshot(),
@@ -39,6 +47,9 @@ export function ServicesList() {
     return services.filter((s) => {
       const matchStatus = statusFilter === 'all' || s.status === statusFilter;
       if (!matchStatus) return false;
+      // Deployment lane: 'all' or a specific environment id. Ungrouped
+      // services (environmentId null) only show under 'all'.
+      if (envFilter !== 'all' && String(s.environmentId ?? '') !== envFilter) return false;
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase();
       // Every nullish arm is exercised by the branch-less service fixture in
@@ -52,7 +63,7 @@ export function ServicesList() {
       );
       /* v8 ignore stop */
     });
-  }, [services, searchQuery, statusFilter]);
+  }, [services, searchQuery, statusFilter, envFilter]);
 
   return (
     <div className="space-y-6">
@@ -96,7 +107,7 @@ export function ServicesList() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {/* Search and status filter bar */}
+          {/* Search, deployment lane and status filter bar */}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="relative max-w-xs flex-1">
               <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -108,6 +119,21 @@ export function ServicesList() {
               />
             </div>
             <div className="flex items-center gap-1.5 overflow-x-auto">
+              {environments && environments.length > 0 && (
+                <select
+                  value={envFilter}
+                  onChange={(e) => setEnvFilter(e.target.value)}
+                  className="rounded-lg bg-white/[0.03] px-2.5 py-1 text-xs font-medium text-slate-300 ring-1 ring-inset ring-white/10"
+                  aria-label="Filter by environment"
+                >
+                  <option value="all">All lanes</option>
+                  {environments.map((e) => (
+                    <option key={e.id} value={String(e.id)}>
+                      {e.name}
+                    </option>
+                  ))}
+                </select>
+              )}
               {(['all', 'running', 'stopped', 'errored'] as const).map((st) => (
                 <button
                   key={st}
