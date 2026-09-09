@@ -5,7 +5,7 @@ import { audit } from '../lib/audit.js';
 import { removeVolume, volumeLabels } from '../engine/database.js';
 import { capture } from '../lib/exec.js';
 import { ensureDockerImage } from '../lib/dockerPull.js';
-import { containerRunning, resolveVolumeOwner } from '../lib/inventory.js';
+import { containerRunning, resolveVolumeOwner, HELPER_IMAGE } from '../lib/inventory.js';
 import { badRequest, conflict } from '../lib/errors.js';
 import {
   deleteVolumePath,
@@ -47,8 +47,8 @@ async function volumeOwner(db: FastifyInstance['db'], name: string): Promise<Vol
 /** Volume size for a named Docker volume (bytes), via a throwaway alpine container. */
 async function volumeSize(name: string): Promise<number> {
   try {
-    await ensureDockerImage('alpine:latest', () => undefined);
-    const out = await capture('docker', ['run', '--rm', '-v', `${name}:/v`, 'alpine:latest', 'sh', '-c', 'du -sb /v']);
+    await ensureDockerImage(HELPER_IMAGE, () => undefined);
+    const out = await capture('docker', ['run', '--rm', '-v', `${name}:/v`, HELPER_IMAGE, 'sh', '-c', 'du -sb /v']);
     return Number(out.trim().split(/\s+/)[0]!) || 0;
   } catch {
     return 0;

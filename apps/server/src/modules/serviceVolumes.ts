@@ -10,14 +10,21 @@ import { audit } from '../lib/audit.js';
 import { createDockerVolume } from '../engine/database.js';
 import { capture } from '../lib/exec.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
-import { assertServiceRole, visibleServiceIdSet } from '../lib/resourceAccess.js';
-import { badRequest, conflict, notFound, parseId as num } from '../lib/errors.js';
-import { containerRunning, listManagedVolumeNames } from '../lib/inventory.js';
+import {
+  assertDatabaseRole,
+  assertServiceRole,
+  loadDatabaseForUser,
+  visibleServiceIdSet,
+  type AuthedUser,
+} from '../lib/resourceAccess.js';
+import { badRequest, conflict, forbidden, notFound, parseId as num } from '../lib/errors.js';
+import { containerRunning, listManagedVolumeNames, HELPER_IMAGE } from '../lib/inventory.js';
+import type { DB } from '@ninedeploy/db';
 
 /** Live on-disk size of a named Docker volume (bytes), via a throwaway alpine container. */
 async function volumeSize(name: string): Promise<number> {
   try {
-    const out = await capture('docker', ['run', '--rm', '-v', `${name}:/v`, 'alpine:latest', 'sh', '-c', 'du -sb /v']);
+    const out = await capture('docker', ['run', '--rm', '-v', `${name}:/v`, HELPER_IMAGE, 'sh', '-c', 'du -sb /v']);
     return Number(out.trim().split(/\s+/)[0]!) || 0;
   } catch {
     return 0;
@@ -56,6 +63,65 @@ export function resolveVolumeNameImpl(
     return `nd-svc-${svc.slug}-${label}`;
   }
   throw badRequest('Either volumeName or create.label is required');
+}
+
+/**
+ * Cross-tenant volume guard.
+ *
+ * Volume names are host-global: `nd-svc-<slug>-<label>` and `nd-db-<slug>-data`
+ * identify data that belongs to some OTHER service or database as soon as the
+ * caller can name it. `resolveVolumeNameImpl` only proves the name is shaped
+ * like a managed volume — without an ownership decision, a member could mount
+ * another tenant's volume (database volumes included) read-write into their
+ * own container, or point config-repair at it and delete files from its root.
+ *
+ * Rule for non-operators:
+ *  • every service that already has the volume attached must be visible to
+ *    the caller — sharing within the tenant set they can see stays possible;
+ *  • `nd-db-*` additionally requires `admin` on every database the name could
+ *    belong to — a data volume is full data access, the same tier as
+ *    credentials and backups in resourceAccess.ts. Prefix matching is
+ *    deliberately conservative because slugs overlap (`team-a` /
+ *    `team-a-2`): an ambiguous name is refused unless every candidate clears
+ *    the bar;
+ *  • a managed name with no visible owner (orphaned, or no matching rows) is
+ *    operator-only — nobody below operator can prove whose data it is.
+ */
+async function assertVolumeOwnership(db: DB, user: AuthedUser, volumeName: string): Promise<void> {
+  if (user.isOperator) return;
+
+  const visible = await visibleServiceIdSet(db, user);
+  const attached = await db
+    .select({ serviceId: serviceVolumeAttachments.serviceId })
+    .from(serviceVolumeAttachments)
+    .where(eq(serviceVolumeAttachments.volumeName, volumeName));
+  for (const row of attached) {
+    if (visible !== null && !visible.has(row.serviceId)) {
+      throw forbidden('This volume is attached to a service that is not visible to you');
+    }
+  }
+
+  if (volumeName.startsWith('nd-db-')) {
+    const rows = await db.query.databases.findMany();
+    const candidates = rows.filter(
+      (d) =>
+        volumeName === `nd-db-${d.slug}-data` ||
+        volumeName === `nd-db-${d.slug}` ||
+        volumeName.startsWith(`nd-db-${d.slug}-`),
+    );
+    if (candidates.length === 0) {
+      throw forbidden('No database visible to you owns this volume — ask an operator to attach it');
+    }
+    for (const d of candidates) {
+      await loadDatabaseForUser(db, d.id, user);
+      await assertDatabaseRole(db, d, user, 'admin');
+    }
+    return;
+  }
+
+  if (attached.length === 0) {
+    throw forbidden('This volume has no active attachment visible to you — ask an operator to attach it');
+  }
 }
 
 /** Per-service volume attachment management. Mounted under
@@ -148,6 +214,12 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const volumeName = resolveVolumeName(svc, input);
+    // Ownership decision BEFORE the docker existence probe: a member naming
+    // another tenant's volume must get 403, not a 404 that confirms the
+    // volume exists on the host.
+    if (input.volumeName) {
+      await assertVolumeOwnership(app.db, req.user!, volumeName);
+    }
     // For create-on-attach, the volume does not have to exist yet; we
     // provision it on the next deploy. For an existing-volume attach, the
     // volume MUST already exist on this host (a typo from the operator
@@ -243,8 +315,14 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
     // cheaply instead of trusting history.
     if (/[^a-zA-Z0-9_.-]/.test(volumeName)) throw badRequest('Invalid volume name');
 
+    // The attachmentId path is scoped to this service, but the row may
+    // predate the attach-time ownership check (or share the volume with a
+    // service the caller cannot see) — resolve the name and apply the same
+    // guard before deleting anything from the volume root.
+    await assertVolumeOwnership(app.db, req.user!, volumeName);
+
     await capture('docker', [
-      'run', '--rm', '-v', `${volumeName}:/data`, 'alpine:latest', 'sh', '-c',
+      'run', '--rm', '-v', `${volumeName}:/data`, HELPER_IMAGE, 'sh', '-c',
       `rm -f -- '/data/${input.filePath}'`,
     ]);
     void audit(app.db, req.user!.id, 'service.volume.config_repair', `${svc.name}:${volumeName}/${input.filePath}`);

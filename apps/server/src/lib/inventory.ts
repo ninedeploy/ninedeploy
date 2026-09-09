@@ -1,6 +1,14 @@
 import type { databases, services, serviceVolumeAttachments } from '@ninedeploy/db';
 import { capture } from './exec.js';
 
+/**
+ * Pinned helper image for throwaway privileged sidecars (`du -sb`, volume
+ * file ops, config repair). A floating `:latest` let a registry-tag
+ * compromise silently swap the image every privileged volume operation runs
+ * through — pin a minor line and bump it deliberately.
+ */
+export const HELPER_IMAGE = 'alpine:3.21';
+
 type ServiceRow = typeof services.$inferSelect;
 type DatabaseRow = typeof databases.$inferSelect;
 type VolumeAttachmentRow = typeof serviceVolumeAttachments.$inferSelect;

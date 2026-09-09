@@ -2,7 +2,7 @@ import path from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { and, desc, eq, inArray, isNotNull, lt, ne } from 'drizzle-orm';
-import { buildConfigs, databaseAttachments, databases, type DB, deployments, domains, envVars, services, serviceProjects, serviceVolumeAttachments, sources } from '@ninedeploy/db';
+import { buildConfigs, databaseAttachments, databases, type DB, deployments, domains, envVars, projects, services, serviceProjects, serviceVolumeAttachments, sources, workspaceMembers } from '@ninedeploy/db';
 import { config } from '../config.js';
 import { decrypt } from '../lib/crypto.js';
 import { checkoutCommit, type CloneCreds } from '../lib/git.js';
@@ -21,6 +21,7 @@ import { pm2Builder } from './builders/pm2.js';
 import { getAcmeEmail, writeDynamicConfig } from './proxy.js';
 import { run, sleep } from '../lib/exec.js';
 import { resolveVaultRefs } from '../lib/vault.js';
+import { isOperator } from '../lib/resourceAccess.js';
 import { getBundledTemplates } from '../templates/registry.js';
 import type { BuildContext, Builder, DeployRuntime } from './types.js';
 import { reconcileTemplateDependencies } from './templateDependencies.js';
@@ -140,6 +141,42 @@ type RuntimeEnvironment = {
   managedDatabaseKeys: string[];
 };
 
+/**
+ * Defence-in-depth behind the tag routes: a `service_projects` link only
+ * injects a project's shared env into this service when the service's owner
+ * is an instance operator or a member of the project's workspace — the same
+ * decision `visibleProjectIds` enforces at the route layer. The routes guard
+ * every write today, but a link written before that guard existed (or by a
+ * future writer that forgets it) would otherwise have the pipeline decrypt
+ * another tenant's shared env straight into a container, so the sink verifies
+ * the chain itself. NULL-workspace projects are operator-only
+ * (see resourceAccess.ts) and resolve to nothing here.
+ */
+export async function filterTrustworthyProjectLinks(
+  db: DB,
+  service: Pick<typeof services.$inferSelect, 'ownerUserId'>,
+  links: Array<{ projectId: number }>,
+): Promise<Array<{ projectId: number }>> {
+  const ownerId = service.ownerUserId;
+  // No owner at all: there is nobody whose membership could authorize the
+  // links, so none of them may inject shared env.
+  if (ownerId == null) return [];
+  if (await isOperator(db, { id: ownerId })) return links;
+  const kept: Array<{ projectId: number }> = [];
+  for (const link of links) {
+    const project = await db.query.projects.findFirst({ where: eq(projects.id, link.projectId) });
+    if (!project || project.workspaceId == null) continue;
+    const seat = await db.query.workspaceMembers.findFirst({
+      where: and(
+        eq(workspaceMembers.userId, ownerId),
+        eq(workspaceMembers.workspaceId, project.workspaceId),
+      ),
+    });
+    if (seat) kept.push(link);
+  }
+  return kept;
+}
+
 async function loadRuntimeEnv(db: DB, service: typeof services.$inferSelect): Promise<RuntimeEnvironment> {
   const env: Record<string, string> = {};
   const managedDatabaseKeys = new Set<string>();
@@ -147,9 +184,13 @@ async function loadRuntimeEnv(db: DB, service: typeof services.$inferSelect): Pr
   // Project-scope shared env (lowest precedence). Services now carry N-N
   // project links via `service_projects`; the env lookup is the union of every
   // linked project's `env_vars` (scope='project').
-  const projectLinks = await db.query.serviceProjects.findMany({
-    where: eq(serviceProjects.serviceId, service.id),
-  });
+  const projectLinks = await filterTrustworthyProjectLinks(
+    db,
+    service,
+    await db.query.serviceProjects.findMany({
+      where: eq(serviceProjects.serviceId, service.id),
+    }),
+  );
   if (projectLinks.length > 0) {
     const shared = await db.query.envVars.findMany({
       where: and(

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { auditLog, deployments, domains, services } from '@ninedeploy/db';
 import { logBus } from '../src/engine/logs.js';
-import { runDeployment } from '../src/engine/pipeline.js';
+import { filterTrustworthyProjectLinks, runDeployment } from '../src/engine/pipeline.js';
 
 const h = vi.hoisted(() => {
   const buildAndRun = vi.fn(async () => ({ runtimeId: 'c-1', port: 3000, healthPath: '/' }));
@@ -79,6 +79,7 @@ const dep = {
 const service = {
   id: 5,
   projectId: null,
+  ownerUserId: 7,
   name: 'Web',
   slug: 'web',
   type: 'docker',
@@ -108,6 +109,12 @@ interface FakeDb {
     databaseAttachments: { findMany: ReturnType<typeof vi.fn> };
     databases: { findFirst: ReturnType<typeof vi.fn> };
     domains: { findFirst: ReturnType<typeof vi.fn> };
+    // The runtime-env sink re-verifies every project link against the
+    // owner's workspace seats before decrypting shared env (cross-tenant
+    // defence in depth).
+    projects: { findFirst: ReturnType<typeof vi.fn> };
+    workspaceMembers: { findFirst: ReturnType<typeof vi.fn> };
+    users: { findFirst: ReturnType<typeof vi.fn> };
   };
   select: ReturnType<typeof vi.fn>;
   update: ReturnType<typeof vi.fn>;
@@ -130,6 +137,12 @@ function makeDb(): { db: FakeDb; updates: { table: unknown; values: Record<strin
       // Services carry N-N project links via `service_projects`; the pipeline
       // unions every linked project's shared env before the service's own.
       serviceProjects: { findMany: vi.fn().mockResolvedValue([]) },
+      // Defaults describe an honest link: project #4 lives in workspace #1 and
+      // the service's owner (#7) holds a seat there; the owner is not an
+      // instance operator.
+      projects: { findFirst: vi.fn().mockResolvedValue({ id: 4, workspaceId: 1 }) },
+      workspaceMembers: { findFirst: vi.fn().mockResolvedValue({ id: 1, workspaceId: 1, userId: 7, role: 'member' }) },
+      users: { findFirst: vi.fn().mockResolvedValue({ id: 7, isInstanceOperator: false }) },
     },
     select: vi.fn(() => ({
       from: vi.fn(() => ({
@@ -1509,7 +1522,7 @@ describe('runDeployment audits the outcome', () => {
     // `ownerUserId` is nullable (ON DELETE SET NULL). A null actor makes the
     // event operator-only on the /v1/events socket, which is the safe default.
     const { db, inserts } = makeDb();
-    baseSetup(db);
+    baseSetup(db, { ownerUserId: null });
     collectLogs(1);
 
     await runDeployment(db as never, 1);
@@ -1681,5 +1694,67 @@ describe('runDeployment on a remote-server target', () => {
 
     expect(h.builder.buildAndRun).toHaveBeenCalled();
     expect(h.agentOp).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The route layer refuses cross-tenant project tags; this is the pipeline-side
+ * backstop that keeps a link nobody validated from decrypting another
+ * workspace's shared env into a container (engine/pipeline.ts
+ * filterTrustworthyProjectLinks).
+ */
+describe('filterTrustworthyProjectLinks', () => {
+  const links = [{ projectId: 4 }, { projectId: 9 }];
+  const owner = { ownerUserId: 7 as number | null };
+
+  function spyDb() {
+    return {
+      query: {
+        users: { findFirst: vi.fn().mockResolvedValue({ id: 7, isInstanceOperator: false }) },
+        // Default: the requested project lives in workspace #1. Individual
+        // tests override this for the NULL-workspace case.
+        projects: { findFirst: vi.fn().mockResolvedValue({ id: 4, workspaceId: 1 }) },
+        workspaceMembers: {
+          findFirst: vi.fn(async () => null as null | { workspaceId: number; role: string }),
+        },
+      },
+    };
+  }
+
+  it('keeps links into workspaces the owner holds a seat in', async () => {
+    const db = spyDb();
+    db.query.workspaceMembers.findFirst.mockResolvedValue({ workspaceId: 1, role: 'viewer' });
+    const kept = await filterTrustworthyProjectLinks(db as never, owner, [{ projectId: 4 }]);
+    expect(kept).toEqual([{ projectId: 4 }]);
+  });
+
+  it('drops links into workspaces the owner cannot see', async () => {
+    const db = spyDb();
+    // Project 4 exists, but the owner holds no seat in its workspace.
+    const kept = await filterTrustworthyProjectLinks(db as never, owner, [{ projectId: 4 }]);
+    expect(kept).toEqual([]);
+  });
+
+  it('drops NULL-workspace (operator-only) projects for non-operators', async () => {
+    const db = spyDb();
+    db.query.projects.findFirst.mockResolvedValue({ id: 4, workspaceId: null });
+    db.query.workspaceMembers.findFirst.mockResolvedValue({ workspaceId: 1, role: 'owner' });
+    const kept = await filterTrustworthyProjectLinks(db as never, owner, [{ projectId: 4 }]);
+    expect(kept).toEqual([]);
+  });
+
+  it('passes every link through for an instance-operator owner', async () => {
+    const db = spyDb();
+    db.query.users.findFirst.mockResolvedValue({ id: 7, isInstanceOperator: true });
+    const kept = await filterTrustworthyProjectLinks(db as never, owner, links);
+    expect(kept).toEqual(links);
+    // The operator decision short-circuits before any per-project lookup.
+    expect(db.query.projects.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('drops every link when the service has no owner at all', async () => {
+    const db = spyDb();
+    const kept = await filterTrustworthyProjectLinks(db as never, { ownerUserId: null }, links);
+    expect(kept).toEqual([]);
   });
 });

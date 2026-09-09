@@ -599,7 +599,7 @@ describe('service volume attachments', () => {
       // name is the kind of thing that takes a week to diagnose.
       expect(execMocks.capture).toHaveBeenCalledWith(
         'docker',
-        expect.arrayContaining(['run', '--rm', '-v', 'nd-svc-web-data:/data', 'alpine:latest', 'sh', '-c', "rm -f -- '/data/wp-config.php'"]),
+        expect.arrayContaining(['run', '--rm', '-v', 'nd-svc-web-data:/data', 'alpine:3.21', 'sh', '-c', "rm -f -- '/data/wp-config.php'"]),
       );
       expect(queuedDeploys).toHaveLength(1);
       expect(String(queuedDeploys[0]?.message)).toContain('Config repaired');
@@ -1027,6 +1027,118 @@ describe('service volume attachments', () => {
       // surfaces the required-field 400. The exact wording is
       // zod-driven ("Required") but the status is 400 either way.
       expect(res.statusCode).toBe(400);
+      await app.close();
+    });
+  });
+
+  // ── cross-tenant volume guard ──────────────────────────────────────────
+  //
+  // Volume names are host-global: without an ownership decision a member can
+  // name another tenant's `nd-svc-*` / `nd-db-*` volume and mount it
+  // read-write into their own container (or delete files from its root via
+  // config-repair). assertVolumeOwnership must refuse anything whose owners
+  // are not fully visible to the caller.
+  describe('cross-tenant volume guard', () => {
+    const member = { id: 7, isOperator: false };
+    const mine = svcRow({ id: 9, name: 'mine', slug: 'mine', ownerUserId: 7, type: 'docker' });
+
+    it('refuses to attach a volume that is attached to an invisible service', async () => {
+      const app = await buildTestApp({
+        db: createFakeDb({
+          findFirst: { services: mine },
+          // The caller can only ever see service 9; the volume is attached
+          // to service 55, which belongs to another tenant.
+          select: {
+            services: [{ id: 9 }],
+            serviceVolumeAttachments: [{ serviceId: 55 }],
+          },
+        }),
+      });
+      await app.register(serviceVolumesRoutes);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/9/volumes',
+        headers: asUser(member),
+        payload: { volumeName: 'nd-svc-victim-uploads', containerPath: '/data' },
+      });
+      expect(res.statusCode).toBe(403);
+      // The refusal happens before any docker probe — the member must not
+      // even learn whether the named volume exists on the host.
+      expect(execMocks.capture).not.toHaveBeenCalled();
+      await app.close();
+    });
+
+    it('refuses config-repair on a database volume the caller does not admin', async () => {
+      const victimDb = {
+        id: 3,
+        slug: 'victim',
+        name: 'victim',
+        ownerUserId: 8,
+        projectId: null,
+        engine: 'postgres',
+        status: 'running',
+      };
+      const app = await buildTestApp({
+        db: createFakeDb({
+          findFirst: { services: mine, databases: victimDb },
+          findMany: { databases: [victimDb] },
+          select: {
+            services: [{ id: 9 }],
+            serviceVolumeAttachments: [],
+          },
+        }),
+      });
+      await app.register(serviceVolumesRoutes);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/9/volumes/config-repair',
+        headers: asUser(member),
+        payload: { volumeName: 'nd-db-victim-data', filePath: 'wp-config.php' },
+      });
+      // loadDatabaseForUser 404s on an invisible database; either way the
+      // repair must never reach docker.
+      expect([403, 404]).toContain(res.statusCode);
+      expect(execMocks.capture).not.toHaveBeenCalled();
+      await app.close();
+    });
+
+    it('still attaches a volume every attacher of which is visible to the caller', async () => {
+      // Re-point the docker probe at the volume this test uses.
+      execMocks.capture.mockImplementation(async (_cmd: string, args: string[]) => {
+        if (args[0] === 'volume' && args[1] === 'ls') return 'nd-svc-mine-uploads\n';
+        return '0\t0\n';
+      });
+      const app = await buildTestApp({
+        db: createFakeDb({
+          findFirst: { services: mine },
+          select: {
+            services: [{ id: 9 }],
+            serviceVolumeAttachments: [{ serviceId: 9 }],
+          },
+          insert: {
+            serviceVolumeAttachments: [
+              {
+                id: 1,
+                serviceId: 9,
+                volumeName: 'nd-svc-mine-uploads',
+                containerPath: '/data',
+                readOnly: false,
+                createdAt: NOW,
+                updatedAt: NOW,
+              },
+            ],
+          },
+        }),
+      });
+      await app.register(serviceVolumesRoutes);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/9/volumes',
+        headers: asUser(member),
+        payload: { volumeName: 'nd-svc-mine-uploads', containerPath: '/data' },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().attachment).toMatchObject({ volumeName: 'nd-svc-mine-uploads' });
       await app.close();
     });
   });

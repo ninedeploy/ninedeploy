@@ -40,10 +40,10 @@ describe('volume file operations (docker sidecar)', () => {
       'directory|4096|1786886400|./configs\nregular file|128|1786886401|./app.env\n',
     );
     const entries = await listVolumeDir('nd-svc-web-data', 'configs');
-    expect(dockerPullMocks.ensureDockerImage).toHaveBeenCalledWith('alpine:latest', expect.any(Function));
+    expect(dockerPullMocks.ensureDockerImage).toHaveBeenCalledWith('alpine:3.21', expect.any(Function));
     expect(execMocks.capture).toHaveBeenCalledWith(
       'docker',
-      expect.arrayContaining(['run', '--rm', '-v', 'nd-svc-web-data:/v', 'alpine:latest']),
+      expect.arrayContaining(['run', '--rm', '-v', 'nd-svc-web-data:/v', 'alpine:3.21']),
     );
     expect(entries).toEqual([
       { name: 'configs', type: 'dir', sizeBytes: 4096, modifiedAt: new Date(1786886400 * 1000).toISOString() },

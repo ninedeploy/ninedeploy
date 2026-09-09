@@ -693,4 +693,104 @@ describe('services CREATE — template validation + tag attachment', () => {
     expect(capturedArgs).toEqual([[], [50], []]);
     replaceSpy.mockRestore();
   });
+
+  // ── cross-tenant tag guard on POST ─────────────────────────────────────
+  //
+  // `replaceServiceTags` writes whatever ids it is handed, and the deploy
+  // pipeline decrypts every tagged project's shared env into the service's
+  // container. The create route must therefore apply the same visibility rule
+  // as PUT /:id/tags — otherwise a member tags their service with another
+  // tenant's project id and exfiltrates its secrets at deploy time
+  // (engine/pipeline.ts loadRuntimeEnv).
+  describe('create — cross-tenant tag guard', () => {
+    const member = { id: 7, isOperator: false };
+    const wsMember = (workspaceId: number) => ({
+      id: 1,
+      workspaceId,
+      userId: 7,
+      role: 'member',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+    });
+    const projectRow = (workspaceId: number) => ({
+      id: 99,
+      name: 'shared-env',
+      slug: 'shared-env',
+      workspaceId,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+    });
+
+    it('refuses to tag a project outside the caller’s workspaces and inserts no links', async () => {
+      let projectLinkInserts = 0;
+      const app = await buildTestApp({
+        db: createFakeDb({
+          findMany: {
+            // The member sits only in workspace 2; project 99 lives in 3.
+            workspaceMembers: [wsMember(2)],
+            projects: [projectRow(3)],
+          },
+          insert: {
+            services: [svcRow({ id: 4, name: 'mine', slug: 'mine' })],
+            serviceProjects: () => {
+              projectLinkInserts += 1;
+              return [];
+            },
+          },
+        }),
+      });
+      await app.register(servicesRoutes);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/',
+        headers: asUser(member),
+        payload: { ...validCreate, tagProjectIds: [99] },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(projectLinkInserts).toBe(0);
+    });
+
+    it('refuses an unknown project id the same way', async () => {
+      const app = await buildTestApp({
+        db: createFakeDb({
+          findMany: { workspaceMembers: [wsMember(2)], projects: [] },
+          insert: { services: [svcRow({ id: 4, name: 'mine', slug: 'mine' })] },
+        }),
+      });
+      await app.register(servicesRoutes);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/',
+        headers: asUser(member),
+        payload: { ...validCreate, tagProjectIds: [99] },
+      });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('applies the tag set when the caller can see the target project', async () => {
+      let capturedRow: unknown;
+      const app = await buildTestApp({
+        db: createFakeDb({
+          findMany: {
+            workspaceMembers: [wsMember(2)],
+            projects: [projectRow(2)],
+          },
+          insert: {
+            services: [svcRow({ id: 4, name: 'mine', slug: 'mine' })],
+            serviceProjects: (v: unknown) => {
+              capturedRow = v;
+              return [];
+            },
+          },
+        }),
+      });
+      await app.register(servicesRoutes);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/',
+        headers: asUser(member),
+        payload: { ...validCreate, tagProjectIds: [99] },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(capturedRow).toEqual([{ serviceId: 4, projectId: 99 }]);
+    });
+  });
 });

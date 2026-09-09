@@ -22,7 +22,16 @@ import { getStickyEnabledForService } from '../engine/proxy.js';
 import { setSettingString } from '../lib/settings.js';
 import { badRequest, conflict, forbidden, HttpError, notFound, parseId as num } from '../lib/errors.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
-import { assertServiceRole, visibleServiceIdSet } from '../lib/resourceAccess.js';
+import {
+  assertServiceRole,
+  maxRole,
+  roleAtLeast,
+  userWorkspaceMemberships,
+  visibleServiceIdSet,
+} from '../lib/resourceAccess.js';
+import { visibleProjectIds } from './projects.js';
+import { visibleWorkspaceIds } from './workspaces.js';
+import { visibleLabelIds } from './labels.js';
 import { assertMayUseHostPrivilege } from '../lib/hostPrivilege.js';
 import { assertMayPublishPort } from '../lib/hostPort.js';
 import { slugify, slugifyWithSuffix } from '../lib/slug.js';
@@ -199,6 +208,18 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
 
   app.post('/', async (req) => {
     const input = createService.parse(req.body);
+    // Viewer is read-only (docs/WORKSPACES_RBAC.md): creating a service is a
+    // write — it provisions runtime, ports and (by default) visibility in
+    // every workspace the caller sits in. A user whose ONLY seats are
+    // `viewer` therefore cannot create one; operators and anyone holding
+    // `member` or higher somewhere can.
+    if (!req.user!.isOperator) {
+      const memberships = await userWorkspaceMemberships(app.db, req.user!.id);
+      const best = maxRole(memberships);
+      if (best === null || !roleAtLeast(best, 'member')) {
+        throw forbidden('Creating a service requires the "member" role in a workspace');
+      }
+    }
     const template = input.templateId
       ? (await getTemplates(app.db)).find((candidate) => candidate.id === input.templateId)
       : undefined;
@@ -372,6 +393,28 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // wins, otherwise the service lands in every workspace the caller belongs
     // to so it is visible to their team by default.
     if (input.tagProjectIds || input.tagWorkspaceIds || input.tagLabelIds) {
+      // Same rule as PUT /:id/tags: a member may only tag with projects,
+      // workspaces and labels they can see. Without this check a member could
+      // tag their service with ANOTHER tenant's project id, and the deploy
+      // pipeline (engine/pipeline.ts loadRuntimeEnv) would decrypt that
+      // project's shared env values straight into the member's container.
+      if (!req.user!.isOperator) {
+        const projectIds = input.tagProjectIds ?? [];
+        const allowedProjects = await visibleProjectIds(app.db, req.user!, projectIds);
+        if (allowedProjects.length !== projectIds.length) {
+          throw forbidden('One or more target projects are not visible to you');
+        }
+        const workspaceIds = input.tagWorkspaceIds ?? [];
+        const allowedWorkspaces = await visibleWorkspaceIds(app.db, req.user!, workspaceIds);
+        if (allowedWorkspaces.length !== workspaceIds.length) {
+          throw forbidden('One or more target workspaces are not visible to you');
+        }
+        const labelIds = input.tagLabelIds ?? [];
+        const allowedLabels = await visibleLabelIds(app.db, req.user!, labelIds);
+        if (allowedLabels.length !== labelIds.length) {
+          throw forbidden('One or more target labels are not visible to you');
+        }
+      }
       await replaceServiceTags(
         app.db,
         svc!.id,

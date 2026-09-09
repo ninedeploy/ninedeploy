@@ -50,7 +50,7 @@ describe('backupVolume', () => {
     const log = vi.fn();
     await backupVolume('nd-svc-web-data', '/backups/web.tar.gz', log);
 
-    expect(pullMocks.ensureDockerImage).toHaveBeenCalledWith('alpine:latest', log);
+    expect(pullMocks.ensureDockerImage).toHaveBeenCalledWith('alpine:3.21', log);
     // The source volume is mounted read-only: a snapshot must never be able to
     // modify what it is reading.
     const created = execMocks.capture.mock.calls[0]![1] as unknown as string[];

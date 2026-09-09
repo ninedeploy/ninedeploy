@@ -32,6 +32,7 @@ import {
   listUserNetworks,
   networkMembers,
   resolveVolumeOwner,
+  HELPER_IMAGE,
 } from '../lib/inventory.js';
 
 /**
@@ -121,7 +122,7 @@ async function dockerDiskFacts(): Promise<DfFact> {
 /** Size of one volume via a throwaway alpine sidecar; 0 when it cannot be read. */
 async function volumeSizeBytes(name: string): Promise<number> {
   try {
-    const out = await capture('docker', ['run', '--rm', '-v', `${name}:/v:ro`, 'alpine:latest', 'sh', '-c', 'du -sb /v']);
+    const out = await capture('docker', ['run', '--rm', '-v', `${name}:/v:ro`, HELPER_IMAGE, 'sh', '-c', 'du -sb /v']);
     return Number(out.trim().split(/\s+/)[0]) || 0;
   } catch {
     return 0;

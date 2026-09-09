@@ -276,8 +276,9 @@ describe('dashboard member scoping', () => {
     return [...self, ...Object.values(node as Record<string, unknown>).flatMap((v) => columnsIn(v, seen))];
   }
 
-  function scopedDb(deploymentsResolver?: (args: unknown) => unknown[]) {
-    return createFakeDb({
+  function scopedDb() {
+    const capture = { where: undefined as unknown };
+    const db = createFakeDb({
       select: {
         // Full-row select -> the whole inventory; id-only projection -> the
         // owner-scoped re-query, whose predicate the fake db cannot apply.
@@ -291,13 +292,20 @@ describe('dashboard member scoping', () => {
         databases: [],
       },
       findMany: {
-        ...(deploymentsResolver ? { deployments: deploymentsResolver } : {}),
+        deployments: async (args: unknown) => {
+          const resolved = await Promise.resolve(args);
+          const a = resolved as { where?: unknown };
+          capture.where = a.where;
+          return [depRow({ id: 8, serviceId: 70, status: 'completed' })];
+        },
       },
     });
+    return { db, capture };
   }
 
   it("a member's dashboard contains only their own services", async () => {
-    const app = await buildTestApp({ db: scopedDb() });
+    const { db } = scopedDb();
+    const app = await buildTestApp({ db });
     await app.register(dashboardRoutes);
     const res = await app.inject({ method: 'GET', url: '/', headers: asUser({ id: 7, isOperator: false }) });
     expect(res.statusCode).toBe(200);
@@ -309,34 +317,26 @@ describe('dashboard member scoping', () => {
     expect(res.body).not.toContain('victim-billing-api');
   });
 
-  it('constrains the recent-deploys query to the member’s own service ids', async () => {
+  it("constrains the recent-deploys query to the member's own service ids", async () => {
     // The fake db ignores predicates, so assert the where-clause itself
     // carries the service_id scoping (mirrors the M-2 regression pattern).
-    let deployWhere: unknown;
-    const app = await buildTestApp({
-      db: scopedDb((args: unknown) => {
-        deployWhere = (args as { where?: unknown }).where;
-        return [depRow({ id: 8, serviceId: 70, status: 'completed' })];
-      }),
-    });
+    const { db, capture } = scopedDb();
+    const app = await buildTestApp({ db });
     await app.register(dashboardRoutes);
     const res = await app.inject({ method: 'GET', url: '/', headers: asUser({ id: 7, isOperator: false }) });
     expect(res.statusCode).toBe(200);
-    expect(columnsIn(deployWhere)).toContain('service_id');
+    expect(columnsIn(capture.where)).toContain('service_id');
     expect(res.json().recentDeploys[0]).toMatchObject({ serviceId: 70, serviceName: 'mine' });
   });
 
   it('an admin still sees the whole instance', async () => {
-    const app = await buildTestApp({
-      db: scopedDb((args: unknown) => {
-        // The admin path must NOT scope the recent-deploys query.
-        expect((args as { where?: unknown }).where).toBeUndefined();
-        return [depRow({ id: 8, serviceId: 71, status: 'completed' })];
-      }),
-    });
+    const { db, capture } = scopedDb();
+    const app = await buildTestApp({ db });
     await app.register(dashboardRoutes);
     const res = await app.inject({ method: 'GET', url: '/', headers: asUser({ id: 1, isOperator: true }) });
     expect(res.statusCode).toBe(200);
+    // The admin path must NOT scope the recent-deploys query.
+    expect(capture.where).toBeUndefined();
     const body = res.json();
     expect(body.stats.services).toBe(2);
     expect(body.health).toHaveLength(2);

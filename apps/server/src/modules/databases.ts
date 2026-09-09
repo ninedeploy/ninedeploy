@@ -20,7 +20,7 @@ import {
 import { decrypt, encrypt, randomToken } from '../lib/crypto.js';
 import {
   assertServiceRole,
-  assertWorkspaceMember,
+  assertWorkspaceRole,
   assertDatabaseRole,
   loadDatabaseForUser,
   loadServiceForUser,
@@ -132,7 +132,10 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
     if (input.projectId != null) {
       const project = await app.db.query.projects.findFirst({ where: eq(projects.id, input.projectId) });
       if (!project) throw badRequest('Project not found');
-      if (project.workspaceId != null) await assertWorkspaceMember(app.db, project.workspaceId, req.user!);
+      // Creating a database (and provisioning its volume + credentials) is a
+      // write on the workspace: `member` floor, so a viewer seat stays
+      // read-only.
+      if (project.workspaceId != null) await assertWorkspaceRole(app.db, project.workspaceId, req.user!, 'member');
       else if (!req.user!.isOperator) throw badRequest('Project not found');
     }
     const slug = slugify(input.name);
@@ -513,6 +516,12 @@ export const attachmentRoutes: FastifyPluginAsync = async (app) => {
     // string into their container env (engine/pipeline.ts), handing them full
     // read/write access to another tenant's data.
     const d = await loadDatabaseForUser(app.db, input.databaseId, req.user!);
+    // Visibility alone is not enough: the attachment ships the database's
+    // ADMIN-only password into the service env (the /credentials route sits at
+    // `admin` for exactly this reason), so attaching demands the same tier —
+    // a viewer-or-member seat on the database's workspace is not consent to
+    // hand its password to a container.
+    await assertDatabaseRole(app.db, d, req.user!, 'admin');
     const envAlias = input.envAlias ?? aliasFor(d.engine);
     if (input.reuseExisting) {
       const existing = await app.db.query.databaseAttachments.findFirst({

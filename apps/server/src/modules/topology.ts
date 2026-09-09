@@ -30,7 +30,7 @@ export const topologyRoutes: FastifyPluginAsync = async (app) => {
     ]);
     // Authorization is workspace-derived now; `users.role` is gone.
     const isAdmin = req.user!.isOperator === true;
-    const svcs = isAdmin
+    const svcs = visibleServiceIds === null
       ? allServices
       : allServices.filter((service) => visibleServiceIds.has(service.id));
     const dbs = visibleDatabases === null

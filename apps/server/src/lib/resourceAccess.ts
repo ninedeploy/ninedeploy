@@ -394,15 +394,28 @@ export async function loadDatabaseForUser(db: DbLike, id: number, user: AuthedUs
 /** Ids of every database the user may see. Operators are unrestricted (`null`). */
 export async function visibleDatabaseIds(db: DbLike, user: AuthedUser): Promise<number[] | null> {
   if (user.isOperator) return null;
-  const workspaceIds = await userWorkspaceIds(db, user.id);
-  const projectIds =
-    workspaceIds.length > 0
-      ? (await db.query.projects.findMany({ where: inArray(projects.workspaceId, workspaceIds) })).map((p) => p.id)
-      : [];
-  const rows = await db.query.databases.findMany();
-  return rows
-    .filter((d) => d.ownerUserId === user.id || (d.projectId != null && projectIds.includes(d.projectId)))
-    .map((d) => d.id);
+  const set = new Set<number>();
+
+  // Direct ownership: db.select (not db.query) — SQL-only, no row materialisation.
+  const owned = await db.select({ id: databases.id }).from(databases).where(eq(databases.ownerUserId, user.id));
+  for (const r of owned) set.add(r.id);
+
+  // Workspace path — must agree with `loadDatabaseForUser`, which resolves a
+  // database through its PROJECT's workspace membership alone. (An earlier
+  // revision joined via service→project tags instead, which HID a database
+  // whose project simply had no service tagged yet while loadDatabaseForUser
+  // still opened it by id — list and detail disagreed.)
+  const wsIds = await userWorkspaceIds(db, user.id);
+  if (wsIds.length > 0) {
+    const tagged = await db
+      .select({ id: databases.id })
+      .from(databases)
+      .innerJoin(projects, eq(databases.projectId, projects.id))
+      .where(inArray(projects.workspaceId, wsIds));
+    for (const r of tagged) if (r.id != null) set.add(r.id);
+  }
+
+  return Array.from(set);
 }
 
 /**

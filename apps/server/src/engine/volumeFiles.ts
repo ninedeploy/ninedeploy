@@ -1,5 +1,6 @@
 import { capture, run } from '../lib/exec.js';
 import { ensureDockerImage } from '../lib/dockerPull.js';
+import { HELPER_IMAGE } from '../lib/inventory.js';
 
 /**
  * File operations inside a managed Docker volume, executed via a throwaway
@@ -50,7 +51,7 @@ export interface VolumeEntry {
 }
 
 const VOL_ROOT = '/v';
-const VOLUME_HELPER_IMAGE = 'alpine:latest';
+const VOLUME_HELPER_IMAGE = HELPER_IMAGE;
 const quiet = () => undefined;
 
 async function prepareVolumeHelper(sink: (line: string) => void = quiet): Promise<void> {
