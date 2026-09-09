@@ -808,7 +808,7 @@ function yamlValue(value: string): string {
 
 /** Escape regex metacharacters in a (already sanitized) domain suffix. */
 function escapeRegexp(s: string): string {
-  return s.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+  return s.replace(/[.+*?^${}()|[\]\\]/g, '\\$&');
 }
 
 /** Escape a value for a double-quoted YAML scalar (backslash + quote). */

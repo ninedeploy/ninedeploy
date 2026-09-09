@@ -1273,3 +1273,27 @@ describe('domain headers middleware is Traefik-parseable (r036 regression)', () 
     expect(doc.http.middlewares['mw_web_1_auth']?.basicAuth?.users).toContain('alice:pwhash');
   });
 });
+
+// ── r040 regression: escapeRegexp must escape EVERY regex metacharacter. ───
+// HOST_RE deliberately preserves `*` in hostnames (wildcard support) and the
+// createDomain schema only checks length, so a hostname with an INTERIOR `*`
+// (own-zone member hostnames skip the DNS ownership proof; legacy/admin rows
+// too) reaches escapeRegexp unescaped. In a Go regexp an unescaped `*`
+// quantifies the preceding literal, silently BROADENING the HostRegexp match
+// set: `*.foo*bar.example.com` rendered
+// `^[a-zA-Z0-9-]+\.foo*bar\.example\.com$`, which also matches sibling
+// hostnames (`<label>.fobar.example.com`) that were never claimed — routing
+// other tenants' traffic into this service's container.
+describe('wildcard HostRegexp escaping (r040 regression)', () => {
+  it('escapes an interior asterisk so the rule matches only the claimed suffix', async () => {
+    const db = makeDb(
+      [{ id: 1, serviceId: 1, hostname: '*.foo*bar.example.com', path: '/', ssl: false, status: 'active' }],
+      [{ id: 1, slug: 'web', port: 3000, runtimeId: 'web-1' }],
+    );
+    const yaml = await renderDynamicConfig(db as never, { serverId: null });
+    // yamlDoubleQuoted doubles backslashes for the YAML text layer, so the
+    // correctly escaped rule carries `foo\\*bar` in the raw file text.
+    expect(yaml).toContain('foo\\\\*bar');
+    expect(yaml).not.toContain('foo*bar');
+  });
+});
