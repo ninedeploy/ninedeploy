@@ -341,12 +341,15 @@ describe('enablePgbouncer', () => {
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/Creating PgBouncer sidecar/));
   });
 
-  it('honors a custom port from the row', async () => {
+  it('honors a custom port from the row, bound to LOOPBACK only', async () => {
     execState.toolResults.set('docker inspect --format {{.State.Running}} nd-pg-mydb', { stdout: 'true\n' });
     await enablePgbouncer(db, buildDb({ pgbouncerPort: 7000 }), () => undefined);
     const create = execState.runs.find((r) => r.args[0] === 'create');
     expect(create).toBeDefined();
-    expect(create!.args).toContain('7000:7000');
+    // The publish binds 127.0.0.1: pgbouncer has no panel auth in front of
+    // it, so a LAN-reachable port carrying DB credentials is pure surface.
+    expect(create!.args).toContain('127.0.0.1:7000:7000');
+    expect(create!.args).not.toContain('7000:7000');
     const last = dbState.updates.at(-1);
     expect(last?.set.pgbouncerPort).toBe(7000);
   });

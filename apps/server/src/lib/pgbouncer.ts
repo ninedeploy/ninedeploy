@@ -17,7 +17,6 @@
  * typical operator that's a few hundred MiB of RAM, which
  * is well below what a pooled Postgres workload saves.
  */
-import { createHash } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { databases, type DB, type Database } from '@ninedeploy/db';
 import { decrypt } from './crypto.js';
@@ -134,8 +133,11 @@ export async function enablePgbouncer(db: DB, d: Database, log: (line: string) =
       // Only publish when the operator chose an explicit sidecar port: the
       // default (6432) is shared by EVERY sidecar, so publishing it makes
       // the second enable fail with "port is already allocated". Clients
-      // connect over the docker network by container name anyway.
-      ...(d.pgbouncerPort != null ? ['-p', `${port}:${port}`] : []),
+      // connect over the docker network by container name anyway; when a
+      // host port IS published it binds to LOOPBACK — plain MD5/SCRAM
+      // credentials reachable from the LAN would be an unnecessary surface,
+      // and pgbouncer has no NineDeploy auth in front of it.
+      ...(d.pgbouncerPort != null ? ['-p', `127.0.0.1:${port}:${port}`] : []),
       PGBOUNCER_IMAGE,
     ];
     log(`Creating PgBouncer sidecar ${containerName} on port ${port} …`);
@@ -245,11 +247,14 @@ interface RenderInput {
 }
 
 /**
- * pgbouncer.ini. We pin the auth_type to md5 (most
- * ubiquitous, works against stock postgres without
- * certs) and the pool_mode to transaction (the
- * common-case setting; session-mode is opt-in via a
- * future PR).
+ * pgbouncer.ini. `auth_type = scram-sha-256` — MD5 challenge/response is
+ * replayable and its stored verifier is password-equivalent, which is exactly
+ * what an audit does not want on a socket that may be exposed. With SCRAM the
+ * userlist carries the CLEARTEXT password (pgbouncer needs it to answer both
+ * the client's and the server's SCRAM exchange) — that file is docker-cp'd
+ * into the container and deleted from the host in the same call, and it is
+ * what pgbouncer must know anyway. `pool_mode = transaction` is the
+ * common-case setting; session-mode is opt-in via a future PR.
  */
 function renderPgbouncerIni(input: RenderInput): string {
   return [
@@ -259,7 +264,7 @@ function renderPgbouncerIni(input: RenderInput): string {
     '[pgbouncer]',
     'listen_addr = 0.0.0.0',
     `listen_port = ${input.listenPort}`,
-    'auth_type = md5',
+    'auth_type = scram-sha-256',
     'auth_file = /etc/pgbouncer/userlist.txt',
     'pool_mode = transaction',
     'max_client_conn = 1000',
@@ -275,14 +280,9 @@ function renderPgbouncerIni(input: RenderInput): string {
   ].join('\n');
 }
 
-/** pgbouncer's userlist format. md5 hashing: "md5" +
- *  hex(md5(password + user)). */
+/** pgbouncer's userlist format for SCRAM: the cleartext password in plain
+ *  `"user" "password"` form — with `auth_type = scram-sha-256` pgbouncer
+ *  derives the SCRAM exchange from it for both client and server auth. */
 function renderUserlist(input: { user: string; password: string }): string {
-  // Static import, not a lazy `require`: this package runs as pure ESM
-  // (tsc → `node dist/server.js`), where `require` does not exist — the lazy
-  // form made every `pgbouncer enable` die with a ReferenceError outside
-  // vitest (whose module runner shims `require`). node:crypto is loaded at
-  // boot regardless, so the "cold startup path" rationale never applied.
-  const md5 = createHash('md5').update(input.password + input.user).digest('hex');
-  return `"${input.user}" "md5${md5}"\n`;
+  return `"${input.user}" "${input.password}"\n`;
 }
