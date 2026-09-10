@@ -5,12 +5,15 @@ import { parseImageRef } from './imageRef.js';
 import { fetchImageDigest } from './imageWatch.js';
 
 /**
- * Watchtower-style image auto-update sweep. For every RUNNING, image-based,
- * panel-host service with `autoUpdate` enabled: probe the registry for the
- * tag's current manifest digest and enqueue a normal deployment (trigger
- * `schedule`) when it moved. The deploy goes through the same queue,
- * builder, health checks and blue-green swap as any manual deploy — a bad
- * new image fails visibly while the old container keeps serving.
+ * Watchtower-style image auto-update sweep. For every RUNNING, image-based
+ * service with `autoUpdate` enabled — panel-host or remote-node alike, the
+ * probe reads the registry from the panel and the enqueued deployment
+ * routes to the node's agent through the normal choke point: probe the
+ * registry for the tag's current manifest digest and enqueue a normal
+ * deployment (trigger `schedule`) when it moved. The deploy goes through
+ * the same queue, builder, health checks and blue-green swap as any
+ * manual deploy — a bad new image fails visibly while the old container
+ * keeps serving.
  *
  * Safety properties:
  *  - The FIRST observation after enabling is a baseline only (stored, not
@@ -40,12 +43,7 @@ export async function sweepAutoUpdates(
 ): Promise<SweepResult> {
   const rows = await db.query.services.findMany();
   const candidates = rows.filter(
-    (s) =>
-      s.type === 'docker' &&
-      !!s.image &&
-      s.autoUpdate === true &&
-      s.serverId == null &&
-      s.status === 'running',
+    (s) => s.type === 'docker' && !!s.image && s.autoUpdate === true && s.status === 'running',
   );
 
   const result: SweepResult = { probed: 0, enqueued: 0, skipped: 0 };

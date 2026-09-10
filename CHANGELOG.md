@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.6] - 2026-09-10
+
+> Watch your images: docker services can now follow their registry tag
+> and re-deploy themselves when the tag moves. Plus one security-debt
+> item from the September audit is closed for good.
+
+### Added
+
+- **Image auto-update (digest watch).** Image-based docker services gain
+  an **Auto-update** switch in their settings — remote-node services
+  included, since the sweep reads the registry from the panel while the
+  enqueued deployment reaches the node through the usual agent path. A
+  30-minute sweep probes the registry for the tag's current manifest
+  digest (Docker Hub and ghcr via the anonymous pull-token dance) and,
+  when it moved, queues a **normal deployment** — full build-config,
+  health checks and blue-green swap, so a broken new image fails
+  visibly while the old container keeps serving. Safety rails: enabling
+  the switch only records a baseline and never deploys by itself; a
+  service with a queued or in-flight deployment defers the update to
+  the next sweep; probe failures and unsupported registry auth schemes
+  are skips, never errors; digest-pinned refs are refused (they cannot
+  move); repo-backed services cannot enable the flag. Disabling clears
+  the baseline. Migration 0053 adds `services.auto_update` +
+  `services.auto_update_digest`.
+
+### Security
+
+- **The last "conditional SSRF" accepted risk is closed.** The five
+  outbound git-host API calls in `sources.ts` (GitHub repos / branches /
+  user, GitLab projects / user) now run through `guardedFetch` like
+  every other panel webhook and API client. The routes were already
+  operator-only and the hosts hardcoded; the guard locks that invariant
+  so it cannot silently drift, a wiring test pins the call path, and
+  the audit document's accepted-risk entry is marked closed (r077).
+
+---
+
 ## [0.7.5] - 2026-09-09
 
 > The deployment-workflows release: services can be grouped into

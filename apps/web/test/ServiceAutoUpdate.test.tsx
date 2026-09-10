@@ -4,10 +4,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '../src/components/Toast.js';
 
 /**
- * The auto-update switch only applies to image-based, panel-host services —
- * it must render for those, fire an immediate dedicated PATCH on toggle (not
- * ride the big settings form), and stay hidden for repo-backed or remote
- * services where the server would refuse the flag anyway.
+ * The auto-update switch only applies to image-based docker services —
+ * it must render for those (remote nodes included: the watch reads the
+ * registry, not the node), fire an immediate dedicated PATCH on toggle (not
+ * ride the big settings form), and stay hidden for repo-backed services
+ * where the server would refuse the flag anyway.
  *
  * Self-contained mocks (no ./helpers.js) — see SettingsTabPrivilege.test.tsx
  * for why: helpers pulls in modules that hang vitest collection here.
@@ -89,9 +90,9 @@ describe('SettingsTab auto-update switch', () => {
     expect(screen.queryByRole('switch', { name: 'Auto-update' })).not.toBeInTheDocument();
   });
 
-  it('stays hidden for services pinned to a remote node', async () => {
+  it('renders for remote-node image services — the watch reads the registry, not the node', async () => {
     renderTab({ ...imageService, serverId: 3 });
-    await screen.findByText('Service settings');
-    expect(screen.queryByRole('switch', { name: 'Auto-update' })).not.toBeInTheDocument();
+    const toggle = await screen.findByRole('switch', { name: 'Auto-update' });
+    expect(toggle).toBeInTheDocument();
   });
 });

@@ -219,13 +219,14 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
             )}
           </Field>
           <Field label="Image (image deploys)"><Input value={form.image} onChange={set('image')} placeholder="nginx:latest" className="h-9 font-mono text-xs" /></Field>
-          {svc.image && svc.type === 'docker' && svc.serverId == null && (
+          {svc.image && svc.type === 'docker' && (
             <div className="col-span-full flex items-center justify-between gap-3 rounded-lg border border-white/[0.05] bg-white/[0.02] px-3 py-2.5">
               <div>
                 <div className="text-xs font-medium text-slate-300">Auto-update (digest watch)</div>
                 <div className="mt-0.5 text-[11px] text-slate-500">
                   Every 30 minutes the registry is probed; when this image&apos;s tag moved, a normal deployment is
-                  queued through the usual health checks. Enabling only sets a baseline — it never deploys by itself.
+                  queued through the usual health checks{svc.serverId != null ? ' on its node' : ''}. Enabling only
+                  sets a baseline — it never deploys by itself.
                 </div>
               </div>
               <Switch

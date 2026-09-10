@@ -401,7 +401,8 @@ export const services = sqliteTable(
     image: text('image'),
     // Watchtower-style digest watch: the auto-update sweep probes the registry
     // for this image's tag and enqueues a re-deploy when the digest moved.
-    // Image-based, panel-host services only (see lib/autoUpdate.ts).
+    // Image-based services only (the resulting deployment routes to the
+    // node's agent for remote services — see lib/autoUpdate.ts).
     autoUpdate: integer('auto_update', { mode: 'boolean' }).notNull().default(false),
     // Last registry manifest digest the sweep observed for this service's
     // tag. The FIRST observation is a baseline only — an update deploys from

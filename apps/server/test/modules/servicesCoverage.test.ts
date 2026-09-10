@@ -475,9 +475,10 @@ describe('services PATCH — autoUpdate watch', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it('refuses autoUpdate on a service pinned to a remote node', async () => {
+  it('accepts autoUpdate on a remote-node image service — the probe reads the registry, not the node', async () => {
     const remoteSvc = svcRow({ id: 1, slug: 'img', type: 'docker', image: 'nginx:latest', serverId: 3 });
-    const app = await buildTestApp({ db: autoUpdateDb(remoteSvc) });
+    const seen: Array<Record<string, unknown>> = [];
+    const app = await buildTestApp({ db: autoUpdateDb(remoteSvc, (s) => seen.push(s)) });
     await app.register(servicesRoutes);
     const res = await app.inject({
       method: 'PATCH',
@@ -485,7 +486,8 @@ describe('services PATCH — autoUpdate watch', () => {
       headers: asUser(),
       payload: { autoUpdate: true },
     });
-    expect(res.statusCode).toBe(400);
+    expect(res.statusCode).toBe(200);
+    expect(seen[0]).toMatchObject({ autoUpdate: true });
   });
 
   it('clears the baseline digest when the watch is disabled', async () => {

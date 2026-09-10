@@ -94,12 +94,19 @@ describe('sweepAutoUpdates', () => {
     expect(probe).not.toHaveBeenCalled();
   });
 
-  it('only watches running, image-based, panel-host, opt-in services', async () => {
+  it('also watches remote-node image services — the probe reads the registry, not the node', async () => {
+    const remote = { ...svcRow(IMAGE_SVC), id: 8, serverId: 3 };
+    const { db, inserts } = baseDb([remote]);
+    const result = await sweepAutoUpdates(db, probeOf('sha256:new'));
+    expect(result.enqueued).toBe(1);
+    expect(inserts[0]).toMatchObject({ serviceId: 8, trigger: 'schedule' });
+  });
+
+  it('only watches running, image-based, opt-in services', async () => {
     const cases = [
       { ...svcRow(IMAGE_SVC), id: 1, status: 'stopped' },
       { ...svcRow(IMAGE_SVC), id: 2, image: null },
       { ...svcRow(IMAGE_SVC), id: 3, autoUpdate: false },
-      { ...svcRow(IMAGE_SVC), id: 4, serverId: 3 },
       { ...svcRow(IMAGE_SVC), id: 6, type: 'compose' },
     ];
     const { db } = baseDb(cases);

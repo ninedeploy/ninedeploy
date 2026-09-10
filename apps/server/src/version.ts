@@ -1,4 +1,4 @@
-export const VERSION = '0.7.5';
+export const VERSION = '0.7.6';
 
 export interface ChangelogEntry {
   version: string;
@@ -8,6 +8,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.7.6',
+    date: '2026-09-10',
+    title: 'Image Auto-Update (Digest Watch) & One Less Accepted Risk',
+    changes: [
+      'Image-based docker services gain an opt-in Auto-update switch — remote nodes included, since the sweep reads the registry from the panel while the enqueued deployment reaches the node through the usual agent path. A 30-minute sweep probes the registry for the tag\u2019s current manifest digest (Docker Hub and ghcr via the anonymous pull-token dance) and, when it moved, queues a NORMAL deployment — the same build config, health checks and blue-green swap as a manual deploy, so a broken new image fails visibly while the old container keeps serving. Enabling only records a baseline and never deploys by itself; a service with a queued or in-flight deployment defers the update to the next sweep; probe failures and unsupported registry auth are skips, never errors; digest-pinned refs are refused; repo-backed services cannot enable the flag.',
+      'The September audit\u2019s last "conditional SSRF" accepted risk is closed: the five outbound git-host API calls in sources.ts now run through guardedFetch like every other panel webhook and API client. The routes were already operator-only and the hosts hardcoded; the guard locks that invariant so it cannot silently drift, and a wiring test pins the call path.',
+    ],
+  },
   {
     version: '0.7.5',
     date: '2026-09-09',

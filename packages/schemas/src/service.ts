@@ -116,8 +116,8 @@ export const updateService = z.object({
   image: z.string().optional(),
   volumeMount: z.string().optional(),
   composeService: z.string().min(1).max(200).optional(),
-  /** Watchtower-style image auto-update. Only meaningful on image-based,
-   * panel-host services — the route refuses it otherwise. */
+  /** Watchtower-style image auto-update. Only meaningful on image-based
+   * docker services — the route refuses it otherwise. */
   autoUpdate: z.boolean().optional(),
   /** Replace an inline stack's YAML. Only meaningful on a service that
    * already stores one — the route refuses it otherwise, because `type`
@@ -187,7 +187,7 @@ export const service = z.object({
   /** Display name of the attached Git credential (source), for the UI. */
   sourceName: z.string().nullable().optional(),
   image: z.string().nullable(),
-  /** Watchtower-style digest watch (image-based, panel-host services only). */
+  /** Watchtower-style digest watch (image-based docker services only). */
   autoUpdate: z.boolean().optional(),
   volumeMount: z.string().nullable(),
   composeService: z.string().nullable(),

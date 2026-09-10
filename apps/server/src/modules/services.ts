@@ -565,15 +565,16 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         throw badRequest(`composeService '${routed}' is not declared in the compose file`);
       }
     }
-    // Image auto-update only makes sense where the watch can act: an image
-    // deploy (no repo), running on the panel host. Anything else is refused
-    // rather than silently ignored — the toggle would be a lie in the UI.
+    // Image auto-update only makes sense on image-based docker services —
+    // the sweep watches the registry, and the enqueued deployment reaches a
+    // remote node through the normal agent path. Repo-backed services (and
+    // non-docker types) are refused rather than silently ignored: the
+    // toggle would be a lie in the UI.
     if (patch.autoUpdate !== undefined) {
       const mergedImage = patch.image !== undefined ? patch.image : existing.image;
       const mergedType = patch.type ?? existing.type;
-      const mergedServerId = patch.serverId !== undefined ? patch.serverId : existing.serverId;
-      if (patch.autoUpdate && (!mergedImage || mergedType !== 'docker' || mergedServerId != null)) {
-        throw badRequest('Auto-update applies only to image-based services running on the panel host');
+      if (patch.autoUpdate && (!mergedImage || mergedType !== 'docker')) {
+        throw badRequest('Auto-update applies only to image-based docker services');
       }
     }
     // Build-config keys are optional; null out omitted-but-cleared ones via `set` semantics.
