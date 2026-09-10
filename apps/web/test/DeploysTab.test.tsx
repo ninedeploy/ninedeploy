@@ -159,4 +159,40 @@ describe('DeploysTab (per-service)', () => {
     await screen.findByText('#7');
     expect(screen.queryByText('Promote this commit')).not.toBeInTheDocument();
   });
+
+  it('offers AI diagnosis for a failed deployment when configured', async () => {
+    mockOf(api.ai.getConfig).mockResolvedValue({ configured: true, baseUrl: 'https://ai.example.com/v1', model: 'gpt-test', hasApiKey: true });
+    const diagnoseSpy = vi.fn().mockResolvedValue({ diagnosis: 'Root cause: bad credentials.', model: 'gpt-test' });
+    mockOf(api.ai.diagnose).mockImplementation(diagnoseSpy);
+    renderWithProviders(
+      <DeploysTab
+        serviceId={1}
+        repoUrl={null}
+        deploys={[baseDeploy({ id: 7, status: 'failed' })]}
+        loading={false}
+        activeId={7}
+        onSelect={() => {}}
+      />,
+    );
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Diagnose failure' }));
+    await waitFor(() => expect(diagnoseSpy).toHaveBeenCalledWith(1, 7));
+    expect(await screen.findByText(/Root cause: bad credentials\./)).toBeInTheDocument();
+  });
+
+  it('hides the AI diagnosis card when no provider is configured', async () => {
+    mockOf(api.ai.getConfig).mockResolvedValue({ configured: false, baseUrl: null, model: null, hasApiKey: false });
+    renderWithProviders(
+      <DeploysTab
+        serviceId={1}
+        repoUrl={null}
+        deploys={[baseDeploy({ id: 7, status: 'failed' })]}
+        loading={false}
+        activeId={7}
+        onSelect={() => {}}
+      />,
+    );
+    await screen.findByText('#7');
+    expect(screen.queryByText('AI diagnosis')).not.toBeInTheDocument();
+  });
 });

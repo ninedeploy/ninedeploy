@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router';
 import {
   ArrowLeftRight,
   Bell,
+  Bot,
   Boxes,
   HardDrive,
   KeyRound,
@@ -18,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { AccountSection } from './AccountSection.js';
+import { AiSection } from './AiSection.js';
 import { AppearanceSection } from './AppearanceSection.js';
 import { SecuritySection } from './SecuritySection.js';
 import { SystemSection } from './SystemSection.js';
@@ -38,6 +40,7 @@ type SectionId =
   | 'security'
   | 'sso'
   | 'integrations'
+  | 'ai'
   | 'log-drains'
   | 'storage'
   | 'firewall'
@@ -73,6 +76,7 @@ const SETTING_GROUPS: SectionCategory[] = [
     category: 'Integrations & Alerts',
     items: [
       { id: 'integrations', label: 'Integrations', desc: 'Vault secrets, DNS & S3', icon: <Boxes size={16} /> },
+      { id: 'ai', label: 'AI Diagnosis', desc: 'BYO-key failed-deploy analysis', icon: <Bot size={16} /> },
       { id: 'notifications', label: 'Notifications', desc: 'Webhooks, Slack, Telegram', icon: <Bell size={16} /> },
       { id: 'log-drains', label: 'Log Drains', desc: 'Syslog, Datadog & Vector', icon: <Terminal size={16} /> },
     ],
@@ -224,6 +228,7 @@ export function Settings() {
             {section === 'security' && <SecuritySection />}
             {section === 'sso' && <SsoSection />}
             {section === 'integrations' && <IntegrationsSection />}
+            {section === 'ai' && <AiSection />}
             {section === 'notifications' && <NotificationsSection />}
             {section === 'log-drains' && <LogDrainsSection />}
             {section === 'firewall' && <FirewallSection />}

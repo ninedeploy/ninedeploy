@@ -89,6 +89,11 @@ export function createFakeApiModule() {
       rename: vi.fn(),
       remove: vi.fn(),
     },
+    ai: {
+      getConfig: vi.fn().mockResolvedValue({ configured: false, baseUrl: null, model: null, hasApiKey: false }),
+      updateConfig: vi.fn(),
+      diagnose: vi.fn(),
+    },
     deploys: {
       trigger: vi.fn(),
       list: vi.fn(),
@@ -243,6 +248,7 @@ export function createFakeApiModule() {
     setSessionTokens: vi.fn(),
     clearTokens: vi.fn(),
     deployLogsWsUrl: vi.fn(() => 'ws://localhost/v1/logs'),
+    websocketAuthProtocols: vi.fn(() => ['nd-auth', 'test-token']),
     // Mirrors the real authedFetch: bearer header from getToken + plain fetch.
     authedFetch: (url: string, init?: RequestInit) => {
       const headers = new Headers(init?.headers);

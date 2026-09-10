@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, ArrowUpRight, GitCompare, RotateCcw, Trash2, X } from 'lucide-react';
+import { Activity, ArrowUpRight, Bot, GitCompare, RotateCcw, Trash2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { Deployment } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
-import { Card, CardBody, Skeleton, Spinner, StatusBadge, cn } from '../../components/ui.js';
+import { Card, CardBody, Button, Skeleton, Spinner, StatusBadge, cn } from '../../components/ui.js';
 import { LogPanel } from './LogPanel.js';
 
 export const IN_FLIGHT = ['queued', 'building', 'deploying'];
@@ -141,6 +141,9 @@ export function DeploysTab({
       </Card>
 
       {activeId && !inFlight && <ConfigDiffCard serviceId={serviceId} deploymentId={activeId} />}
+      {activeId && activeDeployRow?.status === 'failed' && (
+        <AiDiagnosisCard key={activeId} serviceId={serviceId} deploymentId={activeId} />
+      )}
     </div>
   );
 }
@@ -284,6 +287,57 @@ function PromoteCard({
             Promote
           </button>
         </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+// ── AI diagnosis (BYO-key) ────────────────────────────────────────────────
+// Offered only for failed deployments AND only when the operator configured
+// a provider (the server enforces both; this decides whether to offer it).
+// Keyed by deployment id so switching rows resets the shown diagnosis.
+function AiDiagnosisCard({ serviceId, deploymentId }: { serviceId: number; deploymentId: number }) {
+  const { toast } = useToast();
+  const [diagnosis, setDiagnosis] = useState<string | null>(null);
+  const configQ = useQuery({
+    queryKey: ['ai-config'],
+    queryFn: () => api.ai.getConfig(),
+    // Only worth the round-trip when a failed deploy is on screen.
+    staleTime: 60_000,
+  });
+  const diagnose = useMutation({
+    mutationFn: () => api.ai.diagnose(serviceId, deploymentId),
+    onSuccess: (res) => {
+      setDiagnosis(res.diagnosis);
+      toast(`Diagnosis ready (${res.model})`, 'info');
+    },
+    onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Diagnosis failed', 'error'),
+  });
+
+  if (!configQ.data?.configured) return null;
+
+  return (
+    <Card>
+      <CardBody>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="flex items-center gap-2 text-sm font-medium text-slate-300">
+            <Bot size={15} className={diagnosis ? 'text-emerald-300' : 'text-slate-500'} /> AI diagnosis
+          </span>
+          {diagnose.isPending ? (
+            <span className="flex items-center gap-1.5 text-xs text-slate-500">
+              <Spinner className="h-3 w-3" /> Analyzing build log…
+            </span>
+          ) : (
+            <Button variant="secondary" size="sm" onClick={() => diagnose.mutate()}>
+              {diagnosis ? 'Re-analyze' : 'Diagnose failure'}
+            </Button>
+          )}
+        </div>
+        {diagnosis && (
+          <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-lg bg-black/40 p-3 font-mono text-[11px] leading-relaxed text-slate-300 ring-1 ring-inset ring-white/5">
+            {diagnosis}
+          </pre>
+        )}
       </CardBody>
     </Card>
   );

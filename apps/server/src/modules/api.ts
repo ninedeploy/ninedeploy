@@ -8,6 +8,7 @@ import { alertRoutes } from './alerts.js';
 import { dashboardRoutes } from './dashboard.js';
 import { attachmentRoutes, databasesRoutes } from './databases.js';
 import { environmentRoutes } from './environments.js';
+import { aiRoutes } from './ai.js';
 import { studioProxyRoutes } from './studioProxy.js';
 import { backupRoutes, databaseBackupRoutes } from './backups.js';
 import { pgbouncerRoutes } from './pgbouncer.js';
@@ -103,6 +104,7 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(databaseBackupRoutes, { prefix: '/databases' });
   // Deployment lanes (production / staging / development) per workspace.
   await app.register(environmentRoutes, { prefix: '/environments' });
+  await app.register(aiRoutes, { prefix: '/ai' });
   // Same-origin reverse proxy for the database Web Studio — serves the
   // loopback-bound studio container through the panel origin so the
   // embedded iframe works under HTTPS and CSP, and rides the panel auth.

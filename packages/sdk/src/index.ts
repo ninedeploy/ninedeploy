@@ -50,6 +50,8 @@ import type {
   LabelPatchInput,
   Environment,
   EnvironmentCreateInput,
+  AiConfigStatus,
+  AiConfigUpdate,
   Login,
   ManagedDatabase,
   DatabaseDetail,
@@ -579,6 +581,14 @@ export interface NineDeployClient {
     create: (input: EnvironmentCreateInput) => Promise<Environment>;
     rename: (id: number, name: string) => Promise<Environment>;
     remove: (id: number) => Promise<{ ok: boolean }>;
+  };
+  /** AI failure diagnosis (BYO-key): operator-configured, OpenAI-compatible. */
+  ai: {
+    /** Never carries key material — only endpoint/model + hasApiKey. */
+    getConfig: () => Promise<AiConfigStatus>;
+    updateConfig: (input: AiConfigUpdate) => Promise<{ ok: boolean }>;
+    /** Ask the configured provider to diagnose a failed build log. */
+    diagnose: (serviceId: number, deploymentId: number) => Promise<{ diagnosis: string; model: string }>;
   };
   serviceTags: {
     /** Read the project's / workspace's / label memberships of a service. */
@@ -1502,6 +1512,15 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       create: (input) => send<Environment>('POST', '/v1/environments', input),
       rename: (id, name) => send<Environment>('PATCH', `/v1/environments/${id}`, { name }),
       remove: (id) => send<{ ok: boolean }>('DELETE', `/v1/environments/${id}`),
+    },
+    ai: {
+      getConfig: () => get<AiConfigStatus>('/v1/ai/config'),
+      updateConfig: (input) => send<{ ok: boolean }>('PUT', '/v1/ai/config', input),
+      diagnose: (serviceId, deploymentId) =>
+        send<{ diagnosis: string; model: string }>(
+          'POST',
+          `/v1/ai/services/${serviceId}/deploys/${deploymentId}/diagnose`,
+        ),
     },
     serviceTags: {
       get: (id) => get<ServiceTags>(`/v1/services/${id}/tags`),
