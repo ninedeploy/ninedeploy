@@ -1371,16 +1371,16 @@ if [ "$(uname -s)" = "Linux" ] && command -v systemctl &>/dev/null; then
   fi
   DATA_DIR_SETTING="${NINEDEPLOY_DATA_DIR:-$INSTALL_DIR/.data}"
   mkdir -p "$DATA_DIR_SETTING"
-  # Writable homes for the toolchains the panel spawns: DOCKER_CONFIG (buildx
-  # builder-activity writes) and PM2_HOME (dump.pm2 persistence). Both default
-  # to /root/... which the hardened unit's ProtectHome=read-only makes
-  # unwritable — the unit exports these env vars pointing here.
-  mkdir -p "$DATA_DIR/docker-config" "$DATA_DIR/pm2"
   # Environment files commonly use NINEDEPLOY_DATA_DIR=./.data. systemd
   # requires every ReadWritePaths= operand to be absolute, so resolve the
   # configured directory from the installer's current INSTALL_DIR before
   # rendering the unit.
   DATA_DIR=$(cd "$DATA_DIR_SETTING" && pwd -P)
+  # Writable homes for the toolchains the panel spawns: DOCKER_CONFIG (buildx
+  # builder-activity writes) and PM2_HOME (dump.pm2 persistence). Both default
+  # to /root/... which the hardened unit's ProtectHome=read-only makes
+  # unwritable — the unit exports these env vars pointing here.
+  mkdir -p "$DATA_DIR/docker-config" "$DATA_DIR/pm2"
   SERVICE_FILE="/etc/systemd/system/ninedeploy.service"
   UNIT_STAGE_DIR=$(mktemp -d)
   UNIT_STAGE_FILE="$UNIT_STAGE_DIR/ninedeploy.service"
