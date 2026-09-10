@@ -70,7 +70,7 @@ describe('AI diagnosis routes', () => {
       method: 'PUT',
       url: '/ai/config',
       headers: asUser(),
-      payload: { baseUrl: 'https://ai.example.com/v1', model: 'gpt-test', apiKey: 'sk-test-1234567890' },
+      payload: { baseUrl: 'https://ai.example.com/v1', model: 'gpt-test', apiKey: TEST_KEY },
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ok: true });
@@ -79,13 +79,74 @@ describe('AI diagnosis routes', () => {
     expect(configRow).toMatchObject({ key: 'ai_diagnosis_config', value: { baseUrl: 'https://ai.example.com/v1', model: 'gpt-test' } });
     expect(keyRow).toMatchObject({ key: 'ai_diagnosis_key_encrypted' });
     // Sealed envelope, not the plaintext key.
-    expect(String(keyRow!.value)).not.toContain('sk-test-1234567890');
+    expect(String(keyRow!.value)).not.toContain(TEST_KEY);
+    await app.close();
+  });
+
+  it('updates endpoint/model without touching the stored key when omitted', async () => {
+    const settingInserts: Array<Record<string, unknown>> = [];
+    const app = await buildTestApp({
+      db: createFakeDb({
+        insert: {
+          settings: (v: Record<string, unknown>) => {
+            settingInserts.push(v);
+            return [{ ...v }];
+          },
+        },
+      }),
+    });
+    await app.register(aiRoutes, { prefix: '/ai' });
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/ai/config',
+      headers: asUser(),
+      payload: { baseUrl: 'https://ai.example.com/v1', model: 'gpt-test' },
+    });
+    expect(res.statusCode).toBe(200);
+    // Only the config row is written — the key row must stay untouched.
+    expect(settingInserts).toHaveLength(1);
+    expect(settingInserts[0]).toMatchObject({ key: 'ai_diagnosis_config' });
+    await app.close();
+  });
+
+  it('reports partial config as unconfigured on GET', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: {
+          settings: () => ({ key: 'ai_diagnosis_config', value: { baseUrl: 'https://ai.example.com/v1', model: 'gpt-test' } }),
+        },
+      }),
+    });
+    await app.register(aiRoutes, { prefix: '/ai' });
+    const res = await app.inject({ method: 'GET', url: '/ai/config', headers: asUser({ isOperator: false }) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ configured: false, baseUrl: 'https://ai.example.com/v1', model: 'gpt-test', hasApiKey: false });
     await app.close();
   });
 
   it('refuses to diagnose when not configured', async () => {
     const app = await buildTestApp({
       db: createFakeDb({ findFirst: { services: SVC, deployments: depRow({ id: 77, serviceId: 5, status: 'failed' }) } }),
+    });
+    await app.register(aiRoutes, { prefix: '/ai' });
+    const res = await app.inject({ method: 'POST', url: '/ai/services/5/deploys/77/diagnose', headers: asUser() });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('treats an undecryptable stored key as unconfigured instead of half-working', async () => {
+    let settingsCall = 0;
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: {
+          services: SVC,
+          deployments: depRow({ id: 77, serviceId: 5, status: 'failed' }),
+          settings: () =>
+            settingsCall++ === 0
+              ? { key: 'ai_diagnosis_config', value: { baseUrl: 'https://ai.example.com/v1', model: 'gpt-test' } }
+              : { key: 'ai_diagnosis_key_encrypted', value: 'rotated-away-envelope' },
+        },
+      }),
     });
     await app.register(aiRoutes, { prefix: '/ai' });
     const res = await app.inject({ method: 'POST', url: '/ai/services/5/deploys/77/diagnose', headers: asUser() });
@@ -242,6 +303,25 @@ describe('AI diagnosis routes', () => {
     await app.register(aiRoutes, { prefix: '/ai' });
     const res = await app.inject({ method: 'POST', url: '/ai/services/5/deploys/77/diagnose', headers: asUser() });
     expect(res.statusCode).toBe(504);
+    await app.close();
+  });
+
+  it('maps a plain connection failure to 504 as well', async () => {
+    appendFileSync(logFile(77), 'boom');
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('connect ECONNREFUSED 127.0.0.1:11434')));
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: {
+          services: SVC,
+          deployments: depRow({ id: 77, serviceId: 5, status: 'failed' }),
+          settings: alternatingSettings(),
+        },
+      }),
+    });
+    await app.register(aiRoutes, { prefix: '/ai' });
+    const res = await app.inject({ method: 'POST', url: '/ai/services/5/deploys/77/diagnose', headers: asUser() });
+    expect(res.statusCode).toBe(504);
+    expect(JSON.stringify(res.json())).toContain('is unreachable');
     await app.close();
   });
 });

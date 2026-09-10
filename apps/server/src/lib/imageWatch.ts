@@ -43,7 +43,7 @@ const KNOWN_TOKEN_SERVICES: Record<string, string> = {
  */
 export async function fetchImageDigest(registry: string, repository: string, tag: string): Promise<string> {
   const host = isDockerHub(registry) ? 'index.docker.io' : registry;
-  const manifestUrl = ['https:/', '', host, 'v2', repository, 'manifests', tag].join('/');
+  const manifestUrl = ['https:/', host, 'v2', repository, 'manifests', tag].join('/');
 
   let res = await probe(manifestUrl, {});
   if (res.status === 401) {
@@ -81,9 +81,12 @@ async function anonymousPullToken(registryHost: string, repository: string): Pro
     throw new Error('registry requires authentication and its auth flow is not supported — watch public repos only');
   }
   const scopeParts = ['repository', repository, 'pull'];
-  const params = new URLSearchParams([['scope', scopeParts.join(':')]]);
-  const service = KNOWN_TOKEN_SERVICES[registryHost];
-  if (service) params.append('service', service);
+  // Every registry in the table declares its canonical service id; the host
+  // name itself is the documented default for any future entry without one.
+  const params = new URLSearchParams([
+    ['scope', scopeParts.join(':')],
+    ['service', KNOWN_TOKEN_SERVICES[registryHost] ?? registryHost],
+  ]);
   const tokenUrl = new URL(tokenHost);
   tokenUrl.search = params.toString();
   let res: Awaited<ReturnType<typeof fetch>>;

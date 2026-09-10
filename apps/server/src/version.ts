@@ -1,4 +1,4 @@
-export const VERSION = '0.7.7';
+export const VERSION = '0.7.8';
 
 export interface ChangelogEntry {
   version: string;
@@ -9,7 +9,7 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
-    version: '0.7.7',
+    version: '0.7.8',
     date: '2026-09-10',
     title: 'Hardened-Host Fix: buildx & PM2 vs Read-Only /root — Plus a Manifest That Finally Listens',
     changes: [

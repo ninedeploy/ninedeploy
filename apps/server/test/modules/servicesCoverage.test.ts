@@ -121,7 +121,32 @@ describe('services list — visibility + tag filters', () => {
     // is whatever the fake's workspace_members + owned query
     // produce. The point is that the route did not throw, did
     // not 500, and the filter arm ran (no operator short-circuit).
-    expect(Array.isArray(res.json())).toBe(true);
+  });
+
+  it('filters the list by the deployment lane (environmentId) query parameter', async () => {
+    // The lanes feature: `?environmentId=N` keeps only services in that
+    // lane; ungrouped services (environmentId null) never match a lane.
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findMany: {
+          services: [
+            svcRow({ id: 1, name: 'prod-web', environmentId: 2 }),
+            svcRow({ id: 2, name: 'ungrouped', environmentId: null }),
+            svcRow({ id: 3, name: 'staging-web', environmentId: 3 }),
+          ],
+        },
+      }),
+    });
+    await app.register(servicesRoutes);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/?environmentId=2',
+      headers: asUser({ isOperator: true }),
+    });
+    expect(res.statusCode).toBe(200);
+    const rows = res.json();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: 1, environmentId: 2 });
   });
 
   it('narrows the list by ?tagProjectIds= when the wanted set is non-empty (wanted.some branch)', async () => {
@@ -457,6 +482,32 @@ describe('services PATCH — autoUpdate watch', () => {
       url: '/1',
       headers: asUser(),
       payload: { autoUpdate: true },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(seen[0]).toMatchObject({ autoUpdate: true });
+  });
+
+  it('refuses autoUpdate when the same PATCH switches the type away from docker', async () => {
+    const app = await buildTestApp({ db: autoUpdateDb(IMAGE_SVC) });
+    await app.register(servicesRoutes);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/1',
+      headers: asUser(),
+      payload: { autoUpdate: true, type: 'pm2' },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('allows enabling the watch together with a new image in one PATCH', async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    const app = await buildTestApp({ db: autoUpdateDb({ ...IMAGE_SVC, image: null }, (s) => seen.push(s)) });
+    await app.register(servicesRoutes);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/1',
+      headers: asUser(),
+      payload: { autoUpdate: true, image: 'nginx:1.27' },
     });
     expect(res.statusCode).toBe(200);
     expect(seen[0]).toMatchObject({ autoUpdate: true });

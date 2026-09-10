@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.7.7] - 2026-09-10
+## [0.7.8] - 2026-09-10
 
 > The one that un-breaks hardened hosts: a class of silent failures where
 > the panel's own hardening (read-only /root) starved the tools it spawns

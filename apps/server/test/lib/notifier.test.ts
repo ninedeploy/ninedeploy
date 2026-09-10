@@ -25,6 +25,12 @@ vi.mock('../../src/lib/egressGuard.js', async () => {
   return { ...actual, guardedFetch: (url: string, init?: RequestInit) => fetch(url, init) };
 });
 
+// sendFcm talks to Google's OAuth + messaging endpoints — stubbed so the
+// dispatchChannel('fcm', …) tests stay offline. Real FCM behaviour lives in
+// test/lib/fcm.test.ts.
+vi.mock('../../src/lib/fcm.js', () => ({ sendFcm: vi.fn(async () => undefined) }));
+import { sendFcm } from '../../src/lib/fcm.js';
+
 interface FakeDb {
   db: never;
   insert: ReturnType<typeof vi.fn>;
@@ -693,6 +699,41 @@ describe('scopeMatchesAction (per-service subscription scopes)', () => {
   });
 });
 
+describe('dispatchChannel — fcm', () => {
+  const appEvent = { id: 2, action: 'deploy.failed', entity: 'web', ts: '2026-01-01T00:00:00.000Z' };
+  beforeEach(() => {
+    vi.stubEnv('NINEDEPLOY_MASTER_KEY', KEY_HEX);
+    vi.mocked(sendFcm).mockClear();
+  });
+
+  it('refuses an fcm channel without a service-account configJson', async () => {
+    await expect(dispatchChannel('fcm', 'device-token', appEvent, 'body')).rejects.toThrow(
+      'FCM channel missing service account configJson',
+    );
+    expect(sendFcm).not.toHaveBeenCalled();
+  });
+
+  it('hands the device token, service account and action data to sendFcm', async () => {
+    await dispatchChannel('fcm', 'device-token', appEvent, 'body', {
+      configJson: JSON.stringify({ project_id: 'p1' }),
+    });
+    expect(sendFcm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deviceToken: 'device-token',
+        serviceAccountJson: JSON.stringify({ project_id: 'p1' }),
+        body: 'body',
+        data: { action: 'deploy.failed', entity: 'web', ts: appEvent.ts },
+      }),
+    );
+  });
+
+  it('refuses unknown channel types with a loud error', async () => {
+    await expect(dispatchChannel('carrier-pigeon', 'x', appEvent, 'body')).rejects.toThrow(
+      'Unknown notification channel type: carrier-pigeon',
+    );
+  });
+});
+
 describe('notifyEvent — per-service subscription deliveries', () => {
   beforeEach(() => {
     vi.stubEnv('NINEDEPLOY_MASTER_KEY', KEY_HEX);
@@ -741,6 +782,18 @@ describe('notifyEvent — per-service subscription deliveries', () => {
     fetchMock.mockResolvedValue(okResponse());
     const { db } = makeDb([channel()], undefined, [{ channelId: 7, scope: 'deploy' }]);
     await notifyEvent(db, { ...event, action: 'deploy.success', meta: { serviceId: 9 } });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('survives a failing per-service rules lookup and still delivers globally', async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const db = {
+      query: { notificationChannels: { findMany: async () => [{ id: 7, type: 'webhook', targetEncrypted: encrypt('https://hooks.example.com/x'), eventFilter: '', active: true }] } },
+      // The rules lookup rejects (pre-migration table) — delivery must go on.
+      select: () => { throw new Error('no such table: service_notification_channels'); },
+      insert: () => ({ values: async () => undefined }),
+    } as never;
+    await notifyEvent(db, { ...event, action: 'deploy.failed', meta: { serviceId: 5 } });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

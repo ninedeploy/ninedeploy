@@ -78,8 +78,9 @@ export const environmentRoutes: FastifyPluginAsync = async (app) => {
     } catch (err) {
       // The (workspace_id, name) unique index is the race backstop for
       // concurrent creates — translate it into the same clean response the
-      // pre-check would produce.
-      if (err instanceof Error && /UNIQUE.*environments_workspace_name/i.test(err.message)) {
+      // pre-check would produce. SQLite names columns with dots in the
+      // constraint message, not the JS field names.
+      if (err instanceof Error && /UNIQUE constraint failed: environments\.(workspace_id|name)/i.test(err.message)) {
         throw badRequest('An environment with this name already exists in the workspace');
       }
       throw err;
