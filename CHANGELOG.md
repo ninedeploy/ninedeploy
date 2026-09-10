@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.5] - 2026-09-09
+
+> The deployment-workflows release: services can be grouped into
+> environments (deployment lanes), a commit soaked in staging can be
+> promoted to production with one call, and failed builds can be
+> diagnosed by an AI provider under your own API key. Also: operators
+> are now told when scheduled database backups silently stop happening.
+
+### Added
+
+- **Deployment lanes (environments).** A workspace can define named
+  lanes — production, staging, development, anything — and services join
+  a lane from the service create/edit form. The services page gains a
+  lane filter and a **Lanes** manager (create, rename, delete, with live
+  service counts per lane). Deleting a lane detaches its services rather
+  than deleting anything. Role floors are enforced server-side: `member`
+  to create or rename, `admin` to delete. SDK: `client.environments`.
+- **Staging → production promotion.** `POST /v1/services/:id/promote`
+  redeploys ANOTHER service at this service's exact running commit — the
+  canonical soak-in-staging-then-promote flow. Both services must track
+  the same repository, the caller needs `member` on both, the source
+  must have a pinned running deployment, and the target's queued-deploy
+  cap applies. The deploy tab shows a **Promote this commit** card when
+  same-repo siblings exist. SDK: `client.deploys.promote`.
+- **AI failure diagnosis (bring your own key).** The operator configures
+  one OpenAI-compatible endpoint, model and API key under
+  *Settings → AI Diagnosis* — the key is sealed with the same
+  versioned AES-256-GCM envelope as other credentials and is never
+  returned by any route. Failed deployments then offer **AI diagnosis**:
+  the sanitized tail of the build log (16 KB) goes to the provider with
+  the log framed strictly as data. The sanitizer strips ANSI escapes and
+  masks credential-named assignments, Authorization/Bearer headers and
+  `user:password@` URLs before anything leaves the host. Diagnosis needs
+  `member` on the service, works only on failed deployments, and is
+  audited. Endpoint/model are operator-set by design — pointing the
+  provider at a local Ollama/LM Studio is an intended scenario. SDK:
+  `client.ai`.
+- **Missed-backup watchdog.** The backup scheduler now notices when a
+  running database's newest scheduled backup is more than 48 hours old
+  — the silent failure mode where a scheduler tick dies and nobody
+  looks — and raises a `backup.missed` alert once per incident until a
+  successful backup clears it.
+
+---
+
 ## [0.7.4] - 2026-09-09
 
 > Post-remediation polish: the database Web Studio is now served through

@@ -104,6 +104,10 @@ export async function readVolumeFile(
   rel: string,
 ): Promise<{ content: string; encoding: 'utf8' | 'base64' }> {
   assertManagedVolume(volume);
+  // `''` is the volume ROOT (a directory), never a readable file: volPath('')
+  // is '/v', so the generated `test -f '/v'` fails and the shell exits non-zero.
+  // Guarding here — not only at the route — keeps a future non-route caller safe.
+  if (!rel) throw new Error('Refusing to read the volume root — a path inside the volume is required');
   await prepareVolumeHelper();
   const out = await capture('docker', [
     'run', '--rm', '-v', `${volume}:${VOL_ROOT}`, VOLUME_HELPER_IMAGE,
@@ -122,6 +126,10 @@ export async function writeVolumeFile(
   sink: (line: string) => void,
 ): Promise<void> {
   assertManagedVolume(volume);
+  // `''` is the volume ROOT: volPath('') is '/v', so the generated command is
+  // `mkdir -p '' && base64 -d > '/v'` and mkdir fails. Guarding here — not only
+  // at the route — keeps a future non-route caller safe.
+  if (!rel) throw new Error('Refusing to write the volume root — a path inside the volume is required');
   await prepareVolumeHelper(sink);
   // base64 is validated upstream (schemas); it rides through stdin so the
   // content never touches argv or a shell string.
@@ -154,6 +162,10 @@ export async function deleteVolumePath(
   sink: (line: string) => void,
 ): Promise<void> {
   assertManagedVolume(volume);
+  // `''` is not "no path" — volPath('') === VOL_ROOT ('/v'), so `rm -rf /v`
+  // would empty the entire volume. Listing and reading may address the root;
+  // destroying it is never a valid file-manager operation.
+  if (!rel) throw new Error('Refusing to delete the volume root — a path inside the volume is required');
   await prepareVolumeHelper(sink);
   await run(
     'docker',

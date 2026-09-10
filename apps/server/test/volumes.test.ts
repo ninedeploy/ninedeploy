@@ -117,6 +117,54 @@ describe('volume routes', () => {
       expect(res.statusCode).toBe(200);
       expect(volFilesMocks.deleteVolumePath).toHaveBeenCalledWith('nd-svc-web-data', 'old', expect.any(Function));
     });
+
+    it('refuses a missing or root path instead of wiping the volume', async () => {
+      // Regression r087: guardPath('') IS the volume root, and the engine's rm
+      // target became '/v' — a whole-volume wipe. The missing param and every
+      // root-equivalent form must be rejected before any delete runs.
+      const app = await buildTestApp({ db: createFakeDb() });
+      await app.register(volumeRoutes);
+      const noPath = await app.inject({ method: 'DELETE', url: '/nd-svc-web-data/files', headers: asUser() });
+      expect(noPath.statusCode).toBe(400);
+      const slash = await app.inject({ method: 'DELETE', url: '/nd-svc-web-data/files?path=/', headers: asUser() });
+      expect(slash.statusCode).toBe(400);
+      const dot = await app.inject({ method: 'DELETE', url: '/nd-svc-web-data/files?path=.', headers: asUser() });
+      expect(dot.statusCode).toBe(400);
+      expect(volFilesMocks.deleteVolumePath).not.toHaveBeenCalled();
+      await app.close();
+    });
+
+    it('refuses root-equivalent paths for content reads and writes (r088)', async () => {
+      // Regression r088 — same root cause as the r087 delete wipe: `''` IS the
+      // volume root, so the engine built `test -f '/v'` (exits 1 → capture
+      // rejects → 500) and `mkdir -p ''` (fails → run rejects → 500).
+      const app = await buildTestApp({ db: createFakeDb() });
+      await app.register(volumeRoutes);
+
+      const readNoPath = await app.inject({ method: 'GET', url: '/nd-svc-web-data/files/content', headers: asUser() });
+      expect(readNoPath.statusCode).toBe(400);
+      const readRoot = await app.inject({ method: 'GET', url: '/nd-svc-web-data/files/content?path=/', headers: asUser() });
+      expect(readRoot.statusCode).toBe(400);
+
+      const writeRoot = await app.inject({
+        method: 'PUT',
+        url: '/nd-svc-web-data/files',
+        headers: asUser(),
+        payload: { path: '/', contentBase64: 'aGk=' },
+      });
+      expect(writeRoot.statusCode).toBe(400);
+      const writeDot = await app.inject({
+        method: 'PUT',
+        url: '/nd-svc-web-data/files',
+        headers: asUser(),
+        payload: { path: '.', contentBase64: 'aGk=' },
+      });
+      expect(writeDot.statusCode).toBe(400);
+
+      expect(volFilesMocks.readVolumeFile).not.toHaveBeenCalled();
+      expect(volFilesMocks.writeVolumeFile).not.toHaveBeenCalled();
+      await app.close();
+    });
   });
 
   it('lists managed volumes with owners and sizes', async () => {

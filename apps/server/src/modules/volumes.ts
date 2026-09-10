@@ -182,6 +182,7 @@ export const volumeRoutes: FastifyPluginAsync = async (app) => {
   app.get('/:name/files/content', { preHandler: [app.requireAdmin] }, async (req, reply) => {
     const name = guardVolume((req.params as { name: string }).name);
     const rel = guardPath((req.query as { path?: string }).path);
+    if (!rel) throw badRequest('a path inside the volume is required');
     void audit(app.db, req.user!.id, 'volume.file.read', `${name}:${rel}`);
     const file = await readVolumeFile(name, rel);
     reply.header('content-type', 'application/json');
@@ -192,6 +193,7 @@ export const volumeRoutes: FastifyPluginAsync = async (app) => {
     const name = guardVolume((req.params as { name: string }).name);
     const input = volumeFileWrite.parse(req.body);
     const rel = guardPath(input.path);
+    if (!rel) throw badRequest('a path inside the volume is required');
     void audit(app.db, req.user!.id, 'volume.file.write', `${name}:${rel}`);
     await writeVolumeFile(name, rel, input.contentBase64, (line) => req.log.info(line));
     return { ok: true };
@@ -209,6 +211,7 @@ export const volumeRoutes: FastifyPluginAsync = async (app) => {
   app.delete('/:name/files', { preHandler: [app.requireAdmin] }, async (req) => {
     const name = guardVolume((req.params as { name: string }).name);
     const rel = guardPath((req.query as { path?: string }).path);
+    if (!rel) throw badRequest('a path inside the volume is required');
     void audit(app.db, req.user!.id, 'volume.file.delete', `${name}:${rel}`);
     await deleteVolumePath(name, rel, (line) => req.log.info(line));
     return { ok: true };

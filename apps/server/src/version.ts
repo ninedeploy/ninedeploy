@@ -1,4 +1,4 @@
-export const VERSION = '0.7.4';
+export const VERSION = '0.7.5';
 
 export interface ChangelogEntry {
   version: string;
@@ -8,6 +8,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.7.5',
+    date: '2026-09-09',
+    title: 'Deployment Workflows: Lanes, One-Click Promotion & AI Diagnosis Under Your Own Key',
+    changes: [
+      'Deployment lanes (environments) let a workspace group services into named stages — production, staging, development, anything. Services join a lane from the create/edit form; the services page gains a lane filter and a Lanes manager with live service counts. Deleting a lane detaches its services rather than deleting anything. Role floors are enforced server-side: member to create or rename, admin to delete.',
+      'Staging → production promotion: POST /v1/services/:id/promote redeploys another service at this service\u2019s exact running commit — soak a commit in staging, then push it to production with one call and no re-build. Both services must track the same repository, the caller needs member on both, the source must have a pinned running deployment, and the target\u2019s queued-deploy cap applies. The deploy tab shows a "Promote this commit" card whenever same-repo siblings exist.',
+      'AI failure diagnosis (bring your own key): the operator configures one OpenAI-compatible endpoint, model and API key under Settings → AI Diagnosis. The key is sealed with the same versioned AES-256-GCM envelope as every other credential and is never returned by any route. Failed deployments then offer one-click diagnosis: the sanitized tail of the build log (16 KB) goes to the provider with the log framed strictly as data — ANSI escapes stripped, credential-named assignments, Authorization/Bearer headers and user:password@ URLs masked before anything leaves the host. Member floor on the service, failed deployments only, audited, and pointing the provider at a local Ollama/LM Studio is an explicitly supported setup.',
+      'The backup scheduler now notices when a running database\u2019s newest scheduled backup is more than 48 hours old — the silent failure mode where a scheduler tick dies and nobody looks — and raises a backup.missed alert once per incident until a successful backup clears it.',
+    ],
+  },
   {
     version: '0.7.4',
     date: '2026-09-06',

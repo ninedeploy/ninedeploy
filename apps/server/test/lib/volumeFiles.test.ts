@@ -106,4 +106,33 @@ describe('volume file operations (docker sidecar)', () => {
     const args = execMocks.run.mock.calls.at(-1)?.[1] as string[];
     expect(args.join(' ')).toContain('rm -rf -- /v/a/b');
   });
+
+  it('refuses to delete the volume root (rel "" is /v, not "no path")', async () => {
+    // Regression r087: volPath('') === '/v', so an unguarded delete issued
+    // `rm -rf -- /v` and erased the entire volume. The guard must fire before
+    // any exec, so no `rm` is ever spawned.
+    execMocks.run.mockClear();
+    await expect(deleteVolumePath('nd-svc-web-data', '', () => {})).rejects.toThrow('volume root');
+    expect(execMocks.run).not.toHaveBeenCalled();
+  });
+
+  it('refuses to read the volume root (r089 choke point)', async () => {
+    // '' is '/v' — `test -f '/v'` is false, so the shell exits non-zero and
+    // capture() rejects. The engine must refuse before spawning anything, so a
+    // non-route caller cannot reintroduce the bug.
+    execMocks.capture.mockClear();
+    execMocks.run.mockClear();
+    await expect(readVolumeFile('nd-svc-web-data', '')).rejects.toThrow('volume root');
+    expect(execMocks.capture).not.toHaveBeenCalled();
+    expect(execMocks.run).not.toHaveBeenCalled();
+  });
+
+  it('refuses to write the volume root (r089 choke point)', async () => {
+    // '' is '/v' — the generated `mkdir -p ''` fails, so run() rejects.
+    execMocks.capture.mockClear();
+    execMocks.run.mockClear();
+    await expect(writeVolumeFile('nd-svc-web-data', '', 'aGk=', () => {})).rejects.toThrow('volume root');
+    expect(execMocks.run).not.toHaveBeenCalled();
+    expect(execMocks.capture).not.toHaveBeenCalled();
+  });
 });
