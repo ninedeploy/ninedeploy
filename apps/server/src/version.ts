@@ -1,4 +1,4 @@
-export const VERSION = '0.7.6';
+export const VERSION = '0.7.7';
 
 export interface ChangelogEntry {
   version: string;
@@ -8,6 +8,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.7.7',
+    date: '2026-09-10',
+    title: 'Hardened-Host Fix: buildx & PM2 vs Read-Only /root — Plus a Manifest That Finally Listens',
+    changes: [
+      'Fixed "docker build" failing on every hardened install with "failed to update builder last activity time: open /root/.docker/buildx/activity/...: read-only file system". The v0.7.3 systemd hardening (ProtectHome=read-only) makes /root read-only for the root-run panel, and modern buildx insists on writing builder-activity files under $DOCKER_CONFIG on every build. The unit now exports DOCKER_CONFIG and PM2_HOME pointing at writable paths under the data directory, and the panel\u2019s env allowlist inherits them. Docker-mode installs were never affected.',
+      'The .ninedeploy manifest\u2019s previews, notifications and volume.backups sections are wired at deploy time instead of being read and dropped: preview settings land on the service row, notification channel NAMES resolve into per-service subscriptions whose delivery is additive to each channel\u2019s global filter, and the volume-backup cron drives a manifest-owned scheduled job (invalid cron refused loudly, operator-owned jobs never touched). Only static, watch and network remain panel-side.',
+      'The installer now runs a five-second scratch docker-build preflight with the same DOCKER_CONFIG the unit exports, so a broken build toolchain is caught during install — with output and the known-cause hint — instead of by the operator\u2019s first push. Clone failures in the deploy log also explain themselves: the hint names the fix that applies to the service\u2019s actual setup (no credential, deploy-key registration, or token validity).',
+    ],
+  },
   {
     version: '0.7.6',
     date: '2026-09-10',

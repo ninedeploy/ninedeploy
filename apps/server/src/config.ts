@@ -30,7 +30,10 @@ const backupsDir = path.join(dataDir, 'backups');
 // activity files there — the panel points the CLI at this writable dir
 // instead (systemd/ninedeploy.service exports the matching env var).
 const dockerConfigDir = path.join(dataDir, 'docker-config');
-for (const dir of [reposDir, logsDir, backupsDir, dockerConfigDir]) mkdirSync(dir, { recursive: true });
+// PM2_HOME for the same reason: the server persists the PM2 process list
+// (dump.pm2) there, and ~/.pm2 resolves under the read-only /root.
+const pm2Home = path.join(dataDir, 'pm2');
+for (const dir of [reposDir, logsDir, backupsDir, dockerConfigDir, pm2Home]) mkdirSync(dir, { recursive: true });
 
 export const config = {
   env: env.NODE_ENV,
@@ -57,6 +60,7 @@ export const config = {
     logsDir,
     backupsDir,
     dockerConfigDir,
+    pm2Home,
     masterKeyFile: path.join(dataDir, 'master.key'),
   },
   dbUrl,

@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.7] - 2026-09-10
+
+> The one that un-breaks hardened hosts: a class of silent failures where
+> the panel's own hardening (read-only /root) starved the tools it spawns
+> — buildx and PM2 — is found, fixed, and now guarded by an installer
+> preflight so it can never ship quietly again. Also: the `.ninedeploy`
+> manifest's three "declared but ignored" sections now actually work.
+
+### Added
+
+- **Manifest sections are wired: `previews`, `notifications` and
+  `volume.backups`.** A `.ninedeploy` file now configures PR preview
+  settings, per-service notification subscriptions and the volume-backup
+  schedule at deploy time instead of being read and dropped with a
+  warning. `notifications` channel names resolve to per-service rules
+  whose delivery is **additive** to each channel's own global event
+  filter (rules can only add one service's events to a channel, never
+  take anything away); `volume.backups` drives a manifest-owned
+  `kind: backup` scheduled job and refuses invalid cron expressions
+  loudly; preview hostname patterns stay constrained at routing time as
+  before. Only `static`, `watch` and `network` remain panel-side.
+- **Clone failures now explain themselves.** Git says "repository not
+  found" for both a missing repo and a private one read anonymously —
+  the deploy log now adds the fix that applies to the service's actual
+  setup (no credential attached / deploy-key registration / token
+  validity).
+- **The installer runs a deploy preflight.** After the health gate,
+  install.sh performs a five-second scratch `docker build` with the same
+  `DOCKER_CONFIG` the unit exports, so a broken build toolchain is
+  caught during the install — with output and the known-cause hint —
+  instead of by the operator's first push.
+
+### Fixed
+
+- **`docker build` failed on every hardened install** ("failed to update
+  builder last activity time: open /root/.docker/buildx/activity/…:
+  read-only file system"). v0.7.3's `ProtectHome=read-only` makes /root
+  read-only for the root-run panel, and modern buildx insists on writing
+  builder-activity files under `$DOCKER_CONFIG` on every build. The unit
+  now exports `DOCKER_CONFIG` (and `PM2_HOME`, for the same class of
+  failure in the PM2 process-list dump) pointing at writable paths under
+  the data directory, the panel's env allowlist inherits them, and both
+  directories are created at boot. Docker-mode installs were never
+  affected.
+- **PM2 deployments could not persist their process list** on hardened
+  installs for the same reason — `dump.pm2` was written to the read-only
+  `/root/.pm2`. The dump now lives under the data directory, and the
+  boot-resurrect unit reads the same path.
+
+---
+
 ## [0.7.6] - 2026-09-10
 
 > Watch your images: docker services can now follow their registry tag

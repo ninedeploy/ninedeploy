@@ -27,6 +27,9 @@ EnvironmentFile=@INSTALL_DIR@/.env
 # without this override every `docker build` dies with
 # "read-only file system" (the dir is created by the panel at boot).
 Environment=DOCKER_CONFIG=@DATA_DIR@/docker-config
+# Same class of failure for PM2: the server persists the process list to
+# $PM2_HOME/dump.pm2, and ~/.pm2 resolves under the read-only /root.
+Environment=PM2_HOME=@DATA_DIR@/pm2
 ExecStart=@NODE@ @INSTALL_DIR@/apps/server/dist/server.js
 Restart=always
 RestartSec=5

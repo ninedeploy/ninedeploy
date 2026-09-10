@@ -1371,6 +1371,11 @@ if [ "$(uname -s)" = "Linux" ] && command -v systemctl &>/dev/null; then
   fi
   DATA_DIR_SETTING="${NINEDEPLOY_DATA_DIR:-$INSTALL_DIR/.data}"
   mkdir -p "$DATA_DIR_SETTING"
+  # Writable homes for the toolchains the panel spawns: DOCKER_CONFIG (buildx
+  # builder-activity writes) and PM2_HOME (dump.pm2 persistence). Both default
+  # to /root/... which the hardened unit's ProtectHome=read-only makes
+  # unwritable — the unit exports these env vars pointing here.
+  mkdir -p "$DATA_DIR/docker-config" "$DATA_DIR/pm2"
   # Environment files commonly use NINEDEPLOY_DATA_DIR=./.data. systemd
   # requires every ReadWritePaths= operand to be absolute, so resolve the
   # configured directory from the installer's current INSTALL_DIR before
@@ -1542,6 +1547,31 @@ if [ "$(uname -s)" = "Linux" ] && command -v systemctl &>/dev/null; then
   esac
   ok "Traefik ingress verified (network attached, :80 responding)"
 
+  # ── Deploy preflight: prove a build actually works in this environment ──
+  # The panel spawns `docker build` under the hardened unit (ProtectHome makes
+  # /root read-only; buildx writes builder activity under $DOCKER_CONFIG), and
+  # the operator's FIRST deploy is a miserable place to discover a broken
+  # toolchain. A five-second scratch build — run with the same DOCKER_CONFIG
+  # the unit exports — catches that class of failure here, while the installer
+  # can still explain it.
+  PROBE_DIR=$(mktemp -d)
+  printf 'FROM scratch\nCOPY .keep /\n' > "$PROBE_DIR/Dockerfile"
+  : > "$PROBE_DIR/.keep"
+  if DOCKER_CONFIG="$DATA_DIR/docker-config" docker_cmd build -q -t ninedeploy-install-probe "$PROBE_DIR" >/dev/null 2>&1; then
+    ok "Deploy preflight passed: docker build works (DOCKER_CONFIG=$DATA_DIR/docker-config)"
+  else
+    warn "Deploy preflight FAILED — \`docker build\` is broken in this environment, so the first deploy will fail too. Output:"
+    PROBE_OUT=$(DOCKER_CONFIG="$DATA_DIR/docker-config" docker_cmd build -t ninedeploy-install-probe "$PROBE_DIR" 2>&1 || true)
+    printf '%s\n' "$PROBE_OUT" | tail -8
+    case "$PROBE_OUT" in
+      *"read-only file system"*)
+        warn "Known cause: buildx writing under a read-only /root. This release's unit exports DOCKER_CONFIG=$DATA_DIR/docker-config — verify with: systemctl show ninedeploy --property=Environment"
+        ;;
+    esac
+  fi
+  docker_cmd rmi ninedeploy-install-probe >/dev/null 2>&1 || true
+  rm -rf "$PROBE_DIR"
+
   # PM2 boot resurrection: bare-metal deployments live in a PM2 daemon that
   # dies with every reboot — and with the panel restart above. The server
   # keeps /root/.pm2/dump.pm2 fresh after each lifecycle change; this unit
@@ -1553,7 +1583,7 @@ if [ "$(uname -s)" = "Linux" ] && command -v systemctl &>/dev/null; then
     PM2_STAGE_DIR=$(mktemp -d)
     sed -e "s|@NODE@|$(which node)|g" \
         -e "s|@INSTALL_DIR@|${INSTALL_DIR}|g" \
-        -e "s|@PM2_HOME@|/root/.pm2|g" \
+        -e "s|@PM2_HOME@|${DATA_DIR}/pm2|g" \
         "$PM2_UNIT_TEMPLATE" > "$PM2_STAGE_DIR/ninedeploy-pm2.service"
     if ! command -v systemd-analyze &>/dev/null \
       || systemd-analyze verify "$PM2_STAGE_DIR/ninedeploy-pm2.service" >/dev/null 2>&1; then
