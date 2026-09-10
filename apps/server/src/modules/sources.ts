@@ -5,6 +5,10 @@ import type { FastifyPluginAsync } from 'fastify';
 import { createSource, sourcePatch } from '@ninedeploy/schemas';
 import { decrypt, encrypt } from '../lib/crypto.js';
 import { notFound, parseId } from '../lib/errors.js';
+// Every outbound provider call below rides the egress SSRF guard like the
+// rest of the panel's webhooks/API clients — the hosts are hardcoded today,
+// the guard keeps that invariant from silently drifting.
+import { guardedFetch } from '../lib/egressGuard.js';
 
 function serialize(s: Source) {
   return {
@@ -71,7 +75,7 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
     const token = decrypt(src.tokenEncrypted);
     if (src.type === 'github') {
       try {
-        const res = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
+        const res = await guardedFetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
           headers: {
             Authorization: `Bearer ${token}`,
             Accept: 'application/vnd.github+json',
@@ -106,7 +110,7 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
 
     if (src.type === 'gitlab') {
       try {
-        const res = await fetch('https://gitlab.com/api/v4/projects?membership=true&per_page=100&order_by=updated_at', {
+        const res = await guardedFetch('https://gitlab.com/api/v4/projects?membership=true&per_page=100&order_by=updated_at', {
           headers: { 'PRIVATE-TOKEN': token },
         });
         if (!res.ok) {
@@ -148,7 +152,7 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
       try {
         // repo can be full_name "owner/repo" or clone_url
         const cleanRepo = repo.replace('https://github.com/', '').replace(/\.git$/, '');
-        const res = await fetch(`https://api.github.com/repos/${cleanRepo}/branches?per_page=100`, {
+        const res = await guardedFetch(`https://api.github.com/repos/${cleanRepo}/branches?per_page=100`, {
           headers: {
             Authorization: `Bearer ${token}`,
             Accept: 'application/vnd.github+json',
@@ -186,7 +190,7 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
     const token = decrypt(src.tokenEncrypted);
     try {
       if (src.type === 'github') {
-        const res = await fetch('https://api.github.com/user', {
+        const res = await guardedFetch('https://api.github.com/user', {
           headers: {
             Authorization: `Bearer ${token}`,
             Accept: 'application/vnd.github+json',
@@ -201,7 +205,7 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
         return { ok: false, provider: 'github', status: res.status, error: body.slice(0, 240) };
       }
       if (src.type === 'gitlab') {
-        const res = await fetch('https://gitlab.com/api/v4/user', {
+        const res = await guardedFetch('https://gitlab.com/api/v4/user', {
           headers: { 'PRIVATE-TOKEN': token },
         });
         if (res.ok) {

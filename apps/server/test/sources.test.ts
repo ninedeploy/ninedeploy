@@ -5,7 +5,23 @@ import { asUser, buildTestApp, createFakeDb, sourceRow } from './helpers.js';
 
 const h = vi.hoisted(() => ({
   generateDeployKeyPair: vi.fn(),
+  // The module's outbound provider calls ride guardedFetch (egress SSRF
+  // guard). Stubbed to plain fetch so tests need no DNS; the REAL guard
+  // behavior is exercised in test/egressGuard.test.ts, and the wiring test
+  // at the bottom of this file pins that the routes still use it.
+  guardedFetch: vi.fn(),
 }));
+
+vi.mock('../src/lib/egressGuard.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/lib/egressGuard.js')>();
+  return { ...actual, guardedFetch: h.guardedFetch };
+});
+
+// Forward to whatever the current test installed as global fetch — several
+// tests swap it per-test to fake GitHub/GitLab responses.
+h.guardedFetch.mockImplementation(
+  async (url: string | URL, init?: RequestInit) => globalThis.fetch(url, init),
+);
 
 beforeEach(() => {
   h.generateDeployKeyPair.mockReset();
@@ -583,5 +599,33 @@ describe('POST /:id/generate-deploy-key', () => {
     const res = await app.inject({ method: 'POST', url: '/1/generate-deploy-key', headers: asUser() });
     expect(res.statusCode).toBe(500);
     expect(res.json().error.message).toContain('ssh-keygen: command not found');
+  });
+});
+
+describe('sources egress wiring', () => {
+  it('routes the outbound provider calls through the egress guard', async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = async () => {
+        throw new Error('raw fetch must not be used: provider calls ride guardedFetch');
+      };
+      const app = await buildTestApp({
+        db: createFakeDb({
+          findFirst: { sources: sourceRow({ id: 1, type: 'github', tokenEncrypted: encrypt('ghp_test') }) },
+        }),
+      });
+      await app.register(sourcesRoutes);
+      const res = await app.inject({ method: 'GET', url: '/1/repos', headers: asUser() });
+      // The stubbed guard forwards to plain fetch, which this test replaced
+      // with a tripwire — an empty list + the header proves the module caught
+      // the error path, and the guard mock call proves the WIRING.
+      expect(res.headers['x-nd-source-error']).toContain('GitHub API unreachable');
+      expect(h.guardedFetch).toHaveBeenCalledWith(
+        'https://api.github.com/user/repos?per_page=100&sort=updated',
+        expect.objectContaining({ headers: expect.objectContaining({ 'User-Agent': 'NineDeploy' }) }),
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

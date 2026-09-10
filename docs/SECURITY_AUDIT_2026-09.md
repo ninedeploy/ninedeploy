@@ -143,10 +143,12 @@ Tests: `sessions.test.ts`, `sso.test.ts`, `loginLockout.test.ts`,
 
 ## 7. Known accepted risks (documented, not fixed by design)
 
-- Member-reachable git-host API calls in `sources.ts` are a conditional
-  SSRF surface (member-controlled hosts). Operator endpoints (OIDC issuer,
-  Cloudflare, Telegram, agent hosts) are operator-configured values; most
-  outbound calls run through `egressGuard`/`guardedFetch`.
+- ~~Member-reachable git-host API calls in `sources.ts` are a conditional
+  SSRF surface (member-controlled hosts).~~ **Closed (r077):** every
+  `sources.ts` route has been operator-only since the RBAC overhaul, all
+  its provider hosts are hardcoded, and the outbound calls now run
+  through `guardedFetch` like every other panel webhook/API client —
+  pinned by a wiring test, so the hardcoded-host invariant cannot drift.
 - Exec/spawn everywhere passes arguments as **argv** through
   `lib/exec.ts` / `lib/spawnValidated.ts` (never a shell). Static scanners
   report these as "command injection" sinks; the pattern is the audited

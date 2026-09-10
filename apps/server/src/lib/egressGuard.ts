@@ -32,7 +32,9 @@ import { isIP } from 'node:net';
  * (`engine/logDrainManager.ts`), push delivery (`lib/fcm.ts`), git remotes
  * (`lib/gitEgress.ts`), the marketplace catalog, the Namecheap API, OAuth
  * token exchange (`lib/oauth.ts`), `templates_source`
- * (`templates/registry.ts`) and repo insights.
+ * (`templates/registry.ts`), repo insights and the git-host API calls in
+ * `modules/sources.ts` (hardcoded provider hosts, guarded so that invariant
+ * cannot silently drift).
  *
  * DELIBERATELY NOT guarded, because private addresses are the NORMAL
  * deployment for them and blocking would break working installs:
