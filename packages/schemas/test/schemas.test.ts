@@ -596,9 +596,10 @@ describe('service', () => {
       expect(data?.name).toBe('gh');
       expect(createSource.safeParse({ name: 'x', type: 'gitlab' }).success).toBe(true);
       expect(createSource.safeParse({ name: 'x', type: 'gitea' }).success).toBe(true);
+      expect(createSource.safeParse({ name: 'x', type: 'bitbucket' }).success).toBe(true);
       expect(createSource.safeParse({ name: 'x', type: 'custom' }).success).toBe(true);
       bad(createSource, { name: '', type: 'github' });
-      bad(createSource, { name: 'x', type: 'bitbucket' });
+      bad(createSource, { name: 'x', type: 'unknown-provider' });
     });
 
     it('source accepts a row', () => {
