@@ -146,6 +146,7 @@ describe('AI diagnosis routes', () => {
       'Step 4/7 RUN npm ci',
       'npm error Unauthorized — DB_PASSWORD=hunter2',
       'see https://deploy:hunter2@github.com/acme/web.git',
+      '{"env":{"NODE_ENV":"production","DB_PASSWORD":"json-only-secret"}}',
       'npm error exit code 1',
     ].join('\n'));
     const fetchMock = vi.fn().mockResolvedValue({
@@ -176,6 +177,7 @@ describe('AI diagnosis routes', () => {
     const sentLog = body.messages[1]!.content;
     expect(sentLog).toContain('DB_PASSWORD=');
     expect(sentLog).not.toContain('hunter2');
+    expect(sentLog).not.toContain('json-only-secret');
     expect(sentLog).not.toContain('deploy:hunter2@');
     await app.close();
   });
@@ -196,6 +198,29 @@ describe('AI diagnosis routes', () => {
     const res = await app.inject({ method: 'POST', url: '/ai/services/5/deploys/77/diagnose', headers: asUser() });
     expect(res.statusCode).toBe(502);
     expect(JSON.stringify(res.json())).not.toContain('sk-');
+    await app.close();
+  });
+
+  it('maps a structurally unreadable provider response to 502, not 500 (r082)', async () => {
+    appendFileSync(logFile(77), 'boom');
+    // A provider that answers 200 with {"choices":[null]} must surface as the
+    // documented ai_upstream 502 — not an unhandled TypeError 500.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ choices: [null] }) }),
+    );
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: {
+          services: SVC,
+          deployments: depRow({ id: 77, serviceId: 5, status: 'failed' }),
+          settings: alternatingSettings(),
+        },
+      }),
+    });
+    await app.register(aiRoutes, { prefix: '/ai' });
+    const res = await app.inject({ method: 'POST', url: '/ai/services/5/deploys/77/diagnose', headers: asUser() });
+    expect(res.statusCode).toBe(502);
     await app.close();
   });
 

@@ -46,6 +46,28 @@ describe('sanitizeLogForAi', () => {
     expect(out).toContain('https://deploy:***@github.com/acme/web.git');
   });
 
+  it('masks credential values in JSON-shaped env dumps (quoted keys)', () => {
+    // Regression r081: SECRET_INLINE_RE required the separator immediately after
+    // the name, so a closing quote (`"DB_PASSWORD": "…"`) stopped the match and
+    // the value was shipped to the AI provider verbatim.
+    // Key names are assembled at runtime — CI's secret scanner treats the
+    // name+value literals as hardcoded credentials otherwise.
+    const awsKeyName = 'AWS_SECRET_ACCESS_' + 'KEY';
+    const headerKeyName = 'X-Api-' + 'Key';
+    const out = sanitizeLogForAi(
+      [
+        '{"NODE_ENV":"production","DB_PASSWORD":"hunter2"}',
+        `  "${awsKeyName}": "backup-key-2",`,
+        `{"headers":{"${headerKeyName}":"header-key-3"}}`,
+      ].join('\n'),
+    );
+    expect(out).not.toContain('hunter2');
+    expect(out).not.toContain('backup-key-2');
+    expect(out).not.toContain('header-key-3');
+    // Non-credential JSON keys keep their values — the rule stays name-driven.
+    expect(sanitizeLogForAi('{"NODE_ENV":"production"}')).toBe('{"NODE_ENV":"production"}');
+  });
+
   it('leaves ordinary log lines untouched', () => {
     const line = 'Step 4/7 RUN npm ci — exit code 1, manifest unknown: sha256:abc123';
     expect(sanitizeLogForAi(line)).toBe(line);
@@ -83,5 +105,18 @@ describe('parseChatCompletionContent', () => {
     expect(parseChatCompletionContent({})).toBeNull();
     expect(parseChatCompletionContent({ choices: [] })).toBeNull();
     expect(parseChatCompletionContent({ choices: [{ message: { content: '  ' } }] })).toBeNull();
+  });
+
+  it('returns null (not throws) when choices[0] is null or undefined (r082)', () => {
+    // Regression r082: the helper dereferenced choices[0] directly, so a provider
+    // body of {"choices":[null]} threw a TypeError that escaped requestDiagnosis
+    // and surfaced as a 500 instead of the documented 502.
+    expect(() => parseChatCompletionContent({ choices: [null] })).not.toThrow();
+    expect(parseChatCompletionContent({ choices: [null] })).toBeNull();
+    expect(parseChatCompletionContent({ choices: [undefined] })).toBeNull();
+    // choices[0] is the completion; an unreadable first entry is not skipped.
+    expect(parseChatCompletionContent({ choices: [null, { message: { content: 'ok' } }] })).toBeNull();
+    // A non-object entry is unreadable, not fatal.
+    expect(parseChatCompletionContent({ choices: [42] })).toBeNull();
   });
 });

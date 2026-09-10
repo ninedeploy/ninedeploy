@@ -24,7 +24,7 @@ const USERINFO_URL_RE = /([a-z][a-z0-9+.-]*:\/\/)([^@\s/:]+):([^@\s]+)@/gi;
  * error messages. Name-driven so ordinary `FOO=bar` lines pass through.
  */
 const SECRET_ASSIGNMENT_RE = /^(\s*(?:export\s+)?(?:--)?[A-Za-z0-9_-]*(?:password|passwd|token|secret|api[_-]?key|access[_-]?key|private[_-]?key|credential)[A-Za-z0-9_-]*(?:\s*[=:]\s*|\s+)).+$/gim;
-const SECRET_INLINE_RE = /([A-Za-z0-9_-]*(?:password|passwd|token|secret|api[_-]?key|access[_-]?key|private[_-]?key|credential)[A-Za-z0-9_-]*\s*[=:]\s*)(?:"[^"]*"|'[^']*'|[^\s]+)/gi;
+const SECRET_INLINE_RE = /([A-Za-z0-9_-]*(?:password|passwd|token|secret|api[_-]?key|access[_-]?key|private[_-]?key|credential)[A-Za-z0-9_-]*["']?\s*[=:]\s*)(?:"[^"]*"|'[^']*'|[^\s]+)/gi;
 
 /** `Authorization: …` headers and `Bearer …` tokens anywhere on a line. */
 const AUTHORIZATION_HEADER_RE = /^(authorization\s*:\s*).+$/gim;
@@ -73,7 +73,9 @@ export function parseChatCompletionContent(body: unknown): string | null {
   if (typeof body !== 'object' || body === null) return null;
   const choices = (body as { choices?: unknown }).choices;
   if (!Array.isArray(choices) || choices.length === 0) return null;
-  const message = (choices[0] as { message?: unknown }).message;
+  const first = choices[0];
+  if (typeof first !== 'object' || first === null) return null;
+  const message = (first as { message?: unknown }).message;
   if (typeof message !== 'object' || message === null) return null;
   const content = (message as { content?: unknown }).content;
   return typeof content === 'string' && content.trim().length > 0 ? content.trim() : null;
