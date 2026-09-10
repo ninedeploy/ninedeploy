@@ -234,7 +234,7 @@ export type Service = z.infer<typeof service>;
 // ── Sources (private repo credentials) ─────────────────────────────────────
 export const createSource = z.object({
   name: z.string().min(1).max(100),
-  type: z.enum(['github', 'gitlab', 'gitea', 'custom', 'registry']),
+  type: z.enum(['github', 'gitlab', 'gitea', 'bitbucket', 'custom', 'registry']),
   token: z.string().optional(),
   deployKey: z.string().optional(),
   // Registry-type sources: username for `docker login` (token = password).

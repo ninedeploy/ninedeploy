@@ -74,6 +74,22 @@ If you prefer SSH:
 2. Add the **public** key as a **Deploy key** on the GitHub repo: `Settings → Security → Deploy keys → Add deploy key` (read-only is enough; the panel never pushes).
 3. Save the **private** key (the `.pub` is useless without the matching private key) — paste its full contents (one line) into the Source's "SSH deploy key" field, or set `NINEDEPLOY_SSH_KEY` in the env when running `ninedeploy sources add`.
 
+### Bitbucket specifics
+
+Create the Source with type `bitbucket` and a **Bitbucket Cloud API token**
+(account → Settings → API tokens — it authenticates as Bearer). The token
+powers the repos/branches pickers and the connection test. For cloning:
+
+- **Deploy keys work over SSH**: add the panel's public key under
+  `repo → Settings → Access keys` (Read permission) and use the SSH clone URL
+  — this is the recommended path for private Bitbucket repos.
+- HTTPS token clones require the `x-token-auth` username; if you paste an
+  HTTPS URL, make sure the token type you stored matches that flow.
+
+Bitbucket webhooks (`repo:push`, `pullrequest:*`, signed with the webhook
+secret via `X-Hub-Signature`) drive auto-deploys and PR previews exactly like
+the GitHub providers.
+
 ---
 
 ## 4. Add the credential to NineDeploy

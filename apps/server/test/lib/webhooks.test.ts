@@ -392,3 +392,125 @@ describe('isReplayedDelivery', () => {
   });
 });
 
+describe('Bitbucket', () => {
+  const bbHeaders = (body: string, eventKey: string, overrides: Record<string, string> = {}) => ({
+    'x-event-key': eventKey,
+    'x-hub-signature': sig(body),
+    'x-request-uuid': 'bb-uuid-1',
+    ...overrides,
+  });
+
+  const pushPayload = JSON.stringify({
+    push: {
+      changes: [
+        {
+          new: {
+            type: 'branch',
+            name: 'main',
+            target: {
+              hash: '77eab56abc',
+              message: 'fix: login\n',
+              author: { raw: 'Ersin <e@x.io>', type: 'author' },
+            },
+          },
+          commits: [{ hash: '77eab56abc' }],
+        },
+      ],
+    },
+    repository: { full_name: 'acme/web', is_private: true },
+  });
+
+  it('accepts a valid Bitbucket signature', () => {
+    expect(verifyWebhook(bbHeaders(pushPayload, 'repo:push'), pushPayload, SECRET)).toBe('bitbucket');
+  });
+
+  it('rejects a Bitbucket request with a wrong signature', () => {
+    const h = bbHeaders(pushPayload, 'repo:push', { 'x-hub-signature': sig('tampered') });
+    expect(verifyWebhook(h, pushPayload, SECRET)).toBeNull();
+  });
+
+  it('rejects a Bitbucket signature that is not sha256-prefixed', () => {
+    const h = bbHeaders(pushPayload, 'repo:push', { 'x-hub-signature': 'deadbeef' });
+    expect(verifyWebhook(h, pushPayload, SECRET)).toBeNull();
+  });
+
+  it('treats diagnostics:ping as a ping', () => {
+    const body = '{}';
+    expect(isPing(bbHeaders(body, 'diagnostics:ping'), 'bitbucket')).toBe(true);
+    expect(isPing(bbHeaders(body, 'repo:push'), 'bitbucket')).toBe(false);
+  });
+
+  it('deduplicates Bitbucket deliveries by X-Request-UUID', () => {
+    const h = bbHeaders('{}', 'repo:push');
+    expect(isReplayedDelivery(h, 'bitbucket')).toBe(false);
+    expect(isReplayedDelivery(h, 'bitbucket')).toBe(true);
+  });
+
+  it('parses a repo:push payload into a deploy event', () => {
+    const push = parsePush(JSON.parse(pushPayload), 'bitbucket');
+    expect(push).toMatchObject({
+      branch: 'main',
+      sha: '77eab56abc',
+      message: 'fix: login',
+      author: 'Ersin <e@x.io>',
+      repoUrl: 'https://bitbucket.org/acme/web.git',
+    });
+    // Bitbucket ships no per-commit file lists — watch-path filtering must
+    // fail open, which it does on an empty changedFiles array.
+    expect(push!.changedFiles).toEqual([]);
+    expect(push!.commitsListed).toBe(0);
+  });
+
+  it('returns null for a push with no branch creation change', () => {
+    const deletion = JSON.stringify({
+      push: { changes: [{ new: null, old: { type: 'branch', name: 'x', target: { hash: 'a' } } }] },
+      repository: { full_name: 'acme/web' },
+    });
+    expect(parsePush(JSON.parse(deletion), 'bitbucket')).toBeNull();
+  });
+
+  it('recognizes pullrequest event keys', () => {
+    const body = JSON.stringify({ pullrequest: { id: 3 }, event_key: 'pullrequest:created' });
+    const h = bbHeaders(body, 'pullrequest:created');
+    expect(isPullRequest(h, 'bitbucket')).toBe(true);
+    expect(isPing(h, 'bitbucket')).toBe(false);
+  });
+
+  it('parses a created pull request', () => {
+    const body = JSON.stringify({
+      event_key: 'pullrequest:created',
+      pullrequest: {
+        id: 3,
+        title: 'Add login',
+        author: { display_name: 'Ersin' },
+        source: { branch: { name: 'feature/login' }, commit: { hash: 'abc1234' } },
+      },
+      repository: { full_name: 'acme/web' },
+    });
+    const pr = parsePullRequest(JSON.parse(body), 'bitbucket');
+    expect(pr).toMatchObject({
+      action: 'opened',
+      prNumber: 3,
+      branch: 'feature/login',
+      sha: 'abc1234',
+      title: 'Add login',
+      author: 'Ersin',
+      repoUrl: 'https://bitbucket.org/acme/web.git',
+    });
+  });
+
+  it('maps fulfilled to closed with merged=true', () => {
+    const body = JSON.stringify({
+      event_key: 'pullrequest:fulfilled',
+      pullrequest: {
+        id: 3,
+        title: 'Add login',
+        source: { branch: { name: 'feature/login' }, commit: { hash: 'abc1234' } },
+      },
+      repository: { full_name: 'acme/web' },
+    });
+    const pr = parsePullRequest(JSON.parse(body), 'bitbucket');
+    expect(pr).toMatchObject({ action: 'closed', merged: true });
+  });
+});
+

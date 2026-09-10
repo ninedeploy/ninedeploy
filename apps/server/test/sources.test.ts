@@ -219,6 +219,42 @@ describe('sources routes', () => {
     }
   });
 
+  it('lists bitbucket repos for a configured source', async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = async (input: string | URL | Request) => {
+        const u = typeof input === 'string' ? input : (input as any).url || input.toString();
+        if (u.includes('api.bitbucket.org/2.0/repositories')) {
+          return {
+            ok: true,
+            json: async () => ({
+              values: [
+                { name: 'bb-app', full_name: 'acme/bb-app', is_private: true, mainbranch: { name: 'master' }, links: { html: { href: 'https://bitbucket.org/acme/bb-app' } } },
+              ],
+            }),
+          } as any;
+        }
+        return { ok: false } as any;
+      };
+
+      const app = await buildTestApp({
+        db: createFakeDb({
+          findFirst: {
+            sources: sourceRow({ id: 4, type: 'bitbucket', tokenEncrypted: encrypt('bb_token') }),
+          },
+        }),
+      });
+      await app.register(sourcesRoutes);
+      const res = await app.inject({ method: 'GET', url: '/4/repos', headers: asUser() });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual([
+        { name: 'bb-app', fullName: 'acme/bb-app', url: 'https://bitbucket.org/acme/bb-app.git', defaultBranch: 'master', isPrivate: true },
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('lists gitlab repos for a configured source', async () => {
     const originalFetch = globalThis.fetch;
     try {

@@ -1,6 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
-export type Provider = 'github' | 'gitlab' | 'gitea';
+export type Provider = 'github' | 'gitlab' | 'gitea' | 'bitbucket';
 
 export interface PushEvent {
   branch: string;
@@ -62,6 +62,14 @@ export function verifyWebhook(headers: Record<string, string | string[] | undefi
     return safeEqual(token, secret) ? 'gitlab' : null;
   }
 
+  // Bitbucket Cloud (X-Event-Key + X-Hub-Signature: sha256=<hex hmac>)
+  if (h('x-event-key')) {
+    const sig = h('x-hub-signature');
+    if (!sig?.startsWith('sha256=')) return null;
+    const expected = `sha256=${hmac(secret, rawBody, 'hex')}`;
+    return safeEqual(sig, expected) ? 'bitbucket' : null;
+  }
+
   return null;
 }
 
@@ -72,6 +80,7 @@ export function isPing(headers: Record<string, string | string[] | undefined>, p
     return typeof v === 'string' ? v : undefined;
   };
   if (provider === 'github' || provider === 'gitea') return h('x-github-event') === 'ping' || h('x-gitea-event') === 'ping';
+  if (provider === 'bitbucket') return h('x-event-key') === 'diagnostics:ping';
   return h('x-gitlab-event') === 'Ping Hook';
 }
 
@@ -93,6 +102,7 @@ function deliveryId(headers: Record<string, string | string[] | undefined>, prov
   };
   if (provider === 'github') return h('x-github-delivery') ?? null;
   if (provider === 'gitea') return h('x-gitea-delivery') ?? null;
+  if (provider === 'bitbucket') return h('x-request-uuid') ?? null;
   return h('x-gitlab-uuid') ?? null;
 }
 
@@ -144,6 +154,38 @@ export function parsePush(body: unknown, provider: Provider): PushEvent | null {
   // A JSON body of literal `null` arrives here from the public receiver
   // (Fastify parses it to null); same contract as parsePullRequest below.
   if (!b) return null;
+
+  // Bitbucket FIRST: its repo:push payload has NO `ref`/`after` at all — the
+  // common GitHub-shape checks below would null it out before its own branch.
+  if (provider === 'bitbucket') {
+    // Bitbucket's repo:push payload has NO `ref` and NO per-commit file
+    // lists — branch/hash live under push.changes[].new.target. An empty
+    // changedFiles list is the documented contract for watch-path filtering
+    // to FAIL OPEN (the pipeline deploys unfiltered).
+    const pushBb = b['push'] as Record<string, unknown> | undefined;
+    const changes = (pushBb?.['changes'] as Array<Record<string, unknown>> | undefined) ?? [];
+    const change = changes.find((c) => {
+      const created = c['new'] as Record<string, unknown> | undefined;
+      return created && typeof created === 'object' && created['type'] === 'branch';
+    });
+    const created = change?.['new'] as Record<string, unknown> | undefined;
+    const target = created?.['target'] as Record<string, unknown> | undefined;
+    const bbBranch = String(created?.['name'] ?? '');
+    const sha = String(target?.['hash'] ?? '');
+    if (!bbBranch || !sha) return null;
+    const repo = b['repository'] as Record<string, unknown> | undefined;
+    const fullName = String(repo?.['full_name'] ?? '');
+    return {
+      branch: bbBranch,
+      sha,
+      message: String(target?.['message'] ?? '').trim(),
+      author: String((target?.['author'] as Record<string, unknown> | undefined)?.['raw'] ?? ''),
+      repoUrl: fullName ? `https://bitbucket.org/${fullName}.git` : undefined,
+      changedFiles: [],
+      commitsListed: 0,
+    };
+  }
+
   // Branch/tag DELETION pushes are not deployable: GitHub/Gitea send
   // `deleted: true` with an all-zero `after` and a null head_commit; GitLab
   // sends the all-zero `after` with no commits (already filtered below).
@@ -208,6 +250,7 @@ export function isPullRequest(headers: Record<string, string | string[] | undefi
   if (provider === 'github' || provider === 'gitea') {
     return h('x-github-event') === 'pull_request' || h('x-gitea-event') === 'pull_request';
   }
+  if (provider === 'bitbucket') return (h('x-event-key') ?? '').startsWith('pullrequest:');
   return h('x-gitlab-event') === 'Merge Request Hook';
 }
 
@@ -215,6 +258,37 @@ export function isPullRequest(headers: Record<string, string | string[] | undefi
 export function parsePullRequest(body: unknown, provider: Provider): PullRequestEvent | null {
   const b = body as Record<string, unknown>;
   if (!b) return null;
+
+  if (provider === 'bitbucket') {
+    const pr = b['pullrequest'] as Record<string, unknown> | undefined;
+    if (!pr) return null;
+    const key = String(b['event_key'] ?? '');
+    const action: PullRequestEvent['action'] =
+      key === 'pullrequest:fulfilled' || key === 'pullrequest:rejected'
+        ? 'closed'
+        : key === 'pullrequest:updated'
+          ? 'synchronize'
+          : 'opened';
+    const source = pr['source'] as Record<string, unknown> | undefined;
+    const sourceBranch = source?.['branch'] as Record<string, unknown> | undefined;
+    const sourceCommit = source?.['commit'] as Record<string, unknown> | undefined;
+    const author = pr['author'] as Record<string, unknown> | undefined;
+    const repo = b['repository'] as Record<string, unknown> | undefined;
+    const fullName = String(repo?.['full_name'] ?? '');
+    const prNumber = Number(pr['id']) || 0;
+    const branch = String(sourceBranch?.['name'] ?? '');
+    if (!prNumber || !branch) return null;
+    return {
+      action,
+      prNumber,
+      branch,
+      sha: String(sourceCommit?.['hash'] ?? ''),
+      title: String(pr['title'] ?? ''),
+      author: String(author?.['display_name'] ?? ''),
+      repoUrl: fullName ? `https://bitbucket.org/${fullName}.git` : undefined,
+      merged: key === 'pullrequest:fulfilled',
+    };
+  }
 
   if (provider === 'gitlab') {
     const attrs = b['object_attributes'] as Record<string, unknown> | undefined;

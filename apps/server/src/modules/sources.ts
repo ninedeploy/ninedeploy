@@ -137,6 +137,40 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
       }
     }
 
+    if (src.type === 'bitbucket') {
+      try {
+        const res = await guardedFetch('https://api.bitbucket.org/2.0/repositories?role=contributor&pagelen=100&sort=-updated_on', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'User-Agent': 'NineDeploy',
+          },
+        });
+        if (!res.ok) {
+          reply.header('x-nd-source-error', `Bitbucket API ${res.status}`);
+          return [];
+        }
+        const data = (await res.json()) as {
+          values?: Array<{
+            name: string;
+            full_name: string;
+            is_private: boolean;
+            mainbranch?: { name?: string };
+            links?: { html?: { href?: string } };
+          }>;
+        };
+        return (data.values ?? []).map((r) => ({
+          name: r.name,
+          fullName: r.full_name,
+          url: `https://bitbucket.org/${r.full_name}.git`,
+          defaultBranch: r.mainbranch?.name || 'master',
+          isPrivate: r.is_private,
+        }));
+      } catch (err) {
+        reply.header('x-nd-source-error', `Bitbucket API unreachable: ${err instanceof Error ? err.message : String(err)}`);
+        return [];
+      }
+    }
+
     return [];
   });
 
@@ -169,6 +203,27 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
         return data.map((b) => b.name);
       } catch (err) {
         reply.header('x-nd-source-error', `GitHub API unreachable: ${err instanceof Error ? err.message : String(err)}`);
+        return ['main', 'master'];
+      }
+    }
+    if (src.type === 'bitbucket') {
+      try {
+        // repo is full_name "workspace/repo" or a bitbucket.org clone URL.
+        const cleanRepo = repo.replace(/^https:\/\/bitbucket\.org\//, '').replace(/\.git$/, '');
+        const res = await guardedFetch(`https://api.bitbucket.org/2.0/repositories/${cleanRepo}/refs/branches?pagelen=100`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'User-Agent': 'NineDeploy',
+          },
+        });
+        if (!res.ok) {
+          reply.header('x-nd-source-error', `Bitbucket API ${res.status} on ${cleanRepo}`);
+          return ['main', 'master'];
+        }
+        const data = (await res.json()) as { values?: Array<{ name: string }> };
+        return (data.values ?? []).map((b) => b.name);
+      } catch (err) {
+        reply.header('x-nd-source-error', `Bitbucket API unreachable: ${err instanceof Error ? err.message : String(err)}`);
         return ['main', 'master'];
       }
     }
@@ -214,6 +269,23 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
         }
         const body = await res.text().catch(() => '');
         return { ok: false, provider: 'gitlab', status: res.status, error: body.slice(0, 240) };
+      }
+      if (src.type === 'bitbucket') {
+        // Bearer auth works with Bitbucket Cloud API tokens and repository
+        // access tokens; legacy app passwords need Basic auth with the
+        // account username, which the sources table does not store.
+        const res = await guardedFetch('https://api.bitbucket.org/2.0/user', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'User-Agent': 'NineDeploy',
+          },
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { account_id: string; display_name?: string };
+          return { ok: true, provider: 'bitbucket', login: data.account_id, name: data.display_name ?? null };
+        }
+        const body = await res.text().catch(() => '');
+        return { ok: false, provider: 'bitbucket', status: res.status, error: body.slice(0, 240) };
       }
       if (src.type === 'gitea') {
         return { ok: false, error: 'Live credential test is not supported for gitea sources — verify manually' };

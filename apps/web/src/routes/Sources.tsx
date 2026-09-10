@@ -13,14 +13,15 @@ import { api } from '../lib/api.js';
 import { useToast } from '../components/Toast.js';
 import { Button, Card, ConfirmDialog, EmptyState, ErrorCard, Field, Input, PageHeader, Select, Skeleton, Textarea, cn } from '../components/ui.js';
 
-const TYPES = ['github', 'gitlab', 'gitea', 'custom', 'registry'] as const;
-const LABEL: Record<string, string> = { github: 'GitHub', gitlab: 'GitLab', gitea: 'Gitea', custom: 'Custom', registry: 'Registry' };
+const TYPES = ['github', 'gitlab', 'gitea', 'bitbucket', 'custom', 'registry'] as const;
+const LABEL: Record<string, string> = { github: 'GitHub', gitlab: 'GitLab', gitea: 'Gitea', bitbucket: 'Bitbucket', custom: 'Custom', registry: 'Registry' };
 
 /** Where to send the operator to register a deploy key for the picked provider. */
 const DEPLOY_KEY_DOCS: Record<string, { label: string; url: string }> = {
   github: { label: 'github.com → repo → Settings → Security → Deploy keys', url: 'https://github.com/settings/keys' },
   gitlab: { label: 'gitlab.com → project → Settings → Repository → Deploy keys', url: 'https://gitlab.com/-/profile/keys' },
   gitea: { label: 'Gitea → repo → Settings → Deploy keys', url: '' },
+  bitbucket: { label: 'bitbucket.org → repo → Settings → Access keys (Read allowed)', url: 'https://bitbucket.org/account/settings/ssh-keys/' },
   custom: { label: 'your Git host → repo → Deploy keys', url: '' },
   registry: { label: '', url: '' },
 };
