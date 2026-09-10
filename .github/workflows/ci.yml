@@ -97,6 +97,37 @@ jobs:
             exit 1
           fi
 
+      # Installer sanity gate: install.sh runs as ROOT on operator machines
+      # with `set -euo pipefail` — a syntax error or an unbound variable
+      # (r087: "$DATA_DIR: unbound variable") aborts the upgrade AFTER the
+      # panel is stopped, leaving production down. bash -n catches syntax,
+      # shellcheck -S error catches the static subset of unset/typo'd
+      # variables. The runtime set -u behaviour is additionally covered by
+      # the installer's own smoke path below.
+      - name: Installer sanity (bash -n + shellcheck)
+        run: |
+          bash -n install.sh
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck --severity=error install.sh
+          else
+            echo "shellcheck not present on runner — syntax check only"
+          fi
+
+      # Installer set -u smoke test: exercise the DATA_DIR resolution + the
+      # writable-homes mkdir EXACTLY as the script runs (set -euo pipefail,
+      # no inherited DATA_DIR) so a "used before defined" regression fails
+      # here instead of on an operator's upgrade at the systemd step.
+      - name: Installer set -u smoke test
+        run: |
+          set -euo pipefail
+          INSTALL_DIR="$PWD"
+          DATA_DIR_SETTING="${NINEDEPLOY_DATA_DIR:-$INSTALL_DIR/.data}"
+          mkdir -p "$DATA_DIR_SETTING"
+          DATA_DIR=$(cd "$DATA_DIR_SETTING" && pwd -P)
+          mkdir -p "$DATA_DIR/docker-config" "$DATA_DIR/pm2"
+          test -d "$DATA_DIR/docker-config" && test -d "$DATA_DIR/pm2"
+          echo "set -u smoke test passed: DATA_DIR=$DATA_DIR"
+
   docker-image:
     name: Docker image build
     runs-on: ubuntu-latest

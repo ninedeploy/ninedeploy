@@ -1547,6 +1547,22 @@ if [ "$(uname -s)" = "Linux" ] && command -v systemctl &>/dev/null; then
   esac
   ok "Traefik ingress verified (network attached, :80 responding)"
 
+  # ── Unit environment self-check ───────────────────────────────────────────
+  # The hardened unit MUST export the toolchain homes: DOCKER_CONFIG (buildx
+  # builder-activity writes) and PM2_HOME (dump.pm2 persistence). Both default
+  # to /root/... and ProtectHome=read-only makes that unwritable — a unit
+  # missing either variable re-creates the "read-only file system" build
+  # failures and the silent PM2 persistence loss. A stale rendered unit or an
+  # admin drop-in that omits them is caught HERE, on every install/upgrade,
+  # instead of by the operator's first deploy.
+  UNIT_ENV=$(systemctl show ninedeploy --property=Environment --value)
+  for _req_var in DOCKER_CONFIG PM2_HOME; do
+    if ! printf '%s' "$UNIT_ENV" | grep -q "$_req_var="; then
+      warn "ninedeploy unit does not export $_req_var — docker builds (and PM2 persistence) will fail with 'read-only file system'."
+      warn "Re-run this installer to re-render the unit, or add it via: sudo systemctl edit ninedeploy"
+    fi
+  done
+
   # ── Deploy preflight: prove a build actually works in this environment ──
   # The panel spawns `docker build` under the hardened unit (ProtectHome makes
   # /root read-only; buildx writes builder activity under $DOCKER_CONFIG), and
