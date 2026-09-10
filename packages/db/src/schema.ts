@@ -399,6 +399,14 @@ export const services = sqliteTable(
     sourceId: integer('source_id').references(() => sources.id, { onDelete: 'set null' }),
     // Image-based deploy (no repo): skip git+build and run this image directly.
     image: text('image'),
+    // Watchtower-style digest watch: the auto-update sweep probes the registry
+    // for this image's tag and enqueues a re-deploy when the digest moved.
+    // Image-based, panel-host services only (see lib/autoUpdate.ts).
+    autoUpdate: integer('auto_update', { mode: 'boolean' }).notNull().default(false),
+    // Last registry manifest digest the sweep observed for this service's
+    // tag. The FIRST observation is a baseline only — an update deploys from
+    // the second change onward, so enabling the toggle never redeploys.
+    autoUpdateDigest: text('auto_update_digest'),
     // Optional container path to mount a persistent named volume (nd-svc-<slug>-data).
     volumeMount: text('volume_mount'),
     port: integer('port'),

@@ -6,7 +6,7 @@ import { api } from '../../lib/api.js';
 import { useAuth } from '../../lib/auth.js';
 import { toInt } from '../../lib/format.js';
 import { useToast } from '../../components/Toast.js';
-import { Button, Card, CardBody, Field, Input, Select, Skeleton } from '../../components/ui.js';
+import { Button, Card, CardBody, Field, Input, Select, Skeleton, Switch } from '../../components/ui.js';
 import { ServiceTagsCard } from './ServiceTagsCard.js';
 
 /** Service fields, build configuration, lifecycle hooks, PR previews, and resource limits. */
@@ -102,6 +102,17 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
     enabled: isAdmin,
   });
   const svc = service.data;
+
+  // Auto-update is a standalone toggle (not part of the big form): flipping
+  // it takes effect immediately, like the server's other watchdogs.
+  const autoUpdateMutation = useMutation({
+    mutationFn: (enabled: boolean) => api.services.update(serviceId, { autoUpdate: enabled }),
+    onSuccess: (_res, enabled) => {
+      qc.invalidateQueries({ queryKey: ['service', serviceId] });
+      toast(enabled ? 'Auto-update enabled' : 'Auto-update disabled', 'success');
+    },
+    onError: () => toast('Could not change auto-update', 'error'),
+  });
 
   const [form, setForm] = useState<{
     name: string; branch: string; repoUrl: string; image: string; port: string;
@@ -208,6 +219,23 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
             )}
           </Field>
           <Field label="Image (image deploys)"><Input value={form.image} onChange={set('image')} placeholder="nginx:latest" className="h-9 font-mono text-xs" /></Field>
+          {svc.image && svc.type === 'docker' && svc.serverId == null && (
+            <div className="col-span-full flex items-center justify-between gap-3 rounded-lg border border-white/[0.05] bg-white/[0.02] px-3 py-2.5">
+              <div>
+                <div className="text-xs font-medium text-slate-300">Auto-update (digest watch)</div>
+                <div className="mt-0.5 text-[11px] text-slate-500">
+                  Every 30 minutes the registry is probed; when this image&apos;s tag moved, a normal deployment is
+                  queued through the usual health checks. Enabling only sets a baseline — it never deploys by itself.
+                </div>
+              </div>
+              <Switch
+                checked={svc.autoUpdate === true}
+                onChange={(v) => autoUpdateMutation.mutate(v)}
+                disabled={autoUpdateMutation.isPending}
+                label="Auto-update"
+              />
+            </div>
+          )}
           <Field label="Container port (Traefik target)"><Input value={form.port} onChange={set('port')} inputMode="numeric" autoComplete="off" placeholder="3000" className="h-9 font-mono text-xs" /></Field>
           <Field label="Health path"><Input value={form.healthPath} onChange={set('healthPath')} placeholder="/" className="h-9 font-mono text-xs" /></Field>
           <Field label="Volume mount"><Input value={form.volumeMount} onChange={set('volumeMount')} placeholder="/app/data" className="h-9 font-mono text-xs" /></Field>

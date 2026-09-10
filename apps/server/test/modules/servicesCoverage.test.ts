@@ -433,6 +433,84 @@ describe('services PATCH — publishedPort + 404 branches', () => {
   });
 });
 
+describe('services PATCH — autoUpdate watch', () => {
+  const IMAGE_SVC = svcRow({ id: 1, slug: 'img', type: 'docker', image: 'ghcr.io/acme/web:latest' });
+
+  function autoUpdateDb(service: Record<string, unknown>, onSet?: (set: Record<string, unknown>) => void) {
+    return createFakeDb({
+      findFirst: { services: service, buildConfigs: undefined },
+      update: {
+        services: (set: Record<string, unknown>) => {
+          onSet?.(set);
+          return [service];
+        },
+      },
+    });
+  }
+
+  it('accepts autoUpdate on an image-based, panel-host service', async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    const app = await buildTestApp({ db: autoUpdateDb(IMAGE_SVC, (s) => seen.push(s)) });
+    await app.register(servicesRoutes);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/1',
+      headers: asUser(),
+      payload: { autoUpdate: true },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(seen[0]).toMatchObject({ autoUpdate: true });
+  });
+
+  it('refuses autoUpdate on a repo-backed service', async () => {
+    const repoSvc = svcRow({ id: 1, slug: 'web', type: 'docker', repoUrl: 'https://github.com/acme/web.git' });
+    const app = await buildTestApp({ db: autoUpdateDb(repoSvc) });
+    await app.register(servicesRoutes);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/1',
+      headers: asUser(),
+      payload: { autoUpdate: true },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('refuses autoUpdate on a service pinned to a remote node', async () => {
+    const remoteSvc = svcRow({ id: 1, slug: 'img', type: 'docker', image: 'nginx:latest', serverId: 3 });
+    const app = await buildTestApp({ db: autoUpdateDb(remoteSvc) });
+    await app.register(servicesRoutes);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/1',
+      headers: asUser(),
+      payload: { autoUpdate: true },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('clears the baseline digest when the watch is disabled', async () => {
+    const watched = svcRow({
+      id: 1,
+      slug: 'img',
+      type: 'docker',
+      image: 'nginx:latest',
+      autoUpdate: true,
+      autoUpdateDigest: 'sha256:old',
+    });
+    const seen: Array<Record<string, unknown>> = [];
+    const app = await buildTestApp({ db: autoUpdateDb(watched, (s) => seen.push(s)) });
+    await app.register(servicesRoutes);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/1',
+      headers: asUser(),
+      payload: { autoUpdate: false },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(seen[0]).toMatchObject({ autoUpdate: false, autoUpdateDigest: null });
+  });
+});
+
 describe('services DELETE — active-deploy guard', () => {
   it('refuses the delete with 409 when a deployment is queued or building', async () => {
     // The route reads `deployments.findFirst` for the service

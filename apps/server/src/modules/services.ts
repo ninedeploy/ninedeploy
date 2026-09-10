@@ -104,6 +104,7 @@ function serialize(s: Service, sourceName: string | null = null, tags: TagIds = 
     // the UI can explain the link without exposing the token itself.
     sourceName: s.sourceId ? sourceName : null,
     image: s.image,
+    autoUpdate: s.autoUpdate,
     volumeMount: s.volumeMount,
     composeService: s.composeService,
     commitSha: s.commitSha,
@@ -564,8 +565,23 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         throw badRequest(`composeService '${routed}' is not declared in the compose file`);
       }
     }
+    // Image auto-update only makes sense where the watch can act: an image
+    // deploy (no repo), running on the panel host. Anything else is refused
+    // rather than silently ignored — the toggle would be a lie in the UI.
+    if (patch.autoUpdate !== undefined) {
+      const mergedImage = patch.image !== undefined ? patch.image : existing.image;
+      const mergedType = patch.type ?? existing.type;
+      const mergedServerId = patch.serverId !== undefined ? patch.serverId : existing.serverId;
+      if (patch.autoUpdate && (!mergedImage || mergedType !== 'docker' || mergedServerId != null)) {
+        throw badRequest('Auto-update applies only to image-based services running on the panel host');
+      }
+    }
     // Build-config keys are optional; null out omitted-but-cleared ones via `set` semantics.
-    const [svc] = await app.db.update(services).set(patch).where(eq(services.id, id)).returning();
+    // Disabling the watch also clears the stored baseline digest, so a later
+    // re-enable starts from a fresh first observation instead of a stale one.
+    const servicePatch =
+      patch.autoUpdate === false ? { ...patch, autoUpdateDigest: null as string | null } : patch;
+    const [svc] = await app.db.update(services).set(servicePatch).where(eq(services.id, id)).returning();
     if (!svc) throw notFound('Service not found');
     if (build) {
       // Only overwrite the keys the client sent — a PATCH must not reset the

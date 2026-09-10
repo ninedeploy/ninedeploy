@@ -9,6 +9,7 @@ import { eventRoutes } from './modules/events.js';
 import { healthRoutes } from './modules/health.js';
 import authPlugin from './plugins/auth.js';
 import backupSchedulerPlugin from './plugins/backupScheduler.js';
+import autoUpdateSchedulerPlugin from './plugins/autoUpdateScheduler.js';
 import collectorPlugin from './plugins/collector.js';
 import dbPlugin from './plugins/db.js';
 import housekeepingPlugin from './plugins/housekeeping.js';
@@ -109,6 +110,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(collectorPlugin);
   // Scheduled database backups
   await app.register(backupSchedulerPlugin);
+  // Image auto-update (watchtower-style digest watch, opt-in per service)
+  await app.register(autoUpdateSchedulerPlugin);
   // Periodic log/audit/notification-log retention (disk-fill prevention)
   await app.register(housekeepingPlugin);
   await app.register(jobSchedulerPlugin);
