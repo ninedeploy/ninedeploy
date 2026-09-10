@@ -1,4 +1,5 @@
-import { type DB, notificationLog, type NotificationChannel } from '@ninedeploy/db';
+import { eq } from 'drizzle-orm';
+import { type DB, notificationLog, serviceNotificationChannels, type NotificationChannel } from '@ninedeploy/db';
 import { webhookChannelConfig, type WebhookChannelConfig } from '@ninedeploy/schemas';
 import { createHmac } from 'node:crypto';
 import { decrypt } from './crypto.js';
@@ -11,6 +12,16 @@ import { sendFcm } from './fcm.js';
 function matchesFilter(eventAction: string, filter: string): boolean {
   if (!filter.trim()) return true; // empty = all events
   return filter.split(',').map((f) => f.trim()).some((prefix) => eventAction.startsWith(prefix));
+}
+
+/**
+ * Does a per-service subscription `scope` cover this audit action?
+ * Pure and exported — the manifest wiring and its tests share it.
+ */
+export function scopeMatchesAction(scope: 'deploy' | 'failure' | 'alert', action: string): boolean {
+  if (scope === 'deploy') return action.startsWith('deploy.');
+  if (scope === 'failure') return action === 'deploy.failed';
+  return action.startsWith('alert.');
 }
 
 /** Escape HTML special chars so user-controlled entities can't break Telegram's HTML parse mode. */
@@ -374,26 +385,56 @@ export async function notifyEvent(db: DB, event: AppEvent): Promise<void> {
     return; // table might not exist yet
   }
 
+  // Per-service subscriptions (manifest `notifications` rules) apply only to
+  // events that carry a serviceId in their audit meta — most events don't.
+  const serviceId = typeof event.meta?.['serviceId'] === 'number' ? (event.meta['serviceId'] as number) : null;
+  let rules: Array<{ channelId: number; scope: string }> = [];
+  if (serviceId != null) {
+    try {
+      rules = await db
+        .select({ channelId: serviceNotificationChannels.channelId, scope: serviceNotificationChannels.scope })
+        .from(serviceNotificationChannels)
+        .where(eq(serviceNotificationChannels.serviceId, serviceId));
+    } catch {
+      rules = []; // table might not exist yet (pre-migration)
+    }
+  }
+
+  const deliver = async (ch: NotificationChannel): Promise<void> => {
+    const message = formatMessage(event.action, event.entity);
+    const target = decrypt(ch.targetEncrypted);
+    try {
+      const attempts = await withRetry(() => dispatchChannel(ch.type, target, event, message, { configJson: ch.configJson }));
+      await db.insert(notificationLog).values({ channelId: ch.id, event: event.action, entity: event.entity, status: 'sent', attempts });
+    } catch (err) {
+      await db.insert(notificationLog).values({
+        channelId: ch.id,
+        event: event.action,
+        entity: event.entity,
+        status: 'failed',
+        attempts: RETRY_DELAYS_MS.length + 1,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
   await Promise.all(
     channels.map(async (ch) => {
       if (!ch.active) return;
-      if (!matchesFilter(event.action, ch.eventFilter)) return;
-
-      const message = formatMessage(event.action, event.entity);
-      const target = decrypt(ch.targetEncrypted);
-
-      try {
-        const attempts = await withRetry(() => dispatchChannel(ch.type, target, event, message, { configJson: ch.configJson }));
-        await db.insert(notificationLog).values({ channelId: ch.id, event: event.action, entity: event.entity, status: 'sent', attempts });
-      } catch (err) {
-        await db.insert(notificationLog).values({
-          channelId: ch.id,
-          event: event.action,
-          entity: event.entity,
-          status: 'failed',
-          attempts: RETRY_DELAYS_MS.length + 1,
-          error: err instanceof Error ? err.message : String(err),
-        });
+      // Global path: the channel's own event filter, exactly as always.
+      if (matchesFilter(event.action, ch.eventFilter)) {
+        await deliver(ch);
+        return;
+      }
+      // Additive path: a service rule subscribed this channel to this
+      // service's events. The rule is explicit intent, so it bypasses the
+      // global filter — a channel filtered to `backup.` can still receive
+      // one service's deploy failures because a manifest asked for that.
+      if (
+        serviceId != null &&
+        rules.some((r) => r.channelId === ch.id && scopeMatchesAction(r.scope as 'deploy' | 'failure' | 'alert', event.action))
+      ) {
+        await deliver(ch);
       }
     }),
   );

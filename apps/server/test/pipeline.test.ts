@@ -1485,7 +1485,7 @@ describe('runDeployment audits the outcome', () => {
     // `name #id` is the entity shape kernel/auditBridge decomposes back into
     // { serviceName, deploymentId }.
     expect(auditRows(inserts)).toEqual([
-      { userId: OWNER, action: 'deploy.success', entity: 'Web #1', meta: undefined },
+      { userId: OWNER, action: 'deploy.success', entity: 'Web #1', meta: { serviceId: 5 } },
     ]);
   });
 
@@ -1498,7 +1498,7 @@ describe('runDeployment audits the outcome', () => {
     await runDeployment(db as never, 1);
 
     expect(auditRows(inserts)).toEqual([
-      { userId: OWNER, action: 'deploy.failed', entity: 'Web #1', meta: { reason: 'image pull failed' } },
+      { userId: OWNER, action: 'deploy.failed', entity: 'Web #1', meta: { reason: 'image pull failed', serviceId: 5 } },
     ]);
   });
 
@@ -1514,7 +1514,7 @@ describe('runDeployment audits the outcome', () => {
     await runDeployment(db as never, 1);
 
     expect(auditRows(inserts)).toEqual([
-      { userId: OWNER, action: 'deploy.cancelled', entity: 'Web #1', meta: undefined },
+      { userId: OWNER, action: 'deploy.cancelled', entity: 'Web #1', meta: { serviceId: 5 } },
     ]);
   });
 
@@ -1538,7 +1538,7 @@ describe('runDeployment audits the outcome', () => {
     await runDeployment(db as never, 1);
 
     expect(auditRows(inserts)).toEqual([
-      { userId: OWNER, action: 'deploy.failed', entity: 'Web #1', meta: { reason: 'Unknown service type: nonsense' } },
+      { userId: OWNER, action: 'deploy.failed', entity: 'Web #1', meta: { reason: 'Unknown service type: nonsense', serviceId: 5 } },
     ]);
   });
 });

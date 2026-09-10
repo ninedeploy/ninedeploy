@@ -448,10 +448,25 @@ set them in Service → Settings instead.
 
 The remaining stubbed sections (also emitted as deploy warnings) are:
 
-- `volume.backups` — schedule + retention persistence
-- `notifications.*` — channel-name resolution into the notification router
-- `previews.*` — pattern registration with the preview controller
 - `static`, `watch`, `network` — configure these through the panel for now
+
+(`previews` is wired since r079: the section's values are applied onto the
+service row at deploy time, alongside the panel's own preview settings. The
+wildcard-zone constraint is still enforced at routing time, so a pattern is
+never trusted until it renders inside the instance's own zone.)
+
+(`notifications` is wired since r080: channel NAMES resolve to per-service
+subscriptions — `onDeploy`, `onFailure` and `onAlert` each replace that
+scope's subscriptions at deploy time, and delivery is additive to each
+channel's own global event filter. A name that matches no channel is
+reported as a deploy warning; the other names still apply.)
+
+(`volume.backups` is wired since r081: the declared cron becomes the
+service's manifest-owned `volume-backups (manifest)` scheduled job — never
+touching jobs the operator created themselves. Retention stays the
+instance-wide keep-count; the declared per-service retention value is
+reported as not-yet-applied in a deploy warning. An invalid cron expression
+creates or changes nothing and is reported loudly.)
 
 ---
 

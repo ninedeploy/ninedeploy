@@ -24,7 +24,14 @@ export async function audit(
   } catch {
     /* audit logging must never break the request */
   }
-  const event = { id: 0, action, entity: entity ?? null, ts: new Date().toISOString(), actorUserId: userId };
+  const event = {
+    id: 0,
+    action,
+    entity: entity ?? null,
+    ts: new Date().toISOString(),
+    actorUserId: userId,
+    ...(enriched ? { meta: enriched } : {}),
+  };
   // The actor rides along so the /v1/events socket can decide who may see it.
   eventBus.publish(action, entity, userId);
   // Fire-and-forget notification dispatch

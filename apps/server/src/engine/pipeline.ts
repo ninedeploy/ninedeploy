@@ -340,7 +340,10 @@ async function auditOutcome(
     service.ownerUserId ?? null,
     `deploy.${outcome}`,
     `${service.name} #${deploymentId}`,
-    reason ? { reason: reason.slice(0, 500) } : undefined,
+    // serviceId powers the per-service notification subscriptions (the
+    // manifest's `notifications` rules) — the deploy outcome is exactly the
+    // event class those rules exist for.
+    { ...(reason ? { reason: reason.slice(0, 500) } : {}), serviceId: service.id },
   );
 }
 
@@ -477,7 +480,22 @@ export async function runDeployment(
           };
         }
       }
-      sha = await checkoutCommit(service.repoUrl ?? '', service.branch, dep.commitSha ?? undefined, workDir, log, creds);
+      try {
+        sha = await checkoutCommit(service.repoUrl ?? '', service.branch, dep.commitSha ?? undefined, workDir, log, creds);
+      } catch (err) {
+        // The clone error itself is often a bare "repository not found" —
+        // git says that for BOTH a nonexistent repo and a private one read
+        // anonymously. Say which fix applies to THIS service's setup.
+        log(`✗ Clone failed: ${msg(err)}`);
+        if (!creds) {
+          log('hint: no Git credential is attached to this service. If the repository is PRIVATE, attach one: System → Sources (PAT or generate a deploy key), then select it under Service → Settings → Git credential and redeploy. Public repos need no credential.');
+        } else if (creds.deployKey && !creds.token) {
+          log('hint: cloning used this source\u2019s SSH deploy key. Confirm the PUBLIC key is registered as a deploy key on the provider (repo → Settings → Deploy keys, read access is enough) and that the repo URL is reachable over SSH.');
+        } else if (creds.token) {
+          log('hint: cloning used the source\u2019s access token. Check that the token is still valid and has read access to this repository (System → Sources → Test).');
+        }
+        throw err;
+      }
       await db.update(deployments).set({ commitSha: sha }).where(eq(deployments.id, deploymentId));
 
       // Framework analysis powers the service-detail cards and gives the deploy
@@ -511,7 +529,7 @@ export async function runDeployment(
           );
           const applyResult = await applyManifestToService(db, service.id, loaded.manifest, service.ownerUserId);
           log(
-            `📋 .ninedeploy applied: routes=${applyResult.routesUpserted}, alerts=${applyResult.alertsUpserted}, dbAttached=${applyResult.databaseAttached}`,
+            `📋 .ninedeploy applied: routes=${applyResult.routesUpserted}, alerts=${applyResult.alertsUpserted}, dbAttached=${applyResult.databaseAttached}, previews=${applyResult.previewsApplied ? 'configured' : 'unchanged'}, notifications=${applyResult.notificationsSynced}, volumeBackups=${applyResult.volumeBackupSchedule ?? 'unchanged'}`,
           );
           for (const w of applyResult.warnings) {
             log(`📋 .ninedeploy note: ${w}`);

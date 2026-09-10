@@ -1045,6 +1045,33 @@ export const notificationChannels = sqliteTable(
   (t) => ({ nameIdx: uniqueIndex('notification_channels_name_idx').on(t.name) }),
 );
 
+/**
+ * Per-service notification subscriptions — the manifest's `notifications`
+ * section (`onDeploy` / `onFailure` / `onAlert` channel names) resolves to
+ * rows here. A rule ADDS deliveries for one service's events to a channel;
+ * the channel's own global eventFilter keeps working exactly as before for
+ * everything else (rules are additive, never subtractive).
+ */
+export const serviceNotificationChannels = sqliteTable(
+  'service_notification_channels',
+  {
+    id: id(),
+    serviceId: integer('service_id')
+      .notNull()
+      .references(() => services.id, { onDelete: 'cascade' }),
+    channelId: integer('channel_id')
+      .notNull()
+      .references(() => notificationChannels.id, { onDelete: 'cascade' }),
+    // deploy → all deploy.* outcomes; failure → deploy.failed only;
+    // alert → alert.* events.
+    scope: text('scope', { enum: ['deploy', 'failure', 'alert'] as const }).notNull(),
+    createdAt: ts('created_at'),
+  },
+  (t) => ({
+    ruleIdx: uniqueIndex('service_notification_channels_idx').on(t.serviceId, t.channelId, t.scope),
+  }),
+);
+
 export const notificationLog = sqliteTable(
   'notification_log',
   {

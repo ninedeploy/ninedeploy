@@ -25,7 +25,12 @@ const dbUrl = dbFile.startsWith('file:') ? dbFile : `file:${dbFile}`;
 const reposDir = path.join(dataDir, 'repos');
 const logsDir = path.join(dataDir, 'logs');
 const backupsDir = path.join(dataDir, 'backups');
-for (const dir of [reposDir, logsDir, backupsDir]) mkdirSync(dir, { recursive: true });
+// The docker CLI's config dir (DOCKER_CONFIG). Under the hardened systemd
+// unit /root is read-only, and modern buildx insists on writing builder
+// activity files there — the panel points the CLI at this writable dir
+// instead (systemd/ninedeploy.service exports the matching env var).
+const dockerConfigDir = path.join(dataDir, 'docker-config');
+for (const dir of [reposDir, logsDir, backupsDir, dockerConfigDir]) mkdirSync(dir, { recursive: true });
 
 export const config = {
   env: env.NODE_ENV,
@@ -51,6 +56,7 @@ export const config = {
     reposDir,
     logsDir,
     backupsDir,
+    dockerConfigDir,
     masterKeyFile: path.join(dataDir, 'master.key'),
   },
   dbUrl,

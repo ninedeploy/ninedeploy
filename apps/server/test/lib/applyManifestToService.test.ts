@@ -14,13 +14,16 @@ import {
   databases,
   databaseAttachments,
   domains,
+  notificationChannels,
+  scheduledJobs,
+  serviceNotificationChannels,
   services,
   users,
   workspaceMembers,
   workspaces,
   type DB,
 } from '@ninedeploy/db';
-import { applyManifestToService } from '../../src/lib/applyManifestToService.js';
+import { MANIFEST_BACKUP_JOB_NAME, applyManifestToService } from '../../src/lib/applyManifestToService.js';
 import { evaluateAlerts } from '../../src/lib/alerting.js';
 import type { NinedeployManifest } from '@ninedeploy/schemas';
 
@@ -462,22 +465,26 @@ describe('applyManifestToService — deferred sections emit warnings', () => {
     expect(result.warnings.join('\n')).toMatch(/volume\.backups/);
   });
 
-  it('emits a warning listing the declared notification channels', async () => {
+  it('no longer warns for notifications — the section is wired into per-service subscriptions', async () => {
     const result = await applyManifestToService(
       db,
       serviceId,
       m({ notifications: { onDeploy: ['ops'], onFailure: ['oncall'], onAlert: [] } }),
     );
-    expect(result.warnings.join('\n')).toMatch(/notifications.*ops.*oncall/);
+    // Unknown names warn; known-or-unknown resolution is covered by the
+    // notifications describe — here we only pin that a bare declaration no
+    // longer produces the old "not yet implemented" warning.
+    expect(result.warnings.join('\n')).not.toMatch(/not yet implemented/);
   });
 
-  it('emits a warning when previews.enabled is true', async () => {
+  it('no longer warns for previews — the section is wired onto the service row', async () => {
     const result = await applyManifestToService(
       db,
       serviceId,
-      m({ previews: { enabled: true, pattern: 'pr-{n}.example.com' } }),
+      m({ previews: { enabled: true, pattern: 'pr-{n}.example.com', maxActive: 5, autoDestroyOnClose: true } }),
     );
-    expect(result.warnings.join('\n')).toMatch(/previews/);
+    expect(result.warnings.join('\n')).not.toMatch(/previews/);
+    expect(result.previewsApplied).toBe(true);
   });
 
   // `static`, `watch` and `network` are accepted by the (strict) schema and
@@ -502,5 +509,186 @@ describe('applyManifestToService — deferred sections emit warnings', () => {
   it('produces no warnings for a minimal manifest', async () => {
     const result = await applyManifestToService(db, serviceId, m({}));
     expect(result.warnings).toEqual([]);
+  });
+});
+
+describe('applyManifestToService — previews', () => {
+  it('applies the previews section onto the service row without a warning', async () => {
+    const result = await applyManifestToService(
+      db,
+      serviceId,
+      m({
+        previews: { enabled: true, pattern: 'pr-{n}.previews.example.com', maxActive: 3, autoDestroyOnClose: true },
+      }),
+    );
+    expect(result.previewsApplied).toBe(true);
+    expect(result.warnings.some((w) => w.startsWith('previews:'))).toBe(false);
+    const [svc] = await db.select().from(services).where(eq(services.id, serviceId));
+    expect(svc).toMatchObject({
+      previewDeploymentsEnabled: true,
+      previewDomainPattern: 'pr-{n}.previews.example.com',
+      previewMaxActive: 3,
+      previewAutoDestroyOnClose: true,
+    });
+  });
+
+  it('applies enabled:false as an explicit override and clears the stored pattern', async () => {
+    await db
+      .update(services)
+      .set({ previewDeploymentsEnabled: true, previewDomainPattern: 'old-{n}.x.example.com' })
+      .where(eq(services.id, serviceId));
+    const result = await applyManifestToService(
+      db,
+      serviceId,
+      m({ previews: { enabled: false, maxActive: 5, autoDestroyOnClose: true } }),
+    );
+    expect(result.previewsApplied).toBe(true);
+    const [svc] = await db.select().from(services).where(eq(services.id, serviceId));
+    expect(svc!.previewDeploymentsEnabled).toBe(false);
+    expect(svc!.previewDomainPattern).toBeNull();
+  });
+
+  it('is idempotent — re-running the same manifest rewrites the same values', async () => {
+    const manifest = m({
+      previews: { enabled: true, pattern: 'pr-{n}.prev.example.com', maxActive: 7, autoDestroyOnClose: false },
+    });
+    await applyManifestToService(db, serviceId, manifest);
+    await applyManifestToService(db, serviceId, manifest);
+    const [svc] = await db.select().from(services).where(eq(services.id, serviceId));
+    expect(svc).toMatchObject({
+      previewDeploymentsEnabled: true,
+      previewDomainPattern: 'pr-{n}.prev.example.com',
+      previewMaxActive: 7,
+      previewAutoDestroyOnClose: false,
+    });
+  });
+
+  it('leaves panel-set preview config alone when the manifest declares no previews section', async () => {
+    await db
+      .update(services)
+      .set({ previewDeploymentsEnabled: true, previewDomainPattern: 'panel-{n}.x.example.com', previewMaxActive: 9 })
+      .where(eq(services.id, serviceId));
+    const result = await applyManifestToService(db, serviceId, m({}));
+    expect(result.previewsApplied).toBe(false);
+    const [svc] = await db.select().from(services).where(eq(services.id, serviceId));
+    expect(svc!.previewDeploymentsEnabled).toBe(true);
+    expect(svc!.previewDomainPattern).toBe('panel-{n}.x.example.com');
+    expect(svc!.previewMaxActive).toBe(9);
+  });
+});
+
+describe('applyManifestToService — notifications', () => {
+  beforeEach(async () => {
+    // Rules cascade on channel/service delete; the file's global beforeEach
+    // already wipes services. Channels are wiped here so each test seeds its
+    // own set.
+    await db.delete(serviceNotificationChannels);
+    await db.delete(notificationChannels);
+    await db.insert(notificationChannels).values([
+      { name: 'ops-slack', type: 'slack', targetEncrypted: 'enc-1' },
+      { name: 'pager', type: 'webhook', targetEncrypted: 'enc-2' },
+    ]);
+  });
+
+  const ruleRows = async () =>
+    (await db.select().from(serviceNotificationChannels).orderBy(serviceNotificationChannels.id)).map((r) => ({
+      scope: r.scope,
+      channelId: r.channelId,
+    }));
+
+  it('resolves channel names into scoped subscriptions', async () => {
+    const result = await applyManifestToService(
+      db,
+      serviceId,
+      m({ notifications: { onDeploy: ['ops-slack'], onFailure: ['pager'], onAlert: [] } }),
+    );
+    expect(result.notificationsSynced).toBe(2);
+    const rules = await ruleRows();
+    expect(rules).toHaveLength(2);
+    expect(rules.map((r) => r.scope).sort()).toEqual(['deploy', 'failure']);
+    expect(result.warnings.some((w) => w.startsWith('notifications.'))).toBe(false);
+  });
+
+  it('warns for unknown channels and still applies the resolvable ones', async () => {
+    const result = await applyManifestToService(
+      db,
+      serviceId,
+      m({ notifications: { onDeploy: ['ops-slack', 'ghost-channel'] } }),
+    );
+    expect(result.notificationsSynced).toBe(1);
+    expect(result.warnings.join('\n')).toContain('ghost-channel');
+    const rules = await ruleRows();
+    expect(rules).toHaveLength(1);
+  });
+
+  it('replaces a scope\u2019s subscriptions when the manifest changes', async () => {
+    await applyManifestToService(db, serviceId, m({ notifications: { onDeploy: ['ops-slack'] } }));
+    await applyManifestToService(db, serviceId, m({ notifications: { onDeploy: ['pager'] } }));
+    const rules = await ruleRows();
+    expect(rules).toHaveLength(1);
+    const [pager] = await db.select().from(notificationChannels).where(eq(notificationChannels.name, 'pager'));
+    expect(rules[0]).toMatchObject({ scope: 'deploy', channelId: pager!.id });
+  });
+
+  it('leaves scopes the manifest does not mention untouched', async () => {
+    await applyManifestToService(db, serviceId, m({ notifications: { onFailure: ['pager'] } }));
+    await applyManifestToService(db, serviceId, m({ notifications: { onDeploy: ['ops-slack'] } }));
+    const rules = await ruleRows();
+    expect(rules.map((r) => r.scope).sort()).toEqual(['deploy', 'failure']);
+  });
+});
+
+describe('applyManifestToService — volume.backups', () => {
+  const jobRow = async () => {
+    const [job] = await db
+      .select()
+      .from(scheduledJobs)
+      .where(eq(scheduledJobs.name, MANIFEST_BACKUP_JOB_NAME));
+    return job ?? null;
+  };
+
+  it('creates a manifest-owned backup job with the declared cron', async () => {
+    const result = await applyManifestToService(
+      db,
+      serviceId,
+      m({ volume: { backups: { schedule: '0 4 * * *', retention: 7 } } }),
+    );
+    expect(result.volumeBackupSchedule).toBe('0 4 * * *');
+    const job = await jobRow();
+    expect(job).toMatchObject({ serviceId, kind: 'backup', cron: '0 4 * * *', enabled: true });
+    expect(result.warnings.join('\n')).toContain('retention');
+  });
+
+  it('updates the same job on a re-deploy instead of piling up duplicates', async () => {
+    await applyManifestToService(db, serviceId, m({ volume: { backups: { schedule: '0 4 * * *', retention: 7 } } }));
+    await applyManifestToService(db, serviceId, m({ volume: { backups: { schedule: '30 5 * * 1', retention: 14 } } }));
+    const jobs = await db.select().from(scheduledJobs);
+    expect(jobs.filter((j) => j.kind === 'backup')).toHaveLength(1);
+    expect(await jobRow()).toMatchObject({ cron: '30 5 * * 1' });
+  });
+
+  it('refuses an invalid cron loudly and changes nothing', async () => {
+    const result = await applyManifestToService(
+      db,
+      serviceId,
+      m({ volume: { backups: { schedule: 'not a cron at all!!', retention: 7 } } }),
+    );
+    expect(result.volumeBackupSchedule).toBeNull();
+    expect(result.warnings.join('\n')).toContain('is not a valid cron expression');
+    expect(await jobRow()).toBeNull();
+  });
+
+  it('leaves the operator\u2019s own backup jobs alone', async () => {
+    await db.insert(scheduledJobs).values({
+      serviceId,
+      name: 'my nightly backup',
+      cron: '0 2 * * *',
+      kind: 'backup',
+      enabled: true,
+    });
+    await applyManifestToService(db, serviceId, m({ volume: { backups: { schedule: '0 4 * * *', retention: 7 } } }));
+    const jobs = await db.select().from(scheduledJobs).where(eq(scheduledJobs.kind, 'backup'));
+    expect(jobs).toHaveLength(2);
+    expect(jobs.map((j) => j.name).sort()).toEqual(['my nightly backup', MANIFEST_BACKUP_JOB_NAME]);
   });
 });

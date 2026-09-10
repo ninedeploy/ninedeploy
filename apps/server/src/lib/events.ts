@@ -12,6 +12,13 @@ export interface AppEvent {
    * tenants' resource names, so it must not fan out to every session.
    */
   actorUserId: number | null;
+  /**
+   * The audit entry's meta, when the caller supplied one. The notification
+   * dispatcher reads `meta.serviceId` to deliver per-service subscriptions
+   * (manifest `notifications` rules) — most events carry no meta and are
+   * only seen by globally-filtered channels.
+   */
+  meta?: Record<string, unknown>;
 }
 
 /**

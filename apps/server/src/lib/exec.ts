@@ -36,6 +36,13 @@ const SAFE_INHERITED_ENV = new Set([
   'NODE_ENV',
   // Docker daemon connection — required to talk to the docker socket/daemon.
   'DOCKER_HOST', 'DOCKER_BUILDKIT', 'DOCKER_CONTEXT', 'COMPOSE_FILE',
+  // Docker CLI config dir. Under the hardened systemd unit /root is READ-ONLY
+  // (ProtectHome=read-only), and modern buildx writes builder-activity files
+  // under $DOCKER_CONFIG/buildx/activity — without this inherited var, every
+  // `docker build` dies with "read-only file system" the moment the default
+  // builder touches its activity log. The unit points DOCKER_CONFIG at a
+  // writable path under the data dir.
+  'DOCKER_CONFIG',
 ]);
 
 /** Build an isolated environment: only safe host vars + the caller-supplied env. */

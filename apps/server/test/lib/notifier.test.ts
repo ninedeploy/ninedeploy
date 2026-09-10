@@ -4,6 +4,7 @@ import {
   dispatchChannel,
   notifyEvent,
   parseEmailTarget,
+  scopeMatchesAction,
   sendDiscord,
   sendSystemEmail,
   withRetry,
@@ -30,7 +31,11 @@ interface FakeDb {
   lastValues: () => ReturnType<typeof vi.fn>;
 }
 
-function makeDb(channels: unknown[], findManyImpl?: () => Promise<unknown>): FakeDb {
+function makeDb(
+  channels: unknown[],
+  findManyImpl?: () => Promise<unknown>,
+  rules: Array<{ channelId: number; scope: string }> = [],
+): FakeDb {
   const insert = vi.fn(() => ({ values: vi.fn(async () => undefined) }));
   const lastValues = () => {
     const result = insert.mock.results.at(-1)?.value as { values: ReturnType<typeof vi.fn> };
@@ -42,6 +47,13 @@ function makeDb(channels: unknown[], findManyImpl?: () => Promise<unknown>): Fak
         findMany: findManyImpl ?? (async () => channels),
       },
     },
+    // Per-service subscription rules (manifest `notifications` wiring) —
+    // only consulted when the event carries meta.serviceId.
+    select: () => ({
+      from: () => ({
+        where: async () => rules,
+      }),
+    }),
     insert,
   };
   return { db: db as never, insert, lastValues };
@@ -666,5 +678,69 @@ describe('dispatchChannel Discord config_json', () => {
     const [, init] = fetchMock.mock.calls[0]!;
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body.embeds).toBeUndefined();
+  });
+});
+
+describe('scopeMatchesAction (per-service subscription scopes)', () => {
+  it('maps the three manifest scopes onto audit actions', () => {
+    expect(scopeMatchesAction('deploy', 'deploy.success')).toBe(true);
+    expect(scopeMatchesAction('deploy', 'service.create')).toBe(false);
+    expect(scopeMatchesAction('failure', 'deploy.failed')).toBe(true);
+    expect(scopeMatchesAction('failure', 'deploy.success')).toBe(false);
+    expect(scopeMatchesAction('alert', 'alert.fired')).toBe(true);
+    expect(scopeMatchesAction('alert', 'alert.recovered')).toBe(true);
+    expect(scopeMatchesAction('alert', 'deploy.failed')).toBe(false);
+  });
+});
+
+describe('notifyEvent — per-service subscription deliveries', () => {
+  beforeEach(() => {
+    vi.stubEnv('NINEDEPLOY_MASTER_KEY', KEY_HEX);
+    fetchMock.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const channel = () => ({
+    id: 7,
+    type: 'webhook',
+    targetEncrypted: encrypt('https://hooks.example.com/scoped'),
+    // Global filter deliberately excludes deploys — the rule is the only
+    // path that should let this event through.
+    eventFilter: 'backup.',
+    active: true,
+  });
+  const rule = { channelId: 7, scope: 'failure' as const };
+
+  it('delivers a scoped event to a rule-subscribed channel despite the global filter', async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const { db } = makeDb([channel()], undefined, [rule]);
+    const scoped = { ...event, action: 'deploy.failed', meta: { serviceId: 5 } };
+    await notifyEvent(db, scoped);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]![0]).toBe('https://hooks.example.com/scoped');
+  });
+
+  it('does not deliver the channel anything without meta.serviceId', async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const { db } = makeDb([channel()], undefined, [rule]);
+    await notifyEvent(db, { ...event, action: 'deploy.failed' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('does not deliver when the rule scope does not cover the action', async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const { db } = makeDb([channel()], undefined, [{ channelId: 7, scope: 'alert' }]);
+    await notifyEvent(db, { ...event, action: 'deploy.failed', meta: { serviceId: 5 } });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('delivers a deploy outcome for a deploy-scoped rule on another service only with its own id', async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const { db } = makeDb([channel()], undefined, [{ channelId: 7, scope: 'deploy' }]);
+    await notifyEvent(db, { ...event, action: 'deploy.success', meta: { serviceId: 9 } });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

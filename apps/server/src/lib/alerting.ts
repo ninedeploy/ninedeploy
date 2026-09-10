@@ -82,7 +82,13 @@ export async function evaluateAlerts(db: DB, snapshots: MetricSnapshot[], now = 
         await db.update(alertState).set({ status: 'ok', breachSince: null, lastValue: snap.value }).where(eq(alertState.ruleId, rule.id));
         // Only notify recovery if the alert had actually fired.
         if (prevStatus === 'firing') {
-          void audit(db, null, 'alert.recovered', `${rule.name} (${rule.metric}=${snap.value}) back within threshold`);
+          void audit(
+            db,
+            null,
+            'alert.recovered',
+            `${rule.name} (${rule.metric}=${snap.value}) back within threshold`,
+            rule.serviceId != null ? { serviceId: rule.serviceId } : undefined,
+          );
         }
       } else {
         await db.update(alertState).set({ lastValue: snap.value }).where(eq(alertState.ruleId, rule.id));
@@ -104,7 +110,13 @@ export async function evaluateAlerts(db: DB, snapshots: MetricSnapshot[], now = 
           .update(alertState)
           .set({ status: 'firing', firedAt: now, lastNotifiedAt: now, lastValue: snap.value })
           .where(eq(alertState.ruleId, rule.id));
-        void audit(db, null, 'alert.fired', `${rule.name} (${rule.metric}=${snap.value}, threshold ${rule.operator} ${rule.threshold})`);
+        void audit(
+          db,
+          null,
+          'alert.fired',
+          `${rule.name} (${rule.metric}=${snap.value}, threshold ${rule.operator} ${rule.threshold})`,
+          rule.serviceId != null ? { serviceId: rule.serviceId } : undefined,
+        );
       } else {
         await db.update(alertState).set({ lastValue: snap.value }).where(eq(alertState.ruleId, rule.id));
       }

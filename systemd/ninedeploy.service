@@ -22,6 +22,11 @@ User=root
 Group=root
 WorkingDirectory=@INSTALL_DIR@
 EnvironmentFile=@INSTALL_DIR@/.env
+# ProtectHome=read-only below makes /root read-only, and modern buildx
+# writes builder-activity files under $DOCKER_CONFIG/buildx/activity —
+# without this override every `docker build` dies with
+# "read-only file system" (the dir is created by the panel at boot).
+Environment=DOCKER_CONFIG=@DATA_DIR@/docker-config
 ExecStart=@NODE@ @INSTALL_DIR@/apps/server/dist/server.js
 Restart=always
 RestartSec=5

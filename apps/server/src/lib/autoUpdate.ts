@@ -88,7 +88,9 @@ export async function sweepAutoUpdates(
       message: ['Auto-update:', svc.image, '→', digest.slice(0, 19)].join(' '),
     });
     await db.update(services).set({ autoUpdateDigest: digest }).where(eq(services.id, svc.id));
-    void audit(db, null, 'autoupdate.enqueued', `${svc.name}: ${svc.image} moved to ${digest.slice(0, 19)}`);
+    void audit(db, null, 'autoupdate.enqueued', `${svc.name}: ${svc.image} moved to ${digest.slice(0, 19)}`, {
+      serviceId: svc.id,
+    });
     result.enqueued++;
   }
   return result;

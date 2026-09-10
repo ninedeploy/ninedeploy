@@ -4,9 +4,13 @@ import {
   databases,
   databaseAttachments,
   domains,
+  scheduledJobs,
+  serviceNotificationChannels,
+  services,
   type DB,
 } from '@ninedeploy/db';
-import type { NinedeployManifest, Route } from '@ninedeploy/schemas';
+import type { NinedeployManifest, Notifications, Previews, Route } from '@ninedeploy/schemas';
+import { Cron } from 'croner';
 import { ensureAlertState } from './alerting.js';
 import { isOperator, visibleDatabaseIds } from './resourceAccess.js';
 
@@ -23,9 +27,9 @@ import { isOperator, visibleDatabaseIds } from './resourceAccess.js';
  * unique (serviceId, databaseId) index. No new rows are created on a
  * no-op run.
  *
- * Three sections are fully wired here (routes, database, alerts); the
- * build-shaping ones are applied by `engine/pipeline.ts` instead. Six are
- * *recognised but not wired* — `volume.backups`, `notifications`, `previews`,
+ * Six sections are fully wired here (routes, database, alerts, previews,
+ * notifications, volume backups); the build-shaping ones are applied by
+ * `engine/pipeline.ts` instead. Three are *recognised but not wired* —
  * `static`, `watch` and `network` — because the underlying platform feature is
  * either a panel/operator setting or does not exist yet. Every one of them
  * pushes a warning so the operator sees in the deploy log that the section was
@@ -42,6 +46,12 @@ export interface ApplyManifestResult {
    * service-owner's visibility — the cross-tenant attach is refused. */
   databaseAccessDenied: string | null;
   alertsUpserted: number;
+  /** True when a `previews` section was applied onto the service row. */
+  previewsApplied: boolean;
+  /** Per-scope notification subscriptions written by the `notifications` section. */
+  notificationsSynced: number;
+  /** Cron of the manifest-owned volume-backup job, when a `volume.backups` section was applied. */
+  volumeBackupSchedule: string | null;
   warnings: string[];
 }
 
@@ -58,36 +68,24 @@ export async function applyManifestToService(
     databaseNotFound: null,
     databaseAccessDenied: null,
     alertsUpserted: 0,
+    previewsApplied: false,
+    notificationsSynced: 0,
+    volumeBackupSchedule: null,
     warnings: [],
   };
 
   await syncRoutes(db, serviceId, manifest.routes, result);
   await attachManagedDatabase(db, serviceId, ownerUserId ?? null, manifest.database, result);
   await syncAlertRules(db, serviceId, manifest.alerts, result);
+  await applyPreviewConfig(db, serviceId, manifest.previews, result);
+  if (manifest.notifications) {
+    await syncNotificationSubscriptions(db, serviceId, manifest.notifications, result);
+  }
 
   // Recognised-but-not-wired sections: surface so the build log records the
   // operator's intent without silently dropping the configuration.
   if (manifest.volume?.backups) {
-    result.warnings.push(
-      `volume.backups: schedule="${manifest.volume.backups.schedule}" declared but volume-backup cron wiring is not yet implemented (PR 4+).`,
-    );
-  }
-  if (manifest.notifications) {
-    const channels = [
-      ...manifest.notifications.onDeploy,
-      ...manifest.notifications.onFailure,
-      ...manifest.notifications.onAlert,
-    ];
-    if (channels.length > 0) {
-      result.warnings.push(
-        `notifications: channels=[${[...new Set(channels)].join(', ')}] declared but per-service event mapping is not yet implemented.`,
-      );
-    }
-  }
-  if (manifest.previews?.enabled) {
-    result.warnings.push(
-      `previews: pattern="${manifest.previews.pattern ?? ''}" declared but preview config wiring is not yet implemented.`,
-    );
+    await wireVolumeBackupSchedule(db, serviceId, manifest.volume.backups, result);
   }
   // `static`, `watch` and `network` are accepted by the schema (a `.strict()`
   // object would otherwise reject a manifest that uses them) and consumed by
@@ -111,6 +109,172 @@ export async function applyManifestToService(
   }
 
   return result;
+}
+
+// ── Previews ──────────────────────────────────────────────────────────────
+
+/**
+ * Apply the manifest's `previews` section onto the service row — the same
+ * columns the panel's preview-settings UI writes. Declaring the section at
+ * all (even `enabled: false`) is the operator's intent, so every present
+ * field is applied; a section the panel later edits stays until the next
+ * deploy of a repo still carrying the section.
+ *
+ * No hostname validation happens here on purpose: the wildcard-zone
+ * constraint is enforced where it matters, at ROUTING time in
+ * `modules/hooks.ts` — a hostile pattern stored on the row can never claim
+ * a host the instance does not own.
+ */
+async function applyPreviewConfig(
+  db: DB,
+  serviceId: number,
+  previews: Previews | undefined,
+  result: ApplyManifestResult,
+): Promise<void> {
+  if (!previews) return;
+  await db
+    .update(services)
+    .set({
+      previewDeploymentsEnabled: previews.enabled,
+      previewDomainPattern: previews.pattern ?? null,
+      previewMaxActive: previews.maxActive,
+      previewAutoDestroyOnClose: previews.autoDestroyOnClose,
+    })
+    .where(eq(services.id, serviceId));
+  result.previewsApplied = true;
+}
+
+// ── Notifications ─────────────────────────────────────────────────────────
+
+const SCOPE_OF = { onDeploy: 'deploy', onFailure: 'failure', onAlert: 'alert' } as const;
+
+/**
+ * Apply the manifest's `notifications` section: resolve channel NAMES into
+ * per-service subscriptions that add this service's events to those
+ * channels. Semantics per scope key present in the manifest:
+ *  - the scope's rule set is REPLACED by the declared names (a deploy of a
+ *    repo still carrying the section is the source of truth);
+ *  - a scope key that is absent is left untouched (same conservatism as
+ *    routes — the manifest must not be able to silently unsubscribe things
+ *    the operator set up in the panel by omitting a line);
+ *  - a name that matches no channel pushes a warning; the other names in
+ *    the same list still apply.
+ *
+ * Delivery stays ADDITIVE to the channel's own global eventFilter — rules
+ * only ever ADD this service's events to a channel, never remove anything.
+ */
+async function syncNotificationSubscriptions(
+  db: DB,
+  serviceId: number,
+  notifications: Notifications,
+  result: ApplyManifestResult,
+): Promise<void> {
+  const allChannels = await db.query.notificationChannels.findMany();
+  const byName = new Map(allChannels.map((c) => [c.name, c]));
+
+  for (const key of Object.keys(SCOPE_OF) as Array<keyof typeof SCOPE_OF>) {
+    const names = notifications[key];
+    if (!names || names.length === 0) continue;
+    const scope = SCOPE_OF[key];
+
+    const unresolved: string[] = [];
+    const wanted = new Set<number>();
+    for (const name of new Set(names)) {
+      const channel = byName.get(name);
+      if (!channel) {
+        unresolved.push(name);
+        continue;
+      }
+      wanted.add(channel.id);
+    }
+    if (unresolved.length > 0) {
+      result.warnings.push(
+        `notifications.${key}: channel(s) [${unresolved.join(', ')}] not found — those subscriptions were skipped.`,
+      );
+    }
+
+    // Replace this scope's rules with the manifest's set, diffing against
+    // the existing rows so an unchanged manifest is a no-op.
+    const existing = await db
+      .select()
+      .from(serviceNotificationChannels)
+      .where(
+        and(
+          eq(serviceNotificationChannels.serviceId, serviceId),
+          eq(serviceNotificationChannels.scope, scope),
+        ),
+      );
+    for (const row of existing) {
+      if (wanted.has(row.channelId)) {
+        wanted.delete(row.channelId); // already in place
+      } else {
+        await db.delete(serviceNotificationChannels).where(eq(serviceNotificationChannels.id, row.id));
+      }
+    }
+    for (const channelId of wanted) {
+      await db
+        .insert(serviceNotificationChannels)
+        .values({ serviceId, channelId, scope })
+        .onConflictDoNothing();
+      result.notificationsSynced++;
+    }
+  }
+}
+
+// ── Volume backups ────────────────────────────────────────────────────────
+
+/** The manifest owns exactly this job name and never the operator's own. */
+export const MANIFEST_BACKUP_JOB_NAME = 'volume-backups (manifest)';
+
+/**
+ * Apply the manifest's `volume.backups` section: the declared cron becomes
+ * the service's `kind: 'backup'` scheduled job under a manifest-owned name,
+ * so a repo can carry its own volume-backup cadence without the operator
+ * rebuilding it in the panel. The job scheduler re-arms within its regular
+ * 5-minute reload, so the schedule is live without a restart.
+ *
+ * The declared retention is noted but not applied: pruning today is the
+ * instance-wide `volumeBackupRetainCount`, and a per-service override needs
+ * its own column on the prune path — surfaced as a warning instead of being
+ * silently dropped.
+ */
+async function wireVolumeBackupSchedule(
+  db: DB,
+  serviceId: number,
+  backups: { schedule: string; retention: number },
+  result: ApplyManifestResult,
+): Promise<void> {
+  let cron: string | null = null;
+  try {
+    // Validate BEFORE writing: the job scheduler only logs invalid cron
+    // expressions at arm time, which would look like a silently dead backup.
+    new Cron(backups.schedule);
+    cron = backups.schedule;
+  } catch {
+    result.warnings.push(
+      `volume.backups: schedule="${backups.schedule}" is not a valid cron expression — no backup job was created or changed.`,
+    );
+    return;
+  }
+
+  const [existing] = await db
+    .select()
+    .from(scheduledJobs)
+    .where(and(eq(scheduledJobs.serviceId, serviceId), eq(scheduledJobs.name, MANIFEST_BACKUP_JOB_NAME)));
+  if (existing) {
+    await db
+      .update(scheduledJobs)
+      .set({ cron, kind: 'backup', enabled: true, updatedAt: new Date() })
+      .where(eq(scheduledJobs.id, existing.id));
+  } else {
+    await db
+      .insert(scheduledJobs)
+      .values({ serviceId, name: MANIFEST_BACKUP_JOB_NAME, cron, kind: 'backup', enabled: true });
+  }
+  result.volumeBackupSchedule = cron;
+  result.warnings.push(
+    `volume.backups: scheduled (${cron}); retention stays the instance-wide keep-count — the declared retention=${backups.retention} is not applied per-service yet.`,
+  );
 }
 
 // ── Routes (domains) ─────────────────────────────────────────────────────
