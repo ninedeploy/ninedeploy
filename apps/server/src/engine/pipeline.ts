@@ -480,6 +480,17 @@ export async function runDeployment(
       await auditOutcome(db, service, deploymentId, 'failed', reason);
       return;
     }
+    // The static build pack executes npm on the host that runs the panel —
+    // there is no remote operation for it. Refuse loudly rather than letting
+    // the remote builder fail on the missing Dockerfile.
+    if ((buildConfig?.buildPack ?? 'auto') === 'static') {
+      const reason =
+        'the static build pack runs its build commands on the panel host and has no remote implementation';
+      log(`✗ ${reason}`);
+      await safeFail(db, deploymentId, service.id, service.runtimeId);
+      await auditOutcome(db, service, deploymentId, 'failed', reason);
+      return;
+    }
     const call = (op: string, params: Record<string, unknown>, sink: (line: string) => void) =>
       agentOp(db, serverId, op, params, sink);
     builder = service.type === 'compose' ? createRemoteComposeBuilder(call) : createRemoteDockerBuilder(call);

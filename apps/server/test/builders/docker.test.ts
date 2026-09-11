@@ -1,4 +1,6 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { dirname } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { containerExposedTcpPorts, dockerBuilder, nixpacksEnvArgs, sanitiseRuntimeLogs, writeEnvFile } from '../../src/engine/builders/docker.js';
@@ -1016,5 +1018,79 @@ describe('dockerBuilder registry auth', () => {
     );
     expect(spawnMocks.spawn).not.toHaveBeenCalled();
     expect(h.run.mock.calls.some((c) => (c[1] as string[])[0] === 'logout')).toBe(false);
+  });
+});
+
+describe('dockerBuilder.buildAndRun — static build pack', () => {
+  beforeEach(() => {
+    h.run.mockReset();
+    h.run.mockResolvedValue(undefined);
+    h.capture.mockReset();
+    h.capture.mockImplementation(async (_cmd: string, args: string[]) => {
+      const argv = args as string[];
+      if (argv[0] === 'network' && argv[1] === 'ls') return 'nd-svc-web';
+      if (argv[0] === 'inspect' && argv[1] === 'ninedeploy-traefik') return '{"nd-svc-web":{}}';
+      return 'running';
+    });
+  });
+
+  it('runs the host build commands and ships the output via nginx:alpine', async () => {
+    const workDir = mkdtempSync(path.join(os.tmpdir(), 'nd-static-builder-'));
+    try {
+      const dist = path.join(workDir, 'dist');
+      mkdirSync(dist, { recursive: true });
+      writeFileSync(path.join(dist, 'index.html'), '<html></html>');
+      h2.bind(require('node:fs'));
+
+      const ctx = makeCtx({
+        service: { slug: 'web', image: null, port: 3000, repoUrl: 'https://github.com/acme/web', healthPath: '/', cpuShares: 0, memLimitMb: 0 },
+        workDir,
+        buildConfig: { buildPack: 'static', baseDir: '/', installCmd: 'npm ci', buildCmd: 'npm run build', outputDir: 'dist', staticSpa: true },
+      });
+
+      await dockerBuilder.buildAndRun(ctx as never);
+
+      // Host build commands ran, in order: install then build.
+      console.log('DEBUG RUN-CMDS', h.run.mock.calls.map((c) => [c[0], (c[1] as string[] | undefined)?.[0]]));
+      const shCalls = h.run.mock.calls.filter((c) => c[0] === 'sh');
+      expect(shCalls.map((c) => (c[1] as string[])[1])).toEqual(['npm ci', 'npm run build']);
+      // The image was built from the generated per-deploy Dockerfile.
+      expect(h.run.mock.calls.some((c) => (c[1] as string[]).includes('-f') && (c[1] as string[]).includes('Dockerfile.static'))).toBe(true);
+      // The generated conf carries SPA fallback.
+      expect(h2.exists(path.join(workDir, 'nginx-static.conf'))).toBe(true);
+      expect(readFileSync(path.join(workDir, 'nginx-static.conf'), 'utf8')).toContain('/index.html');
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses an output dir that escapes the build context', async () => {
+    const workDir = mkdtempSync(path.join(os.tmpdir(), 'nd-static-escape-'));
+    try {
+      const ctx = makeCtx({
+        service: { slug: 'web', image: null, port: 3000, repoUrl: 'https://github.com/acme/web', healthPath: '/', cpuShares: 0, memLimitMb: 0 },
+        workDir,
+        buildConfig: { buildPack: 'static', baseDir: '/', installCmd: 'echo ok', buildCmd: 'echo skip', outputDir: '../../etc' },
+      });
+
+      await expect(dockerBuilder.buildAndRun(ctx as never)).rejects.toThrow('escapes the build context');
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails with a clear hint when the static build command is missing', async () => {
+    const workDir = mkdtempSync(path.join(os.tmpdir(), 'nd-static-nobuild-'));
+    try {
+      const ctx = makeCtx({
+        service: { slug: 'web', image: null, port: 3000, repoUrl: 'https://github.com/acme/web', healthPath: '/', cpuShares: 0, memLimitMb: 0 },
+        workDir,
+        buildConfig: { buildPack: 'static', baseDir: '/' },
+      });
+
+      await expect(dockerBuilder.buildAndRun(ctx as never)).rejects.toThrow('requires a build command');
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
   });
 });

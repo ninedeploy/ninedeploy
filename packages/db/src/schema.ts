@@ -33,7 +33,7 @@ export const serviceStatus = [
   'error',
   'deleting',
 ] as const;
-export const buildPack = ['auto', 'nixpacks', 'dockerfile'] as const;
+export const buildPack = ['auto', 'nixpacks', 'dockerfile', 'static'] as const;
 export const deploymentStatus = [
   'queued',
   'building',
@@ -479,6 +479,10 @@ export const buildConfigs = sqliteTable('build_configs', {
   buildCmd: text('build_cmd'),
   startCmd: text('start_cmd'),
   dockerfilePath: text('dockerfile_path'),
+  // Static build pack: where the build output lands (relative to baseDir) and
+  // whether the nginx conf gets SPA history fallback (try_files -> index.html).
+  outputDir: text('output_dir'),
+  staticSpa: integer('static_spa', { mode: 'boolean' }).notNull().default(true),
   // CI/CD Lifecycle Hooks
   preDeployCmd: text('pre_deploy_cmd'),
   postDeployCmd: text('post_deploy_cmd'),

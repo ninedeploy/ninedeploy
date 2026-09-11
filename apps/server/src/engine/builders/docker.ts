@@ -9,6 +9,7 @@ import { ensureDockerImage, pullDockerImage } from '../../lib/dockerPull.js';
 import { NETWORK } from '../proxy.js';
 import { ensureServiceBridge } from '../../lib/serviceBridge.js';
 import { buildWithBuildKit } from './buildkit.js';
+import { buildStaticSite } from './staticSite.js';
 import { buildProbeUrl, safeProbePath } from '../../lib/probeUrl.js';
 import { writeSecretFile, type SecretFile } from '../../lib/secretFile.js';
 import { repoRelative, resolveInRepo } from '../../lib/repoPath.js';
@@ -392,6 +393,7 @@ export const dockerBuilder: Builder = {
     // Determine the image to run: a pre-built image (template/one-click) or build from source.
     let target: string;
     let builtWithNixpacks = false;
+    let builtStatic = false;
     let resolvedPort: number | null = service.port ?? validPort(env.PORT);
     try {
     if (service.image) {
@@ -435,7 +437,16 @@ export const dockerBuilder: Builder = {
       const explicitDockerfilePath = !!buildConfig?.dockerfilePath?.trim();
       const hasDockerfile = existsSync(resolveInRepo(workDir, buildConfig?.baseDir, buildConfig?.dockerfilePath || 'Dockerfile'));
       let useNixpacks = pack === 'nixpacks' || (pack === 'auto' && !hasDockerfile);
-      if (pack === 'auto' && !hasDockerfile && !explicitDockerfilePath) {
+      if (pack === 'static') {
+        // Static build pack: host-executed build commands, then the output
+        // dir ships inside nginx:alpine. The runtime/health/routing phases
+        // below run unchanged — only the build differs.
+        await buildStaticSite(
+          { workDir, baseDir: path.join(workDir, baseDir), buildConfig, env, log },
+          target,
+        );
+        builtStatic = true;
+      } else if (pack === 'auto' && !hasDockerfile && !explicitDockerfilePath) {
         // Only auto-discover when the user did not already pin a path. A
         // pinned `dockerfilePath` is a deliberate choice and overrides.
         const discovered = findDockerfileInRepo(workDir, log);
@@ -445,44 +456,48 @@ export const dockerBuilder: Builder = {
           useNixpacks = false;
         }
       }
-      log(`Building image ${target} …`);
-      if (useNixpacks) {
-        builtWithNixpacks = true;
-        await buildWithNixpacks(target, baseDir, buildConfig, workDir, log, ctx.manifest, env);
-      } else {
-        // Sprint 4 G-01 PR-B: when the `engine.use_buildkit` config flag
-        // is on (default off), route the Dockerfile build through the
-        // BuildKit driver so the build can consult / populate the
-        // `IBuildCache` registered on the kernel. The legacy
-        // `docker build` path stays the default until an operator
-        // opts in, because the BuildKit invocation is incompatible
-        // with hosts that ship the legacy builder only.
-        if (ctx.useBuildKit) {
-          const result = await buildWithBuildKit({
-            workDir,
-            dockerfilePath: dockerfile,
-            baseDir,
-            target,
-            commitSha,
-            lastBuildDigest: imageDigest,
-            serviceId: service.id,
-            cache: ctx.buildCache,
-            onCacheEvent: ctx.onBuildCacheEvent,
-            log,
-          });
-          log(`BuildKit finished: ${result.imageDigest}${result.cacheHit ? ' (cache hit)' : ''}`);
+      // The static pack already built its own image above — the Dockerfile /
+      // Nixpacks strategies below apply to everything else.
+      if (!builtStatic) {
+        log(`Building image ${target} …`);
+        if (useNixpacks) {
+          builtWithNixpacks = true;
+          await buildWithNixpacks(target, baseDir, buildConfig, workDir, log, ctx.manifest, env);
         } else {
-          await run(
-            'docker',
-            ['build', '-t', target, '-f', dockerfile, baseDir],
-            {
-              cwd: workDir,
-              env: { DOCKER_BUILDKIT: '1' },
-              heartbeatMs: DEPLOY_HEARTBEAT_MS,
-              heartbeatLabel: `Building Docker image ${target}`,
-            },
-            log,
-          );
+          // Sprint 4 G-01 PR-B: when the `engine.use_buildkit` config flag
+          // is on (default off), route the Dockerfile build through the
+          // BuildKit driver so the build can consult / populate the
+          // `IBuildCache` registered on the kernel. The legacy
+          // `docker build` path stays the default until an operator
+          // opts in, because the BuildKit invocation is incompatible
+          // with hosts that ship the legacy builder only.
+          if (ctx.useBuildKit) {
+            const result = await buildWithBuildKit({
+              workDir,
+              dockerfilePath: dockerfile,
+              baseDir,
+              target,
+              commitSha,
+              lastBuildDigest: imageDigest,
+              serviceId: service.id,
+              cache: ctx.buildCache,
+              onCacheEvent: ctx.onBuildCacheEvent,
+              log,
+            });
+            log(`BuildKit finished: ${result.imageDigest}${result.cacheHit ? ' (cache hit)' : ''}`);
+          } else {
+            await run(
+              'docker',
+              ['build', '-t', target, '-f', dockerfile, baseDir],
+              {
+                cwd: workDir,
+                env: { DOCKER_BUILDKIT: '1' },
+                heartbeatMs: DEPLOY_HEARTBEAT_MS,
+                heartbeatLabel: `Building Docker image ${target}`,
+              },
+              log,
+            );
+          }
         }
       }
     }
@@ -497,6 +512,12 @@ export const dockerBuilder: Builder = {
       log(`No container port configured; using Nixpacks default ${resolvedPort}/tcp for runtime, healthcheck and Traefik`);
     }
     if (builtWithNixpacks && env.PORT === undefined) env.PORT = String(resolvedPort);
+    // Static images listen on nginx's port 80 — no build-time PORT convention
+    // applies, so the default is fixed rather than adopted from the env.
+    if (builtStatic && !resolvedPort) {
+      resolvedPort = 80;
+      log(`Static image: using container port 80/tcp for runtime, healthcheck and Traefik`);
+    }
 
     // Dockerfile/image deploys often declare exactly one EXPOSE port. Adopt it
     // automatically while leaving ambiguous multi-port images for the user to

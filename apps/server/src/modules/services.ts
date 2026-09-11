@@ -138,6 +138,8 @@ function serializeBuild(b: typeof buildConfigs.$inferSelect) {
     buildCmd: b.buildCmd,
     startCmd: b.startCmd,
     dockerfilePath: b.dockerfilePath,
+    outputDir: b.outputDir,
+    staticSpa: b.staticSpa,
     preDeployCmd: b.preDeployCmd,
     postDeployCmd: b.postDeployCmd,
     preStopCmd: b.preStopCmd,
@@ -388,6 +390,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         buildCmd: input.build.buildCmd ?? null,
         startCmd: input.build.startCmd ?? null,
         dockerfilePath: input.build.dockerfilePath ?? null,
+        outputDir: input.build.outputDir ?? null,
         preDeployCmd: input.build.preDeployCmd ?? null,
         postDeployCmd: input.build.postDeployCmd ?? null,
         preStopCmd: input.build.preStopCmd ?? null,
@@ -603,6 +606,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       if (build.baseDir !== undefined) values.baseDir = build.baseDir;
       if (build.restartPolicy !== undefined) values.restartPolicy = build.restartPolicy;
       if (build.stopGraceSeconds !== undefined) values.stopGraceSeconds = build.stopGraceSeconds;
+      if (build.outputDir !== undefined) values.outputDir = build.outputDir === '' ? null : build.outputDir;
+      if (build.staticSpa !== undefined) values.staticSpa = build.staticSpa;
       for (const key of ['installCmd', 'buildCmd', 'startCmd', 'dockerfilePath', 'preDeployCmd', 'postDeployCmd', 'preStopCmd'] as const) {
         const v = build[key];
         if (v !== undefined) values[key] = v === '' ? null : v;

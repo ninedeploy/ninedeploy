@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { containerPath, dockerVolumeName, envVarName, gitBranch, gitRepoUrl, httpPath, repoBaseDir, repoRelativePath, slug } from './common.js';
 
 export const serviceType = z.enum(['pm2', 'docker', 'compose']);
-export const buildPack = z.enum(['auto', 'nixpacks', 'dockerfile']);
+export const buildPack = z.enum(['auto', 'nixpacks', 'dockerfile', 'static']);
 
 /** Optional project/workspace/label tag IDs for new service creation. */
 const tagIds = z.array(z.number().int().positive()).optional();
@@ -61,6 +61,8 @@ export const createService = z.object({
       buildCmd: z.string().optional(),
       startCmd: z.string().optional(),
       dockerfilePath: repoRelativePath.optional(),
+      /** Static build pack: build output dir (relative to baseDir). */
+      outputDir: repoRelativePath.optional(),
       preDeployCmd: z.string().nullable().optional(),
       postDeployCmd: z.string().nullable().optional(),
       preStopCmd: z.string().nullable().optional(),
@@ -142,6 +144,10 @@ export const updateService = z.object({
       buildCmd: z.string().optional(),
       startCmd: z.string().optional(),
       dockerfilePath: repoRelativePath.optional(),
+      /** Static build pack: build output dir, relative to baseDir. */
+      outputDir: repoRelativePath.optional(),
+      /** Static build pack: SPA history fallback in the generated nginx conf. */
+      staticSpa: z.boolean().optional(),
       preDeployCmd: z.string().nullable().optional(),
       postDeployCmd: z.string().nullable().optional(),
       preStopCmd: z.string().nullable().optional(),
@@ -219,6 +225,10 @@ export const service = z.object({
       buildCmd: z.string().nullable(),
       startCmd: z.string().nullable(),
       dockerfilePath: z.string().nullable(),
+      /** Static build pack: build output dir (relative to baseDir). */
+      outputDir: z.string().nullable(),
+      /** Static build pack: SPA history fallback in the generated nginx conf. */
+      staticSpa: z.boolean().optional(),
       preDeployCmd: z.string().nullable().optional(),
       postDeployCmd: z.string().nullable().optional(),
       preStopCmd: z.string().nullable().optional(),

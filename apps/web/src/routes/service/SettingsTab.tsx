@@ -117,7 +117,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
   const [form, setForm] = useState<{
     name: string; branch: string; repoUrl: string; image: string; port: string;
     healthPath: string; volumeMount: string; sourceId: string;
-    buildPack: string; baseDir: string; installCmd: string; buildCmd: string; startCmd: string; dockerfilePath: string;
+    buildPack: string; baseDir: string; installCmd: string; buildCmd: string; startCmd: string; dockerfilePath: string; outputDir: string;
     preDeployCmd: string; postDeployCmd: string; preStopCmd: string;
     restartPolicy: string; stopGraceSeconds: string;
   } | null>(null);
@@ -138,6 +138,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
       buildCmd: svc.build?.buildCmd ?? '',
       startCmd: svc.build?.startCmd ?? '',
       dockerfilePath: svc.build?.dockerfilePath ?? '',
+      outputDir: svc.build?.outputDir ?? '',
       preDeployCmd: svc.build?.preDeployCmd ?? '',
       postDeployCmd: svc.build?.postDeployCmd ?? '',
       preStopCmd: svc.build?.preStopCmd ?? '',
@@ -163,12 +164,13 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
         // one (an omitted key leaves it untouched server-side).
         sourceId: isAdmin ? (f.sourceId ? toInt(f.sourceId) : null) : undefined,
         build: {
-          buildPack: f.buildPack as 'auto' | 'nixpacks' | 'dockerfile',
+          buildPack: f.buildPack as 'auto' | 'nixpacks' | 'dockerfile' | 'static',
           baseDir: f.baseDir,
           installCmd: orUndef(f.installCmd),
           buildCmd: orUndef(f.buildCmd),
           startCmd: orUndef(f.startCmd),
           dockerfilePath: orUndef(f.dockerfilePath),
+          outputDir: orUndef(f.outputDir),
           // Non-admins never see these fields, so they must not send them
           // either: an omitted key leaves whatever an admin stored intact.
           preDeployCmd: isAdmin ? orUndef(f.preDeployCmd) : undefined,
@@ -249,9 +251,15 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
               <option value="auto">auto</option>
               <option value="nixpacks">nixpacks</option>
               <option value="dockerfile">dockerfile</option>
+              <option value="static">static</option>
             </Select>
           </Field>
           <Field label="Base directory"><Input value={form.baseDir} onChange={set('baseDir')} className="h-9 font-mono text-xs" /></Field>
+          {form.buildPack === 'static' && (
+            <Field label="Output directory" hint="Relative to base directory; served by nginx">
+              <Input value={form.outputDir} onChange={set('outputDir')} placeholder="dist" className="h-9 font-mono text-xs" />
+            </Field>
+          )}
           <Field label="Install command"><Input value={form.installCmd} onChange={set('installCmd')} placeholder="npm ci" className="h-9 font-mono text-xs" /></Field>
           <Field label="Build command"><Input value={form.buildCmd} onChange={set('buildCmd')} placeholder="npm run build" className="h-9 font-mono text-xs" /></Field>
           <Field label="Start command"><Input value={form.startCmd} onChange={set('startCmd')} placeholder="npm start" className="h-9 font-mono text-xs" /></Field>
