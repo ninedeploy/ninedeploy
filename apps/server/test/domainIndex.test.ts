@@ -135,6 +135,63 @@ describe('domain index routes', () => {
     expect(res.json()).toEqual({ id: 1, ssl: false });
   });
 
+  it('never marks a domain active — DNS proof lives only in the verify route (r092)', async () => {
+    // PATCH used to set `status: 'active'` unconditionally, letting any seat
+    // holder route + request certificates for a hostname they never proved.
+    const db = createFakeDb({
+      findFirst: {
+        domains: domainRow({ id: 1, serviceId: 1, status: 'pending' }),
+        services: svcRow({ id: 1 }),
+      },
+      update: { domains: [domainRow({ id: 1, ssl: true, status: 'pending' })] },
+    });
+    const writes: Record<string, unknown>[] = [];
+    const origUpdate = db.update.bind(db);
+    db.update = ((table: unknown) => {
+      const builder = origUpdate(table as never);
+      const origSet = builder.set.bind(builder);
+      builder.set = ((values: Record<string, unknown>) => {
+        writes.push(values);
+        return origSet(values as never);
+      }) as typeof builder.set;
+      return builder;
+    }) as typeof db.update;
+    const app = await buildTestApp({ db });
+    await app.register(domainIndexRoutes);
+    const res = await app.inject({ method: 'PATCH', url: '/1', headers: asUser(), payload: { ssl: true } });
+    expect(res.statusCode).toBe(200);
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({ ssl: true });
+    expect(writes[0]).not.toHaveProperty('status');
+  });
+
+  it('refuses the ssl toggle for a workspace viewer (403)', async () => {
+    const OWNER = 2;
+    const VIEWER = 7;
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: {
+          domains: domainRow({ id: 1, serviceId: 3 }),
+          services: svcRow({ id: 3, ownerUserId: OWNER }),
+          workspaceMembers: { id: 1, workspaceId: 1, userId: VIEWER, role: 'viewer' },
+        },
+        findMany: {
+          serviceWorkspaces: [{ id: 1, serviceId: 3, workspaceId: 1 }],
+          workspaceMembers: [{ id: 1, workspaceId: 1, userId: VIEWER, role: 'viewer' }],
+        },
+        update: { domains: [domainRow({ id: 1, ssl: true })] },
+      }),
+    });
+    await app.register(domainIndexRoutes);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/1',
+      headers: asUser({ id: VIEWER, isOperator: false }),
+      payload: { ssl: true },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
   it('returns 404 when the domain is missing', async () => {
     const app = await buildTestApp({
       db: createFakeDb({

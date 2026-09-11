@@ -6,7 +6,7 @@ import { readCertificates, writeDynamicConfig } from '../engine/proxy.js';
 import { notFound, parseId } from '../lib/errors.js';
 
 import { loadServiceForUser } from '../lib/serviceAccess.js';
-import { visibleServiceIdSet } from '../lib/resourceAccess.js';
+import { assertServiceRole, visibleServiceIdSet } from '../lib/resourceAccess.js';
 
 /** Centralized domain index: which domain → which service/container, plus SSL. Mounted under /domains. */
 export const domainIndexRoutes: FastifyPluginAsync = async (app) => {
@@ -50,8 +50,17 @@ export const domainIndexRoutes: FastifyPluginAsync = async (app) => {
     const input = (req.body ?? {}) as { ssl?: boolean };
     const domain = await app.db.query.domains.findFirst({ where: eq(domains.id, id) });
     if (!domain) throw notFound('Domain not found');
-    await loadServiceForUser(app.db, domain.serviceId, req.user!);
-    const [d] = await app.db.update(domains).set({ ssl: input.ssl ?? false, status: 'active' }).where(eq(domains.id, id)).returning();
+    const svc = await loadServiceForUser(app.db, domain.serviceId, req.user!);
+    // A write on the service: same `member` floor as every route in domains.ts.
+    await assertServiceRole(app.db, svc, req.user!, 'member');
+    // SSL toggle only. This used to also set `status: 'active'`, which let any
+    // seat holder skip DNS ownership proof — the verify route in domains.ts is
+    // the only place a domain may become active (r092).
+    const [d] = await app.db
+      .update(domains)
+      .set({ ssl: input.ssl ?? false, updatedAt: new Date() })
+      .where(eq(domains.id, id))
+      .returning();
     if (!d) throw notFound('Domain not found');
     await writeDynamicConfig(app.db);
     void audit(app.db, req.user!.id, 'domain.ssl', `${d.hostname} → ${d.ssl ? 'on' : 'off'}`);
