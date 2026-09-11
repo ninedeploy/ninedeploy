@@ -7,6 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.9] - 2026-09-11
+
+> A security release. A full audit (authentication, authorization,
+> injection, SSRF, supply chain) found six High-severity issues. All six are
+> fixed here, along with the Medium findings that were small, local
+> changes. **Upgrade recommended for every install.** Several fixes tighten
+> what a non-operator may do; see *Changed behaviour* below before
+> upgrading a shared instance.
+
+### Security
+
+- **SAML signature wrapping.** The signature was checked against one
+  `<Assertion>` while the login email was read from another, so an unsigned
+  assertion appended to a validly signed response could sign in as any
+  local user, operators included. Every check (digest, conditions, replay,
+  issuer, audience, subject) now reads the single assertion named by the
+  signature's `Reference`, and a response carrying more than one is refused.
+- **Refresh tokens now rotate from the first use.** The token issued at
+  login carried no generation marker, so a leaked copy could be replayed for
+  the whole session and pushed its expiry forward on each use.
+- **API tokens can no longer mint credentials.** A `write`-scoped token could
+  create a token with `scopes: []`, stored as unrestricted, which restored
+  its owner's operator rights. Tokens, password, 2FA and passkey routes now
+  require an interactive session, and an explicit empty scope list is refused.
+- **Domain ownership proof can no longer be skipped.** `PATCH
+  /v1/domains/:id` marked any domain `active` without DNS verification. It
+  now toggles SSL only and requires the `member` role.
+- **Viewers can no longer read a project's secrets.** A viewer seat was
+  enough to tag one's own service into another workspace's project and have
+  the deploy pipeline decrypt that project's shared env into it. Both the tag
+  routes and the pipeline now require `member`.
+- **Other tenants' volumes can no longer be adopted.** Re-creating a deleted
+  database's name, naming a volume via `existingVolume`, or a slug and label
+  that spelled another service's volume (`shop` + `api-data`) mounted
+  someone else's data. Unclaimed volumes are now operator-only.
+- **Password rotation revokes API tokens**, and an operator password reset
+  now also revokes the user's sessions.
+- **Removed workspace members lose control** of the services and databases
+  they created in it. Ownership passes to the workspace owner.
+- **Remote servers, backup jobs:** placing a service on a remote server and
+  creating `backup` jobs are operator-only, matching the rest of those
+  features.
+- **Studio proxy DoS:** the Web Studio cookie is checked before the request
+  body (up to 256 MiB) is read, so unauthenticated clients can no longer
+  exhaust the panel's memory.
+- **Git SSRF:** git no longer follows HTTP redirects (a public repo host
+  could bounce a clone to `169.254.169.254` or internal ports), remote-node
+  clones go through the same egress check as panel clones, and the node
+  agent refuses non-network repository URLs such as `file://`.
+- **Rate limits can no longer be reset with a fake `X-Forwarded-For`** on a
+  panel reached without its bundled Traefik. Only loopback and private-network
+  peers are trusted as a proxy.
+- **`/v1/sso`:** OIDC sign-in requires `email_verified`, and accounts with
+  TOTP enabled are refused there instead of getting a session with no second
+  factor.
+- **Dependencies:** js-yaml 4.3.2 (merge-key CPU exhaustion, reachable via
+  compose files and manifests), nodemailer 9.1.1, hono 4.13.7. `pnpm audit`
+  reports no known vulnerabilities.
+
+### Changed behaviour
+
+- API tokens cannot create tokens, change the password, or manage 2FA and
+  passkeys. Use a signed-in session. CLI logins are unaffected.
+- `ninedeploy token create` with a blank scope answer now creates a `read`
+  token, not an unrestricted one.
+- Adopting an existing or retained volume (`existingVolume`, or re-creating a
+  deleted database's name), `serverId`, and `backup` jobs now need an
+  operator.
+- A renamed Git repository (HTTP 301) is no longer followed. Update the
+  service to the repository's new URL.
+- SAML is experimental: the `/v1/sso` callback still requires an existing
+  panel session, so IdP-initiated logins do not reach it yet.
+- Accounts with TOTP enabled cannot sign in through `/v1/sso`. The main OIDC
+  login is unchanged for now.
+
+---
+
 ## [0.7.8] - 2026-09-10
 
 > The one that un-breaks hardened hosts: a class of silent failures where

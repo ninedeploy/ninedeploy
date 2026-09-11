@@ -434,6 +434,10 @@ describe('Bitbucket', () => {
     expect(verifyWebhook(h, pushPayload, SECRET)).toBeNull();
   });
 
+  it('rejects a Bitbucket request without a signature', () => {
+    expect(verifyWebhook({ 'x-event-key': 'repo:push' }, '{}', SECRET)).toBeNull();
+  });
+
   it('treats diagnostics:ping as a ping', () => {
     const body = '{}';
     expect(isPing(bbHeaders(body, 'diagnostics:ping'), 'bitbucket')).toBe(true);
@@ -511,6 +515,29 @@ describe('Bitbucket', () => {
     });
     const pr = parsePullRequest(JSON.parse(body), 'bitbucket');
     expect(pr).toMatchObject({ action: 'closed', merged: true });
+  });
+
+  it('maps rejected to closed without merged and updated to synchronize', () => {
+    const mk = (key: string) => JSON.stringify({
+      event_key: key,
+      pullrequest: {
+        id: 5,
+        title: 't',
+        source: { branch: { name: 'b' }, commit: { hash: 's' } },
+      },
+      repository: { full_name: 'acme/web' },
+    });
+    expect(parsePullRequest(JSON.parse(mk('pullrequest:rejected')), 'bitbucket')).toMatchObject({ action: 'closed', merged: false });
+    expect(parsePullRequest(JSON.parse(mk('pullrequest:updated')), 'bitbucket')).toMatchObject({ action: 'synchronize' });
+  });
+
+  it('returns null for a pull request payload without a source branch', () => {
+    const body = JSON.stringify({
+      event_key: 'pullrequest:created',
+      pullrequest: { id: 4, title: 'no branch', source: {} },
+      repository: { full_name: 'acme/web' },
+    });
+    expect(parsePullRequest(JSON.parse(body), 'bitbucket')).toBeNull();
   });
 });
 

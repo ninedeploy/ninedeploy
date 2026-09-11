@@ -324,4 +324,29 @@ describe('AI diagnosis routes', () => {
     expect(JSON.stringify(res.json())).toContain('is unreachable');
     await app.close();
   });
+
+  it('maps an unreadable provider body to 502', async () => {
+    appendFileSync(logFile(77), 'boom');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new Error('Unexpected token < in JSON');
+      },
+    }));
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: {
+          services: SVC,
+          deployments: depRow({ id: 77, serviceId: 5, status: 'failed' }),
+          settings: alternatingSettings(),
+        },
+      }),
+    });
+    await app.register(aiRoutes, { prefix: '/ai' });
+    const res = await app.inject({ method: 'POST', url: '/ai/services/5/deploys/77/diagnose', headers: asUser() });
+    expect(res.statusCode).toBe(502);
+    expect(JSON.stringify(res.json())).toContain('unreadable response');
+    await app.close();
+  });
 });

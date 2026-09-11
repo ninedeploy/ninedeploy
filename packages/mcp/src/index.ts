@@ -21,7 +21,7 @@ export function buildServer(
   warn: (msg: string) => void = console.error,
   options: { readOnly?: boolean; tokenScopes?: string[] | null } = {},
 ): McpServer {
-  const server = new McpServer({ name: 'ninedeploy', version: '0.7.2' });
+  const server = new McpServer({ name: 'ninedeploy', version: '0.7.9' });
 
   // Read-only mode keeps the pre-existing behaviour (a
   // hand-picked allowlist of mutating-free tools). The

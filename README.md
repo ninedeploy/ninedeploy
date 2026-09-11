@@ -10,7 +10,7 @@ the databases, certificates, secrets, backups and access rules around it — fro
 terminal CLI, a typed SDK, or an AI agent over MCP.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Release](https://img.shields.io/badge/Release-0.7.2-blue.svg)](./CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Release-0.7.9-blue.svg)](./CHANGELOG.md)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522.13-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7-blue.svg)](https://www.typescriptlang.org)
 [![Docker](https://img.shields.io/badge/Docker-required-blue.svg)](https://docker.com)
@@ -68,12 +68,12 @@ runs the SQLite migrations, and starts a hardened `systemd` unit (`ProtectSystem
 Re-running the same command is the upgrade path; it snapshots `.data` before touching anything.
 
 ```bash
-./install.sh --version v0.7.2     # pin an exact tag
+./install.sh --version v0.7.9     # pin an exact tag
 ./install.sh --channel main       # track edge
 ./install.sh --force              # discard local edits + stale build artifacts, then rebuild
 ```
 
-> **Where `main` stands:** the default channel installs the newest release tag (**0.7.2**).
+> **Where `main` stands:** the default channel installs the newest release tag (**0.7.9**).
 > The newest work (doctor mode, retained-volume re-keying) lands on `main` before it is tagged —
 > see [`CHANGELOG.md`](./CHANGELOG.md) under *Unreleased*, or run `--channel main` to get it today.
 

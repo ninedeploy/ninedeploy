@@ -1,4 +1,4 @@
-export const VERSION = '0.7.8';
+export const VERSION = '0.7.9';
 
 export interface ChangelogEntry {
   version: string;
@@ -8,6 +8,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.7.9',
+    date: '2026-09-11',
+    title: 'Security Release: Six High-Severity Fixes from a Full Audit',
+    changes: [
+      'Identity: SAML signature wrapping closed (every check now reads the single assertion the signature covers), refresh tokens rotate from the first use, API tokens can no longer mint tokens or change passwords/2FA/passkeys, password rotation revokes API tokens, and /v1/sso requires email_verified and refuses TOTP-enabled accounts.',
+      'Multi-tenant authorization: a domain can no longer be marked active without DNS proof, a viewer seat can no longer pull a project’s secrets into its own container, other tenants’ retained or colliding volumes can no longer be adopted, removed members lose control of what they created, and remote-server placement and backup jobs are operator-only.',
+      'Network and supply chain: the Web Studio cookie is checked before a 256 MiB body is read, git no longer follows HTTP redirects and remote-node clones pass the egress check, fake X-Forwarded-For can no longer reset rate limits on a panel without its Traefik, and js-yaml 4.3.2 / nodemailer 9.1.1 / hono 4.13.7 leave pnpm audit clean.',
+      'Changed behaviour: API tokens cannot manage credentials, a blank CLI token scope now means read, volume adoption / serverId / backup jobs need an operator, renamed Git repos (301) must be updated to their new URL, and SAML stays experimental.',
+    ],
+  },
   {
     version: '0.7.8',
     date: '2026-09-10',
