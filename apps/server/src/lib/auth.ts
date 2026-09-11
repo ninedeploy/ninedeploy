@@ -60,7 +60,7 @@ export async function resolveUser(db: DB, token: string): Promise<AuthUser | nul
     if (payload.ver === undefined || payload.ver !== baseUser.tokenVersion) return null;
     // Interactive sessions are never scope-restricted; scopes are an
     // API-token concept.
-    return { id: baseUser.id, isOperator: baseUser.isInstanceOperator, tokenScopes: null };
+    return { id: baseUser.id, isOperator: baseUser.isInstanceOperator, tokenScopes: null, viaApiToken: false };
   }
 
   // Opaque API token — compare by sha256 hash. Revoked by row deletion.
@@ -73,7 +73,12 @@ export async function resolveUser(db: DB, token: string): Promise<AuthUser | nul
   // HTTP method; this function does not). An empty list means unrestricted —
   // see `apiTokenScope` in @ninedeploy/schemas for why.
   const scopes = Array.isArray(row.scopes) ? row.scopes : [];
-  return { id: baseUser.id, isOperator: baseUser.isInstanceOperator, tokenScopes: scopes.length > 0 ? scopes : null };
+  return {
+    id: baseUser.id,
+    isOperator: baseUser.isInstanceOperator,
+    tokenScopes: scopes.length > 0 ? scopes : null,
+    viaApiToken: true,
+  };
 }
 
 interface LoadedUser {

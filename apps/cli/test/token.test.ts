@@ -70,15 +70,17 @@ describe('tokenCreateAction', () => {
     expect(create).toHaveBeenCalledWith({ name: 'deploy', scopes: ['read'] });
   });
 
-  it('treats a blank scope answer as an unrestricted (legacy) token', async () => {
-    const create = vi.fn().mockResolvedValue({ id: 2, name: 'legacy', token: 's', scopes: [] });
+  it('omits scopes on a blank answer so the server applies its read-only default', async () => {
+    // r090: the server refuses an explicit `[]` — it would be stored as a
+    // legacy unrestricted token. Blank must never mean "unrestricted" again.
+    const create = vi.fn().mockResolvedValue({ id: 2, name: 'plain', token: 's', scopes: ['read'] });
     clientWithTokens({ create });
-    h.prompt.mockResolvedValueOnce('legacy').mockResolvedValueOnce('');
+    h.prompt.mockResolvedValueOnce('plain').mockResolvedValueOnce('');
 
     await tokenCreateAction();
 
-    expect(create).toHaveBeenCalledWith({ name: 'legacy', scopes: [] });
-    expect(logSpy).toHaveBeenCalledWith('  Scopes: unrestricted (legacy)');
+    expect(create).toHaveBeenCalledWith({ name: 'plain' });
+    expect(logSpy).toHaveBeenCalledWith('  Scopes: read');
   });
 
   it('drops scope values outside the vocabulary rather than widening the token', async () => {

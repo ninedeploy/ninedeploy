@@ -21,6 +21,13 @@ export interface AuthUser {
    * were enforced. `null` means unrestricted.
    */
   tokenScopes: string[] | null;
+  /**
+   * True when the request authenticated with an opaque API token rather than
+   * an interactive session. `tokenScopes` cannot tell the two apart — a legacy
+   * unrestricted token also resolves to `null` — so credential-management
+   * routes key off this instead (see `requireInteractive`).
+   */
+  viaApiToken?: boolean;
 }
 
 /** Methods that cannot change server state. */
@@ -125,6 +132,12 @@ declare module 'fastify' {
     requireScope: (
       scope: string,
     ) => (req: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply) => Promise<void>;
+    /**
+     * Refuses API-token requests. For routes that mint or change credentials
+     * (tokens, passkeys, 2FA, password): an API token must never be able to
+     * create a credential broader than itself. Run after `authenticate`.
+     */
+    requireInteractive: (req: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply) => Promise<void>;
   }
   interface FastifyRequest {
     user: AuthUser | null;
@@ -209,6 +222,13 @@ export default fp(
     fastify.decorate('requireAdmin', async (req) => {
       if (!req.user) throw unauthorized();
       if (!req.user.isOperator) throw forbidden('Admin access required');
+    });
+
+    fastify.decorate('requireInteractive', async (req) => {
+      if (!req.user) throw unauthorized();
+      // A `write` token calling POST /auth/tokens with `scopes: []` used to
+      // mint an unrestricted token and get its owner's operator flag back.
+      if (req.user.viaApiToken) throw forbidden('This action requires an interactive session, not an API token');
     });
 
     // Per-route fine-grained scope check (G-08). The factory

@@ -6,10 +6,12 @@ import { prompt } from '../prompts.js';
  * Normalise a typed scope answer. Accepts the legacy
  * `read | write | operator` shorthand AND the fine-grained
  * `nd://scope/(read|write|admin)/<resource>` form
- * introduced in G-08. Empty input keeps the legacy
- * "unrestricted" behaviour, which is what every
- * pre-0.3.5 token has; anything unrecognised is dropped
- * rather than silently widening the token.
+ * introduced in G-08. Anything unrecognised is dropped
+ * rather than silently widening the token. An empty
+ * result means "no scopes given": callers omit the field
+ * and the server applies its read-only default (the
+ * server refuses an explicit `[]`, which would be stored
+ * as a legacy unrestricted token).
  */
 export function parseScopes(answer: string): string[] {
   const legacy = new Set(['read', 'write', 'operator']);
@@ -24,10 +26,10 @@ export function parseScopes(answer: string): string[] {
 export async function tokenCreateAction(): Promise<void> {
   const name = (await prompt('Token name', 'ci')) || 'ci';
   // read = safe methods only · write = mutate as a non-operator ·
-  // operator = no extra restriction. Blank = unrestricted (legacy).
-  const scopes = parseScopes(await prompt('Scopes (read,write,operator — blank = unrestricted)', 'write'));
+  // operator = no extra restriction. Blank = read-only (server default).
+  const scopes = parseScopes(await prompt('Scopes (read,write,operator — blank = read)', 'write'));
   try {
-    const created = await getClient().auth.tokens.create({ name, scopes });
+    const created = await getClient().auth.tokens.create(scopes.length ? { name, scopes } : { name });
     console.log(`✓ Token "${created.name}" created (id: ${created.id}).`);
     console.log(`  Scopes: ${created.scopes.length ? created.scopes.join(', ') : 'unrestricted (legacy)'}`);
     console.log('  This token is shown ONCE — store it securely:');

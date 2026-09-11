@@ -421,8 +421,12 @@ export async function buildTestApp(opts: TestAppOpts = {}): Promise<FastifyInsta
     const scopeHeader = req.headers['x-test-token-scopes'];
     const tokenScopes =
       typeof scopeHeader === 'string' ? scopeHeader.split(',').filter(Boolean) : null;
-    req.user = { id: Number(header), role, isOperator, tokenScopes };
+    // A scope header means the test is simulating an API-token request.
+    req.user = { id: Number(header), role, isOperator, tokenScopes, viaApiToken: typeof scopeHeader === 'string' };
     void reply;
+  });
+  app.decorate('requireInteractive', async (req: FastifyRequest) => {
+    if (req.user?.viaApiToken) throw forbidden('This action requires an interactive session, not an API token');
   });
   app.decorate('requireAdmin', async (req: FastifyRequest) => {
     if (req.user?.isOperator !== true) throw forbidden('Admin access required');

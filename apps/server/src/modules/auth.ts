@@ -313,7 +313,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
   // ── Passkeys (WebAuthn) ──────────────────────────────────────────────────
   // Registration ceremony: options (challenge) → browser prompt → verify.
-  app.post('/passkey/register/options', { onRequest: [app.authenticate], config: { rateLimit: AUTH_LIMIT } }, async (req) => {
+  app.post('/passkey/register/options', { onRequest: [app.authenticate, app.requireInteractive], config: { rateLimit: AUTH_LIMIT } }, async (req) => {
     const user = await app.db.query.users.findFirst({ where: eq(users.id, req.user!.id) });
     if (!user) throw unauthorized();
     const existing = await app.db
@@ -323,7 +323,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     return { options: await beginRegistration(user, existing) };
   });
 
-  app.post('/passkey/register/verify', { onRequest: [app.authenticate], config: { rateLimit: AUTH_LIMIT } }, async (req) => {
+  app.post('/passkey/register/verify', { onRequest: [app.authenticate, app.requireInteractive], config: { rateLimit: AUTH_LIMIT } }, async (req) => {
     const input = passkeyRegisterVerify.parse(req.body);
     const user = await app.db.query.users.findFirst({ where: eq(users.id, req.user!.id) });
     if (!user) throw unauthorized();
@@ -354,7 +354,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     return rows.map((r) => ({ id: r.id, name: r.name, createdAt: r.createdAt.toISOString() }));
   });
 
-  app.delete('/passkey/:id', { onRequest: [app.authenticate] }, async (req) => {
+  app.delete('/passkey/:id', { onRequest: [app.authenticate, app.requireInteractive] }, async (req) => {
     const id = parseId((req.params as { id: string }).id);
     await app.db
       .delete(webauthnCredentials)
@@ -444,7 +444,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   // Setup generates (or regenerates) a pending secret + otpauth URI; enable
   // verifies a code from the user's authenticator and flips the flag; disable
   // requires the password AND a valid code, then bumps tokenVersion.
-  app.post('/2fa/setup', { onRequest: [app.authenticate], config: { rateLimit: AUTH_LIMIT } }, async (req) => {
+  app.post('/2fa/setup', { onRequest: [app.authenticate, app.requireInteractive], config: { rateLimit: AUTH_LIMIT } }, async (req) => {
     const user = await app.db.query.users.findFirst({ where: eq(users.id, req.user!.id) });
     if (!user) throw unauthorized();
     // Regenerating the secret also flips totpEnabled off — when 2FA is active
@@ -462,7 +462,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     return { secret, otpauthUri: otpauthUri(secret, user.email) };
   });
 
-  app.post('/2fa/enable', { onRequest: [app.authenticate], config: { rateLimit: AUTH_LIMIT } }, async (req) => {
+  app.post('/2fa/enable', { onRequest: [app.authenticate, app.requireInteractive], config: { rateLimit: AUTH_LIMIT } }, async (req) => {
     const input = twoFactorCode.parse(req.body);
     const user = await app.db.query.users.findFirst({ where: eq(users.id, req.user!.id) });
     if (!user?.totpSecretEncrypted) throw badRequest('Start 2FA setup first');
@@ -472,7 +472,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true, totpEnabled: true };
   });
 
-  app.post('/2fa/disable', { onRequest: [app.authenticate], config: { rateLimit: AUTH_LIMIT } }, async (req) => {
+  app.post('/2fa/disable', { onRequest: [app.authenticate, app.requireInteractive], config: { rateLimit: AUTH_LIMIT } }, async (req) => {
     const input = twoFactorDisable.parse(req.body);
     const user = await app.db.query.users.findFirst({ where: eq(users.id, req.user!.id) });
     if (!user) throw unauthorized();
@@ -576,7 +576,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   // Self-service password change. Requires the CURRENT password; bumps
   // tokenVersion so every other session of this user is logged out, then
   // issues a fresh token pair for the caller.
-  app.post('/password', { onRequest: [app.authenticate], config: { rateLimit: AUTH_LIMIT } }, async (req) => {
+  app.post('/password', { onRequest: [app.authenticate, app.requireInteractive], config: { rateLimit: AUTH_LIMIT } }, async (req) => {
     const input = passwordChange.parse(req.body);
     const user = await app.db.query.users.findFirst({ where: eq(users.id, req.user!.id) });
     if (!user || !(await verifyPassword(user.passwordHash, input.currentPassword))) {
@@ -594,7 +594,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // ── API tokens (for the CLI / CI) ────────────────────────────────────────
-  app.post('/tokens', { onRequest: [app.authenticate] }, async (req) => {
+  app.post('/tokens', { onRequest: [app.authenticate, app.requireInteractive] }, async (req) => {
     const input = createApiToken.parse(req.body ?? {});
     // A token can never grant more than its creator holds: asking for the
     // `operator` scope as a non-operator would otherwise mint a credential

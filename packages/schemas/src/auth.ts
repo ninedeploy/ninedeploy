@@ -214,9 +214,10 @@ export const createApiToken = z.object({
    * read-only token, not an unrestricted one. The unrestricted meaning of an
    * EMPTY list survives only for legacy rows created before 0.3.5 (the
    * resolver still maps `[]` → unrestricted); new tokens are never handed
-   * their owner's full authority by default.
+   * their owner's full authority by default — and an explicit `[]` is
+   * refused, since it would be stored as exactly that legacy unrestricted row.
    */
-  scopes: z.array(apiTokenScope).max(3).default(['read']),
+  scopes: z.array(apiTokenScope).min(1).max(3).default(['read']),
   /**
    * Defaults to a one-year lifetime. A standing credential that never expires
    * was the pre-0.3.5 behaviour and is what made a leaked CI token

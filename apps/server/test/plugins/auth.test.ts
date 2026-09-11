@@ -74,7 +74,7 @@ describe('auth plugin', () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ user: { id: 42, isOperator: true, tokenScopes: null } });
+    expect(res.json()).toEqual({ user: { id: 42, isOperator: true, tokenScopes: null, viaApiToken: false } });
     expect(db.update).not.toHaveBeenCalled();
     await app.close();
   });
@@ -111,7 +111,7 @@ describe('auth plugin', () => {
       headers: { authorization: 'Bearer api-token-no-dots' },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ user: { id: 7, isOperator: true, tokenScopes: null } });
+    expect(res.json()).toEqual({ user: { id: 7, isOperator: true, tokenScopes: null, viaApiToken: true } });
     expect(db.findFirst).toHaveBeenCalled();
     expect(db.update).toHaveBeenCalledWith(apiTokens);
     const setFn = db.update.mock.results[0]!.value.set;

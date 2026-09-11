@@ -323,10 +323,10 @@ describe('auth', () => {
     it('createApiToken defaults to a read-scoped (["read"]) scope list', () => {
       // A NEW token without explicit scopes is read-only, not unrestricted
       // (1a6313b): omitting a scope must not mint the owner's full authority.
-      // The default only fills a MISSING key — an explicit `[]` still parses
-      // through for callers that deliberately want the legacy behaviour.
+      // An explicit `[]` is refused (r090): it would be stored as a legacy
+      // unrestricted row — how a `write` token minted an operator token.
       expect(createApiToken.parse({ name: 'ci' }).scopes).toEqual(['read']);
-      expect(createApiToken.parse({ name: 'ci', scopes: [] }).scopes).toEqual([]);
+      bad(createApiToken, { name: 'ci', scopes: [] });
       expect(createApiToken.parse({ name: 'ci', scopes: ['read'] }).scopes).toEqual(['read']);
       bad(createApiToken, { name: 'ci', scopes: ['root'] });
       bad(createApiToken, { name: 'ci', expiresInDays: 0 });

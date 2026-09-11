@@ -36,7 +36,7 @@ describe('resolveUser', () => {
   it('resolves a valid JWT access token to id + role (fresh from DB)', async () => {
     const token = await signAccessToken(42, 0);
     const db = mockDb({ user: { id: 42, isInstanceOperator: true } });
-    await expect(resolveUser(db as never, token)).resolves.toEqual({ id: 42, isOperator: true, tokenScopes: null });
+    await expect(resolveUser(db as never, token)).resolves.toEqual({ id: 42, isOperator: true, tokenScopes: null, viaApiToken: false });
     expect(db.query.apiTokens.findFirst).not.toHaveBeenCalled();
     expect(db.query.users.findFirst).toHaveBeenCalled();
   });
@@ -63,7 +63,7 @@ describe('resolveUser', () => {
   it('accepts a JWT whose ver matches the current tokenVersion', async () => {
     const token = await signAccessToken(42, 3);
     const db = mockDb({ user: { id: 42, isInstanceOperator: true, tokenVersion: 3 } });
-    await expect(resolveUser(db as never, token)).resolves.toEqual({ id: 42, isOperator: true, tokenScopes: null });
+    await expect(resolveUser(db as never, token)).resolves.toEqual({ id: 42, isOperator: true, tokenScopes: null, viaApiToken: false });
   });
 
   it('rejects a refresh token (wrong type)', async () => {
@@ -83,7 +83,7 @@ describe('resolveUser', () => {
   it('resolves an opaque API token via its sha256 hash and loads the role', async () => {
     const db = mockDb({ token: { userId: 7, expiresAt: null }, user: { id: 7, role: 'member' } });
     const user = await resolveUser(db as never, 'opaque-token-abc');
-    expect(user).toEqual({ id: 7, isOperator: false, tokenScopes: null });
+    expect(user).toEqual({ id: 7, isOperator: false, tokenScopes: null, viaApiToken: true });
     expect(db.query.apiTokens.findFirst).toHaveBeenCalledWith({ where: expect.objectContaining({}) });
   });
 
@@ -102,7 +102,7 @@ describe('resolveUser', () => {
 
   it('returns the user when the token has not expired', async () => {
     const db = mockDb({ token: { userId: 3, expiresAt: new Date(Date.now() + 60_000) }, user: { id: 3, isInstanceOperator: true } });
-    await expect(resolveUser(db as never, 'still-valid')).resolves.toEqual({ id: 3, isOperator: true, tokenScopes: null });
+    await expect(resolveUser(db as never, 'still-valid')).resolves.toEqual({ id: 3, isOperator: true, tokenScopes: null, viaApiToken: true });
   });
 
   it('returns null when the API token has expired', async () => {

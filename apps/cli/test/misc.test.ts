@@ -452,14 +452,17 @@ describe('tokenCreate', () => {
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('raw-token'));
   });
 
-  it('names an unscoped token as unrestricted rather than showing nothing', async () => {
+  it('omits scopes on a blank answer, and still names a legacy unscoped token', async () => {
+    // r090: blank no longer sends `[]` (the server refuses it); the server's
+    // read-only default applies. A legacy row coming back with `[]` must still
+    // be labelled rather than shown as nothing.
     const create = vi.fn().mockResolvedValue({ token: 'raw-token', scopes: [] });
     const client = { auth: { tokens: { create } } };
-    h.prompt.mockResolvedValueOnce('legacy').mockResolvedValueOnce('');
+    h.prompt.mockResolvedValueOnce('plain').mockResolvedValueOnce('');
 
     await tokenCreate(client as never);
 
-    expect(create).toHaveBeenCalledWith({ name: 'legacy', scopes: [] });
+    expect(create).toHaveBeenCalledWith({ name: 'plain' });
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('unrestricted (legacy)'));
   });
 

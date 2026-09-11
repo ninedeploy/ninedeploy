@@ -171,17 +171,17 @@ export async function deploysRemove(client: NineDeployClient, svcIdStr: string, 
 export async function tokenCreate(client: NineDeployClient): Promise<void> {
   const name = await prompt('Token name', 'ci');
   // read = safe methods only · write = mutate as a non-operator ·
-  // operator = no extra restriction. Blank = unrestricted (legacy tokens).
+  // operator = no extra restriction. Blank = read-only (server default).
   // G-08 fine-grained: also accept
   // 'nd://scope/(read|write|admin)/<resource>' for per-resource
   // restriction; the server's scopeCovers() expands the legacy
   // shorthand against the URI form so a `write` token still
   // covers every `nd://scope/write/<r>`.
   const scopes = parseScopes(
-    await prompt('Scopes (read,write,operator or nd://scope/(read|write|admin)/<resource> — blank = unrestricted)', 'write'),
+    await prompt('Scopes (read,write,operator or nd://scope/(read|write|admin)/<resource> — blank = read)', 'write'),
   );
   try {
-    const tok = await spinner('Creating token', () => client.auth.tokens.create({ name, scopes }));
+    const tok = await spinner('Creating token', () => client.auth.tokens.create(scopes.length ? { name, scopes } : { name }));
     success(`Token created: ${c.cyan(tok.token)}`);
     info(`Scopes: ${tok.scopes.length ? tok.scopes.join(', ') : 'unrestricted (legacy)'}`);
     info('Store this securely — it won\'t be shown again.');

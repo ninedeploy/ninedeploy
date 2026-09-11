@@ -125,6 +125,56 @@ describe('API token scopes', () => {
     await app.close();
   });
 
+  it('refuses API tokens on credential-management routes (requireInteractive)', async () => {
+    // r090: a `write` token could POST /auth/tokens {scopes: []} and mint an
+    // unrestricted token — operator flag restored. Legacy `[]` tokens resolve
+    // to `tokenScopes: null` exactly like a JWT, so the gate must key off how
+    // the request authenticated, not off the scopes.
+    for (const scopes of [['write'], ['operator'], []]) {
+      const app = await buildApp(makeDb(scopes, true));
+      app.post('/mint', { preHandler: [app.authenticate, app.requireInteractive] }, async () => ({ ok: true }));
+      const res = await app.inject({ method: 'POST', url: '/mint', headers: auth });
+      expect(res.statusCode, `scopes=${JSON.stringify(scopes)}`).toBe(403);
+      await app.close();
+    }
+    const { signAccessToken } = await import('../src/lib/jwt.js');
+    const app = await buildApp(makeDb(['read'], true));
+    app.post('/mint', { preHandler: [app.authenticate, app.requireInteractive] }, async () => ({ ok: true }));
+    const res = await app.inject({
+      method: 'POST',
+      url: '/mint',
+      headers: { authorization: `Bearer ${await signAccessToken(4, 0)}` },
+    });
+    expect(res.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it('refuses an explicit empty scope list on token creation', async () => {
+    const { createApiToken } = await import('@ninedeploy/schemas');
+    expect(() => createApiToken.parse({ scopes: [] })).toThrow();
+    expect(createApiToken.parse({}).scopes).toEqual(['read']);
+  });
+
+  it('mounts every credential-minting route in modules/auth.ts behind requireInteractive', async () => {
+    // Wiring guard: the decorator is worthless if a route forgets it.
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../src/modules/auth.ts', import.meta.url), 'utf8');
+    for (const route of [
+      "app.post('/tokens'",
+      "app.post('/password'",
+      "app.post('/2fa/setup'",
+      "app.post('/2fa/enable'",
+      "app.post('/2fa/disable'",
+      "app.post('/passkey/register/options'",
+      "app.post('/passkey/register/verify'",
+      "app.delete('/passkey/:id'",
+    ]) {
+      const line = src.split('\n').find((l) => l.includes(route));
+      expect(line, route).toBeDefined();
+      expect(line, route).toContain('app.requireInteractive');
+    }
+  });
+
   it('looks the token up by its sha256, not the raw value', async () => {
     const db = makeDb(['read']);
     const app = await buildApp(db);
