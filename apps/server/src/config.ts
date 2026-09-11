@@ -2,6 +2,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { env } from './env.js';
+import { isPrivateAddress } from './lib/egressGuard.js';
 
 /* v8 ignore start */
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -43,15 +44,20 @@ export const config = {
   publicUrl: env.NINEDEPLOY_PUBLIC_URL.replace(/\/+$/, ''),
   // Fastify trustProxy: see the NINEDEPLOY_TRUST_PROXY note in env.ts. "true"
   // trusts every hop, "false" none. Fastify (unlike Express) has no numeric
-  // hop form, so a hop count N becomes a function trusting the first N hops.
+  // hop form, so a hop count N becomes a function trusting the first N hops —
+  // and only hops on the host's own network (r100). The address used to be
+  // ignored, so on a panel reached WITHOUT the bundled Traefik (dev compose,
+  // NINEDEPLOY_BIND=0.0.0.0, bare metal) an internet client counted as the
+  // trusted proxy, and a fresh fake X-Forwarded-For per request reset every
+  // per-IP login / forgot-password bucket. A public peer is now never a proxy.
   trustProxy:
     env.NINEDEPLOY_TRUST_PROXY === 'true'
       ? true
       : env.NINEDEPLOY_TRUST_PROXY === 'false'
         ? false
-        : (_addr: string, hop: number) => {
+        : (addr: string, hop: number) => {
           const n = Number(env.NINEDEPLOY_TRUST_PROXY);
-          return Number.isNaN(n) ? false : hop < n;
+          return !Number.isNaN(n) && hop < n && isPrivateAddress(addr);
         },
   paths: {
     dataDir,

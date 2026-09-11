@@ -22,10 +22,11 @@ const schema = z.object({
   // Trust the reverse proxy for client IP derivation (Fastify trustProxy).
   // Every standard install fronts the panel with its own Traefik, so the
   // default trusts ONE hop — without it every rate-limit bucket and audit row
-  // collapses onto the proxy's container IP. Set "false" when the panel is
-  // exposed directly (a client could otherwise mint fresh rate-limit buckets
-  // with fake X-Forwarded-For entries), or a larger hop count when extra
-  // proxies sit in front of Traefik.
+  // collapses onto the proxy's container IP. A hop count only ever trusts
+  // loopback/private peers (config.ts, r100), so a directly-connected internet
+  // client's X-Forwarded-For is ignored even with the default. Set "false" to
+  // trust no proxy at all (e.g. untrusted clients on the same LAN), or a
+  // larger hop count when extra proxies sit in front of Traefik.
   NINEDEPLOY_TRUST_PROXY: z
     .string()
     .regex(/^(true|false|\d+)$/, 'must be "true", "false" or a hop count')

@@ -99,5 +99,35 @@ describe('config', () => {
     expect(typeof trust).toBe('function');
     expect(trust('10.0.0.1', 0)).toBe(true);
     expect(trust('10.0.0.1', 1)).toBe(false);
+    // r100: only a proxy on the host's own network is trusted — a public peer
+    // (a client talking to the panel directly) never is.
+    expect(trust('127.0.0.1', 0)).toBe(true);
+    expect(trust('::ffff:172.18.0.2', 0)).toBe(true);
+    expect(trust('203.0.113.9', 0)).toBe(false);
+    expect(trust('2606:4700::1111', 0)).toBe(false);
+  });
+
+  it('ignores X-Forwarded-For from a directly-connected public client (r100)', async () => {
+    // End to end through Fastify: with the address ignored, a fresh fake XFF
+    // per request minted a fresh rate-limit bucket for every login attempt.
+    delete process.env['NINEDEPLOY_TRUST_PROXY'];
+    const { default: Fastify } = await import('fastify');
+    const app = Fastify({ trustProxy: (await loadConfig()).trustProxy });
+    app.get('/ip', async (req) => ({ ip: req.ip }));
+    const spoofed = await app.inject({
+      method: 'GET',
+      url: '/ip',
+      remoteAddress: '203.0.113.9',
+      headers: { 'x-forwarded-for': '1.2.3.4' },
+    });
+    expect(spoofed.json().ip).toBe('203.0.113.9');
+    const viaTraefik = await app.inject({
+      method: 'GET',
+      url: '/ip',
+      remoteAddress: '172.18.0.2',
+      headers: { 'x-forwarded-for': '198.51.100.7' },
+    });
+    expect(viaTraefik.json().ip).toBe('198.51.100.7');
+    await app.close();
   });
 });
