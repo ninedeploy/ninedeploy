@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8.0] - 2026-09-11
+
+> The provider-matrix and reliability release: Bitbucket joins GitHub,
+> GitLab and Gitea end-to-end (repos, branches, webhooks, PR preview
+> environments), and a batch of quietly-broken reliability paths — hook
+> quoting, agent op timeouts, database size/restore ordering — is fixed
+> and pinned with tests.
+
+### Added
+
+- **Bitbucket support, end-to-end.** Sources gain the `bitbucket` type
+  (Bitbucket Cloud API tokens, Bearer auth): the repos/branches
+  pickers, the connection test, and the web UI dropdown with deploy-key
+  instructions. Webhooks handle `repo:push` and `pullrequest:*` —
+  verified by the `X-Hub-Signature` sha256 HMAC, deduplicated by
+  `X-Request-UUID`, with push hashes parsed from
+  `push.changes[].new.target` and PRs mapped to
+  opened/synchronize/closed(+merged). Private repos: the deploy-key
+  (SSH) path is the recommended flow. PR preview environments work for
+  Bitbucket pull requests like every other provider.
+
+### Fixed
+
+- **Lifecycle hook commands are tokenized quote-aware.** The old
+  whitespace split left quote bytes in argv, so the documented compound
+  form `sh -c "a && b"` failed with command-not-found. Single quotes
+  are literal, double-quote backslash escapes work, empty quoted args
+  survive, unterminated quotes run to end of input.
+- **Agent operations can no longer run orphaned.** Each agent op gets a
+  595 s child-side timeout (just under the 600 s master request
+  window) with a process-group kill — a stalled `git fetch` used to
+  hold the workspace's `.git` locks and fail the NEXT op with "cannot
+  lock ref". Children killed by a signal now report the signal instead
+  of a nonsense "code null".
+- **Redis/Valkey restores stop the container before copying `dump.rdb`.**
+  A graceful shutdown SAVEs memory to disk, so the old
+  copy-then-restart order let the dying process overwrite the staged
+  backup — the "restored" server reloaded its own old data.
+- **Postgres restores run `psql` with `ON_ERROR_STOP`.** A bare `-f`
+  continues past statement errors and exits 0, reporting
+  partially-applied dumps as successful restores.
+- **Managed Mongo sizes report real numbers** (the stats call now
+  authenticates with the root credentials — unauthenticated `dbStats`
+  was rejected and sizes silently read 0).
+- **`localhost/team/app` image references resolve against the local
+  registry** (Docker's own first-segment rule) instead of a Docker Hub
+  namespace.
+- **The installer self-checks its environment.** Every bare-metal
+  install/upgrade verifies the rendered unit exports `DOCKER_CONFIG`
+  and `PM2_HOME` (missing either re-creates the "read-only file
+  system" build failures on hardened hosts) and runs a five-second
+  scratch `docker build` preflight; CI gained an installer syntax +
+  `set -u` smoke gate so an installer regression cannot merge again.
+
+---
+
 ## [0.7.9] - 2026-09-11
 
 > A security release. A full audit (authentication, authorization,

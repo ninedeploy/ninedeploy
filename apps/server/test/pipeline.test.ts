@@ -4,11 +4,14 @@ import path from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { auditLog, deployments, domains, services } from '@ninedeploy/db';
 import { logBus } from '../src/engine/logs.js';
-import { filterTrustworthyProjectLinks, runDeployment } from '../src/engine/pipeline.js';
+import { filterTrustworthyProjectLinks, runDeployment, splitHookCommand } from '../src/engine/pipeline.js';
 
 const h = vi.hoisted(() => {
-  const buildAndRun = vi.fn(async () => ({ runtimeId: 'c-1', port: 3000, healthPath: '/' }));
-  const isHealthy = vi.fn(async () => true);
+  // Loose `...args: any[]` signatures: individual tests install impls with
+  // concrete param/return shapes — an untyped vi.fn() would pin `calls` to
+  // `[][]` and reject every multi-arg mockImplementation under strict mode.
+  const buildAndRun = vi.fn<(...args: any[]) => Promise<{ runtimeId: string; port: number | null; healthPath: string }>>(async () => ({ runtimeId: 'c-1', port: 3000, healthPath: '/' }));
+  const isHealthy = vi.fn<(...args: any[]) => Promise<boolean>>(async () => true);
   const stop = vi.fn(async () => undefined);
   const builder = { buildAndRun, isHealthy, stop };
   const checkoutCommit = vi.fn(async () => 'sha-1234567');
@@ -24,7 +27,7 @@ const h = vi.hoisted(() => {
     paths: { reposDir: '', logsDir: '', dataDir: '' },
     wildcardDomain: '',
   };
-  const agentOp = vi.fn(async () => ({ exitCode: 0, lines: [] }));
+  const agentOp = vi.fn<(...args: any[]) => Promise<{ exitCode: number; lines: string[] }>>(async () => ({ exitCode: 0, lines: [] }));
   const reconcileTemplateDependencies = vi.fn(async () => null as null | { database: { slug: string }; alreadyAttached: boolean });
   return { builder, checkoutCommit, decrypt, connectionString, ENGINES, writeDynamicConfig, getAcmeEmail, config, agentOp, reconcileTemplateDependencies };
 });
@@ -101,7 +104,7 @@ const service = {
 
 interface FakeDb {
   query: {
-    deployments: { findFirst: ReturnType<typeof vi.fn> };
+    deployments: { findFirst: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
     services: { findFirst: ReturnType<typeof vi.fn> };
     buildConfigs: { findFirst: ReturnType<typeof vi.fn> };
     sources: { findFirst: ReturnType<typeof vi.fn> };
@@ -113,6 +116,7 @@ interface FakeDb {
     // owner's workspace seats before decrypting shared env (cross-tenant
     // defence in depth).
     projects: { findFirst: ReturnType<typeof vi.fn> };
+    serviceProjects: { findMany: ReturnType<typeof vi.fn> };
     workspaceMembers: { findFirst: ReturnType<typeof vi.fn> };
     users: { findFirst: ReturnType<typeof vi.fn> };
   };
@@ -126,7 +130,7 @@ function makeDb(): { db: FakeDb; updates: { table: unknown; values: Record<strin
   const inserts: { table: unknown; values: Record<string, unknown> }[] = [];
   const db: FakeDb = {
     query: {
-      deployments: { findFirst: vi.fn() },
+      deployments: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
       services: { findFirst: vi.fn() },
       buildConfigs: { findFirst: vi.fn() },
       sources: { findFirst: vi.fn() },
@@ -405,6 +409,9 @@ describe('runDeployment', () => {
       templateDatabaseEnv: wpMapping,
     });
     second.db.query.deployments.findFirst.mockResolvedValue({ ...dep, configSnapshot: JSON.stringify(snap1) });
+    // The drift check scans recent snapshot-bearing rows for one carrying a
+    // fingerprint; the previous successful deploy's row supplies it here.
+    second.db.query.deployments.findMany.mockResolvedValue([{ ...dep, configSnapshot: JSON.stringify(snap1) }]);
     second.db.query.databaseAttachments.findMany.mockResolvedValue([{ serviceId: 5, databaseId: 2, envAlias: 'DATABASE_URL' }]);
     second.db.query.databases.findFirst.mockResolvedValue({ ...dbRow, passwordEncrypted: 'enc:secret-two' });
     second.db.query.serviceProjects.findMany.mockResolvedValue([]);
@@ -697,7 +704,7 @@ describe('runDeployment', () => {
     // audit log now, so a bare insert count would conflate the two.
     const domainInserts = inserts.filter((i: { table: unknown }) => i.table === domains);
     expect(domainInserts).toHaveLength(1);
-    expect(domainInserts[0].values).toEqual({
+    expect(domainInserts[0]!.values).toEqual({
       serviceId: 5,
       hostname: 'web.example.com',
       path: '/',
@@ -717,7 +724,7 @@ describe('runDeployment', () => {
 
     await runDeployment(db as never, 1);
 
-    expect(inserts.filter((i: { table: unknown }) => i.table === domains)[0].values).toMatchObject({ hostname: 'web.example.com', ssl: true });
+    expect(inserts.filter((i: { table: unknown }) => i.table === domains)[0]!.values).toMatchObject({ hostname: 'web.example.com', ssl: true });
     expect(lines).toContain('🌐 Auto-assigned URL: https://web.example.com');
   });
 
@@ -1768,5 +1775,42 @@ describe('filterTrustworthyProjectLinks', () => {
     const db = spyDb();
     const kept = await filterTrustworthyProjectLinks(db as never, { ownerUserId: null }, links);
     expect(kept).toEqual([]);
+  });
+});
+
+describe('splitHookCommand', () => {
+  it('splits plain argv on whitespace', () => {
+    expect(splitHookCommand('npm run build')).toEqual(['npm', 'run', 'build']);
+    expect(splitHookCommand('  spaced   out  ')).toEqual(['spaced', 'out']);
+  });
+
+  it('honours double-quoted segments', () => {
+    expect(splitHookCommand('node -e "let x = 1"')).toEqual(['node', '-e', 'let x = 1']);
+    expect(splitHookCommand('sh -c "a && b"')).toEqual(['sh', '-c', 'a && b']);
+  });
+
+  it('honours single-quoted segments (fully literal)', () => {
+    expect(splitHookCommand(`node -e 'let y = 2'`)).toEqual(['node', '-e', 'let y = 2']);
+    expect(splitHookCommand(`echo 'a "b" c'`)).toEqual(['echo', 'a "b" c']);
+  });
+
+  it('handles backslash escapes', () => {
+    expect(splitHookCommand(String.raw`echo a\ b`)).toEqual(['echo', 'a b']);
+    expect(splitHookCommand(String.raw`echo "say \"hi\""`)).toEqual(['echo', 'say "hi"']);
+    expect(splitHookCommand(String.raw`echo "c:\\tmp"`)).toEqual(['echo', 'c:\\tmp']);
+  });
+
+  it('keeps quoted empty strings as empty argv entries', () => {
+    expect(splitHookCommand('touch ""')).toEqual(['touch', '']);
+    expect(splitHookCommand(`a '' b`)).toEqual(['a', '', 'b']);
+  });
+
+  it('treats an unterminated quote as running to end of input', () => {
+    expect(splitHookCommand('node -e "let x = 1')).toEqual(['node', '-e', 'let x = 1']);
+  });
+
+  it('returns empty argv for blank input', () => {
+    expect(splitHookCommand('')).toEqual([]);
+    expect(splitHookCommand('   ')).toEqual([]);
   });
 });

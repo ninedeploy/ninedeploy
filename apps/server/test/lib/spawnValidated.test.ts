@@ -43,14 +43,14 @@ describe('spawnValidated', () => {
     cur.emit('close', 0);
     await expect(promise).resolves.toBe(0);
     expect(lines).toEqual(['line1', 'line2', 'err-out']);
-    expect(childMocks.spawn).toHaveBeenCalledWith('docker', ['ps'], {});
+    expect(childMocks.spawn).toHaveBeenCalledWith('docker', ['ps'], { detached: process.platform !== 'win32' });
   });
 
   it('spawns git for the git executable', async () => {
     const promise = spawnValidated('git', ['fetch', '--all'], () => {});
     childMocks.current!.emit('close', 1);
     await expect(promise).resolves.toBe(1);
-    expect(childMocks.spawn).toHaveBeenCalledWith('git', ['fetch', '--all'], {});
+    expect(childMocks.spawn).toHaveBeenCalledWith('git', ['fetch', '--all'], { detached: process.platform !== 'win32' });
   });
 
   it('resolves 127 on a spawn error', async () => {

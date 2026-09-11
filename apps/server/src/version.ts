@@ -1,4 +1,4 @@
-export const VERSION = '0.7.9';
+export const VERSION = '0.8.0';
 
 export interface ChangelogEntry {
   version: string;
@@ -8,6 +8,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.8.0',
+    date: '2026-09-11',
+    title: 'Bitbucket End-to-End, Quote-Aware Hooks, Agent Op Timeouts',
+    changes: [
+      'Bitbucket joins the provider matrix end-to-end: a bitbucket Source type (Cloud API tokens, Bearer auth) powers the repos/branches pickers and the connection test, webhooks verify X-Hub-Signature sha256 HMACs and parse repo:push and pullrequest:* payloads (push hashes come from push.changes[].new.target; Bitbucket ships no per-commit file lists, so watch-path filtering fails open), and PR preview environments work for Bitbucket pull requests. Private repos: deploy keys over SSH are the recommended path.',
+      'Lifecycle hook commands are tokenized quote-aware — the old whitespace split left quote bytes in argv, so the documented compound form sh -c "a && b" failed with command-not-found. Single quotes are literal, double-quote escapes work, empty quoted args survive, unterminated quotes run to end of input.',
+      'Agent operations get a 595s child-side timeout with process-group kill — a stalled git fetch used to hold the workspace .git locks and fail the NEXT op with cannot-lock-ref; signal-killed children report the signal instead of code null. Redis/Valkey restores stop the container before copying dump.rdb (graceful shutdown SAVEs would overwrite the staged backup); Postgres restores run psql with ON_ERROR_STOP; managed Mongo sizes authenticate (unauthenticated dbStats read 0); localhost/team/app image refs resolve against the local registry.',
+    ],
+  },
   {
     version: '0.7.9',
     date: '2026-09-11',

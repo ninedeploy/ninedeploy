@@ -1,4 +1,4 @@
-﻿import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync as existsSyncMock, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -32,7 +32,9 @@ const h = vi.hoisted(() => {
   const run = vi.fn(async (_cmd: string, _args: unknown[], _opts: unknown, sink?: (line: string) => void) => {
     sink?.('');
   });
-  const capture = vi.fn(async () => '[]');
+  // `...args: any[]`: tests install impls with concrete param lists — an
+  // untyped signature would pin them to `() => Promise<string>` under strict.
+  const capture = vi.fn<(...args: any[]) => Promise<string>>(async () => '[]');
   const pullDockerImage = vi.fn(async () => undefined);
   const ensureDockerImage = vi.fn(async () => undefined);
   const config: { paths: { dataDir: string } } = { paths: { dataDir: '/tmp/nd-db-test' } };
@@ -45,7 +47,7 @@ vi.mock('../src/lib/crypto.js', async () => {
     decrypt: h.decrypt,
     encrypt: h.encrypt,
     createBackupCipher: () => {
-      const cipher = new PassThrough() as PassThrough & { getAuthTag: () => Buffer };
+      const cipher = new PassThrough() as InstanceType<typeof PassThrough> & { getAuthTag: () => Buffer };
       cipher.getAuthTag = () => Buffer.alloc(16, 7);
       return { cipher, header: Buffer.from('NDBK1:v0:AAAAAAAAAAAAAAAA\n') };
     },
@@ -68,6 +70,14 @@ beforeEach(() => {
   h.pullDockerImage.mockResolvedValue(undefined);
   h.ensureDockerImage.mockResolvedValue(undefined);
 });
+
+// ENGINES is a Record<string, EngineConfig>, so under noUncheckedIndexedAccess
+// every named access is `EngineConfig | undefined`. Tests only touch known
+// engines — alias with concrete keys so `E.postgres` is non-nullable.
+const E = ENGINES as Record<
+  'postgres' | 'mysql' | 'mariadb' | 'redis' | 'valkey' | 'mongo' | 'clickhouse' | 'meilisearch' | 'rabbitmq',
+  NonNullable<(typeof ENGINES)[string]>
+>;
 
 const dbRow = (over: Record<string, unknown> = {}) =>
   ({
@@ -94,65 +104,65 @@ const dbRow = (over: Record<string, unknown> = {}) =>
 
 describe('ENGINES metadata', () => {
   it('maps each engine to image, port, volume and env', () => {
-    expect(ENGINES.postgres.image()).toBe('postgres:18');
-    expect(ENGINES.postgres.image('17')).toBe('postgres:17');
-    expect(ENGINES.mysql.image()).toBe('mysql:9.7');
-    expect(ENGINES.mysql.image('8.4')).toBe('mysql:8.4');
-    expect(ENGINES.mariadb.image()).toBe('mariadb:12.3');
-    expect(ENGINES.mariadb.image('11')).toBe('mariadb:11');
-    expect(ENGINES.redis.image()).toBe('redis:8.8');
-    expect(ENGINES.redis.image('7')).toBe('redis:7');
-    expect(ENGINES.mongo.image()).toBe('mongo:8.0');
-    expect(ENGINES.mongo.image('7.0')).toBe('mongo:7.0');
+    expect(E.postgres.image()).toBe('postgres:18');
+    expect(E.postgres.image('17')).toBe('postgres:17');
+    expect(E.mysql.image()).toBe('mysql:9.7');
+    expect(E.mysql.image('8.4')).toBe('mysql:8.4');
+    expect(E.mariadb.image()).toBe('mariadb:12.3');
+    expect(E.mariadb.image('11')).toBe('mariadb:11');
+    expect(E.redis.image()).toBe('redis:8.8');
+    expect(E.redis.image('7')).toBe('redis:7');
+    expect(E.mongo.image()).toBe('mongo:8.0');
+    expect(E.mongo.image('7.0')).toBe('mongo:7.0');
 
-    expect(ENGINES.postgres.port).toBe(5432);
-    expect(ENGINES.mysql.port).toBe(3306);
-    expect(ENGINES.mariadb.port).toBe(3306);
-    expect(ENGINES.redis.port).toBe(6379);
-    expect(ENGINES.mongo.port).toBe(27017);
+    expect(E.postgres.port).toBe(5432);
+    expect(E.mysql.port).toBe(3306);
+    expect(E.mariadb.port).toBe(3306);
+    expect(E.redis.port).toBe(6379);
+    expect(E.mongo.port).toBe(27017);
 
     // postgres 18+ moved the data directory under /var/lib/postgresql/<major>/docker
     // and REFUSES the classic /var/lib/postgresql/data mount (docker-library/postgres#1259):
     // mounting there crash-loops the container, its DNS name never registers and the
     // attached app dies with `getaddrinfo EAI_AGAIN` against the database hostname.
-    expect(resolveVolumePath(ENGINES.postgres)).toBe('/var/lib/postgresql');
-    expect(resolveVolumePath(ENGINES.postgres, '18')).toBe('/var/lib/postgresql');
-    expect(resolveVolumePath(ENGINES.postgres, 'pgvector')).toBe('/var/lib/postgresql');
-    expect(resolveDataDir(ENGINES.postgres)).toBe('/var/lib/postgresql/18/docker');
-    expect(resolveDataDir(ENGINES.postgres, '19')).toBe('/var/lib/postgresql/19/docker');
-    expect(resolveVolumePath(ENGINES.postgres, '17')).toBe('/var/lib/postgresql/data');
-    expect(resolveDataDir(ENGINES.postgres, '17')).toBe('/var/lib/postgresql/data');
+    expect(resolveVolumePath(E.postgres)).toBe('/var/lib/postgresql');
+    expect(resolveVolumePath(E.postgres, '18')).toBe('/var/lib/postgresql');
+    expect(resolveVolumePath(E.postgres, 'pgvector')).toBe('/var/lib/postgresql');
+    expect(resolveDataDir(E.postgres)).toBe('/var/lib/postgresql/18/docker');
+    expect(resolveDataDir(E.postgres, '19')).toBe('/var/lib/postgresql/19/docker');
+    expect(resolveVolumePath(E.postgres, '17')).toBe('/var/lib/postgresql/data');
+    expect(resolveDataDir(E.postgres, '17')).toBe('/var/lib/postgresql/data');
     expect(postgresMajor('vector')).toBe(18);
     expect(postgresMajor('17')).toBe(17);
     expect(postgresMajor(undefined)).toBe(18);
-    expect(resolveVolumePath(ENGINES.mysql)).toBe('/var/lib/mysql');
-    expect(resolveVolumePath(ENGINES.mariadb)).toBe('/var/lib/mysql');
-    expect(resolveVolumePath(ENGINES.redis)).toBe('/data');
-    expect(resolveVolumePath(ENGINES.mongo)).toBe('/data/db');
+    expect(resolveVolumePath(E.mysql)).toBe('/var/lib/mysql');
+    expect(resolveVolumePath(E.mariadb)).toBe('/var/lib/mysql');
+    expect(resolveVolumePath(E.redis)).toBe('/data');
+    expect(resolveVolumePath(E.mongo)).toBe('/data/db');
 
-    expect(ENGINES.postgres.username()).toBe('nine');
-    expect(ENGINES.mysql.username()).toBe('root');
-    expect(ENGINES.mariadb.username()).toBe('root');
-    expect(ENGINES.mongo.username()).toBe('nine');
-    expect(ENGINES.redis.username()).toBeUndefined();
-    expect(ENGINES.postgres.dbName()).toBe('app');
-    expect(ENGINES.mysql.dbName()).toBe('app');
-    expect(ENGINES.mariadb.dbName()).toBe('app');
-    expect(ENGINES.redis.dbName()).toBeUndefined();
-    expect(ENGINES.mongo.dbName()).toBeUndefined();
+    expect(E.postgres.username()).toBe('nine');
+    expect(E.mysql.username()).toBe('root');
+    expect(E.mariadb.username()).toBe('root');
+    expect(E.mongo.username()).toBe('nine');
+    expect(E.redis.username()).toBeUndefined();
+    expect(E.postgres.dbName()).toBe('app');
+    expect(E.mysql.dbName()).toBe('app');
+    expect(E.mariadb.dbName()).toBe('app');
+    expect(E.redis.dbName()).toBeUndefined();
+    expect(E.mongo.dbName()).toBeUndefined();
 
-    expect(ENGINES.postgres.env('p')).toEqual({ POSTGRES_USER: 'nine', POSTGRES_PASSWORD: 'p', POSTGRES_DB: 'app' });
-    expect(ENGINES.mysql.env('p')).toEqual({ MYSQL_ROOT_PASSWORD: 'p', MYSQL_DATABASE: 'app' });
-    expect(ENGINES.mariadb.env('p')).toEqual({ MARIADB_ROOT_PASSWORD: 'p', MARIADB_DATABASE: 'app' });
-    expect(ENGINES.redis.env('p')).toEqual({});
-    expect(ENGINES.mongo.env('p')).toEqual({ MONGO_INITDB_ROOT_USERNAME: 'nine', MONGO_INITDB_ROOT_PASSWORD: 'p' });
-    expect(ENGINES.redis.authViaArg).toBe(true);
-    expect(ENGINES.valkey.authViaArg).toBe(true);
-    expect(ENGINES.postgres.authViaArg).toBeUndefined();
+    expect(E.postgres.env('p')).toEqual({ POSTGRES_USER: 'nine', POSTGRES_PASSWORD: 'p', POSTGRES_DB: 'app' });
+    expect(E.mysql.env('p')).toEqual({ MYSQL_ROOT_PASSWORD: 'p', MYSQL_DATABASE: 'app' });
+    expect(E.mariadb.env('p')).toEqual({ MARIADB_ROOT_PASSWORD: 'p', MARIADB_DATABASE: 'app' });
+    expect(E.redis.env('p')).toEqual({});
+    expect(E.mongo.env('p')).toEqual({ MONGO_INITDB_ROOT_USERNAME: 'nine', MONGO_INITDB_ROOT_PASSWORD: 'p' });
+    expect(E.redis.authViaArg).toBe(true);
+    expect(E.valkey.authViaArg).toBe(true);
+    expect(E.postgres.authViaArg).toBeUndefined();
   });
 
   it('renders mariadb connection strings', () => {
-    expect(ENGINES.mariadb.connectionString('db', 3306, 'root', 'pw', undefined)).toBe('mariadb://root:pw@db:3306/app');
+    expect(E.mariadb.connectionString('db', 3306, 'root', 'pw', undefined)).toBe('mariadb://root:pw@db:3306/app');
   });
 });
 
@@ -776,7 +786,7 @@ describe('restoreDatabase', () => {
     await restoreDatabase(dbRow({ engine: 'postgres' }), file, log);
     // docker cp receives the DECRYPTED sibling, not the envelope file.
     expect(h.run).toHaveBeenCalledWith('docker', ['cp', `${file}.dec`, 'c:/tmp/ninedeploy-restore'], {}, log);
-    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'psql', '-U', 'nine', '-d', 'app', '-f', '/tmp/ninedeploy-restore'], {}, log);
+    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'psql', '-v', 'ON_ERROR_STOP=1', '-U', 'nine', '-d', 'app', '-f', '/tmp/ninedeploy-restore'], {}, log);
   });
 
   it('restores from a LEGACY plaintext backup as-is (no envelope)', async () => {
@@ -845,8 +855,9 @@ describe('restoreDatabase', () => {
     const log = vi.fn();
     const file = encFile('REDIS');
     await restoreDatabase(dbRow({ engine: 'redis' }), file, log);
+    expect(h.run).toHaveBeenCalledWith('docker', ['stop', 'c'], {}, log);
     expect(h.run).toHaveBeenCalledWith('docker', ['cp', `${file}.dec`, 'c:/data/dump.rdb'], {}, log);
-    expect(h.run).toHaveBeenCalledWith('docker', ['restart', 'c'], {}, log);
+    expect(h.run).toHaveBeenCalledWith('docker', ['start', 'c'], {}, log);
     expect(existsSyncMock(`${file}.dec`)).toBe(false);
   });
 
@@ -907,37 +918,37 @@ describe('restoreDatabase', () => {
   });
 
   it('configures extended engines properly (valkey, clickhouse, meilisearch, rabbitmq, vector)', () => {
-    expect(ENGINES.postgres.image('vector')).toBe('pgvector/pgvector:pg18');
-    expect(ENGINES.postgres.image('pgvector')).toBe('pgvector/pgvector:pg18');
-    expect(ENGINES.postgres.image('16')).toBe('postgres:16');
-    expect(ENGINES.valkey.image('8')).toBe('valkey/valkey:8');
-    expect(ENGINES.valkey.image()).toBe('valkey/valkey:9.1');
-    expect(ENGINES.clickhouse.image('24.3')).toBe('clickhouse/clickhouse-server:24.3');
-    expect(ENGINES.clickhouse.image()).toBe('clickhouse/clickhouse-server:25.8');
-    expect(ENGINES.meilisearch.image('v1.12')).toBe('getmeili/meilisearch:v1.12');
-    expect(ENGINES.meilisearch.image()).toBe('getmeili/meilisearch:v1.53');
-    expect(ENGINES.rabbitmq.image('3-management')).toBe('rabbitmq:3-management');
-    expect(ENGINES.rabbitmq.image()).toBe('rabbitmq:4-management');
+    expect(E.postgres.image('vector')).toBe('pgvector/pgvector:pg18');
+    expect(E.postgres.image('pgvector')).toBe('pgvector/pgvector:pg18');
+    expect(E.postgres.image('16')).toBe('postgres:16');
+    expect(E.valkey.image('8')).toBe('valkey/valkey:8');
+    expect(E.valkey.image()).toBe('valkey/valkey:9.1');
+    expect(E.clickhouse.image('24.3')).toBe('clickhouse/clickhouse-server:24.3');
+    expect(E.clickhouse.image()).toBe('clickhouse/clickhouse-server:25.8');
+    expect(E.meilisearch.image('v1.12')).toBe('getmeili/meilisearch:v1.12');
+    expect(E.meilisearch.image()).toBe('getmeili/meilisearch:v1.53');
+    expect(E.rabbitmq.image('3-management')).toBe('rabbitmq:3-management');
+    expect(E.rabbitmq.image()).toBe('rabbitmq:4-management');
 
-    expect(ENGINES.valkey.env('p')).toEqual({});
-    expect(ENGINES.valkey.username()).toBeUndefined();
-    expect(ENGINES.valkey.dbName()).toBeUndefined();
+    expect(E.valkey.env('p')).toEqual({});
+    expect(E.valkey.username()).toBeUndefined();
+    expect(E.valkey.dbName()).toBeUndefined();
 
-    expect(ENGINES.clickhouse.env('p')).toEqual({ CLICKHOUSE_USER: 'nine', CLICKHOUSE_PASSWORD: 'p', CLICKHOUSE_DB: 'app' });
-    expect(ENGINES.clickhouse.username()).toBe('nine');
-    expect(ENGINES.clickhouse.dbName()).toBe('app');
+    expect(E.clickhouse.env('p')).toEqual({ CLICKHOUSE_USER: 'nine', CLICKHOUSE_PASSWORD: 'p', CLICKHOUSE_DB: 'app' });
+    expect(E.clickhouse.username()).toBe('nine');
+    expect(E.clickhouse.dbName()).toBe('app');
 
-    expect(ENGINES.meilisearch.env('p')).toEqual({ MEILI_MASTER_KEY: 'p', MEILI_NO_ANALYTICS: 'true' });
-    expect(ENGINES.meilisearch.username()).toBeUndefined();
-    expect(ENGINES.meilisearch.dbName()).toBeUndefined();
+    expect(E.meilisearch.env('p')).toEqual({ MEILI_MASTER_KEY: 'p', MEILI_NO_ANALYTICS: 'true' });
+    expect(E.meilisearch.username()).toBeUndefined();
+    expect(E.meilisearch.dbName()).toBeUndefined();
 
-    expect(ENGINES.rabbitmq.env('p')).toEqual({ RABBITMQ_DEFAULT_USER: 'nine', RABBITMQ_DEFAULT_PASS: 'p' });
-    expect(ENGINES.rabbitmq.username()).toBe('nine');
-    expect(ENGINES.rabbitmq.dbName()).toBeUndefined();
+    expect(E.rabbitmq.env('p')).toEqual({ RABBITMQ_DEFAULT_USER: 'nine', RABBITMQ_DEFAULT_PASS: 'p' });
+    expect(E.rabbitmq.username()).toBe('nine');
+    expect(E.rabbitmq.dbName()).toBeUndefined();
 
     expect(connectionString(dbRow({ engine: 'valkey', internalHost: 'valkey-h', internalPort: 6379 }))).toBe('valkey://:pw%3Aenc@valkey-h:6379');
     expect(connectionString(dbRow({ engine: 'clickhouse', internalHost: 'ch-h', internalPort: 8123 }))).toBe('clickhouse://nine:pw%3Aenc@ch-h:8123/app');
-    expect(ENGINES.clickhouse.connectionString('ch-h', 8123, 'nine', 'pw:enc', undefined)).toBe('clickhouse://nine:pw%3Aenc@ch-h:8123/default');
+    expect(E.clickhouse.connectionString('ch-h', 8123, 'nine', 'pw:enc', undefined)).toBe('clickhouse://nine:pw%3Aenc@ch-h:8123/default');
     expect(connectionString(dbRow({ engine: 'meilisearch', internalHost: 'ms-h', internalPort: 7700 }))).toBe('http://:pw%3Aenc@ms-h:7700');
     expect(connectionString(dbRow({ engine: 'rabbitmq', internalHost: 'rb-h', internalPort: 5672 }))).toBe('amqp://nine:pw%3Aenc@rb-h:5672/');
     expect(defaultPort('clickhouse')).toBe(8123);
@@ -1032,7 +1043,9 @@ describe('restoreDatabase', () => {
 
     // Restore
     await restoreDatabase(dbRow({ engine: 'valkey', containerName: 'c' }), backupTarget, vi.fn());
+    expect(h.run).toHaveBeenCalledWith('docker', ['stop', 'c'], {}, expect.any(Function));
     expect(h.run).toHaveBeenCalledWith('docker', ['cp', expect.any(String), 'c:/data/dump.rdb'], {}, expect.any(Function));
-    expect(h.run).toHaveBeenCalledWith('docker', ['restart', 'c'], {}, expect.any(Function));
+    expect(h.run).toHaveBeenCalledWith('docker', ['start', 'c'], {}, expect.any(Function));
   });
 });
+

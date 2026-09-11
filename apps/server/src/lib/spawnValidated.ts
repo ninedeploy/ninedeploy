@@ -1,5 +1,16 @@
-import { spawn, type ChildProcess } from 'node:child_process';
-import { makeLineSplitter } from './exec.js';
+import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import { armTimeout, makeLineSplitter } from './exec.js';
+
+/**
+ * Default cap for an op's child. The master's request to this agent dies at
+ * 600s (lib/agentClient AbortSignal.timeout) — without a child-side timeout a
+ * stalled op keeps running orphaned, and an orphaned `git fetch` still holds
+ * the workspace's .git locks so the NEXT op fails on "cannot lock ref".
+ * 595s sits just under that request window.
+ */
+const OP_TIMEOUT_MS = 595_000;
+/** Exit code reported when the child is killed by the timeout (GNU timeout convention). */
+const TIMEOUT_EXIT = 124;
 
 /**
  * Single choke-point for spawning the two agent executables. The argv arrays
@@ -22,6 +33,8 @@ export interface SpawnValidatedOptions {
   cwd?: string;
   /** Written to the child's stdin, then closed. Used by `docker login`. */
   stdin?: string;
+  /** Hard-kill the child (tree) after this many ms. Default {@link OP_TIMEOUT_MS}. */
+  timeoutMs?: number;
 }
 
 /** Spawn one of the two fixed executables and collect its output lines. */
@@ -31,14 +44,30 @@ export function spawnValidated(
   onLine: (line: string) => void,
   opts: SpawnValidatedOptions = {},
 ): Promise<number> {
-  const spawnOpts = opts.cwd ? { cwd: opts.cwd } : {};
+  // detached (POSIX) makes the child a process-group leader so the timeout
+  // can kill the whole tree — a `git fetch`'s remote helpers must die with
+  // it. Skipped on Windows: detached spawns a visible console there, and the
+  // libuv job object already tears descendants down with the child.
+  const spawnOpts: SpawnOptions = { detached: process.platform !== 'win32' };
+  if (opts.cwd) spawnOpts.cwd = opts.cwd;
   const child: ChildProcess =
     executable === 'docker' ? spawn('docker', argv, spawnOpts) : spawn('git', argv, spawnOpts);
   if (opts.stdin !== undefined) {
     child.stdin?.end(opts.stdin);
   }
   return new Promise<number>((resolve) => {
+    let finished = false;
+    const finish = (code: number) => {
+      if (!finished) {
+        finished = true;
+        resolve(code);
+      }
+    };
     child.stdin?.on('error', () => { /* child gone */ });
+    const cancelTimeout = armTimeout(child, opts.timeoutMs ?? OP_TIMEOUT_MS, () => {
+      onLine(`Operation timed out after ${opts.timeoutMs ?? OP_TIMEOUT_MS}ms — killed`);
+      finish(TIMEOUT_EXIT);
+    });
     const outSplitter = makeLineSplitter();
     const errSplitter = makeLineSplitter();
     child.stdout?.on('data', (d: Buffer) => {
@@ -47,8 +76,9 @@ export function spawnValidated(
     child.stderr?.on('data', (d: Buffer) => {
       for (const l of errSplitter.feed(d)) onLine(l);
     });
-    child.on('error', () => resolve(127));
+    child.on('error', () => { cancelTimeout(); finish(127); });
     child.on('close', (code) => {
+      cancelTimeout();
       for (const tail of [outSplitter.flush(), errSplitter.flush()]) {
         if (tail) onLine(tail);
       }
@@ -57,7 +87,7 @@ export function spawnValidated(
       // the agent's callers the op had succeeded while exec.ts's run() and
       // capture() treat the same condition as failure (r035). Numeric exit
       // codes pass through untouched.
-      resolve(code ?? 1);
+      finish(code ?? 1);
     });
   });
 }

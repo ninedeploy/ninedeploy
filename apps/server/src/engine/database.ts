@@ -818,7 +818,15 @@ export async function databaseSize(d: Database): Promise<number> {
       return Number(out.trim()) || 0;
     }
     if (d.engine === 'mongo') {
-      const out = await capture('docker', ['exec', d.containerName, 'mongosh', '--quiet', '--eval', 'db.getSiblingDB("app").stats().dataSize']);
+      // Managed mongo always has a root user (MONGO_INITDB_ROOT_*), so the
+      // stats command needs the same credentials the dump/restore paths use —
+      // an unauthenticated dbStats is rejected and the size silently reads 0.
+      const pass = decrypt(d.passwordEncrypted);
+      const out = await capture('docker', [
+        'exec', d.containerName, 'mongosh',
+        '-u', cfg.username()!, '-p', pass, '--authenticationDatabase', 'admin',
+        '--quiet', '--eval', 'db.getSiblingDB("app").stats().dataSize',
+      ]);
       return Number(out.match(/[\d.]+/)?.[0]) || 0;
     }
   } catch {
@@ -908,12 +916,20 @@ export async function restoreDatabase(d: Database, file: string, log: (line: str
   const staged = await stageForRestore(file);
   try {
     if (d.engine === 'redis' || d.engine === 'valkey') {
+      // Stop BEFORE copying: a graceful redis shutdown SAVEs the in-memory
+      // dataset to dump.rdb, so a copy-then-restart order lets the dying
+      // process overwrite the backup we just staged — the "restored" server
+      // then reloads its own old data. Stop first so nothing can rewrite it.
+      await run('docker', ['stop', cn], {}, log);
       await run('docker', ['cp', staged.path, `${cn}:/data/dump.rdb`], {}, log);
-      await run('docker', ['restart', cn], {}, log);
+      await run('docker', ['start', cn], {}, log);
     } else {
       await run('docker', ['cp', staged.path, `${cn}:${RESTORE_TMP}`], {}, log);
       if (d.engine === 'postgres') {
-        await run('docker', ['exec', cn, 'psql', '-U', cfg.username()!, '-d', cfg.dbName()!, '-f', RESTORE_TMP], {}, log);
+        // ON_ERROR_STOP: bare `psql -f` continues past statement errors and
+        // still exits 0, which would report a partially-applied dump as a
+        // successful restore.
+        await run('docker', ['exec', cn, 'psql', '-v', 'ON_ERROR_STOP=1', '-U', cfg.username()!, '-d', cfg.dbName()!, '-f', RESTORE_TMP], {}, log);
       } else if (d.engine === 'mysql' || d.engine === 'mariadb') {
         const pass = decrypt(d.passwordEncrypted);
         const client = d.engine === 'mysql' ? 'mysql' : 'mariadb';

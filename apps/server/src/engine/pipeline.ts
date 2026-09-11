@@ -90,9 +90,61 @@ export async function reconcileDeploymentHistory(db: DB): Promise<number> {
   return supersededIds.length;
 }
 
+/**
+ * Tokenize a hook command line. Hooks are documented as ONE argv-style
+ * command whose compound form is `sh -c "a && b"` — that only works if
+ * quoting is honoured; a plain whitespace split leaves the quote bytes in
+ * argv (`sh -c '"a'` → "command not found"). Rules: single quotes are fully
+ * literal; inside double quotes `\` escapes `"` and `\`; outside quotes `\`
+ * escapes the next char; unterminated quotes run to end of input.
+ */
+/** Exported for the tokenizer's own unit tests — pure string logic. */
+export function splitHookCommand(cmd: string): string[] {
+  const argv: string[] = [];
+  let cur = '';
+  let open = false; // the current token exists — keeps `''`/`""` as empty args
+  let quote: '"' | "'" | null = null;
+  for (let i = 0; i < cmd.length; i++) {
+    const ch = cmd[i]!;
+    if (quote === "'") {
+      if (ch === "'") quote = null;
+      else cur += ch;
+      continue;
+    }
+    if (quote === '"') {
+      if (ch === '"') quote = null;
+      else if (ch === '\\' && (cmd[i + 1] === '"' || cmd[i + 1] === '\\')) cur += cmd[++i];
+      else cur += ch;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      open = true;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      if (open) {
+        argv.push(cur);
+        cur = '';
+        open = false;
+      }
+      continue;
+    }
+    if (ch === '\\' && i + 1 < cmd.length) {
+      cur += cmd[++i];
+      open = true;
+      continue;
+    }
+    cur += ch;
+    open = true;
+  }
+  if (open) argv.push(cur);
+  return argv;
+}
+
 /** Execute a lifecycle hook command in the service workDir with resolved environment. */
 async function runHook(cmd: string, cwd: string, env: Record<string, string>, log: (line: string) => void): Promise<void> {
-  const [bin, ...args] = cmd.trim().split(/\s+/);
+  const [bin, ...args] = splitHookCommand(cmd);
   if (!bin) return;
   // Hooks must be usable from EVERY service shape — including pure-image
   // deploys that never run a git checkout. Without this the very first
@@ -282,7 +334,10 @@ async function loadRegistryAuth(
   // registry host; bare names (nginx:latest) use the Docker Hub default.
   const parts = service.image.split('/');
   const first = parts.length > 1 ? parts[0]! : '';
-  const isHost = first.includes('.') || first.includes(':');
+  // Docker's rule (lib/imageRef.ts): the first segment is a registry host when
+  // it contains '.' or ':', or is exactly `localhost` — `localhost/team/app`
+  // pulls from a local registry, not from a Docker Hub namespace.
+  const isHost = first.includes('.') || first.includes(':') || first === 'localhost';
   const server = first !== '' && isHost ? first : undefined;
   return { username, password, server };
 }
@@ -772,19 +827,28 @@ export async function runDeployment(
   if (Object.keys(managedFp).length > 0) {
     // `dep` was loaded BEFORE this run wrote its own snapshot, and deployment
     // rows are created without one — dep.configSnapshot is always null here.
-    // The comparison target is the previous deployment that CARRIES a
-    // snapshot (same resolution rule the /diff endpoint uses).
-    const prevRow = await db.query.deployments.findFirst({
+    // The comparison target is the previous deployment carrying a FINGERPRINT
+    // (`configSnapshot.managedEnv`), not merely the newest snapshot: every row
+    // gets a snapshot the moment the pipeline starts, so a failed/cancelled
+    // deploy in between carries one WITHOUT a fingerprint and would silently
+    // disable the warning. Scan a bounded window of recent rows.
+    const prevRows = await db.query.deployments.findMany({
       where: and(eq(deployments.serviceId, service.id), lt(deployments.id, deploymentId), isNotNull(deployments.configSnapshot)),
       orderBy: [desc(deployments.id)],
+      limit: 20,
     });
-    let prev: { managedEnv?: Record<string, string> } | null = null;
-    try {
-      prev = JSON.parse(prevRow?.configSnapshot ?? 'null') as { managedEnv?: Record<string, string> } | null;
-    } catch {
-      prev = null;
+    let prevFp: Record<string, string> | undefined;
+    for (const row of prevRows) {
+      try {
+        const snap = JSON.parse(row.configSnapshot ?? 'null') as { managedEnv?: Record<string, string> } | null;
+        if (snap?.managedEnv) {
+          prevFp = snap.managedEnv;
+          break;
+        }
+      } catch {
+        /* unparsable snapshot — keep scanning older rows */
+      }
     }
-    const prevFp = prev?.managedEnv;
     if (prevFp) {
       for (const key of Object.keys(managedFp)) {
         if (prevFp[key] !== undefined && prevFp[key] !== managedFp[key]) {

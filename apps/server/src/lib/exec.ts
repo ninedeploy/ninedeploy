@@ -101,7 +101,7 @@ function armHeartbeat(
  * whole tree (e.g. `sh -c` → `docker build`). Falls back to a plain kill if the
  * group signal fails (already dead, or unsupported platform).
  */
-function killTree(child: ChildProcess, signal: NodeJS.Signals): void {
+export function killTree(child: ChildProcess, signal: NodeJS.Signals): void {
   if (typeof child.pid !== 'number') return;
   try {
     process.kill(-child.pid, signal);
@@ -147,7 +147,7 @@ export function makeLineSplitter() {
  * SIGTERM, escalates to SIGKILL 5s later, and invokes `onTimeout` exactly once.
  * Returns a cancel function to clear both timers once the child settles.
  */
-function armTimeout(child: ChildProcess, timeoutMs: number, onTimeout: () => void): () => void {
+export function armTimeout(child: ChildProcess, timeoutMs: number, onTimeout: () => void): () => void {
   // fire runs at most once: setTimeout fires once and cancel() clears it.
   const fire = () => {
     killTree(child, 'SIGTERM');
@@ -252,7 +252,7 @@ export function run(cmd: string, args: string[], opts: ExecOptions, sink: (line:
       cancelHeartbeat();
       reject(err);
     });
-    child.on('close', (code) => {
+    child.on('close', (code, signal) => {
       if (settled) return;
       settled = true;
       cancelTimeout();
@@ -260,7 +260,10 @@ export function run(cmd: string, args: string[], opts: ExecOptions, sink: (line:
       for (const tail of [outSplitter.flush(), errSplitter.flush()]) {
         if (tail.length) sink(tail);
       }
+      // `code` is null when the child died to a signal — report the signal,
+      // not the nonsense "code null".
       if (code === 0) resolve();
+      else if (code === null) reject(new Error(`\`${label}\` was killed by signal ${signal ?? 'unknown'}`));
       else reject(new Error(`\`${label}\` exited with code ${code}`));
     });
   });
@@ -326,7 +329,7 @@ export function capture(cmd: string, args: string[], opts: ExecOptions = {}, inp
       cancelTimeout();
       reject(err);
     });
-    child.on('close', (code) => {
+    child.on('close', (code, signal) => {
       if (settled) return;
       settled = true;
       cancelHeartbeat();
@@ -336,6 +339,7 @@ export function capture(cmd: string, args: string[], opts: ExecOptions = {}, inp
       out += outDecoder.end();
       errOut += errDecoder.end();
       if (code === 0) resolve(out);
+      else if (code === null) reject(new Error(`\`${label}\` was killed by signal ${signal ?? 'unknown'}${errOut ? `: ${errOut.trim()}` : ''}`));
       else reject(new Error(`\`${label}\` exited ${code}${errOut ? `: ${errOut.trim()}` : ''}`));
     });
   });
