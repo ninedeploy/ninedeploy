@@ -439,3 +439,75 @@ describe('domains routes', () => {
     expect(res.json().error.code).toBe('validation_error');
   });
 });
+
+// node:dns/promises is mocked so the DNS-status route needs no real
+// resolution; classifyResolution stays pure and is exercised directly.
+const dnsMocks = vi.hoisted(() => ({ resolve4: vi.fn(), resolve6: vi.fn(), resolveTxt: vi.fn() }));
+vi.mock('node:dns/promises', () => dnsMocks);
+
+describe('domains DNS status', () => {
+  it('reports ok when the hostname resolves to the expected address', async () => {
+    dnsMocks.resolve4.mockResolvedValue(['203.0.113.5']);
+    dnsMocks.resolve6.mockResolvedValue([]);
+    cfMocks.detectPublicIp.mockResolvedValue('203.0.113.5');
+    const db = createFakeDb({
+      findFirst: {
+        services: svcRow(),
+        domains: domainRow({ id: 9, hostname: 'app.example.com', status: 'active' }),
+      },
+    });
+    const app = await buildTestApp({ db });
+    await app.register(domainsRoutes);
+    const res = await app.inject({ method: 'GET', url: '/1/domains/9/dns', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      hostname: 'app.example.com',
+      status: 'ok',
+      addresses: { a: ['203.0.113.5'], aaaa: [] },
+      expected: ['203.0.113.5'],
+    });
+  });
+
+  it('reports mismatch when the hostname resolves elsewhere', async () => {
+    dnsMocks.resolve4.mockResolvedValue(['198.51.100.9']);
+    dnsMocks.resolve6.mockResolvedValue([]);
+    const db = createFakeDb({
+      findFirst: {
+        services: svcRow(),
+        domains: domainRow({ id: 9, hostname: 'app.example.com', status: 'active' }),
+      },
+    });
+    const app = await buildTestApp({ db });
+    await app.register(domainsRoutes);
+    const res = await app.inject({ method: 'GET', url: '/1/domains/9/dns', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().status).toBe('mismatch');
+    expect(res.json().addresses.a).toEqual(['198.51.100.9']);
+  });
+
+  it('reports unresolved when no address records exist', async () => {
+    dnsMocks.resolve4.mockRejectedValue(Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' }));
+    dnsMocks.resolve6.mockRejectedValue(Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' }));
+    const db = createFakeDb({
+      findFirst: {
+        services: svcRow(),
+        domains: domainRow({ id: 9, hostname: 'app.example.com', status: 'pending' }),
+      },
+    });
+    const app = await buildTestApp({ db });
+    await app.register(domainsRoutes);
+    const res = await app.inject({ method: 'GET', url: '/1/domains/9/dns', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().status).toBe('unresolved');
+  });
+
+  it('returns 404 for a domain of another service', async () => {
+    const db = createFakeDb({
+      findFirst: { services: svcRow(), domains: null },
+    });
+    const app = await buildTestApp({ db });
+    await app.register(domainsRoutes);
+    const res = await app.inject({ method: 'GET', url: '/1/domains/9/dns', headers: asUser() });
+    expect(res.statusCode).toBe(404);
+  });
+});

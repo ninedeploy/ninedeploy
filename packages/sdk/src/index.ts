@@ -628,6 +628,19 @@ export interface NineDeployClient {
     list: (serviceId: number) => Promise<Domain[]>;
     create: (serviceId: number, input: CreateDomainInput) => Promise<Domain>;
     remove: (serviceId: number, domainId: number) => Promise<void>;
+    /**
+     * DNS status for a domain: does the hostname resolve to the addresses
+     * this panel expects? Advisory — routing is governed by ownership.
+     */
+    dnsCheck: (
+      serviceId: number,
+      domainId: number,
+    ) => Promise<{
+      hostname: string;
+      status: 'ok' | 'mismatch' | 'unresolved';
+      addresses: { a: string[]; aaaa: string[] };
+      expected: string[];
+    }>;
     /** Update routing extras: ssl toggle, www→apex redirect, custom headers, basicAuth, ipAllowlist, rateLimit. */
     update: (serviceId: number, domainId: number, input: DomainPatch) => Promise<Domain>;
     all: () => Promise<DomainEntry[]>;
@@ -1552,6 +1565,13 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
     domains: {
       list: (serviceId) => get<Domain[]>(`/v1/services/${serviceId}/domains`),
       create: (serviceId, input) => send<Domain>('POST', `/v1/services/${serviceId}/domains`, input),
+      dnsCheck: (serviceId, domainId) =>
+        get<{
+          hostname: string;
+          status: 'ok' | 'mismatch' | 'unresolved';
+          addresses: { a: string[]; aaaa: string[] };
+          expected: string[];
+        }>(`/v1/services/${serviceId}/domains/${domainId}/dns`),
       update: (serviceId, domainId, input) =>
         send<Domain>('PATCH', `/v1/services/${serviceId}/domains/${domainId}`, input),
       remove: async (serviceId, domainId) => {

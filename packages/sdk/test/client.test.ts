@@ -676,6 +676,32 @@ describe('createClient', () => {
     });
   });
 
+  describe('domains (custom hostnames)', () => {
+    it('exercises list, create, dnsCheck and remove', async () => {
+      const { fetchMock, calls } = makeFetch((url, init) => {
+        if (init.method === 'POST') return ok({ id: 7, hostname: 'app.example.com' });
+        if (init.method === 'GET' && url.includes('/dns')) {
+          return ok({ hostname: 'app.example.com', status: 'ok', addresses: { a: ['203.0.113.5'], aaaa: [] }, expected: ['203.0.113.5'] });
+        }
+        return ok([{ id: 7, hostname: 'app.example.com' }]);
+      });
+      const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+
+      await client.domains.list(1);
+      expect(last(calls)).toMatchObject({ url: '/v1/services/1/domains', init: { method: 'GET' } });
+
+      await client.domains.create(1, { hostname: 'app.example.com', path: '/' });
+      expect(last(calls)).toMatchObject({ url: '/v1/services/1/domains', init: { method: 'POST' } });
+
+      const dns = await client.domains.dnsCheck(1, 7);
+      expect(last(calls)).toMatchObject({ url: '/v1/services/1/domains/7/dns', init: { method: 'GET' } });
+      expect(dns.status).toBe('ok');
+
+      await client.domains.remove(1, 7);
+      expect(last(calls)).toMatchObject({ url: '/v1/services/1/domains/7', init: { method: 'DELETE' } });
+    });
+  });
+
   describe('networks', () => {
     it('exercises list, create, remove, attach and detach', async () => {
       const { fetchMock, calls } = makeFetch(() => ok({ networks: [], remote: null }));

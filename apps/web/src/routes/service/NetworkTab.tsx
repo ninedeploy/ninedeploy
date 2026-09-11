@@ -297,6 +297,18 @@ function DomainItemRow({ domain: d, serviceId }: { domain: any; serviceId: numbe
   const [rateLimitAvg, setRateLimitAvg] = useState(d.rateLimitAverage ? String(d.rateLimitAverage) : '');
   const [rateLimitBurst, setRateLimitBurst] = useState(d.rateLimitBurst ? String(d.rateLimitBurst) : '');
 
+  // DNS resolution check: advisory (routing is ownership-driven), but the
+  // fastest way to see why an added domain "does not load" yet.
+  const checkDns = useMutation({
+    mutationFn: () => api.domains.dnsCheck(serviceId, d.id),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['domains', serviceId] });
+      setDnsResult(res);
+    },
+    onError: () => toast('Could not run the DNS check', 'error'),
+  });
+  const [dnsResult, setDnsResult] = useState<{ status: 'ok' | 'mismatch' | 'unresolved'; addresses: { a: string[]; aaaa: string[] }; expected: string[] } | null>(null);
+
   const remove = useMutation({
     mutationFn: () => api.domains.remove(serviceId, d.id),
     onSuccess: () => {
@@ -359,6 +371,26 @@ function DomainItemRow({ domain: d, serviceId }: { domain: any; serviceId: numbe
           </a>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => checkDns.mutate()}
+            disabled={checkDns.isPending}
+            className={cn(
+              'rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset transition',
+              dnsResult?.status === 'ok'
+                ? 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/20'
+                : dnsResult?.status === 'mismatch'
+                  ? 'bg-amber-500/15 text-amber-300 ring-amber-500/20'
+                  : 'bg-slate-500/15 text-slate-400 ring-slate-500/20 hover:bg-slate-500/25',
+            )}
+            title={
+              dnsResult
+                ? `A: ${dnsResult.addresses.a.join(', ') || '—'} · AAAA: ${dnsResult.addresses.aaaa.join(', ') || '—'} · expected: ${dnsResult.expected.join(', ') || '—'} — click to re-check`
+                : 'Check whether this hostname resolves to this server'
+            }
+          >
+            {checkDns.isPending ? 'checking…' : dnsResult ? `DNS: ${dnsResult.status}` : 'Check DNS'}
+          </button>
           <button
             type="button"
             onClick={() => setExpanded(!expanded)}

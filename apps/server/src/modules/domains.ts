@@ -9,6 +9,7 @@ import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { assertServiceRole } from '../lib/resourceAccess.js';
 import { badRequest, conflict, notFound, parseId as num } from '../lib/errors.js';
 import { getSettingString } from '../lib/settings.js';
+import { classifyResolution, resolveHostAddresses } from '../lib/dnsStatus.js';
 import { challengeRecordName, checkOwnershipRecord, newChallengeToken, requiresOwnershipProof } from '../lib/domainVerification.js';
 
 /** Normalise pasted input to a bare hostname. Users routinely paste a full
@@ -260,6 +261,40 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
     await writeDynamicConfig(app.db);
     void audit(app.db, req.user!.id, 'domain.verified', updated.hostname);
     return { ...serialize(updated), verified: true, verification: null, dnsWarning };
+  });
+
+  /**
+   * DNS status for a domain: does the hostname currently resolve to the
+   * address this instance expects? Advisory — ownership challenges and
+   * routing live elsewhere — but the fastest way to explain a domain that
+   * "is added yet does not load" (the usual cause is DNS still pointing at
+   * the old server).
+   */
+  app.get('/:id/domains/:domainId/dns', async (req) => {
+    const id = num((req.params as { id: string }).id);
+    const domainId = num((req.params as { domainId: string }).domainId);
+    await loadServiceForUser(app.db, id, req.user!);
+    const d = await app.db.query.domains.findFirst({
+      where: and(eq(domains.id, domainId), eq(domains.serviceId, id)),
+    });
+    if (!d) throw notFound('Domain not found');
+
+    // The expected address mirrors the auto-record flow: the operator's
+    // explicit record content, else the detected public IP.
+    const dnsCfg = await getDnsRecordsConfig(app.db);
+    const expected: string[] = [];
+    if (dnsCfg.content) expected.push(dnsCfg.content.trim());
+    else {
+      try {
+        expected.push(await detectPublicIp());
+      } catch {
+        /* public-IP detection unavailable — report an empty expectation */
+      }
+    }
+
+    const resolution = await resolveHostAddresses(d.hostname);
+    const status = classifyResolution(resolution, expected);
+    return { hostname: d.hostname, status, addresses: resolution, expected };
   });
 
   // Update routing extras: ssl, www→apex redirect, custom headers, basicAuth, ipAllowlist, rateLimit.
