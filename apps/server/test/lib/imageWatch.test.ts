@@ -132,8 +132,52 @@ describe('fetchImageDigest', () => {
   it('reports a token endpoint failure instead of retrying blindly', async () => {
     makeFetch([res(401, HUB_401_HEADERS), res(500, {})]);
     await expect(fetchImageDigest('index.docker.io', 'library/nginx', 'latest')).rejects.toThrow(
-      'token endpoint answered HTTP 500',
+      'the registry token endpoint answered HTTP 500',
     );
+  });
+
+  it('probes private repos with Basic auth when credentials are given', async () => {
+    const { calls } = makeFetch([res(200, { 'docker-content-digest': 'sha256:private' })]);
+    const digest = await fetchImageDigest('registry.acme.io', 'team/app', 'latest', {
+      username: 'robot',
+      password: 'secret',
+    });
+    expect(digest).toBe('sha256:private');
+    expect(calls[0]!.url).toBe('https://registry.acme.io/v2/team/app/manifests/latest');
+    expect(calls[0]!.headers.authorization).toBe(`Basic ${Buffer.from('robot:secret').toString('base64')}`);
+  });
+
+  it('runs the token dance WITH credentials for private Docker Hub repos', async () => {
+    const { calls } = makeFetch([
+      res(401, HUB_401_HEADERS),
+      res(200, {}, { token: 'cred-token' }),
+      res(200, { 'docker-content-digest': 'sha256:private-hub' }),
+    ]);
+    const digest = await fetchImageDigest('index.docker.io', 'acme/web', 'latest', {
+      username: 'robot',
+      password: 'secret',
+    });
+    expect(digest).toBe('sha256:private-hub');
+    // The token request itself carries the Basic credential.
+    expect(calls[1]!.headers.authorization).toBe(`Basic ${Buffer.from('robot:secret').toString('base64')}`);
+    expect(calls[2]!.headers.authorization).toBe('Bearer cred-token');
+  });
+
+  it('names rejected credentials when the token endpoint answers 401', async () => {
+    makeFetch([
+      res(401, HUB_401_HEADERS),
+      res(401, HUB_401_HEADERS),
+    ]);
+    await expect(
+      fetchImageDigest('index.docker.io', 'acme/private', 'latest', { username: 'robot', password: 'wrong' }),
+    ).rejects.toThrow('the stored registry credential was rejected');
+  });
+
+  it('still refuses unknown auth realms for credentialed probes', async () => {
+    makeFetch([res(401, { 'www-authenticate': 'Bearer realm="https://evil.example/token"' })]);
+    await expect(
+      fetchImageDigest('evil.example', 'a/b', 'latest', { username: 'robot', password: 'secret' }),
+    ).rejects.toThrow('unsupported auth flow');
   });
 
   it('reports an unreachable token endpoint', async () => {

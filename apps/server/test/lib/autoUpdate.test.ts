@@ -44,7 +44,7 @@ describe('sweepAutoUpdates', () => {
     const probe = probeOf('sha256:new');
     const result = await sweepAutoUpdates(db, probe);
     expect(result).toEqual({ probed: 1, enqueued: 1, skipped: 0 });
-    expect(probe).toHaveBeenCalledWith('ghcr.io', 'acme/web', 'latest');
+    expect(probe).toHaveBeenCalledWith('ghcr.io', 'acme/web', 'latest', undefined);
     expect(inserts[0]).toMatchObject({ serviceId: 5, status: 'queued', trigger: 'schedule' });
     expect(String(inserts[0]!.message)).toContain('Auto-update:');
     expect(updates.at(-1)).toMatchObject({ autoUpdateDigest: 'sha256:new' });
@@ -100,6 +100,27 @@ describe('sweepAutoUpdates', () => {
     const result = await sweepAutoUpdates(db, probeOf('sha256:new'));
     expect(result.enqueued).toBe(1);
     expect(inserts[0]).toMatchObject({ serviceId: 8, trigger: 'schedule' });
+  });
+
+  it('passes the attached registry credential to the probe for private repos', async () => {
+    // A `registry`-type source attached to the service carries the pull
+    // credentials; the sweep decrypts and forwards them to the probe.
+    const { encrypt } = await import('../../src/lib/crypto.js');
+    const priv = {
+      ...svcRow(IMAGE_SVC),
+      sourceId: 12,
+      autoUpdateDigest: null as string | null,
+    };
+    const db = createFakeDb({
+      findMany: { services: [priv] },
+      findFirst: {
+        sources: { id: 12, type: 'registry', registryUsername: 'robot', tokenEncrypted: encrypt('robot-secret') },
+      },
+      update: { services: () => [priv] },
+    });
+    const probe = vi.fn(async () => 'sha256:baseline');
+    await sweepAutoUpdates(db, probe as never);
+    expect(probe).toHaveBeenCalledTimes(1);
   });
 
   it('only watches running, image-based, opt-in services', async () => {

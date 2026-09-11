@@ -37,17 +37,42 @@ const KNOWN_TOKEN_SERVICES: Record<string, string> = {
 };
 
 /**
+ * Optional pull credentials for a private registry — the service's attached
+ * `registry` source (username + decrypted token).
+ */
+export interface RegistryAuth {
+  username: string;
+  password: string;
+}
+
+function basicAuth(auth: RegistryAuth): string {
+  return ['Basic', Buffer.from(`${auth.username}:${auth.password}`).toString('base64')].join(' ');
+}
+
+/**
  * Read the current manifest digest of `repository:tag` on `registry`.
+ *
+ * `auth` (the service's attached registry credential) unlocks private
+ * repos: the manifest request goes out with Basic auth, and if the
+ * registry still wants a bearer token (Docker Hub / ghcr) the token
+ * dance runs WITH the credentials instead of anonymously. Without auth
+ * only public repos resolve — a 401 then names the cause.
+ *
  * Throws with a human-readable reason on anything that is not a digest —
  * the sweep turns those into skips, not failed deploys.
  */
-export async function fetchImageDigest(registry: string, repository: string, tag: string): Promise<string> {
+export async function fetchImageDigest(
+  registry: string,
+  repository: string,
+  tag: string,
+  auth?: RegistryAuth,
+): Promise<string> {
   const host = isDockerHub(registry) ? 'index.docker.io' : registry;
   const manifestUrl = ['https:/', host, 'v2', repository, 'manifests', tag].join('/');
 
-  let res = await probe(manifestUrl, {});
+  let res = await probe(manifestUrl, auth ? { authorization: basicAuth(auth) } : {});
   if (res.status === 401) {
-    const token = await anonymousPullToken(host, repository);
+    const token = await pullToken(host, repository, auth);
     res = await probe(manifestUrl, { authorization: ['Bearer', token].join(' ') });
   }
   const digest = res.headers.get('docker-content-digest');
@@ -71,14 +96,19 @@ async function probe(url: string, extraHeaders: Record<string, string>): Promise
 }
 
 /**
- * Anonymous pull-scope token against the registry's KNOWN token endpoint.
- * Returns null when the registry is not in the table — callers treat that
- * as "private or unsupported" and skip.
+ * Pull-scope token against the registry's KNOWN token endpoint. Anonymous
+ * without `auth`; with credentials the token request itself carries Basic
+ * auth, which is how private Docker Hub / ghcr repos authenticate. A 401
+ * AFTER a credentialed token request means the credentials were rejected.
  */
-async function anonymousPullToken(registryHost: string, repository: string): Promise<string> {
+async function pullToken(registryHost: string, repository: string, auth?: RegistryAuth): Promise<string> {
   const tokenHost = KNOWN_TOKEN_HOSTS[registryHost];
   if (!tokenHost) {
-    throw new Error('registry requires authentication and its auth flow is not supported — watch public repos only');
+    throw new Error(
+      auth
+        ? 'the stored registry credential was rejected by a registry with an unsupported auth flow'
+        : 'registry requires authentication and its auth flow is not supported — attach a registry credential to the service to watch private repos',
+    );
   }
   const scopeParts = ['repository', repository, 'pull'];
   // Every registry in the table declares its canonical service id; the host
@@ -91,11 +121,20 @@ async function anonymousPullToken(registryHost: string, repository: string): Pro
   tokenUrl.search = params.toString();
   let res: Awaited<ReturnType<typeof fetch>>;
   try {
-    res = await fetch(tokenUrl.href, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+    res = await fetch(tokenUrl.href, {
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      ...(auth ? { headers: { authorization: basicAuth(auth) } } : {}),
+    });
   } catch {
     throw new Error('the registry token endpoint is unreachable');
   }
-  if (!res.ok) throw new Error(`the registry token endpoint answered HTTP ${res.status}`);
+  if (!res.ok) {
+    throw new Error(
+      res.status === 401
+        ? 'the stored registry credential was rejected (HTTP 401) — check the attached registry credential'
+        : `the registry token endpoint answered HTTP ${res.status}`,
+    );
+  }
   const body = (await res.json().catch(() => null)) as { token?: string } | null;
   if (!body?.token) throw new Error('the registry token endpoint returned no token');
   return body.token;
