@@ -449,6 +449,49 @@ else
   ok "Nixpacks $(nixpacks --version 2>/dev/null)"
 fi
 
+# Railpack — Railway's next-gen buildpack, the optional second source-builder
+# (buildPack: 'railpack'). Installed the same checksum-verified way so an
+# unverified binary can never root-run on this host. Optional: services keep
+# working on nixpacks/dockerfile unless the operator picks railpack.
+RAILPACK_VERSION="${NINEDEPLOY_RAILPACK_VERSION:-0.39.0}"
+RAILPACK_SHA_AMD64_x86_64="728407f5cdb9e9bc1cdd07f568419344a20e71b0a5a9fd90a9cfbaca0a6c94f7"
+RAILPACK_SHA_ARM64_aarch64="42eb3fa68e38f44be3610a7d74f714ec0d808d70c105fbe35e053b6e6cfb20be"
+
+install_railpack() {
+  case "$(uname -m)" in
+    x86_64|amd64)
+      RAILPACK_TARGET="x86_64-unknown-linux-musl"
+      RAILPACK_SHA256="$RAILPACK_SHA_AMD64_x86_64"
+      ;;
+    aarch64|arm64)
+      RAILPACK_TARGET="aarch64-unknown-linux-musl"
+      RAILPACK_SHA256="$RAILPACK_SHA_ARM64_aarch64"
+      ;;
+    *) return 1 ;;
+  esac
+
+  RAILPACK_ASSET="railpack-v${RAILPACK_VERSION}-${RAILPACK_TARGET}.tar.gz"
+  RAILPACK_STAGE=$(mktemp -d) || return 1
+  curl -fsSL "https://github.com/railwayapp/railpack/releases/download/v${RAILPACK_VERSION}/${RAILPACK_ASSET}" \
+    -o "$RAILPACK_STAGE/$RAILPACK_ASSET" || { rm -rf "$RAILPACK_STAGE"; return 1; }
+  RAILPACK_ACTUAL_SHA=$(sha256sum "$RAILPACK_STAGE/$RAILPACK_ASSET" | awk '{print $1}')
+  if [ "$RAILPACK_ACTUAL_SHA" != "$RAILPACK_SHA256" ]; then
+    rm -rf "$RAILPACK_STAGE"
+    return 1
+  fi
+  tar -xzf "$RAILPACK_STAGE/$RAILPACK_ASSET" -C "$RAILPACK_STAGE" railpack || { rm -rf "$RAILPACK_STAGE"; return 1; }
+  sudo install -m 0755 "$RAILPACK_STAGE/railpack" /usr/local/bin/railpack || { rm -rf "$RAILPACK_STAGE"; return 1; }
+  rm -rf "$RAILPACK_STAGE"
+}
+
+if command -v railpack &>/dev/null; then
+  ok "Railpack $(railpack --version 2>/dev/null | head -1) available (optional railpack buildPack)"
+elif install_railpack; then
+  ok "Railpack ${RAILPACK_VERSION} installed (optional railpack buildPack)"
+else
+  info "Railpack optional binary not installed — the railpack build pack stays unavailable (harmless)."
+fi
+
 fi # end bare-metal-only prerequisites (Node, pnpm, Nixpacks)
 
 # Docker
