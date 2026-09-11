@@ -71,8 +71,11 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
     assertCron(input.cron);
     if (input.kind === 'exec' && !input.command) throw badRequest('command is required for exec jobs');
     // Exec jobs run arbitrary commands inside the container — admin-only,
-    // consistent with the exec WS route and the volume file manager.
-    if (input.kind === 'exec' && !req.user?.isOperator) {
+    // consistent with the exec WS route and the volume file manager. Backup
+    // jobs too (r097): PATCH and run-now already treat them as operator-only
+    // (host-level tar files, optional remote push), but create did not, and
+    // the cron sweep then ran a member's `* * * * *` backup every minute.
+    if ((input.kind === 'exec' || input.kind === 'backup') && !req.user?.isOperator) {
       throw forbidden('Operator access required');
     }
     if (input.kind === 'deploy') {

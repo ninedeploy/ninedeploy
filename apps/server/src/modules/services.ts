@@ -275,6 +275,12 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     if (input.sourceId != null && !req.user!.isOperator) {
       throw forbidden('Only operators may attach a managed source to a service');
     }
+    // Remote servers are registered and listed by operators only — they are
+    // operator-allocated capacity (and each node's Traefik is a public edge).
+    // Placing a service on one is the operator's call (r097).
+    if (input.serverId != null && !req.user!.isOperator) {
+      throw forbidden('Only operators may place a service on a remote server');
+    }
     const slug = input.slug ?? slugify(input.name);
     // Explicit duplicate-slug check → a clean 409 instead of an uncaught
     // unique-index error (500). Covers the NULL-project case too, where
@@ -511,6 +517,11 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // onto it afterwards.
     if (patch.sourceId !== undefined && patch.sourceId !== null && !req.user!.isOperator) {
       throw forbidden('Only operators may attach a managed source to a service');
+    }
+    // Same for remote-server placement (r097). Moving a service back to the
+    // local host (`serverId: null`) stays open: it takes nothing from anyone.
+    if (patch.serverId !== undefined && patch.serverId !== null && !req.user!.isOperator) {
+      throw forbidden('Only operators may place a service on a remote server');
     }
     // Deployment lane assignment: the environment must belong to a workspace
     // the caller holds a seat in. null clears the lane (ungrouped).

@@ -83,6 +83,19 @@ describe('jobs routes', () => {
     expect(res.statusCode).toBe(403);
   });
 
+  it('forbids backup job creation for members, like PATCH and run-now already do (r097)', async () => {
+    // A member's `* * * * *` backup job used to be accepted here and then run
+    // by the cron sweep every minute: host tar files + optional remote push.
+    const app = await appWith({ findFirst: { services: svcRow({ ownerUserId: 1 }) } });
+    const res = await app.inject({
+      method: 'POST', url: '/services/1/jobs',
+      headers: { ...asUser(), 'x-test-role': 'member' },
+      payload: { name: 'fill-disk', cron: '* * * * *', kind: 'backup' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.message).toContain('Operator access required');
+  });
+
   it('forbids deploy-job creation for members on a host-privileged service (S1)', async () => {
     // A PM2 service executes its install/build/start commands on the HOST —
     // a member must not be able to wrap one in a cron job they can trigger

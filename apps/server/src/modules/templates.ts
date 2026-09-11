@@ -17,7 +17,7 @@ import {
   removeCommunityTemplate as removeCommunityTemplateLib,
 } from '../lib/communityTemplates.js';
 import { encrypt, randomToken } from '../lib/crypto.js';
-import { badRequest, notFound } from '../lib/errors.js';
+import { badRequest, forbidden, notFound } from '../lib/errors.js';
 import { assertMayUseHostPrivilege } from '../lib/hostPrivilege.js';
 import type { AuthedUser } from '../lib/resourceAccess.js';
 import { assertMayPublishPort } from '../lib/hostPort.js';
@@ -132,6 +132,11 @@ async function prepareTemplateService(
   user: AuthedUser,
 ): Promise<{ service: Service; generatedSecrets: Array<{ key: string; value: string }>; stages: ProvisionStage[] }> {
   const ownerUserId = user.id;
+  // Remote-server placement is operator-only, same as POST/PATCH /services
+  // (r097). Covers both the fresh-create and the reuseExisting path below.
+  if (input.serverId != null && !user.isOperator) {
+    throw forbidden('Only operators may place a service on a remote server');
+  }
   // The Hub may pin a different TAG of the template's own image (:latest →
   // :11.5). Anything else — a different repository or a digest reference —
   // would run unverified bytes under a vetted template's name, so it is

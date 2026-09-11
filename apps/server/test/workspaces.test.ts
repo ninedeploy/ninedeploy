@@ -729,6 +729,38 @@ describe('workspaces routes', () => {
       expect(res.json().ok).toBe(true);
     });
 
+    it('hands the removed member\'s workspace resources to the workspace owner (r097)', async () => {
+      // ownerUserId short-circuits to `owner` in every access helper; without
+      // re-homing, a removed member kept env/deploy/credentials/delete rights
+      // on everything they created inside the team.
+      const { databases, services } = await import('@ninedeploy/db');
+      const db = createFakeDb({
+        findFirst: {
+          workspaces: workspaceRow({ id: 1, ownerId: 2 }),
+          workspace_members: memberRow({ id: 10, workspaceId: 1, userId: 4, role: 'member' }),
+        },
+        select: { service_workspaces: [{ id: 5 }], projects: [{ id: 3 }] },
+      });
+      const writes: Array<{ table: unknown; values: Record<string, unknown> }> = [];
+      const origUpdate = db.update.bind(db);
+      db.update = ((table: unknown) => {
+        const builder = origUpdate(table as never);
+        const origSet = builder.set.bind(builder);
+        builder.set = ((values: Record<string, unknown>) => {
+          writes.push({ table, values });
+          return origSet(values as never);
+        }) as typeof builder.set;
+        return builder;
+      }) as typeof db.update;
+      const app = await buildTestApp({ db });
+      await app.register(workspaceRoutes, { prefix: '/workspaces' });
+
+      const res = await app.inject({ method: 'DELETE', url: '/workspaces/1/members/10', headers: asUser({ id: 2 }) });
+      expect(res.statusCode).toBe(200);
+      expect(writes).toContainEqual({ table: services, values: { ownerUserId: 2 } });
+      expect(writes).toContainEqual({ table: databases, values: { ownerUserId: 2 } });
+    });
+
     it('forbids removing member without permissions (403)', async () => {
       const app = await buildTestApp({
         db: createFakeDb({

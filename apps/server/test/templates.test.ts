@@ -396,6 +396,19 @@ describe('template routes', () => {
     expect(envInserts).toContainEqual(expect.objectContaining({ key: 'CUSTOM_SETTING', serviceId: 21 }));
   });
 
+  it('refuses a member template deploy onto a remote server (r097)', async () => {
+    const app = await buildTestApp({ db: createFakeDb() });
+    await app.register(templateRoutes);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/n8n/deploy',
+      headers: asUser({ id: 7, isOperator: false }),
+      payload: { name: 'Automation', serverId: 3 },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.message).toContain('remote server');
+  });
+
   it('reconciles an interrupted install without rotating secrets or duplicating its deployment', async () => {
     let serviceUpdate: Record<string, unknown> | undefined;
     const existing = svcRow({

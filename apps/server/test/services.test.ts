@@ -165,6 +165,45 @@ describe('services routes', () => {
     expect(res.statusCode).toBe(403);
   });
 
+  it('refuses a member-supplied serverId on create and patch; null stays allowed (r097)', async () => {
+    // Remote servers are operator-registered capacity with their own public
+    // Traefik edge; placing a member's container there is the operator's call.
+    const createApp = await buildTestApp({
+      db: createFakeDb({ insert: { services: [svcRow({ id: 4, name: 'My App', slug: 'my-app' })] } }),
+    });
+    await createApp.register(servicesRoutes);
+    const created = await createApp.inject({
+      method: 'POST',
+      url: '/',
+      headers: asUser({ id: 7, isOperator: false }),
+      payload: { ...validCreate, serverId: 3 },
+    });
+    expect(created.statusCode).toBe(403);
+    expect(created.json().error.message).toContain('remote server');
+
+    const patchApp = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { services: svcRow({ id: 1, ownerUserId: 7, runtimeId: 'nd-svc-web' }) },
+        update: { services: [svcRow({ id: 1, ownerUserId: 7, serverId: null })] },
+      }),
+    });
+    await patchApp.register(servicesRoutes);
+    const moved = await patchApp.inject({
+      method: 'PATCH',
+      url: '/1',
+      headers: asUser({ id: 7, isOperator: false }),
+      payload: { serverId: 3 },
+    });
+    expect(moved.statusCode).toBe(403);
+    const backHome = await patchApp.inject({
+      method: 'PATCH',
+      url: '/1',
+      headers: asUser({ id: 7, isOperator: false }),
+      payload: { serverId: null },
+    });
+    expect(backHome.statusCode).not.toBe(403);
+  });
+
   it('refuses a member-supplied sourceId on patch (operator-managed credentials)', async () => {
     const app = await buildTestApp({
       db: createFakeDb({

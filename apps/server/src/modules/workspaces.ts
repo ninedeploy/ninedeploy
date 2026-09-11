@@ -1,6 +1,9 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import {
+  databases,
   projects,
+  services,
+  serviceWorkspaces,
   users,
   workspaceMembers,
   workspaces,
@@ -474,10 +477,49 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
     }
 
     await app.db.delete(workspaceMembers).where(eq(workspaceMembers.id, memberId));
+    await rehomeOwnedResources(app.db, id, targetMembership.userId, ws.ownerId);
     void audit(app.db, req.user!.id, 'workspace.member.remove', `Removed member #${memberId} from ${ws.name}`);
     return { ok: true };
   });
 };
+
+/**
+ * Hand the workspace's resources that `removedUserId` owns over to the
+ * workspace owner (r097).
+ *
+ * `ownerUserId` is an access grant on its own — `loadServiceForUser`,
+ * `serviceRole` and `databaseRole` all short-circuit to `owner` on it. So a
+ * member removed from a team kept owner-level control (env, deploys, DB
+ * credentials, backups, delete) over everything they had created inside it.
+ * Services tagged into this workspace and databases in its projects now
+ * change hands; resources the user owns elsewhere are untouched.
+ */
+export async function rehomeOwnedResources(
+  db: DB,
+  workspaceId: number,
+  removedUserId: number,
+  newOwnerId: number,
+): Promise<void> {
+  const tagged = await db
+    .select({ id: serviceWorkspaces.serviceId })
+    .from(serviceWorkspaces)
+    .where(eq(serviceWorkspaces.workspaceId, workspaceId));
+  const serviceIds = tagged.map((r) => r.id);
+  if (serviceIds.length > 0) {
+    await db
+      .update(services)
+      .set({ ownerUserId: newOwnerId })
+      .where(and(eq(services.ownerUserId, removedUserId), inArray(services.id, serviceIds)));
+  }
+  const wsProjects = await db.select({ id: projects.id }).from(projects).where(eq(projects.workspaceId, workspaceId));
+  const projectIds = wsProjects.map((p) => p.id);
+  if (projectIds.length > 0) {
+    await db
+      .update(databases)
+      .set({ ownerUserId: newOwnerId })
+      .where(and(eq(databases.ownerUserId, removedUserId), inArray(databases.projectId, projectIds)));
+  }
+}
 
 /**
  * For a service-tag write: return the subset of `ids` the caller is allowed
