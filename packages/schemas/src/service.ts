@@ -226,7 +226,7 @@ export const service = z.object({
       startCmd: z.string().nullable(),
       dockerfilePath: z.string().nullable(),
       /** Static build pack: build output dir (relative to baseDir). */
-      outputDir: z.string().nullable(),
+      outputDir: z.string().nullable().optional(),
       /** Static build pack: SPA history fallback in the generated nginx conf. */
       staticSpa: z.boolean().optional(),
       preDeployCmd: z.string().nullable().optional(),
