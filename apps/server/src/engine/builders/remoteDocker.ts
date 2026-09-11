@@ -1,4 +1,5 @@
 import type { Builder, BuildContext, DeployRuntime } from '../types.js';
+import { assertCloneTargetAllowed } from '../../lib/gitEgress.js';
 
 /**
  * Remote Docker builder — deploys a service onto a registered node through the
@@ -143,6 +144,10 @@ export function createRemoteDockerBuilder(agent: AgentCall): Builder {
           );
         }
 
+        // Same egress gate as a panel-side checkout (r099): the clone runs from
+        // the NODE's network position — a cloud VM with its own metadata
+        // service, or a LAN — and used to skip the check entirely.
+        await assertCloneTargetAllowed(service.repoUrl);
         log(`Fetching ${service.repoUrl} into the node workspace "${workspace}" …`);
         await agent('git.ensure', { workspace, url: service.repoUrl, depth: '1' }, sink);
         if (service.branch) {

@@ -11,6 +11,9 @@ vi.mock('simple-git', () => ({ simpleGit: gitState.simpleGit }));
 
 const { checkoutCommit } = await import('../../src/lib/git.js');
 
+/** Every simple-git instance carries the redirect hardening (r099). */
+const HARDENED = { config: ['http.followRedirects=false'] };
+
 const tmpRoot = path.join(os.tmpdir(), `ninedeploy-git-${process.pid}-${Date.now()}`);
 
 function makeGit() {
@@ -60,8 +63,8 @@ describe('checkoutCommit — fresh clone', () => {
     const sink = vi.fn();
     const resolved = await checkoutCommit('https://github.com/ada/repo.git', 'main', undefined, dir, sink);
 
-    expect(gitState.simpleGit.mock.calls[0]).toEqual([{}]); // bare factory call for clone
-    expect(gitState.simpleGit.mock.calls[1]).toEqual([dir, {}]); // checkout instance
+    expect(gitState.simpleGit.mock.calls[0]).toEqual([HARDENED]); // bare factory call for clone
+    expect(gitState.simpleGit.mock.calls[1]).toEqual([dir, HARDENED]); // checkout instance
     const bare = gitState.simpleGit.mock.results[0]!.value;
     expect(bare.clone).toHaveBeenCalledWith('https://github.com/ada/repo.git', dir, []);
     expect(sink).toHaveBeenCalledWith('Cloning https://github.com/ada/repo.git …');
@@ -198,7 +201,7 @@ describe('checkoutCommit — existing checkout', () => {
     const sink = vi.fn();
     const resolved = await checkoutCommit('https://github.com/ada/repo.git', 'main', undefined, dir, sink);
 
-    expect(gitState.simpleGit).toHaveBeenCalledWith(dir, {});
+    expect(gitState.simpleGit).toHaveBeenCalledWith(dir, HARDENED);
     expect(git.fetch).toHaveBeenCalledWith(['--all']);
     expect(git.checkout).toHaveBeenCalledWith('main');
     expect(git.pull).toHaveBeenCalledWith('origin', 'main');

@@ -22,6 +22,19 @@ const RE_PATH_RAW = /^[A-Za-z0-9@._][A-Za-z0-9@._/-]*$|^\/[A-Za-z0-9@._/-]*$/; /
 const RE_PATH = (value: string): boolean => RE_PATH_RAW.test(value) && !value.split('/').includes('..');
 const RE_SHA = /^(HEAD|[0-9a-f]{6,64})$/;
 const RE_REF = /^[A-Za-z0-9@:/._][A-Za-z0-9@:/._-]*$/; // branches, tags, URLs — first char must not be `-` (git reads a dash-leading argv element as an option)
+/**
+ * Repository URL for a clone: RE_REF's charset AND a network scheme (r099).
+ * RE_REF alone accepted `file:///etc` or a bare local path — the agent must not
+ * rely on the panel's schema to keep a clone off the node's own filesystem.
+ */
+const isRepoUrl = (value: string): boolean =>
+  RE_REF.test(value) && /^(?:https?:\/\/|ssh:\/\/|git:\/\/|git@[A-Za-z0-9.-]+:)/.test(value);
+/**
+ * `-c` flags for every network git op on the node (r099): no HTTP redirects
+ * (a public host bouncing to the node's metadata service / LAN), no `file://`
+ * or `ext::` transports.
+ */
+const GIT_EGRESS_FLAGS = ['-c', 'http.followRedirects=false', '-c', 'protocol.file.allow=never', '-c', 'protocol.ext.allow=never'];
 
 type Params = Record<string, unknown>;
 
@@ -232,14 +245,14 @@ const OPS: Record<string, { exe: 'docker' | 'git'; build: Op }> = {
   'git.clone': {
     exe: 'git',
     build: (p) => {
-      const argv = ['clone'];
+      const argv = [...GIT_EGRESS_FLAGS, 'clone'];
       const depth = str(p, 'depth');
       if (depth !== undefined) argv.push('--depth', /^\d{1,3}$/.test(depth) ? depth : '1');
-      argv.push(validated(str(p, 'url'), RE_REF, 'repo url'), validated(str(p, 'dir') ?? '.', RE_PATH, 'target dir'));
+      argv.push(validated(str(p, 'url'), isRepoUrl, 'repo url'), validated(str(p, 'dir') ?? '.', RE_PATH, 'target dir'));
       return argv;
     },
   },
-  'git.fetch': { exe: 'git', build: () => ['fetch', '--all'] },
+  'git.fetch': { exe: 'git', build: () => [...GIT_EGRESS_FLAGS, 'fetch', '--all'] },
   'git.checkout': { exe: 'git', build: (p) => ['checkout', validated(str(p, 'ref') ?? 'HEAD', RE_REF, 'ref')] },
   'git.rev-parse': { exe: 'git', build: () => ['rev-parse', 'HEAD'] },
   'git.reset': { exe: 'git', build: (p) => ['reset', '--hard', validated(str(p, 'sha') ?? 'HEAD', RE_SHA, 'commit sha')] },
@@ -521,12 +534,12 @@ export async function runOp(op: string, params: Params, onLine: (l: string) => v
     const { existsSync } = await import('node:fs');
     const pathmod = await import('node:path');
     const dir = await resolveWorkspace(validated(str(params, 'workspace'), RE_NAME, 'workspace name'));
-    const url = validated(str(params, 'url'), RE_REF, 'repo url');
+    const url = validated(str(params, 'url'), isRepoUrl, 'repo url');
     if (existsSync(pathmod.join(dir, '.git'))) {
-      return spawnValidated('git', ['fetch', '--all', '--prune'], onLine, { cwd: dir });
+      return spawnValidated('git', [...GIT_EGRESS_FLAGS, 'fetch', '--all', '--prune'], onLine, { cwd: dir });
     }
     const depth = str(params, 'depth');
-    const argv = ['clone'];
+    const argv = [...GIT_EGRESS_FLAGS, 'clone'];
     if (depth !== undefined) argv.push('--depth', /^\d{1,3}$/.test(depth) ? depth : '1');
     argv.push(url, '.');
     return spawnValidated('git', argv, onLine, { cwd: dir });

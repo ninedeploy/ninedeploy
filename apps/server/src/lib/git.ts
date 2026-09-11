@@ -69,9 +69,16 @@ export async function checkoutCommit(
   //
   // Without this the feature is dead code — the config call throws, and the
   // checkout silently proceeds with no credentials.
-  const unsafe: Partial<SimpleGitOptions> = useKey
-    ? { unsafe: { allowUnsafeSshCommand: true } }
-    : {};
+  // `http.followRedirects=false` on EVERY git command (r099): the egress gate
+  // above validates the URL's host once, but git follows the first HTTP
+  // redirect by default — a public repo host answering `/info/refs` with
+  // `302 → http://169.254.169.254/…` turned a checkout into a request from the
+  // panel's network position. Cost: a renamed GitHub repo (301) must be
+  // updated to its new URL instead of being followed.
+  const gitOptions: Partial<SimpleGitOptions> = {
+    config: ['http.followRedirects=false'],
+    ...(useKey ? { unsafe: { allowUnsafeSshCommand: true } } : {}),
+  };
   const keyFile = path.join(path.dirname(dir), `${path.basename(dir)}.sshkey`);
 
   const writeKey = () => {
@@ -83,7 +90,7 @@ export async function checkoutCommit(
   let git: SimpleGit | undefined;
   try {
     if (existsSync(path.join(dir, '.git'))) {
-      git = simpleGit(dir, unsafe);
+      git = simpleGit(dir, gitOptions);
       // Refresh auth so rotated credentials take effect.
       if (useKey) {
         writeKey();
@@ -116,8 +123,8 @@ export async function checkoutCommit(
       } else {
         sink(`Cloning ${maskUrl(repoUrl)} …`);
       }
-      await simpleGit(unsafe).clone(cloneUrl, dir, opts);
-      git = simpleGit(dir, unsafe);
+      await simpleGit(gitOptions).clone(cloneUrl, dir, opts);
+      git = simpleGit(dir, gitOptions);
     }
 
     await git.checkout(branch);

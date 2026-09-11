@@ -1,4 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
+
+// The egress gate resolves DNS; tests never touch the network (r099).
+const egressMocks = vi.hoisted(() => ({ assertCloneTargetAllowed: vi.fn(async (_url: string) => undefined) }));
+vi.mock('../../src/lib/gitEgress.js', () => egressMocks);
+
 import { createRemoteComposeBuilder } from '../../src/engine/builders/remoteCompose.js';
 import { RemoteDeployUnsupportedError } from '../../src/engine/builders/remoteDocker.js';
 import type { BuildContext } from '../../src/engine/types.js';
@@ -244,6 +249,18 @@ describe('remote compose builder — repository stacks', () => {
     expect(calls.find((c) => c.op === 'docker.composeUp')!.params).toMatchObject({
       file: 'deploy/compose.yml',
     });
+  });
+
+  it('runs the egress gate before the node clones, and stops when it refuses (r099)', async () => {
+    const { agent, ops } = fakeAgent();
+    egressMocks.assertCloneTargetAllowed.mockRejectedValueOnce(new Error('Refusing to send an outbound request'));
+    await expect(
+      createRemoteComposeBuilder(agent).buildAndRun(
+        ctx({ service: svc({ composeContent: null, repoUrl: 'https://metadata.evil.example/s.git' }), commitSha: 'abc1234' }),
+      ),
+    ).rejects.toThrow(/Refusing to send an outbound request/);
+    expect(egressMocks.assertCloneTargetAllowed).toHaveBeenCalledWith('https://metadata.evil.example/s.git');
+    expect(ops()).not.toContain('git.ensure');
   });
 
   it('refuses a compose service with neither inline YAML nor a repository', async () => {

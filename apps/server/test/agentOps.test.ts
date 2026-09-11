@@ -10,6 +10,9 @@ const dockerPullMock = vi.hoisted(() => vi.fn(async () => undefined));
 vi.mock('../src/lib/dockerPull.js', () => ({ pullDockerImage: dockerPullMock }));
 
 /** Capture the argv a runOp call spawned with. */
+/** The `-c` hardening every network git op on the node carries (r099). */
+const EGRESS = ['-c', 'http.followRedirects=false', '-c', 'protocol.file.allow=never', '-c', 'protocol.ext.allow=never'];
+
 async function argvOf(op: string, params: Record<string, unknown>): Promise<string[]> {
   const code = await runOp(op, params, () => {});
   expect(code).toBe(0);
@@ -145,12 +148,12 @@ describe('agent typed-op argv templates', () => {
 
   it('git ops', async () => {
     expect(await argvOf('git.clone', { url: 'https://x/y.git', dir: 'repo' })).toEqual(
-      ['clone', 'https://x/y.git', 'repo'],
+      [...EGRESS, 'clone', 'https://x/y.git', 'repo'],
     );
     expect(await argvOf('git.clone', { url: 'https://x/y.git', depth: '50' })).toEqual(
-      ['clone', '--depth', '50', 'https://x/y.git', '.'],
+      [...EGRESS, 'clone', '--depth', '50', 'https://x/y.git', '.'],
     );
-    expect(await argvOf('git.fetch', {})).toEqual(['fetch', '--all']);
+    expect(await argvOf('git.fetch', {})).toEqual([...EGRESS, 'fetch', '--all']);
     expect(await argvOf('git.checkout', { ref: 'main' })).toEqual(['checkout', 'main']);
     expect(await argvOf('git.checkout', {})).toEqual(['checkout', 'HEAD']);
     expect(await argvOf('git.rev-parse', {})).toEqual(['rev-parse', 'HEAD']);
@@ -168,6 +171,17 @@ describe('agent typed-op argv templates', () => {
     await expect(argvOf('git.clone', { url: '--config=core.sshCommand=/bin/true', dir: 'r' })).rejects.toThrow(
       'Invalid repo url',
     );
+  });
+
+  it('refuses non-network repo urls and pins egress flags on clones (r099)', async () => {
+    // RE_REF alone accepted these; the node must not clone its own filesystem.
+    for (const url of ['file:///etc', '/srv/other-tenant.git', 'repo.git', 'ext::sh']) {
+      await expect(argvOf('git.clone', { url, dir: 'r' }), url).rejects.toThrow('Invalid repo url');
+    }
+    for (const url of ['https://github.com/a/b.git', 'ssh://git@h/a.git', 'git@github.com:a/b.git', 'git://h/a']) {
+      const argv = await argvOf('git.clone', { url, dir: 'r' });
+      expect(argv.slice(0, EGRESS.length), url).toEqual(EGRESS);
+    }
   });
 
   it('docker.runEnv without limits or volume', async () => {
@@ -200,7 +214,7 @@ describe('agent typed-op argv templates', () => {
 
   it('clamps an invalid clone depth to 1', async () => {
     expect(await argvOf('git.clone', { url: 'https://x/y.git', depth: '9999' })).toEqual(
-      ['clone', '--depth', '1', 'https://x/y.git', '.'],
+      [...EGRESS, 'clone', '--depth', '1', 'https://x/y.git', '.'],
     );
   });
 });

@@ -1,4 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
+
+// The egress gate resolves DNS; tests never touch the network (r099).
+const egressMocks = vi.hoisted(() => ({ assertCloneTargetAllowed: vi.fn(async (_url: string) => undefined) }));
+vi.mock('../../src/lib/gitEgress.js', () => egressMocks);
+
 import {
   createRemoteDockerBuilder,
   RemoteDeployUnsupportedError,
@@ -175,6 +180,18 @@ describe('remote docker builder — repository services', () => {
       dockerfile: 'Dockerfile',
       context: '.',
     });
+  });
+
+  it('runs the egress gate before the node clones, and stops when it refuses (r099)', async () => {
+    const { agent, ops } = fakeAgent();
+    egressMocks.assertCloneTargetAllowed.mockRejectedValueOnce(new Error('Refusing to send an outbound request'));
+    await expect(
+      createRemoteDockerBuilder(agent).buildAndRun(
+        ctx({ service: svc({ repoUrl: 'https://metadata.evil.example/r.git' }), commitSha: 'abc1234' }),
+      ),
+    ).rejects.toThrow(/Refusing to send an outbound request/);
+    expect(egressMocks.assertCloneTargetAllowed).toHaveBeenCalledWith('https://metadata.evil.example/r.git');
+    expect(ops()).not.toContain('git.ensure');
   });
 
   it('skips the branch checkout when the service pins no branch', async () => {

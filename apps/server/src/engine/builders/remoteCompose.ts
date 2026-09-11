@@ -2,6 +2,7 @@ import type { Builder, BuildContext, DeployRuntime } from '../types.js';
 import type { AgentCall } from './remoteDocker.js';
 import { RemoteDeployUnsupportedError } from './remoteDocker.js';
 import { INLINE_COMPOSE_FILE } from '../../lib/composeWorkspace.js';
+import { assertCloneTargetAllowed } from '../../lib/gitEgress.js';
 
 /**
  * Remote Compose builder — brings a compose stack up on a registered node
@@ -110,6 +111,8 @@ export function createRemoteComposeBuilder(agent: AgentCall): Builder {
         // writes. Same rule as the local builder.
         composeFile = INLINE_COMPOSE_FILE;
       } else if (service.repoUrl) {
+        // Egress gate before the node clones (r099) — see remoteDocker.ts.
+        await assertCloneTargetAllowed(service.repoUrl);
         log(`Fetching ${service.repoUrl} into the node workspace "${workspace}" …`);
         await agent('git.ensure', { workspace, url: service.repoUrl, depth: '1' }, sink);
         if (service.branch) {
