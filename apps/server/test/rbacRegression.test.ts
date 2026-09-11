@@ -216,7 +216,7 @@ describe('K5: existingVolume must be a docker volume name', () => {
     }
   });
 
-  it('accepts a plain docker volume name', async () => {
+  it('accepts a plain docker volume name from an operator', async () => {
     let inserted: Record<string, unknown> | null = null;
     const app = await buildTestApp({
       db: createFakeDb({
@@ -233,11 +233,18 @@ describe('K5: existingVolume must be a docker volume name', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/databases',
-      headers: asUser({ id: MEMBER, isOperator: false }),
+      headers: asUser({ id: 1, isOperator: true }),
       payload: { name: 'Evil', engine: 'postgres', existingVolume: 'nd-db-imported-data' },
     });
     expect(res.statusCode).toBe(200);
     expect(inserted).toMatchObject({ volumeName: 'nd-db-imported-data' });
+  });
+
+  it('refuses the same well-formed name from a member — adoption is operator-only (r096)', async () => {
+    // A well-formed name is not a proof of ownership: adopting an unclaimed
+    // volume re-keys whoever's data it holds onto the member's new row.
+    const res = await createDbApp('nd-db-imported-data');
+    expect(res.statusCode).toBe(403);
   });
 });
 

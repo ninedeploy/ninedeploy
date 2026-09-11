@@ -16,6 +16,8 @@ const engineMocks = vi.hoisted(() => ({
   startDatabaseStudio: vi.fn(async (_d: unknown, _port: number, log: (l: string) => void) => { log('studio starting'); }),
   stopDatabaseStudio: vi.fn(async (_d: unknown, log: (l: string) => void) => { log('studio stopping'); }),
   adoptRetainedVolume: vi.fn(async () => ({ action: 'fresh' as const })),
+  // Default: no volume of that name on the host. Never the real docker probe.
+  volumeExists: vi.fn(async (_name: string) => false),
 }));
 
 // Partial ENGINES: `mysql` is a valid schema enum value but intentionally
@@ -42,6 +44,7 @@ vi.mock('../src/engine/database.js', async (importOriginal) => {
     startDatabaseStudio: engineMocks.startDatabaseStudio,
     stopDatabaseStudio: engineMocks.stopDatabaseStudio,
     adoptRetainedVolume: engineMocks.adoptRetainedVolume,
+    volumeExists: engineMocks.volumeExists,
   };
 });
 
@@ -167,6 +170,61 @@ describe('databases routes', () => {
     const statuses = [a.statusCode, b.statusCode].sort();
     expect(statuses).toEqual([200, 400]);
     expect(rows).toHaveLength(1);
+  });
+
+  describe('unclaimed volumes are operator-only (r096)', () => {
+    // Tenant A deletes database `billing`; its volume is retained. Before r096
+    // any member could re-create `billing` (or name the volume) and adoption
+    // re-keyed A's data onto a row the member owns.
+    const member = () => asUser({ id: 7, isOperator: false });
+    const appFor = async () => {
+      const app = await buildTestApp({
+        db: createFakeDb({
+          insert: { databases: [dbRow({ id: 9, status: 'creating' })] },
+          findFirst: { databases: dbRow({ id: 9, status: 'running' }) },
+        }),
+      });
+      await app.register(databasesRoutes);
+      return app;
+    };
+
+    it('refuses existingVolume for a non-operator', async () => {
+      const app = await appFor();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/',
+        headers: member(),
+        payload: { name: 'x', engine: 'postgres', existingVolume: 'nd-db-billing-data' },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(engineMocks.adoptRetainedVolume).not.toHaveBeenCalled();
+      expect(engineMocks.startDatabase).not.toHaveBeenCalled();
+    });
+
+    it('refuses a default name whose retained volume already exists on the host', async () => {
+      engineMocks.volumeExists.mockResolvedValueOnce(true);
+      const app = await appFor();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/',
+        headers: member(),
+        payload: { name: 'billing', engine: 'postgres' },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(engineMocks.volumeExists).toHaveBeenCalledWith('nd-db-billing-data');
+      expect(engineMocks.adoptRetainedVolume).not.toHaveBeenCalled();
+    });
+
+    it('still lets a member create a database whose volume is fresh', async () => {
+      const app = await appFor();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/',
+        headers: member(),
+        payload: { name: 'fresh', engine: 'postgres' },
+      });
+      expect(res.statusCode).toBe(200);
+    });
   });
 
   it('refuses a volume already owned by another database row', async () => {

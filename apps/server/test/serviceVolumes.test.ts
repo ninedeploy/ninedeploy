@@ -238,6 +238,66 @@ describe('service volume attachments', () => {
       expect(dbEngineMocks.createDockerVolume).toHaveBeenCalledWith('nd-svc-web-uploads', expect.any(Function));
     });
 
+    it('refuses create.label for a member when the resolved name already exists on the host (r096)', async () => {
+      // Slug + label concatenation collides across services: `shop` +
+      // `api-data` spells `shop-api`'s data volume. The mocked host already
+      // has `nd-svc-web-uploads`, and no visible attachment claims it.
+      const app = await buildTestApp({
+        db: createFakeDb({
+          findFirst: { services: svcRow({ id: 1, slug: 'web', ownerUserId: 7 }) },
+          select: { service_volume_attachments: [] },
+        }),
+      });
+      await app.register(serviceVolumesRoutes);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/1/volumes',
+        headers: asUser({ id: 7, isOperator: false }),
+        payload: { create: { label: 'uploads' }, containerPath: '/uploads' },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(dbEngineMocks.createDockerVolume).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when docker cannot list volumes (member, create.label)', async () => {
+      execMocks.capture.mockRejectedValue(new Error('docker unreachable'));
+      const app = await buildTestApp({
+        db: createFakeDb({
+          findFirst: { services: svcRow({ id: 1, slug: 'web', ownerUserId: 7 }) },
+          select: { service_volume_attachments: [] },
+        }),
+      });
+      await app.register(serviceVolumesRoutes);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/1/volumes',
+        headers: asUser({ id: 7, isOperator: false }),
+        payload: { create: { label: 'brand-new' }, containerPath: '/new' },
+      });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('still lets a member create a volume under a fresh name', async () => {
+      const app = await buildTestApp({
+        db: createFakeDb({
+          findFirst: { services: svcRow({ id: 1, slug: 'web', ownerUserId: 7 }) },
+          insert: {
+            service_volume_attachments: [{ id: 9, serviceId: 1, volumeName: 'nd-svc-web-brand-new', containerPath: '/new', readOnly: false, createdAt: NOW, updatedAt: NOW }],
+            deployments: [{ id: 42 }],
+          },
+        }),
+      });
+      await app.register(serviceVolumesRoutes);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/1/volumes',
+        headers: asUser({ id: 7, isOperator: false }),
+        payload: { create: { label: 'brand-new' }, containerPath: '/new' },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(dbEngineMocks.createDockerVolume).toHaveBeenCalledWith('nd-svc-web-brand-new', expect.any(Function));
+    });
+
     it('refuses to attach at the primary volumeMount path', async () => {
       const app = await buildTestApp({
         db: createFakeDb({

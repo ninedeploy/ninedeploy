@@ -6,6 +6,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { createAttachment, createDatabase, setLimits } from '@ninedeploy/schemas';
 import {
   adoptRetainedVolume,
+  volumeExists,
   connectionString,
   databaseLogs,
   defaultPort,
@@ -27,7 +28,7 @@ import {
   visibleDatabaseIds,
 } from '../lib/resourceAccess.js';
 import { studioCookieName, studioCookieSetHeader, studioProxyPathFor } from './studioProxy.js';
-import { badRequest, notFound, parseId as num } from '../lib/errors.js';
+import { badRequest, forbidden, notFound, parseId as num } from '../lib/errors.js';
 import { slugify } from '../lib/slug.js';
 
 /** Docker volume names only: prevents `existingVolume` from becoming a bind
@@ -162,6 +163,24 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
     const claimed = await serializeOnVolume(volumeName, async () => {
       const [volumeClash] = await app.db.select().from(databases).where(eq(databases.volumeName, volumeName));
       if (volumeClash) throw badRequest(`Volume "${volumeName}" already belongs to database "${volumeClash.name}"`);
+
+      // No row claims this volume — but it may still hold someone's data: a
+      // deleted database's volume is deliberately retained, and adoption
+      // re-keys its credentials onto the NEW row, whose owner can then read
+      // everything (r096). Below operator nobody can prove whose data an
+      // unclaimed volume is (same rule as serviceVolumes.ts), so:
+      //  • `existingVolume` (naming any volume) is operator-only;
+      //  • a default name that already exists on the host is operator-only.
+      if (!req.user!.isOperator) {
+        if (existingVolume) {
+          throw forbidden('Adopting an existing volume is operator-only — ask an operator to attach it');
+        }
+        if (await volumeExists(volumeName)) {
+          throw forbidden(
+            `A retained volume "${volumeName}" already exists for this name — pick another name, or ask an operator to adopt it`,
+          );
+        }
+      }
 
       if (input.reuseExisting) {
         const existing = await app.db.query.databases.findFirst({ where: eq(databases.slug, slug) });

@@ -219,6 +219,19 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
     // volume exists on the host.
     if (input.volumeName) {
       await assertVolumeOwnership(app.db, req.user!, volumeName);
+    } else {
+      // `create.label` builds `nd-svc-<slug>-<label>` by concatenation, so a
+      // chosen slug + label can spell ANOTHER service's volume (`shop` +
+      // `api-data` = `shop-api` + `data`), and `docker volume create` is
+      // idempotent on an existing name — the "new" volume would be the
+      // victim's data (r096). A name that already exists on the host gets the
+      // same ownership decision as an explicit `volumeName`. If docker cannot
+      // be asked, decide as if it exists (fail closed).
+      const onHost = await listManagedVolumeNames().then(
+        (names) => names.includes(volumeName),
+        () => true,
+      );
+      if (onHost) await assertVolumeOwnership(app.db, req.user!, volumeName);
     }
     // For create-on-attach, the volume does not have to exist yet; we
     // provision it on the next deploy. For an existing-volume attach, the
