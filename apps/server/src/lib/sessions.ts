@@ -20,11 +20,15 @@ export async function issueSessionTokens(
 ): Promise<TokenPair> {
   const jti = crypto.randomUUID();
   const refreshTtl = ttlSeconds(config.jwt.refreshTtl);
+  const expiresAt = new Date(Date.now() + refreshTtl * 1000);
   // Both token types carry the jti so the sessions list can flag the current
-  // one from a plain access-token request.
+  // one from a plain access-token request. The refresh token is bound to the
+  // row's expiry from the very first issue (r091): without `gen`, the login
+  // refresh token skipped the rotation check in refreshSessionTokens and could
+  // be replayed for the whole session, sliding its expiry each time.
   const [accessToken, refreshToken] = await Promise.all([
     signAccessToken(user.id, user.tokenVersion, jti),
-    signRefreshToken(user.id, user.tokenVersion, jti),
+    signRefreshToken(user.id, user.tokenVersion, jti, expiresAt.getTime()),
   ]);
   // Best-effort row write: even if it failed, the token pair stays valid (a
   // missing row simply means no session-list entry / no per-session revoke).
@@ -35,7 +39,7 @@ export async function issueSessionTokens(
       ip: ctx?.ip ?? null,
       userAgent: ctx?.userAgent?.slice(0, 300) ?? null,
       lastUsedAt: new Date(),
-      expiresAt: new Date(Date.now() + refreshTtl * 1000),
+      expiresAt,
     });
   } catch {
     /* non-fatal — see above */

@@ -27,7 +27,32 @@ describe('lib/sessions', () => {
     expect(tokens.accessToken).toBe(ACCESS);
     expect(tokens.refreshToken).toBe(REFRESH);
     expect(tokens.expiresIn).toBe(900);
-    expect(jwtMocks.signRefreshToken).toHaveBeenCalledWith(3, 0, expect.any(String));
+    expect(jwtMocks.signRefreshToken).toHaveBeenCalledWith(3, 0, expect.any(String), expect.any(Number));
+  });
+
+  it('binds the FIRST refresh token to the row expiry, so the login token is rotation-checked (r091)', async () => {
+    // Without `gen` on the login-issued token, refreshSessionTokens skipped
+    // the generation check and that token replayed for the whole session.
+    jwtMocks.signRefreshToken.mockClear();
+    let inserted: { expiresAt: Date } | undefined;
+    const db = {
+      insert: () => ({
+        values: async (v: { expiresAt: Date }) => {
+          inserted = v;
+        },
+      }),
+    };
+    await issueSessionTokens(db as never, userRow({ id: 3, tokenVersion: 0 }));
+    const gen = (jwtMocks.signRefreshToken.mock.calls[0] as unknown[])[3];
+    expect(typeof gen).toBe('number');
+    expect(gen).toBe(inserted!.expiresAt.getTime());
+
+    // …and once the session rotates, that same login token is refused.
+    const rotated = createFakeDb({
+      findFirst: { sessions: { jti: 'j', revokedAt: null, expiresAt: new Date((gen as number) + 60_000) } },
+      update: { sessions: [{ id: 1 }] },
+    });
+    await expect(refreshSessionTokens(rotated, userRow(), 'j', gen as number)).rejects.toThrow('session_revoked');
   });
 
   it('tolerates a failing session-row insert (best-effort write)', async () => {
