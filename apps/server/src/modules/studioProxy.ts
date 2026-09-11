@@ -199,7 +199,19 @@ export const studioProxyRoutes: FastifyPluginAsync = async (app) => {
   };
   app.addContentTypeParser('*', { parseAs: 'buffer' }, passthrough);
 
-  const options = { bodyLimit: 256 * 1024 * 1024 };
+  // The cookie check runs at onRequest — BEFORE body parsing (r098). In the
+  // handler it came after Fastify had already buffered up to `bodyLimit`
+  // (256 MiB) into memory, so any unauthenticated client could exhaust the
+  // single-process panel with a few concurrent uploads. The handler keeps its
+  // own check as defence in depth.
+  const requireStudioSession = async (req: FastifyRequest): Promise<void> => {
+    const id = Number((req.params as { id?: string }).id);
+    if (!Number.isSafeInteger(id) || id < 1) throw notFound('Web Studio is not running');
+    if (!studioCookieValid(id, req.headers.cookie)) {
+      throw unauthorized('Studio session expired — start it again from the database page');
+    }
+  };
+  const options = { bodyLimit: 256 * 1024 * 1024, onRequest: [requireStudioSession] };
   app.all('/:id/studio-proxy', options, (req, reply) => proxyHandler(app, req, reply));
   app.all('/:id/studio-proxy/*', options, (req, reply) => proxyHandler(app, req, reply));
 };

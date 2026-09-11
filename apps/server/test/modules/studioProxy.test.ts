@@ -67,6 +67,38 @@ describe('studio proxy', () => {
     await app.close();
   });
 
+  it('rejects a cookie-less request BEFORE its body is parsed (r098)', async () => {
+    // The route accepts 256 MiB bodies. With the cookie check in the handler,
+    // Fastify had already buffered the whole body for an unauthenticated
+    // client — a memory DoS on the single-process panel.
+    const preParsing = vi.fn(async () => undefined);
+    const app = Fastify();
+    app.addHook('preParsing', preParsing);
+    app.decorate('db', { query: { databases: { findFirst: vi.fn(async () => dbRow) } } } as never);
+    await app.register(studioProxyRoutes, { prefix: '/databases' });
+    await app.ready();
+
+    const denied = await app.inject({
+      method: 'POST',
+      url: '/databases/3/studio-proxy/import',
+      headers: { 'content-type': 'application/octet-stream' },
+      payload: Buffer.alloc(64 * 1024, 1),
+    });
+    expect(denied.statusCode).toBe(401);
+    expect(preParsing).not.toHaveBeenCalled();
+
+    // Control: an authenticated request does reach body parsing.
+    const allowed = await app.inject({
+      method: 'POST',
+      url: '/databases/3/studio-proxy/import',
+      headers: { cookie: cookieHeader(), 'content-type': 'application/octet-stream' },
+      payload: Buffer.alloc(16, 1),
+    });
+    expect(allowed.statusCode).toBe(200);
+    expect(preParsing).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
   it('refuses a cookie with a forged signature', async () => {
     const app = await makeApp();
     const forged = `nd-studio-3=${studioCookieValue(3).value.slice(0, -2)}ff`;
