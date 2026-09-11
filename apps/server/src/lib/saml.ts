@@ -172,21 +172,49 @@ export function canonicalDigest(input: string): string {
  * a provider whose canonical form differs will fail CLOSED — an SSO
  * outage the operator can see, not a silent bypass.
  */
-export function verifyAssertionDigest(opts: { decodedXml: string; signedInfo: string }): void {
+export function verifyAssertionDigest(opts: { decodedXml: string; signedInfo: string }): string {
   const digestMatch = opts.signedInfo.match(/<ds:DigestValue[^>]*>([\s\S]*?)<\/ds:DigestValue>/)
     ?? opts.signedInfo.match(/<DigestValue[^>]*>([\s\S]*?)<\/DigestValue>/);
   if (!digestMatch) {
     throw new Error('SAML response: SignedInfo carries no <ds:DigestValue> — refusing unbound signature');
   }
-  const assertionMatch = opts.decodedXml.match(/<(?:[A-Za-z0-9]+:)?Assertion\b[^>]*>[\s\S]*?<\/(?:[A-Za-z0-9]+:)?Assertion>/);
-  if (!assertionMatch) {
-    throw new Error('SAML response: missing <Assertion>');
-  }
+  const assertion = locateSignedAssertion(opts.decodedXml, opts.signedInfo);
   const expected = Buffer.from(digestMatch[1]!.replace(/\s+/g, ''), 'base64');
-  const actual = createHash('sha256').update(assertionMatch[0], 'utf8').digest();
+  const actual = createHash('sha256').update(assertion, 'utf8').digest();
   if (expected.length !== actual.length || !timingSafeBuffers(expected, actual)) {
     throw new Error('SAML response: assertion digest does not match the signed DigestValue');
   }
+  return assertion;
+}
+
+/** Any-prefix `<…Assertion …>` opening tag (not AssertionConsumer…, not EncryptedAssertion). */
+const ASSERTION_OPEN_RE = /<((?:[A-Za-z0-9_-]+:)?Assertion)\b[^>]*>/g;
+
+/**
+ * The ONE assertion the signature covers, as an exact slice of the response.
+ *
+ * Signature wrapping (r093): the digest used to bind to the first
+ * `<…:Assertion>` while the subject was read from the first unprefixed
+ * `<Assertion>`, so an unsigned assertion appended after a legitimately signed
+ * `<saml:Assertion>` chose the user. Every later check — digest, conditions,
+ * replay ID, issuer, audience, subject — must read THIS slice and nothing
+ * else. Refused unless the response carries exactly one assertion and its ID
+ * is the one SignedInfo's `<Reference URI="#…">` names.
+ */
+export function locateSignedAssertion(decodedXml: string, signedInfo: string): string {
+  const refId = signedInfo.match(/<(?:[A-Za-z0-9_-]+:)?Reference\b[^>]*\bURI=["']#([^"']+)["']/)?.[1];
+  if (!refId) throw new Error('SAML response: SignedInfo <Reference> names no assertion ID — refusing unbound signature');
+  const opens = [...decodedXml.matchAll(ASSERTION_OPEN_RE)];
+  if (opens.length === 0) throw new Error('SAML response: missing <Assertion>');
+  if (opens.length > 1) throw new Error('SAML response: more than one <Assertion> — refusing (signature wrapping)');
+  const open = opens[0]!;
+  const id = parseAttrs(open[0]).ID;
+  if (id !== refId) throw new Error('SAML response: the signed Reference does not name this assertion');
+  if (open[0].endsWith('/>')) throw new Error('SAML response: empty <Assertion>');
+  const closeTag = `</${open[1]}>`;
+  const end = decodedXml.indexOf(closeTag, open.index! + open[0].length);
+  if (end === -1) throw new Error('SAML response: unterminated <Assertion>');
+  return decodedXml.slice(open.index!, end + closeTag.length);
 }
 
 function timingSafeBuffers(a: Buffer, b: Buffer): boolean {
@@ -293,45 +321,32 @@ export interface SamlAssertionSubject {
  * attribute extraction. Signature verification is the caller's
  * responsibility (see `verifySignedInfo`).
  */
-export function extractSamlSubject(decodedXml: string): SamlAssertionSubject {
-  const assertion = findTag(decodedXml, 'Assertion') ?? findTag(decodedXml, 'saml:Assertion');
-  if (!assertion) throw new Error('SAML response: missing <Assertion>');
-  // `<NameID>` is a leaf node carrying the federated identifier.
-  const nameIdBlock = findTag(assertion, 'NameID') ?? findTag(assertion, 'saml:NameID');
-  if (!nameIdBlock) throw new Error('SAML response: missing <NameID>');
-  const nameId = nameIdBlock.replace(/<\/?[^>]+>/g, '').trim();
+export function extractSamlSubject(assertionOrResponseXml: string): SamlAssertionSubject {
+  // Callers pass the slice `locateSignedAssertion` returned; the refusal of a
+  // second assertion here is defence in depth for any other caller.
+  const opens = [...assertionOrResponseXml.matchAll(ASSERTION_OPEN_RE)];
+  if (opens.length === 0) throw new Error('SAML response: missing <Assertion>');
+  if (opens.length > 1) throw new Error('SAML response: more than one <Assertion> — refusing (signature wrapping)');
+  const assertion = assertionOrResponseXml.slice(opens[0]!.index!);
+  // `<NameID>` is a leaf node carrying the federated identifier. Any prefix
+  // (`saml:`, `saml2:`, none) — the prefix is the IdP's choice.
+  const nameIdMatch = assertion.match(/<(?:[A-Za-z0-9_-]+:)?NameID\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z0-9_-]+:)?NameID>/);
+  if (!nameIdMatch) throw new Error('SAML response: missing <NameID>');
+  const nameId = nameIdMatch[1]!.replace(/<\/?[^>]+>/g, '').trim();
   if (!nameId) throw new Error('SAML response: empty <NameID>');
   // `<AttributeStatement>` is the only place the IdP can publish
-  // `email` / `mail` / `emailAddress`. Try each alias.
-  const attrStatement =
-    findTag(assertion, 'AttributeStatement') ?? findTag(assertion, 'saml:AttributeStatement');
+  // `email` / `mail` / `emailAddress`. Try each alias, in that order.
   let email: string | null = null;
-  if (attrStatement) {
-    for (const alias of ['email', 'mail', 'emailAddress']) {
-      // We have to do a manual `<Attribute Name="email">…<AttributeValue>…</AttributeValue></Attribute>`
-      // search because the XML surface is `Attribute > AttributeValue` and
-      // our pull-parser only returns the inner block of `Attribute`. Drill
-      // a level deeper to grab the value.
-      const attrBlock =
-        findTag(attrStatement, 'Attribute') ?? findTag(attrStatement, 'saml:Attribute');
-      if (!attrBlock) break;
-      // A single Assertion can carry many `<Attribute>` blocks; scan
-      // the whole statement for one whose `Name` attribute matches.
-      const attrRe = new RegExp(
-        `<(?:saml:)?Attribute\\s+[^>]*Name=["']${alias}["'][^>]*>([\\s\\S]*?)</(?:saml:)?Attribute>`,
-        'i',
-      );
-      const m = attrRe.exec(attrStatement);
-      if (m) {
-        const value = m[1]!.replace(/<\/?[^>]+>/g, '').trim();
-        if (value) {
-          email = value;
-          break;
-        }
-      }
-      // Suppress the unused-binding warning; `attrBlock` is checked
-      // so a future change can rely on the parser having run.
-      void attrBlock;
+  for (const alias of ['email', 'mail', 'emailAddress']) {
+    const attrRe = new RegExp(
+      `<(?:[A-Za-z0-9_-]+:)?Attribute\\s+[^>]*Name=["']${alias}["'][^>]*>([\\s\\S]*?)</(?:[A-Za-z0-9_-]+:)?Attribute>`,
+      'i',
+    );
+    const m = attrRe.exec(assertion);
+    const value = m?.[1]?.replace(/<\/?[^>]+>/g, '').trim();
+    if (value) {
+      email = value;
+      break;
     }
   }
   return { nameId, email };

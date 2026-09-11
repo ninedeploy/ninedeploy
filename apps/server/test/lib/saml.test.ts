@@ -4,8 +4,10 @@ import {
   checkAssertionNotReplayed,
   decodeSamlResponse,
   extractSamlSubject,
+  locateSignedAssertion,
   parseIdpMetadata,
   readIssuer,
+  verifyAssertionDigest,
   verifySignedInfo,
   wrapPem,
 } from '../../src/lib/saml.js';
@@ -324,6 +326,43 @@ describe('lib/saml', () => {
         <saml:Assertion><saml:NameID>   </saml:NameID></saml:Assertion>
       </samlp:Response>`;
       expect(() => extractSamlSubject(xml)).toThrow(/empty <NameID>/);
+    });
+  });
+
+  describe('signature wrapping (r093)', () => {
+    const { createHash } = require('node:crypto') as typeof import('node:crypto');
+    const signedAssertion = (prefix: string, id: string, who: string) =>
+      `<${prefix}Assertion ID="${id}"><${prefix}Subject><${prefix}NameID>${who}</${prefix}NameID></${prefix}Subject></${prefix}Assertion>`;
+    const signedInfoFor = (id: string, assertion: string) =>
+      `<ds:SignedInfo><ds:Reference URI="#${id}"><ds:DigestValue>${createHash('sha256').update(assertion, 'utf8').digest('base64')}</ds:DigestValue></ds:Reference></ds:SignedInfo>`;
+
+    it('refuses an unsigned unprefixed <Assertion> appended after a signed <saml:Assertion>', () => {
+      const signed = signedAssertion('saml:', '_s', 'attacker@example.com');
+      const response = `<samlp:Response>${signed}<Assertion ID="_x"><NameID>victim@example.com</NameID></Assertion></samlp:Response>`;
+      expect(() => verifyAssertionDigest({ decodedXml: response, signedInfo: signedInfoFor('_s', signed) })).toThrow(
+        /more than one <Assertion>/,
+      );
+      // Defence in depth: the subject extractor refuses the same shape.
+      expect(() => extractSamlSubject(response)).toThrow(/more than one <Assertion>/);
+    });
+
+    it('refuses a Reference that names a different ID, or none at all', () => {
+      const signed = signedAssertion('saml:', '_s', 'a@example.com');
+      const response = `<samlp:Response>${signed}</samlp:Response>`;
+      expect(() => locateSignedAssertion(response, signedInfoFor('_other', signed))).toThrow(/does not name this assertion/);
+      expect(() => locateSignedAssertion(response, '<ds:SignedInfo><ds:Reference /></ds:SignedInfo>')).toThrow(
+        /names no assertion ID/,
+      );
+    });
+
+    it('returns the exact signed slice, and reads the subject from it for any prefix (saml2:, none)', () => {
+      for (const prefix of ['saml2:', 'saml:', '']) {
+        const signed = signedAssertion(prefix, '_ok', 'alice@example.com');
+        const response = `<samlp:Response><saml:Issuer>x</saml:Issuer>${signed}</samlp:Response>`;
+        const slice = verifyAssertionDigest({ decodedXml: response, signedInfo: signedInfoFor('_ok', signed) });
+        expect(slice).toBe(signed);
+        expect(extractSamlSubject(slice).nameId).toBe('alice@example.com');
+      }
     });
   });
 

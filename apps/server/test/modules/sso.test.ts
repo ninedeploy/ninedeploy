@@ -970,11 +970,14 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     // The DigestValue must be the sha256 (base64) of the FULL assertion
     // element — the route now binds the signature to the assertion bytes,
     // so a response whose assertion was swapped after signing must fail.
-    const assertion = assertionXml(email, opts.notOnOrAfter, opts.assertionId, opts.audience);
+    const id = opts.assertionId ?? `_a${++assertionSeq}`;
+    const assertion = assertionXml(email, opts.notOnOrAfter, id, opts.audience);
     const digestValue = opts.omitDigest ? '' : opts.digestOverride ?? sha256b64(assertion);
+    // The Reference names the assertion it signs (URI="#ID") — the route
+    // binds every check to exactly that element (r093).
     const digestBlock = opts.omitDigest
       ? '<ds:Reference />'
-      : `<ds:Reference><ds:DigestValue>${digestValue}</ds:DigestValue></ds:Reference>`;
+      : `<ds:Reference URI="#${id}"><ds:DigestValue>${digestValue}</ds:DigestValue></ds:Reference>`;
     return `<samlp:Response>
   <saml:Issuer>https://idp.example.com</saml:Issuer>
   <ds:Signature>
@@ -1090,6 +1093,53 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     const body = res.json() as { ok: boolean; error?: string };
     expect(body.ok).toBe(false);
     expect(body.error).toMatch(/not a SAML provider/);
+    await app.close();
+  });
+
+  it('refuses a wrapped response: unsigned <Assertion> appended after the signed one (r093)', async () => {
+    // The signed assertion names the attacker; a second, unsigned, unprefixed
+    // <Assertion> names the victim. Before r093 the digest bound the first
+    // `<saml:Assertion>` and the subject came from the first `<Assertion>`.
+    const meta = idpMetadata();
+    const { db, seedProvider, userRows } = wiredDb('victim@example.com', meta);
+    seedProvider('corp-saml', 'saml', { idpMetadata: meta });
+    const signed = samlResponse('attacker@example.com');
+    const wrapped = signed.replace(
+      '</samlp:Response>',
+      `<Assertion ID="_evil"><Issuer>https://idp.example.com</Issuer><Subject><NameID>victim@example.com</NameID></Subject></Assertion>\n</samlp:Response>`,
+    );
+    const app = await buildTestApp({ db });
+    await app.register(ssoRoutes);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/corp-saml/saml-callback',
+      headers: asUser(),
+      payload: { SAMLResponse: b64(wrapped) },
+    });
+    const body = res.json() as { ok: boolean; error?: string; tokens?: unknown };
+    expect(body.ok).toBe(false);
+    expect(body.error).toMatch(/more than one <Assertion>/);
+    expect(body.tokens).toBeUndefined();
+    expect(userRows[0]).toMatchObject({ email: 'victim@example.com' });
+    await app.close();
+  });
+
+  it('refuses a signature whose Reference names a different assertion ID (r093)', async () => {
+    const meta = idpMetadata();
+    const { db, seedProvider } = wiredDb('alice@example.com', meta);
+    seedProvider('corp-saml', 'saml', { idpMetadata: meta });
+    const response = samlResponse('alice@example.com').replace(/URI="#[^"]+"/, 'URI="#_someone-else"');
+    const app = await buildTestApp({ db });
+    await app.register(ssoRoutes);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/corp-saml/saml-callback',
+      headers: asUser(),
+      payload: { SAMLResponse: b64(response) },
+    });
+    const body = res.json() as { ok: boolean; error?: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toMatch(/does not name this assertion/);
     await app.close();
   });
 
@@ -1211,7 +1261,7 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     const xml = `<samlp:Response>
   <saml:Issuer>https://idp.example.com</saml:Issuer>
   <ds:Signature>
-    <ds:SignedInfo><ds:Reference><ds:DigestValue>${sha256b64(assertion)}</ds:DigestValue></ds:Reference></ds:SignedInfo>
+    <ds:SignedInfo><ds:Reference URI="#_nameid-fallback"><ds:DigestValue>${sha256b64(assertion)}</ds:DigestValue></ds:Reference></ds:SignedInfo>
     <ds:SignatureValue>AAAA</ds:SignatureValue>
   </ds:Signature>
   ${assertion}
@@ -1239,7 +1289,7 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     const xml = `<samlp:Response>
   <saml:Issuer>https://idp.example.com</saml:Issuer>
   <ds:Signature>
-    <ds:SignedInfo><ds:Reference><ds:DigestValue>${sha256b64(`<saml:Assertion ID="_opaque">
+    <ds:SignedInfo><ds:Reference URI="#_opaque"><ds:DigestValue>${sha256b64(`<saml:Assertion ID="_opaque">
     <saml:Issuer>https://idp.example.com</saml:Issuer>
     <saml:Subject>
       <saml:NameID>opaque-transient-id-12345</saml:NameID>
