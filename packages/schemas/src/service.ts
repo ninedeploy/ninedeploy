@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { containerPath, dockerVolumeName, envVarName, gitBranch, gitRepoUrl, httpPath, repoBaseDir, repoRelativePath, slug } from './common.js';
 
 export const serviceType = z.enum(['pm2', 'docker', 'compose']);
-export const buildPack = z.enum(['auto', 'nixpacks', 'dockerfile', 'static']);
+export const buildPack = z.enum(['auto', 'nixpacks', 'dockerfile', 'railpack', 'static']);
 
 /** Optional project/workspace/label tag IDs for new service creation. */
 const tagIds = z.array(z.number().int().positive()).optional();

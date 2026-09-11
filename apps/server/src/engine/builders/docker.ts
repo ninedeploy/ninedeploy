@@ -9,7 +9,6 @@ import { ensureDockerImage, pullDockerImage } from '../../lib/dockerPull.js';
 import { NETWORK } from '../proxy.js';
 import { ensureServiceBridge } from '../../lib/serviceBridge.js';
 import { buildWithBuildKit } from './buildkit.js';
-import { buildStaticSite } from './staticSite.js';
 import { buildProbeUrl, safeProbePath } from '../../lib/probeUrl.js';
 import { writeSecretFile, type SecretFile } from '../../lib/secretFile.js';
 import { repoRelative, resolveInRepo } from '../../lib/repoPath.js';
@@ -290,6 +289,47 @@ export async function containerExposedTcpPorts(name: string): Promise<number[]> 
  * and version pins like `NIXPACKS_NODE_VERSION` from the panel would only
  * exist at runtime and never reach `next build`.
  */
+/**
+ * Railpack source build (buildPack: 'railpack'). Railpack auto-detects the
+ * stack and builds via its own BuildKit connection — NineDeploy passes the
+ * image name and the runtime env; custom install/build commands are NOT
+ * forwarded (railpack's plan handles them itself, and NineDeploy does not
+ * translate nixpacks conventions onto railpack's config format).
+ */
+async function buildWithRailpack(
+  target: string,
+  baseDir: string,
+  workDir: string,
+  env: Record<string, string>,
+  log: (line: string) => void,
+): Promise<void> {
+  let hasCli = false;
+  try {
+    await capture('railpack', ['--version']);
+    hasCli = true;
+  } catch {
+    hasCli = false;
+  }
+  if (!hasCli) {
+    throw new Error(
+      'Railpack CLI is unavailable. Re-run the NineDeploy installer to provision it, or switch the build pack.',
+    );
+  }
+
+  const envArgs: string[] = [];
+  for (const [key, value] of Object.entries(env)) {
+    envArgs.push('--env', `${key}=${value}`);
+  }
+
+  log(`⚡ railpack CLI build: ${baseDir} …`);
+  await run(
+    'railpack',
+    ['build', baseDir, '--name', target, ...envArgs],
+    { cwd: workDir, heartbeatMs: DEPLOY_HEARTBEAT_MS, heartbeatLabel: `Building ${target} with Railpack` },
+    log,
+  );
+}
+
 async function buildWithNixpacks(
   target: string,
   baseDir: string,
@@ -437,15 +477,11 @@ export const dockerBuilder: Builder = {
       const explicitDockerfilePath = !!buildConfig?.dockerfilePath?.trim();
       const hasDockerfile = existsSync(resolveInRepo(workDir, buildConfig?.baseDir, buildConfig?.dockerfilePath || 'Dockerfile'));
       let useNixpacks = pack === 'nixpacks' || (pack === 'auto' && !hasDockerfile);
-      if (pack === 'static') {
-        // Static build pack: host-executed build commands, then the output
-        // dir ships inside nginx:alpine. The runtime/health/routing phases
-        // below run unchanged — only the build differs.
-        await buildStaticSite(
-          { workDir, baseDir: path.join(workDir, baseDir), buildConfig, env, log },
-          target,
-        );
-        builtStatic = true;
+      if (pack === 'railpack') {
+        // Railpack auto-detects the stack and builds via its own BuildKit
+        // connection — no host install/build commands run for it, so the
+        // dispatch order places it before the nixpacks/Dockerfile checks.
+        await buildWithRailpack(target, baseDir, workDir, env, log);
       } else if (pack === 'auto' && !hasDockerfile && !explicitDockerfilePath) {
         // Only auto-discover when the user did not already pin a path. A
         // pinned `dockerfilePath` is a deliberate choice and overrides.

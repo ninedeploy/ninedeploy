@@ -33,7 +33,7 @@ export const serviceStatus = [
   'error',
   'deleting',
 ] as const;
-export const buildPack = ['auto', 'nixpacks', 'dockerfile', 'static'] as const;
+export const buildPack = ['auto', 'nixpacks', 'dockerfile', 'railpack', 'static'] as const;
 export const deploymentStatus = [
   'queued',
   'building',
