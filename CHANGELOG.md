@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8.2] - 2026-09-12
+
+> Answering "why doesn't my domain load?" before it is asked: every
+> custom domain carries an on-demand DNS resolution status, and the
+> build pack matrix gains static site builds.
+
+### Added
+
+- **Static site build pack.** `static` joins the build pack select: the
+  repo's install + build commands run on the panel host, and the output
+  directory (default `dist`) ships inside an nginx:alpine image with an
+  optional SPA history fallback (`try_files` → `index.html`). Health
+  check, Traefik routing and blue-green swap behave exactly like any
+  other deploy. Remote nodes are refused loudly (the build is
+  host-executed); migration 0055 adds the two build-config columns.
+- **Per-domain DNS resolution status.** `GET
+  /v1/services/:id/domains/:domainId/dns` resolves the hostname's A and
+  AAAA records and compares them with the address this instance expects
+  (the operator's record content, else the detected public IP). The web
+  domain row gains a **Check DNS** chip showing `ok` / `mismatch` /
+  `unresolved` with the resolved addresses — advisory only; routing
+  stays governed by the ownership challenge.
+
+---
+
 ## [0.8.1] - 2026-09-11
 
 > The provider-matrix and reliability release: Bitbucket joins GitHub,
