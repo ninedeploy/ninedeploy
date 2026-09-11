@@ -36,6 +36,8 @@ export interface OidcClaims {
   exp: number;
   iat: number;
   email?: string;
+  /** Standard OIDC claim; only `true` lets `email` be used as the join key. */
+  email_verified?: boolean;
   name?: string;
   preferred_username?: string;
   [extra: string]: unknown;

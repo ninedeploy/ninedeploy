@@ -1,6 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import type { DB, User } from '@ninedeploy/db';
-import { sessions } from '@ninedeploy/db';
+import { apiTokens, sessions } from '@ninedeploy/db';
 import type { TokenPair } from '@ninedeploy/schemas';
 import { config } from '../config.js';
 import { signAccessToken, signRefreshToken, ttlSeconds } from './jwt.js';
@@ -104,6 +104,17 @@ export async function findLiveSession(db: Pick<DB, 'query'>, jti: string) {
   if (row.revokedAt) return null;
   if (row.expiresAt.getTime() < Date.now()) return null;
   return row;
+}
+
+/**
+ * Delete every API token of a user. Called when the password changes or is
+ * reset (r094): a token leaked alongside the old password must not outlive the
+ * credential rotation the owner just performed to get rid of the attacker.
+ * Deliberately NOT called on logout — that ends one interactive session, and
+ * would silently break every CLI/CI integration of the account.
+ */
+export async function revokeApiTokens(db: Pick<DB, 'delete'>, userId: number): Promise<void> {
+  await db.delete(apiTokens).where(eq(apiTokens.userId, userId));
 }
 
 /** Revoke every session of a user (logout / password change / reset / role change). */

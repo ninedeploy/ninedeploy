@@ -224,6 +224,27 @@ describe('users routes', () => {
     expect(cryptoMock.hashPassword).toHaveBeenCalledWith(['fresh', 'pass', '123'].join('-'));
   });
 
+  it('revokes the target user sessions and API tokens on an operator reset (r094)', async () => {
+    // The tokenVersion bump only kills JWTs; session rows and API tokens are
+    // separate credentials a compromised account's attacker may hold.
+    const { apiTokens, sessions } = await import('@ninedeploy/db');
+    const updated = userRow({ id: 7 });
+    const db = createFakeDb({ findFirst: { users: updated }, update: { users: [updated] } } as never);
+    const del = vi.spyOn(db, 'delete');
+    const upd = vi.spyOn(db, 'update');
+    const app = await buildTestApp({ db });
+    await app.register(userRoutes);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/7/password',
+      headers: asUser(),
+      payload: { newPassword: ['fresh', 'pass', '123'].join('-') },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(del).toHaveBeenCalledWith(apiTokens);
+    expect(upd).toHaveBeenCalledWith(sessions);
+  });
+
   it('404s when resetting the password of a missing user', async () => {
     const app = await appWith({ findFirst: { users: undefined }, update: { users: [] } });
     const res = await app.inject({

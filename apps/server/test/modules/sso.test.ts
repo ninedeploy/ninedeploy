@@ -697,6 +697,7 @@ describe('POST-style OIDC callback (Sprint 6 PR #30)', () => {
       exp,
       iat: Math.floor(Date.now() / 1000),
       email: 'alice@example.com',
+      email_verified: true,
     });
     const body = res.json() as {
       ok: boolean;
@@ -707,6 +708,63 @@ describe('POST-style OIDC callback (Sprint 6 PR #30)', () => {
     expect(body.ok, JSON.stringify(body)).toBe(true);
     expect(body.provider).toBe('corp-oidc');
     expect(body.subject).toEqual({ sub: 'oidc-subject-12345', email: 'alice@example.com' });
+    await app.close();
+  });
+
+  async function oidcAppWithProvider(dbOverride?: (db: ReturnType<typeof statefulDb>) => void) {
+    const issuer = uniqueIssuer();
+    const db = statefulDb();
+    dbOverride?.(db);
+    const app = await buildTestApp({ db: db as never });
+    await app.register(ssoRoutes);
+    await app.inject({
+      method: 'POST',
+      url: '/providers',
+      headers: asUser(),
+      payload: {
+        type: 'oidc',
+        name: 'corp-oidc',
+        config: { issuer, clientId: 'cid', clientSecret: 'csec', redirectUri: 'https://app/cb' },
+      },
+    });
+    return { app, issuer };
+  }
+  const validClaims = (issuer: string) => ({
+    iss: issuer,
+    sub: 'oidc-subject-12345',
+    aud: 'cid',
+    exp: Math.floor(Date.now() / 1000) + 3600,
+    iat: Math.floor(Date.now() / 1000),
+    email: 'alice@example.com',
+  });
+
+  it('refuses an id_token whose email the IdP does not attest as verified (r094)', async () => {
+    const kp = makeRsaKeyPair();
+    for (const flag of [undefined, false]) {
+      const { app, issuer } = await oidcAppWithProvider();
+      const claims = flag === undefined ? validClaims(issuer) : { ...validClaims(issuer), email_verified: flag };
+      const body = (await runOidcFlow(app, kp, issuer, claims)).json() as { ok: boolean; error?: string; tokens?: unknown };
+      expect(body.ok, `email_verified=${String(flag)}`).toBe(false);
+      expect(body.error).toMatch(/email_verified/);
+      expect(body.tokens).toBeUndefined();
+      await app.close();
+    }
+  });
+
+  it('refuses SSO sign-in for an account with TOTP enabled — no 2FA bypass through the IdP (r094)', async () => {
+    const kp = makeRsaKeyPair();
+    const { app, issuer } = await oidcAppWithProvider((db) => {
+      db.query.users.findFirst = () =>
+        Promise.resolve({ id: 1, email: 'alice@example.com', tokenVersion: 0, totpEnabled: true }) as never;
+    });
+    const body = (await runOidcFlow(app, kp, issuer, { ...validClaims(issuer), email_verified: true })).json() as {
+      ok: boolean;
+      error?: string;
+      tokens?: unknown;
+    };
+    expect(body.ok).toBe(false);
+    expect(body.error).toMatch(/two-factor/);
+    expect(body.tokens).toBeUndefined();
     await app.close();
   });
 
@@ -915,6 +973,7 @@ describe('POST-style OIDC callback (Sprint 6 PR #30)', () => {
       exp: Math.floor(Date.now() / 1000) + 3600,
       iat: Math.floor(Date.now() / 1000),
       email: 'ghost@example.com',
+      email_verified: true,
     });
     const body = res.json() as { ok: boolean; error?: string };
     expect(body.ok).toBe(false);
@@ -1121,6 +1180,26 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     expect(body.error).toMatch(/more than one <Assertion>/);
     expect(body.tokens).toBeUndefined();
     expect(userRows[0]).toMatchObject({ email: 'victim@example.com' });
+    await app.close();
+  });
+
+  it('refuses a SAML sign-in for an account with TOTP enabled (r094)', async () => {
+    const meta = idpMetadata();
+    const { db, seedProvider, userRows } = wiredDb('alice@example.com', meta);
+    userRows[0]!.totpEnabled = true;
+    seedProvider('corp-saml', 'saml', { idpMetadata: meta });
+    const app = await buildTestApp({ db });
+    await app.register(ssoRoutes);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/corp-saml/saml-callback',
+      headers: asUser(),
+      payload: { SAMLResponse: b64(samlResponse('alice@example.com')) },
+    });
+    const body = res.json() as { ok: boolean; error?: string; tokens?: unknown };
+    expect(body.ok).toBe(false);
+    expect(body.error).toMatch(/two-factor/);
+    expect(body.tokens).toBeUndefined();
     await app.close();
   });
 

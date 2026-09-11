@@ -14,7 +14,7 @@ import { generateSecret, otpauthUri } from '../lib/totp.js';
 import { consumeTotpCode } from '../lib/totpReplay.js';
 import { audit } from '../lib/audit.js';
 import { getSetting } from '../lib/settings.js';
-import { findLiveSession, issueSessionTokens, refreshSessionTokens, revokeAllSessions } from '../lib/sessions.js';
+import { findLiveSession, issueSessionTokens, refreshSessionTokens, revokeAllSessions, revokeApiTokens } from '../lib/sessions.js';
 import { beginAuthentication, beginRegistration, finishAuthentication, finishRegistration } from '../lib/webauthn.js';
 import { exchangeGitHubCode, exchangeOidcCode, fetchOidcConfiguration, fetchOidcUserInfo, generateOAuthState, verifyOAuthState } from '../lib/oauth.js';
 import { ensureDefaultWorkspace, ensureDefaultWorkspaceWithRole } from './workspaces.js';
@@ -522,6 +522,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     const input = passwordResetWithToken.parse(req.body);
     const user = await consumeResetToken(app.db, input.token, input.newPassword);
     await revokeAllSessions(app.db, user.id);
+    await revokeApiTokens(app.db, user.id);
     void audit(app.db, user.id, 'auth.reset_password', user.email);
     return { ok: true };
   });
@@ -590,6 +591,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       .returning();
     if (!updated) throw unauthorized();
     await revokeAllSessions(app.db, user.id);
+    await revokeApiTokens(app.db, user.id);
     return { user: toUser(updated, await isOperator(app.db, updated)), tokens: await issueSessionTokens(app.db, updated, { ip: req.ip, userAgent: req.headers['user-agent'] }) };
   });
 

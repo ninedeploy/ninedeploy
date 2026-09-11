@@ -1,6 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { audit } from '../lib/audit.js';
 import { users, workspaceMembers } from '@ninedeploy/db';
+import { revokeAllSessions, revokeApiTokens } from '../lib/sessions.js';
 import type { FastifyPluginAsync } from 'fastify';
 import { operatorGrant, passwordReset, userCreate } from '@ninedeploy/schemas';
 import { badRequest, forbidden, notFound, parseId } from '../lib/errors.js';
@@ -158,6 +159,10 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
       .where(eq(users.id, id))
       .returning();
     if (!updated) throw notFound('User not found');
+    // The tokenVersion bump only kills JWTs; session rows and API tokens are
+    // separate credentials and must go too (r094).
+    await revokeAllSessions(app.db, id);
+    await revokeApiTokens(app.db, id);
     void audit(app.db, req.user!.id, 'user.password', `reset for #${id}`);
     return { ok: true };
   });

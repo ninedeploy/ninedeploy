@@ -387,6 +387,50 @@ describe('auth routes', () => {
     expect(body.tokens.accessToken).toBe('access-token');
   });
 
+  it('deletes the user API tokens on a password change and on a token reset (r094)', async () => {
+    // A token leaked alongside the old password must not survive the rotation
+    // the owner performed to evict the attacker.
+    const { apiTokens } = await import('@ninedeploy/db');
+
+    cryptoMocks.verifyPassword.mockResolvedValueOnce(true);
+    const changeDb = createFakeDb({
+      findFirst: { users: userRow({ id: 1, tokenVersion: 3 }) },
+      update: { users: [userRow({ id: 1, tokenVersion: 4 })] },
+    });
+    const changeDelete = vi.spyOn(changeDb, 'delete');
+    const change = await buildTestApp({ db: changeDb });
+    await change.register(authRoutes);
+    const changed = await change.inject({
+      method: 'POST',
+      url: '/password',
+      headers: asUser(),
+      payload: { currentPassword: F.currentPassword, newPassword: F.newPassword },
+    });
+    expect(changed.statusCode).toBe(200);
+    expect(changeDelete).toHaveBeenCalledWith(apiTokens);
+
+    const resetDb = createFakeDb({
+      findFirst: {
+        passwordResetTokens: {
+          id: 7, userId: 1, tokenHash: 'tok-hash', expiresAt: new Date(Date.now() + 60_000),
+          usedAt: null, requestedFrom: null, createdAt: new Date(),
+        },
+        users: userRow({ id: 1, tokenVersion: 3 }),
+      },
+      update: { users: [userRow({ id: 1, tokenVersion: 4 })], password_reset_tokens: [{}] },
+    });
+    const resetDelete = vi.spyOn(resetDb, 'delete');
+    const reset = await buildTestApp({ db: resetDb });
+    await reset.register(authRoutes);
+    const res = await reset.inject({
+      method: 'POST',
+      url: '/reset-password',
+      payload: { token: 'raw-token-1234567890abcdef', newPassword: 'fresh-password' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(resetDelete).toHaveBeenCalledWith(apiTokens);
+  });
+
   it('rejects a password change with a wrong current password', async () => {
     cryptoMocks.verifyPassword.mockResolvedValueOnce(false);
     const app = await buildTestApp({
