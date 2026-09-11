@@ -411,7 +411,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       // project's shared env values straight into the member's container.
       if (!req.user!.isOperator) {
         const projectIds = input.tagProjectIds ?? [];
-        const allowedProjects = await visibleProjectIds(app.db, req.user!, projectIds);
+        const allowedProjects = await visibleProjectIds(app.db, req.user!, projectIds, 'member');
         if (allowedProjects.length !== projectIds.length) {
           throw forbidden('One or more target projects are not visible to you');
         }

@@ -1,9 +1,15 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { databases, projects, serviceProjects, type Project, workspaces, type Workspace } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
-import { createProject, projectPatch } from '@ninedeploy/schemas';
+import { createProject, projectPatch, type WorkspaceRole } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
-import { assertWorkspaceMember, assertWorkspaceRole, loadProjectForUser, projectScopeFilter } from '../lib/resourceAccess.js';
+import {
+  assertWorkspaceMember,
+  assertWorkspaceRole,
+  loadProjectForUser,
+  projectScopeFilter,
+  roleAtLeast,
+} from '../lib/resourceAccess.js';
 import { badRequest, conflict, parseId } from '../lib/errors.js';
 import { iso } from '../lib/serialize.js';
 import { slugify } from '../lib/slug.js';
@@ -145,14 +151,19 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
 };
 
 /**
- * For a service-tag write: return the subset of `ids` the caller is allowed
- * to assign (i.e. projects they can see). Operators see every requested id
- * (we still verify the rows exist). Returns an empty array when none match.
+ * Return the subset of `ids` the caller holds at least `minRole` on (via the
+ * project's workspace). Operators get every requested id (we still verify the
+ * rows exist). Returns an empty array when none match.
+ *
+ * Tag WRITES must pass `member` (r095): tagging a service into a project makes
+ * the pipeline decrypt that project's shared env — secrets included — into the
+ * service's container, so a read-only `viewer` seat must not be enough.
  */
 export async function visibleProjectIds(
   db: import('@ninedeploy/db').DB,
   user: { id: number; isOperator: boolean },
   ids: number[],
+  minRole: WorkspaceRole = 'viewer',
 ): Promise<number[]> {
   if (ids.length === 0) return [];
   const rows = await db.query.projects.findMany({
@@ -162,7 +173,7 @@ export async function visibleProjectIds(
   const ms = await db.query.workspaceMembers.findMany({
     where: (m, { eq: eqOp }) => eqOp(m.userId, user.id),
   });
-  const wsIds = new Set(ms.map((m) => m.workspaceId));
+  const wsIds = new Set(ms.filter((m) => roleAtLeast(m.role, minRole)).map((m) => m.workspaceId));
   return rows
     .filter((r) => r.workspaceId != null && wsIds.has(r.workspaceId))
     .map((r) => r.id);

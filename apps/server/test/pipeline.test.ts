@@ -1721,11 +1721,23 @@ describe('filterTrustworthyProjectLinks', () => {
     };
   }
 
-  it('keeps links into workspaces the owner holds a seat in', async () => {
+  it('keeps links into workspaces the owner holds a member+ seat in', async () => {
+    for (const role of ['member', 'admin', 'owner']) {
+      const db = spyDb();
+      db.query.workspaceMembers.findFirst.mockResolvedValue({ workspaceId: 1, role });
+      const kept = await filterTrustworthyProjectLinks(db as never, owner, [{ projectId: 4 }]);
+      expect(kept, role).toEqual([{ projectId: 4 }]);
+    }
+  });
+
+  it('drops links when the owner only holds a viewer seat (r095)', async () => {
+    // A viewer is read-only and never sees secret values through the API; a
+    // viewer-seat link must not decrypt the project's shared env into a
+    // container the viewer's own code runs in.
     const db = spyDb();
     db.query.workspaceMembers.findFirst.mockResolvedValue({ workspaceId: 1, role: 'viewer' });
     const kept = await filterTrustworthyProjectLinks(db as never, owner, [{ projectId: 4 }]);
-    expect(kept).toEqual([{ projectId: 4 }]);
+    expect(kept).toEqual([]);
   });
 
   it('drops links into workspaces the owner cannot see', async () => {

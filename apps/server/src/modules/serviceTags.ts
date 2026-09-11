@@ -63,7 +63,9 @@ export const serviceTagRoutes: FastifyPluginAsync = async (app) => {
       if (allowedWorkspaces.length !== input.workspaceIds.length) {
         throw forbidden('One or more target workspaces are not visible to you');
       }
-      const allowedProjects = await visibleProjectIds(app.db, user, input.projectIds);
+      // `member` floor: tagging makes the pipeline decrypt the project's shared
+      // env into this service — a viewer seat must not unlock that (r095).
+      const allowedProjects = await visibleProjectIds(app.db, user, input.projectIds, 'member');
       if (allowedProjects.length !== input.projectIds.length) {
         throw forbidden('One or more target projects are not visible to you');
       }

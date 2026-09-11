@@ -21,7 +21,7 @@ import { pm2Builder } from './builders/pm2.js';
 import { getAcmeEmail, writeDynamicConfig } from './proxy.js';
 import { run, sleep } from '../lib/exec.js';
 import { resolveVaultRefs } from '../lib/vault.js';
-import { isOperator } from '../lib/resourceAccess.js';
+import { isOperator, roleAtLeast } from '../lib/resourceAccess.js';
 import { getBundledTemplates } from '../templates/registry.js';
 import type { BuildContext, Builder, DeployRuntime } from './types.js';
 import { reconcileTemplateDependencies } from './templateDependencies.js';
@@ -172,7 +172,10 @@ export async function filterTrustworthyProjectLinks(
         eq(workspaceMembers.workspaceId, project.workspaceId),
       ),
     });
-    if (seat) kept.push(link);
+    // A seat alone is not enough (r095): a `viewer` is read-only and the API
+    // masks secret values from them, so a link from a viewer-seat owner must
+    // not decrypt the project's shared env into a container they control.
+    if (seat && roleAtLeast(seat.role, 'member')) kept.push(link);
   }
   return kept;
 }

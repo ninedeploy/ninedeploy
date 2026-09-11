@@ -135,6 +135,29 @@ describe('service tag routes', () => {
       expect(res.json().error.message).toMatch(/labels are not visible/);
     });
 
+    it('rejects tagging into a project where the caller only holds a viewer seat (r095)', async () => {
+      // The attack: own a service (workspace 4), hold a viewer seat in the
+      // victim's workspace 10, tag the service into victim project 3, deploy —
+      // the pipeline would decrypt project 3's shared secrets into it.
+      const app = await appWith({
+        findFirst: { services: svcRow({ id: 1, ownerUserId: 7 }) },
+        findMany: {
+          workspaceMembers: [...seat, { id: 2, workspaceId: 10, userId: 7, role: 'viewer' }],
+          projects: [{ id: 3, workspaceId: 10 }],
+        },
+      });
+      const res = await app.inject({
+        method: 'PUT',
+        url: '/services/1/tags',
+        headers: { ...asMember(), 'content-type': 'application/json' },
+        // Workspace 10 itself is taggable with a viewer seat (visibility); it is
+        // the project link — the secrets sink — that needs member+.
+        payload: { projectIds: [3], workspaceIds: [4, 10], labelIds: [] },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error.message).toMatch(/projects are not visible/);
+    });
+
     it('accepts a set the member is entitled to', async () => {
       const app = await appWith({
         findFirst: { services: svcRow({ id: 1, ownerUserId: 7 }) },
