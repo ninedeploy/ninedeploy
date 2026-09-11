@@ -3,11 +3,12 @@ packages:
   - "packages/*"
   - "website"
 
-# Force js-yaml >= 4.3.1 (CVE-2026-59870 / GHSA-5p4m-2wfm-xmqj): pm2 pins the
-# vulnerable 4.3.0 exactly. ^4.3.1 resolves to 4.3.1 — the minimal patched
-# version — without silently jumping pm2's dependency to the 5.x major.
+# Force js-yaml >= 4.3.2: pm2 pins the vulnerable 4.3.0 exactly. 4.3.1 fixed
+# CVE-2026-59870 / GHSA-5p4m-2wfm-xmqj; 4.3.2 fixes the merge-key CPU
+# exhaustion (r098) — reachable here, since user compose files and repo
+# ninedeploy.yml manifests are parsed with it. Stays on the 4.x major.
 overrides:
-  js-yaml: "^4.3.1"
+  js-yaml: "^4.3.2"
   # esbuild <=0.24.2 (GHSA-67mh-4wv8-2f99) arrives via the deprecated
   # @esbuild-kit toolchain under drizzle-kit (0.18.20). Pin the exact patched
   # version drizzle-kit already uses (0.25.12) — not a bare >= range, which
@@ -34,6 +35,10 @@ overrides:
   # MCP SDK's express → body-parser edge, all on the 6.x line. Single pin is
   # safe: only one qs instance exists in the tree.
   qs: "6.16.0"
+  # hono <4.13.5 (GHSA-gqvv-2mrq-wpjv, GHSA-g6gw-c38x-mqfc, GHSA-crvj-82cr-hjcx)
+  # arrives via the MCP SDK's @hono/node-server. Not reachable today — the MCP
+  # server is stdio-only — so this is defence in depth (r098).
+  hono: "^4.13.5"
 
 # Dependencies allowed to run install scripts (pnpm 11 blocks these by default).
 # esbuild ships its native binary via postinstall; Vite/tsx need it.
