@@ -1,4 +1,5 @@
-import { type RefObject, useEffect, useMemo, useRef } from 'react';
+import { type RefObject, useEffect, useMemo, useRef, useState } from 'react';
+import { Download } from 'lucide-react';
 import { useDeployLogs } from '../../lib/useDeployLogs.js';
 import { PipelineStepper, type StageId } from '../../components/PipelineStepper.js';
 
@@ -16,6 +17,18 @@ export function LogPanel({
   const ref = useRef<HTMLPreElement>(null);
   useAutoScroll(ref, lines);
   const empty = useMemo(() => deploymentId == null, [deploymentId]);
+  const [downloading] = useState(false);
+
+  const downloadLog = () => {
+    if (!lines || downloading) return;
+    const blob = new Blob([lines], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `deploy-${deploymentId}.log`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const handleStageClick = (stageId: StageId) => {
     if (!ref.current || !lines) return;
@@ -51,14 +64,27 @@ export function LogPanel({
             <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/70" />
             <span className="ml-2 font-mono text-[11px] text-slate-400">deployment-{deploymentId}.log</span>
           </div>
-          {/* Both stream states render across the open/closed log tests; the
-              instrumenter cannot see these ternaries. */}
-          {/* v8 ignore start */}
-          <span className={open ? 'flex items-center gap-1.5 text-[10px] text-emerald-400' : 'flex items-center gap-1.5 text-[10px] text-slate-500'}>
-            <span className={open ? 'h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse' : 'h-1.5 w-1.5 rounded-full bg-slate-600'} />
-            {open ? 'Following live output' : 'Stream closed'}
-          </span>
-          {/* v8 ignore stop */}
+          <div className="flex items-center gap-2">
+            {lines && lines.length > 0 && (
+              <button
+                type="button"
+                onClick={downloadLog}
+                disabled={downloading}
+                className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-slate-400 transition hover:bg-white/5 hover:text-slate-200"
+                title="Download build log"
+              >
+                <Download size={11} /> {downloading ? '…' : 'Download'}
+              </button>
+            )}
+            {/* Both stream states render across the open/closed log tests; the
+                instrumenter cannot see these ternaries. */}
+            {/* v8 ignore start */}
+            <span className={open ? 'flex items-center gap-1.5 text-[10px] text-emerald-400' : 'flex items-center gap-1.5 text-[10px] text-slate-500'}>
+              <span className={open ? 'h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse' : 'h-1.5 w-1.5 rounded-full bg-slate-600'} />
+              {open ? 'Following live output' : 'Stream closed'}
+            </span>
+            {/* v8 ignore stop */}
+          </div>
         </div>
         <pre ref={ref} className="h-[26rem] overflow-auto p-4 font-mono text-xs leading-5 text-slate-300 selection:bg-blue-500/30">
           {/* Every lines/open combination renders across the log tests; the

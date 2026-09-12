@@ -617,6 +617,8 @@ export interface NineDeployClient {
     remove: (serviceId: number, deploymentId: number) => Promise<{ ok: boolean; id: number }>;
     /** Build-config + env-key diff against the previous deployment. */
     configDiff: (serviceId: number, deploymentId: number) => Promise<{ deploymentId: number; previousDeploymentId: number | null; changed: boolean; diff: string }>;
+    /** Build log download URL (serves the raw log file as an attachment). */
+    logDownloadUrl: (serviceId: number, deploymentId: number) => string;
     /**
      * Promote: deploy ANOTHER service at this service's exact running
      * commit — the staging → production lane hop. Both services must
@@ -1563,6 +1565,8 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
           `/v1/services/${serviceId}/promote`,
           { targetServiceId },
         ),
+      logDownloadUrl: (serviceId, deploymentId) =>
+        `/v1/services/${serviceId}/deploys/${deploymentId}/logs/download`,
     },
     domains: {
       list: (serviceId) => get<Domain[]>(`/v1/services/${serviceId}/domains`),

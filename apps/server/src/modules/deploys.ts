@@ -1,4 +1,7 @@
 import { spawn } from 'node:child_process';
+import { createReadStream, existsSync } from 'node:fs';
+import path from 'node:path';
+import { config } from '../config.js';
 import { and, asc, desc, eq, inArray, isNotNull, lt, notInArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { deployments, services } from '@ninedeploy/db';
@@ -387,6 +390,25 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
       changed: ops.some((op) => op.kind !== 'same'),
       diff: renderDiff(ops),
     };
+  });
+
+  // Download the raw build log as a file attachment.
+  app.get('/:id/deploys/:depId/logs/download', { onRequest: [app.authenticate] }, async (req, reply) => {
+    const id = num((req.params as { id: string }).id);
+    const depId = num((req.params as { depId: string }).depId);
+    await loadServiceForUser(app.db, id, req.user!);
+    const dep = await app.db.query.deployments.findFirst({
+      where: and(eq(deployments.id, depId), eq(deployments.serviceId, id)),
+    });
+    if (!dep) throw notFound('Deployment not found');
+
+    const logPath = path.join(config.paths.logsDir, `${depId}.log`);
+    if (!existsSync(logPath)) throw notFound('Build log not found');
+    const stream = createReadStream(logPath);
+    reply
+      .header('Content-Type', 'text/plain; charset=utf-8')
+      .header('Content-Disposition', `attachment; filename="deploy-${depId}.log"`);
+    return reply.send(stream);
   });
 
   // Live log stream over WebSocket. Browser auth travels in a subprotocol header.
