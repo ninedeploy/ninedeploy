@@ -1,4 +1,4 @@
-export const VERSION = '0.8.3';
+export const VERSION = '0.8.4';
 
 export interface ChangelogEntry {
   version: string;
@@ -9,7 +9,7 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
-    version: '0.8.3',
+    version: '0.8.4',
     date: '2026-09-11',
     title: 'Bitbucket End-to-End, Quote-Aware Hooks, Agent Op Timeouts',
     changes: [

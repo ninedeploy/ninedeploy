@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8.4] - 2026-09-13
+
+> Developer-experience polish: bulk .env import, build log download,
+> and the last reliability fixes for the static/railpack build
+> dispatch.
+
+### Added
+
+- **`.env` bulk import.** `POST /v1/services/:id/env/import` accepts a
+  `.env`-formatted string and upserts each variable — overwrite on key
+  collision, per-line errors reported without failing the batch. The
+  parser handles `export` prefixes, quoted values, `#` comments and
+  blank lines. SDK: `client.env.import(serviceId, content)`.
+- **Build log download.** The deploy log panel gains a **Download**
+  button that saves the current build log as a `.log` file using the
+  browser Blob API — no server round-trip needed since the log content
+  is already in memory from the WebSocket stream.
+- **SDK coverage** for `deploys.logDownloadUrl`, `env.import` and
+  `domains.dnsCheck` client methods.
+
+### Fixed
+
+- **Static build dispatch restored** after being silently overwritten
+  by the concurrent railpack edit — static-pack services were falling
+  through to the nixpacks/Dockerfile path instead of the nginx:alpine
+  path.
+
+---
+
 ## [0.8.3] - 2026-09-12
 
 > Three reliability fixes for the new build surfaces added in 0.8.2,
