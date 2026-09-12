@@ -1905,3 +1905,11 @@ describe('request timeout', () => {
     expect(seen).toBeUndefined();
   });
 });
+
+describe('logDownloadUrl', () => {
+  it('builds the download URL without a network call', () => {
+    const client = createClient({ baseUrl: 'http://api.test', fetch: async () => { throw new Error('no fetch expected'); } });
+    const url = client.deploys.logDownloadUrl(1, 42);
+    expect(url).toBe('/v1/services/1/deploys/42/logs/download');
+  });
+});
