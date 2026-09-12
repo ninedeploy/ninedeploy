@@ -790,6 +790,14 @@ describe('createClient', () => {
       await client.projectEnv.remove(6, 7);
       expect(last(calls)).toMatchObject({ url: '/v1/projects/6/env/7', init: { method: 'DELETE' } });
     });
+
+    it('imports a .env file via the bulk import endpoint', async () => {
+      const { fetchMock, calls } = makeFetch(() => ok({ imported: 2, skipped: 0, errors: [] }));
+      const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+      const res = await client.env.import(1, 'A=1\nB=2');
+      expect(last(calls)).toMatchObject({ url: '/v1/services/1/env/import', init: { method: 'POST' } });
+      expect(res).toEqual({ imported: 2, skipped: 0, errors: [] });
+    });
   });
 
   describe('activity', () => {
