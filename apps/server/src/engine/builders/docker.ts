@@ -9,6 +9,7 @@ import { ensureDockerImage, pullDockerImage } from '../../lib/dockerPull.js';
 import { NETWORK } from '../proxy.js';
 import { ensureServiceBridge } from '../../lib/serviceBridge.js';
 import { buildWithBuildKit } from './buildkit.js';
+import { buildStaticSite } from './staticSite.js';
 import { buildProbeUrl, safeProbePath } from '../../lib/probeUrl.js';
 import { writeSecretFile, type SecretFile } from '../../lib/secretFile.js';
 import { repoRelative, resolveInRepo } from '../../lib/repoPath.js';
@@ -477,7 +478,16 @@ export const dockerBuilder: Builder = {
       const explicitDockerfilePath = !!buildConfig?.dockerfilePath?.trim();
       const hasDockerfile = existsSync(resolveInRepo(workDir, buildConfig?.baseDir, buildConfig?.dockerfilePath || 'Dockerfile'));
       let useNixpacks = pack === 'nixpacks' || (pack === 'auto' && !hasDockerfile);
-      if (pack === 'railpack') {
+      if (pack === 'static') {
+        // Static build pack: host-executed build commands, then the output
+        // dir ships inside nginx:alpine. The runtime/health/routing phases
+        // below run unchanged — only the build differs.
+        await buildStaticSite(
+          { workDir, baseDir: path.join(workDir, baseDir), buildConfig, env, log },
+          target,
+        );
+        builtStatic = true;
+      } else if (pack === 'railpack') {
         // Railpack auto-detects the stack and builds via its own BuildKit
         // connection — no host install/build commands run for it, so the
         // dispatch order places it before the nixpacks/Dockerfile checks.
