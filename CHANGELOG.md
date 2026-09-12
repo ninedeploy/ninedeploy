@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8.3] - 2026-09-12
+
+> Three reliability fixes for the new build surfaces added in 0.8.2,
+> plus a Railpack build pack option for operators who prefer Railway's
+> builder.
+
+### Added
+
+- **Railpack build pack (optional).** The installer provisions the
+  checksum-verified Railpack binary as an optional second source
+  builder; operators opt in per service via the build pack select.
+  Railpack auto-detects the stack and builds via its own BuildKit
+  connection — NineDeploy passes the image name and runtime env only.
+
+### Fixed
+
+- **Static build dispatch restored** after being silently overwritten
+  by the concurrent railpack edit — static-pack services were falling
+  through to the nixpacks/Dockerfile path instead of the nginx:alpine
+  path.
+- **Lifecycle hook commands are tokenized quote-aware** — the old
+  whitespace split left quote bytes in argv, breaking the documented
+  compound form `sh -c "a && b"`.
+- **Agent operations get a 595 s timeout** with process-group kill —
+  stalled git fetches no longer hold `.git` locks and fail the next op.
+- **Managed Mongo sizes report real numbers** (the stats call now
+  authenticates with the root credentials).
+- **Redis/Valkey restores stop the container before copying `dump.rdb`**
+  (graceful shutdown SAVEs would overwrite the staged backup).
+- **Postgres restores run `psql` with `ON_ERROR_STOP`** (partial dumps
+  exited 0).
+- **`localhost/team/app` image references resolve against the local
+  registry** (Docker's own first-segment rule).
+- **The static nginx conf enables gzip and adds immutable caching** for
+  hashed build assets — previously every visitor downloaded
+  uncompressed, uncached files.
+
+---
+
 ## [0.8.2] - 2026-09-12
 
 > Answering "why doesn't my domain load?" before it is asked: every
