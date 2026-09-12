@@ -467,6 +467,21 @@ export const upsertEnvVar = z.object({
 });
 export type UpsertEnvVarInput = z.input<typeof upsertEnvVar>;
 
+/** .env bulk import — parse the content server-side and upsert each var. */
+export const envImport = z.object({
+  content: z.string().min(1).max(100_000),
+  isSecret: z.boolean().optional(),
+  overwriteExisting: z.boolean().optional(),
+});
+export type EnvImportInput = z.infer<typeof envImport>;
+
+export const envImportResult = z.object({
+  imported: z.number().int(),
+  skipped: z.number().int(),
+  errors: z.array(z.object({ line: z.number().int(), message: z.string() })),
+});
+export type EnvImportResult = z.infer<typeof envImportResult>;
+
 export const envVar = z.object({
   id: z.number().int(),
   key: z.string(),

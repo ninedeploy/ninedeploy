@@ -1,10 +1,38 @@
 import { and, eq, like } from 'drizzle-orm';
 import { envVars, services } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
-import { upsertEnvVar } from '@ninedeploy/schemas';
+import { envImport, upsertEnvVar } from '@ninedeploy/schemas';
 import { decrypt, encrypt } from '../lib/crypto.js';
 import { assertServiceRole, assertWorkspaceRole, loadProjectForUser, loadServiceForUser } from '../lib/resourceAccess.js';
 import { badRequest, notFound, parseId as num } from '../lib/errors.js';
+import { audit } from '../lib/audit.js';
+
+/**
+ * Parse a .env-formatted string into key/value pairs. Handles `export`
+ * prefixes, single/double-quoted values, `#` comments, and blank lines.
+ * Pure and exported for testing.
+ */
+export function parseDotEnv(content: string): Array<{ key: string; value: string; line: number }> {
+  const out: Array<{ key: string; value: string; line: number }> = [];
+  const lines = content.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!.trim();
+    if (!line || line.startsWith('#')) continue;
+    const stripped = line.startsWith('export ') ? line.slice(7).trim() : line;
+    const eq = stripped.indexOf('=');
+    if (eq <= 0) continue;
+    const key = stripped.slice(0, eq).trim();
+    let value = stripped.slice(eq + 1).trim();
+    if (!key || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    // Strip matching surrounding quotes.
+    if ((value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
+        (value.startsWith("'") && value.endsWith("'") && value.length >= 2)) {
+      value = value.slice(1, -1);
+    }
+    out.push({ key, value, line: i + 1 });
+  }
+  return out;
+}
 
 function serialize(e: typeof envVars.$inferSelect) {
   return {
@@ -99,6 +127,52 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
     await assertServiceRole(app.db, target, req.user!, 'member');
     await app.db.delete(envVars).where(and(eq(envVars.id, varId), eq(envVars.serviceId, id)));
     return { ok: true };
+  });
+
+  /**
+   * Bulk import from a .env-formatted string. Parses the content, upserts
+   * each variable (overwrite on key collision), and returns a summary.
+   * `member` floor — same as the individual upsert route.
+   */
+  app.post('/:id/env/import', async (req) => {
+    const id = num((req.params as { id: string }).id);
+    const input = envImport.parse(req.body ?? {});
+    const svc = await loadServiceForUser(app.db, id, req.user!);
+    await assertServiceRole(app.db, svc, req.user!, 'member');
+
+    const pairs = parseDotEnv(input.content);
+    let imported = 0;
+    const errors: Array<{ line: number; message: string }> = [];
+
+    for (const { key, value, line } of pairs) {
+      try {
+        const existing = await app.db.query.envVars.findFirst({
+          where: and(eq(envVars.serviceId, id), eq(envVars.key, key)),
+        });
+        if (existing) {
+          await app.db
+            .update(envVars)
+            .set({ valueEncrypted: encrypt(value), isSecret: input.isSecret ?? existing.isSecret })
+            .where(and(eq(envVars.id, existing.id), eq(envVars.serviceId, id)));
+        } else {
+          await app.db.insert(envVars).values({
+            serviceId: id,
+            scope: 'service',
+            scopeKey: id,
+            key,
+            valueEncrypted: encrypt(value),
+            isSecret: input.isSecret ?? false,
+          });
+        }
+        imported++;
+      } catch (err) {
+        errors.push({ line: line, message: err instanceof Error ? err.message : String(err) });
+      }
+    }
+
+    const skipped = pairs.length - imported - errors.length;
+    void audit(app.db, req.user!.id, 'env.import', `${imported} imported, ${errors.length} errors`);
+    return { imported, skipped: skipped, errors };
   });
 };
 

@@ -1114,6 +1114,8 @@ export interface NineDeployClient {
     create: (serviceId: number, input: UpsertEnvVarInput) => Promise<EnvVar>;
     update: (serviceId: number, varId: number, input: UpsertEnvVarInput) => Promise<EnvVar>;
     remove: (serviceId: number, varId: number) => Promise<void>;
+    /** Bulk import from a .env-formatted string. Returns imported/skipped counts. */
+    import: (serviceId: number, content: string) => Promise<{ imported: number; skipped: number; errors: Array<{ line: number; message: string }> }>;
     /** Cross-scope key search: where a given env key is defined. */
     search: (q: string) => Promise<{ results: Array<{ key: string; isSecret: boolean; scope: string; serviceId: number | null; serviceName: string | null }> }>;
   };
@@ -1957,6 +1959,12 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       remove: async (serviceId, varId) => {
         await request(`/v1/services/${serviceId}/env/${varId}`, { method: 'DELETE' });
       },
+      import: (serviceId, content) =>
+        send<{ imported: number; skipped: number; errors: Array<{ line: number; message: string }> }>(
+          'POST',
+          `/v1/services/${serviceId}/env/import`,
+          { content },
+        ),
       search: (q) =>
         get<{ results: Array<{ key: string; isSecret: boolean; scope: string; serviceId: number | null; serviceName: string | null }> }>(
           `/v1/env/search?q=${encodeURIComponent(q)}`,
