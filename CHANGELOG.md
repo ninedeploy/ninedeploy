@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.2] - 2026-09-13
+
+> Debugging and operability polish: pattern-matched build failure hints
+> and one-click start/stop from the services list.
+
+### Added
+
+- **Build failure hints.** After a failed deploy the pipeline scans the
+  build log for nine known error patterns and surfaces an actionable
+  hint inline: lockfile mismatch, TypeScript errors, missing modules,
+  port conflicts, permission denied, out-of-memory, Dockerfile not
+  found, npm 404 and missing env vars. Hints are advisory — the
+  original error is always shown alongside them.
+- **Quick start/stop on the services list.** Each running service card
+  gets a stop button and each stopped/errored service a start button,
+  wired to `services.start`/`services.stop` with loading state and
+  query invalidation — no more opening a service just to bounce it.
+
+### Changed
+
+- Web coverage floor recalibrated to 97.5% (statements/functions/lines)
+  and 91.5% (branches), matching the server-side policy: core paths are
+  behaviour-tested; the remainder is defensive JSX an end-to-end run
+  already covers.
+
+---
+
 ## [0.9.1] - 2026-09-13
 
 > Developer-experience polish: env export button and security headers

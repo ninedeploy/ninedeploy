@@ -1,4 +1,4 @@
-export const VERSION = '0.9.1';
+export const VERSION = '0.9.2';
 
 export interface ChangelogEntry {
   version: string;
@@ -9,7 +9,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
-    version: '0.9.1',
+    version: '0.9.2',
+    date: '2026-09-13',
+    title: 'Build Failure Hints, Quick Start/Stop',
+    changes: [
+      'After a failed deploy the pipeline scans the build log for nine known error patterns and surfaces an actionable hint inline: lockfile mismatch, TypeScript errors, missing modules, port conflicts, permission denied, out-of-memory, Dockerfile not found, npm 404 and missing env vars. Hints are advisory — the original error is always shown alongside them.',
+      'The services list gains one-click start/stop: running cards get a stop button, stopped/errored cards a start button, wired to services.start/stop with loading state and query invalidation — no more opening a service just to bounce it.',
+    ],
+  },
+  {
+    version: '0.8.1',
     date: '2026-09-11',
     title: 'Bitbucket End-to-End, Quote-Aware Hooks, Agent Op Timeouts',
     changes: [
