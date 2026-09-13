@@ -16,7 +16,12 @@ import { run } from '../../src/lib/exec.js';
 
 describe('renderStaticConf / renderStaticDockerfile', () => {
   it('spa conf falls missing paths back to index.html', () => {
-    expect(renderStaticConf(true)).toContain('try_files $uri $uri/ /index.html;');
+    const conf = renderStaticConf(true);
+    expect(conf).toContain('try_files $uri $uri/ /index.html;');
+    expect(conf).toContain('X-Frame-Options');
+    expect(conf).toContain('X-Content-Type-Options');
+    expect(conf).toContain('Referrer-Policy');
+    expect(conf).toContain('Permissions-Policy');
   });
 
   it('non-spa conf 404s missing paths', () => {
