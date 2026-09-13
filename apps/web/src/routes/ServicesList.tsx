@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { Cpu, GitBranch, HardDrive, Layers, MemoryStick, Plus, Search, Server } from 'lucide-react';
+import { Cpu, GitBranch, HardDrive, Layers, MemoryStick, Play, Plus, Search, Server, Square } from 'lucide-react';
 import { Link } from 'react-router';
 import { api } from '../lib/api.js';
 import { useTagScope } from '../lib/projects.js';
@@ -20,6 +20,21 @@ export function ServicesList() {
   // Empty arrays mean "no constraint" — the server returns every service
   // the caller is allowed to see, just like the unfiltered legacy mode.
   const { workspaceIds, projectIds, labelIds } = useTagScope();
+
+  // Quick start/stop toggle on service cards — avoids navigating to the
+  // detail page just to restart a stale service.
+  const qc = useQueryClient();
+  const [togglingId, setTogglingId] = useState<number | null>(null);
+  const toggleService = useMutation({
+    mutationFn: ({ id, start }: { id: number; start: boolean }) =>
+      start ? api.services.start(id) : api.services.stop(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['services', workspaceIds, projectIds, labelIds] });
+      setTogglingId(null);
+    },
+    onError: () => setTogglingId(null),
+  });
+
   const buildQuery = (): string => {
     const params: string[] = [];
     if (workspaceIds.length > 0) params.push(`tagWorkspaceIds=${workspaceIds.join(',')}`);
@@ -243,6 +258,28 @@ export function ServicesList() {
                       </div>
                     </Card>
                     </Link>
+                    {isRunning && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleService.mutate({ id: s.id, start: false }); }}
+                        disabled={togglingId === s.id}
+                        className="absolute bottom-3 left-3 z-10 rounded-lg bg-white/[0.06] p-1.5 text-slate-400 ring-1 ring-inset ring-white/10 transition hover:bg-white/[0.1] hover:text-rose-300"
+                        title="Stop service"
+                      >
+                        <Square size={12} />
+                      </button>
+                    )}
+                    {!isRunning && s.status === 'stopped' && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleService.mutate({ id: s.id, start: true }); }}
+                        disabled={togglingId === s.id}
+                        className="absolute bottom-3 left-3 z-10 rounded-lg bg-white/[0.06] p-1.5 text-slate-400 ring-1 ring-inset ring-white/10 transition hover:bg-white/[0.1] hover:text-emerald-300"
+                        title="Start service"
+                      >
+                        <Play size={12} />
+                      </button>
+                    )}
                     <ServiceDomainLauncher serviceId={s.id} serviceName={s.name} className="absolute bottom-3 right-3 z-10" />
                   </div>
                 );
