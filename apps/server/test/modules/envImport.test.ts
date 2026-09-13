@@ -97,3 +97,35 @@ describe('POST /:id/env/import', () => {
     expect([200, 403]).toContain(res.statusCode);
   });
 });
+
+describe('GET /:id/env/export', () => {
+  it('exports non-secret vars as .env content', async () => {
+    const db = createFakeDb({
+      findFirst: { services: svcRow() },
+      findMany: {
+        envVars: [
+          { id: 1, key: 'DB_URL', valueEncrypted: 'enc:pg://x', isSecret: false },
+          { id: 2, key: 'API_KEY', valueEncrypted: 'enc:abc', isSecret: true },
+        ],
+      },
+    });
+    const app = await buildTestApp({ db });
+    await app.register(envRoutes);
+    const res = await app.inject({ method: 'GET', url: '/1/env/export', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().content).toContain('DB_URL=pg://x');
+    expect(res.json().content).toContain('# API_KEY=<secret>');
+    expect(res.json().count).toBe(1);
+  });
+
+  it('returns empty content when no env vars exist', async () => {
+    const db = createFakeDb({
+      findFirst: { services: svcRow() },
+    });
+    const app = await buildTestApp({ db });
+    await app.register(envRoutes);
+    const res = await app.inject({ method: 'GET', url: '/1/env/export', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ content: '', count: 0 });
+  });
+});
