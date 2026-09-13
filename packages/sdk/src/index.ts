@@ -1118,6 +1118,8 @@ export interface NineDeployClient {
     remove: (serviceId: number, varId: number) => Promise<void>;
     /** Bulk import from a .env-formatted string. Returns imported/skipped counts. */
     import: (serviceId: number, content: string) => Promise<{ imported: number; skipped: number; errors: Array<{ line: number; message: string }> }>;
+    /** Export non-secret env vars as a .env-formatted string (admin floor). */
+    export: (serviceId: number) => Promise<{ content: string; count: number }>;
     /** Cross-scope key search: where a given env key is defined. */
     search: (q: string) => Promise<{ results: Array<{ key: string; isSecret: boolean; scope: string; serviceId: number | null; serviceName: string | null }> }>;
   };
@@ -1969,6 +1971,8 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
           `/v1/services/${serviceId}/env/import`,
           { content },
         ),
+      export: (serviceId) =>
+        get<{ content: string; count: number }>(`/v1/services/${serviceId}/env/export`),
       search: (q) =>
         get<{ results: Array<{ key: string; isSecret: boolean; scope: string; serviceId: number | null; serviceName: string | null }> }>(
           `/v1/env/search?q=${encodeURIComponent(q)}`,

@@ -798,6 +798,14 @@ describe('createClient', () => {
       expect(last(calls)).toMatchObject({ url: '/v1/services/1/env/import', init: { method: 'POST' } });
       expect(res).toEqual({ imported: 2, skipped: 0, errors: [] });
     });
+
+    it('exports non-secret env vars as .env content', async () => {
+      const { fetchMock, calls } = makeFetch(() => ok({ content: 'DB_URL=postgres://x\n', count: 1 }));
+      const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+      const res = await client.env.export(1);
+      expect(last(calls)).toMatchObject({ url: '/v1/services/1/env/export', init: { method: 'GET' } });
+      expect(res.count).toBe(1);
+    });
   });
 
   describe('activity', () => {

@@ -174,6 +174,30 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
     void audit(app.db, req.user!.id, 'env.import', `${imported} imported, ${errors.length} errors`);
     return { imported, skipped: skipped, errors };
   });
+
+  /**
+   * Export non-secret env vars as a .env-formatted string for backup or
+   * migration. Secret values are exported as empty strings (the key name is
+   * preserved so the operator knows what to re-enter). `admin` floor — the
+   * output contains decrypted plain-text values.
+   */
+  app.get('/:id/env/export', async (req) => {
+    const id = num((req.params as { id: string }).id);
+    const svc = await loadServiceForUser(app.db, id, req.user!);
+    await assertServiceRole(app.db, svc, req.user!, 'admin');
+    const rows = await app.db.query.envVars.findMany({
+      where: eq(envVars.serviceId, id),
+      orderBy: (e, { asc }) => [asc(e.key)],
+    });
+    const lines = rows
+      .filter((r) => !r.isSecret)
+      .map((r) => `${r.key}=${decrypt(r.valueEncrypted)}`);
+    for (const r of rows.filter((r) => r.isSecret)) {
+      lines.push(`# ${r.key}=<secret>`);
+    }
+    const body = lines.length > 0 ? lines.join('\n') + '\n' : '';
+    return { content: body, count: rows.filter((r) => !r.isSecret).length };
+  });
 };
 
 /** Shared (project-scope) env vars. Mounted under /projects. */
