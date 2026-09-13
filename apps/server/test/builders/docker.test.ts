@@ -1093,4 +1093,22 @@ describe('dockerBuilder.buildAndRun — static build pack', () => {
       rmSync(workDir, { recursive: true, force: true });
     }
   });
+
+  it('runs railpack build with the image name and env for railpack buildPack', async () => {
+    h.run.mockResolvedValue(undefined);
+    const ctx = makeCtx({
+      service: { slug: 'web', image: null, port: 3000, repoUrl: 'https://github.com/acme/web', healthPath: '/', cpuShares: 0, memLimitMb: 0 },
+      workDir: '/work/web',
+      buildConfig: { buildPack: 'railpack', baseDir: '/' },
+    });
+
+    await dockerBuilder.buildAndRun(ctx as never);
+
+    const rpCall = h.run.mock.calls.find((c) => c[0] === 'railpack');
+    expect(rpCall).toBeDefined();
+    const rpArgs = rpCall![1] as string[];
+    expect(rpArgs).toContain('build');
+    expect(rpArgs).toContain('--name');
+    expect(rpArgs).toContain('ninedeploy/web:abcdef1');
+  });
 });

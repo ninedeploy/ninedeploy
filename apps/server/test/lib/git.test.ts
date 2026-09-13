@@ -1,4 +1,4 @@
-﻿import { existsSync, mkdirSync, rmSync, } from 'node:fs';
+﻿import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,6 +25,7 @@ function makeGit() {
     pull: vi.fn(async () => undefined),
     raw: vi.fn(async () => '0123456789abcdef\n'),
     clone: vi.fn(async () => undefined),
+    submoduleUpdate: vi.fn(async () => undefined),
   };
 }
 
@@ -300,5 +301,28 @@ describe('checkoutCommit — edge cases', () => {
 
     const resolved = await checkoutCommit('https://github.com/ada/repo.git', 'main', undefined, dir, vi.fn());
     expect(resolved).toBe('');
+  });
+
+  it('initialises submodules when the checkout ships a .gitmodules', async () => {
+    const dir = existingCheckout('submodule-repo');
+    writeFileSync(path.join(dir, '.gitmodules'), '[submodule "lib"]\n\tpath = lib\n\turl = https://github.com/acme/lib.git\n');
+    const git = makeGit();
+    const subUpdate = vi.fn(async () => undefined);
+    git.submoduleUpdate = subUpdate;
+    gitState.simpleGit.mockImplementation(() => git);
+
+    await checkoutCommit('https://github.com/ada/repo.git', 'main', undefined, dir, vi.fn());
+    expect(subUpdate).toHaveBeenCalledWith(['--init', '--recursive']);
+  });
+
+  it('skips submodule init when the checkout has no .gitmodules', async () => {
+    const dir = existingCheckout('no-submodules');
+    const git = makeGit();
+    const subUpdate = vi.fn(async () => undefined);
+    git.submoduleUpdate = subUpdate;
+    gitState.simpleGit.mockImplementation(() => git);
+
+    await checkoutCommit('https://github.com/ada/repo.git', 'main', undefined, dir, vi.fn());
+    expect(subUpdate).not.toHaveBeenCalled();
   });
 });

@@ -135,6 +135,13 @@ export async function checkoutCommit(
     }
     if (sha) await git.checkout(sha);
 
+    // Submodules: if the repo ships a `.gitmodules`, init + fetch them so
+    // builds that reference submodule paths don't fail on empty directories.
+    if (existsSync(path.join(dir, '.gitmodules'))) {
+      sink('Initialising git submodules …');
+      await git.submoduleUpdate(['--init', '--recursive']);
+    }
+
     const resolved = (await git.raw(['log', '-1', '--format=%H'])).trim() || sha || '';
     sink(`Checked out ${resolved.slice(0, 7)} on ${branch}`);
     return resolved;
