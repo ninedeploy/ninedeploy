@@ -138,6 +138,27 @@ export function EnvCard({ serviceId }: { serviceId: number }) {
           <div className="flex items-center gap-2">
             <button
               type="button"
+              onClick={() => {
+                const content = (env.data ?? [])
+                  .filter((v) => !v.isSecret)
+                  .map((v) => `${v.key}=${v.value}`)
+                  .join('\n') + '\n';
+                const blob = new Blob([content], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = '.env';
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              disabled={(env.data?.length ?? 0) === 0}
+              className="flex items-center gap-1.5 rounded-lg bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400 ring-1 ring-inset ring-white/10 transition hover:bg-white/[0.08] hover:text-slate-200 disabled:opacity-30"
+              title="Download non-secret env vars as a .env file"
+            >
+              <FileCode size={12} /> Export
+            </button>
+            <button
+              type="button"
               onClick={() => (rawMode ? setRawMode(false) : enterRaw())}
               className="flex items-center gap-1.5 rounded-lg bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400 ring-1 ring-inset ring-white/10 transition hover:bg-white/[0.08] hover:text-slate-200"
               title={rawMode ? 'Back to the variable table' : 'Paste or edit the whole .env file as text'}
