@@ -6,6 +6,7 @@ import { buildConfigs, databaseAttachments, databases, type DB, deployments, dom
 import { config } from '../config.js';
 import { decrypt } from '../lib/crypto.js';
 import { checkoutCommit, type CloneCreds } from '../lib/git.js';
+import { detectDeployHints } from '../lib/deployHints.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
 import { remoteDeploySupported, remoteDeployUnsupportedReason } from '../lib/remoteDeploy.js';
 import { agentOp } from '../lib/agentClient.js';
@@ -777,6 +778,10 @@ export async function runDeployment(
     const cancelled = err instanceof DeploymentCancelled;
     log(cancelled ? '⏹ Deployment cancelled' : `✗ Deployment failed: ${msg(err)}`);
     log('##[stage:ERROR:failed]');
+
+    // Scan the log for known error patterns and surface actionable hints.
+    const hints = detectDeployHints(logBus.read(deploymentId));
+    for (const h of hints) log(`💡 ${h.label}: ${h.hint}`);
 
     // Clean up the failed/cancelled NEW runtime (if one was created).
     if (runtime) await builder.stop(runtime.runtimeId).catch(() => undefined);
