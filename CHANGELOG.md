@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.0] - 2026-09-13
+
+> The build-matrix completion release: Railpack and Git submodule
+> support round out the source-build story, and custom domain watch
+> paths can now be declared from the `.ninedeploy` manifest.
+
+### Added
+
+- **Railpack build pack.** The installer provisions the checksum-verified
+  Railpack binary as an optional source builder; operators opt in per
+  service via the build pack select. Railpack auto-detects the stack
+  and builds via its own BuildKit connection — NineDeploy passes the
+  image name and runtime env only.
+- **Git submodule init.** Repos shipping a `.gitmodules` file now have
+  their submodules initialised recursively after checkout, so builds
+  that reference submodule paths no longer fail on empty directories.
+- **`watch` manifest section wiring.** A `.ninedeploy` watch section
+  syncs watch paths to all active webhooks for the service
+  (newline-joined, matching the webhook storage format). An empty
+  paths list is a no-op.
+- **`.env` export.** `GET /v1/services/:id/env/export` returns
+  non-secret env vars as `.env`-formatted content for backup or
+  migration (admin floor; secret values stay masked).
+
+### Fixed
+
+- **Static build dispatch restored** after being silently overwritten
+  by a concurrent edit — static-pack services were falling through to
+  the nixpacks/Dockerfile path instead of the nginx:alpine path.
+- **Agent operations get a 595 s timeout** with process-group kill —
+  stalled `git fetch` no longer holds `.git` locks and fail the next
+  op. Signal-killed children report the signal instead of "code null".
+
+---
+
 ## [0.8.4] - 2026-09-13
 
 > Developer-experience polish: bulk .env import, build log download,
