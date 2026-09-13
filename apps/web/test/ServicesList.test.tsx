@@ -160,4 +160,24 @@ describe('ServicesList', () => {
     fireEvent.change(searchInput, { target: { value: 'no-such-thing' } });
     expect(screen.getByText('No matching services')).toBeInTheDocument();
   });
+
+  it('shows a stop button on running services and calls the API on click', async () => {
+    mockOf(api.services.list).mockResolvedValue([
+      { id: 1, name: 'web', slug: 'web', type: 'docker', branch: 'main', port: 3000, status: 'running' },
+    ] as never);
+    renderWithProviders(<ServicesList />);
+    const stopBtn = await screen.findByTitle('Stop service');
+    fireEvent.click(stopBtn);
+    await waitFor(() => expect(api.services.stop).toHaveBeenCalledWith(1));
+  });
+
+  it('shows a start button on stopped services and calls the API on click', async () => {
+    mockOf(api.services.list).mockResolvedValue([
+      { id: 1, name: 'web', slug: 'web', type: 'docker', branch: 'main', port: 3000, status: 'stopped' },
+    ] as never);
+    renderWithProviders(<ServicesList />);
+    const startBtn = await screen.findByTitle('Start service');
+    fireEvent.click(startBtn);
+    await waitFor(() => expect(api.services.start).toHaveBeenCalledWith(1));
+  });
 });
