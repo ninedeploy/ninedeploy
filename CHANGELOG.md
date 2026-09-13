@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.1] - 2026-09-13
+
+> Developer-experience polish: env export button and security headers
+> for static sites.
+
+### Added
+
+- **Env var export button.** The environment card gains an **Export**
+  button that downloads all non-secret env vars as a `.env` file via
+  the browser Blob API — no server round-trip needed since the values
+  are already in memory from the list endpoint.
+
+### Fixed
+
+- **Security headers in the static build pack's nginx conf.** The
+  generated conf now includes `X-Frame-Options: SAMEORIGIN`,
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy:
+  strict-origin-when-cross-origin` and `Permissions-Policy` — the same
+  baseline Coolify's static builder applies. Test: the renderer
+  assertions verify all four headers are present.
+
+---
+
 ## [0.9.0] - 2026-09-13
 
 > The build-matrix completion release: Railpack and Git submodule
