@@ -17,6 +17,7 @@ import {
   notificationChannels,
   scheduledJobs,
   serviceNotificationChannels,
+  webhooks,
   services,
   users,
   workspaceMembers,
@@ -496,11 +497,6 @@ describe('applyManifestToService — deferred sections emit warnings', () => {
     expect(result.warnings.some((w) => w.startsWith('static: '))).toBe(true);
   });
 
-  it('emits a warning when watch is declared', async () => {
-    const result = await applyManifestToService(db, serviceId, m({ watch: { paths: ['apps/web/**'] } }));
-    expect(result.warnings.some((w) => w.startsWith('watch: '))).toBe(true);
-  });
-
   it('emits a warning when network is declared', async () => {
     const result = await applyManifestToService(db, serviceId, m({ network: { publishPort: 8080, aliases: ['edge'] } }));
     expect(result.warnings.some((w) => w.startsWith('network: '))).toBe(true);
@@ -690,5 +686,47 @@ describe('applyManifestToService — volume.backups', () => {
     const jobs = await db.select().from(scheduledJobs).where(eq(scheduledJobs.kind, 'backup'));
     expect(jobs).toHaveLength(2);
     expect(jobs.map((j) => j.name).sort()).toEqual(['my nightly backup', MANIFEST_BACKUP_JOB_NAME]);
+  });
+});
+
+describe('applyManifestToService — watch paths', () => {
+  it('sets watch paths on the service\u2019s active webhooks', async () => {
+    const [hook] = await db
+      .insert(webhooks)
+      .values({ serviceId, branch: 'main', secretEncrypted: 'enc:secret', watchPaths: null })
+      .returning();
+    const result = await applyManifestToService(
+      db,
+      serviceId,
+      m({ watch: { paths: ['apps/web/**', 'packages/shared/**'] } }),
+    );
+    expect(result.watchPathsSynced).toBe(1);
+    const [updated] = await db.select().from(webhooks).where(eq(webhooks.id, hook!.id));
+    expect(updated!.watchPaths).toBe('apps/web/**\npackages/shared/**');
+  });
+
+  it('sets null watchPaths when the watch section declares an empty paths list', async () => {
+    const [hook] = await db
+      .insert(webhooks)
+      .values({ serviceId, branch: 'main', secretEncrypted: 'enc:secret', watchPaths: 'old/path' })
+      .returning();
+    const result = await applyManifestToService(db, serviceId, m({ watch: { paths: [] } }));
+    expect(result.watchPathsSynced).toBe(0);
+    const [updated] = await db.select().from(webhooks).where(eq(webhooks.id, hook!.id));
+    expect(updated!.watchPaths).toBe('old/path');
+  });
+
+  it('does not touch webhooks of other services', async () => {
+    const [otherSvc] = await db
+      .insert(services)
+      .values({ name: 'other', slug: 'other', type: 'docker', port: 3000, healthPath: '/' })
+      .returning();
+    const [hook] = await db
+      .insert(webhooks)
+      .values({ serviceId: otherSvc!.id, branch: 'main', secretEncrypted: 'enc:s', watchPaths: 'keep-me' })
+      .returning();
+    await applyManifestToService(db, serviceId, m({ watch: { paths: ['new/path'] } }));
+    const [updated] = await db.select().from(webhooks).where(eq(webhooks.id, hook!.id));
+    expect(updated!.watchPaths).toBe('keep-me');
   });
 });

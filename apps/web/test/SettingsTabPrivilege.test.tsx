@@ -82,9 +82,10 @@ describe('SettingsTab host-privilege gating', () => {
   afterEach(cleanup);
 
   // The admin-save path chains several react-query round-trips through
-  // SettingsTab; on loaded CI runners it can exceed 15s, so these tests use
-  // the global 30s ceiling instead of a tighter override.
-  const TIMEOUT = 30_000;
+  // SettingsTab; on loaded CI runners it can exceed 15s, and under
+  // coverage instrumentation (roughly 2× slower) even the 30s global
+  // ceiling was observed to overflow when the suite runs fully parallel.
+  const TIMEOUT = 60_000;
 
   beforeEach(() => {
     vi.clearAllMocks();

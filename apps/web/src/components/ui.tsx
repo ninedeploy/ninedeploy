@@ -190,7 +190,18 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
   );
 });
 
-export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+export function Field({
+  label,
+  hint,
+  error,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  /** Inline validation message rendered in rose below the control. */
+  error?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
@@ -198,6 +209,7 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
         {hint && <span className="text-[11px] text-slate-500">{hint}</span>}
       </div>
       {children}
+      {error != null && <p className="mt-1.5 text-[11px] leading-relaxed text-rose-300">{error}</p>}
     </div>
   );
 }
@@ -960,6 +972,10 @@ export interface PresetOption<T> {
   label: string;
   description?: string;
   manifest: T;
+  /** Optional icon rendered to the left of the label. */
+  icon?: ReactNode;
+  /** Short facts (runtime, port, key command) rendered as tiny chips. */
+  meta?: readonly string[];
 }
 
 export interface PresetSelectorProps<T> {
@@ -1002,9 +1018,28 @@ export function PresetSelector<T>({ options, onSelect, label, hint, value }: Pre
                   : 'border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]',
               )}
             >
-              <div className="text-sm font-medium text-slate-100">{opt.label}</div>
+              <div className="flex items-center gap-2">
+                {opt.icon && (
+                  <span className={cn('shrink-0', active ? 'text-indigo-300' : 'text-slate-400')}>
+                    {opt.icon}
+                  </span>
+                )}
+                <div className="text-sm font-medium text-slate-100">{opt.label}</div>
+              </div>
               {opt.description && (
                 <div className="mt-0.5 text-xs text-slate-500">{opt.description}</div>
+              )}
+              {opt.meta && opt.meta.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {opt.meta.map((chip) => (
+                    <span
+                      key={chip}
+                      className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[10px] text-slate-400 ring-1 ring-inset ring-white/[0.06]"
+                    >
+                      {chip}
+                    </span>
+                  ))}
+                </div>
               )}
             </button>
           );

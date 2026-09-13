@@ -1,6 +1,14 @@
 import type { Build } from '@ninedeploy/schemas';
 import { Field, Input } from '../../../components/ui.js';
 
+/** Mirror of the schema's repoRelativePath check: `..` escapes the repo. */
+function baseDirError(baseDir: string): string | undefined {
+  if (baseDir !== '' && baseDir.split(/[\\/]/).includes('..')) {
+    return 'The base directory must stay inside the repository — no ".." segments.';
+  }
+  return undefined;
+}
+
 export function BuildSection({
   value,
   onChange,
@@ -32,7 +40,11 @@ export function BuildSection({
           onChange={(e) => update({ start: e.target.value || undefined })}
         />
       </Field>
-      <Field label="Base directory" hint="Relative to repo root; e.g. apps/web">
+      <Field
+        label="Base directory"
+        hint="Relative to repo root; e.g. apps/web"
+        error={baseDirError(value?.baseDir ?? '')}
+      >
         <Input
           value={value?.baseDir ?? ''}
           placeholder="leave empty for repo root"

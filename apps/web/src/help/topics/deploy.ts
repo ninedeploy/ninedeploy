@@ -81,9 +81,11 @@ export const DEPLOY_TOPICS: Record<string, HelpTopic> = {
       {
         heading: 'How to use it',
         steps: [
-          'Start from a preset close to your stack, or blank.',
-          'Walk the sections: Runtime, Build, Run, Environment, Routing, Resources, Volumes, Static assets, Database, Phases/Hooks, Watch paths, Previews, Notifications, Alerts.',
-          'Use the validation and secret-scan feedback to catch mistakes before committing.',
+          'Start from one of the presets (Node, Next.js, FastAPI, Django, Go, Rust, Rails, Laravel, Java, monorepo, worker, API + database) or blank.',
+          'Walk the grouped sections — Core, Build pipeline, Operations, Traffic, Observability. The sidebar tracks how much you have configured.',
+          'Already have a .ninedeploy file? Use Import to paste or upload it — it is validated with the same schema the deploy pipeline uses and loaded into the form.',
+          'Every change is undoable (Undo / Redo in the header), and the draft survives page reloads.',
+          'Use the live validation banner and the secret-scan feedback to catch mistakes before committing.',
           'Copy or download the YAML and commit it as .ninedeploy in the repository root.',
         ],
       },

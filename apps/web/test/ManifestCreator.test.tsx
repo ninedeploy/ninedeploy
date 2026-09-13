@@ -445,8 +445,7 @@ describe('ManifestCreator', () => {
 
   // Touches eleven sections sequentially; under parallel suite load this can
   // outlive the default 5s budget.
-  it('persists every section edit into the draft it saves', { timeout: 30_000 }, async () => {
-    const user = userEvent.setup();
+  it('persists every section edit into the draft it saves', { timeout: 30_000 }, async () => {    const user = userEvent.setup();
     renderPage();
     window.localStorage.removeItem('ninedeploy.manifest.draft');
 
@@ -508,5 +507,257 @@ describe('ManifestCreator', () => {
     await visit(/Notifications section/);
     await type('ops', 'ops@acme.dev', true);
     expect(draftKeys()).toContain('notifications');
+  });
+
+  // ── Grouped nav + progress ────────────────────────────────────────────
+  it('renders the nav grouped with group headings and a progress readout', () => {
+    renderPage();
+    expect(screen.getByText('Core')).toBeInTheDocument();
+    expect(screen.getByText('Build pipeline')).toBeInTheDocument();
+    expect(screen.getByText('Operations')).toBeInTheDocument();
+    expect(screen.getByText('Traffic')).toBeInTheDocument();
+    expect(screen.getByText('Observability')).toBeInTheDocument();
+    // Nothing configured yet.
+    expect(screen.getByText(/0\/16 sections configured/)).toBeInTheDocument();
+  });
+
+  // ── Live validation ───────────────────────────────────────────────────
+  it('shows a validation banner with a jump link when the draft is invalid', async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem(
+      'ninedeploy.manifest.draft',
+      JSON.stringify({ version: '1', run: { port: 70_000 } }),
+    );
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    expect(screen.getByText(/validation issue/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Fix in Run' }));
+    // The jump lands on Run where the schema message sits next to the
+    // offending field (both the page-level panel and the inline hint show).
+    await waitFor(() =>
+      expect(screen.getByText('Port must be between 1 and 65535.')).toBeInTheDocument(),
+    );
+  });
+
+  it('shows a valid-manifest strip with the configured count when clean', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    // The Node preset fills runtime + build + run.
+    await user.click(screen.getByText(NODE_NPM_PRESET));
+    expect(screen.getByText(/Manifest is valid/)).toBeInTheDocument();
+    expect(screen.getByText(/3\/16 sections configured/)).toBeInTheDocument();
+  });
+
+  // ── Undo / Redo ───────────────────────────────────────────────────────
+  it('starts with undo/redo disabled and walks history after a preset apply', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const undoButton = screen.getByRole('button', { name: 'Undo' });
+    const redoButton = screen.getByRole('button', { name: 'Redo' });
+    expect(undoButton).toBeDisabled();
+    expect(redoButton).toBeDisabled();
+
+    await user.click(screen.getByText(NODE_NPM_PRESET));
+    const versionSelect = () => screen.getByLabelText('Runtime version') as HTMLSelectElement;
+    expect(versionSelect().value).toBe(recommendedRuntimeVersion('node'));
+
+    // After undo the manifest is empty again: the catalog picker disappears
+    // (runtime falls back to auto) and only the free-text input remains.
+    await user.click(undoButton);
+    expect(
+      screen.getByPlaceholderText(/leave empty to let Nixpacks/),
+    ).toBeInTheDocument();
+    expect(redoButton).toBeEnabled();
+
+    await user.click(redoButton);
+    expect(versionSelect().value).toBe(recommendedRuntimeVersion('node'));
+  });
+
+  it('makes Reset itself undoable', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByText(NODE_NPM_PRESET));
+    await user.click(screen.getByRole('button', { name: /Reset/ }));
+    expect(
+      screen.getByPlaceholderText(/leave empty to let Nixpacks/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    expect((screen.getByLabelText('Runtime version') as HTMLSelectElement).value).toBe(
+      recommendedRuntimeVersion('node'),
+    );
+  });
+
+  // ── Import ────────────────────────────────────────────────────────────
+  it('imports a pasted YAML manifest through the import modal', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('button', { name: 'Import' }));
+    const area = screen.getByLabelText('YAML to import');
+    fireEvent.change(area, {
+      target: { value: 'version: "1"\nruntime:\n  type: go\n  version: "1.22"\n' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Import YAML' }));
+    // The modal closes and the parsed manifest lands in the form.
+    await waitFor(() => expect(screen.getByDisplayValue('1.22')).toBeInTheDocument());
+    expect(screen.queryByLabelText('YAML to import')).not.toBeInTheDocument();
+  });
+
+  it('keeps the modal open with the schema issues when the YAML is invalid', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('button', { name: 'Import' }));
+    fireEvent.change(screen.getByLabelText('YAML to import'), {
+      target: { value: 'version: "1"\nrun:\n  port: 99999\n' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Import YAML' }));
+    expect(await screen.findByText('Could not import')).toBeInTheDocument();
+    // The modal stayed open so the operator can fix the pasted text.
+    expect(screen.getByLabelText('YAML to import')).toBeInTheDocument();
+  });
+
+  it('reports malformed YAML as an import failure instead of throwing', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('button', { name: 'Import' }));
+    fireEvent.change(screen.getByLabelText('YAML to import'), {
+      target: { value: 'run: [unclosed' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Import YAML' }));
+    expect(await screen.findByText('Could not import')).toBeInTheDocument();
+  });
+
+  it('imports from a chosen file', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('button', { name: 'Import' }));
+    // The picker opens through the visible button; the input itself is hidden.
+    await user.click(screen.getByRole('button', { name: /Choose file/ }));
+    const input = screen.getByLabelText('Import from file') as HTMLInputElement;
+    const file = new File(
+      ['version: "1"\nruntime:\n  type: go\n  version: "1.22"\n'],
+      '.ninedeploy',
+      { type: 'text/yaml' },
+    );
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByDisplayValue('1.22')).toBeInTheDocument());
+  });
+
+  it('reports a file-read failure as an import error', async () => {
+    const user = userEvent.setup();
+    const textSpy = vi
+      .spyOn(File.prototype, 'text')
+      .mockRejectedValueOnce(new Error('read failed'));
+    renderPage();
+    await user.click(screen.getByRole('button', { name: 'Import' }));
+    const input = screen.getByLabelText('Import from file');
+    const file = new File(['version: "1"'], '.ninedeploy', { type: 'text/yaml' });
+    fireEvent.change(input, { target: { files: [file] } });
+    expect(await screen.findByText('Could not import')).toBeInTheDocument();
+    expect(await screen.findByText(/Could not read/)).toBeInTheDocument();
+    textSpy.mockRestore();
+  });
+
+  it('closes the import modal via Cancel and via the dialog close button', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('button', { name: 'Import' }));
+    // Fire the file-input branch once so a stale selection can't linger.
+    await user.click(screen.getByRole('button', { name: /Cancel/ }));
+    await waitFor(() =>
+      expect(screen.queryByLabelText('YAML to import')).not.toBeInTheDocument(),
+    );
+    // Reopen and close through the modal's header X.
+    await user.click(screen.getByRole('button', { name: 'Import' }));
+    const dialog = screen.getByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close dialog' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  // ── Section-level inline validation ───────────────────────────────────
+  it('flags a healthcheck path missing its leading slash', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('button', { name: /Run section/ }));
+    fireEvent.change(screen.getByPlaceholderText('/healthz'), {
+      target: { value: 'healthz' },
+    });
+    // Match the exact inline error — the field hint legitimately contains
+    // the same "must start with" wording.
+    expect(
+      screen.getByText('Healthcheck path must start with "/".'),
+    ).toBeInTheDocument();
+  });
+
+  it('flags a preview pattern missing the {n} placeholder', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('button', { name: /PR previews section/ }));
+    await user.click(screen.getByRole('switch'));
+    fireEvent.change(screen.getByPlaceholderText(/pr-\{n\}/), {
+      target: { value: 'pr.previews.example.com' },
+    });
+    expect(screen.getByText(/must contain the \{n\} placeholder/)).toBeInTheDocument();
+  });
+
+  it('flags an invalid route host inline', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('button', { name: /Routing section/ }));
+    await user.click(screen.getByRole('button', { name: /Add route/ }));
+    fireEvent.change(screen.getByPlaceholderText('app.example.com'), {
+      target: { value: 'ab' },
+    });
+    expect(screen.getByText(/at least 3 characters/)).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText('app.example.com'), {
+      target: { value: 'bad host!' },
+    });
+    // The live schema banner also repeats "valid hostname" for the same
+    // field — match the inline hint's distinctive wording.
+    expect(
+      screen.getByText(/letters, digits, dots, dashes/),
+    ).toBeInTheDocument();
+  });
+
+  // ── Quick-pick chips ──────────────────────────────────────────────────
+  it('fills the backup cron schedule from a quick-pick chip', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('button', { name: /Volume section/ }));
+    await user.click(screen.getByRole('button', { name: 'Daily 03:00' }));
+    expect((screen.getByPlaceholderText('0 3 * * *') as HTMLInputElement).value).toBe('0 3 * * *');
+  });
+
+  it('fills the memory cap from a quick-pick chip', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('button', { name: /Resources section/ }));
+    await user.click(screen.getByRole('button', { name: 'Set memory to 1024 MiB' }));
+    expect((screen.getByPlaceholderText('512') as HTMLInputElement).value).toBe('1024');
+  });
+
+  it('fills the CPU shares from a quick-pick chip', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('button', { name: /Resources section/ }));
+    await user.click(screen.getByRole('button', { name: 'Set CPU shares to 1024' }));
+    expect((screen.getByPlaceholderText('1024') as HTMLInputElement).value).toBe('1024');
+  });
+
+  it('offers managed-database suggestions and fills the slug from one', async () => {
+    const user = userEvent.setup();
+    const api = (await import('../src/lib/api.js')).api as unknown as {
+      databases: { list: ReturnType<typeof vi.fn> };
+    };
+    api.databases.list = vi.fn().mockResolvedValue([
+      { id: 1, slug: 'app-db', engine: 'postgres', status: 'running' },
+      { id: 2, slug: 'cache-db', engine: 'redis', status: 'running' },
+    ]);
+    renderPage();
+    await user.click(screen.getByRole('button', { name: /Database section/ }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Use app-db (postgres)' })).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole('button', { name: 'Use app-db (postgres)' }));
+    expect((screen.getByPlaceholderText('app-db') as HTMLInputElement).value).toBe('app-db');
   });
 });

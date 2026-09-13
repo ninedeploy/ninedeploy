@@ -7,6 +7,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactElement } from 'react';
 import type { NinedeployManifest } from '@ninedeploy/schemas';
 import './web-utils.js';
 import { AlertsSection } from '../src/routes/manifestCreator/sections/AlertsSection.js';
@@ -25,6 +27,16 @@ import { StaticSection } from '../src/routes/manifestCreator/sections/StaticSect
 import { VolumeSection } from '../src/routes/manifestCreator/sections/VolumeSection.js';
 import { WatchSection } from '../src/routes/manifestCreator/sections/WatchSection.js';
 import { RuntimeSection } from '../src/routes/manifestCreator/sections/RuntimeSection.js';
+
+/**
+ * DatabaseSection pulls live managed-DB suggestions through react-query,
+ * so its renders need a QueryClientProvider. Queries fail fast (retry off)
+ * and the section degrades to manual entry, which is what these tests pin.
+ */
+function renderWithClient(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
 
 describe('RuntimeSection', () => {
   // `Field` renders its label as a plain <span>, so the type select has no
@@ -631,7 +643,7 @@ describe('VolumeSection', () => {
 describe('DatabaseSection', () => {
   it('emits onChange with the new ref when typed', async () => {
     const onChange = vi.fn();
-    render(<DatabaseSection value={undefined} onChange={onChange} />);
+    renderWithClient(<DatabaseSection value={undefined} onChange={onChange} />);
     const input = screen.getByPlaceholderText('app-db');
     fireEvent.change(input, { target: { value: 'app-db' } });
     expect(onChange).toHaveBeenLastCalledWith({ ref: 'app-db', env: 'DATABASE_URL' });
@@ -639,7 +651,9 @@ describe('DatabaseSection', () => {
 
   it('clears the section when the ref is emptied', () => {
     const onChange = vi.fn();
-    render(<DatabaseSection value={{ ref: 'app-db', env: 'DATABASE_URL' }} onChange={onChange} />);
+    renderWithClient(
+      <DatabaseSection value={{ ref: 'app-db', env: 'DATABASE_URL' }} onChange={onChange} />,
+    );
     const input = screen.getByDisplayValue('app-db');
     fireEvent.change(input, { target: { value: '' } });
     expect(onChange).toHaveBeenLastCalledWith(undefined);
@@ -647,7 +661,9 @@ describe('DatabaseSection', () => {
 
   it('updates the env key on input', () => {
     const onChange = vi.fn();
-    render(<DatabaseSection value={{ ref: 'app-db', env: 'DATABASE_URL' }} onChange={onChange} />);
+    renderWithClient(
+      <DatabaseSection value={{ ref: 'app-db', env: 'DATABASE_URL' }} onChange={onChange} />,
+    );
     const input = screen.getByDisplayValue('DATABASE_URL') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'POSTGRES_URL' } });
     expect(onChange).toHaveBeenLastCalledWith({ ref: 'app-db', env: 'POSTGRES_URL' });
@@ -891,17 +907,19 @@ describe('clear-input branches', () => {
     expect(onChange).toHaveBeenLastCalledWith({ healthcheck: undefined });
   });
 
-  it('ResourcesSection: clearing memMb sends { memMb: undefined }', () => {
+  it('ResourcesSection: clearing the only set field drops the whole block', () => {
     const onChange = vi.fn();
-    render(<ResourcesSection value={{ memMb: 512 }} onChange={onChange} />);
+    renderWithClient(<ResourcesSection value={{ memMb: 512 }} onChange={onChange} />);
     const input = screen.getByDisplayValue('512');
     fireEvent.change(input, { target: { value: '' } });
-    expect(onChange).toHaveBeenLastCalledWith({ memMb: undefined });
+    // An all-undefined resources block would emit a dangling `resources:`
+    // header in the YAML, so the section drops it entirely instead.
+    expect(onChange).toHaveBeenLastCalledWith(undefined);
   });
 
   it('DatabaseSection: clearing env key sends the ref with default env', () => {
     const onChange = vi.fn();
-    render(<DatabaseSection value={{ ref: 'app-db', env: 'X' }} onChange={onChange} />);
+    renderWithClient(<DatabaseSection value={{ ref: 'app-db', env: 'X' }} onChange={onChange} />);
     const input = screen.getByDisplayValue('X');
     fireEvent.change(input, { target: { value: '' } });
     expect(onChange).toHaveBeenLastCalledWith({ ref: 'app-db', env: 'DATABASE_URL' });

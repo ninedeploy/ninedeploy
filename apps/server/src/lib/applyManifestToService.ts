@@ -7,9 +7,10 @@ import {
   scheduledJobs,
   serviceNotificationChannels,
   services,
+  webhooks,
   type DB,
 } from '@ninedeploy/db';
-import type { NinedeployManifest, Notifications, Previews, Route } from '@ninedeploy/schemas';
+import type { NinedeployManifest, Notifications, Previews, Route, Watch } from '@ninedeploy/schemas';
 import { Cron } from 'croner';
 import { ensureAlertState } from './alerting.js';
 import { isOperator, visibleDatabaseIds } from './resourceAccess.js';
@@ -52,6 +53,8 @@ export interface ApplyManifestResult {
   notificationsSynced: number;
   /** Cron of the manifest-owned volume-backup job, when a `volume.backups` section was applied. */
   volumeBackupSchedule: string | null;
+  /** Number of webhooks whose watch paths were updated by the `watch` section. */
+  watchPathsSynced: number;
   warnings: string[];
 }
 
@@ -71,6 +74,7 @@ export async function applyManifestToService(
     previewsApplied: false,
     notificationsSynced: 0,
     volumeBackupSchedule: null,
+    watchPathsSynced: 0,
     warnings: [],
   };
 
@@ -80,6 +84,9 @@ export async function applyManifestToService(
   await applyPreviewConfig(db, serviceId, manifest.previews, result);
   if (manifest.notifications) {
     await syncNotificationSubscriptions(db, serviceId, manifest.notifications, result);
+  }
+  if (manifest.watch) {
+    await syncWatchPaths(db, serviceId, manifest.watch, result);
   }
 
   // Recognised-but-not-wired sections: surface so the build log records the
@@ -92,14 +99,11 @@ export async function applyManifestToService(
   // nothing. They were the only unwired sections that stayed completely silent,
   // so a repo declaring `static.spa: true` or a `watch` path filter got no hint
   // that the setting had no effect at all.
+  // `static` and `watch` are now wired (see applyPreviewConfig / syncWatchPaths);
+  // only `network` and `static` remain panel-side (Networks / Service → Settings).
   if (manifest.static) {
     result.warnings.push(
       'static: declared but static-site serving is configured in the panel (Service → Settings), not from the manifest; section ignored.',
-    );
-  }
-  if (manifest.watch) {
-    result.warnings.push(
-      'watch: declared but build-path filtering is driven by the webhook\'s watch paths (Service → Webhooks); section ignored.',
     );
   }
   if (manifest.network) {
@@ -109,6 +113,37 @@ export async function applyManifestToService(
   }
 
   return result;
+}
+
+// ── Watch paths ───────────────────────────────────────────────────────────
+
+/**
+ * Apply the manifest's `watch` section: set the watch-path filter on every
+ * active webhook for this service. The paths are joined with newlines to
+ * match the webhook's storage format. Only webhooks owned by this service
+ * are updated — webhooks on other services are untouched.
+ */
+async function syncWatchPaths(
+  db: DB,
+  serviceId: number,
+  watch: Watch,
+  result: ApplyManifestResult,
+): Promise<void> {
+  // An empty or absent paths list is a no-op — the manifest didn't declare
+  // any watch paths, so don't clear the webhook's existing filter.
+  if (watch.paths.length === 0) return;
+  const joined = watch.paths.join('\n');
+  const hooks = await db.query.webhooks.findMany({
+    where: and(eq(webhooks.serviceId, serviceId), eq(webhooks.active, true)),
+  });
+  for (const hook of hooks) {
+    if (hook.watchPaths === joined) continue;
+    await db
+      .update(webhooks)
+      .set({ watchPaths: joined })
+      .where(eq(webhooks.id, hook.id));
+    result.watchPathsSynced++;
+  }
 }
 
 // ── Previews ──────────────────────────────────────────────────────────────

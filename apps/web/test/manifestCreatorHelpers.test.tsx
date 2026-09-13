@@ -116,7 +116,7 @@ describe('lintManifest', () => {
       env: { required: ['DATABASE_URL=postgres://user:s3cret@db:5432/app'] },
     });
     expect(hits).toHaveLength(1);
-    expect(hits[0]?.patternId).toBe('database-url-creds');
+    expect(hits[0]?.patternId).toBe('database-url-credentials');
   });
 
   it('walks into nested object and array values', () => {

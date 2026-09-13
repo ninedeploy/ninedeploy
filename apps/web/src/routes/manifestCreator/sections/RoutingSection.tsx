@@ -7,6 +7,22 @@ const createRoute = (): Route => ({
   ssl: true,
 });
 
+/** Mirror of the schema's hostname check — used for the inline hint. */
+const HOSTNAME_RE =
+  /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
+
+function hostError(host: string): string | undefined {
+  if (host === '') return undefined;
+  if (host.length < 3) return 'Hostnames are at least 3 characters (e.g. app.example.com).';
+  if (!HOSTNAME_RE.test(host)) return 'Must be a valid hostname — letters, digits, dots, dashes.';
+  return undefined;
+}
+
+function pathError(path: string): string | undefined {
+  if (path !== '' && !path.startsWith('/')) return 'Paths are absolute — they must start with "/".';
+  return undefined;
+}
+
 export function RoutingSection({
   value,
   onChange,
@@ -27,14 +43,14 @@ export function RoutingSection({
         renderItem={(route, update) => (
           <div className="space-y-3">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Field label="Host">
+              <Field label="Host" error={hostError(route.host)}>
                 <Input
                   value={route.host}
                   placeholder="app.example.com"
                   onChange={(e) => update({ ...route, host: e.target.value })}
                 />
               </Field>
-              <Field label="Path">
+              <Field label="Path" error={pathError(route.path)}>
                 <Input
                   value={route.path}
                   placeholder="/"

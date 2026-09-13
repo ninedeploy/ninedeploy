@@ -17,9 +17,17 @@ export function RunSection({
   onChange: (next: Run | undefined) => void;
 }) {
   const update = (patch: Partial<Run>) => onChange({ ...(value ?? {}), ...patch });
+  const port = value?.port;
+  const healthcheck = value?.healthcheck ?? '';
+  const portInvalid = port != null && (port < 1 || port > 65535);
+  const healthcheckInvalid = healthcheck !== '' && !healthcheck.startsWith('/');
   return (
     <div className="space-y-4">
-      <Field label="Container port" hint="The port the app listens on inside the container">
+      <Field
+        label="Container port"
+        hint="The port the app listens on inside the container"
+        error={portInvalid ? 'Port must be between 1 and 65535.' : undefined}
+      >
         <Input
           type="number"
           min={1}
@@ -33,7 +41,11 @@ export function RunSection({
           }}
         />
       </Field>
-      <Field label="Healthcheck path" hint="HTTP path probed for liveness (must start with /)">
+      <Field
+        label="Healthcheck path"
+        hint="HTTP path probed for liveness (must start with /)"
+        error={healthcheckInvalid ? 'Healthcheck path must start with "/".' : undefined}
+      >
         <Input
           value={value?.healthcheck ?? ''}
           placeholder="/healthz"
