@@ -252,6 +252,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
               <option value="nixpacks">nixpacks</option>
               <option value="dockerfile">dockerfile</option>
               <option value="static">static</option>
+              <option value="railpack">railpack</option>
             </Select>
           </Field>
           <Field label="Base directory"><Input value={form.baseDir} onChange={set('baseDir')} className="h-9 font-mono text-xs" /></Field>
