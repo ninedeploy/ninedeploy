@@ -1,4 +1,4 @@
-export const VERSION = '0.9.2';
+export const VERSION = '0.9.3';
 
 export interface ChangelogEntry {
   version: string;
@@ -8,6 +8,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.9.3',
+    date: '2026-09-13',
+    title: 'Hard CPU Caps, Honest Memory Limits, OOM Visibility',
+    changes: [
+      'Services and databases gain a hard CPU limit in cores (docker --cpus) alongside cpu-shares — it throttles even without host contention. Memory limits are now honest: swap is pinned to the limit instead of Docker defaulting to 2x, so 512 MiB means 512 MiB. Changed limits live-apply to running containers where Docker allows it, no redeploy needed.',
+      'OOM kills are finally visible: the reconcile loop reads OOMKilled/exit code before reviving a downed container and records an alert.oom event into the activity trail and alert-scope notification subscriptions (throttled to one per service per 10 minutes). The limits UI now tells the truth per service type — pm2 shows memory only, compose points at the stack YAML.',
+    ],
+  },
   {
     version: '0.9.2',
     date: '2026-09-13',

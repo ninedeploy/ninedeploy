@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.3] - 2026-09-13
+
+> The resource-limits release: hard CPU caps, honest memory limits,
+> live application, and OOM kills you can actually see.
+
+### Added
+
+- **Hard CPU limit.** A new CPU limit field (in cores, e.g. `0.5`) maps
+  to Docker's `--cpus` and throttles even without host contention —
+  `--cpu-shares` alone is only a scheduling weight. Stored as
+  `cpuLimitMilli` (migration 0056), applied on every run path: local
+  builder, database engines, remote-node agents (re-validated server
+  side) and the kernel compute driver. Settable from Service Settings,
+  the database detail page, the Monitoring cards, the `.ninedeploy`
+  `resources` section, and the overview runtime card now displays it.
+- **Live limit application.** Changing a service's limits used to wait
+  for the next deploy; the endpoint now best-effort `docker update`s a
+  running container and reports whether it applied live (Docker refuses
+  to lower memory below current usage — that case stays on the
+  next-deploy path). Databases already restarted live.
+- **OOM-kill visibility.** The 60-second reconcile loop used to revive
+  an OOM-killed container silently. It now reads `OOMKilled`/exit code
+  before restarting and records an `alert.oom` event — visible in the
+  activity trail and fired into the alert-scope notification
+  subscriptions, throttled to one alert per service per 10 minutes.
+
+### Fixed
+
+- **Memory limits were soft.** `--memory` without `--memory-swap` lets
+  Docker allow swap equal to the limit — a "512 MiB" service could take
+  512 MiB RAM plus 512 MiB swap. Every limit now pins swap to the same
+  value: a limit means a limit.
+- **Compose view lied about CPU.** The generated compose manifest
+  rendered `--cpu-shares` (a weight) as `cpus:` — imposing a hard cap
+  the container never had. Shares now render as `cpu_shares`, and `cpus`
+  comes from the real NanoCpus value.
+- **Limits card honesty.** PM2 services show only the memory field
+  (host processes: memory maps to pm2's restart threshold, Docker caps
+  do not apply); compose services are pointed at their stack YAML.
+
+---
+
 ## [0.9.2] - 2026-09-13
 
 > Debugging and operability polish: pattern-matched build failure hints
