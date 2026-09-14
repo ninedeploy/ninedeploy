@@ -553,6 +553,7 @@ describe('service', () => {
       autoUrl: null,
       port: null,
       cpuShares: 0,
+      cpuLimitMilli: 0,
       memLimitMb: 0,
       build: null,
       createdAt: '2026-01-01T00:00:00Z',
@@ -736,9 +737,12 @@ describe('service', () => {
     it('accepts optional and nullable fields', () => {
       expect(setLimits.safeParse({}).success).toBe(true);
       expect(setLimits.safeParse({ cpuShares: 1024, memLimitMb: 512 }).success).toBe(true);
-      expect(setLimits.safeParse({ cpuShares: null, memLimitMb: null }).success).toBe(true);
+      expect(setLimits.safeParse({ cpuShares: null, cpuLimitMilli: null, memLimitMb: null }).success).toBe(true);
+      expect(setLimits.safeParse({ cpuLimitMilli: 500 }).success).toBe(true);
       bad(setLimits, { cpuShares: 262145 });
       bad(setLimits, { memLimitMb: -1 });
+      bad(setLimits, { cpuLimitMilli: -1 });
+      bad(setLimits, { cpuLimitMilli: 512_001 });
     });
   });
 
