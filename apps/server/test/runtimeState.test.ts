@@ -9,6 +9,9 @@ const execMocks = vi.hoisted(() => ({
 }));
 vi.mock('../src/lib/exec.js', () => execMocks);
 
+const auditMocks = vi.hoisted(() => ({ audit: vi.fn(async () => undefined) }));
+vi.mock('../src/lib/audit.js', () => auditMocks);
+
 const pm2Mocks = vi.hoisted(() => ({
   connect: vi.fn((cb: (err?: Error | null) => void) => cb(null)),
   disconnect: vi.fn(),
@@ -49,6 +52,8 @@ function mockDocker(byArgs: {
   state: Array<string | Error>;
   label?: string;
   ps?: string;
+  /** Raw `{{.State.OOMKilled}}|{{.State.ExitCode}}` inspect reply. */
+  oom?: string;
 }) {
   let stateCalls = 0;
   execMocks.capture.mockImplementation(async (_cmd: string, args: string[]) => {
@@ -57,6 +62,7 @@ function mockDocker(byArgs: {
       if (next instanceof Error) throw next;
       return next;
     }
+    if (args.includes('{{.State.OOMKilled}}|{{.State.ExitCode}}')) return byArgs.oom ?? 'false|0';
     if (args.includes('com.docker.compose.project" }}')) return byArgs.label ?? '';
     if (args.includes('ps')) return byArgs.ps ?? '';
     if (args[0] === 'start') return '';
@@ -87,6 +93,29 @@ describe('runtime state reconciliation', () => {
     const { updates } = await reconcileOnce(svcRow({ id: 1, status: 'running', runtimeId: 'c1' }));
     expect(execMocks.capture).toHaveBeenCalledWith('docker', ['start', 'c1']);
     expect(updates).toEqual([]);
+    // A clean exit is nobody's business — no OOM alert.
+    expect(auditMocks.audit).not.toHaveBeenCalled();
+  });
+
+  it('alerts when the revived container was OOM-killed', async () => {
+    mockDocker({ state: ['exited', 'running'], oom: 'true|137' });
+    await reconcileOnce(svcRow({ id: 21, status: 'running', runtimeId: 'oom1', name: 'oom-svc' }));
+    expect(auditMocks.audit).toHaveBeenCalledWith(expect.anything(), null, 'alert.oom', 'oom-svc', expect.objectContaining({ runtimeId: 'oom1', exitCode: 137 }));
+  });
+
+  it('alerts on exit 137 even when the OOMKilled flag is false', async () => {
+    mockDocker({ state: ['exited', 'running'], oom: 'false|137' });
+    await reconcileOnce(svcRow({ id: 22, status: 'running', runtimeId: 'oom2', name: 'sigkill-svc' }));
+    expect(auditMocks.audit).toHaveBeenCalledWith(expect.anything(), null, 'alert.oom', 'sigkill-svc', expect.objectContaining({ exitCode: 137 }));
+  });
+
+  it('throttles repeated OOM alerts for the same service', async () => {
+    mockDocker({ state: ['exited', 'running'], oom: 'true|137' });
+    // Two passes for the same service: the in-memory cooldown (module-level,
+    // shared across app instances) must swallow the second alert.
+    await reconcileOnce(svcRow({ id: 23, status: 'running', runtimeId: 'oom3', name: 'loopy' }));
+    await reconcileOnce(svcRow({ id: 23, status: 'running', runtimeId: 'oom3', name: 'loopy' }));
+    expect(auditMocks.audit).toHaveBeenCalledTimes(1);
   });
 
   it('starts compose project siblings alongside the main container', async () => {

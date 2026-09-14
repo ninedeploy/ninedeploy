@@ -542,6 +542,10 @@ function TargetNodeCard({ svc }: { svc: Service }) {
 function LimitsCard({ svc }: { svc: Service }) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  // Limits only reach a container on the docker run path. PM2 services are
+  // host processes (memory maps to a restart threshold, CPU not enforceable);
+  // compose services take their limits from the stack's own YAML.
+  const isDocker = svc.type === 'docker';
   // Initialized once from the service row — later refetches never fight user edits.
   const [cpu, setCpu] = useState(String(svc.cpuShares || ''));
   // Stored in millicores (500 = 0.5 cores); the field takes decimal cores.
@@ -552,8 +556,8 @@ function LimitsCard({ svc }: { svc: Service }) {
     mutationFn: () => {
       const capCores = cpuCap.trim() ? Number(cpuCap.replace(',', '.')) : null;
       return api.limits.setService(svc.id, {
-        cpuShares: cpu.trim() ? toInt(cpu, 0) : null,
-        cpuLimitMilli: capCores != null && Number.isFinite(capCores) && capCores > 0 ? Math.round(capCores * 1000) : null,
+        cpuShares: isDocker && cpu.trim() ? toInt(cpu, 0) : null,
+        cpuLimitMilli: isDocker && capCores != null && Number.isFinite(capCores) && capCores > 0 ? Math.round(capCores * 1000) : null,
         memLimitMb: mem.trim() ? toInt(mem, 0) : null,
       });
     },
@@ -565,6 +569,22 @@ function LimitsCard({ svc }: { svc: Service }) {
     },
     onError: () => toast('Could not save limits', 'error'),
   });
+
+  if (svc.type === 'compose') {
+    return (
+      <Card>
+        <CardBody>
+          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-300">
+            <Cpu size={15} className="text-slate-500" /> Resource limits
+          </div>
+          <p className="text-xs text-slate-500">
+            A compose stack manages its own containers — set resource limits under the service's{' '}
+            <code className="font-mono">deploy.resources.limits</code> block in the stack YAML.
+          </p>
+        </CardBody>
+      </Card>
+    );
+  }
 
   return (
     <Card>
@@ -579,12 +599,16 @@ function LimitsCard({ svc }: { svc: Service }) {
           }}
           className="flex flex-wrap items-end gap-4"
         >
-          <Field label="CPU limit cores (0 = no cap)">
-            <Input value={cpuCap} onChange={(e) => setCpuCap(e.target.value)} inputMode="decimal" placeholder="e.g. 0.5" className="h-9 w-44 font-mono text-xs" />
-          </Field>
-          <Field label="CPU shares (weight under contention)">
-            <Input value={cpu} onChange={(e) => setCpu(e.target.value)} inputMode="numeric" className="h-9 w-44 font-mono text-xs" />
-          </Field>
+          {isDocker && (
+            <>
+              <Field label="CPU limit cores (0 = no cap)">
+                <Input value={cpuCap} onChange={(e) => setCpuCap(e.target.value)} inputMode="decimal" placeholder="e.g. 0.5" className="h-9 w-44 font-mono text-xs" />
+              </Field>
+              <Field label="CPU shares (weight under contention)">
+                <Input value={cpu} onChange={(e) => setCpu(e.target.value)} inputMode="numeric" className="h-9 w-44 font-mono text-xs" />
+              </Field>
+            </>
+          )}
           <Field label="Memory limit MiB (0 = unlimited)">
             <Input value={mem} onChange={(e) => setMem(e.target.value)} inputMode="numeric" className="h-9 w-44 font-mono text-xs" />
           </Field>
@@ -593,10 +617,20 @@ function LimitsCard({ svc }: { svc: Service }) {
           </Button>
         </form>
         <p className="mt-2 text-xs text-slate-500">
-          CPU limit maps to Docker's <code className="font-mono">--cpus</code> (a hard cap, e.g. 0.5 = half a core); shares map to{' '}
-          <code className="font-mono">--cpu-shares</code> (a relative weight, default 1024 — they matter only when the host is
-          contended); memory to <code className="font-mono">--memory</code> with swap pinned to the same value. Running containers
-          get the new limits live where Docker allows it.
+          {isDocker ? (
+            <>
+              CPU limit maps to Docker's <code className="font-mono">--cpus</code> (a hard cap, e.g. 0.5 = half a core); shares map to{' '}
+              <code className="font-mono">--cpu-shares</code> (a relative weight, default 1024 — they matter only when the host is
+              contended); memory to <code className="font-mono">--memory</code> with swap pinned to the same value. Running containers
+              get the new limits live where Docker allows it.
+            </>
+          ) : (
+            <>
+              PM2 processes run on the host — the memory limit maps to pm2's{' '}
+              <code className="font-mono">max_memory_restart</code> (the process restarts gracefully above it, Docker-style hard
+              caps do not apply). Applied on the next deploy.
+            </>
+          )}
         </p>
       </CardBody>
     </Card>

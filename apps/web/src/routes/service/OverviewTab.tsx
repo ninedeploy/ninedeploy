@@ -255,7 +255,7 @@ function RuntimeInfoCard({ svc }: { svc: Service }) {
     ['Internal Port', svc.port ? `:${svc.port}` : '—'],
     ['Health Endpoint', svc.healthPath || '/'],
     ['Git Credential', svc.repoUrl ? (svc.sourceName ?? 'public / none') : '—'],
-    ['CPU Limit', svc.cpuShares ? `${svc.cpuShares} shares` : 'unlimited'],
+    ['CPU Limit', svc.cpuLimitMilli ? `${svc.cpuLimitMilli / 1000} cores` : svc.cpuShares ? `${svc.cpuShares} shares` : 'unlimited'],
     ['Memory Limit', svc.memLimitMb ? `${svc.memLimitMb} MiB` : 'unlimited'],
   ];
 

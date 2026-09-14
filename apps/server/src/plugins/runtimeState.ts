@@ -2,6 +2,7 @@ import fp from 'fastify-plugin';
 import { and, eq, isNull } from 'drizzle-orm';
 import { services } from '@ninedeploy/db';
 import { pm2Resurrect, pm2Start, pm2Status } from '../engine/builders/pm2.js';
+import { audit } from '../lib/audit.js';
 import { capture } from '../lib/exec.js';
 
 // A tight loop matters for the boot promise ("everything comes back on its
@@ -60,6 +61,25 @@ async function containerState(runtimeId: string): Promise<'running' | 'stopped' 
   return 'stopped';
 }
 
+/**
+ * Why a container was last down — read from the pre-revive inspect. Docker
+ * restarts or we revive the process, so an OOM kill is otherwise invisible:
+ * the panel never sees the down state and the operator keeps hitting the same
+ * memory ceiling. `exitCode` rides along because 137 (SIGKILL) frequently
+ * means OOM even when the OOMKilled flag is false (cgroup v2 kernel kills).
+ */
+async function downReason(runtimeId: string): Promise<{ oomKilled: boolean; exitCode: number } | null> {
+  try {
+    const raw = (await execDocker(['inspect', '--format', '{{.State.OOMKilled}}|{{.State.ExitCode}}', runtimeId])).trim();
+    const [oom, code] = raw.split('|');
+    return { oomKilled: oom === 'true', exitCode: Number(code) || 0 };
+  } catch {
+    // The daemon hiccuped between the two inspects — downgrade to "unknown",
+    // never let diagnostics break the revive.
+    return null;
+  }
+}
+
 /** Start a stopped container; returns whether it ended up running. */
 async function reviveContainer(runtimeId: string): Promise<boolean> {
   try {
@@ -97,6 +117,13 @@ async function reviveContainer(runtimeId: string): Promise<boolean> {
 
 export default fp(
   async (fastify) => {
+    // A crash-looping service dies every round — alert at most once per
+    // window per service so notifications stay useful, not noisy. In-memory
+    // is deliberate: a panel restart re-alerting once is fine, persistence
+    // for a throttle is not worth a table.
+    const OOM_ALERT_COOLDOWN_MS = 10 * 60_000;
+    const lastOomAlertAt = new Map<number, number>();
+
     const setStatus = async (
       svc: { id: number; name: string; runtimeId: string },
       status: 'stopped' | 'error',
@@ -111,6 +138,17 @@ export default fp(
         { serviceId: svc.id, name: svc.name, runtimeId: svc.runtimeId, status },
         'service runtime is down and could not be revived — status reconciled from live state (a redeploy recreates it)',
       );
+    };
+
+    /** Record an OOM kill in the activity trail + notification fan-out. */
+    const alertOom = (serviceId: number, name: string, runtimeId: string, exitCode: number) => {
+      const now = Date.now();
+      const last = lastOomAlertAt.get(serviceId) ?? 0;
+      if (now - last < OOM_ALERT_COOLDOWN_MS) return;
+      lastOomAlertAt.set(serviceId, now);
+      // 'alert.*' lands in the alert-scope notification subscriptions; the
+      // entity format matches the other service audit entries.
+      void audit(fastify.db, null, 'alert.oom', name, { serviceId, runtimeId, exitCode });
     };
 
     const reconcile = async () => {
@@ -150,11 +188,20 @@ export default fp(
               const live = await containerState(runtimeId);
               if (live === 'running') continue;
               if (live === 'stopped') {
+                // Read why it died BEFORE starting it — the restart wipes the
+                // OOMKilled flag's meaning (it reports the *last* exit, so a
+                // healthy post-revive exit would mask the crash).
+                const reason = await downReason(runtimeId);
                 if (await reviveContainer(runtimeId)) {
                   fastify.log.warn(
-                    { serviceId: svc.id, name: svc.name, runtimeId },
-                    'revived stopped container',
+                    { serviceId: svc.id, name: svc.name, runtimeId, exitCode: reason?.exitCode, oomKilled: reason?.oomKilled ?? false },
+                    reason?.oomKilled || reason?.exitCode === 137
+                      ? 'revived container that died from memory exhaustion — consider raising the memory limit in Service → Settings'
+                      : 'revived stopped container',
                   );
+                  if (reason?.oomKilled || reason?.exitCode === 137) {
+                    void alertOom(svc.id, svc.name, runtimeId, reason.exitCode);
+                  }
                   continue;
                 }
               }
