@@ -368,7 +368,7 @@ describe('DatabaseDetail', () => {
 
     const saveLimitsBtn = screen.getByRole('button', { name: 'Save resource limits' });
     fireEvent.click(saveLimitsBtn);
-    await waitFor(() => expect(api.databases.setLimits).toHaveBeenCalledWith(1, { cpuShares: 2048, memLimitMb: 1024 }));
+    await waitFor(() => expect(api.databases.setLimits).toHaveBeenCalledWith(1, { cpuShares: 2048, cpuLimitMilli: null, memLimitMb: 1024 }));
 
     // Delete DB success
     const deleteBtn = screen.getByRole('button', { name: 'Delete database' });
@@ -447,7 +447,7 @@ describe('DatabaseDetail', () => {
 
     const saveLimitsBtn = screen.getByRole('button', { name: 'Save resource limits' });
     fireEvent.click(saveLimitsBtn);
-    await waitFor(() => expect(api.databases.setLimits).toHaveBeenCalledWith(1, { cpuShares: null, memLimitMb: null }));
+    await waitFor(() => expect(api.databases.setLimits).toHaveBeenCalledWith(1, { cpuShares: null, cpuLimitMilli: null, memLimitMb: null }));
   });
 
   it('renders the Topology tab with visual schema', async () => {

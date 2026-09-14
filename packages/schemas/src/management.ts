@@ -505,6 +505,7 @@ export interface DatabaseDetail {
   containerId?: string | null;
   volumeName?: string | null;
   cpuShares?: number | null;
+  cpuLimitMilli?: number | null;
   memLimitMb?: number | null;
   webGuiEnabled?: boolean | null;
   webGuiPort?: number | null;

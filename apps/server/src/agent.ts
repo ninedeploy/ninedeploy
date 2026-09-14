@@ -90,6 +90,24 @@ function publishArgs(p: Params): string[] {
 }
 
 /**
+ * Resource limit flags for `docker.run`/`docker.runEnv`. Values arrive as
+ * panel-supplied strings and are re-validated here — an off-format value
+ * degrades to "no flag" (cpu shares) or "0" (uncapped), never to argv
+ * injection. memory-swap is pinned equal to memory: Docker's default allows
+ * swap = 2× the limit, which would quietly double the configured ceiling.
+ */
+function resourceArgs(p: Params): string[] {
+  const argv: string[] = [];
+  const shares = str(p, 'cpuShares');
+  if (shares !== undefined && /^\d{1,6}$/.test(shares)) argv.push('--cpu-shares', shares);
+  const cpus = str(p, 'cpuLimitMilli');
+  if (cpus !== undefined && /^\d{1,6}$/.test(cpus) && Number(cpus) > 0) argv.push('--cpus', String(Number(cpus) / 1000));
+  const mem = str(p, 'memLimitMb');
+  if (mem !== undefined && /^\d{1,6}$/.test(mem) && Number(mem) > 0) argv.push('--memory', `${mem}m`, '--memory-swap', `${mem}m`);
+  return argv;
+}
+
+/**
  * `compose -p <project> -f <file> [-f <override>]` — the shared prefix of every
  * compose operation. The optional override file carries the panel's volume
  * attachments; compose merges `-f` left to right, so it wins on duplicate keys.
@@ -122,10 +140,7 @@ const OPS: Record<string, { exe: 'docker' | 'git'; build: Op }> = {
     exe: 'docker',
     build: (p) => {
       const argv = ['run', '-d', '--name', validated(str(p, 'name'), RE_NAME, 'name'), '--restart', 'unless-stopped', '--network', 'ninedeploy'];
-      const cpu = str(p, 'cpuShares');
-      if (cpu !== undefined) argv.push('--cpu-shares', /^\d{1,6}$/.test(cpu) ? cpu : '0');
-      const mem = str(p, 'memLimitMb');
-      if (mem !== undefined) argv.push('--memory', `${/^\d{1,6}$/.test(mem) ? mem : '0'}m`);
+      argv.push(...resourceArgs(p));
       const vol = str(p, 'volume');
       if (vol !== undefined) argv.push('-v', `${validated(vol, RE_NAME, 'volume name')}:${validated(str(p, 'mount') ?? '/', RE_PATH, 'mount path')}`);
       argv.push(...publishArgs(p));
@@ -140,10 +155,7 @@ const OPS: Record<string, { exe: 'docker' | 'git'; build: Op }> = {
     exe: 'docker',
     build: (p) => {
       const argv = ['run', '-d', '--name', validated(str(p, 'name'), RE_NAME, 'name'), '--restart', 'unless-stopped', '--network', 'ninedeploy'];
-      const cpu = str(p, 'cpuShares');
-      if (cpu !== undefined) argv.push('--cpu-shares', /^\d{1,6}$/.test(cpu) ? cpu : '0');
-      const mem = str(p, 'memLimitMb');
-      if (mem !== undefined) argv.push('--memory', `${/^\d{1,6}$/.test(mem) ? mem : '0'}m`);
+      argv.push(...resourceArgs(p));
       const vol = str(p, 'volume');
       if (vol !== undefined) argv.push('-v', `${validated(vol, RE_NAME, 'volume name')}:${validated(str(p, 'mount') ?? '/', RE_PATH, 'mount path')}`);
       argv.push('--env-file', validated(str(p, 'envFile'), RE_PATH, 'env file path'));

@@ -43,6 +43,8 @@ export const createService = z.object({
    * Same 256 KiB cap as a Hub template's `composeContent`. */
   composeContent: z.string().min(1).max(262_144).optional(),
   cpuShares: z.number().int().min(0).max(262144).optional(),
+  /** Hard CPU cap in millicores (500 = 0.5 cores); maps to docker --cpus. */
+  cpuLimitMilli: z.number().int().min(0).max(512_000).optional(),
   memLimitMb: z.number().int().min(0).optional(),
   healthPath: httpPath.optional(),
   port: z.number().int().min(1).max(65535).optional(),
@@ -126,6 +128,8 @@ export const updateService = z.object({
    * alone cannot tell an inline stack from a git-repo compose service. */
   composeContent: z.string().min(1).max(262_144).optional(),
   cpuShares: z.number().int().min(0).max(262144).optional(),
+  /** Hard CPU cap in millicores (500 = 0.5 cores); maps to docker --cpus. */
+  cpuLimitMilli: z.number().int().min(0).max(512_000).optional(),
   memLimitMb: z.number().int().min(0).optional(),
   healthPath: httpPath.optional(),
   port: z.number().int().min(1).max(65535).optional(),
@@ -207,6 +211,7 @@ export const service = z.object({
   port: z.number().int().nullable(),
   publishedPort: z.number().int().nullable().optional(),
   cpuShares: z.number().int(),
+  cpuLimitMilli: z.number().int(),
   memLimitMb: z.number().int(),
   previewDeploymentsEnabled: z.boolean().optional(),
   previewAutoDestroyOnClose: z.boolean().optional(),
@@ -542,6 +547,9 @@ export type ServiceVolumeAttachment = z.infer<typeof serviceVolumeAttachment>;
 export const setLimits = z.object({
   cpuShares: z.number().int().min(0).max(262144).nullable().optional(),
   memLimitMb: z.number().int().min(0).nullable().optional(),
+  /** Hard CPU cap in millicores (500 = 0.5 cores), unlike the relative
+   * cpuShares weight. Maps to docker --cpus. */
+  cpuLimitMilli: z.number().int().min(0).max(512_000).nullable().optional(),
 });
 export type SetLimitsInput = z.infer<typeof setLimits>;
 
@@ -748,6 +756,8 @@ export const deployTemplate = z.object({
   publishedPort: z.number().int().min(1).max(65535).nullable().optional(),
   healthPath: httpPath.optional(),
   cpuShares: z.number().int().min(0).max(262144).optional(),
+  /** Hard CPU cap in millicores (500 = 0.5 cores); maps to docker --cpus. */
+  cpuLimitMilli: z.number().int().min(0).max(512_000).optional(),
   memLimitMb: z.number().int().min(0).optional(),
   /** Optional tag override for the template's image — SAME repository only
    *  (e.g. directus/directus:11.5 instead of :latest). Validated server-side

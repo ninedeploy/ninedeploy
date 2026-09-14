@@ -51,6 +51,7 @@ describe('databases table — schema/migration drift guard', () => {
       'db_name',
       'volume_name',
       'cpu_shares',
+      'cpu_limit_milli',
       'mem_limit_mb',
       'web_gui_enabled',
       'web_gui_port',

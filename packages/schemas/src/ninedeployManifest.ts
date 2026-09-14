@@ -135,6 +135,8 @@ export type Phases = z.infer<typeof phases>;
 export const resources = z
   .object({
     cpuShares: z.number().int().min(0).max(262144).optional(),
+    /** Hard CPU cap in millicores (500 = 0.5 cores); maps to docker --cpus. */
+    cpuLimitMilli: z.number().int().min(0).max(512_000).optional(),
     memMb: z.number().int().min(0).max(1_048_576).optional(),
   })
   .strict();

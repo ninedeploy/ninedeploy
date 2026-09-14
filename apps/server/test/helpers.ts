@@ -624,6 +624,7 @@ export const svcRow = (over: Record<string, unknown> = {}) => ({
   healthPath: '/',
   runtimeId: null,
   cpuShares: 0,
+  cpuLimitMilli: 0,
   memLimitMb: 0,
   publishedPort: null,
   previewDeploymentsEnabled: false,

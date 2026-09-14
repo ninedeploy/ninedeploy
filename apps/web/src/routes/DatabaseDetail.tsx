@@ -557,7 +557,7 @@ function OverviewPanel({
             <div className="flex justify-between">
               <dt className="text-slate-500">CPU / RAM Limit</dt>
               <dd className="font-mono text-slate-200">
-                {db.cpuShares ? `${db.cpuShares} shares` : 'Unlimited'} / {db.memLimitMb ? `${db.memLimitMb} MB` : 'Unlimited'}
+                {db.cpuLimitMilli ? `${db.cpuLimitMilli / 1000} cores` : db.cpuShares ? `${db.cpuShares} shares` : 'Unlimited'} / {db.memLimitMb ? `${db.memLimitMb} MB` : 'Unlimited'}
               </dd>
             </div>
           </dl>
@@ -798,16 +798,21 @@ function SettingsPanel({ db, onDeleted }: { db: IDatabaseDetail; onDeleted: () =
   const qc = useQueryClient();
   const { toast } = useToast();
   const [cpuShares, setCpuShares] = useState(db.cpuShares ? String(db.cpuShares) : '');
+  // Stored in millicores (500 = 0.5 cores); the field takes decimal cores.
+  const [cpuCap, setCpuCap] = useState(db.cpuLimitMilli ? String(db.cpuLimitMilli / 1000) : '');
   const [memLimitMb, setMemLimitMb] = useState(db.memLimitMb ? String(db.memLimitMb) : '');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [forceDelete, setForceDelete] = useState(false);
 
   const limitsMutation = useMutation({
-    mutationFn: () =>
-      api.databases.setLimits(db.id, {
+    mutationFn: () => {
+      const capCores = cpuCap.trim() ? Number(cpuCap.replace(',', '.')) : null;
+      return api.databases.setLimits(db.id, {
         cpuShares: cpuShares.trim() ? Number(cpuShares) : null,
+        cpuLimitMilli: capCores != null && Number.isFinite(capCores) && capCores > 0 ? Math.round(capCores * 1000) : null,
         memLimitMb: memLimitMb.trim() ? Number(memLimitMb) : null,
-      }),
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['database-detail', db.id] });
       qc.invalidateQueries({ queryKey: ['databases'] });
@@ -832,7 +837,16 @@ function SettingsPanel({ db, onDeleted }: { db: IDatabaseDetail; onDeleted: () =
       {/* Resource Limits */}
       <Card className="p-5 space-y-4">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Resource Allocations</h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Field label="CPU Limit (cores, hard cap)">
+            <Input
+              type="text"
+              inputMode="decimal"
+              placeholder="e.g. 0.5"
+              value={cpuCap}
+              onChange={(e) => setCpuCap(e.target.value)}
+            />
+          </Field>
           <Field label="CPU Shares (relative weight, e.g. 1024)">
             <Input
               type="number"
@@ -841,7 +855,7 @@ function SettingsPanel({ db, onDeleted }: { db: IDatabaseDetail; onDeleted: () =
               onChange={(e) => setCpuShares(e.target.value)}
             />
           </Field>
-          <Field label="Memory Limit (MB)">
+          <Field label="Memory Limit (MB, no swap allowance)">
             <Input
               type="number"
               placeholder="e.g. 512"

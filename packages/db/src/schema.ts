@@ -416,9 +416,11 @@ export const services = sqliteTable(
     healthPath: text('health_path').notNull().default('/'),
     // Runtime identifier: pm2 process name or docker container name.
     runtimeId: text('runtime_id'),
-    // Resource limits (0 = unlimited). cpuShares maps to docker --cpu-shares,
-    // memLimitMb maps to docker --memory (MiB).
+    // Resource limits (0 = unlimited). cpuShares maps to docker --cpu-shares
+    // (relative weight under contention), memLimitMb maps to docker --memory
+    // (MiB), cpuLimitMilli maps to docker --cpus (hard cap, 500 = 0.5 cores).
     cpuShares: integer('cpu_shares').notNull().default(0),
+    cpuLimitMilli: integer('cpu_limit_milli').notNull().default(0),
     memLimitMb: integer('mem_limit_mb').notNull().default(0),
     // Template-defined container command (argv after the image). Only the
     // admin-controlled template registry sets it — not the create-service API.
@@ -924,8 +926,9 @@ export const databases = sqliteTable(
     passwordEncrypted: text('password_encrypted').notNull(),
     dbName: text('db_name'),
     volumeName: text('volume_name'),
-    // Resource limits (0 = unlimited).
+    // Resource limits (0 = unlimited). cpuLimitMilli maps to docker --cpus.
     cpuShares: integer('cpu_shares').notNull().default(0),
+    cpuLimitMilli: integer('cpu_limit_milli').notNull().default(0),
     memLimitMb: integer('mem_limit_mb').notNull().default(0),
     // Web Studio (GUI): Adminer / Redis Commander / pgweb container port & status
     webGuiEnabled: integer('web_gui_enabled', { mode: 'boolean' }).notNull().default(false),

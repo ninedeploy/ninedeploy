@@ -1199,8 +1199,8 @@ export interface NineDeployClient {
     };
   };
   limits: {
-    setService: (serviceId: number, input: SetLimitsInput) => Promise<{ cpuShares: number; memLimitMb: number }>;
-    setDatabase: (databaseId: number, input: SetLimitsInput) => Promise<{ cpuShares: number; memLimitMb: number }>;
+    setService: (serviceId: number, input: SetLimitsInput) => Promise<{ cpuShares: number; cpuLimitMilli: number; memLimitMb: number; liveApplied: boolean }>;
+    setDatabase: (databaseId: number, input: SetLimitsInput) => Promise<{ cpuShares: number; cpuLimitMilli: number; memLimitMb: number }>;
   };
   traefik: {
     get: () => Promise<TraefikInfo>;
@@ -1909,7 +1909,7 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       },
       logs: (id, lines) => get<{ logs: string[] }>(`/v1/databases/${id}/logs${lines ? `?lines=${lines}` : ''}`),
       credentials: (id) => get<DatabaseCredentials>(`/v1/databases/${id}/credentials`),
-      setLimits: (id, input) => send<{ cpuShares: number | null; memLimitMb: number | null }>('PATCH', `/v1/databases/${id}/limits`, input),
+      setLimits: (id, input) => send<{ cpuShares: number | null; cpuLimitMilli: number | null; memLimitMb: number | null }>('PATCH', `/v1/databases/${id}/limits`, input),
       startStudio: (id, port) => send<{ ok: boolean; port: number; url: string }>('POST', `/v1/databases/${id}/studio`, { port }),
       stopStudio: async (id) => {
         await request(`/v1/databases/${id}/studio`, { method: 'DELETE' });
@@ -2055,9 +2055,9 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
     },
     limits: {
       setService: (serviceId, input) =>
-        send<{ cpuShares: number; memLimitMb: number }>('PATCH', `/v1/services/${serviceId}/limits`, input),
+        send<{ cpuShares: number; cpuLimitMilli: number; memLimitMb: number; liveApplied: boolean }>('PATCH', `/v1/services/${serviceId}/limits`, input),
       setDatabase: (databaseId, input) =>
-        send<{ cpuShares: number; memLimitMb: number }>('PATCH', `/v1/databases/${databaseId}/limits`, input),
+        send<{ cpuShares: number; cpuLimitMilli: number; memLimitMb: number }>('PATCH', `/v1/databases/${databaseId}/limits`, input),
     },
     traefik: {
       get: () => get<TraefikInfo>('/v1/traefik'),

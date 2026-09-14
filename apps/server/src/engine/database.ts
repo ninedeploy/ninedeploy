@@ -436,7 +436,10 @@ export async function startDatabase(
   const password = decrypt(d.passwordEncrypted);
   const args = ['run', '-d', '--name', d.containerName, '--network', NETWORK, '--restart', 'unless-stopped'];
   if (d.cpuShares > 0) args.push('--cpu-shares', String(d.cpuShares));
-  if (d.memLimitMb > 0) args.push('--memory', `${d.memLimitMb}m`);
+  // Hard CPU cap (--cpus) and swap pinned to the memory limit (see the app
+  // builder — without it Docker allows swap = 2× the limit).
+  if (d.cpuLimitMilli > 0) args.push('--cpus', String(d.cpuLimitMilli / 1000));
+  if (d.memLimitMb > 0) args.push('--memory', `${d.memLimitMb}m`, '--memory-swap', `${d.memLimitMb}m`);
   args.push('-v', `${d.volumeName}:${resolveVolumePath(cfg, d.version)}`);
   // Pass secrets via a 0600 env-file instead of `-e KEY=value` on the argv —
   // argv is visible to every local user via `ps`.

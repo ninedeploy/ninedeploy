@@ -544,19 +544,24 @@ function LimitsCard({ svc }: { svc: Service }) {
   const { toast } = useToast();
   // Initialized once from the service row — later refetches never fight user edits.
   const [cpu, setCpu] = useState(String(svc.cpuShares || ''));
+  // Stored in millicores (500 = 0.5 cores); the field takes decimal cores.
+  const [cpuCap, setCpuCap] = useState(svc.cpuLimitMilli ? String(svc.cpuLimitMilli / 1000) : '');
   const [mem, setMem] = useState(String(svc.memLimitMb || ''));
 
   const save = useMutation({
-    mutationFn: () =>
-      api.limits.setService(svc.id, {
+    mutationFn: () => {
+      const capCores = cpuCap.trim() ? Number(cpuCap.replace(',', '.')) : null;
+      return api.limits.setService(svc.id, {
         cpuShares: cpu.trim() ? toInt(cpu, 0) : null,
+        cpuLimitMilli: capCores != null && Number.isFinite(capCores) && capCores > 0 ? Math.round(capCores * 1000) : null,
         memLimitMb: mem.trim() ? toInt(mem, 0) : null,
-      }),
-    onSuccess: () => {
+      });
+    },
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['service', svc.id] });
       qc.invalidateQueries({ queryKey: ['services'] });
       qc.invalidateQueries({ queryKey: ['live-stats-snapshot'] });
-      toast('Limits saved — applied on next deploy', 'success');
+      toast(res.liveApplied ? 'Limits saved and applied to the running container' : 'Limits saved — applied on next deploy', 'success');
     },
     onError: () => toast('Could not save limits', 'error'),
   });
@@ -574,7 +579,10 @@ function LimitsCard({ svc }: { svc: Service }) {
           }}
           className="flex flex-wrap items-end gap-4"
         >
-          <Field label="CPU shares (0 = unlimited)">
+          <Field label="CPU limit cores (0 = no cap)">
+            <Input value={cpuCap} onChange={(e) => setCpuCap(e.target.value)} inputMode="decimal" placeholder="e.g. 0.5" className="h-9 w-44 font-mono text-xs" />
+          </Field>
+          <Field label="CPU shares (weight under contention)">
             <Input value={cpu} onChange={(e) => setCpu(e.target.value)} inputMode="numeric" className="h-9 w-44 font-mono text-xs" />
           </Field>
           <Field label="Memory limit MiB (0 = unlimited)">
@@ -585,7 +593,10 @@ function LimitsCard({ svc }: { svc: Service }) {
           </Button>
         </form>
         <p className="mt-2 text-xs text-slate-500">
-          CPU shares map to Docker's <code className="font-mono">--cpu-shares</code> (max 262144); memory to <code className="font-mono">--memory</code>. Applied on the next deploy.
+          CPU limit maps to Docker's <code className="font-mono">--cpus</code> (a hard cap, e.g. 0.5 = half a core); shares map to{' '}
+          <code className="font-mono">--cpu-shares</code> (a relative weight, default 1024 — they matter only when the host is
+          contended); memory to <code className="font-mono">--memory</code> with swap pinned to the same value. Running containers
+          get the new limits live where Docker allows it.
         </p>
       </CardBody>
     </Card>

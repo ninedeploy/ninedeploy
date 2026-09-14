@@ -26,6 +26,7 @@ interface ServiceBundle {
     composeContent?: string | null;
     healthPath: string;
     cpuShares: number;
+    cpuLimitMilli: number;
     memLimitMb: number;
   };
   buildConfig: {
@@ -86,6 +87,7 @@ export const serviceMigrationRoutes: FastifyPluginAsync = async (app) => {
         composeContent: svc.composeContent,
         healthPath: svc.healthPath,
         cpuShares: svc.cpuShares,
+        cpuLimitMilli: svc.cpuLimitMilli,
         memLimitMb: svc.memLimitMb,
       },
       buildConfig: bc ? {
@@ -142,6 +144,7 @@ export const serviceMigrationRoutes: FastifyPluginAsync = async (app) => {
       composeContent: bundle.service.composeContent ?? null,
       healthPath: bundle.service.healthPath || '/',
       cpuShares: bundle.service.cpuShares || 0,
+      cpuLimitMilli: bundle.service.cpuLimitMilli || 0,
       memLimitMb: bundle.service.memLimitMb || 0,
       status: 'idle',
     }).returning();

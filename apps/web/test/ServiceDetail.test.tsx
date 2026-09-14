@@ -82,6 +82,7 @@ const service = {
   status: 'running',
   runtimeId: 'nd-api',
   cpuShares: 1024,
+  cpuLimitMilli: 0,
   memLimitMb: 512,
   healthPath: '/',
   build: {
@@ -1082,7 +1083,7 @@ describe('ServiceDetail', () => {
     // Fresh object per fetch so the post-save invalidation produces a new
     // reference (react-query structural sharing keeps identical objects).
     mockOf(api.services.get).mockImplementation(async () => ({ ...service }) as never);
-    mockOf(api.limits.setService).mockResolvedValue({ cpuShares: 2048, memLimitMb: 1024 } as never);
+    mockOf(api.limits.setService).mockResolvedValue({ cpuShares: 2048, cpuLimitMilli: 0, memLimitMb: 1024, liveApplied: false } as never);
     renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
     await openTab('Settings');
     const cpuInput = await screen.findByDisplayValue('1024');
@@ -1092,7 +1093,7 @@ describe('ServiceDetail', () => {
     await user.clear(memInput);
     await user.type(memInput, '1024');
     await user.click(screen.getByRole('button', { name: /Save limits/ }));
-    await waitFor(() => expect(api.limits.setService).toHaveBeenCalledWith(1, { cpuShares: 2048, memLimitMb: 1024 }));
+    await waitFor(() => expect(api.limits.setService).toHaveBeenCalledWith(1, { cpuShares: 2048, cpuLimitMilli: null, memLimitMb: 1024 }));
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Limits saved — applied on next deploy', 'success'));
   });
 
@@ -1210,9 +1211,10 @@ describe('ServiceDetail', () => {
     await openTab('Settings');
     await screen.findByText('Resource limits');
     const inputs = document.querySelectorAll<HTMLInputElement>('input.w-44');
-    expect(inputs).toHaveLength(2);
+    expect(inputs).toHaveLength(3);
     expect(inputs[0]).toHaveValue('');
     expect(inputs[1]).toHaveValue('');
+    expect(inputs[2]).toHaveValue('');
   });
 
   it('renders an undeployed service with all-optional fields missing', async () => {
@@ -1234,18 +1236,18 @@ describe('ServiceDetail', () => {
   });
 
   it('clears limits to unlimited (null) when the inputs are emptied', async () => {
-    mockOf(api.limits.setService).mockResolvedValue({ cpuShares: 0, memLimitMb: 0 } as never);
+    mockOf(api.limits.setService).mockResolvedValue({ cpuShares: 0, cpuLimitMilli: 0, memLimitMb: 0, liveApplied: false } as never);
     const user = userEvent.setup();
     renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
     await openTab('Settings');
     await screen.findByText('Resource limits');
-    const cpuInput = document.querySelectorAll<HTMLInputElement>('input.w-44')[0]!;
-    const memInput = document.querySelectorAll<HTMLInputElement>('input.w-44')[1]!;
-    await user.clear(cpuInput);
-    await user.clear(memInput);
+    const inputs = document.querySelectorAll<HTMLInputElement>('input.w-44');
+    await user.clear(inputs[0]!);
+    await user.clear(inputs[1]!);
+    await user.clear(inputs[2]!);
     await user.click(screen.getByRole('button', { name: /Save limits/ }));
     // Empty inputs mean "no limit": the API receives null, not zero.
-    await waitFor(() => expect(api.limits.setService).toHaveBeenCalledWith(1, { cpuShares: null, memLimitMb: null }));
+    await waitFor(() => expect(api.limits.setService).toHaveBeenCalledWith(1, { cpuShares: null, cpuLimitMilli: null, memLimitMb: null }));
   });
 
   it('shows the settings saving label while in flight', async () => {

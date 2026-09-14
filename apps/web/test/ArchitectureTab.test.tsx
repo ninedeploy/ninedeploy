@@ -60,6 +60,7 @@ const mockService: Service = {
   healthPath: '/api/health',
   autoUrl: 'my-service.local',
   cpuShares: 512,
+  cpuLimitMilli: 0,
   memLimitMb: 256,
   build: null,
   createdAt: '2026-01-01T00:00:00Z',

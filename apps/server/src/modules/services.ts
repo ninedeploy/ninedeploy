@@ -115,6 +115,7 @@ function serialize(s: Service, sourceName: string | null = null, tags: TagIds = 
     publishedPort: s.publishedPort ?? null,
     autoUrl: config.wildcardDomain ? `${s.slug}.${config.wildcardDomain}` : null,
     cpuShares: s.cpuShares,
+    cpuLimitMilli: s.cpuLimitMilli,
     memLimitMb: s.memLimitMb,
     previewDeploymentsEnabled: s.previewDeploymentsEnabled,
     previewAutoDestroyOnClose: s.previewAutoDestroyOnClose,
@@ -355,6 +356,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         composeContent: input.composeContent ?? null,
         serverId: input.serverId ?? null,
         cpuShares: input.cpuShares ?? 0,
+        cpuLimitMilli: input.cpuLimitMilli ?? 0,
         memLimitMb: input.memLimitMb ?? 0,
         port: input.port ?? null,
         publishedPort: input.publishedPort ?? null,
@@ -703,22 +705,41 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     reply.status(204);
   });
 
-  // Resource limits (applied on next deploy).
+  // Resource limits. Persisted for the next deploy's `docker run`; a running
+  // docker container also gets a best-effort live `docker update` so the new
+  // ceiling takes effect without a redeploy (memory can only be raised live —
+  // lowering below current usage fails at the kernel, which we swallow and
+  // leave to the next deploy).
   app.patch('/:id/limits', async (req) => {
     const id = num((req.params as { id: string }).id);
     const limitTarget = await loadServiceForUser(app.db, id, req.user!);
     await assertServiceRole(app.db, limitTarget, req.user!, 'member');
     const input = setLimits.parse(req.body);
-    const updateData: { cpuShares?: number; memLimitMb?: number } = {};
+    const updateData: { cpuShares?: number; cpuLimitMilli?: number; memLimitMb?: number } = {};
     if (input.cpuShares !== undefined) {
       updateData.cpuShares = input.cpuShares && input.cpuShares > 0 ? input.cpuShares : 0;
+    }
+    if (input.cpuLimitMilli !== undefined) {
+      updateData.cpuLimitMilli = input.cpuLimitMilli && input.cpuLimitMilli > 0 ? input.cpuLimitMilli : 0;
     }
     if (input.memLimitMb !== undefined) {
       updateData.memLimitMb = input.memLimitMb && input.memLimitMb > 0 ? input.memLimitMb : 0;
     }
     const [svc] = await app.db.update(services).set(updateData).where(eq(services.id, id)).returning();
     if (!svc) throw notFound('Service not found');
-    return { cpuShares: svc.cpuShares, memLimitMb: svc.memLimitMb };
+    let liveApplied = false;
+    if (svc.type === 'docker' && svc.status === 'running' && svc.runtimeId) {
+      const argv = ['update'];
+      if (svc.cpuShares > 0) argv.push('--cpu-shares', String(svc.cpuShares));
+      if (svc.cpuLimitMilli > 0) argv.push('--cpus', String(svc.cpuLimitMilli / 1000));
+      if (svc.memLimitMb > 0) argv.push('--memory', `${svc.memLimitMb}m`, '--memory-swap', `${svc.memLimitMb}m`);
+      if (argv.length > 1) {
+        liveApplied = await capture('docker', [...argv, svc.runtimeId])
+          .then(() => true)
+          .catch(() => false);
+      }
+    }
+    return { cpuShares: svc.cpuShares, cpuLimitMilli: svc.cpuLimitMilli, memLimitMb: svc.memLimitMb, liveApplied };
   });
 
   // G-28: per-service sticky-session toggle. The setting lives in the

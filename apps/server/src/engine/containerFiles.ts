@@ -182,7 +182,9 @@ export interface ContainerInspectResult {
   networks: string[];
   resources: {
     memoryLimitBytes: number;
+    memorySwapBytes: number;
     cpuShares: number;
+    nanoCpus: number;
     restartPolicy: string;
   };
   raw: unknown;
@@ -229,7 +231,9 @@ export async function inspectContainer(container: string): Promise<ContainerInsp
     networks: Object.keys(data.NetworkSettings?.Networks ?? {}),
     resources: {
       memoryLimitBytes: data.HostConfig?.Memory ?? 0,
+      memorySwapBytes: data.HostConfig?.MemorySwap ?? 0,
       cpuShares: data.HostConfig?.CpuShares ?? 0,
+      nanoCpus: data.HostConfig?.NanoCpus ?? 0,
       restartPolicy: data.HostConfig?.RestartPolicy?.Name ?? 'no',
     },
     raw: data,
@@ -255,15 +259,25 @@ export async function getContainerComposeManifest(container: string): Promise<{
     `    restart: ${inspect.resources.restartPolicy || 'unless-stopped'}`,
   ];
 
-  if (inspect.resources.memoryLimitBytes > 0 || inspect.resources.cpuShares > 0) {
+  // cpu-shares is a scheduling WEIGHT (default 1024), not a CPU cap — it must
+  // not be rendered as `cpus:`, which would impose a hard limit the container
+  // never had. The hard cap lives in NanoCpus; swap is only meaningful when it
+  // differs from the memory limit (compose memswap_limit = memory + swap).
+  if (inspect.resources.cpuShares > 0) {
+    lines.push(`    cpu_shares: ${inspect.resources.cpuShares}`);
+  }
+  if (inspect.resources.memoryLimitBytes > 0 || inspect.resources.nanoCpus > 0 || inspect.resources.memorySwapBytes > inspect.resources.memoryLimitBytes) {
     lines.push(`    deploy:`);
     lines.push(`      resources:`);
     lines.push(`        limits:`);
     if (inspect.resources.memoryLimitBytes > 0) {
       lines.push(`          memory: ${Math.round(inspect.resources.memoryLimitBytes / (1024 * 1024))}M`);
     }
-    if (inspect.resources.cpuShares > 0) {
-      lines.push(`          cpus: '${(inspect.resources.cpuShares / 1024).toFixed(2)}'`);
+    if (inspect.resources.memorySwapBytes > inspect.resources.memoryLimitBytes) {
+      lines.push(`          memory_swap: ${Math.round(inspect.resources.memorySwapBytes / (1024 * 1024))}M`);
+    }
+    if (inspect.resources.nanoCpus > 0) {
+      lines.push(`          cpus: '${inspect.resources.nanoCpus / 1e9}'`);
     }
   }
 

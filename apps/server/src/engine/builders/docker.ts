@@ -634,7 +634,12 @@ export const dockerBuilder: Builder = {
     // run side by side without fighting over a host port — and removes the
     // loopback exposure entirely.
     if (service.cpuShares > 0) args.push('--cpu-shares', String(service.cpuShares));
-    if (service.memLimitMb > 0) args.push('--memory', `${service.memLimitMb}m`);
+    // Hard CPU cap — unlike --cpu-shares this throttles even without contention.
+    if (service.cpuLimitMilli > 0) args.push('--cpus', String(service.cpuLimitMilli / 1000));
+    // memory-swap pinned to memory: without it Docker allows swap = 2× the
+    // limit, so a "512 MiB" service could really take 512 MiB RAM + 512 MiB
+    // swap. A limit means a limit.
+    if (service.memLimitMb > 0) args.push('--memory', `${service.memLimitMb}m`, '--memory-swap', `${service.memLimitMb}m`);
     if (service.volumeMount) args.push('-v', `nd-svc-${service.slug}-data:${service.volumeMount}`);
     // Direct host port mapping (e.g. 8080:3000) for domain-less external access.
     if (service.publishedPort) {

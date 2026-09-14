@@ -152,7 +152,7 @@ describe('Monitoring', () => {
     await userEvent.clear(memInput);
     await userEvent.type(memInput, '1024');
     fireEvent.submit(cpuInput.closest('form')!);
-    await waitFor(() => expect(apiMock.api.limits.setService).toHaveBeenCalledWith(1, { cpuShares: 512, memLimitMb: 1024 }));
+    await waitFor(() => expect(apiMock.api.limits.setService).toHaveBeenCalledWith(1, { cpuShares: 512, cpuLimitMilli: null, memLimitMb: 1024 }));
   });
 
   it('submits zero limits when the fields are emptied', async () => {
@@ -163,7 +163,7 @@ describe('Monitoring', () => {
     const cpuInput = screen.getAllByPlaceholderText('cpu shares')[0]!;
     await userEvent.clear(screen.getAllByPlaceholderText('mem MB')[0]!);
     fireEvent.submit(cpuInput.closest('form')!);
-    await waitFor(() => expect(apiMock.api.limits.setService).toHaveBeenCalledWith(1, { cpuShares: null, memLimitMb: null }));
+    await waitFor(() => expect(apiMock.api.limits.setService).toHaveBeenCalledWith(1, { cpuShares: null, cpuLimitMilli: null, memLimitMb: null }));
   });
 
   it('shows the pending state while limits are being saved', async () => {
@@ -218,7 +218,7 @@ describe('Monitoring', () => {
     const memInput = screen.getAllByPlaceholderText('mem MB')[0]!;
     await userEvent.type(memInput, '128');
     fireEvent.submit(memInput.closest('form')!);
-    await waitFor(() => expect(apiMock.api.limits.setDatabase).toHaveBeenCalledWith(2, { cpuShares: null, memLimitMb: 128 }));
+    await waitFor(() => expect(apiMock.api.limits.setDatabase).toHaveBeenCalledWith(2, { cpuShares: null, cpuLimitMilli: null, memLimitMb: 128 }));
   });
 
   it('shows an empty state when no alert rules exist', async () => {

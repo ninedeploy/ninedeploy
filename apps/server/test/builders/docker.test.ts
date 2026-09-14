@@ -69,6 +69,7 @@ const makeCtx = (over: Record<string, unknown> = {}) => ({
     image: null,
     port: 3000,
     cpuShares: 512,
+    cpuLimitMilli: 0,
     memLimitMb: 256,
     volumeMount: '/data',
     healthPath: '/health',
@@ -131,7 +132,7 @@ describe('dockerBuilder.buildAndRun', () => {
 
   it('pulls a pre-built image and starts a container with resource/env-file flags', async () => {
     h.run.mockRejectedValueOnce(new Error('pull failed')).mockResolvedValueOnce(undefined);
-    const ctx = makeCtx({ service: { slug: 'web', image: 'nginx:1.25', port: 3000, cpuShares: 512, memLimitMb: 256, volumeMount: '/data', healthPath: '/health' } });
+    const ctx = makeCtx({ service: { slug: 'web', image: 'nginx:1.25', port: 3000, cpuShares: 512, cpuLimitMilli: 500, memLimitMb: 256, volumeMount: '/data', healthPath: '/health' } });
 
     const runtime = await dockerBuilder.buildAndRun(ctx as never);
 
@@ -148,7 +149,8 @@ describe('dockerBuilder.buildAndRun', () => {
     expect(runArgs).toEqual(
       [
         'run', '-d', '--name', 'web-3', '--restart', 'unless-stopped', '--network', 'nd-svc-web',
-        '--cpu-shares', '512', '--memory', '256m',
+        '--cpu-shares', '512', '--cpus', '0.5',
+        '--memory', '256m', '--memory-swap', '256m',
         '-v', 'nd-svc-web-data:/data',
         '--env-file', expect.any(String),
         'nginx:1.25',

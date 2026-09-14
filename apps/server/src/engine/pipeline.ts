@@ -684,10 +684,15 @@ export async function runDeployment(
       const patch: Partial<typeof service> = {};
       const notes: string[] = [];
       const cpu = manifest.resources?.cpuShares;
+      const cpuCap = manifest.resources?.cpuLimitMilli;
       const mem = manifest.resources?.memMb;
       if (service.cpuShares === 0 && cpu) {
         patch.cpuShares = cpu;
         notes.push(`cpuShares=${cpu}`);
+      }
+      if (service.cpuLimitMilli === 0 && cpuCap) {
+        patch.cpuLimitMilli = cpuCap;
+        notes.push(`cpuLimitMilli=${cpuCap}`);
       }
       if (service.memLimitMb === 0 && mem) {
         patch.memLimitMb = mem;

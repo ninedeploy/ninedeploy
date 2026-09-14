@@ -224,7 +224,7 @@ export interface IMenuRegistry {
 export interface IComputeDriver {
   readonly name: string;
   pullImage(image: string, onLog: (l: string) => void): Promise<void>;
-  runContainer(opts: { name: string; image: string; network?: string; envFile?: string; volume?: string; mount?: string; cpuShares?: string; memLimitMb?: string }): Promise<void>;
+  runContainer(opts: { name: string; image: string; network?: string; envFile?: string; volume?: string; mount?: string; cpuShares?: string; cpuLimitMilli?: string; memLimitMb?: string }): Promise<void>;
   stopContainer(name: string, timeoutSec?: number): Promise<void>;
   removeContainer(name: string): Promise<void>;
   inspectContainer(name: string): Promise<{ status: string; ipAddress?: string; image?: string }>;

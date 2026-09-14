@@ -56,14 +56,29 @@ export function ResourcesSection({
 }) {
   const patch = (next: Partial<Resources>) => {
     const merged = { ...(value ?? {}), ...next };
-    // Both fields unset → drop the whole block so the YAML stays minimal.
-    onChange(merged.cpuShares == null && merged.memMb == null ? undefined : merged);
+    // All fields unset → drop the whole block so the YAML stays minimal.
+    onChange(merged.cpuShares == null && merged.cpuLimitMilli == null && merged.memMb == null ? undefined : merged);
   };
   return (
     <div className="space-y-4">
       <Field
+        label="CPU limit (cores, hard cap)"
+        hint="Caps the container even without contention; 0.5 = half a core (maps to docker --cpus)"
+      >
+        <Input
+          type="text"
+          inputMode="decimal"
+          value={value?.cpuLimitMilli ? String(value.cpuLimitMilli / 1000) : ''}
+          placeholder="e.g. 0.5"
+          onChange={(e) => {
+            const n = e.target.value ? Number(e.target.value.replace(',', '.')) : undefined;
+            patch({ cpuLimitMilli: n != null && Number.isFinite(n) && n > 0 ? Math.round(n * 1000) : undefined });
+          }}
+        />
+      </Field>
+      <Field
         label="CPU shares"
-        hint="0 = unlimited (default); 1024 ≈ 1 vCPU on Docker's weighted scheduler"
+        hint="Relative weight under contention (default 1024); 1024 ≈ 1 vCPU on Docker's weighted scheduler"
       >
         <div className="space-y-2">
           <Input

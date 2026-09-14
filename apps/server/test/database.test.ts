@@ -276,7 +276,7 @@ describe('startDatabase', () => {
     const log = vi.fn();
 
     await startDatabase(
-      dbRow({ engine: 'mysql', containerName: 'cm', volumeName: 'vm', cpuShares: 512, memLimitMb: 256 }),
+      dbRow({ engine: 'mysql', containerName: 'cm', volumeName: 'vm', cpuShares: 512, cpuLimitMilli: 500, memLimitMb: 256 }),
       log,
     );
 
@@ -286,7 +286,8 @@ describe('startDatabase', () => {
       'docker',
       [
         'run', '-d', '--name', 'cm', '--network', 'ninedeploy', '--restart', 'unless-stopped',
-        '--cpu-shares', '512', '--memory', '256m',
+        '--cpu-shares', '512', '--cpus', '0.5',
+        '--memory', '256m', '--memory-swap', '256m',
         '-v', 'vm:/var/lib/mysql',
         '--env-file', expect.any(String),
         'mysql:9.7',

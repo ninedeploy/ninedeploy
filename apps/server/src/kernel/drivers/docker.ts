@@ -17,6 +17,8 @@ export class LocalDockerDriver implements IComputeDriver {
     volume?: string;
     mount?: string;
     cpuShares?: string;
+    /** Hard CPU cap in millicores (500 = 0.5 cores); maps to docker --cpus. */
+    cpuLimitMilli?: string;
     memLimitMb?: string;
   }): Promise<void> {
     const argv = ['run', '-d', '--name', opts.name, '--restart', 'unless-stopped'];
@@ -33,8 +35,11 @@ export class LocalDockerDriver implements IComputeDriver {
     if (opts.cpuShares) {
       argv.push('--cpu-shares', opts.cpuShares);
     }
+    if (opts.cpuLimitMilli && /^\d{1,6}$/.test(opts.cpuLimitMilli) && Number(opts.cpuLimitMilli) > 0) {
+      argv.push('--cpus', String(Number(opts.cpuLimitMilli) / 1000));
+    }
     if (opts.memLimitMb) {
-      argv.push('--memory', `${opts.memLimitMb}m`);
+      argv.push('--memory', `${opts.memLimitMb}m`, '--memory-swap', `${opts.memLimitMb}m`);
     }
 
     argv.push(opts.image);

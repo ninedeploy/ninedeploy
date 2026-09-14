@@ -516,7 +516,7 @@ describe('databases routes', () => {
     const app = await buildTestApp({
       db: createFakeDb({
         findFirst: { databases: dbRow({ id: 7, status: 'running' }) },
-        update: { databases: [dbRow({ id: 7, status: 'running', cpuShares: 512, memLimitMb: 1024 })] },
+        update: { databases: [dbRow({ id: 7, status: 'running', cpuShares: 512, cpuLimitMilli: 500, memLimitMb: 1024 })] },
       }),
     });
     await app.register(databasesRoutes);
@@ -524,10 +524,10 @@ describe('databases routes', () => {
       method: 'PATCH',
       url: '/7/limits',
       headers: asUser(),
-      payload: { cpuShares: 512, memLimitMb: 1024 },
+      payload: { cpuShares: 512, cpuLimitMilli: 500, memLimitMb: 1024 },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ cpuShares: 512, memLimitMb: 1024 });
+    expect(res.json()).toEqual({ cpuShares: 512, cpuLimitMilli: 500, memLimitMb: 1024 });
     expect(engineMocks.stopDatabase).toHaveBeenCalled();
     expect(engineMocks.startDatabase).toHaveBeenCalled();
   });

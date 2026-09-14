@@ -365,7 +365,9 @@ describe('containerFiles operations (docker exec)', () => {
     expect(yaml).toContain('memory: 100M');
     expect(yaml).not.toContain('cpus:');
 
-    // CPU-only
+    // CPU-only: a hard cap comes from NanoCpus; cpu-shares is a scheduling
+    // weight and must render as `cpu_shares`, never as `cpus:` (which would
+    // impose a cap the container does not have).
     const cpuOnlyInspect = [
       {
         Id: 'cid777',
@@ -376,7 +378,22 @@ describe('containerFiles operations (docker exec)', () => {
     ];
     execMocks.capture.mockResolvedValueOnce(JSON.stringify(cpuOnlyInspect));
     const { yaml: cpuYaml } = await getContainerComposeManifest('cpu-app');
-    expect(cpuYaml).toContain("cpus: '0.50'");
+    expect(cpuYaml).toContain('cpu_shares: 512');
+    expect(cpuYaml).not.toContain('cpus:');
     expect(cpuYaml).not.toContain('memory:');
+
+    // Hard CPU cap renders from NanoCpus only.
+    const cappedInspect = [
+      {
+        Id: 'cid999',
+        Name: 'capped-app',
+        Config: { Image: 'node:20' },
+        HostConfig: { Memory: 0, CpuShares: 1024, NanoCpus: 500000000 },
+      },
+    ];
+    execMocks.capture.mockResolvedValueOnce(JSON.stringify(cappedInspect));
+    const { yaml: cappedYaml } = await getContainerComposeManifest('capped-app');
+    expect(cappedYaml).toContain("cpus: '0.5'");
+    expect(cappedYaml).toContain('cpu_shares: 1024');
   });
 });

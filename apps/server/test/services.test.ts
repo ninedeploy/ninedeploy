@@ -699,14 +699,48 @@ describe('services routes', () => {
 
   it('updates limits', async () => {
     const app = await buildTestApp({
-      db: createFakeDb({ findFirst: { services: svcRow({ id: 1 }) }, update: { services: [svcRow({ id: 1, cpuShares: 512, memLimitMb: 1024 })] } }),
+      db: createFakeDb({ findFirst: { services: svcRow({ id: 1 }) }, update: { services: [svcRow({ id: 1, cpuShares: 512, cpuLimitMilli: 500, memLimitMb: 1024 })] } }),
     });
     await app.register(servicesRoutes);
     const res = await app.inject({
-      method: 'PATCH', url: '/1/limits', headers: asUser(), payload: { cpuShares: 512, memLimitMb: 1024 },
+      method: 'PATCH', url: '/1/limits', headers: asUser(), payload: { cpuShares: 512, cpuLimitMilli: 500, memLimitMb: 1024 },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ cpuShares: 512, memLimitMb: 1024 });
+    expect(res.json()).toEqual({ cpuShares: 512, cpuLimitMilli: 500, memLimitMb: 1024, liveApplied: false });
+  });
+
+  it('live-applies limits to a running docker container via docker update', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { services: svcRow({ id: 1, status: 'running', runtimeId: 'web-3' }) },
+        update: { services: [svcRow({ id: 1, status: 'running', runtimeId: 'web-3', memLimitMb: 1024 })] },
+      }),
+    });
+    await app.register(servicesRoutes);
+    const res = await app.inject({
+      method: 'PATCH', url: '/1/limits', headers: asUser(), payload: { memLimitMb: 1024 },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ cpuShares: 0, cpuLimitMilli: 0, memLimitMb: 1024, liveApplied: true });
+    // Swap pinned to memory — a bare --memory would allow 2× via swap.
+    expect(execMocks.capture).toHaveBeenCalledWith('docker', [
+      'update', '--memory', '1024m', '--memory-swap', '1024m', 'web-3',
+    ]);
+  });
+
+  it('skips the live docker update when the container is not running', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { services: svcRow({ id: 1, status: 'idle' }) },
+        update: { services: [svcRow({ id: 1, memLimitMb: 1024 })] },
+      }),
+    });
+    await app.register(servicesRoutes);
+    const res = await app.inject({
+      method: 'PATCH', url: '/1/limits', headers: asUser(), payload: { memLimitMb: 1024 },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ cpuShares: 0, cpuLimitMilli: 0, memLimitMb: 1024, liveApplied: false });
   });
 
   it('returns 404 when updating limits on a missing service', async () => {

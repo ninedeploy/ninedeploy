@@ -851,13 +851,16 @@ function ServiceSpark({ id }: { id: number }) {
 function LimitsRow({ kind, id, memLimitMb }: { kind: 'service' | 'database'; id: number; memLimitMb: number }) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const [cpuCap, setCpuCap] = useState('');
   const [cpu, setCpu] = useState('');
   const [mem, setMem] = useState('');
 
   const save = useMutation({
     mutationFn: () => {
+      const capCores = cpuCap.trim() ? Number(cpuCap.replace(',', '.')) : null;
       const input = {
         cpuShares: cpu.trim() ? toInt(cpu, 0) : null,
+        cpuLimitMilli: capCores != null && Number.isFinite(capCores) && capCores > 0 ? Math.round(capCores * 1000) : null,
         memLimitMb: mem.trim() ? toInt(mem, 0) : null,
       };
       return kind === 'service' ? api.limits.setService(id, input) : api.limits.setDatabase(id, input);
@@ -880,10 +883,11 @@ function LimitsRow({ kind, id, memLimitMb }: { kind: 'service' | 'database'; id:
   };
 
   // Prefill with the current limits whenever the container (re)mounts or the
-  // reported limit changes; cpu shares are not exposed by the stats API, so
-  // that field starts empty (placeholder describes the unit).
+  // reported limit changes; cpu fields are not exposed by the stats API, so
+  // they start empty (placeholders describe the unit).
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally keyed on id — the form prefill must reset when a different service/database is selected, even though the body doesn't reference id directly.
   useEffect(() => {
+    setCpuCap('');
     setCpu('');
     setMem(memLimitMb > 0 ? String(memLimitMb) : '');
   }, [id, memLimitMb]);
@@ -892,10 +896,16 @@ function LimitsRow({ kind, id, memLimitMb }: { kind: 'service' | 'database'; id:
     <form onSubmit={onSubmit} onClick={(e) => e.stopPropagation()} className="mt-4 flex items-center gap-2 border-t border-white/5 pt-3">
       <span className="text-[10px] uppercase tracking-wide text-slate-500">Limits</span>
       <Input
+        value={cpuCap}
+        onChange={(e) => setCpuCap(e.target.value)}
+        placeholder="cpus"
+        className="h-7 w-16 font-mono text-[11px]"
+      />
+      <Input
         value={cpu}
         onChange={(e) => setCpu(e.target.value)}
         placeholder="cpu shares"
-        className="h-7 w-24 font-mono text-[11px]"
+        className="h-7 w-20 font-mono text-[11px]"
       />
       <Input
         value={mem}

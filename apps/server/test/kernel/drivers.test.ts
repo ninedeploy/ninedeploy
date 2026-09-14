@@ -49,6 +49,7 @@ describe('Kernel Drivers', () => {
         volume: 'redis-data',
         mount: '/data',
         cpuShares: '512',
+        cpuLimitMilli: '500',
         memLimitMb: '256',
       });
       expect(captureSpy).toHaveBeenCalledWith('docker', [
@@ -57,7 +58,8 @@ describe('Kernel Drivers', () => {
         '--env-file', '/tmp/env',
         '-v', 'redis-data:/data',
         '--cpu-shares', '512',
-        '--memory', '256m',
+        '--cpus', '0.5',
+        '--memory', '256m', '--memory-swap', '256m',
         'redis:alpine',
       ]);
 

@@ -180,6 +180,7 @@ export function createRemoteDockerBuilder(agent: AgentCall): Builder {
       const resolvedPort = service.port ?? null;
       const runParams: Record<string, unknown> = { name, image: target, envFile };
       if (service.cpuShares > 0) runParams['cpuShares'] = String(service.cpuShares);
+      if (service.cpuLimitMilli > 0) runParams['cpuLimitMilli'] = String(service.cpuLimitMilli);
       if (service.memLimitMb > 0) runParams['memLimitMb'] = String(service.memLimitMb);
       if (service.volumeMount) {
         runParams['volume'] = `nd-svc-${service.slug}-data`;

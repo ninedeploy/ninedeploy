@@ -80,19 +80,25 @@ describe('agent typed-op argv templates', () => {
 
   it('docker.run appends resource limits and volume when given', async () => {
     const argv = await argvOf('docker.run', {
-      name: 'w', image: 'i', cpuShares: '512', memLimitMb: '256', volume: 'nd-svc-w-data', mount: '/data',
+      name: 'w', image: 'i', cpuShares: '512', cpuLimitMilli: '500', memLimitMb: '256', volume: 'nd-svc-w-data', mount: '/data',
     });
     expect(argv).toContain('--cpu-shares');
     expect(argv).toContain('512');
+    expect(argv).toContain('--cpus');
+    expect(argv).toContain('0.5');
     expect(argv).toContain('--memory');
     expect(argv).toContain('256m');
+    // Swap is pinned to the memory limit — Docker's default would allow 2×.
+    expect(argv).toContain('--memory-swap');
     expect(argv).toContain('nd-svc-w-data:/data');
   });
 
-  it('docker.run clamps non-numeric limits', async () => {
-    const argv = await argvOf('docker.run', { name: 'w', image: 'i', cpuShares: 'abc', memLimitMb: 'xyz' });
-    expect(argv).toContain('0');
-    expect(argv).toContain('0m');
+  it('docker.run drops non-numeric limits instead of forcing zeros', async () => {
+    const argv = await argvOf('docker.run', { name: 'w', image: 'i', cpuShares: 'abc', cpuLimitMilli: '1; rm', memLimitMb: 'xyz' });
+    expect(argv).not.toContain('--cpu-shares');
+    expect(argv).not.toContain('--cpus');
+    expect(argv).not.toContain('--memory');
+    expect(argv).not.toContain('--memory-swap');
   });
 
   it('docker.runEnv appends the env-file flag', async () => {
@@ -201,10 +207,10 @@ describe('agent typed-op argv templates', () => {
     expect(argv).toContain('nd-svc-w-data:/');
   });
 
-  it('docker.runEnv clamps non-numeric limits', async () => {
+  it('docker.runEnv drops non-numeric limits', async () => {
     const argv = await argvOf('docker.runEnv', { name: 'w', image: 'i', envFile: 'e.env', cpuShares: 'oops', memLimitMb: 'nah' });
-    expect(argv).toContain('0');
-    expect(argv).toContain('0m');
+    expect(argv).not.toContain('--cpu-shares');
+    expect(argv).not.toContain('--memory');
   });
 
   it('docker.run volume without an explicit mount defaults to /', async () => {

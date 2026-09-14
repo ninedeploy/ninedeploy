@@ -89,6 +89,7 @@ function serialize(
     containerName: d.containerName,
     volumeName: d.volumeName,
     cpuShares: d.cpuShares,
+    cpuLimitMilli: d.cpuLimitMilli,
     memLimitMb: d.memLimitMb,
     webGuiEnabled: Boolean(d.webGuiEnabled),
     webGuiPort: d.webGuiPort,
@@ -391,9 +392,12 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
     const d = await loadDatabaseForUser(app.db, num((req.params as { id: string }).id), req.user!);
     await assertDatabaseRole(app.db, d, req.user!, 'member');
     const input = setLimits.parse(req.body);
-    const updateData: { cpuShares?: number; memLimitMb?: number } = {};
+    const updateData: { cpuShares?: number; cpuLimitMilli?: number; memLimitMb?: number } = {};
     if (input.cpuShares !== undefined) {
       updateData.cpuShares = input.cpuShares ? Math.max(0, input.cpuShares) : 0;
+    }
+    if (input.cpuLimitMilli !== undefined) {
+      updateData.cpuLimitMilli = input.cpuLimitMilli ? Math.max(0, input.cpuLimitMilli) : 0;
     }
     if (input.memLimitMb !== undefined) {
       updateData.memLimitMb = input.memLimitMb ? Math.max(0, input.memLimitMb) : 0;
@@ -403,7 +407,7 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
       await stopDatabase(updated, () => undefined);
       await startDatabase(updated, (line) => app.log.info({ component: 'database' }, line));
     }
-    return { cpuShares: updated!.cpuShares, memLimitMb: updated!.memLimitMb };
+    return { cpuShares: updated!.cpuShares, cpuLimitMilli: updated!.cpuLimitMilli, memLimitMb: updated!.memLimitMb };
   });
 
   app.post('/:id/restart', async (req) => {
