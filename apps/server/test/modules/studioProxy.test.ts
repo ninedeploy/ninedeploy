@@ -2,7 +2,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
-import { studioCookieSetHeader, studioCookieValue, studioProxyRoutes } from '../../src/modules/studioProxy.js';
+import { studioCookieSetHeader, studioCookieValid, studioCookieValue, studioProxyRoutes } from '../../src/modules/studioProxy.js';
 
 let upstream: http.Server;
 let upstreamPort: number;
@@ -54,8 +54,12 @@ describe('studio proxy', () => {
     expect(res.body).toBe('upstream:GET:/');
     expect(seen).toHaveLength(1);
     expect(seen[0].url).toBe('/');
-    // The studio's own session cookie rides along; the panel's does not exist here.
-    expect(seen[0].headers.cookie).toBe(cookieHeader());
+    // The studio's own session cookie rides along; the panel's does not exist
+    // here. Compare structurally, not byte-for-byte against a freshly minted
+    // cookie — the route stamps its own expiry second, and this assertion
+    // crossing a 1s boundary would flake on the timestamp+HMAC pair.
+    expect(seen[0].headers.cookie).toMatch(/^nd-studio-3=\d+\.[0-9a-f]{64}$/);
+    expect(studioCookieValid(3, seen[0].headers.cookie)).toBe(true);
     await app.close();
   });
 
