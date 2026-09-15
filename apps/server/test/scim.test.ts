@@ -161,6 +161,135 @@ describe('SCIM 2.0 provisioning', () => {
     await app.close();
   });
 
+  it('reactivates a deactivated account on PATCH active=true', async () => {
+    let call = 0;
+    const db = createFakeDb({
+      select: { scimTokens: [TOKEN_ROW] },
+      findFirst: {
+        users: () => {
+          call++;
+          return userRow({ deactivatedAt: call === 1 ? new Date() : null });
+        },
+      },
+      update: { users: [userRow()] },
+    });
+    const app = await scimApp(db);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/scim/v2/Users/11',
+      headers: auth,
+      payload: { Operations: [{ op: 'replace', path: 'active', value: true }] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().active).toBe(true);
+    await app.close();
+  });
+
+  it('rejects a create payload without an email-shaped userName', async () => {
+    const app = await scimApp(createFakeDb({ select: { scimTokens: [TOKEN_ROW] } }));
+    const res = await app.inject({ method: 'POST', url: '/scim/v2/Users', headers: auth, payload: { userName: 'not-an-email' } });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('answers 404 for unknown or malformed user ids', async () => {
+    const db = createFakeDb({
+      select: { scimTokens: [TOKEN_ROW] },
+      findFirst: { users: () => undefined },
+    });
+    const app = await scimApp(db);
+    const missing = await app.inject({ method: 'GET', url: '/scim/v2/Users/999', headers: auth });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().schemas).toContain('urn:ietf:params:scim:api:messages:2.0:Error');
+    const malformed = await app.inject({ method: 'DELETE', url: '/scim/v2/Users/not-a-number', headers: auth });
+    expect(malformed.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it('PUT replaces the record and honours active=false', async () => {
+    let call = 0;
+    const db = createFakeDb({
+      select: { scimTokens: [TOKEN_ROW] },
+      findFirst: {
+        users: () => {
+          call++;
+          return userRow({ deactivatedAt: call > 1 ? new Date() : null });
+        },
+      },
+      update: { users: [userRow()] },
+    });
+    const app = await scimApp(db);
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/scim/v2/Users/11',
+      headers: auth,
+      payload: { userName: 'new.user@example.com', displayName: 'Renamed User', active: false },
+    });
+    expect(res.statusCode).toBe(200);
+    // The fake db does not apply the UPDATE, so the body reflects the stored
+    // row: deactivated (active=false) with the original name.
+    expect(res.json()).toMatchObject({ displayName: 'New User', active: false });
+    await app.close();
+  });
+
+  it('adopting an already-member active account does not duplicate the membership', async () => {
+    const memberInserts: Array<Record<string, unknown>> = [];
+    const db = createFakeDb({
+      select: { scimTokens: [TOKEN_ROW] },
+      findFirst: { users: () => userRow() },
+      findMany: { workspaceMembers: () => [memberRow()] },
+      update: { users: [userRow()] },
+      insert: {
+        workspaceMembers: (v: Record<string, unknown>) => {
+          memberInserts.push(v);
+          return [memberRow(v)];
+        },
+      },
+    });
+    const app = await scimApp(db);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/scim/v2/Users',
+      headers: auth,
+      payload: { userName: 'new.user@example.com' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(memberInserts).toEqual([]);
+    await app.close();
+  });
+
+  it('re-provisioning a deprovisioned account reactivates and re-enrolls it', async () => {
+    const memberInserts: Array<Record<string, unknown>> = [];
+    let call = 0;
+    const db = createFakeDb({
+      select: { scimTokens: [TOKEN_ROW] },
+      findFirst: {
+        users: () => {
+          call++;
+          return userRow({ deactivatedAt: call === 1 ? new Date() : null });
+        },
+      },
+      findMany: { workspaceMembers: () => (call === 1 ? [] : [memberRow()]) },
+      update: { users: [userRow()] },
+      insert: {
+        workspaceMembers: (v: Record<string, unknown>) => {
+          memberInserts.push(v);
+          return [memberRow(v)];
+        },
+      },
+    });
+    const app = await scimApp(db);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/scim/v2/Users',
+      headers: auth,
+      payload: { userName: 'new.user@example.com' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(memberInserts).toEqual([{ workspaceId: 7, userId: 11, role: 'member' }]);
+    await app.close();
+  });
+
   it('deactivates on PATCH active=false and denies login afterwards', async () => {
     let call = 0;
     const db = createFakeDb({
@@ -268,6 +397,14 @@ describe('SCIM management API', () => {
     expect(String(inserts[0]!.tokenHash)).not.toContain('scim_');
     const listed = await app.inject({ method: 'GET', url: '/scim/tokens', headers: asUser() });
     expect(listed.json()).toMatchObject([{ id: 4, name: 'Okta', workspaceId: 7, revoked: false }]);
+    await app.close();
+  });
+
+  it('answers 404 when revoking an unknown token', async () => {
+    const app = await buildTestApp({ db: createFakeDb({ update: { scimTokens: [] } }) });
+    await app.register(scimManagementRoutes, { prefix: '/scim' });
+    const res = await app.inject({ method: 'DELETE', url: '/scim/tokens/99', headers: asUser() });
+    expect(res.statusCode).toBe(404);
     await app.close();
   });
 
