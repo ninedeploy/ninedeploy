@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.5] - 2026-09-15
+
+> The scaling release: N containers per service with plain Docker —
+> no Swarm, no extra daemon.
+
+### Added
+
+- **Horizontal replicas.** Docker services can now run 1-10 replicas:
+  identical containers on the service bridge (`<runtimeId>`,
+  `<runtimeId>-r2`, …), Traefik round-robin across them with a
+  `healthCheck` block so a dead replica stops receiving traffic instead
+  of erroring. Replicas are started after the deploy's health gate,
+  revived automatically by the reconcile loop, and swept as one
+  generation by stop / start / restart / delete. The Scaling card in
+  Service → Settings and the `.ninedeploy` `resources.replicas` field
+  both set it; the overview runtime card shows the count.
+
+---
+
 ## [0.9.4] - 2026-09-15
 
 > The integrations release: the notification matrix reaches full parity,

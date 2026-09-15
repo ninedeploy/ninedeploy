@@ -1,4 +1,4 @@
-export const VERSION = '0.9.4';
+export const VERSION = '0.9.5';
 
 export interface ChangelogEntry {
   version: string;
@@ -8,6 +8,14 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.9.5',
+    date: '2026-09-15',
+    title: 'Horizontal Replicas — Swarm-less Scaling',
+    changes: [
+      'Docker services gain 1-10 replicas: identical containers on the service bridge that Traefik round-robins across with per-server health checks, so a dead replica drops out of rotation instead of erroring. Replicas are revived by the reconcile loop and swept as one generation by stop, start, restart and delete. Set from the Scaling card or the manifest resources.replicas field.',
+    ],
+  },
   {
     version: '0.9.4',
     date: '2026-09-15',
