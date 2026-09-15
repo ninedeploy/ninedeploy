@@ -698,6 +698,11 @@ export async function runDeployment(
         patch.memLimitMb = mem;
         notes.push(`memLimitMb=${mem}`);
       }
+      const replicas = manifest.resources?.replicas;
+      if (service.replicas === 1 && replicas && replicas > 1) {
+        patch.replicas = replicas;
+        notes.push(`replicas=${replicas}`);
+      }
       if (service.port == null && manifest.run?.port) {
         patch.port = manifest.run.port;
         notes.push(`port=${manifest.run.port}`);

@@ -871,9 +871,11 @@ describe('services routes', () => {
   });
 
   it('reports 409 when the container no longer exists at restart', async () => {
-    execMocks.capture.mockRejectedValueOnce(
-      new Error('`docker restart c1` exited 1: Error response from daemon: No such container: c1'),
-    );
+    // Batched restart AND the primary-only fallback both hit the missing
+    // container (clearAllMocks cannot reset persistent implementations, so
+    // two one-shots).
+    const missing = new Error('`docker restart c1` exited 1: Error response from daemon: No such container: c1');
+    execMocks.capture.mockRejectedValueOnce(missing).mockRejectedValueOnce(missing);
     const app = await buildTestApp({
       db: createFakeDb({ findFirst: { services: svcRow({ id: 1, runtimeId: 'c1' }) } }),
     });

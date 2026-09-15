@@ -57,7 +57,11 @@ export function ResourcesSection({
   const patch = (next: Partial<Resources>) => {
     const merged = { ...(value ?? {}), ...next };
     // All fields unset → drop the whole block so the YAML stays minimal.
-    onChange(merged.cpuShares == null && merged.cpuLimitMilli == null && merged.memMb == null ? undefined : merged);
+    onChange(
+      merged.cpuShares == null && merged.cpuLimitMilli == null && merged.memMb == null && merged.replicas == null
+        ? undefined
+        : merged,
+    );
   };
   return (
     <div className="space-y-4">
@@ -100,6 +104,22 @@ export function ResourcesSection({
             onPick={(cpuShares) => patch({ cpuShares })}
           />
         </div>
+      </Field>
+      <Field
+        label="Replicas (docker services)"
+        hint="1-10 identical containers; Traefik round-robins and health-checks each one. Applied when the panel's own value is still the default 1."
+      >
+        <Input
+          type="number"
+          min={1}
+          max={10}
+          value={value?.replicas ?? ''}
+          placeholder="1"
+          onChange={(e) => {
+            const n = e.target.value ? Number.parseInt(e.target.value, 10) : undefined;
+            patch({ replicas: n != null && Number.isFinite(n) ? n : undefined });
+          }}
+        />
       </Field>
       <Field
         label="Memory (MiB)"

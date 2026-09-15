@@ -138,6 +138,8 @@ export const resources = z
     /** Hard CPU cap in millicores (500 = 0.5 cores); maps to docker --cpus. */
     cpuLimitMilli: z.number().int().min(0).max(512_000).optional(),
     memMb: z.number().int().min(0).max(1_048_576).optional(),
+    /** Horizontal replicas for docker services (Traefik load-balances). */
+    replicas: z.number().int().min(1).max(10).optional(),
   })
   .strict();
 export type Resources = z.infer<typeof resources>;

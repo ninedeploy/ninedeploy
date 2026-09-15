@@ -1408,16 +1408,17 @@ describe('runDeployment applies the .ninedeploy build sections', () => {
       '  cpuShares: 512',
       '  cpuLimitMilli: 250',
       '  memMb: 256',
+      '  replicas: 2',
     ]);
     const { db } = makeDb();
-    baseSetup(db, { ...repoService, port: null, healthPath: '/', cpuShares: 0, cpuLimitMilli: 0, memLimitMb: 0 });
+    baseSetup(db, { ...repoService, port: null, healthPath: '/', cpuShares: 0, cpuLimitMilli: 0, memLimitMb: 0, replicas: 1 });
     db.query.buildConfigs.findFirst.mockResolvedValue(BUILD_CONFIG);
     const lines = collectLogs(1);
 
     await runDeployment(db as never, 1);
 
     const ctx = h.builder.buildAndRun.mock.calls.at(-1)![0] as { service: Record<string, unknown> };
-    expect(ctx.service).toMatchObject({ port: 8080, healthPath: '/healthz', cpuShares: 512, cpuLimitMilli: 250, memLimitMb: 256 });
+    expect(ctx.service).toMatchObject({ port: 8080, healthPath: '/healthz', cpuShares: 512, cpuLimitMilli: 250, memLimitMb: 256, replicas: 2 });
     expect(lines.some((l) => l.includes('.ninedeploy runtime config'))).toBe(true);
   });
 

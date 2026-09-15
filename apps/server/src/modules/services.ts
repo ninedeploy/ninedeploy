@@ -886,13 +886,26 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         throw err;
       });
     } else if (svc.type === 'docker' || svc.type === 'compose') {
-      await capture('docker', ['restart', svc.runtimeId]).catch(async (err: unknown) => {
+      // Batched over the replica generation — a stop → restart flow must
+      // bring the clones back too, or the panel would read `running` while
+      // half the capacity stayed down.
+      const restartId = svc.runtimeId;
+      await capture('docker', ['restart', ...replicaNames(restartId, svc.replicas)]).catch(async (err: unknown) => {
         if (isDaemonDown(err)) throw daemonUnavailable(err);
         if (isMissingRuntime(err)) {
-          await app.db.update(services).set({ status: 'error' }).where(eq(services.id, svc.id));
-          throw runtimeGone('Container', svc.runtimeId!);
+          // A stale replica name fails the whole batch — retry the primary
+          // alone before declaring the runtime gone.
+          await capture('docker', ['restart', restartId]).catch(async (err2: unknown) => {
+            if (isDaemonDown(err2)) throw daemonUnavailable(err2);
+            if (isMissingRuntime(err2)) {
+              await app.db.update(services).set({ status: 'error' }).where(eq(services.id, svc.id));
+              throw runtimeGone('Container', restartId);
+            }
+            throw err2;
+          });
+        } else {
+          throw err;
         }
-        throw err;
       });
     } else {
       req.log.warn({ type: svc.type, runtimeId: svc.runtimeId }, 'unsupported service type — cannot restart runtime');
