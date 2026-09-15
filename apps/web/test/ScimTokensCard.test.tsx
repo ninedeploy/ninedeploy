@@ -28,9 +28,7 @@ describe('ScimTokensCard', () => {
   it('mints a token, shows the plaintext exactly once, and revokes', async () => {
     mockOf(api.scim.createToken).mockResolvedValue({ id: 5, token: 'scim_plain-secret' } as never);
     mockOf(api.scim.revokeToken).mockResolvedValue({ ok: true } as never);
-    const { user, ...rtl } = await import('./helpers.js');
-    void user;
-    const view = rtl.renderWithProviders(<ScimTokensCard />);
+    const view = renderWithProviders(<ScimTokensCard />);
     await screen.findByText('Okta');
     fireEvent.change(screen.getByLabelText('SCIM workspace'), { target: { value: '7' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create token' }));
