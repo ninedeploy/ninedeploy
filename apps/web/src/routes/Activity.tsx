@@ -106,7 +106,20 @@ export function Activity() {
     URL.revokeObjectURL(url);
   };
 
+  // Well-known actions get a human-readable badge; anything unknown falls
+  // through to the raw action name so new backend events are never invisible.
+  const ACTION_LABELS: Record<string, string> = {
+    'alert.oom': 'Out of memory',
+    'ai.diagnose': 'AI diagnosis',
+    'ai.suggest': 'AI manifest',
+    'service.oom': 'Out of memory',
+  };
+  const actionLabel = (action: string) => ACTION_LABELS[action] ?? action;
+
   const getActionTone = (action: string) => {
+    if (action.startsWith('alert.') || action.includes('oom')) {
+      return 'text-rose-400 bg-rose-500/10 border-rose-500/20';
+    }
     if (action.includes('delete') || action.includes('destroy') || action.includes('remove') || action.includes('error')) {
       return 'text-rose-400 bg-rose-500/10 border-rose-500/20';
     }
@@ -276,8 +289,11 @@ export function Activity() {
                       {new Date(row.ts).toLocaleString()}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center rounded-md border px-2 py-0.5 font-mono text-[11px] font-medium ${getActionTone(row.action)}`}>
-                        {row.action}
+                      <span
+                        className={`inline-flex items-center rounded-md border px-2 py-0.5 font-mono text-[11px] font-medium ${getActionTone(row.action)}`}
+                        title={row.action}
+                      >
+                        {actionLabel(row.action)}
                       </span>
                     </td>
                     <td className="px-4 py-3">

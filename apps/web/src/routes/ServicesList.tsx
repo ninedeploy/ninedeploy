@@ -239,6 +239,14 @@ export function ServicesList() {
                                 {s.volumeMount}
                               </span>
                             )}
+                            {(s.replicas ?? 1) > 1 && (
+                              <span
+                                className="inline-flex items-center gap-1 rounded-md bg-fuchsia-500/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-fuchsia-300 ring-1 ring-inset ring-fuchsia-500/20"
+                                title={`${s.replicas} replicas behind Traefik's round-robin`}
+                              >
+                                <Layers size={11} className="text-fuchsia-400" />×{s.replicas}
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>
