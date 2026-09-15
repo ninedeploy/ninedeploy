@@ -206,6 +206,18 @@ describe('SCIM 2.0 provisioning', () => {
     await app.close();
   });
 
+  it('returns a single user by id', async () => {
+    const db = createFakeDb({
+      select: { scimTokens: [TOKEN_ROW] },
+      findFirst: { users: () => userRow() },
+    });
+    const app = await scimApp(db);
+    const res = await app.inject({ method: 'GET', url: '/scim/v2/Users/11', headers: auth });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ id: '11', userName: 'new.user@example.com', active: true });
+    await app.close();
+  });
+
   it('PUT replaces the record and honours active=false', async () => {
     let call = 0;
     const db = createFakeDb({
@@ -229,6 +241,30 @@ describe('SCIM 2.0 provisioning', () => {
     // The fake db does not apply the UPDATE, so the body reflects the stored
     // row: deactivated (active=false) with the original name.
     expect(res.json()).toMatchObject({ displayName: 'New User', active: false });
+    await app.close();
+  });
+
+  it('PUT reactivates a deactivated account with active=true', async () => {
+    let call = 0;
+    const db = createFakeDb({
+      select: { scimTokens: [TOKEN_ROW] },
+      findFirst: {
+        users: () => {
+          call++;
+          return userRow({ deactivatedAt: call > 1 ? null : new Date() });
+        },
+      },
+      update: { users: [userRow()] },
+    });
+    const app = await scimApp(db);
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/scim/v2/Users/11',
+      headers: auth,
+      payload: { userName: 'new.user@example.com', active: true },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().active).toBe(true);
     await app.close();
   });
 
@@ -397,6 +433,16 @@ describe('SCIM management API', () => {
     expect(String(inserts[0]!.tokenHash)).not.toContain('scim_');
     const listed = await app.inject({ method: 'GET', url: '/scim/tokens', headers: asUser() });
     expect(listed.json()).toMatchObject([{ id: 4, name: 'Okta', workspaceId: 7, revoked: false }]);
+    await app.close();
+  });
+
+  it('revokes a live token', async () => {
+    const db = createFakeDb({ update: { scimTokens: [{ id: 4, revokedAt: new Date() }] } });
+    const app = await buildTestApp({ db });
+    await app.register(scimManagementRoutes, { prefix: '/scim' });
+    const res = await app.inject({ method: 'DELETE', url: '/scim/tokens/4', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true });
     await app.close();
   });
 
