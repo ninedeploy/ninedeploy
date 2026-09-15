@@ -1256,7 +1256,7 @@ describe('ServiceDetail', () => {
   it('saves replicas from the scaling card and hides it for pm2 services', async () => {
     const user = userEvent.setup();
     const api = (await import('../src/lib/api.js')).api as unknown as {
-      services: { update: ReturnType<typeof vi.fn> };
+      services: { get: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
     };
     api.services.update = vi.fn().mockResolvedValue({ ...service });
     const first = renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
