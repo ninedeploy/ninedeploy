@@ -247,6 +247,10 @@ export function ManifestCreator() {
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState('');
   const [importErrors, setImportErrors] = useState<string[] | null>(null);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiDescription, setAiDescription] = useState('');
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { copy, copied } = useCopy(1500);
 
@@ -317,6 +321,23 @@ export function ManifestCreator() {
     });
   };
 
+  // AI deploy assist: describe the app, merge the schema-validated manifest
+  // over the draft. Sections the AI returns win; everything else survives.
+  const runAiFill = async () => {
+    setAiBusy(true);
+    setAiError(null);
+    try {
+      const { manifest: suggested } = await api.ai.suggestManifest(aiDescription.trim());
+      replace({ ...manifest, ...(suggested as Partial<NinedeployManifest>) });
+      setAiOpen(false);
+      setAiDescription('');
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'AI assist failed');
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -328,6 +349,11 @@ export function ManifestCreator() {
             <Tooltip content="Import an existing .ninedeploy file">
               <Button variant="secondary" size="md" onClick={() => setImportOpen(true)}>
                 <Upload size={14} /> Import
+              </Button>
+            </Tooltip>
+            <Tooltip content="Describe the app and let AI fill the manifest">
+              <Button variant="secondary" size="md" onClick={() => setAiOpen(true)}>
+                <Sparkles size={14} /> AI fill
               </Button>
             </Tooltip>
             <Tooltip content="Undo the last change">
@@ -685,6 +711,57 @@ export function ManifestCreator() {
             </div>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        title="Fill with AI"
+        onClose={() => {
+          setAiOpen(false);
+          setAiError(null);
+        }}
+        open={aiOpen}
+      >
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!aiBusy && aiDescription.trim().length >= 10) void runAiFill();
+          }}
+        >
+          <p className="text-xs text-slate-500">
+            Describe the app in plain language — stack, port, health endpoint, env vars. The
+            suggestion is validated against the manifest schema before it reaches this form and is
+            merged over your draft (Undo brings the old draft back).
+          </p>
+          <Textarea
+            aria-label="App description"
+            value={aiDescription}
+            onChange={(e) => setAiDescription(e.target.value)}
+            placeholder={'A Node 20 Express API listening on port 3000, healthcheck at /healthz, needs DATABASE_URL, cap it at 512 MiB.'}
+            rows={5}
+          />
+          {aiError && (
+            <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3 text-xs text-rose-200" role="alert">
+              {aiError}
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setAiOpen(false);
+                setAiError(null);
+              }}
+            >
+              <X size={12} /> Cancel
+            </Button>
+            <Button type="submit" size="sm" disabled={aiBusy || aiDescription.trim().length < 10}>
+              <Sparkles size={12} /> {aiBusy ? 'Thinking…' : 'Generate manifest'}
+            </Button>
+          </div>
+        </form>
       </Modal>
     </div>
   );

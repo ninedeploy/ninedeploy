@@ -350,3 +350,110 @@ describe('AI diagnosis routes', () => {
     await app.close();
   });
 });
+
+describe('AI manifest suggestion routes', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const suggest = (app: { inject: (opts: unknown) => Promise<{ statusCode: number; json: () => unknown }> }, description = 'A Node 20 Express API listening on port 3000 with a Postgres database, healthcheck at /healthz') =>
+    app.inject({
+      method: 'POST',
+      url: '/ai/suggest-manifest',
+      headers: asUser(),
+      payload: { description },
+    });
+
+  it('refuses to suggest when AI is not configured', async () => {
+    const app = await buildTestApp({ db: createFakeDb() });
+    await app.register(aiRoutes, { prefix: '/ai' });
+    const res = await suggest(app);
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('rejects a too-short description', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { settings: alternatingSettings() } }),
+    });
+    await app.register(aiRoutes, { prefix: '/ai' });
+    const res = await suggest(app, 'short');
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('returns a schema-validated manifest for a valid completion', async () => {
+    const manifest = { version: '1', run: { port: 3000, healthcheck: '/healthz' }, env: { required: ['DATABASE_URL'] }, resources: { memMb: 512 } };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: JSON.stringify(manifest) } }] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { settings: alternatingSettings() } }),
+    });
+    await app.register(aiRoutes, { prefix: '/ai' });
+    const res = await suggest(app);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ model: 'gpt-test', manifest });
+    // The description rides in the user message.
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, { body: string }];
+    expect(JSON.parse(init.body).messages[1].content).toContain('Express API');
+    await app.close();
+  });
+
+  it('accepts a JSON-fenced completion despite the no-fence instruction', async () => {
+    const manifest = { version: '1', run: { port: 8080 } };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: '```json\n' + JSON.stringify(manifest) + '\n```' } }] }),
+    }));
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { settings: alternatingSettings() } }),
+    });
+    await app.register(aiRoutes, { prefix: '/ai' });
+    const res = await suggest(app);
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as { manifest: unknown }).manifest).toEqual(manifest);
+    await app.close();
+  });
+
+  it('maps malformed JSON from the model to 502', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: 'here is your manifest: {version: 1' } }] }),
+    }));
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { settings: alternatingSettings() } }),
+    });
+    await app.register(aiRoutes, { prefix: '/ai' });
+    const res = await suggest(app);
+    expect(res.statusCode).toBe(502);
+    expect(JSON.stringify(res.json())).toContain('malformed JSON');
+    await app.close();
+  });
+
+  it('maps a schema-violating manifest (hallucinated field) to 502', async () => {
+    // The strict manifest schema rejects unknown keys — a hallucinated
+    // `kubernetes:` block must never reach the creator form.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: JSON.stringify({ version: '1', kubernetes: { replicas: 3 } }) } }] }),
+    }));
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { settings: alternatingSettings() } }),
+    });
+    await app.register(aiRoutes, { prefix: '/ai' });
+    const res = await suggest(app);
+    expect(res.statusCode).toBe(502);
+    expect(JSON.stringify(res.json())).toContain('invalid manifest');
+    await app.close();
+  });
+});

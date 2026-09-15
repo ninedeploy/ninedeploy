@@ -93,6 +93,7 @@ export function createFakeApiModule() {
       getConfig: vi.fn().mockResolvedValue({ configured: false, baseUrl: null, model: null, hasApiKey: false }),
       updateConfig: vi.fn(),
       diagnose: vi.fn(),
+      suggestManifest: vi.fn(),
     },
     deploys: {
       trigger: vi.fn(),

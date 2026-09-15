@@ -589,6 +589,8 @@ export interface NineDeployClient {
     updateConfig: (input: AiConfigUpdate) => Promise<{ ok: boolean }>;
     /** Ask the configured provider to diagnose a failed build log. */
     diagnose: (serviceId: number, deploymentId: number) => Promise<{ diagnosis: string; model: string }>;
+    /** Describe the app in plain language, get a schema-valid .ninedeploy manifest. */
+    suggestManifest: (description: string) => Promise<{ manifest: Record<string, unknown>; model: string }>;
   };
   serviceTags: {
     /** Read the project's / workspace's / label memberships of a service. */
@@ -1540,6 +1542,8 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
           'POST',
           `/v1/ai/services/${serviceId}/deploys/${deploymentId}/diagnose`,
         ),
+      suggestManifest: (description) =>
+        send<{ manifest: Record<string, unknown>; model: string }>('POST', '/v1/ai/suggest-manifest', { description }),
     },
     serviceTags: {
       get: (id) => get<ServiceTags>(`/v1/services/${id}/tags`),

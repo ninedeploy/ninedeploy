@@ -602,6 +602,42 @@ describe('ManifestCreator', () => {
     expect(screen.queryByLabelText('YAML to import')).not.toBeInTheDocument();
   });
 
+  it('fills the manifest with AI from a description and merges over the draft', async () => {
+    const user = userEvent.setup();
+    const api = (await import('../src/lib/api.js')).api as unknown as {
+      ai: { suggestManifest: ReturnType<typeof vi.fn> };
+    };
+    api.ai.suggestManifest = vi.fn().mockResolvedValue({
+      manifest: { version: '1', run: { port: 4000 }, resources: { memMb: 512 } },
+      model: 'gpt-test',
+    });
+    renderPage();
+    await user.click(screen.getByRole('button', { name: 'AI fill' }));
+    const area = screen.getByLabelText('App description');
+    await user.type(area, 'A Node 20 Express API listening on port 4000 with a Postgres database');
+    await user.click(screen.getByRole('button', { name: 'Generate manifest' }));
+    await waitFor(() => expect(api.ai.suggestManifest).toHaveBeenCalledWith(expect.stringContaining('Express API')));
+    // The modal closes and the suggested run.port lands in the form.
+    await waitFor(() => expect(screen.queryByLabelText('App description')).not.toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /Run section/ }));
+    // The Field component does not label-associate; assert via the value.
+    expect(screen.getByDisplayValue('4000')).toBeInTheDocument();
+  });
+
+  it('keeps the AI modal open with the error when the provider fails', async () => {
+    const user = userEvent.setup();
+    const api = (await import('../src/lib/api.js')).api as unknown as {
+      ai: { suggestManifest: ReturnType<typeof vi.fn> };
+    };
+    api.ai.suggestManifest = vi.fn().mockRejectedValue(new Error('The AI returned malformed JSON'));
+    renderPage();
+    await user.click(screen.getByRole('button', { name: 'AI fill' }));
+    await user.type(screen.getByLabelText('App description'), 'A small static site built with vite and deployed as SPA');
+    await user.click(screen.getByRole('button', { name: 'Generate manifest' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('The AI returned malformed JSON');
+    expect(screen.getByLabelText('App description')).toBeInTheDocument();
+  });
+
   it('keeps the modal open with the schema issues when the YAML is invalid', async () => {
     const user = userEvent.setup();
     renderPage();
