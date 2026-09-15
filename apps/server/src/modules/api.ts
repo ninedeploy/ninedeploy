@@ -33,6 +33,7 @@ import { networkRoutes } from './networks.js';
 import { orchestratorsRoutes } from './orchestrators.js';
 import { egressRoutes } from './egress.js';
 import { ssoRoutes } from './sso.js';
+import { scimManagementRoutes, scimRoutes } from './scim.js';
 import { metricRoutes, statsRoutes } from './stats.js';
 import { metricHistoryRoutes } from './metricHistory.js';
 import { servicesRoutes } from './services.js';
@@ -140,6 +141,9 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(brandingRoutes, { prefix: '/branding' });
   await app.register(egressRoutes, { prefix: '/egress' });
   await app.register(ssoRoutes, { prefix: '/sso' });
+  // SCIM 2.0 lives OUTSIDE /v1: IdPs hardcode the RFC path `${base}/scim/v2`.
+  await app.register(scimRoutes, { prefix: '/scim/v2' });
+  await app.register(scimManagementRoutes, { prefix: '/v1/scim' });
   await app.register(pluginRoutes, { prefix: '/plugins' });
   await app.register(menuRoutes, { prefix: '/menus' });
   await app.register(topologyRoutes, { prefix: '/topology' });

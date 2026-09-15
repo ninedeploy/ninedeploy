@@ -684,6 +684,31 @@ describe('createClient', () => {
     });
   });
 
+  describe('scim token management', () => {
+    it('lists, mints and revokes provisioning tokens', async () => {
+      const { fetchMock, calls } = makeFetch((url, init) => {
+        if (init.method === 'POST') return ok({ id: 4, token: 'scim_plain' });
+        if (init.method === 'DELETE') return ok({ ok: true });
+        return ok([{ id: 4, name: 'Okta', workspaceId: 7, createdAt: '2026-09-15T00:00:00Z', lastUsedAt: null, revoked: false }]);
+      });
+      const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+
+      const listed = await client.scim.listTokens();
+      expect(last(calls)).toMatchObject({ url: '/v1/scim/tokens', init: { method: 'GET' } });
+      expect(listed).toMatchObject([{ id: 4, name: 'Okta', revoked: false }]);
+
+      const minted = await client.scim.createToken({ name: 'Okta', workspaceId: 7 });
+      expect(last(calls)).toMatchObject({
+        url: '/v1/scim/tokens',
+        init: { method: 'POST', body: JSON.stringify({ name: 'Okta', workspaceId: 7 }) },
+      });
+      expect(minted).toMatchObject({ id: 4, token: 'scim_plain' });
+
+      await client.scim.revokeToken(4);
+      expect(last(calls)).toMatchObject({ url: '/v1/scim/tokens/4', init: { method: 'DELETE' } });
+    });
+  });
+
   describe('domains (custom hostnames)', () => {
     it('exercises list, create, dnsCheck and remove', async () => {
       const { fetchMock, calls } = makeFetch((url, init) => {

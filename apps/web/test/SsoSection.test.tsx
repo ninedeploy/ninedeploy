@@ -223,8 +223,9 @@ describe('SsoSection', () => {
     fireEvent.change(screen.getByPlaceholderText('••••••••••••'), { target: { value: 's3cret' } });
     fireEvent.click(screen.getByLabelText('Enable SSO on login page'));
     fireEvent.click(screen.getByLabelText('Auto-enroll new users on first login'));
-    // Field labels are spans, not <label>s: target the modal's only select.
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'admin' } });
+    // Field labels are spans, not <label>s: target the modal's select (the
+    // SCIM card's workspace select lives outside the modal).
+    fireEvent.change(screen.getAllByRole('combobox')[1]!, { target: { value: 'admin' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create Provider' }));
 
     await waitFor(() => {

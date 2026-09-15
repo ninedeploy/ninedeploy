@@ -816,6 +816,13 @@ export interface NineDeployClient {
     /** Detach the rule for a project. */
     clear: (projectId: number) => Promise<{ ok: boolean; driver: string }>;
   };
+  scim: {
+    /** SCIM 2.0 provisioning tokens (operator-managed). */
+    listTokens: () => Promise<Array<{ id: number; name: string; workspaceId: number; createdAt: string | null; lastUsedAt: string | null; revoked: boolean }>>;
+    /** The plaintext token is returned exactly once — only its sha256 persists. */
+    createToken: (input: { name: string; workspaceId: number }) => Promise<{ id: number; token: string }>;
+    revokeToken: (id: number) => Promise<{ ok: boolean }>;
+  };
   sso: {
     /** Every configured OIDC / SAML provider. G-22. */
     listProviders: () => Promise<{
@@ -1720,6 +1727,13 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
         error?: string;
       }>('POST', '/v1/sso/providers', input),
       removeProvider: (id) => send<{ ok: boolean }>('DELETE', `/v1/sso/providers/${id}`),
+    },
+    scim: {
+      listTokens: () =>
+        get<Array<{ id: number; name: string; workspaceId: number; createdAt: string | null; lastUsedAt: string | null; revoked: boolean }>>('/v1/scim/tokens'),
+      createToken: (input) =>
+        send<{ id: number; token: string }>('POST', '/v1/scim/tokens', input),
+      revokeToken: (id) => send<{ ok: boolean }>('DELETE', `/v1/scim/tokens/${id}`),
     },
     volumes: {
       list: () => get<VolumeEntry[]>('/v1/volumes'),

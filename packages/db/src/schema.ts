@@ -72,6 +72,12 @@ export const users = sqliteTable('users', {
   // replaying one inside the +/-1-step (90 s) drift window is refused because
   // its step is no longer strictly greater than this. Null = none used yet.
   totpLastStep: integer('totp_last_step'),
+  // SCIM 2.0 provisioning: the IdP's immutable external id for this account
+  // (join key for PUT/PATCH/DELETE from Okta/Entra et al). Null = local user.
+  scimExternalId: text('scim_external_id'),
+  // Non-null = the account was deactivated via SCIM (deprovisioned): login is
+  // denied, sessions and API tokens were revoked at deactivation time.
+  deactivatedAt: integer('deactivated_at', { mode: 'timestamp' }),
   // Instance-level operator flag.
   //
   // This is DELIBERATELY not derived from workspace membership. It used to be:
@@ -895,6 +901,30 @@ export const ssoProviders = sqliteTable(
 );
 
 export type SsoProvider = typeof ssoProviders.$inferSelect;
+
+// ─── SCIM provisioning ─────────────────────────────────────────────────────
+export const scimTokens = sqliteTable(
+  'scim_tokens',
+  {
+    id: id(),
+    name: text('name').notNull(),
+    // The bearer token presented by the IdP is hashed (sha256) before
+    // comparison — same envelope as api_tokens.
+    tokenHash: text('token_hash').notNull(),
+    // Every user the IdP provisions lands in this workspace as a member.
+    workspaceId: integer('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    createdAt: ts('created_at'),
+    lastUsedAt: integer('last_used_at', { mode: 'timestamp' }),
+    revokedAt: integer('revoked_at', { mode: 'timestamp' }),
+  },
+  (t) => ({
+    hashIdx: uniqueIndex('scim_tokens_token_hash_idx').on(t.tokenHash),
+  }),
+);
+
+export type ScimToken = typeof scimTokens.$inferSelect;
 
 export const settings = sqliteTable(
   'settings',

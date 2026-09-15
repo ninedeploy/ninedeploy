@@ -69,6 +69,11 @@ export function createFakeApiModule() {
       previewInvitation: vi.fn(),
       acceptInvitation: vi.fn(),
     },
+    scim: {
+      listTokens: vi.fn().mockResolvedValue([]),
+      createToken: vi.fn(),
+      revokeToken: vi.fn(),
+    },
     services: {
       list: vi.fn().mockResolvedValue([]),
       get: vi.fn(),

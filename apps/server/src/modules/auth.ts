@@ -295,6 +295,9 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         throw unauthorized('Invalid two-factor code', 'totp_invalid');
       }
     }
+    // SCIM-deprovisioned accounts verify fine (their credentials were hashed
+    // randomly at provision time anyway) but must never get a session.
+    if (user.deactivatedAt) throw unauthorized('This account has been deactivated', 'account_deactivated');
     recordSuccess(input.email);
     // Auto-accept any pending workspace invitations for this email so a user
     // who created their account to redeem an invite lands inside that

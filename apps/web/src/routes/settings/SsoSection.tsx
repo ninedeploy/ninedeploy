@@ -16,6 +16,7 @@ import {
   Select,
 } from '../../components/ui.js';
 import type { OidcProviderCreateInput, OidcProviderEntry } from '@ninedeploy/sdk';
+import { ScimTokensCard } from './ScimTokensCard.js';
 
 export function SsoSection() {
   const queryClient = useQueryClient();
@@ -393,6 +394,7 @@ export function SsoSection() {
           </form>
         </Modal>
       )}
+      <ScimTokensCard />
     </div>
   );
 }
