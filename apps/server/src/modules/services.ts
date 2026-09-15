@@ -18,6 +18,7 @@ import {
 import { composePreviewRequest, createService, sameImageRepository, setLimits, updateService } from '@ninedeploy/schemas';
 import { getTemplates } from '../templates/registry.js';
 import { capture } from '../lib/exec.js';
+import { replicaNames } from '../engine/dockerNames.js';
 import { audit } from '../lib/audit.js';
 import { config } from '../config.js';
 import { getStickyEnabledForService } from '../engine/proxy.js';
@@ -117,6 +118,7 @@ function serialize(s: Service, sourceName: string | null = null, tags: TagIds = 
     cpuShares: s.cpuShares,
     cpuLimitMilli: s.cpuLimitMilli,
     memLimitMb: s.memLimitMb,
+    replicas: s.replicas,
     previewDeploymentsEnabled: s.previewDeploymentsEnabled,
     previewAutoDestroyOnClose: s.previewAutoDestroyOnClose,
     previewDomainPattern: s.previewDomainPattern,
@@ -358,6 +360,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         cpuShares: input.cpuShares ?? 0,
         cpuLimitMilli: input.cpuLimitMilli ?? 0,
         memLimitMb: input.memLimitMb ?? 0,
+        replicas: input.replicas ?? 1,
         port: input.port ?? null,
         publishedPort: input.publishedPort ?? null,
         cmd: template?.cmd ?? null,
@@ -806,7 +809,10 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         req.log.warn({ err, runtimeId: svc.runtimeId }, 'pm2 process already gone; stop is idempotent');
       });
     } else if (svc.type === 'docker' || svc.type === 'compose') {
-      await capture('docker', ['stop', '-t', '5', svc.runtimeId]).catch((err: unknown) => {
+      // One batched stop covers the whole generation: primary + -r2..-rN
+      // replicas. Stopping only the primary would leave replicas serving
+      // while the panel says `stopped`.
+      await capture('docker', ['stop', '-t', '5', ...replicaNames(svc.runtimeId, svc.replicas)]).catch((err: unknown) => {
         if (isDaemonDown(err)) throw daemonUnavailable(err);
         if (!isMissingRuntime(err)) throw err;
         req.log.warn({ err, runtimeId: svc.runtimeId }, 'container already gone; stop is idempotent');
@@ -836,13 +842,27 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         throw err;
       });
     } else if (svc.type === 'docker' || svc.type === 'compose') {
-      await capture('docker', ['start', svc.runtimeId]).catch(async (err: unknown) => {
+      // Batched start covers primary + replicas, mirroring stop. `docker
+      // start` already-running members is a success (it prints the name),
+      // so partial states converge.
+      const startId = svc.runtimeId;
+      await capture('docker', ['start', ...replicaNames(startId, svc.replicas)]).catch(async (err: unknown) => {
         if (isDaemonDown(err)) throw daemonUnavailable(err);
         if (isMissingRuntime(err)) {
-          await app.db.update(services).set({ status: 'error' }).where(eq(services.id, svc.id));
-          throw runtimeGone('Container', svc.runtimeId!);
+          // A batched start fails when ANY member is missing (a stale replica
+          // name from a scaled-down generation). The primary may already be
+          // running — retry it alone before declaring the runtime gone.
+          await capture('docker', ['start', startId]).catch(async (err2: unknown) => {
+            if (isDaemonDown(err2)) throw daemonUnavailable(err2);
+            if (isMissingRuntime(err2)) {
+              await app.db.update(services).set({ status: 'error' }).where(eq(services.id, svc.id));
+              throw runtimeGone('Container', startId);
+            }
+            throw err2;
+          });
+        } else {
+          throw err;
         }
-        throw err;
       });
     } else {
       req.log.warn({ type: svc.type, runtimeId: svc.runtimeId }, 'unsupported service type — cannot start runtime');

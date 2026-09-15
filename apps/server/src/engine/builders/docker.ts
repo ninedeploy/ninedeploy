@@ -7,6 +7,7 @@ import { generateNixpacksToml } from '../../lib/ninedeployToNixpacks.js';
 import { buildEnv, capture, run, sleep } from '../../lib/exec.js';
 import { ensureDockerImage, pullDockerImage } from '../../lib/dockerPull.js';
 import { NETWORK } from '../proxy.js';
+import { MAX_REPLICAS, replicaNames } from '../dockerNames.js';
 import { ensureServiceBridge } from '../../lib/serviceBridge.js';
 import { buildWithBuildKit } from './buildkit.js';
 import { buildStaticSite } from './staticSite.js';
@@ -75,6 +76,7 @@ function findDockerfileInRepo(
 }
 
 const swallow = () => {};
+const msg = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const PROBE_IMAGE = 'busybox:1.36';
 const PROBE_CONTAINER = 'ninedeploy-prober';
 const DEPLOY_HEARTBEAT_MS = 20_000;
@@ -611,9 +613,12 @@ export const dockerBuilder: Builder = {
     // A worker/host crash can leave this deployment's candidate container
     // behind before DB finalization. The deployment ID makes the name exact;
     // remove only that retry candidate, never the previous live runtime.
+    // The batch also sweeps the candidate's -r2..-rN replicas, which would
+    // otherwise linger forever: the next deploy gets a new deployment ID and
+    // would never touch them again.
     if (previous?.runtimeId !== name) {
       try {
-        await run('docker', ['rm', '-f', name], {}, swallowLine);
+        await run('docker', ['rm', '-f', ...replicaNames(name, MAX_REPLICAS)], {}, swallowLine);
         log(`Removed interrupted deployment candidate ${name}`);
       } catch {
         // Missing container is the normal first-deploy path.
@@ -666,6 +671,42 @@ export const dockerBuilder: Builder = {
       );
     } finally {
       envFile?.cleanup();
+    }
+
+    // Horizontal replicas: N-1 extra containers of the SAME image/env on the
+    // same bridge, started best-effort AFTER the primary (a primary failure
+    // must not leave orphans behind). Traefik load-balances across them via
+    // the multi-server render + healthCheck in renderDynamicConfig. Replicas
+    // are clones of a container that already passed `docker run`; per-replica
+    // health gates would 10x the boot time for no real safety.
+    const replicaCount = Math.max(1, Math.min(service.replicas ?? 1, MAX_REPLICAS));
+    if (replicaCount > 1) {
+      // The primary's env-file was cleaned up above — replicas need their own.
+      // One file serves every replica; the values are identical.
+      const replicaEnvFile = writeEnvFile(env);
+      // `args` still carries everything except the primary's name and env-file
+      // path; swap both per replica set (args = ['run','-d','--name', name, …,
+      // '--env-file', envPath, …]).
+      const cloneArgs = (replicaName: string): string[] =>
+        args.map((a, i) => {
+          if (i === 3) return replicaName;
+          return a === envFile?.path && replicaEnvFile ? replicaEnvFile.path : a;
+        });
+      for (let i = 2; i <= replicaCount; i++) {
+        const replicaName = `${name}-r${i}`;
+        try {
+          await run(
+            'docker',
+            cloneArgs(replicaName),
+            { heartbeatMs: DEPLOY_HEARTBEAT_MS, heartbeatLabel: `Starting replica ${replicaName}` },
+            log,
+          );
+          log(`Replica ${replicaName} started (${i}/${replicaCount})`);
+        } catch (err) {
+          log(`warning: replica ${replicaName} failed to start — continuing with fewer replicas (${msg(err)})`);
+        }
+      }
+      replicaEnvFile?.cleanup();
     }
 
     // Capture the resolved image digest so rollback can later pin this exact image.
@@ -809,13 +850,18 @@ export const dockerBuilder: Builder = {
 
   async stop(runtimeId, opts) {
     const grace = opts?.graceSeconds && opts.graceSeconds >= 0 ? Math.min(Math.floor(opts.graceSeconds), 300) : 5;
+    // One batched rm covers the generation: the primary plus its `-r2..-rN`
+    // replicas (deterministic names — see replicaNames). docker rm -f on a
+    // missing name is an error per name but the batch still removes the rest,
+    // and single-container services simply have no siblings to remove.
+    const targets = replicaNames(runtimeId, MAX_REPLICAS);
     try {
-      await run('docker', ['stop', '-t', String(grace), runtimeId], {}, swallow);
+      await run('docker', ['stop', '-t', String(grace), ...targets], {}, swallow);
     } catch {
       /* already gone */
     }
     try {
-      await run('docker', ['rm', '-f', runtimeId], {}, swallow);
+      await run('docker', ['rm', '-f', ...targets], {}, swallow);
     } catch {
       /* already gone */
     }

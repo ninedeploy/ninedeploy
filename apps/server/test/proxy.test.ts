@@ -169,6 +169,39 @@ describe('writeDynamicConfig', () => {
     expect(db.select).toHaveBeenCalledTimes(3);
   });
 
+  it('load-balances a docker service with replicas and health-checks each server', async () => {
+    const db = makeDb(
+      [{ id: 1, serviceId: 1, hostname: 'app.example.com', path: '/', ssl: true, status: 'active' }],
+      [{ id: 1, slug: 'web', port: 3000, runtimeId: 'web-7', type: 'docker', replicas: 3, healthPath: '/healthz' }],
+    );
+
+    await writeDynamicConfig(db as never);
+
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    // One server per generation container: the primary plus -r2/-r3.
+    expect(yaml).toContain('url: "http://web-7:3000"');
+    expect(yaml).toContain('url: "http://web-7-r2:3000"');
+    expect(yaml).toContain('url: "http://web-7-r3:3000"');
+    // Traefik health-checks each replica so a dead one stops receiving
+    // traffic instead of blackholing its share.
+    expect(yaml).toContain('healthCheck:');
+    expect(yaml).toContain('path: "/healthz"');
+  });
+
+  it('keeps single-server rendering (no healthCheck) for replicas == 1', async () => {
+    const db = makeDb(
+      [{ id: 1, serviceId: 1, hostname: 'app.example.com', path: '/', ssl: false, status: 'active' }],
+      [{ id: 1, slug: 'web', port: 3000, runtimeId: 'web-1', type: 'docker', replicas: 1 }],
+    );
+
+    await writeDynamicConfig(db as never);
+
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    expect(yaml).toContain('url: "http://web-1:3000"');
+    expect(yaml).not.toContain('-r2');
+    expect(yaml).not.toContain('healthCheck:');
+  });
+
   it('routes PM2 services through the host gateway (a process name is not DNS-resolvable)', async () => {
     // A PM2 runtimeId is a PM2 PROCESS NAME on the host — inside the Traefik
     // container it resolves to NXDOMAIN, so every domain attached to a PM2

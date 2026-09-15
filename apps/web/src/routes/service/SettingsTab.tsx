@@ -18,6 +18,7 @@ export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: Servic
       <PreviewEnvironmentsCard svc={svc} />
       <TargetNodeCard svc={svc} />
       <LimitsCard svc={svc} />
+      <ScalingCard svc={svc} />
     </div>
   );
 }
@@ -631,6 +632,64 @@ function LimitsCard({ svc }: { svc: Service }) {
               caps do not apply). Applied on the next deploy.
             </>
           )}
+        </p>
+      </CardBody>
+    </Card>
+  );
+}
+
+// ── Horizontal scaling ─────────────────────────────────────────────────────
+function ScalingCard({ svc }: { svc: Service }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [replicas, setReplicas] = useState(String(svc.replicas ?? 1));
+
+  const save = useMutation({
+    mutationFn: (count: number) => api.services.update(svc.id, { replicas: count }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['service', svc.id] });
+      qc.invalidateQueries({ queryKey: ['services'] });
+      toast('Replicas saved — applied on next deploy', 'success');
+    },
+    onError: () => toast('Could not save replicas', 'error'),
+  });
+
+  if (svc.type !== 'docker') {
+    return null;
+  }
+
+  const desired = Math.max(1, Math.min(Math.floor(Number(replicas)) || 1, 10));
+
+  return (
+    <Card>
+      <CardBody>
+        <div className="mb-4 flex items-center gap-2 text-sm font-medium text-slate-300">
+          <Layers size={15} className="text-slate-500" /> Scaling
+        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            save.mutate(desired);
+          }}
+          className="flex flex-wrap items-end gap-4"
+        >
+          <Field label="Replicas (1-10)">
+            <Input
+              value={replicas}
+              onChange={(e) => setReplicas(e.target.value)}
+              inputMode="numeric"
+              className="h-9 w-44 font-mono text-xs"
+            />
+          </Field>
+          <Button type="submit" size="sm" variant="secondary" disabled={save.isPending || desired === (svc.replicas ?? 1)}>
+            {save.isPending ? 'Saving…' : 'Save replicas'}
+          </Button>
+        </form>
+        <p className="mt-2 text-xs text-slate-500">
+          Each replica is a full container of the deployed release on the service bridge; Traefik
+          round-robins across them and health-checks each one (a dead replica stops receiving
+          traffic instead of erroring). New replicas start on the next deploy; crashed ones are
+          revived automatically.
         </p>
       </CardBody>
     </Card>

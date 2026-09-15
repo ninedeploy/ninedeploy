@@ -46,6 +46,8 @@ export const createService = z.object({
   /** Hard CPU cap in millicores (500 = 0.5 cores); maps to docker --cpus. */
   cpuLimitMilli: z.number().int().min(0).max(512_000).optional(),
   memLimitMb: z.number().int().min(0).optional(),
+  /** Horizontal replica count for docker services (Traefik load-balances). */
+  replicas: z.number().int().min(1).max(10).optional(),
   healthPath: httpPath.optional(),
   port: z.number().int().min(1).max(65535).optional(),
   publishedPort: z.number().int().min(1).max(65535).nullable().optional(),
@@ -131,6 +133,8 @@ export const updateService = z.object({
   /** Hard CPU cap in millicores (500 = 0.5 cores); maps to docker --cpus. */
   cpuLimitMilli: z.number().int().min(0).max(512_000).optional(),
   memLimitMb: z.number().int().min(0).optional(),
+  /** Horizontal replica count for docker services (Traefik load-balances). */
+  replicas: z.number().int().min(1).max(10).optional(),
   healthPath: httpPath.optional(),
   port: z.number().int().min(1).max(65535).optional(),
   publishedPort: z.number().int().min(1).max(65535).nullable().optional(),
@@ -213,6 +217,7 @@ export const service = z.object({
   cpuShares: z.number().int(),
   cpuLimitMilli: z.number().int(),
   memLimitMb: z.number().int(),
+  replicas: z.number().int(),
   previewDeploymentsEnabled: z.boolean().optional(),
   previewAutoDestroyOnClose: z.boolean().optional(),
   previewDomainPattern: z.string().nullable().optional(),

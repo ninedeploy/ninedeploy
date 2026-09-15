@@ -422,6 +422,11 @@ export const services = sqliteTable(
     cpuShares: integer('cpu_shares').notNull().default(0),
     cpuLimitMilli: integer('cpu_limit_milli').notNull().default(0),
     memLimitMb: integer('mem_limit_mb').notNull().default(0),
+    // Horizontal replicas for docker services: N identical containers on the
+    // service bridge (`<runtimeId>`, `<runtimeId>-r2`, …), which Traefik
+    // load-balances across (see renderDynamicConfig). Applies on the next
+    // deploy; honored by the local builder only, not remote nodes.
+    replicas: integer('replicas').notNull().default(1),
     // Template-defined container command (argv after the image). Only the
     // admin-controlled template registry sets it — not the create-service API.
     cmd: text('cmd', { mode: 'json' }).$type<string[]>(),

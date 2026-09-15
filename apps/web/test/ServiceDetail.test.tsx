@@ -1211,10 +1211,13 @@ describe('ServiceDetail', () => {
     await openTab('Settings');
     await screen.findByText('Resource limits');
     const inputs = document.querySelectorAll<HTMLInputElement>('input.w-44');
-    expect(inputs).toHaveLength(3);
+    // CPU cap + CPU shares + memory (limits card) and the replicas field
+    // (scaling card — docker services always render it, defaulting to 1).
+    expect(inputs).toHaveLength(4);
     expect(inputs[0]).toHaveValue('');
     expect(inputs[1]).toHaveValue('');
     expect(inputs[2]).toHaveValue('');
+    expect(inputs[3]).toHaveValue('1');
   });
 
   it('renders an undeployed service with all-optional fields missing', async () => {
@@ -1248,6 +1251,31 @@ describe('ServiceDetail', () => {
     await user.click(screen.getByRole('button', { name: /Save limits/ }));
     // Empty inputs mean "no limit": the API receives null, not zero.
     await waitFor(() => expect(api.limits.setService).toHaveBeenCalledWith(1, { cpuShares: null, cpuLimitMilli: null, memLimitMb: null }));
+  });
+
+  it('saves replicas from the scaling card and hides it for pm2 services', async () => {
+    const user = userEvent.setup();
+    const api = (await import('../src/lib/api.js')).api as unknown as {
+      services: { update: ReturnType<typeof vi.fn> };
+    };
+    api.services.update = vi.fn().mockResolvedValue({ ...service });
+    const first = renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+    await openTab('Settings');
+    await screen.findByText('Scaling');
+    // Field does not label-associate — address the replicas input by position
+    // (4th w-44 input on the settings tab, after cap/shares/mem).
+    const replicasInput = document.querySelectorAll<HTMLInputElement>('input.w-44')[3]!;
+    await user.clear(replicasInput);
+    await user.type(replicasInput, '3');
+    await user.click(screen.getByRole('button', { name: /Save replicas/ }));
+    await waitFor(() => expect(api.services.update).toHaveBeenCalledWith(1, { replicas: 3 }));
+
+    // pm2 services have no container replicas — the card must not render.
+    first.unmount();
+    mockOf(api.services.get).mockResolvedValue({ ...service, type: 'pm2', runtimeId: 'web' } as never);
+    renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+    await openTab('Settings');
+    await waitFor(() => expect(screen.queryByText('Scaling')).not.toBeInTheDocument());
   });
 
   it('shows the settings saving label while in flight', async () => {

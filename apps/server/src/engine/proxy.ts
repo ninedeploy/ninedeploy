@@ -8,7 +8,7 @@ import { getSettingString } from '../lib/settings.js';
 import { decrypt, encrypt } from '../lib/crypto.js';
 import { ensureDockerImage } from '../lib/dockerPull.js';
 import { reapTraefikNetworks } from '../lib/serviceBridge.js';
-import { NETWORK, TRAEFIK_CONTAINER, TRAEFIK_IMAGE } from './dockerNames.js';
+import { MAX_REPLICAS, NETWORK, replicaNames, TRAEFIK_CONTAINER, TRAEFIK_IMAGE } from './dockerNames.js';
 
 // Defined in a leaf module and re-exported here: `proxy` and `serviceBridge`
 // import each other, and a constant declared in one of them is in its temporal
@@ -631,11 +631,27 @@ export async function renderDynamicConfig(
       // request would 502 forever). Route them through the host gateway,
       // same as the panel router below.
       const upstreamHost = svc.type === 'pm2' ? 'host.docker.internal' : svc.runtimeId;
+      // Replicas (docker services with `replicas > 1`): every generation
+      // container — the primary plus its -r2..-rN clones — becomes one
+      // loadBalancer server, and a healthCheck block makes Traefik drop a
+      // dead replica from rotation instead of blackholing its share of
+      // requests (the file provider caches name→IP, so a crashed replica
+      // would otherwise keep receiving traffic until the next reload).
+      const replicaCount = svc.type === 'docker' ? Math.max(1, Math.min(svc.replicas ?? 1, MAX_REPLICAS)) : 1;
+      const healthPath = String(svc.healthPath ?? '/').replace(PATH_RE, '') || '/';
+      const servers = replicaNames(upstreamHost, replicaCount)
+        .map((n) => `          - url: "http://${n}:${svc.port}"`)
+        .join('\n');
+      const healthCheck =
+        replicaCount > 1
+          ? `\n          healthCheck:\n            path: "${yamlDoubleQuoted(healthPath)}"\n            interval: "10s"\n            timeout: "5s"`
+          : '';
       svcBlocks.push(
         `    svc_${key}:\n` +
           `      loadBalancer:\n` +
           `        servers:\n` +
-          `          - url: "http://${upstreamHost}:${svc.port}"`,
+          servers +
+          healthCheck,
       );
     }
   }

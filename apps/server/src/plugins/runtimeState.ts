@@ -4,6 +4,7 @@ import { services } from '@ninedeploy/db';
 import { pm2Resurrect, pm2Start, pm2Status } from '../engine/builders/pm2.js';
 import { audit } from '../lib/audit.js';
 import { capture } from '../lib/exec.js';
+import { replicaNames } from '../engine/dockerNames.js';
 
 // A tight loop matters for the boot promise ("everything comes back on its
 // own"): the first pass runs at startup, and anything it cannot fix — e.g. a
@@ -80,9 +81,28 @@ async function downReason(runtimeId: string): Promise<{ oomKilled: boolean; exit
   }
 }
 
+/**
+ * Best-effort revive of a service's extra replicas (`-r2..-rN`). The main
+ * container being healthy says nothing about its clones — one OOM-killed
+ * replica halves capacity while the service row reads `running`. A replica
+ * that no longer exists (service scaled down between deploys) reports gone
+ * and is recreated on the next deploy; that is not drift to repair here.
+ */
+async function reviveReplicas(runtimeId: string, replicas: number, log: (line: string) => void): Promise<void> {
+  for (const name of replicaNames(runtimeId, replicas).slice(1)) {
+    try {
+      const state = (await execDocker(['inspect', '--format', '{{.State.Status}}', name])).trim();
+      if (state === 'running' || state === 'restarting') continue;
+      await execDocker(['start', name]);
+      log(`revived replica ${name}`);
+    } catch {
+      /* replica gone (scaled down generation) — next deploy recreates it */
+    }
+  }
+}
+
 /** Start a stopped container; returns whether it ended up running. */
-async function reviveContainer(runtimeId: string): Promise<boolean> {
-  try {
+async function reviveContainer(runtimeId: string): Promise<boolean> {  try {
     await execDocker(['start', runtimeId]);
     // Compose projects are multi-container: starting only the main container
     // would leave sidecars (DBs, workers) dead. Starting already-running
@@ -186,7 +206,14 @@ export default fp(
             } else if (svc.type === 'docker' || svc.type === 'compose') {
               if (daemonDown) continue;
               const live = await containerState(runtimeId);
-              if (live === 'running') continue;
+              if (live === 'running') {
+                // Main healthy ≠ replicas healthy — a single dead clone
+                // quietly halves capacity while the row reads `running`.
+                await reviveReplicas(runtimeId, svc.replicas ?? 1, (line) =>
+                  fastify.log.warn({ serviceId: svc.id, name: svc.name, runtimeId }, line),
+                );
+                continue;
+              }
               if (live === 'stopped') {
                 // Read why it died BEFORE starting it — the restart wipes the
                 // OOMKilled flag's meaning (it reports the *last* exit, so a
@@ -202,6 +229,9 @@ export default fp(
                   if (reason?.oomKilled || reason?.exitCode === 137) {
                     void alertOom(svc.id, svc.name, runtimeId, reason.exitCode);
                   }
+                  await reviveReplicas(runtimeId, svc.replicas ?? 1, (line) =>
+                    fastify.log.warn({ serviceId: svc.id, name: svc.name, runtimeId }, line),
+                  );
                   continue;
                 }
               }

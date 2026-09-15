@@ -393,6 +393,13 @@
       "when": 1789400000005,
       "tag": "0056_cpu_limit_milli",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "6",
+      "when": 1789400000006,
+      "tag": "0057_service_replicas",
+      "breakpoints": true
     }
   ]
 }

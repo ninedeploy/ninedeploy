@@ -31,3 +31,19 @@ export const TRAEFIK_IMAGE = 'traefik:3';
 
 /** Shared Docker network that app + database containers join to reach each other. */
 export const NETWORK = 'ninedeploy';
+
+/** Hard ceiling on per-service replicas — a typo of 1000 must not eat the host. */
+export const MAX_REPLICAS = 10;
+
+/**
+ * Deterministic replica names for a deployment generation: the primary
+ * container keeps its own name; extras get `-r2` … `-rN` suffixes. Deriving
+ * them (instead of storing them) means every consumer — Traefik render,
+ * reconcile, stop/start — agrees without new state to keep consistent.
+ */
+export function replicaNames(runtimeId: string, replicas: number): string[] {
+  const n = Math.max(1, Math.min(Math.floor(replicas) || 1, MAX_REPLICAS));
+  const names = [runtimeId];
+  for (let i = 2; i <= n; i++) names.push(`${runtimeId}-r${i}`);
+  return names;
+}

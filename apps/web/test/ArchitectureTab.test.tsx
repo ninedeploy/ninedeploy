@@ -62,6 +62,7 @@ const mockService: Service = {
   cpuShares: 512,
   cpuLimitMilli: 0,
   memLimitMb: 256,
+  replicas: 1,
   build: null,
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',

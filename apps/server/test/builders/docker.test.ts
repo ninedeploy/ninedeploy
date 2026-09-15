@@ -130,6 +130,31 @@ describe('dockerBuilder.buildAndRun', () => {
     expect(runArgs.join(' ')).toContain('--restart unless-stopped');
   });
 
+  it('starts replicas -r2..-rN after the primary when replicas > 1', async () => {
+    const ctx = makeCtx({ service: { slug: 'web', image: 'nginx:1.25', port: 3000, cpuShares: 0, memLimitMb: 0, replicas: 3, healthPath: '/' } });
+
+    const runtime = await dockerBuilder.buildAndRun(ctx as never);
+
+    expect(runtime.runtimeId).toBe('web-3');
+    const names = h.run.mock.calls
+      .filter(([, argv]) => (argv as unknown[])[0] === 'run')
+      .map(([, argv]) => (argv as unknown[])[3]);
+    expect(names).toEqual(['web-3', 'web-3-r2', 'web-3-r3']);
+    // Replicas are full clones: same bridge, same limits, same env-file wiring.
+    const replicaArgs = h.run.mock.calls.filter(([, argv]) => (argv as unknown[])[0] === 'run' && (argv as unknown[])[3] === 'web-3-r2')[0]![1] as unknown[];
+    expect(replicaArgs).toContain('--network');
+    expect(replicaArgs).toContain('nginx:1.25');
+    // The log announces each replica.
+    expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('Replica web-3-r2 started (2/3)'));
+  });
+
+  it('keeps launching a single container when replicas is unset or 1', async () => {
+    const ctx = makeCtx({ service: { slug: 'web', image: 'nginx:1.25', port: 3000, cpuShares: 0, memLimitMb: 0, healthPath: '/' } });
+    await dockerBuilder.buildAndRun(ctx as never);
+    const runCount = h.run.mock.calls.filter(([, argv]) => (argv as unknown[])[0] === 'run').length;
+    expect(runCount).toBe(1);
+  });
+
   it('pulls a pre-built image and starts a container with resource/env-file flags', async () => {
     h.run.mockRejectedValueOnce(new Error('pull failed')).mockResolvedValueOnce(undefined);
     const ctx = makeCtx({ service: { slug: 'web', image: 'nginx:1.25', port: 3000, cpuShares: 512, cpuLimitMilli: 500, memLimitMb: 256, volumeMount: '/data', healthPath: '/health' } });
@@ -886,23 +911,29 @@ describe('dockerBuilder.stop', () => {
     });
   });
 
-  it('stops and removes the container', async () => {
+/** The full replica-generation batch for `web-3`: primary + -r2..-r10. */
+const generationBatch = (cmd: string[]) => [...cmd, 'web-3', ...Array.from({ length: 9 }, (_, i) => `web-3-r${i + 2}`)];
+
+  it('stops and removes the container (batched over the replica generation)', async () => {
     await dockerBuilder.stop('web-3');
 
-    expect(h.run).toHaveBeenCalledWith('docker', ['stop', '-t', '5', 'web-3'], {}, expect.any(Function));
-    expect(h.run).toHaveBeenCalledWith('docker', ['rm', '-f', 'web-3'], {}, expect.any(Function));
+    // The batch sweeps the deterministic -r2..-rN replica names too; docker
+    // errors on members that do not exist but still removes the rest, so
+    // single-replica services are unaffected.
+    expect(h.run).toHaveBeenCalledWith('docker', generationBatch(['stop', '-t', '5']), {}, expect.any(Function));
+    expect(h.run).toHaveBeenCalledWith('docker', generationBatch(['rm', '-f']), {}, expect.any(Function));
   });
 
   it('uses the configured stop grace period', async () => {
     await dockerBuilder.stop('web-3', { graceSeconds: 30 });
-    expect(h.run).toHaveBeenCalledWith('docker', ['stop', '-t', '30', 'web-3'], {}, expect.any(Function));
+    expect(h.run).toHaveBeenCalledWith('docker', generationBatch(['stop', '-t', '30']), {}, expect.any(Function));
   });
 
   it('clamps and rejects bogus grace values', async () => {
     await dockerBuilder.stop('web-3', { graceSeconds: 9999 });
-    expect(h.run).toHaveBeenCalledWith('docker', ['stop', '-t', '300', 'web-3'], {}, expect.any(Function));
+    expect(h.run).toHaveBeenCalledWith('docker', generationBatch(['stop', '-t', '300']), {}, expect.any(Function));
     await dockerBuilder.stop('web-3', { graceSeconds: -1 });
-    expect(h.run).toHaveBeenCalledWith('docker', ['stop', '-t', '5', 'web-3'], {}, expect.any(Function));
+    expect(h.run).toHaveBeenCalledWith('docker', generationBatch(['stop', '-t', '5']), {}, expect.any(Function));
   });
 
   it('swallows errors from both commands', async () => {

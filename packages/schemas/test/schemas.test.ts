@@ -555,6 +555,7 @@ describe('service', () => {
       cpuShares: 0,
       cpuLimitMilli: 0,
       memLimitMb: 0,
+      replicas: 1,
       build: null,
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',

@@ -660,8 +660,19 @@ describe('services routes', () => {
     await app.register(servicesRoutes);
     const res = await app.inject({ method: 'DELETE', url: '/1', headers: asUser() });
     expect(res.statusCode).toBe(204);
-    expect(execMocks.run).toHaveBeenCalledWith('docker', ['stop', '-t', '5', 'c1'], {}, expect.any(Function));
-    expect(execMocks.run).toHaveBeenCalledWith('docker', ['rm', '-f', 'c1'], {}, expect.any(Function));
+    // Batched over the replica generation: primary + -r2..-r10 in one call.
+    expect(execMocks.run).toHaveBeenCalledWith(
+      'docker',
+      ['stop', '-t', '5', 'c1', ...Array.from({ length: 9 }, (_, i) => `c1-r${i + 2}`)],
+      {},
+      expect.any(Function),
+    );
+    expect(execMocks.run).toHaveBeenCalledWith(
+      'docker',
+      ['rm', '-f', 'c1', ...Array.from({ length: 9 }, (_, i) => `c1-r${i + 2}`)],
+      {},
+      expect.any(Function),
+    );
     expect(proxyMocks.writeDynamicConfig).toHaveBeenCalled();
   });
 
@@ -842,9 +853,11 @@ describe('services routes', () => {
   });
 
   it('reports 409 and marks the service errored when the container no longer exists at start', async () => {
-    execMocks.capture.mockRejectedValueOnce(
-      new Error('`docker start c1` exited 1: Error response from daemon: No such container: c1'),
-    );
+    // The batched start AND the primary-only fallback both hit the missing
+    // container — the service is genuinely gone, so 409 + status error.
+    // (Two One-shots: clearAllMocks cannot reset a persistent implementation.)
+    const missing = new Error('`docker start c1` exited 1: Error response from daemon: No such container: c1');
+    execMocks.capture.mockRejectedValueOnce(missing).mockRejectedValueOnce(missing);
     const db = createFakeDb({ findFirst: { services: svcRow({ id: 1, runtimeId: 'c1' }) } });
     const { updates } = trackStatusUpdates(db);
     const app = await buildTestApp({ db });

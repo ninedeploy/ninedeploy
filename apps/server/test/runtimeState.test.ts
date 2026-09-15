@@ -97,6 +97,25 @@ describe('runtime state reconciliation', () => {
     expect(auditMocks.audit).not.toHaveBeenCalled();
   });
 
+  it('revives a stopped replica while the primary stays healthy', async () => {
+    // Main container is running (first Status inspect); replica r2 is exited
+    // (second Status inspect) — the reconcile must start it.
+    mockDocker({ state: ['running', 'exited'] });
+    const { updates } = await reconcileOnce(svcRow({ id: 31, status: 'running', runtimeId: 'web-7', replicas: 3 }));
+    expect(execMocks.capture).toHaveBeenCalledWith('docker', ['start', 'web-7-r2']);
+    // r3 was reported running by the default mock — never started.
+    expect(execMocks.capture).not.toHaveBeenCalledWith('docker', ['start', 'web-7-r3']);
+    expect(updates).toEqual([]);
+  });
+
+  it('leaves single-replica services without replica inspections', async () => {
+    mockDocker({ state: ['running'] });
+    await reconcileOnce(svcRow({ id: 32, status: 'running', runtimeId: 'web-1' }));
+    // Exactly one Status inspect (the primary); no replica names touched.
+    const startCalls = execMocks.capture.mock.calls.filter(([, argv]) => argv[0] === 'start');
+    expect(startCalls).toEqual([]);
+  });
+
   it('alerts when the revived container was OOM-killed', async () => {
     mockDocker({ state: ['exited', 'running'], oom: 'true|137' });
     await reconcileOnce(svcRow({ id: 21, status: 'running', runtimeId: 'oom1', name: 'oom-svc' }));
