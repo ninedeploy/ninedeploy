@@ -43,7 +43,7 @@ function serializeDiscordConfig(cfg: DiscordChannelConfig): string {
   return JSON.stringify(cleaned);
 }
 
-/** Notifications: delivery channels (Telegram, Discord, Slack, ntfy, email, webhook). */
+/** Notifications: delivery channels (Telegram, Discord, Slack, ntfy, Gotify, Pushover, Lark, email, webhook). */
 export function NotificationsSection() {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -83,7 +83,7 @@ export function NotificationsSection() {
           <Button size="sm" variant="secondary" onClick={() => setShowChannel(true)}>+ Add channel</Button>
         </div>
         <p className="mb-3 text-xs text-slate-500">
-          Get notified on deploy, alert, database, domain, backup events via Telegram, Discord, Slack, ntfy, email, or any webhook.
+          Get notified on deploy, alert, database, domain, backup events via Telegram, Discord, Slack, ntfy, Gotify, Pushover, Lark, email, or any webhook.
         </p>
         {showChannel && <NotificationWizard onClose={() => setShowChannel(false)} />}
         <div className="space-y-1.5">

@@ -233,6 +233,98 @@ describe('notification routes', () => {
     expect(res.json().error.message).toContain('Webhook 500');
   });
 
+  it('tests a gotify channel against its message endpoint', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200 })) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchMock);
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { notificationChannels: channelRow({ id: 5, type: 'gotify', targetEncrypted: encrypt('https://push.example.com/message?token=Axxx') }) },
+      }),
+    });
+    await app.register(notificationRoutes);
+    const res = await app.inject({ method: 'POST', url: '/channels/5/test', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://push.example.com/message?token=Axxx',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('rejects a gotify channel whose target has no token', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { notificationChannels: channelRow({ id: 5, type: 'gotify', targetEncrypted: encrypt('https://push.example.com/message') }) },
+      }),
+    });
+    await app.register(notificationRoutes);
+    const res = await app.inject({ method: 'POST', url: '/channels/5/test', headers: asUser() });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toContain('?token=');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('tests a pushover channel with form-encoded credentials', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200 })) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchMock);
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { notificationChannels: channelRow({ id: 5, type: 'pushover', targetEncrypted: encrypt('appToken123@userKey456') }) },
+      }),
+    });
+    await app.register(notificationRoutes);
+    const res = await app.inject({ method: 'POST', url: '/channels/5/test', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.pushover.net/1/messages.json',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('rejects a pushover channel without the @ separator', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { notificationChannels: channelRow({ id: 5, type: 'pushover', targetEncrypted: encrypt('justAUserKey') }) },
+      }),
+    });
+    await app.register(notificationRoutes);
+    const res = await app.inject({ method: 'POST', url: '/channels/5/test', headers: asUser() });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toContain('appToken@userKey');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('tests a lark channel and surfaces its error code', async () => {
+    // Lark answers HTTP 200 even when it rejects — the code lives in the body.
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ code: 0 }) })) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchMock);
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { notificationChannels: channelRow({ id: 5, type: 'lark', targetEncrypted: encrypt('https://open.larksuite.com/open-apis/bot/v2/hook/x') }) },
+      }),
+    });
+    await app.register(notificationRoutes);
+    const res = await app.inject({ method: 'POST', url: '/channels/5/test', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('fails a lark channel test when the bot returns an error code', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ code: 19001, msg: 'invalid uri' }) })) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchMock);
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { notificationChannels: channelRow({ id: 5, type: 'lark', targetEncrypted: encrypt('https://open.larksuite.com/open-apis/bot/v2/hook/x') }) },
+      }),
+    });
+    await app.register(notificationRoutes);
+    const res = await app.inject({ method: 'POST', url: '/channels/5/test', headers: asUser() });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toContain('Lark error 19001');
+  });
+
   it('tests a discord channel', async () => {
     const fetchMock = vi.fn(async () => ({ ok: true })) as unknown as typeof fetch;
     vi.stubGlobal('fetch', fetchMock);

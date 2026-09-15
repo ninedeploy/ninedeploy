@@ -247,6 +247,51 @@ async function sendNtfy(topicUrl: string, message: string): Promise<void> {
   if (!res.ok) throw new Error(`ntfy ${res.status}`);
 }
 
+/** Push to a self-hosted Gotify server (target = the /message endpoint
+ * including its app-token query, e.g. https://push.x.com/message?token=Axxx). */
+async function sendGotify(endpoint: string, message: string): Promise<void> {
+  const res = await guardedFetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'NineDeploy', message, priority: 5 }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`Gotify ${res.status}`);
+}
+
+/** Pushover (target = `<appToken>@<userKey>` — the same packed form the
+ * Telegram channel uses for its bot/chat pair). */
+async function sendPushover(appToken: string, userKey: string, message: string): Promise<void> {
+  const res = await guardedFetch('https://api.pushover.net/1/messages.json', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ token: appToken, user: userKey, title: 'NineDeploy', message }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`Pushover ${res.status}`);
+}
+
+/** Lark / Feishu custom-bot webhook. The bot answers HTTP 200 even on
+ * rejection — the failure only shows up as a code in the JSON body. */
+async function sendLark(webhookUrl: string, message: string): Promise<void> {
+  const res = await guardedFetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ msg_type: 'text', content: { text: message } }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`Lark ${res.status}`);
+  try {
+    const body = (await res.json()) as { code?: number; msg?: string };
+    if (typeof body.code === 'number' && body.code !== 0) {
+      throw new Error(`Lark error ${body.code}: ${body.msg ?? 'rejected'}`);
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith('Lark error')) throw err;
+    /* non-JSON success body — treat as delivered */
+  }
+}
+
 export interface EmailTarget {
   host: string;
   port: number;
@@ -338,6 +383,17 @@ export async function dispatchChannel(
     await sendSlack(target, message);
   } else if (type === 'ntfy') {
     await sendNtfy(target, message);
+  } else if (type === 'gotify') {
+    if (!/[?&]token=/.test(target)) throw new Error('Invalid Gotify target (expected the message endpoint URL including ?token=)');
+    await sendGotify(target, message);
+  } else if (type === 'pushover') {
+    const at = target.indexOf('@');
+    const appToken = at > 0 ? target.slice(0, at) : '';
+    const userKey = at > 0 ? target.slice(at + 1) : '';
+    if (!appToken || !userKey) throw new Error('Invalid Pushover target (expected appToken@userKey)');
+    await sendPushover(appToken, userKey, message);
+  } else if (type === 'lark') {
+    await sendLark(target, message);
   } else if (type === 'email') {
     await sendEmail(target, `NineDeploy: ${event.action}`, message);
   } else if (type === 'fcm') {

@@ -15,6 +15,9 @@ const TYPES = [
   { id: 'webhook', label: 'Webhook', emoji: '🔗', color: 'from-amber-500 to-orange-600', icon: Webhook },
   { id: 'slack', label: 'Slack', emoji: '💬', color: 'from-emerald-500 to-teal-600', icon: MessageCircle },
   { id: 'ntfy', label: 'ntfy', emoji: '📡', color: 'from-rose-500 to-pink-600', icon: Zap },
+  { id: 'gotify', label: 'Gotify', emoji: '🔔', color: 'from-fuchsia-500 to-purple-600', icon: Bell },
+  { id: 'pushover', label: 'Pushover', emoji: '📲', color: 'from-blue-500 to-indigo-600', icon: Send },
+  { id: 'lark', label: 'Lark / Feishu', emoji: '🐦', color: 'from-sky-400 to-cyan-600', icon: MessageCircle },
   { id: 'email', label: 'Email (SMTP)', emoji: '✉️', color: 'from-cyan-500 to-sky-600', icon: Mail },
 ] as const;
 
@@ -178,6 +181,9 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
                           : t.id === 'webhook' ? 'Any URL'
                           : t.id === 'slack' ? 'Slack channel'
                           : t.id === 'ntfy' ? 'ntfy push'
+                          : t.id === 'gotify' ? 'Self-hosted push'
+                          : t.id === 'pushover' ? 'Mobile push'
+                          : t.id === 'lark' ? 'Lark / Feishu bot'
                           : 'SMTP email'}
                       </div>
                     </div>
@@ -243,6 +249,42 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
                 <div>
                   <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Topic URL</span>
                   <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="https://ntfy.sh/my-ninedeploy-alerts" className="font-mono text-xs" autoFocus />
+                </div>
+              </>
+            )}
+            {type === 'gotify' && (
+              <>
+                <div className="rounded-xl bg-fuchsia-500/[0.06] p-3 ring-1 ring-inset ring-fuchsia-500/20">
+                  <p className="mb-1.5 text-xs font-medium text-fuchsia-200">Gotify app token</p>
+                  <p className="text-[11px] text-slate-400">In Gotify, create an app (Apps → Create), then paste the message endpoint with its token below.</p>
+                </div>
+                <div>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Message endpoint URL</span>
+                  <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="https://push.example.com/message?token=Axxxxxxxxxx" className="font-mono text-xs" autoFocus />
+                </div>
+              </>
+            )}
+            {type === 'pushover' && (
+              <>
+                <div className="rounded-xl bg-blue-500/[0.06] p-3 ring-1 ring-inset ring-blue-500/20">
+                  <p className="mb-1.5 text-xs font-medium text-blue-200">Pushover credentials</p>
+                  <p className="text-[11px] text-slate-400">Create an <a href="https://pushover.net/apps/build" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">application</a> for its API token; your user key is on the dashboard.</p>
+                </div>
+                <div>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">App token @ User key</span>
+                  <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="azGDoR8w……@uQiRzpo4DXghDmr9QzzfQu27cmVRsG" className="font-mono text-xs" autoFocus />
+                </div>
+              </>
+            )}
+            {type === 'lark' && (
+              <>
+                <div className="rounded-xl bg-sky-500/[0.06] p-3 ring-1 ring-inset ring-sky-500/20">
+                  <p className="mb-1.5 text-xs font-medium text-sky-200">Lark / Feishu custom bot</p>
+                  <p className="text-[11px] text-slate-400">In a group chat: Settings → Bots → Add Custom Bot, then paste its webhook URL.</p>
+                </div>
+                <div>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Webhook URL</span>
+                  <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="https://open.larksuite.com/open-apis/bot/v2/hook/…" className="font-mono text-xs" autoFocus />
                 </div>
               </>
             )}
