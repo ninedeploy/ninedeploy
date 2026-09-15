@@ -656,6 +656,7 @@ describe('createClient', () => {
     it('reads the config status, updates it, and requests a diagnosis', async () => {
       const { fetchMock, calls } = makeFetch((url, init) => {
         if (init.method === 'PUT') return ok({ ok: true });
+        if (url.includes('/suggest-manifest')) return ok({ manifest: { version: '1' }, model: 'gpt-test' });
         if (init.method === 'POST') return ok({ diagnosis: 'bad credentials', model: 'gpt-test' });
         return ok({ configured: false, baseUrl: null, model: null, hasApiKey: false });
       });
@@ -673,6 +674,13 @@ describe('createClient', () => {
       const res = await client.ai.diagnose(5, 77);
       expect(last(calls)).toMatchObject({ url: '/v1/ai/services/5/deploys/77/diagnose', init: { method: 'POST' } });
       expect(res).toMatchObject({ diagnosis: 'bad credentials', model: 'gpt-test' });
+
+      const suggested = await client.ai.suggestManifest('A Node 20 Express API on port 3000');
+      expect(last(calls)).toMatchObject({
+        url: '/v1/ai/suggest-manifest',
+        init: { method: 'POST', body: JSON.stringify({ description: 'A Node 20 Express API on port 3000' }) },
+      });
+      expect(suggested).toMatchObject({ manifest: { version: '1' }, model: 'gpt-test' });
     });
   });
 
