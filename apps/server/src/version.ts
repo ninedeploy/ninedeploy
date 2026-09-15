@@ -1,4 +1,4 @@
-export const VERSION = '0.9.3';
+export const VERSION = '0.9.4';
 
 export interface ChangelogEntry {
   version: string;
@@ -8,6 +8,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.9.4',
+    date: '2026-09-15',
+    title: 'Notification Parity, AI Deploy Assist',
+    changes: [
+      'Three notification channels join the matrix: self-hosted Gotify, Pushover (appToken@userKey packed target) and Lark/Feishu custom-bot webhooks — with guided wizard steps and the same encrypted-at-rest storage as every other channel. The Lark bot answers HTTP 200 even on rejection, so the body error code is surfaced as a delivery failure.',
+      'AI deploy assist: describe the app in plain language and the BYO-key provider returns a .ninedeploy manifest, validated against the strict schema before it reaches the creator form and merged over the draft (Undo restores it). Malformed or schema-violating answers surface as a 502 with the reason.',
+    ],
+  },
   {
     version: '0.9.3',
     date: '2026-09-13',

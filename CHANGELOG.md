@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.4] - 2026-09-15
+
+> The integrations release: the notification matrix reaches full parity,
+> and deploying a new app starts with a sentence instead of a form.
+
+### Added
+
+- **Gotify, Pushover and Lark/Feishu notification channels.** Self-hosted
+  Gotify (message-endpoint URL including its app-token query), Pushover
+  (packed `appToken@userKey` target, the same combined form Telegram
+  uses) and Lark/Feishu custom-bot webhooks complete the
+  integration-matrix parity — the Lark bot answers HTTP 200 even on
+  rejection, so the body's error code is surfaced as a delivery
+  failure. The channel wizard gains guided setup steps for all three;
+  targets stay encrypted at rest.
+- **AI deploy assist.** The manifest creator gains an "AI fill" action:
+  describe the app in plain language (stack, port, health endpoint, env
+  vars, resource cap) and the operator-configured OpenAI-compatible
+  provider returns a `.ninedeploy` manifest. Model output is parsed and
+  validated against the STRICT manifest schema before it reaches the
+  form — the model can hallucinate values but cannot invent fields —
+  and the validated suggestion merges over the current draft (Undo
+  restores it). Reuses the BYO-key AI config from failure diagnosis.
+
+---
+
 ## [0.9.3] - 2026-09-13
 
 > The resource-limits release: hard CPU caps, honest memory limits,
