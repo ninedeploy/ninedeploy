@@ -32,7 +32,21 @@
    "composeContent": "services:\n  app:\n    image: activepieces/activepieces:latest\n    environment:\n      - AP_ENCRYPTION_KEY=$SERVICE_PASSWORD_32_ACTIVEPIECES\n      - AP_JWT_SECRET=$SERVICE_PASSWORD_64_ACTIVEPIECES\n      - AP_REDIS_URL=redis://redis:6379\n      - AP_POSTGRES_HOST=postgresql\n      - AP_POSTGRES_PORT=5432\n      - AP_POSTGRES_DATABASE=${AP_POSTGRES_DATABASE:-activepieces}\n      - AP_POSTGRES_USERNAME=$SERVICE_USER_POSTGRES\n      - AP_POSTGRES_PASSWORD=$SERVICE_PASSWORD_POSTGRES\n      - AP_FRONTEND_URL=$SERVICE_URL_ACTIVEPIECES_80\n      - AP_TELEMETRY_DISABLED=true\n    depends_on:\n      redis:\n        condition: service_healthy\n      postgresql:\n        condition: service_healthy\n  redis:\n    image: redis:7-alpine\n    healthcheck:\n      test: [\"CMD\", \"redis-cli\", \"ping\"]\n      interval: 5s\n      timeout: 20s\n      retries: 10\n  postgresql:\n    image: postgres:16-alpine\n    volumes:\n      - postgresql-data:/var/lib/postgresql/data\n    environment:\n      - POSTGRES_USER=$SERVICE_USER_POSTGRES\n      - POSTGRES_PASSWORD=$SERVICE_PASSWORD_POSTGRES\n      - POSTGRES_DB=${POSTGRES_DB:-activepieces}\n    healthcheck:\n      test: [\"CMD-SHELL\", \"pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}\"]\n      interval: 5s\n      timeout: 20s\n      retries: 10\nvolumes:\n  postgresql-data:\n",
    "composeService": "app",
    "runtimeVerified": true,
-   "verifiedAt": "2026-09-16"
+   "verifiedAt": "2026-09-16",
+   "env": [
+    {
+     "key": "AP_ENCRYPTION_KEY",
+     "value": "activepieces-secure-encryption-key-32chars",
+     "secret": true
+    },
+    {
+     "key": "AP_JWT_SECRET",
+     "value": "activepieces-jwt-secret-replace-me",
+     "secret": true
+    }
+   ],
+   "volumeMount": "/root/.activepieces",
+   "requires": "Needs a Redis instance (AP_REDIS_HOST/AP_REDIS_PORT) for its queue — point these env keys at one after deploy"
   },
   {
    "id": "directus",
@@ -160,7 +174,7 @@
    "description": "Open source UI visual tool for LangChain and LlamaIndex to build customized LLM applications, autonomous agents and RAG pipelines.",
    "category": "AI",
    "emoji": "🌊",
-   "image": "flowiseai/flowise:2.2.8",
+   "image": "flowiseai/flowise:latest",
    "port": 3000,
    "volumeMount": "/root/.flowise",
    "env": [
@@ -560,7 +574,7 @@
    "category": "Productivity",
    "emoji": "✅",
    "image": "vikunja/vikunja:0.24.6",
-   "port": 3456,
+   "port": 8080,
    "volumeMount": "/app/vikunja/files",
    "website": "https://vikunja.io",
    "requires": "Vikunja needs a PostgreSQL database — one is provisioned and attached automatically",
@@ -582,7 +596,7 @@
      "value": "false"
     },
     {
-     "key": "VIKUNJA_SERVICE_SECRET",
+     "key": "VIKUNJA_SERVICE_JWTSECRET",
      "value": "generated",
      "secret": true
     }
