@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.7] - 2026-09-16
+
+> The fleet release: one release, many nodes.
+
+### Added
+
+- **Multi-server deployment targets (phase 1).** An image-based docker
+  release can now run on several nodes at once: the primary placement
+  stays where it is, and `PATCH /v1/services/:id/targets` names the
+  extra nodes. After the primary deploy finalizes, each target gets
+  the same digest-pinned image through its agent (login → pull →
+  retire-previous-generation → run → container-state health), with
+  per-node failures recorded on the target row and never blocking the
+  primary. Each node's own Traefik routes the service locally through
+  the target's container; pointing a domain at several nodes is the
+  operator's DNS choice. Service deletion tears down every target
+  container. Source builds wait for the build-server/registry story —
+  stated in the code, not faked.
+
+---
+
 ## [0.9.6] - 2026-09-16
 
 > The enterprise and scale release: Swarm-less replicas, SCIM

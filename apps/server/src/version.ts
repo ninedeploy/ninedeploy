@@ -1,4 +1,4 @@
-export const VERSION = '0.9.6';
+export const VERSION = '0.9.7';
 
 export interface ChangelogEntry {
   version: string;
@@ -8,6 +8,14 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.9.7',
+    date: '2026-09-16',
+    title: 'Multi-Server Deployment Targets',
+    changes: [
+      'One release, many nodes: image-based docker services gain fan-out targets — after the primary deploy finalizes, each extra node pulls the same digest-pinned image through its agent, retires its previous generation and runs the new one, with per-node failures recorded without ever blocking the primary. Node-local Traefik routing and fleet-wide teardown on delete included; source builds await the build-server story.',
+    ],
+  },
   {
     version: '0.9.6',
     date: '2026-09-16',
