@@ -52,7 +52,10 @@ jobs:
       # and the db package tests apply the real migrations to a fresh SQLite
       # file (see packages/db/test/migrate.test.ts).
       - name: Test
-        run: pnpm test
+        # Serialized: server+web coverage suites starve each other on the
+        # 2-core runner when turbo runs them in parallel (intermittent
+        # 30s-waitFor false failures that grow with the test count).
+        run: pnpm turbo run test --concurrency=1
 
       # Schema↔snapshot drift guard: 'drizzle-kit generate' must be a no-op.
       # Any change (edited snapshot, new migration) means schema.ts and the
