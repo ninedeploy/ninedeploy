@@ -15,7 +15,7 @@
    "website": "https://n8n.io",
    "featured": true,
    "runtimeVerified": true,
-   "verifiedAt": "2026-08-20"
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "activepieces",
@@ -30,7 +30,9 @@
    "docs": "https://www.activepieces.com/docs",
    "featured": true,
    "composeContent": "services:\n  app:\n    image: activepieces/activepieces:latest\n    environment:\n      - AP_ENCRYPTION_KEY=$SERVICE_PASSWORD_32_ACTIVEPIECES\n      - AP_JWT_SECRET=$SERVICE_PASSWORD_64_ACTIVEPIECES\n      - AP_REDIS_URL=redis://redis:6379\n      - AP_POSTGRES_HOST=postgresql\n      - AP_POSTGRES_PORT=5432\n      - AP_POSTGRES_DATABASE=${AP_POSTGRES_DATABASE:-activepieces}\n      - AP_POSTGRES_USERNAME=$SERVICE_USER_POSTGRES\n      - AP_POSTGRES_PASSWORD=$SERVICE_PASSWORD_POSTGRES\n      - AP_FRONTEND_URL=$SERVICE_URL_ACTIVEPIECES_80\n      - AP_TELEMETRY_DISABLED=true\n    depends_on:\n      redis:\n        condition: service_healthy\n      postgresql:\n        condition: service_healthy\n  redis:\n    image: redis:7-alpine\n    healthcheck:\n      test: [\"CMD\", \"redis-cli\", \"ping\"]\n      interval: 5s\n      timeout: 20s\n      retries: 10\n  postgresql:\n    image: postgres:16-alpine\n    volumes:\n      - postgresql-data:/var/lib/postgresql/data\n    environment:\n      - POSTGRES_USER=$SERVICE_USER_POSTGRES\n      - POSTGRES_PASSWORD=$SERVICE_PASSWORD_POSTGRES\n      - POSTGRES_DB=${POSTGRES_DB:-activepieces}\n    healthcheck:\n      test: [\"CMD-SHELL\", \"pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}\"]\n      interval: 5s\n      timeout: 20s\n      retries: 10\nvolumes:\n  postgresql-data:\n",
-   "composeService": "app"
+   "composeService": "app",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "directus",
@@ -74,7 +76,7 @@
     "DB_PASSWORD": "password"
    },
    "runtimeVerified": true,
-   "verifiedAt": "2026-08-20"
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "pocketbase",
@@ -89,7 +91,7 @@
    "website": "https://pocketbase.io",
    "featured": true,
    "runtimeVerified": true,
-   "verifiedAt": "2026-08-20"
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "nocodb",
@@ -173,7 +175,9 @@
     }
    ],
    "website": "https://flowiseai.com",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "localai",
@@ -223,7 +227,7 @@
    "website": "https://qdrant.tech",
    "featured": true,
    "runtimeVerified": true,
-   "verifiedAt": "2026-08-20"
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "chromadb",
@@ -273,7 +277,9 @@
    "image": "libretranslate/libretranslate",
    "port": 5000,
    "volumeMount": "/home/libretranslate",
-   "website": "https://libretranslate.com"
+   "website": "https://libretranslate.com",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "umami",
@@ -393,7 +399,7 @@
    "website": "https://github.com/louislam/uptime-kuma",
    "featured": true,
    "runtimeVerified": true,
-   "verifiedAt": "2026-08-20"
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "grafana",
@@ -415,7 +421,7 @@
    "website": "https://grafana.com",
    "featured": true,
    "runtimeVerified": true,
-   "verifiedAt": "2026-08-20"
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "prometheus",
@@ -516,7 +522,7 @@
    "website": "https://usememos.com",
    "featured": true,
    "runtimeVerified": true,
-   "verifiedAt": "2026-08-20"
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "trilium",
@@ -580,7 +586,9 @@
      "value": "generated",
      "secret": true
     }
-   ]
+   ],
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "focalboard",
@@ -622,7 +630,7 @@
    "website": "https://excalidraw.com",
    "featured": true,
    "runtimeVerified": true,
-   "verifiedAt": "2026-08-20"
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "it-tools",
@@ -651,7 +659,7 @@
    "website": "https://actualbudget.org",
    "featured": true,
    "runtimeVerified": true,
-   "verifiedAt": "2026-08-20"
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "mealie",
@@ -678,7 +686,9 @@
    "image": "lscr.io/linuxserver/grocy:latest",
    "port": 80,
    "volumeMount": "/config",
-   "website": "https://grocy.info"
+   "website": "https://grocy.info",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "linkding",
@@ -722,7 +732,7 @@
    "website": "https://about.gitea.com",
    "featured": true,
    "runtimeVerified": true,
-   "verifiedAt": "2026-08-20"
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "forgejo",
@@ -736,7 +746,7 @@
    "volumeMount": "/data",
    "website": "https://forgejo.org",
    "runtimeVerified": true,
-   "verifiedAt": "2026-08-20"
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "gitlab-ce",
@@ -845,7 +855,9 @@
    "image": "jc21/nginx-proxy-manager:latest",
    "port": 81,
    "volumeMount": "/etc/letsencrypt",
-   "website": "https://nginxproxymanager.com"
+   "website": "https://nginxproxymanager.com",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "vaultwarden",
@@ -870,7 +882,7 @@
    "website": "https://github.com/dani-garcia/vaultwarden",
    "featured": true,
    "runtimeVerified": true,
-   "verifiedAt": "2026-08-20"
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "keycloak",
@@ -1084,7 +1096,7 @@
    "website": "https://min.io",
    "featured": true,
    "runtimeVerified": true,
-   "verifiedAt": "2026-08-20"
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "cloudcmd",
@@ -1251,7 +1263,7 @@
    "volumeMount": "/kavita/config",
    "website": "https://www.kavitareader.com",
    "runtimeVerified": true,
-   "verifiedAt": "2026-08-20"
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "qbittorrent",
@@ -1499,7 +1511,7 @@
    },
    "featured": true,
    "runtimeVerified": true,
-   "verifiedAt": "2026-08-20"
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "wordpress",
@@ -1522,7 +1534,7 @@
     "WORDPRESS_DB_NAME": "database"
    },
    "runtimeVerified": true,
-   "verifiedAt": "2026-08-20"
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "umami-stack",
@@ -1618,15 +1630,30 @@
    "id": "speedtest-tracker",
    "name": "Speedtest Tracker",
    "tagline": "Continuous internet speed monitoring",
-   "description": "Runs Ookla speedtests on a schedule and graphs the history: download/upload, latency, packet loss and jitter — with pass/fail thresholds. SQLite-backed.",
+   "description": "Runs Ookla speedtests on a schedule and graphs the history: download/upload, latency, packet loss and jitter — with pass/fail thresholds.",
    "category": "Monitoring",
    "emoji": "🚀",
    "image": "ghcr.io/alexjustesen/speedtest-tracker:latest",
    "port": 80,
    "volumeMount": "/config",
    "website": "https://speedtest-tracker.dev",
-   "runtimeVerified": false,
-   "verifiedAt": "2026-09-15"
+   "requires": "Speedtest Tracker needs a MySQL database — one is provisioned and attached automatically",
+   "dbEngine": "mysql",
+   "databaseEnv": {
+    "DB_HOST": "host",
+    "DB_PORT": "port",
+    "DB_DATABASE": "database",
+    "DB_USERNAME": "username",
+    "DB_PASSWORD": "password"
+   },
+   "env": [
+    {
+     "key": "DB_CONNECTION",
+     "value": "mysql"
+    }
+   ],
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "homebox",
@@ -1646,8 +1673,8 @@
     }
    ],
    "website": "https://homebox.software",
-   "runtimeVerified": false,
-   "verifiedAt": "2026-09-15"
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "firefly-iii",
@@ -1688,8 +1715,8 @@
    "port": 8686,
    "volumeMount": "/config",
    "website": "https://lidarr.audio",
-   "runtimeVerified": false,
-   "verifiedAt": "2026-09-15"
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "sabnzbd",
@@ -1702,8 +1729,8 @@
    "port": 8080,
    "volumeMount": "/config",
    "website": "https://sabnzbd.org",
-   "runtimeVerified": false,
-   "verifiedAt": "2026-09-15"
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "drawio",

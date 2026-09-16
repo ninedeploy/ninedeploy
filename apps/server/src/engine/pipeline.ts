@@ -1032,7 +1032,24 @@ export async function runDeployment(
   // the primary is live — additive, best-effort, never blocking the success.
   // Source builds are excluded on purpose: their image exists only where the
   // build ran (see engine/fanout.ts for the honest scope note).
-  if (service.type === 'docker' && service.image) {
+  const buildableSource =
+    service.type === 'docker' &&
+    !service.image &&
+    service.repoUrl &&
+    sha &&
+    // Nixpacks has no agent operation on a node — the local builder ran it on
+    // the panel; a target node could not reproduce it.
+    (buildConfig?.buildPack ?? 'auto') !== 'nixpacks'
+      ? {
+          repoUrl: service.repoUrl,
+          branch: service.branch,
+          commitSha: sha,
+          // Nixpacks has no agent op — the gate below refuses it per target.
+          dockerfilePath: (buildConfig?.dockerfilePath || 'Dockerfile').replace(/^\/+/, '') || 'Dockerfile',
+          baseDir: (buildConfig?.baseDir || '.').replace(/^\/+/, '') || '.',
+        }
+      : undefined;
+  if (service.type === 'docker' && (service.image || buildableSource)) {
     const extra = await targetsForService(db, service.id);
     if (extra.length > 0) {
       log(`Fanning out to ${extra.length} additional node${extra.length === 1 ? '' : 's'} …`);
@@ -1053,10 +1070,11 @@ export async function runDeployment(
             publishedPort: service.publishedPort,
           },
           deploymentId,
-          image: runtime!.imageDigest ?? service.image,
+          image: service.image ? (runtime!.imageDigest ?? service.image) : undefined,
           env: fanoutEnv,
           registryAuth: await loadRegistryAuth(db, service),
           primaryServerId: service.serverId ?? null,
+          source: buildableSource,
         },
         log,
       );

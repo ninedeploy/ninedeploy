@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+> The verification release: 101/101 templates runtime-certified, ten
+> quietly-broken templates repaired.
+
+### Added
+
+- **Whole-catalog runtime verification (r132).** Every Hub template —
+  all 101 — now carries a `runtimeVerified` badge earned from one real
+  isolated smoke run. `scripts/smoke-template-runtime.mjs` grew the
+  profiles the old runner refused: managed-database templates boot
+  against a throwaway postgres/mysql following the `ENGINES` contract
+  with `databaseEnv` resolved exactly like the deploy pipeline;
+  docker-socket templates run with a read-only socket mount; compose
+  stacks go through `docker compose up` with generated `SERVICE_*`
+  secrets. The green run ships as `runtime-verify-2026-09-16.json`
+  and the registry verification test derives the contract from that
+  evidence — a template may only claim `runtimeVerified` if the
+  committed run passed it, so the badge can no longer drift from
+  reality.
+- **Placeholder consistency lint for compose stacks.** A catalog
+  compose file may no longer reference the same variable both bare
+  (`$VAR` → the resolver exports `''`) and defaulted
+  (`${VAR:-x}` → the default) — the discrepancy that crash-looped
+  umami-stack fails the registry tests before any deploy.
+
+### Fixed
+
+- **Ten templates that could never have booted, repaired against
+  their real upstream behavior.** `umami-stack` built `DATABASE_URL`
+  from a defaultless `$POSTGRES_DB` (→ empty database name → crash
+  loop against a healthy postgres; now `${POSTGRES_DB:-umami}`).
+  `activepieces` requires Redis and PostgreSQL that single-container
+  installs never provided, and its UI listens on 80 via
+  `AP_REDIS_URL` (not `AP_REDIS_CONNECTION_STRING`) — converted to a
+  three-service compose stack. `flowise` 3.x images crash upstream
+  (`connect-sqlite3: this.db.exec is not a function` even without
+  auth env) — pinned to 2.2.8. `libretranslate`'s named volume sat at
+  a path the image never creates, losing argostranslate's home
+  ownership — moved to `/home/libretranslate`. `vikunja:latest` ships
+  a root-owned files dir that uid 1000 cannot write — pinned 0.24.6.
+  `grocy` declared port 9283 while its nginx listens on 80.
+  `nginx-proxy-manager` refuses to boot unless `/etc/letsencrypt` is
+  a real mountpoint — the single persistent volume moved there.
+  `homebox` panics without a 32-byte `HBOX_AUTH_API_KEY_PEPPER` —
+  now a generated secret env row. `speedtest-tracker` defaults to
+  MySQL and a Docker Hub repo that no longer exists — moved to the
+  ghcr image with a managed-MySQL `databaseEnv` contract. `lidarr`
+  and `sabnzbd` pointed at Docker Hub repos that do not exist —
+  `lscr.io/linuxserver/*` is where they actually publish.
+
+---
+
 ## [0.9.7] - 2026-09-16
 
 > The fleet release: one release, many nodes.

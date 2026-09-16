@@ -78,12 +78,22 @@ async function waitRunning(
 export interface FanoutContext {
   service: { id: number; slug: string; type: string; image: string | null; port: number | null; healthPath?: string | null; cpuShares: number; cpuLimitMilli: number; memLimitMb: number; volumeMount: string | null; publishedPort: number | null };
   deploymentId: number;
-  /** The resolved release (digest-pinned on rollback), already pulled on the primary. */
-  image: string;
+  /** Image services: the resolved release (digest-pinned on rollback), already pulled on the primary. */
+  image?: string;
   env: Record<string, string>;
   registryAuth?: { username: string; password: string; server?: string };
   /** The PRIMARY placement — targets equal to it are skipped. */
   primaryServerId: number | null;
+  /** Source builds (phase 2): each target node builds the SAME commit itself
+   * through git.* + docker.build — the image never has to travel. Nixpacks
+   * stays refused (no agent op). */
+  source?: {
+    repoUrl: string;
+    branch: string | null;
+    commitSha: string;
+    dockerfilePath: string;
+    baseDir: string;
+  };
 }
 
 /**
@@ -106,6 +116,25 @@ export async function deployToTargets(
     const name = `${ctx.service.slug}-t${target.serverId}-${ctx.deploymentId}`;
     const agent: AgentCaller = (op, params, sink) => agentOp(db, target.serverId, op, params, sink);
     try {
+      let release: string;
+      if (ctx.image) {
+        release = ctx.image;
+      } else if (ctx.source) {
+        // Each target builds the pinned commit ITSELF — the image never
+        // travels between nodes (that would need a registry).
+        const { repoUrl, branch, commitSha, dockerfilePath, baseDir } = ctx.source;
+        log(`target node #${target.serverId}: building from ${repoUrl} @ ${commitSha.slice(0, 7)} …`);
+        await agent('git.ensure', { workspace: ctx.service.slug, url: repoUrl, depth: '1' }, log);
+        if (branch) {
+          await agent('git.fetch', { workspace: ctx.service.slug }, log);
+          await agent('git.checkout', { workspace: ctx.service.slug, ref: branch }, log);
+        }
+        if (commitSha) await agent('git.reset', { workspace: ctx.service.slug, sha: commitSha }, log);
+        release = `ninedeploy/${ctx.service.slug}:t${target.serverId}-${commitSha.slice(0, 7) || 'latest'}`;
+        await agent('docker.build', { workspace: ctx.service.slug, tag: release, dockerfile: dockerfilePath, context: baseDir }, log);
+      } else {
+        throw new Error('fan-out context has neither an image nor a buildable source');
+      }
       if (ctx.registryAuth) {
         await agent(
           'docker.login',
@@ -114,7 +143,7 @@ export async function deployToTargets(
         );
       }
       try {
-        await agent('docker.pull', { image: ctx.image }, log);
+        if (ctx.image) await agent('docker.pull', { image: release }, log);
       } finally {
         if (ctx.registryAuth) {
           await agent('docker.logout', ctx.registryAuth.server ? { server: ctx.registryAuth.server } : {}, log).catch(() => undefined);
@@ -129,7 +158,7 @@ export async function deployToTargets(
       const envName = `${ctx.service.slug}-t${target.serverId}-${ctx.deploymentId}`;
       const wrote = await agent('file.writeEnv', { name: envName, env: ctx.env }, log);
       const envFile = wrote.lines.find((l) => l.startsWith('wrote '))?.slice('wrote '.length) ?? `.agent-env/${envName}.env`;
-      const runParams: Record<string, unknown> = { name, image: ctx.image, envFile };
+      const runParams: Record<string, unknown> = { name, image: release, envFile };
       if (ctx.service.cpuShares > 0) runParams['cpuShares'] = String(ctx.service.cpuShares);
       if (ctx.service.cpuLimitMilli > 0) runParams['cpuLimitMilli'] = String(ctx.service.cpuLimitMilli);
       if (ctx.service.memLimitMb > 0) runParams['memLimitMb'] = String(ctx.service.memLimitMb);

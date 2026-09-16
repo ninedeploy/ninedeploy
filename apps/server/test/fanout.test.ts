@@ -72,6 +72,42 @@ describe('multi-server fan-out (phase 1)', () => {
     expect(ops).toContainEqual(['docker.rm', { name: 'web-t5-8' }]);
   });
 
+  it('builds the pinned commit on each target node for source releases', async () => {
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string, params: Record<string, unknown>) => {
+      if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|10.0.0.9'] };
+      if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${params.name}.env`] };
+      return { exitCode: 0, lines: [] };
+    });
+    const db = dbWithTargets([{ serverId: 5, runtimeId: null }]);
+    const log = vi.fn();
+    const results = await deployToTargets(
+      db as never,
+      {
+        service: { ...svc, image: null },
+        deploymentId: 12,
+        env: {},
+        primaryServerId: null,
+        source: {
+          repoUrl: 'https://github.com/acme/web.git',
+          branch: 'main',
+          commitSha: 'abcdef1234567890',
+          dockerfilePath: 'Dockerfile',
+          baseDir: '.',
+        },
+      },
+      log,
+    );
+    expect(results).toEqual([{ serverId: 5, runtimeId: 'web-t5-12', ok: true, error: undefined }]);
+    const calls = agentMocks.agentOp.mock.calls.map((c) => [c[2], c[3]]);
+    expect(calls).toContainEqual(['git.ensure', { workspace: 'web', url: 'https://github.com/acme/web.git', depth: '1' }]);
+    expect(calls).toContainEqual(['git.checkout', { workspace: 'web', ref: 'main' }]);
+    expect(calls).toContainEqual(['git.reset', { workspace: 'web', sha: 'abcdef1234567890' }]);
+    // The tag pins BOTH the node and the commit — node-local and reproducible.
+    expect(calls).toContainEqual(['docker.build', { workspace: 'web', tag: 'ninedeploy/web:t5-abcdef1', dockerfile: 'Dockerfile', context: '.' }]);
+    // No pull: the image was built right there.
+    expect(calls.some(([op]) => op === 'docker.pull')).toBe(false);
+  });
+
   it('skips targets equal to the primary placement', async () => {
     const db = dbWithTargets([{ serverId: 9, runtimeId: null }]);
     const results = await deployToTargets(

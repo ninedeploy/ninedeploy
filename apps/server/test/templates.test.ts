@@ -47,14 +47,15 @@ describe('template routes', () => {
     expect(res.statusCode).toBe(404);
   });
 
-  it('exposes curated community templates without falsely marking them verified', async () => {
+  it('exposes curated templates with their true verification state', async () => {
     const app = await buildTestApp({ db: createFakeDb() });
     await app.register(templateRoutes);
     const res = await app.inject({ method: 'GET', url: '/activepieces', headers: asUser() });
     expect(res.statusCode).toBe(200);
-    // activepieces failed its readiness smoke (it wants a Redis host) — the
-    // panel must not advertise it as verified.
-    expect(res.json()).toMatchObject({ id: 'activepieces', runtimeVerified: false });
+    // activepieces needed Redis + Postgres its single-container entry never
+    // had, so it used to sit unverified — the compose-stack conversion passed
+    // the isolated smoke run and may claim the badge now.
+    expect(res.json()).toMatchObject({ id: 'activepieces', runtimeVerified: true });
   });
 
   it('generates fresh secrets for secret env values on one-click deploys', async () => {
