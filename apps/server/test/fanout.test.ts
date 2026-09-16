@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { deployToTargets, teardownTargets } from '../src/engine/fanout.js';
+import { deployToTargets, listFanoutCandidates, recordFanoutResults, teardownTargets } from '../src/engine/fanout.js';
 import { createFakeDb } from './helpers.js';
 
 const agentMocks = vi.hoisted(() => ({ agentOp: vi.fn() }));
@@ -70,6 +70,68 @@ describe('multi-server fan-out (phase 1)', () => {
     const ops = agentMocks.agentOp.mock.calls.map((c) => [c[2], c[3]]);
     expect(ops).toContainEqual(['docker.stop', { name: 'web-t5-8' }]);
     expect(ops).toContainEqual(['docker.rm', { name: 'web-t5-8' }]);
+  });
+
+  it('skips targets equal to the primary placement', async () => {
+    const db = dbWithTargets([{ serverId: 9, runtimeId: null }]);
+    const results = await deployToTargets(
+      db as never,
+      { service: svc, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: 9 },
+      vi.fn(),
+    );
+    expect(results).toEqual([]);
+    expect(agentMocks.agentOp).not.toHaveBeenCalled();
+  });
+
+  it('records a per-node failure when the container exits during the state poll', async () => {
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string) => {
+      if (op === 'docker.inspect') return { exitCode: 0, lines: ['exited|'] };
+      return { exitCode: 0, lines: [] };
+    });
+    const db = dbWithTargets([{ serverId: 5, runtimeId: null }]);
+    const results = await deployToTargets(
+      db as never,
+      { service: svc, deploymentId: 10, image: 'nginx:1.25', env: {}, primaryServerId: null },
+      vi.fn(),
+    );
+    expect(results).toEqual([{ serverId: 5, runtimeId: 'web-t5-10', ok: false, error: 'container did not reach running state' }]);
+  });
+
+  it('upserts fan-out results onto the target rows', async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const inserts: Array<Record<string, unknown>> = [];
+    let lookups = 0;
+    const db = createFakeDb({
+      select: {
+        // First lookup (server 5) finds the row; the second (server 6) finds
+        // none — exercising the update and insert arms respectively.
+        serviceTargets: () => (lookups++ === 0 ? [{ id: 3 }] : []),
+      },
+      update: {
+        serviceTargets: (v: Record<string, unknown>) => {
+          updates.push(v);
+          return [{ id: 3, ...v }];
+        },
+      },
+      insert: {
+        serviceTargets: (v: Record<string, unknown>) => {
+          inserts.push(v);
+          return [{ id: 9, ...v }];
+        },
+      },
+    });
+    await recordFanoutResults(db as never, 1, [
+      { serverId: 5, runtimeId: 'web-t5-9', ok: true },
+      { serverId: 6, runtimeId: null, ok: false, error: 'pull failed' },
+    ]);
+    expect(updates[0]).toMatchObject({ runtimeId: 'web-t5-9', status: 'running' });
+    expect(inserts[0]).toMatchObject({ serviceId: 1, serverId: 6, status: 'error' });
+  });
+
+  it('lists fan-out candidate nodes', async () => {
+    const db = createFakeDb({ select: { servers: [{ id: 5, name: 'edge-1' }] } });
+    const rows = await listFanoutCandidates(db as never);
+    expect(rows).toEqual([{ id: 5, name: 'edge-1' }]);
   });
 
   it('teardown removes every target container and the rows', async () => {

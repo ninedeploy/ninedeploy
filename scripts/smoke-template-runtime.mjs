@@ -1,7 +1,6 @@
 import { execFile } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -142,7 +141,12 @@ async function startManagedDatabase(template, password) {
     : [`MYSQL_ROOT_PASSWORD=${password}`, 'MYSQL_DATABASE=app'];
   await docker(['run', '-d', '--name', container, '--network', network, '--network-alias', 'db', '--restart', 'no',
     ...env.map((e) => ['-e', e]).flat(), image], { timeout: 120_000 });
-  const ready = postgres ? ['exec', container, 'pg_isready', '-U', 'nine'] : ['exec', container, 'mysqladmin', 'ping', '-uroot', `-p${password}`];
+  // Authenticated probe, not a bare ping: both entrypoints boot a temporary
+  // server before init completes, and pg_isready/mysqladmin ping pass against
+  // it long before the app database and final credentials exist.
+  const ready = postgres
+    ? ['exec', '-e', `PGPASSWORD=${password}`, container, 'psql', '-U', 'nine', '-d', 'app', '-c', 'SELECT 1']
+    : ['exec', container, 'mysql', '-uroot', `-p${password}`, '-e', 'USE app'];
   const deadline = Date.now() + 180_000;
   while (Date.now() < deadline) {
     if (await docker(ready).then(() => true).catch(() => false)) return;
