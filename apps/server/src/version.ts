@@ -1,4 +1,4 @@
-export const VERSION = '0.9.7';
+export const VERSION = '0.9.8';
 
 export interface ChangelogEntry {
   version: string;
@@ -8,6 +8,14 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.9.8',
+    date: '2026-09-16',
+    title: 'Fan-out Everywhere: Images and Source Builds',
+    changes: [
+      'Multi-server fan-out completed in two phases: image releases pull to every target node through its agent, Dockerfile repositories are built per node from the same pinned commit (no registry needed — the image never travels), per-node failures never block the primary, and the Target node card exposes the whole model as a checkbox list with live status.',
+    ],
+  },
   {
     version: '0.9.7',
     date: '2026-09-16',

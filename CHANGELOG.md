@@ -60,6 +60,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.8] - 2026-09-16
+
+> The fan-out release: one release, every node — with a panel to match.
+
+### Added
+
+- **Multi-server fan-out, phases 1+2 (r131/r132).** A release can run
+  on several nodes at once. Image services are pulled to each target
+  through its agent; Dockerfile repositories are built per node from
+  the same pinned commit (`git.ensure/fetch/checkout/reset` +
+  `docker.build`) — the image never has to travel. Per-node failures
+  are recorded on the target row and never block the primary; each
+  node's own Traefik routes the service locally; service deletion
+  tears down every target container. Nixpacks stays honestly refused.
+- **Fan-out panel surface (r133).** The Target node card gains "Run on
+  additional nodes": a checkbox list of registered nodes with live
+  per-target status, enabled save on divergence, and the DNS
+  instruction where the operator needs it. `fanout.get/set` join the
+  SDK with a client contract test.
+
+---
+
 ## [0.9.7] - 2026-09-16
 
 > The fleet release: one release, many nodes.
