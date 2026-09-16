@@ -106,7 +106,8 @@ describe('SettingsTab host-privilege gating', () => {
   it('sends the hook values an admin has configured', async () => {
     renderTab();
     await screen.findByText('Service settings');
-    fireEvent.click(screen.getByRole('button', { name: /Save settings/ }));
+    const adminSave = screen.getByRole('button', { name: /Save settings/ });
+    fireEvent.submit(adminSave.closest('form')!);
     expect((await savedBuild()).preDeployCmd).toBe('make migrate');
   }, TIMEOUT);
 
@@ -125,7 +126,10 @@ describe('SettingsTab host-privilege gating', () => {
     authMock.user = { id: 5, isOperator: false, email: 'm@test', name: 'M' };
     renderTab();
     await screen.findByText('Service settings');
-    fireEvent.click(screen.getByRole('button', { name: /Save settings/ }));
+    // Submit the form directly — on a starved runner the click-into-submit
+    // path has raced the form's hydration and silently no-op'd.
+    const saveButton = screen.getByRole('button', { name: /Save settings/ });
+    fireEvent.submit(saveButton.closest('form')!);
     const build = await savedBuild();
     // absent, not '' — an empty string would wipe the admin's `make migrate`
     expect(build.preDeployCmd).toBeUndefined();
