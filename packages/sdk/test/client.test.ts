@@ -686,7 +686,7 @@ describe('createClient', () => {
 
   describe('scim token management', () => {
     it('lists, mints and revokes provisioning tokens', async () => {
-      const { fetchMock, calls } = makeFetch((url, init) => {
+      const { fetchMock, calls } = makeFetch((_url, init) => {
         if (init.method === 'POST') return ok({ id: 4, token: 'scim_plain' });
         if (init.method === 'DELETE') return ok({ ok: true });
         return ok([{ id: 4, name: 'Okta', workspaceId: 7, createdAt: '2026-09-15T00:00:00Z', lastUsedAt: null, revoked: false }]);

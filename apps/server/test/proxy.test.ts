@@ -137,13 +137,10 @@ const makeDb = (domainRows: unknown[], serviceRows: unknown[], targetRows: unkno
         if (t === serviceTargets) return targetRows;
         return [];
       };
-      return {
-        where: async () => resolve(),
-        then: (
-          res?: (v: unknown[]) => unknown,
-          rej?: (e: unknown) => unknown,
-        ) => resolve().then(res, rej),
-      };
+      // A real promise (so `await` works) carrying a `.where` for callers
+      // that refine the select — biome forbids literal then-properties.
+      const pending = Promise.resolve().then(resolve);
+      return Object.assign(pending, { where: async () => resolve() });
     }),
   })),
 });
