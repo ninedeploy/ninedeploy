@@ -113,7 +113,9 @@
    "volumeMount": "/usr/app/data",
    "website": "https://nocodb.com",
    "requires": "NocoDB can connect to existing databases or use its internal data store",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "hasura",
@@ -140,7 +142,9 @@
    "dbEngine": "postgres",
    "databaseEnv": {
     "HASURA_GRAPHQL_DATABASE_URL": "url"
-   }
+   },
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "ollama",
@@ -153,7 +157,9 @@
    "port": 11434,
    "volumeMount": "/root/.ollama",
    "website": "https://ollama.com",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "flowise",
@@ -189,7 +195,9 @@
    "image": "localai/localai:latest",
    "port": 8080,
    "volumeMount": "/build/models",
-   "website": "https://localai.io"
+   "website": "https://localai.io",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "searxng",
@@ -208,7 +216,9 @@
      "secret": true
     }
    ],
-   "website": "https://searxng.org"
+   "website": "https://searxng.org",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "qdrant",
@@ -235,7 +245,9 @@
    "image": "chromadb/chroma:latest",
    "port": 8000,
    "volumeMount": "/chroma/chroma",
-   "website": "https://www.trychroma.com"
+   "website": "https://www.trychroma.com",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "weaviate",
@@ -257,7 +269,9 @@
      "value": "/var/lib/weaviate"
     }
    ],
-   "website": "https://weaviate.io"
+   "website": "https://weaviate.io",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "libretranslate",
@@ -268,7 +282,7 @@
    "emoji": "🌐",
    "image": "libretranslate/libretranslate",
    "port": 5000,
-   "volumeMount": "/home/libretranslate/.local/share",
+   "volumeMount": "/home/libretranslate",
    "website": "https://libretranslate.com"
   },
   {
@@ -293,7 +307,9 @@
    "featured": true,
    "databaseEnv": {
     "DATABASE_URL": "url"
-   }
+   },
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "matomo",
@@ -319,7 +335,9 @@
      "key": "MATOMO_DATABASE_ADAPTER",
      "value": "mysql"
     }
-   ]
+   ],
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "metabase",
@@ -332,7 +350,9 @@
    "port": 3000,
    "volumeMount": "/metabase-data",
    "website": "https://metabase.com",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "yourls",
@@ -366,7 +386,9 @@
      "value": "generated",
      "secret": true
     }
-   ]
+   ],
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "uptime-kuma",
@@ -416,7 +438,9 @@
    "port": 9090,
    "volumeMount": "/prometheus",
    "website": "https://prometheus.io",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "loki",
@@ -429,7 +453,9 @@
    "port": 3100,
    "volumeMount": "/loki",
    "website": "https://grafana.com/oss/loki",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "beszel",
@@ -441,7 +467,9 @@
    "image": "henrygd/beszel:latest",
    "port": 8090,
    "volumeMount": "/beszel_data",
-   "website": "https://beszel.dev"
+   "website": "https://beszel.dev",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "jaeger",
@@ -452,7 +480,9 @@
    "emoji": "🕵️",
    "image": "jaegertracing/all-in-one:latest",
    "port": 16686,
-   "website": "https://www.jaegertracing.io"
+   "website": "https://www.jaegertracing.io",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "victoriametrics",
@@ -464,7 +494,9 @@
    "image": "victoriametrics/victoria-metrics:latest",
    "port": 8428,
    "volumeMount": "/victoria-metrics-data",
-   "website": "https://victoriametrics.com"
+   "website": "https://victoriametrics.com",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "nextcloud",
@@ -477,7 +509,9 @@
    "port": 80,
    "volumeMount": "/var/www/html",
    "website": "https://nextcloud.com",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "memos",
@@ -504,7 +538,9 @@
    "image": "zadam/trilium:latest",
    "port": 8080,
    "volumeMount": "/home/node/trilium-data",
-   "website": "https://github.com/zadam/trilium"
+   "website": "https://github.com/zadam/trilium",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "silverbullet",
@@ -516,7 +552,9 @@
    "image": "zefhemel/silverbullet:latest",
    "port": 3000,
    "volumeMount": "/space",
-   "website": "https://silverbullet.md"
+   "website": "https://silverbullet.md",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "vikunja",
@@ -525,7 +563,7 @@
    "description": "Organize tasks with Kanban boards, Gantt charts, lists and table views. Cross-platform with reminders, tags and team sharing.",
    "category": "Productivity",
    "emoji": "✅",
-   "image": "vikunja/vikunja:latest",
+   "image": "vikunja/vikunja:0.24.6",
    "port": 3456,
    "volumeMount": "/app/vikunja/files",
    "website": "https://vikunja.io",
@@ -564,7 +602,9 @@
    "image": "mattermost/focalboard:latest",
    "port": 8000,
    "volumeMount": "/data",
-   "website": "https://www.focalboard.com"
+   "website": "https://www.focalboard.com",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "stirling-pdf",
@@ -576,7 +616,9 @@
    "image": "frooodle/s-pdf:latest",
    "port": 8080,
    "website": "https://github.com/Stirling-Tools/Stirling-PDF",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "excalidraw",
@@ -602,7 +644,9 @@
    "image": "corentinth/it-tools:latest",
    "port": 80,
    "website": "https://it-tools.tech",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "actual-budget",
@@ -630,7 +674,9 @@
    "port": 9000,
    "volumeMount": "/app/data",
    "website": "https://mealie.io",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "grocy",
@@ -640,7 +686,7 @@
    "category": "Productivity",
    "emoji": "🛒",
    "image": "lscr.io/linuxserver/grocy:latest",
-   "port": 9283,
+   "port": 80,
    "volumeMount": "/config",
    "website": "https://grocy.info"
   },
@@ -655,7 +701,9 @@
    "port": 9090,
    "volumeMount": "/etc/linkding/data",
    "website": "https://github.com/sissbruecker/linkding",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "gotify",
@@ -667,7 +715,9 @@
    "image": "gotify/server:latest",
    "port": 80,
    "volumeMount": "/app/data",
-   "website": "https://gotify.net"
+   "website": "https://gotify.net",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "gitea",
@@ -709,7 +759,9 @@
    "port": 80,
    "volumeMount": "/var/opt/gitlab",
    "website": "https://about.gitlab.com",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "code-server",
@@ -729,7 +781,9 @@
     }
    ],
    "website": "https://github.com/coder/code-server",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "dozzle",
@@ -742,7 +796,9 @@
    "port": 8080,
    "dockerSocket": true,
    "website": "https://dozzle.dev",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "dockge",
@@ -756,7 +812,9 @@
    "volumeMount": "/app/data",
    "dockerSocket": true,
    "website": "https://dockge.kuma.pet",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "portainer-ce",
@@ -769,7 +827,9 @@
    "port": 9000,
    "volumeMount": "/data",
    "dockerSocket": true,
-   "website": "https://www.portainer.io"
+   "website": "https://www.portainer.io",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "caddy",
@@ -781,7 +841,9 @@
    "image": "caddy:latest",
    "port": 80,
    "volumeMount": "/data",
-   "website": "https://caddyserver.com"
+   "website": "https://caddyserver.com",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "nginx-proxy-manager",
@@ -792,7 +854,7 @@
    "emoji": "🛡️",
    "image": "jc21/nginx-proxy-manager:latest",
    "port": 81,
-   "volumeMount": "/data",
+   "volumeMount": "/etc/letsencrypt",
    "website": "https://nginxproxymanager.com"
   },
   {
@@ -844,7 +906,9 @@
     }
    ],
    "website": "https://www.keycloak.org",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "verdaccio",
@@ -856,7 +920,9 @@
    "image": "verdaccio/verdaccio:latest",
    "port": 4873,
    "volumeMount": "/verdaccio/storage",
-   "website": "https://verdaccio.org"
+   "website": "https://verdaccio.org",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "nexus",
@@ -868,7 +934,9 @@
    "image": "sonatype/nexus3:latest",
    "port": 8081,
    "volumeMount": "/nexus-data",
-   "website": "https://www.sonatype.com/products/sonatype-nexus-repository"
+   "website": "https://www.sonatype.com/products/sonatype-nexus-repository",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "mailpit",
@@ -887,7 +955,9 @@
     }
    ],
    "website": "https://github.com/axllent/mailpit",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "cyberchef",
@@ -898,7 +968,9 @@
    "emoji": "🍳",
    "image": "mpepping/cyberchef:latest",
    "port": 8000,
-   "website": "https://gchq.github.io/CyberChef"
+   "website": "https://gchq.github.io/CyberChef",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "adminer",
@@ -909,7 +981,9 @@
    "emoji": "🗄️",
    "image": "adminer:latest",
    "port": 8080,
-   "website": "https://www.adminer.org"
+   "website": "https://www.adminer.org",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "redis-insight",
@@ -921,7 +995,9 @@
    "image": "redis/redisinsight:latest",
    "port": 5540,
    "volumeMount": "/data",
-   "website": "https://redis.io/insight"
+   "website": "https://redis.io/insight",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "pgweb",
@@ -933,7 +1009,9 @@
    "image": "sosedoff/pgweb:latest",
    "port": 8081,
    "website": "https://github.com/sosedoff/pgweb",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "meilisearch",
@@ -957,7 +1035,9 @@
     }
    ],
    "website": "https://www.meilisearch.com",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "typesense",
@@ -980,7 +1060,9 @@
      "secret": true
     }
    ],
-   "website": "https://typesense.org"
+   "website": "https://typesense.org",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "minio",
@@ -1024,7 +1106,9 @@
    "image": "coderaiser/cloudcmd:latest",
    "port": 8000,
    "volumeMount": "/root",
-   "website": "https://cloudcmd.io"
+   "website": "https://cloudcmd.io",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "filebrowser",
@@ -1037,7 +1121,9 @@
    "port": 80,
    "volumeMount": "/srv",
    "website": "https://filebrowser.org",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "restic-rest-server",
@@ -1049,7 +1135,9 @@
    "image": "restic/rest-server:latest",
    "port": 8000,
    "volumeMount": "/data",
-   "website": "https://github.com/restic/rest-server"
+   "website": "https://github.com/restic/rest-server",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "jellyfin",
@@ -1062,7 +1150,9 @@
    "port": 8096,
    "volumeMount": "/config",
    "website": "https://jellyfin.org",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "plex",
@@ -1075,7 +1165,9 @@
    "port": 32400,
    "volumeMount": "/config",
    "website": "https://www.plex.tv",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "emby",
@@ -1087,7 +1179,9 @@
    "image": "emby/embyserver:latest",
    "port": 8096,
    "volumeMount": "/config",
-   "website": "https://emby.media"
+   "website": "https://emby.media",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "audiobookshelf",
@@ -1100,7 +1194,9 @@
    "port": 80,
    "volumeMount": "/config",
    "website": "https://www.audiobookshelf.org",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "navidrome",
@@ -1113,7 +1209,9 @@
    "port": 4533,
    "volumeMount": "/data",
    "website": "https://www.navidrome.org",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "photoprism",
@@ -1133,7 +1231,9 @@
     }
    ],
    "website": "https://photoprism.app",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "calibre-web",
@@ -1145,7 +1245,9 @@
    "image": "lscr.io/linuxserver/calibre-web:latest",
    "port": 8083,
    "volumeMount": "/config",
-   "website": "https://github.com/janeczku/calibre-web"
+   "website": "https://github.com/janeczku/calibre-web",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "kavita",
@@ -1171,7 +1273,9 @@
    "image": "lscr.io/linuxserver/qbittorrent:latest",
    "port": 8080,
    "volumeMount": "/config",
-   "website": "https://www.qbittorrent.org"
+   "website": "https://www.qbittorrent.org",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "transmission",
@@ -1183,7 +1287,9 @@
    "image": "lscr.io/linuxserver/transmission:latest",
    "port": 9091,
    "volumeMount": "/config",
-   "website": "https://transmissionbt.com"
+   "website": "https://transmissionbt.com",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "sonarr",
@@ -1195,7 +1301,9 @@
    "image": "lscr.io/linuxserver/sonarr:latest",
    "port": 8989,
    "volumeMount": "/config",
-   "website": "https://sonarr.tv"
+   "website": "https://sonarr.tv",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "radarr",
@@ -1207,7 +1315,9 @@
    "image": "lscr.io/linuxserver/radarr:latest",
    "port": 7878,
    "volumeMount": "/config",
-   "website": "https://radarr.video"
+   "website": "https://radarr.video",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "prowlarr",
@@ -1219,7 +1329,9 @@
    "image": "lscr.io/linuxserver/prowlarr:latest",
    "port": 9696,
    "volumeMount": "/config",
-   "website": "https://prowlarr.com"
+   "website": "https://prowlarr.com",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "bazarr",
@@ -1231,7 +1343,9 @@
    "image": "lscr.io/linuxserver/bazarr:latest",
    "port": 6767,
    "volumeMount": "/config",
-   "website": "https://www.bazarr.media"
+   "website": "https://www.bazarr.media",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "overseerr",
@@ -1243,7 +1357,9 @@
    "image": "sctx/overseerr:latest",
    "port": 5055,
    "volumeMount": "/app/config",
-   "website": "https://overseerr.dev"
+   "website": "https://overseerr.dev",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "jellyseerr",
@@ -1255,7 +1371,9 @@
    "image": "fallenbagel/jellyseerr:latest",
    "port": 5055,
    "volumeMount": "/app/config",
-   "website": "https://github.com/Fallenbagel/jellyseerr"
+   "website": "https://github.com/Fallenbagel/jellyseerr",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "flaresolverr",
@@ -1266,7 +1384,9 @@
    "emoji": "🛡️",
    "image": "flaresolverr/flaresolverr:latest",
    "port": 8191,
-   "website": "https://github.com/FlareSolverr/FlareSolverr"
+   "website": "https://github.com/FlareSolverr/FlareSolverr",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "homarr",
@@ -1279,7 +1399,9 @@
    "port": 7575,
    "volumeMount": "/appdata",
    "website": "https://homarr.dev",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "heimdall",
@@ -1291,7 +1413,9 @@
    "image": "lscr.io/linuxserver/heimdall:latest",
    "port": 80,
    "volumeMount": "/config",
-   "website": "https://heimdall.site"
+   "website": "https://heimdall.site",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "homepage",
@@ -1305,7 +1429,9 @@
    "volumeMount": "/app/config",
    "dockerSocket": true,
    "website": "https://gethomepage.dev",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "dashy",
@@ -1317,7 +1443,9 @@
    "image": "lissy93/dashy:latest",
    "port": 8080,
    "volumeMount": "/app/user-data",
-   "website": "https://dashy.to"
+   "website": "https://dashy.to",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "adguard-home",
@@ -1330,7 +1458,9 @@
    "port": 3000,
    "volumeMount": "/opt/adguardhome/work",
    "website": "https://adguard.com/adguard-home.html",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "home-assistant",
@@ -1343,7 +1473,9 @@
    "port": 8123,
    "volumeMount": "/config",
    "website": "https://www.home-assistant.io",
-   "featured": true
+   "featured": true,
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "ghost",
@@ -1415,7 +1547,9 @@
    "docs": "https://umami.is/docs",
    "featured": false,
    "composeContent": "services:\n  umami:\n    image: ghcr.io/umami-software/umami:3.0.3\n    environment:\n      - SERVICE_URL_UMAMI_3000\n      - DATABASE_URL=postgres://$SERVICE_USER_POSTGRES:$SERVICE_PASSWORD_POSTGRES@postgresql:5432/${POSTGRES_DB:-umami}\n      - DATABASE_TYPE=postgres\n      - APP_SECRET=$SERVICE_PASSWORD_64_UMAMI\n      - DISABLE_TELEMETRY=1\n    depends_on:\n      postgresql:\n        condition: service_healthy\n    healthcheck:\n      test: [\"CMD\", \"curl\", \"-f\", \"http://127.0.0.1:3000/api/heartbeat\"]\n      interval: 5s\n      timeout: 20s\n      retries: 10\n  postgresql:\n    image: postgres:16-alpine\n    volumes:\n      - postgresql-data:/var/lib/postgresql/data\n    environment:\n      - POSTGRES_USER=$SERVICE_USER_POSTGRES\n      - POSTGRES_PASSWORD=$SERVICE_PASSWORD_POSTGRES\n      - POSTGRES_DB=${POSTGRES_DB:-umami}\n    healthcheck:\n      test: [\"CMD-SHELL\", \"pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}\"]\n      interval: 5s\n      timeout: 20s\n      retries: 10\nvolumes:\n  postgresql-data:\n",
-   "composeService": "umami"
+   "composeService": "umami",
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "changedetection-io",
@@ -1428,8 +1562,8 @@
    "port": 5000,
    "volumeMount": "/data",
    "website": "https://changedetection.io",
-   "runtimeVerified": false,
-   "verifiedAt": "2026-09-15"
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "ntfy-server",
@@ -1445,8 +1579,8 @@
     "serve"
    ],
    "website": "https://ntfy.sh/docs",
-   "runtimeVerified": false,
-   "verifiedAt": "2026-09-15"
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "freshrss",
@@ -1459,8 +1593,8 @@
    "port": 80,
    "volumeMount": "/var/www/FreshRSS/data",
    "website": "https://freshrss.org",
-   "runtimeVerified": false,
-   "verifiedAt": "2026-09-15"
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "shiori",
@@ -1473,8 +1607,8 @@
    "port": 8080,
    "volumeMount": "/shiori",
    "website": "https://github.com/go-shiori/shiori",
-   "runtimeVerified": false,
-   "verifiedAt": "2026-09-15"
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "wallos",
@@ -1487,8 +1621,8 @@
    "port": 80,
    "volumeMount": "/var/www/html/db",
    "website": "https://github.com/ellite/Wallos",
-   "runtimeVerified": false,
-   "verifiedAt": "2026-09-15"
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "speedtest-tracker",
@@ -1497,7 +1631,7 @@
    "description": "Runs Ookla speedtests on a schedule and graphs the history: download/upload, latency, packet loss and jitter — with pass/fail thresholds. SQLite-backed.",
    "category": "Monitoring",
    "emoji": "🚀",
-   "image": "alexjustesen/speedtest-tracker:latest",
+   "image": "ghcr.io/alexjustesen/speedtest-tracker:latest",
    "port": 80,
    "volumeMount": "/config",
    "website": "https://speedtest-tracker.dev",
@@ -1529,8 +1663,8 @@
    "port": 8080,
    "volumeMount": "/var/www/html/storage/upload",
    "website": "https://firefly-iii.org",
-   "runtimeVerified": false,
-   "verifiedAt": "2026-09-15"
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "syncthing",
@@ -1543,8 +1677,8 @@
    "port": 8384,
    "volumeMount": "/var/syncthing",
    "website": "https://syncthing.net",
-   "runtimeVerified": false,
-   "verifiedAt": "2026-09-15"
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   },
   {
    "id": "lidarr",
@@ -1553,7 +1687,7 @@
    "description": "The *arr family's music member: monitors artists, grabs releases from indexers, renames and organizes into your library — a companion to the Prowlarr/Sonarr/Radarr stack.",
    "category": "Media",
    "emoji": "🎵",
-   "image": "lidarr/lidarr:latest",
+   "image": "lscr.io/linuxserver/lidarr:latest",
    "port": 8686,
    "volumeMount": "/config",
    "website": "https://lidarr.audio",
@@ -1567,7 +1701,7 @@
    "description": "A free binary newsreader: NZB automation, repair and unpack with par2, categories, scripting hooks and an API the *arr apps drive natively.",
    "category": "Media",
    "emoji": "📥",
-   "image": "sabnzbd/sabnzbd:latest",
+   "image": "lscr.io/linuxserver/sabnzbd:latest",
    "port": 8080,
    "volumeMount": "/config",
    "website": "https://sabnzbd.org",
@@ -1585,8 +1719,8 @@
    "port": 8080,
    "volumeMount": null,
    "website": "https://drawio.com",
-   "runtimeVerified": false,
-   "verifiedAt": "2026-09-15"
+   "runtimeVerified": true,
+   "verifiedAt": "2026-09-16"
   }
  ]
 }
