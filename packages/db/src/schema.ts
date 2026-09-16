@@ -926,6 +926,35 @@ export const scimTokens = sqliteTable(
 
 export type ScimToken = typeof scimTokens.$inferSelect;
 
+// ─── multi-server fan-out targets ──────────────────────────────────────────
+// A service's PRIMARY placement stays `services.server_id` (null = panel
+// host). Rows here name the ADDITIONAL nodes the same release is pushed to —
+// image-based docker services only: a source build's image exists only on the
+// node (or panel) that built it, so fanning out source builds needs the
+// separate build-server/registry story first.
+export const serviceTargets = sqliteTable(
+  'service_targets',
+  {
+    id: id(),
+    serviceId: integer('service_id')
+      .notNull()
+      .references(() => services.id, { onDelete: 'cascade' }),
+    serverId: integer('server_id')
+      .notNull()
+      .references(() => servers.id, { onDelete: 'cascade' }),
+    // The container name of THIS node's generation (`<slug>-t<serverId>-<depId>`).
+    runtimeId: text('runtime_id'),
+    status: text('status', { enum: ['idle', 'running', 'error'] }).notNull().default('idle'),
+    createdAt: ts('created_at'),
+    updatedAt: tsUpdatable('updated_at'),
+  },
+  (t) => ({
+    uniqueTarget: uniqueIndex('service_targets_service_server_idx').on(t.serviceId, t.serverId),
+  }),
+);
+
+export type ServiceTarget = typeof serviceTargets.$inferSelect;
+
 export const settings = sqliteTable(
   'settings',
   {

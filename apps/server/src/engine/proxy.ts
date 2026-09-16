@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { domains, servers, services, type DB } from '@ninedeploy/db';
+import { domains, serviceTargets, servers, services, type DB } from '@ninedeploy/db';
+import { eq } from 'drizzle-orm';
 import { config } from '../config.js';
 import { capture, run, sleep } from '../lib/exec.js';
 import { getSettingString } from '../lib/settings.js';
@@ -506,9 +507,21 @@ export async function renderDynamicConfig(
 ): Promise<string> {
   const forNode = opts.serverId != null;
   const all = await db.select().from(domains);
+  // Multi-server fan-out: a service with a `service_targets` row on THIS node
+  // also routes here, through the target's own container (not the primary's).
+  const targetsOnNode = forNode
+    ? await db.select().from(serviceTargets).where(eq(serviceTargets.serverId, opts.serverId!))
+    : [];
+  const targetRuntimeByService = new Map(
+    targetsOnNode.filter((t) => t.runtimeId).map((t) => [t.serviceId, t.runtimeId as string]),
+  );
   const servicesById = new Map(
     (await db.select().from(services))
-      .filter((s) => (forNode ? s.serverId === opts.serverId : s.serverId == null))
+      .filter((s) =>
+        forNode
+          ? s.serverId === opts.serverId || targetRuntimeByService.has(s.id)
+          : s.serverId == null,
+      )
       .map((s) => [s.id, s]),
   );
   const acmeEmail = await getAcmeEmail(db);
@@ -630,7 +643,8 @@ export async function renderDynamicConfig(
       // which no DNS server inside the Traefik container can resolve (every
       // request would 502 forever). Route them through the host gateway,
       // same as the panel router below.
-      const upstreamHost = svc.type === 'pm2' ? 'host.docker.internal' : svc.runtimeId;
+      const upstreamHost =
+        svc.type === 'pm2' ? 'host.docker.internal' : (targetRuntimeByService.get(svc.id) ?? svc.runtimeId);
       // Replicas (docker services with `replicas > 1`): every generation
       // container — the primary plus its -r2..-rN clones — becomes one
       // loadBalancer server, and a healthCheck block makes Traefik drop a

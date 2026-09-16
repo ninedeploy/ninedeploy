@@ -2,6 +2,7 @@
 import { template as templateSchema } from '@ninedeploy/schemas';
 import bundledRegistry from '../../src/templates/registry.json' with { type: 'json' };
 import { parseBundle } from '../../src/templates/registry.js';
+import { scanRequiredPlaceholders } from '../../src/engine/magicVars.js';
 
 describe('bundled Hub template contract', () => {
   const templates = parseBundle(bundledRegistry);
@@ -71,6 +72,26 @@ describe('bundled Hub template contract', () => {
     expect(byId.get('forgejo')?.image).toBe('codeberg.org/forgejo/forgejo:16');
     expect(byId.get('kavita')?.image).toBe('jvmilazz0/kavita:latest');
     expect(byId.get('minio')?.cmd).toEqual(['server', '/data', '--console-address', ':9001']);
+  });
+
+  it('resolves in-file defaulted placeholders consistently across every compose stack', () => {
+    for (const template of templates.filter((candidate) => candidate.composeContent)) {
+      const content = template.composeContent!;
+      const defaulted = new Set([...content.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*):-/g)].map((m) => m[1]!));
+      // The resolver exports defaultless placeholders as '' — a stack that also
+      // carries a ${NAME:-default} form of the SAME variable gets two different
+      // values in one deploy: '' for the bare ref, the default for the other.
+      // Deployment #91: umami-stack pointed DATABASE_URL at `$POSTGRES_DB`
+      // (→ '') while postgres provisioned `umami`, so umami connected to a
+      // nonexistent database and crash-looped against a healthy postgres.
+      for (const name of scanRequiredPlaceholders(content)) {
+        expect(defaulted.has(name), `${template.id} references $${name} both bare and as a defaulted \${${name}:-…}`).toBe(false);
+      }
+      if (template.id === 'umami-stack') {
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: compose interpolation is the literal under test
+        expect(content).toContain('@postgresql:5432/${POSTGRES_DB:-umami}');
+      }
+    }
   });
 
   it('advertises only templates that passed an isolated runtime smoke test', () => {

@@ -8,7 +8,9 @@ import {
   envVars,
   serviceLabels,
   serviceProjects,
+  serviceTargets,
   services,
+  servers,
   serviceWorkspaces,
   sources,
   workspaceMembers,
@@ -17,8 +19,12 @@ import {
 } from '@ninedeploy/db';
 import { composePreviewRequest, createService, sameImageRepository, setLimits, updateService } from '@ninedeploy/schemas';
 import { getTemplates } from '../templates/registry.js';
+
+/** Fan-out target set for a service — up to 10 extra nodes, operator-set. */
+const setTargets = z.object({ serverIds: z.array(z.number().int().positive()).max(10) });
 import { capture } from '../lib/exec.js';
 import { replicaNames } from '../engine/dockerNames.js';
+import { teardownTargets } from '../engine/fanout.js';
 import { audit } from '../lib/audit.js';
 import { config } from '../config.js';
 import { getStickyEnabledForService } from '../engine/proxy.js';
@@ -691,6 +697,11 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       else if (svc.type === 'compose') await composeBuilder.stop(svc.runtimeId);
       else req.log.warn({ type: svc.type, runtimeId: svc.runtimeId }, 'unsupported service type — leaving runtime in place');
     }
+    // Fan-out targets: tear down every extra node's container and drop the
+    // rows — deleting the service deletes the whole fleet footprint.
+    await teardownTargets(app.db, svc.id, (line) => req.log.info({ fanout: line }, line)).catch((err: unknown) =>
+      req.log.warn({ err }, 'fan-out teardown failed (rows remain recoverable on next deploy)'),
+    );
     // Model B: reap the service's private bridge. A no-op when a database is
     // still attached to it (so the DB keeps resolving the service's bridge
     // and the panel can still show the connection). Failures are logged, not
@@ -743,6 +754,47 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       }
     }
     return { cpuShares: svc.cpuShares, cpuLimitMilli: svc.cpuLimitMilli, memLimitMb: svc.memLimitMb, liveApplied };
+  });
+
+  // Multi-server fan-out targets (phase 1): image-based docker services only
+  // (a source build's image exists solely on the node that built it).
+  app.patch('/:id/targets', async (req) => {
+    const id = num((req.params as { id: string }).id);
+    const svc = await loadServiceForUser(app.db, id, req.user!);
+    await assertServiceRole(app.db, svc, req.user!, 'member');
+    if (!req.user!.isOperator) throw forbidden('Only operators may change fan-out targets');
+    if (svc.type !== 'docker' || !svc.image) {
+      throw badRequest('Fan-out targets apply only to image-based docker services');
+    }
+    const input = setTargets.parse(req.body ?? {});
+    const requested = [...new Set(input.serverIds)];
+    const existing = await app.db.select().from(serviceTargets).where(eq(serviceTargets.serviceId, id));
+    if (existing.some((t) => !requested.includes(t.serverId))) {
+      await teardownTargets(app.db, id, () => undefined);
+    }
+    for (const serverId of requested) {
+      if (serverId === svc.serverId) continue;
+      const node = await app.db.query.servers.findFirst({ where: eq(servers.id, serverId) });
+      if (!node) throw notFound(`Server ${serverId} not found`);
+      if (!existing.some((t) => t.serverId === serverId)) {
+        await app.db.insert(serviceTargets).values({ serviceId: id, serverId, status: 'idle' });
+      }
+    }
+    for (const t of existing) {
+      if (!requested.includes(t.serverId)) {
+        await app.db.delete(serviceTargets).where(eq(serviceTargets.id, t.id));
+      }
+    }
+    void audit(app.db, req.user!.id, 'service.targets', `${svc.name}: ${requested.join(',') || 'cleared'}`);
+    const rows = await app.db.select().from(serviceTargets).where(eq(serviceTargets.serviceId, id));
+    return { targets: rows.map((t) => ({ serverId: t.serverId, runtimeId: t.runtimeId, status: t.status })) };
+  });
+
+  app.get('/:id/targets', async (req) => {
+    const id = num((req.params as { id: string }).id);
+    await loadServiceForUser(app.db, id, req.user!);
+    const rows = await app.db.select().from(serviceTargets).where(eq(serviceTargets.serviceId, id));
+    return { targets: rows.map((t) => ({ serverId: t.serverId, runtimeId: t.runtimeId, status: t.status })) };
   });
 
   // G-28: per-service sticky-session toggle. The setting lives in the

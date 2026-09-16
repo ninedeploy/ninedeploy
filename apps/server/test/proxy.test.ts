@@ -2,7 +2,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { domains, services } from '@ninedeploy/db';
+import { domains, serviceTargets, services } from '@ninedeploy/db';
 import { encryptDnsToken, ensureNetwork, ensureTraefik, getAcmeEmail, getDnsConfig, NETWORK, parseBasicAuth, parseCertExpiry, parseIpAllowlist, readCertificates, renderDynamicConfig, renderStaticConfig, traefikConfigFingerprint, writeDynamicConfig } from '../src/engine/proxy.js';
 import { load } from 'js-yaml';
 
@@ -128,12 +128,22 @@ describe('certificate tracking', () => {
   });
 });
 
-const makeDb = (domainRows: unknown[], serviceRows: unknown[]) => ({
+const makeDb = (domainRows: unknown[], serviceRows: unknown[], targetRows: unknown[] = []) => ({
   select: vi.fn(() => ({
-    from: vi.fn(async (t: unknown) => {
-      if (t === domains) return domainRows;
-      if (t === services) return serviceRows;
-      return [];
+    from: vi.fn((t: unknown) => {
+      const resolve = async () => {
+        if (t === domains) return domainRows;
+        if (t === services) return serviceRows;
+        if (t === serviceTargets) return targetRows;
+        return [];
+      };
+      return {
+        where: async () => resolve(),
+        then: (
+          res?: (v: unknown[]) => unknown,
+          rej?: (e: unknown) => unknown,
+        ) => resolve().then(res, rej),
+      };
     }),
   })),
 });
@@ -186,6 +196,24 @@ describe('writeDynamicConfig', () => {
     // traffic instead of blackholing its share.
     expect(yaml).toContain('healthCheck:');
     expect(yaml).toContain('path: "/healthz"');
+  });
+
+  it('routes a fan-out target service on its node through the per-node runtime', async () => {
+    // The service is pinned to node A (serverId 9); node B (serverId 5) holds
+    // a fan-out target. Node B's proxy must route to the TARGET container
+    // name, and the panel's own config must not claim the remote service.
+    const db = makeDb(
+      [{ id: 1, serviceId: 1, hostname: 'app.example.com', path: '/', ssl: true, status: 'active' }],
+      [{ id: 1, slug: 'web', port: 3000, runtimeId: 'web-7', type: 'docker', serverId: 9 }],
+      [{ id: 1, serviceId: 1, serverId: 5, runtimeId: 'web-t5-9', status: 'running' }],
+    );
+
+    const nodeYaml = await renderDynamicConfig(db as never, { serverId: 5 });
+    expect(nodeYaml).toContain('url: "http://web-t5-9:3000"');
+    expect(nodeYaml).not.toContain('web-7');
+    // The panel host must not claim the remote service either.
+    const panelYaml = await renderDynamicConfig(db as never, { serverId: null });
+    expect(panelYaml).not.toContain('app.example.com');
   });
 
   it('keeps single-server rendering (no healthCheck) for replicas == 1', async () => {

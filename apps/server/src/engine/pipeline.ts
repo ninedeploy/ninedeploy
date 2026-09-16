@@ -11,6 +11,7 @@ import { materialiseComposeFile } from '../lib/composeWorkspace.js';
 import { remoteDeploySupported, remoteDeployUnsupportedReason } from '../lib/remoteDeploy.js';
 import { agentOp } from '../lib/agentClient.js';
 import { createRemoteDockerBuilder } from './builders/remoteDocker.js';
+import { deployToTargets, recordFanoutResults, targetsForService } from './fanout.js';
 import { createRemoteComposeBuilder } from './builders/remoteCompose.js';
 import { analyzeRepo, summarizeInsights } from '../lib/frameworks.js';
 import { upsertInsights } from './repoInsights.js';
@@ -513,6 +514,9 @@ export async function runDeployment(
     : undefined;
 
   let runtime: DeployRuntime | undefined;
+  // The resolved runtime env (lifted so the fan-out hook can push the same
+  // secrets to every target node).
+  let fanoutEnv: Record<string, string> = {};
   // Resolved commit SHA (empty for image deploys). Lifted out of the try so the
   // success path (which persists it onto the service row) can read it.
   let sha = '';
@@ -624,6 +628,7 @@ export async function runDeployment(
     }
 
     const runtimeEnvironment = await loadRuntimeEnv(db, service);
+    fanoutEnv = runtimeEnvironment.values;
     if (runtimeEnvironment.readyAttachmentCount !== runtimeEnvironment.attachmentCount) {
       throw new Error(
         `Managed database dependency is not ready (${runtimeEnvironment.readyAttachmentCount}/${runtimeEnvironment.attachmentCount} attachments running)`,
@@ -1021,6 +1026,50 @@ export async function runDeployment(
     log('##[stage:CLEANUP:success]');
   }
   log('##[stage:COMPLETE:success] Service is live and healthy on production');
+
+  // ── Multi-server fan-out (phase 1) ────────────────────────────────────────
+  // Image-based docker releases are pushed to every extra target node AFTER
+  // the primary is live — additive, best-effort, never blocking the success.
+  // Source builds are excluded on purpose: their image exists only where the
+  // build ran (see engine/fanout.ts for the honest scope note).
+  if (service.type === 'docker' && service.image) {
+    const extra = await targetsForService(db, service.id);
+    if (extra.length > 0) {
+      log(`Fanning out to ${extra.length} additional node${extra.length === 1 ? '' : 's'} …`);
+      const results = await deployToTargets(
+        db,
+        {
+          service: {
+            id: service.id,
+            slug: service.slug,
+            type: service.type,
+            image: service.image,
+            port: service.port,
+            healthPath: service.healthPath,
+            cpuShares: service.cpuShares,
+            cpuLimitMilli: service.cpuLimitMilli,
+            memLimitMb: service.memLimitMb,
+            volumeMount: service.volumeMount,
+            publishedPort: service.publishedPort,
+          },
+          deploymentId,
+          image: runtime!.imageDigest ?? service.image,
+          env: fanoutEnv,
+          registryAuth: await loadRegistryAuth(db, service),
+          primaryServerId: service.serverId ?? null,
+        },
+        log,
+      );
+      await recordFanoutResults(db, service.id, results);
+      const failed = results.filter((r) => !r.ok).length;
+      log(
+        failed === 0
+          ? `Fan-out complete: ${results.length}/${results.length} target nodes healthy`
+          : `Fan-out partially applied: ${results.length - failed}/${results.length} target nodes healthy`,
+      );
+    }
+  }
+
   log('✓ Deployment successful');
   await auditOutcome(db, service, deploymentId, 'success');
 }
