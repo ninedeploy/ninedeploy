@@ -1,4 +1,4 @@
-export const VERSION = '0.9.5';
+export const VERSION = '0.9.6';
 
 export interface ChangelogEntry {
   version: string;
@@ -8,6 +8,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.9.6',
+    date: '2026-09-16',
+    title: 'Swarm-less Replicas, SCIM Provisioning, 101 Templates',
+    changes: [
+      'Docker services run 1-10 replicas behind Traefik round-robin with per-server health checks — no Swarm needed. Lifecycle stop/start/restart/delete sweep the whole replica generation, the reconcile loop revives crashed clones, and scaling is settable from the Scaling card or the manifest.',
+      'SCIM 2.0 user provisioning: IdPs push users into a workspace through {panel}/scim/v2 and deprovisioning at the IdP revokes sessions, API tokens and memberships automatically. Plus a 100-template catalog and human-readable OOM/activity surfaces.',
+    ],
+  },
   {
     version: '0.9.5',
     date: '2026-09-15',

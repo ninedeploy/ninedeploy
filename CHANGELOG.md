@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.6] - 2026-09-16
+
+> The enterprise and scale release: Swarm-less replicas, SCIM
+> provisioning, and a 100-template catalog.
+
+### Added
+
+- **Horizontal replicas (r126/r127).** Docker services run 1-10
+  replicas: identical containers on the service bridge, Traefik
+  round-robin with a per-server `healthCheck` so a dead replica drops
+  from rotation instead of erroring. Replicas are swept as one
+  generation by stop / start / restart / delete (a stop → restart flow
+  used to leave clones down while the panel read `running`), revived
+  by the reconcile loop, settable from the Scaling card or the
+  `.ninedeploy` `resources.replicas` field.
+- **SCIM 2.0 user provisioning (r129).** Point Okta / Entra ID at
+  `{panel}/scim/v2` with a workspace-scoped bearer token: users push
+  in as members, deactivating them at the IdP revokes their sessions,
+  API tokens and (on delete) memberships here within one sync cycle.
+  A push for an existing local email adopts the account instead of
+  duplicating it. Tokens are sha256-hashed at rest and shown exactly
+  once. Management card lives in Settings → SSO.
+- **Template catalog 89 → 101 (r130).** Changedetection.io, ntfy
+  server, FreshRSS, Shiori, Wallos, Speedtest Tracker, Homebox, Firefly
+  III, Syncthing, Lidarr, SABnzbd and draw.io — single-image picks
+  filling the most-deployed gaps. New entries are honestly marked
+  `runtimeVerified: false` until deploy-tested; a new integrity suite
+  pins schema-parse, unique ids and the 100-template floor.
+- **Panel surfaces for recent features (r128).** OOM events render as
+  human-readable rose badges in Activity, replica counts show as ×N
+  chips on service cards, and notification channel badges got
+  per-provider colors.
+
+---
+
 ## [0.9.5] - 2026-09-15
 
 > The scaling release: N containers per service with plain Docker —

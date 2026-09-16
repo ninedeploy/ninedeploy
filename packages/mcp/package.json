@@ -1,6 +1,6 @@
 {
   "name": "@ninedeploy/mcp",
-  "version": "0.9.5",
+  "version": "0.9.6",
   "description": "Official Model Context Protocol (MCP) server for NineDeploy AI integration",
   "license": "MIT",
   "repository": {
