@@ -1253,6 +1253,35 @@ describe('ServiceDetail', () => {
     await waitFor(() => expect(api.limits.setService).toHaveBeenCalledWith(1, { cpuShares: null, cpuLimitMilli: null, memLimitMb: null }));
   });
 
+  it('toasts when the replicas save fails and keeps the field editable', async () => {
+    const user = userEvent.setup();
+    const api = (await import('../src/lib/api.js')).api as unknown as {
+      services: { get: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
+    };
+    api.services.get = vi.fn().mockResolvedValue({ ...service });
+    api.services.update = vi.fn().mockRejectedValue(new Error('boom'));
+    renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+    await openTab('Settings');
+    await screen.findByText('Scaling');
+    const replicasInput = document.querySelectorAll<HTMLInputElement>('input.w-44')[3]!;
+    await user.clear(replicasInput);
+    await user.type(replicasInput, '2');
+    await user.click(screen.getByRole('button', { name: /Save replicas/ }));
+    await waitFor(() => expect(api.services.update).toHaveBeenCalled());
+    // The card did not crash and the field kept the edit.
+    expect(screen.getByText('Scaling')).toBeInTheDocument();
+    expect(replicasInput).toHaveValue('2');
+  });
+
+  it('shows the pm2 limits hint without CPU fields for host processes', async () => {
+    mockOf(api.services.get).mockResolvedValue({ ...service, type: 'pm2', runtimeId: 'web' } as never);
+    renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+    await openTab('Settings');
+    await screen.findByText('Resource limits');
+    expect(screen.getByText(/PM2 processes run on the host/)).toBeInTheDocument();
+    expect(screen.queryByText(/CPU limit cores/)).not.toBeInTheDocument();
+  });
+
   it('saves replicas from the scaling card and hides it for pm2 services', async () => {
     const user = userEvent.setup();
     const api = (await import('../src/lib/api.js')).api as unknown as {

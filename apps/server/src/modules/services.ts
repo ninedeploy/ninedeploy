@@ -763,8 +763,11 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     const svc = await loadServiceForUser(app.db, id, req.user!);
     await assertServiceRole(app.db, svc, req.user!, 'member');
     if (!req.user!.isOperator) throw forbidden('Only operators may change fan-out targets');
-    if (svc.type !== 'docker' || !svc.image) {
-      throw badRequest('Fan-out targets apply only to image-based docker services');
+    // Image releases pull; Dockerfile releases build per node (r132). Anything
+    // else (pm2, compose, Dockerfile-less nixpacks sources) has no honest
+    // node-side story.
+    if (svc.type !== 'docker' || (!svc.image && !svc.repoUrl)) {
+      throw badRequest('Fan-out targets apply only to docker services with an image or a Dockerfile repository');
     }
     const input = setTargets.parse(req.body ?? {});
     const requested = [...new Set(input.serverIds)];

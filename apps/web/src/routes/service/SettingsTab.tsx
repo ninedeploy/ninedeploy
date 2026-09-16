@@ -6,7 +6,7 @@ import { api } from '../../lib/api.js';
 import { useAuth } from '../../lib/auth.js';
 import { toInt } from '../../lib/format.js';
 import { useToast } from '../../components/Toast.js';
-import { Button, Card, CardBody, Field, Input, Select, Skeleton, Switch } from '../../components/ui.js';
+import { Button, Card, CardBody, cn, Field, Input, Select, Skeleton, Switch } from '../../components/ui.js';
 import { ServiceTagsCard } from './ServiceTagsCard.js';
 
 /** Service fields, build configuration, lifecycle hooks, PR previews, and resource limits. */
@@ -534,8 +534,90 @@ function TargetNodeCard({ svc }: { svc: Service }) {
             the container on the previous host is not moved for you.
           </p>
         ) : null}
+
+        {isOperator && svc.type === 'docker' && (svc.image || svc.repoUrl) ? (
+          <FanoutTargetsCard svc={svc} />
+        ) : null}
       </CardBody>
     </Card>
+  );
+}
+
+// ── Multi-server fan-out ───────────────────────────────────────────────────
+export function FanoutTargetsCard({ svc }: { svc: Service }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const servers = useQuery({ queryKey: ['servers'], queryFn: () => api.servers.list() });
+  const targets = useQuery({ queryKey: ['fanout-targets', svc.id], queryFn: () => api.fanout.get(svc.id) });
+  const [selected, setSelected] = useState<number[] | null>(null);
+
+  const save = useMutation({
+    mutationFn: () => api.fanout.set(svc.id, selected ?? targets.data?.map((t) => t.serverId) ?? []),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['fanout-targets', svc.id] });
+      toast('Fan-out targets saved — applied on the next deploy', 'success');
+    },
+    onError: () => toast('Could not save the fan-out targets', 'error'),
+  });
+
+  const current = selected ?? targets.data?.map((t) => t.serverId) ?? [];
+  const candidates = (servers.data ?? []).filter((s) => s.id !== svc.serverId);
+  const dirty =
+    selected != null &&
+    (selected.length !== (targets.data?.length ?? 0) ||
+      selected.some((id) => !targets.data?.some((t) => t.serverId === id)));
+
+  const toggle = (id: number) =>
+    setSelected(current.includes(id) ? current.filter((x) => x !== id) : [...current, id]);
+
+  if ((servers.data ?? []).filter((s) => s.id !== svc.serverId).length === 0 && (targets.data ?? []).length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-5 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+      <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-300">
+        <Layers size={15} className="text-slate-500" /> Run on additional nodes
+      </div>
+      <p className="mb-3 text-xs text-slate-500">
+        Each target node runs its own container of this release — the image is pulled there, or a
+        Dockerfile repository is built from the same pinned commit. Point the domain's DNS at every
+        node you select.
+      </p>
+      {targets.isLoading || servers.isLoading ? (
+        <p className="text-xs text-slate-600">Loading nodes…</p>
+      ) : (
+        <div className="space-y-1.5">
+          {candidates.map((node) => {
+            const active = current.includes(node.id);
+            const target = targets.data?.find((t) => t.serverId === node.id);
+            return (
+              <label key={node.id} className="flex items-center gap-2 rounded-lg border border-white/[0.05] px-3 py-1.5 text-xs text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={active}
+                  onChange={() => toggle(node.id)}
+                  className="accent-indigo-500"
+                  aria-label={`Fan out to ${node.name}`}
+                />
+                {node.name}
+                {target && (
+                  <span className={cn('ml-auto font-mono text-[10px]', target.status === 'running' ? 'text-emerald-400' : 'text-rose-400')}>
+                    {target.status}
+                  </span>
+                )}
+              </label>
+            );
+          })}
+          {candidates.length === 0 && <p className="text-xs text-slate-600">No additional nodes registered.</p>}
+        </div>
+      )}
+      {selected != null && dirty && (
+        <Button size="sm" variant="secondary" className="mt-3" onClick={() => save.mutate()} disabled={save.isPending}>
+          {save.isPending ? 'Saving…' : 'Save fan-out targets'}
+        </Button>
+      )}
+    </div>
   );
 }
 

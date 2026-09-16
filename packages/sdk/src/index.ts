@@ -816,6 +816,14 @@ export interface NineDeployClient {
     /** Detach the rule for a project. */
     clear: (projectId: number) => Promise<{ ok: boolean; driver: string }>;
   };
+  fanout: {
+    /** The extra nodes an image/Dockerfile release is pushed to. */
+    get: (serviceId: number) =>
+      Promise<Array<{ serverId: number; runtimeId: string | null; status: string }>>;
+    /** Replace the target-node set (operator-only). */
+    set: (serviceId: number, serverIds: number[]) =>
+      Promise<{ targets: Array<{ serverId: number; runtimeId: string | null; status: string }> }>;
+  };
   scim: {
     /** SCIM 2.0 provisioning tokens (operator-managed). */
     listTokens: () => Promise<Array<{ id: number; name: string; workspaceId: number; createdAt: string | null; lastUsedAt: string | null; revoked: boolean }>>;
@@ -1727,6 +1735,15 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
         error?: string;
       }>('POST', '/v1/sso/providers', input),
       removeProvider: (id) => send<{ ok: boolean }>('DELETE', `/v1/sso/providers/${id}`),
+    },
+    fanout: {
+      get: (serviceId) => get<Array<{ serverId: number; runtimeId: string | null; status: string }>>(`/v1/services/${serviceId}/targets`),
+      set: (serviceId, serverIds) =>
+        send<{ targets: Array<{ serverId: number; runtimeId: string | null; status: string }> }>(
+          'PATCH',
+          `/v1/services/${serviceId}/targets`,
+          { serverIds },
+        ),
     },
     scim: {
       listTokens: () =>

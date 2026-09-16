@@ -684,6 +684,27 @@ describe('createClient', () => {
     });
   });
 
+  describe('fan-out targets', () => {
+    it('reads and replaces the target-node set', async () => {
+      const { fetchMock, calls } = makeFetch((_url, init) => {
+        if (init.method === 'PATCH') return ok({ targets: [{ serverId: 5, runtimeId: 'web-t5-9', status: 'running' }] });
+        return ok([{ serverId: 5, runtimeId: 'web-t5-9', status: 'running' }]);
+      });
+      const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+
+      const listed = await client.fanout.get(1);
+      expect(last(calls)).toMatchObject({ url: '/v1/services/1/targets', init: { method: 'GET' } });
+      expect(listed).toMatchObject([{ serverId: 5, status: 'running' }]);
+
+      const set = await client.fanout.set(1, [5, 6]);
+      expect(last(calls)).toMatchObject({
+        url: '/v1/services/1/targets',
+        init: { method: 'PATCH', body: JSON.stringify({ serverIds: [5, 6] }) },
+      });
+      expect(set.targets[0]).toMatchObject({ runtimeId: 'web-t5-9' });
+    });
+  });
+
   describe('scim token management', () => {
     it('lists, mints and revokes provisioning tokens', async () => {
       const { fetchMock, calls } = makeFetch((_url, init) => {
