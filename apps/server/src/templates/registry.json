@@ -19,28 +19,18 @@
   },
   {
    "id": "activepieces",
-   "name": "Activepieces",
-   "tagline": "Open-source Zapier alternative",
-   "description": "No-code business automation tool designed to be extensible through a flexible piece ecosystem and TypeScript SDK.",
+   "name": "Activepieces (Compose Stack)",
+   "tagline": "Open-source Zapier alternative with its own Redis & Postgres",
+   "description": "No-code business automation tool designed to be extensible through a flexible piece ecosystem and TypeScript SDK. Deployed as a full compose stack: recent Activepieces releases refuse to boot without Redis and PostgreSQL, so the stack carries both.",
    "category": "Automation",
    "emoji": "🧩",
    "image": "activepieces/activepieces:latest",
    "port": 80,
-   "volumeMount": "/root/.activepieces",
-   "env": [
-    {
-     "key": "AP_ENCRYPTION_KEY",
-     "value": "activepieces-secure-encryption-key-32chars",
-     "secret": true
-    },
-    {
-     "key": "AP_JWT_SECRET",
-     "value": "activepieces-jwt-secret-replace-me",
-     "secret": true
-    }
-   ],
    "website": "https://www.activepieces.com",
-   "featured": true
+   "docs": "https://www.activepieces.com/docs",
+   "featured": true,
+   "composeContent": "services:\n  app:\n    image: activepieces/activepieces:latest\n    environment:\n      - AP_ENCRYPTION_KEY=$SERVICE_PASSWORD_32_ACTIVEPIECES\n      - AP_JWT_SECRET=$SERVICE_PASSWORD_64_ACTIVEPIECES\n      - AP_REDIS_URL=redis://redis:6379\n      - AP_POSTGRES_HOST=postgresql\n      - AP_POSTGRES_PORT=5432\n      - AP_POSTGRES_DATABASE=${AP_POSTGRES_DATABASE:-activepieces}\n      - AP_POSTGRES_USERNAME=$SERVICE_USER_POSTGRES\n      - AP_POSTGRES_PASSWORD=$SERVICE_PASSWORD_POSTGRES\n      - AP_FRONTEND_URL=$SERVICE_URL_ACTIVEPIECES_80\n      - AP_TELEMETRY_DISABLED=true\n    depends_on:\n      redis:\n        condition: service_healthy\n      postgresql:\n        condition: service_healthy\n  redis:\n    image: redis:7-alpine\n    healthcheck:\n      test: [\"CMD\", \"redis-cli\", \"ping\"]\n      interval: 5s\n      timeout: 20s\n      retries: 10\n  postgresql:\n    image: postgres:16-alpine\n    volumes:\n      - postgresql-data:/var/lib/postgresql/data\n    environment:\n      - POSTGRES_USER=$SERVICE_USER_POSTGRES\n      - POSTGRES_PASSWORD=$SERVICE_PASSWORD_POSTGRES\n      - POSTGRES_DB=${POSTGRES_DB:-activepieces}\n    healthcheck:\n      test: [\"CMD-SHELL\", \"pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}\"]\n      interval: 5s\n      timeout: 20s\n      retries: 10\nvolumes:\n  postgresql-data:\n",
+   "composeService": "app"
   },
   {
    "id": "directus",
@@ -168,7 +158,7 @@
    "description": "Open source UI visual tool for LangChain and LlamaIndex to build customized LLM applications, autonomous agents and RAG pipelines.",
    "category": "AI",
    "emoji": "🌊",
-   "image": "flowiseai/flowise:latest",
+   "image": "flowiseai/flowise:2.2.8",
    "port": 3000,
    "volumeMount": "/root/.flowise",
    "env": [
@@ -1648,6 +1638,13 @@
    "image": "ghcr.io/sysadminsmedia/homebox:latest",
    "port": 7745,
    "volumeMount": "/data",
+   "env": [
+    {
+     "key": "HBOX_AUTH_API_KEY_PEPPER",
+     "value": "generated",
+     "secret": true
+    }
+   ],
    "website": "https://homebox.software",
    "runtimeVerified": false,
    "verifiedAt": "2026-09-15"

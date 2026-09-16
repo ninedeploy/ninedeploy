@@ -50,9 +50,11 @@ describe('template routes', () => {
   it('exposes curated community templates without falsely marking them verified', async () => {
     const app = await buildTestApp({ db: createFakeDb() });
     await app.register(templateRoutes);
-    const res = await app.inject({ method: 'GET', url: '/ollama', headers: asUser() });
+    const res = await app.inject({ method: 'GET', url: '/activepieces', headers: asUser() });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ id: 'ollama', runtimeVerified: false });
+    // activepieces failed its readiness smoke (it wants a Redis host) — the
+    // panel must not advertise it as verified.
+    expect(res.json()).toMatchObject({ id: 'activepieces', runtimeVerified: false });
   });
 
   it('generates fresh secrets for secret env values on one-click deploys', async () => {

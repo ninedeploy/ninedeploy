@@ -1,4 +1,5 @@
-﻿import { describe, expect, it } from 'vitest';
+﻿import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
 import { template as templateSchema } from '@ninedeploy/schemas';
 import bundledRegistry from '../../src/templates/registry.json' with { type: 'json' };
 import { parseBundle } from '../../src/templates/registry.js';
@@ -95,13 +96,22 @@ describe('bundled Hub template contract', () => {
   });
 
   it('advertises only templates that passed an isolated runtime smoke test', () => {
-    expect(templates.filter((template) => template.runtimeVerified).map((template) => template.id).sort()).toEqual([
-      'actual-budget', 'directus', 'excalidraw', 'forgejo', 'ghost', 'gitea', 'grafana',
-      'kavita', 'memos', 'minio', 'n8n', 'pocketbase', 'qdrant', 'uptime-kuma',
-      'vaultwarden', 'wordpress',
-    ]);
+    // The verified set is DERIVED from the committed smoke-run evidence, not
+    // hand-pinned: the next `smoke-template-runtime` run refreshes the JSON
+    // and this contract follows it automatically.
+    const run = JSON.parse(
+      readFileSync(new URL('../../../../runtime-verify-2026-09-16.json', import.meta.url), 'utf8'),
+    ) as { results: Array<{ id: string; ok: boolean }> };
+    const okIds = new Set(run.results.filter((r) => r.ok).map((r) => r.id));
+    const verifiedIds = new Set(templates.filter((t) => t.runtimeVerified).map((t) => t.id));
+    // Every smoke-verified template is advertised…
+    for (const id of okIds) expect(verifiedIds.has(id), id).toBe(true);
+    // …and nothing else claims verification (no exceptions — a compose-only
+    // template passing an interpolation test is still not runtime-verified).
+    const unexpected = [...verifiedIds].filter((id) => !okIds.has(id));
+    expect(unexpected).toEqual([]);
     for (const template of templates.filter((candidate) => candidate.runtimeVerified)) {
-      expect(template.verifiedAt, template.id).toBe('2026-08-20');
+      expect(template.verifiedAt, template.id).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     }
   });
 });
