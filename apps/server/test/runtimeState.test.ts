@@ -12,6 +12,9 @@ vi.mock('../src/lib/exec.js', () => execMocks);
 const auditMocks = vi.hoisted(() => ({ audit: vi.fn(async () => undefined) }));
 vi.mock('../src/lib/audit.js', () => auditMocks);
 
+const agentMocks = vi.hoisted(() => ({ agentOp: vi.fn(async () => ({ exitCode: 0, lines: [] })) }));
+vi.mock('../src/lib/agentClient.js', () => ({ agentOp: agentMocks.agentOp }));
+
 const pm2Mocks = vi.hoisted(() => ({
   connect: vi.fn((cb: (err?: Error | null) => void) => cb(null)),
   disconnect: vi.fn(),
@@ -35,9 +38,15 @@ const configMock = vi.hoisted(() => ({
 vi.mock('../src/config.js', () => ({ config: configMock }));
 
 /** Build an app whose onReady runs one reconcile pass against `row`. */
-async function reconcileOnce(row: Record<string, unknown> | null) {
+async function reconcileOnce(
+  row: Record<string, unknown> | null,
+  extra: Record<string, unknown> = {},
+) {
   const db = createFakeDb(
-    row ? { findMany: { services: [row] } } : { findMany: { services: [] } },
+    {
+      ...(row ? { findMany: { services: [row] } } : { findMany: { services: [] } }),
+      ...extra,
+    },
   );
   const { updates } = trackStatusUpdates(db);
   const app = await buildTestApp({ db });
@@ -126,6 +135,37 @@ describe('runtime state reconciliation', () => {
     mockDocker({ state: ['exited', 'running'], oom: 'false|137' });
     await reconcileOnce(svcRow({ id: 22, status: 'running', runtimeId: 'oom2', name: 'sigkill-svc' }));
     expect(auditMocks.audit).toHaveBeenCalledWith(expect.anything(), null, 'alert.oom', 'sigkill-svc', expect.objectContaining({ exitCode: 137 }));
+  });
+
+  it('patrols fan-out targets: revives a stopped clone on its node', async () => {
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string) => {
+      if (op === 'docker.inspect') return { exitCode: 0, lines: ['exited'] };
+      return { exitCode: 0, lines: [] };
+    });
+    const { updates } = await reconcileOnce(
+      svcRow({ id: 41, status: 'running', runtimeId: 'web-7', replicas: 1 }),
+      {
+        select: { serviceTargets: [{ id: 3, serviceId: 41, serverId: 5, runtimeId: 'web-t5-9', status: 'error' }] },
+        update: { serviceTargets: [{ id: 3, status: 'running' }] },
+      },
+    );
+    expect(agentMocks.agentOp).toHaveBeenCalledWith(
+      expect.anything(), 5, 'docker.start', { name: 'web-t5-9' }, expect.any(Function),
+    );
+    // The service row itself is untouched — only the target row's status
+    // flipped to running (the tracker records table-agnostically).
+    expect(updates.filter((u) => u.status === 'error' || u.status === 'stopped')).toEqual([]);
+  });
+
+  it('skips a downed agent without judging the service', async () => {
+    agentMocks.agentOp.mockRejectedValue(new Error('node unreachable'));
+    const { updates } = await reconcileOnce(
+      svcRow({ id: 42, status: 'running', runtimeId: 'web-7' }),
+      {
+        select: { serviceTargets: [{ id: 4, serviceId: 42, serverId: 6, runtimeId: 'web-t6-9', status: 'running' }] },
+      },
+    );
+    expect(updates).toEqual([]);
   });
 
   it('throttles repeated OOM alerts for the same service', async () => {

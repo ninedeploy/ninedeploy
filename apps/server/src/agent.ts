@@ -165,6 +165,7 @@ const OPS: Record<string, { exe: 'docker' | 'git'; build: Op }> = {
     },
   },
   'docker.stop': { exe: 'docker', build: (p) => ['stop', '-t', '5', validated(str(p, 'name'), RE_NAME, 'name')] },
+  'docker.start': { exe: 'docker', build: (p) => ['start', validated(str(p, 'name'), RE_NAME, 'name')] },
   'docker.rm': { exe: 'docker', build: (p) => ['rm', '-f', validated(str(p, 'name'), RE_NAME, 'name')] },
   'docker.inspect': {
     exe: 'docker',

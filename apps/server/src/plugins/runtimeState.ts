@@ -5,6 +5,8 @@ import { pm2Resurrect, pm2Start, pm2Status } from '../engine/builders/pm2.js';
 import { audit } from '../lib/audit.js';
 import { capture } from '../lib/exec.js';
 import { replicaNames } from '../engine/dockerNames.js';
+import { agentOp } from '../lib/agentClient.js';
+import { serviceTargets } from '@ninedeploy/db';
 
 // A tight loop matters for the boot promise ("everything comes back on its
 // own"): the first pass runs at startup, and anything it cannot fix — e.g. a
@@ -160,6 +162,53 @@ export default fp(
       );
     };
 
+    /**
+     * Best-effort patrol of a service's fan-out targets through their node
+     * agents: a target container that died stays dead — the reconcile's
+     * local execDocker cannot see another machine — until its next deploy.
+     * A node that is unreachable is skipped (not judged): the node being
+     * down is not the service's fault, and starting a container on a dead
+     * agent is impossible anyway. Targets whose container is GONE (scaled
+     * down generation) get their row marked error so the panel says so;
+     * the next deploy recreates them.
+     */
+    const patrolTargets = async (
+      serviceId: number,
+      name: string,
+      log: (line: string) => void,
+    ): Promise<void> => {
+      const rows = await fastify.db
+        .select()
+        .from(serviceTargets)
+        .where(eq(serviceTargets.serviceId, serviceId));
+      for (const target of rows) {
+        if (!target.runtimeId) continue;
+        const agent = (op: string, params: Record<string, unknown>) =>
+          agentOp(fastify.db, target.serverId, op, params, () => undefined);
+        try {
+          const state = (
+            await agent('docker.inspect', { name: target.runtimeId, format: 'state' })
+          ).lines
+            .filter((l) => l.trim() !== '')
+            .at(-1)
+            ?.split('|')[0];
+          if (state === 'running' || state === 'restarting') continue;
+          if (state === undefined) continue; // container gone — next deploy recreates
+          await agent('docker.start', { name: target.runtimeId });
+          log(`revived fan-out target ${target.runtimeId} on node #${target.serverId}`);
+          if (target.status !== 'running') {
+            await fastify.db
+              .update(serviceTargets)
+              .set({ status: 'running' })
+              .where(eq(serviceTargets.id, target.id));
+          }
+        } catch {
+          // node unreachable or inspect refused — skip, never judge
+        }
+      }
+      void name;
+    };
+
     /** Record an OOM kill in the activity trail + notification fan-out. */
     const alertOom = (serviceId: number, name: string, runtimeId: string, exitCode: number) => {
       const now = Date.now();
@@ -210,6 +259,11 @@ export default fp(
                 // Main healthy ≠ replicas healthy — a single dead clone
                 // quietly halves capacity while the row reads `running`.
                 await reviveReplicas(runtimeId, svc.replicas ?? 1, (line) =>
+                  fastify.log.warn({ serviceId: svc.id, name: svc.name, runtimeId }, line),
+                );
+                // Healthy local ≠ healthy targets: fan-out containers live on
+                // other machines and only the agent can see them.
+                await patrolTargets(svc.id, svc.name, (line) =>
                   fastify.log.warn({ serviceId: svc.id, name: svc.name, runtimeId }, line),
                 );
                 continue;
