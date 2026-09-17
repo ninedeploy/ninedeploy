@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.9.8';
+export const VERSION = '0.9.9';
 
 export interface ChangelogEntry {
   version: string;
@@ -11,6 +11,14 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.9.9',
+    date: '2026-09-16',
+    title: 'Self-Healing Fleet, Registry Drift Guards',
+    changes: [
+      'Fan-out hardening: the reconcile loop now patrols target nodes through their agents, reviving crashed clones on other machines within the minute (a new validated docker.start op), and skipping unreachable nodes without judgement. Template quality: three smoke-failed definitions repaired (a stripped env restored, a wrong secret key and port fixed, a crashing tag unpinned), 91/101 templates live-verified, and a drift guard that diffs the registry against the previous release so definitions can no longer silently lose fields.',
+    ],
+  },
   {
     version: '0.9.8',
     date: '2026-09-16',

@@ -60,6 +60,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.9] - 2026-09-16
+
+> The self-healing fleet: fan-out hardening, drift guards, and a
+> registry that verifies itself.
+
+### Added
+
+- **Registry drift guard (r137).** Released template definitions can no
+  longer silently lose fields: a guard test diffs the current registry
+  against the previous release tag — env keys, database-engine
+  contracts and volume mounts must survive unless the removal is
+  allowlisted with a named reason. CI now checks out full history so
+  the guard runs there too.
+- **Fan-out target patrols (r138).** The 60-second reconcile loop
+  patrols every running docker service's target nodes through their
+  agents: a crashed clone on another machine is revived within the
+  minute. A node that is unreachable is skipped without judgement;
+  containers from scaled-down generations are left to the next deploy.
+
+### Fixed
+
+- **Template smoke failures repaired (r136).** activepieces had its
+  env and volume silently stripped by a registry rewrite (restored from
+  the last intact release, with an honest Redis requirement note);
+  vikunja used a wrong secret key and a wrong port; flowise was pinned
+  to a crashing tag. 91/101 templates passed the live smoke run; the
+  verified set is now derived from the committed run evidence, not
+  hand-pinned.
+
+---
+
 ## [0.9.8] - 2026-09-16
 
 > The fan-out release: one release, every node — with a panel to match.
