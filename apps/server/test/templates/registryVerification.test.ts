@@ -31,7 +31,8 @@ describe('bundled Hub template contract', () => {
   it('defines explicit application env mappings for every managed database template', () => {
     const databaseTemplates = templates.filter((template) => template.dbEngine);
     expect(databaseTemplates.map((template) => template.id).sort()).toEqual([
-      'directus', 'ghost', 'hasura', 'matomo', 'speedtest-tracker', 'umami', 'vikunja', 'wordpress', 'yourls',
+      'bookstack', 'directus', 'fider', 'ghost', 'hasura', 'matomo',
+      'speedtest-tracker', 'umami', 'vikunja', 'wordpress', 'yourls',
     ]);
     for (const template of databaseTemplates) {
       expect(Object.keys(template.databaseEnv ?? {}).length, template.id).toBeGreaterThan(0);

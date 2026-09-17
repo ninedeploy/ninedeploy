@@ -1997,6 +1997,87 @@
    "website": "https://distribution.github.io/distribution/",
    "runtimeVerified": false,
    "verifiedAt": "2026-09-16"
+  },
+  {
+   "id": "bookstack",
+   "name": "BookStack",
+   "tagline": "Structured wiki & documentation",
+   "description": "Books, chapters and pages: a opinionated, easy-to-keep-organized documentation wiki with role-based access, revisions and image management. Attaches its managed MySQL automatically.",
+   "category": "Productivity",
+   "emoji": "📚",
+   "image": "lscr.io/linuxserver/bookstack:latest",
+   "port": 80,
+   "volumeMount": "/config",
+   "website": "https://bookstackapp.com",
+   "dbEngine": "mysql",
+   "databaseEnv": {
+    "DB_HOST": "host",
+    "DB_DATABASE": "database",
+    "DB_USERNAME": "username",
+    "DB_PASSWORD": "password"
+   },
+   "runtimeVerified": false,
+   "verifiedAt": "2026-09-16"
+  },
+  {
+   "id": "fider",
+   "name": "Fider",
+   "tagline": "Feature requests & customer feedback",
+   "description": "A portal where users suggest and vote on ideas — public or private boards, status workflow (open/planned/done) and comments. Attaches its managed PostgreSQL automatically.",
+   "category": "Productivity",
+   "emoji": "🗳️",
+   "image": "fider/fider:latest",
+   "port": 3000,
+   "volumeMount": null,
+   "website": "https://fider.io",
+   "dbEngine": "postgres",
+   "databaseEnv": {
+    "DATABASE_URL": "url"
+   },
+   "runtimeVerified": false,
+   "verifiedAt": "2026-09-16"
+  },
+  {
+   "id": "privatebin",
+   "name": "PrivateBin",
+   "tagline": "Minimal, encrypted pastebin",
+   "description": "Pastebin where the server has zero knowledge: pastes are encrypted in the browser, expire on schedule, support discussions and file attachments, and self-destruct after reading.",
+   "category": "Productivity",
+   "emoji": "🔒",
+   "image": "privatebin/nginx-fpm-alpine:latest",
+   "port": 8080,
+   "volumeMount": "/srv/data",
+   "website": "https://privatebin.info",
+   "runtimeVerified": false,
+   "verifiedAt": "2026-09-16"
+  },
+  {
+   "id": "wud",
+   "name": "What's Up Docker",
+   "tagline": "Container update tracker",
+   "description": "Watches your Docker containers, detects newer image versions from any registry and notifies through the same channel matrix NineDeploy ships — the missing watchtower UI, without the auto-pull footgun.",
+   "category": "DevOps",
+   "emoji": "👀",
+   "image": "getwud/wud:latest",
+   "port": 8000,
+   "volumeMount": "/var/run/docker.sock",
+   "website": "https://getwud.github.io",
+   "runtimeVerified": false,
+   "verifiedAt": "2026-09-16"
+  },
+  {
+   "id": "organizr",
+   "name": "Organizr",
+   "tagline": "Unified service dashboard",
+   "description": "One homepage for everything you self-host: iframes with SSO-ish login, tabs per service, user management and theme support — a veteran companion for the Homarr/Dashy crowd.",
+   "category": "Dashboards",
+   "emoji": "🗂️",
+   "image": "organizr/organizr:latest",
+   "port": 80,
+   "volumeMount": "/config",
+   "website": "https://organizr.app",
+   "runtimeVerified": false,
+   "verifiedAt": "2026-09-16"
   }
  ]
 }
