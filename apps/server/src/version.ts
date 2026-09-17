@@ -1,3 +1,6 @@
+// Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
+// rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
+// reserved for the owner, never a release-script accident.
 export const VERSION = '0.9.8';
 
 export interface ChangelogEntry {
