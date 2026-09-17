@@ -23,6 +23,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The registry drift guard diffs templates against the previous
+          # release tag — a shallow checkout has no tags and the test would
+          # silently skip. Full history costs seconds here.
+          fetch-depth: 0
 
       - name: Setup pnpm
         # No `version:` input on purpose: action-setup derives the pnpm version
