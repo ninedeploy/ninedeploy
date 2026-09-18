@@ -240,7 +240,8 @@ describe('Projects route', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Edit project' }));
     expect(screen.getByText('Edit project')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Acme Web')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('acme-web')).toBeInTheDocument();
+    // r214: the slug is shown but fixed — the update API cannot change it.
+    expect(screen.getByDisplayValue('acme-web')).toBeDisabled();
     expect(screen.getByDisplayValue('Marketing site')).toBeInTheDocument();
 
     fireEvent.change(screen.getByDisplayValue('Acme Web'), { target: { value: 'Acme Site' } });
@@ -249,7 +250,6 @@ describe('Projects route', () => {
     await waitFor(() =>
       expect(api.projects.update).toHaveBeenCalledWith(1, {
         name: 'Acme Site',
-        slug: 'acme-web',
         description: 'Marketing site',
         workspaceId: 2,
       }),

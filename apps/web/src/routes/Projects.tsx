@@ -73,7 +73,10 @@ export function Projects() {
       const descriptionValue: string | null = description.trim() ? description.trim() : null;
       const payload = {
         name: name.trim(),
-        ...(slug.trim() ? { slug: slug.trim() } : {}),
+        // r214: the slug is set once, at create. The update schema has no
+        // slug, so an edited one was silently stripped while the form said
+        // "changing it is fine" and the save toasted success.
+        ...(!editing && slug.trim() ? { slug: slug.trim() } : {}),
         description: descriptionValue,
         workspaceId: workspaceId === '' ? null : Number(workspaceId),
       };
@@ -261,11 +264,13 @@ export function Projects() {
             <Field
               label="Slug"
               hint={editing
-                ? 'The unique URL identifier. Changing it is fine but may break external links.'
+                ? 'The unique identifier. It is fixed once the project exists.'
                 : 'Optional. Lower-case, hyphen-separated. Generated from the name when empty.'}
             >
               <Input
                 value={slug}
+                readOnly={!!editing}
+                disabled={!!editing}
                 onChange={(e) => setSlug(e.target.value)}
                 placeholder={editing ? '' : 'acme-web'}
                 maxLength={63}
