@@ -214,6 +214,7 @@ export default fp(
             const run = runDeployment(fastify.db, queued.id, {
               useBuildKit,
               buildCache,
+              hooks: fastify.kernel?.hooks,
               // Publish the build's REAL cache observation. Best-effort: a
               // bus that throws must not fail the deploy.
               onBuildCacheEvent: kernelEvents

@@ -29,7 +29,7 @@ import {
   visibleDatabaseIds,
 } from '../lib/resourceAccess.js';
 import { studioCookieName, studioCookieSetHeader, studioProxyPathFor } from './studioProxy.js';
-import { badRequest, forbidden, notFound, parseId as num } from '../lib/errors.js';
+import { badRequest, conflict, forbidden, notFound, parseId as num } from '../lib/errors.js';
 import { slugify } from '../lib/slug.js';
 
 /** Docker volume names only: prevents `existingVolume` from becoming a bind
@@ -356,6 +356,18 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
       throw badRequest(
         `Cannot delete database "${d.name}": It is locked and actively in use by ${attachedServices.length} service(s) (${names}). Detach these services first or pass ?force=true to override.`,
       );
+    }
+
+    // r237: `database:before_delete` was declared as the plugin veto point and
+    // never called. A handler returning `allowOrAbort: false` stops the delete
+    // before anything is torn down.
+    const hooks = app.kernel?.hooks;
+    if (hooks?.hasListeners('database:before_delete')) {
+      const { attachments: _attachments, ...row } = d;
+      const verdict = await hooks.call('database:before_delete', { database: row, allowOrAbort: true });
+      if (verdict.allowOrAbort === false) {
+        throw conflict(`Deleting database "${d.name}" was refused by a plugin${verdict.reason ? `: ${verdict.reason}` : ''}`);
+      }
     }
 
     const dbLog = (line: string) => app.log.info({ component: 'database' }, line);

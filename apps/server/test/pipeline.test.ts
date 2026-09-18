@@ -1855,3 +1855,36 @@ describe('splitHookCommand', () => {
     expect(splitHookCommand('   ')).toEqual([]);
   });
 });
+
+describe('r237: kernel deploy hooks', () => {
+  it('calls deploy:before and deploy:after around a deployment', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { image: 'nginx:latest' });
+    const hooks = { call: vi.fn(async (_n: string, p: unknown) => p), hasListeners: vi.fn(() => true) };
+    await runDeployment(db as never, 1, { useBuildKit: false, hooks: hooks as never });
+    const names = hooks.call.mock.calls.map((c) => c[0]);
+    expect(names[0]).toBe('deploy:before');
+    expect(names).toContain('deploy:after');
+    const after = hooks.call.mock.calls.find((c) => c[0] === 'deploy:after')![1] as { deployId: number };
+    expect(after.deployId).toBe(1);
+  });
+
+  it('fires deploy:after with success=false when the deploy fails', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { type: 'k8s' });
+    db.query.deployments.findFirst.mockResolvedValueOnce(dep).mockResolvedValue({ ...dep, status: 'failed' });
+    const hooks = { call: vi.fn(async (_n: string, p: unknown) => p), hasListeners: vi.fn(() => true) };
+    await runDeployment(db as never, 1, { useBuildKit: false, hooks: hooks as never });
+    const after = hooks.call.mock.calls.find((c) => c[0] === 'deploy:after')![1] as { success: boolean };
+    expect(after.success).toBe(false);
+  });
+
+  it('a throwing hook bus never fails the deployment', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { image: 'nginx:latest' });
+    const hooks = { call: vi.fn(async () => { throw new Error('bus down'); }), hasListeners: vi.fn(() => true) };
+    await expect(runDeployment(db as never, 1, { useBuildKit: false, hooks: hooks as never })).resolves.toBeUndefined();
+    expect(h.builder.buildAndRun).toHaveBeenCalled();
+  });
+});
+

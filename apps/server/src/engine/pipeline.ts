@@ -437,20 +437,51 @@ async function snapshotConfig(
   });
 }
 
+type PipelineKernelCtx = {
+  useBuildKit: boolean;
+  buildCache?: import('../kernel/types.js').IBuildCache;
+  onBuildCacheEvent?: (event: import('./builders/buildkit.js').BuildCacheEvent) => void;
+  /**
+   * r237: the kernel hook pipeline. `deploy:before` / `deploy:after` (and the
+   * legacy `deploy.after` the Cloudflare Tunnels plugin taps) were declared,
+   * tapped by plugins, and never called by anything.
+   */
+  hooks?: import('../kernel/types.js').IHookPipeline;
+};
+
 /** Run the full deploy pipeline for one deployment row. */
-export async function runDeployment(
-  db: DB,
-  deploymentId: number,
-  kernelCtx?: {
-    useBuildKit: boolean;
-    buildCache?: import('../kernel/types.js').IBuildCache;
-    onBuildCacheEvent?: (event: import('./builders/buildkit.js').BuildCacheEvent) => void;
-  },
-): Promise<void> {
+export async function runDeployment(db: DB, deploymentId: number, kernelCtx?: PipelineKernelCtx): Promise<void> {
+  try {
+    await runDeploymentCore(db, deploymentId, kernelCtx);
+  } finally {
+    const hooks = kernelCtx?.hooks;
+    if (hooks) await fireAfterHooks(db, deploymentId, hooks).catch(() => undefined);
+  }
+}
+
+/** Observational: a plugin must never be able to fail or stall the outcome. */
+async function fireAfterHooks(db: DB, deploymentId: number, hooks: import('../kernel/types.js').IHookPipeline): Promise<void> {
   const dep = await db.query.deployments.findFirst({ where: eq(deployments.id, deploymentId) });
   if (!dep) return;
   const service = await db.query.services.findFirst({ where: eq(services.id, dep.serviceId) });
   if (!service) return;
+  const success = dep.status === 'running';
+  await hooks.call('deploy:after', { service, deployId: deploymentId, success });
+  if (success) {
+    const domain = await db.query.domains.findFirst({ where: eq(domains.serviceId, service.id) });
+    await hooks.call('deploy.after', { serviceId: service.id, domain: domain?.hostname });
+  }
+}
+
+async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: PipelineKernelCtx): Promise<void> {
+  const dep = await db.query.deployments.findFirst({ where: eq(deployments.id, deploymentId) });
+  if (!dep) return;
+  const service = await db.query.services.findFirst({ where: eq(services.id, dep.serviceId) });
+  if (!service) return;
+  if (kernelCtx?.hooks) {
+    // HookPipeline.call already isolates handler errors and timeouts.
+    await kernelCtx.hooks.call('deploy:before', { service, targetCommit: dep.commitSha ?? undefined }).catch(() => undefined);
+  }
   const buildConfig = await db.query.buildConfigs.findFirst({ where: eq(buildConfigs.serviceId, service.id) });
   const configSnapshot = await snapshotConfig(db, service, buildConfig);
 

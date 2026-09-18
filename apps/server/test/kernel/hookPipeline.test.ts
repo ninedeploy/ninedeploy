@@ -105,4 +105,19 @@ describe('HookPipeline', () => {
     expect(pipeline.hasListeners('deploy:before')).toBe(false);
     expect(pipeline.hasListeners('deploy:after')).toBe(false);
   });
+
+  it('r237: stops at the first failing handler and rolls back once', async () => {
+    const pipeline = new HookPipeline(() => mockContext);
+    const rollback = vi.fn();
+    const later = vi.fn(async () => undefined);
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    pipeline.tap('deploy:before', async () => undefined, { priority: 300, rollback });
+    pipeline.tap('deploy:before', async () => { throw new Error('first'); }, { priority: 200 });
+    pipeline.tap('deploy:before', async () => { throw new Error('second'); }, { priority: 100 });
+    pipeline.tap('deploy:before', later, { priority: 50 });
+    await pipeline.call('deploy:before', { service: { id: 1 } as any });
+    expect(rollback).toHaveBeenCalledTimes(1);
+    expect(later).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
 });

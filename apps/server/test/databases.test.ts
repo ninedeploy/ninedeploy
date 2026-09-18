@@ -514,6 +514,16 @@ describe('databases routes', () => {
     expect(resForce.json()).toEqual({ ok: true });
   });
 
+  it('r237: a plugin veto on database:before_delete stops the delete', async () => {
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { databases: dbRow({ id: 7, name: 'prod-pg' }) } }) });
+    app.kernel.hooks.tap('database:before_delete', async (p) => ({ ...p, allowOrAbort: false, reason: 'protected' }));
+    await app.register(databasesRoutes);
+    const res = await app.inject({ method: 'DELETE', url: '/7', headers: asUser() });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.message).toContain('protected');
+    expect(engineMocks.stopDatabase).not.toHaveBeenCalled();
+  });
+
   it('returns 404 when deleting a missing database', async () => {
     const app = await buildTestApp({ db: createFakeDb() });
     await app.register(databasesRoutes);
