@@ -21,12 +21,11 @@ const h = vi.hoisted(() => {
 });
 
 vi.mock('pm2', () => ({ default: h.pm2 }));
-vi.mock('../../src/lib/exec.js', async (orig) => ({
-  run: h.run,
-  sleep: h.sleep,
-  capture: vi.fn(),
-  buildEnv: (await orig<typeof import('../../src/lib/exec.js')>()).buildEnv,
-}));
+// buildEnv (the allowlisted base env) is an identity spy here so the exact-env
+// expectations below stay host-independent; r233 asserts the app env goes
+// through it and that PM2 is told not to merge the daemon's own.
+const buildEnvSpy = vi.hoisted(() => vi.fn((extra?: Record<string, string>) => ({ ...(extra ?? {}) })));
+vi.mock('../../src/lib/exec.js', () => ({ run: h.run, sleep: h.sleep, capture: vi.fn(), buildEnv: buildEnvSpy }));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -85,6 +84,7 @@ describe('pm2Builder.buildAndRun', () => {
         autorestart: true,
         max_restarts: 10,
         env: { PORT: '4000' },
+        filter_env: true,
       },
       expect.any(Function),
     );
@@ -141,7 +141,7 @@ describe('pm2Builder.buildAndRun', () => {
     expect(startOpts.max_memory_restart).toBeUndefined();
     // r233: the app never inherits the daemon's (= the panel's) environment.
     expect(startOpts.filter_env).toBe(true);
-    expect(startOpts.env).not.toHaveProperty('NINEDEPLOY_MASTER_KEY');
+    expect(buildEnvSpy).toHaveBeenCalledWith(startOpts.env);
   });
 
   it('populates env.PORT from publishedPort or port when not already defined', async () => {
