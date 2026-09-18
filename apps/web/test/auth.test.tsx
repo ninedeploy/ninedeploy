@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import './web-utils.js';
 import type { PublicUser } from '@ninedeploy/sdk';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const apiMock = vi.hoisted(() => ({
   api: {
@@ -52,11 +53,13 @@ function Probe() {
   );
 }
 
-function renderAuth() {
+function renderAuth(queryClient = new QueryClient()) {
   return render(
-    <AuthProvider>
-      <Probe />
-    </AuthProvider>,
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -67,6 +70,54 @@ describe('AuthProvider', () => {
     apiMock.api.auth.me.mockResolvedValue(USER);
     apiMock.api.auth.login.mockResolvedValue(SESSION);
     apiMock.api.auth.setup.mockResolvedValue(SESSION);
+  });
+
+  it.each(['logout', 'session-expired', 'login', 'setup', 'login-passkey'])('clears the previous account cache on %s', async (action) => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(['database-credentials', 1], { password: 'private' });
+    apiMock.api.auth.logout.mockResolvedValue({ ok: true });
+    apiMock.api.auth.passkeys.loginOptions.mockResolvedValue({ options: '{}' });
+    webauthnMock.startAuthentication.mockResolvedValue({});
+    apiMock.api.auth.passkeys.loginVerify.mockResolvedValue(SESSION);
+    renderAuth(queryClient);
+    if (action === 'session-expired') {
+      act(() => window.dispatchEvent(new Event('ninedeploy:session-expired')));
+    } else {
+      await userEvent.setup().click(screen.getByText(action));
+    }
+    await waitFor(() => expect(queryClient.getQueryData(['database-credentials', 1])).toBeUndefined());
+  });
+
+  it('cancels in-flight queries so they cannot refill the cache after logout', async () => {
+    const queryClient = new QueryClient();
+    let resolve!: (value: { password: string }) => void;
+    const pending = queryClient.fetchQuery({
+      queryKey: ['database-credentials', 1],
+      queryFn: () => new Promise<{ password: string }>((done) => { resolve = done; }),
+    }).catch(() => undefined);
+    apiMock.api.auth.logout.mockResolvedValue({ ok: true });
+    renderAuth(queryClient);
+    await userEvent.setup().click(screen.getByText('logout'));
+    resolve({ password: 'private' });
+    await pending;
+    expect(queryClient.getQueryData(['database-credentials', 1])).toBeUndefined();
+  });
+
+  it.each(['resolve', 'reject'])('ignores a bootstrap response after logout: %s', async (outcome) => {
+    apiMock.getToken.mockReturnValue(ACCESS_1);
+    let resolve!: (user: PublicUser) => void;
+    let reject!: (error: unknown) => void;
+    apiMock.api.auth.me.mockReturnValue(new Promise((yes, no) => { resolve = yes; reject = no; }));
+    apiMock.api.auth.logout.mockResolvedValue({ ok: true });
+    renderAuth();
+    await userEvent.setup().click(screen.getByText('logout'));
+    const cleared = apiMock.clearTokens.mock.calls.length;
+    await act(async () => {
+      if (outcome === 'resolve') resolve(USER);
+      else reject({ status: 401 });
+    });
+    expect(screen.getByTestId('email')).toHaveTextContent('none');
+    expect(apiMock.clearTokens).toHaveBeenCalledTimes(cleared);
   });
 
   it('captures OAuth/OIDC session tokens from the URL hash and clears it', async () => {
@@ -175,9 +226,11 @@ describe('AuthProvider', () => {
       return null;
     }
     render(
-      <AuthProvider>
-        <Capture />
-      </AuthProvider>,
+      <QueryClientProvider client={new QueryClient()}>
+        <AuthProvider>
+          <Capture />
+        </AuthProvider>
+      </QueryClientProvider>,
     );
     // Call login directly via the captured context and attach a catch so the
     // rejection is not surfaced as unhandled.

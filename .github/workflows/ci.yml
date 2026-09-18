@@ -202,9 +202,9 @@ jobs:
           # sha-pinned tag is the immutable artifact a release manager
           # can re-tag to `:latest` (or roll back to) without rebuilding.
           tags: |
-            ghcr.io/${{ github.repository }}:edge
-            ghcr.io/${{ github.repository }}:main-${{ github.sha }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:edge
+            ghcr.io/ninedeploy/ninedeploy:edge
+            ghcr.io/ninedeploy/ninedeploy:main-${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/ninedeploy/ninedeploy:edge
           cache-to: type=inline
 
   integration:

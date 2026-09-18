@@ -274,6 +274,20 @@ describe('fetchWithRefresh (401 → refresh → retry)', () => {
     vi.unstubAllGlobals();
   });
 
+  it('refreshes the authenticated OIDC link request and preserves its cookie mode', async () => {
+    setSessionTokens('old', REFRESH_1);
+    client.auth.refresh.mockResolvedValue({ tokens: { accessToken: FRESH_ACC, refreshToken: REFRESH_2 } });
+    const fetchMock = vi.fn().mockResolvedValueOnce(status(401)).mockResolvedValueOnce(status(200));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await fetchWithRefresh('/v1/auth/oidc/company/link', { method: 'POST', credentials: 'include' });
+      expect(client.auth.refresh).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'POST', credentials: 'include' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('never refreshes for auth/setup endpoints (no loops)', async () => {
     setSessionTokens('acc', 'ref');
     const fetchMock = vi.fn(async () => status(401));
@@ -288,7 +302,7 @@ describe('fetchWithRefresh (401 → refresh → retry)', () => {
 
   it('returns the 401 and clears tokens when the refresh itself fails', async () => {
     setSessionTokens('acc', 'dead-refresh');
-    client.auth.refresh.mockRejectedValue(new Error('401'));
+    client.auth.refresh.mockRejectedValue(Object.assign(new Error('Unauthorized'), { status: 401 }));
     const fetchMock = vi.fn(async () => status(401));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -298,6 +312,53 @@ describe('fetchWithRefresh (401 → refresh → retry)', () => {
     expect(sessionStorage.getItem(TOKEN_KEY)).toBeNull();
     expect(sessionStorage.getItem(REFRESH_KEY)).toBeNull();
     vi.unstubAllGlobals();
+  });
+
+  it.each([new TypeError('Network unavailable'), Object.assign(new Error('Bad gateway'), { status: 502 })])('preserves credentials on transient refresh failure: %s', async (error) => {
+    setSessionTokens('acc', REFRESH_1);
+    client.auth.refresh.mockRejectedValue(error);
+    const expired = vi.fn();
+    window.addEventListener('ninedeploy:session-expired', expired);
+    try {
+      await expect(refreshAccessToken()).rejects.toBe(error);
+      expect(getToken()).toBe('acc');
+      expect(sessionStorage.getItem(REFRESH_KEY)).toBe(REFRESH_1);
+      expect(expired).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('ninedeploy:session-expired', expired);
+    }
+  });
+
+  it.each(['logout', 'login', 'rejected-old-refresh'])('does not let an old refresh overwrite %s', async (action) => {
+    setSessionTokens('old', REFRESH_1);
+    let resolve!: (value: unknown) => void;
+    let reject!: (error: unknown) => void;
+    client.auth.refresh.mockReturnValue(new Promise((yes, no) => { resolve = yes; reject = no; }));
+    const pending = refreshAccessToken();
+    if (action === 'logout') clearTokens();
+    else setSessionTokens('new-account', 'new-refresh');
+    if (action === 'rejected-old-refresh') reject({ status: 401 });
+    else resolve({ tokens: { accessToken: 'stale', refreshToken: 'stale-refresh' } });
+    await expect(pending).resolves.toBe(false);
+    expect(getToken()).toBe(action === 'logout' ? null : 'new-account');
+    expect(sessionStorage.getItem(REFRESH_KEY)).toBe(action === 'logout' ? null : 'new-refresh');
+  });
+
+  it('does not replay an old-account request with the new account credentials', async () => {
+    setSessionTokens('old', REFRESH_1);
+    let resolve!: (response: Response) => void;
+    const fetchMock = vi.fn(() => new Promise<Response>((done) => { resolve = done; }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const pending = fetchWithRefresh('/v1/services', {});
+      setSessionTokens('new-account', 'new-refresh');
+      resolve(status(401));
+      await expect(pending).resolves.toMatchObject({ status: 401 });
+      expect(client.auth.refresh).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('returns the 401 without refreshing when no refresh token is stored', async () => {
@@ -385,6 +446,19 @@ describe('authedFetch', () => {
     sessionStorage.clear();
     vi.restoreAllMocks();
     client.auth.refresh.mockReset();
+  });
+
+  it('uses the configured API origin for raw exports and imports', async () => {
+    vi.stubEnv('VITE_API_URL', 'https://control.example.test/panel/');
+    const fetchMock = vi.fn(async () => status(200));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await authedFetch('/v1/system/import', { method: 'POST', body: 'archive' });
+      expect(fetchMock).toHaveBeenCalledWith('https://control.example.test/panel/v1/system/import', expect.objectContaining({ method: 'POST', body: 'archive' }));
+    } finally {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    }
   });
 
   it('sends the stored access token as a bearer header', async () => {

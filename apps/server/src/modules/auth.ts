@@ -1,11 +1,12 @@
 import { and, count, eq, sql } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
-import { apiTokens, type DB, oidcProviders, type OidcProvider, sessions as sessionsTable, users, webauthnCredentials, type User } from '@ninedeploy/db';
+import { apiTokens, type DB, oauthIdentities, oidcProviders, type OidcProvider, sessions as sessionsTable, users, webauthnCredentials, type User } from '@ninedeploy/db';
 import type { PublicUser, Register } from '@ninedeploy/schemas';
 import { createApiToken, forgotPassword, login, oidcProviderCreate, oidcProviderUpdate, type OidcProviderEntry, type OidcPublicProvider, passkeyLoginVerify, passkeyRegisterVerify, passwordChange, passwordResetWithToken, refresh, register, twoFactorCode, twoFactorDisable, twoFactorSetup } from '@ninedeploy/schemas';
 import { config } from '../config.js';
 import { decrypt, encrypt, hashPassword, randomToken, secretEquals, sha256, verifyPassword } from '../lib/crypto.js';
 import { normalizeEmail } from '../lib/authHelpers.js';
+import { oauthProviderFingerprint, resolveOAuthIdentity } from '../lib/oauthIdentity.js';
 import { badRequest, conflict, forbidden, notFound, parseId, unauthorized } from '../lib/errors.js';
 import { verifyJwt, type AppJwtPayload } from '../lib/jwt.js';
 import { isLocked, recordFailure, recordSuccess } from '../lib/loginLockout.js';
@@ -149,8 +150,6 @@ export async function createFirstAdmin(db: DB, input: Register) {
   });
   // r222: a new account (or the first admin) is a security event of its own.
   void audit(db, result.rawUser.id, 'auth.register', result.rawUser.email);
-  const joined = await acceptInvitationsForUser(db, { id: result.rawUser.id, email: result.rawUser.email });
-  for (const w of joined) void audit(db, result.rawUser.id, 'workspace.invitation.accept', `auto-accept ${w.email} → workspace #${w.workspaceId} as ${w.role}`);
   return { user: result.user, tokens: result.tokens };
 }
 
@@ -193,8 +192,6 @@ export async function registerAccount(db: DB, input: Register) {
   });
   // r222: a new account (or the first admin) is a security event of its own.
   void audit(db, result.rawUser.id, 'auth.register', result.rawUser.email);
-  const joined = await acceptInvitationsForUser(db, { id: result.rawUser.id, email: result.rawUser.email });
-  for (const w of joined) void audit(db, result.rawUser.id, 'workspace.invitation.accept', `auto-accept ${w.email} → workspace #${w.workspaceId} as ${w.role}`);
   return { user: result.user, tokens: result.tokens };
 }
 
@@ -313,11 +310,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     // randomly at provision time anyway) but must never get a session.
     if (user.deactivatedAt) throw unauthorized('This account has been deactivated', 'account_deactivated');
     recordSuccess(input.email, req.ip);
-    // Auto-accept any pending workspace invitations for this email so a user
-    // who created their account to redeem an invite lands inside that
-    // workspace without re-clicking the link.
-    const joined = await acceptInvitationsForUser(app.db, { id: user.id, email: user.email });
-    for (const w of joined) void audit(app.db, user.id, 'workspace.invitation.accept', `auto-accept ${w.email} → workspace #${w.workspaceId} as ${w.role}`);
+    // Password authentication does not verify email ownership; invitation
+    // membership is granted only through the token-bearing accept route.
     void audit(app.db, user.id, 'auth.login', user.email, undefined, { ip: req.ip, userAgent: req.headers['user-agent'] });
     return {
       user: toUser(user, await isOperator(app.db, user)),
@@ -409,8 +403,6 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       .where(eq(webauthnCredentials.id, cred.id));
     const user = await app.db.query.users.findFirst({ where: eq(users.id, cred.userId) });
     if (!user) throw unauthorized();
-    const joined = await acceptInvitationsForUser(app.db, { id: user.id, email: user.email });
-    for (const w of joined) void audit(app.db, user.id, 'workspace.invitation.accept', `auto-accept ${w.email} → workspace #${w.workspaceId} as ${w.role}`);
     void audit(app.db, user.id, 'auth.passkey_login', user.email, undefined, { ip: req.ip, userAgent: req.headers['user-agent'] });
     return {
       user: toUser(user, await isOperator(app.db, user)),
@@ -538,8 +530,6 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   app.post('/reset-password', { config: { rateLimit: AUTH_LIMIT } }, async (req) => {
     const input = passwordResetWithToken.parse(req.body);
     const user = await consumeResetToken(app.db, input.token, input.newPassword);
-    await revokeAllSessions(app.db, user.id);
-    await revokeApiTokens(app.db, user.id);
     void audit(app.db, user.id, 'auth.reset_password', user.email);
     return { ok: true };
   });
@@ -735,6 +725,12 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     const existing = await app.db.query.oidcProviders.findFirst({ where: eq(oidcProviders.id, id) });
     if (!existing) throw notFound('OIDC provider not found');
 
+    // An issuer/client change defines a different identity namespace. Never
+    // retain links merely because the provider row and subject string match.
+    if ((input.issuerUrl !== undefined && (input.issuerUrl ?? null) !== existing.issuerUrl) ||
+        (input.clientId !== undefined && input.clientId !== existing.clientId)) {
+      await app.db.delete(oauthIdentities).where(eq(oauthIdentities.providerId, id));
+    }
     const [updated] = await app.db
       .update(oidcProviders)
       .set({
@@ -765,7 +761,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // ── OIDC & OAuth2 Login Initiation ─────────────────────────────────────────
-  app.get('/oidc/:slug/login', async (req, reply) => {
+  const startOidc = async (req: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply, linking = false) => {
     const { slug } = req.params as { slug: string };
     const query = req.query as { returnTo?: string; json?: string };
     const returnTo = query?.returnTo;
@@ -776,7 +772,17 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!provider) throw notFound(`OAuth2/OIDC provider "${slug}" not found or disabled`);
 
-    const state = generateOAuthState(slug, returnTo);
+    let link: import('../lib/oauth.js').OAuthLinkContext | undefined;
+    if (linking) {
+      const token = req.headers.authorization?.slice('Bearer '.length).trim() ?? '';
+      const payload = await verifyJwt(token);
+      const session = payload.jti ? await findLiveSession(app.db, payload.jti) : null;
+      if (payload.type !== 'access' || !session || session.userId !== req.user!.id || payload.ver === undefined) {
+        throw unauthorized('A live interactive session is required to link this provider');
+      }
+      link = { userId: req.user!.id, sessionJti: session.jti, tokenVersion: payload.ver, providerFingerprint: oauthProviderFingerprint(provider) };
+    }
+    const state = generateOAuthState(slug, returnTo, link);
     // Bind this flow to the browser that started it (see the cookie helpers).
     writeOidcStateCookie(req, reply, slug, state);
     const redirectUri = oidcRedirectUri(slug);
@@ -803,11 +809,14 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       authUrl = `${oidcConfig.authorization_endpoint}?${params.toString()}`;
     }
 
-    if (json === 'true' || json === '1') {
+    if (linking) void audit(app.db, req.user!.id, 'auth.sso_link_started', provider.name);
+    if (linking || json === 'true' || json === '1') {
       return { authUrl };
     }
     return reply.redirect(authUrl);
-  });
+  };
+  app.get('/oidc/:slug/login', async (req, reply) => startOidc(req, reply));
+  app.post('/oidc/:slug/link', { onRequest: [app.authenticate, app.requireInteractive], config: { rateLimit: AUTH_LIMIT } }, async (req, reply) => startOidc(req, reply, true));
 
   // ── OIDC & OAuth2 Login Callback ───────────────────────────────────────────
   const handleOidcCallback = async (req: any, reply: any, isPost: boolean) => {
@@ -850,61 +859,22 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       userInfo = await fetchOidcUserInfo(userinfoEndpoint, tokens.access_token);
     }
 
-    let user = await app.db.query.users.findFirst({
-      where: sql`lower(${users.email}) = lower(${userInfo.email})`,
-    });
-    if (userInfo.emailVerified === false) {
-      // Never admit an unverified (e.g. synthetic-namespace or unconfirmed
-      // secondary) SSO identity, in either direction: linking it to a
-      // pre-existing local account would let an attacker who pre-registered
-      // the address silently share the real SSO user's account, and
-      // auto-enrolling it would let the attacker claim the address outright —
-      // including auto-accepting workspace invitations sent to the victim.
-      // Refusing (fail closed) turns both into, at worst, a denial of service.
-      throw forbidden('SSO email address is not verified; refusing to link or auto-enroll an account');
+    const resolved = await resolveOAuthIdentity(app.db, provider, userInfo, stateData.link);
+    const user = resolved.user;
+    if (stateData.link) {
+      void audit(app.db, user.id, 'auth.sso_link', provider.name);
+      if (isPost) return { ok: true, linked: true };
+      return reply.redirect(`${config.publicUrl}/settings?oidcLinked=1`);
     }
-    if (!user) {
-      if (!provider.autoEnroll) {
-        throw forbidden('Auto-enrollment is disabled for this SSO provider');
-      }
-      const randomPassword = randomToken(32);
-      const passwordHash = await hashPassword(randomPassword);
-      // Legacy `users.role` was dropped: the new model only knows workspace
-      // membership. The provider's `defaultRole` is the workspace role we'll
-      // grant this user in their auto-created personal workspace.
-      const firstUser = (await userCount(app.db)) === 0;
-
-      const [created] = await app.db
-        .insert(users)
-        .values({
-          email: normalizeEmail(userInfo.email),
-          passwordHash,
-          name: userInfo.name ?? null,
-          // Same bootstrap rule as /auth/register: only the very first account
-          // on an empty instance becomes an instance operator. A provider's
-          // `defaultRole` is a WORKSPACE role and must never mint one — that
-          // would hand instance-wide control to whoever the IdP admits.
-          isInstanceOperator: firstUser,
-        })
-        .returning();
-
-      user = created!;
-      // Auto-create a personal workspace with the SSO user's chosen role. The
-      // first user on the instance always becomes 'owner' (operator), every
-      // subsequent SSO login gets the provider's configured default role.
-      const roleForFirstWorkspace: WorkspaceRole = firstUser
-        ? 'owner'
-        : (provider.defaultRole as WorkspaceRole);
+    if (resolved.created) {
+      const roleForFirstWorkspace: WorkspaceRole = resolved.firstUser ? 'owner' : (provider.defaultRole as WorkspaceRole);
       await ensureDefaultWorkspaceWithRole(app.db, user, roleForFirstWorkspace);
     }
-
     // For users who already existed (no auto-enroll block above) we still
     // make sure they have a personal workspace, in case one was wiped.
     await ensureDefaultWorkspace(app.db, user);
-    // Pull the user into any pending invitations addressed to their email —
-    // an SSO account is the same shape as a password one from the workspace's
-    // perspective, so the join-on-first-login flow is the same.
-    const joined = await acceptInvitationsForUser(app.db, { id: user.id, email: user.email });
+    // Only this provider-verified email may auto-accept invitations.
+    const joined = await acceptInvitationsForUser(app.db, { id: user.id, email: user.email, emailVerified: userInfo.emailVerified && normalizeEmail(user.email) === normalizeEmail(userInfo.email) });
     for (const w of joined) void audit(app.db, user.id, 'workspace.invitation.accept', `auto-accept ${w.email} → workspace #${w.workspaceId} as ${w.role}`);
 
     const tokens = await issueSessionTokens(app.db, user, { ip: req.ip, userAgent: req.headers['user-agent'] });

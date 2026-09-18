@@ -3,7 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 const newVersion = process.argv[2];
-if (!newVersion || !/^\d+\.\d+\.\d+.*$/.test(newVersion)) {
+if (!newVersion || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(newVersion)) {
   console.error('Usage: node scripts/bump-version.js <version> (e.g. 0.2.3)');
   process.exit(1);
 }
@@ -11,7 +11,7 @@ if (!newVersion || !/^\d+\.\d+\.\d+.*$/.test(newVersion)) {
 // OWNER POLICY (Ersin, 2026-09-16): NineDeploy never crosses 1.0.0 — when
 // the 0.9.x line fills (0.9.99) it rolls to 0.10.0, then 0.11.0, forever.
 // A major bump is a product-positioning decision, not a script accident.
-const [maj, min] = newVersion.split('.').map(Number);
+const [maj] = newVersion.split('.').map(Number);
 if (maj >= 1) {
   console.error('Refusing ' + newVersion + ': the project stays on the 0.x line by owner policy (0.9.99 rolls to 0.10.0, never 1.0.0).');
   process.exit(1);

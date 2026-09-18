@@ -84,6 +84,10 @@ describe('restoreVolume', () => {
     expect(created).toContain('nd-svc-web-data:/v');
     expect(created.join(' ')).toContain('rm -rf');
     expect(created.join(' ')).toContain('tar -xzf');
+    const script = created.at(-1)!;
+    // Listing must complete successfully before the destructive group starts:
+    // invalid gzip/tar input exits without executing rm or extraction.
+    expect(script).toMatch(/^tar -tzf \S+ >\/dev\/null && \{ rm -rf /);
 
     const args = runArgs();
     expect(args[0]).toEqual(['cp', '/backups/web.tar.gz', 'sidecar-id:/tmp/ninedeploy-volume.tar.gz']);

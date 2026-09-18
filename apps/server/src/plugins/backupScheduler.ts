@@ -139,13 +139,23 @@ export default fp(
             orderBy: desc(backups.createdAt),
           });
           const scheduled = rows.filter((r) => r.scope === 'scheduled');
-          for (const stale of scheduled.slice(KEEP_PER_DB)) {
+          // Failed attempts are diagnostics, not recovery points. Keep their
+          // own bounded history so an outage cannot evict every usable dump.
+          // Never prune an operation that is still running.
+          const staleRows = [
+            ...scheduled.filter((r) => r.status === 'completed').slice(KEEP_PER_DB),
+            ...scheduled.filter((r) => r.status === 'failed').slice(KEEP_PER_DB),
+          ];
+          for (const stale of staleRows) {
             try {
               if (existsSync(stale.path)) unlinkSync(stale.path);
             } catch {
               /* file may be unreadable — still drop the row */
             }
-            await fastify.db.delete(backups).where(eq(backups.id, stale.id));
+            // Keep remote recovery points discoverable after local retention.
+            // The row has no historical destination identity, so deleting via
+            // today's active destination could target a different bucket.
+            if (!stale.remoteKey) await fastify.db.delete(backups).where(eq(backups.id, stale.id));
           }
         }
       } catch (err) {

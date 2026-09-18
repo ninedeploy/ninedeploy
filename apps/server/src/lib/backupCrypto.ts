@@ -150,7 +150,14 @@ export async function decryptBackupFile(file: string, outputPath: string): Promi
   }
   const decipher = createBackupDecipher(header, authTag);
   const output = createWriteStream(outputPath, { mode: 0o600 });
-  await pipeline(createReadStream(file, { start: dataStart, end: dataEnd }), decipher, output);
+  try {
+    await pipeline(createReadStream(file, { start: dataStart, end: dataEnd }), decipher, output);
+  } catch (error) {
+    // Authentication is checked at the end of the stream; discard any
+    // plaintext emitted before a corrupt tag or write failure was detected.
+    try { unlinkSync(outputPath); } catch { /* absent or inaccessible */ }
+    throw error;
+  }
 }
 
 /**

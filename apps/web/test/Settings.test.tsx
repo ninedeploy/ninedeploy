@@ -84,6 +84,7 @@ describe('Settings', () => {
       { id: 11, current: true, ip: '10.0.0.2', userAgent: 'Mozilla/5.0', lastUsedAt: '2026-01-02T00:00:00Z', createdAt: '2026-01-01T00:00:00Z' },
       { id: 12, current: false, ip: null, userAgent: null, lastUsedAt: null, createdAt: '2026-01-01T00:00:00Z' },
     ] as never);
+    mockOf(api.auth.oidc.publicProviders).mockResolvedValue([]);
     mockOf(api.settings.vault.get).mockResolvedValue({ provider: '', hasToken: false } as never);
     mockOf(api.settings.dnsRecords.get).mockResolvedValue({ enabled: false, hasToken: false } as never);
   });
@@ -765,6 +766,30 @@ describe('Settings', () => {
     const sw = await screen.findByRole('switch');
     expect(sw).toBeDisabled();
     expect(sw).toHaveAttribute('aria-checked', 'true'); // optimistic default
+  });
+
+  it('links an existing account through the authenticated SSO flow', async () => {
+    const assign = vi.fn();
+    const original = window.location;
+    Object.defineProperty(window, 'location', { value: { assign, hash: '' }, writable: true, configurable: true });
+    try {
+      mockOf(api.auth.oidc.publicProviders).mockResolvedValue([{ id: 1, name: 'Company SSO', slug: 'company', authUrl: '/login' }]);
+      mockOf(api.auth.oidc.link).mockResolvedValue({ authUrl: 'https://identity.example.test/authorize' });
+      renderWithProviders(<Settings />);
+      await userEvent.setup().click(await screen.findByRole('button', { name: 'Link Company SSO' }));
+      await waitFor(() => expect(api.auth.oidc.link).toHaveBeenCalledWith('company'));
+      await waitFor(() => expect(assign).toHaveBeenCalledWith('https://identity.example.test/authorize'));
+    } finally {
+      Object.defineProperty(window, 'location', { value: original, writable: true, configurable: true });
+    }
+  });
+
+  it('shows an SSO linking failure without redirecting', async () => {
+    mockOf(api.auth.oidc.publicProviders).mockResolvedValue([{ id: 1, name: 'Company SSO', slug: 'company', authUrl: '/login' }]);
+    mockOf(api.auth.oidc.link).mockRejectedValue(new Error('Identity is already linked'));
+    renderWithProviders(<Settings />);
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Link Company SSO' }));
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Identity is already linked', 'error'));
   });
 
   it('changes the password and persists the fresh token pair', async () => {

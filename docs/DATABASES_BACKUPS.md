@@ -1,6 +1,6 @@
 # Managed Databases & Backups
 
-NineDeploy provides one-click provisioning and lifecycle management for production-grade databases, plus encrypted snapshots for both databases and attached volumes with offsite cloud storage.
+NineDeploy provides provisioning and lifecycle management for databases, encrypted database dumps, and attached-volume snapshots with offsite cloud storage.
 
 ---
 
@@ -30,13 +30,17 @@ NineDeploy provides one-click provisioning and lifecycle management for producti
 
 ## ☁️ 3. Offsite Backup Destinations
 
-Automated backup jobs run on configurable cron schedules and upload AES-encrypted tar archives to S3-compatible cloud storage:
+Automated backup jobs upload backups to S3-compatible cloud storage. Database dumps use streaming AES-256-GCM encryption:
 - **Amazon S3 / AWS GovCloud**
 - **Cloudflare R2** (Zero egress fees)
 - **MinIO / Self-Hosted S3**
 - **Wasabi / DigitalOcean Spaces**
 
-The same destination backs up attached volume snapshots; every archive is sealed with AES-256-GCM as it streams and requests to the destination are egress-gated like all outbound traffic.
+The same destination stores attached-volume snapshots as plaintext `tar.gz` archives. Volume snapshots are not encrypted by NineDeploy; restrict access to the backup directory and bucket, and configure storage encryption as needed.
+
+Retention counts completed recovery points separately from failed attempts and leaves running backups untouched. Failed attempts cannot evict the last successful backups.
+
+The daily database scheduler retains seven completed local dumps. Older remote copies keep their database records so they remain discoverable after local files are pruned; configure bucket lifecycle rules for remote retention. Backup records currently use the active destination for remote retrieval, so migrate existing objects before changing that destination.
 
 ---
 
@@ -50,7 +54,8 @@ Each managed Docker volume can be snapshotted (`tar.gz`), restored or downloaded
 
 ---
 
-## 🛡️ 5. Restore & Tar-Slip Safety
+## 🛡️ 5. Restore Safety
 
 - Restores can be initiated via Web UI, CLI (`ninedeploy backups restore`), or MCP tool.
-- The decompression engine enforces path validation to prevent **Tar-Slip** vulnerabilities, rejecting any archive entries targeting paths outside the allocated container volume.
+- Volume restores first check that the archive can be listed, then replace the volume contents inside a temporary helper container. Corrupt archives fail before existing data is deleted. Extraction is not atomic: a disk or filesystem failure during extraction can still leave a partial restore.
+- Database operations use separate staging files. Failed decryption removes partial plaintext instead of retaining an unauthenticated dump on disk.

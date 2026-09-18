@@ -90,9 +90,47 @@ export function AccountSection() {
       </Card>
 
       <TwoFactorCard />
+      <SsoLinkCard />
       <PasskeyCard />
       <SessionsCard />
     </>
+  );
+}
+
+function SsoLinkCard() {
+  const { toast } = useToast();
+  const providers = useQuery({
+    queryKey: ['oidc-public-providers'],
+    queryFn: () => api.auth.oidc.publicProviders(),
+  });
+  const link = useMutation({
+    mutationFn: (slug: string) => api.auth.oidc.link(slug),
+    onSuccess: ({ authUrl }) => window.location.assign(authUrl),
+    onError: (error) => toast(error instanceof Error ? error.message : 'Could not link SSO account', 'error'),
+  });
+
+  return (
+    <Card className="mb-5">
+      <CardBody>
+        <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">Single sign-on</h2>
+        <p className="mb-4 text-xs text-slate-500">
+          Link your existing account before signing in with an SSO provider. You will continue to the provider to verify your identity.
+        </p>
+        {providers.isLoading ? <Skeleton className="h-10 w-full" /> : providers.isError ? (
+          <p role="alert" className="text-xs text-rose-400">Could not load SSO providers.</p>
+        ) : !providers.data?.length ? (
+          <p className="text-xs text-slate-500">No SSO providers are configured.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {providers.data.map((provider) => (
+              <Button key={provider.id} onClick={() => link.mutate(provider.slug)} disabled={link.isPending}>
+                {link.isPending && link.variables === provider.slug ? 'Connecting…' : `Link ${provider.name}`}
+              </Button>
+            ))}
+          </div>
+        )}
+      </CardBody>
+    </Card>
   );
 }
 

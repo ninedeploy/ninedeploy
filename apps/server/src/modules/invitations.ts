@@ -213,10 +213,10 @@ export async function findPendingInvitationByToken(
 }
 
 /**
- * Apply every pending invitation whose email matches the given user. Called
- * after register/login/OIDC completes so that someone who created an account
- * to accept an invite is silently promoted to the right workspace role(s)
- * without having to re-click the link. Returns the list of workspaces joined.
+ * Apply pending invitations only when the sign-in provider attests ownership
+ * of the email address. Password and passkey authentication prove account
+ * control, not ownership of the address supplied at registration; those users
+ * must present the invitation token through the explicit accept route.
  *
  * Accepts the same `Pick<DB, ...>` subset that other auth helpers do so the
  * caller can pass either a top-level `db` or a transaction handle. Audit
@@ -225,8 +225,9 @@ export async function findPendingInvitationByToken(
  */
 export async function acceptInvitationsForUser(
   db: Pick<DB, 'query' | 'select' | 'insert' | 'update'>,
-  user: { id: number; email: string },
+  user: { id: number; email: string; emailVerified?: boolean },
 ): Promise<Array<{ workspaceId: number; role: WorkspaceRole; email: string }>> {
+  if (user.emailVerified !== true) return [];
   const now = new Date();
   const pending = await db
     .select()

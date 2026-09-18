@@ -1,6 +1,10 @@
 import { sql } from 'drizzle-orm';
 import { users, type DB, type User } from '@ninedeploy/db';
 
+/** SSO callbacks cannot mint full sessions until the local second factor is satisfied. */
+export const SSO_TOTP_REFUSAL =
+  'This account has two-factor authentication enabled; SSO sign-in cannot satisfy it yet. Sign in with password and code.';
+
 /**
  * Look up a user by their lowercased email address. The
  * `users.email` column is stored lowercased (a precondition enforced

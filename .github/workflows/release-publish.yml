@@ -83,7 +83,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: 26
           cache: pnpm
 
       - name: Install dependencies
@@ -93,6 +93,11 @@ jobs:
       # the same verification gates CI enforces on every commit.
       - name: Release checks (typecheck · lint · build · test)
         run: pnpm release:check
+
+      - name: Database backup integration checks
+        run: pnpm --filter @ninedeploy/server exec vitest run --config vitest.integration.config.ts
+        env:
+          RUN_INTEGRATION: '1'
 
       - name: Derive image tags
         if: success()
@@ -152,60 +157,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Delete the legacy tag slugs from prior releases
-      # (`:v0`, `:v0.4`, `:0.4.0`, `:0.4`, `:0`). The new
-      # build below only produces `:v0.4.0` and `:latest`,
-      # so anything left over from earlier rollups would
-      # otherwise hang around as orphan pointers to the
-      # old digest. We keep the version row whose tags are
-      # a subset of the canonical set (`:v0.4.0` /
-      # `:latest`) and delete every other version.
-      - name: Prune legacy GHCR tag slugs
-        if: success()
-        run: |
-          set -euo pipefail
-          canonical="${{ env.RELEASE_TAG }} latest"
-          echo "Canonical tag set: ${canonical}"
-          gh api "/orgs/${{ github.repository_owner }}/packages/container/ninedeploy/versions?per_page=100" \
-            | jq -r '.[] | "\(.id)\t\(.metadata.container.tags | join(","))"' \
-            | while IFS=$'\t' read -r id tags; do
-                keep=true
-                for t in ${tags//,/ }; do
-                  case "${t}" in
-                    # `:edge` and `:main-<sha>` are pushed by ci.yml on every
-                    # green main build — they are what `install.sh
-                    # --channel=main` resolves. This prune used to delete any
-                    # version whose tags were not a subset of the canonical
-                    # release set, which silently broke main-channel installs
-                    # until the next push to main.
-                    edge|main-*) ;;
-                    *)
-                      case " ${canonical} " in
-                        *" ${t} "*) ;;
-                        *) keep=false ;;
-                      esac
-                      ;;
-                  esac
-                done
-                if [ "${keep}" = "false" ]; then
-                  echo "Deleting version ${id} (tags: ${tags})"
-                  # GHCR refuses to delete any version with
-                  # > 5000 downloads (HTTP 400). Those rows are
-                  # the public-tag trail of past releases
-                  # (0.2, 0.2.1, 0.3.x, etc.) and we cannot
-                  # remove them — but the loop must continue
-                  # so the new v0.4.0 / latest publish below
-                  # still runs. Swallow the failure per-row.
-                  gh api --method DELETE \
-                    "/orgs/${{ github.repository_owner }}/packages/container/ninedeploy/versions/${id}" \
-                    || echo "  delete blocked (>5000 downloads or immutable); keeping version ${id}"
-                else
-                  echo "Keeping version ${id} (tags: ${tags})"
-                fi
-              done
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+      # Keep historical images: version-pinned installs and rollback depend on them.
       - name: Build and push
         if: success()
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -263,8 +215,8 @@ jobs:
 
             **Pull the image:**
             ```
-            docker pull ghcr.io/${{ github.repository }}:${{ env.RELEASE_TAG }}
-            docker pull ghcr.io/${{ github.repository }}:latest
+            docker pull ghcr.io/ninedeploy/ninedeploy:${{ env.RELEASE_TAG }}
+            docker pull ghcr.io/ninedeploy/ninedeploy:latest
             ```
           files: |
             CHANGELOG.md

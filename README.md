@@ -10,7 +10,7 @@ the databases, certificates, secrets, backups and access rules around it — fro
 terminal CLI, a typed SDK, or an AI agent over MCP.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Release](https://img.shields.io/badge/Release-0.10.1-blue.svg)](./CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Release-0.10.2-blue.svg)](./CHANGELOG.md)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522.13-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7-blue.svg)](https://www.typescriptlang.org)
 [![Docker](https://img.shields.io/badge/Docker-required-blue.svg)](https://docker.com)
@@ -68,12 +68,12 @@ runs the SQLite migrations, and starts a hardened `systemd` unit (`ProtectSystem
 Re-running the same command is the upgrade path; it snapshots `.data` before touching anything.
 
 ```bash
-./install.sh --version v0.10.1     # pin an exact tag
+./install.sh --version v0.10.2     # pin an exact tag
 ./install.sh --channel main       # track edge
 ./install.sh --force              # discard local edits + stale build artifacts, then rebuild
 ```
 
-> **Where `main` stands:** the default channel installs the newest release tag (**0.10.1**).
+> **Where `main` stands:** the default channel installs the newest release tag (**0.10.2**).
 > The newest work (doctor mode, retained-volume re-keying) lands on `main` before it is tagged —
 > see [`CHANGELOG.md`](./CHANGELOG.md) under *Unreleased*, or run `--channel main` to get it today.
 
@@ -548,12 +548,12 @@ build, and the integration job.
 
 Stated plainly, because finding these out during an incident is worse than reading them here:
 
-- **Agent transport is sealed, but falls back to cleartext.** Operations are encrypted end-to-end
-  with the shared agent token when the agent advertises `sealed` on `GET /agent/ping`; a core that
-  is newer than its agents silently falls back to plain HTTP, which an on-path attacker can force by
-  stripping that flag. Set `NINEDEPLOY_AGENT_REQUIRE_SEALED=1` once the whole fleet is upgraded to
-  close that door. There is still no TLS on the transport itself, so keep worker nodes same-LAN or
-  same-VPN.
+- **Agent transport fails closed by default.** Operations require sealed transport unless the
+  operator explicitly sets `NINEDEPLOY_AGENT_ALLOW_CLEARTEXT=1`; `NINEDEPLOY_AGENT_REQUIRE_SEALED=1`
+  overrides that opt-in. Connection tests and approval always use an authenticated sealed challenge
+  and never send the raw token. Upgrade agents together with the panel: older agents without
+  `agent.ping` cannot pass connection tests. There is still no TLS on the transport itself, so keep
+  worker nodes on a private network or VPN.
 - **Remote deployments cover `docker` and `compose` services.** PM2 (a host process with no agent
   operation) and Nixpacks source builds (no nixpacks on the node) are refused with a reason rather
   than silently run on the panel host. Add a Dockerfile, or clear the target server, to deploy

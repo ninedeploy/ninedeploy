@@ -47,6 +47,7 @@ export function createFakeApiModule() {
       me: vi.fn(async () => null),
       tokens: { create: vi.fn(), list: vi.fn(), remove: vi.fn() },
       oidc: {
+        link: vi.fn(),
         list: vi.fn(),
         publicProviders: vi.fn(),
         create: vi.fn(),

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -71,6 +71,19 @@ describe('lib/backupCrypto', () => {
     writeFileSync(file, samplePlaintext);
     const out = join(tmpDir, 'plain.dump.out');
     await expect(decryptBackupFile(file, out)).rejects.toThrow(/not encrypted/);
+  });
+
+  it('removes plaintext output when an encrypted backup has a corrupt authentication tag', async () => {
+    const file = join(tmpDir, 'corrupt.dump');
+    const out = join(tmpDir, 'corrupt.dump.dec');
+    writeFileSync(file, samplePlaintext);
+    await encryptBackupFile(file);
+    const bytes = readFileSync(file);
+    bytes[bytes.length - 1] = bytes[bytes.length - 1]! ^ 1;
+    writeFileSync(file, bytes);
+    await expect(decryptBackupFile(file, out)).rejects.toThrow();
+    expect(existsSync(out)).toBe(false);
+    expect(readFileSync(file)).toEqual(bytes);
   });
 
   it('readBackupHeader reports the key version and IV base64', async () => {

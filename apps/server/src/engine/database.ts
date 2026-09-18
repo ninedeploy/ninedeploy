@@ -1,5 +1,6 @@
 import { createReadStream, createWriteStream, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { open } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { Database } from '@ninedeploy/db';
@@ -9,12 +10,11 @@ import { capture, run } from '../lib/exec.js';
 import { HELPER_IMAGE } from '../lib/inventory.js';
 import { connectContainerToServiceBridge, ensureServiceBridge } from '../lib/serviceBridge.js';
 import { writeSecretFile } from '../lib/secretFile.js';
+import { createKeyedOperationGuard } from '../lib/keyedOperationGuard.js';
 import { NETWORK } from './proxy.js';
 
 const swallow = () => {};
-/** Static temp paths used inside managed containers for backup/restore staging. */
-const DUMP_TMP = '/tmp/ninedeploy-dump';
-const RESTORE_TMP = '/tmp/ninedeploy-restore';
+const withDatabaseBackupOperation = createKeyedOperationGuard<number>();
 
 /** Matches a versioned secret envelope ("v<ver>:…"). Backups written since the
  *  encryption change carry this prefix; anything else is a legacy plaintext dump. */
@@ -126,18 +126,30 @@ export function readBackupBytes(file: string): Buffer {
 async function stageForRestore(file: string): Promise<{ path: string; cleanup: () => void }> {
   const layout = await streamBackupLayout(file);
   if (layout) {
-    const dec = `${file}.${process.pid}.${Date.now()}.dec`;
-    await pipeline(
-      createReadStream(file, { start: layout.dataStart, end: layout.dataEnd }),
-      createBackupDecipher(layout.header, layout.authTag),
-      createWriteStream(dec, { mode: 0o600 }),
-    );
+    const dec = `${file}.${randomUUID()}.dec`;
+    try {
+      await pipeline(
+        createReadStream(file, { start: layout.dataStart, end: layout.dataEnd }),
+        createBackupDecipher(layout.header, layout.authTag),
+        createWriteStream(dec, { mode: 0o600 }),
+      );
+    } catch (error) {
+      // GCM may have emitted plaintext before its final tag check fails.
+      // No caller cleanup exists yet because staging has not returned.
+      try { unlinkSync(dec); } catch { /* absent or inaccessible */ }
+      throw error;
+    }
     return { path: dec, cleanup: () => { try { unlinkSync(dec); } catch { /* gone */ } } };
   }
   const head = await fileHead(file);
   if (!ENVELOPE_RE.test(head)) return { path: file, cleanup: () => undefined };
-  const dec = `${file}.dec`;
-  writeFileSync(dec, readBackupBytes(file), { mode: 0o600 });
+  const dec = `${file}.${randomUUID()}.dec`;
+  try {
+    writeFileSync(dec, readBackupBytes(file), { mode: 0o600 });
+  } catch (error) {
+    try { unlinkSync(dec); } catch { /* absent or inaccessible */ }
+    throw error;
+  }
   return { path: dec, cleanup: () => { try { unlinkSync(dec); } catch { /* gone */ } } };
 }
 
@@ -771,7 +783,10 @@ export async function restoreVolume(
       '-v', `${name}:/v`,
       VOLUME_TAR_IMAGE,
       'sh', '-c',
-      `rm -rf /v/..?* /v/.[!.]* /v/* 2>/dev/null; tar -xzf ${VOLUME_TMP_ARCHIVE} -C /v`,
+      // Reject corrupt/truncated archives before touching the existing data.
+      // This is a preflight, not an atomic restore: extraction can still fail
+      // later because of disk or filesystem errors.
+      `tar -tzf ${VOLUME_TMP_ARCHIVE} >/dev/null && { rm -rf /v/..?* /v/.[!.]* /v/* 2>/dev/null; tar -xzf ${VOLUME_TMP_ARCHIVE} -C /v; }`,
     ])
   ).trim();
   try {
@@ -845,7 +860,12 @@ export async function databaseSize(d: Database): Promise<number> {
  * `--password=` value (visible to a local admin via `docker inspect`, but not
  * shell-injectable) rather than an interpolated shell string.
  */
-export async function backupDatabase(d: Database, file: string, log: (line: string) => void): Promise<void> {
+export function backupDatabase(d: Database, file: string, log: (line: string) => void): Promise<void> {
+  return withDatabaseBackupOperation(d.id, () => backupDatabaseUnlocked(d, file, log));
+}
+
+async function backupDatabaseUnlocked(d: Database, file: string, log: (line: string) => void): Promise<void> {
+  const DUMP_TMP = `/tmp/ninedeploy-dump-${randomUUID()}`;
   const cfg = ENGINES[d.engine];
   if (!cfg || !d.containerName) throw new Error('database not runnable');
   const cn = d.containerName;
@@ -897,12 +917,17 @@ export async function backupDatabase(d: Database, file: string, log: (line: stri
 
 /**
  * Restore a managed database from `file` (host path). The dump is copied into
- * the container at a static temp path, restored via a file-reading flag, then
+ * the container at a unique temp path, restored via a file-reading flag, then
  * removed — no host shell, no stdin plumbing, no interpolation. Encrypted
  * backups are transparently decrypted to a temp sibling first; legacy
  * plaintext backups (pre-encryption) restore as-is.
  */
-export async function restoreDatabase(d: Database, file: string, log: (line: string) => void): Promise<void> {
+export function restoreDatabase(d: Database, file: string, log: (line: string) => void): Promise<void> {
+  return withDatabaseBackupOperation(d.id, () => restoreDatabaseUnlocked(d, file, log));
+}
+
+async function restoreDatabaseUnlocked(d: Database, file: string, log: (line: string) => void): Promise<void> {
+  const RESTORE_TMP = `/tmp/ninedeploy-restore-${randomUUID()}`;
   const cfg = ENGINES[d.engine];
   if (!cfg || !d.containerName) throw new Error('database not runnable');
   const cn = d.containerName;

@@ -18,15 +18,22 @@ export interface OidcUserInfo {
 }
 
 /** Generate a signed state parameter for OAuth2/OIDC CSRF protection */
-export function generateOAuthState(providerSlug: string, returnTo?: string): string {
+export interface OAuthLinkContext {
+  userId: number;
+  sessionJti: string;
+  tokenVersion: number;
+  providerFingerprint: string;
+}
+
+export function generateOAuthState(providerSlug: string, returnTo?: string, link?: OAuthLinkContext): string {
   const nonce = randomBytes(16).toString('hex');
-  const payload = JSON.stringify({ slug: providerSlug, returnTo: returnTo ?? '/', nonce, ts: Date.now() });
+  const payload = JSON.stringify({ slug: providerSlug, returnTo: returnTo ?? '/', nonce, ts: Date.now(), ...(link && { link }) });
   const signature = createHmac('sha256', config.jwt.secret).update(payload).digest('base64url');
   return `${Buffer.from(payload).toString('base64url')}.${signature}`;
 }
 
 /** Verify a signed state parameter (constant-time signature compare) */
-export function verifyOAuthState(state: string): { slug: string; returnTo: string } | null {
+export function verifyOAuthState(state: string): { slug: string; returnTo: string; link?: OAuthLinkContext } | null {
   try {
     const [payloadB64, signature] = state.split('.');
     if (!payloadB64 || !signature) return null;
@@ -37,8 +44,14 @@ export function verifyOAuthState(state: string): { slug: string; returnTo: strin
     if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
     const data = JSON.parse(payloadJson);
     // 15 minute TTL on OAuth login initiation
-    if (Date.now() - data.ts > 15 * 60 * 1000) return null;
-    return { slug: data.slug, returnTo: data.returnTo };
+    if (!Number.isFinite(data.ts) || data.ts > Date.now() || Date.now() - data.ts > 15 * 60 * 1000) return null;
+    if (data.link !== undefined && (
+      !Number.isSafeInteger(data.link?.userId) || data.link.userId <= 0 ||
+      typeof data.link.sessionJti !== 'string' || !data.link.sessionJti ||
+      !Number.isSafeInteger(data.link.tokenVersion) ||
+      typeof data.link.providerFingerprint !== 'string' || !data.link.providerFingerprint
+    )) return null;
+    return { slug: data.slug, returnTo: data.returnTo, ...(data.link && { link: data.link }) };
   } catch {
     return null;
   }
@@ -109,8 +122,11 @@ export async function fetchOidcUserInfo(userinfoEndpoint: string, accessToken: s
     throw forbidden('SSO email address is not verified; refusing to link or auto-enroll an account');
   }
 
+  if (typeof json['sub'] !== 'string' || !json['sub'].trim()) {
+    throw forbidden('OIDC userinfo did not contain a stable subject');
+  }
   return {
-    sub: String(json['sub'] ?? email),
+    sub: json['sub'],
     email: email.toLowerCase().trim(),
     emailVerified: json['email_verified'] === true,
     name: (json['name'] as string) ?? null,

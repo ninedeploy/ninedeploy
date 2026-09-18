@@ -1,6 +1,6 @@
 {
   "name": "ninedeploy-monorepo",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "private": true,
   "description": "Self-hosted, one-click deployment platform with PM2 + Docker, Traefik, webhooks, secrets, backups and monitoring.",
   "license": "MIT",
@@ -23,7 +23,7 @@
     "docker:smoke-registry-recovery": "pnpm --filter @ninedeploy/server build && node scripts/smoke-registry-recovery.mjs",
     "db:studio": "pnpm --filter @ninedeploy/db db:studio",
     "clean": "turbo run clean && rm -rf node_modules",
-    "release:check": "turbo run typecheck lint build test",
+    "release:check": "turbo run typecheck lint build test --concurrency=1",
     "version:bump": "node scripts/bump-version.js",
     "release": "pnpm release:check && pnpm -r --filter \"./packages/*\" --filter \"./apps/cli\" publish --access public",
     "packages:publish": "pnpm -r --filter \"./packages/*\" --filter \"./apps/cli\" publish --access public"

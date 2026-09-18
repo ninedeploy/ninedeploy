@@ -1632,6 +1632,16 @@ describe('createClient', () => {
   });
 
   describe('auth.oidc', () => {
+    it('links with bearer authentication and cookies at the configured API base', async () => {
+      const { fetchMock, calls } = makeFetch(() => ok({ authUrl: 'https://identity.example.test/authorize' }));
+      const client = createClient({ baseUrl: 'https://api.test/panel/', getToken: () => 'session-token', fetch: fetchMock });
+      await expect(client.auth.oidc.link('company/team')).resolves.toEqual({ authUrl: 'https://identity.example.test/authorize' });
+      expect(last(calls)).toMatchObject({
+        url: '/panel/v1/auth/oidc/company%2Fteam/link',
+        init: { method: 'POST', credentials: 'include', headers: { Authorization: ['Bearer', 'session-token'].join(' ') } },
+      });
+    });
+
     it('exercises publicProviders, listProviders, createProvider, updateProvider, deleteProvider, and callback', async () => {
       const { fetchMock, calls } = makeFetch(() => ok({}));
       const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });

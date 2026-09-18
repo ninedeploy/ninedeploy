@@ -1,7 +1,8 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import { asUser, buildTestApp, createFakeDb, NOW, svcRow } from './helpers.js';
 
 /**
@@ -34,7 +35,7 @@ const remoteMocks = vi.hoisted(() => ({
 vi.mock('../src/lib/backupRemote.js', () => remoteMocks);
 
 const engineMocks = vi.hoisted(() => ({
-  backupVolume: vi.fn(async () => undefined),
+  backupVolume: vi.fn(async (_name: string, _file: string) => undefined),
   restoreVolume: vi.fn(async () => undefined),
   volumeExists: vi.fn(async () => true),
 }));
@@ -182,6 +183,26 @@ describe('volume backup routes', () => {
     });
     const file = String(engineMocks.backupVolume.mock.calls[0]![1]);
     expect(path.basename(file)).toMatch(/^nd-svc-web-data-[\dTZ.:-]+\.tar\.gz$/);
+  });
+
+  it('keeps the completed snapshot when retention fails', async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    let written = '';
+    engineMocks.backupVolume.mockImplementationOnce(async (_name: string, file: string) => {
+      written = file;
+      writeFileSync(file, 'snapshot');
+    });
+    const app = await appWith({
+      insert: { backups: [backupRow({ id: 25, status: 'running' })] },
+      findFirst: { backups: backupRow({ id: 25 }) },
+      update: { backups: (v: Record<string, unknown>) => { updates.push(v); return [backupRow()]; } },
+      selectError: { backups: new Error('retention query failed') },
+    });
+    const res = await app.inject({ method: 'POST', url: `/volumes/${VOLUME}/backups`, headers: asUser(), payload: {} });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().status).toBe('completed');
+    expect(updates).toEqual([expect.objectContaining({ status: 'completed' })]);
+    expect(existsSync(written)).toBe(true);
   });
 
   it('404s when the volume disappears between the check and the snapshot', async () => {
@@ -365,6 +386,13 @@ describe('volume backup routes', () => {
     const file = path.join(tmp, 'download.tar.gz');
     writeFileSync(file, 'tarball');
     const app = await appWith({ findFirst: { backups: backupRow({ path: file }) } });
+    // Assert the route hands Fastify a stream rather than buffering an entire
+    // potentially multi-GB archive before sending its first byte.
+    let downloadPayload: unknown;
+    app.addHook('onSend', async (_request, _reply, payload) => {
+      downloadPayload = payload;
+      return payload;
+    });
     const res = await app.inject({
       method: 'GET',
       url: `/volumes/${VOLUME}/backups/10/download`,
@@ -375,6 +403,7 @@ describe('volume backup routes', () => {
     expect(res.headers['content-type']).toContain('application/gzip');
     expect(res.headers['content-disposition']).toContain('download.tar.gz');
     expect(res.body).toBe('tarball');
+    expect(downloadPayload).toBeInstanceOf(Readable);
   });
 
   it('404s a download whose file is missing', async () => {

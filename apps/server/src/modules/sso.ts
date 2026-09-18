@@ -19,16 +19,9 @@ import {
   verifySignedInfo,
 } from '../lib/saml.js';
 import { issueSessionTokens } from '../lib/sessions.js';
-import { findUserByEmail } from '../lib/authHelpers.js';
+import { findUserByEmail, SSO_TOTP_REFUSAL } from '../lib/authHelpers.js';
 import { audit } from '../lib/audit.js';
 
-/**
- * These callbacks mint a full session with no second factor. For an account
- * that enabled TOTP that would make the IdP a 2FA bypass (r094), so they fail
- * closed until an SSO "2FA pending" step exists.
- */
-const SSO_TOTP_REFUSAL =
-  'This account has two-factor authentication enabled; SSO sign-in cannot satisfy it yet. Sign in with password and code.';
 import {
   clearSsoCookies,
   readSsoCookies,
@@ -172,6 +165,7 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
   //      password flow produces.
   app.get<{ Params: { name: string }; Querystring: { code?: string; state?: string; error?: string; error_description?: string } }>(
     '/:name/callback',
+    { onRequest: [app.requireInteractive] },
     async (req, reply) => {
       const provider = await db.query.ssoProviders.findFirst({
         where: eq(ssoProviders.name, req.params.name),
@@ -244,6 +238,7 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
           error: `OIDC sign-in denied: no local user matches ${claims.email}. Operators must be invited first.`,
         };
       }
+      if (user.id !== req.user!.id) return { ok: false, error: 'SSO identity must match the signed-in account' };
       if (user.totpEnabled) return { ok: false, error: SSO_TOTP_REFUSAL };
       const issued = await issueSessionTokens(db, user, {
         ip: req.ip,
@@ -269,6 +264,7 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
   // operator-issuance flow.)
   app.post<{ Params: { name: string }; Body: { SAMLResponse?: string } }>(
     '/:name/saml-callback',
+    { onRequest: [app.requireInteractive] },
     async (req) => {
       const provider = await db.query.ssoProviders.findFirst({
         where: eq(ssoProviders.name, req.params.name),
@@ -411,6 +407,7 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
           error: `SAML sign-in denied: no local user matches ${lookupEmail}. Operators must be invited first.`,
         };
       }
+      if (user.id !== req.user!.id) return { ok: false, error: 'SSO identity must match the signed-in account' };
       if (user.totpEnabled) return { ok: false, error: SSO_TOTP_REFUSAL };
       const tokens = await issueSessionTokens(db, user, {
         ip: req.ip,

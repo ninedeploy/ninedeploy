@@ -9,10 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-> The verification release: 101/101 templates runtime-certified, ten
-> quietly-broken templates repaired.
+## [0.10.2] - 2026-09-18
 
-### Added
+> The hardening patch: the security and reliability follow-up to the
+> 0.10.1 audit — sealed agent connection tests, stable SSO identities,
+> and backup/restore lifecycle repairs.
+
+### Security and reliability
+
+- Authenticate agent connection tests with a sealed challenge instead of sending the raw agent token over HTTP. Malformed operation exit codes no longer count as success. Agents must support the new `agent.ping` operation.
+- Require proof of email ownership before automatically accepting workspace invitations, enforce the `env` token scope on project environment routes, and refuse SSO sign-in that bypasses local TOTP or uses a deactivated account.
+- Bind SSO accounts to stable provider subjects. Existing accounts link a provider explicitly from account settings; verified email equality alone no longer merges accounts. See [SSO account linking](docs/SSO_ACCOUNT_LINKING.md) for upgrade recovery steps.
+- Password-reset recovery atomically revokes sessions, API tokens, passkeys, and external identity links so an earlier account holder cannot retain an alternative sign-in method.
+- Clear account-specific query caches on session changes, ignore stale authentication responses, preserve credentials during transient refresh failures, and apply the configured API origin to raw downloads and uploads.
+- Preserve successful backups independently from failed attempts, stream volume downloads, validate archives before replacing volume contents, isolate database staging files, and remove partial plaintext after failed decryption.
+- Preserve historical release images, use lowercase GHCR image names, serialize release checks, and run database integration checks before release image publication. Version bumps now reject formats unsupported by the installer.
+- Correct documentation that claimed automatic plaintext agent fallback and encryption of volume snapshots.
+
+### Added — template runtime verification (carried here for release-packaging completeness)
+
+> The verification work below shipped with the 0.10.0/0.10.1 binaries but
+> was never recorded in a numbered release section; it is folded into
+> 0.10.2's notes so the record is complete. The verification release:
+> 101/101 templates runtime-certified, ten quietly-broken templates
+> repaired.
 
 - **Whole-catalog runtime verification (r132).** Every Hub template —
   all 101 — now carries a `runtimeVerified` badge earned from one real

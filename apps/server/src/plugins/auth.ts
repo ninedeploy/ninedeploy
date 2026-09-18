@@ -73,6 +73,7 @@ const PREFIX_SCOPES: Record<string, readonly [string, string]> = {
  * Checked BEFORE the prefix table, most specific first.
  */
 const ROUTE_SCOPE_OVERRIDES: Array<[RegExp, readonly [string, string]]> = [
+  [/^projects\/\d+\/env\b/, ['nd://scope/read/env', 'nd://scope/write/env']],
   [/^services\/\d+\/env\b/, ['nd://scope/read/env', 'nd://scope/write/env']],
   [/^services\/\d+\/webhooks\b/, ['nd://scope/read/webhooks', 'nd://scope/write/webhooks']],
   [/^services\/\d+\/deploys\b/, ['nd://scope/read/deploys', 'nd://scope/write/deploys']],

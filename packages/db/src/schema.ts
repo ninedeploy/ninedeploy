@@ -240,6 +240,19 @@ export const oidcProviders = sqliteTable('oidc_providers', {
   updatedAt: tsUpdatable('updated_at'),
 });
 
+/** Explicit external identities: email coincidence never establishes an account link. */
+export const oauthIdentities = sqliteTable('oauth_identities', {
+  id: id(),
+  providerId: integer('provider_id').notNull().references(() => oidcProviders.id, { onDelete: 'cascade' }),
+  subject: text('subject').notNull(),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  providerFingerprint: text('provider_fingerprint').notNull(),
+  createdAt: ts('created_at'),
+}, (t) => ({
+  identityIdx: uniqueIndex('oauth_identities_provider_subject_unique').on(t.providerId, t.subject),
+  userIdx: index('oauth_identities_user_idx').on(t.userId),
+}));
+
 // Pending workspace invitations. One row per (workspace, email) — the row is
 // created when an owner/admin invites an address that does not yet have a
 // `users` row (or that we want to onboard into a specific role). A non-null

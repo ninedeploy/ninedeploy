@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, statSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
@@ -163,7 +163,9 @@ export const volumeBackupRoutes: FastifyPluginAsync = async (app) => {
       // for now we share the active destination with DB backups.
       await uploadBackup(app.db, row!.id, file, log);
       // Prune older backups so the directory never grows unbounded.
-      await pruneOldBackups(app.db, name, log);
+      await pruneOldBackups(app.db, name, log).catch((err: unknown) => {
+        log(`warning: backup retention failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
     } catch (err) {
       await app.db.update(backups).set({ status: 'failed' }).where(eq(backups.id, row!.id));
       try { unlinkSync(file); } catch { /* best-effort */ }
@@ -243,15 +245,15 @@ export const volumeBackupRoutes: FastifyPluginAsync = async (app) => {
     reply
       .type('application/gzip')
       .header('content-disposition', `attachment; filename="${path.basename(b.path)}"`)
-      .send(readFileSync(b.path));
+      .send(createReadStream(b.path));
     return reply;
   });
 };
 
 /**
- * Keep the most recent N backups for one volume. Older rows (and their
- * on-disk tar.gz files) are deleted. Called after a successful backup so
- * the directory never grows unbounded.
+ * Keep the most recent N completed backups and N failed attempts for one
+ * volume. Older finished rows and files are deleted; running snapshots are
+ * untouched. Called after a successful backup.
  *
  * Exported for the scheduled-job path — a `kind: 'backup'` cron also
  * calls this so the schedule doesn't pile up duplicates.
@@ -267,15 +269,21 @@ export async function pruneOldBackups(
     .from(backups)
     .where(and(eq(backups.volumeName, volumeName), eq(backups.scope, 'volumes')))
     .orderBy(desc(backups.createdAt));
-  if (rows.length <= keep) return { deleted: 0, kept: rows.length };
-  const toDelete = rows.slice(keep);
+  // Preserve recovery points independently from failed attempts, and never
+  // unlink a running snapshot while another backup is finishing.
+  const toDelete = [
+    ...rows.filter((row) => row.status === 'completed').slice(keep),
+    ...rows.filter((row) => row.status === 'failed').slice(keep),
+  ];
+  const kept = rows.length - toDelete.length;
+  if (toDelete.length === 0) return { deleted: 0, kept };
   for (const row of toDelete) {
     try { unlinkSync(row.path); } catch { /* file may already be gone */ }
     if (row.remoteKey) await deleteRemoteBackup(db, row.remoteKey).catch(() => undefined);
     await db.delete(backups).where(eq(backups.id, row.id));
   }
-  log(`Pruned ${toDelete.length} old backup(s) for ${volumeName} (kept newest ${keep})`);
-  return { deleted: toDelete.length, kept: keep };
+  log(`Pruned ${toDelete.length} old backup(s) for ${volumeName} (kept ${kept})`);
+  return { deleted: toDelete.length, kept };
 }
 
 /**
@@ -329,7 +337,9 @@ export async function backupServiceVolumes(
       const sizeBytes = existsSync(file) ? statSync(file).size : 0;
       await app.db.update(backups).set({ status: 'completed', sizeBytes }).where(eq(backups.id, row!.id));
       await uploadBackup(app.db, row!.id, file, log).catch(() => undefined);
-      await pruneOldBackups(app.db, name, log);
+      await pruneOldBackups(app.db, name, log).catch((err: unknown) => {
+        log(`warning: backup retention failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
       created++;
     } catch (err) {
       await app.db.update(backups).set({ status: 'failed' }).where(eq(backups.id, row!.id));

@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.1';
+export const VERSION = '0.10.2';
 
 export interface ChangelogEntry {
   version: string;
@@ -11,6 +11,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.10.2',
+    date: '2026-09-18',
+    title: 'The Hardening Patch — Sealed Agents, Stable SSO Identities',
+    changes: [
+      'Agent connection tests authenticate with a sealed nonce-bound challenge (the new agent.ping operation) instead of sending the raw token over HTTP; malformed exit codes fail closed and agents must be upgraded together with the panel. SSO accounts bind to stable provider subjects with explicit account linking — verified email equality alone no longer merges accounts — and password-reset recovery atomically revokes sessions, API tokens, passkeys and external identities.',
+      'Invitations need proof of email ownership, project environment routes enforce the env token scope, and SSO cannot bypass local TOTP or sign in deactivated accounts. Backups survive alongside failed attempts, volume archives are validated before a restore replaces data, database staging is isolated per operation, partial plaintext is removed after failed decryption, and web sessions clear cached account data and survive transient refresh failures.',
+    ],
+  },
   {
     version: '0.10.1',
     date: '2026-09-18',

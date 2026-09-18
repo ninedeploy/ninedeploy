@@ -507,6 +507,7 @@ async function deleteEnvFileOp(params: Params): Promise<void> {
  * without being listed here (or unreachable after being added).
  */
 const HANDLED_OPS = new Set([
+  'agent.ping',
   'file.writeEnv',
   'file.deleteEnv',
   'file.writeWorkspace',
@@ -520,6 +521,7 @@ const HANDLED_OPS = new Set([
 
 /** Run one typed operation (exported for tests). */
 export async function runOp(op: string, params: Params, onLine: (l: string) => void): Promise<number> {
+  if (op === 'agent.ping') return 0;
   if (op === 'file.writeEnv') {
     const { path } = await writeEnvFileOp(params);
     onLine(`wrote ${path}`);

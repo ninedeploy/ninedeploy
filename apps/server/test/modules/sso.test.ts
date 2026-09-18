@@ -53,6 +53,16 @@ afterEach(() => {
 });
 
 describe('GET /v1/sso/providers', () => {
+  it.each([
+    { method: 'GET' as const, url: '/corp/callback' },
+    { method: 'POST' as const, url: '/corp/saml-callback' },
+  ])('refuses API-token session upgrades at $url', async ({ method, url }) => {
+    const app = await buildTestApp();
+    await app.register(ssoRoutes);
+    const response = await app.inject({ method, url, headers: { ...asUser(), 'x-test-token-scopes': 'read' } });
+    expect(response.statusCode).toBe(403);
+    await app.close();
+  });
   it('returns an empty list when no providers are configured', async () => {
     const app = await buildTestApp();
     await app.register(ssoRoutes);
@@ -765,6 +775,17 @@ describe('POST-style OIDC callback (Sprint 6 PR #30)', () => {
     expect(body.ok).toBe(false);
     expect(body.error).toMatch(/two-factor/);
     expect(body.tokens).toBeUndefined();
+    await app.close();
+  });
+
+  it('does not switch an authenticated caller to another local account', async () => {
+    const kp = makeRsaKeyPair();
+    const { app, issuer } = await oidcAppWithProvider((db) => {
+      db.query.users.findFirst = () => Promise.resolve({ id: 99, email: 'alice@example.com', tokenVersion: 0 }) as never;
+    });
+    const response = await runOidcFlow(app, kp, issuer, { ...validClaims(issuer), email_verified: true });
+    expect(response.json()).toMatchObject({ ok: false, error: 'SSO identity must match the signed-in account' });
+    expect(response.json().tokens).toBeUndefined();
     await app.close();
   });
 

@@ -90,6 +90,23 @@ describe('auth module helpers', () => {  it('createFirstAdmin succeeds when no u
     expect(result.user.isOperator).toBe(false);
   });
 
+  it('registration cannot redeem a pending invitation by claiming its email', async () => {
+    const grant = vi.fn(() => []);
+    const consume = vi.fn(() => []);
+    const db = createFakeDb({
+      counts: { users: [{ n: 2 }] },
+      select: { workspace_invitations: [{ id: 1, workspaceId: 7, email: validRegister.email, role: 'admin' }] },
+      insert: {
+        users: [userRow({ id: 3, email: validRegister.email })],
+        workspace_members: grant,
+      },
+      update: { workspace_invitations: consume },
+    });
+    await registerAccount(db, validRegister as never);
+    expect(grant).not.toHaveBeenCalled();
+    expect(consume).not.toHaveBeenCalled();
+  });
+
   it('registerAccount reports duplicate emails', async () => {
     const db = createFakeDb({
       counts: { users: [{ n: 2 }] },

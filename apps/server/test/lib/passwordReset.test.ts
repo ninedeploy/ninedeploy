@@ -36,18 +36,27 @@ describe('passwordReset tokens', () => {
   });
 
   it('consumes a valid token: sets the password and bumps tokenVersion', async () => {
+    const removePasskeys = vi.fn(() => []);
+    const removeLinks = vi.fn(() => []);
+    const removeTokens = vi.fn(() => []);
+    const revokeSessions = vi.fn(() => []);
     const newHash = await hashPassword('fresh-password');
     const db = createFakeDb({
       findFirst: {
         passwordResetTokens: row(),
         users: { ...user, tokenVersion: 3 },
       },
-      update: { users: [{ ...user, tokenVersion: 4, passwordHash: newHash }], password_reset_tokens: [{}] },
+      update: { users: [{ ...user, tokenVersion: 4, passwordHash: newHash }], password_reset_tokens: [{}], sessions: revokeSessions },
+      delete: { webauthn_credentials: removePasskeys, oauth_identities: removeLinks, api_tokens: removeTokens },
     });
     const updated = await consumeResetToken(db, 'tok', 'fresh-password');
     expect(updated.tokenVersion).toBe(4);
     expect(await verifyPassword(updated.passwordHash, 'fresh-password')).toBe(true);
     expect(await verifyPassword(updated.passwordHash, 'other')).toBe(false);
+    expect(removePasskeys).toHaveBeenCalledOnce();
+    expect(removeLinks).toHaveBeenCalledOnce();
+    expect(removeTokens).toHaveBeenCalledOnce();
+    expect(revokeSessions).toHaveBeenCalledOnce();
   });
 
   it('rejects an unknown token with a generic message', async () => {

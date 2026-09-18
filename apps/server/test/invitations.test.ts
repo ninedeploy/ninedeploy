@@ -1,4 +1,4 @@
-﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   acceptInvitationRoutes,
   acceptInvitationsForUser,
@@ -257,6 +257,19 @@ describe('invitation helpers', () => {
   describe('acceptInvitationsForUser', () => {
     beforeEach(() => vi.clearAllMocks());
 
+    it.each([undefined, false])('does not grant invitations for an unverified email (%s)', async (emailVerified) => {
+      const grant = vi.fn(() => []);
+      const consume = vi.fn(() => []);
+      const db = createFakeDb({
+        select: { workspace_invitations: [invitationRow({ role: 'admin' })] },
+        insert: { workspace_members: grant },
+        update: { workspace_invitations: consume },
+      });
+      expect(await acceptInvitationsForUser(db, { id: 99, email: 'bob@example.com', emailVerified })).toEqual([]);
+      expect(grant).not.toHaveBeenCalled();
+      expect(consume).not.toHaveBeenCalled();
+    });
+
     it('joins pending workspaces for matching email', async () => {
       const inv = invitationRow({ workspaceId: 1, role: 'admin' });
       const db = createFakeDb({
@@ -264,7 +277,7 @@ describe('invitation helpers', () => {
         findFirst: { workspace_members: undefined },
         update: { workspace_invitations: [invitationRow({ id: inv.id, acceptedAt: new Date() })] },
       });
-      const joined = await acceptInvitationsForUser(db, { id: 99, email: 'bob@example.com' });
+      const joined = await acceptInvitationsForUser(db, { id: 99, email: 'bob@example.com', emailVerified: true });
       expect(joined).toEqual([{ workspaceId: 1, role: 'admin', email: 'bob@example.com' }]);
     });
 
@@ -275,7 +288,7 @@ describe('invitation helpers', () => {
         findFirst: { workspace_members: memberRow({ workspaceId: 1, userId: 99, role: 'member' }) },
         update: { workspace_invitations: [inv] },
       });
-      const joined = await acceptInvitationsForUser(db, { id: 99, email: 'bob@example.com' });
+      const joined = await acceptInvitationsForUser(db, { id: 99, email: 'bob@example.com', emailVerified: true });
       expect(joined).toEqual([]);
     });
 
@@ -283,7 +296,7 @@ describe('invitation helpers', () => {
       // Empty select result simulates the WHERE clause already filtering out
       // rows that are no longer pending.
       const db = createFakeDb({ select: { workspace_invitations: [] } });
-      const joined = await acceptInvitationsForUser(db, { id: 99, email: 'bob@example.com' });
+      const joined = await acceptInvitationsForUser(db, { id: 99, email: 'bob@example.com', emailVerified: true });
       expect(joined).toEqual([]);
     });
   });
@@ -603,7 +616,7 @@ describe('publicInvitationRoutes', () => {
         findFirst: {
           workspace_invitations: inv,
           workspace_members: undefined,
-          users: userRow({ id: 99, email: 'bob@example.com' }),
+          users: userRow({ id: 99, email: 'bob@example.com', emailVerified: true }),
         },
       }),
     });

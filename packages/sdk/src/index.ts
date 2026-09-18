@@ -145,6 +145,7 @@ export type FetchLike = (input: string, init: {
     method?: string;
     headers?: Record<string, string>;
     body?: string;
+    credentials?: 'omit' | 'same-origin' | 'include';
   }) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>
 
 export interface HealthStatus {
@@ -497,6 +498,7 @@ export interface NineDeployClient {
     };
     oidc: {
       publicProviders: () => Promise<OidcPublicProvider[]>;
+      link: (slug: string) => Promise<{ authUrl: string }>;
       listProviders: () => Promise<OidcProviderEntry[]>;
       list: () => Promise<OidcProviderEntry[]>;
       createProvider: (input: OidcProviderCreateInput) => Promise<OidcProviderEntry>;
@@ -1356,6 +1358,7 @@ export interface ContainerComposeData {
 
 interface RequestInit {
   method?: string;
+  credentials?: 'omit' | 'same-origin' | 'include';
   headers?: Record<string, string>;
   body?: unknown;
   /**
@@ -1394,11 +1397,12 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
     // modern browsers); it is resolved off globalThis and attached opaquely —
     // FetchLike's shape stays untouched (widening it with `signal: unknown`
     // breaks assigning a real `typeof fetch` at the call sites).
-    const out: { method?: string; headers?: Record<string, string>; body?: string } = {
+    const out: { method?: string; headers?: Record<string, string>; body?: string; credentials?: 'omit' | 'same-origin' | 'include' } = {
       method: init.method ?? 'GET',
       headers,
       body,
     };
+    if (init.credentials !== undefined) out.credentials = init.credentials;
     if (timeoutMs > 0) {
       const abort = (globalThis as { AbortSignal?: { timeout: (ms: number) => unknown } }).AbortSignal;
       if (abort) (out as { signal?: unknown }).signal = abort.timeout(timeoutMs);
@@ -1481,6 +1485,7 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       },
       oidc: {
         publicProviders: () => get<OidcPublicProvider[]>('/v1/auth/oidc/providers/public'),
+        link: (slug) => request<{ authUrl: string }>(`/v1/auth/oidc/${encodeURIComponent(slug)}/link`, { method: 'POST', credentials: 'include' }),
         listProviders: () => get<OidcProviderEntry[]>('/v1/auth/oidc/providers'),
         list: () => get<OidcProviderEntry[]>('/v1/auth/oidc/providers'),
         createProvider: (input) => send<OidcProviderEntry>('POST', '/v1/auth/oidc/providers', input),

@@ -2,6 +2,8 @@
 
 NineDeploy follows a defense-in-depth security model to protect secrets at rest, API access, user authentication, and system communication.
 
+For 0.10.2 upgrades, read [SSO account linking](SSO_ACCOUNT_LINKING.md): existing accounts must explicitly link their provider before SSO sign-in. Local TOTP requirements remain in force.
+
 ---
 
 ## 🔒 1. Dual-Vault Secret Encryption & Key Rotation

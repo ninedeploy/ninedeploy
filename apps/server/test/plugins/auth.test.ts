@@ -541,6 +541,8 @@ describe('auth plugin — fine-grained URI scopes narrow centrally', () => {
     app.post('/v1/databases', { preHandler: [app.authenticate] }, async () => ({ ok: true }));
     app.get('/v1/unmapped-thing', { preHandler: [app.authenticate] }, async () => ({ ok: true }));
     app.put('/v1/services/:id/env', { preHandler: [app.authenticate] }, async () => ({ ok: true }));
+    app.get('/v1/projects/:id/env', { preHandler: [app.authenticate] }, async () => ({ ok: true }));
+    app.post('/v1/projects/:id/env', { preHandler: [app.authenticate] }, async () => ({ ok: true }));
     return app;
   }
 
@@ -549,6 +551,17 @@ describe('auth plugin — fine-grained URI scopes narrow centrally', () => {
     const res = await app.inject({ method: 'GET', url: '/v1/services', headers: { authorization: 'Bearer t' } });
     expect(res.statusCode).toBe(200);
     await app.close();
+  });
+
+  it.each(['GET', 'POST'] as const)('requires env scope for project environment %s', async (method) => {
+    const projectTokenApp = await scopedApp(['nd://scope/write/projects']);
+    const denied = await projectTokenApp.inject({ method, url: '/v1/projects/7/env', headers: { authorization: 'Bearer t' } });
+    expect(denied.statusCode).toBe(403);
+    await projectTokenApp.close();
+    const envTokenApp = await scopedApp(['nd://scope/write/env']);
+    const allowed = await envTokenApp.inject({ method, url: '/v1/projects/7/env', headers: { authorization: 'Bearer t' } });
+    expect(allowed.statusCode).toBe(200);
+    await envTokenApp.close();
   });
 
   it('refuses a read-scoped token writing its own resource', async () => {

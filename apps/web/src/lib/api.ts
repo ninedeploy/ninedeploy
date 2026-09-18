@@ -2,6 +2,7 @@ import { createClient, type NineDeployClient } from '@ninedeploy/sdk';
 
 const TOKEN_KEY = 'ninedeploy.token';
 const REFRESH_KEY = 'ninedeploy.refreshToken';
+let sessionGeneration = 0;
 
 /**
  * Token storage. sessionStorage (NOT localStorage) so a bearer credential
@@ -57,12 +58,16 @@ function setRefreshToken(token: string | null): void {
 
 /** Persist both tokens of a session (access + refresh). */
 export function setSessionTokens(accessToken: string, refreshToken?: string): void {
+  sessionGeneration++;
+  refreshInflight = null;
   setToken(accessToken);
   setRefreshToken(refreshToken ?? null);
 }
 
 /** Clear every stored credential (logout / failed refresh). */
 export function clearTokens(): void {
+  sessionGeneration++;
+  refreshInflight = null;
   setToken(null);
   setRefreshToken(null);
 }
@@ -79,13 +84,20 @@ const baseFetch: typeof fetch = (...args) => fetch(...args);
 let refreshInflight: Promise<boolean> | null = null;
 
 async function doRefresh(): Promise<boolean> {
+  const generation = sessionGeneration;
   const refreshToken = getRefreshToken();
   if (!refreshToken) return false;
   try {
     const session = await api.auth.refresh({ refreshToken });
-    setSessionTokens(session.tokens.accessToken, session.tokens.refreshToken);
+    if (generation !== sessionGeneration) return false;
+    setToken(session.tokens.accessToken);
+    setRefreshToken(session.tokens.refreshToken);
     return true;
-  } catch {
+  } catch (error) {
+    if (generation !== sessionGeneration) return false;
+    const status = (error as { status?: number } | null)?.status;
+    // Network failures and server outages do not revoke a session.
+    if (status !== 401 && status !== 403) throw error;
     clearTokens(); // refresh rejected — the session is gone server-side
     // Announce the death of the session: the auth provider gates the
     // authenticated layout on its `user` state, so without this event the
@@ -96,9 +108,12 @@ async function doRefresh(): Promise<boolean> {
 }
 
 export function refreshAccessToken(): Promise<boolean> {
-  refreshInflight ??= doRefresh().finally(() => {
-    refreshInflight = null;
-  });
+  if (!refreshInflight) {
+    const pending = doRefresh().finally(() => {
+      if (refreshInflight === pending) refreshInflight = null;
+    });
+    refreshInflight = pending;
+  }
   return refreshInflight;
 }
 
@@ -110,18 +125,21 @@ export function refreshAccessToken(): Promise<boolean> {
  * failed permanently once the 15-minute access token expired.
  */
 export const NO_REFRESH_PATH =
-  /\/(?:v1\/setup|v1\/auth\/(?:login|refresh|register|logout|forgot-password|reset-password|status|oidc\/(?!providers(?:\/|$|\?))|passkey\/login\/))/;
+  /\/(?:v1\/setup|v1\/auth\/(?:login|refresh|register|logout|forgot-password|reset-password|status|oidc\/(?!providers(?:\/|$|\?)|[^/]+\/link(?:$|\?))|passkey\/login\/))/;
 
 /**
  * Fetch wrapper: on a 401 from a non-auth endpoint, refresh the access token
  * once and retry. Auth endpoints manage tokens themselves and must not loop.
  */
 const fetchWithRefresh: typeof fetch = async (input, init) => {
+  const generation = sessionGeneration;
   const res = await baseFetch(input, init);
   if (res.status !== 401) return res;
+  if (generation !== sessionGeneration) return res;
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   if (NO_REFRESH_PATH.test(url)) return res;
   if (!(await refreshAccessToken())) return res;
+  if (generation !== sessionGeneration) return res;
   const headers = new Headers(init?.headers);
   // The refresh just stored a fresh access token, so it is present.
   headers.set('Authorization', `Bearer ${getToken() as string}`);
@@ -138,7 +156,9 @@ export async function authedFetch(url: string, init?: RequestInit): Promise<Resp
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
   // fetchWithRefresh transparently refreshes + retries on a 401.
-  return fetchWithRefresh(url, { ...init, headers });
+  const baseUrl = (import.meta.env['VITE_API_URL'] ?? '').replace(/\/$/, '');
+  const target = url.startsWith('/') && !url.startsWith('//') ? `${baseUrl}${url}` : url;
+  return fetchWithRefresh(target, { ...init, headers });
 }
 
 /**

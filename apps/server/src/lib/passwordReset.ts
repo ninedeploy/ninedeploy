@@ -1,7 +1,8 @@
 import { and, eq, isNull, lt } from 'drizzle-orm';
-import { passwordResetTokens, type DB, users, type User } from '@ninedeploy/db';
+import { oauthIdentities, passwordResetTokens, type DB, users, webauthnCredentials, type User } from '@ninedeploy/db';
 import { hashPassword, randomToken, sha256 } from './crypto.js';
 import { badRequest, unauthorized } from './errors.js';
+import { revokeAllSessions, revokeApiTokens } from './sessions.js';
 
 /** Reset links are valid for 30 minutes and can be used exactly once. */
 export const RESET_TTL_MS = 30 * 60 * 1000;
@@ -54,22 +55,28 @@ export async function consumeResetToken(db: DB, token: string, newPassword: stri
   }
   // Atomically claim the token BEFORE doing any work: the conditional update
   // guarantees single-use even under concurrent requests with the same token.
-  const claimed = await db
-    .update(passwordResetTokens)
-    .set({ usedAt: new Date() })
-    .where(and(eq(passwordResetTokens.id, row.id), isNull(passwordResetTokens.usedAt)))
-    .returning();
-  if (!claimed.length) throw badRequest('Invalid or expired reset token');
-  const user = await db.query.users.findFirst({ where: eq(users.id, row.userId) });
-  if (!user) throw unauthorized();
-  const passwordHash = await hashPassword(newPassword);
-  const [updated] = await db
-    .update(users)
-    .set({ passwordHash, tokenVersion: user.tokenVersion + 1 })
-    .where(eq(users.id, user.id))
-    .returning();
-  if (!updated) throw unauthorized();
-  return updated;
+  return db.transaction(async (tx) => {
+    const claimed = await tx
+      .update(passwordResetTokens)
+      .set({ usedAt: new Date() })
+      .where(and(eq(passwordResetTokens.id, row.id), isNull(passwordResetTokens.usedAt)))
+      .returning();
+    if (!claimed.length) throw badRequest('Invalid or expired reset token');
+    const user = await tx.query.users.findFirst({ where: eq(users.id, row.userId) });
+    if (!user) throw unauthorized();
+    const passwordHash = await hashPassword(newPassword);
+    const [updated] = await tx
+      .update(users)
+      .set({ passwordHash, tokenVersion: user.tokenVersion + 1 })
+      .where(eq(users.id, user.id))
+      .returning();
+    if (!updated) throw unauthorized();
+    await tx.delete(webauthnCredentials).where(eq(webauthnCredentials.userId, user.id));
+    await tx.delete(oauthIdentities).where(eq(oauthIdentities.userId, user.id));
+    await revokeAllSessions(tx, user.id);
+    await revokeApiTokens(tx, user.id);
+    return updated;
+  });
 }
 
 /** Sweep expired pending tokens and used tokens older than a day (housekeeping). */

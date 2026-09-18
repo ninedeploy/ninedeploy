@@ -12,6 +12,10 @@ import { asUser, buildTestApp, createFakeDb } from '../helpers.js';
 
 const notifierMock = vi.hoisted(() => ({
   dispatchChannel: vi.fn(async () => undefined),
+  // The channel routes fire-and-forget `audit()` calls, whose async tail
+  // lands after the test — without this export the rejection escapes as an
+  // unhandled error that fails the suite.
+  notifyEvent: vi.fn(async () => undefined),
 }));
 
 vi.mock('../../src/lib/notifier.js', () => notifierMock);

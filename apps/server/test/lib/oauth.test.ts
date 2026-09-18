@@ -39,6 +39,15 @@ describe('oauth library', () => {
   });
 
   describe('OAuth state generation and verification', () => {
+    it('authenticates the initiating local session binding in link state', () => {
+      const link = { userId: 9, sessionJti: 'session-jti', tokenVersion: 3, providerFingerprint: 'provider-fingerprint' };
+      const state = generateOAuthState('google', '/settings', link);
+      expect(verifyOAuthState(state)).toEqual({ slug: 'google', returnTo: '/settings', link });
+      const [payload, signature] = state.split('.');
+      const changed = JSON.parse(Buffer.from(payload!, 'base64url').toString());
+      changed.link.userId = 1;
+      expect(verifyOAuthState(`${Buffer.from(JSON.stringify(changed)).toString('base64url')}.${signature}`)).toBeNull();
+    });
     it('generates and verifies valid state', () => {
       const state = generateOAuthState('google', '/dashboard');
       const verified = verifyOAuthState(state);
@@ -79,6 +88,10 @@ describe('oauth library', () => {
   });
 
   describe('OIDC helpers', () => {
+    it('requires a stable subject rather than using the email as an identity', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ email: 'alice@example.com', email_verified: true }) } as never);
+      await expect(fetchOidcUserInfo('https://auth.example.com/userinfo', F.accessToken)).rejects.toThrow('stable subject');
+    });
     it('fetches OIDC configuration successfully', async () => {
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
@@ -254,14 +267,17 @@ describe('oauth library', () => {
       expect(profile.email).toBe('privateuser@github.user');
     });
 
-    it('falls back to email when sub is omitted in userinfo', async () => {
+    it('refuses userinfo without a stable subject instead of falling back to email', async () => {
+      // An email-derived subject re-maps an identity whenever the address
+      // changes, so a provider that omits `sub` must be refused outright.
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({ email: 'nosub@example.com' }),
       } as never);
 
-      const info = await fetchOidcUserInfo('https://auth.example.com/userinfo', F.accessToken);
-      expect(info.sub).toBe('nosub@example.com');
+      await expect(
+        fetchOidcUserInfo('https://auth.example.com/userinfo', F.accessToken),
+      ).rejects.toThrow('OIDC userinfo did not contain a stable subject');
     });
 
     it('falls back to verified or first email when primary email not marked', async () => {

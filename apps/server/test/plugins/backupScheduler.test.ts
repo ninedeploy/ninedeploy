@@ -84,7 +84,51 @@ describe('r170: firstTickDelay', () => {
   });
 });
 
+it('keeps metadata for remote recovery points after local retention', async () => {
+  vi.useFakeTimers();
+  const file = path.join(tmp, 'remote-retained.dump');
+  writeFileSync(file, 'old dump');
+  const rows = Array.from({ length: KEEP_PER_DB + 1 }, (_, i) => ({
+    id: i + 1, databaseId: 1, scope: 'scheduled', status: 'completed',
+    path: i === KEEP_PER_DB ? file : path.join(tmp, `recent-${i}.dump`),
+    remoteKey: `database/backup-${i}`, createdAt: new Date(Date.now() - i * DAY_MS),
+  }));
+  const { db, del } = makeDb({ dbs: [{ id: 1, slug: 'a', name: 'A', status: 'running' }], backupRows: rows });
+  const app = await buildApp(db);
+  try {
+    await vi.advanceTimersByTimeAsync(DAY_MS);
+    expect(existsSync(file)).toBe(false);
+    expect(del).not.toHaveBeenCalled();
+  } finally {
+    await app.close();
+  }
+});
+
 describe('backup scheduler plugin', () => {
+  it('preserves successful recovery points when newer scheduled attempts failed', async () => {
+    vi.useFakeTimers();
+    const successfulPath = path.join(tmp, 'last-good.dump');
+    writeFileSync(successfulPath, 'recoverable');
+    const rows = Array.from({ length: KEEP_PER_DB }, (_, i) => ({
+      id: i + 2, databaseId: 1, scope: 'scheduled', status: 'failed',
+      path: path.join(tmp, `failed-${i}.dump`), createdAt: new Date(),
+    }));
+    rows.push({ id: 1, databaseId: 1, scope: 'scheduled', status: 'completed',
+      path: successfulPath, createdAt: new Date(0) });
+    const { db, del } = makeDb({
+      dbs: [{ id: 1, slug: 'a', name: 'A', status: 'running' }], backupRows: rows,
+    });
+    engineMock.backupDatabase.mockRejectedValueOnce(new Error('dump failed'));
+    const app = await buildApp(db);
+    try {
+      await vi.advanceTimersByTimeAsync(DAY_MS);
+      expect(existsSync(successfulPath)).toBe(true);
+      expect(del).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
   it('backs up running databases, records size, and prunes stale backups', async () => {
     vi.useFakeTimers();
     const stalePath = path.join(tmp, 'stale.dump');
@@ -95,13 +139,13 @@ describe('backup scheduler plugin', () => {
     for (let i = 0; i < KEEP_PER_DB + 2; i++) {
       // rows[7] and rows[8] fall past the KEEP_PER_DB window; rows[7] exists on
       // disk (gets unlinked), rows[8] does not.
-      rows.push({ id: i + 1, databaseId: 1, scope: 'scheduled', path: i === 7 ? stalePath : missingPath, createdAt: new Date() });
+      rows.push({ id: i + 1, databaseId: 1, scope: 'scheduled', status: 'completed', path: i === 7 ? stalePath : missingPath, createdAt: new Date() });
     }
     // A MANUAL backup is never pruned by the scheduler — even far past the
     // retention window it must survive.
     const manualPath = path.join(tmp, 'manual.dump');
     writeFileSync(manualPath, 'manual');
-    rows.push({ id: 99, databaseId: 1, scope: 'db', path: manualPath, createdAt: new Date(0) });
+    rows.push({ id: 99, databaseId: 1, scope: 'db', status: 'completed', path: manualPath, createdAt: new Date(0) });
 
     const { db, insert, del, findMany } = makeDb({
       dbs: [

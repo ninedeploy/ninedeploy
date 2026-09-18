@@ -216,6 +216,20 @@ describe('agent /agent/exec sealed transport', () => {
     spawnMock.mockResolvedValue(0);
   });
 
+  it('answers an authenticated ping without touching Docker or the filesystem', async () => {
+    const app = await appWith();
+    const res = await app.inject({
+      method: 'POST', url: '/agent/exec',
+      payload: { sealed: seal(TOKEN_HASH, { op: 'agent.ping', params: {}, nonce: 'probe-123' }) },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(openSealed(TOKEN_HASH, res.json().sealed)).toEqual({
+      lines: [], exitCode: 0, envFile: null, nonce: 'probe-123',
+    });
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(dockerPullMock).not.toHaveBeenCalled();
+  });
+
   it('executes a sealed request with no token header at all', async () => {
     spawnMock.mockImplementation(async (_exe, _argv, onLine) => {
       onLine?.('stopping web-3');

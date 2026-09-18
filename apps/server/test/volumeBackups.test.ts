@@ -1,5 +1,5 @@
 ﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pruneOldBackups, backupServiceVolumes } from '../src/modules/volumeBackups.js';
@@ -9,7 +9,7 @@ const execMocks = vi.hoisted(() => ({ capture: vi.fn(), run: vi.fn(), sleep: vi.
 vi.mock('../src/lib/exec.js', () => execMocks);
 
 const dbEngineMocks = vi.hoisted(() => ({
-  backupVolume: vi.fn(async () => undefined),
+  backupVolume: vi.fn(async (_name: string, _file: string) => undefined),
   restoreVolume: vi.fn(async () => undefined),
   volumeExists: vi.fn(async (_n: string) => true),
   ensureDockerImage: vi.fn(async () => undefined),
@@ -40,6 +40,23 @@ beforeEach(() => {
 // cover the data path that route handlers delegate to.
 
 describe('pruneOldBackups', () => {
+  it('retains completed snapshots and running snapshots independently of failures', async () => {
+    const fakeDb = createFakeDb({ select: { backups: [
+      { id: 4, volumeName: 'nd-svc-x', scope: 'volumes', status: 'failed', path: '/tmp/failure-new.tar.gz', createdAt: new Date(4000), remoteKey: null, databaseId: null, sizeBytes: 0 },
+      { id: 3, volumeName: 'nd-svc-x', scope: 'volumes', status: 'failed', path: '/tmp/failure-old.tar.gz', createdAt: new Date(3000), remoteKey: null, databaseId: null, sizeBytes: 0 },
+      { id: 2, volumeName: 'nd-svc-x', scope: 'volumes', status: 'completed', path: '/tmp/last-good.tar.gz', createdAt: new Date(2000), remoteKey: null, databaseId: null, sizeBytes: 100 },
+      { id: 1, volumeName: 'nd-svc-x', scope: 'volumes', status: 'running', path: '/tmp/in-progress.tar.gz', createdAt: new Date(1000), remoteKey: null, databaseId: null, sizeBytes: 0 },
+    ] } });
+    const cfg = await import('../src/config.js');
+    const originalRetain = cfg.config.volumeBackupRetainCount;
+    Object.defineProperty(cfg.config, 'volumeBackupRetainCount', { value: 2, configurable: true });
+    try {
+      expect(await pruneOldBackups(fakeDb as never, 'nd-svc-x')).toEqual({ deleted: 0, kept: 4 });
+    } finally {
+      Object.defineProperty(cfg.config, 'volumeBackupRetainCount', { value: originalRetain, configurable: true });
+    }
+  });
+
   it('keeps the most recent N rows and deletes the rest', async () => {
     const fakeDb = createFakeDb({
       select: {
@@ -87,6 +104,30 @@ describe('pruneOldBackups', () => {
 });
 
 describe('backupServiceVolumes (scheduled sweep)', () => {
+  it('counts a completed snapshot as created when retention fails', async () => {
+    let written = '';
+    const updates: Array<Record<string, unknown>> = [];
+    dbEngineMocks.backupVolume.mockImplementationOnce(async (_name: string, file: string) => {
+      written = file;
+      writeFileSync(file, 'snapshot');
+    });
+    const app = await buildTestApp({ db: createFakeDb({
+      findFirst: { services: svcRow({ id: 1, slug: 'web', volumeMount: '/data' }) },
+      insert: { backups: [{ id: 40 }] },
+      update: { backups: (v: Record<string, unknown>) => { updates.push(v); return []; } },
+      selectError: { backups: new Error('retention query failed') },
+    }) });
+    const log = vi.fn();
+    try {
+      expect(await backupServiceVolumes(app, 1, log)).toEqual({ created: 1, failed: 0 });
+      expect(updates).toEqual([expect.objectContaining({ status: 'completed' })]);
+      expect(existsSync(written)).toBe(true);
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('retention failed'));
+    } finally {
+      if (written && existsSync(written)) unlinkSync(written);
+    }
+  });
+
   it('iterates the service\'s volume attachments and creates one row per volume', async () => {
     await stubContainerRunning(false);
     const app = await buildTestApp({

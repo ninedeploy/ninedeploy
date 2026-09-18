@@ -372,12 +372,17 @@ export function createFakeDb(opts: FakeDbOpts = {}): DB {
   });
 
   const dbish = { query, select, insert, update, delete: del, run };
-  return {
+  const outer = {
     ...dbish,
     // Drizzle-style transaction: runs the callback against the same fake db
-    // (single-connection fake — no isolation semantics needed for route tests).
-    transaction: async <T>(fn: (tx: typeof dbish) => Promise<T>): Promise<T> => fn(dbish),
-  } as unknown as DB;
+    // (single-connection fake — no isolation semantics needed for route
+    // tests). It must forward the returned object itself, not the pre-spread
+    // `dbish`, so `vi.spyOn(db, 'delete')` observes calls issued from inside
+    // the transaction body (`tx.delete === db.delete`).
+    transaction: async <T>(fn: (tx: typeof dbish) => Promise<T>): Promise<T> =>
+      fn(outer as unknown as typeof dbish),
+  };
+  return outer as unknown as DB;
 }
 
 // ── Fastify test app ──────────────────────────────────────────────────────

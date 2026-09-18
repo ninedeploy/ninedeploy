@@ -1,8 +1,8 @@
-﻿import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { issueSessionTokens } from '../src/lib/sessions.js';
-import { oidcProviders, users, workspaceInvitations, workspaceMembers, workspaces } from '@ninedeploy/db';
+import { oidcProviders, sessions, users, workspaceInvitations, workspaceMembers, workspaces } from '@ninedeploy/db';
 import { generateOAuthState } from '../src/lib/oauth.js';
 import { encrypt, sha256 } from '../src/lib/crypto.js';
 import { eq } from 'drizzle-orm';
@@ -342,6 +342,77 @@ describe('OIDC and OAuth2 SSO endpoints', () => {
   });
 
   describe('Callback & Token Exchange (/v1/auth/oidc/:slug/callback)', () => {
+    it('requires explicit local-session linking and then recognizes the stable provider subject', async () => {
+      const email = 'local-link@example.test';
+      const [local] = await app.db.insert(users).values({ email, passwordHash: 'hash' }).returning();
+      const localSession = await issueSessionTokens(app.db, local);
+      const discovery = {
+        authorization_endpoint: 'https://accounts.google.com/auth',
+        token_endpoint: 'https://oauth2.googleapis.com/token',
+        userinfo_endpoint: 'https://openidconnect.googleapis.com/v1/userinfo',
+      };
+      const mockExchange = (sub = 'link-subject') => {
+        globalThis.fetch = vi.fn()
+          .mockResolvedValueOnce({ ok: true, json: async () => discovery } as never)
+          .mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: F.googleAccessToken }) } as never)
+          .mockResolvedValueOnce({ ok: true, json: async () => ({ sub, email, email_verified: true }) } as never);
+      };
+      const callback = (state: string, cookie = stateCookieFor(state)) => app.inject({
+        method: 'POST', url: '/v1/auth/oidc/google/callback', headers: { cookie }, payload: { code: 'code', state },
+      });
+      mockExchange();
+      const refused = await callback(generateOAuthState('google'));
+      expect(refused.statusCode).toBe(403);
+      expect(refused.json().error.code).toBe('account_link_required');
+
+      globalThis.fetch = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => discovery } as never);
+      const started = await app.inject({
+        method: 'POST', url: '/v1/auth/oidc/google/link', headers: { authorization: `Bearer ${localSession.accessToken}` },
+      });
+      expect(started.statusCode).toBe(200);
+      const state = new URL(started.json().authUrl).searchParams.get('state')!;
+      const cookie = String(started.headers['set-cookie']).split(';')[0]!;
+      mockExchange();
+      const linked = await callback(state, cookie);
+      expect(linked.statusCode).toBe(200);
+      expect(linked.json()).toEqual({ ok: true, linked: true });
+
+      mockExchange();
+      const signedIn = await callback(generateOAuthState('google'));
+      expect(signedIn.statusCode).toBe(200);
+      expect(signedIn.json().user.id).toBe(local.id);
+      mockExchange('another-subject');
+      expect((await callback(generateOAuthState('google'))).statusCode).toBe(403);
+    });
+
+    it.each(['totp', 'deactivated'] as const)('refuses %s accounts before workspace or session creation', async (condition) => {
+      const email = `${condition}@blocked-oidc.test`;
+      const [user] = await app.db.insert(users).values({
+        email,
+        passwordHash: 'hash',
+        totpEnabled: condition === 'totp',
+        deactivatedAt: condition === 'deactivated' ? new Date() : null,
+      }).returning();
+      const state = generateOAuthState('google', '/');
+      globalThis.fetch = vi.fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({
+          token_endpoint: 'https://oauth2.googleapis.com/token',
+          userinfo_endpoint: 'https://openidconnect.googleapis.com/v1/userinfo',
+        }) } as never)
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: F.googleAccessToken }) } as never)
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ sub: condition, email, email_verified: true }) } as never);
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/auth/oidc/google/callback',
+        headers: { cookie: stateCookieFor(state) },
+        payload: { code: 'valid_code', state },
+      });
+      expect(response.statusCode).toBe(condition === 'totp' ? 403 : 401);
+      expect(response.json().tokens).toBeUndefined();
+      expect(await app.db.query.workspaces.findFirst({ where: eq(workspaces.ownerId, user.id) })).toBeUndefined();
+      expect(await app.db.query.sessions.findFirst({ where: eq(sessions.userId, user.id) })).toBeUndefined();
+    });
+
     it('handles provider error param (401)', async () => {
       const res = await app.inject({
         method: 'GET',
@@ -535,7 +606,7 @@ describe('OIDC and OAuth2 SSO endpoints', () => {
         } as never)
         .mockResolvedValueOnce({
           ok: true,
-          json: async () => ({ sub: 'g_user_99', email: 'sam@google.test', email_verified: true }),
+          json: async () => ({ sub: 'g_user_1', email: 'sam@google.test', email_verified: true }),
         } as never);
 
       const res = await app.inject({

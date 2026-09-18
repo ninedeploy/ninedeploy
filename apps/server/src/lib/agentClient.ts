@@ -141,7 +141,8 @@ export async function agentOp(
     const text = await res.text().catch(() => '');
     throw new Error(`agent ${op} failed (${res.status}): ${text.slice(0, 200)}`);
   }
-  const raw = (await res.json()) as { sealed?: unknown; lines?: unknown; exitCode?: unknown; nonce?: unknown };
+  const raw = (await res.json()) as { sealed?: unknown; lines?: unknown; exitCode?: unknown; nonce?: unknown } | null;
+  if (!raw || typeof raw !== 'object') throw new Error(`agent ${op}: invalid response`);
   // Fail closed on a response that does not honour the transport the request
   // used: a sealed request MUST get a sealed, verifying reply. Accepting
   // whatever came back would let an on-path attacker fabricate success and
@@ -153,6 +154,7 @@ export async function agentOp(
   if (raw.sealed !== undefined) {
     try {
       body = openSealed<{ lines?: unknown; exitCode?: unknown; nonce?: unknown }>(shared, raw.sealed);
+      if (!body || typeof body !== 'object') throw new Error('Invalid response');
     } catch {
       throw new Error(`agent ${op}: sealed response failed verification — refusing it`);
     }
@@ -164,16 +166,37 @@ export async function agentOp(
   }
   const lines = Array.isArray(body.lines) ? body.lines.map(String) : [];
   for (const l of lines) sink(l);
-  const exitCode = Number(body.exitCode) || 0;
+  if (typeof body.exitCode !== 'number' || !Number.isInteger(body.exitCode)) {
+    throw new Error(`agent ${op}: invalid exit code in response`);
+  }
+  const exitCode = body.exitCode;
   if (exitCode !== 0) throw new Error(`agent ${op} exited with ${exitCode}`);
   return { exitCode, lines };
 }
 
 /** Probe an agent's reachability + auth (used by the servers routes + UI). */
 export async function agentPing(host: string, port: number, token: string): Promise<void> {
-  const res = await fetch(`http://${host}:${port}/agent/ping`, {
-    headers: { 'x-agent-token': token },
+  // The public capability endpoint cannot authenticate either party. Prove
+  // possession of the shared key with a fresh, side-effect-free challenge.
+  // Never fall back to transmitting the token, even for legacy agents.
+  const shared = sha256(token);
+  const nonce = randomBytes(16).toString('hex');
+  const res = await fetch(`http://${host}:${port}/agent/exec`, {
+    method: 'POST',
+    redirect: 'error',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sealed: seal(shared, { op: 'agent.ping', params: {}, nonce }) }),
     signal: AbortSignal.timeout(5000),
   });
   if (!res.ok) throw new Error(`agent unreachable (${res.status})`);
+  const raw = (await res.json()) as { sealed?: unknown } | null;
+  let result: { nonce?: unknown; exitCode?: unknown } | null;
+  try {
+    result = openSealed(shared, raw?.sealed);
+  } catch {
+    throw new Error('agent authentication failed: invalid sealed response; upgrade legacy agents');
+  }
+  if (!result || result.nonce !== nonce || result.exitCode !== 0) {
+    throw new Error('agent authentication failed: response does not match this probe');
+  }
 }

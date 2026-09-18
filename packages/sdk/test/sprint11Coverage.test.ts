@@ -464,6 +464,8 @@ describe('Sprint 11 SDK surface (G-13 / G-15 / G-30 / G-24 / G-47 / G-16)', () =
       await client.egress.clear(1);
       expect(calls[2]?.url).toBe('/v1/egress/1');
       expect(calls[2]?.init.method).toBe('DELETE');
+      await client.egress.clear(2, 'wg-quick');
+      expect(calls[3]?.url).toBe('/v1/egress/2?driver=wg-quick');
     });
 
     it('sso providers CRUD', async () => {

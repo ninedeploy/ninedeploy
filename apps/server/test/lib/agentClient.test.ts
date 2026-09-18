@@ -67,7 +67,11 @@ function honestSealedAgent(
     if (String(url).endsWith('/agent/ping')) {
       return { ok: true, json: async () => ({ ok: true, agent: true, sealed: pingSealed }) };
     }
-    const request = openSealed<{ nonce?: string }>(SHARED, (JSON.parse(String(init?.body)) as { sealed: unknown }).sealed);
+    // The runner can invoke a stubbed global fetch with no arguments during
+    // post-test cleanup; that is not an agent request, and crashing here on a
+    // missing body fails the file with an unhandled rejection.
+    if (!init?.body) return { ok: true, json: async () => ({}) };
+    const request = openSealed<{ nonce?: string }>(SHARED, (JSON.parse(String(init.body)) as { sealed: unknown }).sealed);
     return { ok: true, json: async () => ({ sealed: seal(SHARED, { ...result, nonce: request.nonce }) }) };
   });
 }
@@ -229,6 +233,17 @@ describe('agentOp', () => {
     expect(lines).toEqual([]);
   });
 
+  it.each([undefined, null, '0', 'not-a-number', 0.5])('rejects invalid exit code %j instead of reporting success', async (exitCode) => {
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/agent/ping')) return { ok: true, json: async () => ({ sealed: true }) };
+      if (!init?.body) return { ok: true, json: async () => ({}) };
+      const request = openSealed<{ nonce: string }>(SHARED, JSON.parse(String(init.body)).sealed);
+      return { ok: true, json: async () => ({ sealed: seal(SHARED, { exitCode, nonce: request.nonce }) }) };
+    });
+    await expect(agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'docker.pull', {}, () => {}))
+      .rejects.toThrow('invalid exit code');
+  });
+
   it('refuses a plaintext reply to a sealed request', async () => {
     // An on-path attacker can strip `sealed` from the RESPONSE body. The core
     // sent a sealed request, so anything unsealed back is tampering — never
@@ -302,12 +317,28 @@ describe('agentPing', () => {
   beforeEach(() => fetchMock.mockReset());
   afterEach(() => undefined);
 
-  it('probes the ping endpoint with the token', async () => {
-    fetchMock.mockResolvedValue({ ok: true });
-    await expect(agentPing('10.0.0.5', 4600, 'tok')).resolves.toBeUndefined();
+  it('authenticates using a sealed challenge without exposing the token', async () => {
+    honestSealedAgent();
+    await expect(agentPing('10.0.0.5', 4600, 'raw-token')).resolves.toBeUndefined();
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('http://10.0.0.5:4600/agent/ping');
-    expect((init.headers as Record<string, string>)['x-agent-token']).toBe('tok');
+    expect(url).toBe('http://10.0.0.5:4600/agent/exec');
+    expect((init.headers as Record<string, string>)['x-agent-token']).toBeUndefined();
+    expect(String(init.body)).not.toContain('raw-token');
+    expect(openSealed(SHARED, JSON.parse(String(init.body)).sealed)).toEqual({
+      op: 'agent.ping', params: {}, nonce: expect.any(String),
+    });
+    expect(init.redirect).toBe('error');
+  });
+
+  it.each([
+    { ok: true, agent: true, sealed: true },
+    { exitCode: 0 },
+    { sealed: seal(SHARED, { exitCode: 0, nonce: 'replayed' }) },
+    { sealed: seal(cryptoReal.sha256('wrong-token'), { exitCode: 0 }) },
+    null,
+  ])('refuses unauthenticated or mismatched probe replies: %j', async (reply) => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => reply });
+    await expect(agentPing('10.0.0.5', 4600, 'raw-token')).rejects.toThrow('agent authentication failed');
   });
 
   it('throws when unreachable', async () => {

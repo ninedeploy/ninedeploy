@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync as existsSyncMock, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync as existsSyncMock, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createCipheriv, createDecipheriv } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -672,14 +673,28 @@ describe('backupDatabase', () => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), 'nd-backup-'));
   afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
+  it('isolates container staging for overlapping backups of one database', async () => {
+    const files = [path.join(tmp, 'concurrent-a.sql'), path.join(tmp, 'concurrent-b.sql')];
+    for (const file of files) writeFileSync(file, 'dump');
+    await Promise.all(files.map((file) => backupDatabase(dbRow({ engine: 'postgres' }), file, vi.fn())));
+    const copies = h.run.mock.calls.filter((call) => call[1][0] === 'cp').map((call) => call[1]);
+    expect(copies).toHaveLength(2);
+    expect(new Set(copies.map((args) => args[1])).size).toBe(2);
+    for (const args of copies) {
+      const staged = String(args[1]).slice(2);
+      expect(h.run).toHaveBeenCalledWith('docker', expect.arrayContaining([`--file=${staged}`]), {}, expect.any(Function));
+      expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'rm', '-f', staged], {}, expect.any(Function));
+    }
+  });
+
   it('backs up postgres via a container-side dump file + docker cp (no in-memory dump)', async () => {
     const file = path.join(tmp, 'pg.sql');
     writeFileSync(file, ''); // the (mocked) docker cp would land here
     const log = vi.fn();
     await backupDatabase(dbRow({ engine: 'postgres' }), file, log);
-    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'pg_dump', '-U', 'nine', '-d', 'app', '--clean', '--if-exists', '--file=/tmp/ninedeploy-dump'], {}, log);
-    expect(h.run).toHaveBeenCalledWith('docker', ['cp', 'c:/tmp/ninedeploy-dump', file], {}, log);
-    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'rm', '-f', '/tmp/ninedeploy-dump'], {}, expect.any(Function));
+    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'pg_dump', '-U', 'nine', '-d', 'app', '--clean', '--if-exists', expect.stringMatching(/^--file=\/tmp\/ninedeploy-dump-[a-f0-9-]+$/)], {}, log);
+    expect(h.run).toHaveBeenCalledWith('docker', ['cp', expect.stringMatching(/^c:\/tmp\/ninedeploy-dump-[a-f0-9-]+$/), file], {}, log);
+    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'rm', '-f', expect.stringMatching(/^\/tmp\/ninedeploy-dump-[a-f0-9-]+$/)], {}, expect.any(Function));
     expect(h.capture).not.toHaveBeenCalled();
     expect(readFileSync(file).subarray(0, 6).toString()).toBe('NDBK1:');
   });
@@ -690,9 +705,9 @@ describe('backupDatabase', () => {
     const log = vi.fn();
     await backupDatabase(dbRow({ engine: 'mysql' }), file, log);
     expect(h.run).toHaveBeenCalledWith('docker', [
-      'exec', 'c', 'mysqldump', '-uroot', '--password=pw:enc', '--single-transaction', '--quick', '--all-databases', '--result-file=/tmp/ninedeploy-dump',
+      'exec', 'c', 'mysqldump', '-uroot', '--password=pw:enc', '--single-transaction', '--quick', '--all-databases', expect.stringMatching(/^--result-file=\/tmp\/ninedeploy-dump-[a-f0-9-]+$/),
     ], {}, log);
-    expect(h.run).toHaveBeenCalledWith('docker', ['cp', 'c:/tmp/ninedeploy-dump', file], {}, log);
+    expect(h.run).toHaveBeenCalledWith('docker', ['cp', expect.stringMatching(/^c:\/tmp\/ninedeploy-dump-[a-f0-9-]+$/), file], {}, log);
     expect(h.decrypt).toHaveBeenCalledWith('enc');
     expect(h.capture).not.toHaveBeenCalled();
     expect(readFileSync(file).subarray(0, 6).toString()).toBe('NDBK1:');
@@ -717,10 +732,10 @@ describe('backupDatabase', () => {
     expect(h.run).toHaveBeenCalledWith('docker', [
       'exec', 'c', 'mongodump',
       '-u', 'nine', '-p', 'pw:enc', '--authenticationDatabase', 'admin',
-      '--archive=/tmp/ninedeploy-dump', '--gzip',
+      expect.stringMatching(/^--archive=\/tmp\/ninedeploy-dump-[a-f0-9-]+$/), '--gzip',
     ], {}, log);
-    expect(h.run).toHaveBeenCalledWith('docker', ['cp', 'c:/tmp/ninedeploy-dump', file], {}, log);
-    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'rm', '-f', '/tmp/ninedeploy-dump'], {}, expect.any(Function));
+    expect(h.run).toHaveBeenCalledWith('docker', ['cp', expect.stringMatching(/^c:\/tmp\/ninedeploy-dump-[a-f0-9-]+$/), file], {}, log);
+    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'rm', '-f', expect.stringMatching(/^\/tmp\/ninedeploy-dump-[a-f0-9-]+$/)], {}, expect.any(Function));
     expect(readFileSync(file).includes(Buffer.from('MONGO-BYTES'))).toBe(true);
   });
 
@@ -781,13 +796,83 @@ describe('restoreDatabase', () => {
     return f;
   };
 
+  it('removes staged plaintext when the encrypted dump fails its final authentication check', async () => {
+    const key = Buffer.alloc(32, 4);
+    const iv = Buffer.alloc(12, 3);
+    const cipher = createCipheriv('aes-256-gcm', key, iv);
+    const encrypted = Buffer.concat([cipher.update('private dump contents'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    tag[0] = tag[0]! ^ 1;
+    const file = path.join(tmp, 'corrupt-stream.dump');
+    writeFileSync(file, Buffer.concat([Buffer.from(`NDBK1:v0:${iv.toString('base64')}\n`), encrypted, tag]));
+    const cryptoModule = await import('../src/lib/crypto.js');
+    const decipherSpy = vi.spyOn(cryptoModule, 'createBackupDecipher').mockImplementation((_header, authTag) => {
+      const decipher = createDecipheriv('aes-256-gcm', key, iv);
+      decipher.setAuthTag(authTag);
+      return decipher;
+    });
+    try {
+      await expect(restoreDatabase(dbRow({ engine: 'postgres' }), file, vi.fn())).rejects.toThrow();
+      expect(readdirSync(tmp).filter((name) => name.startsWith('corrupt-stream.dump.') && name.endsWith('.dec'))).toEqual([]);
+      expect(h.run).not.toHaveBeenCalled();
+    } finally {
+      decipherSpy.mockRestore();
+    }
+  });
+
+  it('isolates local and container staging for overlapping restores of the same backup', async () => {
+    const file = encFile('concurrent restore');
+    await Promise.all([1, 2].map(() => restoreDatabase(dbRow({ engine: 'postgres' }), file, vi.fn())));
+    const copies = h.run.mock.calls.filter((call) => call[1][0] === 'cp').map((call) => call[1]);
+    expect(copies).toHaveLength(2);
+    expect(new Set(copies.map((args) => args[1])).size).toBe(2);
+    expect(new Set(copies.map((args) => args[2])).size).toBe(2);
+    for (const args of copies) {
+      expect(existsSyncMock(String(args[1]))).toBe(false);
+      expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'rm', '-f', String(args[2]).slice(2)], {}, expect.any(Function));
+    }
+  });
+
+  it('waits for a restore on the same database and continues after its failure', async () => {
+    const firstFile = path.join(tmp, 'serialized-first.sql');
+    const secondFile = path.join(tmp, 'serialized-second.sql');
+    writeFileSync(firstFile, '-- first');
+    writeFileSync(secondFile, '-- second');
+    let reachedRestore!: () => void;
+    const started = new Promise<void>((resolve) => { reachedRestore = resolve; });
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    let restores = 0;
+    h.run.mockImplementation(async (_cmd, args) => {
+      if (args.includes('psql') && args[1] === 'c' && restores++ === 0) {
+        reachedRestore();
+        await pending;
+        throw new Error('restore failed');
+      }
+    });
+    const first = restoreDatabase(dbRow({ engine: 'postgres' }), firstFile, vi.fn());
+    const firstResult = expect(first).rejects.toThrow('restore failed');
+    await started;
+    const second = restoreDatabase(dbRow({ engine: 'postgres' }), secondFile, vi.fn());
+    // A different database can finish while the first remains suspended.
+    try {
+      await restoreDatabase(dbRow({ id: 2, engine: 'postgres', containerName: 'other' }), firstFile, vi.fn());
+      expect(h.run.mock.calls.some((call) => call[1][0] === 'cp' && call[1][1] === secondFile)).toBe(false);
+    } finally {
+      release();
+      await firstResult;
+      await second;
+    }
+    expect(h.run).toHaveBeenCalledWith('docker', ['cp', secondFile, expect.stringContaining('c:/tmp/ninedeploy-restore-')], {}, expect.any(Function));
+  });
+
   it('restores postgres from an ENCRYPTED backup (decrypts to a temp sibling)', async () => {
     const log = vi.fn();
     const file = encFile('-- plain sql --');
     await restoreDatabase(dbRow({ engine: 'postgres' }), file, log);
     // docker cp receives the DECRYPTED sibling, not the envelope file.
-    expect(h.run).toHaveBeenCalledWith('docker', ['cp', `${file}.dec`, 'c:/tmp/ninedeploy-restore'], {}, log);
-    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'psql', '-v', 'ON_ERROR_STOP=1', '--single-transaction', '-U', 'nine', '-d', 'app', '-f', '/tmp/ninedeploy-restore'], {}, log);
+    expect(h.run).toHaveBeenCalledWith('docker', ['cp', expect.stringMatching(/\.[a-f0-9-]+\.dec$/), expect.stringMatching(/^c:\/tmp\/ninedeploy-restore-[a-f0-9-]+$/)], {}, log);
+    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'psql', '-v', 'ON_ERROR_STOP=1', '--single-transaction', '-U', 'nine', '-d', 'app', '-f', expect.stringMatching(/^\/tmp\/ninedeploy-restore-[a-f0-9-]+$/)], {}, log);
   });
 
   it('restores from a LEGACY plaintext backup as-is (no envelope)', async () => {
@@ -795,16 +880,16 @@ describe('restoreDatabase', () => {
     const file = path.join(tmp, 'legacy.dump');
     writeFileSync(file, '-- legacy plain --');
     await restoreDatabase(dbRow({ engine: 'postgres' }), file, log);
-    expect(h.run).toHaveBeenCalledWith('docker', ['cp', file, 'c:/tmp/ninedeploy-restore'], {}, log);
+    expect(h.run).toHaveBeenCalledWith('docker', ['cp', file, expect.stringMatching(/^c:\/tmp\/ninedeploy-restore-[a-f0-9-]+$/)], {}, log);
   });
 
   it('restores mysql with the decrypted password via source (no shell interpolation)', async () => {
     const log = vi.fn();
     const file = encFile('USE app;');
     await restoreDatabase(dbRow({ engine: 'mysql' }), file, log);
-    expect(h.run).toHaveBeenCalledWith('docker', ['cp', `${file}.dec`, 'c:/tmp/ninedeploy-restore'], {}, log);
+    expect(h.run).toHaveBeenCalledWith('docker', ['cp', expect.stringMatching(/\.[a-f0-9-]+\.dec$/), expect.stringMatching(/^c:\/tmp\/ninedeploy-restore-[a-f0-9-]+$/)], {}, log);
     expect(h.run).toHaveBeenCalledWith('docker', [
-      'exec', 'c', 'mysql', '-uroot', '--password=pw:enc', '-e', 'source /tmp/ninedeploy-restore',
+      'exec', 'c', 'mysql', '-uroot', '--password=pw:enc', '-e', expect.stringMatching(/^source \/tmp\/ninedeploy-restore-[a-f0-9-]+$/),
     ], {}, log);
     expect(h.decrypt).toHaveBeenCalledWith('enc');
   });
@@ -815,9 +900,9 @@ describe('restoreDatabase', () => {
     const log = vi.fn();
     await backupDatabase(dbRow({ engine: 'mariadb' }), file, log);
     expect(h.run).toHaveBeenCalledWith('docker', [
-      'exec', 'c', 'mariadb-dump', '-uroot', '--password=pw:enc', '--single-transaction', '--quick', '--all-databases', '--result-file=/tmp/ninedeploy-dump',
+      'exec', 'c', 'mariadb-dump', '-uroot', '--password=pw:enc', '--single-transaction', '--quick', '--all-databases', expect.stringMatching(/^--result-file=\/tmp\/ninedeploy-dump-[a-f0-9-]+$/),
     ], {}, log);
-    expect(h.run).toHaveBeenCalledWith('docker', ['cp', 'c:/tmp/ninedeploy-dump', file], {}, log);
+    expect(h.run).toHaveBeenCalledWith('docker', ['cp', expect.stringMatching(/^c:\/tmp\/ninedeploy-dump-[a-f0-9-]+$/), file], {}, log);
     expect(h.capture).not.toHaveBeenCalled();
     expect(readFileSync(file).subarray(0, 6).toString()).toBe('NDBK1:');
   });
@@ -827,7 +912,7 @@ describe('restoreDatabase', () => {
     const file = encFile('USE app;');
     await restoreDatabase(dbRow({ engine: 'mariadb' }), file, log);
     expect(h.run).toHaveBeenCalledWith('docker', [
-      'exec', 'c', 'mariadb', '-uroot', '--password=pw:enc', '-e', 'source /tmp/ninedeploy-restore',
+      'exec', 'c', 'mariadb', '-uroot', '--password=pw:enc', '-e', expect.stringMatching(/^source \/tmp\/ninedeploy-restore-[a-f0-9-]+$/),
     ], {}, log);
   });
 
@@ -844,11 +929,11 @@ describe('restoreDatabase', () => {
     const log = vi.fn();
     const file = encFile('MONGO');
     await restoreDatabase(dbRow({ engine: 'mongo' }), file, log);
-    expect(h.run).toHaveBeenCalledWith('docker', ['cp', `${file}.dec`, 'c:/tmp/ninedeploy-restore'], {}, log);
+    expect(h.run).toHaveBeenCalledWith('docker', ['cp', expect.stringMatching(/\.[a-f0-9-]+\.dec$/), expect.stringMatching(/^c:\/tmp\/ninedeploy-restore-[a-f0-9-]+$/)], {}, log);
     expect(h.run).toHaveBeenCalledWith('docker', [
       'exec', 'c', 'mongorestore',
       '-u', 'nine', '-p', 'pw:enc', '--authenticationDatabase', 'admin',
-      '--archive=/tmp/ninedeploy-restore', '--gzip', '--drop',
+      expect.stringMatching(/^--archive=\/tmp\/ninedeploy-restore-[a-f0-9-]+$/), '--gzip', '--drop',
     ], {}, log);
   });
 
@@ -857,9 +942,9 @@ describe('restoreDatabase', () => {
     const file = encFile('REDIS');
     await restoreDatabase(dbRow({ engine: 'redis' }), file, log);
     expect(h.run).toHaveBeenCalledWith('docker', ['stop', 'c'], {}, log);
-    expect(h.run).toHaveBeenCalledWith('docker', ['cp', `${file}.dec`, 'c:/data/dump.rdb'], {}, log);
+    expect(h.run).toHaveBeenCalledWith('docker', ['cp', expect.stringMatching(/\.[a-f0-9-]+\.dec$/), 'c:/data/dump.rdb'], {}, log);
     expect(h.run).toHaveBeenCalledWith('docker', ['start', 'c'], {}, log);
-    expect(existsSyncMock(`${file}.dec`)).toBe(false);
+    expect(existsSyncMock(h.run.mock.calls.find((call) => call[1][0] === 'cp')![1][1] as string)).toBe(false);
   });
 
   it('r232: brings redis back up even when the dump copy fails', async () => {
@@ -875,8 +960,8 @@ describe('restoreDatabase', () => {
   it('removes the staged restore file and decrypted sibling afterwards', async () => {
     const file = encFile('x');
     await restoreDatabase(dbRow({ engine: 'postgres' }), file, vi.fn());
-    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'rm', '-f', '/tmp/ninedeploy-restore'], {}, expect.any(Function));
-    expect(existsSyncMock(`${file}.dec`)).toBe(false);
+    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'rm', '-f', expect.stringMatching(/^\/tmp\/ninedeploy-restore-[a-f0-9-]+$/)], {}, expect.any(Function));
+    expect(existsSyncMock(h.run.mock.calls.find((call) => call[1][0] === 'cp')![1][1] as string)).toBe(false);
   });
 
   it('swallows a failing cleanup after a successful restore', async () => {
@@ -885,7 +970,7 @@ describe('restoreDatabase', () => {
     });
     const file = encFile('y');
     await expect(restoreDatabase(dbRow({ engine: 'postgres' }), file, vi.fn())).resolves.toBeUndefined();
-    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'rm', '-f', '/tmp/ninedeploy-restore'], {}, expect.any(Function));
+    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'rm', '-f', expect.stringMatching(/^\/tmp\/ninedeploy-restore-[a-f0-9-]+$/)], {}, expect.any(Function));
   });
 
   it('rejects unsupported engines and non-runnable databases', async () => {
@@ -904,7 +989,7 @@ describe('restoreDatabase', () => {
     await restoreDatabase(dbRow({ engine: 'mariadb', passwordEncrypted: 'enc-pass' }), file, vi.fn());
     expect(h.run).toHaveBeenCalledWith(
       'docker',
-      ['exec', 'c', 'mariadb', '-uroot', '--password=pw:enc-pass', '-e', 'source /tmp/ninedeploy-restore'],
+      ['exec', 'c', 'mariadb', '-uroot', '--password=pw:enc-pass', '-e', expect.stringMatching(/^source \/tmp\/ninedeploy-restore-[a-f0-9-]+$/)],
       {},
       expect.any(Function),
     );
