@@ -105,10 +105,12 @@ describe('nextCronRun', () => {
   });
 
   it('matches either day restriction when BOTH dom and dow are set', () => {
-    // Friday OR the 13th. From Sat Aug 1 2026, Aug 2…5 are not Friday;
-    // the 13th (Thursday) hits first via the dom leg.
-    const from = new Date(2026, 7, 1, 0, 0);
-    expect(nextCronRun('0 0 13 * 5', from)).toEqual(new Date(2026, 7, 13, 0, 0));
+    // Friday OR the 13th. From Sat Aug 1 2026 the Friday leg hits first on
+    // Aug 7 (r207: this used to assert the 13th — the stale clock made the
+    // search miss Aug 7's midnight slot); from Aug 8 the dom leg wins on
+    // Thursday the 13th, before Friday the 14th.
+    expect(nextCronRun('0 0 13 * 5', new Date(2026, 7, 1, 0, 0))).toEqual(new Date(2026, 7, 7, 0, 0));
+    expect(nextCronRun('0 0 13 * 5', new Date(2026, 7, 8, 0, 0))).toEqual(new Date(2026, 7, 13, 0, 0));
   });
 
   it('survives impossible dates like Feb 30 and returns null past ~2 years', () => {
