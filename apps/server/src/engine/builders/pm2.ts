@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import type { ProcessDescription } from 'pm2';
 import pm2 from 'pm2';
 import type { Builder } from '../types.js';
-import { run, sleep } from '../../lib/exec.js';
+import { buildEnv, run, sleep } from '../../lib/exec.js';
 
 const DEPLOY_HEARTBEAT_MS = 20_000;
 
@@ -108,7 +108,12 @@ export const pm2Builder: Builder = {
       cwd: workDir,
       autorestart: true,
       max_restarts: 10,
-      env,
+      // r233: PM2 merges the DAEMON's environment into every app — and the
+      // daemon inherits the panel's, master key and JWT secret included. The
+      // app gets the same allowlisted base every other build/runtime child
+      // gets (PATH, HOME, locale…) plus its own variables, and nothing else.
+      env: buildEnv(env),
+      filter_env: true,
     };
     // Enforce a memory ceiling via PM2's auto-restart-on-OOM, mirroring the
     // Docker builder's --memory limit.

@@ -21,7 +21,12 @@ const h = vi.hoisted(() => {
 });
 
 vi.mock('pm2', () => ({ default: h.pm2 }));
-vi.mock('../../src/lib/exec.js', () => ({ run: h.run, sleep: h.sleep, capture: vi.fn() }));
+vi.mock('../../src/lib/exec.js', async (orig) => ({
+  run: h.run,
+  sleep: h.sleep,
+  capture: vi.fn(),
+  buildEnv: (await orig<typeof import('../../src/lib/exec.js')>()).buildEnv,
+}));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -134,6 +139,9 @@ describe('pm2Builder.buildAndRun', () => {
 
     const startOpts = h.pm2.start.mock.calls[0]![0] as Record<string, unknown>;
     expect(startOpts.max_memory_restart).toBeUndefined();
+    // r233: the app never inherits the daemon's (= the panel's) environment.
+    expect(startOpts.filter_env).toBe(true);
+    expect(startOpts.env).not.toHaveProperty('NINEDEPLOY_MASTER_KEY');
   });
 
   it('populates env.PORT from publishedPort or port when not already defined', async () => {
