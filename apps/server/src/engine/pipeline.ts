@@ -798,8 +798,13 @@ export async function runDeployment(
     const hints = detectDeployHints(logBus.read(deploymentId));
     for (const h of hints) log(`💡 ${h.label}: ${h.hint}`);
 
-    // Clean up the failed/cancelled NEW runtime (if one was created).
-    if (runtime) await builder.stop(runtime.runtimeId).catch(() => undefined);
+    // Clean up the failed/cancelled NEW runtime (if one was created). r167: an
+    // in-place redeploy (compose) reuses the previous runtime id — "the new
+    // runtime" IS the service's only stack, and stopping it tore down the
+    // running app on a cancel or a slow healthcheck.
+    if (runtime && runtime.runtimeId !== previous?.runtimeId) {
+      await builder.stop(runtime.runtimeId).catch(() => undefined);
+    }
 
     // Rollback: if the PREVIOUS runtime is still alive, the service keeps
     // serving the old version (Docker blue-green — the old container was never
@@ -825,7 +830,11 @@ export async function runDeployment(
       await db.update(services).set({ status: 'idle' }).where(eq(services.id, service.id));
       await db.update(deployments).set({ status: 'cancelled', finishedAt: new Date() }).where(eq(deployments.id, deploymentId));
     } else {
-      await safeFail(db, deploymentId, service.id, null);
+      // r167: keep pointing at the previous runtime. A failed 3s probe does
+      // not mean it is gone — `--restart unless-stopped` keeps it running and
+      // Traefik keeps routing to it — and clearing the id orphaned it for good
+      // (no later deploy or stop could ever find it again).
+      await safeFail(db, deploymentId, service.id, previous?.runtimeId ?? null);
     }
     await auditOutcome(
       db,

@@ -11,6 +11,35 @@ vi.mock('../../src/lib/exec.js', () => ({
 }));
 
 describe('autoPrune engine', () => {
+  it("r166: never removes a stopped service's container or panel infrastructure", async () => {
+    const db = createFakeDb({
+      findMany: { services: [{ runtimeId: 'web-41', replicas: 2 }, { runtimeId: null, replicas: 1 }] },
+    });
+    const old = '2020-01-01 00:00:00 +0000 UTC';
+    const fresh = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' +0000 UTC';
+    const runner = vi.fn(async (_cmd: string, args: string[]) => {
+      if (args[0] === 'ps') {
+        return {
+          stdout: [
+            `c1\tweb-41\t${old}`, // stopped from the panel — owned
+            `c2\tweb-41-r2\t${old}`, // its replica — owned
+            `c3\tnd-db-pg\t${old}`, // a stopped managed database
+            `c4\tninedeploy-traefik\t${old}`,
+            `c5\told-deploy-7\t${old}`, // orphan: the only victim
+            `c6\tscratch\t${fresh}`, // too young
+          ].join('\n'),
+          stderr: '',
+        };
+      }
+      return { stdout: '', stderr: '' };
+    });
+    const result = await executeAutoPrune(db, { pruneImages: false, pruneBuildCache: false, pruneContainers: true, pruneVolumes: false }, runner);
+    expect(runner).toHaveBeenCalledWith('docker', ['rm', 'c5']);
+    expect(runner.mock.calls.some(([, a]) => a[0] === 'container' && a[1] === 'prune')).toBe(false);
+    expect(result.details.containersFreed).toBe('Removed 1 stopped container');
+  });
+
+
   it('parses reclaimed space from Docker output', () => {
     expect(parseReclaimedBytes('Total reclaimed space: 1.25GB')).toBe(1342177280);
     expect(parseReclaimedBytes('Total reclaimed space: 512MB')).toBe(536870912);
@@ -87,7 +116,7 @@ describe('autoPrune engine', () => {
     const runnerMock = vi.fn().mockImplementation(async (_cmd, args: string[]) => {
       if (args[0] === 'image') return { stdout: 'Total reclaimed space: 500MB', stderr: '' };
       if (args[0] === 'builder') return { stdout: 'Total reclaimed space: 200MB', stderr: '' };
-      if (args[0] === 'container') return { stdout: 'Total reclaimed space: 50MB', stderr: '' };
+      if (args[0] === 'ps') return { stdout: 'abc123\told-orphan\t2020-01-01 00:00:00 +0000 UTC', stderr: '' };
       if (args[0] === 'volume') return { stdout: 'Total reclaimed space: 10MB', stderr: '' };
       return { stdout: '', stderr: '' };
     });
@@ -98,10 +127,11 @@ describe('autoPrune engine', () => {
       runnerMock,
     );
     expect(result.ok).toBe(true);
-    expect(result.freedBytes).toBe(500 * 1024 * 1024 + 200 * 1024 * 1024 + 50 * 1024 * 1024 + 10 * 1024 * 1024);
+    expect(result.freedBytes).toBe(500 * 1024 * 1024 + 200 * 1024 * 1024 + 10 * 1024 * 1024);
     expect(result.details.imagesFreed).toContain('500MB');
     expect(result.details.buildCacheFreed).toContain('200MB');
-    expect(result.details.containersFreed).toContain('50MB');
+    expect(result.details.containersFreed).toBe('Removed 1 stopped container');
+    expect(runnerMock).toHaveBeenCalledWith('docker', ['rm', 'abc123']);
     expect(result.details.volumesFreed).toContain('10MB');
 
     // Empty output fallback branches

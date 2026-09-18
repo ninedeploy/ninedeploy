@@ -853,7 +853,10 @@ export async function backupDatabase(d: Database, file: string, log: (line: stri
     // Dump to a file INSIDE the container, then `docker cp` it out — the
     // whole dump never sits in this process's memory (a `capture`d stdout
     // string would OOM the server on large databases).
-    await run('docker', ['exec', cn, 'pg_dump', '-U', cfg.username()!, '-d', cfg.dbName()!, `--file=${DUMP_TMP}`], {}, log);
+    // r165: --clean --if-exists makes the dump replace what is there. Without
+    // it the restore's first CREATE hit "already exists" under ON_ERROR_STOP,
+    // so a backup could only ever be restored into an EMPTY database.
+    await run('docker', ['exec', cn, 'pg_dump', '-U', cfg.username()!, '-d', cfg.dbName()!, '--clean', '--if-exists', `--file=${DUMP_TMP}`], {}, log);
     await run('docker', ['cp', `${cn}:${DUMP_TMP}`, file], {}, log);
     await run('docker', ['exec', cn, 'rm', '-f', DUMP_TMP], {}, swallow);
   } else if (d.engine === 'mysql' || d.engine === 'mariadb') {
@@ -931,8 +934,11 @@ export async function restoreDatabase(d: Database, file: string, log: (line: str
       if (d.engine === 'postgres') {
         // ON_ERROR_STOP: bare `psql -f` continues past statement errors and
         // still exits 0, which would report a partially-applied dump as a
-        // successful restore.
-        await run('docker', ['exec', cn, 'psql', '-v', 'ON_ERROR_STOP=1', '-U', cfg.username()!, '-d', cfg.dbName()!, '-f', RESTORE_TMP], {}, log);
+        // successful restore. --single-transaction (r165): the dump's DROPs
+        // and CREATEs apply atomically — a failure mid-way rolls the database
+        // back to exactly what it was, never a half-dropped schema. Dumps taken
+        // before --clean still fail on existing objects, harmlessly.
+        await run('docker', ['exec', cn, 'psql', '-v', 'ON_ERROR_STOP=1', '--single-transaction', '-U', cfg.username()!, '-d', cfg.dbName()!, '-f', RESTORE_TMP], {}, log);
       } else if (d.engine === 'mysql' || d.engine === 'mariadb') {
         const pass = decrypt(d.passwordEncrypted);
         const client = d.engine === 'mysql' ? 'mysql' : 'mariadb';

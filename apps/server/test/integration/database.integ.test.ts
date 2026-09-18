@@ -59,8 +59,10 @@ describe.skipIf(!ENABLED)('database backup/restore (real PostgreSQL container)',
     expect(/^NDBK1:v\d+:/.test(atRest)).toBe(true);
     expect(atRest).not.toContain('roundtrip');
 
-    // Wipe the source data, then restore from the dump.
-    await execSql('DROP TABLE integ;');
+    // r165: restore INTO the live database — the realistic case. This used
+    // to DROP the table first because a plain dump could only be restored
+    // into an empty database ("relation already exists").
+    await execSql("UPDATE integ SET label = 'changed-after-backup';");
 
     await restoreDatabase(db as never, dumpFile, () => undefined);
 

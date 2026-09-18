@@ -677,7 +677,7 @@ describe('backupDatabase', () => {
     writeFileSync(file, ''); // the (mocked) docker cp would land here
     const log = vi.fn();
     await backupDatabase(dbRow({ engine: 'postgres' }), file, log);
-    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'pg_dump', '-U', 'nine', '-d', 'app', '--file=/tmp/ninedeploy-dump'], {}, log);
+    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'pg_dump', '-U', 'nine', '-d', 'app', '--clean', '--if-exists', '--file=/tmp/ninedeploy-dump'], {}, log);
     expect(h.run).toHaveBeenCalledWith('docker', ['cp', 'c:/tmp/ninedeploy-dump', file], {}, log);
     expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'rm', '-f', '/tmp/ninedeploy-dump'], {}, expect.any(Function));
     expect(h.capture).not.toHaveBeenCalled();
@@ -787,7 +787,7 @@ describe('restoreDatabase', () => {
     await restoreDatabase(dbRow({ engine: 'postgres' }), file, log);
     // docker cp receives the DECRYPTED sibling, not the envelope file.
     expect(h.run).toHaveBeenCalledWith('docker', ['cp', `${file}.dec`, 'c:/tmp/ninedeploy-restore'], {}, log);
-    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'psql', '-v', 'ON_ERROR_STOP=1', '-U', 'nine', '-d', 'app', '-f', '/tmp/ninedeploy-restore'], {}, log);
+    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'psql', '-v', 'ON_ERROR_STOP=1', '--single-transaction', '-U', 'nine', '-d', 'app', '-f', '/tmp/ninedeploy-restore'], {}, log);
   });
 
   it('restores from a LEGACY plaintext backup as-is (no envelope)', async () => {

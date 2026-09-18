@@ -3,6 +3,7 @@ import type { DB } from '@ninedeploy/db';
 import type { AutoPruneConfig, AutoPruneRunResult, AutoPruneStatus } from '@ninedeploy/schemas';
 import { getSettingJson, getSettingString, setSettingJson, setSettingString } from '../lib/settings.js';
 import { run } from '../lib/exec.js';
+import { replicaNames } from './dockerNames.js';
 import { config } from '../config.js';
 
 export const DEFAULT_AUTOPRUNE_CONFIG: AutoPruneConfig = {
@@ -101,6 +102,54 @@ export async function saveAutoPruneConfig(db: DB, input: Partial<AutoPruneConfig
 
 export type AutoPruneRunner = (cmd: string, args: string[]) => Promise<{ stdout: string; stderr: string }>;
 
+/**
+ * Container names the panel still owns: every service runtime (and its
+ * replicas) plus the fixed `nd-*` / `ninedeploy-*` infrastructure names
+ * (databases, tunnels, pgbouncer, studio, Traefik).
+ */
+async function panelContainerNames(db: DB): Promise<Set<string>> {
+  const names = new Set<string>();
+  const rows = await db.query.services.findMany({ columns: { runtimeId: true, replicas: true } });
+  for (const r of rows) {
+    if (r.runtimeId) for (const n of replicaNames(r.runtimeId, r.replicas ?? 1)) names.add(n);
+  }
+  return names;
+}
+
+const isInfraName = (name: string) => name.startsWith('nd-') || name.startsWith('ninedeploy');
+
+/**
+ * r166: remove stopped containers older than `maxAgeHours` that the panel does
+ * NOT own. `docker container prune` could not tell them apart: a service the
+ * user stopped from the panel is an exited container, so after a week at 85%
+ * disk its container was deleted — the next "start" failed with "runtime
+ * gone", and the following image prune took its rollback image too.
+ */
+async function pruneStoppedContainers(db: DB, runner: AutoPruneRunner, maxAgeHours: number): Promise<string> {
+  const listed = await runner('docker', [
+    'ps', '-a',
+    '--filter', 'status=exited',
+    '--filter', 'status=created',
+    '--filter', 'status=dead',
+    '--format', '{{.ID}}\t{{.Names}}\t{{.CreatedAt}}',
+  ]);
+  const owned = await panelContainerNames(db);
+  const cutoff = Date.now() - maxAgeHours * 3_600_000;
+  const victims: string[] = [];
+  for (const line of listed.stdout.split('\n')) {
+    const [id, name, createdAt] = line.trim().split('\t');
+    if (!id || !name || !createdAt) continue;
+    // `2026-09-18 08:12:13 +0300 +03` — the trailing zone abbreviation is not parseable.
+    const created = Date.parse(createdAt.split(' ').slice(0, 3).join(' '));
+    if (!Number.isFinite(created) || created > cutoff) continue;
+    if (isInfraName(name) || owned.has(name)) continue;
+    victims.push(id);
+  }
+  if (victims.length === 0) return '';
+  await runner('docker', ['rm', ...victims]);
+  return `Removed ${victims.length} stopped container${victims.length === 1 ? '' : 's'}`;
+}
+
 export async function executeAutoPrune(
   db: DB,
   overrideConfig?: Partial<AutoPruneConfig>,
@@ -146,9 +195,8 @@ export async function executeAutoPrune(
 
   if (cfg.pruneContainers) {
     try {
-      const res = await actualRunner('docker', ['container', 'prune', '-f', '--filter', filterUntil]);
-      totalFreed += parseReclaimedBytes(res.stdout);
-      details.containersFreed = res.stdout.trim() || 'No containers pruned';
+      const summary = await pruneStoppedContainers(db, actualRunner, cfg.maxAgeHours);
+      details.containersFreed = summary || 'No containers pruned';
     } catch {
       details.containersFreed = 'Prune containers failed or skipped';
     }

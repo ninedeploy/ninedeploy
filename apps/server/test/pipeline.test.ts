@@ -633,6 +633,30 @@ describe('runDeployment', () => {
     expect(updates.some((u) => u.table === services && u.values.status === 'running')).toBe(false);
   });
 
+  it('r167: a failed deploy keeps the row pointing at a previous runtime it cannot prove healthy', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { runtimeId: 'old-c' });
+    h.builder.buildAndRun.mockResolvedValue({ runtimeId: 'c-2', port: 3000, healthPath: '/' });
+    h.builder.isHealthy.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+
+    await runDeployment(db as never, 1);
+
+    const errored = updates.find((u) => u.table === services && u.values.status === 'error');
+    expect(errored?.values.runtimeId).toBe('old-c');
+  });
+
+  it('r167: an in-place (compose) redeploy that fails never stops the only stack', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { runtimeId: 'stack-1' });
+    // Compose redeploys in place: the "new" runtime has the previous id.
+    h.builder.buildAndRun.mockResolvedValue({ runtimeId: 'stack-1', port: 3000, healthPath: '/' });
+    h.builder.isHealthy.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+
+    await runDeployment(db as never, 1);
+
+    expect(h.builder.stop).not.toHaveBeenCalledWith('stack-1');
+  });
+
   it('treats a previous-runtime probe error as not restorable', async () => {
     const { db, updates } = makeDb();
     baseSetup(db, { runtimeId: 'old-c' });
