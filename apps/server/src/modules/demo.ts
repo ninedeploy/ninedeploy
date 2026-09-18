@@ -12,6 +12,7 @@ import {
   type DB,
 } from '@ninedeploy/db';
 import { audit } from '../lib/audit.js';
+import { decrypt } from '../lib/crypto.js';
 
 /**
  * The single demo payload: one real, deployable service built from a pinned
@@ -37,7 +38,20 @@ const LEGACY = {
   projectSlug: 'nextjs-demo-stack',
   serviceSlugs: ['nextjs-docker-app', 'nextjs-pm2-service'],
   dbSlug: 'demo-postgres',
+  // r221: what ONLY the fake rows carry. The slugs alone are ordinary names a
+  // tenant may well use for real work.
+  runtimeIds: ['docker-nextjs-demo-container', 'pm2-nextjs-demo-process'],
+  dbPassword: 'demo_secure_pass_2026',
 } as const;
+
+function isLegacyFakeDatabase(row: { projectId: number | null; passwordEncrypted: string }, legacyProjectId: number | undefined): boolean {
+  if (legacyProjectId == null || row.projectId !== legacyProjectId) return false;
+  try {
+    return decrypt(row.passwordEncrypted) === LEGACY.dbPassword;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Reap the legacy fake demo stack on the first new-seed call. The old seed
@@ -49,14 +63,21 @@ async function reapLegacyFakeStack(db: DB, userId: number): Promise<void> {
   const legacyProject = await db.query.projects.findFirst({
     where: eq(projects.slug, LEGACY.projectSlug),
   });
-  const legacyServices = await db
-    .select()
-    .from(services)
-    .where(inArray(services.slug, [...LEGACY.serviceSlugs]));
-  const legacyDb = await db.query.databases.findFirst({
+  // r221: matched by the fake rows' fingerprint, not by slug. The slug-only
+  // match deleted ANY service slugged `nextjs-docker-app` / `nextjs-pm2-service`
+  // and ANY database slugged `demo-postgres` — a tenant's real, running ones
+  // included — on every "Load demo" press.
+  const legacyServices = (
+    await db
+      .select()
+      .from(services)
+      .where(inArray(services.slug, [...LEGACY.serviceSlugs]))
+  ).filter((s) => s.runtimeId != null && (LEGACY.runtimeIds as readonly string[]).includes(s.runtimeId));
+  const dbCandidate = await db.query.databases.findFirst({
     where: eq(databases.slug, LEGACY.dbSlug),
   });
-  if (!legacyProject && legacyServices.length === 0 && !legacyDb) return;
+  const legacyDb = dbCandidate && isLegacyFakeDatabase(dbCandidate, legacyProject?.id) ? dbCandidate : undefined;
+  if (legacyServices.length === 0 && !legacyDb) return;
 
   const svcIds = legacyServices.map((s) => s.id);
   if (svcIds.length > 0) {
@@ -70,8 +91,13 @@ async function reapLegacyFakeStack(db: DB, userId: number): Promise<void> {
   if (legacyDb) {
     await db.delete(databases).where(eq(databases.id, legacyDb.id));
   }
+  // The project goes only when nothing real is left in it.
   if (legacyProject) {
-    await db.delete(projects).where(eq(projects.id, legacyProject.id));
+    const svcIdSet = new Set(svcIds);
+    const members = await db.query.serviceProjects.findMany({ where: eq(serviceProjects.projectId, legacyProject.id) });
+    const dbs = await db.query.databases.findMany({ where: eq(databases.projectId, legacyProject.id) });
+    const occupied = members.some((m) => !svcIdSet.has(m.serviceId)) || dbs.some((d) => d.id !== legacyDb?.id);
+    if (!occupied) await db.delete(projects).where(eq(projects.id, legacyProject.id));
   }
   void audit(db, userId, 'demo.legacy_reaped', [...LEGACY.serviceSlugs, LEGACY.dbSlug].join(','));
 }

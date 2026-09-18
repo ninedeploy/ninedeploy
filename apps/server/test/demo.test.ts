@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { demoRoutes } from '../src/modules/demo.js';
 import { asUser, buildTestApp, createFakeDb } from './helpers.js';
+import { encrypt } from '../src/lib/crypto.js';
 
 const auditMocks = vi.hoisted(() => ({ audit: vi.fn(async () => undefined) }));
 vi.mock('../src/lib/audit.js', () => auditMocks);
@@ -144,17 +145,22 @@ describe('demo routes', () => {
       findFirst: {
         projects: { id: 11, name: 'Next.js Demo Stack', slug: 'nextjs-demo-stack' },
         services: null,
-        databases: { id: 20, name: 'demo-postgres', slug: 'demo-postgres', engine: 'postgres' },
+        databases: {
+          id: 20, name: 'demo-postgres', slug: 'demo-postgres', engine: 'postgres',
+          projectId: 11, passwordEncrypted: encrypt('demo_secure_pass_2026'),
+        },
         workspaces: null,
       },
       select: {
         services: [
-          { id: 31, slug: 'nextjs-docker-app', name: 'Next.js Docker App', type: 'docker', status: 'running' },
-          { id: 32, slug: 'nextjs-pm2-service', name: 'Next.js PM2 Service', type: 'pm2', status: 'running' },
+          { id: 31, slug: 'nextjs-docker-app', name: 'Next.js Docker App', type: 'docker', status: 'running', runtimeId: 'docker-nextjs-demo-container' },
+          { id: 32, slug: 'nextjs-pm2-service', name: 'Next.js PM2 Service', type: 'pm2', status: 'running', runtimeId: 'pm2-nextjs-demo-process' },
         ],
       },
       findMany: {
         workspaces: [],
+        service_projects: [],
+        databases: [{ id: 20 }],
       },
       insert: {
         projects: [{ id: 10, name: 'Next.js Demo', slug: 'nextjs-demo' }],
@@ -193,5 +199,41 @@ describe('demo routes', () => {
       'demo.legacy_reaped',
       expect.stringContaining('nextjs-docker-app'),
     );
+  });
+
+  it('r221: never reaps tenant rows that merely share the legacy slugs', async () => {
+    let deleteCalls = 0;
+    const sweep = () => {
+      deleteCalls += 1;
+      return [];
+    };
+    const app = await appWith({
+      findFirst: {
+        projects: { id: 11, name: 'Next.js Demo Stack', slug: 'nextjs-demo-stack' },
+        services: null,
+        // A real database: different credentials, not in the legacy project.
+        databases: { id: 20, slug: 'demo-postgres', projectId: 99, passwordEncrypted: encrypt('a-real-secret') },
+        workspaces: null,
+      },
+      select: {
+        // A real service deployed under the same slug.
+        services: [{ id: 31, slug: 'nextjs-docker-app', type: 'docker', status: 'running', runtimeId: 'nextjs-docker-app-1-17' }],
+      },
+      findMany: { workspaces: [] },
+      insert: {
+        projects: [{ id: 10, name: 'Next.js Demo', slug: 'nextjs-demo' }],
+        services: (values: Record<string, unknown>) => [{ id: 30, ...values }],
+        build_configs: [{ serviceId: 30 }],
+        deployments: [{ id: 50, status: 'queued' }],
+      },
+      delete: {
+        env_vars: sweep, deployments: sweep, build_configs: sweep, service_projects: sweep,
+        service_workspaces: sweep, services: sweep, databases: sweep, projects: sweep,
+      },
+    });
+    const res = await app.inject({ method: 'POST', url: '/demo/seed', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(deleteCalls).toBe(0);
+    expect(auditMocks.audit).not.toHaveBeenCalledWith(expect.anything(), expect.anything(), 'demo.legacy_reaped', expect.anything());
   });
 });
