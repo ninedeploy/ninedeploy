@@ -4,9 +4,11 @@ import { loginAction } from '../src/commands/login.js';
 const h = vi.hoisted(() => {
   class NineDeployError extends Error {
     status: number;
-    constructor(status: number, message: string) {
+    code: string;
+    constructor(status: number, message: string, code = 'unknown_error') {
       super(message);
       this.status = status;
+      this.code = code;
     }
   }
   return {
@@ -140,6 +142,35 @@ describe('loginAction', () => {
 
     expect(errorSpy).toHaveBeenCalledWith('✗ Login failed:', 'connect ECONNREFUSED 127.0.0.1:3000');
     expect(errorSpy).toHaveBeenCalledWith('  Could not reach NineDeploy server at http://srv:3000. Check your URL or ensure the server is running.');
+    expect(process.exitCode).toBe(1);
+  });
+});
+
+describe('r197: two-factor login', () => {
+  it('prompts for the TOTP code and retries with it', async () => {
+    const login = vi
+      .fn()
+      .mockRejectedValueOnce(new h.NineDeployError(401, 'Two-factor code required', 'totp_required'))
+      .mockResolvedValueOnce({
+        tokens: { accessToken: 'a', refreshToken: 'r' },
+        user: { email: 'op@x.io', isOperator: true },
+      });
+    h.createClient.mockReturnValue({ auth: { login } });
+    h.prompt.mockResolvedValueOnce('http://srv').mockResolvedValueOnce('op@x.io').mockResolvedValueOnce('123456');
+    h.promptHidden.mockResolvedValueOnce('pw');
+    await loginAction();
+    expect(login).toHaveBeenLastCalledWith({ email: 'op@x.io', password: 'pw', totpCode: '123456' });
+    expect(h.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ token: 'a', refreshToken: 'r' }));
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('gives up cleanly on a blank code', async () => {
+    const login = vi.fn().mockRejectedValueOnce(new h.NineDeployError(401, 'Two-factor code required', 'totp_required'));
+    h.createClient.mockReturnValue({ auth: { login } });
+    h.prompt.mockResolvedValueOnce('http://srv').mockResolvedValueOnce('op@x.io').mockResolvedValueOnce('');
+    h.promptHidden.mockResolvedValueOnce('pw');
+    await loginAction();
+    expect(login).toHaveBeenCalledTimes(1);
     expect(process.exitCode).toBe(1);
   });
 });

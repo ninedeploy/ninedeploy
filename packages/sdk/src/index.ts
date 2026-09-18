@@ -812,9 +812,11 @@ export interface NineDeployClient {
       ok: boolean;
       driver: string;
       rule: { selector: { projectId: number; sourceCidr?: string }; ip: string; createdAt: string };
+      /** Present (with `ok: false`) when the route refused the request. */
+      error?: string;
     }>;
-    /** Detach the rule for a project. */
-    clear: (projectId: number) => Promise<{ ok: boolean; driver: string }>;
+    /** Detach the rule for a project (on the named or first driver). */
+    clear: (projectId: number, driver?: string) => Promise<{ ok: boolean; driver: string; error?: string }>;
   };
   fanout: {
     /** The extra nodes an image/Dockerfile release is pushed to. */
@@ -1720,8 +1722,13 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
         ok: boolean;
         driver: string;
         rule: { selector: { projectId: number; sourceCidr?: string }; ip: string; createdAt: string };
+        error?: string;
       }>('POST', '/v1/egress', input),
-      clear: (projectId) => send<{ ok: boolean; driver: string }>('DELETE', `/v1/egress/${projectId}`),
+      clear: (projectId, driver) =>
+        send<{ ok: boolean; driver: string; error?: string }>(
+          'DELETE',
+          `/v1/egress/${projectId}${driver ? `?driver=${encodeURIComponent(driver)}` : ''}`,
+        ),
     },
     sso: {
       listProviders: () => get<{

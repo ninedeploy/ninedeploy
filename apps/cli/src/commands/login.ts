@@ -23,7 +23,22 @@ export async function loginAction(): Promise<void> {
 
   const client = createClient({ baseUrl });
   try {
-    const session = await client.auth.login({ email, password });
+    // r197: a 2FA account answers `totp_required`; the CLI used to print
+    // "Login failed (401)" with no way to supply the code, so any operator who
+    // enabled 2FA could not use the CLI at all.
+    let session;
+    try {
+      session = await client.auth.login({ email, password });
+    } catch (err) {
+      if (!(err instanceof NineDeployError) || err.code !== 'totp_required') throw err;
+      const totpCode = (await prompt('Two-factor code')).trim();
+      if (!totpCode) {
+        console.error('Two-factor code is required.');
+        process.exitCode = 1;
+        return;
+      }
+      session = await client.auth.login({ email, password, totpCode });
+    }
     // Both tokens: the access token alone dies with the 15-minute TTL and
     // every scripted session used to die with it (client.ts now refreshes).
     saveConfig({ baseUrl, token: session.tokens.accessToken, refreshToken: session.tokens.refreshToken });

@@ -426,7 +426,11 @@ egressCmd
   .description('Attach a stable outbound IP to a project (e.g. after creating a VPS)')
   .option('--driver <name>', 'Target a specific driver (default: first registered)')
   .action((projectId: string, ip: string, opts: { driver?: string }) => egressSetAction(getClient(), projectId, ip, opts));
-egressCmd.command('clear <projectId>').description('Detach the egress rule for a project').action((projectId: string) => egressClearAction(getClient(), projectId));
+egressCmd
+  .command('clear <projectId>')
+  .description('Detach the egress rule for a project')
+  .option('--driver <name>', 'Target a specific driver (default: first registered)')
+  .action((projectId: string, opts: { driver?: string }) => egressClearAction(getClient(), projectId, opts));
 
 // ── SSO (G-22) ───────────────────────────────────────────────────────────
 const ssoCmd = program.command('sso').description('Manage OIDC / SAML SSO providers (G-22)');

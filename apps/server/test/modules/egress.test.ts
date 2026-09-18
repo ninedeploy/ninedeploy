@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { egressRoutes } from '../../src/modules/egress.js';
 import type { EgressIpRule, EgressIpSelector, IEgressIpDriver } from '../../src/kernel/types.js';
 import { asUser, buildTestApp, createFakeDb } from '../helpers.js';
+import { audit } from '../../src/lib/audit.js';
+
+vi.mock('../../src/lib/audit.js', () => ({ audit: vi.fn(async () => undefined) }));
 
 /**
  * The `egress` route module is a thin shell over the kernel's
@@ -323,6 +326,36 @@ describe('egress routes', () => {
       expect(res.json()).toEqual({ ok: true, driver: 'iptables' });
       expect(ipt.detach).toHaveBeenCalledWith({ projectId: 42 });
       expect(cloud.detach).not.toHaveBeenCalled();
+      await app.close();
+    });
+
+    it('r199: honours ?driver= and audits the detach', async () => {
+      const app = await buildTestApp({ db: createFakeDb() });
+      const ipt = mockDriver('iptables');
+      const cloud = mockDriver('cloud-nat');
+      app.kernel.registry.registerEgressIpDriver(ipt);
+      app.kernel.registry.registerEgressIpDriver(cloud);
+      await app.register(egressRoutes);
+      const res = await app.inject({ method: 'DELETE', url: '/42?driver=cloud-nat', headers: asUser() });
+      expect(res.json()).toEqual({ ok: true, driver: 'cloud-nat' });
+      expect(cloud.detach).toHaveBeenCalledWith({ projectId: 42 });
+      expect(ipt.detach).not.toHaveBeenCalled();
+      expect(vi.mocked(audit)).toHaveBeenCalledWith(
+        expect.anything(), expect.anything(), 'egress.detach', 'project:42', { driver: 'cloud-nat' }, expect.anything(),
+      );
+      const missing = await app.inject({ method: 'DELETE', url: '/42?driver=nope', headers: asUser() });
+      expect(missing.json()).toEqual({ ok: false, error: 'Egress IP driver "nope" is not registered' });
+      await app.close();
+    });
+
+    it('r199: audits an attach', async () => {
+      const app = await buildTestApp({ db: createFakeDb() });
+      app.kernel.registry.registerEgressIpDriver(mockDriver('iptables'));
+      await app.register(egressRoutes);
+      await app.inject({ method: 'POST', url: '/', headers: asUser(), payload: { projectId: 3, ip: '203.0.113.9' } });
+      expect(vi.mocked(audit)).toHaveBeenCalledWith(
+        expect.anything(), expect.anything(), 'egress.attach', 'project:3', { ip: '203.0.113.9', driver: 'iptables' }, expect.anything(),
+      );
       await app.close();
     });
 

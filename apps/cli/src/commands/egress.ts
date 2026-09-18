@@ -62,7 +62,7 @@ export async function egressSet(
   projectId: number,
   ip: string,
   driver?: string,
-): Promise<{ ok: boolean; driver: string; rule: EgressRule }> {
+): Promise<{ ok: boolean; driver: string; rule: EgressRule; error?: string }> {
   return await client.egress.set({ projectId, ip, driver });
 }
 
@@ -86,6 +86,13 @@ export async function egressSetAction(
     process.exitCode = 1;
     return;
   }
+  // r198: the route answers a refusal as 200 `{ ok: false, error }`; this
+  // used to dereference the missing `rule` and crash with a TypeError.
+  if (!result.ok) {
+    error(result.error ?? 'Egress IP attach was refused');
+    process.exitCode = 1;
+    return;
+  }
   success(`Egress IP ${result.rule.ip} attached to project ${projectId} via ${result.driver}`);
 }
 
@@ -95,25 +102,32 @@ export async function egressSetAction(
 export async function egressClear(
   client: NineDeployClient,
   projectId: number,
-): Promise<{ ok: boolean; driver: string }> {
-  return await client.egress.clear(projectId);
+  driver?: string,
+): Promise<{ ok: boolean; driver: string; error?: string }> {
+  return driver ? await client.egress.clear(projectId, driver) : await client.egress.clear(projectId);
 }
 
 export async function egressClearAction(
   client: NineDeployClient,
   projectIdStr: string,
+  opts: { driver?: string } = {},
 ): Promise<void> {
   const projectId = Number(projectIdStr);
   if (!Number.isFinite(projectId)) {
-    error('Usage: ninedeploy egress clear <projectId>');
+    error('Usage: ninedeploy egress clear <projectId> [--driver <name>]');
     process.exitCode = 1;
     return;
   }
   let result: Awaited<ReturnType<typeof egressClear>>;
   try {
-    result = await egressClear(client, projectId);
+    result = await egressClear(client, projectId, opts.driver);
   } catch (err) {
     error(err instanceof Error ? err.message : String(err));
+    process.exitCode = 1;
+    return;
+  }
+  if (!result.ok) {
+    error(result.error ?? 'Egress IP detach was refused');
     process.exitCode = 1;
     return;
   }

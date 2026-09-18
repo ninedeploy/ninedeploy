@@ -129,6 +129,27 @@ describe('egress clear', () => {
     expect(h.successSpy).toHaveBeenCalledWith(expect.stringMatching(/cleared for project 7 via iptables/));
   });
 
+  it('r198: reports an { ok: false } refusal instead of crashing', async () => {
+    const client = newClient();
+    (client.egress.set as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false, error: 'Egress IP driver "iptables" is not registered' });
+    await egressSetAction(client as never, '7', '203.0.113.7', {});
+    expect(h.errorSpy).toHaveBeenCalledWith('Egress IP driver "iptables" is not registered');
+    expect(h.successSpy).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+    (client.egress.clear as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false, error: 'No egress IP driver is registered' });
+    process.exitCode = 0;
+    await egressClearAction(client as never, '7');
+    expect(h.errorSpy).toHaveBeenCalledWith('No egress IP driver is registered');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('r199: forwards --driver on clear', async () => {
+    const client = newClient();
+    (client.egress.clear as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, driver: 'cloud-nat' });
+    await egressClearAction(client as never, '7', { driver: 'cloud-nat' });
+    expect(client.egress.clear).toHaveBeenCalledWith(7, 'cloud-nat');
+  });
+
   it('refuses non-numeric projectId and sets exitCode=1', async () => {
     const client = newClient();
     await egressClearAction(client as never, 'abc');
