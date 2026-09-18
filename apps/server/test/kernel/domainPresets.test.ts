@@ -26,10 +26,14 @@ vi.mock('drizzle-orm', async (importOriginal) => {
   };
 });
 
+// r241: the plugin only acts on a routed (`active`) domain without a record.
+let domainRow: Record<string, unknown> | undefined;
+
 function settingsDb(over: Record<string, unknown> = {}) {
   return createFakeDb({
     findFirst: {
       settings: () => (lastKey in over ? { key: lastKey, value: over[lastKey] } : undefined),
+      domains: () => domainRow,
     },
   });
 }
@@ -68,7 +72,7 @@ interface FakeKernel {
     listenerCount: ReturnType<typeof vi.fn>;
     removeAllListeners: ReturnType<typeof vi.fn>;
   };
-  configCenter: { get: ReturnType<typeof vi.fn> };
+  configCenter: { get: ReturnType<typeof vi.fn>; set: ReturnType<typeof vi.fn>; delete: ReturnType<typeof vi.fn> };
   registry: { getDomainProvider: ReturnType<typeof vi.fn> };
   hooks: { tap: ReturnType<typeof vi.fn>; call: ReturnType<typeof vi.fn>; hasListeners: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn> };
   menuRegistry: { registerMenuItem: ReturnType<typeof vi.fn>; unregisterMenuItem: ReturnType<typeof vi.fn>; getItemsForSlot: ReturnType<typeof vi.fn>; getAllItems: ReturnType<typeof vi.fn>; getPluginMenus: ReturnType<typeof vi.fn>; purgePluginMenus: ReturnType<typeof vi.fn> };
@@ -92,11 +96,16 @@ function newKernel(provider: ReturnType<typeof cloudflareProvider> | null, setti
     listenerCount: vi.fn().mockReturnValue(0),
     removeAllListeners: vi.fn(),
   };
+  const store = new Map<string, unknown>();
   const configCenter = {
     get: vi.fn().mockImplementation((key: string, def: unknown) => {
       if (key === 'plugin:domain-presets:enabled') return Promise.resolve(options.enabled ?? def);
-      return Promise.resolve(def);
+      return Promise.resolve(store.has(key) ? store.get(key) : def);
     }),
+    set: vi.fn().mockImplementation(async (key: string, value: unknown) => {
+      store.set(key, value);
+    }),
+    delete: vi.fn().mockImplementation(async (key: string) => store.delete(key)),
   };
   const registry = {
     getDomainProvider: vi.fn().mockImplementation((name: string) => (provider && provider.name === name ? provider : undefined)),
@@ -113,20 +122,21 @@ function newKernel(provider: ReturnType<typeof cloudflareProvider> | null, setti
   };
 }
 
-async function fireDomainAdd(kernel: FakeKernel, hostname: string): Promise<void> {
+async function fireDomainAdd(kernel: FakeKernel, hostname: string, action = 'domain.add'): Promise<void> {
   // The plugin's `init` registers a single `audit.recorded` listener; invoke
   // it directly with the same shape the audit bridge would use.
   const listener = (kernel.events.on as ReturnType<typeof vi.fn>).mock.calls.find(
     (c: unknown[]) => c[0] === 'audit.recorded',
   )?.[1] as ((payload: unknown) => void) | undefined;
   if (!listener) throw new Error('audit.recorded listener not registered');
-  listener({ action: 'domain.add', entity: hostname, actorUserId: 1, ts: '2026-08-28T12:00:00.000Z' });
+  listener({ action, entity: hostname, actorUserId: 1, ts: '2026-08-28T12:00:00.000Z' });
   // The handler is fire-and-forget (`void this.handle(...)`); wait one tick.
   await new Promise((resolve) => setTimeout(resolve, 0));
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 beforeEach(() => {
+  domainRow = { id: 1, hostname: 'app.example.com', status: 'active', dnsRecordId: null };
   detectPublicIpMock.mockReset();
   fetchMock.mockReset();
   lastKey = '';
@@ -265,10 +275,10 @@ describe('DomainPresetsPlugin', () => {
   });
 
   it('publishes domain.preset.failed when the registered provider is missing', async () => {
-    // dns_records_provider=cloudflare, but registry has no driver under that name.
+    // dns_records_provider=namecheap, but registry has no driver under that name.
     const { kernel, plugin, emitted } = newKernel(
       null,
-      { dns_records_provider: 'cloudflare' /* no driver registered */ },
+      { dns_records_provider: 'namecheap' /* no driver registered */ },
     );
     plugin.init(kernel as unknown as never);
     await fireDomainAdd(kernel, 'app.example.com');
@@ -284,6 +294,7 @@ describe('DomainPresetsPlugin', () => {
       { dns_records_provider: 'cloudflare-zone', dns_records_content: '203.0.113.9' },
     );
     plugin.init(kernel as unknown as never);
+    domainRow = { id: 2, hostname: 'nope.other.org', status: 'active', dnsRecordId: null };
     await fireDomainAdd(kernel, 'nope.other.org');
     const failed = emitted.find((e) => e.event === 'domain.preset.failed');
     expect(failed).toBeDefined();
@@ -305,5 +316,51 @@ describe('DomainPresetsPlugin', () => {
     const failed = emitted.find((e) => e.event === 'domain.preset.failed');
     expect(failed).toBeDefined();
     expect(failed?.payload).toMatchObject({ hostname: 'app.example.com', reason: /Cloudflare API error: 503/ });
+  });
+
+  describe('r241', () => {
+    it('does not create a record for a pending (unproven) domain, then does on domain.verified', async () => {
+      const provider = dnsimpleProvider();
+      const { kernel, plugin } = newKernel(provider, { dns_records_provider: 'dnsimple', dns_records_content: '203.0.113.9' });
+      plugin.init(kernel as unknown as never);
+      domainRow = { id: 1, hostname: 'app.example.com', status: 'pending', dnsRecordId: null };
+      await fireDomainAdd(kernel, 'app.example.com');
+      expect(provider.createRecord).not.toHaveBeenCalled();
+      domainRow = { ...domainRow, status: 'active' };
+      await fireDomainAdd(kernel, 'app.example.com', 'domain.verified');
+      expect(provider.createRecord).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves Cloudflare to the domains route (no duplicate record, no failure noise)', async () => {
+      const provider = { ...cloudflareProvider(), name: 'cloudflare' };
+      const { kernel, plugin, emitted } = newKernel(provider, { dns_records_provider: 'cloudflare', dns_records_content: '203.0.113.9' });
+      plugin.init(kernel as unknown as never);
+      await fireDomainAdd(kernel, 'app.example.com');
+      expect(provider.createRecord).not.toHaveBeenCalled();
+      expect(emitted.find((e) => e.event === 'domain.preset.failed')).toBeUndefined();
+    });
+
+    it('does not create a second record when the domain already has one', async () => {
+      const provider = dnsimpleProvider();
+      const { kernel, plugin } = newKernel(provider, { dns_records_provider: 'dnsimple', dns_records_content: '203.0.113.9' });
+      plugin.init(kernel as unknown as never);
+      await fireDomainAdd(kernel, 'app.example.com');
+      await fireDomainAdd(kernel, 'app.example.com', 'domain.verified');
+      expect(provider.createRecord).toHaveBeenCalledTimes(1);
+    });
+
+    it('deletes the record it created when the domain is deleted', async () => {
+      const provider = dnsimpleProvider();
+      const { kernel, plugin, emitted } = newKernel(provider, { dns_records_provider: 'dnsimple', dns_records_content: '203.0.113.9' });
+      plugin.init(kernel as unknown as never);
+      await fireDomainAdd(kernel, 'app.example.com');
+      domainRow = undefined;
+      await fireDomainAdd(kernel, 'app.example.com', 'domain.delete');
+      expect(provider.deleteRecord).toHaveBeenCalledWith('example.com', '42');
+      expect(emitted.find((e) => e.event === 'domain.preset.removed')).toBeDefined();
+      // Deleting an unknown hostname touches nothing.
+      await fireDomainAdd(kernel, 'other.example.com', 'domain.delete');
+      expect(provider.deleteRecord).toHaveBeenCalledTimes(1);
+    });
   });
 });

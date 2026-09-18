@@ -1,3 +1,5 @@
+import { eq } from 'drizzle-orm';
+import { domains } from '@ninedeploy/db';
 import { detectPublicIp } from '../../lib/cloudflare.js';
 import { getSettingString } from '../../lib/settings.js';
 import type { KernelContext, KernelPlugin } from '../types.js';
@@ -31,9 +33,28 @@ import type { KernelContext, KernelPlugin } from '../types.js';
  *   - Success is published as `domain.preset.applied` with the provider's
  *     recordId so an operator can correlate the upstream-side id with
  *     the panel-side row.
- *   - All audit actions other than `domain.add` are ignored.
+ *   - r241: only a domain that is `active` gets a record. A `pending`
+ *     hostname (ownership not proven) used to get one on `domain.add`;
+ *     `domain.verified` is now the trigger for those.
+ *   - r241: `cloudflare` is skipped: `modules/domains.ts` already creates
+ *     (and deletes) that provider's record itself. The plugin covers the
+ *     providers the route does not (DNSimple, Namecheap).
+ *   - r241: the created record is remembered per hostname and deleted on
+ *     `domain.delete`. It used to outlive the domain forever.
+ *   - All other audit actions are ignored.
  *   - `destroy()` clears every subscription registered in `init()`.
  */
+/** The provider `modules/domains.ts` manages records for itself. */
+const ROUTE_OWNED_PROVIDER = 'cloudflare';
+
+interface StoredRecord {
+  provider: string;
+  zoneId: string;
+  recordId: string;
+}
+
+const recordKey = (hostname: string): string => `plugin:domain-presets:record:${hostname}`;
+
 export class DomainPresetsPlugin implements KernelPlugin {
   readonly id = 'domain-presets';
   readonly name = 'Domain Presets';
@@ -91,9 +112,10 @@ export class DomainPresetsPlugin implements KernelPlugin {
     ctx: KernelContext,
     payload: { action?: string; entity?: string | null; actorUserId?: number | null; ts?: string },
   ): Promise<void> {
-    if (payload.action !== 'domain.add') return;
     const hostname = payload.entity;
     if (!hostname) return;
+    if (payload.action === 'domain.delete') return this.removeRecord(ctx, hostname);
+    if (payload.action !== 'domain.add' && payload.action !== 'domain.verified') return;
 
     try {
       const enabled = await ctx.configCenter.get<boolean>('plugin:domain-presets:enabled', true);
@@ -101,6 +123,13 @@ export class DomainPresetsPlugin implements KernelPlugin {
 
       const providerName = await getSettingString(ctx.db, 'dns_records_provider', '');
       if (!providerName) return;
+      // The domains route owns Cloudflare records (create + delete).
+      if (providerName === ROUTE_OWNED_PROVIDER) return;
+
+      // Only a routed hostname gets a record, and only once.
+      const row = await ctx.db.query.domains.findFirst({ where: eq(domains.hostname, hostname) });
+      if (!row || row.status !== 'active' || row.dnsRecordId) return;
+      if (await ctx.configCenter.get<string | null>(recordKey(hostname), null)) return;
 
       const provider = ctx.registry.getDomainProvider(providerName);
       if (!provider) {
@@ -124,6 +153,8 @@ export class DomainPresetsPlugin implements KernelPlugin {
         content,
         ttl: 1,
       });
+      const stored: StoredRecord = { provider: provider.name, zoneId: zone.id, recordId: String(result.recordId) };
+      await ctx.configCenter.set(recordKey(hostname), JSON.stringify(stored));
 
       ctx.events.emitCustom('domain.preset.applied', {
         hostname,
@@ -132,6 +163,29 @@ export class DomainPresetsPlugin implements KernelPlugin {
         recordId: result.recordId,
         type,
         content,
+        ts: new Date().toISOString(),
+      });
+    } catch (err) {
+      this.publishFailed(ctx, hostname, err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  private async removeRecord(ctx: KernelContext, hostname: string): Promise<void> {
+    try {
+      const raw = await ctx.configCenter.get<string | null>(recordKey(hostname), null);
+      if (!raw) return;
+      const stored = JSON.parse(raw) as StoredRecord;
+      const provider = ctx.registry.getDomainProvider(stored.provider);
+      if (!provider) {
+        this.publishFailed(ctx, hostname, `No IDomainProvider registered for "${stored.provider}" to delete record ${stored.recordId}`);
+        return;
+      }
+      await provider.deleteRecord(stored.zoneId, stored.recordId);
+      await ctx.configCenter.delete(recordKey(hostname));
+      ctx.events.emitCustom('domain.preset.removed', {
+        hostname,
+        provider: provider.name,
+        recordId: stored.recordId,
         ts: new Date().toISOString(),
       });
     } catch (err) {
