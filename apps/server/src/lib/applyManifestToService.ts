@@ -14,7 +14,7 @@ import type { NinedeployManifest, Notifications, Previews, Route, Watch } from '
 import { Cron } from 'croner';
 import { ensureAlertState } from './alerting.js';
 import { isOperator, visibleDatabaseIds } from './resourceAccess.js';
-import { hostsCollide, newChallengeToken, requiresOwnershipProof } from './domainVerification.js';
+import { hostsCollide, newChallengeToken, ownZoneClaimRefusal, requiresOwnershipProof } from './domainVerification.js';
 import { getSettingString } from './settings.js';
 
 /**
@@ -329,6 +329,9 @@ async function manifestRouteRefusal(db: DB, serviceId: number, hostname: string)
     /* settings table unavailable — fall back to the env */
   }
   if (panelDomain && hostsCollide(hostname, panelDomain)) return 'is reserved for the NineDeploy panel';
+  // r223: a manifest carries no user identity, so it gets the non-operator rules.
+  const zoneRefusal = await ownZoneClaimRefusal(db, serviceId, hostname);
+  if (zoneRefusal) return zoneRefusal;
   const rows = await db.select({ hostname: domains.hostname, serviceId: domains.serviceId }).from(domains);
   const holder = rows.find((r) => r.serviceId !== serviceId && hostsCollide(r.hostname, hostname));
   return holder ? `is already routed by service #${holder.serviceId}` : null;

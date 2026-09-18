@@ -210,3 +210,47 @@ describe('POST /:id/domains/:domainId/verify', () => {
 // The enforcement point itself — that `writeDynamicConfig` never describes a
 // pending domain to Traefik — is covered in test/proxy.test.ts, which already
 // has the filesystem harness for reading the generated dynamic.yml.
+
+describe('r223: own-zone first-come claims', () => {
+  /** services.findFirst: call 1 is the caller's service, later calls the slug lookup. */
+  const servicesBySlug = (other: Record<string, unknown> | undefined) => {
+    let calls = 0;
+    return () => (++calls === 1 ? svcRow({ id: 1, ownerUserId: MEMBER }) : other);
+  };
+
+  it("refuses a member claiming another service's automatic domain", async () => {
+    const { a, inserted } = await app({
+      findFirst: { services: servicesBySlug(svcRow({ id: 2, name: 'billing', slug: 'billing', ownerUserId: 99 })) },
+    });
+    const res = await a.inject({
+      method: 'POST', url: '/1/domains', headers: member(), payload: { hostname: 'billing.apps.ninedeploy.test' },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.message).toMatch(/automatic domain of service "billing"/);
+    expect(inserted).toHaveLength(0);
+  });
+
+  it('refuses a member wildcard on the instance zone', async () => {
+    const { a, inserted } = await app({ findFirst: { services: servicesBySlug(undefined) } });
+    const res = await a.inject({
+      method: 'POST', url: '/1/domains', headers: member(), payload: { hostname: '*.apps.ninedeploy.test' },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(inserted).toHaveLength(0);
+  });
+
+  it('still lets a member take an unreserved own-zone name, and an operator anything', async () => {
+    const free = await app({ findFirst: { services: servicesBySlug(undefined) } });
+    const ok = await free.a.inject({
+      method: 'POST', url: '/1/domains', headers: member(), payload: { hostname: 'fresh.apps.ninedeploy.test' },
+    });
+    expect(ok.statusCode).toBe(200);
+    const op = await app({
+      findFirst: { services: servicesBySlug(svcRow({ id: 2, name: 'billing', slug: 'billing' })) },
+    });
+    const opRes = await op.a.inject({
+      method: 'POST', url: '/1/domains', headers: admin(), payload: { hostname: 'billing.apps.ninedeploy.test' },
+    });
+    expect(opRes.statusCode).toBe(200);
+  });
+});

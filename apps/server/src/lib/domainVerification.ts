@@ -1,5 +1,7 @@
 import { resolveTxt } from 'node:dns/promises';
 import { randomBytes } from 'node:crypto';
+import { eq } from 'drizzle-orm';
+import { services, type DB } from '@ninedeploy/db';
 import { config } from '../config.js';
 
 /**
@@ -63,6 +65,29 @@ function safeHost(url: string): string {
 export function isOwnZone(hostname: string): boolean {
   const host = hostname.trim().toLowerCase().replace(/^\*\./, '').replace(/\.$/, '');
   return ownZones().some((zone) => host === zone || host.endsWith(`.${zone}`));
+}
+
+/**
+ * r223: why a claim inside the instance's OWN zone is refused for a
+ * non-operator, or null when it may proceed. Own-zone names skip the DNS
+ * proof, so first-come used to win:
+ *  - `<slug>.<wildcardDomain>` is the automatic domain the pipeline gives the
+ *    service with that slug. Claimed early by another tenant, the pipeline's
+ *    later auto-insert hit the unique index and was skipped with a warning —
+ *    and the claimant received that service's traffic.
+ *  - `*.<zone>` shadows every service in the zone (a wildcard router outranks
+ *    the automatic ones on rule length).
+ */
+export async function ownZoneClaimRefusal(db: DB, serviceId: number, hostname: string): Promise<string | null> {
+  if (!isOwnZone(hostname)) return null;
+  const host = hostname.trim().toLowerCase().replace(/\.$/, '');
+  if (host.startsWith('*.')) return 'is a wildcard on the instance zone (operator-only)';
+  const zone = (config.wildcardDomain ?? '').trim().toLowerCase().replace(/^\*\./, '').replace(/\.$/, '');
+  if (!zone || !host.endsWith(`.${zone}`)) return null;
+  const label = host.slice(0, -(zone.length + 1));
+  if (label.includes('.')) return null;
+  const owner = await db.query.services.findFirst({ where: eq(services.slug, label) });
+  return owner && owner.id !== serviceId ? `is reserved as the automatic domain of service "${owner.name}"` : null;
 }
 
 /** Whether this claim has to be proved before it may route. */

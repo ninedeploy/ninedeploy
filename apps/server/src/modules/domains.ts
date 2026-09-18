@@ -17,6 +17,7 @@ import {
   newChallengeToken,
   normalizeHost,
   requiresOwnershipProof,
+  ownZoneClaimRefusal,
 } from '../lib/domainVerification.js';
 
 /**
@@ -116,6 +117,10 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
     const hostname = normalizeHost(input.hostname);
     if (!hostname) throw badRequest('Enter a valid hostname');
     await assertHostnameClaimable(app, hostname, id, req.user!);
+    if (!req.user!.isOperator) {
+      const refusal = await ownZoneClaimRefusal(app.db, id, hostname);
+      if (refusal) throw conflict(`${hostname} ${refusal}`);
+    }
 
     // H-2 layer 2: a hostname outside this instance's own zone is not routed
     // until its owner proves control of the DNS zone. Until then the row is
