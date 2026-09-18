@@ -195,7 +195,7 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
     for (const r of rows.filter((r) => r.isSecret)) {
       lines.push(`# ${r.key}=<secret>`);
     }
-    const body = lines.length > 0 ? lines.join('\n') + '\n' : '';
+    const body = lines.length > 0 ? `${lines.join('\n')}\n` : '';
     return { content: body, count: rows.filter((r) => !r.isSecret).length };
   });
 };

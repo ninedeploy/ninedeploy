@@ -139,10 +139,10 @@ export function EnvCard({ serviceId }: { serviceId: number }) {
             <button
               type="button"
               onClick={() => {
-                const content = (env.data ?? [])
+                const content = `${(env.data ?? [])
                   .filter((v) => !v.isSecret)
                   .map((v) => `${v.key}=${v.value}`)
-                  .join('\n') + '\n';
+                  .join('\n')}\n`;
                 const blob = new Blob([content], { type: 'text/plain' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');

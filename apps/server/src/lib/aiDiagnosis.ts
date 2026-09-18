@@ -11,7 +11,7 @@
  */
 
 /** ECMA-48 / ANSI escape sequences emitted by colored build output. */
-const ANSI_RE = new RegExp(String.fromCharCode(27) + '\\[[0-9;]*[A-Za-z]', 'g');
+const ANSI_RE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*[A-Za-z]`, 'g');
 
 /** `scheme://user:password@host` — keep the userinfo user, mask the password. */
 const USERINFO_URL_RE = /([a-z][a-z0-9+.-]*:\/\/)([^@\s/:]+):([^@\s]+)@/gi;

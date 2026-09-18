@@ -27,7 +27,7 @@ function makeDb(opts: { job?: Record<string, unknown> | null; svc?: Record<strin
       scheduledJobs: { findFirst: vi.fn(async () => ('job' in opts ? opts.job : JOB)) },
       services: { findFirst: vi.fn(async () => ('svc' in opts ? opts.svc : SVC)) },
     },
-    update: vi.fn((table: unknown) => ({
+    update: vi.fn((_table: unknown) => ({
       set: (values: Record<string, unknown>) => ({
         where: vi.fn(async () => {
           jobRunUpdates.push({ values });

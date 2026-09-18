@@ -8,19 +8,6 @@ const cryptoMocks = vi.hoisted(() => ({
 }));
 vi.mock('../../src/lib/crypto.js', () => cryptoMocks);
 
-const envRow = (over: Record<string, unknown> = {}) => ({
-  id: 1,
-  serviceId: 1,
-  scope: 'service',
-  scopeKey: 1,
-  key: 'EXISTING',
-  valueEncrypted: 'enc:old',
-  isSecret: false,
-  createdAt: new Date('2026-01-01T00:00:00Z'),
-  updatedAt: new Date('2026-01-01T00:00:00Z'),
-  ...over,
-});
-
 describe('POST /:id/env/import', () => {
   it('imports multiple .env vars in one call', async () => {
     const inserted: Array<Record<string, unknown>> = [];

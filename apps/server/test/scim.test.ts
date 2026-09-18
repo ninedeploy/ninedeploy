@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { scimManagementRoutes, scimRoutes } from '../src/modules/scim.js';
 import { authRoutes } from '../src/modules/auth.js';
 import { hashPassword } from '../src/lib/crypto.js';
-import { asUser, buildTestApp, createFakeDb, trackStatusUpdates } from './helpers.js';
+import { asUser, buildTestApp, createFakeDb, } from './helpers.js';
 
 const TOKEN = 'scim_test-token-abcdef';
 const TOKEN_ROW = {

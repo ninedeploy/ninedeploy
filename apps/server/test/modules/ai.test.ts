@@ -411,7 +411,7 @@ describe('AI manifest suggestion routes', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ choices: [{ message: { content: '```json\n' + JSON.stringify(manifest) + '\n```' } }] }),
+      json: async () => ({ choices: [{ message: { content: `\`\`\`json\n${JSON.stringify(manifest)}\n\`\`\`` } }] }),
     }));
     const app = await buildTestApp({
       db: createFakeDb({ findFirst: { settings: alternatingSettings() } }),

@@ -32,7 +32,7 @@ describe('bundled Hub template contract', () => {
     const databaseTemplates = templates.filter((template) => template.dbEngine);
     expect(databaseTemplates.map((template) => template.id).sort()).toEqual([
       'bookstack', 'directus', 'fider', 'ghost', 'hasura', 'matomo',
-      'speedtest-tracker', 'umami', 'vikunja', 'wordpress', 'yourls',
+      'speedtest-tracker', 'umami', 'vikunja', 'wekan', 'wordpress', 'yourls',
     ]);
     for (const template of databaseTemplates) {
       expect(Object.keys(template.databaseEnv ?? {}).length, template.id).toBeGreaterThan(0);
