@@ -79,8 +79,17 @@ export function EnvCard({ serviceId }: { serviceId: number }) {
 
   const add = useMutation({
     mutationFn: () => api.env.create(serviceId, { key, value, isSecret: secret }),
-    onSuccess: invalidate,
-    onError: () => toast('Could not add the variable — the key may already exist', 'error'),
+    // r217: the inputs clear only once the variable is stored. They used to
+    // clear on submit, so a refused add (an invalid key name, a 403) lost
+    // what was typed — and the toast blamed a duplicate key the server would
+    // have upserted anyway.
+    onSuccess: () => {
+      setKey('');
+      setValue('');
+      setSecret(false);
+      invalidate();
+    },
+    onError: (err) => toast(err instanceof Error ? err.message : 'Could not add the variable', 'error'),
   });
   const update = useMutation({
     // isSecret is passed through explicitly: the server preserves the stored
@@ -123,9 +132,6 @@ export function EnvCard({ serviceId }: { serviceId: number }) {
     e.preventDefault();
     if (!key.trim()) return;
     add.mutate();
-    setKey('');
-    setValue('');
-    setSecret(false);
   };
 
   return (

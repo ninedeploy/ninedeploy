@@ -138,8 +138,20 @@ describe('EnvCard', () => {
     await user.type(screen.getByPlaceholderText('KEY'), 'FOO');
     await waitFor(() => expect(getAddButton()).toBeEnabled());
     fireEvent.submit(getAddForm());
-    expect(getAddButton()).toBeDisabled();
+    await waitFor(() => expect(getAddButton()).toBeDisabled());
     d.resolve({ id: 9, key: 'FOO', value: 'b', isSecret: false });
+  });
+
+  it('r217: a refused add keeps what was typed', async () => {
+    apiMock.api.env.create.mockRejectedValueOnce(new Error('key must match [A-Z_][A-Z0-9_]*'));
+    const user = userEvent.setup();
+    renderCard();
+    await waitFor(() => expect(screen.getByText('PORT')).toBeInTheDocument());
+    await user.type(screen.getByPlaceholderText('KEY'), 'my-key');
+    fireEvent.submit(getAddForm());
+    await waitFor(() => expect(apiMock.api.env.create).toHaveBeenCalled());
+    await waitFor(() => expect(getAddButton()).toBeEnabled());
+    expect(screen.getByPlaceholderText('KEY')).toHaveValue('my-key');
   });
 
   it('saves an edited draft with the save button', async () => {
