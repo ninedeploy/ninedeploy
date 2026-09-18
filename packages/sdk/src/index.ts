@@ -1744,7 +1744,15 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       removeProvider: (id) => send<{ ok: boolean }>('DELETE', `/v1/sso/providers/${id}`),
     },
     fanout: {
-      get: (serviceId) => get<Array<{ serverId: number; runtimeId: string | null; status: string }>>(`/v1/services/${serviceId}/targets`),
+      // r201: the route answers `{ targets: [...] }` (like PATCH); the SDK
+      // typed and returned it as a bare array, so the panel's fan-out card
+      // called `.map` on an object and crashed whenever it rendered.
+      get: async (serviceId) =>
+        (
+          await get<{ targets: Array<{ serverId: number; runtimeId: string | null; status: string }> }>(
+            `/v1/services/${serviceId}/targets`,
+          )
+        ).targets,
       set: (serviceId, serverIds) =>
         send<{ targets: Array<{ serverId: number; runtimeId: string | null; status: string }> }>(
           'PATCH',

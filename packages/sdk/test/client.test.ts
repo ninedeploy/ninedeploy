@@ -688,7 +688,8 @@ describe('createClient', () => {
     it('reads and replaces the target-node set', async () => {
       const { fetchMock, calls } = makeFetch((_url, init) => {
         if (init.method === 'PATCH') return ok({ targets: [{ serverId: 5, runtimeId: 'web-t5-9', status: 'running' }] });
-        return ok([{ serverId: 5, runtimeId: 'web-t5-9', status: 'running' }]);
+        // r201: the real route wraps the list, exactly like PATCH.
+        return ok({ targets: [{ serverId: 5, runtimeId: 'web-t5-9', status: 'running' }] });
       });
       const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
 
