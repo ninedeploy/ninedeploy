@@ -43,7 +43,11 @@ ProtectSystem=full
 # ever READS its own code from there (writes go to the paths below), so the
 # rest of /home stays out of a compromised service's reach.
 ProtectHome=read-only
-ReadWritePaths=@INSTALL_DIR@ @DATA_DIR@ /tmp -/var/run/docker.sock -/run/docker.sock
+# /etc/ufw: ProtectSystem=full makes /etc read-only, and the panel's firewall
+# management (`ufw allow/delete`, lib/firewall.ts) persists its rules in
+# /etc/ufw/user*.rules — every change failed with "read-only file system".
+# The leading '-' keeps hosts without ufw bootable.
+ReadWritePaths=@INSTALL_DIR@ @DATA_DIR@ /tmp -/var/run/docker.sock -/run/docker.sock -/etc/ufw
 PrivateTmp=true
 
 # Deployments routinely run longer than watchdog windows while Docker unpacks
