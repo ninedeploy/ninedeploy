@@ -252,6 +252,28 @@ describe('agent workspaces', () => {
     expect((spawnMock.mock.calls.at(-1) as unknown[])[3]).toEqual({});
   });
 
+  it('r227: a shallow node clone fetches every branch tip', async () => {
+    await runOp('git.ensure', { workspace: 'r227-fresh', url: 'https://x/y.git', depth: '1' }, () => {});
+    const argv = (spawnMock.mock.calls.at(-1) as unknown[])[1] as string[];
+    expect(argv).toEqual([...EGRESS, 'clone', '--depth', '1', '--no-single-branch', 'https://x/y.git', '.']);
+  });
+
+  it('r227: git.reset fetches a pinned commit the shallow checkout lacks', async () => {
+    // cat-file -e says "missing" → fetch exactly that sha → reset.
+    spawnMock.mockResolvedValueOnce(1);
+    await runOp('git.reset', { workspace: 'web', sha: 'abcdef1234' }, () => {});
+    const argvs = spawnMock.mock.calls.map((c) => (c as unknown[])[1] as string[]);
+    expect(argvs).toEqual([
+      ['cat-file', '-e', 'abcdef1234^{commit}'],
+      [...EGRESS, 'fetch', '--depth', '1', 'origin', 'abcdef1234'],
+      ['reset', '--hard', 'abcdef1234'],
+    ]);
+    // Present commit: no network round-trip.
+    spawnMock.mockClear();
+    await runOp('git.reset', { workspace: 'web', sha: 'abcdef1234' }, () => {});
+    expect(spawnMock.mock.calls.map((c) => ((c as unknown[])[1] as string[])[0])).toEqual(['cat-file', 'reset']);
+  });
+
   it('keeps two services in separate checkouts', async () => {
     await runOp('git.fetch', { workspace: 'alpha' }, () => {});
     const a = ((spawnMock.mock.calls.at(-1) as unknown[])[3] as { cwd: string }).cwd;

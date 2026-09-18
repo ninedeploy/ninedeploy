@@ -551,11 +551,17 @@ export async function runOp(op: string, params: Params, onLine: (l: string) => v
     const dir = await resolveWorkspace(validated(str(params, 'workspace'), RE_NAME, 'workspace name'));
     const url = validated(str(params, 'url'), isRepoUrl, 'repo url');
     if (existsSync(pathmod.join(dir, '.git'))) {
+      // r227: widen a checkout made by an older agent (a shallow clone is
+      // single-branch, and `fetch --all` follows only its refspec) so every
+      // branch's tip is fetched.
+      await spawnValidated('git', ['config', 'remote.origin.fetch', '+refs/heads/*:refs/remotes/origin/*'], () => undefined, { cwd: dir });
       return spawnValidated('git', [...GIT_EGRESS_FLAGS, 'fetch', '--all', '--prune'], onLine, { cwd: dir });
     }
     const depth = str(params, 'depth');
     const argv = [...GIT_EGRESS_FLAGS, 'clone'];
-    if (depth !== undefined) argv.push('--depth', /^\d{1,3}$/.test(depth) ? depth : '1');
+    // r227: `--depth` implies `--single-branch`: a service on any branch but
+    // the default then failed `git checkout <branch>` on the node.
+    if (depth !== undefined) argv.push('--depth', /^\d{1,3}$/.test(depth) ? depth : '1', '--no-single-branch');
     argv.push(url, '.');
     return spawnValidated('git', argv, onLine, { cwd: dir });
   }
@@ -568,6 +574,21 @@ export async function runOp(op: string, params: Params, onLine: (l: string) => v
   }
   if (op === 'proxy.ensure') {
     return proxyEnsureOp(params, onLine);
+  }
+  if (op === 'git.reset') {
+    // r227: a pinned commit older than the shallow tip (a rollback, or a
+    // deploy of a commit the branch has since moved past) is absent from a
+    // depth-1 checkout — fetch exactly that commit before resetting to it.
+    const sha = validated(str(params, 'sha') ?? 'HEAD', RE_SHA, 'commit sha');
+    const workspace = str(params, 'workspace');
+    const opts = workspace === undefined ? {} : { cwd: await resolveWorkspace(workspace) };
+    if (sha !== 'HEAD') {
+      const present = await spawnValidated('git', ['cat-file', '-e', `${sha}^{commit}`], () => undefined, opts);
+      if (present !== 0) {
+        await spawnValidated('git', [...GIT_EGRESS_FLAGS, 'fetch', '--depth', '1', 'origin', sha], onLine, opts);
+      }
+    }
+    return spawnValidated('git', ['reset', '--hard', sha], onLine, opts);
   }
   if (op === 'docker.pull') {
     const image = validated(str(params, 'image'), RE_IMAGE, 'image');
