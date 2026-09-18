@@ -19,7 +19,7 @@
  * backups are fetched to a local temp first via
  * `lib/backupRemote.ts`.
  */
-import { open, stat, unlink } from 'node:fs/promises';
+import { open, stat, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { desc, eq } from 'drizzle-orm';
@@ -27,6 +27,7 @@ import { backupDrills, backups, databases, type DB } from '@ninedeploy/db';
 import { fetchRemoteBackup } from './backupRemote.js';
 import { decryptBackupFile, isEncryptedBackupFile } from './backupCrypto.js';
 import { capture, run } from './exec.js';
+import { readBackupBytes } from '../engine/database.js';
 
 export interface DrillResult {
   drillId: number;
@@ -183,37 +184,58 @@ async function stageForDrill(
   _engine: string,
 ): Promise<DrillContext> {
   // Remote-only backup: pull to a local temp file first.
+  let source = path;
+  let fetched: string | null = null;
   if (!await fileExists(path).catch(() => false)) {
     if (!remoteKey) {
       throw new Error('Backup file is missing on disk and no remote key is recorded');
     }
-    const local = join(tmpdir(), `nd-drill-${process.pid}-${Date.now()}.dump`);
-    await fetchRemoteBackup(db, remoteKey, local);
-    return {
-      file: local,
-      engine: _engine,
-      cleanup: async () => {
-        await unlink(local).catch(() => undefined);
-      },
-    };
+    fetched = join(tmpdir(), `nd-drill-${process.pid}-${Date.now()}.dump`);
+    await fetchRemoteBackup(db, remoteKey, fetched);
+    source = fetched;
   }
+  const dropFetched = async () => {
+    if (fetched) await unlink(fetched).catch(() => undefined);
+  };
 
-  // Encrypted envelope: decrypt to a sibling temp file.
-  if (await isEncryptedBackupFile(path)) {
-    const dec = `${path}.${process.pid}-drill.dec`;
-    await decryptBackupFile(path, dec);
+  // r189: the fetched object goes through the SAME decryption as a local
+  // file. The remote copy is the on-disk file uploaded as-is — an encrypted
+  // NDBK1 envelope — and it used to be handed straight to the validator,
+  // so every drill of a pruned-locally backup "failed" on ciphertext.
+  if (await isEncryptedBackupFile(source)) {
+    const dec = `${source}.${process.pid}-drill.dec`;
+    await decryptBackupFile(source, dec);
     return {
       file: dec,
       engine: _engine,
       cleanup: async () => {
         await unlink(dec).catch(() => undefined);
+        await dropFetched();
       },
     };
   }
 
-  // Plaintext: use in place. No cleanup needed.
-  return { file: path, engine: _engine, cleanup: async () => undefined };
+  // Legacy single-line `v<n>:` envelope (pre-streaming backups), which the
+  // restore path still reads: decrypt it the same way restore does.
+  if (LEGACY_ENVELOPE_RE.test(await readHead(source, 32).catch(() => ''))) {
+    const dec = `${source}.${process.pid}-drill.dec`;
+    await writeFile(dec, readBackupBytes(source), { mode: 0o600 });
+    return {
+      file: dec,
+      engine: _engine,
+      cleanup: async () => {
+        await unlink(dec).catch(() => undefined);
+        await dropFetched();
+      },
+    };
+  }
+
+  // Plaintext: use in place.
+  return { file: source, engine: _engine, cleanup: dropFetched };
 }
+
+const LEGACY_ENVELOPE_RE = /^v\d+:/;
+
 
 async function fileExists(p: string): Promise<boolean> {
   try {

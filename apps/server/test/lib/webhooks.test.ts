@@ -531,6 +531,25 @@ describe('Bitbucket', () => {
     expect(parsePullRequest(JSON.parse(mk('pullrequest:updated')), 'bitbucket')).toMatchObject({ action: 'synchronize' });
   });
 
+  it('r187: reads the event key from the X-Event-Key header, as Bitbucket really sends it', () => {
+    // Real payloads carry no `event_key` in the body.
+    const body = {
+      pullrequest: { id: 9, title: 't', source: { branch: { name: 'b' }, commit: { hash: 's' } } },
+      repository: { full_name: 'acme/web' },
+    };
+    expect(parsePullRequest(body, 'bitbucket', { 'x-event-key': 'pullrequest:fulfilled' })).toMatchObject({
+      action: 'closed',
+      merged: true,
+    });
+    expect(parsePullRequest(body, 'bitbucket', { 'x-event-key': 'pullrequest:rejected' })).toMatchObject({
+      action: 'closed',
+      merged: false,
+    });
+    // Comments and approvals are not deploy events.
+    expect(parsePullRequest(body, 'bitbucket', { 'x-event-key': 'pullrequest:comment_created' })).toBeNull();
+    expect(parsePullRequest(body, 'bitbucket', { 'x-event-key': 'pullrequest:approved' })).toBeNull();
+  });
+
   it('returns null for a pull request payload without a source branch', () => {
     const body = JSON.stringify({
       event_key: 'pullrequest:created',

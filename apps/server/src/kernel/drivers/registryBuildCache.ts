@@ -167,7 +167,9 @@ export class RegistryBuildCache implements IBuildCache {
       .update(cacheRegistryBlobs)
       .set({ hits: row.hits + 1, lastHitAt: new Date() })
       .where(eq(cacheRegistryBlobs.id, row.id));
-    this.hits += 1;
+    // r186: NOT `this.hits` — this hit is already in the row's counter, and
+    // stats() adds the two together, so every stored-row hit counted twice.
+    // `this.hits` is only for manifest-only hits (no row to record them).
     return { digest: row.digest, sizeBytes: row.sizeBytes, storedAt: row.storedAt.toISOString() };
   }
 

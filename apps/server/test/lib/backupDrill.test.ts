@@ -318,6 +318,23 @@ describe('lib/backupDrill', () => {
       expect(remoteState.fetchedTo.get('s3://bucket/dump')).toBeTruthy();
     });
 
+    it('r189: decrypts a fetched remote copy that is an encrypted envelope', async () => {
+      const db = buildDb();
+      dbState.databases.set(1, { id: 1, engine: 'postgres' });
+      dbState.backups.set(1, { id: 1, databaseId: 1, path: '/no/such/file', remoteKey: 's3://bucket/enc' });
+      const { fetchRemoteBackup } = await import('../../src/lib/backupRemote.js');
+      vi.mocked(fetchRemoteBackup).mockImplementationOnce(async (_db, key, dest) => {
+        remoteState.fetchedTo.set(key, dest);
+        await writeFile(dest, 'NDBK1:ciphertext', 'utf8');
+        cryptoState.encryptedPaths.add(dest); // what really lands in the bucket
+      });
+      execState.toolResults.set('pg_restore', { throw: new Error('not a Postgres archive') });
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('passed');
+      const fetched = remoteState.fetchedTo.get('s3://bucket/enc')!;
+      expect(cryptoState.decryptedTo.get(fetched)).toBeTruthy();
+    });
+
     it('fails cleanly when the file is missing and no remote key is recorded', async () => {
       const db = buildDb();
       dbState.databases.set(1, { id: 1, engine: 'postgres' });

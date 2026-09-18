@@ -144,7 +144,12 @@ export class S3BuildCache implements IBuildCache {
     // body. The `BlobRef` marker IS the body, so on lookup we
     // GET the marker body, parse the digest, and use the rest of
     // the workflow unchanged.
-    await s3Request(conn.cfg, 'PUT', objectKey, Buffer.from(blob), 'application/octet-stream');
+    const res = await s3Request(conn.cfg, 'PUT', objectKey, Buffer.from(blob), 'application/octet-stream');
+    // r186: s3Request does not throw on HTTP errors. A 403 (bad credentials)
+    // or 5xx PUT used to be counted as a store and logged "Cache stored" —
+    // every later lookup then missed with no error ever surfaced.
+    await res.arrayBuffer().catch(() => undefined);
+    if (!res.ok) throw new Error(`S3 build-cache PUT failed (HTTP ${res.status})`);
 
     this.stores += 1;
     return { digest, sizeBytes, storedAt: new Date().toISOString() };

@@ -15,7 +15,11 @@ interface MiniS3 {
   restore: () => void;
 }
 
+/** Status the fake answers PUTs with (tests flip it to simulate a denied upload). */
+const miniS3 = { putStatus: 200 };
+
 function installMiniS3(): MiniS3 {
+  miniS3.putStatus = 200;
   const objects = new Map<string, Buffer>();
   const calls: Array<{ method: string; path: string }> = [];
   const origFetch = globalThis.fetch;
@@ -25,18 +29,15 @@ function installMiniS3(): MiniS3 {
     calls.push({ method, path });
     if (method === 'PUT') {
       const raw = (init as { body?: Uint8Array } | undefined)?.body;
+      if (miniS3.putStatus !== 200) return new Response('AccessDenied', { status: miniS3.putStatus });
       objects.set(path, Buffer.from(raw ?? new Uint8Array()));
-      return { status: 200, headers: new Headers() };
+      return new Response(null, { status: 200 });
     }
     const entry = objects.get(path);
-    if (!entry) return { status: 404, headers: new Headers() };
-    if (method === 'GET') {
-      return { status: 200, headers: new Headers(), arrayBuffer: async () => entry };
-    }
-    if (method === 'HEAD') {
-      return { status: 200, headers: new Headers() };
-    }
-    return { status: 405, headers: new Headers() };
+    if (!entry) return new Response(null, { status: 404 });
+    if (method === 'GET') return new Response(entry, { status: 200 });
+    if (method === 'HEAD') return new Response(null, { status: 200 });
+    return new Response(null, { status: 405 });
   }) as never;
   return {
     calls,
@@ -155,6 +156,13 @@ describe('S3BuildCache', () => {
     expect(ref.sizeBytes).toBe(4096);
     const stats = await cache.stats();
     expect(stats.stores).toBe(1);
+  });
+
+  it('r186: a rejected PUT is an error, never counted as a store', async () => {
+    const cache = newCache();
+    miniS3.putStatus = 403;
+    await expect(cache.store('ndbuild:abc', markerBlob('sha256:def'))).rejects.toThrow(/HTTP 403/);
+    expect((await cache.stats()).stores).toBe(0);
   });
 
   it('falls back to a placeholder digest for non-marker blobs', async () => {

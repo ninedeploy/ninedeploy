@@ -243,6 +243,42 @@ describe('s3PutFile / s3GetToFile (streamed transfers)', () => {
     rmSync(target, { force: true });
   });
 
+  it('r188: a slow download that keeps making progress is not cut off', async () => {
+    let n = 0;
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: new ReadableStream({
+        async pull(controller) {
+          await new Promise((r) => setTimeout(r, 30));
+          if (n++ < 6) controller.enqueue(new TextEncoder().encode('x'));
+          else controller.close();
+        },
+      }),
+    } as unknown as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    const target = path.join(tmpdir(), `s3-slow-${Date.now()}`);
+    // ~210 ms in total, well past the 80 ms stall limit — but never idle that long.
+    await s3GetToFile(CFG, 'k', target, 80);
+    expect(readFileSync(target, 'utf8')).toBe('xxxxxx');
+    rmSync(target, { force: true });
+  });
+
+  it('r188: a download that stops sending bytes is aborted', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('partial'));
+          // …and then nothing, forever.
+        },
+      }),
+    } as unknown as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(s3GetToFile(CFG, 'k', path.join(tmpdir(), `s3-stall-${Date.now()}`), 60)).rejects.toThrow();
+  });
+
   it('s3GetToFile throws on failure and handles an empty body', async () => {
     fetchMock.mockResolvedValueOnce({ ok: false, status: 404 } as unknown as Response);
     vi.stubGlobal('fetch', fetchMock);

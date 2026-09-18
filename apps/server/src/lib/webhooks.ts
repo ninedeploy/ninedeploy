@@ -255,20 +255,32 @@ export function isPullRequest(headers: Record<string, string | string[] | undefi
 }
 
 /** Parse a pull request / merge request payload into structured fields. */
-export function parsePullRequest(body: unknown, provider: Provider): PullRequestEvent | null {
+export function parsePullRequest(
+  body: unknown,
+  provider: Provider,
+  headers: Record<string, string | string[] | undefined> = {},
+): PullRequestEvent | null {
   const b = body as Record<string, unknown>;
   if (!b) return null;
 
   if (provider === 'bitbucket') {
     const pr = b['pullrequest'] as Record<string, unknown> | undefined;
     if (!pr) return null;
-    const key = String(b['event_key'] ?? '');
-    const action: PullRequestEvent['action'] =
-      key === 'pullrequest:fulfilled' || key === 'pullrequest:rejected'
-        ? 'closed'
-        : key === 'pullrequest:updated'
-          ? 'synchronize'
-          : 'opened';
+    // r187: Bitbucket sends the event key ONLY in the `X-Event-Key` header
+    // (isPullRequest already reads it there). Reading `event_key` from the
+    // body made every PR event "opened": a merged or declined PR redeployed
+    // its preview instead of destroying it, and comment/approval events
+    // redeployed too. Unknown pullrequest:* events are ignored.
+    const header = headers['x-event-key'];
+    const key = String((typeof header === 'string' ? header : undefined) ?? b['event_key'] ?? '');
+    const actions: Record<string, PullRequestEvent['action']> = {
+      'pullrequest:created': 'opened',
+      'pullrequest:updated': 'synchronize',
+      'pullrequest:fulfilled': 'closed',
+      'pullrequest:rejected': 'closed',
+    };
+    const action = actions[key];
+    if (!action) return null;
     const source = pr['source'] as Record<string, unknown> | undefined;
     const sourceBranch = source?.['branch'] as Record<string, unknown> | undefined;
     const sourceCommit = source?.['commit'] as Record<string, unknown> | undefined;

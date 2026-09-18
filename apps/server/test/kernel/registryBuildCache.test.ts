@@ -191,6 +191,13 @@ describe('RegistryBuildCache', () => {
     expect(stats.misses, 'the round-trip must not record a miss').toBe(0);
   });
 
+  it('r186: a hit on a stored row is counted once in stats()', async () => {
+    const cache = newCache();
+    await cache.store(KEY, marker(LAYER_DIGEST));
+    await cache.lookup(KEY);
+    expect((await cache.stats()).hits).toBe(1);
+  });
+
   it('cluster-join: registry has the tag but this instance has no row → layer digest', async () => {
     const cache = newCache();
     await cache.store(KEY, marker(LAYER_DIGEST));

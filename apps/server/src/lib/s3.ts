@@ -50,6 +50,9 @@ function canonicalQueryString(query?: URLSearchParams): string {
  * Sign and execute one S3 request. `path` is the object key (already
  * namespace-prefixed by the caller); method/body drive the signature.
  */
+/** Per-request timeout; for streamed downloads, the no-progress (stall) limit. */
+const S3_TIMEOUT_MS = 120_000;
+
 export async function s3Request(
   cfg: S3Config,
   method: 'GET' | 'PUT' | 'POST' | 'DELETE' | 'HEAD',
@@ -57,6 +60,8 @@ export async function s3Request(
   body?: Buffer | string,
   contentType = 'application/octet-stream',
   query?: URLSearchParams,
+  /** Abort signal replacing the default whole-request 120 s timeout. */
+  signal?: AbortSignal,
 ): Promise<Response> {
   const canonicalQuery = canonicalQueryString(query);
   const url = new URL(`${cfg.endpoint.replace(/\/$/, '')}/${cfg.bucket}/${uriEncode(key)}`);
@@ -102,7 +107,7 @@ export async function s3Request(
     method,
     headers,
     body: body === undefined ? undefined : body instanceof Buffer ? new Uint8Array(body) : body,
-    signal: AbortSignal.timeout(120_000),
+    signal: signal ?? AbortSignal.timeout(S3_TIMEOUT_MS),
   });
 }
 
@@ -201,21 +206,49 @@ export async function s3Get(cfg: S3Config, key: string): Promise<Buffer> {
  * GET an object straight to a file — the response stream is piped to disk
  * so a multi-GB restore never enters the heap.
  */
-export async function s3GetToFile(cfg: S3Config, key: string, filePath: string): Promise<void> {
-  const res = await s3Request(cfg, 'GET', key);
-  if (!res.ok) throw new Error(`S3 download failed (${res.status})`);
-  if (!res.body) {
-    const { writeFileSync } = await import('node:fs');
-    writeFileSync(filePath, '', { mode: 0o600 });
-    return;
+export async function s3GetToFile(
+  cfg: S3Config,
+  key: string,
+  filePath: string,
+  stallMs: number = S3_TIMEOUT_MS,
+): Promise<void> {
+  // r188: the default `AbortSignal.timeout(120s)` also covers the response
+  // BODY, so a multi-GB restore was aborted mid-stream at two minutes (a
+  // truncated dump and a failed restore or drill). A streamed download is
+  // instead aborted only when no bytes arrive for `stallMs`.
+  const controller = new AbortController();
+  let stall = setTimeout(() => controller.abort(new Error('S3 download stalled')), stallMs);
+  const touch = () => {
+    clearTimeout(stall);
+    stall = setTimeout(() => controller.abort(new Error('S3 download stalled')), stallMs);
+  };
+  try {
+    const res = await s3Request(cfg, 'GET', key, undefined, undefined, undefined, controller.signal);
+    touch();
+    if (!res.ok) throw new Error(`S3 download failed (${res.status})`);
+    if (!res.body) {
+      const { writeFileSync } = await import('node:fs');
+      writeFileSync(filePath, '', { mode: 0o600 });
+      return;
+    }
+    const { createWriteStream } = await import('node:fs');
+    const { Readable, Transform } = await import('node:stream');
+    const { pipeline } = await import('node:stream/promises');
+    const progress = new Transform({
+      transform(chunk, _enc, done) {
+        touch();
+        done(null, chunk);
+      },
+    });
+    await pipeline(
+      Readable.fromWeb(res.body as unknown as import('node:stream/web').ReadableStream),
+      progress,
+      createWriteStream(filePath, { mode: 0o600 }),
+      { signal: controller.signal },
+    );
+  } finally {
+    clearTimeout(stall);
   }
-  const { createWriteStream } = await import('node:fs');
-  const { Readable } = await import('node:stream');
-  const { pipeline } = await import('node:stream/promises');
-  await pipeline(
-    Readable.fromWeb(res.body as unknown as import('node:stream/web').ReadableStream),
-    createWriteStream(filePath, { mode: 0o600 }),
-  );
 }
 
 /** DELETE an object; missing objects (404) are treated as success. */

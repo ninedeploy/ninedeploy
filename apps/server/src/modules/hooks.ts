@@ -132,7 +132,7 @@ export const hookReceiveRoutes: FastifyPluginAsync = async (app) => {
 
     // ── Ephemeral PR / MR Preview Deployments ──────────────────────────────────
     if (isPullRequest(req.headers, provider)) {
-      const pr = parsePullRequest(req.body, provider);
+      const pr = parsePullRequest(req.body, provider, req.headers);
       if (!pr) return { ok: 'ignored', reason: 'not_a_valid_pr' };
 
       const parent = await app.db.query.services.findFirst({ where: eq(services.id, hook.serviceId) });
