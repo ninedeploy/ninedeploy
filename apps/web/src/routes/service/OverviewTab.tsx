@@ -287,7 +287,10 @@ function RuntimeInfoCard({ svc }: { svc: Service }) {
 // ── Deployment Quick Card ─────────────────────────────────────────────────
 function DeploymentQuickCard({ serviceId }: { serviceId: number }) {
   const deploys = useQuery({
-    queryKey: ['service-deploys', serviceId],
+    // r250: the same key the service page and every deploy mutation use. Under
+    // a key of its own this card never saw an invalidation,
+    // so it kept showing the previous deployment after a redeploy/rollback.
+    queryKey: ['deploys', serviceId],
     queryFn: () => api.deploys.list(serviceId),
   });
 

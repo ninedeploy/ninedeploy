@@ -112,14 +112,18 @@ export function ContainerFileBrowser({
     onError: () => toast('Could not read file (binary or >1 MB)', 'error'),
   });
 
+  // r251: the save carries the exact (path, text) it writes, and only marks
+  // the editor clean if it still shows that content. Writing back the
+  // click-time snapshot discarded whatever was typed while the save was in
+  // flight, and re-opened the old file if the user had moved on to another.
   const save = useMutation({
-    mutationFn: () =>
+    mutationFn: (v: { path: string; text: string }) =>
       api.containers.writeFile(container, {
-        path: editing!.path,
-        contentBase64: btoa(unescape(encodeURIComponent(editing!.text))),
+        path: v.path,
+        contentBase64: btoa(unescape(encodeURIComponent(v.text))),
       }),
-    onSuccess: () => {
-      setEditing({ ...editing!, dirty: false });
+    onSuccess: (_res, v) => {
+      setEditing((cur) => (cur && cur.path === v.path && cur.text === v.text ? { ...cur, dirty: false } : cur));
       refresh();
       toast('File saved', 'success');
     },
@@ -164,7 +168,7 @@ export function ContainerFileBrowser({
                 <ArrowLeft size={13} /> Back
               </Button>
               {editing.category === 'text' ? (
-                <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || !editing.dirty}>
+                <Button size="sm" onClick={() => save.mutate({ path: editing.path, text: editing.text })} disabled={save.isPending || !editing.dirty}>
                   <Save size={13} /> {save.isPending ? 'Saving…' : editing.dirty ? 'Save' : 'Saved'}
                 </Button>
               ) : (

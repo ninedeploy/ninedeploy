@@ -60,6 +60,23 @@ describe('VolumeBrowser', () => {
     );
   });
 
+  it('r251: text typed while a save is in flight is kept and stays unsaved', async () => {
+    mockOf(api.volumes.listFiles).mockResolvedValue(dir as never);
+    mockOf(api.volumes.readFile).mockResolvedValue({ content: btoa('KEY=1'), encoding: 'base64' } as never);
+    let finish!: () => void;
+    mockOf(api.volumes.writeFile).mockReturnValue(new Promise((r) => { finish = () => r({ ok: true }); }) as never);
+    renderWithProviders(<VolumeBrowser volume="nd-svc-web-data" onClose={vi.fn()} />);
+    fireEvent.click(await screen.findByText('app.env'));
+    const editor = (await screen.findByLabelText('File editor')) as HTMLTextAreaElement;
+    fireEvent.change(editor, { target: { value: 'KEY=2' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save/ }));
+    fireEvent.change(editor, { target: { value: 'KEY=3' } });
+    finish();
+    await waitFor(() => expect(api.volumes.writeFile).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByRole('button', { name: /Save/ })).not.toBeDisabled());
+    expect(editor.value).toBe('KEY=3');
+  });
+
   it('deletes an entry after confirmation', async () => {
     mockOf(api.volumes.listFiles).mockResolvedValue(dir as never);
     mockOf(api.volumes.deleteFile).mockResolvedValue({ ok: true } as never);
