@@ -151,7 +151,8 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
   const save = useMutation({
     mutationFn: () => {
       const f = form!;
-      // Omit empty optional fields so a PATCH never clears values the form left blank.
+      // Omit empty service fields the schema cannot take blank (repo URL,
+      // image, port, health path).
       const orUndef = <T,>(v: T) => (v === '' ? undefined : v);
       return api.services.update(serviceId, {
         name: f.name,
@@ -167,16 +168,20 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
         build: {
           buildPack: f.buildPack as 'auto' | 'nixpacks' | 'dockerfile' | 'static',
           baseDir: f.baseDir,
-          installCmd: orUndef(f.installCmd),
-          buildCmd: orUndef(f.buildCmd),
-          startCmd: orUndef(f.startCmd),
-          dockerfilePath: orUndef(f.dockerfilePath),
-          outputDir: orUndef(f.outputDir),
+          // r205: build fields are prefilled, so a blank one is a deliberate
+          // clear — sent as '' (the server stores it as null). They used to
+          // be omitted, so a start command or pre-deploy hook, once set, could
+          // never be removed from the panel.
+          installCmd: f.installCmd,
+          buildCmd: f.buildCmd,
+          startCmd: f.startCmd,
+          dockerfilePath: f.dockerfilePath,
+          outputDir: f.outputDir,
           // Non-admins never see these fields, so they must not send them
           // either: an omitted key leaves whatever an admin stored intact.
-          preDeployCmd: isAdmin ? orUndef(f.preDeployCmd) : undefined,
-          postDeployCmd: isAdmin ? orUndef(f.postDeployCmd) : undefined,
-          preStopCmd: isAdmin ? orUndef(f.preStopCmd) : undefined,
+          preDeployCmd: isAdmin ? f.preDeployCmd : undefined,
+          postDeployCmd: isAdmin ? f.postDeployCmd : undefined,
+          preStopCmd: isAdmin ? f.preStopCmd : undefined,
           restartPolicy: f.restartPolicy,
           stopGraceSeconds: toInt(f.stopGraceSeconds, 5)!,
         },
@@ -351,7 +356,8 @@ function PreviewEnvironmentsCard({ svc }: { svc: Service }) {
       api.services.update(svc.id, {
         previewDeploymentsEnabled: enabled,
         previewAutoDestroyOnClose: autoDestroy,
-        previewDomainPattern: pattern || undefined,
+        // r205: an emptied pattern clears it (null) instead of being dropped.
+        previewDomainPattern: pattern || null,
         previewMaxActive: parseInt(maxActive, 10) || 5,
       }),
     onSuccess: () => {

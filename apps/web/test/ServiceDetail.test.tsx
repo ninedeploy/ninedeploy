@@ -1070,6 +1070,19 @@ describe('ServiceDetail', () => {
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Settings saved — redeploy to apply', 'success'));
   });
 
+  it('r205: an emptied build command is sent as a clear, not dropped', async () => {
+    const user = userEvent.setup();
+    mockOf(api.services.update).mockResolvedValue(service as never);
+    renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+    await openTab('Settings');
+    await screen.findByText('Service settings');
+    await user.clear(screen.getByDisplayValue('npm run build'));
+    await user.click(screen.getByRole('button', { name: /Save settings/ }));
+    await waitFor(() =>
+      expect(api.services.update).toHaveBeenCalledWith(1, expect.objectContaining({ build: expect.objectContaining({ buildCmd: '' }) })),
+    );
+  });
+
   it('reports settings save failures', async () => {
     mockOf(api.services.update).mockRejectedValue(new Error('x'));
     renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
@@ -1163,7 +1176,7 @@ describe('ServiceDetail', () => {
     expect(api.services.update).toHaveBeenCalledWith(1, {
       previewDeploymentsEnabled: true,
       previewAutoDestroyOnClose: true,
-      previewDomainPattern: undefined,
+      previewDomainPattern: null,
       previewMaxActive: 5,
     });
 
