@@ -27,7 +27,9 @@ export async function tokenCreateAction(): Promise<void> {
   const name = (await prompt('Token name', 'ci')) || 'ci';
   // read = safe methods only · write = mutate as a non-operator ·
   // operator = no extra restriction. Blank = read-only (server default).
-  const scopes = parseScopes(await prompt('Scopes (read,write,operator — blank = read)', 'write'));
+  // r194: the default must match the label — it was 'write', so pressing
+  // Enter at "blank = read" minted a write token.
+  const scopes = parseScopes(await prompt('Scopes (read,write,operator — blank = read)', 'read'));
   try {
     const created = await getClient().auth.tokens.create(scopes.length ? { name, scopes } : { name });
     console.log(`✓ Token "${created.name}" created (id: ${created.id}).`);

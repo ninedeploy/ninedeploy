@@ -178,7 +178,7 @@ export async function tokenCreate(client: NineDeployClient): Promise<void> {
   // shorthand against the URI form so a `write` token still
   // covers every `nd://scope/write/<r>`.
   const scopes = parseScopes(
-    await prompt('Scopes (read,write,operator or nd://scope/(read|write|admin)/<resource> — blank = read)', 'write'),
+    await prompt('Scopes (read,write,operator or nd://scope/(read|write|admin)/<resource> — blank = read)', 'read'),
   );
   try {
     const tok = await spinner('Creating token', () => client.auth.tokens.create(scopes.length ? { name, scopes } : { name }));

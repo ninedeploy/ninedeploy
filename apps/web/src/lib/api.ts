@@ -103,6 +103,16 @@ export function refreshAccessToken(): Promise<boolean> {
 }
 
 /**
+ * Endpoints that exchange credentials for tokens (or run before a session
+ * exists). A 401 there is a real answer — never refresh-and-retry it.
+ * r193: every `/auth/` path used to be skipped, so the authenticated ones
+ * (`/auth/me`, `/auth/tokens`, `/auth/sessions`, 2FA, passkey registration)
+ * failed permanently once the 15-minute access token expired.
+ */
+export const NO_REFRESH_PATH =
+  /\/(?:v1\/setup|v1\/auth\/(?:login|refresh|register|logout|forgot-password|reset-password|status|oidc\/(?!providers(?:\/|$|\?))|passkey\/login\/))/;
+
+/**
  * Fetch wrapper: on a 401 from a non-auth endpoint, refresh the access token
  * once and retry. Auth endpoints manage tokens themselves and must not loop.
  */
@@ -110,7 +120,7 @@ const fetchWithRefresh: typeof fetch = async (input, init) => {
   const res = await baseFetch(input, init);
   if (res.status !== 401) return res;
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-  if (url.includes('/auth/') || url.includes('/v1/setup')) return res;
+  if (NO_REFRESH_PATH.test(url)) return res;
   if (!(await refreshAccessToken())) return res;
   const headers = new Headers(init?.headers);
   // The refresh just stored a fresh access token, so it is present.

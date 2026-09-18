@@ -70,6 +70,13 @@ describe('tokenCreateAction', () => {
     expect(create).toHaveBeenCalledWith({ name: 'deploy', scopes: ['read'] });
   });
 
+  it('r194: the scope prompt defaults to read, as its label says', async () => {
+    const create = vi.fn().mockResolvedValue({ id: 1, name: 'ci', token: 't', scopes: ['read'] });
+    h.getClient.mockReturnValue({ auth: { tokens: { create } } });
+    await tokenCreateAction();
+    expect(h.prompt).toHaveBeenLastCalledWith(expect.stringContaining('blank = read'), 'read');
+  });
+
   it('omits scopes on a blank answer so the server applies its read-only default', async () => {
     // r090: the server refuses an explicit `[]` — it would be stored as a
     // legacy unrestricted token. Blank must never mean "unrestricted" again.

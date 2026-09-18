@@ -10,6 +10,16 @@ export type { NineDeployClient };
  */
 let refreshInflight: Promise<boolean> | null = null;
 
+/**
+ * Endpoints that exchange credentials for tokens (or run before a session
+ * exists). A 401 there is a real answer — never refresh-and-retry it.
+ * r193: every `/auth/` path used to be skipped, so the authenticated ones
+ * (`/auth/me`, `/auth/tokens`, `/auth/sessions`, 2FA, passkey registration)
+ * failed permanently once the 15-minute access token expired.
+ */
+export const NO_REFRESH_PATH =
+  /\/(?:v1\/setup|v1\/auth\/(?:login|refresh|register|logout|forgot-password|reset-password|status|oidc\/(?!providers(?:\/|$|\?))|passkey\/login\/))/;
+
 async function refreshSession(baseUrl: string, refreshToken: string): Promise<boolean> {
   try {
     const res = await fetch(`${baseUrl}/v1/auth/refresh`, {
@@ -51,7 +61,7 @@ export function getClient(): NineDeployClient {
     fetch: async (input, init) => {
       const res = await fetch(input, init);
       if (res.status !== 401) return res;
-      if (input.includes('/auth/')) return res;
+      if (NO_REFRESH_PATH.test(input)) return res;
       const refreshToken = loadConfig().refreshToken;
       if (!refreshToken) return res;
       refreshInflight ??= refreshSession(cfg.baseUrl, refreshToken).finally(() => {

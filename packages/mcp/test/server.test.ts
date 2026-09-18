@@ -229,6 +229,35 @@ describe('production defaults', () => {
     expect(isDirectRun('://bad-url\0', self)).toBe(false);
   });
 
+  it('r196: isDirectRun follows the symlink npm installs as the bin', async () => {
+    const { mkdtempSync, symlinkSync, writeFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = mkdtempSync(join(tmpdir(), 'nd-mcp-bin-'));
+    try {
+      const real = join(dir, 'index.js');
+      writeFileSync(real, '');
+      const link = join(dir, 'ninedeploy-mcp');
+      try {
+        symlinkSync(real, link, 'file');
+      } catch {
+        return; // no symlink privilege on this host (Windows without dev mode)
+      }
+      expect(isDirectRun(link, pathToFileURL(real).href)).toBe(true);
+      expect(isDirectRun(join(dir, 'missing'), pathToFileURL(real).href)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('r195: advertises the package version, not a stale literal', async () => {
+    const { createRequire } = await import('node:module');
+    const pkg = createRequire(import.meta.url)('../package.json') as { version: string };
+    const server = buildServer({} as NineDeployClient, () => undefined);
+    const info = (server.server as unknown as { _serverInfo: { version: string } })._serverInfo;
+    expect(info.version).toBe(pkg.version);
+  });
+
   it('staticToken returns a closure yielding the token', () => {
     expect(staticToken('abc')()).toBe('abc');
   });

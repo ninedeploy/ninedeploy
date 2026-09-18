@@ -477,14 +477,17 @@ export async function systemExport(file?: string): Promise<void> {
   const { writeFileSync } = await import('node:fs');
   const { loadConfig } = await import('../config.js');
   const cfg = loadConfig();
-  const filename = file ?? `ninedeploy-export-${new Date().toISOString().slice(0, 10)}.json`;
+  // r192: the export is a gzip'd tar (`application/gzip`). It used to be read
+  // with `res.text()` — UTF-8 decoding replaces every invalid byte with U+FFFD —
+  // and saved as `.json`, so the file was corrupt and could never be imported.
+  const filename = file ?? `ninedeploy-export-${new Date().toISOString().slice(0, 10)}.tar.gz`;
   try {
     const data = await spinner('Exporting system', async () => {
       const res = await fetch(`${cfg.baseUrl}/v1/system/export`, {
         headers: { Authorization: `Bearer ${cfg.token ?? ''}` },
       });
       if (!res.ok) throw new Error(`Export failed (${res.status})`);
-      return res.text();
+      return Buffer.from(await res.arrayBuffer());
     });
     writeFileSync(filename, data);
     success(`Exported to ${filename}`);
@@ -544,13 +547,14 @@ export async function systemImport(file: string): Promise<void> {
   const confirm = await prompt('Import OVERWRITES the current system state. Type "yes" to continue');
   if (confirm.toLowerCase() !== 'yes') return error('Cancelled.');
   try {
-    const form = new FormData();
-    form.append('file', new Blob([readFileSync(file)]), file);
+    // r192: the server reads the raw archive (`application/octet-stream`),
+    // as the web panel sends it. A multipart form was refused (415) or, at
+    // best, restored from the multipart envelope instead of the archive.
     const res = await spinner('Importing system', () =>
       fetch(`${cfg.baseUrl}/v1/system/import`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${cfg.token ?? ''}` },
-        body: form,
+        headers: { Authorization: `Bearer ${cfg.token ?? ''}`, 'Content-Type': 'application/octet-stream' },
+        body: readFileSync(file),
       }),
     );
     if (!res.ok) throw new Error(`Import failed (${res.status})`);

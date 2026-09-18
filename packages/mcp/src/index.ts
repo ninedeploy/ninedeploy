@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { realpathSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -16,12 +18,15 @@ export { TOOLS };
  *   NINEDEPLOY_MCP_READONLY=1 exposes only the non-mutating, non-secret allowlist
  */
 
+/** r195: the advertised version was a literal stuck at 0.7.9. */
+const PACKAGE_VERSION = (createRequire(import.meta.url)('../package.json') as { version: string }).version;
+
 export function buildServer(
   client: ReturnType<typeof createClient>,
   warn: (msg: string) => void = console.error,
   options: { readOnly?: boolean; tokenScopes?: string[] | null } = {},
 ): McpServer {
-  const server = new McpServer({ name: 'ninedeploy', version: '0.7.9' });
+  const server = new McpServer({ name: 'ninedeploy', version: PACKAGE_VERSION });
 
   // Read-only mode keeps the pre-existing behaviour (a
   // hand-picked allowlist of mutating-free tools). The
@@ -172,7 +177,11 @@ export const DEFAULT_IO = {
 export function isDirectRun(argv1: string | undefined, selfUrl: string): boolean {
   if (argv1 == null) return false;
   try {
-    return pathToFileURL(argv1).href === selfUrl;
+    // r196: npm installs the `ninedeploy-mcp` bin as a SYMLINK; argv[1] is
+    // the link while import.meta.url is the resolved file, so the server
+    // silently never started when launched through the installed bin.
+    if (pathToFileURL(argv1).href === selfUrl) return true;
+    return pathToFileURL(realpathSync(argv1)).href === selfUrl;
   } catch {
     /* v8 ignore next -- node:path accepts every string; defensive for exotic runtimes */
     return false;

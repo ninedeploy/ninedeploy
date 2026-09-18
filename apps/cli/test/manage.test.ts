@@ -384,7 +384,12 @@ describe('usage and error branches', () => {
 });
 
 describe('system export/import', () => {
-  const okRes = () => ({ ok: true, status: 200, text: async () => 'data' });
+  const okRes = () => ({
+    ok: true,
+    status: 200,
+    text: async () => 'data',
+    arrayBuffer: async () => new Uint8Array([0x1f, 0x8b, 0xff, 0x00]).buffer,
+  });
 
   it('exports without a stored token', async () => {
     const saved = sys.config.token;
@@ -409,7 +414,7 @@ describe('system export/import', () => {
     sys.fetch.mockResolvedValueOnce(okRes());
     await systemExport();
     const name = sys.writeFileSync.mock.calls.at(-1)![0] as string;
-    expect(name).toMatch(/^ninedeploy-export-\d{4}-\d{2}-\d{2}\.json$/);
+    expect(name).toMatch(/^ninedeploy-export-\d{4}-\d{2}-\d{2}\.tar\.gz$/);
   });
 
   it('formats non-Error failures from the export path', async () => {
@@ -422,7 +427,10 @@ describe('system export/import', () => {
     sys.fetch.mockResolvedValueOnce(okRes());
     await systemExport('out.json');
     expect(sys.fetch).toHaveBeenCalledWith('http://srv.test/v1/system/export', expect.objectContaining({ headers: expect.anything() }));
-    expect(sys.writeFileSync).toHaveBeenCalledWith('out.json', 'data');
+    // r192: the gzip bytes are written verbatim (0xff would not survive text decoding).
+    const written = sys.writeFileSync.mock.calls.at(-1)![1] as Buffer;
+    expect(Buffer.isBuffer(written)).toBe(true);
+    expect([...written]).toEqual([0x1f, 0x8b, 0xff, 0x00]);
   });
 
   it('reports export failures', async () => {
@@ -436,6 +444,10 @@ describe('system export/import', () => {
     sys.fetch.mockResolvedValueOnce(okRes());
     await systemImport('bundle.json');
     expect(sys.fetch).toHaveBeenCalledWith('http://srv.test/v1/system/import', expect.objectContaining({ method: 'POST' }));
+    // r192: raw archive bytes, not multipart.
+    const init = sys.fetch.mock.calls.at(-1)![1] as { headers: Record<string, string>; body: unknown };
+    expect(init.headers['Content-Type']).toBe('application/octet-stream');
+    expect(Buffer.isBuffer(init.body)).toBe(true);
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('System imported.'));
   });
 

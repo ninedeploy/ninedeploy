@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createRequire } from 'node:module';
 import { Command } from 'commander';
 import { getClient } from './client.js';
 import { loadConfig, saveConfig } from './config.js';
@@ -107,7 +108,8 @@ const program = new Command();
 program
   .name('ninedeploy')
   .description('NineDeploy — self-hosted deployment platform CLI\n\n  Deploy apps from Git or Docker Hub in one click.')
-  .version('0.7.9')
+  // r195: read from package.json — the literal was stuck at 0.7.9.
+  .version((createRequire(import.meta.url)('../package.json') as { version: string }).version)
   .helpOption('-h, --help', 'Display this help');
 
 // ── Auth ──────────────────────────────────────────────────────────────────
