@@ -863,7 +863,7 @@ function LimitsRow({ kind, id, memLimitMb }: { kind: 'service' | 'database'; id:
       // silently wiped the service's CPU cap and shares. Type 0 to clear.
       // Memory IS prefilled, so blanking it is a deliberate clear.
       const input: { cpuShares?: number | null; cpuLimitMilli?: number | null; memLimitMb: number | null } = {
-        memLimitMb: mem.trim() ? toInt(mem, 0) : null,
+        memLimitMb: mem.trim() ? (toInt(mem, 0) ?? null) : null,
       };
       if (cpu.trim()) input.cpuShares = toInt(cpu, 0) || null;
       if (cpuCap.trim()) {
