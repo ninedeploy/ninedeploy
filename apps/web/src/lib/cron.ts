@@ -118,6 +118,11 @@ export function nextCronRun(expr: string, from: Date = new Date()): Date | null 
         y += 1;
       }
       d = 1;
+      // r207: a fresh day starts at 00:00. The clock used to carry over from
+      // `from`, so a day that only matches EARLIER than the current time of
+      // day (a weekly 03:00 seen at 10:30) was skipped entirely.
+      h = 0;
+      mi = 0;
       continue;
     }
     const domRestricted = parts.daysOfMonth.size !== 31;
@@ -128,6 +133,8 @@ export function nextCronRun(expr: string, from: Date = new Date()): Date | null 
       domRestricted && dowRestricted ? dateMatches || dowMatches : dateMatches && dowMatches;
     if (!dayOk) {
       d += 1;
+      h = 0;
+      mi = 0;
       if (new Date(y, mo, d).getDate() !== d) {
         // Rolled past end of month.
         mo += 1;

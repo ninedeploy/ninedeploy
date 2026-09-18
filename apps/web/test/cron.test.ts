@@ -72,6 +72,16 @@ describe('describeCron', () => {
 });
 
 describe('nextCronRun', () => {
+  it('r207: a later matching day starts from midnight, not the current clock', () => {
+    // Monday 2026-09-14 10:30 local → weekly Wednesday 03:00 is 2026-09-16 03:00.
+    const from = new Date(2026, 8, 14, 10, 30);
+    expect(nextCronRun('0 3 * * 3', from)).toEqual(new Date(2026, 8, 16, 3, 0));
+    // Monthly on the 1st at 01:00, seen mid-month in the afternoon.
+    expect(nextCronRun('0 1 1 * *', new Date(2026, 8, 18, 15, 0))).toEqual(new Date(2026, 9, 1, 1, 0));
+    // Month skip: January-only job seen in March.
+    expect(nextCronRun('5 2 * 1 *', new Date(2026, 2, 10, 23, 50))).toEqual(new Date(2027, 0, 1, 2, 5));
+  });
+
   it('steps one minute ahead of `from` for a every-minute expression', () => {
     const from = new Date(2026, 7, 27, 12, 34);
     expect(nextCronRun('* * * * *', from)).toEqual(new Date(2026, 7, 27, 12, 35));
