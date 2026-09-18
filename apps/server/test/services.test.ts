@@ -1128,6 +1128,43 @@ describe('services routes', () => {
     }
   });
 
+  it('r220: a clone keeps the runtime-defining columns and static build fields', async () => {
+    const db = createFakeDb({
+      findFirst: {
+        services: svcRow({
+          id: 1, name: 'ghost', slug: 'ghost', cmd: ['node', 'server.js'], templateId: 'ghost',
+          templateDatabaseEnv: { database__connection__host: 'host' }, cpuLimitMilli: 1500, replicas: 3, environmentId: 4,
+        }),
+        buildConfigs: { serviceId: 1, buildPack: 'static', outputDir: 'dist', staticSpa: true } as any,
+      },
+      findMany: { envVars: [] as any },
+      insert: {
+        services: [svcRow({ id: 2, name: 'ghost (Copy)', slug: 'ghost-copy' })],
+        buildConfigs: [{ id: 2, serviceId: 2 }] as any,
+      },
+    });
+    const values: Record<string, unknown>[] = [];
+    const insert = db.insert.bind(db);
+    (db as { insert: unknown }).insert = (table: unknown) => {
+      const q = insert(table as never) as { values: (v: Record<string, unknown>) => unknown };
+      const original = q.values.bind(q);
+      q.values = (v) => {
+        values.push(v);
+        return original(v);
+      };
+      return q;
+    };
+    const app = await buildTestApp({ db });
+    await app.register(servicesRoutes);
+    const res = await app.inject({ method: 'POST', url: '/1/clone', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(values[0]).toMatchObject({
+      cmd: ['node', 'server.js'], templateId: 'ghost', templateDatabaseEnv: { database__connection__host: 'host' },
+      cpuLimitMilli: 1500, replicas: 3, environmentId: 4,
+    });
+    expect(values[1]).toMatchObject({ outputDir: 'dist', staticSpa: true });
+  });
+
   it('clones an existing service with its build configs and env vars', async () => {
     const app = await buildTestApp({
       db: createFakeDb({

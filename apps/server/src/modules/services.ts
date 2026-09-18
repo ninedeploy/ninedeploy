@@ -1052,6 +1052,18 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         publishedPort: null, // do not collide host port
         cpuShares: svc.cpuShares,
         memLimitMb: svc.memLimitMb,
+        // r220: the runtime-defining columns travel too. A template clone
+        // started with the image's default command (no `cmd`) and a generic
+        // database URL (no `templateDatabaseEnv`); the CPU cap, replica count
+        // and deployment lane were silently reset. `dockerSocket` already
+        // passed the host-privilege gate above.
+        cpuLimitMilli: svc.cpuLimitMilli,
+        replicas: svc.replicas,
+        cmd: svc.cmd,
+        dockerSocket: svc.dockerSocket ?? false,
+        templateId: svc.templateId,
+        templateDatabaseEnv: svc.templateDatabaseEnv,
+        environmentId: svc.environmentId,
         previewDeploymentsEnabled: svc.previewDeploymentsEnabled,
         previewAutoDestroyOnClose: svc.previewAutoDestroyOnClose,
         previewDomainPattern: svc.previewDomainPattern,
@@ -1081,6 +1093,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         buildCmd: b.buildCmd,
         startCmd: b.startCmd,
         dockerfilePath: b.dockerfilePath,
+        outputDir: b.outputDir,
+        staticSpa: b.staticSpa,
         preDeployCmd: b.preDeployCmd,
         postDeployCmd: b.postDeployCmd,
         preStopCmd: b.preStopCmd,
