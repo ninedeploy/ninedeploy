@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Cloud, KeyRound, Server } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
@@ -29,6 +29,18 @@ function VaultCard() {
   const [token, setToken] = useState('');
   const [projectId, setProjectId] = useState('');
   const [environment, setEnvironment] = useState('');
+  // r206: prefill from the stored config once it loads. The form used to start
+  // blank with provider=infisical, so re-saving (say, to rotate the token)
+  // switched a Doppler setup to Infisical — dropping its token — and wiped
+  // the stored project/environment.
+  const [prefilled, setPrefilled] = useState(false);
+  useEffect(() => {
+    if (prefilled || !vault.data) return;
+    if (vault.data.provider === 'infisical' || vault.data.provider === 'doppler') setProvider(vault.data.provider);
+    setProjectId(vault.data.projectId ?? '');
+    setEnvironment(vault.data.environment ?? '');
+    setPrefilled(true);
+  }, [vault.data, prefilled]);
   const initialized =
     provider === (vault.data?.provider ?? '') && (vault.data?.hasToken || token.length > 0);
 
@@ -37,7 +49,9 @@ function VaultCard() {
       api.settings.vault.set({
         provider,
         ...(token ? { token } : {}),
-        ...(provider === 'infisical' ? { projectId, environment: environment || 'default' } : { environment: environment || 'dev' }),
+        // Doppler reads the project too (`?project=`); it was never sent.
+        projectId,
+        environment: environment || (provider === 'infisical' ? 'default' : 'dev'),
       }),
     onSuccess: () => {
       setToken('');
@@ -135,17 +149,25 @@ function CloudflareCard() {
   const [token, setToken] = useState('');
   const [content, setContent] = useState('');
   const isOn = enabled ?? dns.data?.enabled ?? false;
+  // r206: prefill the stored record content — the field started blank and a
+  // blank save clears it server-side, so every save (even just toggling the
+  // feature) silently reverted a custom CNAME/IP to auto-detect.
+  const [prefilled, setPrefilled] = useState(false);
+  useEffect(() => {
+    if (prefilled || !dns.data) return;
+    setContent(dns.data.content ?? '');
+    setPrefilled(true);
+  }, [dns.data, prefilled]);
 
   const save = useMutation({
     mutationFn: () =>
       api.settings.dnsRecords.set({
         enabled: isOn,
         ...(token ? { token } : {}),
-        ...(content ? { content } : {}),
+        content: content.trim(),
       }),
     onSuccess: () => {
       setToken('');
-      setContent('');
       qc.invalidateQueries({ queryKey: ['settings-dns-records'] });
       toast('DNS records settings saved', 'success');
     },
@@ -231,6 +253,15 @@ function NamecheapCard() {
   const [apiUser, setApiUser] = useState(nc.data?.apiUser ?? '');
   const [apiKey, setApiKey] = useState('');
   const [clientIp, setClientIp] = useState(nc.data?.clientIp ?? '');
+  // r206: `useState(nc.data?.…)` only reads the FIRST render, when the query
+  // has not resolved yet — the promised prefill never happened.
+  const [prefilled, setPrefilled] = useState(false);
+  useEffect(() => {
+    if (prefilled || !nc.data) return;
+    setApiUser(nc.data.apiUser ?? '');
+    setClientIp(nc.data.clientIp ?? '');
+    setPrefilled(true);
+  }, [nc.data, prefilled]);
 
   const save = useMutation({
     mutationFn: () =>

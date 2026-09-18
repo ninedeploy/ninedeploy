@@ -94,7 +94,7 @@ describe('IntegrationsSection', () => {
     await user.type(screen.getByPlaceholderText('Zone:DNS:Edit-capable token'), 'cf-tok');
     fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[1]!);
     await waitFor(() =>
-      expect(api.settings.dnsRecords.set).toHaveBeenCalledWith({ enabled: true, token: 'cf-tok' }),
+      expect(api.settings.dnsRecords.set).toHaveBeenCalledWith({ enabled: true, token: 'cf-tok', content: '' }),
     );
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('DNS records settings saved', 'success'));
 
@@ -145,6 +145,31 @@ describe('IntegrationsSection', () => {
     await waitFor(() => expect(testBtn).toBeEnabled());
     fireEvent.click(testBtn);
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Connection failed', 'error'));
+  });
+
+  it('r206: prefills stored vault, DNS and Namecheap values so a re-save keeps them', async () => {
+    mockOf(api.settings.vault.get).mockResolvedValue({
+      provider: 'doppler', hasToken: true, projectId: 'backend', environment: 'prd',
+    } as never);
+    mockOf(api.settings.dnsRecords.get).mockResolvedValue({ enabled: true, hasToken: true, content: 'edge.example.com' } as never);
+    mockOf(api.settings.namecheap.get).mockResolvedValue({
+      configured: true, apiUser: 'owner', clientIp: '203.0.113.5', hasKey: true,
+    } as never);
+    mockOf(api.settings.vault.set).mockResolvedValue(undefined as never);
+    mockOf(api.settings.dnsRecords.set).mockResolvedValue(undefined as never);
+    renderWithProviders(<IntegrationsSection />);
+    expect(await screen.findByDisplayValue('edge.example.com')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('backend')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('owner')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('203.0.113.5')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[0]!);
+    await waitFor(() =>
+      expect(api.settings.vault.set).toHaveBeenCalledWith({ provider: 'doppler', projectId: 'backend', environment: 'prd' }),
+    );
+    fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[1]!);
+    await waitFor(() =>
+      expect(api.settings.dnsRecords.set).toHaveBeenCalledWith({ enabled: true, content: 'edge.example.com' }),
+    );
   });
 
   it('sends the record content with DNS settings', async () => {
