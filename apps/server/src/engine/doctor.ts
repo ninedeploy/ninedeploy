@@ -35,6 +35,11 @@ import {
   HELPER_IMAGE,
 } from '../lib/inventory.js';
 
+/** r228: runtimes this host's `docker ps` can see (not PM2, not a remote node). */
+function isLocalContainerRuntime(s: { type: string; serverId?: number | null }): boolean {
+  return s.type !== 'pm2' && (s.serverId ?? null) === null;
+}
+
 /**
  * Doctor: one scan answers "what is dead, stale or bloated on this host, and
  * what can be done about it safely?" — leftover deploy junk (exited Hub
@@ -184,6 +189,11 @@ export async function scanDoctor(db: DB): Promise<DoctorReport> {
 
   for (const s of svcs) {
     if (s.status !== 'running' || !s.runtimeId) continue;
+    // r228: only a LOCAL docker runtime is visible in this host's container
+    // list. A PM2 process name and a container on a remote node were always
+    // "gone" here — reported critical, and the one-click sync then flipped a
+    // healthy service to `error`.
+    if (!isLocalContainerRuntime(s)) continue;
     const c = containerByName.get(s.runtimeId);
     if (c && (c.state === 'running' || c.state === 'restarting')) continue;
     finding({
@@ -529,6 +539,9 @@ export async function fixDoctorFinding(
       if (id == null) throw new Error('missing service id');
       const [row] = await db.select().from(services).where(eq(services.id, id));
       if (!row) throw conflict(`Service #${id} is gone — re-scan and retry.`);
+      if (!isLocalContainerRuntime(row)) {
+        throw conflict(`Service "${row.name}" does not run in a local container — the doctor cannot judge its runtime.`);
+      }
       if (row.runtimeId && (await containerRunning(row.runtimeId))) {
         throw conflict(`Container ${row.runtimeId} is back up — the service no longer needs a sync. Re-scan instead.`);
       }

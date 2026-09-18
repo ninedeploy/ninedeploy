@@ -102,6 +102,19 @@ describe('doctor scan', () => {
     expect(report.totals.critical).toBe(1);
   });
 
+  it('r228: never flags a PM2 process or a remote-node container as a local desync', async () => {
+    host.containers = [];
+    const report = await scanDoctor(createFakeDb({
+      select: {
+        services: [
+          svcRow({ id: 1, type: 'pm2', runtimeId: 'web-pm2' }),
+          svcRow({ id: 2, type: 'docker', runtimeId: 'api-2-9', serverId: 4 }),
+        ],
+      },
+    }));
+    expect(report.findings.filter((x) => x.kind === 'service_runtime_desync')).toEqual([]);
+  });
+
   it('flags a database marked running with a dead container, and stuck creating rows', async () => {
     host.containers = [{ Names: 'nd-db-web-db', State: 'exited', Image: 'postgres:18' }];
     const report = await scanDoctor(createFakeDb({
