@@ -63,7 +63,7 @@ async function authorizeVolume(
   user: { id: number; isOperator: boolean },
   volumeName: string,
   requireOwner: boolean,
-): Promise<{ serviceIds: number[] }> {
+): Promise<{ serviceIds: number[]; databaseContainer: string | null }> {
   if (!volumeName.startsWith('nd-svc-') && !volumeName.startsWith('nd-db-')) {
     throw badRequest('not a managed volume');
   }
@@ -86,7 +86,14 @@ async function authorizeVolume(
     if (ownerId == null) throw badRequest('Volume has no owning service');
     await loadServiceForUser(app.db, ownerId, user);
   }
-  return { serviceIds: ownerId != null ? [ownerId] : [] };
+  // r164: every service that mounts the volume, and the owning database's
+  // container, must be stopped before a restore. Only the single resolved
+  // owner used to be returned — and never for `nd-db-*` volumes — so a
+  // restore untarred over a RUNNING database's data files (corruption).
+  const sharing = allAtts.filter((a) => a.volumeName === volumeName).map((a) => a.serviceId);
+  const serviceIds = [...new Set([...(ownerId != null ? [ownerId] : []), ...sharing])];
+  const databaseContainer = resolved?.owner.kind === 'database' ? (resolved.owner.containerName ?? null) : null;
+  return { serviceIds, databaseContainer };
 }
 
 /** Per-volume backup management. Mounted under /v1/volumes/:name/backups. */
@@ -178,15 +185,18 @@ export const volumeBackupRoutes: FastifyPluginAsync = async (app) => {
   app.post('/:name/backups/:bid/restore', { preHandler: [app.requireAdmin] }, async (req) => {
     const name = (req.params as { name: string }).name;
     const bid = num((req.params as { bid: string }).bid);
-    const { serviceIds } = await authorizeVolume(app, req.user!, name, true);
+    const { serviceIds, databaseContainer } = await authorizeVolume(app, req.user!, name, true);
 
     const b = await app.db.query.backups.findFirst({
       where: and(eq(backups.id, bid), eq(backups.volumeName, name), eq(backups.scope, 'volumes')),
     });
     if (!b) throw notFound('Backup not found');
 
-    // Refuse if the owning service (or any service attaching the volume)
-    // is currently running.
+    // Refuse if the owning database, the owning service or any service
+    // attaching the volume is currently running.
+    if (databaseContainer && (await containerRunning(databaseContainer))) {
+      throw conflict('The database is running — stop it before restoring its volume');
+    }
     for (const sid of serviceIds) {
       const svc = await app.db.query.services.findFirst({ where: eq(services.id, sid) });
       if (svc && (await containerRunning(svc.runtimeId))) {
@@ -284,12 +294,12 @@ export async function backupServiceVolumes(
   if (!svc) return { created: 0, failed: 0 };
 
   const targets: string[] = [];
-  if (svc.volumeMount) targets.push(svc.volumeMount.replace(/^\/+/, '') || svc.volumeMount);
-  // Resolve the actual volume name from the slug. We don't have the
-  // legacy `nd-svc-<slug>-data` mapping here — that's an engine-level
-  // convention; for scheduled backups the operator is expected to have
-  // moved to the new attachment model. Skip the implicit primary if no
-  // row is recorded.
+  // r163: the primary volume is `nd-svc-<slug>-data` (builders/docker.ts
+  // mounts it at `volumeMount`). This used to push the CONTAINER path
+  // (`/data` → `data`), which the managed-name filter below then dropped —
+  // a template service with only its primary volume was "backed up" with
+  // created=0, failed=0, and nothing on disk.
+  if (svc.volumeMount) targets.push(`nd-svc-${svc.slug}-data`);
   // Always include the explicit attachments, regardless of type.
   const atts = await app.db
     .select()

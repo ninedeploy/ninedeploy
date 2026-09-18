@@ -38,6 +38,8 @@ export interface CreateDbResult {
  * @example
  * const { db } = createDb({ url: 'file:./.data/ninedeploy.db' });
  */
+const BUSY_TIMEOUT_MS = 5000;
+
 export function createDb(opts: CreateDbOptions): CreateDbResult {
   /* v8 ignore start */
   if (opts.url.startsWith('file:')) {
@@ -45,7 +47,22 @@ export function createDb(opts: CreateDbOptions): CreateDbResult {
     mkdirSync(path.dirname(path.resolve(raw)), { recursive: true });
   }
   /* v8 ignore stop */
-  const client = createClient({ url: opts.url, authToken: opts.authToken });
+  // r162: `timeout` is libsql's per-connection busy timeout. It must be set
+  // here, not only via PRAGMA: `client.transaction()` hands its connection to
+  // the transaction and lazily opens a FRESH one for everything after it, so
+  // PRAGMAs issued on the first connection were silently gone (busy_timeout
+  // fell back to 0 → immediate SQLITE_BUSY) after the first transaction.
+  const client = createClient({ url: opts.url, authToken: opts.authToken, timeout: BUSY_TIMEOUT_MS });
+  if (typeof client.transaction === 'function') {
+    const beginTransaction = client.transaction.bind(client);
+    client.transaction = async (...args: Parameters<typeof client.transaction>) => {
+      const tx = await beginTransaction(...args);
+      // Re-assert on the connection that replaces the one the transaction just
+      // took (foreign_keys is not a client option).
+      await client.execute('PRAGMA foreign_keys = ON;');
+      return tx;
+    };
+  }
   // SQLite defaults `foreign_keys` to OFF, which would silently disable every
   // `onDelete cascade` / `set null` rule declared in the schema. Enable it per
   // connection. Fired without awaiting — execute calls on a single libSQL client
@@ -60,7 +77,7 @@ export function createDb(opts: CreateDbOptions): CreateDbResult {
   // include the sidecar files.
   const ready = client
     .execute('PRAGMA foreign_keys = ON;')
-    .then(() => client.execute('PRAGMA busy_timeout = 5000;'))
+    .then(() => client.execute(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS};`))
     .then(() => undefined);
   const db = drizzle(client, { schema });
   // The client is opt-out via `withClient: false` so call sites that only

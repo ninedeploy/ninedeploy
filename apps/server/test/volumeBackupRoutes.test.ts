@@ -258,6 +258,41 @@ describe('volume backup routes', () => {
     expect(res.json().error.message).toMatch(/stop the service before restoring/);
   });
 
+  it('r164: refuses to restore a database volume while the database runs', async () => {
+    inventoryMocks.listManagedVolumeNames.mockResolvedValue(['nd-db-pg-data']);
+    inventoryMocks.resolveVolumeOwnerWithSharing.mockReturnValue({
+      owner: { kind: 'database', refId: 4, name: 'pg', containerName: 'nd-db-pg' },
+      sharedWith: 0,
+    } as never);
+    inventoryMocks.containerRunning.mockImplementation(async (name: string | null | undefined) => name === 'nd-db-pg');
+    const app = await appWith({ findFirst: { backups: backupRow({ volumeName: 'nd-db-pg-data' }) } });
+    const res = await app.inject({ method: 'POST', url: '/volumes/nd-db-pg-data/backups/10/restore', headers: asUser() });
+    expect(res.statusCode).toBe(409);
+    expect(engineMocks.restoreVolume).not.toHaveBeenCalled();
+  });
+
+  it('r164: refuses to restore while a service that SHARES the volume runs', async () => {
+    inventoryMocks.containerRunning.mockImplementation(async (name: string | null | undefined) => name === 'c-worker');
+    const app = await appWith({
+      findFirst: {
+        backups: backupRow(),
+        // Checked in order: the owner (web, stopped), then the sharer (worker).
+        services: (() => {
+          let call = 0;
+          return () => (call++ === 0 ? svcRow({ id: 1, name: 'web', runtimeId: 'c-web' }) : svcRow({ id: 2, name: 'worker', runtimeId: 'c-worker' }));
+        })(),
+      },
+      select: {
+        service_volume_attachments: [
+          { id: 1, serviceId: 2, volumeName: VOLUME, containerPath: '/shared', readOnly: false, createdAt: NOW, updatedAt: NOW },
+        ],
+      },
+    });
+    const res = await app.inject({ method: 'POST', url: `/volumes/${VOLUME}/backups/10/restore`, headers: asUser() });
+    expect(res.statusCode).toBe(409);
+    expect(engineMocks.restoreVolume).not.toHaveBeenCalled();
+  });
+
   it('404s a restore for an unknown backup', async () => {
     const app = await appWith({ findFirst: { backups: undefined } });
     const res = await app.inject({

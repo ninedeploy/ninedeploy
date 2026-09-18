@@ -116,6 +116,23 @@ describe('backupServiceVolumes (scheduled sweep)', () => {
     expect(dbEngineMocks.backupVolume.mock.calls[1]?.[0]).toBe('nd-svc-web-cache');
   });
 
+  it("r163: backs up the service's PRIMARY volume by its docker name", async () => {
+    await stubContainerRunning(false);
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { services: svcRow({ id: 1, slug: 'web', volumeMount: '/data' }) },
+        select: { services: [svcRow({ id: 1, slug: 'web' })], service_volume_attachments: [] },
+        insert: {
+          backups: [{ id: 1, volumeName: 'nd-svc-web-data', scope: 'volumes', status: 'running', path: '/tmp/p.tar.gz', sizeBytes: 0, createdAt: NOW, remoteKey: null, databaseId: null }],
+        },
+      }),
+    });
+
+    const result = await backupServiceVolumes(app as never, 1);
+    expect(result).toEqual({ created: 1, failed: 0 });
+    expect(dbEngineMocks.backupVolume.mock.calls[0]?.[0]).toBe('nd-svc-web-data');
+  });
+
   it('counts a volume as failed when it is not on this host', async () => {
     await stubContainerRunning(false);
     dbEngineMocks.volumeExists.mockResolvedValue(false);
