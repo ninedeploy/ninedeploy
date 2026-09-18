@@ -89,6 +89,23 @@ import { WatchSection } from './manifestCreator/sections/WatchSection.js';
 import { RuntimeSection } from './manifestCreator/sections/RuntimeSection.js';
 
 /**
+ * r213: set a manifest section, or DROP it when the editor reports
+ * `undefined`. Every section used to spread `...(x ? { x } : {})`, which keeps
+ * the OLD value when a section is turned off or emptied — the Previews switch
+ * stayed on, the last route/alert never left the YAML — short of a full reset.
+ */
+export function withSection<K extends keyof NinedeployManifest>(
+  manifest: NinedeployManifest,
+  key: K,
+  value: NinedeployManifest[K] | undefined,
+): NinedeployManifest {
+  const next = { ...manifest };
+  if (value === undefined) delete next[key];
+  else next[key] = value;
+  return next;
+}
+
+/**
  * Section registry: maps the section id to the form component. The order
  * matches `SECTIONS` (left-nav order). Keeping this in one place means
  * adding a new section is a one-liner in two adjacent objects.
@@ -100,103 +117,103 @@ const SECTION_RENDERERS: Record<
   runtime: ({ manifest, replace }) => (
     <RuntimeSection
       value={manifest.runtime}
-      onChange={(runtime) => replace({ ...manifest, ...(runtime ? { runtime } : {}) })}
+      onChange={(runtime) => replace(withSection(manifest, 'runtime', runtime))}
     />
   ),
   build: ({ manifest, replace }) => (
     <BuildSection
       value={manifest.build}
-      onChange={(build) => replace({ ...manifest, ...(build ? { build } : {}) })}
+      onChange={(build) => replace(withSection(manifest, 'build', build))}
     />
   ),
   run: ({ manifest, replace }) => (
     <RunSection
       value={manifest.run}
-      onChange={(run) => replace({ ...manifest, ...(run ? { run } : {}) })}
+      onChange={(run) => replace(withSection(manifest, 'run', run))}
     />
   ),
   static: ({ manifest, replace }) => (
     <StaticSection
       value={manifest.static}
       onChange={(staticConfig) =>
-        replace({ ...manifest, ...(staticConfig ? { static: staticConfig } : {}) })
+        replace(withSection(manifest, 'static', staticConfig))
       }
     />
   ),
   env: ({ manifest, replace }) => (
     <EnvSection
       value={manifest.env}
-      onChange={(env) => replace({ ...manifest, ...(env ? { env } : {}) })}
+      onChange={(env) => replace(withSection(manifest, 'env', env))}
     />
   ),
   phases: ({ manifest, replace }) => (
     <PhasesSection
       value={manifest.phases}
-      onChange={(phases) => replace({ ...manifest, ...(phases ? { phases } : {}) })}
+      onChange={(phases) => replace(withSection(manifest, 'phases', phases))}
     />
   ),
   resources: ({ manifest, replace }) => (
     <ResourcesSection
       value={manifest.resources}
       onChange={(resources) =>
-        replace({ ...manifest, ...(resources ? { resources } : {}) })
+        replace(withSection(manifest, 'resources', resources))
       }
     />
   ),
   hooks: ({ manifest, replace }) => (
     <HooksSection
       value={manifest.hooks}
-      onChange={(hooks) => replace({ ...manifest, ...(hooks ? { hooks } : {}) })}
+      onChange={(hooks) => replace(withSection(manifest, 'hooks', hooks))}
     />
   ),
   watch: ({ manifest, replace }) => (
     <WatchSection
       value={manifest.watch}
-      onChange={(watch) => replace({ ...manifest, ...(watch ? { watch } : {}) })}
+      onChange={(watch) => replace(withSection(manifest, 'watch', watch))}
     />
   ),
   routing: ({ manifest, replace }) => (
     <RoutingSection
       value={manifest.routes}
-      onChange={(routes) => replace({ ...manifest, ...(routes ? { routes } : {}) })}
+      onChange={(routes) => replace(withSection(manifest, 'routes', routes))}
     />
   ),
   previews: ({ manifest, replace }) => (
     <PreviewsSection
       value={manifest.previews}
-      onChange={(previews) => replace({ ...manifest, ...(previews ? { previews } : {}) })}
+      onChange={(previews) => replace(withSection(manifest, 'previews', previews))}
     />
   ),
   volume: ({ manifest, replace }) => (
     <VolumeSection
       value={manifest.volume}
-      onChange={(volume) => replace({ ...manifest, ...(volume ? { volume } : {}) })}
+      onChange={(volume) => replace(withSection(manifest, 'volume', volume))}
     />
   ),
   database: ({ manifest, replace }) => (
     <DatabaseSection
       value={manifest.database}
-      onChange={(database) => replace({ ...manifest, ...(database ? { database } : {}) })}
+      onChange={(database) => replace(withSection(manifest, 'database', database))}
     />
   ),
   network: ({ manifest, replace }) => (
     <NetworkSection
       value={manifest.network}
-      onChange={(network) => replace({ ...manifest, ...(network ? { network } : {}) })}
+      onChange={(network) => replace(withSection(manifest, 'network', network))}
     />
   ),
   notifications: ({ manifest, replace }) => (
     <NotificationsSection
       value={manifest.notifications}
       onChange={(notifications) =>
-        replace({ ...manifest, ...(notifications ? { notifications } : {}) })
+        replace(withSection(manifest, 'notifications', notifications))
       }
     />
   ),
   alerts: ({ manifest, replace }) => (
     <AlertsSection
       value={manifest.alerts}
-      onChange={(alerts) => replace({ ...manifest, ...(alerts ? { alerts } : {}) })}
+      onChange={(alerts) => replace(withSection(manifest, 'alerts', alerts))}
     />
   ),
 };

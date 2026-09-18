@@ -510,6 +510,19 @@ describe('ManifestCreator', () => {
   });
 
   // ── Grouped nav + progress ────────────────────────────────────────────
+  it('r213: switching a section off removes it from the manifest', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    window.localStorage.removeItem('ninedeploy.manifest.draft');
+    const draftKeys = () => Object.keys(JSON.parse(window.localStorage.getItem('ninedeploy.manifest.draft') ?? '{}'));
+    await user.click(screen.getByRole('button', { name: /PR previews section/ }));
+    await user.click(screen.getByRole('switch'));
+    expect(draftKeys()).toContain('previews');
+    await user.click(screen.getByRole('switch'));
+    expect(draftKeys()).not.toContain('previews');
+    expect(screen.getByRole('switch')).not.toBeChecked();
+  });
+
   it('renders the nav grouped with group headings and a progress readout', () => {
     renderPage();
     expect(screen.getByText('Core')).toBeInTheDocument();
