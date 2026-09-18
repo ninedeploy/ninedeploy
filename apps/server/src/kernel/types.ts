@@ -395,9 +395,9 @@ export interface EgressIpSelector {
   /** Stable project id the rule applies to. */
   projectId: number;
   /**
-   * Source CIDR the rule rewrites. Defaults to the project's
-   * `ninedeploy_<project>` Docker network when omitted, which is
-   * what the iptables driver computes from `docker network inspect`.
+   * Source CIDR the rule rewrites. When omitted the iptables driver
+   * resolves the subnets of the project's service bridges
+   * (`nd-svc-<slug>`, one per service) — r240.
    */
   sourceCidr?: string;
 }
@@ -408,6 +408,12 @@ export interface EgressIpRule {
   ip: string;
   /** When the rule was created. ISO 8601. */
   createdAt: string;
+  /**
+   * r240: the source CIDRs the rule was actually applied to. Stored so a
+   * detach (or a reboot re-apply) removes exactly what attach added, even
+   * after the project's networks changed.
+   */
+  sourceCidrs?: string[];
 }
 
 export interface IEgressIpDriver {

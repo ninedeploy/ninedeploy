@@ -33,19 +33,24 @@ export const egressRoutes: FastifyPluginAsync = async (app) => {
     return { drivers: all };
   });
 
-  app.post<{ Body: { projectId: number; ip: string; driver?: string } }>('/', async (req) => {
-    const { projectId, ip, driver } = req.body ?? ({} as Record<string, unknown>);
+  app.post<{ Body: { projectId: number; ip: string; driver?: string; sourceCidr?: string } }>('/', async (req) => {
+    const { projectId, ip, driver, sourceCidr } = req.body ?? ({} as Record<string, unknown>);
     if (typeof projectId !== 'number') {
       return { ok: false, error: '`projectId` is required (number)' };
     }
     if (typeof ip !== 'string' || ip.length === 0) {
       return { ok: false, error: '`ip` is required (string)' };
     }
+    // r240: an explicit source network, for hosts where the project's
+    // bridges cannot be resolved (or to scope the rule more narrowly).
+    if (sourceCidr !== undefined && (typeof sourceCidr !== 'string' || !/^\d+\.\d+\.\d+\.\d+\/\d{1,2}$/.test(sourceCidr))) {
+      return { ok: false, error: '`sourceCidr` must be an IPv4 CIDR such as 172.20.0.0/16' };
+    }
     const d = pick(driver);
     if (!d) {
       return { ok: false, error: `Egress IP driver "${driver ?? DEFAULT_DRIVER}" is not registered` };
     }
-    const rule = await d.attach({ projectId }, ip);
+    const rule = await d.attach(sourceCidr ? { projectId, sourceCidr } : { projectId }, ip);
     // r199: host-level SNAT changes were the one operator mutation with no
     // audit trail (and so no notification / live-feed event either).
     void audit(app.db, req.user?.id ?? null, 'egress.attach', `project:${projectId}`, { ip, driver: d.name }, {

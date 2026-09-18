@@ -12,6 +12,8 @@
  *
  * Every helper here is idempotent: safe to call on every deploy.
  */
+import { eq } from 'drizzle-orm';
+import { type DB, serviceProjects, services } from '@ninedeploy/db';
 import { capture, run } from './exec.js';
 // From the leaf module, not from `proxy` — importing them from there
 // closes a cycle whose top-level `RESERVED_NETWORKS` evaluation crashed
@@ -161,3 +163,32 @@ export async function removeServiceBridgeIfEmpty(slug: string, log: (line: strin
  * probes can call `connectContainerToServiceBridge` directly.
  */
 export const RESERVED_NETWORKS = [NETWORK] as const;
+
+/**
+ * r240: the IPv4 subnets of a project's local service bridges: the source
+ * networks an egress SNAT rule has to match. Remote-node services are skipped
+ * (their traffic never leaves through this host), as are bridges that do not
+ * exist yet (a never-deployed service).
+ */
+export async function projectBridgeCidrs(db: DB, projectId: number): Promise<string[]> {
+  const rows = await db
+    .select({ slug: services.slug, serverId: services.serverId })
+    .from(serviceProjects)
+    .innerJoin(services, eq(services.id, serviceProjects.serviceId))
+    .where(eq(serviceProjects.projectId, projectId));
+  const cidrs: string[] = [];
+  for (const row of rows) {
+    if (row.serverId != null) continue;
+    try {
+      const out = await capture('docker', [
+        'network', 'inspect', serviceBridgeName(row.slug),
+        '--format', '{{range .IPAM.Config}}{{.Subnet}} {{end}}',
+      ]);
+      for (const subnet of out.split(/\s+/)) if (/^\d+\.\d+\.\d+\.\d+\/\d+$/.test(subnet)) cidrs.push(subnet);
+    } catch {
+      /* bridge not created yet */
+    }
+  }
+  return cidrs;
+}
+

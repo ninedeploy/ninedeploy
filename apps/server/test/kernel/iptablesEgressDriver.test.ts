@@ -169,3 +169,62 @@ describe('ESM purity (r025 regression)', () => {
     expect(source).not.toMatch(/\brequire\s*\(/);
   });
 });
+
+describe('r240: real source networks and reboot re-apply', () => {
+  const addCidrs = () =>
+    runMock.mock.calls.filter((c) => (c[1] as string[])[2] === '-A').map((c) => (c[1] as string[])[5]);
+
+  it('applies one SNAT rule per resolved service bridge', async () => {
+    const d = new IptablesEgressDriver({ rootDir: tmpRoot, resolveCidrs: async () => ['172.21.0.0/16', '172.22.0.0/16'] });
+    const rule = await d.attach({ projectId: 3 }, '203.0.113.3');
+    expect(addCidrs()).toEqual(['172.21.0.0/16', '172.22.0.0/16']);
+    expect(rule.sourceCidrs).toEqual(['172.21.0.0/16', '172.22.0.0/16']);
+    // The resolver replaces the dead `ninedeploy_proj_<id>` lookup.
+    expect(captureMock).not.toHaveBeenCalled();
+  });
+
+  it('detach removes exactly what attach added, even after the networks changed', async () => {
+    let cidrs = ['172.21.0.0/16'];
+    const d = new IptablesEgressDriver({ rootDir: tmpRoot, resolveCidrs: async () => cidrs });
+    await d.attach({ projectId: 3 }, '203.0.113.3');
+    cidrs = ['172.30.0.0/16'];
+    await d.detach({ projectId: 3 });
+    const del = runMock.mock.calls.filter((c) => (c[1] as string[])[2] === '-D').map((c) => (c[1] as string[])[5]);
+    expect(del).toEqual(['172.21.0.0/16']);
+  });
+
+  it('re-attaches when the project gained a bridge (same IP)', async () => {
+    let cidrs = ['172.21.0.0/16'];
+    const d = new IptablesEgressDriver({ rootDir: tmpRoot, resolveCidrs: async () => cidrs });
+    await d.attach({ projectId: 3 }, '203.0.113.3');
+    cidrs = ['172.21.0.0/16', '172.22.0.0/16'];
+    await d.attach({ projectId: 3 }, '203.0.113.3');
+    expect(addCidrs()).toEqual(['172.21.0.0/16', '172.21.0.0/16', '172.22.0.0/16']);
+  });
+
+  it('rolls back the rules already added when a later one is rejected', async () => {
+    runMock.mockImplementation(async (_t: string, argv: string[]) => {
+      if (argv[2] === '-A' && argv[5] === '172.22.0.0/16') throw new Error('Permission denied');
+    });
+    const d = new IptablesEgressDriver({ rootDir: tmpRoot, resolveCidrs: async () => ['172.21.0.0/16', '172.22.0.0/16'] });
+    await expect(d.attach({ projectId: 3 }, '203.0.113.3')).rejects.toThrow(/Permission denied/);
+    const del = runMock.mock.calls.filter((c) => (c[1] as string[])[2] === '-D').map((c) => (c[1] as string[])[5]);
+    expect(del).toEqual(['172.21.0.0/16']);
+    expect(await d.list()).toEqual([]);
+  });
+
+  it('reapply() re-adds persisted rules the kernel lost, and skips present ones', async () => {
+    writeFileSync(
+      join(tmpRoot, '5.rules'),
+      JSON.stringify({ selector: { projectId: 5 }, ip: '198.51.100.5', createdAt: 'x', sourceCidrs: ['172.21.0.0/16', '172.22.0.0/16'] }),
+    );
+    runMock.mockImplementation(async (_t: string, argv: string[]) => {
+      // The first network's rule survived; the second did not.
+      if (argv[2] === '-C' && argv[5] === '172.22.0.0/16') throw new Error('Bad rule');
+    });
+    const d = new IptablesEgressDriver({ rootDir: tmpRoot });
+    expect(await d.reapply()).toEqual({ restored: 1, failed: 0 });
+    expect(addCidrs()).toEqual(['172.22.0.0/16']);
+  });
+});
+

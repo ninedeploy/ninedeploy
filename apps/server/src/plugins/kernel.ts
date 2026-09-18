@@ -14,6 +14,7 @@ import { IptablesEgressDriver } from '../kernel/drivers/iptablesEgressDriver.js'
 import { NineDeployKernel } from '../kernel/kernel.js';
 import { bridgeAuditEvents } from '../kernel/auditBridge.js';
 import { eventBus } from '../lib/events.js';
+import { projectBridgeCidrs } from '../lib/serviceBridge.js';
 import { getDnsRecordsConfig } from '../lib/cloudflare.js';
 import { getDnsimpleConfig } from '../lib/dnsimple.js';
 import { getNamecheapConfig } from '../lib/namecheap.js';
@@ -126,7 +127,18 @@ export default fp(
       // Default egress IP driver — iptables. Reused by the
       // StickyIpPlugin when a project has a `sticky_ip.ip` config
       // entry. Sprint 6 will add cloud-specific drivers.
-      kernel.registry.registerEgressIpDriver(new IptablesEgressDriver());
+      // r240: the source networks are the project's `nd-svc-<slug>` bridges,
+      // and persisted rules are re-added after a reboot flushed iptables.
+      const egress = new IptablesEgressDriver(
+        fastify.db ? { resolveCidrs: (projectId) => projectBridgeCidrs(fastify.db, projectId) } : {},
+      );
+      kernel.registry.registerEgressIpDriver(egress);
+      void egress
+        .reapply()
+        .then(({ restored, failed }) => {
+          if (restored || failed) fastify.log.info({ restored, failed }, 'egress SNAT rules re-applied');
+        })
+        .catch(() => undefined);
       // Sibling driver for DNSimple. Mirrors the Cloudflare wiring — the
       // credentials supplier is a closure over `fastify.db`, and a missing
       // setting surfaces as `null`, so the driver fails with a descriptive

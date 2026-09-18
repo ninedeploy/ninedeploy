@@ -333,3 +333,27 @@ describe('removeServiceBridgeIfEmpty', () => {
     expect(reconnects.length).toBeGreaterThan(0);
   });
 });
+
+describe('r240: projectBridgeCidrs', () => {
+  it('returns the subnets of the project\'s local service bridges only', async () => {
+    const { projectBridgeCidrs } = await import('../../src/lib/serviceBridge.js');
+    execState.byArgs.set('docker network inspect nd-svc-web --format {{range .IPAM.Config}}{{.Subnet}} {{end}}', {
+      stdout: '172.21.0.0/16 fd00::/64 ',
+    });
+    execState.byArgs.set('docker network inspect nd-svc-new --format {{range .IPAM.Config}}{{.Subnet}} {{end}}', {
+      throw: new Error('No such network'),
+    });
+    const rows = [
+      { slug: 'web', serverId: null },
+      { slug: 'new', serverId: null },
+      { slug: 'edge', serverId: 4 },
+    ];
+    const chain: Record<string, unknown> = {};
+    chain.from = () => chain;
+    chain.innerJoin = () => chain;
+    chain.where = async () => rows;
+    const db = { select: () => chain };
+    expect(await projectBridgeCidrs(db as never, 1)).toEqual(['172.21.0.0/16']);
+  });
+});
+
