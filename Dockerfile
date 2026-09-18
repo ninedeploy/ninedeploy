@@ -74,6 +74,29 @@ RUN apt-get update \
   && rm -f "/tmp/${NIXPACKS_ASSET}" \
   && rm -rf /var/lib/apt/lists/*
 
+# Docker CLI plugins. Debian's `docker.io` ships the bare CLI only, so every
+# compose service (`docker compose up`) and every BuildKit build
+# (`docker buildx build`, engine:use_buildkit) failed inside this image with
+# "'compose' is not a docker command". Pinned + checksum-verified like Nixpacks.
+ARG COMPOSE_VERSION=5.5.1
+ARG BUILDX_VERSION=0.37.1
+RUN case "$TARGETARCH" in \
+       amd64) COMPOSE_ARCH="x86_64"; COMPOSE_SHA256="db1889184726840f75c4f9c001048430d4f25b3be3cb084d3ddd762bc0aed576"; \
+              BUILDX_SHA256="9447199cdb435f25880548343c128a4b6650e8891ee598905d8d29d39a8e359b" ;; \
+       arm64) COMPOSE_ARCH="aarch64"; COMPOSE_SHA256="732e3a84c1a0f67256ce80bc2598a24546b10ca05f9faa97efceb1171ece2ef7"; \
+              BUILDX_SHA256="e5cc9fe3bbff5cbc91230981f7860e06076110730a2db997082652199042a1f2" ;; \
+       *) echo "Unsupported Docker plugin architecture: $TARGETARCH" >&2; exit 1 ;; \
+     esac \
+  && PLUGINS=/usr/local/lib/docker/cli-plugins \
+  && mkdir -p "$PLUGINS" \
+  && curl -fsSL "https://github.com/docker/compose/releases/download/v${COMPOSE_VERSION}/docker-compose-linux-${COMPOSE_ARCH}" -o "$PLUGINS/docker-compose" \
+  && echo "${COMPOSE_SHA256}  $PLUGINS/docker-compose" | sha256sum -c - \
+  && curl -fsSL "https://github.com/docker/buildx/releases/download/v${BUILDX_VERSION}/buildx-v${BUILDX_VERSION}.linux-${TARGETARCH}" -o "$PLUGINS/docker-buildx" \
+  && echo "${BUILDX_SHA256}  $PLUGINS/docker-buildx" | sha256sum -c - \
+  && chmod 0755 "$PLUGINS/docker-compose" "$PLUGINS/docker-buildx" \
+  && docker compose version \
+  && docker buildx version
+
 # Node ≥ 26 images no longer bundle corepack — see stage 1. Keep in sync with
 # "packageManager" in package.json.
 ARG PNPM_VERSION=11.23.0
