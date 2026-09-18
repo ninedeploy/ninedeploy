@@ -88,6 +88,19 @@ export function mapAuditToDomainEvent(event: AppEvent): MappedEvent | null {
     } as MappedEvent;
   }
 
+  // r242: the runtime reconcile records a service it could not revive. This
+  // is the one failure transition, and the only `service.health_changed` the
+  // notifications plugin raises an alert for.
+  if (action === 'alert.service_down') {
+    return {
+      name: 'service.health_changed',
+      payload: {
+        status: 'dead',
+        ...(entityId(entity) === undefined ? {} : { serviceId: entityId(entity) }),
+      },
+    } as MappedEvent;
+  }
+
   if (action === 'backup.create') {
     return { name: 'backup.completed', payload: {} } as MappedEvent;
   }

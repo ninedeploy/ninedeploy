@@ -160,6 +160,12 @@ export default fp(
         { serviceId: svc.id, name: svc.name, runtimeId: svc.runtimeId, status },
         'service runtime is down and could not be revived — status reconciled from live state (a redeploy recreates it)',
       );
+      // r242: a service going down was only a log line: no activity entry, no
+      // notification, and the kernel's `service.health_changed` (which the
+      // notifications plugin alerts on) was never emitted with a failure
+      // status. Once per outage: the reconcile only visits `running` rows. An
+      // `alert.*` action, so per-service alert subscriptions receive it too.
+      void audit(fastify.db, null, 'alert.service_down', `${svc.name} #${svc.id}`, { serviceId: svc.id, runtimeId: svc.runtimeId, status });
     };
 
     /**

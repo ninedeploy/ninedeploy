@@ -68,6 +68,13 @@ describe('mapAuditToDomainEvent', () => {
     });
   });
 
+  it('r242: maps a service the reconcile could not revive onto a dead health change', () => {
+    expect(mapAuditToDomainEvent(evt('alert.service_down', 'api #4'))).toEqual({
+      name: 'service.health_changed',
+      payload: { status: 'dead', serviceId: 4 },
+    });
+  });
+
   it('maps service lifecycle actions onto service.health_changed', () => {
     expect(mapAuditToDomainEvent(evt('service.stop', 'api #4'))).toEqual({
       name: 'service.health_changed',

@@ -201,6 +201,14 @@ describe('runtime state reconciliation', () => {
     expect(updates).toContainEqual({ status: 'error' });
   });
 
+  it('r242: records the outage in the audit trail, which fans out to notifications and the kernel', async () => {
+    mockDocker({
+      state: [new Error('`docker inspect` exited 1: Error response from daemon: No such container: c1')],
+    });
+    await reconcileOnce(svcRow({ id: 1, name: 'api', status: 'running', runtimeId: 'c1' }));
+    expect(auditMocks.audit).toHaveBeenCalledWith(expect.anything(), null, 'alert.service_down', 'api #1', expect.objectContaining({ status: 'error' }));
+  });
+
   it('skips the round without judging when the docker daemon is unreachable', async () => {
     mockDocker({
       state: [new Error('`docker inspect` exited 1: Cannot connect to the Docker daemon at unix:///var/run/docker.sock')],
