@@ -26,6 +26,7 @@ import { capture } from '../lib/exec.js';
 import { replicaNames } from '../engine/dockerNames.js';
 import { teardownTargets } from '../engine/fanout.js';
 import { audit } from '../lib/audit.js';
+import { agentOp } from '../lib/agentClient.js';
 import { config } from '../config.js';
 import { getStickyEnabledForService } from '../engine/proxy.js';
 import { setSettingString } from '../lib/settings.js';
@@ -614,6 +615,15 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // re-enable starts from a fresh first observation instead of a stale one.
     const servicePatch =
       patch.autoUpdate === false ? { ...patch, autoUpdateDigest: null as string | null } : patch;
+    // r225: moving a DEPLOYED service to another node (or back to the panel
+    // host) retires the runtime where it runs now; the next deploy creates it
+    // on the new node. Otherwise the old container kept serving, unmanaged.
+    const moving = patch.serverId !== undefined && (patch.serverId ?? null) !== (existing.serverId ?? null);
+    if (moving && existing.runtimeId) {
+      await retireRuntime(existing, (msg) => req.log.warn({ serviceId: id }, msg));
+      Object.assign(servicePatch, { runtimeId: null, status: 'idle' });
+      void audit(app.db, req.user!.id, 'service.move', `${existing.name}: node ${existing.serverId ?? 'local'} → ${patch.serverId ?? 'local'}`);
+    }
     const [svc] = await app.db.update(services).set(servicePatch).where(eq(services.id, id)).returning();
     if (!svc) throw notFound('Service not found');
     if (build) {
@@ -652,6 +662,50 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     void audit(app.db, req.user!.id, 'service.update', svc.name);
     return serialize(svc, await sourceNameFor(app.db, svc.sourceId), await tagIdsOf(app.db, svc.id));
   });
+
+  // r225: a service with `serverId` runs on a remote NODE. Its lifecycle,
+  // logs and teardown used to run the LOCAL docker CLI: stop answered "no such
+  // container" (read as success) and marked the row stopped while the node
+  // kept serving; start/restart marked it `error`; logs came back empty;
+  // delete left the node's container running as an orphan. These go through
+  // the node's agent instead.
+  const remoteDocker = async (
+    serverId: number,
+    op: 'docker.stop' | 'docker.start' | 'docker.rm' | 'docker.logs' | 'docker.composeDown',
+    params: Record<string, unknown>,
+  ): Promise<string> => {
+    const out: string[] = [];
+    try {
+      await agentOp(app.db, serverId, op, params, (line) => out.push(line));
+    } catch (err) {
+      // Fold the command's output into the error so "no such container" is
+      // recognisable to the same classifiers as a local CLI failure.
+      throw new Error(`${err instanceof Error ? err.message : String(err)}: ${out.join(' ').slice(0, 400)}`);
+    }
+    return out.join('\n');
+  };
+  /** Tear a runtime down wherever it lives (non-throwing, like the builders' stop). */
+  const retireRuntime = async (
+    svc: { type: string; slug: string; runtimeId: string | null; replicas: number; serverId: number | null },
+    log: (msg: string) => void,
+  ): Promise<void> => {
+    if (!svc.runtimeId) return;
+    if (svc.serverId != null) {
+      const serverId = svc.serverId;
+      if (svc.type === 'compose') {
+        await remoteDocker(serverId, 'docker.composeDown', { project: `ndcmp-${svc.slug}` }).catch((err: unknown) => log(String(err)));
+      } else {
+        for (const name of replicaNames(svc.runtimeId, svc.replicas)) {
+          await remoteDocker(serverId, 'docker.rm', { name }).catch((err: unknown) => log(String(err)));
+        }
+      }
+      return;
+    }
+    if (svc.type === 'pm2') await pm2Builder.stop(svc.runtimeId);
+    else if (svc.type === 'docker') await dockerBuilder.stop(svc.runtimeId);
+    else if (svc.type === 'compose') await composeBuilder.stop(svc.runtimeId);
+    else log(`unsupported service type ${svc.type} — leaving runtime ${svc.runtimeId} in place`);
+  };
 
   app.delete('/:id', async (req, reply) => {
     const id = num((req.params as { id: string }).id);
@@ -698,12 +752,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // (routing flips before the old container stops). Both builders' `stop` is
     // contractually non-throwing (they swallow missing/dead runtimes). An
     // unknown type cannot silently misroute to the docker teardown.
-    if (svc.runtimeId) {
-      if (svc.type === 'pm2') await pm2Builder.stop(svc.runtimeId);
-      else if (svc.type === 'docker') await dockerBuilder.stop(svc.runtimeId);
-      else if (svc.type === 'compose') await composeBuilder.stop(svc.runtimeId);
-      else req.log.warn({ type: svc.type, runtimeId: svc.runtimeId }, 'unsupported service type — leaving runtime in place');
-    }
+    await retireRuntime(svc, (msg) => req.log.warn({ runtimeId: svc.runtimeId, serverId: svc.serverId }, msg));
     // Fan-out targets: tear down every extra node's container and drop the
     // rows — deleting the service deletes the whole fleet footprint.
     await teardownTargets(app.db, svc.id, (line) => req.log.info({ fanout: line }, line)).catch((err: unknown) =>
@@ -858,6 +907,22 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     new HttpError(503, 'runtime_daemon_unavailable', `Docker daemon is unreachable: ${errText(err)}`);
   const runtimeGone = (kind: string, runtimeId: string): HttpError =>
     conflict(`${kind} "${runtimeId}" no longer exists — redeploy the service to recreate it`);
+  const nodeUnavailable = (err: unknown): HttpError =>
+    new HttpError(503, 'node_unavailable', `The service's node did not complete the operation: ${errText(err)}`);
+  /** Start a remote generation: primary first (a stale replica name must not
+   *  mask a healthy primary), then the replicas best-effort. */
+  const startRemote = async (serverId: number, serviceId: number, runtimeId: string, replicas: number): Promise<void> => {
+    await remoteDocker(serverId, 'docker.start', { name: runtimeId }).catch(async (err: unknown) => {
+      if (isMissingRuntime(err)) {
+        await app.db.update(services).set({ status: 'error' }).where(eq(services.id, serviceId));
+        throw runtimeGone('Container', runtimeId);
+      }
+      throw nodeUnavailable(err);
+    });
+    for (const name of replicaNames(runtimeId, replicas).slice(1)) {
+      await remoteDocker(serverId, 'docker.start', { name }).catch(() => undefined);
+    }
+  };
 
   app.post('/:id/stop', async (req) => {
     const svc = await loadServiceForUser(app.db, num((req.params as { id: string }).id), req.user!);
@@ -871,6 +936,13 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         if (!isMissingRuntime(err)) throw err;
         req.log.warn({ err, runtimeId: svc.runtimeId }, 'pm2 process already gone; stop is idempotent');
       });
+    } else if ((svc.type === 'docker' || svc.type === 'compose') && svc.serverId != null) {
+      for (const name of replicaNames(svc.runtimeId, svc.replicas)) {
+        await remoteDocker(svc.serverId, 'docker.stop', { name }).catch((err: unknown) => {
+          if (!isMissingRuntime(err)) throw nodeUnavailable(err);
+          req.log.warn({ err, name }, 'remote container already gone; stop is idempotent');
+        });
+      }
     } else if (svc.type === 'docker' || svc.type === 'compose') {
       // One batched stop covers the whole generation: primary + -r2..-rN
       // replicas. Stopping only the primary would leave replicas serving
@@ -904,6 +976,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         }
         throw err;
       });
+    } else if ((svc.type === 'docker' || svc.type === 'compose') && svc.serverId != null) {
+      await startRemote(svc.serverId, svc.id, svc.runtimeId, svc.replicas);
     } else if (svc.type === 'docker' || svc.type === 'compose') {
       // Batched start covers primary + replicas, mirroring stop. `docker
       // start` already-running members is a success (it prints the name),
@@ -948,6 +1022,14 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         }
         throw err;
       });
+    } else if ((svc.type === 'docker' || svc.type === 'compose') && svc.serverId != null) {
+      // The agent has no restart op: stop (idempotent) then start.
+      for (const name of replicaNames(svc.runtimeId, svc.replicas)) {
+        await remoteDocker(svc.serverId, 'docker.stop', { name }).catch((err: unknown) => {
+          if (!isMissingRuntime(err)) throw nodeUnavailable(err);
+        });
+      }
+      await startRemote(svc.serverId, svc.id, svc.runtimeId, svc.replicas);
     } else if (svc.type === 'docker' || svc.type === 'compose') {
       // Batched over the replica generation — a stop → restart flow must
       // bring the clones back too, or the panel would read `running` while
@@ -993,6 +1075,9 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       }
     }
     try {
+      if (svc.serverId != null) {
+        return { lines: await remoteDocker(svc.serverId, 'docker.logs', { name: svc.runtimeId }) };
+      }
       const out = await capture('docker', ['logs', '--tail', '300', '--timestamps', svc.runtimeId]);
       return { lines: out };
     } catch {
