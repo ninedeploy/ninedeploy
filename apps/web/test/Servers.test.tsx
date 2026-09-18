@@ -250,8 +250,10 @@ describe('Servers', () => {
 
   it('copies the agent command to the clipboard', async () => {
     mockOf(api.servers.list).mockResolvedValue([] as never);
+    // r175: the command the server built for this node is what gets copied.
     mockOf(api.servers.create).mockResolvedValue({
-      id: 3, token: 'raw-tok', tokenSha256: 'a'.repeat(64), agentCommand: 'x',
+      id: 3, token: 'raw-tok', tokenSha256: 'a'.repeat(64),
+      agentCommand: 'docker run -d --name ninedeploy-agent -e NINEDEPLOY_AGENT=1 ghcr.io/ninedeploy/ninedeploy:0.9.9',
     } as never);
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
@@ -285,13 +287,13 @@ describe('Servers', () => {
     fireEvent.change(screen.getByPlaceholderText('10.0.0.5'), { target: { value: 'h' } });
     fireEvent.click(screen.getByRole('button', { name: 'Register server' }));
 
-    // Switch to NPX tab
-    fireEvent.click(await screen.findByRole('button', { name: 'NPX / Node' }));
-    expect(screen.getByText(/npx -y @ninedeploy\/server/)).toBeInTheDocument();
+    // Switch to the source-checkout tab (r175: `@ninedeploy/server` is not on npm)
+    fireEvent.click(await screen.findByRole('button', { name: 'Node (source checkout)' }));
+    expect(screen.getByText(/node apps\/server\/dist\/agent\.js/)).toBeInTheDocument();
 
-    // Switch back to Docker tab
+    // Switch back to Docker tab: the server-built command is shown verbatim
     fireEvent.click(screen.getByRole('button', { name: /Docker/i }));
-    expect(screen.getAllByText(/docker run -d --name ninedeploy-agent/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/^x$/).length).toBeGreaterThanOrEqual(1);
   });
 
   it('approves a discovered pending node and toasts on success or failure', async () => {
