@@ -103,6 +103,7 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
         throw err;
       });
     if (!created) throw badRequest('Env var with that key already exists');
+    void audit(app.db, req.user!.id, 'env.create', `${svc.name}/${created.key}`);
     return serialize(created);
   });
 
@@ -124,6 +125,7 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
       .where(and(eq(envVars.id, varId), eq(envVars.serviceId, id)))
       .returning();
     if (!updated) throw notFound('Env var not found');
+    void audit(app.db, req.user!.id, 'env.update', `${target.name}/${updated.key}`);
     return serialize(updated);
   });
 
@@ -132,7 +134,11 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
     const varId = num((req.params as { varId: string }).varId);
     const target = await loadServiceForUser(app.db, id, req.user!);
     await assertServiceRole(app.db, target, req.user!, 'member');
-    await app.db.delete(envVars).where(and(eq(envVars.id, varId), eq(envVars.serviceId, id)));
+    const gone = await app.db
+      .delete(envVars)
+      .where(and(eq(envVars.id, varId), eq(envVars.serviceId, id)))
+      .returning({ key: envVars.key });
+    if (gone[0]) void audit(app.db, req.user!.id, 'env.delete', `${target.name}/${gone[0].key}`);
     return { ok: true };
   });
 
@@ -247,6 +253,7 @@ export const projectEnvRoutes: FastifyPluginAsync = async (app) => {
         throw err;
       });
     if (!created) throw badRequest('Env var with that key already exists');
+    void audit(app.db, req.user!.id, 'env.create', `project:${project.name}/${created.key}`);
     return serialize(created);
   });
 
@@ -270,6 +277,7 @@ export const projectEnvRoutes: FastifyPluginAsync = async (app) => {
       .where(and(eq(envVars.id, varId), eq(envVars.scope, 'project'), eq(envVars.scopeKey, id)))
       .returning();
     if (!updated) throw notFound('Env var not found');
+    void audit(app.db, req.user!.id, 'env.update', `project:${project.name}/${updated.key}`);
     return serialize(updated);
   });
 
@@ -280,9 +288,11 @@ export const projectEnvRoutes: FastifyPluginAsync = async (app) => {
     if (!req.user!.isOperator && project.workspaceId != null) {
       await assertWorkspaceRole(app.db, project.workspaceId, req.user!, 'member');
     }
-    await app.db
+    const gone = await app.db
       .delete(envVars)
-      .where(and(eq(envVars.id, varId), eq(envVars.scope, 'project'), eq(envVars.scopeKey, id)));
+      .where(and(eq(envVars.id, varId), eq(envVars.scope, 'project'), eq(envVars.scopeKey, id)))
+      .returning({ key: envVars.key });
+    if (gone[0]) void audit(app.db, req.user!.id, 'env.delete', `project:${project.name}/${gone[0].key}`);
     return { ok: true };
   });
 };

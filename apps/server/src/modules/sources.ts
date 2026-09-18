@@ -63,6 +63,9 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
     if (input.registryUsername !== undefined) patch.registryUsername = input.registryUsername || null;
     const [updated] = await app.db.update(sources).set(patch).where(eq(sources.id, id)).returning();
     if (!updated) throw notFound('Source not found');
+    // Which credential fields changed — never their values.
+    const changed = (['token', 'deployKey', 'registryUsername', 'name', 'defaultBranch'] as const).filter((k) => input[k] !== undefined);
+    void audit(app.db, req.user!.id, 'source.update', `${updated.name}: ${changed.join(',') || 'no-op'}`);
     return serialize(updated);
   });
 

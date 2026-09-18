@@ -760,6 +760,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
           .catch(() => false);
       }
     }
+    void audit(app.db, req.user!.id, 'service.limits', `${svc.name}: cpu=${svc.cpuShares} cpus=${svc.cpuLimitMilli / 1000} mem=${svc.memLimitMb}MB`);
     return { cpuShares: svc.cpuShares, cpuLimitMilli: svc.cpuLimitMilli, memLimitMb: svc.memLimitMb, liveApplied };
   });
 

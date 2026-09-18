@@ -147,6 +147,8 @@ export async function createFirstAdmin(db: DB, input: Register) {
     await ensureDefaultWorkspace(tx, user);
     return { user: toUser(user, true), tokens: await issueSessionTokens(tx, user), rawUser: user };
   });
+  // r222: a new account (or the first admin) is a security event of its own.
+  void audit(db, result.rawUser.id, 'auth.register', result.rawUser.email);
   const joined = await acceptInvitationsForUser(db, { id: result.rawUser.id, email: result.rawUser.email });
   for (const w of joined) void audit(db, result.rawUser.id, 'workspace.invitation.accept', `auto-accept ${w.email} → workspace #${w.workspaceId} as ${w.role}`);
   return { user: result.user, tokens: result.tokens };
@@ -189,6 +191,8 @@ export async function registerAccount(db: DB, input: Register) {
     }
     return { user: toUser(user, operator), tokens: await issueSessionTokens(tx, user), rawUser: user };
   });
+  // r222: a new account (or the first admin) is a security event of its own.
+  void audit(db, result.rawUser.id, 'auth.register', result.rawUser.email);
   const joined = await acceptInvitationsForUser(db, { id: result.rawUser.id, email: result.rawUser.email });
   for (const w of joined) void audit(db, result.rawUser.id, 'workspace.invitation.accept', `auto-accept ${w.email} → workspace #${w.workspaceId} as ${w.role}`);
   return { user: result.user, tokens: result.tokens };
@@ -605,6 +609,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     if (!updated) throw unauthorized();
     await revokeAllSessions(app.db, user.id);
     await revokeApiTokens(app.db, user.id);
+    void audit(app.db, user.id, 'auth.password_changed', user.email, undefined, {
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
     return { user: toUser(updated, await isOperator(app.db, updated)), tokens: await issueSessionTokens(app.db, updated, { ip: req.ip, userAgent: req.headers['user-agent'] }) };
   });
 
@@ -669,7 +677,11 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
   app.delete('/tokens/:id', { onRequest: [app.authenticate] }, async (req) => {
     const id = parseId((req.params as { id: string }).id);
-    await app.db.delete(apiTokens).where(and(eq(apiTokens.id, id), eq(apiTokens.userId, req.user!.id)));
+    const gone = await app.db
+      .delete(apiTokens)
+      .where(and(eq(apiTokens.id, id), eq(apiTokens.userId, req.user!.id)))
+      .returning({ name: apiTokens.name });
+    if (gone[0]) void audit(app.db, req.user!.id, 'auth.token_revoked', gone[0].name);
     return { ok: true };
   });
 

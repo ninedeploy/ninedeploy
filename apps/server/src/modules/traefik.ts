@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, readFileSync } from 'node:fs';
 import { config } from '../config.js';
 import { capture, run } from '../lib/exec.js';
+import { audit } from '../lib/audit.js';
 import { pullDockerImage } from '../lib/dockerPull.js';
 import {
   ensureNetwork,
@@ -388,9 +389,10 @@ export const traefikRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // Traefik'i yeniden başlat (admin only)
-  app.post('/traefik/restart', { preHandler: [app.authenticate, app.requireAdmin] }, async () => {
+  app.post('/traefik/restart', { preHandler: [app.authenticate, app.requireAdmin] }, async (req) => {
     try {
       await capture('docker', ['restart', TRAEFIK_CONTAINER]);
+      void audit(app.db, req.user!.id, 'traefik.restart');
       return { ok: true, message: 'Traefik restarted' };
     } catch (err) {
       throw new Error(`Failed to restart Traefik: ${err}`);
@@ -398,7 +400,7 @@ export const traefikRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // ACME dosyasını yedekle
-  app.post('/traefik/backup-certs', { preHandler: [app.authenticate, app.requireAdmin] }, async () => {
+  app.post('/traefik/backup-certs', { preHandler: [app.authenticate, app.requireAdmin] }, async (req) => {
     // Resolve through config (which anchors relative data dirs to the repo
     // root) — reading the env var directly followed the process cwd, so a
     // restart from a different directory silently backed up the WRONG
@@ -409,6 +411,7 @@ export const traefikRoutes: FastifyPluginAsync = async (app) => {
     
     try {
       copyFileSync(acmePath, backupPath);
+      void audit(app.db, req.user!.id, 'traefik.backup_certs', backupPath);
       return { ok: true, backupPath };
     } catch {
       throw new Error('Failed to backup certificates');
@@ -428,7 +431,7 @@ export const traefikRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // Traefik'i güncelle (pull new image + restart)
-  app.post('/traefik/update', { preHandler: [app.authenticate, app.requireAdmin] }, async () => {
+  app.post('/traefik/update', { preHandler: [app.authenticate, app.requireAdmin] }, async (req) => {
     const log = (line: string) => app.log.info({ component: 'traefik-update' }, line);
     
     log('Starting Traefik update...');
@@ -460,6 +463,7 @@ export const traefikRoutes: FastifyPluginAsync = async (app) => {
     
     const newVersion = await getLatestTraefikVersion();
     log(`Traefik updated to ${newVersion}`);
+    void audit(app.db, req.user!.id, 'traefik.update', newVersion ?? 'latest');
     
     return { ok: true, newVersion };
   });

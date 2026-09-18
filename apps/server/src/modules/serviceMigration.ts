@@ -6,6 +6,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { envVarName } from '@ninedeploy/schemas';
 import { decrypt, encrypt } from '../lib/crypto.js';
 import { badRequest, notFound, parseId as num } from '../lib/errors.js';
+import { audit } from '../lib/audit.js';
 import { slugifyWithSuffix } from '../lib/slug.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
 
@@ -149,6 +150,7 @@ export const serviceMigrationRoutes: FastifyPluginAsync = async (app) => {
       status: 'idle',
     }).returning();
     if (!svc) throw badRequest('Could not create service');
+    void audit(app.db, req.user!.id, 'service.import', svc.name);
     // An inline stack has no repository to clone, so its workspace has to be
     // rebuilt from the bundle before the first deploy on this host.
     if (svc.composeContent) materialiseComposeFile(svc.id, svc.composeContent);

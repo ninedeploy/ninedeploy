@@ -6,6 +6,7 @@ import { config } from '../config.js';
 import { decrypt, encrypt, randomToken } from '../lib/crypto.js';
 import { matchesAny, parseWatchPaths } from '../lib/glob.js';
 import { parseId, notFound, unauthorized } from '../lib/errors.js';
+import { audit } from '../lib/audit.js';
 import { isPing, isPullRequest, isReplayedDelivery, parsePullRequest, parsePush, verifyWebhook } from '../lib/webhooks.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { assertMayDeployStoredService } from '../lib/hostPrivilege.js';
@@ -516,6 +517,7 @@ export const webhookMgmtRoutes: FastifyPluginAsync = async (app) => {
         active: true,
       })
       .returning();
+    void audit(app.db, req.user!.id, 'webhook.create', `${svc.name}@${branch}`);
     // The raw secret is returned exactly once.
     return { id: w!.id, branch: w!.branch, active: w!.active, sourceId: w!.sourceId, url: await webhookUrl(app.db, w!.id), secret };
   });
@@ -527,7 +529,11 @@ export const webhookMgmtRoutes: FastifyPluginAsync = async (app) => {
     // Same tier as create: revoking (or keeping) a standing deploy credential
     // is an admin decision on the service.
     await assertServiceRole(app.db, hookSvc, req.user!, 'admin');
-    await app.db.delete(webhooks).where(and(eq(webhooks.id, hookId), eq(webhooks.serviceId, id)));
+    const gone = await app.db
+      .delete(webhooks)
+      .where(and(eq(webhooks.id, hookId), eq(webhooks.serviceId, id)))
+      .returning({ id: webhooks.id });
+    if (gone.length > 0) void audit(app.db, req.user!.id, 'webhook.delete', `${hookSvc.name}#${hookId}`);
     return { ok: true };
   });
 };

@@ -413,6 +413,9 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
       updateData.memLimitMb = input.memLimitMb ? Math.max(0, input.memLimitMb) : 0;
     }
     const [updated] = await app.db.update(databases).set(updateData).where(eq(databases.id, d.id)).returning();
+    if (updated) {
+      void audit(app.db, req.user!.id, 'database.limits', `${updated.name}: cpu=${updated.cpuShares} cpus=${updated.cpuLimitMilli / 1000} mem=${updated.memLimitMb}MB`);
+    }
     if (updated && updated.status === 'running') {
       await stopDatabase(updated, () => undefined);
       await startDatabase(updated, (line) => app.log.info({ component: 'database' }, line));
@@ -581,6 +584,7 @@ export const attachmentRoutes: FastifyPluginAsync = async (app) => {
         throw err;
       });
     if (!a) throw badRequest('Already attached');
+    void audit(app.db, req.user!.id, 'database.attach', `${d.name} → ${svc.name}`);
     return { id: a.id, databaseId: input.databaseId, envAlias };
   });
 
@@ -596,6 +600,7 @@ export const attachmentRoutes: FastifyPluginAsync = async (app) => {
       .where(and(eq(databaseAttachments.id, attId), eq(databaseAttachments.serviceId, id)))
       .returning({ id: databaseAttachments.id });
     if (deleted.length === 0) throw notFound('Attachment not found');
+    void audit(app.db, req.user!.id, 'database.detach', `${svc.name}#${attId}`);
     return { ok: true };
   });
 };

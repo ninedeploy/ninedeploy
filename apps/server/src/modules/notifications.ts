@@ -5,6 +5,7 @@ import { notificationChannelCreate, notificationChannelPatch } from '@ninedeploy
 import { decrypt, encrypt } from '../lib/crypto.js';
 import { dispatchChannel } from '../lib/notifier.js';
 import { badRequest, notFound, parseId } from '../lib/errors.js';
+import { audit } from '../lib/audit.js';
 
 function serialize(ch: typeof notificationChannels.$inferSelect) {
   return {
@@ -48,6 +49,7 @@ export const notificationRoutes: FastifyPluginAsync = async (app) => {
         configJson: input.configJson ?? null,
       })
       .returning();
+    void audit(app.db, req.user!.id, 'notification.channel_create', `${ch!.type}:${ch!.name}`);
     return serialize(ch!);
   });
 
@@ -67,12 +69,14 @@ export const notificationRoutes: FastifyPluginAsync = async (app) => {
     if (input.configJson !== undefined) patch.configJson = input.configJson === '' ? null : input.configJson;
     const [ch] = await app.db.update(notificationChannels).set(patch).where(eq(notificationChannels.id, id)).returning();
     if (!ch) throw notFound('Channel not found');
+    void audit(app.db, req.user!.id, 'notification.channel_update', `${ch.type}:${ch.name}`);
     return serialize(ch);
   });
 
   app.delete('/channels/:id', async (req) => {
     const id = parseId((req.params as { id: string }).id);
-    await app.db.delete(notificationChannels).where(eq(notificationChannels.id, id));
+    const [gone] = await app.db.delete(notificationChannels).where(eq(notificationChannels.id, id)).returning();
+    if (gone) void audit(app.db, req.user!.id, 'notification.channel_delete', `${gone.type}:${gone.name}`);
     return { ok: true };
   });
 

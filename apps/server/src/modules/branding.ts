@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
+import { audit } from '../lib/audit.js';
 
 /**
  * Branding HTTP surface — Sprint 4, Gap G-30.
@@ -93,6 +94,8 @@ export const brandingRoutes: FastifyPluginAsync = async (app) => {
       }
     }
     invalidate();
+    const changed = fields.filter((f) => body[f] !== undefined);
+    if (changed.length > 0) void audit(app.db, userId ?? null, 'branding.update', changed.join(','));
     return { ok: true };
   });
 };

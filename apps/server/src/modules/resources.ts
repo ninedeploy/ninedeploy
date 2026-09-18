@@ -10,6 +10,7 @@ import { checkForUpdate } from '../lib/updateCheck.js';
 import { getSelfUpdateStatus, startSelfUpdate } from '../lib/selfUpdate.js';
 import { selfUpdateStart } from '@ninedeploy/schemas';
 import { NETWORK } from '../engine/proxy.js';
+import { audit } from '../lib/audit.js';
 
 function parseDf(line: string): Record<string, string> | null {
   try { return JSON.parse(line) as Record<string, string>; } catch { return null; }
@@ -40,6 +41,7 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
         error: { code: 'bad_request', message: parsed.error.issues[0]?.message ?? 'invalid body' },
       });
     }
+    void audit(app.db, req.user?.id ?? null, 'system.update_start', parsed.data.version ?? 'latest');
     return startSelfUpdate(parsed.data.version);
   });
 
@@ -78,6 +80,7 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
   app.post('/prune-images', async (req) => {
     const log = (line: string) => req.log.info({ component: 'system' }, line);
     await run('docker', ['image', 'prune', '-f'], {}, log).catch(() => undefined);
+    void audit(app.db, req.user?.id ?? null, 'system.prune_images');
     return { ok: true };
   });
 
@@ -109,7 +112,10 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // ── Export: download a tar.gz of the entire system state ──────────────
-  app.get('/export', async (_req, reply) => {
+  app.get('/export', async (req, reply) => {
+    // The archive holds the database AND the master key — every secret on the
+    // instance. Its download must leave a trail.
+    void audit(app.db, req.user?.id ?? null, 'system.export');
     const files: string[] = [];
     // Unique temp names so two concurrent exports can't delete each other's
     // artifacts mid-stream via the finally-cleanup below.
@@ -272,6 +278,9 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
     const metaPath = path.join(tmpDir, metaFilename);
     const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
 
+    // Audited BEFORE the swap: once the imported database is in place this
+    // connection's file is the backup. The event still fans out live.
+    void audit(app.db, req.user?.id ?? null, 'system.import', String(meta?.exportedAt ?? 'unknown export'));
     try { const inst = app as unknown as { worker?: { stop: () => Promise<void> } }; if (inst.worker) await inst.worker.stop(); } catch { /* */ }
 
     const backupDir = path.join(config.paths.dataDir, `_backup-${Date.now()}`);

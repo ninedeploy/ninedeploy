@@ -4,6 +4,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { alertRuleCreate, alertRulePatch } from '@ninedeploy/schemas';
 import { ensureAlertState, resetAlertState } from '../lib/alerting.js';
 import { notFound, parseId } from '../lib/errors.js';
+import { audit } from '../lib/audit.js';
 
 function serialize(rule: typeof alertRules.$inferSelect, state?: typeof alertState.$inferSelect) {
   return {
@@ -52,6 +53,7 @@ export const alertRoutes: FastifyPluginAsync = async (app) => {
       })
       .returning();
     await ensureAlertState(app.db, rule!.id);
+    void audit(app.db, req.user!.id, 'alert.create', rule!.name);
     return serialize(rule!);
   });
 
@@ -71,12 +73,14 @@ export const alertRoutes: FastifyPluginAsync = async (app) => {
     // Edits invalidate stale breach state so the rule re-evaluates from scratch.
     await resetAlertState(app.db, rule.id);
     await ensureAlertState(app.db, rule.id);
+    void audit(app.db, req.user!.id, 'alert.update', rule.name);
     return serialize(rule);
   });
 
   app.delete('/:id', { preHandler: [app.requireAdmin] }, async (req) => {
     const id = parseId((req.params as { id: string }).id);
-    await app.db.delete(alertRules).where(eq(alertRules.id, id));
+    const [gone] = await app.db.delete(alertRules).where(eq(alertRules.id, id)).returning();
+    if (gone) void audit(app.db, req.user!.id, 'alert.delete', gone.name);
     return { ok: true };
   });
 };

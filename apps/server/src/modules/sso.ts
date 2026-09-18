@@ -20,6 +20,7 @@ import {
 } from '../lib/saml.js';
 import { issueSessionTokens } from '../lib/sessions.js';
 import { findUserByEmail } from '../lib/authHelpers.js';
+import { audit } from '../lib/audit.js';
 
 /**
  * These callbacks mint a full session with no second factor. For an account
@@ -107,6 +108,7 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
           .insert(ssoProviders)
           .values({ type, name, configJson: JSON.stringify(config) })
           .returning();
+        void audit(db, req.user?.id ?? null, 'sso.provider_create', `${type}:${name}`);
         return { ok: true, id: row?.id, name, type };
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -118,7 +120,8 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
   app.delete<{ Params: { id: string } }>('/providers/:id', { preHandler: [app.requireAdmin] }, async (req) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return { ok: false, error: '`id` must be a number' };
-    await db.delete(ssoProviders).where(eq(ssoProviders.id, id));
+    const [gone] = await db.delete(ssoProviders).where(eq(ssoProviders.id, id)).returning();
+    if (gone) void audit(db, req.user?.id ?? null, 'sso.provider_delete', `${gone.type}:${gone.name}`);
     return { ok: true };
   });
 
