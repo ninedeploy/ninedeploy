@@ -104,6 +104,10 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
   // anywhere else in the form. Read the latest closure through a ref instead
   // and run the setup exactly once per mount of the dialog.
   const busyRef = useRef(false);
+  // r208: what a failed repo deploy already created. The create → env → trigger
+  // sequence is not atomic; a retry after a failed env row or trigger used to
+  // re-POST the service and die on `slug_taken`, stranding a half-made service.
+  const createdRef = useRef<{ serviceId: number; envDone: Set<string> } | null>(null);
   const onCloseRef = useRef(onClose);
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -349,7 +353,7 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
       const cmdSource = f
         ? { install: f.installCmd, build: f.buildCmd, start: f.startCmd }
         : { install: installCmd || null, build: buildCmd || null, start: startCmd || null };
-      const svc = await api.services.create({
+      const svc = createdRef.current ? { id: createdRef.current.serviceId } : await api.services.create({
         name,
         type,
         // Non-template creates always run in repo mode (image mode only
@@ -383,13 +387,16 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
             }
           : {}),
       });
+      createdRef.current ??= { serviceId: svc.id, envDone: new Set() };
+      const progress = createdRef.current;
       for (const e of effectiveEnvRows) {
-        if (e.key.trim()) {
+        if (e.key.trim() && !progress.envDone.has(e.key)) {
           await api.env.create(svc.id, {
             key: e.key,
             value: e.value,
             isSecret: e.secret,
           });
+          progress.envDone.add(e.key);
         }
       }
       const deployment = await api.deploys.trigger(svc.id);
@@ -406,7 +413,11 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
       onClose();
     },
     onError: (err) => {
-      setProvisionStatus('Provisioning failed — nothing was queued before its required dependencies were ready.');
+      setProvisionStatus(
+        createdRef.current
+          ? 'The service was created but setup did not finish — retrying resumes where it stopped.'
+          : 'Provisioning failed — nothing was queued before its required dependencies were ready.',
+      );
       toast(err instanceof Error ? err.message : 'Deploy failed', 'error');
     },
   });

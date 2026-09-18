@@ -423,6 +423,24 @@ describe('DeployWizard', () => {
     expect(screen.getByText('boom')).toBeInTheDocument();
   });
 
+  it('r208: a retry after a failed trigger resumes instead of re-creating the service', async () => {
+    apiMock.api.services.create.mockResolvedValue({ id: 9 } as never);
+    apiMock.api.deploys.trigger.mockRejectedValueOnce(new Error('queue down')).mockResolvedValueOnce({ deploymentId: 4 } as never);
+    const user = userEvent.setup();
+    renderWizard();
+    await user.type(screen.getByPlaceholderText('my-app'), 'app');
+    await user.type(screen.getByPlaceholderText('https://github.com/you/repo'), 'https://github.com/x/y');
+    for (let i = 0; i < 4; i++) {
+      await user.click(screen.getByRole('button', { name: /continue/i }));
+    }
+    await user.click(screen.getByRole('button', { name: /deploy/i }));
+    await waitFor(() => expect(screen.getByText('Failed — try again')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /try again|deploy/i }));
+    await waitFor(() => expect(apiMock.api.deploys.trigger).toHaveBeenCalledTimes(2));
+    expect(apiMock.api.services.create).toHaveBeenCalledTimes(1);
+    expect(apiMock.api.deploys.trigger).toHaveBeenLastCalledWith(9);
+  });
+
   it('toasts a generic message when the error is not an Error', async () => {
     apiMock.api.services.create.mockRejectedValue('nope');
     const user = userEvent.setup();
