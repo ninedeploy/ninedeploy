@@ -8,7 +8,7 @@ import { decrypt } from '../lib/crypto.js';
 import { checkoutCommit, type CloneCreds } from '../lib/git.js';
 import { detectDeployHints } from '../lib/deployHints.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
-import { remoteDeploySupported, remoteDeployUnsupportedReason } from '../lib/remoteDeploy.js';
+import { remoteDatabaseRefusal, remoteDeploySupported, remoteDeployUnsupportedReason } from '../lib/remoteDeploy.js';
 import { agentOp } from '../lib/agentClient.js';
 import { createRemoteDockerBuilder } from './builders/remoteDocker.js';
 import { deployToTargets, pullableReleaseRef, recordFanoutResults, targetsForService } from './fanout.js';
@@ -491,6 +491,13 @@ export async function runDeployment(
       log(`✗ ${reason}`);
       await safeFail(db, deploymentId, service.id, service.runtimeId);
       await auditOutcome(db, service, deploymentId, 'failed', reason);
+      return;
+    }
+    const dbRefusal = await remoteDatabaseRefusal(db, service);
+    if (dbRefusal) {
+      log(`✗ ${dbRefusal}`);
+      await safeFail(db, deploymentId, service.id, service.runtimeId);
+      await auditOutcome(db, service, deploymentId, 'failed', dbRefusal);
       return;
     }
     const call = (op: string, params: Record<string, unknown>, sink: (line: string) => void) =>

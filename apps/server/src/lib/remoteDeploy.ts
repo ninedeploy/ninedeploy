@@ -1,3 +1,5 @@
+import { eq } from 'drizzle-orm';
+import { databaseAttachments, type DB } from '@ninedeploy/db';
 import { badRequest } from './errors.js';
 
 /**
@@ -41,6 +43,32 @@ export function remoteDeployUnsupportedReason(type: string): string {
       ? 'PM2 services run as host processes and the node agent has no operation for them'
       : `service type "${type}" has no remote implementation`;
   return `Deployments to a remote server are not available for this service: ${why}. Clear the target server to deploy it on the panel host.`;
+}
+
+/**
+ * r229: why a node cannot run this service's DATABASE wiring, or null.
+ * Managed databases always run on the panel host, and the runtime env names
+ * them by container (`nd-db-<slug>`) — a name only the panel's docker network
+ * resolves. A database-attached service pinned to a node deployed "green"
+ * (remote health is container state) and then failed DNS on every connection.
+ */
+export async function remoteDatabaseRefusal(
+  db: DB,
+  service: { id: number; serverId?: number | null; templateDatabaseEnv?: unknown },
+): Promise<string | null> {
+  if (service.serverId == null) return null;
+  const attached = await db.query.databaseAttachments.findMany({ where: eq(databaseAttachments.serviceId, service.id) });
+  if (attached.length === 0) return null;
+  return 'Deployments to a remote server are not available for a service with an attached managed database: the database runs on the panel host and its hostname does not resolve on the node. Detach it (use an external database URL) or clear the target server.';
+}
+
+/** Queue-time 400 for {@link remoteDatabaseRefusal}. */
+export async function assertRemoteDatabaseReachable(
+  db: DB,
+  service: { id: number; serverId?: number | null },
+): Promise<void> {
+  const reason = await remoteDatabaseRefusal(db, service);
+  if (reason) throw badRequest(reason, 'remote_database_unreachable');
 }
 
 /**

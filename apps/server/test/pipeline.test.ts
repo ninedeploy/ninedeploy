@@ -1674,6 +1674,21 @@ describe('runDeployment on a remote-server target', () => {
     expect(ops.indexOf('file.deleteEnv')).toBeGreaterThan(ops.indexOf('docker.runEnv'));
   });
 
+  it('r229: refuses a database-attached service on a node — the DB host only resolves on the panel', async () => {
+    const { db, inserts } = makeDb();
+    baseSetup(db, { ownerUserId: 42, image: 'nginx:latest', serverId: 4 });
+    db.query.databaseAttachments.findMany.mockResolvedValue([{ serviceId: 1, databaseId: 2, envAlias: 'DATABASE_URL' }]);
+    const lines = collectLogs(1);
+    h.agentOp.mockClear();
+
+    await runDeployment(db as never, 1);
+
+    expect(h.agentOp).not.toHaveBeenCalled();
+    expect(lines.join(' ')).toMatch(/does not resolve on the node/);
+    const audits = inserts.filter((i) => i.table === auditLog).map((i) => i.values);
+    expect(audits[0]).toMatchObject({ action: 'deploy.failed' });
+  });
+
   it('refuses a pm2 service on a node instead of running it on the panel host', async () => {
     const { db, inserts } = makeDb();
     baseSetup(db, { ownerUserId: 42, type: 'pm2', serverId: 4 });
