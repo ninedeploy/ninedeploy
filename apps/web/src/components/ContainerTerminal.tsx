@@ -112,6 +112,11 @@ export function ContainerTerminal({ serviceId, serviceName, onClose }: Container
   // Move the imperative terminal node between hosts when fullscreen toggles,
   // then re-fit once the destination layout has settled. appendChild of an
   // existing node RE-PARENTS it — xterm keeps rendering, the socket stays up.
+  // r210: also after a reconnect (a NEW node, attached inline by the session
+  // effect above): Reconnect sits in the fullscreen title bar, and the fresh
+  // session used to render into the hidden inline card, leaving the overlay
+  // blank. Declared after the session effect, so it runs after it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: serviceId/sessionKey re-run the move for the node a new session created
   useEffect(() => {
     const host = termHostRef.current;
     if (!host) return;
@@ -123,7 +128,7 @@ export function ContainerTerminal({ serviceId, serviceName, onClose }: Container
       fitRef.current?.fit();
     });
     return () => cancelAnimationFrame(raf);
-  }, [fullscreen]);
+  }, [fullscreen, serviceId, sessionKey]);
 
   const handleReconnect = () => {
     setSessionKey((k) => k + 1);

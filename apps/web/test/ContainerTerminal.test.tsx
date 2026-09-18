@@ -231,6 +231,19 @@ describe('ContainerTerminal', () => {
     expect(screen.getAllByTitle('Expand full screen').length).toBeGreaterThan(0);
   });
 
+  it('r210: a reconnect while fullscreen renders the new session in the overlay', () => {
+    render(<ContainerTerminal serviceId={1} onClose={vi.fn()} />);
+    const firstHost = (xtermMock.terminals[0] as FakeTerm).open.mock.calls[0]?.[0] as HTMLElement;
+    const inlineHost = firstHost.parentElement;
+    act(() => screen.getAllByTitle('Expand full screen')[0]!.click());
+    const overlayScreen = firstHost.parentElement;
+    expect(overlayScreen).not.toBe(inlineHost);
+    act(() => screen.getAllByText('Reconnect')[0]!.click());
+    const latest = xtermMock.terminals.at(-1) as FakeTerm;
+    const newHost = latest.open.mock.calls[0]?.[0] as HTMLElement;
+    expect(newHost.parentElement).toBe(overlayScreen);
+  });
+
   it('marks the terminal disconnected when the socket errors', () => {
     render(<ContainerTerminal serviceId={1} onClose={vi.fn()} />);
     const ws = FakeWebSocket.instances[0] as unknown as { onerror?: () => void };
