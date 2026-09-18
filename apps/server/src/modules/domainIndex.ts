@@ -3,7 +3,7 @@ import { audit } from '../lib/audit.js';
 import { domains, services } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import { readCertificates, writeDynamicConfig } from '../engine/proxy.js';
-import { notFound, parseId } from '../lib/errors.js';
+import { badRequest, notFound, parseId } from '../lib/errors.js';
 
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { assertServiceRole, visibleServiceIdSet } from '../lib/resourceAccess.js';
@@ -47,7 +47,11 @@ export const domainIndexRoutes: FastifyPluginAsync = async (app) => {
 
   app.patch('/:id', async (req) => {
     const id = parseId((req.params as { id: string }).id);
-    const input = (req.body ?? {}) as { ssl?: boolean };
+    const input = (req.body ?? {}) as { ssl?: unknown };
+    // r218: `ssl` is the only field and it must be a boolean. A body without
+    // it (or with "false" as a string) used to fall through `?? false` and
+    // silently turn TLS OFF for the domain.
+    if (typeof input.ssl !== 'boolean') throw badRequest('`ssl` (boolean) is required');
     const domain = await app.db.query.domains.findFirst({ where: eq(domains.id, id) });
     if (!domain) throw notFound('Domain not found');
     const svc = await loadServiceForUser(app.db, domain.serviceId, req.user!);
@@ -58,7 +62,7 @@ export const domainIndexRoutes: FastifyPluginAsync = async (app) => {
     // the only place a domain may become active (r092).
     const [d] = await app.db
       .update(domains)
-      .set({ ssl: input.ssl ?? false, updatedAt: new Date() })
+      .set({ ssl: input.ssl, updatedAt: new Date() })
       .where(eq(domains.id, id))
       .returning();
     if (!d) throw notFound('Domain not found');

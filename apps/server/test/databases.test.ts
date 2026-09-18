@@ -706,6 +706,13 @@ describe('databases routes', () => {
 
     const defaultLinesRes = await app.inject({ method: 'GET', url: '/3/logs', headers: asUser() });
     expect(defaultLinesRes.statusCode).toBe(200);
+    expect(engineMocks.databaseLogs).toHaveBeenLastCalledWith(expect.anything(), 100);
+
+    // r218: clamped to 1..5000; junk falls back to the default.
+    await app.inject({ method: 'GET', url: '/3/logs?lines=1000000000', headers: asUser() });
+    expect(engineMocks.databaseLogs).toHaveBeenLastCalledWith(expect.anything(), 5000);
+    await app.inject({ method: 'GET', url: '/3/logs?lines=-5', headers: asUser() });
+    expect(engineMocks.databaseLogs).toHaveBeenLastCalledWith(expect.anything(), 100);
 
     const emptyApp = await buildTestApp({ db: createFakeDb() });
     await emptyApp.register(databasesRoutes);

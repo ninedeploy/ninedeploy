@@ -103,36 +103,23 @@ describe('domain index routes', () => {
     expect(proxyMocks.writeDynamicConfig).toHaveBeenCalled();
   });
 
-  it('defaults ssl to false when omitted', async () => {
+  it('r218: refuses a PATCH without a boolean ssl instead of turning TLS off', async () => {
     const app = await buildTestApp({
       db: createFakeDb({
         findFirst: {
-          domains: domainRow({ id: 1, serviceId: 1 }),
+          domains: domainRow({ id: 1, serviceId: 1, ssl: true }),
           services: svcRow({ id: 1 }),
         },
         update: { domains: [domainRow({ id: 1, ssl: false })] },
       }),
     });
     await app.register(domainIndexRoutes);
-    const res = await app.inject({ method: 'PATCH', url: '/1', headers: asUser(), payload: {} });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ id: 1, ssl: false });
-  });
-
-  it('defaults ssl to false when no body is sent', async () => {
-    const app = await buildTestApp({
-      db: createFakeDb({
-        findFirst: {
-          domains: domainRow({ id: 1, serviceId: 1 }),
-          services: svcRow({ id: 1 }),
-        },
-        update: { domains: [domainRow({ id: 1, ssl: false })] },
-      }),
-    });
-    await app.register(domainIndexRoutes);
-    const res = await app.inject({ method: 'PATCH', url: '/1', headers: asUser() });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ id: 1, ssl: false });
+    const writesBefore = proxyMocks.writeDynamicConfig.mock.calls.length;
+    for (const payload of [{}, { ssl: 'false' }, undefined]) {
+      const res = await app.inject({ method: 'PATCH', url: '/1', headers: asUser(), ...(payload ? { payload } : {}) });
+      expect(res.statusCode).toBe(400);
+    }
+    expect(proxyMocks.writeDynamicConfig.mock.calls.length).toBe(writesBefore);
   });
 
   it('never marks a domain active — DNS proof lives only in the verify route (r092)', async () => {
@@ -203,7 +190,7 @@ describe('domain index routes', () => {
       }),
     });
     await app.register(domainIndexRoutes);
-    const res = await app.inject({ method: 'PATCH', url: '/99', headers: asUser(), payload: {} });
+    const res = await app.inject({ method: 'PATCH', url: '/99', headers: asUser(), payload: { ssl: true } });
     expect(res.statusCode).toBe(404);
   });
 

@@ -467,7 +467,11 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
   app.get('/:id/logs', async (req) => {
     const id = num((req.params as { id: string }).id);
     const d = await loadDatabaseForUser(app.db, id, req.user!);
-    const lines = Number((req.query as { lines?: string }).lines) || 100;
+    // r218: clamped. Any viewer could ask for `?lines=1e9` (or a negative /
+    // fractional value docker rejects) and have `docker logs` fill the
+    // capture buffer.
+    const requested = Math.trunc(Number((req.query as { lines?: string }).lines));
+    const lines = Number.isFinite(requested) && requested > 0 ? Math.min(requested, 5000) : 100;
     const logs = await databaseLogs(d, lines);
     return { logs };
   });
