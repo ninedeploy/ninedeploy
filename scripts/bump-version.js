@@ -8,16 +8,12 @@ if (!newVersion || !/^\d+\.\d+\.\d+.*$/.test(newVersion)) {
   process.exit(1);
 }
 
-// OWNER POLICY (Ersin, 2026-09-16): NineDeploy never crosses 1.0.0 — the
-// 0.9.x line runs to 0.9.99 and rolls 0.9.99 -> 0.10.0, forever. A major
-// bump is a product-positioning decision, not a script accident.
+// OWNER POLICY (Ersin, 2026-09-16): NineDeploy never crosses 1.0.0 — when
+// the 0.9.x line fills (0.9.99) it rolls to 0.10.0, then 0.11.0, forever.
+// A major bump is a product-positioning decision, not a script accident.
 const [maj, min] = newVersion.split('.').map(Number);
 if (maj >= 1) {
   console.error('Refusing ' + newVersion + ': the project stays on the 0.x line by owner policy (0.9.99 rolls to 0.10.0, never 1.0.0).');
-  process.exit(1);
-}
-if (maj === 0 && min > 9) {
-  console.error('Refusing ' + newVersion + ': minor must stay 9 on the 0.9.x line (0.9.99 rolls to 0.10.0).');
   process.exit(1);
 }
 

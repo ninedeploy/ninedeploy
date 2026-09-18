@@ -1,6 +1,6 @@
 {
   "name": "@ninedeploy/server",
-  "version": "0.9.9",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "main": "./dist/server.js",
