@@ -29,7 +29,7 @@ describe('r178: key rotation covers every encrypted settings row', () => {
       for (const m of src.matchAll(/setSettingString\(\s*[\w.]+\s*,\s*([\w'"]+)\s*,\s*(?:[\w.!]+\s*\?\s*)?encrypt\(/g)) {
         let key = m[1]!;
         if (!/^['"]/.test(key)) {
-          const decl = new RegExp(`const\s+${key}\s*=\s*['"]([^'"]+)['"]`).exec(src);
+          const decl = new RegExp(`consts+${key}s*=s*['"]([^'"]+)['"]`).exec(src);
           if (!decl) continue; // resolved elsewhere; the literal-key rows are the risk
           key = decl[1]!;
         } else {

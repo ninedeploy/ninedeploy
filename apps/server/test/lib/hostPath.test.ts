@@ -47,7 +47,8 @@ describe('r245: hostPathFor', () => {
 
   it('is what the Traefik container mounts go through (wiring guard)', () => {
     const src = readFileSync(new URL('../../src/engine/proxy.ts', import.meta.url), 'utf8');
-    expect(src).toContain('`${await hostPathFor(dir())}:/etc/traefik:ro`');
-    expect(src).toContain('`${await hostPathFor(acmePath())}:/etc/traefik/acme.json`');
+    const d = '$';
+    expect(src).toContain(`\`${d}{await hostPathFor(dir())}:/etc/traefik:ro\``);
+    expect(src).toContain(`\`${d}{await hostPathFor(acmePath())}:/etc/traefik/acme.json\``);
   });
 });

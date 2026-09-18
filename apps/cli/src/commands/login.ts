@@ -26,7 +26,7 @@ export async function loginAction(): Promise<void> {
     // r197: a 2FA account answers `totp_required`; the CLI used to print
     // "Login failed (401)" with no way to supply the code, so any operator who
     // enabled 2FA could not use the CLI at all.
-    let session;
+    let session: Awaited<ReturnType<typeof client.auth.login>>;
     try {
       session = await client.auth.login({ email, password });
     } catch (err) {
