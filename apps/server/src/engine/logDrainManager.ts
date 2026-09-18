@@ -13,6 +13,55 @@ export interface LogPayloadEntry {
   stream?: 'stdout' | 'stderr';
 }
 
+/**
+ * r231: the labels `lib/logSearch.ts` queries by — `{service="<slug>"}` for
+ * one service, `{job="ninedeploy"}` cluster-wide. The drain used to push only
+ * `app`/`container`/`stream`, so every search came back empty even for lines
+ * that had been delivered. `app` stays for dashboards built on it.
+ */
+function lokiLabels(entry: LogPayloadEntry): Record<string, string> {
+  return {
+    job: 'ninedeploy',
+    service: entry.service,
+    app: entry.service,
+    container: entry.container,
+    stream: entry.stream ?? 'stdout',
+  };
+}
+
+/** Several entries as ONE request body (the shipper's unit of delivery). */
+export function formatLogBatch(
+  type: LogDrainType,
+  format: LogDrainFormat,
+  entries: LogPayloadEntry[],
+): { body: string; contentType: string } {
+  if (type === 'loki') {
+    const streams = new Map<string, { stream: Record<string, string>; values: Array<[string, string]> }>();
+    for (const e of entries) {
+      const labels = lokiLabels(e);
+      const key = JSON.stringify(labels);
+      const nano = String(Date.parse(e.timestamp) * 1_000_000 || Date.now() * 1_000_000);
+      const s = streams.get(key) ?? { stream: labels, values: [] };
+      s.values.push([nano, e.line]);
+      streams.set(key, s);
+    }
+    return { body: JSON.stringify({ streams: [...streams.values()] }), contentType: 'application/json' };
+  }
+  if (type === 'datadog') {
+    return {
+      body: JSON.stringify(entries.map((e) => JSON.parse(formatLogPayload(type, format, e).body)[0])),
+      contentType: 'application/json',
+    };
+  }
+  if (format === 'raw' || format === 'rfc5424') {
+    return { body: entries.map((e) => formatLogPayload(type, format, e).body).join(''), contentType: 'text/plain' };
+  }
+  return {
+    body: JSON.stringify(entries.map((e) => JSON.parse(formatLogPayload(type, format, e).body))),
+    contentType: 'application/json',
+  };
+}
+
 export function formatLogPayload(
   type: LogDrainType,
   format: LogDrainFormat,
@@ -23,11 +72,7 @@ export function formatLogPayload(
     const body = JSON.stringify({
       streams: [
         {
-          stream: {
-            app: entry.service,
-            container: entry.container,
-            stream: entry.stream ?? 'stdout',
-          },
+          stream: lokiLabels(entry),
           values: [[nano, entry.line]],
         },
       ],
@@ -86,7 +131,14 @@ export async function dispatchLogToDrain(
   // compromised admin credential should not get for free.
   fetchImpl: FetchLike = guardedFetch,
 ): Promise<{ ok: boolean; status: number; error?: string }> {
-  const { body, contentType } = formatLogPayload(drain.type, drain.format, entry);
+  return postToDrain(drain, formatLogPayload(drain.type, drain.format, entry), fetchImpl);
+}
+
+async function postToDrain(
+  drain: { url: string; type: LogDrainType; apiKey?: string | null; headers?: Record<string, string> | null },
+  { body, contentType }: { body: string; contentType: string },
+  fetchImpl: FetchLike,
+): Promise<{ ok: boolean; status: number; error?: string }> {
   const headers: Record<string, string> = {
     'Content-Type': contentType,
     'User-Agent': 'NineDeploy-LogDrain/1.0',
@@ -108,11 +160,28 @@ export async function dispatchLogToDrain(
       body,
       signal: AbortSignal.timeout(6000),
     });
+    // Release the connection: an unread body keeps the socket busy.
+    await res.body?.cancel().catch(() => undefined);
     return { ok: res.ok, status: res.status };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return { ok: false, status: 0, error: message };
   }
+}
+
+/** Deliver a batch; same transport, auth and egress policy as a single entry. */
+export async function dispatchLogBatch(
+  drain: {
+    url: string;
+    type: LogDrainType;
+    format: LogDrainFormat;
+    apiKey?: string | null;
+    headers?: Record<string, string> | null;
+  },
+  entries: LogPayloadEntry[],
+  fetchImpl: FetchLike = guardedFetch,
+): Promise<{ ok: boolean; status: number; error?: string }> {
+  return postToDrain(drain, formatLogBatch(drain.type, drain.format, entries), fetchImpl);
 }
 
 export async function testLogDrainConnection(

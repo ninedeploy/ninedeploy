@@ -80,6 +80,13 @@ describe('buildApp', () => {
     await app.close();
   });
 
+  it('r231: registers the log-drain shipper (drains had no sender)', async () => {
+    const app = await buildApp();
+    await app.ready();
+    expect(app.hasPlugin('ninedeploy-log-shipper')).toBe(true);
+    await app.close();
+  });
+
   it('GET /v1/auth/status reports an uninitialized instance', async () => {
     const app = await buildApp();
     await createUsersTable(app);

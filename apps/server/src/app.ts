@@ -14,6 +14,7 @@ import autoUpdateSchedulerPlugin from './plugins/autoUpdateScheduler.js';
 import collectorPlugin from './plugins/collector.js';
 import dbPlugin from './plugins/db.js';
 import housekeepingPlugin from './plugins/housekeeping.js';
+import logShipperPlugin from './plugins/logShipper.js';
 import jobSchedulerPlugin from './plugins/jobScheduler.js';
 import kernelPlugin from './plugins/kernel.js';
 import rateLimitPlugin from './plugins/rateLimit.js';
@@ -117,6 +118,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(autoUpdateSchedulerPlugin);
   // Periodic log/audit/notification-log retention (disk-fill prevention)
   await app.register(housekeepingPlugin);
+  // Container output → configured log drains (r231: drains had no sender)
+  await app.register(logShipperPlugin);
   await app.register(jobSchedulerPlugin);
 
   // Web dashboard (SPA) — registered LAST so every API/WS route wins over the
