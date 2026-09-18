@@ -430,7 +430,14 @@ function ActivityDrawer({ onClose }: { onClose: () => void }) {
         try {
           const lines = String(e.data).split('\n').filter(Boolean);
           const parsed = lines.map((l) => JSON.parse(l) as AppEvent);
-          setEvents((prev) => [...parsed, ...prev].slice(0, 100));
+          // r209: the server replays its recent-event backlog on EVERY connect,
+          // so each reconnect used to prepend up to 100 copies of events
+          // already shown. Merge by id (ids are unique and increasing), newest first.
+          setEvents((prev) => {
+            const byId = new Map(prev.map((ev) => [ev.id, ev]));
+            for (const ev of parsed) byId.set(ev.id, ev);
+            return [...byId.values()].sort((a, b) => b.id - a.id).slice(0, 100);
+          });
         } catch { /* ignore */ }
       };
       ws.onclose = () => {

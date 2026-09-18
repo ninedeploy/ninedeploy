@@ -92,6 +92,23 @@ describe('useDeployLogs', () => {
     vi.useRealTimers();
   });
 
+  it('r209: a reconnect replaces the replayed backlog instead of appending it', () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useDeployLogs(1, 2));
+    const first = FakeWebSocket.instances[0]!;
+    act(() => first.open());
+    act(() => first.message('step 1\nstep 2\n'));
+    act(() => first.closeFromServer());
+    act(() => vi.advanceTimersByTime(2000));
+    const second = FakeWebSocket.instances[1]!;
+    act(() => second.open());
+    act(() => second.message('step 1\nstep 2\nstep 3\n')); // server backlog replay
+    act(() => second.message('step 4\n')); // live
+    act(() => vi.advanceTimersByTime(200));
+    expect(result.current.lines).toBe('step 1\nstep 2\nstep 3\nstep 4\n');
+    vi.useRealTimers();
+  });
+
   it('marks the stream closed on error and on close', () => {
     const { result } = renderHook(() => useDeployLogs(1, 2));
     const ws = FakeWebSocket.instances[0];

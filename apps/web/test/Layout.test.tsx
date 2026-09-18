@@ -427,6 +427,19 @@ describe('Layout', () => {
     expect(screen.getByText('database create')).toBeInTheDocument();
   });
 
+  it('r209: a reconnect backlog replay does not duplicate drawer events', async () => {
+    const user = userEvent.setup();
+    renderLayout();
+    await user.click(screen.getByTitle('Activity'));
+    const ws = FakeWebSocket.instances[0];
+    const now = new Date().toISOString();
+    const backlog = [JSON.stringify({ id: 1, action: 'deploy.start', entity: null, ts: now }), JSON.stringify({ id: 2, action: 'database.create', entity: null, ts: now })].join('\n');
+    actSocket(ws, backlog);
+    actSocket(ws, backlog); // the replay a reconnect delivers
+    expect(screen.getAllByText('deploy start')).toHaveLength(1);
+    expect(screen.getAllByText('database create')).toHaveLength(1);
+  });
+
   it('closes the drawer via the X button and the backdrop', async () => {
     const user = userEvent.setup();
     const { container } = renderLayout();

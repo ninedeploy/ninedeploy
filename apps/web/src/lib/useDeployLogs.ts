@@ -32,6 +32,8 @@ export function useDeployLogs(serviceId: number | null, deploymentId: number | n
     let ws: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let attempts = 0;
+    let connectedBefore = false;
+    let expectReplay = false;
 
     const flush = () => {
       if (chunksRef.current.length === 0) return;
@@ -49,10 +51,26 @@ export function useDeployLogs(serviceId: number | null, deploymentId: number | n
       ws.onopen = () => {
         setOpen(true);
         attempts = 0; // a healthy connection refills the reconnect budget
+        // r209: the server replays the WHOLE backlog on every connect, so the
+        // first frame of a reconnection repeats what is already on screen.
+        expectReplay = connectedBefore;
+        connectedBefore = true;
       };
       ws.onmessage = (event) => {
         if (activeId.current !== deploymentId) return;
-        chunksRef.current.push(String(event.data));
+        const data = String(event.data);
+        if (expectReplay) {
+          expectReplay = false;
+          // The replay starts at the head of the log we already hold; it
+          // supersedes that text instead of being appended after it (which
+          // doubled the log per reconnect, and the Download with it).
+          const held = linesRef.current + chunksRef.current.join('');
+          if (held && data.includes(held.slice(0, 256))) {
+            chunksRef.current = [];
+            linesRef.current = '';
+          }
+        }
+        chunksRef.current.push(data);
       };
       ws.onerror = () => setOpen(false);
       ws.onclose = () => {
