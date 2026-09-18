@@ -68,6 +68,12 @@ describe('assertWorkspaceRole', () => {
     await expect(assertWorkspaceRole(db, 1, member, ['owner', 'viewer'])).resolves.toBeUndefined();
   });
 
+  it('r219: lets an instance operator through without a seat', async () => {
+    const db = createFakeDb({ findFirst: { workspaceMembers: undefined } } as never);
+    await expect(assertWorkspaceRole(db, 1, { ...member, isOperator: true }, 'admin')).resolves.toBeUndefined();
+    await expect(assertWorkspaceRole(db, 1, { ...member, isOperator: false }, 'viewer')).rejects.toThrow(/Insufficient role/);
+  });
+
   it('rejects a seat below the required role', async () => {
     const db = createFakeDb({ findFirst: { workspaceMembers: { workspaceId: 1, userId: 7, role: 'viewer' } } } as never);
     await expect(assertWorkspaceRole(db, 1, member, 'admin')).rejects.toThrow(/Insufficient role/);

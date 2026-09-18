@@ -146,6 +146,12 @@ export async function assertWorkspaceRole(
   user: AuthedUser,
   required: WorkspaceRole | WorkspaceRole[],
 ): Promise<void> {
+  // r219: instance operators pass, as they do in every other access helper
+  // here (`serviceRole`, `projectRole`… all resolve operators as owner). The
+  // missing bypass left operators 403 on creating a database in, or managing
+  // the environments of, a workspace they hold no seat in — while the list
+  // routes showed them everything. `env.ts` worked around it per call site.
+  if (user.isOperator) return;
   const requiredList = Array.isArray(required) ? required : [required];
   const membership = await db.query.workspaceMembers.findFirst({
     where: and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, user.id)),
