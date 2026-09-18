@@ -48,6 +48,12 @@ vi.mock('../src/engine/database.js', async (importOriginal) => {
   };
 });
 
+const pgbouncerMocks = vi.hoisted(() => ({ disablePgbouncer: vi.fn(async () => undefined) }));
+vi.mock('../src/lib/pgbouncer.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/pgbouncer.js')>()),
+  disablePgbouncer: pgbouncerMocks.disablePgbouncer,
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -445,6 +451,9 @@ describe('databases routes', () => {
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({ ok: true });
       expect(engineMocks.stopDatabase).toHaveBeenCalled();
+      // r183: the credential-holding sidecars go with it.
+      expect(engineMocks.stopDatabaseStudio).toHaveBeenCalled();
+      expect(pgbouncerMocks.disablePgbouncer).toHaveBeenCalled();
       // The orphaned backup FILE is gone, not just the row.
       expect(existsSync(dump)).toBe(false);
     } finally {

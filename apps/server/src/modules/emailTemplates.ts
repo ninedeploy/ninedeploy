@@ -93,8 +93,10 @@ export const emailTemplateRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
-  // Write-side: admin only.
-  app.addHook('preHandler', app.requireAdmin);
+  // Write-side: workspace admin, enforced per route by assertWorkspaceRole.
+  // r185: a plugin-level `requireAdmin` (instance operator) hook used to sit
+  // here — it gated EVERY route of this plugin, reads included, and made the
+  // documented "workspace admins manage their own templates" impossible.
 
   // `PUT /:wid/email-templates/:name` — upsert the
   // workspace override. The (workspace, name) pair is

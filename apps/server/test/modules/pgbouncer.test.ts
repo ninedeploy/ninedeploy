@@ -155,6 +155,13 @@ describe('GET /:id/pgbouncer', () => {
     expect(body.directConnectionString).toMatch(/postgres:\/\/nine:\*@nd-pg-mydb:5432\/app/);
   });
 
+  it('r184: a member who owns the database can read the status (not only admins)', async () => {
+    currentRow = { ...rowDbFixture(), ownerUserId: 7 } as DbRow;
+    const { port } = await startApp();
+    const res = await fetch(`http://127.0.0.1:${port}/1/pgbouncer`, { headers: asUser({ id: 7, role: 'member' }) });
+    expect(res.status).toBe(200);
+  });
+
   it('rejects unauthenticated callers with 401', async () => {
     const { port } = await startApp();
     const res = await fetch(`http://127.0.0.1:${port}/1/pgbouncer`);

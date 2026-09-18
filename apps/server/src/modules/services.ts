@@ -526,6 +526,13 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // Read access is any workspace seat; editing the definition is `member`+.
     await assertServiceRole(app.db, existing, req.user!, 'member');
     const { build, ...patch } = updateService.parse(req.body ?? {});
+    // r182: the slug is an identity, not a label — it names the data volume
+    // (`nd-svc-<slug>-data`), the private bridge and the auto-domain. A rename
+    // made the next deploy mount a fresh EMPTY volume, left the old one
+    // ownerless, and `POST /volumes/prune` then deleted the data.
+    if (patch.slug !== undefined && patch.slug !== existing.slug) {
+      throw badRequest('A service slug cannot be changed after creation (it names the volume and network)', 'slug_immutable');
+    }
     // Same rule as create: attaching a managed source is operator-only. A
     // member editing their own service must not bolt an operator credential
     // onto it afterwards.

@@ -267,6 +267,13 @@ describe('GET /domain-transfers/:token (preview)', () => {
     expect(lib.previewCalls[0]).toBe('tok-1');
   });
 
+  it('r185: answers a LOGGED-OUT visitor (the token is the secret)', async () => {
+    const { port } = await startTokenApp();
+    const res = await fetch(`http://127.0.0.1:${port}/tok-1`);
+    expect(res.status).toBe(200);
+    expect((await res.json()).hostname).toBe('example.com');
+  });
+
   it('returns 404 for an unknown token', async () => {
     const { port } = await startTokenApp();
     const res = await fetch(`http://127.0.0.1:${port}/unknown`, { headers: asUser(1) });

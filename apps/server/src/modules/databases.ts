@@ -19,6 +19,7 @@ import {
   stopDatabaseStudio,
 } from '../engine/database.js';
 import { decrypt, encrypt, randomToken } from '../lib/crypto.js';
+import { disablePgbouncer } from '../lib/pgbouncer.js';
 import {
   assertServiceRole,
   assertWorkspaceRole,
@@ -357,7 +358,16 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
       );
     }
 
-    await stopDatabase(d, (line) => app.log.info({ component: 'database' }, line));
+    const dbLog = (line: string) => app.log.info({ component: 'database' }, line);
+    await stopDatabase(d, dbLog);
+    // r183: the sidecars go with it. Only `nd-db-<slug>` used to be removed:
+    // the studio (which holds the credentials) and PgBouncer kept running
+    // with the old password, and a later database reusing the slug found
+    // `nd-studio-<slug>` "already running" and inherited the stale one.
+    await stopDatabaseStudio(d, dbLog);
+    await disablePgbouncer(app.db, d, dbLog).catch((err: unknown) =>
+      req.log.warn({ err }, 'failed to remove the PgBouncer sidecar after database delete'),
+    );
     // Capture the dump paths BEFORE the transaction deletes the rows.
     const backupRows = await app.db.query.backups.findMany({ where: eq(backups.databaseId, d.id) });
     // Atomic row removal (attachments + backups + the database itself commit

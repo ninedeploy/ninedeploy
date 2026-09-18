@@ -44,48 +44,52 @@ export const pgbouncerRoutes: FastifyPluginAsync = async (app) => {
     };
   });
 
-  // `POST` toggles a sidecar — admin only.
-  app.addHook('preHandler', app.requireAdmin);
+  // `POST` toggles a sidecar — admin only. r184: in a NESTED scope. A
+  // plugin-level addHook applies to every route of the plugin, including the
+  // member-readable GET declared above it, so members got 403 on status.
+  await app.register(async (admin) => {
+    admin.addHook('preHandler', admin.requireAdmin);
 
-  app.post<{ Params: { id: string }; Body: { port?: number } }>(
-    '/:id/pgbouncer/enable',
-    async (req) => {
+    admin.post<{ Params: { id: string }; Body: { port?: number } }>(
+      '/:id/pgbouncer/enable',
+      async (req) => {
+        const id = num((req.params as { id: string }).id);
+        const d = await loadDatabaseForUser(app.db, id, req.user!);
+        const body = enableBody.safeParse(req.body ?? {});
+        if (!body.success) throw unprocessable(body.error.issues[0]!.message);
+        // Apply the port override to the row before enabling
+        // so the helper picks it up via d.pgbouncerPort.
+        if (body.data.port && body.data.port !== d.pgbouncerPort) {
+          await app.db
+            .update(databases)
+            .set({ pgbouncerPort: body.data.port, updatedAt: new Date() })
+            .where(eq(databases.id, d.id));
+          d.pgbouncerPort = body.data.port;
+        }
+        const log = (line: string) => app.log.info({ component: 'pgbouncer' }, line);
+        try {
+          await enablePgbouncer(app.db, d, log);
+        } catch (err) {
+          throw badRequest(err instanceof Error ? err.message : String(err));
+        }
+        void audit(app.db, req.user!.id, 'database.pgbouncer_enable', `${d.name} (port=${d.pgbouncerPort})`);
+        const status = await pgbouncerStatusFor(d);
+        return status;
+      },
+    );
+
+    admin.post<{ Params: { id: string } }>('/:id/pgbouncer/disable', async (req) => {
       const id = num((req.params as { id: string }).id);
       const d = await loadDatabaseForUser(app.db, id, req.user!);
-      const body = enableBody.safeParse(req.body ?? {});
-      if (!body.success) throw unprocessable(body.error.issues[0]!.message);
-      // Apply the port override to the row before enabling
-      // so the helper picks it up via d.pgbouncerPort.
-      if (body.data.port && body.data.port !== d.pgbouncerPort) {
-        await app.db
-          .update(databases)
-          .set({ pgbouncerPort: body.data.port, updatedAt: new Date() })
-          .where(eq(databases.id, d.id));
-        d.pgbouncerPort = body.data.port;
-      }
       const log = (line: string) => app.log.info({ component: 'pgbouncer' }, line);
       try {
-        await enablePgbouncer(app.db, d, log);
+        await disablePgbouncer(app.db, d, log);
       } catch (err) {
         throw badRequest(err instanceof Error ? err.message : String(err));
       }
-      void audit(app.db, req.user!.id, 'database.pgbouncer_enable', `${d.name} (port=${d.pgbouncerPort})`);
-      const status = await pgbouncerStatusFor(d);
-      return status;
-    },
-  );
-
-  app.post<{ Params: { id: string } }>('/:id/pgbouncer/disable', async (req) => {
-    const id = num((req.params as { id: string }).id);
-    const d = await loadDatabaseForUser(app.db, id, req.user!);
-    const log = (line: string) => app.log.info({ component: 'pgbouncer' }, line);
-    try {
-      await disablePgbouncer(app.db, d, log);
-    } catch (err) {
-      throw badRequest(err instanceof Error ? err.message : String(err));
-    }
-    void audit(app.db, req.user!.id, 'database.pgbouncer_disable', d.name);
-    return pgbouncerStatusFor(d);
+      void audit(app.db, req.user!.id, 'database.pgbouncer_disable', d.name);
+      return pgbouncerStatusFor(d);
+    });
   });
 };
 

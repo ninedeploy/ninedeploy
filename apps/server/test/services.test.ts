@@ -486,6 +486,29 @@ describe('services routes', () => {
     expect(proxyMocks.writeDynamicConfig).toHaveBeenCalledWith(app.db);
   });
 
+  it('r182: refuses to rename a service slug (it names the data volume)', async () => {
+    const updates: unknown[] = [];
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { services: svcRow({ slug: 'shop' }) },
+        update: {
+          services: (v: unknown) => {
+            updates.push(v);
+            return [svcRow()];
+          },
+        },
+      }),
+    });
+    await app.register(servicesRoutes);
+    const renamed = await app.inject({ method: 'PATCH', url: '/1', headers: asUser(), payload: { slug: 'shop-v2' } });
+    expect(renamed.statusCode).toBe(400);
+    expect(renamed.json().error.code).toBe('slug_immutable');
+    expect(updates).toEqual([]);
+    // Echoing the current slug back is harmless.
+    const same = await app.inject({ method: 'PATCH', url: '/1', headers: asUser(), payload: { slug: 'shop' } });
+    expect(same.statusCode).toBe(200);
+  });
+
   it('patches restart policy and stop grace into the build config', async () => {
     const app = await buildTestApp({
       db: createFakeDb({

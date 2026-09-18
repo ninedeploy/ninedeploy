@@ -115,62 +115,66 @@ export const domainTransferTokenRoutes: FastifyPluginAsync = async (app) => {
     return preview;
   });
 
-  // accept / cancel need auth.
-  app.addHook('onRequest', app.authenticate);
+  // accept / cancel need auth — in a NESTED scope (r185). A plugin-level
+  // hook also covers routes declared before it, so the "public" preview
+  // above answered 401 to the logged-out visitor it was written for.
+  await app.register(async (authed) => {
+    authed.addHook('onRequest', authed.authenticate);
 
-  app.post<{ Params: { token: string }; Body: { targetServiceId?: number } }>(
-    '/:token/accept',
-    async (req) => {
-      const body = acceptBody.safeParse(req.body ?? {});
-      if (!body.success) {
-        throw unprocessable(body.error.issues[0]!.message);
-      }
-      // The one-time token proves that the caller was invited to accept the
-      // transfer; it must not authorize choosing an arbitrary target service.
-      // Otherwise a recipient could point another tenant's hostname at a
-      // victim container and bypass that service's routing middleware.
-      const targetService = await loadServiceForUser(app.db, body.data.targetServiceId, req.user!);
-      await assertServiceRole(app.db, targetService, req.user!, 'admin');
-      let result: Awaited<ReturnType<typeof acceptTransfer>>;
+    authed.post<{ Params: { token: string }; Body: { targetServiceId?: number } }>(
+      '/:token/accept',
+      async (req) => {
+        const body = acceptBody.safeParse(req.body ?? {});
+        if (!body.success) {
+          throw unprocessable(body.error.issues[0]!.message);
+        }
+        // The one-time token proves that the caller was invited to accept the
+        // transfer; it must not authorize choosing an arbitrary target service.
+        // Otherwise a recipient could point another tenant's hostname at a
+        // victim container and bypass that service's routing middleware.
+        const targetService = await loadServiceForUser(app.db, body.data.targetServiceId, req.user!);
+        await assertServiceRole(app.db, targetService, req.user!, 'admin');
+        let result: Awaited<ReturnType<typeof acceptTransfer>>;
+        try {
+          result = await acceptTransfer(app.db, {
+            token: req.params.token,
+            userId: req.user!.id,
+            targetServiceId: body.data.targetServiceId,
+          });
+        } catch (err) {
+          throw badRequest(err instanceof Error ? err.message : String(err));
+        }
+        // r180: re-render the routing table like every other domain mutation.
+        // The row moved to the new service, but Traefik kept sending the
+        // hostname to the OLD owner's container until some unrelated change
+        // happened to rewrite the dynamic config.
+        await writeDynamicConfig(app.db);
+        void audit(
+          app.db,
+          req.user!.id,
+          'domain.transfer_accept',
+          `${result.hostname}: svc ${result.fromServiceId} -> ${result.serviceId}`,
+        );
+        return {
+          ok: true,
+          transferId: result.transferId,
+          domainId: result.domainId,
+          serviceId: result.serviceId,
+          hostname: result.hostname,
+        };
+      },
+    );
+
+    authed.post<{ Params: { token: string } }>('/:token/cancel', async (req) => {
+      let result: Awaited<ReturnType<typeof cancelTransfer>>;
       try {
-        result = await acceptTransfer(app.db, {
-          token: req.params.token,
-          userId: req.user!.id,
-          targetServiceId: body.data.targetServiceId,
-        });
+        result = await cancelTransfer(app.db, req.params.token, req.user!.id, req.user!.isOperator);
       } catch (err) {
         throw badRequest(err instanceof Error ? err.message : String(err));
       }
-      // r180: re-render the routing table like every other domain mutation.
-      // The row moved to the new service, but Traefik kept sending the
-      // hostname to the OLD owner's container until some unrelated change
-      // happened to rewrite the dynamic config.
-      await writeDynamicConfig(app.db);
-      void audit(
-        app.db,
-        req.user!.id,
-        'domain.transfer_accept',
-        `${result.hostname}: svc ${result.fromServiceId} -> ${result.serviceId}`,
-      );
-      return {
-        ok: true,
-        transferId: result.transferId,
-        domainId: result.domainId,
-        serviceId: result.serviceId,
-        hostname: result.hostname,
-      };
-    },
-  );
-
-  app.post<{ Params: { token: string } }>('/:token/cancel', async (req) => {
-    let result: Awaited<ReturnType<typeof cancelTransfer>>;
-    try {
-      result = await cancelTransfer(app.db, req.params.token, req.user!.id, req.user!.isOperator);
-    } catch (err) {
-      throw badRequest(err instanceof Error ? err.message : String(err));
-    }
-    void audit(app.db, req.user!.id, 'domain.transfer_cancel', `#${result.transferId}`);
-    return result;
+      void audit(app.db, req.user!.id, 'domain.transfer_cancel', `#${result.transferId}`);
+      return result;
+    });
   });
 };
 

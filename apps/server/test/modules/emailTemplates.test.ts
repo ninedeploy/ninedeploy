@@ -65,6 +65,8 @@ interface WorkspaceRow {
 }
 
 let workspaceRow: WorkspaceRow | null = { id: 1, name: 'MyWS' };
+/** The caller's seat in workspace 1. */
+let seatRole = 'owner';
 let overrides: Array<{ workspaceId: number; name: string; subject: string; text: string }> = [];
 let appRef: Awaited<ReturnType<typeof buildTestApp>> | null = null;
 
@@ -76,7 +78,7 @@ async function startApp() {
       // for any table (only `findMany` has a `workspaceMembers`
       // fallback). For this test we explicitly hand an `owner` seat
       // to user 1 so `assertWorkspaceRole(_, 'admin')` passes.
-      workspaceMembers: () => ({ id: 1, workspaceId: 1, userId: 1, role: 'owner' }),
+      workspaceMembers: () => ({ id: 1, workspaceId: 1, userId: 1, role: seatRole }),
     },
     findMany: {
       emailTemplateOverrides: () => overrides.filter((o) => o.workspaceId === 1),
@@ -96,12 +98,29 @@ beforeEach(() => {
   lib.clearCalls.length = 0;
   lib.override = null;
   workspaceRow = { id: 1, name: 'MyWS' };
+  seatRole = 'owner';
   overrides = [];
 });
 
 afterEach(async () => {
   if (appRef) await appRef.close().catch(() => undefined);
   appRef = null;
+});
+
+describe('r185: workspace-scoped access, not instance-operator-only', () => {
+  it('lets a non-operator workspace owner list and override templates', async () => {
+    const { port } = await startApp();
+    const owner = asUser({ id: 1, role: 'member' });
+    const list = await fetch(`http://127.0.0.1:${port}/1/email-templates`, { headers: owner });
+    expect(list.status).toBe(200);
+  });
+
+  it('lets a plain member read the templates', async () => {
+    seatRole = 'member';
+    const { port } = await startApp();
+    const res = await fetch(`http://127.0.0.1:${port}/1/email-templates`, { headers: asUser({ id: 1, role: 'member' }) });
+    expect(res.status).toBe(200);
+  });
 });
 
 describe('GET /:wid/email-templates', () => {
@@ -173,7 +192,8 @@ describe('POST /:wid/email-templates/preview', () => {
 });
 
 describe('PUT /:wid/email-templates/:name', () => {
-  it('rejects non-admin callers with 403', async () => {
+  it('rejects callers with only a member seat with 403', async () => {
+    seatRole = 'member';
     const { port } = await startApp();
     const res = await fetch(`http://127.0.0.1:${port}/1/email-templates/password-reset`, {
       method: 'PUT',
@@ -246,7 +266,8 @@ describe('PUT /:wid/email-templates/:name', () => {
 });
 
 describe('DELETE /:wid/email-templates/:name', () => {
-  it('rejects non-admin callers with 403', async () => {
+  it('rejects callers with only a member seat with 403', async () => {
+    seatRole = 'member';
     const { port } = await startApp();
     const res = await fetch(`http://127.0.0.1:${port}/1/email-templates/password-reset`, {
       method: 'DELETE',
