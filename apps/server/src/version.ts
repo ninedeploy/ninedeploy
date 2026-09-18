@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.0';
+export const VERSION = '0.10.1';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,22 +12,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
-    version: '0.10.0',
+    version: '0.10.1',
     date: '2026-09-18',
-    title: 'Release 0.10.0',
+    title: 'The Audit Release — Everything That Was Wired Wrong',
     changes: [
-      'Placeholder — fill in from CHANGELOG.md before tagging',
+      'A whole-project audit (r150–r251): security and tenancy fixes across auth, SCIM, token scopes and domain claims; remote-node services now stop, start, log and delete through their agent; fan-out keeps the proven container until the new one runs; failed deploys keep the live runtime; restores, backups and PgBouncer (moved to an image that still exists) work end to end.',
+      'Wiring that existed only on paper now runs: log drains ship logs, kernel deploy/database hooks and service lifecycle events fire, Sticky IP and egress SNAT use the real service networks and survive reboots, domain presets create and delete their records, and a service that goes down raises an alert. The container image gains the compose and buildx plugins and mounts Traefik from the right host path.',
     ],
   },
-{
-    version: '0.10.0',
-    date: '2026-09-18',
-    title: 'Release 0.10.0',
-    changes: [
-      'Placeholder — fill in from CHANGELOG.md before tagging',
-    ],
-  },
-{
+  {
     version: '0.10.0',
     date: '2026-09-18',
     title: 'Fan-out Everywhere — the Fleet Era Close',

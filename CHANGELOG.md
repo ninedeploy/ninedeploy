@@ -60,6 +60,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.10.1] - 2026-09-18
+
+> The audit release: a whole-project review (r150–r251). Most fixes are
+> things that were written, tested and never actually wired, or wired to
+> the wrong thing.
+
+### Security
+
+- **Auth, SCIM, tenancy and token scopes (r150–r161)**; updater secrets
+  off argv, submodules through the egress gate (r171–r173); PM2 apps get
+  an allowlisted environment instead of the panel's own, which carried
+  the master key and JWT secret (r233).
+- **Domain claims (r190, r223).** A member can no longer claim another
+  service's automatic `<slug>.<wildcard>` host or a `*.` wildcard of an
+  instance-owned zone, from the API or from a manifest route.
+- **Audit coverage (r222).** Mutations that skipped `audit()` (and so
+  notifications, the live feed and the plugin bus) are audited, with a
+  guard test that fails on any new unaudited route.
+
+### Fixed — engine and runtime
+
+- Remote-node services: stop/start/restart/logs/delete go through the
+  node's agent, a node move retires the old runtime (r225); remote
+  checkouts fetch any branch and pinned commit (r227); database-attached
+  services are refused on remote nodes, whose containers cannot resolve
+  the panel's database host (r229).
+- Fan-out pulls a real image reference and retires the previous target
+  only after the new one runs (r226); registry login/pull/logout is
+  serialised per credential store (r230).
+- Failed deploys keep the live runtime; pg dumps restore; redis/valkey
+  restores never leave the database stopped (r165–r167, r232).
+- The deploy worker no longer lets a long remote build block local
+  deploys at concurrency 1 (r238).
+- PgBouncer: `bitnami/pgbouncer:1.24.1` no longer exists and never read
+  the config the panel wrote — moved to `edoburu/pgbouncer` (r243).
+- Namecheap DNS writes keep MX preferences and the email type, and use
+  zone-relative host names (r244).
+
+### Fixed — wiring that existed only on paper
+
+- Log drains now receive logs (r231).
+- Kernel hooks `deploy:before/after` and `database:before_delete` (with
+  veto) are called; a failing hook rolls back once (r237). Pipeline emits
+  `service.deploying` / `service.deployed` with project ids (r239).
+- Sticky IP / egress SNAT target the project's real `nd-svc-<slug>`
+  bridges, keep the applied CIDRs and re-apply rules after a reboot
+  (r239, r240). Domain presets only create records for active domains,
+  on verify too, and delete them with the domain (r241).
+- A service the reconcile loop cannot revive raises
+  `alert.service_down` (r242).
+
+### Fixed — panel, CLI, SDK
+
+- Web: backup downloads authenticate, notification edits, CPU limits,
+  build-field clears, integrations prefill, cron next-run, deploy wizard
+  retry, socket replay de-duplication, log follow, topology drag,
+  manifest creator, env card, file editors keeping text typed during a
+  save, and one deploys cache key (r202–r217, r250–r251).
+- CLI/MCP/SDK: export/import bytes, token refresh scope, read-only token
+  default, versions from package.json, 2FA login, egress driver
+  selection, `domains preset add namecheap`, `fanout.get` (r192–r201).
+
+### Fixed — packaging
+
+- The container image ships the `compose` and `buildx` plugins (r246)
+  and mounts Traefik's config from the host path when the panel itself
+  runs in a container — previously Traefik started with no config (r245).
+- `ninedeploy server start` adds the docker socket group (r247); the
+  systemd unit may write `/etc/ufw` (r248); the dev compose no longer
+  relies on corepack (r249).
+- The release script no longer stacks duplicate changelog stubs; the two
+  "Placeholder" entries 0.10.0 shipped on the About page are gone.
+
+---
+
 ## [0.10.0] - 2026-09-18
 
 > The fleet-era close: multi-server fan-out everywhere, with the

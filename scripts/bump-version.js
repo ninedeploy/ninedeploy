@@ -72,6 +72,13 @@ replaceInFile('apps/server/src/version.ts', /export const VERSION = '.*?';/, `ex
 function prependChangelogEntry() {
   const file = resolveInRoot('apps/server/src/version.ts');
   const content = readFileSync(file, 'utf8');
+  // Idempotent: re-running the bump for the same version must not stack a
+  // second stub (v0.10.0 shipped with two "Placeholder" entries on the About
+  // page because the script ran more than once).
+  if (content.includes(`version: '${newVersion}',`)) {
+    console.log(`✓ version.ts already has a ChangelogEntry for v${newVersion} — not adding a stub`);
+    return;
+  }
   const today = new Date().toISOString().slice(0, 10);
   const stub = `{\n    version: '${newVersion}',\n    date: '${today}',\n    title: 'Release ${newVersion}',\n    changes: [\n      'Placeholder — fill in from CHANGELOG.md before tagging',\n    ],\n  },\n`;
   // Insert BEFORE the first object in the CHANGELOG array by matching the start

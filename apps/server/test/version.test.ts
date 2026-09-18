@@ -31,6 +31,16 @@ describe('version', () => {
     expect(CHANGELOG[0]?.changes.length).toBeGreaterThan(0);
   });
 
+  it('ships no placeholder or duplicate changelog entries', () => {
+    // v0.10.0 went out with two "Placeholder — fill in …" stubs on the About
+    // page: the bump script stacked one per run and nothing checked.
+    for (const entry of CHANGELOG) {
+      for (const change of entry.changes) expect(change, entry.version).not.toMatch(/Placeholder/);
+    }
+    const versions = CHANGELOG.map((e) => e.version);
+    expect(versions.filter((v, i) => versions.indexOf(v) !== i)).toEqual([]);
+  });
+
   it('VERSION is a semver-shaped string', () => {
     expect(VERSION).toMatch(/^\d+\.\d+\.\d+/);
   });
