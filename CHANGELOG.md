@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Password-reset recovery atomically revokes sessions, API tokens, passkeys, and external identity links so an earlier account holder cannot retain an alternative sign-in method.
 - Clear account-specific query caches on session changes, ignore stale authentication responses, preserve credentials during transient refresh failures, and apply the configured API origin to raw downloads and uploads.
 - Preserve successful backups independently from failed attempts, stream volume downloads, validate archives before replacing volume contents, isolate database staging files, and remove partial plaintext after failed decryption.
-- Preserve historical release images, use lowercase GHCR image names, serialize release checks, and run database integration checks before release image publication. Version bumps now reject formats unsupported by the installer.
+- Preserve historical release images, use lowercase GHCR image names, serialize release checks, and run database integration checks before release image publication. Version bumps now reject formats unsupported by the installer. The server coverage floors are recalibrated to the measured 0.10.1/0.10.2 reality (functions 91.3, statements 93.3, branches 87.3) — the 0.10.1 release had shipped stale floors its own CI never reached.
 - Restore the container image build: Debian trixie split the Docker CLI out of `docker.io` into a `docker-cli` package, so the runtime image installs `docker-cli` — the plugin stage's `docker compose version` verification had failed with `docker: not found`.
 - Correct documentation that claimed automatic plaintext agent fallback and encryption of volume snapshots.
 

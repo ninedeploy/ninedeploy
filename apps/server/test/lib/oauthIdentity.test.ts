@@ -49,6 +49,23 @@ describe('external identity account boundaries', () => {
     expect(grant).toHaveBeenCalledWith(expect.objectContaining({ userId: 9, providerId: 2, subject: info.sub }));
   });
 
+  it('refreshes the fingerprint when re-linking the same account’s stale identity row', async () => {
+    // A provider whose issuer/clientId changed since the identity row was
+    // written: the stored fingerprint is stale, but the row still belongs to
+    // the authenticating local account — the link updates it in place.
+    const refresh = vi.fn(() => [{}]);
+    const db = createFakeDb({
+      findFirst: {
+        users: local,
+        sessions: sessionRow({ userId: 9, jti: 'session-jti' }),
+        oauthIdentities: { id: 1, userId: 9, providerFingerprint: 'old-provider' },
+      },
+      update: { oauth_identities: refresh },
+    });
+    expect(await resolveOAuthIdentity(db, provider, info, link)).toMatchObject({ user: { id: 9 }, created: false });
+    expect(refresh).toHaveBeenCalled();
+  });
+
   it.each([
     { session: sessionRow({ userId: 9, revokedAt: new Date() }), user: local, binding: link },
     { session: sessionRow({ userId: 9, expiresAt: new Date(0) }), user: local, binding: link },
