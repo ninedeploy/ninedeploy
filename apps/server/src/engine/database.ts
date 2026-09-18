@@ -927,8 +927,14 @@ export async function restoreDatabase(d: Database, file: string, log: (line: str
       // process overwrite the backup we just staged — the "restored" server
       // then reloads its own old data. Stop first so nothing can rewrite it.
       await run('docker', ['stop', cn], {}, log);
-      await run('docker', ['cp', staged.path, `${cn}:/data/dump.rdb`], {}, log);
-      await run('docker', ['start', cn], {}, log);
+      // r232: the container comes back up whether or not the copy worked — a
+      // failed `docker cp` used to leave the database stopped, every attached
+      // service failing its connections, with no restore to show for it.
+      try {
+        await run('docker', ['cp', staged.path, `${cn}:/data/dump.rdb`], {}, log);
+      } finally {
+        await run('docker', ['start', cn], {}, log);
+      }
     } else {
       await run('docker', ['cp', staged.path, `${cn}:${RESTORE_TMP}`], {}, log);
       if (d.engine === 'postgres') {

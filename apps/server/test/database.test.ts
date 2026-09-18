@@ -862,6 +862,16 @@ describe('restoreDatabase', () => {
     expect(existsSyncMock(`${file}.dec`)).toBe(false);
   });
 
+  it('r232: brings redis back up even when the dump copy fails', async () => {
+    h.run.mockImplementation(async (_cmd: string, args: unknown[]) => {
+      if (Array.isArray(args) && args[0] === 'cp') throw new Error('no space left on device');
+    });
+    const log = vi.fn();
+    const file = encFile('REDIS');
+    await expect(restoreDatabase(dbRow({ engine: 'redis' }), file, log)).rejects.toThrow(/no space/);
+    expect(h.run).toHaveBeenCalledWith('docker', ['start', 'c'], {}, log);
+  });
+
   it('removes the staged restore file and decrypted sibling afterwards', async () => {
     const file = encFile('x');
     await restoreDatabase(dbRow({ engine: 'postgres' }), file, vi.fn());
