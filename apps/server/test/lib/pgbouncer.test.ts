@@ -375,12 +375,22 @@ describe('enablePgbouncer', () => {
   });
 
   it('swallows a failing pull (network flakes, but the rest still runs)', async () => {
-    execState.toolResults.set('docker pull bitnami/pgbouncer:1.24.1', {
+    execState.toolResults.set('docker pull edoburu/pgbouncer:v1.25.1-p0', {
       throw: new Error('network unreachable'),
     });
     execState.toolResults.set('docker inspect --format {{.State.Running}} nd-pg-mydb', { stdout: 'true\n' });
     await expect(enablePgbouncer(db, buildDb(), () => undefined)).resolves.toBeUndefined();
     expect(execState.runs.some((r) => r.args[0] === 'create')).toBe(true);
+  });
+
+  it('r243: uses an image that exists and reads /etc/pgbouncer, with files the postgres user can read', async () => {
+    execState.toolResults.set('docker inspect --format {{.State.Running}} nd-pg-mydb', { stdout: 'true\n' });
+    await enablePgbouncer(db, buildDb(), () => undefined);
+    const create = execState.runs.find((r) => r.args[0] === 'create');
+    expect(create!.args).toContain('edoburu/pgbouncer:v1.25.1-p0');
+    const { writeSecretFile } = await import('../../src/lib/secretFile.js');
+    const modes = (writeSecretFile as unknown as { mock: { calls: unknown[][] } }).mock.calls.map((c) => c[3]);
+    expect(modes).toEqual([0o644, 0o644]);
   });
 
   it('uses a row-supplied pgbouncer container name verbatim', async () => {

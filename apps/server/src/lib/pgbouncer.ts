@@ -24,7 +24,15 @@ import { capture, run } from './exec.js';
 import { NETWORK } from '../engine/proxy.js';
 import { writeSecretFile, type SecretFile } from './secretFile.js';
 
-const PGBOUNCER_IMAGE = 'bitnami/pgbouncer:1.24.1';
+/**
+ * r243: `bitnami/pgbouncer:1.24.1` no longer exists on Docker Hub (Bitnami
+ * withdrew its versioned public tags), so every enable failed at `create`.
+ * It also never read `/etc/pgbouncer/pgbouncer.ini`: the Bitnami image renders
+ * its own config from env vars under /opt/bitnami. `edoburu/pgbouncer` runs
+ * `pgbouncer /etc/pgbouncer/pgbouncer.ini` and keeps an ini that is already
+ * there, which is exactly the file this helper copies in before `start`.
+ */
+export const PGBOUNCER_IMAGE = 'edoburu/pgbouncer:v1.25.1-p0';
 const DEFAULT_PORT = 6432;
 const swallow = () => undefined;
 
@@ -234,7 +242,10 @@ async function writeTempFile(suffix: string, body: string): Promise<SecretFile> 
   // in depth. The caller MUST call cleanup() once the
   // files have been copied into the container.
   const ref = `nd-pgb-${process.pid}-${Date.now()}`;
-  return writeSecretFile(ref, suffix, body);
+  // 0644, not 0600: the image runs pgbouncer as `postgres`, and `docker cp`
+  // hands the copied file to root. The host copy stays in a private 0700
+  // directory and is deleted as soon as the copy is done.
+  return writeSecretFile(ref, suffix, body, 0o644);
 }
 
 interface RenderInput {

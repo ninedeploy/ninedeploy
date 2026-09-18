@@ -29,11 +29,16 @@ export interface SecretFile {
  * Create `<tmp>/<prefix>-XXXXXX/<name>` containing `contents` (mode 0600).
  * The caller MUST call `cleanup()` — a `finally` block — once the consuming
  * process has read the file.
+ *
+ * `mode` exists for files that are `docker cp`'d into a container whose
+ * process is not root: `docker cp` keeps the mode but makes root the owner,
+ * so a 0600 file is unreadable there. The private 0700 directory is what keeps
+ * such a file away from other host users.
  */
-export function writeSecretFile(prefix: string, name: string, contents: string): SecretFile {
+export function writeSecretFile(prefix: string, name: string, contents: string, mode = 0o600): SecretFile {
   const dir = mkdtempSync(path.join(tmpdir(), `${prefix}-`));
   const file = path.join(dir, name);
-  writeFileSync(file, contents, { mode: 0o600 });
+  writeFileSync(file, contents, { mode });
   return {
     path: file,
     cleanup: () => {
