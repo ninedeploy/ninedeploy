@@ -64,7 +64,7 @@ export function NotificationsSection() {
   };
   const [editChannel, setEditChannel] = useState<EditableChannel | null>(null);
   const updateChannel = useMutation({
-    mutationFn: (input: { id: number; name?: string; eventFilter?: string; active?: boolean; configJson?: string | null }) => {
+    mutationFn: (input: { id: number; name?: string; eventFilter?: string; active?: boolean; configJson?: string }) => {
       const { id, ...patch } = input;
       return api.notifications.updateChannel(id, patch);
     },
@@ -117,7 +117,10 @@ export function NotificationsSection() {
                       id: ch.id,
                       name: editChannel.name.trim() || ch.name,
                       eventFilter: editChannel.eventFilter,
-                      configJson: ch.type === 'discord' ? serializeDiscordConfig(editChannel.discord) : null,
+                      // r203: omitted (not null) for other channel types —
+                      // the update schema takes an optional STRING, so `null`
+                      // was a 400 and no non-Discord channel could be renamed.
+                      ...(ch.type === 'discord' ? { configJson: serializeDiscordConfig(editChannel.discord) } : {}),
                     });
                   }}
                   className="mt-1.5 space-y-2 rounded-lg bg-indigo-500/[0.04] px-3 py-2 ring-1 ring-inset ring-indigo-500/20"

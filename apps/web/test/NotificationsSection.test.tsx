@@ -110,6 +110,18 @@ describe('NotificationsSection', () => {
     expect(patch.configJson).not.toContain('unknownKey');
   });
 
+  it('r203: renaming a non-discord channel sends no configJson', async () => {
+    mockOf(api.notifications.listChannels).mockResolvedValue([channel()] as never);
+    mockOf(api.notifications.updateChannel).mockResolvedValue({} as never);
+    renderWithProviders(<NotificationsSection />);
+    await screen.findByText('ops');
+    fireEvent.click(screen.getByTitle('Edit'));
+    fireEvent.change(screen.getByLabelText('Channel name'), { target: { value: 'ops-2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.notifications.updateChannel).toHaveBeenCalled());
+    expect(vi.mocked(api.notifications.updateChannel).mock.calls[0]![1]).toEqual({ name: 'ops-2', eventFilter: '' });
+  });
+
   it('tolerates a malformed config blob when opening the editor', async () => {
     mockOf(api.notifications.listChannels).mockResolvedValue([
       channel({ type: 'discord', name: 'broken', configJson: '{not json' }),
@@ -121,7 +133,7 @@ describe('NotificationsSection', () => {
     expect(screen.getByLabelText('Webhook username')).toHaveValue('');
   });
 
-  it('serializes a non-discord channel save with a null config blob', async () => {
+  it('saves a non-discord channel without touching its config blob', async () => {
     mockOf(api.notifications.listChannels).mockResolvedValue([channel({ eventFilter: '' })] as never);
     mockOf(api.notifications.updateChannel).mockResolvedValue({} as never);
     renderWithProviders(<NotificationsSection />);
@@ -131,12 +143,9 @@ describe('NotificationsSection', () => {
     // No embed section for a telegram channel.
     expect(screen.queryByLabelText('Embed title')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() =>
-      expect(api.notifications.updateChannel).toHaveBeenCalledWith(
-        1,
-        expect.objectContaining({ configJson: null }),
-      ),
-    );
+    // r203: `configJson: null` was a 400 (the schema takes an optional string).
+    await waitFor(() => expect(api.notifications.updateChannel).toHaveBeenCalled());
+    expect(vi.mocked(api.notifications.updateChannel).mock.calls[0]![1]).not.toHaveProperty('configJson');
   });
 
   it('edits the discord embed title, username and avatar url fields', async () => {
