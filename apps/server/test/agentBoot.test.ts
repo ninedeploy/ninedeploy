@@ -1,4 +1,7 @@
-﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { mkdtempSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
   buildApp: vi.fn(),
@@ -36,7 +39,13 @@ let envToken: string | undefined;
 let envPort: string | undefined;
 let envEgress: string | undefined;
 
+// main() persists an auto-join token in its working directory (r176); keep
+// that out of the source tree.
+const agentCwd = mkdtempSync(path.join(os.tmpdir(), 'nd-agentboot-'));
+const originalCwd = process.cwd();
+
 beforeEach(() => {
+  process.chdir(agentCwd);
   state.exitCalls = [];
   state.signalListeners = {};
   state.buildApp.mockReset();
@@ -60,6 +69,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  process.chdir(originalCwd);
   vi.restoreAllMocks();
   vi.resetModules();
   if (envAgent === undefined) delete process.env['NINEDEPLOY_AGENT'];

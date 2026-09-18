@@ -8,6 +8,8 @@ import { badRequest, notFound, parseId, unauthorized } from '../lib/errors.js';
 import { agentPing, generateAgentToken } from '../lib/agentClient.js';
 import { ENROLMENT_HEADER, assertEnrolmentAllowed } from '../lib/enrolment.js';
 import { bootstrapServer, getBootstrapLogs, testSshConnection } from '../engine/serverProvisioner.js';
+import { agentDockerRunCommand } from '@ninedeploy/schemas';
+import { VERSION } from '../version.js';
 
 function serialize(s: ServerRow) {
   return {
@@ -114,7 +116,8 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
       void audit(authed.db, req.user!.id, 'server.register', name);
       const { createHash } = await import('node:crypto');
       const tokenSha256 = createHash('sha256').update(token).digest('hex');
-      const agentCommand = `docker run -d --name ninedeploy-agent --restart unless-stopped -p ${port}:4600 -v /var/run/docker.sock:/var/run/docker.sock -e NINEDEPLOY_AGENT=1 -e NINEDEPLOY_AGENT_TOKEN=${tokenSha256} -e NINEDEPLOY_AGENT_PORT=4600 ghcr.io/ninedeploy/server:latest`;
+      // r175: the shared builder — see @ninedeploy/schemas agentCommand.
+      const agentCommand = agentDockerRunCommand({ hostPort: port, imageTag: `v${VERSION}`, tokenSha256 });
       return {
         ...serialize(row),
         token,

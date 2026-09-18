@@ -2,6 +2,13 @@ import { buildApp } from './app.js';
 import { config } from './config.js';
 
 async function main(): Promise<void> {
+  // r175: the image's default command is this file. A node started with
+  // NINEDEPLOY_AGENT=1 must run the agent, never boot a second panel with an
+  // empty database on the node.
+  if (process.env['NINEDEPLOY_AGENT'] === '1') {
+    await import('./agent.js'); // self-boots on the same flag
+    return;
+  }
   const app = await buildApp();
 
   app.addHook('onClose', async () => {

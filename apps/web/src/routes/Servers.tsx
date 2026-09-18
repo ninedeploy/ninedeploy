@@ -23,6 +23,7 @@ import { api } from '../lib/api.js';
 import { useToast } from '../components/Toast.js';
 import { Button, Card, ConfirmDialog, EmptyState, ErrorCard, Field, Input, Modal, PageHeader, Skeleton, cn } from '../components/ui.js';
 import { formatRelative, useCopy } from '../lib/format.js';
+import { agentDockerRunCommand } from '@ninedeploy/schemas';
 
 /**
  * Remote server registry (admin). Supports zero-touch SSH auto-onboarding,
@@ -193,13 +194,21 @@ export function Servers() {
   const registeredServers = list.data?.filter((s) => s.status !== 'pending') ?? [];
 
   const masterOrigin = window.location.origin;
-  const autoJoinCommand = `docker run -d --name ninedeploy-agent --restart unless-stopped -p 4600:4600 -v /var/run/docker.sock:/var/run/docker.sock -e NINEDEPLOY_AGENT=1 -e NINEDEPLOY_MASTER_URL=${masterOrigin} ghcr.io/ninedeploy/server:latest`;
+  // r175: one builder for every agent command (@ninedeploy/schemas). The
+  // enrolment secret is generated in Settings; /announce refuses without it.
+  const autoJoinCommand = agentDockerRunCommand({
+    hostPort: 4600,
+    imageTag: 'latest',
+    masterUrl: masterOrigin,
+    enrolmentToken: '<enrolment-token-from-settings>',
+  });
 
-  const dockerCommand = revealed
-    ? `docker run -d --name ninedeploy-agent --restart unless-stopped -p 4600:4600 -v /var/run/docker.sock:/var/run/docker.sock -e NINEDEPLOY_AGENT=1 -e NINEDEPLOY_AGENT_TOKEN=${revealed.tokenSha256} -e NINEDEPLOY_AGENT_PORT=4600 ghcr.io/ninedeploy/server:latest`
-    : '';
+  // The server returns the exact command for the node it just registered
+  // (pinned to the core's release). `@ninedeploy/server` is not published to
+  // npm, so the second tab runs the agent from a source checkout instead.
+  const dockerCommand = revealed ? revealed.agentCommand : '';
   const npxCommand = revealed
-    ? `NINEDEPLOY_AGENT=1 NINEDEPLOY_AGENT_TOKEN=${revealed.tokenSha256} NINEDEPLOY_AGENT_PORT=4600 npx -y @ninedeploy/server`
+    ? `NINEDEPLOY_AGENT=1 NINEDEPLOY_AGENT_TOKEN=${revealed.tokenSha256} NINEDEPLOY_AGENT_PORT=4600 node apps/server/dist/agent.js`
     : '';
   const activeCommand = cmdTab === 'docker' ? dockerCommand : npxCommand;
 
@@ -372,7 +381,7 @@ export function Servers() {
                   onClick={() => setCmdTab('npx')}
                   className={cn('rounded px-2.5 py-1 transition', cmdTab === 'npx' ? 'bg-indigo-500 text-white font-medium' : 'text-slate-400 hover:text-slate-200')}
                 >
-                  NPX / Node
+                  Node (source checkout)
                 </button>
               </div>
             </div>

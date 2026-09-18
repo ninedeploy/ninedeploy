@@ -104,6 +104,17 @@ describe('env', () => {
     expect(errorSpy.mock.calls[0]?.[0]).toMatch(/NINEDEPLOY_JWT_SECRET/);
   });
 
+  it('r177: a node agent boots in production without a panel JWT secret', async () => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('NINEDEPLOY_AGENT', '1');
+    await loadEnv();
+
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
   it('refuses to boot in production with the .env.example placeholder JWT secret', async () => {
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);

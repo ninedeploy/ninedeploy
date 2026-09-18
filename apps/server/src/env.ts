@@ -71,7 +71,17 @@ function parseEnv(): Env {
   // Hard guard: the publicly-known default JWT secret would let anyone forge
   // tokens, so refuse to boot in production with it still in place. (Only
   // evaluated on a successful parse; on failure we already exited above.)
-  if (parsed.success && parsed.data.NODE_ENV === 'production' && KNOWN_INSECURE_JWT_SECRETS.has(parsed.data.NINEDEPLOY_JWT_SECRET)) {
+  // r177: a node AGENT never signs or verifies a JWT (it authenticates with
+  // the sealed agent token), yet it imports config through lib/crypto — so
+  // in the production image it refused to start without a panel secret it
+  // has no use for. The guard is the panel's, not the agent's.
+  const agentMode = process.env['NINEDEPLOY_AGENT'] === '1';
+  if (
+    parsed.success &&
+    !agentMode &&
+    parsed.data.NODE_ENV === 'production' &&
+    KNOWN_INSECURE_JWT_SECRETS.has(parsed.data.NINEDEPLOY_JWT_SECRET)
+  ) {
     // eslint-disable-next-line no-console
     console.error(
       '❌ NINEDEPLOY_JWT_SECRET must be set to a strong, unique secret in production. The insecure default is not allowed.',

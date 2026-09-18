@@ -14,6 +14,7 @@ import { run } from '../lib/exec.js';
 import { encrypt } from '../lib/crypto.js';
 import { agentPing, generateAgentToken } from '../lib/agentClient.js';
 import { VERSION } from '../version.js';
+import { agentDockerRunCommand } from '@ninedeploy/schemas';
 
 // In-memory log cache for recently run bootstraps (keyed by serverId or host)
 const bootstrapLogStore = new Map<string, string[]>();
@@ -253,12 +254,11 @@ export async function bootstrapServer(
     const agentStartCmd = [
       'docker stop ninedeploy-agent 2>/dev/null || true',
       'docker rm -f ninedeploy-agent 2>/dev/null || true',
-      // The agent is THIS SAME binary in agent mode, published under the
-      // panel's own repository — `ghcr.io/ninedeploy/server` does not exist,
-      // so provisioning silently failed at pull time. Tagged with the running
-      // core's release version so the node agent matches the core's protocol
-      // (seal/nonce) instead of floating on :latest.
-      `docker run -d --name ninedeploy-agent --restart unless-stopped -p ${input.agentPort}:4600 -v /var/run/docker.sock:/var/run/docker.sock -e NINEDEPLOY_AGENT=1 -e NINEDEPLOY_AGENT_TOKEN=${tokenSha256} -e NINEDEPLOY_AGENT_PORT=4600 ghcr.io/ninedeploy/ninedeploy:v${VERSION}`,
+      // The agent is THIS SAME image in agent mode, tagged with the running
+      // core's release so the node matches the core's protocol (seal/nonce).
+      // r175: the line used to start the image's default command — the full
+      // panel — so no agent ever listened and every bootstrap failed its ping.
+      agentDockerRunCommand({ hostPort: input.agentPort, imageTag: `v${VERSION}`, tokenSha256 }),
     ].join(' && ');
 
     await runSshCommand(sshOpts, agentStartCmd, emitLog);

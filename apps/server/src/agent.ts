@@ -1,6 +1,8 @@
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join as joinPath } from 'node:path';
 import { buildAgentApp } from './agentApp.js';
 import { tokenMatches } from './lib/agentClient.js';
-import { open as openSealed, seal as sealResponse } from './lib/agentSeal.js';
+import { MAX_SKEW_MS, open as openSealed, seal as sealResponse } from './lib/agentSeal.js';
 import { spawnValidated } from './lib/spawnValidated.js';
 import { pullDockerImage } from './lib/dockerPull.js';
 
@@ -628,15 +630,34 @@ export async function announceToMaster(
   }
 }
 
+/** File (relative to the agent's working directory) holding an auto-join token. */
+export const AGENT_TOKEN_FILE = '.agent-token';
+
+/** The persisted auto-join token, created (owner-only) on first use. */
+export function loadOrCreateAgentToken(generate: () => string, dir = process.cwd()): string {
+  const file = joinPath(dir, AGENT_TOKEN_FILE);
+  if (existsSync(file)) {
+    const stored = readFileSync(file, 'utf8').trim();
+    if (/^[0-9a-f]{32,128}$/.test(stored)) return stored;
+  }
+  const token = generate();
+  writeFileSync(file, `${token}\n`, { mode: 0o600 });
+  return token;
+}
+
 async function main(): Promise<void> {
   const masterUrl = process.env['NINEDEPLOY_MASTER_URL'] ?? '';
   let tokenHash = process.env['NINEDEPLOY_AGENT_TOKEN'] ?? '';
   let rawToken = process.env['NINEDEPLOY_AGENT_RAW_TOKEN'] ?? '';
 
   if (!tokenHash && masterUrl) {
-    // Auto-discovery mode: generate a local token pair and announce to master
+    // Auto-discovery mode: generate a local token pair and announce to master.
+    // r176: persist it. A fresh random token on every start made the master
+    // refuse the next announce ("token mismatch") while still holding the old
+    // token, so every agentOp got 401 until the node was deleted and
+    // re-approved by hand — after any reboot or container update.
     const { randomBytes, createHash } = await import('node:crypto');
-    rawToken = rawToken || randomBytes(32).toString('hex');
+    rawToken = rawToken || loadOrCreateAgentToken(() => randomBytes(32).toString('hex'));
     tokenHash = createHash('sha256').update(rawToken).digest('hex');
   }
 
@@ -686,6 +707,8 @@ async function main(): Promise<void> {
  * route tests). `tokenHash` is the sha256 of the shared agent token.
  */
 export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: { tokenHash?: string }) => {
+  /** Sealed-request nonces seen within the replay window → expiry (r174). */
+  const seenNonces = new Map<string, number>();
   const tokenHash = opts.tokenHash ?? process.env['NINEDEPLOY_AGENT_TOKEN'] ?? '';
 
   app.post('/agent/exec', { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (req, reply) => {
@@ -716,6 +739,19 @@ export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: 
         return reply.code(401).send({ error: { code: 'unauthorized', message: 'Bad agent token' } });
       }
       input = raw;
+    }
+    // r174: refuse a replayed request. The nonce used to bind only the
+    // RESPONSE: a captured sealed `docker.rm` / `git.reset` envelope could be
+    // re-posted for the whole ±5-minute seal window and it ran again. Every
+    // nonce is remembered for twice that window (covering clock skew in both
+    // directions). Pre-nonce cores send none — legacy, still accepted.
+    if (sealedRequest && typeof input.nonce === 'string') {
+      const now = Date.now();
+      for (const [n, exp] of seenNonces) if (exp <= now) seenNonces.delete(n);
+      if (seenNonces.has(input.nonce)) {
+        return reply.code(401).send({ error: { code: 'replayed', message: 'Replayed agent request' } });
+      }
+      seenNonces.set(input.nonce, now + 2 * MAX_SKEW_MS);
     }
     const op = typeof input.op === 'string' ? input.op : '';
     const params: Params = typeof input.params === 'object' && input.params ? (input.params as Params) : {};

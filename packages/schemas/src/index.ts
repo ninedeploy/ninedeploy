@@ -15,4 +15,5 @@ export * from './ai.js';
 export * from './secretScan.js';
 export * from './runtimeVersions.js';
 export * from './doctor.js';
+export * from './agentCommand.js';
 

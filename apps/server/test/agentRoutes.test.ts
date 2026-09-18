@@ -269,6 +269,19 @@ describe('agent /agent/exec sealed transport', () => {
     expect(spawnMock).not.toHaveBeenCalled();
   });
 
+  it('r174: refuses a sealed request replayed INSIDE the skew window', async () => {
+    const app = await appWith();
+    const envelope = seal(TOKEN_HASH, { op: 'docker.stop', params: { name: 'web-3' }, nonce: 'a1b2c3d4e5f60718' });
+    const first = await app.inject({ method: 'POST', url: '/agent/exec', payload: { sealed: envelope } });
+    expect(first.statusCode).toBe(200);
+    const replay = await app.inject({ method: 'POST', url: '/agent/exec', payload: { sealed: envelope } });
+    expect(replay.statusCode).toBe(401);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    // A fresh nonce (a genuinely new request) still runs.
+    const fresh = seal(TOKEN_HASH, { op: 'docker.stop', params: { name: 'web-3' }, nonce: 'ffeeddccbbaa9988' });
+    expect((await app.inject({ method: 'POST', url: '/agent/exec', payload: { sealed: fresh } })).statusCode).toBe(200);
+  });
+
   it('answers a bad envelope exactly like a bad token, so it is no oracle', async () => {
     const app = await appWith();
     const sealedRes = await app.inject({
@@ -347,5 +360,16 @@ describe('runOp env-file helpers', () => {
   it('returns -1 for an unknown op in runOp', async () => {
     const code = await runOp('unknown.op', {}, () => {});
     expect(code).toBe(-1);
+  });
+});
+
+describe('r176: auto-join token persistence', () => {
+  it('reuses the token written on first start, so a restarted agent is not locked out', async () => {
+    const { loadOrCreateAgentToken } = await import('../src/agent.js');
+    const dir = mkdtempSync(path.join(tmp, 'tok-'));
+    const first = loadOrCreateAgentToken(() => 'a'.repeat(64), dir);
+    const second = loadOrCreateAgentToken(() => 'b'.repeat(64), dir);
+    expect(first).toBe('a'.repeat(64));
+    expect(second).toBe(first);
   });
 });
