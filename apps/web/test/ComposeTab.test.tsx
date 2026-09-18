@@ -105,6 +105,15 @@ describe('ComposeTab', () => {
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/services/4?tab=deploys'));
   });
 
+  it('r211: refreshes the deploy list so the queued redeploy shows up', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const spy = vi.spyOn(client, 'invalidateQueries');
+    render(tree({}, client));
+    fireEvent.change(editor(), { target: { value: 'services:\n  web:\n    image: nginx:1.28\n' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save & redeploy/ }));
+    await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ['deploys', 4] }));
+  });
+
   it('omits the routed-service line when the stack has no main service yet', () => {
     renderTab({ composeService: null });
     expect(screen.getByText('ndcmp-stack')).toBeInTheDocument();

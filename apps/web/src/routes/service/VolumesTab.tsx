@@ -439,6 +439,8 @@ function RepairConfigButton(
     onSuccess: () => {
       toast('wp-config.php removed from the volume — the queued redeploy regenerates it from current env', 'success');
       qc.invalidateQueries({ queryKey: ['service-volume-attachments', serviceId] });
+      // r211: each of these queued a redeploy the Deploys tab never saw.
+      qc.invalidateQueries({ queryKey: ['deploys', serviceId] });
     },
     onError: (err: Error) => toast(err.message || 'Could not regenerate wp-config', 'error'),
   });
@@ -465,6 +467,8 @@ function DetachButton({ serviceId, attachment }: { serviceId: number; attachment
     onSuccess: () => {
       toast(`Volume detached — a redeploy was queued to drop the mount`, 'success');
       qc.invalidateQueries({ queryKey: ['service-volume-attachments', serviceId] });
+      // r211: each of these queued a redeploy the Deploys tab never saw.
+      qc.invalidateQueries({ queryKey: ['deploys', serviceId] });
       setConfirming(false);
     },
     // Server rejections (auth, 404, docker errors) must be visible — a silent
@@ -534,6 +538,8 @@ function AttachVolumeModal({
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['service-volume-attachments', serviceId] });
+      // r211: each of these queued a redeploy the Deploys tab never saw.
+      qc.invalidateQueries({ queryKey: ['deploys', serviceId] });
       onClose();
     },
     onError: (err: Error) => setError(err.message || 'Failed to attach volume'),

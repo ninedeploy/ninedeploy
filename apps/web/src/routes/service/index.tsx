@@ -94,10 +94,16 @@ export function ServiceDetail() {
     setActiveDeploy(null);
   }
 
+  // Follow the newest deployment while the user is on the newest one. r211:
+  // a redeploy queued from another tab (compose save, volume attach/detach)
+  // used to leave the Deploys tab on the previous build's log; an explicitly
+  // picked older deployment is still left alone.
+  const latestSeenRef = useRef<number | null>(null);
   useEffect(() => {
-    if (activeDeploy != null) return;
-    const latest = deploys.data?.[0];
-    if (latest) setActiveDeploy(latest.id);
+    const latest = deploys.data?.[0]?.id;
+    if (latest == null) return;
+    if (activeDeploy == null || activeDeploy === latestSeenRef.current) setActiveDeploy(latest);
+    latestSeenRef.current = latest;
   }, [deploys.data, activeDeploy]);
 
   // Redeploying a LIVE service is intentional but easy to hit by accident —

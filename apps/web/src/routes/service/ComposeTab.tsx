@@ -47,6 +47,8 @@ export function ComposeTab({ service }: { service: Service }) {
     onSuccess: (deployment) => {
       qc.invalidateQueries({ queryKey: ['service', service.id] });
       qc.invalidateQueries({ queryKey: ['services'] });
+      // r211: the redeploy just queued must reach the Deploys tab it lands on.
+      qc.invalidateQueries({ queryKey: ['deploys', service.id] });
       if (deployment) {
         toast('Compose file saved — redeploying…', 'info');
         navigate(`/services/${service.id}?tab=deploys`);

@@ -59,8 +59,15 @@ export function AttachmentsCard({ serviceId }: { serviceId: number }) {
       setAlias('');
       invalidate();
     },
+    // r211: the server refuses non-admins (403) and duplicates (400); both
+    // were swallowed, so Attach looked like a dead button.
+    onError: (err) => toast(err instanceof Error ? err.message : 'Could not attach the database', 'error'),
   });
-  const detach = useMutation({ mutationFn: (id: number) => api.attachments.remove(serviceId, id), onSuccess: invalidate });
+  const detach = useMutation({
+    mutationFn: (id: number) => api.attachments.remove(serviceId, id),
+    onSuccess: invalidate,
+    onError: (err) => toast(err instanceof Error ? err.message : 'Could not detach the database', 'error'),
+  });
   const [testingDb, setTestingDb] = useState<number | null>(null);
 
   // Real reachability probe: fetch the database's container logs via the API.

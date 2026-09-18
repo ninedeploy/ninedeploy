@@ -213,15 +213,22 @@ function JobsCard({ serviceId }: { serviceId: number }) {
   const remove = useMutation({
     mutationFn: (jobId: number) => api.jobs.remove(serviceId, jobId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['jobs', serviceId] }),
+    // r211: the server refuses exec/backup jobs to members (403); a silent
+    // failure looked like a dead button.
+    onError: (err) => toast(err instanceof Error ? err.message : 'Could not delete the job', 'error'),
   });
   const runNow = useMutation({
     mutationFn: (jobId: number) => api.jobs.run(serviceId, jobId),
-    onSuccess: () => toast('Job executed', 'success'),
+    onSuccess: () => {
+      toast('Job executed', 'success');
+      qc.invalidateQueries({ queryKey: ['jobs', serviceId] }); // refresh 'last ran'
+    },
     onError: () => toast('Job run failed', 'error'),
   });
   const toggle = useMutation({
     mutationFn: (j: { id: number; enabled: boolean }) => api.jobs.update(serviceId, j.id, { enabled: !j.enabled }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['jobs', serviceId] }),
+    onError: (err) => toast(err instanceof Error ? err.message : 'Could not update the job', 'error'),
   });
 
   const preset = PRESETS.find((p) => p.id === presetId) ?? PRESETS[0]!;

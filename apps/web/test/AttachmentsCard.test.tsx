@@ -107,6 +107,16 @@ describe('AttachmentsCard', () => {
     );
   });
 
+  it('r211: shows the server refusal when an attach fails', async () => {
+    apiMock.api.attachments.create.mockRejectedValueOnce(new Error('Admin role on the database required'));
+    const user = userEvent.setup();
+    renderCardWithToasts();
+    await waitFor(() => expect(screen.getByText('pg-main (postgres)')).toBeInTheDocument());
+    await user.selectOptions(screen.getByRole('combobox'), '1');
+    await user.click(screen.getByRole('button', { name: /attach/i }));
+    expect(await screen.findByText('Admin role on the database required')).toBeInTheDocument();
+  });
+
   it('attaches a redis database using the REDIS_URL alias placeholder', async () => {
     const user = userEvent.setup();
     renderCard();

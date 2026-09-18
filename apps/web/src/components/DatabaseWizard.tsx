@@ -5,6 +5,7 @@ import { api } from '../lib/api.js';
 import { formatBytes } from '../lib/format.js';
 import { useExperienceMode } from '../lib/mode.js';
 import { Button, Input, cn } from './ui.js';
+import { useToast } from './Toast.js';
 
 const ENGINES = [
   { id: 'postgres', label: 'PostgreSQL', emoji: '🐘', hint: 'Relational · SQL · pgvector' },
@@ -22,6 +23,7 @@ const STEPS = ['Engine', 'Details', 'Review'];
 
 export function DatabaseWizard({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
+  const { toast } = useToast();
   const { isAdvanced } = useExperienceMode();
   const [step, setStep] = useState(0);
   const [engine, setEngine] = useState<typeof ENGINES[number]['id'] | null>(null);
@@ -57,6 +59,9 @@ export function DatabaseWizard({ onClose }: { onClose: () => void }) {
       qc.invalidateQueries({ queryKey: ['volumes'] });
       onClose();
     },
+    // r211: a taken slug or an operator-only volume re-attach was swallowed —
+    // the button just went back to "Create database" with no feedback.
+    onError: (err) => toast(err instanceof Error ? err.message : 'Could not create the database', 'error'),
   });
 
   const canNext = step === 0 ? !!engine : step === 1 ? !!name.trim() : true;

@@ -1022,6 +1022,18 @@ describe('ServiceDetail', () => {
     await screen.findByText('No deployments yet.');
   });
 
+  it('r211: follows a deployment queued elsewhere while showing the latest one', async () => {
+    const { queryClient } = renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+    await openTab('Deploys');
+    expect(await screen.findByText(/Deployment #5 ·/)).toBeInTheDocument();
+    // A compose save / volume attach queues #9 and invalidates the list.
+    mockOf(api.deploys.list).mockResolvedValue([{ ...deploys[0], id: 9, status: 'queued' }, ...deploys] as never);
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['deploys', 1] });
+    });
+    expect(await screen.findByText(/Deployment #9 ·/)).toBeInTheDocument();
+  });
+
   it('invalidates the service when an in-flight deploy becomes terminal', async () => {
     // first list returns an in-flight deploy, second returns terminal
     mockOf(api.deploys.list).mockResolvedValueOnce([{ ...deploys[0], status: 'building' }] as never);

@@ -24,6 +24,7 @@ const modeMock = vi.hoisted(() => ({
 vi.mock('../src/lib/mode.js', () => ({ useExperienceMode: modeMock.useExperienceMode }));
 
 import { DatabaseWizard } from '../src/components/DatabaseWizard.js';
+import { ToastProvider } from '../src/components/Toast.js';
 
 function renderWizard(onClose = vi.fn()) {
   return {
@@ -67,6 +68,18 @@ describe('DatabaseWizard', () => {
     expect(screen.getByRole('button', { name: /continue/i })).toBeDisabled();
     await user.type(screen.getByPlaceholderText('my-database'), 'prod');
     expect(screen.getByRole('button', { name: /continue/i })).toBeEnabled();
+  });
+
+  it('r211: surfaces a create failure instead of swallowing it', async () => {
+    apiMock.api.databases.create.mockRejectedValueOnce(new Error("slug 'postgres-db' is taken"));
+    const user = userEvent.setup();
+    renderWithProviders(<DatabaseWizard onClose={vi.fn()} />, {
+      queryClient: createQueryClient(),
+      wrapper: (children) => <ToastProvider>{children}</ToastProvider>,
+    });
+    await user.click(screen.getByText('PostgreSQL'));
+    await user.click(screen.getByRole('button', { name: 'Create Now' }));
+    expect(await screen.findByText("slug 'postgres-db' is taken")).toBeInTheDocument();
   });
 
   it('creates immediately from the quick-mode button once an engine is picked', async () => {
