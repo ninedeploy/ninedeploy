@@ -41,7 +41,10 @@ services:
   web:
     image: node:26-slim
     working_dir: /app
-    command: sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @ninedeploy/web dev --host 0.0.0.0"
+    # Node >= 26 images no longer bundle corepack (see the Dockerfile), so
+    # `corepack enable` died with "not found" before anything installed.
+    # Keep the pnpm version in sync with "packageManager" in package.json.
+    command: sh -c "npm install -g pnpm@11.23.0 && pnpm install --frozen-lockfile && pnpm --filter @ninedeploy/web dev --host 0.0.0.0"
     ports:
       - "5173:5173"
     environment:
@@ -55,6 +58,10 @@ services:
       - ./package.json:/app/package.json
       - ./pnpm-workspace.yaml:/app/pnpm-workspace.yaml
       - ./pnpm-lock.yaml:/app/pnpm-lock.yaml
+      # A frozen install applies the workspace's patchedDependencies and its
+      # .npmrc settings; without them it fails on a missing patch file.
+      - ./.npmrc:/app/.npmrc:ro
+      - ./patches:/app/patches:ro
     depends_on:
       - server
 

@@ -19,4 +19,12 @@ describe('infrastructure guards', () => {
     expect(line).toContain('-/etc/ufw');
     expect(unit).toContain('ProtectSystem=full');
   });
+
+  it('r249: the dev compose web service does not rely on corepack (absent from node:26)', () => {
+    const compose = repo('docker-compose.yml');
+    expect(compose).not.toMatch(/corepack enable/);
+    const pm = (JSON.parse(repo('package.json')) as { packageManager: string }).packageManager;
+    expect(compose).toContain(`npm install -g ${pm}`);
+    expect(compose).toContain('./patches:/app/patches:ro');
+  });
 });
