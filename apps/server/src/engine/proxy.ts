@@ -1,3 +1,4 @@
+import { hostPathFor } from '../lib/hostPath.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -354,14 +355,15 @@ async function ensureTraefikUnlocked(
       '--label', `${TRAEFIK_CONFIG_LABEL}=${configFingerprint}`,
       '--add-host', 'host.docker.internal:host-gateway',
       '-p', '80:80', '-p', '443:443',
-      '-v', `${dir()}:/etc/traefik:ro`,
+      // r245: resolved to the HOST path when the panel itself runs in a container.
+      '-v', `${await hostPathFor(dir())}:/etc/traefik:ro`,
     ];
     if (acmeEmail) {
       // ACME needs a writable storage file for the account key + certificates.
       // Mount just that single file read-write (Traefik writes it; we never
       // atomically rename it, so the pinned-inode caveat does not apply) while
       // keeping the config directory read-only.
-      runArgs.push('-v', `${acmePath()}:/etc/traefik/acme.json`);
+      runArgs.push('-v', `${await hostPathFor(acmePath())}:/etc/traefik/acme.json`);
     }
     const dnsEnv = dns ? renderDnsEnvFile(dns) : null;
     if (dnsEnv) {
