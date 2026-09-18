@@ -31,6 +31,7 @@ import {
   previewTransfer,
   startTransfer,
 } from '../lib/domainTransfer.js';
+import { writeDynamicConfig } from '../engine/proxy.js';
 import { audit } from '../lib/audit.js';
 import { badRequest, notFound, parseId as num, unprocessable } from '../lib/errors.js';
 import { loadServiceForUser, assertServiceRole } from '../lib/resourceAccess.js';
@@ -140,6 +141,11 @@ export const domainTransferTokenRoutes: FastifyPluginAsync = async (app) => {
       } catch (err) {
         throw badRequest(err instanceof Error ? err.message : String(err));
       }
+      // r180: re-render the routing table like every other domain mutation.
+      // The row moved to the new service, but Traefik kept sending the
+      // hostname to the OLD owner's container until some unrelated change
+      // happened to rewrite the dynamic config.
+      await writeDynamicConfig(app.db);
       void audit(
         app.db,
         req.user!.id,

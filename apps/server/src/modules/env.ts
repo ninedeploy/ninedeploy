@@ -1,9 +1,16 @@
-import { and, eq, like } from 'drizzle-orm';
-import { envVars, services } from '@ninedeploy/db';
+import { and, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
+import { envVars, projects, services } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import { envImport, upsertEnvVar } from '@ninedeploy/schemas';
 import { decrypt, encrypt } from '../lib/crypto.js';
-import { assertServiceRole, assertWorkspaceRole, loadProjectForUser, loadServiceForUser } from '../lib/resourceAccess.js';
+import {
+  assertServiceRole,
+  assertWorkspaceRole,
+  loadProjectForUser,
+  loadServiceForUser,
+  projectScopeFilter,
+  visibleServiceIdSet,
+} from '../lib/resourceAccess.js';
 import { badRequest, notFound, parseId as num } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
 
@@ -287,10 +294,25 @@ export const envSearchRoutes: FastifyPluginAsync = async (app) => {
   app.get('/search', async (req) => {
     const q = String((req.query as { q?: string }).q ?? '').trim();
     if (q.length < 1) return { results: [] };
-    const needle = `%${q.replace(/[%_]/g, (c) => `\\${c}`)}%`;
-    const conditions = [like(envVars.key, needle)];
+    // r181: SQLite's LIKE has no default escape character, so the `\_` this
+    // builds only works with an explicit ESCAPE — without it every key
+    // containing `_` (DATABASE_URL, …) was unfindable.
+    const needle = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    const conditions: SQL[] = [sql`${envVars.key} LIKE ${needle} ESCAPE '\\'`];
     if (!req.user?.isOperator) {
-      conditions.push(eq(services.ownerUserId, req.user!.id));
+      // Same visibility as the rest of /services: owned OR tagged into one of
+      // the caller's workspaces (owner-only hid every team service), plus
+      // project-scope variables of projects in those workspaces.
+      const visible = [...((await visibleServiceIdSet(app.db, req.user!)) ?? [])];
+      const projectFilter = await projectScopeFilter(app.db, req.user!);
+      const visibleProjects = projectFilter
+        ? (await app.db.select({ id: projects.id }).from(projects).where(projectFilter)).map((r) => r.id)
+        : [];
+      const reach: SQL[] = [];
+      if (visible.length > 0) reach.push(and(eq(envVars.scope, 'service'), inArray(envVars.serviceId, visible))!);
+      if (visibleProjects.length > 0) reach.push(and(eq(envVars.scope, 'project'), inArray(envVars.scopeKey, visibleProjects))!);
+      if (reach.length === 0) return { results: [] };
+      conditions.push(or(...reach)!);
     }
     const rows = await app.db
       .select({

@@ -458,19 +458,26 @@ export async function notifyEvent(db: DB, event: AppEvent): Promise<void> {
 
   const deliver = async (ch: NotificationChannel): Promise<void> => {
     const message = formatMessage(event.action, event.entity);
-    const target = decrypt(ch.targetEncrypted);
     try {
+      // r179: inside the try. A target that no longer decrypts (key retired)
+      // threw out of deliver: no `failed` row was logged and the rejection
+      // vanished into audit()'s catch, so the operator never learned the
+      // channel was dead.
+      const target = decrypt(ch.targetEncrypted);
       const attempts = await withRetry(() => dispatchChannel(ch.type, target, event, message, { configJson: ch.configJson }));
       await db.insert(notificationLog).values({ channelId: ch.id, event: event.action, entity: event.entity, status: 'sent', attempts });
     } catch (err) {
-      await db.insert(notificationLog).values({
-        channelId: ch.id,
-        event: event.action,
-        entity: event.entity,
-        status: 'failed',
-        attempts: RETRY_DELAYS_MS.length + 1,
-        error: err instanceof Error ? err.message : String(err),
-      });
+      await db
+        .insert(notificationLog)
+        .values({
+          channelId: ch.id,
+          event: event.action,
+          entity: event.entity,
+          status: 'failed',
+          attempts: RETRY_DELAYS_MS.length + 1,
+          error: err instanceof Error ? err.message : String(err),
+        })
+        .catch(() => undefined); // one channel's log write must not sink the others
     }
   };
 

@@ -158,7 +158,8 @@ export async function rotateSecretsWithReport(db: DB): Promise<RotationResult> {
  * change in one of these lists — forgetting it leaves that secret on the
  * retired key forever, exactly like a missed registry column.
  */
-const SETTINGS_ENCRYPTED_KEYS = [
+export const SETTINGS_ENCRYPTED_KEYS = [
+  'ai_diagnosis_key_encrypted', // modules/ai.ts (AI_KEY_KEY) — r178: was missing
   'vault_token_encrypted', // lib/vault.ts
   'agent_enrolment_token', // lib/enrolment.ts (ENROLMENT_SETTING_KEY)
   'namecheap_api_key_encrypted', // lib/namecheap.ts (KEY_API_KEY)

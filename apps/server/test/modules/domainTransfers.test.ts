@@ -83,6 +83,9 @@ vi.mock('../../src/lib/audit.js', () => ({
   audit: vi.fn(async () => undefined),
 }));
 
+const proxyMock = vi.hoisted(() => ({ writeDynamicConfig: vi.fn(async () => undefined) }));
+vi.mock('../../src/engine/proxy.js', () => proxyMock);
+
 interface DomainRow {
   id: number;
   hostname: string;
@@ -301,6 +304,18 @@ describe('POST /domain-transfers/:token/accept', () => {
       body: JSON.stringify({ targetServiceId: 2 }),
     });
     expect(res.status).toBe(401);
+  });
+
+  it('r180: re-renders the Traefik routing table once the domain changed hands', async () => {
+    proxyMock.writeDynamicConfig.mockClear();
+    const { port } = await startTokenApp();
+    const res = await fetch(`http://127.0.0.1:${port}/tok-1/accept`, {
+      method: 'POST',
+      headers: { ...asUser(1), 'content-type': 'application/json' },
+      body: JSON.stringify({ targetServiceId: 2 }),
+    });
+    expect(res.status).toBe(200);
+    expect(proxyMock.writeDynamicConfig).toHaveBeenCalledTimes(1);
   });
 
   it('accepts the transfer, audits, and returns the new service id', async () => {

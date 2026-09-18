@@ -100,6 +100,23 @@ describe('notifyEvent', () => {
     expect(insert).not.toHaveBeenCalled();
   });
 
+  it('r179: an undecryptable channel is logged as failed and does not stop the others', async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const channels = [
+      { id: 7, type: 'webhook', targetEncrypted: 'v9:not-a-valid-envelope', eventFilter: 'deploy', active: true },
+      { id: 8, type: 'webhook', targetEncrypted: encrypt('https://hooks.example.com/ok'), eventFilter: 'deploy', active: true },
+    ];
+    const { db, insert } = makeDb(channels);
+    await expect(notifyEvent(db, event)).resolves.toBeUndefined();
+    const rows = insert.mock.results.map((r) => (r.value as { values: ReturnType<typeof vi.fn> }).values.mock.calls[0]?.[0]);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ channelId: 7, status: 'failed' }),
+        expect.objectContaining({ channelId: 8, status: 'sent' }),
+      ]),
+    );
+  });
+
   it('skips inactive channels and filter mismatches', async () => {
     const channels = [
       { id: 1, type: 'webhook', targetEncrypted: encrypt('https://hooks.example.com'), eventFilter: 'service', active: false },
