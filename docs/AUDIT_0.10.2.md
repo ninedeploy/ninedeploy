@@ -16,6 +16,14 @@ Remaining unverified locally: Docker backup/restore integration, installer
 paths, and real-browser login/logout/SSO-linking flows. `git diff --check`
 was run successfully.
 
+Post-validation fix: the 0.10.1 CI run had also failed its Docker image
+build — Debian trixie (node:26-slim) split the Docker CLI into a separate
+`docker-cli` package, so `docker.io` alone no longer provides
+`/usr/bin/docker` and the plugin stage's `docker compose version` check
+exited 127. The runtime image now installs `docker-cli` (verified in the
+base image: CLI present, both pinned plugin checksums pass, compose v5.5.1
+and buildx v0.37.1 report their versions).
+
 ## Findings addressed in source
 
 | Surface | Fault | Change |

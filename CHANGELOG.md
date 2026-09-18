@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clear account-specific query caches on session changes, ignore stale authentication responses, preserve credentials during transient refresh failures, and apply the configured API origin to raw downloads and uploads.
 - Preserve successful backups independently from failed attempts, stream volume downloads, validate archives before replacing volume contents, isolate database staging files, and remove partial plaintext after failed decryption.
 - Preserve historical release images, use lowercase GHCR image names, serialize release checks, and run database integration checks before release image publication. Version bumps now reject formats unsupported by the installer.
+- Restore the container image build: Debian trixie split the Docker CLI out of `docker.io` into a `docker-cli` package, so the runtime image installs `docker-cli` — the plugin stage's `docker compose version` verification had failed with `docker: not found`.
 - Correct documentation that claimed automatic plaintext agent fallback and encryption of volume snapshots.
 
 ### Added — template runtime verification (carried here for release-packaging completeness)
