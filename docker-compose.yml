@@ -42,7 +42,7 @@ services:
     image: node:26-slim
     working_dir: /app
     # Node >= 26 images no longer bundle corepack (see the Dockerfile), so
-    # `corepack enable` died with "not found" before anything installed.
+    # the old corepack bootstrap died with "not found" before anything installed.
     # Keep the pnpm version in sync with "packageManager" in package.json.
     command: sh -c "npm install -g pnpm@11.23.0 && pnpm install --frozen-lockfile && pnpm --filter @ninedeploy/web dev --host 0.0.0.0"
     ports:
