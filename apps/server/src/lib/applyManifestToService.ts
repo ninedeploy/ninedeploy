@@ -14,6 +14,8 @@ import type { NinedeployManifest, Notifications, Previews, Route, Watch } from '
 import { Cron } from 'croner';
 import { ensureAlertState } from './alerting.js';
 import { isOperator, visibleDatabaseIds } from './resourceAccess.js';
+import { hostsCollide, newChallengeToken, requiresOwnershipProof } from './domainVerification.js';
+import { getSettingString } from './settings.js';
 
 /**
  * Apply a `.ninedeploy` manifest's operational sections onto an existing
@@ -314,6 +316,24 @@ async function wireVolumeBackupSchedule(
 
 // ── Routes (domains) ─────────────────────────────────────────────────────
 
+/**
+ * Why a manifest may not claim `hostname` for `serviceId`, or null when it
+ * may. A manifest push carries no user identity to check against, so any
+ * colliding route owned by ANOTHER service refuses it.
+ */
+async function manifestRouteRefusal(db: DB, serviceId: number, hostname: string): Promise<string | null> {
+  let panelDomain: string | null = process.env['NINEDEPLOY_DOMAIN'] ?? null;
+  try {
+    panelDomain = (await getSettingString(db, 'panel_domain', null)) ?? panelDomain;
+  } catch {
+    /* settings table unavailable — fall back to the env */
+  }
+  if (panelDomain && hostsCollide(hostname, panelDomain)) return 'is reserved for the NineDeploy panel';
+  const rows = await db.select({ hostname: domains.hostname, serviceId: domains.serviceId }).from(domains);
+  const holder = rows.find((r) => r.serviceId !== serviceId && hostsCollide(r.hostname, hostname));
+  return holder ? `is already routed by service #${holder.serviceId}` : null;
+}
+
 async function syncRoutes(
   db: DB,
   serviceId: number,
@@ -369,21 +389,22 @@ async function syncRoutes(
       // registered is claimed. Skip it with a warning — the same graceful
       // refusal `assertHostnameClaimable` gives the panel flow — instead of
       // crashing the deploy on the raw UNIQUE constraint.
-      const claimedBy = await db
-        .select({ serviceId: domains.serviceId })
-        .from(domains)
-        .where(and(eq(domains.hostname, hostname), eq(domains.path, path)))
-        .limit(1);
-      if (claimedBy.length > 0) {
-        result.warnings.push(
-          `routes: ${hostname}${path} is already registered to service #${claimedBy[0]!.serviceId}; manifest route skipped.`,
-        );
+      // r190: the same claim rules as POST /domains. Only the exact
+      // (hostname, path) pair used to be checked, so a manifest could stack a
+      // longer-rule router on another service's host (Traefik ranks by rule
+      // length) or sit on the panel's own hostname.
+      const refusal = await manifestRouteRefusal(db, serviceId, hostname);
+      if (refusal) {
+        result.warnings.push(`routes: ${hostname}${path} ${refusal}; manifest route skipped.`);
         continue;
       }
-      // Newly declared route: insert in `pending` state. The platform's
-      // existing DNS-challenge flow will lift it to `active` once the
-      // operator proves ownership (or immediately if the host is in the
-      // instance's own zone).
+      // Newly declared route. Inside the instance's own zone it goes live at
+      // once; anything else needs the DNS ownership proof, so it is `pending`
+      // WITH a challenge token the owner can complete from the panel. r190:
+      // the token used to be null — POST /verify refused ("no pending
+      // challenge"), so such a route could never go live, yet the row still
+      // blocked the hostname for its real owner.
+      const needsProof = requiresOwnershipProof(hostname, false);
       const [createdRow] = await db
         .insert(domains)
         .values({
@@ -397,8 +418,9 @@ async function syncRoutes(
           rateLimitAverage: rateAverage,
           rateLimitBurst: rateBurst,
           basicAuth: null,
-          status: 'pending',
-          verificationToken: null,
+          status: needsProof ? 'pending' : 'active',
+          verificationToken: needsProof ? newChallengeToken() : null,
+          verifiedAt: needsProof ? null : new Date(),
           dnsRecordId: null,
         })
         .returning({ id: domains.id });

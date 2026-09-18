@@ -190,6 +190,30 @@ describe('applyManifestToService — routes', () => {
     expect(rows[0]!.ssl).toBe(true);
   });
 
+  it('r190: a pending foreign-zone route carries a challenge token, so it CAN be verified', async () => {
+    await applyManifestToService(db, serviceId, m({ routes: [{ host: 'shop.customer.example', path: '/', ssl: true }] }));
+    const [row] = await db.select().from(domains).where(eq(domains.hostname, 'shop.customer.example'));
+    expect(row!.status).toBe('pending');
+    expect(row!.verificationToken).toMatch(/^nd-verify-[0-9a-f]{32}$/);
+  });
+
+  it("r190: refuses a route that would stack on another service's host on a different path", async () => {
+    const [other] = await db
+      .insert(services)
+      .values({ name: 'victim', slug: 'victim', type: 'docker', port: 3000, healthPath: '/' })
+      .returning();
+    await db.insert(domains).values({ serviceId: other!.id, hostname: 'victim.example.com', path: '/', status: 'active' });
+
+    const result = await applyManifestToService(
+      db,
+      serviceId,
+      m({ routes: [{ host: 'victim.example.com', path: '/api', ssl: true }] }),
+    );
+    expect(result.routesUpserted).toBe(0);
+    const rows = await db.select().from(domains).where(eq(domains.hostname, 'victim.example.com'));
+    expect(rows.map((r) => r.serviceId)).toEqual([other!.id]);
+  });
+
   it('skips a route whose hostname another service already registered, with a warning', async () => {
     // The uniqueness is global across services: a manifest re-declaring a
     // hostname owned by ANOTHER service must be refused the way the panel's

@@ -2,7 +2,7 @@
 import { screen, waitFor, fireEvent } from '@testing-library/react';
 import './web-utils.js';
 import { renderWithProviders } from './web-utils.js';
-import { FirewallSection } from '../src/routes/settings/FirewallSection.js';
+import { FirewallSection, ufwRuleMatchesPort } from '../src/routes/settings/FirewallSection.js';
 
 const apiMock = vi.hoisted(() => ({
   api: {
@@ -131,6 +131,40 @@ describe('FirewallSection', () => {
 
     expect(await screen.findByText('Not Installed')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Enable Firewall' })).not.toBeInTheDocument();
+  });
+
+  it('r191: matches UFW "To" columns on the exact port, v6 twins included', () => {
+    expect(ufwRuleMatchesPort('22/tcp', 22, 'tcp')).toBe(true);
+    expect(ufwRuleMatchesPort('22/tcp (v6)', 22, 'tcp')).toBe(true);
+    expect(ufwRuleMatchesPort('2222/tcp', 22, 'tcp')).toBe(false);
+    expect(ufwRuleMatchesPort('80', 80, 'tcp')).toBe(true);
+    expect(ufwRuleMatchesPort('80/udp', 80, 'tcp')).toBe(false);
+    expect(ufwRuleMatchesPort('8000:8100/tcp', 8080, 'tcp')).toBe(true);
+  });
+
+  it('r191: closing a preset deletes every matching rule highest-id first (ufw renumbers)', async () => {
+    apiMock.api.firewall.status.mockResolvedValue({
+      installed: true,
+      active: true,
+      supported: true,
+      rules: [
+        { id: 1, to: '22/tcp', action: 'ALLOW IN', from: 'Anywhere', comment: 'SSH' },
+        { id: 2, to: '80/tcp', action: 'ALLOW IN', from: 'Anywhere' },
+        { id: 3, to: '443/tcp', action: 'ALLOW IN', from: 'Anywhere' },
+        { id: 4, to: '22/tcp (v6)', action: 'ALLOW IN', from: 'Anywhere (v6)' },
+        { id: 5, to: '80/tcp (v6)', action: 'ALLOW IN', from: 'Anywhere (v6)' },
+        { id: 6, to: '443/tcp (v6)', action: 'ALLOW IN', from: 'Anywhere (v6)' },
+      ],
+      defaultIncoming: 'deny',
+      defaultOutgoing: 'allow',
+    });
+    apiMock.api.firewall.deleteRule.mockResolvedValue({ ok: true });
+    renderWithProviders(<FirewallSection />);
+    expect(await screen.findByText('Active & Enforcing')).toBeInTheDocument();
+    // The first preset is the web ingress one (80, 443).
+    fireEvent.click(screen.getAllByRole('button', { name: 'Close Ports' })[0]!);
+    await waitFor(() => expect(apiMock.api.firewall.deleteRule).toHaveBeenCalledTimes(4));
+    expect(apiMock.api.firewall.deleteRule.mock.calls.map((c) => c[0])).toEqual([6, 5, 3, 2]);
   });
 
   it('allows opening and closing 1-click presets', async () => {

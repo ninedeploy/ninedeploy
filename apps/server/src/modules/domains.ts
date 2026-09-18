@@ -10,45 +10,14 @@ import { assertServiceRole } from '../lib/resourceAccess.js';
 import { badRequest, conflict, notFound, parseId as num } from '../lib/errors.js';
 import { getSettingString } from '../lib/settings.js';
 import { classifyResolution, resolveHostAddresses } from '../lib/dnsStatus.js';
-import { challengeRecordName, checkOwnershipRecord, newChallengeToken, requiresOwnershipProof } from '../lib/domainVerification.js';
-
-/** Normalise pasted input to a bare hostname. Users routinely paste a full
- *  URL (`https://app.example.com/`) instead of the host, so scheme,
- *  credentials, port and anything after the host are discarded first; what
- *  remains is then lowercased — DNS is case-insensitive — and stripped of
- *  the insignificant trailing root dot. Empty output means unusable input. */
-function normalizeHost(raw: string): string {
-  let value = raw.trim().toLowerCase();
-  if (/^[a-z][a-z0-9+.-]*:\/\//.test(value)) {
-    try {
-      // `URL.hostname` drops credentials, port and path in one step.
-      value = new URL(value).hostname;
-    } catch {
-      return '';
-    }
-  }
-  // Scheme-less pastes can still carry a path (`app.example.com/`, `app.example.com/about`).
-  value = value.split(/[/?#]/)[0] ?? '';
-  // Traefik's Host matcher never sees a port.
-  value = value.replace(/:\d+$/, '');
-  return value.replace(/\.$/, '');
-}
-
-/**
- * True when two host patterns can match the same HTTP request — either an
- * exact match, or a `*.suffix` wildcard covering a single-label host under it
- * (which is exactly what `writeDynamicConfig` turns into a HostRegexp router).
- */
-function hostsCollide(a: string, b: string): boolean {
-  const x = normalizeHost(a);
-  const y = normalizeHost(b);
-  if (x === y) return true;
-  const covers = (pattern: string, host: string): boolean =>
-    pattern.startsWith('*.') && !host.startsWith('*.')
-      ? new RegExp(`^[a-z0-9-]+\\.${pattern.slice(2).replace(/[.+?^${}()|[\]\\]/g, '\\$&')}$`).test(host)
-      : false;
-  return covers(x, y) || covers(y, x);
-}
+import {
+  challengeRecordName,
+  checkOwnershipRecord,
+  hostsCollide,
+  newChallengeToken,
+  normalizeHost,
+  requiresOwnershipProof,
+} from '../lib/domainVerification.js';
 
 /**
  * Refuse a hostname the caller has no claim to.

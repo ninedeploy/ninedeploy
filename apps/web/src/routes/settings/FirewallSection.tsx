@@ -96,6 +96,19 @@ const COMMON_PRESETS: PortPreset[] = [
   },
 ];
 
+/**
+ * Whether a `ufw status numbered` "To" column (`80`, `443/tcp`,
+ * `22/tcp (v6)`, `8000:8100/tcp`) covers `port`/`proto` exactly.
+ */
+export function ufwRuleMatchesPort(to: string, port: number, proto: 'tcp' | 'udp' | string): boolean {
+  const m = /^(\d+)(?::(\d+))?(?:\/(tcp|udp))?(?:\s+\(v6\))?$/i.exec(to.trim());
+  if (!m) return false;
+  const lo = Number(m[1]);
+  const hi = m[2] ? Number(m[2]) : lo;
+  if (port < lo || port > hi) return false;
+  return !m[3] || m[3].toLowerCase() === String(proto).toLowerCase();
+}
+
 export function FirewallSection() {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -167,12 +180,7 @@ export function FirewallSection() {
 
   // Helper to check if a port is permitted in active UFW rules
   const isPortAllowed = (p: number, pr: 'tcp' | 'udp') => {
-    return rules.some((r) => {
-      const to = r.to.toLowerCase();
-      const action = r.action.toUpperCase();
-      if (!action.includes('ALLOW')) return false;
-      return to.includes(String(p)) && (to.includes(pr) || !to.includes('/'));
-    });
+    return rules.some((r) => r.action.toUpperCase().includes('ALLOW') && ufwRuleMatchesPort(r.to, p, pr));
   };
 
   // Helper to toggle a preset on or off
@@ -190,22 +198,19 @@ export function FirewallSection() {
         }
         toast(`Opened all ports for ${preset.name}`, 'success');
       } else {
-        // Close matching ports by finding their rule IDs
-        const matchingRuleIds: number[] = [];
-        for (const item of preset.ports) {
-          const match = rules.find((r) => {
-            const to = r.to.toLowerCase();
-            // Port matching runs for open and closed presets across the
-            // preset tests; the instrumenter cannot see this predicate.
-            /* v8 ignore start */
-            return to.includes(String(item.port)) && r.action.includes('ALLOW');
-            /* v8 ignore stop */
-          });
-          // The no-match arm only occurs for partially-open presets.
-          /* v8 ignore start */
-          if (match) matchingRuleIds.push(match.id);
-          /* v8 ignore stop */
-        }
+        // r191: every matching ALLOW rule (IPv4 AND the "(v6)" twin), matched
+        // on the exact port — `includes('22')` also hit 2222 — and deleted in
+        // DESCENDING id order: `ufw delete N` renumbers every rule after N, so
+        // ascending deletes removed the wrong rules (closing "Web" could drop
+        // the SSH rule and leave 443 open).
+        const matchingRuleIds = rules
+          .filter(
+            (r) =>
+              r.action.toUpperCase().includes('ALLOW') &&
+              preset.ports.some((item) => ufwRuleMatchesPort(r.to, item.port, item.proto)),
+          )
+          .map((r) => r.id)
+          .sort((a, b) => b - a);
         for (const id of matchingRuleIds) {
           await api.firewall.deleteRule(id);
         }
