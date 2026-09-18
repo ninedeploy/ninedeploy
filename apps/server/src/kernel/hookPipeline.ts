@@ -113,10 +113,11 @@ export class HookPipeline implements IHookPipeline {
       } catch (err) {
         console.error(`[HookPipeline] Error executing hook "${hookName}":`, err);
         await executeRollback(err instanceof Error ? err : new Error(String(err)));
-        // r237: stop here. Continuing ran the remaining handlers against a
-        // rolled-back operation, and a second failure rolled the same
-        // entries back again.
-        break;
+        // r237: what was rolled back is no longer "executed". Keeping it in
+        // the list meant a second failing handler rolled the same entries
+        // back again. The chain itself continues: one slow or broken plugin
+        // must not silence the handlers after it.
+        executedEntries.length = 0;
       }
     }
 

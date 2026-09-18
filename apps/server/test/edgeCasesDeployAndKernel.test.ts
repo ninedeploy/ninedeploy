@@ -234,7 +234,7 @@ describe('Edge Cases — Microkernel Lifecycle & Dependency Resolution', () => {
     expect(kernel.state).toBe('TERMINATED');
   });
 
-  it('detects circular dependencies and throws', async () => {
+  it('detects circular dependencies and skips the cycle without aborting boot (r236)', async () => {
     const mockDb = {} as any;
     const kernel = new NineDeployKernel(mockDb, {} as any);
 
@@ -259,7 +259,11 @@ describe('Edge Cases — Microkernel Lifecycle & Dependency Resolution', () => {
     await kernel.registerPlugin(pluginX);
     await kernel.registerPlugin(pluginY);
 
-    await expect(kernel.boot()).rejects.toThrow(/Circular dependency detected/);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await kernel.boot();
+    expect(kernel.state).toBe('READY');
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Skipping plugin'), expect.stringMatching(/Circular dependency detected/));
+    errorSpy.mockRestore();
   });
 });
 

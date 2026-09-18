@@ -106,7 +106,7 @@ describe('HookPipeline', () => {
     expect(pipeline.hasListeners('deploy:after')).toBe(false);
   });
 
-  it('r237: stops at the first failing handler and rolls back once', async () => {
+  it('r237: a second failing handler does not roll the same entries back again', async () => {
     const pipeline = new HookPipeline(() => mockContext);
     const rollback = vi.fn();
     const later = vi.fn(async () => undefined);
@@ -117,7 +117,8 @@ describe('HookPipeline', () => {
     pipeline.tap('deploy:before', later, { priority: 50 });
     await pipeline.call('deploy:before', { service: { id: 1 } as any });
     expect(rollback).toHaveBeenCalledTimes(1);
-    expect(later).not.toHaveBeenCalled();
+    // The chain continues past broken handlers.
+    expect(later).toHaveBeenCalledTimes(1);
     errSpy.mockRestore();
   });
 });
