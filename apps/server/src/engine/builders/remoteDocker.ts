@@ -1,5 +1,6 @@
 import type { Builder, BuildContext, DeployRuntime } from '../types.js';
 import { assertCloneTargetAllowed } from '../../lib/gitEgress.js';
+import { acquireRegistryLock, registryLockKey } from '../../lib/registryLock.js';
 
 /**
  * Remote Docker builder — deploys a service onto a registered node through the
@@ -105,6 +106,11 @@ export function createRemoteDockerBuilder(agent: AgentCall): Builder {
         // Pre-built image (template / one-click). On rollback the deployment
         // row pins the exact digest, same as the local builder.
         target = imageDigest ?? service.image;
+        // r230: the node's credential store is shared by every deploy to it.
+        const releaseRegistry = registryAuth
+          ? await acquireRegistryLock(registryLockKey(service.serverId ?? -1, registryAuth.server))
+          : null;
+        try {
         if (registryAuth) {
           log(`Logging in to ${registryAuth.server || 'docker.io'} on the node …`);
           await agent(
@@ -128,6 +134,9 @@ export function createRemoteDockerBuilder(agent: AgentCall): Builder {
               sink,
             ).catch(() => undefined);
           }
+        }
+        } finally {
+          releaseRegistry?.();
         }
       } else {
         const pack = buildConfig?.buildPack ?? 'auto';

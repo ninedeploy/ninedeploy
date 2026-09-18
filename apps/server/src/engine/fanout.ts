@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { serviceTargets, servers, type DB } from '@ninedeploy/db';
 import { agentOp } from '../lib/agentClient.js';
+import { acquireRegistryLock, registryLockKey } from '../lib/registryLock.js';
 
 /**
  * Multi-server fan-out (phase 1): push an IMAGE-based release to additional
@@ -135,6 +136,10 @@ export async function deployToTargets(
       } else {
         throw new Error('fan-out context has neither an image nor a buildable source');
       }
+      const releaseRegistry = ctx.registryAuth
+        ? await acquireRegistryLock(registryLockKey(target.serverId, ctx.registryAuth.server))
+        : null;
+      try {
       if (ctx.registryAuth) {
         await agent(
           'docker.login',
@@ -148,6 +153,9 @@ export async function deployToTargets(
         if (ctx.registryAuth) {
           await agent('docker.logout', ctx.registryAuth.server ? { server: ctx.registryAuth.server } : {}, log).catch(() => undefined);
         }
+      }
+      } finally {
+        releaseRegistry?.();
       }
       // r226: the previous generation keeps serving until the new one is
       // proven. It used to be removed FIRST ("a duplicate name" — but the new

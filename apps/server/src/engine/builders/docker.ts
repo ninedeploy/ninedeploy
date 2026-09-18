@@ -14,6 +14,7 @@ import { buildStaticSite } from './staticSite.js';
 import { buildProbeUrl, safeProbePath } from '../../lib/probeUrl.js';
 import { writeSecretFile, type SecretFile } from '../../lib/secretFile.js';
 import { repoRelative, resolveInRepo } from '../../lib/repoPath.js';
+import { acquireRegistryLock, registryLockKey } from '../../lib/registryLock.js';
 
 /**
  * Find a Dockerfile inside a repo when the user kept `baseDir: '/'` and
@@ -414,6 +415,10 @@ export const dockerBuilder: Builder = {
     // pulling, logout afterwards so the credential never lingers.
     const server = registryAuth?.server ?? '';
     let loggedIn = false;
+    // r230: hold this registry's credential store for the whole login →
+    // pull/build → logout window (see lib/registryLock.ts).
+    const releaseRegistry = registryAuth ? await acquireRegistryLock(registryLockKey(null, server)) : null;
+    try {
     if (registryAuth) {
       const loginArgs = ['login', '--username', registryAuth.username, '--password-stdin'];
       if (server) loginArgs.push(server);
@@ -431,6 +436,10 @@ export const dockerBuilder: Builder = {
         child.on('error', reject);
       });
       loggedIn = true;
+    }
+    } catch (err) {
+      releaseRegistry?.();
+      throw err;
     }
 
     // Determine the image to run: a pre-built image (template/one-click) or build from source.
@@ -589,6 +598,7 @@ export const dockerBuilder: Builder = {
           /* best-effort logout */
         }
       }
+      releaseRegistry?.();
     }
 
     // BLUE-GREEN: the previous container is intentionally NOT stopped here. It
