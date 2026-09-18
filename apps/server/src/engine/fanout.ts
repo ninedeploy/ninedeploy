@@ -149,12 +149,18 @@ export async function deployToTargets(
           await agent('docker.logout', ctx.registryAuth.server ? { server: ctx.registryAuth.server } : {}, log).catch(() => undefined);
         }
       }
-      // Retire the previous generation first — docker.runEnv would refuse a
-      // duplicate name otherwise.
-      if (target.runtimeId) {
-        await agent('docker.stop', { name: target.runtimeId }, () => undefined).catch(() => undefined);
-        await agent('docker.rm', { name: target.runtimeId }, () => undefined).catch(() => undefined);
-      }
+      // r226: the previous generation keeps serving until the new one is
+      // proven. It used to be removed FIRST ("a duplicate name" — but the new
+      // name carries the deployment id, so it never collides): a failed run or
+      // state check left the node serving nothing, while the row still
+      // pointed at the container just removed. Only a host-port publish
+      // forces the old one out first (both cannot bind the port).
+      const retire = async (runtimeId: string) => {
+        await agent('docker.stop', { name: runtimeId }, () => undefined).catch(() => undefined);
+        await agent('docker.rm', { name: runtimeId }, () => undefined).catch(() => undefined);
+      };
+      const sequential = Boolean(ctx.service.publishedPort && ctx.service.port);
+      if (target.runtimeId && sequential) await retire(target.runtimeId);
       const envName = `${ctx.service.slug}-t${target.serverId}-${ctx.deploymentId}`;
       const wrote = await agent('file.writeEnv', { name: envName, env: ctx.env }, log);
       const envFile = wrote.lines.find((l) => l.startsWith('wrote '))?.slice('wrote '.length) ?? `.agent-env/${envName}.env`;
@@ -175,6 +181,14 @@ export async function deployToTargets(
         await agent('file.deleteEnv', { name: envName }, log).catch(() => undefined);
       }
       const ok = await waitRunning(agent, name, log);
+      if (ok && target.runtimeId && !sequential) await retire(target.runtimeId);
+      if (!ok && target.runtimeId && !sequential) {
+        // The new generation is not trusted: drop it, keep the proven one.
+        await retire(name);
+        results.push({ serverId: target.serverId, runtimeId: target.runtimeId, ok: false, error: 'container did not reach running state' });
+        log(`✗ target node #${target.serverId}: ${name} failed its container-state check — ${target.runtimeId} keeps serving`);
+        continue;
+      }
       results.push({ serverId: target.serverId, runtimeId: name, ok, error: ok ? undefined : 'container did not reach running state' });
       log(ok ? `✓ target node #${target.serverId} is serving ${name}` : `✗ target node #${target.serverId}: ${name} failed its container-state check`);
     } catch (err) {
@@ -184,6 +198,29 @@ export async function deployToTargets(
     }
   }
   return results;
+}
+
+/**
+ * r226: a reference the TARGET node can pull. A local primary reports its
+ * image as `docker inspect --format {{.Image}}` — the local image ID
+ * (`sha256:<hex>`), which a node's `docker pull` reads as
+ * `docker.io/library/sha256` and fails, so every target of an image service
+ * with a local primary ended in `error`. Resolve the ID to the repo digest the
+ * image was pulled by (same bytes on every node), else fall back to the tag.
+ */
+export async function pullableReleaseRef(image: string, digest: string | undefined): Promise<string> {
+  if (!digest) return image;
+  if (!/^sha256:[0-9a-f]{64}$/i.test(digest)) return digest;
+  try {
+    const { capture } = await import('../lib/exec.js');
+    const repo = image.replace(/@.*$/, '').replace(/:[^/:]+$/, '');
+    const digests = (await capture('docker', ['image', 'inspect', digest, '--format', '{{join .RepoDigests " "}}']))
+      .split(/\s+/)
+      .filter(Boolean);
+    return digests.find((d) => d.startsWith(`${repo}@`)) ?? digests[0] ?? image;
+  } catch {
+    return image;
+  }
 }
 
 /** Tear every target container down (service delete / targets cleared). */

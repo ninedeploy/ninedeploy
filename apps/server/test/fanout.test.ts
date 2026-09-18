@@ -1,9 +1,11 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { deployToTargets, listFanoutCandidates, recordFanoutResults, teardownTargets } from '../src/engine/fanout.js';
+import { deployToTargets, listFanoutCandidates, pullableReleaseRef, recordFanoutResults, teardownTargets } from '../src/engine/fanout.js';
 import { createFakeDb } from './helpers.js';
 
 const agentMocks = vi.hoisted(() => ({ agentOp: vi.fn() }));
 vi.mock('../src/lib/agentClient.js', () => ({ agentOp: agentMocks.agentOp }));
+const execMocks = vi.hoisted(() => ({ capture: vi.fn() }));
+vi.mock('../src/lib/exec.js', () => execMocks);
 
 const svc = {
   id: 1,
@@ -63,13 +65,44 @@ describe('multi-server fan-out (phase 1)', () => {
     expect(log).toHaveBeenCalledWith(expect.stringContaining('the primary release is unaffected'));
   });
 
-  it('retires the previous target generation before starting the new one', async () => {
+  it('r226: retires the previous target generation only AFTER the new one runs', async () => {
     agentMocks.agentOp.mockResolvedValue({ exitCode: 0, lines: ['running|10.0.0.9'] });
     const db = dbWithTargets([{ serverId: 5, runtimeId: 'web-t5-8' }]);
     await deployToTargets(db as never, { service: svc, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null }, vi.fn());
-    const ops = agentMocks.agentOp.mock.calls.map((c) => [c[2], c[3]]);
-    expect(ops).toContainEqual(['docker.stop', { name: 'web-t5-8' }]);
-    expect(ops).toContainEqual(['docker.rm', { name: 'web-t5-8' }]);
+    const ops = agentMocks.agentOp.mock.calls.map((c) => `${c[2]} ${(c[3] as { name?: string }).name ?? ''}`.trim());
+    expect(ops.indexOf('docker.runEnv web-t5-9')).toBeLessThan(ops.indexOf('docker.stop web-t5-8'));
+    expect(ops).toContain('docker.rm web-t5-8');
+  });
+
+  it('r226: keeps the proven container when the new generation fails its state check', async () => {
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string) => {
+      if (op === 'docker.inspect') return { exitCode: 0, lines: ['exited|'] };
+      return { exitCode: 0, lines: [] };
+    });
+    const db = dbWithTargets([{ serverId: 5, runtimeId: 'web-t5-8' }]);
+    const results = await deployToTargets(db as never, { service: svc, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null }, vi.fn());
+    expect(results).toEqual([{ serverId: 5, runtimeId: 'web-t5-8', ok: false, error: 'container did not reach running state' }]);
+    const removed = agentMocks.agentOp.mock.calls.filter((c) => c[2] === 'docker.rm').map((c) => (c[3] as { name: string }).name);
+    expect(removed).toEqual(['web-t5-9']);
+  });
+
+  it('r226: a host-port publish still retires the old container first', async () => {
+    agentMocks.agentOp.mockResolvedValue({ exitCode: 0, lines: ['running|10.0.0.9'] });
+    const db = dbWithTargets([{ serverId: 5, runtimeId: 'web-t5-8' }]);
+    await deployToTargets(db as never, { service: { ...svc, publishedPort: 8080 }, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null }, vi.fn());
+    const ops = agentMocks.agentOp.mock.calls.map((c) => `${c[2]} ${(c[3] as { name?: string }).name ?? ''}`.trim());
+    expect(ops.indexOf('docker.rm web-t5-8')).toBeLessThan(ops.indexOf('docker.runEnv web-t5-9'));
+  });
+
+  it('r226: turns a local image ID into a reference a node can pull', async () => {
+    const id = `sha256:${'a'.repeat(64)}`;
+    execMocks.capture.mockResolvedValueOnce('mirror.local/nginx@sha256:111 nginx@sha256:222 ');
+    expect(await pullableReleaseRef('nginx:1.25', id)).toBe('nginx@sha256:222');
+    execMocks.capture.mockRejectedValueOnce(new Error('no such image'));
+    expect(await pullableReleaseRef('nginx:1.25', id)).toBe('nginx:1.25');
+    // Already pullable (a remote primary reports the ref it ran): unchanged.
+    expect(await pullableReleaseRef('nginx:1.25', 'nginx:1.25@sha256:abc')).toBe('nginx:1.25@sha256:abc');
+    expect(await pullableReleaseRef('nginx:1.25', undefined)).toBe('nginx:1.25');
   });
 
   it('builds the pinned commit on each target node for source releases', async () => {

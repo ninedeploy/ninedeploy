@@ -11,7 +11,7 @@ import { materialiseComposeFile } from '../lib/composeWorkspace.js';
 import { remoteDeploySupported, remoteDeployUnsupportedReason } from '../lib/remoteDeploy.js';
 import { agentOp } from '../lib/agentClient.js';
 import { createRemoteDockerBuilder } from './builders/remoteDocker.js';
-import { deployToTargets, recordFanoutResults, targetsForService } from './fanout.js';
+import { deployToTargets, pullableReleaseRef, recordFanoutResults, targetsForService } from './fanout.js';
 import { createRemoteComposeBuilder } from './builders/remoteCompose.js';
 import { analyzeRepo, summarizeInsights } from '../lib/frameworks.js';
 import { upsertInsights } from './repoInsights.js';
@@ -1079,7 +1079,7 @@ export async function runDeployment(
             publishedPort: service.publishedPort,
           },
           deploymentId,
-          image: service.image ? (runtime!.imageDigest ?? service.image) : undefined,
+          image: service.image ? await pullableReleaseRef(service.image, runtime!.imageDigest) : undefined,
           env: fanoutEnv,
           registryAuth: await loadRegistryAuth(db, service),
           primaryServerId: service.serverId ?? null,
