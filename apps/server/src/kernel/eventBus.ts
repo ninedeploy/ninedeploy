@@ -50,7 +50,7 @@ export class EventBus implements IEventBus {
     return this.onCustom(event as string, listener as (payload: unknown) => Promise<void> | void);
   }
 
-  onCustom(event: string, listener: (payload: unknown) => Promise<void> | void): () => void {
+  onCustom(event: string, listener: (payload: unknown, event?: string) => Promise<void> | void): () => void {
     let set = this.listeners.get(event);
     if (!set) {
       set = new Set();

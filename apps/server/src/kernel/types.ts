@@ -79,7 +79,8 @@ export interface IEventBus {
   emit<K extends keyof DomainEvents>(event: K, payload: DomainEvents[K]): void;
   emitCustom(event: string, payload: unknown): void;
   on<K extends keyof DomainEvents>(event: K, listener: (payload: DomainEvents[K]) => Promise<void> | void): () => void;
-  onCustom(event: string, listener: (payload: unknown) => Promise<void> | void): () => void;
+  /** A `'*'` listener also receives the concrete event name as its second argument. */
+  onCustom(event: string, listener: (payload: unknown, event?: string) => Promise<void> | void): () => void;
   once<K extends keyof DomainEvents>(event: K, listener: (payload: DomainEvents[K]) => Promise<void> | void): () => void;
   listenerCount(event: string): number;
   removeAllListeners(event?: string): void;

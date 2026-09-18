@@ -81,8 +81,11 @@ export class SandboxPlugin implements KernelPlugin {
 
     // Listen to kernel events and relay to worker
     this.unsubs.push(
-      ctx.events.onCustom('*', (payload) => {
-        eventForwarder('custom.system_event', payload);
+      // r234: the bus hands a wildcard listener the concrete event name. It
+      // used to be dropped and every event relayed as `custom.system_event`,
+      // so a sandbox `ctx.on('deployment.status_changed', …)` never fired.
+      ctx.events.onCustom('*', (payload, event) => {
+        eventForwarder(event ?? 'custom.system_event', payload);
       }),
     );
 

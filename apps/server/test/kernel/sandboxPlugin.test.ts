@@ -105,6 +105,41 @@ describe('SandboxPlugin (Worker Threads)', () => {
     }
   });
 
+  it('r234: relays kernel events to the worker under their real names', async () => {
+    const db = createFakeDb();
+    const kernel = new NineDeployKernel(db, mockConfig);
+    const workerScriptPath = join(tmpdir(), `test-worker-events-${Date.now()}.mjs`);
+    writeFileSync(
+      workerScriptPath,
+      `
+      import { parentPort } from 'node:worker_threads';
+      parentPort.on('message', (msg) => {
+        if (msg.type === 'INIT') parentPort.postMessage({ type: 'READY', payload: { configSchema: [], menuItems: [] } });
+        if (msg.type === 'EVENT' && msg.payload.event === 'deployment.status_changed') {
+          parentPort.postMessage({ type: 'EMIT_EVENT', payload: { event: 'test.relayed', data: { name: msg.payload.event } } });
+        }
+        if (msg.type === 'SHUTDOWN') process.exit(0);
+      });
+      `,
+      'utf8',
+    );
+    try {
+      const relayed = new Promise<{ name: string }>((resolve) => {
+        kernel.events.onCustom('test.relayed', (payload) => resolve(payload as { name: string }));
+      });
+      await kernel.registerPlugin(
+        new SandboxPlugin({ id: 'evt-sandbox', name: 'Evt', version: '1.0.0', workerPath: workerScriptPath }),
+      );
+      kernel.events.emitCustom('deployment.status_changed', { deploymentId: 1 });
+      expect(await relayed).toEqual({ name: 'deployment.status_changed' });
+      await kernel.unregisterPlugin('evt-sandbox');
+    } finally {
+      try {
+        unlinkSync(workerScriptPath);
+      } catch {}
+    }
+  });
+
   it('handles worker error events gracefully without crashing kernel', async () => {
     const db = createFakeDb();
     const kernel = new NineDeployKernel(db, mockConfig);
