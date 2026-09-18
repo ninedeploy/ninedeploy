@@ -1888,3 +1888,26 @@ describe('r237: kernel deploy hooks', () => {
   });
 });
 
+
+describe('r239: kernel service lifecycle events', () => {
+  it('emits service.deploying and service.deployed with the linked projects', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { image: 'nginx:latest' });
+    db.query.deployments.findFirst.mockResolvedValue({ ...dep, status: 'running' });
+    db.query.serviceProjects.findMany.mockResolvedValue([{ serviceId: 1, projectId: 9 }, { serviceId: 1, projectId: 4 }]);
+    const emit = vi.fn();
+    await runDeployment(db as never, 1, { useBuildKit: false, events: { emit } as never });
+    const names = emit.mock.calls.map((c) => c[0]);
+    expect(names).toEqual(['service.deploying', 'service.deployed']);
+    expect(emit.mock.calls[1]![1]).toMatchObject({ status: 'success', projectId: 4, projectIds: [4, 9], deployId: 1 });
+  });
+
+  it('does not announce a cancelled deployment as an outcome', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { type: 'k8s' });
+    db.query.deployments.findFirst.mockResolvedValueOnce(dep).mockResolvedValueOnce(dep).mockResolvedValue({ ...dep, status: 'cancelled' });
+    const emit = vi.fn();
+    await runDeployment(db as never, 1, { useBuildKit: false, events: { emit } as never });
+    expect(emit.mock.calls.map((c) => c[0])).toEqual(['service.deploying']);
+  });
+});

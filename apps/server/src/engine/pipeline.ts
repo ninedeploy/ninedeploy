@@ -447,25 +447,58 @@ type PipelineKernelCtx = {
    * tapped by plugins, and never called by anything.
    */
   hooks?: import('../kernel/types.js').IHookPipeline;
+  /**
+   * r239: the kernel event bus. `service.deploying` / `service.deployed` were
+   * declared and listened for (Sticky IP, Sticky Session, build cache) and
+   * emitted by nothing.
+   */
+  events?: import('../kernel/types.js').IEventBus;
 };
 
 /** Run the full deploy pipeline for one deployment row. */
 export async function runDeployment(db: DB, deploymentId: number, kernelCtx?: PipelineKernelCtx): Promise<void> {
+  const events = kernelCtx?.events;
+  if (events) await emitDeploying(db, deploymentId, events).catch(() => undefined);
   try {
     await runDeploymentCore(db, deploymentId, kernelCtx);
   } finally {
-    const hooks = kernelCtx?.hooks;
-    if (hooks) await fireAfterHooks(db, deploymentId, hooks).catch(() => undefined);
+    if (kernelCtx?.hooks || events) await announceOutcome(db, deploymentId, kernelCtx).catch(() => undefined);
   }
 }
 
+async function linkedProjectIds(db: DB, serviceId: number): Promise<number[]> {
+  const links = await db.query.serviceProjects.findMany({ where: eq(serviceProjects.serviceId, serviceId) });
+  return links.map((l) => l.projectId).sort((a, b) => a - b);
+}
+
+async function emitDeploying(db: DB, deploymentId: number, events: import('../kernel/types.js').IEventBus): Promise<void> {
+  const dep = await db.query.deployments.findFirst({ where: eq(deployments.id, deploymentId) });
+  if (!dep) return;
+  const projectIds = await linkedProjectIds(db, dep.serviceId);
+  events.emit('service.deploying', { serviceId: dep.serviceId, deployId: deploymentId, projectId: projectIds[0], projectIds });
+}
+
 /** Observational: a plugin must never be able to fail or stall the outcome. */
-async function fireAfterHooks(db: DB, deploymentId: number, hooks: import('../kernel/types.js').IHookPipeline): Promise<void> {
+async function announceOutcome(db: DB, deploymentId: number, kernelCtx: PipelineKernelCtx | undefined): Promise<void> {
   const dep = await db.query.deployments.findFirst({ where: eq(deployments.id, deploymentId) });
   if (!dep) return;
   const service = await db.query.services.findFirst({ where: eq(services.id, dep.serviceId) });
   if (!service) return;
   const success = dep.status === 'running';
+  const events = kernelCtx?.events;
+  // A cancelled deploy is neither outcome: the previous release keeps serving.
+  if (events && (success || dep.status === 'failed')) {
+    const projectIds = await linkedProjectIds(db, service.id);
+    events.emit('service.deployed', {
+      serviceId: service.id,
+      deployId: deploymentId,
+      status: success ? 'success' : 'failed',
+      projectId: projectIds[0],
+      projectIds,
+    });
+  }
+  const hooks = kernelCtx?.hooks;
+  if (!hooks) return;
   await hooks.call('deploy:after', { service, deployId: deploymentId, success });
   if (success) {
     const domain = await db.query.domains.findFirst({ where: eq(domains.serviceId, service.id) });

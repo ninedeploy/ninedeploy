@@ -6,9 +6,10 @@ import type { KernelContext, KernelPlugin } from '../types.js';
  * Watches the `service.deployed` firehose and, when a project has a
  * `sticky_ip.ip` config-center entry, attaches the configured egress
  * IP to the project's network via the active `IEgressIpDriver`. The
- * matching `service.deploying` listener runs the corresponding
- * `detach()` so a project switching IPs does not leave a stale SNAT
- * rule on the host.
+ * attach is preceded by a `detach()` so a project switching IPs does not
+ * leave a stale SNAT rule on the host. r239: that detach used to run on
+ * `service.deploying`, so a FAILED deploy — whose previous release keeps
+ * serving — silently lost its egress IP until the next success.
  *
  * Contract:
  *   - `enabled` (default `true`) is the master switch. When `false`,
@@ -58,21 +59,16 @@ export class StickyIpPlugin implements KernelPlugin {
   private unsubs: Array<() => void> = [];
 
   init(ctx: KernelContext): void {
-    const unsubDeploying = ctx.events.on('service.deploying', (payload) => {
-      const record = payload as { serviceId?: number; projectId?: number };
-      if (typeof record.projectId !== 'number') return;
-      // Detach any pre-existing SNAT so a project switching IPs
-      // does not leak the old rule. The attach() below re-applies
-      // with the new IP.
-      return this.detachForProject(ctx, record.projectId);
-    });
-    this.unsubs.push(unsubDeploying);
-
     const unsubDeployed = ctx.events.on('service.deployed', (payload) => {
-      const record = payload as { status?: string; projectId?: number };
+      const record = payload as { status?: string; projectId?: number; projectIds?: number[] };
       if (record.status !== 'success') return;
-      if (typeof record.projectId !== 'number') return;
-      return this.attachForProject(ctx, record.projectId);
+      const ids = Array.isArray(record.projectIds) && record.projectIds.length > 0
+        ? record.projectIds
+        : typeof record.projectId === 'number'
+          ? [record.projectId]
+          : [];
+      if (ids.length === 0) return;
+      return Promise.all(ids.map((id) => this.attachForProject(ctx, id))).then(() => undefined);
     });
     this.unsubs.push(unsubDeployed);
   }
@@ -99,6 +95,7 @@ export class StickyIpPlugin implements KernelPlugin {
         });
         return;
       }
+      await this.detachForProject(ctx, projectId);
       await driver.attach({ projectId }, ip);
     } catch (err) {
       ctx.events.emitCustom('metric.egress.unavailable', {

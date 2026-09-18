@@ -9,8 +9,16 @@ export type KernelState = 'INIT' | 'BOOTSTRAP' | 'READY' | 'DRAINING' | 'TERMINA
 export interface DomainEvents {
   // Service lifecycle
   'service.created': { serviceId: number; projectId: number; name: string };
-  'service.deploying': { serviceId: number; deployId: number };
-  'service.deployed': { serviceId: number; deployId: number; status: 'success' | 'failed' };
+  // r239: emitted by the deploy pipeline. `projectId` is the service's first
+  // linked project (services are N-N with projects); `projectIds` lists all.
+  'service.deploying': { serviceId: number; deployId: number; projectId?: number; projectIds?: number[] };
+  'service.deployed': {
+    serviceId: number;
+    deployId: number;
+    status: 'success' | 'failed';
+    projectId?: number;
+    projectIds?: number[];
+  };
   'service.stopped': { serviceId: number };
   'service.deleted': { serviceId: number; name: string };
 

@@ -232,6 +232,7 @@ export default fp(
               useBuildKit,
               buildCache,
               hooks: fastify.kernel?.hooks,
+              events: kernelEvents,
               // Publish the build's REAL cache observation. Best-effort: a
               // bus that throws must not fail the deploy.
               onBuildCacheEvent: kernelEvents

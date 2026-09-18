@@ -197,44 +197,35 @@ describe('StickyIpPlugin', () => {
     });
   });
 
-  describe('service.deploying detach path', () => {
-    it('detaches any pre-existing SNAT for the project', async () => {
-      kernel.events.emit('service.deploying', { projectId: 11 });
-      await waitFor(() => driver.detach.mock.calls.length > 0);
-      expect(driver.detach).toHaveBeenCalledWith({ projectId: 11 });
-    });
-
-    it('skips detach when the event has no projectId', async () => {
-      kernel.events.emit('service.deploying', {});
+  describe('r239: detach runs only as part of a successful re-attach', () => {
+    it('does not detach when a deploy merely starts (a failed deploy keeps its egress IP)', async () => {
+      kernel.events.emit('service.deploying', { serviceId: 1, deployId: 1, projectId: 11 });
       await new Promise((r) => setTimeout(r, 20));
       expect(driver.detach).not.toHaveBeenCalled();
     });
 
-    it('is a no-op when no egress driver is registered', async () => {
-      const unreg = new NineDeployKernel(mockDb as never, mockConfig);
-      const p = new StickyIpPlugin();
-      await unreg.registerPlugin(p);
-      // No driver — detach is silently skipped.
-      unreg.events.emit('service.deploying', { projectId: 12 });
-      await new Promise((r) => setTimeout(r, 20));
-      // Nothing to assert on the driver side (there is none); the
-      // important contract is that the listener does not throw.
-      expect(true).toBe(true);
-      p.destroy();
+    it('detaches the old rule before attaching the new IP', async () => {
+      await kernel.configCenter.set('project:11:sticky_ip.ip', '203.0.113.11');
+      kernel.events.emit('service.deployed', { serviceId: 1, deployId: 1, status: 'success', projectId: 11 });
+      await waitFor(() => driver.attach.mock.calls.length > 0);
+      expect(driver.detach).toHaveBeenCalledWith({ projectId: 11 });
+      expect(driver.detach.mock.invocationCallOrder[0]!).toBeLessThan(driver.attach.mock.invocationCallOrder[0]!);
     });
 
-    it('swallows detach failures (best-effort, not a deploy blocker)', async () => {
+    it('attaches for every linked project', async () => {
+      await kernel.configCenter.set('project:31:sticky_ip.ip', '203.0.113.31');
+      await kernel.configCenter.set('project:32:sticky_ip.ip', '203.0.113.32');
+      kernel.events.emit('service.deployed', { serviceId: 1, deployId: 1, status: 'success', projectId: 31, projectIds: [31, 32] });
+      await waitFor(() => driver.attach.mock.calls.length > 1);
+      expect(driver.attach).toHaveBeenCalledWith({ projectId: 32 }, '203.0.113.32');
+    });
+
+    it('a failing detach does not block the attach', async () => {
       driver.detach.mockRejectedValueOnce(new Error('connection refused'));
-      // The plugin's detachForProject has an empty catch — the
-      // listener must NOT propagate the error to the bus.
-      let propagated = false;
-      kernel.events.onCustom('error', () => {
-        propagated = true;
-      });
-      kernel.events.emit('service.deploying', { projectId: 99 });
-      await new Promise((r) => setTimeout(r, 30));
-      expect(driver.detach).toHaveBeenCalledWith({ projectId: 99 });
-      expect(propagated).toBe(false);
+      await kernel.configCenter.set('project:99:sticky_ip.ip', '203.0.113.99');
+      kernel.events.emit('service.deployed', { serviceId: 1, deployId: 1, status: 'success', projectId: 99 });
+      await waitFor(() => driver.attach.mock.calls.length > 0);
+      expect(driver.attach).toHaveBeenCalledWith({ projectId: 99 }, '203.0.113.99');
     });
   });
 
