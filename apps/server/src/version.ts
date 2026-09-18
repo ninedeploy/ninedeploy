@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.9.9';
+export const VERSION = '0.10.0';
 
 export interface ChangelogEntry {
   version: string;
@@ -11,6 +11,30 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.10.0',
+    date: '2026-09-18',
+    title: 'Release 0.10.0',
+    changes: [
+      'Placeholder — fill in from CHANGELOG.md before tagging',
+    ],
+  },
+{
+    version: '0.10.0',
+    date: '2026-09-18',
+    title: 'Release 0.10.0',
+    changes: [
+      'Placeholder — fill in from CHANGELOG.md before tagging',
+    ],
+  },
+{
+    version: '0.10.0',
+    date: '2026-09-18',
+    title: 'Fan-out Everywhere — the Fleet Era Close',
+    changes: [
+      'Multi-server deployment is complete: image releases pull to every target node, Dockerfile repositories build per node from the same pinned commit, the reconcile loop patrols targets through their agents and revives crashed clones within the minute, and the Target node card manages the whole model as a checkbox list. The catalog grows to 130 one-click templates with managed-database auto-attachment.',
+    ],
+  },
   {
     version: '0.9.9',
     date: '2026-09-16',

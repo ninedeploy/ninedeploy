@@ -8,16 +8,12 @@ if (!newVersion || !/^\d+\.\d+\.\d+.*$/.test(newVersion)) {
   process.exit(1);
 }
 
-// OWNER POLICY (Ersin, 2026-09-16): NineDeploy never crosses 1.0.0 — the
-// 0.9.x line runs to 0.9.99 and rolls 0.9.99 -> 0.10.0, forever. A major
-// bump is a product-positioning decision, not a script accident.
+// OWNER POLICY (Ersin, 2026-09-16): NineDeploy never crosses 1.0.0 — when
+// the 0.9.x line fills (0.9.99) it rolls to 0.10.0, then 0.11.0, forever.
+// A major bump is a product-positioning decision, not a script accident.
 const [maj, min] = newVersion.split('.').map(Number);
 if (maj >= 1) {
   console.error('Refusing ' + newVersion + ': the project stays on the 0.x line by owner policy (0.9.99 rolls to 0.10.0, never 1.0.0).');
-  process.exit(1);
-}
-if (maj === 0 && min > 9) {
-  console.error('Refusing ' + newVersion + ': minor must stay 9 on the 0.9.x line (0.9.99 rolls to 0.10.0).');
   process.exit(1);
 }
 
@@ -111,8 +107,9 @@ prependChangelogEntry();
 // occurrence would relabel the newest changelog entry instead of anything
 // meant to track the released version. ABOUT.version reads the VERSION
 // constant, so there is nothing else to sync in that file.
-replaceInFile('apps/cli/src/index.ts', /\.version\('.*?'\)/, `.version('${newVersion}')`);
-replaceInFile('packages/mcp/src/index.ts', /version: '.*?'/, `version: '${newVersion}'`);
+// The CLI and the MCP server read their version from their own package.json
+// at runtime (r195), so there is no literal to rewrite in their sources; the
+// package.json bump above is what they report.
 replaceInFile('apps/web/src/routes/About.tsx', /--version v\d+\.\d+\.\d+/g, `--version v${newVersion}`);
 replaceInFile('docs/QUICKSTART.md', /--version v\d+\.\d+\.\d+/g, `--version v${newVersion}`);
 replaceInFile('website/src/pages/Home.tsx', /<span className="tag font-bold">v\d+\.\d+\.\d+<\/span>/, `<span className="tag font-bold">v${newVersion}</span>`);

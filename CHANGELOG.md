@@ -60,6 +60,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.10.0] - 2026-09-18
+
+> The fleet-era close: multi-server fan-out everywhere, with the
+> panel, SDK and self-healing to match.
+
+### Added
+
+- **Multi-server fan-out, complete (r131/r132/r133/r138).** A release
+  runs on several nodes at once: image releases pull through each
+  target's agent, Dockerfile repositories build per node from the same
+  pinned commit (no registry needed), per-node failures never block
+  the primary, the reconcile loop revives crashed target clones within
+  the minute (new validated `docker.start` op), and the Target node
+  card exposes the whole model as a checkbox list with live status.
+- **SCIM 2.0 provisioning (r129)** — see 0.9.6-era note carried here
+  for release-packaging completeness.
+
+### Changed
+
+- **Template catalog 118 → 130 (r134/r135/r139/r140).** Node-RED, Open
+  WebUI, Appsmith, Baserow, Whoogle, ArchiveBox, Wallabag, Lobe Chat,
+  LimeSurvey, Redmine, Jenkins, Woodpecker CI, Drone, Fathom, Shlink,
+  Piwigo, the official Docker Registry, BookStack, Fider, PrivateBin,
+  What's Up Docker, Organizr, Owncast, Duplicati, Komga, MeTube, Wekan,
+  Filestash and Deluge — with managed-database auto-attachment for the
+  DB-backed ones and an evidence-derived verification contract.
+
+---
+
 ## [0.9.9] - 2026-09-16
 
 > The self-healing fleet: fan-out hardening, drift guards, and a

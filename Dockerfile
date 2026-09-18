@@ -26,6 +26,11 @@
 FROM node:26-slim AS build
 WORKDIR /app
 
+# Native modules (ssh2 -> node-gyp) need a toolchain at install time;
+# node:26-slim ships without python3/make/g++ and the install fails
+# nondeterministically depending on which optional deps resolve.
+RUN apt-get update  && apt-get install -y --no-install-recommends python3 make g++  && rm -rf /var/lib/apt/lists/*
+
 # Node ≥ 26 images no longer bundle corepack, so install pnpm via npm.
 # Keep PNPM_VERSION in sync with "packageManager" in package.json.
 ARG PNPM_VERSION=11.23.0
