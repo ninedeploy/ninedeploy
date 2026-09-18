@@ -1035,8 +1035,10 @@ describe('ServiceDetail', () => {
   });
 
   it('invalidates the service when an in-flight deploy becomes terminal', async () => {
-    // first list returns an in-flight deploy, second returns terminal
-    mockOf(api.deploys.list).mockResolvedValueOnce([{ ...deploys[0], status: 'building' }] as never);
+    // the list reports an in-flight deploy until the test flips it. Not a
+    // one-shot mock: since r250 the overview card shares ['deploys', id] and
+    // its mount may refetch the same query.
+    mockOf(api.deploys.list).mockResolvedValue([{ ...deploys[0], status: 'building' }] as never);
     const { queryClient } = renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
     await openTab('Deploys');
     await screen.findByText('#5');
