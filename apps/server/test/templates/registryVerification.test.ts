@@ -99,9 +99,11 @@ describe('bundled Hub template contract', () => {
   it('advertises only templates that passed an isolated runtime smoke test', () => {
     // The verified set is DERIVED from the committed smoke-run evidence, not
     // hand-pinned: the next `smoke-template-runtime` run refreshes the JSON
-    // and this contract follows it automatically.
+    // and this contract follows it automatically. The evidence lives with the
+    // test fixtures (74d6eab removed it from the repo root, which left this
+    // contract reading a file that no longer existed).
     const run = JSON.parse(
-      readFileSync(new URL('../../../../runtime-verify-2026-09-16.json', import.meta.url), 'utf8'),
+      readFileSync(new URL('../fixtures/runtime-verify-2026-09-16.json', import.meta.url), 'utf8'),
     ) as { results: Array<{ id: string; ok: boolean }> };
     const okIds = new Set(run.results.filter((r) => r.ok).map((r) => r.id));
     const verifiedIds = new Set(templates.filter((t) => t.runtimeVerified).map((t) => t.id));
