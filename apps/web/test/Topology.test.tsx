@@ -1,5 +1,5 @@
 ﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { Topology } from '../src/routes/Topology.js';
 import { api } from '../src/lib/api.js';
 import { renderWithProviders, mockOf } from './helpers.js';
@@ -20,7 +20,7 @@ vi.mock('@xyflow/react', () => ({
     onNodeClick,
     children,
   }: {
-    nodes: Array<{ id: string; type: string; data: unknown }>;
+    nodes: Array<{ id: string; type: string; data: unknown; position?: { x: number; y: number } }>;
     edges: unknown[];
     nodeTypes?: Record<string, React.ComponentType<{ id: string; data: unknown }>>;
     onNodesChange?: (changes: unknown[]) => void;
@@ -32,13 +32,14 @@ vi.mock('@xyflow/react', () => ({
       {nodes.map((n) => {
         const NodeComp = nodeTypes?.[n.type];
         return NodeComp ? (
-          <div key={n.id} data-testid={`node-${n.id}`} onClick={(e) => onNodeClick?.(e, n)}>
+          <div key={n.id} data-testid={`node-${n.id}`} data-x={n.position?.x} onClick={(e) => onNodeClick?.(e, n)}>
             <NodeComp id={n.id} data={n.data} />
           </div>
         ) : null;
       })}
       {/* Triggers for the change handlers the real canvas fires. */}
       <button type="button" data-testid="fire-node-drop" onClick={() => onNodesChange?.([{ type: 'position', dragging: false }])}>node-drop</button>
+      <button type="button" data-testid="fire-node-move" onClick={() => onNodesChange?.([{ type: 'position', id: 'service-1', position: { x: 999, y: 999 }, dragging: false }])}>node-move</button>
       <button type="button" data-testid="fire-node-change" onClick={() => onNodesChange?.([{ type: 'select' }])}>node-change</button>
       <button type="button" data-testid="fire-edge-change" onClick={() => onEdgesChange?.([{ type: 'select' }])}>edge-change</button>
       {children}
@@ -57,7 +58,12 @@ vi.mock('@xyflow/react', () => ({
   Panel: ({ children }: { children: React.ReactNode }) => <div data-testid="panel">{children}</div>,
   BackgroundVariant: { Dots: 'dots' },
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
-  applyNodeChanges: (_changes: unknown[], nodes: unknown[]) => nodes,
+  // Positions apply (for the r216 drag test); every other change is a no-op.
+  applyNodeChanges: (changes: Array<{ type: string; id?: string; position?: unknown }>, nodes: Array<{ id: string }>) =>
+    nodes.map((n) => {
+      const move = changes.find((c) => c.type === 'position' && c.id === n.id && c.position);
+      return move ? { ...n, position: move.position } : n;
+    }),
   applyEdgeChanges: (_changes: unknown[], edges: unknown[]) => edges,
   useReactFlow: () => ({
     fitView: () => Promise.resolve(true),
@@ -299,6 +305,28 @@ it('shows an error state with retry when the graph query fails', async () => {
       renderWithProviders(<Topology />);
       await screen.findByTestId('react-flow');
       expect(screen.getByTestId('node-service-1')).toBeInTheDocument();
+    });
+
+    it('r216: a dragged node keeps its position across a live-stats refresh', async () => {
+      mockOf(api.topology.get).mockResolvedValue(graph as never);
+      mockOf(api.stats.snapshot).mockResolvedValue({
+        host: null,
+        containers: [{ kind: 'service', refId: 1, refName: 'api', name: 'nd-app-api', cpuPct: 3.5, memMb: 220, memLimitMb: 512 }],
+      } as never);
+      const { queryClient } = renderWithProviders(<Topology />);
+      expect(await screen.findByText('3.5%')).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('fire-node-move'));
+      expect(screen.getByTestId('node-service-1')).toHaveAttribute('data-x', '999');
+      mockOf(api.stats.snapshot).mockResolvedValue({
+        host: null,
+        containers: [{ kind: 'service', refId: 1, refName: 'api', name: 'nd-app-api', cpuPct: 7.5, memMb: 230, memLimitMb: 512 }],
+      } as never);
+      await act(async () => {
+        await queryClient.invalidateQueries({ queryKey: ['live-stats-snapshot'] });
+      });
+      // The live chip updates, the node stays where the user dropped it.
+      expect(await screen.findByText('7.5%')).toBeInTheDocument();
+      expect(screen.getByTestId('node-service-1')).toHaveAttribute('data-x', '999');
     });
 
     it('shows live stats and volume sizes, and tours the inspector', async () => {

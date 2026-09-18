@@ -1032,32 +1032,28 @@ function TopologyCanvasWithClick(props: {
   const [, setUserMoved] = useState(false);
   const lastLayoutKey = useRef<string>('');
 
-  // Layout key derived from the props we received — re-apply positions
-  // when upstream data changes; preserve user-dragged positions otherwise.
-  // Node DATA is part of the key: the live poll refreshes cpuPct/memMb in
-  // place, and a key of only ids+positions would freeze the badges at the
-  // first layout forever.
+  // r216: two keys. The LAYOUT key (ids, computed positions, edge count)
+  // re-applies positions when the graph itself changes. Live data (cpuPct /
+  // memMb / status, refreshed every poll) only updates each node's `data` IN
+  // PLACE — it used to be part of the layout key, so every 4 s poll reset
+  // every node to the computed layout and a dragged node snapped back.
   const layoutKey = useMemo(
     () =>
-      props.nodes
-        .map(
-          (n) =>
-            `${n.id}:${n.position.x.toFixed(0)},${n.position.y.toFixed(0)}:${JSON.stringify(
-              (n.data as { cpuPct?: unknown; memMb?: unknown; status?: unknown }) ?? {},
-            )}`,
-        )
-        .join('|') +
+      props.nodes.map((n) => `${n.id}:${n.position.x.toFixed(0)},${n.position.y.toFixed(0)}`).join('|') +
       '|' +
       props.edges.length.toString(),
     [props.nodes, props.edges],
   );
 
   useEffect(() => {
-    // A same-layout re-render (e.g. opening the inspector) takes the early
-    // return; the instrumenter cannot see this comparison.
-    /* v8 ignore start */
-    if (lastLayoutKey.current === layoutKey) return;
-    /* v8 ignore stop */
+    if (lastLayoutKey.current === layoutKey) {
+      // Same graph: refresh live data, keep wherever the user put each node.
+      const fresh = new Map(props.nodes.map((n) => [n.id, n.data]));
+      setNodes((current) =>
+        current.map((n) => (fresh.has(n.id) && fresh.get(n.id) !== n.data ? { ...n, data: fresh.get(n.id)! } : n)),
+      );
+      return;
+    }
     lastLayoutKey.current = layoutKey;
     setNodes(props.nodes);
     setEdges(props.edges);
