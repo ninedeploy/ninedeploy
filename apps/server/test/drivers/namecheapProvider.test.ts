@@ -134,6 +134,37 @@ describe('NamecheapProvider (IDomainProvider)', () => {
     expect(params.get('HostId2')).toBeNull();
   });
 
+  it('r244: keeps MX preferences and the email type, and writes the host name relative to the zone', async () => {
+    fetchMock.mockResolvedValueOnce(
+      xmlResponse(
+        '<ApiResponse Status="OK"><CommandResponse><DomainDNSGetHostsResult EmailType="MX">' +
+          '<hosts>' +
+          '<host HostId="60" Name="@" Type="MX" Address="mx1.mail.example.net." MXPref="5" TTL="1800" />' +
+          '</hosts></DomainDNSGetHostsResult></CommandResponse></ApiResponse>',
+      ),
+    );
+    fetchMock.mockResolvedValueOnce(xmlResponse('<ApiResponse Status="OK"><CommandResponse /></ApiResponse>'));
+    fetchMock.mockResolvedValueOnce(
+      xmlResponse(
+        '<ApiResponse Status="OK"><CommandResponse><DomainDNSGetHostsResult EmailType="MX">' +
+          '<hosts>' +
+          '<host HostId="60" Name="@" Type="MX" Address="mx1.mail.example.net." MXPref="5" TTL="1800" />' +
+          '<host HostId="61" Name="app" Type="A" Address="1.1.1.1" TTL="1800" />' +
+          '</hosts></DomainDNSGetHostsResult></CommandResponse></ApiResponse>',
+      ),
+    );
+    const result = await newProvider(creds).createRecord('example.com', {
+      hostname: 'app.example.com',
+      type: 'A',
+      content: '1.1.1.1',
+    });
+    expect(result.recordId).toBe('61');
+    const params = new URL(fetchMock.mock.calls[1]![0] as string).searchParams;
+    expect(params.get('MXPref1')).toBe('5');
+    expect(params.get('EmailType')).toBe('MX');
+    expect(params.get('HostName2')).toBe('app');
+  });
+
   it('createRecord de-duplicates on (name, type) so a re-add replaces the old row', async () => {
     fetchMock.mockResolvedValueOnce(
       xmlResponse(

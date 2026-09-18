@@ -112,6 +112,9 @@ export interface NamecheapHost {
   type: DomainRecordType | string;
   address: string;
   ttl: string;
+  /** MX priority. r244: dropped by the old round-trip, so every write reset
+   *  the zone's MX preferences to Namecheap's default. */
+  mxPref?: string;
 }
 
 function parseHosts(hostsEl: ReturnType<typeof parseXml>): NamecheapHost[] {
@@ -121,6 +124,7 @@ function parseHosts(hostsEl: ReturnType<typeof parseXml>): NamecheapHost[] {
     type: h.attrs['Type'] ?? 'A',
     address: h.attrs['Address'] ?? '',
     ttl: h.attrs['TTL'] ?? '1800',
+    ...(h.attrs['MXPref'] ? { mxPref: h.attrs['MXPref'] } : {}),
   }));
 }
 
@@ -177,19 +181,33 @@ export async function listNamecheapDomains(creds: NamecheapCredentials): Promise
 
 /** Fetch the current host list for `domain` (`namecheap.domains.dns.getHosts`). */
 export async function getNamecheapHosts(creds: NamecheapCredentials, domain: string): Promise<NamecheapHost[]> {
+  return (await readNamecheapHostList(creds, domain)).hosts;
+}
+
+/**
+ * The host list plus the domain's `EmailType`. `setHosts` REPLACES the zone,
+ * and without `EmailType=MX` Namecheap discards the MX rows it is sent, so a
+ * read-modify-write that does not carry the email type back silently deletes
+ * the domain's mail routing (r244).
+ */
+export async function readNamecheapHostList(
+  creds: NamecheapCredentials,
+  domain: string,
+): Promise<{ hosts: NamecheapHost[]; emailType?: string }> {
   const params = authParams(creds, 'namecheap.domains.dns.getHosts');
   params.set('SLD', sldOf(domain));
   params.set('TLD', tldOf(domain));
   const root = await namecheapRequest(creds, params);
   const result = findChild(root, 'CommandResponse');
-  if (!result) return [];
+  if (!result) return { hosts: [] };
   const domainEl = findChild(result, 'DomainDNSGetHostsResult') ?? result;
   // The host list lives under `<DomainDNSGetHostsResult><hosts>…</hosts></…>`.
   // If the wrapping `<hosts>` is missing, treat the result element itself
   // as the container — keeps the driver working against test fixtures
   // that elide the wrapper.
   const hostsContainer = findChild(domainEl, 'hosts') ?? domainEl;
-  return parseHosts(hostsContainer);
+  const emailType = domainEl.attrs['EmailType'];
+  return { hosts: parseHosts(hostsContainer), ...(emailType ? { emailType } : {}) };
 }
 
 /** Replace the entire host list for `domain` (`namecheap.domains.dns.setHosts`).
@@ -201,6 +219,7 @@ export async function setNamecheapHosts(
   creds: NamecheapCredentials,
   domain: string,
   hosts: NamecheapHost[],
+  opts: { emailType?: string } = {},
 ): Promise<void> {
   const params = authParams(creds, 'namecheap.domains.dns.setHosts');
   params.set('SLD', sldOf(domain));
@@ -212,7 +231,12 @@ export async function setNamecheapHosts(
     params.set(`RecordType${n}`, h.type);
     params.set(`Address${n}`, h.address);
     params.set(`TTL${n}`, h.ttl);
+    if (h.type === 'MX') params.set(`MXPref${n}`, h.mxPref ?? '10');
   });
+  // An MX row is only kept when the email type says so; carry the domain's
+  // own setting back, and default to MX when MX rows are being written.
+  const emailType = opts.emailType ?? (hosts.some((h) => h.type === 'MX') ? 'MX' : undefined);
+  if (emailType) params.set('EmailType', emailType);
   await namecheapRequest(creds, params);
 }
 

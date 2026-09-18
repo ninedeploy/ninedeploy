@@ -1,6 +1,6 @@
 import {
   getNamecheapConfig,
-  getNamecheapHosts,
+  readNamecheapHostList,
   listNamecheapDomains,
   setNamecheapHosts,
   type NamecheapCredentials,
@@ -82,28 +82,32 @@ export class NamecheapProvider implements IDomainProvider {
 
   async createRecord(zoneId: string, spec: DomainRecordSpec): Promise<DomainRecordResult> {
     const creds = await this.requireCredentials();
-    // 1. Read the current host list so we can append to it.
-    const existing = await getNamecheapHosts(creds, zoneId);
+    // r244: Namecheap host names are RELATIVE to the domain (`www`, `@`).
+    // Callers such as the domain-presets plugin pass the full hostname, which
+    // was written verbatim and produced `app.example.com.example.com`.
+    const name = relativeHostName(spec.hostname, zoneId);
+    // 1. Read the current host list (and email type) so we can append to it.
+    const { hosts: existing, emailType } = await readNamecheapHostList(creds, zoneId);
     // 2. Drop any existing row that matches the new one on (name, type).
     //    A re-add of the same record is the desired terminal state —
     //    Namecheap will reject the request if the same logical record
     //    appears twice, so we de-dup by content first.
-    const filtered = existing.filter((h) => !(h.name === spec.hostname && h.type === spec.type));
+    const filtered = existing.filter((h) => !(h.name === name && h.type === spec.type));
     filtered.push({
-      name: spec.hostname,
+      name,
       type: spec.type,
       address: spec.content,
       ttl: spec.ttl ? String(spec.ttl) : '1800',
     });
     // 3. Push the merged list. Namecheap's `setHosts` is the only
     //    mutation endpoint; the new entry's `HostId` is assigned by
-    //    their backend.
-    await setNamecheapHosts(creds, zoneId, filtered);
+    //    their backend. The email type rides along so MX rows survive.
+    await setNamecheapHosts(creds, zoneId, filtered, { emailType });
     // 4. Re-read so we can hand back the new id. The contract needs
     //    a `recordId`; without a second `getHosts` the caller has no
     //    way to address the record later for `deleteRecord`.
-    const reread = await getNamecheapHosts(creds, zoneId);
-    const created = reread.find((h) => h.name === spec.hostname && h.type === spec.type);
+    const { hosts: reread } = await readNamecheapHostList(creds, zoneId);
+    const created = reread.find((h) => h.name === name && h.type === spec.type);
     if (!created || !created.hostId) {
       throw new Error(`Namecheap setHosts did not return a HostId for ${spec.hostname}`);
     }
@@ -112,13 +116,23 @@ export class NamecheapProvider implements IDomainProvider {
 
   async deleteRecord(zoneId: string, recordId: string): Promise<void> {
     const creds = await this.requireCredentials();
-    const existing = await getNamecheapHosts(creds, zoneId);
+    const { hosts: existing, emailType } = await readNamecheapHostList(creds, zoneId);
     const filtered = existing.filter((h) => h.hostId !== recordId);
     // If nothing matched, the desired terminal state is already
     // reached; do not push a redundant `setHosts` round-trip.
     if (filtered.length === existing.length) return;
-    await setNamecheapHosts(creds, zoneId, filtered);
+    await setNamecheapHosts(creds, zoneId, filtered, { emailType });
   }
+}
+
+/** `app.example.com` in zone `example.com` → `app`; the apex → `@`. A name
+ *  that is already relative is returned unchanged. */
+export function relativeHostName(hostname: string, zone: string): string {
+  const host = hostname.replace(/\.$/, '').toLowerCase();
+  const z = zone.toLowerCase();
+  if (host === z) return '@';
+  if (host.endsWith(`.${z}`)) return host.slice(0, -(z.length + 1));
+  return hostname;
 }
 
 /** Helper used by the kernel plugin wiring: a credentials provider
