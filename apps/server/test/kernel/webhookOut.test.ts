@@ -102,6 +102,22 @@ describe('WebhookOutPlugin (kernel integration)', () => {
     vi.unstubAllGlobals();
   });
 
+  it('r168: a failing config read is caught by the bus, never an unhandled rejection', async () => {
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    const busLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    kernel.db.query.configEntries.findFirst.mockRejectedValue(new Error('SQLITE_BUSY') as never);
+
+    await kernel.registerPlugin(plugin);
+    kernel.events.emit('deployment.status_changed', { deploymentId: 1, status: 'success' });
+    await new Promise((r) => setTimeout(r, 30));
+
+    process.off('unhandledRejection', unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
+    expect(busLog).toHaveBeenCalledWith(expect.stringContaining('Uncaught async error'), expect.any(Error));
+    busLog.mockRestore();
+  });
+
   it('does nothing when `enabled` is false', async () => {
     // findFirst is called for both `enabled` and `endpoint`; the first
     // call returns `false`, the second the endpoint. We only need the

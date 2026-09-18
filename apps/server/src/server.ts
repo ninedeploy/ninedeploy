@@ -20,6 +20,12 @@ async function main(): Promise<void> {
     app.log.info({ signal }, 'received signal, closing');
     void app.close().finally(() => process.exit(0));
   };
+  // r168: a stray rejected promise in a fire-and-forget path (plugin
+  // listeners, notifiers) must be logged, not take the panel — and every
+  // in-flight deploy — down with it.
+  process.on('unhandledRejection', (reason) => {
+    app.log.error({ err: reason }, 'unhandled promise rejection');
+  });
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 }

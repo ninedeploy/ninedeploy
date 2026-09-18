@@ -14,6 +14,25 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  *  the "missed" state: the pipeline has silently stopped covering it (panel
  *  was down over the tick, the tick itself errored, …). */
 const MISSED_AFTER_MS = 2 * DAY_MS;
+/** Never run the first tick sooner than this after boot. */
+const STARTUP_GRACE_MS = 5 * 60 * 1000;
+
+/**
+ * Delay until the first scheduled tick after boot (r170): a day after the
+ * newest scheduled backup — or, with none yet, a day after the oldest running
+ * database appeared — clamped to [grace, 1 day]. It used to be a flat 24h
+ * FROM BOOT, so a panel restarted more often than daily (auto-updates, panel
+ * redeploys, crashes) never took a scheduled backup, and the missed-backup
+ * watchdog living inside that same tick never fired either.
+ */
+export function firstTickDelay(
+  newestScheduledAt: number | null,
+  oldestRunningDbAt: number | null,
+  now: number,
+): number {
+  const anchor = newestScheduledAt ?? oldestRunningDbAt ?? now;
+  return Math.min(DAY_MS, Math.max(STARTUP_GRACE_MS, anchor + DAY_MS - now));
+}
 
 /** Databases (running) whose newest scheduled backup is older than
  *  `missedAfterMs` — or that have no scheduled backup despite existing
@@ -143,8 +162,24 @@ export default fp(
       running = false;
       clearTimeout(timer);
     });
-    // First run in 24h (manual backups cover immediate needs); then daily.
-    timer = setTimeout(() => void tick(), DAY_MS);
+    // First run a day after the last scheduled backup (see firstTickDelay);
+    // then daily.
+    let delay = DAY_MS;
+    try {
+      const scheduled = (await fastify.db.query.backups.findMany({
+        where: eq(backups.scope, 'scheduled'),
+        orderBy: desc(backups.createdAt),
+      })) as Array<{ scope?: string; createdAt: Date | null }>;
+      const newest = scheduled.find((r) => r.scope === 'scheduled' && r.createdAt)?.createdAt?.getTime() ?? null;
+      const dbRows = (await fastify.db.select().from(databases)) as Array<{ status: string; createdAt?: Date | null }>;
+      const created = dbRows
+        .filter((d) => d.status === 'running' && d.createdAt)
+        .map((d) => (d.createdAt as Date).getTime());
+      delay = firstTickDelay(newest, created.length ? Math.min(...created) : null, Date.now());
+    } catch (err) {
+      fastify.log.warn({ err }, 'backup scheduler: could not read history, first run in 24h');
+    }
+    timer = setTimeout(() => void tick(), delay);
     timer.unref?.();
     fastify.log.info('backup scheduler armed (daily)');
   },

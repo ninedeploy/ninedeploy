@@ -258,7 +258,7 @@ export class MetricHistoryPlugin implements KernelPlugin {
     for (const eventName of targets) {
       const unsub = ctx.events.on(eventName, (payload) => {
         // Fire-and-forget — the audit bus must not block on the backend.
-        void this.handle(ctx, eventName, payload);
+        return this.handle(ctx, eventName, payload);
       });
       this.unsubs.push(unsub);
     }

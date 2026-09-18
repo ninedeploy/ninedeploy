@@ -64,7 +64,7 @@ export class StickyIpPlugin implements KernelPlugin {
       // Detach any pre-existing SNAT so a project switching IPs
       // does not leak the old rule. The attach() below re-applies
       // with the new IP.
-      void this.detachForProject(ctx, record.projectId);
+      return this.detachForProject(ctx, record.projectId);
     });
     this.unsubs.push(unsubDeploying);
 
@@ -72,7 +72,7 @@ export class StickyIpPlugin implements KernelPlugin {
       const record = payload as { status?: string; projectId?: number };
       if (record.status !== 'success') return;
       if (typeof record.projectId !== 'number') return;
-      void this.attachForProject(ctx, record.projectId);
+      return this.attachForProject(ctx, record.projectId);
     });
     this.unsubs.push(unsubDeployed);
   }

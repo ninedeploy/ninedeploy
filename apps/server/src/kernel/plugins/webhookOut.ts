@@ -110,7 +110,10 @@ export class WebhookOutPlugin implements KernelPlugin {
 
     for (const eventName of targets) {
       const unsub = ctx.events.on(eventName, (payload) => {
-        void this.dispatch(ctx, eventName, payload);
+        // r168: RETURN the promise so the event bus attaches its .catch. With
+        // `void`, a rejected config read (e.g. SQLITE_BUSY) became an
+        // unhandled rejection, and Node terminated the whole panel.
+        return this.dispatch(ctx, eventName, payload);
       });
       this.unsubs.push(unsub);
     }

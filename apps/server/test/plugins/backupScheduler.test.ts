@@ -16,7 +16,7 @@ mkdirSync(tmp, { recursive: true });
 
 vi.stubEnv('NINEDEPLOY_DATA_DIR', tmp);
 
-const backupSchedulerPlugin = (await import('../../src/plugins/backupScheduler.js')).default;
+const { default: backupSchedulerPlugin, firstTickDelay } = await import('../../src/plugins/backupScheduler.js');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const KEEP_PER_DB = 7;
@@ -66,6 +66,22 @@ afterEach(() => {
 afterAll(() => {
   vi.unstubAllEnvs();
   rmSync(tmp, { recursive: true, force: true });
+});
+
+describe('r170: firstTickDelay', () => {
+  const now = Date.parse('2026-09-18T12:00:00Z');
+  it('runs a day after the newest scheduled backup, not a day after boot', () => {
+    // Last scheduled backup 20h ago → the next is due in 4h, even though the
+    // panel only just restarted.
+    expect(firstTickDelay(now - 20 * 3_600_000, null, now)).toBe(4 * 3_600_000);
+  });
+  it('catches up (after a short grace) when a backup is overdue', () => {
+    expect(firstTickDelay(now - 3 * DAY_MS, null, now)).toBe(5 * 60 * 1000);
+  });
+  it('anchors on the oldest running database when nothing was ever backed up', () => {
+    expect(firstTickDelay(null, now - 30 * 3_600_000, now)).toBe(5 * 60 * 1000);
+    expect(firstTickDelay(null, null, now)).toBe(DAY_MS);
+  });
 });
 
 describe('backup scheduler plugin', () => {
@@ -205,8 +221,9 @@ describe('backup scheduler plugin', () => {
     expect(engineMock.backupDatabase).not.toHaveBeenCalled();
     expect(app.db).toBeDefined();
     await vi.advanceTimersByTimeAsync(DAY_MS);
-    // A second tick ran (db.select called twice total).
-    expect((db.select as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(2);
+    // A second tick ran (db.select: once at boot for the r170 schedule
+    // anchor, then once per tick).
+    expect((db.select as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(3);
     await app.close();
   });
 
@@ -216,7 +233,9 @@ describe('backup scheduler plugin', () => {
     const pending = new Promise<DbRow[]>((r) => {
       resolveSelect = r;
     });
-    const { db } = makeDb({ dbs: [], selectImpl: () => pending });
+    // The boot-time schedule read (r170) answers at once; the tick's select hangs.
+    let selects = 0;
+    const { db } = makeDb({ dbs: [], selectImpl: () => (selects++ === 0 ? Promise.resolve([]) : pending) });
 
     const app = await buildApp(db);
     vi.advanceTimersByTime(DAY_MS); // tick starts, suspends on pending select

@@ -11,7 +11,7 @@ vi.mock('../../src/engine/pipeline.js', () => pipelineMock);
 const configMock = vi.hoisted(() => ({ config: { deployConcurrency: 1 } }));
 vi.mock('../../src/config.js', () => configMock);
 
-const workerPlugin = (await import('../../src/plugins/worker.js')).default;
+const { default: workerPlugin, STALE_SWEEP_EVERY_MS } = await import('../../src/plugins/worker.js');
 
 const POLL_MS = 2000;
 
@@ -123,6 +123,19 @@ describe('worker plugin', () => {
     const sweep = updates.find((u) => u.status === 'queued');
     expect(sweep).toBeDefined();
     expect(sweep!.table).toBe(deployments);
+  });
+
+  it('r169: re-sweeps periodically, so a row stranded by a restart resumes without another restart', async () => {
+    vi.useFakeTimers();
+    const building: Array<{ id: number; startedAt: Date }> = [{ id: 11, startedAt: new Date() }];
+    const { db, updates } = makeDb({ queued: [], building });
+    const app = await buildApp(db);
+    expect(updates.find((u) => u.status === 'queued')).toBeUndefined();
+    // The row ages past the 45-minute cutoff while the panel keeps running.
+    vi.setSystemTime(Date.now() + 50 * 60 * 1000);
+    await vi.advanceTimersByTimeAsync(STALE_SWEEP_EVERY_MS);
+    expect(updates.find((u) => u.status === 'queued')).toBeDefined();
+    await app.close();
   });
 
   it('keeps an in-flight `building` deployment of another live worker', async () => {

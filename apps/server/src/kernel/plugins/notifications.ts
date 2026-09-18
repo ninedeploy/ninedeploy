@@ -55,7 +55,7 @@ export class NotificationsDispatcherPlugin implements KernelPlugin {
     // 1. Listen for deployment events
     const unsub1 = ctx.events.on('deployment.status_changed', (payload) => {
       const data = payload as { deploymentId?: number; status?: string; serviceName?: string };
-      void this.publish(
+      return this.publish(
         ctx,
         {
           title: `Deployment ${data.status ?? 'Updated'}`,
@@ -72,7 +72,7 @@ export class NotificationsDispatcherPlugin implements KernelPlugin {
     const unsub2 = ctx.events.on('service.health_changed', (payload) => {
       const data = payload as { serviceId?: number; status?: string };
       if (data.status === 'unhealthy' || data.status === 'dead') {
-        void this.publish(ctx, {
+        return this.publish(ctx, {
           title: `Service Health Alert`,
           body: `Service #${data.serviceId ?? 0} transitioned to ${data.status}`,
           level: 'error',
@@ -83,7 +83,7 @@ export class NotificationsDispatcherPlugin implements KernelPlugin {
     // 3. Listen for backup completion/failures
     const unsub3 = ctx.events.on('backup.completed', (payload) => {
       const data = payload as { databaseId?: number; sizeBytes?: number };
-      void this.publish(ctx, {
+      return this.publish(ctx, {
         title: 'Database Backup Completed',
         body: `Database #${data.databaseId ?? 0} backup succeeded (${data.sizeBytes ?? 0} bytes)`,
         level: 'info',

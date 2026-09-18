@@ -61,7 +61,7 @@ export class StickySessionPlugin implements KernelPlugin {
       if (typeof serviceId !== 'number') return;
       // Fire-and-forget — the plugin is a passive observer; a slow
       // settings read must not block the deploy pipeline.
-      void this.announce(ctx, serviceId);
+      return this.announce(ctx, serviceId);
     });
     this.unsubs.push(unsub);
   }

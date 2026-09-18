@@ -75,7 +75,7 @@ export class DomainPresetsPlugin implements KernelPlugin {
   init(ctx: KernelContext): void {
     const unsub = ctx.events.on('audit.recorded', (payload) => {
       // Fire-and-forget — the audit bus must not block on the network.
-      void this.handle(ctx, payload);
+      return this.handle(ctx, payload);
     });
     this.unsubs.push(unsub);
   }

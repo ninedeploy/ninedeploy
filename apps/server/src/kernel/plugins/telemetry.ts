@@ -131,7 +131,7 @@ export class TelemetryStreamerPlugin implements KernelPlugin {
     //    external plugin that bypasses the bridge — passes through here
     //    and is POSTed to the configured endpoint (when set).
     const unsubRecorded = ctx.events.on('telemetry.recorded', (payload) => {
-      void this.export(ctx, payload as { sourceEvent?: string; data?: unknown; timestamp?: string });
+      return this.export(ctx, payload as { sourceEvent?: string; data?: unknown; timestamp?: string });
     });
 
     this.unsubs.push(unsubWild, unsubRecorded);

@@ -35,6 +35,8 @@ async function resolveBuildCache(
 }
 
 const POLL_MS = 2000;
+/** How often the stale-`building` sweep re-runs after boot (r169). */
+export const STALE_SWEEP_EVERY_MS = 5 * 60 * 1000;
 /** Bounded grace period for an in-flight deploy during graceful shutdown. The
  *  exec layer already tree-kills hung subprocesses on their own timeouts, so
  *  this is a backstop, not the primary guard against stuck deploys. */
@@ -60,6 +62,8 @@ export default fp(
   async (fastify) => {
     let running = true;
     const currents: Array<Promise<void>> = [];
+    /** Deployment ids this process is running right now — never "stale". */
+    const inFlight = new Set<number>();
     /**
      * Pending poll timers, one per concurrency slot.
      *
@@ -86,33 +90,44 @@ export default fp(
     // failing those out from under it would break the multi-process story.
     // 45 min comfortably covers the 30-min exec timeout + 5-min healthcheck.
     const STALE_BUILDING_MS = 45 * 60 * 1000;
-    const staleCutoff = new Date(Date.now() - STALE_BUILDING_MS);
-    try {
-      const buildingRows = (await fastify.db.select().from(deployments).where(eq(deployments.status, 'building'))) as Array<{
-        id: number;
-        message: string | null;
-        startedAt: Date | null;
-        createdAt: Date | null;
-      }>;
-      const stale = buildingRows
-        .filter((r) => {
-          // v0.2.34 let the browser own dependency provisioning and left this
-          // marker behind if that request was interrupted. No worker can be
-          // running such a row, so migrate it immediately regardless of age.
-          if (r.message?.startsWith('Provisioning template dependencies:')) return true;
-          const ts = r.startedAt ?? r.createdAt;
-          return !!ts && ts.getTime() < staleCutoff.getTime();
-        })
-        .map((r) => r.id);
-      if (stale.length) {
-        await fastify.db
-          .update(deployments)
-          .set({ status: 'queued', startedAt: null, finishedAt: null, message: 'Automatically resumed after interrupted worker' })
-          .where(inArray(deployments.id, stale));
+    const sweepStaleBuilding = async (): Promise<void> => {
+      const staleCutoff = new Date(Date.now() - STALE_BUILDING_MS);
+      try {
+        const buildingRows = (await fastify.db.select().from(deployments).where(eq(deployments.status, 'building'))) as Array<{
+          id: number;
+          message: string | null;
+          startedAt: Date | null;
+          createdAt: Date | null;
+        }>;
+        const stale = buildingRows
+          .filter((r) => {
+            // v0.2.34 let the browser own dependency provisioning and left this
+            // marker behind if that request was interrupted. No worker can be
+            // running such a row, so migrate it immediately regardless of age.
+            if (r.message?.startsWith('Provisioning template dependencies:')) return true;
+            if (inFlight.has(r.id)) return false;
+            const ts = r.startedAt ?? r.createdAt;
+            return !!ts && ts.getTime() < staleCutoff.getTime();
+          })
+          .map((r) => r.id);
+        if (stale.length) {
+          await fastify.db
+            .update(deployments)
+            .set({ status: 'queued', startedAt: null, finishedAt: null, message: 'Automatically resumed after interrupted worker' })
+            .where(inArray(deployments.id, stale));
+        }
+      } catch (err) {
+        fastify.log.warn({ err }, 'could not sweep stale building deployments');
       }
-    } catch (err) {
-      fastify.log.warn({ err }, 'could not sweep stale building deployments');
-    }
+    };
+    await sweepStaleBuilding();
+    // r169: the sweep used to run ONCE, at boot. A restart 5 minutes into a
+    // build left that row `building` forever — its service could never be
+    // claimed again (nextClaimable skips services with a build in flight) and,
+    // at the default concurrency of 1, it held the local partition's only
+    // slot. Re-run it so such rows resume once they cross the stale cutoff.
+    const sweepTimer = setInterval(() => void sweepStaleBuilding(), STALE_SWEEP_EVERY_MS);
+    sweepTimer.unref?.();
 
     /** The oldest queued deployment of a service with nothing in `building`,
      * whose SERVER partition still has a free concurrency slot. Deploys are
@@ -213,12 +228,14 @@ export default fp(
                 : undefined,
             });
             currents.push(run);
+            inFlight.add(queued.id);
             try {
               await run;
             } finally {
               // Drop the settled entry so stop() waits only on live work.
               // indexOf always finds it: we pushed before awaiting.
               currents.splice(currents.indexOf(run), 1);
+              inFlight.delete(queued.id);
             }
           } else {
             fastify.log.info({ deploymentId: queued.id }, 'deployment already claimed, skipping');
@@ -234,6 +251,7 @@ export default fp(
     fastify.decorate('worker', {
       stop: async () => {
         running = false;
+        clearInterval(sweepTimer);
         for (const t of timers) clearTimeout(t);
         timers.clear();
         // Wait for in-flight deploys, but only up to a bounded grace period.
