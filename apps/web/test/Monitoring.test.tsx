@@ -152,7 +152,24 @@ describe('Monitoring', () => {
     await userEvent.clear(memInput);
     await userEvent.type(memInput, '1024');
     fireEvent.submit(cpuInput.closest('form')!);
-    await waitFor(() => expect(apiMock.api.limits.setService).toHaveBeenCalledWith(1, { cpuShares: 512, cpuLimitMilli: null, memLimitMb: 1024 }));
+    await waitFor(() => expect(apiMock.api.limits.setService).toHaveBeenCalledWith(1, { cpuShares: 512, memLimitMb: 1024 }));
+  });
+
+  it('r204: clearing memory leaves the unprefilled CPU limits untouched; 0 clears them', async () => {
+    apiMock.api.stats.snapshot.mockResolvedValue(snapshot as never);
+    apiMock.api.limits.setService.mockResolvedValue({} as never);
+    renderWithProviders(<Monitoring />);
+    expect((await screen.findAllByText('api')).length).toBeGreaterThan(0);
+    const cpuInput = screen.getAllByPlaceholderText('cpu shares')[0]!;
+    await userEvent.clear(screen.getAllByPlaceholderText('mem MB')[0]!);
+    fireEvent.submit(cpuInput.closest('form')!);
+    await waitFor(() => expect(apiMock.api.limits.setService).toHaveBeenCalledWith(1, { memLimitMb: null }));
+    await userEvent.type(cpuInput, '0');
+    await userEvent.type(screen.getAllByPlaceholderText('cpus')[0]!, '0');
+    fireEvent.submit(cpuInput.closest('form')!);
+    await waitFor(() =>
+      expect(apiMock.api.limits.setService).toHaveBeenLastCalledWith(1, { memLimitMb: null, cpuShares: null, cpuLimitMilli: null }),
+    );
   });
 
   it('submits zero limits when the fields are emptied', async () => {
@@ -163,7 +180,7 @@ describe('Monitoring', () => {
     const cpuInput = screen.getAllByPlaceholderText('cpu shares')[0]!;
     await userEvent.clear(screen.getAllByPlaceholderText('mem MB')[0]!);
     fireEvent.submit(cpuInput.closest('form')!);
-    await waitFor(() => expect(apiMock.api.limits.setService).toHaveBeenCalledWith(1, { cpuShares: null, cpuLimitMilli: null, memLimitMb: null }));
+    await waitFor(() => expect(apiMock.api.limits.setService).toHaveBeenCalledWith(1, { memLimitMb: null }));
   });
 
   it('shows the pending state while limits are being saved', async () => {
@@ -218,7 +235,7 @@ describe('Monitoring', () => {
     const memInput = screen.getAllByPlaceholderText('mem MB')[0]!;
     await userEvent.type(memInput, '128');
     fireEvent.submit(memInput.closest('form')!);
-    await waitFor(() => expect(apiMock.api.limits.setDatabase).toHaveBeenCalledWith(2, { cpuShares: null, cpuLimitMilli: null, memLimitMb: 128 }));
+    await waitFor(() => expect(apiMock.api.limits.setDatabase).toHaveBeenCalledWith(2, { memLimitMb: 128 }));
   });
 
   it('shows an empty state when no alert rules exist', async () => {

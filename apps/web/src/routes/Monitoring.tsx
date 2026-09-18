@@ -857,12 +857,19 @@ function LimitsRow({ kind, id, memLimitMb }: { kind: 'service' | 'database'; id:
 
   const save = useMutation({
     mutationFn: () => {
-      const capCores = cpuCap.trim() ? Number(cpuCap.replace(',', '.')) : null;
-      const input = {
-        cpuShares: cpu.trim() ? toInt(cpu, 0) : null,
-        cpuLimitMilli: capCores != null && Number.isFinite(capCores) && capCores > 0 ? Math.round(capCores * 1000) : null,
+      // r204: the CPU fields are never prefilled (the stats API does not
+      // report them), so a blank CPU field means "unchanged" and is omitted.
+      // It used to be sent as null (= clear), so saving only the memory limit
+      // silently wiped the service's CPU cap and shares. Type 0 to clear.
+      // Memory IS prefilled, so blanking it is a deliberate clear.
+      const input: { cpuShares?: number | null; cpuLimitMilli?: number | null; memLimitMb: number | null } = {
         memLimitMb: mem.trim() ? toInt(mem, 0) : null,
       };
+      if (cpu.trim()) input.cpuShares = toInt(cpu, 0) || null;
+      if (cpuCap.trim()) {
+        const capCores = Number(cpuCap.replace(',', '.'));
+        input.cpuLimitMilli = Number.isFinite(capCores) && capCores > 0 ? Math.round(capCores * 1000) : null;
+      }
       return kind === 'service' ? api.limits.setService(id, input) : api.limits.setDatabase(id, input);
     },
     onSuccess: () => {
@@ -899,12 +906,14 @@ function LimitsRow({ kind, id, memLimitMb }: { kind: 'service' | 'database'; id:
         value={cpuCap}
         onChange={(e) => setCpuCap(e.target.value)}
         placeholder="cpus"
+        title="CPU cap in cores — blank keeps the current value, 0 removes it"
         className="h-7 w-16 font-mono text-[11px]"
       />
       <Input
         value={cpu}
         onChange={(e) => setCpu(e.target.value)}
         placeholder="cpu shares"
+        title="Relative CPU weight — blank keeps the current value, 0 removes it"
         className="h-7 w-20 font-mono text-[11px]"
       />
       <Input
