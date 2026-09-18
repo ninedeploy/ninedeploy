@@ -400,9 +400,10 @@ describe('worker plugin', () => {
 
     await vi.advanceTimersByTimeAsync(POLL_MS);
 
+    // r238: the run settles outside the tick, so its failure is logged as such.
     expect(errorSpy).toHaveBeenCalledWith(
-      { err: expect.objectContaining({ message: 'build failed' }) },
-      'worker tick failed',
+      { err: expect.objectContaining({ message: 'build failed' }), deploymentId: 3 },
+      'deployment run failed',
     );
     await app.close();
   });
@@ -509,6 +510,28 @@ describe('worker plugin', () => {
     gate1.resolve();
     gate2.resolve();
     configMock.config.deployConcurrency = 1;
+    await app.close();
+  });
+
+  it('r238: a long build on another server does not block local deploys at concurrency 1', async () => {
+    vi.useFakeTimers();
+    configMock.config.deployConcurrency = 1;
+    let outerCalls = 0;
+    const { db } = makeDb({
+      queued: [],
+      selectImpl: async () => {
+        outerCalls++;
+        if (outerCalls === 1) return [{ id: 1, serverId: 7 }];
+        if (outerCalls === 2) return [{ id: 2, serverId: null }];
+        return [];
+      },
+    });
+    const remote = deferred();
+    pipelineMock.runDeployment.mockReturnValueOnce(remote.promise as never).mockResolvedValue(undefined);
+    const app = await buildApp(db);
+    await vi.advanceTimersByTimeAsync(POLL_MS * 2 + 100);
+    expect(pipelineMock.runDeployment.mock.calls.map((c) => c[1])).toEqual([1, 2]);
+    remote.resolve();
     await app.close();
   });
 

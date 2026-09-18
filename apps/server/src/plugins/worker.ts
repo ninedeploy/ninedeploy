@@ -57,6 +57,8 @@ declare module 'fastify' {
  *     the database — can never double-run a deployment.
  *   • The claim query skips services with a `building` deployment, so the
  *     same service is never deployed concurrently.
+ *   • A slot does not wait for the run it launched (r238): the per-server
+ *     partition counts, not the loop count, bound how many builds run.
  */
 export default fp(
   async (fastify) => {
@@ -164,11 +166,22 @@ export default fp(
       return undefined;
     };
 
+    let claimChain: Promise<unknown> = Promise.resolve();
+    const withClaimLock = <T>(fn: () => Promise<T>): Promise<T> => {
+      const next = claimChain.then(fn, fn);
+      claimChain = next.catch(() => undefined);
+      return next;
+    };
+
     const tick = async () => {
       if (!running) return;
       try {
-        const queued = await nextClaimable();
-        if (queued) {
+        // r238: selection + claim are serialized across slots, so two slots
+        // can never both read a partition as having a free seat and overfill
+        // it now that a slot no longer waits for its run to finish.
+        const picked = await withClaimLock(async () => {
+          const queued = await nextClaimable();
+          if (!queued) return undefined;
           // Atomically claim: only flip queued→building if still queued, then
           // verify we won the claim via rowsAffected. A single-row update
           // affects exactly 1 row on success, so `=== 1` is a precise win test.
@@ -190,8 +203,12 @@ export default fp(
             ))) as
             | { rowsAffected?: number }
             | undefined;
-
-          if (claimed?.rowsAffected === 1) {
+          if (claimed?.rowsAffected === 1) return queued;
+          fastify.log.info({ deploymentId: queued.id }, 'deployment already claimed, skipping');
+          return undefined;
+        });
+        if (picked) {
+          const queued = picked;
             fastify.log.info({ deploymentId: queued.id }, 'processing deployment');
             // Sprint 4 G-01 PR-B: surface the engine.use_buildkit flag
             // and the first registered build cache to the pipeline so
@@ -228,19 +245,23 @@ export default fp(
                   }
                 : undefined,
             });
-            currents.push(run);
+            // r238: the run is NOT awaited by the slot. A slot that sat on a
+            // 20-minute remote build could not claim anything else, so at the
+            // default concurrency of 1 a build on another server blocked every
+            // local deploy — the per-partition limits below were never reached.
+            // Concurrency is bounded by those partition counts (the claimed
+            // row is `building` before the next selection runs).
+            const tracked: Promise<void> = run
+              .catch((err: unknown) => {
+                fastify.log.error({ err, deploymentId: queued.id }, 'deployment run failed');
+              })
+              .finally(() => {
+                // Drop the settled entry so stop() waits only on live work.
+                currents.splice(currents.indexOf(tracked), 1);
+                inFlight.delete(queued.id);
+              });
+            currents.push(tracked);
             inFlight.add(queued.id);
-            try {
-              await run;
-            } finally {
-              // Drop the settled entry so stop() waits only on live work.
-              // indexOf always finds it: we pushed before awaiting.
-              currents.splice(currents.indexOf(run), 1);
-              inFlight.delete(queued.id);
-            }
-          } else {
-            fastify.log.info({ deploymentId: queued.id }, 'deployment already claimed, skipping');
-          }
         }
       } catch (err) {
         fastify.log.error({ err }, 'worker tick failed');
