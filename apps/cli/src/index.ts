@@ -347,15 +347,23 @@ domainsPresetsCmd.command('apply <hostname>')
   .description('Create a DNS record for the given hostname via the active provider')
   .option('-c, --content <content>', 'Override the record content (A record IPv4 or CNAME hostname)')
   .action((hostname: string, opts: { content?: string }) => domainsPresetApplyAction(getClient(), hostname, { content: opts.content }));
+// r200: the spec used to be the bare words "add namecheap" — commander reads the bare word as a
+// REQUIRED ARGUMENT, so the action received the string "namecheap" as `opts`
+// and posted undefined credentials. The provider is now a real argument.
 domainsPresetsCmd
-  .command('add namecheap')
-  .description('Save Namecheap API credentials so dns_records_provider=namecheap can be used')
+  .command('add <provider>')
+  .description('Save DNS provider API credentials (supported: namecheap) so dns_records_provider can use it')
   .requiredOption('--api-user <user>', 'Namecheap username (account owner)')
   .requiredOption('--api-key <key>', 'Namecheap API key (the key itself; the server encrypts it at rest)')
   .requiredOption('--client-ip <ip>', 'Public IPv4 of this server, already whitelisted on the Namecheap account panel')
-  .action((opts: { apiUser: string; apiKey: string; clientIp: string }) =>
-    domainsPresetAddNamecheapAction(getClient(), { apiUser: opts.apiUser, apiKey: opts.apiKey, clientIp: opts.clientIp }),
-  );
+  .action((provider: string, opts: { apiUser: string; apiKey: string; clientIp: string }) => {
+    if (provider !== 'namecheap') {
+      error(`Unsupported DNS provider "${provider}" (supported: namecheap)`);
+      process.exitCode = 1;
+      return;
+    }
+    return domainsPresetAddNamecheapAction(getClient(), { apiUser: opts.apiUser, apiKey: opts.apiKey, clientIp: opts.clientIp });
+  });
 
 // ── Config Presets ───────────────────────────────────────────────────────
 const configPresetsCmd = program.command('config-preset').description('Manage named configCenter bundles that can be re-applied to a fresh instance');
