@@ -709,7 +709,17 @@ export async function installPlugin(
 
   // Register into kernel if not already present
   if (!kernel.getPlugin(dynamicPlugin.id)) {
-    await kernel.registerPlugin(dynamicPlugin);
+    try {
+      await kernel.registerPlugin(dynamicPlugin);
+    } catch (err) {
+      // r235: the row was written `active` above; a plugin whose init failed
+      // must not be reported (or restored at boot) as running.
+      await db
+        .update(installedPlugins)
+        .set({ status: 'errored', error: (err as Error).message.slice(0, 500), updatedAt: new Date() })
+        .where(eq(installedPlugins.id, dynamicPlugin.id));
+      throw err;
+    }
   }
 
   kernel.events.emit('plugin.status_changed', { pluginId: dynamicPlugin.id, status: 'active' });

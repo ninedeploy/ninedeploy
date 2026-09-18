@@ -81,6 +81,18 @@ export class NineDeployKernel implements KernelContext {
       await plugin.init(this);
       this.events.emit('plugin.registered', { pluginId: plugin.id, version: plugin.version });
     } catch (err) {
+      // r235: a plugin whose init failed is not installed. It used to stay in
+      // the plugin map and boot order — reported active, its reinstall refused
+      // as "already installed", its onReady still run at boot, and any bus
+      // listener it had registered leaked. Undo what registration did.
+      if (plugin.destroy) {
+        await Promise.resolve(plugin.destroy(this)).catch(() => undefined);
+      }
+      this.menuRegistry.purgePluginMenus(plugin.id);
+      await this.configCenter.purgePluginConfigs(plugin.id).catch(() => undefined);
+      this.plugins.delete(plugin.id);
+      const idx = this.bootOrder.indexOf(plugin.id);
+      if (idx >= 0) this.bootOrder.splice(idx, 1);
       this.events.emit('plugin.status_changed', { pluginId: plugin.id, status: 'errored' });
       throw new Error(`Failed to initialize plugin "${plugin.id}": ${(err as Error).message}`);
     }
@@ -177,6 +189,10 @@ export class NineDeployKernel implements KernelContext {
     const order: string[] = [];
     const visiting = new Set<string>();
 
+    // r236: one plugin with a missing or circular dependency used to throw out
+    // of boot() — no plugin's onReady ran and the kernel stayed in BOOTSTRAP.
+    // Such a plugin (and anything depending on it) is now skipped, loudly.
+    const broken = new Set<string>();
     const visit = (id: string) => {
       if (visiting.has(id)) {
         throw new Error(`Circular dependency detected involving plugin "${id}"`);
@@ -199,9 +215,16 @@ export class NineDeployKernel implements KernelContext {
     };
 
     for (const id of this.bootOrder) {
-      visit(id);
+      try {
+        visit(id);
+      } catch (err) {
+        for (const v of visiting) broken.add(v);
+        visiting.clear();
+        broken.add(id);
+        console.error(`[NineDeployKernel] Skipping plugin "${id}" at boot:`, (err as Error).message);
+      }
     }
-
-    return order;
+    for (const id of broken) this.events.emit('plugin.status_changed', { pluginId: id, status: 'errored' });
+    return order.filter((id) => !broken.has(id));
   }
 }

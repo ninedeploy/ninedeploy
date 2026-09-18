@@ -144,20 +144,63 @@ describe('NineDeployKernel', () => {
     await expect(kernel.registerPlugin(bad)).rejects.toThrow('Failed to initialize plugin "bad": Init crash');
   });
 
+  it('r235: a plugin whose init failed is fully unregistered and can be installed again', async () => {
+    const kernel = new NineDeployKernel(createFakeDb(), mockConfig);
+    const destroy = vi.fn();
+    let attempts = 0;
+    const flaky: KernelPlugin = {
+      id: 'flaky',
+      name: 'Flaky',
+      version: '1.0.0',
+      menuItems: [{ id: 'flaky-menu', slot: 'sidebar:main', label: 'Flaky', route: '/flaky' } as never],
+      init: () => {
+        if (++attempts === 1) throw new Error('timed out');
+      },
+      destroy,
+    };
+    await expect(kernel.registerPlugin(flaky)).rejects.toThrow(/timed out/);
+    expect(kernel.getPlugin('flaky')).toBeUndefined();
+    expect(kernel.menuRegistry.getAllItems()).toHaveLength(0);
+    expect(destroy).toHaveBeenCalledTimes(1);
+    // The retry is not refused as "already registered".
+    await expect(kernel.registerPlugin(flaky)).resolves.toBeUndefined();
+    expect(kernel.getPlugin('flaky')).toBeDefined();
+  });
+
   it('detects circular dependencies and missing dependencies', async () => {
     const kernel = new NineDeployKernel(createFakeDb(), mockConfig);
     const p1: KernelPlugin = { id: 'p1', name: 'P1', version: '1.0.0', dependencies: ['missing-dep'], init: () => {} };
 
+    // r236: a broken plugin is skipped — it no longer aborts the whole boot.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const healthyReady = vi.fn();
+    const healthy: KernelPlugin = { id: 'ok', name: 'OK', version: '1.0.0', init: () => {}, onReady: healthyReady };
+    const p1Ready = vi.fn();
+    p1.onReady = p1Ready;
     await kernel.registerPlugin(p1);
-    await expect(kernel.boot()).rejects.toThrow('Plugin "p1" requires missing dependency "missing-dep"');
+    await kernel.registerPlugin(healthy);
+    await kernel.boot();
+    expect(kernel.state).toBe('READY');
+    expect(healthyReady).toHaveBeenCalledTimes(1);
+    expect(p1Ready).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Skipping plugin "p1"'), expect.stringContaining('missing dependency "missing-dep"'));
 
     const kernel2 = new NineDeployKernel(createFakeDb(), mockConfig);
-    const c1: KernelPlugin = { id: 'c1', name: 'C1', version: '1.0.0', dependencies: ['c2'], init: () => {} };
+    const c1Ready = vi.fn();
+    const c1: KernelPlugin = { id: 'c1', name: 'C1', version: '1.0.0', dependencies: ['c2'], init: () => {}, onReady: c1Ready };
     const c2: KernelPlugin = { id: 'c2', name: 'C2', version: '1.0.0', dependencies: ['c1'], init: () => {} };
+    const dependentReady = vi.fn();
+    const dependent: KernelPlugin = { id: 'd', name: 'D', version: '1.0.0', dependencies: ['c1'], init: () => {}, onReady: dependentReady };
 
     await kernel2.registerPlugin(c1);
     await kernel2.registerPlugin(c2);
-    await expect(kernel2.boot()).rejects.toThrow(/Circular dependency detected involving plugin/);
+    await kernel2.registerPlugin(dependent);
+    await kernel2.boot();
+    expect(kernel2.state).toBe('READY');
+    expect(c1Ready).not.toHaveBeenCalled();
+    expect(dependentReady).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Skipping plugin'), expect.stringMatching(/Circular dependency/));
+    errorSpy.mockRestore();
   });
 
   it('prevents booting twice and handles onReady/onShutdown errors', async () => {
