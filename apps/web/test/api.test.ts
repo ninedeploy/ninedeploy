@@ -213,18 +213,38 @@ describe('session token storage', () => {
   });
 
   it('ignores storage failures on write and read of the refresh token', async () => {
-    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-      throw new Error('denied');
+    // Same runner caveat as the denied-reads test above: the
+    // Storage.prototype spy is not intercepted on all runners, so swap the
+    // store for reachable stubs whose writes/reads throw — deterministic
+    // everywhere.
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'sessionStorage');
+    const denied = (op: 'getItem' | 'setItem') => ({
+      length: 0,
+      clear: () => {},
+      key: () => null,
+      removeItem: () => {},
+      setItem:
+        op === 'setItem'
+          ? () => {
+              throw new Error('denied');
+            }
+          : () => {},
+      getItem:
+        op === 'getItem'
+          ? () => {
+              throw new Error('denied');
+            }
+          : () => null,
     });
-    expect(() => setSessionTokens('a', 'r')).not.toThrow();
-    spy.mockRestore();
-    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-      throw new Error('denied');
-    });
-    // A denied read surfaces as "no refresh token" → refresh declines safely.
-    sessionStorage.setItem(REFRESH_KEY, 'r');
-    await expect(refreshAccessToken()).resolves.toBe(false);
-    getItem.mockRestore();
+    try {
+      Object.defineProperty(window, 'sessionStorage', { configurable: true, get: () => denied('setItem') });
+      expect(() => setSessionTokens('a', 'r')).not.toThrow();
+      // A denied read surfaces as "no refresh token" → refresh declines safely.
+      Object.defineProperty(window, 'sessionStorage', { configurable: true, get: () => denied('getItem') });
+      await expect(refreshAccessToken()).resolves.toBe(false);
+    } finally {
+      if (descriptor) Object.defineProperty(window, 'sessionStorage', descriptor);
+    }
   });
 });
 
