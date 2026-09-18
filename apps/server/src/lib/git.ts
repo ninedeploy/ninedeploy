@@ -42,6 +42,61 @@ function maskUrl(url: string): string {
   return url.replace(/\/\/[^/@]+@/, '//***@');
 }
 
+/** A remote URL with any userinfo removed and a trailing `.git`/slash dropped. */
+function canonicalRemote(url: string): string {
+  return url.trim().replace(/\/\/[^/@]+@/, '//').replace(/\/+$/, '').replace(/\.git$/, '');
+}
+
+/** Whether the checkout's current origin is (either form of) `repoUrl`. */
+function sameRemote(current: string, repoUrl: string): boolean {
+  const c = canonicalRemote(current);
+  return c === canonicalRemote(repoUrl) || c === canonicalRemote(toSshUrl(repoUrl));
+}
+
+const MAX_SUBMODULE_DEPTH = 5;
+
+/**
+ * r173: submodule URLs come from the repository's own `.gitmodules`, so they
+ * are as attacker-controlled as the repo — and `git submodule update
+ * --recursive` dialled them with no egress check (`url =
+ * http://169.254.169.254/…` or `ssh://git@10.0.0.5/…` made the panel reach
+ * internal hosts during checkout). Initialise one level at a time, gating
+ * every URL first: relative URLs resolve against the already-vetted origin;
+ * anything else must be a network form the egress gate understands.
+ */
+async function initSubmodules(git: SimpleGit, repoDir: string, sink: (line: string) => void, depth = 0): Promise<void> {
+  if (depth >= MAX_SUBMODULE_DEPTH || !existsSync(path.join(repoDir, '.gitmodules'))) return;
+  let raw = '';
+  try {
+    raw = await git.raw(['config', '-f', '.gitmodules', '--get-regexp', '^submodule\\..*\\.(url|path)$']);
+  } catch {
+    return; // no url/path entries at all
+  }
+  const paths: string[] = [];
+  for (const line of raw.split('\n')) {
+    const m = /^submodule\..*\.(url|path) (.+)$/.exec(line.trim());
+    if (!m) continue;
+    const value = m[2]!.trim();
+    if (m[1] === 'path') {
+      paths.push(value);
+      continue;
+    }
+    if (value.startsWith('./') || value.startsWith('../')) continue;
+    if (!/^(https?:\/\/|ssh:\/\/|git:\/\/|[\w.-]+@[\w.-]+:)/i.test(value)) {
+      throw new Error(`Refusing submodule URL with an unsupported transport: ${maskUrl(value).slice(0, 120)}`);
+    }
+    await assertCloneTargetAllowed(value);
+  }
+  if (depth === 0) sink('Initialising git submodules …');
+  await git.submoduleUpdate(['--init']);
+  for (const rel of paths) {
+    const subDir = path.resolve(repoDir, rel);
+    if (!subDir.startsWith(path.resolve(repoDir) + path.sep)) continue;
+    if (!existsSync(path.join(subDir, '.gitmodules'))) continue;
+    await initSubmodules(simpleGit(subDir, { config: ['http.followRedirects=false'] }), subDir, sink, depth + 1);
+  }
+}
+
 /**
  * Ensure `dir` is a checkout of `repoUrl` at `branch` (optionally pinned to
  * `sha`). Supports private repos via an HTTPS PAT or an SSH deploy key.
@@ -89,7 +144,21 @@ export async function checkoutCommit(
 
   let git: SimpleGit | undefined;
   try {
-    if (existsSync(path.join(dir, '.git'))) {
+    // r172: reuse the checkout only while it still points at `repoUrl`. With
+    // no credential (or a deploy key) the origin was never reset, so after a
+    // repoUrl change every deploy kept fetching and building the OLD
+    // repository — the one the egress gate above did not just validate.
+    let reuse = existsSync(path.join(dir, '.git'));
+    if (reuse) {
+      const current = await simpleGit(dir, gitOptions)
+        .remote(['get-url', 'origin'])
+        .catch(() => undefined);
+      if (typeof current !== 'string' || !sameRemote(current, repoUrl)) {
+        sink('Repository URL changed — re-cloning …');
+        reuse = false;
+      }
+    }
+    if (reuse) {
       git = simpleGit(dir, gitOptions);
       // Refresh auth so rotated credentials take effect.
       if (useKey) {
@@ -137,10 +206,7 @@ export async function checkoutCommit(
 
     // Submodules: if the repo ships a `.gitmodules`, init + fetch them so
     // builds that reference submodule paths don't fail on empty directories.
-    if (existsSync(path.join(dir, '.gitmodules'))) {
-      sink('Initialising git submodules …');
-      await git.submoduleUpdate(['--init', '--recursive']);
-    }
+    await initSubmodules(git, dir, sink);
 
     const resolved = (await git.raw(['log', '-1', '--format=%H'])).trim() || sha || '';
     sink(`Checked out ${resolved.slice(0, 7)} on ${branch}`);

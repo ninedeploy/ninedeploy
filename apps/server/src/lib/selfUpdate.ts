@@ -262,13 +262,22 @@ export function getSelfUpdateStatus(opts: { installDir?: string; stateDir?: stri
  * unit's environment is readable via `systemctl show`. PATH/HOME keep
  * node/pnpm resolvable inside the clean systemd-run environment; NINEDEPLOY_*
  * keeps operator settings consistent between the panel and the installer.
+ *
+ * r171: secret-valued NINEDEPLOY_* keys (master key, JWT secret, tokens,
+ * passwords) are NOT passed. They became `--setenv=K=V` arguments — readable
+ * by every local user in `ps` / `/proc/<pid>/cmdline` and later via
+ * `systemctl show` on the transient unit. install.sh reads them from `.env`
+ * itself (the same file the service's EnvironmentFile= loads).
  */
+const SECRET_KEY = /(SECRET|_KEY|_KEYS|TOKEN|PASSWORD|PASSWD)$/;
+
 export function updaterEnvironment(): Record<string, string> {
   const passthrough = ['PATH', 'HOME', 'SHELL', 'LANG', 'LC_ALL', 'TERM', 'TMPDIR'];
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value === undefined) continue;
-    if (passthrough.includes(key) || key.startsWith('NINEDEPLOY_')) out[key] = value;
+    if (passthrough.includes(key)) out[key] = value;
+    else if (key.startsWith('NINEDEPLOY_') && !SECRET_KEY.test(key)) out[key] = value;
   }
   out['NODE_ENV'] = 'production';
   return out;
@@ -395,7 +404,11 @@ function trySystemdRun(script: string, env: Record<string, string>): Promise<boo
       '/bin/bash', script,
     ];
     const child = spawn('systemd-run', args, { detached: true, stdio: 'ignore' });
-    child.once('spawn', () => done(true));
+    // r171: success is systemd-run's EXIT status (it returns as soon as the
+    // transient unit is registered). 'spawn' only means the binary started —
+    // without a D-Bus/systemd session it then exits non-zero, and the update
+    // used to show "running" for 45 minutes instead of falling back.
+    child.once('exit', (code) => done(code === 0));
     child.once('error', () => done(false));
   });
 }

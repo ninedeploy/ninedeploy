@@ -32,6 +32,7 @@ function installSpawn() {
       if (cmd === 'systemd-run') {
         for (const cb of handlers['spawn'] ?? []) cb();
         for (const cb of handlers['once-spawn'] ?? []) cb();
+        for (const cb of handlers['once-exit'] ?? []) cb(0);
       }
     });
     return {
@@ -341,11 +342,23 @@ describe('updaterEnvironment', () => {
   it('passes operator settings and host tooling through, forcing production mode', async () => {
     vi.stubEnv('PATH', '/usr/local/bin:/usr/bin');
     vi.stubEnv('NINEDEPLOY_PORT', '3000');
-    vi.stubEnv('NINEDEPLOY_JWT_SECRET', 'do-not-leak-but-must-propagate');
+    vi.stubEnv('NINEDEPLOY_MASTER_KEY_FILE', '/var/lib/ninedeploy/master.key');
     const lib = await loadLib();
     const env = lib.updaterEnvironment();
     expect(env['NINEDEPLOY_PORT']).toBe('3000');
-    expect(env['NINEDEPLOY_JWT_SECRET']).toBe('do-not-leak-but-must-propagate');
+    expect(env['NINEDEPLOY_MASTER_KEY_FILE']).toBe('/var/lib/ninedeploy/master.key');
     expect(env['NODE_ENV']).toBe('production');
+  });
+
+  it('r171: never hands secret-valued settings to the updater (they become argv)', async () => {
+    vi.stubEnv('NINEDEPLOY_JWT_SECRET', 'jwt-secret-value');
+    vi.stubEnv('NINEDEPLOY_MASTER_KEY', 'master-key-value');
+    vi.stubEnv('NINEDEPLOY_DNS_TOKEN', 'dns-token-value');
+    vi.stubEnv('NINEDEPLOY_ADMIN_PASSWORD', 'pw');
+    const lib = await loadLib();
+    const env = lib.updaterEnvironment();
+    const leaked = Object.values(env).join(' ');
+    for (const v of ['jwt-secret-value', 'master-key-value', 'dns-token-value']) expect(leaked).not.toContain(v);
+    expect(env['NINEDEPLOY_ADMIN_PASSWORD']).toBeUndefined();
   });
 });

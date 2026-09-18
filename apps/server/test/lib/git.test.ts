@@ -1,10 +1,13 @@
-﻿import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+﻿import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const gitState = vi.hoisted(() => ({
   simpleGit: vi.fn(),
+  /** What `git remote get-url origin` answers for an existing checkout. */
+  origin: undefined as string | undefined,
+  lastDir: undefined as string | undefined,
 }));
 
 vi.mock('simple-git', () => ({ simpleGit: gitState.simpleGit }));
@@ -19,11 +22,27 @@ const tmpRoot = path.join(os.tmpdir(), `ninedeploy-git-${process.pid}-${Date.now
 function makeGit() {
   return {
     addConfig: vi.fn(async () => undefined),
-    remote: vi.fn(async () => undefined),
+    remote: vi.fn(async (args: string[]) => (args[0] === 'get-url' ? gitState.origin : undefined)),
     fetch: vi.fn(async () => undefined),
     checkout: vi.fn(async () => undefined),
     pull: vi.fn(async () => undefined),
-    raw: vi.fn(async () => '0123456789abcdef\n'),
+    raw: vi.fn(async (args: string[]) => {
+      if (args[0] === 'config') {
+        // `git config -f .gitmodules --get-regexp …` — read the fixture file.
+        const file = path.join(gitState.lastDir ?? '', '.gitmodules');
+        if (!existsSync(file)) throw new Error('no .gitmodules');
+        const out: string[] = [];
+        let name = '';
+        for (const line of readFileSync(file, 'utf8').split('\n')) {
+          const sec = /^\[submodule "(.+)"\]/.exec(line.trim());
+          if (sec) name = sec[1]!;
+          const kv = /^(url|path)\s*=\s*(.+)$/.exec(line.trim());
+          if (kv) out.push(`submodule.${name}.${kv[1]} ${kv[2]}`);
+        }
+        return `${out.join('\n')}\n`;
+      }
+      return '0123456789abcdef\n';
+    }),
     clone: vi.fn(async () => undefined),
     submoduleUpdate: vi.fn(async () => undefined),
   };
@@ -33,9 +52,11 @@ function gitDir(name: string): string {
   return path.join(tmpRoot, name);
 }
 
-function existingCheckout(name: string): string {
+function existingCheckout(name: string, origin = 'https://github.com/org/repo.git'): string {
   const dir = gitDir(name);
   mkdirSync(path.join(dir, '.git'), { recursive: true });
+  gitState.origin = origin;
+  gitState.lastDir = dir;
   return dir;
 }
 
@@ -50,6 +71,8 @@ function makeFailingCloneGit() {
 }
 
 beforeEach(() => {
+  gitState.origin = undefined;
+  gitState.lastDir = undefined;
   gitState.simpleGit.mockReset();
   gitState.simpleGit.mockImplementation(() => makeGit());
 });
@@ -195,7 +218,7 @@ describe('checkoutCommit — fresh clone', () => {
 
 describe('checkoutCommit — existing checkout', () => {
   it('fetches, checks out, pulls, and reuses the working tree', async () => {
-    const dir = existingCheckout('existing-public');
+    const dir = existingCheckout('existing-public', 'https://github.com/ada/repo.git');
     const git = makeGit();
     gitState.simpleGit.mockImplementation(() => git);
 
@@ -212,7 +235,7 @@ describe('checkoutCommit — existing checkout', () => {
   });
 
   it('refreshes the remote url when a token is provided', async () => {
-    const dir = existingCheckout('existing-token');
+    const dir = existingCheckout('existing-token', 'https://github.com/org/repo.git');
     const git = makeGit();
     gitState.simpleGit.mockImplementation(() => git);
 
@@ -226,7 +249,7 @@ describe('checkoutCommit — existing checkout', () => {
   });
 
   it('writes a key and configures the ssh command when a deploy key is used', async () => {
-    const dir = existingCheckout('existing-key');
+    const dir = existingCheckout('existing-key', 'git@github.com:org/repo.git');
     const git = makeGit();
     gitState.simpleGit.mockImplementation(() => git);
 
@@ -239,7 +262,7 @@ describe('checkoutCommit — existing checkout', () => {
   });
 
   it('fails fast on addConfig failure', async () => {
-    const dir = existingCheckout('existing-addconfig-fail');
+    const dir = existingCheckout('existing-addconfig-fail', 'git@github.com:org/repo.git');
     const git = makeGit();
     git.addConfig = vi.fn(async () => {
       throw new Error('config failed');
@@ -255,9 +278,10 @@ describe('checkoutCommit — existing checkout', () => {
     // Same rule as core.sshCommand: if the origin URL never updates, the
     // fetch below runs with the STALE stored credential and fails far from
     // the real cause.
-    const dir = existingCheckout('existing-remote-fail');
+    const dir = existingCheckout('existing-remote-fail', 'https://github.com/org/repo.git');
     const git = makeGit();
-    git.remote = vi.fn(async () => {
+    git.remote = vi.fn(async (args: string[]) => {
+      if (args[0] === 'get-url') return gitState.origin;
       throw new Error('remote failed');
     });
     gitState.simpleGit.mockImplementation(() => git);
@@ -270,7 +294,7 @@ describe('checkoutCommit — existing checkout', () => {
 
 describe('checkoutCommit — edge cases', () => {
   it('continues when pull fails (detached/empty remote)', async () => {
-    const dir = existingCheckout('existing-pull-fail');
+    const dir = existingCheckout('existing-pull-fail', 'https://github.com/ada/repo.git');
     const git = makeGit();
     git.pull = vi.fn(async () => {
       throw new Error('no upstream');
@@ -283,7 +307,7 @@ describe('checkoutCommit — edge cases', () => {
   });
 
   it('checks out the pinned sha and falls back to it when the log is empty', async () => {
-    const dir = existingCheckout('existing-sha');
+    const dir = existingCheckout('existing-sha', 'https://github.com/ada/repo.git');
     const git = makeGit();
     git.raw = vi.fn(async () => '');
     gitState.simpleGit.mockImplementation(() => git);
@@ -294,7 +318,7 @@ describe('checkoutCommit — edge cases', () => {
   });
 
   it('returns an empty string when no sha and the log is empty', async () => {
-    const dir = existingCheckout('existing-no-sha');
+    const dir = existingCheckout('existing-no-sha', 'https://github.com/ada/repo.git');
     const git = makeGit();
     git.raw = vi.fn(async () => '');
     gitState.simpleGit.mockImplementation(() => git);
@@ -304,7 +328,7 @@ describe('checkoutCommit — edge cases', () => {
   });
 
   it('initialises submodules when the checkout ships a .gitmodules', async () => {
-    const dir = existingCheckout('submodule-repo');
+    const dir = existingCheckout('submodule-repo', 'https://github.com/ada/repo.git');
     writeFileSync(path.join(dir, '.gitmodules'), '[submodule "lib"]\n\tpath = lib\n\turl = https://github.com/acme/lib.git\n');
     const git = makeGit();
     const subUpdate = vi.fn(async () => undefined);
@@ -312,11 +336,42 @@ describe('checkoutCommit — edge cases', () => {
     gitState.simpleGit.mockImplementation(() => git);
 
     await checkoutCommit('https://github.com/ada/repo.git', 'main', undefined, dir, vi.fn());
-    expect(subUpdate).toHaveBeenCalledWith(['--init', '--recursive']);
+    // One level at a time (r173) — `--recursive` skipped the egress gate for
+    // nested submodules.
+    expect(subUpdate).toHaveBeenCalledWith(['--init']);
+  });
+
+  it('r173: refuses a submodule URL that points at a private address', async () => {
+    const dir = existingCheckout('submodule-ssrf', 'https://github.com/ada/repo.git');
+    writeFileSync(path.join(dir, '.gitmodules'), '[submodule "meta"]\n\tpath = meta\n\turl = http://169.254.169.254/latest/meta-data\n');
+    const git = makeGit();
+    gitState.simpleGit.mockImplementation(() => git);
+
+    await expect(checkoutCommit('https://github.com/ada/repo.git', 'main', undefined, dir, vi.fn())).rejects.toThrow();
+    expect(git.submoduleUpdate).not.toHaveBeenCalled();
+  });
+
+  it('r173: refuses a submodule with a non-network transport', async () => {
+    const dir = existingCheckout('submodule-file', 'https://github.com/ada/repo.git');
+    writeFileSync(path.join(dir, '.gitmodules'), '[submodule "x"]\n\tpath = x\n\turl = file:///etc\n');
+    const git = makeGit();
+    gitState.simpleGit.mockImplementation(() => git);
+
+    await expect(checkoutCommit('https://github.com/ada/repo.git', 'main', undefined, dir, vi.fn())).rejects.toThrow(/unsupported transport/);
+    expect(git.submoduleUpdate).not.toHaveBeenCalled();
+  });
+
+  it('r172: re-clones when the service now points at a different repository', async () => {
+    const dir = existingCheckout('moved-repo', 'https://github.com/old/app.git');
+    const sink = vi.fn();
+    await checkoutCommit('https://github.com/new/app.git', 'main', undefined, dir, sink);
+    expect(sink).toHaveBeenCalledWith('Repository URL changed — re-cloning …');
+    const bare = gitState.simpleGit.mock.results.find((r) => (r.value as ReturnType<typeof makeGit>).clone.mock.calls.length > 0);
+    expect((bare!.value as ReturnType<typeof makeGit>).clone).toHaveBeenCalledWith('https://github.com/new/app.git', dir, []);
   });
 
   it('skips submodule init when the checkout has no .gitmodules', async () => {
-    const dir = existingCheckout('no-submodules');
+    const dir = existingCheckout('no-submodules', 'https://github.com/ada/repo.git');
     const git = makeGit();
     const subUpdate = vi.fn(async () => undefined);
     git.submoduleUpdate = subUpdate;
