@@ -2,9 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Archive, Download, History, Loader2, RotateCcw, ShieldCheck, Tag, Trash2, X } from 'lucide-react';
 import type { Backup } from '@ninedeploy/sdk';
-import { api } from '../lib/api.js';
+import { api, authedFetch } from '../lib/api.js';
 import { Button, Card, Input } from './ui.js';
-import { formatBytes } from '../lib/format.js';
+import { downloadBlob, formatBytes } from '../lib/format.js';
+import { useToast } from './Toast.js';
 
 export function VolumeBackupsPanel({ volumeName }: { volumeName: string }) {
   const qc = useQueryClient();
@@ -123,6 +124,23 @@ function BackupRow({
   isRestoring: boolean;
 }) {
   const date = new Date(backup.createdAt);
+  const { toast } = useToast();
+  // r202: a plain <a href> sends no Authorization header (the panel's session
+  // is a bearer token, not a cookie), so every volume backup download was a
+  // 401 JSON body. Fetch with the session and save the blob instead, as the
+  // database backup downloads do.
+  const download = async () => {
+    try {
+      const res = await authedFetch(api.volumeBackups.downloadUrl(volumeName, backup.id));
+      if (!res.ok) {
+        toast('Download failed', 'error');
+        return;
+      }
+      downloadBlob(await res.blob(), `${volumeName}-backup-${backup.id}.tar.gz`, 'application/gzip');
+    } catch {
+      toast('Download failed', 'error');
+    }
+  };
   return (
     <Card className="p-3" data-testid={`backup-row-${backup.id}`}>
       <div className="flex items-center justify-between gap-3">
@@ -148,14 +166,16 @@ function BackupRow({
         </div>
         <div className="flex items-center gap-2">
           <span className="font-mono text-xs text-slate-300 shrink-0">{formatBytes(backup.sizeBytes)}</span>
-          <a
-            href={api.volumeBackups.downloadUrl(volumeName, backup.id)}
+          <button
+            type="button"
+            onClick={() => void download()}
             className="text-slate-400 hover:text-indigo-300 transition-colors"
             title="Download tar.gz"
+            aria-label="Download tar.gz"
             data-testid={`download-backup-${backup.id}`}
           >
             <Download size={14} />
-          </a>
+          </button>
           {restoring ? (
             <div className="flex items-center gap-1">
               <Button size="sm" variant="ghost" onClick={onCancelRestore} className="text-xs h-6 px-2">

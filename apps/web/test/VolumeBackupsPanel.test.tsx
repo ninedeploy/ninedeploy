@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { screen, waitFor, fireEvent } from '@testing-library/react';
 import { VolumeBackupsPanel } from '../src/components/VolumeBackupsPanel.js';
-import { api } from '../src/lib/api.js';
+import { api, getToken } from '../src/lib/api.js';
 import { renderWithProviders, mockOf } from './helpers.js';
 
 vi.mock('../src/lib/api.js', async () => {
@@ -81,10 +81,26 @@ describe('VolumeBackupsPanel', () => {
     expect(screen.getAllByText('2026-02-03 04:05')).toHaveLength(3);
     expect(screen.getByText('Off-site')).toBeInTheDocument();
     expect(screen.getByText('archived')).toBeInTheDocument();
-    expect(screen.getByTestId('download-backup-2')).toHaveAttribute(
-      'href',
-      '/v1/volumes/nd-svc-web-data/backups/2/download',
-    );
+  });
+
+  it('r202: downloads with the session bearer instead of a bare link', async () => {
+    mockOf(api.volumeBackups.list).mockResolvedValue([backup({ id: 2 })] as never);
+    vi.stubGlobal('fetch', vi.fn());
+    URL.createObjectURL = vi.fn(() => 'blob:vol');
+    URL.revokeObjectURL = vi.fn();
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce({ ok: true, blob: async () => new Blob(['tar']) } as Response);
+    renderWithProviders(<VolumeBackupsPanel volumeName="nd-svc-web-data" />);
+    fireEvent.click(await screen.findByTestId('download-backup-2'));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/v1/volumes/nd-svc-web-data/backups/2/download');
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('Authorization')).toBe(`Bearer ${getToken()}`);
+    expect(URL.createObjectURL).toHaveBeenCalled();
+    fetchMock.mockResolvedValueOnce({ ok: false } as Response);
+    fireEvent.click(screen.getByTestId('download-backup-2'));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
   });
 
   it('requires a confirmation before restoring, and lets it be cancelled', async () => {
