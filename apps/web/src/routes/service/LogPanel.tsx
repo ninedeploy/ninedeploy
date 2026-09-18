@@ -99,14 +99,27 @@ export function LogPanel({
 }
 
 function useAutoScroll(ref: RefObject<HTMLPreElement | null>, content: string): void {
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally keyed on content — scroll to the newest line whenever a new log line arrives, even though the body only touches the DOM node.
+  // r212: whether to follow is decided by where the user WAS before the new
+  // text landed. It used to be measured inside the effect — after the DOM
+  // already held the new batch — so any flush taller than the 48px slack
+  // (the backlog on open, a burst of build output) read as "the user
+  // scrolled up" and following stopped for good.
+  const followRef = useRef(true);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    // Follow live output only when the user is already (near) the bottom —
-    // force-scrolling on every chunk yanked anyone scrolling up to read
-    // straight back down. 48px ≈ a couple of lines of slack.
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-    if (nearBottom) el.scrollTop = el.scrollHeight;
+    // Follow live output only when the user is (near) the bottom — force-
+    // scrolling on every chunk yanked anyone scrolling up to read straight
+    // back down. 48px ≈ a couple of lines of slack.
+    const onScroll = () => {
+      followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+    };
+    el.addEventListener('scroll', onScroll);
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [ref]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally keyed on content — scroll to the newest line whenever a new log line arrives, even though the body only touches the DOM node.
+  useEffect(() => {
+    const el = ref.current;
+    if (el && followRef.current) el.scrollTop = el.scrollHeight;
   }, [content, ref]);
 }
