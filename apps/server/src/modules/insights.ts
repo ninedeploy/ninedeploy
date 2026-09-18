@@ -1,4 +1,4 @@
-import { existsSync, rmSync } from 'node:fs';
+import { rmSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
@@ -84,34 +84,34 @@ export const serviceInsightsRoutes: FastifyPluginAsync = async (app) => {
   app.post('/:id/insights/refresh', async (req) => {
     const id = parseId((req.params as { id: string }).id);
     const svc = await loadServiceForUser(app.db, id, req.user!);
-    // Refresh re-clones the repository into the service's canonical checkout
-    // dir and rewrites the stored analysis — a write on the service, so the
+    // Refresh re-clones the repository and rewrites the stored analysis — a
+    // write on the service, so the
     // `member` floor applies (a viewer seat stays read-only).
     await assertServiceRole(app.db, svc, req.user!, 'member');
     if (!svc.repoUrl) throw badRequest('Service has no repository URL to analyze');
     const build = await app.db.query.buildConfigs.findFirst({ where: eq(buildConfigs.serviceId, id) });
 
-    // Reuse the service's canonical checkout dir (the same location the deploy
-    // pipeline uses, so a fresh clone here is reused by the next deploy).
-    // checkoutCommit fetches+checks out the branch tip when .git exists and
-    // re-clones otherwise, so both the "never deployed" and "refresh" cases
-    // are one call.
-    const workDir = path.join(config.paths.reposDir, String(svc.id));
+    // r224: analysed in a THROWAWAY checkout. This used to reuse the service's
+    // canonical dir (reposDir/<id>) — the one the deploy pipeline builds
+    // from — with no lock: a refresh during a rollback or webhook deploy of
+    // commit X checked the branch tip out underneath the running build, and
+    // the deployment recorded X while building different code.
+    const workDir = path.join(config.paths.reposDir, '_inspections', randomUUID());
     const creds = await resolveCreds(app.db, svc.sourceId);
-    let sha: string | undefined;
     try {
-      sha = await checkoutCommit(svc.repoUrl, svc.branch, undefined, workDir, () => undefined, creds);
-    } catch (err) {
-      if (!existsSync(path.join(workDir, '.git'))) {
+      let sha: string;
+      try {
+        sha = await checkoutCommit(svc.repoUrl, svc.branch, undefined, workDir, () => undefined, creds);
+      } catch (err) {
         if (err instanceof EgressBlockedError) throw toApiError(err);
+        req.log.warn({ err, serviceId: id }, 'insights refresh could not fetch the repository');
         throw notFound('Repository is not reachable');
       }
-      req.log.warn({ err, serviceId: id }, 'insights refresh fell back to the cached checkout');
+      const insights = analyzeRepo(workDir, build?.baseDir, sha);
+      await upsertInsights(app.db, id, insights);
+      return insights;
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
     }
-    if (!sha) throw notFound('Repository is not reachable');
-
-    const insights = analyzeRepo(workDir, build?.baseDir, sha);
-    await upsertInsights(app.db, id, insights);
-    return insights;
   });
 };

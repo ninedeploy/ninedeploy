@@ -225,6 +225,11 @@ describe('service insights routes', () => {
     expect(res.statusCode).toBe(200);
     expect(frameworkMocks.analyzeRepo).toHaveBeenCalledTimes(1);
     expect(res.json()).toMatchObject({ framework: { id: 'node' }, packageManager: 'pnpm' });
+    // r224: never the pipeline's canonical checkout (reposDir/<id>) — a
+    // refresh mid-deploy would move the tree under the running build.
+    const dir = String(vi.mocked(gitMocks.checkoutCommit).mock.calls.at(-1)?.[3]);
+    expect(dir).toMatch(/_inspections/);
+    expect(dir.split(/[\\/]/).at(-1)).not.toBe('1');
     await app.close();
   });
 });
