@@ -14,6 +14,7 @@ export default defineConfig({
     proxy: {
       '/health': { target: api, changeOrigin: true },
       '/v1': { target: api, changeOrigin: true, ws: true },
+      '/scim': { target: api, changeOrigin: true },
     },
   },
   build: {

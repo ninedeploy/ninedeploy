@@ -5,6 +5,7 @@ import type { PublicUser, Register } from '@ninedeploy/schemas';
 import { createApiToken, forgotPassword, login, oidcProviderCreate, oidcProviderUpdate, type OidcProviderEntry, type OidcPublicProvider, passkeyLoginVerify, passkeyRegisterVerify, passwordChange, passwordResetWithToken, refresh, register, twoFactorCode, twoFactorDisable, twoFactorSetup } from '@ninedeploy/schemas';
 import { config } from '../config.js';
 import { decrypt, encrypt, hashPassword, randomToken, secretEquals, sha256, verifyPassword } from '../lib/crypto.js';
+import { normalizeEmail } from '../lib/authHelpers.js';
 import { badRequest, conflict, forbidden, notFound, parseId, unauthorized } from '../lib/errors.js';
 import { verifyJwt, type AppJwtPayload } from '../lib/jwt.js';
 import { isLocked, recordFailure, recordSuccess } from '../lib/loginLockout.js';
@@ -130,6 +131,7 @@ async function userCount(db: Pick<DB, 'select'>): Promise<number> {
 export async function createFirstAdmin(db: DB, input: Register) {
   const result = await db.transaction(async (tx) => {
     if ((await userCount(tx)) > 0) throw conflict('Instance is already initialized');
+    const email = normalizeEmail(input.email);
     const passwordHash = await hashPassword(input.password);
     const [user] = await tx
       .insert(users)
@@ -137,7 +139,7 @@ export async function createFirstAdmin(db: DB, input: Register) {
       // instance-operator flag automatically. Everyone else must be granted it
       // by an existing operator (PATCH /v1/users/:id/operator) — creating a
       // workspace does NOT confer it (see lib/resourceAccess.ts:isOperator).
-      .values({ email: input.email, passwordHash, name: input.name ?? null, isInstanceOperator: true })
+      .values({ email, passwordHash, name: input.name ?? null, isInstanceOperator: true })
       .returning();
     if (!user) throw badRequest('Could not create user');
     // …and gets a personal workspace so the team surfaces have somewhere to
@@ -157,6 +159,14 @@ export async function registerAccount(db: DB, input: Register) {
   // between two simultaneous first registrations must not create two users.
   const result = await db.transaction(async (tx) => {
     const isFirst = (await userCount(tx)) === 0;
+    // r159: the unique index on users.email is case-sensitive, while login,
+    // invitations and domain transfers match on lower(email). Registering
+    // `Victim@corp.com` next to `victim@corp.com` auto-accepted the victim's
+    // pending invitations and made login ambiguous. Store the canonical form
+    // and refuse a case-variant of an existing address.
+    const email = normalizeEmail(input.email);
+    const taken = await tx.query.users.findFirst({ where: sql`lower(${users.email}) = ${email}` });
+    if (taken) throw badRequest('Email is already registered', 'email_taken');
     const passwordHash = await hashPassword(input.password);
     let user: User | undefined;
     try {
@@ -164,7 +174,7 @@ export async function registerAccount(db: DB, input: Register) {
         .insert(users)
         // Only the very first registration on an empty instance is an
         // operator; open registration must never mint one.
-        .values({ email: input.email, passwordHash, name: input.name ?? null, isInstanceOperator: isFirst })
+        .values({ email, passwordHash, name: input.name ?? null, isInstanceOperator: isFirst })
         .returning();
     } catch {
       throw badRequest('Email is already registered', 'email_taken');
@@ -298,7 +308,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     // SCIM-deprovisioned accounts verify fine (their credentials were hashed
     // randomly at provision time anyway) but must never get a session.
     if (user.deactivatedAt) throw unauthorized('This account has been deactivated', 'account_deactivated');
-    recordSuccess(input.email);
+    recordSuccess(input.email, req.ip);
     // Auto-accept any pending workspace invitations for this email so a user
     // who created their account to redeem an invite lands inside that
     // workspace without re-clicking the link.
@@ -855,7 +865,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       const [created] = await app.db
         .insert(users)
         .values({
-          email: userInfo.email,
+          email: normalizeEmail(userInfo.email),
           passwordHash,
           name: userInfo.name ?? null,
           // Same bootstrap rule as /auth/register: only the very first account

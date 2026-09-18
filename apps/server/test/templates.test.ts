@@ -79,6 +79,31 @@ describe('template routes', () => {
     expect(body.generatedSecrets[0].value.length).toBeGreaterThanOrEqual(16);
   });
 
+  it("r158: a member cannot tag a template deploy into another tenant's project", async () => {
+    const inserts: unknown[] = [];
+    const app = await buildTestApp({
+      db: createFakeDb({
+        // The victim project lives in workspace 10, where the member has no seat.
+        findMany: { projects: [{ id: 3, workspaceId: 10 }], workspaceMembers: [{ workspaceId: 4, userId: 7, role: 'member' }] },
+        insert: {
+          services: (v: unknown) => {
+            inserts.push(v);
+            return [svcRow({ id: 7 })];
+          },
+        },
+      }),
+    });
+    await app.register(templateRoutes);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/grafana/deploy',
+      headers: { ...asUser({ id: 7, isOperator: false }), 'content-type': 'application/json' },
+      payload: { projectId: 3 },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(inserts).toEqual([]);
+  });
+
   it('deploys a template with env vars and a secret', async () => {
     const app = await buildTestApp({
       db: createFakeDb({

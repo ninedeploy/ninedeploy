@@ -78,6 +78,10 @@ export const users = sqliteTable('users', {
   // Non-null = the account was deactivated via SCIM (deprovisioned): login is
   // denied, sessions and API tokens were revoked at deactivation time.
   deactivatedAt: integer('deactivated_at', { mode: 'timestamp' }),
+  // The workspace whose SCIM token performed the deactivation. Only that
+  // workspace's IdP may lift it — another tenant's push must not undo it.
+  // Plain integer (no FK): the workspace may be deleted later.
+  deactivatedByWorkspaceId: integer('deactivated_by_workspace_id'),
   // Instance-level operator flag.
   //
   // This is DELIBERATELY not derived from workspace membership. It used to be:

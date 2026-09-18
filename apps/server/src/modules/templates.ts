@@ -3,7 +3,6 @@ import {
   deployments,
   envVars,
   services,
-  workspaceMembers,
   type Service,
 } from '@ninedeploy/db';
 import { deployTemplate, sameImageRepository, type DeployTemplate } from '@ninedeploy/schemas';
@@ -22,7 +21,8 @@ import { assertMayUseHostPrivilege } from '../lib/hostPrivilege.js';
 import type { AuthedUser } from '../lib/resourceAccess.js';
 import { assertMayPublishPort } from '../lib/hostPort.js';
 import { slugify } from '../lib/slug.js';
-import { applyDefaultTags, replaceServiceTags } from './serviceTags.js';
+import { visibleProjectIds } from './projects.js';
+import { applyDefaultTags, defaultWorkspaceIdsForUser, replaceServiceTags } from './serviceTags.js';
 import { prepareComposeStack } from './composeStacks.js';
 
 const summary = (t: Template) => ({
@@ -149,6 +149,13 @@ async function prepareTemplateService(
   // now use the N-N tag system; the request body still accepts `projectId`
   // (singular) for back-compat and we map it to the new join table.
   const inputProjectIds = input.projectId != null ? [input.projectId] : [];
+  // r158: same guard POST /services applies. Tagging into a project makes the
+  // pipeline decrypt that project's shared env into this service, so a
+  // member may only name a project they hold `member`+ in.
+  if (!user.isOperator && inputProjectIds.length > 0) {
+    const allowed = await visibleProjectIds(app.db, user, inputProjectIds, 'member');
+    if (allowed.length !== inputProjectIds.length) throw forbidden('The target project is not visible to you');
+  }
   const name = input.name ?? template.name;
   const requestedSlug = input.name ? slugify(name) : `${slugify(template.name)}-${Date.now().toString(36).slice(-4)}`;
   const stages: ProvisionStage[] = [];
@@ -228,17 +235,6 @@ async function prepareTemplateService(
   const generatedSecrets = await reconcileEnvironment(app, service.id, template, input.env ?? []);
   stages.push({ id: 'environment', status: 'success', message: 'Environment and secrets reconciled' });
   return { service, generatedSecrets, stages };
-}
-
-async function defaultWorkspaceIdsForUser(db: import('@ninedeploy/db').DB, user: { id: number; isOperator: boolean }): Promise<number[]> {
-  if (user.isOperator) {
-    const rows = await db.query.workspaces.findMany();
-    return rows.map((w) => w.id);
-  }
-  const ms = await db.query.workspaceMembers.findMany({
-    where: eq(workspaceMembers.userId, user.id),
-  });
-  return ms.map((m) => m.workspaceId);
 }
 
 /** Template hub: list, detail, canonical retry-safe one-click provisioning. */

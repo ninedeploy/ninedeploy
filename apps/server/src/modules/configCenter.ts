@@ -189,16 +189,22 @@ export const configCenterRoutes: FastifyPluginAsync = async (app) => {
       value = row.isSecret ? await req.kernel.configCenter.getSecret(key) : await req.kernel.configCenter.get(key);
     }
 
+    // r155: pass the RESOLVED secrecy and the row's metadata. `set()` only
+    // falls back to a static definition, so an ad-hoc secret re-saved without
+    // `isSecret` was written back decrypted with is_secret=0 (and its
+    // category/plugin/description/tags reset to defaults).
     await req.kernel.configCenter.set(key, value, {
-      isSecret: body.isSecret,
-      description: body.description,
-      tags: body.tags,
+      isSecret,
+      category: row?.category ?? undefined,
+      pluginId: row?.pluginId ?? undefined,
+      description: body.description ?? row?.description ?? undefined,
+      tags: body.tags ?? (row?.tags as string[] | null | undefined) ?? undefined,
       userId: req.user!.id,
     });
 
     await audit(app.db, req.user!.id, 'config.set', 'system', {
       key,
-      isSecret: body.isSecret ?? false,
+      isSecret,
       tags: body.tags,
     });
 

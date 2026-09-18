@@ -27,6 +27,7 @@ const userRow = (over: Record<string, unknown> = {}) => ({
   isInstanceOperator: false,
   scimExternalId: 'idp-777',
   deactivatedAt: null,
+  deactivatedByWorkspaceId: null,
   createdAt: new Date(),
   updatedAt: new Date(),
   ...over,
@@ -166,6 +167,7 @@ describe('SCIM 2.0 provisioning', () => {
     const db = createFakeDb({
       select: { scimTokens: [TOKEN_ROW] },
       findFirst: {
+        workspaceMembers: () => memberRow(),
         users: () => {
           call++;
           return userRow({ deactivatedAt: call === 1 ? new Date() : null });
@@ -209,7 +211,8 @@ describe('SCIM 2.0 provisioning', () => {
   it('returns a single user by id', async () => {
     const db = createFakeDb({
       select: { scimTokens: [TOKEN_ROW] },
-      findFirst: { users: () => userRow() },
+      findFirst: {
+        workspaceMembers: () => memberRow(), users: () => userRow() },
     });
     const app = await scimApp(db);
     const res = await app.inject({ method: 'GET', url: '/scim/v2/Users/11', headers: auth });
@@ -223,6 +226,7 @@ describe('SCIM 2.0 provisioning', () => {
     const db = createFakeDb({
       select: { scimTokens: [TOKEN_ROW] },
       findFirst: {
+        workspaceMembers: () => memberRow(),
         users: () => {
           call++;
           return userRow({ deactivatedAt: call > 1 ? new Date() : null });
@@ -249,6 +253,7 @@ describe('SCIM 2.0 provisioning', () => {
     const db = createFakeDb({
       select: { scimTokens: [TOKEN_ROW] },
       findFirst: {
+        workspaceMembers: () => memberRow(),
         users: () => {
           call++;
           return userRow({ deactivatedAt: call > 1 ? null : new Date() });
@@ -272,7 +277,8 @@ describe('SCIM 2.0 provisioning', () => {
     const memberInserts: Array<Record<string, unknown>> = [];
     const db = createFakeDb({
       select: { scimTokens: [TOKEN_ROW] },
-      findFirst: { users: () => userRow() },
+      findFirst: {
+        workspaceMembers: () => memberRow(), users: () => userRow() },
       findMany: { workspaceMembers: () => [memberRow()] },
       update: { users: [userRow()] },
       insert: {
@@ -331,6 +337,7 @@ describe('SCIM 2.0 provisioning', () => {
     const db = createFakeDb({
       select: { scimTokens: [TOKEN_ROW] },
       findFirst: {
+        workspaceMembers: () => memberRow(),
         users: () => {
           call++;
           return userRow({ deactivatedAt: call > 1 ? new Date() : null, tokenVersion: call > 1 ? 1 : 0 });
@@ -353,11 +360,12 @@ describe('SCIM 2.0 provisioning', () => {
     await app.close();
   });
 
-  it('deprovisions on DELETE by stripping all memberships', async () => {
+  it('deprovisions on DELETE by leaving the token workspace', async () => {
     let call = 0;
     const db = createFakeDb({
       select: { scimTokens: [TOKEN_ROW] },
       findFirst: {
+        workspaceMembers: () => memberRow(),
         users: () => {
           call++;
           return userRow({ deactivatedAt: call > 1 ? new Date() : null });
@@ -369,6 +377,152 @@ describe('SCIM 2.0 provisioning', () => {
     const app = await scimApp(db);
     const res = await app.inject({ method: 'DELETE', url: '/scim/v2/Users/11', headers: auth });
     expect(res.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it('r153: a token cannot read or act on a user outside its workspace', async () => {
+    const updates: unknown[] = [];
+    const db = createFakeDb({
+      select: { scimTokens: [TOKEN_ROW] },
+      findFirst: { users: () => userRow(), workspaceMembers: () => undefined },
+      update: {
+        users: (v: unknown) => {
+          updates.push(v);
+          return [userRow()];
+        },
+      },
+    });
+    const app = await scimApp(db);
+    const get = await app.inject({ method: 'GET', url: '/scim/v2/Users/11', headers: auth });
+    expect(get.statusCode).toBe(404);
+    const patch = await app.inject({
+      method: 'PATCH',
+      url: '/scim/v2/Users/11',
+      headers: auth,
+      payload: { Operations: [{ op: 'replace', path: 'active', value: false }] },
+    });
+    expect(patch.statusCode).toBe(404);
+    const del = await app.inject({ method: 'DELETE', url: '/scim/v2/Users/11', headers: auth });
+    expect(del.statusCode).toBe(404);
+    expect(updates).toEqual([]);
+    await app.close();
+  });
+
+  it('r153: an instance operator cannot be deactivated or deleted through SCIM', async () => {
+    const updates: unknown[] = [];
+    const db = createFakeDb({
+      select: { scimTokens: [TOKEN_ROW] },
+      findFirst: { users: () => userRow({ isInstanceOperator: true }), workspaceMembers: () => memberRow() },
+      update: {
+        users: (v: unknown) => {
+          updates.push(v);
+          return [userRow()];
+        },
+      },
+    });
+    const app = await scimApp(db);
+    const patch = await app.inject({
+      method: 'PATCH',
+      url: '/scim/v2/Users/11',
+      headers: auth,
+      payload: { Operations: [{ op: 'replace', path: 'active', value: false }] },
+    });
+    expect(patch.statusCode).toBe(403);
+    const put = await app.inject({ method: 'PUT', url: '/scim/v2/Users/11', headers: auth, payload: { active: false } });
+    expect(put.statusCode).toBe(403);
+    const del = await app.inject({ method: 'DELETE', url: '/scim/v2/Users/11', headers: auth });
+    expect(del.statusCode).toBe(403);
+    expect(updates).toEqual([]);
+    await app.close();
+  });
+
+  it('r153: adopting an account deprovisioned by another tenant does not reactivate it', async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const db = createFakeDb({
+      select: { scimTokens: [TOKEN_ROW] },
+      findFirst: {
+        users: () => userRow({ deactivatedAt: new Date() }),
+        workspaceMembers: () => undefined,
+        workspaces: () => ({ id: 9, ownerId: 99 }),
+      },
+      findMany: { workspaceMembers: () => [memberRow({ workspaceId: 9 })] },
+      update: {
+        users: (v: Record<string, unknown>) => {
+          updates.push(v);
+          return [userRow()];
+        },
+      },
+      insert: { workspaceMembers: (v: Record<string, unknown>) => [memberRow(v)] },
+    });
+    const app = await scimApp(db);
+    const res = await app.inject({ method: 'POST', url: '/scim/v2/Users', headers: auth, payload: { userName: 'new.user@example.com' } });
+    expect(res.statusCode).toBe(200);
+    expect(updates[0]).not.toHaveProperty('deactivatedAt');
+    await app.close();
+  });
+
+  it("r153: PATCH and PUT active=true cannot lift another workspace's deactivation", async () => {
+    const updates: unknown[] = [];
+    const db = createFakeDb({
+      select: { scimTokens: [TOKEN_ROW] },
+      findFirst: {
+        users: () => userRow({ deactivatedAt: new Date(), deactivatedByWorkspaceId: 9 }),
+        workspaceMembers: () => memberRow(),
+      },
+      update: {
+        users: (v: unknown) => {
+          updates.push(v);
+          return [userRow()];
+        },
+      },
+    });
+    const app = await scimApp(db);
+    const patch = await app.inject({
+      method: 'PATCH',
+      url: '/scim/v2/Users/11',
+      headers: auth,
+      payload: { Operations: [{ op: 'replace', path: 'active', value: true }] },
+    });
+    expect(patch.statusCode).toBe(403);
+    const put = await app.inject({ method: 'PUT', url: '/scim/v2/Users/11', headers: auth, payload: { active: true } });
+    expect(put.statusCode).toBe(403);
+    expect(updates).toEqual([]);
+    await app.close();
+  });
+
+  it('r153: the deactivating workspace can reactivate, and deactivation records it', async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const db = createFakeDb({
+      select: { scimTokens: [TOKEN_ROW] },
+      findFirst: {
+        users: () => userRow({ deactivatedAt: new Date(), deactivatedByWorkspaceId: 7 }),
+        workspaceMembers: () => memberRow(),
+      },
+      update: {
+        users: (v: Record<string, unknown>) => {
+          updates.push(v);
+          return [userRow()];
+        },
+      },
+      delete: { apiTokens: [] },
+    });
+    const app = await scimApp(db);
+    const on = await app.inject({
+      method: 'PATCH',
+      url: '/scim/v2/Users/11',
+      headers: auth,
+      payload: { Operations: [{ op: 'replace', path: 'active', value: true }] },
+    });
+    expect(on.statusCode).toBe(200);
+    expect(updates[0]).toEqual({ deactivatedAt: null, deactivatedByWorkspaceId: null });
+    const off = await app.inject({
+      method: 'PATCH',
+      url: '/scim/v2/Users/11',
+      headers: auth,
+      payload: { Operations: [{ op: 'replace', path: 'active', value: false }] },
+    });
+    expect(off.statusCode).toBe(200);
+    expect(updates[1]).toMatchObject({ deactivatedByWorkspaceId: 7 });
     await app.close();
   });
 

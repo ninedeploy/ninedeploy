@@ -5,6 +5,7 @@ import { ZodError } from 'zod';
 import { config } from './config.js';
 import { ABOUT } from './version.js';
 import { apiRoutes } from './modules/api.js';
+import { scimRoutes } from './modules/scim.js';
 import { eventRoutes } from './modules/events.js';
 import { healthRoutes } from './modules/health.js';
 import authPlugin from './plugins/auth.js';
@@ -100,6 +101,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(eventRoutes);
   // Versioned API
   await app.register(apiRoutes, { prefix: '/v1' });
+  // SCIM 2.0 lives OUTSIDE /v1: IdPs hardcode the RFC path `${base}/scim/v2`.
+  await app.register(scimRoutes, { prefix: '/scim/v2' });
   // Background deploy worker
   await app.register(workerPlugin);
   // Traefik reverse proxy + dynamic routing

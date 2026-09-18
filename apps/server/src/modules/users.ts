@@ -8,6 +8,7 @@ import { badRequest, forbidden, notFound, parseId } from '../lib/errors.js';
 import { hashPassword } from '../lib/crypto.js';
 import { issueResetToken } from '../lib/passwordReset.js';
 import { config } from '../config.js';
+import { normalizeEmail } from '../lib/authHelpers.js';
 
 /** How many accounts currently carry the instance-operator flag. */
 async function operatorCount(db: import('@ninedeploy/db').DB): Promise<number> {
@@ -81,7 +82,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     const [created] = await app.db
       .insert(users)
       .values({
-        email: input.email,
+        email: normalizeEmail(input.email),
         name: input.name ?? null,
         passwordHash: await hashPassword(input.password),
       })

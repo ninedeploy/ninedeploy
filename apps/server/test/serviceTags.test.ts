@@ -176,6 +176,37 @@ describe('service tag routes', () => {
       });
       expect(res.statusCode).toBe(200);
     });
+
+    it("r156: an admin of workspace A cannot evict workspace B's link", async () => {
+      // Service shared into A (4, caller is admin) and B (10, no seat).
+      const inserted: unknown[] = [];
+      const app = await appWith({
+        findFirst: { services: svcRow({ id: 1, ownerUserId: 7 }) },
+        findMany: { workspaceMembers: [{ id: 1, workspaceId: 4, userId: 7, role: 'admin' }] },
+        select: {
+          service_projects: [],
+          service_workspaces: [workspace, { id: 10, name: 'Other tenant', slug: 'other' }],
+          service_labels: [],
+        },
+        insert: {
+          service_workspaces: (v: unknown) => {
+            inserted.push(v);
+            return [];
+          },
+        },
+      });
+      const res = await app.inject({
+        method: 'PUT',
+        url: '/services/1/tags',
+        headers: { ...asMember(), 'content-type': 'application/json' },
+        payload: { projectIds: [], workspaceIds: [4], labelIds: [] },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(inserted[0]).toEqual([
+        { serviceId: 1, workspaceId: 4 },
+        { serviceId: 1, workspaceId: 10 },
+      ]);
+    });
   });
 });
 
@@ -213,10 +244,10 @@ describe('tag helpers', () => {
     expect(inserted.map((i) => (i as [string, unknown])[0])).toEqual(['projects', 'labels']);
   });
 
-  it('applyDefaultTags gives an operator every workspace', async () => {
+  it('r152: applyDefaultTags gives an operator only their own seats, never every workspace', async () => {
     const inserted: unknown[] = [];
     const db = createFakeDb({
-      findMany: { workspaces: [{ id: 1 }, { id: 2 }] },
+      findMany: { workspaces: [{ id: 1 }, { id: 2 }, { id: 3 }], workspaceMembers: [{ workspaceId: 1, userId: 1 }] },
       insert: {
         service_workspaces: (v: unknown) => {
           inserted.push(v);
@@ -226,10 +257,7 @@ describe('tag helpers', () => {
     } as never);
 
     await applyDefaultTags(db, { id: 1, isOperator: true }, 5);
-    expect(inserted[0]).toEqual([
-      { serviceId: 5, workspaceId: 1 },
-      { serviceId: 5, workspaceId: 2 },
-    ]);
+    expect(inserted[0]).toEqual([{ serviceId: 5, workspaceId: 1 }]);
   });
 
   it('applyDefaultTags gives a member only their own seats', async () => {

@@ -19,8 +19,14 @@ import { unauthorized } from '../lib/errors.js';
  * tokens). Tokens never leave the management API in plaintext.
  *
  * Users are never hard-deleted (audit trail + FK history): DELETE deactivates
- * the account, revokes every credential, and strips all workspace
- * memberships. The SCIM `externalId` and the email are the join keys — a
+ * the account, revokes every credential, and removes it from the token's
+ * workspace.
+ *
+ * r153: a token is scoped to ONE workspace. `/Users/:id` only resolves members
+ * of that workspace, instance operators are never deactivated through SCIM,
+ * and a DELETE leaves other workspaces' rosters alone. Previously any
+ * workspace's IdP could deactivate the operator or strip another tenant's
+ * members by numeric id. The SCIM `externalId` and the email are the join keys — a
  * provisioning push for an existing local account adopts it instead of
  * duplicating it (IdPs retry on timeout; duplicates would lock people out).
  */
@@ -83,19 +89,70 @@ async function resolveUser(db: DB, idRaw: string) {
   return (await db.query.users.findFirst({ where: eq(users.id, id) })) ?? null;
 }
 
+async function isMemberOf(db: DB, userId: number, workspaceId: number): Promise<boolean> {
+  const seat = await db.query.workspaceMembers.findFirst({
+    where: and(eq(workspaceMembers.userId, userId), eq(workspaceMembers.workspaceId, workspaceId)),
+  });
+  return seat !== undefined;
+}
+
+/**
+ * Whether `workspaceId`'s IdP may lift this account's deactivation: only the
+ * workspace that deactivated it may. Rows deactivated before that was recorded
+ * fall back to "holds no seat in a workspace another user owns", so no other
+ * tenant's deprovision is undone.
+ */
+async function mayReactivate(
+  db: DB,
+  user: { id: number; deactivatedAt: Date | null; deactivatedByWorkspaceId: number | null },
+  workspaceId: number,
+): Promise<boolean> {
+  if (!user.deactivatedAt) return true;
+  if (user.deactivatedByWorkspaceId !== null) return user.deactivatedByWorkspaceId === workspaceId;
+  const seats = await db.query.workspaceMembers.findMany({ where: eq(workspaceMembers.userId, user.id) });
+  for (const seat of seats) {
+    if (seat.workspaceId === workspaceId) continue;
+    const ws = await db.query.workspaces.findFirst({ where: eq(workspaces.id, seat.workspaceId) });
+    if (ws && ws.ownerId !== user.id) return false;
+  }
+  return true;
+}
+
+const REACTIVATE_REFUSED = 'This account was deprovisioned by another workspace';
+
+/** A user this workspace's token may act on: an existing member of it. */
+async function resolveMember(db: DB, idRaw: string, workspaceId: number) {
+  const user = await resolveUser(db, idRaw);
+  if (!user || !(await isMemberOf(db, user.id, workspaceId))) return null;
+  return user;
+}
+
 /**
  * Deactivate (or fully deprovision when `stripMemberships` is set): revoke
  * every credential the account holds — the tokenVersion bump invalidates all
  * outstanding JWTs the way logout does, and API tokens are rows we can
  * delete outright.
  */
-async function deactivateUser(db: DB, userId: number, stripMemberships: boolean): Promise<void> {
-  await db.update(users).set({ deactivatedAt: new Date(), tokenVersion: sql`${users.tokenVersion} + 1` }).where(eq(users.id, userId));
+async function deactivateUser(
+  db: DB,
+  userId: number,
+  byWorkspaceId: number,
+  opts: { leaveWorkspace: boolean },
+): Promise<void> {
+  await db
+    .update(users)
+    .set({ deactivatedAt: new Date(), deactivatedByWorkspaceId: byWorkspaceId, tokenVersion: sql`${users.tokenVersion} + 1` })
+    .where(eq(users.id, userId));
   await db.delete(apiTokens).where(eq(apiTokens.userId, userId));
-  if (stripMemberships) {
-    await db.delete(workspaceMembers).where(eq(workspaceMembers.userId, userId));
+  if (opts.leaveWorkspace) {
+    await db
+      .delete(workspaceMembers)
+      .where(and(eq(workspaceMembers.userId, userId), eq(workspaceMembers.workspaceId, byWorkspaceId)));
   }
 }
+
+const OPERATOR_REFUSED = 'Instance operators cannot be deprovisioned through SCIM';
+const REACTIVATED = { deactivatedAt: null, deactivatedByWorkspaceId: null } as const;
 
 export const scimRoutes: FastifyPluginAsync = async (app) => {
   const bearer = async (req: { headers: Record<string, unknown> }): Promise<number> => {
@@ -148,24 +205,20 @@ export const scimRoutes: FastifyPluginAsync = async (app) => {
       // and reactivate if a previous deprovision left it disabled.
       const externalId = str(req.body.externalId);
       const name = str(req.body.displayName) ?? str(req.body.name?.givenName);
+      // A push from workspace A must not undo a deprovision another tenant
+      // performed (r153) — see mayReactivate.
+      const alreadyMember = await isMemberOf(app.db, existing.id, workspaceId);
+      const reactivate = existing.deactivatedAt !== null && (await mayReactivate(app.db, existing, workspaceId));
       await app.db
         .update(users)
         .set({
           scimExternalId: externalId ?? existing.scimExternalId,
           name: name ?? existing.name,
-          deactivatedAt: null,
+          ...(reactivate ? REACTIVATED : {}),
         })
         .where(eq(users.id, existing.id));
-      if (existing.deactivatedAt) {
-        const memberships = await app.db.query.workspaceMembers.findMany({ where: eq(workspaceMembers.userId, existing.id) });
-        if (!memberships.some((m) => m.workspaceId === workspaceId)) {
-          await app.db.insert(workspaceMembers).values({ workspaceId, userId: existing.id, role: 'member' });
-        }
-      } else {
-        const memberships = await app.db.query.workspaceMembers.findMany({ where: eq(workspaceMembers.userId, existing.id) });
-        if (!memberships.some((m) => m.workspaceId === workspaceId)) {
-          await app.db.insert(workspaceMembers).values({ workspaceId, userId: existing.id, role: 'member' });
-        }
+      if (!alreadyMember) {
+        await app.db.insert(workspaceMembers).values({ workspaceId, userId: existing.id, role: 'member' });
       }
       const fresh = (await resolveUser(app.db, String(existing.id)))!;
       return scimReply(reply, {
@@ -192,7 +245,7 @@ export const scimRoutes: FastifyPluginAsync = async (app) => {
   // ── Read one / list (with the `userName eq "…"` filter IdPs send) ────────
   app.get<{ Params: { id: string } }>('/Users/:id', async (req, reply) => {
     const workspaceId = await bearer(req);
-    const user = await resolveUser(app.db, (req.params as { id: string }).id);
+    const user = await resolveMember(app.db, (req.params as { id: string }).id, workspaceId);
     if (!user) return scimReply(reply, scimError(404, 'User not found'));
     return scimUserBody(user, workspaceId);
   });
@@ -223,17 +276,19 @@ export const scimRoutes: FastifyPluginAsync = async (app) => {
     '/Users/:id',
     async (req, reply) => {
       const workspaceId = await bearer(req);
-      const user = await resolveUser(app.db, (req.params as { id: string }).id);
+      const user = await resolveMember(app.db, (req.params as { id: string }).id, workspaceId);
       if (!user) return scimReply(reply, scimError(404, 'User not found'));
       for (const op of req.body.Operations ?? []) {
         const path = str(op.path)?.toLowerCase();
         const active = op.value;
         if ((str(op.op)?.toLowerCase() === 'replace' || str(op.op)?.toLowerCase() === 'remove') && (path === 'active' || !path)) {
           if (active === false || active === 'False' || active === 'false') {
-            await deactivateUser(app.db, user.id, false);
+            if (user.isInstanceOperator) return scimReply(reply, scimError(403, OPERATOR_REFUSED));
+            await deactivateUser(app.db, user.id, workspaceId, { leaveWorkspace: false });
             void audit(app.db, null, 'scim.deactivate', user.email);
           } else if (active === true || active === 'True' || active === 'true') {
-            await app.db.update(users).set({ deactivatedAt: null }).where(eq(users.id, user.id));
+            if (!(await mayReactivate(app.db, user, workspaceId))) return scimReply(reply, scimError(403, REACTIVATE_REFUSED));
+            await app.db.update(users).set(REACTIVATED).where(eq(users.id, user.id));
             void audit(app.db, null, 'scim.reactivate', user.email);
           }
         }
@@ -246,23 +301,28 @@ export const scimRoutes: FastifyPluginAsync = async (app) => {
   // ── Replace (PUT) — IdPs that don't use PATCH rewrite the whole record ───
   app.put<{ Params: { id: string }; Body: ScimUserPayload }>('/Users/:id', async (req, reply) => {
     const workspaceId = await bearer(req);
-    const user = await resolveUser(app.db, (req.params as { id: string }).id);
+    const user = await resolveMember(app.db, (req.params as { id: string }).id, workspaceId);
     if (!user) return scimReply(reply, scimError(404, 'User not found'));
     const name = str(req.body.displayName) ?? str(req.body.name?.givenName);
     const active = req.body.active;
-    if (active === false) await deactivateUser(app.db, user.id, false);
-    else if (active === true && user.deactivatedAt) await app.db.update(users).set({ deactivatedAt: null }).where(eq(users.id, user.id));
+    if (active === false && user.isInstanceOperator) return scimReply(reply, scimError(403, OPERATOR_REFUSED));
+    if (active === true && !(await mayReactivate(app.db, user, workspaceId))) {
+      return scimReply(reply, scimError(403, REACTIVATE_REFUSED));
+    }
+    if (active === false) await deactivateUser(app.db, user.id, workspaceId, { leaveWorkspace: false });
+    else if (active === true && user.deactivatedAt) await app.db.update(users).set(REACTIVATED).where(eq(users.id, user.id));
     await app.db.update(users).set({ name: name ?? user.name, scimExternalId: str(req.body.externalId) ?? user.scimExternalId }).where(eq(users.id, user.id));
     const fresh = (await resolveUser(app.db, String(user.id)))!;
     return scimUserBody(fresh, workspaceId);
   });
 
-  // ── Delete — deprovision fully: deactivate + strip every membership ──────
+  // ── Delete — deprovision: deactivate + leave this workspace ──────────────
   app.delete<{ Params: { id: string } }>('/Users/:id', async (req, reply) => {
-    await bearer(req);
-    const user = await resolveUser(app.db, (req.params as { id: string }).id);
+    const workspaceId = await bearer(req);
+    const user = await resolveMember(app.db, (req.params as { id: string }).id, workspaceId);
     if (!user) return scimReply(reply, scimError(404, 'User not found'));
-    await deactivateUser(app.db, user.id, true);
+    if (user.isInstanceOperator) return scimReply(reply, scimError(403, OPERATOR_REFUSED));
+    await deactivateUser(app.db, user.id, workspaceId, { leaveWorkspace: true });
     void audit(app.db, null, 'scim.deprovision', user.email);
     return { schemas: [SCIM_USER_SCHEMA], id: String(user.id) };
   });
@@ -301,6 +361,7 @@ export const scimManagementRoutes: FastifyPluginAsync = async (app) => {
         workspaceId,
       })
       .returning();
+    void audit(app.db, req.user!.id, 'scim.token.create', `${row!.name} -> workspace #${workspaceId}`);
     return { id: row!.id, token };
   });
 
@@ -308,6 +369,7 @@ export const scimManagementRoutes: FastifyPluginAsync = async (app) => {
     const id = Number((req.params as { id: string }).id);
     const [row] = await app.db.update(scimTokens).set({ revokedAt: new Date() }).where(eq(scimTokens.id, id)).returning();
     if (!row) return reply.code(404).send({ error: { message: 'Token not found' } });
+    void audit(app.db, req.user!.id, 'scim.token.revoke', `${row.name} (workspace #${row.workspaceId})`);
     return { ok: true };
   });
 };

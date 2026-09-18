@@ -45,11 +45,23 @@ describe('loginLockout', () => {
 
   it('success clears pending failures', () => {
     for (let i = 0; i < 3; i++) recordFailure('w@x.y', '10.0.0.1');
-    recordSuccess('w@x.y');
+    recordSuccess('w@x.y', '10.0.0.1');
     expect(isLocked('w@x.y', '10.0.0.1')).toBe(false);
     // counting starts fresh after a success
     for (let i = 0; i < 4; i++) expect(recordFailure('w@x.y', '10.0.0.1')).toBe(false);
     expect(recordFailure('w@x.y', '10.0.0.1')).toBe(true);
+  });
+
+  it("r160: the victim's success does not reset another source's lock or counter", () => {
+    for (let i = 0; i < 5; i++) recordFailure('v2@x.y', '198.51.100.7');
+    expect(isLocked('v2@x.y', '198.51.100.7')).toBe(true);
+    for (let i = 0; i < 3; i++) recordFailure('v2@x.y', '198.51.100.8');
+    recordSuccess('v2@x.y', '203.0.113.5');
+    // The attacker's pair lock survives…
+    expect(isLocked('v2@x.y', '198.51.100.7')).toBe(true);
+    // …and so does the other source's tally: two more failures lock it.
+    expect(recordFailure('v2@x.y', '198.51.100.8')).toBe(false);
+    expect(recordFailure('v2@x.y', '198.51.100.8')).toBe(true);
   });
 
   it('matches emails case-insensitively', () => {

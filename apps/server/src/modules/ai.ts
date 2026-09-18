@@ -4,11 +4,11 @@ import type { FastifyPluginAsync } from 'fastify';
 import { aiConfigUpdate, ninedeployManifest, type AiConfigStatus as AiConfigStatusT } from '@ninedeploy/schemas';
 import { z } from 'zod';
 import { decrypt, encrypt } from '../lib/crypto.js';
-import { HttpError, badRequest, notFound, parseId as num } from '../lib/errors.js';
+import { HttpError, badRequest, forbidden, notFound, parseId as num } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
 import { getSettingJson, getSettingString, setSettingJson, setSettingString } from '../lib/settings.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
-import { assertServiceRole } from '../lib/resourceAccess.js';
+import { assertServiceRole, roleAtLeast, userWorkspaceMemberships } from '../lib/resourceAccess.js';
 import { logBus } from '../engine/logs.js';
 import {
   buildDiagnosisMessages,
@@ -156,7 +156,16 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
   // against the STRICT manifest schema before it reaches the caller — an
   // LLM can hallucinate values, but it cannot invent fields or smuggle
   // unvalidated shapes into the creator form.
-  app.post('/suggest-manifest', async (req) => {
+  // r161: same spend rule as diagnose — a viewer (or a seatless account) must
+  // not be able to loop this and run up the operator's provider bill.
+  app.post('/suggest-manifest', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
+    const user = req.user!;
+    if (!user.isOperator) {
+      const seats = await userWorkspaceMemberships(app.db, user.id);
+      if (!seats.some((m) => roleAtLeast(m.role, 'member'))) {
+        throw forbidden('AI assist needs at least a member seat in a workspace');
+      }
+    }
     const input = suggestManifest.parse(req.body ?? {});
     const cfg = await loadAiConfig(app.db);
     if (!cfg) throw badRequest('AI assist is not configured — ask the operator to set it up in Settings');

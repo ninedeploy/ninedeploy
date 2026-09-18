@@ -68,6 +68,18 @@ describe('buildApp', () => {
     await app.close();
   });
 
+  it('r153: mounts SCIM at the RFC path and its management API under /v1/scim', async () => {
+    const app = await buildApp();
+    await app.ready();
+    const has = (method: 'GET' | 'POST', url: string) => app.hasRoute({ method, url });
+    expect(has('GET', '/scim/v2/ServiceProviderConfig')).toBe(true);
+    expect(has('POST', '/scim/v2/Users')).toBe(true);
+    expect(has('GET', '/v1/scim/tokens')).toBe(true);
+    expect(has('GET', '/v1/scim/v2/ServiceProviderConfig')).toBe(false);
+    expect(has('GET', '/v1/v1/scim/tokens')).toBe(false);
+    await app.close();
+  });
+
   it('GET /v1/auth/status reports an uninitialized instance', async () => {
     const app = await buildApp();
     await createUsersTable(app);

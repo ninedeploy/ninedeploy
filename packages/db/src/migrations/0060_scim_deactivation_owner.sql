@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `deactivated_by_workspace_id` integer;

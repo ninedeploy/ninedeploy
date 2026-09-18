@@ -13,7 +13,10 @@ const authMocks = vi.hoisted(() => ({
       token === 'valid' ? { id: 1, isOperator: true as const } : token === 'member' ? { id: 2, isOperator: false as const } : token === 'scoped-read-only' ? { id: 1, isOperator: true as const, tokenScopes: ['read'] } : null,
   ),
 }));
-vi.mock('../src/lib/auth.js', () => authMocks);
+vi.mock('../src/lib/auth.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/auth.js')>()),
+  ...authMocks,
+}));
 
 const childProc = vi.hoisted(() => {
   const makeEmitter = () => {

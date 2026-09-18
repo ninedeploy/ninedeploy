@@ -346,13 +346,12 @@ export const traefikRoutes: FastifyPluginAsync = async (app) => {
     return processCertificates();
   });
 
-  // Richer inventory view used by the (forthcoming)
-  // Certificates page. Member-accessible so a viewer
-  // can see "what is going to expire in 30 days"
-  // without being admin.
+  // Richer inventory view used by the Certificates page. r157: admin-only,
+  // like /traefik/certificates — the list names every tenant's domain on the
+  // instance (the L-12 rule the overview route already applies).
   app.get<{ Querystring: { threshold?: string } }>(
     '/traefik/certificates/inventory',
-    { preHandler: [app.authenticate] },
+    { preHandler: [app.authenticate, app.requireAdmin] },
     async (req) => {
       const threshold = Number(req.query.threshold) > 0 ? Number(req.query.threshold) : 30;
       return buildCertificateInventory(threshold);
@@ -364,7 +363,7 @@ export const traefikRoutes: FastifyPluginAsync = async (app) => {
   // uses to page the operator before a cert falls over.
   app.get<{ Querystring: { days?: string } }>(
     '/traefik/certificates/expiring',
-    { preHandler: [app.authenticate] },
+    { preHandler: [app.authenticate, app.requireAdmin] },
     async (req) => {
       const days = Number(req.query.days) > 0 ? Number(req.query.days) : 30;
       const report = await buildCertificateInventory(days);

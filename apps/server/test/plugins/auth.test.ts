@@ -540,6 +540,7 @@ describe('auth plugin — fine-grained URI scopes narrow centrally', () => {
     app.post('/v1/services', { preHandler: [app.authenticate] }, async () => ({ ok: true }));
     app.post('/v1/databases', { preHandler: [app.authenticate] }, async () => ({ ok: true }));
     app.get('/v1/unmapped-thing', { preHandler: [app.authenticate] }, async () => ({ ok: true }));
+    app.put('/v1/services/:id/env', { preHandler: [app.authenticate] }, async () => ({ ok: true }));
     return app;
   }
 
@@ -590,5 +591,36 @@ describe('auth plugin — fine-grained URI scopes narrow centrally', () => {
     expect(requiredFineGrainedScope('/v1/services/7/webhooks', 'POST')).toBe('nd://scope/write/webhooks');
     expect(requiredFineGrainedScope('/v1/services/7/deploys', 'GET')).toBe('nd://scope/read/deploys');
     expect(requiredFineGrainedScope('/v1/menus', 'GET')).toBeNull();
+  });
+
+  it('r150: percent-encoded sub-resource paths are classified as the router decodes them', async () => {
+    const { requiredFineGrainedScope } = await import('../../src/plugins/auth.js');
+    expect(requiredFineGrainedScope('/v1/services/7/%65nv', 'PUT')).toBe('nd://scope/write/env');
+    expect(requiredFineGrainedScope('/v1/services/7/%77ebhooks', 'POST')).toBe('nd://scope/write/webhooks');
+    expect(requiredFineGrainedScope('/v1/services/7/%2565nv', 'PUT')).toBeNull();
+    expect(requiredFineGrainedScope('/v1/services/%E0%A4%A', 'GET')).toBeNull();
+  });
+
+  it('r154: authorizeWebsocketUser narrows scoped tokens and enforces fine-grained scopes', async () => {
+    const { authorizeWebsocketUser } = await import('../../src/plugins/auth.js');
+    const logUrl = '/v1/services/3/deploys/9/logs';
+    // A scoped CI token owned by an operator loses the operator flag.
+    const ci = { id: 1, isOperator: true, tokenScopes: ['deploy'], viaApiToken: true };
+    expect(authorizeWebsocketUser(ci, logUrl)).toBe(true);
+    expect(ci.isOperator).toBe(false);
+    // Fine-grained tokens need the matching read scope for the socket URL.
+    expect(authorizeWebsocketUser({ id: 1, isOperator: false, tokenScopes: ['nd://scope/read/services'], viaApiToken: true }, logUrl)).toBe(false);
+    expect(authorizeWebsocketUser({ id: 1, isOperator: false, tokenScopes: ['nd://scope/read/deploys'], viaApiToken: true }, logUrl)).toBe(true);
+    // Interactive sessions are untouched.
+    const session = { id: 1, isOperator: true, tokenScopes: null, viaApiToken: false };
+    expect(authorizeWebsocketUser(session, logUrl)).toBe(true);
+    expect(session.isOperator).toBe(true);
+  });
+
+  it('r150: a services-only token cannot reach env through an encoded path', async () => {
+    const app = await scopedApp(['nd://scope/write/services']);
+    const res = await app.inject({ method: 'PUT', url: '/v1/services/1/%65nv', headers: { authorization: 'Bearer t' } });
+    expect(res.statusCode).toBe(403);
+    await app.close();
   });
 });

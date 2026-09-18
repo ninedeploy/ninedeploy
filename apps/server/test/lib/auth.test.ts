@@ -17,7 +17,7 @@ async function expiredAccessToken() {
 
 function mockDb(opts: {
   token?: { userId: number; expiresAt: Date | null };
-  user?: { id: number; isInstanceOperator?: boolean; tokenVersion?: number };
+  user?: { id: number; isInstanceOperator?: boolean; tokenVersion?: number; deactivatedAt?: Date | null };
   /** Workspace seats backing the derived `isOperator` flag. */
   memberships?: Array<{ workspaceId: number; role: string }>;
 } = {}) {
@@ -45,6 +45,13 @@ describe('resolveUser', () => {
     const token = await signAccessToken(42, 0);
     const db = mockDb({ user: undefined });
     await expect(resolveUser(db as never, token)).resolves.toBeNull();
+  });
+
+  it('r151: returns null for a deactivated account (JWT and API token alike)', async () => {
+    const user = { id: 42, isInstanceOperator: true, deactivatedAt: new Date() };
+    await expect(resolveUser(mockDb({ user }) as never, await signAccessToken(42, 0))).resolves.toBeNull();
+    const db = mockDb({ user, token: { userId: 42, expiresAt: null } });
+    await expect(resolveUser(db as never, 'opaque-api-token')).resolves.toBeNull();
   });
 
   it('rejects a JWT with no ver claim at all (revocation bypass guard)', async () => {

@@ -102,7 +102,9 @@ interface LoadedUser {
 
 async function loadBaseUser(db: DB, userId: number): Promise<LoadedUser | null> {
   const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
-  if (!user) return null;
+  // r151: a deactivated account's outstanding API tokens and access JWTs stop
+  // working too (SCIM bumps tokenVersion, but API tokens don't carry it).
+  if (!user || user.deactivatedAt) return null;
   return {
     id: user.id,
     tokenVersion: user.tokenVersion,

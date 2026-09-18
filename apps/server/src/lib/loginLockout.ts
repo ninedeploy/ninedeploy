@@ -105,9 +105,20 @@ export function recordFailure(email: string, ip = '*'): boolean {
   return locked;
 }
 
-/** Successful login clears any pending failure count (locks stay until expiry). */
-export function recordSuccess(email: string): void {
-  entries.delete(email.toLowerCase());
+/**
+ * A successful login clears the failure count of the source it came from —
+ * and only that source. r160: this used to drop the whole account map, so the
+ * victim logging in from home wiped the attacker's (account, IP) lock and the
+ * distributed-failure tally, handing the attacker a fresh batch of guesses
+ * after every legitimate login. Other sources' counters and locks now run to
+ * their own expiry.
+ */
+export function recordSuccess(email: string, ip = '*'): void {
+  const m = entries.get(email.toLowerCase());
+  if (!m) return;
+  const e = m.get(ip);
+  if (e && e.lockedUntil <= Date.now()) m.delete(ip);
+  if (m.size === 0) entries.delete(email.toLowerCase());
 }
 
 /** Test hook: reset all state between cases. */

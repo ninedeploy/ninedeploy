@@ -9,9 +9,9 @@ import {
   type DB,
 } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
-import { setServiceTags, type ServiceTags } from '@ninedeploy/schemas';
+import { setServiceTags, type ServiceTags, type WorkspaceRole } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
-import { assertServiceRole, loadServiceForUser } from '../lib/resourceAccess.js';
+import { assertServiceRole, loadServiceForUser, roleAtLeast } from '../lib/resourceAccess.js';
 import { forbidden, parseId } from '../lib/errors.js';
 import { visibleLabelIds } from './labels.js';
 import { visibleProjectIds } from './projects.js';
@@ -54,28 +54,47 @@ export const serviceTagRoutes: FastifyPluginAsync = async (app) => {
     // so it sits above ordinary configuration writes: `admin`+ on the service.
     await assertServiceRole(app.db, svc, user, 'admin');
 
-    // Validate every target id is one the caller is allowed to assign. We
-    // also check that the workspace the service will end up in is one the
-    // service is currently scoped to (or empty on creation). Operators skip
-    // these checks.
+    // Validate every target id is one the caller is allowed to assign.
+    // Operators skip these checks.
+    let workspaceIds = input.workspaceIds;
+    let projectIds = input.projectIds;
     if (!user.isOperator) {
-      const allowedWorkspaces = await visibleWorkspaceIds(app.db, user, input.workspaceIds);
-      if (allowedWorkspaces.length !== input.workspaceIds.length) {
+      // r156: links the caller cannot manage are NOT theirs to remove. A
+      // service shared into workspaces A and B let an admin of A evict B's
+      // whole team by PUTting [A]. Such links now survive every PUT, and
+      // resending them unchanged is not an "add" that needs visibility —
+      // which also stops the UI's full-set round-trip from 403ing.
+      const current = await getServiceTags(app.db, id);
+      const currentWs = current.workspaces.map((w) => w.id);
+      const adminWs = new Set(
+        (await app.db.query.workspaceMembers.findMany({ where: (m, { eq: eqOp }) => eqOp(m.userId, user.id) }))
+          .filter((m) => roleAtLeast(m.role as WorkspaceRole, 'admin'))
+          .map((m) => m.workspaceId),
+      );
+      const addedWs = input.workspaceIds.filter((w) => !currentWs.includes(w));
+      const allowedWorkspaces = await visibleWorkspaceIds(app.db, user, addedWs);
+      if (allowedWorkspaces.length !== addedWs.length) {
         throw forbidden('One or more target workspaces are not visible to you');
       }
+      workspaceIds = [...new Set([...input.workspaceIds, ...currentWs.filter((w) => !adminWs.has(w))])];
+
       // `member` floor: tagging makes the pipeline decrypt the project's shared
       // env into this service — a viewer seat must not unlock that (r095).
-      const allowedProjects = await visibleProjectIds(app.db, user, input.projectIds, 'member');
-      if (allowedProjects.length !== input.projectIds.length) {
+      const currentProjects = current.projects.map((p) => p.id);
+      const addedProjects = input.projectIds.filter((p) => !currentProjects.includes(p));
+      const allowedProjects = await visibleProjectIds(app.db, user, addedProjects, 'member');
+      if (allowedProjects.length !== addedProjects.length) {
         throw forbidden('One or more target projects are not visible to you');
       }
+      const manageableProjects = new Set(await visibleProjectIds(app.db, user, currentProjects, 'admin'));
+      projectIds = [...new Set([...input.projectIds, ...currentProjects.filter((p) => !manageableProjects.has(p))])];
       const allowedLabels = await visibleLabelIds(app.db, user, input.labelIds);
       if (allowedLabels.length !== input.labelIds.length) {
         throw forbidden('One or more target labels are not visible to you');
       }
     }
 
-    await replaceServiceTags(app.db, id, input.projectIds, input.workspaceIds, input.labelIds);
+    await replaceServiceTags(app.db, id, projectIds, workspaceIds, input.labelIds);
     void audit(app.db, user.id, 'service.tags', `service #${id}`);
     return getServiceTags(app.db, id);
   });
@@ -177,23 +196,27 @@ export async function replaceServiceTags(
 
 /**
  * Apply the default tag set for a freshly-created service: every workspace the
- * caller belongs to (so the service is visible to all of them by default), no
- * projects, no labels. Operators get all workspaces.
+ * caller holds a seat in, no projects, no labels.
+ *
+ * r152: operators used to get EVERY workspace on the instance. Registration
+ * gives each user an `owner` seat in a personal workspace, so an operator's
+ * service became `owner`-editable by every account — which could swap its
+ * image, read its secrets or delete it. Operators already see everything via
+ * `serviceRole`; tagging stays limited to their own seats like anyone else.
  */
 export async function applyDefaultTags(
   db: DB,
   user: { id: number; isOperator: boolean },
   serviceId: number,
 ): Promise<void> {
-  let workspaceIds: number[];
-  if (user.isOperator) {
-    const rows = await db.query.workspaces.findMany();
-    workspaceIds = rows.map((w) => w.id);
-  } else {
-    const ms = await db.query.workspaceMembers.findMany({
-      where: (m, { eq: eqOp }) => eqOp(m.userId, user.id),
-    });
-    workspaceIds = ms.map((m) => m.workspaceId);
-  }
+  const workspaceIds = await defaultWorkspaceIdsForUser(db, user);
   await replaceServiceTags(db, serviceId, [], workspaceIds, []);
+}
+
+/** The workspaces a new resource is tagged into by default: the caller's own seats. */
+export async function defaultWorkspaceIdsForUser(db: DB, user: { id: number }): Promise<number[]> {
+  const ms = await db.query.workspaceMembers.findMany({
+    where: (m, { eq: eqOp }) => eqOp(m.userId, user.id),
+  });
+  return ms.map((m) => m.workspaceId);
 }

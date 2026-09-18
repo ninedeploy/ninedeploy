@@ -3,6 +3,7 @@ import type { DB, User } from '@ninedeploy/db';
 import { apiTokens, sessions } from '@ninedeploy/db';
 import type { TokenPair } from '@ninedeploy/schemas';
 import { config } from '../config.js';
+import { unauthorized } from './errors.js';
 import { signAccessToken, signRefreshToken, ttlSeconds } from './jwt.js';
 
 /**
@@ -15,9 +16,12 @@ import { signAccessToken, signRefreshToken, ttlSeconds } from './jwt.js';
  */
 export async function issueSessionTokens(
   db: Pick<DB, 'insert' | 'update'>,
-  user: Pick<User, 'id' | 'tokenVersion'>,
+  user: Pick<User, 'id' | 'tokenVersion'> & { deactivatedAt?: Date | null },
   ctx?: { ip?: string; userAgent?: string },
 ): Promise<TokenPair> {
+  // r151: every sign-in path funnels through here (password, passkey, OIDC,
+  // SAML, 2FA) — refuse a SCIM-deactivated account once, not per route.
+  if (user.deactivatedAt) throw unauthorized('This account has been deactivated', 'account_deactivated');
   const jti = crypto.randomUUID();
   const refreshTtl = ttlSeconds(config.jwt.refreshTtl);
   const expiresAt = new Date(Date.now() + refreshTtl * 1000);
@@ -65,10 +69,11 @@ export async function issueSessionTokens(
  */
 export async function refreshSessionTokens(
   db: Pick<DB, 'query' | 'update'>,
-  user: Pick<User, 'id' | 'tokenVersion'>,
+  user: Pick<User, 'id' | 'tokenVersion'> & { deactivatedAt?: Date | null },
   jti: string,
   tokenGen?: number,
 ): Promise<TokenPair> {
+  if (user.deactivatedAt) throw unauthorized('This account has been deactivated', 'account_deactivated');
   if (tokenGen !== undefined) {
     // Generation check FIRST: a stale refresh token must not even slide the
     // session's expiry (that would hand whoever holds the old token a

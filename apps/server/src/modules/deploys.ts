@@ -11,6 +11,7 @@ import { buildEnv, capture } from '../lib/exec.js';
 import { audit } from '../lib/audit.js';
 import { deleteLog, logBus } from '../engine/logs.js';
 import { resolveUser } from '../lib/auth.js';
+import { authorizeWebsocketUser } from '../plugins/auth.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { assertMayDeployStoredService } from '../lib/hostPrivilege.js';
 import { assertRemoteDeploySupported } from '../lib/remoteDeploy.js';
@@ -419,6 +420,12 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     const user = token ? await resolveUser(app.db, token) : null;
     if (!user) {
       socket.close(1008, 'unauthorized');
+      return;
+    }
+    // r154: a scoped CI token owned by an operator kept the operator flag
+    // here and could stream any tenant's build log (logs echo secrets).
+    if (!authorizeWebsocketUser(user, req.url)) {
+      socket.close(1008, 'forbidden');
       return;
     }
     // Ownership check mirrors the HTTP routes: a member may only stream logs

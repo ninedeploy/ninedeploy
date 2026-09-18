@@ -127,6 +127,12 @@ describe('lib/sessions', () => {
     expect(await findLiveSession(createFakeDb({ findFirst: { sessions: row } }), 'ok')).toBe(row);
   });
 
+  it('r151: refuses to mint or refresh a session for a deactivated account', async () => {
+    const gone = userRow({ id: 3, tokenVersion: 0, deactivatedAt: new Date() });
+    await expect(issueSessionTokens(createFakeDb(), gone)).rejects.toMatchObject({ statusCode: 401 });
+    await expect(refreshSessionTokens(createFakeDb(), gone, 'j')).rejects.toMatchObject({ statusCode: 401 });
+  });
+
   it('revokeAllSessions issues an update for the user', async () => {
     const db = createFakeDb();
     await expect(revokeAllSessions(db, 5)).resolves.toBeUndefined();

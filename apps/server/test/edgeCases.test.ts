@@ -58,7 +58,7 @@ describe('Edge Cases — Login Lockout & Brute-force Tracking', () => {
     }
   });
 
-  it('locks account on 5th consecutive failure and unlocks after recordSuccess', () => {
+  it('locks account on 5th consecutive failure; a lock outlives a later success (r160)', () => {
     recordSuccess(testEmail);
     for (let i = 1; i < 5; i++) {
       recordFailure(testEmail);
@@ -67,8 +67,9 @@ describe('Edge Cases — Login Lockout & Brute-force Tracking', () => {
     expect(locked).toBe(true);
     expect(isLocked(testEmail)).toBe(true);
 
+    // A lock runs to its expiry — a success must not lift it early.
     recordSuccess(testEmail);
-    expect(isLocked(testEmail)).toBe(false);
+    expect(isLocked(testEmail)).toBe(true);
   });
 });
 

@@ -90,6 +90,16 @@ const ROUTE_SCOPE_OVERRIDES: Array<[RegExp, readonly [string, string]]> = [
 export function requiredFineGrainedScope(url: string, method: string): string | null {
   const query = url.indexOf('?');
   let path = query === -1 ? url : url.slice(0, query);
+  // r150: classify the path the router will actually match. find-my-way
+  // percent-decodes before routing, so `/services/1/%65nv` reaches the env
+  // handler while the raw string slips past the `env` override and is judged
+  // as plain `services`. Undecodable or double-encoded paths fail closed.
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    return null;
+  }
+  if (path.includes('%')) return null;
   while (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1);
   const apiRoot = '/v1/';
   if (!path.startsWith(apiRoot)) return null;
@@ -257,6 +267,20 @@ export default fp(
  *     `nd://scope/read/<resource>`.
  *   - Otherwise exact match on the URI form.
  */
+/**
+ * r154: WebSocket upgrades never run the `authenticate` onRequest hook, so a
+ * socket route must repeat its narrowing itself: drop the owner's operator
+ * flag for scope-restricted tokens and enforce fine-grained URI scopes for the
+ * URL being opened (read semantics). Returns false when the token may not.
+ */
+export function authorizeWebsocketUser(user: AuthUser, url: string): boolean {
+  narrowScopes(user);
+  const scopes = user.tokenScopes;
+  if (!Array.isArray(scopes) || !scopes.some((s) => s.startsWith('nd://scope/'))) return true;
+  const required = requiredFineGrainedScope(url, 'GET');
+  return required !== null && scopeCovers(user, required);
+}
+
 function scopeCovers(user: AuthUser, required: string): boolean {
   const scopes = user.tokenScopes;
   if (scopes === null) return true;

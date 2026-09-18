@@ -436,7 +436,15 @@ tcp:
     expect(body.middlewares).toEqual([]);
     expect(body.certificates).toEqual([]);
 
-    for (const url of ['/traefik/status', '/traefik/certificates', '/traefik/version', '/traefik/logs', '/traefik/config']) {
+    for (const url of [
+      '/traefik/status',
+      '/traefik/certificates',
+      '/traefik/certificates/inventory',
+      '/traefik/certificates/expiring',
+      '/traefik/version',
+      '/traefik/logs',
+      '/traefik/config',
+    ]) {
       const res = await app.inject({ method: 'GET', url, headers: member });
       expect(res.statusCode, `GET ${url} as member must be admin-only`).toBe(403);
     }

@@ -342,6 +342,27 @@ describe('Config Center HTTP API', () => {
     expect(revealed.value).toBe('real-smtp-secret');
     expect(revealed.description).toBe('updated description');
 
+    // r155: an AD-HOC secret (no static definition) re-saved without
+    // `isSecret` must stay encrypted and keep its metadata.
+    await app.inject({
+      method: 'POST',
+      url: '/custom:api:token',
+      headers: asUser({ isOperator: true }),
+      payload: { value: 'adhoc-secret', isSecret: true, description: 'keep me', tags: ['ops'] },
+    });
+    const retag = await app.inject({
+      method: 'POST',
+      url: '/custom:api:token',
+      headers: asUser({ isOperator: true }),
+      payload: { value: 'rotated-secret' },
+    });
+    expect(retag.statusCode).toBe(200);
+    const stored = store.get('custom:api:token');
+    expect(stored.isSecret).toBe(true);
+    expect(String(stored.value)).not.toContain('rotated-secret');
+    expect(stored.description).toBe('keep me');
+    expect(stored.tags).toEqual(['ops']);
+
     await app.close();
   });
 });

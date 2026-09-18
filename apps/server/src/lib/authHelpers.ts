@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { users, type DB, type User } from '@ninedeploy/db';
 
 /**
@@ -17,7 +17,15 @@ export async function findUserByEmail(
   db: Pick<DB, 'query'>,
   email: string,
 ): Promise<User | undefined> {
-  const normalized = email.trim().toLowerCase();
+  const normalized = normalizeEmail(email);
   if (!normalized) return undefined;
-  return db.query.users.findFirst({ where: eq(users.email, normalized) });
+  // r159: compare case-insensitively. Accounts created before emails were
+  // normalized on write keep their original casing, and an exact match made
+  // SSO sign-in fail for `Alice@Corp.com`.
+  return db.query.users.findFirst({ where: sql`lower(${users.email}) = ${normalized}` });
+}
+
+/** The canonical stored form of an email address. */
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
 }
