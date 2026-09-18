@@ -84,18 +84,19 @@ describe('VolumesTab', () => {
     expect(screen.getByText('Primary Mount')).toBeInTheDocument();
     expect(screen.getByText(/Mounted at \/app\/data/)).toBeInTheDocument();
     expect(screen.getByText(/Mounted & Active/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Protection On/i })).toBeInTheDocument();
+    // r215: no fake per-volume toggle — the server's retention policy is shown.
+    expect(screen.queryByRole('button', { name: /Protection (On|Off)/i })).not.toBeInTheDocument();
     // Totals: 2 KiB service + 4 KiB attached db (decimal KB units); the db
     // volume's own card also shows 4.1 KB.
     expect(screen.getAllByText('4.1 KB').length).toBe(2);
     // The attached database card links to the database.
     expect(screen.getByRole('link', { name: /main/ })).toHaveAttribute('href', '/databases/7');
     expect(screen.getByText('postgres · nd-db-main-data')).toBeInTheDocument();
-    expect(screen.getByText('Retained on Delete')).toBeInTheDocument();
+    expect(screen.getAllByText('Retained on Delete').length).toBe(2);
     expect(screen.queryByText('nd-db-other-data')).not.toBeInTheDocument();
   });
 
-  it('shows detached status for a stopped service and toggles protection off', async () => {
+  it('shows detached status for a stopped service', async () => {
     mockOf(api.volumes.list).mockResolvedValue([
       { name: 'nd-vol-api', sizeBytes: 1024, owner: { kind: 'service', id: 1, name: 'api' } },
     ] as never);
@@ -104,15 +105,7 @@ describe('VolumesTab', () => {
 
     expect(await screen.findByText('nd-vol-api')).toBeInTheDocument();
     expect(screen.getByText(/Detached \(Stopped\)/)).toBeInTheDocument();
-
-    // The toggle flips the stored flag: undefined → true (still protected)
-    // → false (off). The first click is a visual no-op by design.
-    const toggle = screen.getByRole('button', { name: /Protection On/i });
-    fireEvent.click(toggle);
-    expect(screen.getByRole('button', { name: /Protection On/i })).toBeInTheDocument();
-    fireEvent.click(toggle);
-    expect(await screen.findByText('Protection Off')).toBeInTheDocument();
-    expect(screen.queryByText('Protected')).not.toBeInTheDocument();
+    expect(screen.getByText('Retained on Delete')).toBeInTheDocument();
   });
 
   it('opens the volume browser for the service and database volumes', async () => {

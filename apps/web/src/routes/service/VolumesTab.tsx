@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Archive, ArrowUpRight, Database, ExternalLink, FolderOpen, HardDrive, Info, Layers, Plus, Server, ShieldAlert, ShieldCheck, Trash2, Wrench, X } from 'lucide-react';
+import { Archive, ArrowUpRight, Database, ExternalLink, FolderOpen, HardDrive, Info, Layers, Plus, Server, ShieldCheck, Trash2, Wrench, X } from 'lucide-react';
 import { Link } from 'react-router';
 import type { Service, ServiceVolumeAttachment as SdkServiceVolumeAttachment } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
@@ -20,7 +20,6 @@ type ServiceVolumeAttachment = SdkServiceVolumeAttachment & {
 
 export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service }) {
   const [browsingVolume, setBrowsingVolume] = useState<string | null>(null);
-  const [protectedVolumes, setProtectedVolumes] = useState<Record<string, boolean>>({});
   const [attaching, setAttaching] = useState(false);
   const [expandedBackup, setExpandedBackup] = useState<string | null>(null);
   const toggleBackups = (volumeName: string) =>
@@ -61,13 +60,6 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
     (serviceVolume?.sizeBytes ?? 0) +
     svcVolumeAttachments.reduce((acc: number, v: ServiceVolumeAttachment) => acc + v.sizeBytes, 0) +
     databaseVolumes.reduce((acc: number, v: { sizeBytes: number }) => acc + v.sizeBytes, 0);
-
-  const toggleProtection = (volName: string) => {
-    setProtectedVolumes((prev) => ({
-      ...prev,
-      [volName]: !prev[volName],
-    }));
-  };
 
   const hasPrimary = Boolean(svc.volumeMount);
   const hasAttachments = svcVolumeAttachments.length > 0;
@@ -144,11 +136,13 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
                     <span className="rounded bg-indigo-500/15 px-2 py-0.5 font-mono text-[10px] font-medium text-indigo-300">
                       Primary Mount
                     </span>
-                    {protectedVolumes[serviceVolume?.name ?? `nd-vol-${svc.slug}`] !== false && (
-                      <span className="inline-flex items-center gap-1 rounded bg-emerald-500/15 px-2 py-0.5 font-mono text-[10px] font-medium text-emerald-300 ring-1 ring-inset ring-emerald-500/20">
-                        <ShieldCheck size={11} /> Protected
-                      </span>
-                    )}
+                    {/* r215: the retention policy is the server's, always on. A
+                        "Protection On/Off" toggle used to sit here; it only
+                        flipped local React state — nothing stored, nothing
+                        enforced, reset on reload — so it has been removed. */}
+                    <span className="inline-flex items-center gap-1 rounded bg-emerald-500/15 px-2 py-0.5 font-mono text-[10px] font-medium text-emerald-300 ring-1 ring-inset ring-emerald-500/20">
+                      <ShieldCheck size={11} /> Retained on Delete
+                    </span>
                   </div>
                   <p className="mt-1 font-mono text-xs text-slate-400">
                     Target Path: <code className="text-indigo-300 bg-white/[0.04] px-1.5 py-0.5 rounded">{svc.volumeMount}</code>
@@ -171,19 +165,6 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
                 {hostsOneTimeConfig(svc, svc.volumeMount ?? '/var/www/html') && (
                   <RepairConfigButton serviceId={serviceId} volumeName={serviceVolume?.name ?? `nd-vol-${svc.slug}`} />
                 )}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => toggleProtection(serviceVolume?.name ?? `nd-vol-${svc.slug}`)}
-                  title="Toggle deletion protection for this volume"
-                  className={cn('text-xs', protectedVolumes[serviceVolume?.name ?? `nd-vol-${svc.slug}`] === false ? 'text-amber-400' : 'text-emerald-400')}
-                >
-                  {protectedVolumes[serviceVolume?.name ?? `nd-vol-${svc.slug}`] === false ? (
-                    <span className="inline-flex items-center gap-1"><ShieldAlert size={14} /> Protection Off</span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1"><ShieldCheck size={14} /> Protection On</span>
-                  )}
-                </Button>
               </div>
             </div>
           </Card>
@@ -213,7 +194,6 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {svcVolumeAttachments.map((a: ServiceVolumeAttachment) => {
-              const isProtected = protectedVolumes[a.volumeName] !== false;
               return (
                 <Card key={a.id} className="p-4 flex flex-col justify-between">
                   <div>
@@ -244,11 +224,9 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
                           Shared with {a.sharedWith} other service{a.sharedWith === 1 ? '' : 's'}
                         </span>
                       )}
-                      {isProtected && (
-                        <span className="inline-flex items-center gap-1 rounded bg-slate-500/10 px-2 py-0.5 font-mono text-[10px] text-slate-300 ring-1 ring-inset ring-slate-500/20">
-                          <ShieldCheck size={10} className="text-emerald-400" /> Retained on Delete
-                        </span>
-                      )}
+                      <span className="inline-flex items-center gap-1 rounded bg-slate-500/10 px-2 py-0.5 font-mono text-[10px] text-slate-300 ring-1 ring-inset ring-slate-500/20">
+                        <ShieldCheck size={10} className="text-emerald-400" /> Retained on Delete
+                      </span>
                     </div>
                   </div>
 
@@ -314,8 +292,6 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {databaseVolumes.map((v) => {
-              const isProtected = protectedVolumes[v.name] !== false;
-
               return (
                 <Card key={v.name} className="p-4 flex flex-col justify-between">
                   <div>
@@ -349,11 +325,9 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
                       <span className="rounded bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] text-emerald-300 ring-1 ring-inset ring-emerald-500/20">
                         Attached Database
                       </span>
-                      {isProtected && (
-                        <span className="inline-flex items-center gap-1 rounded bg-slate-500/10 px-2 py-0.5 font-mono text-[10px] text-slate-300 ring-1 ring-inset ring-slate-500/20">
-                          <ShieldCheck size={10} className="text-emerald-400" /> Retained on Delete
-                        </span>
-                      )}
+                      <span className="inline-flex items-center gap-1 rounded bg-slate-500/10 px-2 py-0.5 font-mono text-[10px] text-slate-300 ring-1 ring-inset ring-slate-500/20">
+                        <ShieldCheck size={10} className="text-emerald-400" /> Retained on Delete
+                      </span>
                     </div>
                   </div>
 
