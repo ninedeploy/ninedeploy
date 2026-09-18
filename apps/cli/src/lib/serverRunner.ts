@@ -13,6 +13,25 @@ export interface ServerRunnerOptions {
   image?: string;
   secret?: string;
   containerName?: string;
+  /** Group id owning the host docker socket; resolved when omitted. */
+  dockerGid?: number | null;
+}
+
+/**
+ * r247: the group that owns the host's docker socket, on Linux. The image
+ * runs as the non-root `ninedeploy` user and the socket is typically
+ * root:docker 0660, so without `--group-add <gid>` every `docker` call the
+ * panel makes fails with "permission denied" (the compose file and the
+ * Dockerfile both document this; the CLI's own `docker run` skipped it).
+ * Docker Desktop (macOS/Windows) proxies the socket and needs nothing.
+ */
+export async function dockerSocketGid(platform: NodeJS.Platform = process.platform): Promise<number | null> {
+  if (platform !== 'linux') return null;
+  try {
+    return (await fs.stat('/var/run/docker.sock')).gid;
+  } catch {
+    return null;
+  }
 }
 
 export interface ContainerState {
@@ -121,6 +140,7 @@ export async function startServerContainer(
   // The JWT secret travels via --env-file (0600 temp file), NOT `-e` argv:
   // values passed as `-e NAME=value` stay visible in `ps` and `docker inspect`
   // forever, while the env file exists only for the duration of `docker run`.
+  const gid = opts.dockerGid !== undefined ? opts.dockerGid : await dockerSocketGid();
   const envFile = join(tmpdir(), `nd_env_${randomBytes(8).toString('hex')}`);
   await fs.writeFile(envFile, `NINEDEPLOY_JWT_SECRET=${secret}\n`, { mode: 0o600 });
   const args = [
@@ -130,6 +150,7 @@ export async function startServerContainer(
     containerName,
     '-v',
     '/var/run/docker.sock:/var/run/docker.sock',
+    ...(gid != null ? ['--group-add', String(gid)] : []),
     '-v',
     'ninedeploy-data:/data',
     '-p',

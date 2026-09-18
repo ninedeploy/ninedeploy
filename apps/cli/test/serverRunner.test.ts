@@ -10,7 +10,9 @@ import {
   waitForServerReady,
   normalizeServerUrl,
   formatDockerError,
+  dockerSocketGid,
 } from '../src/lib/serverRunner.js';
+import { promises as fsp } from 'node:fs';
 
 vi.mock('node:child_process', () => ({
   execFile: vi.fn(),
@@ -182,6 +184,30 @@ describe('serverRunner', () => {
       });
       const res = await startServerContainer({ port: 3000, secret: 'sec123' });
       expect(res).toEqual({ port: 3000, newlyCreated: true });
+    });
+
+    it('r247: adds the docker socket group so the non-root image can reach the daemon', async () => {
+      const calls: string[][] = [];
+      vi.mocked(childProcess.execFile).mockImplementation((_cmd, args: any, cb: any) => {
+        calls.push(args);
+        if (args[0] === 'inspect') cb(new Error('No such object'), { stdout: '', stderr: '' });
+        else cb(null, { stdout: 'cid', stderr: '' });
+        return {} as any;
+      });
+      await startServerContainer({ port: 3000, secret: 's', dockerGid: 998 });
+      const run = calls.find((a) => a[0] === 'run')!;
+      expect(run[run.indexOf('--group-add') + 1]).toBe('998');
+      calls.length = 0;
+      await startServerContainer({ port: 3000, secret: 's', dockerGid: null });
+      expect(calls.find((a) => a[0] === 'run')).not.toContain('--group-add');
+    });
+
+    it('r247: reads the socket gid on Linux only', async () => {
+      const stat = vi.spyOn(fsp, 'stat').mockResolvedValue({ gid: 997 } as never);
+      expect(await dockerSocketGid('linux')).toBe(997);
+      expect(await dockerSocketGid('darwin')).toBeNull();
+      stat.mockRejectedValueOnce(new Error('ENOENT'));
+      expect(await dockerSocketGid('linux')).toBeNull();
     });
 
     it('throws formatted error when docker run fails', async () => {
