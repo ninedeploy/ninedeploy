@@ -6,7 +6,7 @@
  */
 import os from 'node:os';
 import path from 'node:path';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { capture } from '../../src/lib/exec.js';
 import { backupVolume, restoreVolume } from '../../src/engine/database.js';
@@ -62,22 +62,26 @@ describe.skipIf(!ENABLED)('managed volume snapshot/restore (real Docker)', () =>
 
   it('still restores a legacy plaintext archive written before encryption', async () => {
     // Pre-encryption snapshots on disk are plain tar.gz files; they must
-    // keep restoring unchanged.
-    const legacyFile = `${backupFile}.legacy`;
-    await inVolume('rm -rf /v/..?* /v/.[!.]* /v/* 2>/dev/null; echo -n LEGACY > /v/legacy.txt; true');
-    await capture('docker', [
-      'run', '--rm', '-v', `${VOLUME}:/v:ro`, '-v', `${path.dirname(legacyFile)}:/w`,
-      'alpine:3.21', 'sh', '-c',
-      `tar -czf /w/${path.basename(legacyFile)} -C /v .`,
-    ]);
-    expect(readFileSync(legacyFile).subarray(0, 2).toString('utf8')).not.toBe('ND');
+    // keep restoring unchanged. The archive is written by a container
+    // running as root, so it goes into a test-owned temp DIRECTORY: /tmp
+    // itself is sticky-bit mounted on CI runners and a non-root unlink of a
+    // root-owned file there fails with EPERM.
+    const legacyDir = mkdtempSync(path.join(os.tmpdir(), 'nd-integ-legacy-'));
+    const legacyFile = path.join(legacyDir, 'legacy.tar.gz');
     try {
+      await inVolume('rm -rf /v/..?* /v/.[!.]* /v/* 2>/dev/null; echo -n LEGACY > /v/legacy.txt; true');
+      await capture('docker', [
+        'run', '--rm', '-v', `${VOLUME}:/v:ro`, '-v', `${legacyDir}:/w`,
+        'alpine:3.21', 'sh', '-c',
+        'tar -czf /w/legacy.tar.gz -C /v .',
+      ]);
+      expect(readFileSync(legacyFile).subarray(0, 2).toString('utf8')).not.toBe('ND');
       await inVolume('rm /v/legacy.txt; echo -n NEWER > /v/newer.txt');
       await restoreVolume(VOLUME, legacyFile, log);
       expect(await inVolume('cat /v/legacy.txt')).toBe('LEGACY');
       expect(await inVolume('ls -A /v')).not.toContain('newer.txt');
     } finally {
-      rmSync(legacyFile, { force: true });
+      rmSync(legacyDir, { recursive: true, force: true });
     }
   }, 180_000);
 
