@@ -1,4 +1,4 @@
-import { createReadStream, existsSync, mkdirSync, statSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
@@ -6,7 +6,7 @@ import { backups, databases, serviceVolumeAttachments, services } from '@ninedep
 import { createVolumeBackup } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
 import { config } from '../config.js';
-import { backupVolume, restoreVolume, volumeExists } from '../engine/database.js';
+import { backupVolume, createBackupReadStream, restoreVolume, volumeExists } from '../engine/database.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { badRequest, conflict, notFound, parseId as num } from '../lib/errors.js';
 import { containerRunning, listManagedVolumeNames, resolveVolumeOwnerWithSharing } from '../lib/inventory.js';
@@ -233,8 +233,9 @@ export const volumeBackupRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // ── GET /:name/backups/:bid/download — stream the tar.gz to the client ─
-  // Admin-only — the file is the underlying Docker volume bytes in the
-  // clear (no encryption; the same posture as database backups).
+  // Admin-only. Snapshots are encrypted at rest under the master key; the
+  // stream decrypts on the fly so the client receives the plain tar.gz
+  // (legacy plaintext archives stream as-is — same posture as DB backups).
   app.get('/:name/backups/:bid/download', { preHandler: [app.requireAdmin] }, async (req: FastifyRequest, reply: FastifyReply) => {
     const name = (req.params as { name: string }).name;
     const bid = num((req.params as { bid: string }).bid);
@@ -246,7 +247,7 @@ export const volumeBackupRoutes: FastifyPluginAsync = async (app) => {
     reply
       .type('application/gzip')
       .header('content-disposition', `attachment; filename="${path.basename(b.path)}"`)
-      .send(createReadStream(b.path));
+      .send(await createBackupReadStream(b.path));
     return reply;
   });
 };

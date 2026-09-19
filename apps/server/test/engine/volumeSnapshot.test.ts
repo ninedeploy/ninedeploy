@@ -1,11 +1,17 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * The three managed-volume helpers all work through a throwaway sidecar
  * container, so the assertions here are about the exact docker invocations:
  * that is the whole contract, and getting the mount flags or the cleanup wrong
- * is what would silently corrupt a volume.
+ * is what would silently corrupt a volume. The at-rest encryption runs for
+ * real against a stubbed master key — the cipher path itself is under test.
  */
+vi.stubEnv('NINEDEPLOY_MASTER_KEY', 'a'.repeat(64));
+
 const execMocks = vi.hoisted(() => ({
   run: vi.fn(async () => undefined),
   capture: vi.fn(async () => 'sidecar-id\n'),
@@ -23,6 +29,31 @@ const { backupVolume, createDockerVolume, restoreVolume } = await import('../../
 
 /** The docker argv of each `run` call, for order-sensitive assertions. */
 const runArgs = () => execMocks.run.mock.calls.map((c) => (c as unknown as [string, string[]])[1]);
+
+/** Make the mocked `docker cp` out of the sidecar materialize the archive on
+ * disk, so the engine's encrypt-in-place step has a real file to work on. */
+function fakeArchiveCp(content: string, dest: string) {
+  execMocks.run.mockImplementation(async (_cmd: string, args: string[]) => {
+    if (args[0] === 'cp' && args[2] === dest) writeFileSync(dest, content);
+    return undefined;
+  });
+}
+
+afterEach(() => {
+  for (const file of [SNAP, LEGACY]) {
+    if (!existsSync(file)) continue;
+    rmSync(file, { force: true });
+    // stageForRestore names its temp siblings <file>.<uuid>.dec — sweep them.
+    for (const entry of readdirSync(path.dirname(file))) {
+      if (entry.startsWith(`${path.basename(file)}.`) && entry.endsWith('.dec')) {
+        rmSync(path.join(path.dirname(file), entry), { force: true });
+      }
+    }
+  }
+});
+
+const SNAP = path.join(os.tmpdir(), `nd-unit-snap-${process.pid}.tar.gz`);
+const LEGACY = path.join(os.tmpdir(), `nd-unit-legacy-${process.pid}.tar.gz`);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -46,9 +77,10 @@ describe('createDockerVolume', () => {
 });
 
 describe('backupVolume', () => {
-  it('tars the volume read-only in a sidecar and copies the archive out', async () => {
+  it('tars the volume read-only in a sidecar and encrypts the archive at rest', async () => {
     const log = vi.fn();
-    await backupVolume('nd-svc-web-data', '/backups/web.tar.gz', log);
+    fakeArchiveCp('tarball-bytes', SNAP);
+    await backupVolume('nd-svc-web-data', SNAP, log);
 
     expect(pullMocks.ensureDockerImage).toHaveBeenCalledWith('alpine:3.21', log);
     // The source volume is mounted read-only: a snapshot must never be able to
@@ -59,16 +91,21 @@ describe('backupVolume', () => {
 
     const args = runArgs();
     expect(args[0]).toEqual(['start', '-a', 'sidecar-id']);
-    expect(args[1]).toEqual(['cp', 'sidecar-id:/tmp/ninedeploy-volume.tar.gz', '/backups/web.tar.gz']);
+    expect(args[1]).toEqual(['cp', 'sidecar-id:/tmp/ninedeploy-volume.tar.gz', SNAP]);
     expect(args[2]).toEqual(['rm', '-f', 'sidecar-id']);
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('/backups/web.tar.gz'));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining(SNAP));
+    // Same at-rest posture as database dumps: the written file carries the
+    // master-key stream envelope and leaks none of the volume bytes.
+    const atRest = readFileSync(SNAP, 'utf8');
+    expect(atRest.startsWith('NDBK1:')).toBe(true);
+    expect(atRest).not.toContain('tarball-bytes');
   });
 
   it('removes the sidecar even when the snapshot fails', async () => {
     execMocks.run.mockImplementation(async (_cmd: string, args: string[]) => {
       if (args[0] === 'start') throw new Error('tar exploded');
     });
-    await expect(backupVolume('nd-svc-web-data', '/backups/web.tar.gz', vi.fn())).rejects.toThrow('tar exploded');
+    await expect(backupVolume('nd-svc-web-data', SNAP, vi.fn())).rejects.toThrow('tar exploded');
     expect(runArgs()).toContainEqual(['rm', '-f', 'sidecar-id']);
   });
 });
@@ -76,7 +113,8 @@ describe('backupVolume', () => {
 describe('restoreVolume', () => {
   it('extracts into staging first and only then swaps the volume contents', async () => {
     const log = vi.fn();
-    await restoreVolume('nd-svc-web-data', '/backups/web.tar.gz', log);
+    writeFileSync(LEGACY, 'plain-tarball');
+    await restoreVolume('nd-svc-web-data', LEGACY, log);
 
     // Read-write mount; the script does the whole job inside the sidecar.
     const created = execMocks.capture.mock.calls[0]![1] as unknown as string[];
@@ -98,26 +136,56 @@ describe('restoreVolume', () => {
     // A rename failure rolls the aside-move back instead of leaving a mix.
     expect(script).toContain('rollback; exit 1');
 
+    // A legacy plaintext archive stages as itself — no decryption sibling.
+    const cp = runArgs().find((a) => a[0] === 'cp' && a[2]?.includes('ninedeploy-volume.tar.gz'))!;
+    expect(cp[1]).toBe(LEGACY);
     const args = runArgs();
-    expect(args[0]).toEqual(['cp', '/backups/web.tar.gz', 'sidecar-id:/tmp/ninedeploy-volume.tar.gz']);
-    expect(args[1]).toEqual(['start', '-a', 'sidecar-id']);
-    expect(args[2]).toEqual(['rm', '-f', 'sidecar-id']);
+    expect(args).toContainEqual(['start', '-a', 'sidecar-id']);
+    expect(args).toContainEqual(['rm', '-f', 'sidecar-id']);
     expect(log).toHaveBeenCalledWith(expect.stringContaining('restored'));
   });
 
+  it('decrypts an encrypted snapshot to a temp sibling and cleans it up', async () => {
+    fakeArchiveCp('secret-tarball', SNAP);
+    await backupVolume('nd-svc-web-data', SNAP, vi.fn());
+
+    // Capture the staged plaintext at the moment of the copy — restoreVolume
+    // unlinks the sibling in its finally block before returning.
+    let stagedPath: string | undefined;
+    let stagedContent: string | undefined;
+    execMocks.run.mockImplementation(async (_cmd: string, args: string[]) => {
+      if (args[0] === 'cp' && String(args[1]).endsWith('.dec')) {
+        stagedPath = String(args[1]);
+        stagedContent = readFileSync(stagedPath, 'utf8');
+      }
+      return undefined;
+    });
+
+    await restoreVolume('nd-svc-web-data', SNAP, vi.fn());
+
+    // The sidecar received a decrypted sibling, not the encrypted file —
+    // holding exactly the original archive — and it is gone afterwards.
+    expect(stagedPath).toMatch(/nd-unit-snap-.+\.dec$/);
+    expect(stagedPath).not.toBe(SNAP);
+    expect(stagedContent).toBe('secret-tarball');
+    expect(stagedPath && existsSync(stagedPath)).toBe(false);
+  });
+
   it('uses a fresh staging suffix per restore so leftovers cannot collide', async () => {
-    await restoreVolume('nd-svc-web-data', '/backups/web.tar.gz', vi.fn());
-    await restoreVolume('nd-svc-web-data', '/backups/web.tar.gz', vi.fn());
+    writeFileSync(LEGACY, 'plain-tarball');
+    await restoreVolume('nd-svc-web-data', LEGACY, vi.fn());
+    await restoreVolume('nd-svc-web-data', LEGACY, vi.fn());
     const first = (execMocks.capture.mock.calls[0]![1] as unknown as string[]).at(-1)!;
     const second = (execMocks.capture.mock.calls[1]![1] as unknown as string[]).at(-1)!;
     expect(first).not.toBe(second);
   });
 
   it('removes the sidecar even when the restore fails', async () => {
+    writeFileSync(LEGACY, 'plain-tarball');
     execMocks.run.mockImplementation(async (_cmd: string, args: string[]) => {
       if (args[0] === 'start') throw new Error('bad archive');
     });
-    await expect(restoreVolume('nd-svc-web-data', '/backups/web.tar.gz', vi.fn())).rejects.toThrow('bad archive');
+    await expect(restoreVolume('nd-svc-web-data', LEGACY, vi.fn())).rejects.toThrow('bad archive');
     expect(runArgs()).toContainEqual(['rm', '-f', 'sidecar-id']);
   });
 });

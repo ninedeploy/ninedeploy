@@ -738,7 +738,9 @@ export async function createDockerVolume(
   await run('docker', args, {}, log);
 }
 
-/** Snapshot a named volume into a gzipped tarball on the host. */
+/** Snapshot a named volume into a gzipped tarball on the host, encrypted at
+ * rest under the master-key envelope — the same posture as database dumps,
+ * so a stolen data directory leaks neither DB credentials nor volume files. */
 export async function backupVolume(
   name: string,
   destFile: string,
@@ -760,6 +762,7 @@ export async function backupVolume(
   } finally {
     await run('docker', ['rm', '-f', cid], {}, swallow).catch(() => undefined);
   }
+  await encryptFileInPlace(destFile);
   log(`Snapshot written to ${destFile}`);
 }
 
@@ -830,6 +833,9 @@ export async function restoreVolume(
 ): Promise<void> {
   await ensureDockerImage(VOLUME_TAR_IMAGE, log);
   log(`Restoring volume ${name} …`);
+  // Snapshots are encrypted at rest; decrypt to a temp sibling for the copy
+  // into the sidecar. Legacy plaintext tarballs (pre-encryption) stage as-is.
+  const staged = await stageForRestore(srcFile);
   const cid = (
     await capture('docker', [
       'create',
@@ -840,10 +846,11 @@ export async function restoreVolume(
     ])
   ).trim();
   try {
-    await run('docker', ['cp', srcFile, `${cid}:${VOLUME_TMP_ARCHIVE}`], {}, log);
+    await run('docker', ['cp', staged.path, `${cid}:${VOLUME_TMP_ARCHIVE}`], {}, log);
     await run('docker', ['start', '-a', cid], {}, log);
   } finally {
     await run('docker', ['rm', '-f', cid], {}, swallow).catch(() => undefined);
+    staged.cleanup();
   }
   log(`Volume ${name} restored`);
 }

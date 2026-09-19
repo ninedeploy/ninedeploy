@@ -6,7 +6,7 @@
  */
 import os from 'node:os';
 import path from 'node:path';
-import { existsSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { capture } from '../../src/lib/exec.js';
 import { backupVolume, restoreVolume } from '../../src/engine/database.js';
@@ -39,6 +39,12 @@ describe.skipIf(!ENABLED)('managed volume snapshot/restore (real Docker)', () =>
     await inVolume("echo -n OLD > /v/old.txt; echo -n HIDDEN > /v/.hidden; mkdir -p /v/dir; echo -n DEEP > /v/dir/deep.txt");
     await backupVolume(VOLUME, backupFile, log);
     expect(existsSync(backupFile)).toBe(true);
+    // Encrypted at rest under the streamed NDBK1 header — the volume bytes
+    // (OLD/HIDDEN) must not appear in the clear on disk.
+    const atRest = readFileSync(backupFile);
+    expect(atRest.subarray(0, 6).toString('utf8')).toBe('NDBK1:');
+    expect(atRest.toString('latin1')).not.toContain('OLD');
+    expect(atRest.toString('latin1')).not.toContain('HIDDEN');
 
     // Post-snapshot mutation: the restore must remove `stray.txt` and bring
     // `old.txt` back — extracting over the contents would keep the stray.
@@ -50,17 +56,40 @@ describe.skipIf(!ENABLED)('managed volume snapshot/restore (real Docker)', () =>
     expect(listing.split(/\s+/)).toEqual(expect.arrayContaining(['.hidden', 'dir', 'old.txt']));
     expect(listing).not.toContain('stray.txt');
     expect(await inVolume('cat /v/old.txt /v/.hidden /v/dir/deep.txt')).toBe('OLDHIDDENDEEP');
-    // No staging residue from the swap.
+    // No staging residue from the swap, and no decrypted sibling left behind.
     expect(listing).not.toContain('.nd-restore');
   }, 180_000);
 
+  it('still restores a legacy plaintext archive written before encryption', async () => {
+    // Pre-encryption snapshots on disk are plain tar.gz files; they must
+    // keep restoring unchanged.
+    const legacyFile = `${backupFile}.legacy`;
+    await inVolume('rm -rf /v/..?* /v/.[!.]* /v/* 2>/dev/null; echo -n LEGACY > /v/legacy.txt; true');
+    await capture('docker', [
+      'run', '--rm', '-v', `${VOLUME}:/v:ro`, '-v', `${path.dirname(legacyFile)}:/w`,
+      'alpine:3.21', 'sh', '-c',
+      `tar -czf /w/${path.basename(legacyFile)} -C /v .`,
+    ]);
+    expect(readFileSync(legacyFile).subarray(0, 2).toString('utf8')).not.toBe('ND');
+    try {
+      await inVolume('rm /v/legacy.txt; echo -n NEWER > /v/newer.txt');
+      await restoreVolume(VOLUME, legacyFile, log);
+      expect(await inVolume('cat /v/legacy.txt')).toBe('LEGACY');
+      expect(await inVolume('ls -A /v')).not.toContain('newer.txt');
+    } finally {
+      rmSync(legacyFile, { force: true });
+    }
+  }, 180_000);
+
   it('refuses a corrupt archive with the volume untouched', async () => {
+    // Self-contained guard content: earlier tests (and the legacy-restore
+    // case after this one) rewrite the volume.
+    await inVolume('echo -n GUARD > /v/guard.txt');
     const badFile = `${backupFile}.bad`;
     writeFileSync(badFile, 'this is not a gzip stream');
     try {
       await expect(restoreVolume(VOLUME, badFile, log)).rejects.toThrow();
-      // The pre-snapshot contents from the previous test survive verbatim.
-      expect(await inVolume('cat /v/old.txt /v/.hidden')).toBe('OLDHIDDEN');
+      expect(await inVolume('cat /v/guard.txt')).toBe('GUARD');
     } finally {
       rmSync(badFile, { force: true });
     }

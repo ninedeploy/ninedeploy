@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Volume snapshots are now encrypted at rest with the same streaming AES-256-GCM master-key envelope as database dumps — a stolen data directory or backup bucket no longer leaks volume files in the clear. Downloads and restores decrypt transparently; legacy plaintext archives written before this change keep restoring unchanged.
+
 ### Fixed
 
 - Volume restores no longer empty the volume before extracting. The archive is fully extracted into a hidden staging directory inside the volume and only then swapped into place with same-filesystem renames, so a corrupt member or a full disk during extraction aborts the restore with the volume's previous contents untouched (a disk or filesystem failure mid-extraction could previously leave a partial restore and lose the old data). The staging copy transiently needs space for both the old and the restored contents.

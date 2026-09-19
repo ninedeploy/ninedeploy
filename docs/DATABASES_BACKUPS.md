@@ -36,7 +36,7 @@ Automated backup jobs upload backups to S3-compatible cloud storage. Database du
 - **MinIO / Self-Hosted S3**
 - **Wasabi / DigitalOcean Spaces**
 
-The same destination stores attached-volume snapshots as plaintext `tar.gz` archives. Volume snapshots are not encrypted by NineDeploy; restrict access to the backup directory and bucket, and configure storage encryption as needed.
+The same destination stores attached-volume snapshots as `tar.gz` archives encrypted with the same streaming AES-256-GCM envelope as database dumps; downloads and restores decrypt transparently, and legacy plaintext archives written before encryption keep restoring unchanged. Snapshots taken before the encryption change remain plaintext on disk until they age out of retention — restrict access to the backup directory and bucket accordingly.
 
 Retention counts completed recovery points separately from failed attempts and leaves running backups untouched. Failed attempts cannot evict the last successful backups.
 
