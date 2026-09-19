@@ -690,18 +690,33 @@ export const dockerBuilder: Builder = {
     // are clones of a container that already passed `docker run`; per-replica
     // health gates would 10x the boot time for no real safety.
     const replicaCount = Math.max(1, Math.min(service.replicas ?? 1, MAX_REPLICAS));
+    // Achieved count starts at 1 (the primary is up) and grows per replica
+    // that actually started — the proxy renders THIS, so a replica that
+    // failed to start never becomes a dead round-robin backend.
+    let achievedReplicas = 1;
     if (replicaCount > 1) {
       // The primary's env-file was cleaned up above — replicas need their own.
       // One file serves every replica; the values are identical.
       const replicaEnvFile = writeEnvFile(env);
-      // `args` still carries everything except the primary's name and env-file
-      // path; swap both per replica set (args = ['run','-d','--name', name, …,
-      // '--env-file', envPath, …]).
-      const cloneArgs = (replicaName: string): string[] =>
-        args.map((a, i) => {
-          if (i === 3) return replicaName;
-          return a === envFile?.path && replicaEnvFile ? replicaEnvFile.path : a;
-        });
+      // `args` still carries everything except the primary's name, env-file
+      // path and host port publishing; swap the first two per replica and
+      // strip the third — only the primary may own the published host port
+      // (Docker refuses a second `-p` bind on the same port, so clones
+      // inheriting it fail to start and scaling silently collapses to 1).
+      // Public traffic reaches replicas over the shared bridge via Traefik.
+      const cloneArgs = (replicaName: string): string[] => {
+        const out: string[] = [];
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === '-p' && i + 1 < args.length) {
+            i++; // skip the host:container port pair
+            continue;
+          }
+          if (i === 3) out.push(replicaName);
+          else if (args[i] === envFile?.path && replicaEnvFile) out.push(replicaEnvFile.path);
+          else out.push(args[i]!);
+        }
+        return out;
+      };
       for (let i = 2; i <= replicaCount; i++) {
         const replicaName = `${name}-r${i}`;
         try {
@@ -711,6 +726,7 @@ export const dockerBuilder: Builder = {
             { heartbeatMs: DEPLOY_HEARTBEAT_MS, heartbeatLabel: `Starting replica ${replicaName}` },
             log,
           );
+          achievedReplicas++;
           log(`Replica ${replicaName} started (${i}/${replicaCount})`);
         } catch (err) {
           log(`warning: replica ${replicaName} failed to start — continuing with fewer replicas (${msg(err)})`);
@@ -727,7 +743,7 @@ export const dockerBuilder: Builder = {
       /* non-fatal — digest is best-effort */
     }
 
-    return { runtimeId: name, port: resolvedPort, healthPath: service.healthPath ?? '/', imageDigest: digest };
+    return { runtimeId: name, port: resolvedPort, healthPath: service.healthPath ?? '/', imageDigest: digest, replicas: achievedReplicas };
   },
 
   // 5-minute deadline: first boots (model downloads, DB migrations) are slow.

@@ -1,0 +1,1 @@
+ALTER TABLE `services` ADD `runtime_replicas` integer DEFAULT 1 NOT NULL;

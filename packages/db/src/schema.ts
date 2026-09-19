@@ -450,6 +450,10 @@ export const services = sqliteTable(
     // load-balances across (see renderDynamicConfig). Applies on the next
     // deploy; honored by the local builder only, not remote nodes.
     replicas: integer('replicas').notNull().default(1),
+    // The replica count the LAST deploy actually achieved (a replica that
+    // failed to start must not remain a dead backend in the proxy config).
+    // The proxy renders THIS value, never the desired one above.
+    runtimeReplicas: integer('runtime_replicas').notNull().default(1),
     // Template-defined container command (argv after the image). Only the
     // admin-controlled template registry sets it — not the create-service API.
     cmd: text('cmd', { mode: 'json' }).$type<string[]>(),

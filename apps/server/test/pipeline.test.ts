@@ -336,11 +336,25 @@ describe('runDeployment', () => {
     expect(lines).toContain('✓ Deployment successful');
 
     const svcUpdate = updates.find((u) => u.table === services && u.values.status === 'running');
-    expect(svcUpdate?.values).toMatchObject({ runtimeId: 'c-1', port: null, commitSha: '' });
+    expect(svcUpdate?.values).toMatchObject({ runtimeId: 'c-1', port: null, commitSha: '', runtimeReplicas: 1 });
     const depUpdate = updates.find((u) => u.table === deployments && u.values.status === 'running');
     expect(depUpdate?.values.finishedAt).toBeInstanceOf(Date);
     expect(h.writeDynamicConfig).toHaveBeenCalledWith(db);
     expect(db.query.domains.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('records the replica count the runtime actually achieved', async () => {
+    // The proxy renders runtimeReplicas (never the desired count), so the
+    // finalize step must persist what the builder reported — a replica that
+    // failed to start must not linger as a dead round-robin backend.
+    const { db, updates } = makeDb();
+    baseSetup(db, { image: 'nginx:latest', port: null, replicas: 3 });
+    h.builder.buildAndRun.mockImplementation(async () => ({ runtimeId: 'c-1', port: null, healthPath: '/', replicas: 2 }));
+
+    await runDeployment(db as never, 1);
+
+    const svcUpdate = updates.find((u) => u.table === services && u.values.status === 'running');
+    expect(svcUpdate?.values).toMatchObject({ runtimeId: 'c-1', runtimeReplicas: 2 });
   });
 
   it('demotes older running rows to superseded when the build goes live', async () => {

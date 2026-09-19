@@ -86,6 +86,10 @@ export interface DeployRuntime {
   healthPath: string;
   /** Resolved image digest the runtime is actually running (for exact rollback). */
   imageDigest?: string;
+  /** Replica count the deploy actually achieved (primary included). The
+   * proxy renders this — never the desired count — so a replica that failed
+   * to start does not linger as a dead round-robin backend. */
+  replicas?: number;
 }
 
 /** A runtime backend (Docker / PM2). Implementations live in ./builders. */

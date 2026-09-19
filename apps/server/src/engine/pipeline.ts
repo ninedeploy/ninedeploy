@@ -1016,7 +1016,15 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   }
   const persisted = await db
     .update(services)
-    .set({ status: 'running', runtimeId: newRuntimeId, port: runtime!.port ?? null, commitSha: sha })
+    .set({
+      status: 'running',
+      runtimeId: newRuntimeId,
+      port: runtime!.port ?? null,
+      commitSha: sha,
+      // What actually runs, not what was asked for: the proxy renders this
+      // count, so a replica that failed to start must not stay a dead backend.
+      runtimeReplicas: runtime!.replicas ?? 1,
+    })
     .where(eq(services.id, service.id))
     .returning({ id: services.id });
   if (persisted.length === 0) {

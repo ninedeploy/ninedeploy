@@ -184,7 +184,7 @@ describe('dockerBuilder.buildAndRun', () => {
     // No host port is published — Traefik routes over the network and the
     // healthcheck probes the container's network IP.
     expect(runArgs).not.toContain('-p');
-    expect(runtime).toEqual({ runtimeId: 'web-3', port: 3000, healthPath: '/health', imageDigest: expect.any(String) });
+    expect(runtime).toEqual({ runtimeId: 'web-3', port: 3000, healthPath: '/health', imageDigest: expect.any(String), replicas: 1 });
   });
 
   it('logs a pull warning when the rejection is not an Error instance', async () => {
@@ -433,7 +433,7 @@ describe('dockerBuilder.buildAndRun', () => {
 
     const runtime = await dockerBuilder.buildAndRun(ctx as never);
 
-    expect(runtime).toEqual({ runtimeId: 'y-3', port: null, healthPath: '/', imageDigest: expect.any(String) });
+    expect(runtime).toEqual({ runtimeId: 'y-3', port: null, healthPath: '/', imageDigest: expect.any(String), replicas: 1 });
   });
 
   it('does NOT stop the previous container (blue-green: old keeps serving until healthy)', async () => {

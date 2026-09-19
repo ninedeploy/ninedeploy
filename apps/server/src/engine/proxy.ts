@@ -653,7 +653,12 @@ export async function renderDynamicConfig(
       // dead replica from rotation instead of blackholing its share of
       // requests (the file provider caches name→IP, so a crashed replica
       // would otherwise keep receiving traffic until the next reload).
-      const replicaCount = svc.type === 'docker' ? Math.max(1, Math.min(svc.replicas ?? 1, MAX_REPLICAS)) : 1;
+      // Render what actually RUNS (runtimeReplicas, written by the deploy
+      // that achieved it), never the desired count: a replica that failed
+      // to start — or the window between saving a higher count and the
+      // next deploy — must not linger as an unresolvable 502 backend.
+      const replicaCount =
+        svc.type === 'docker' ? Math.max(1, Math.min(svc.runtimeReplicas ?? svc.replicas ?? 1, MAX_REPLICAS)) : 1;
       const healthPath = String(svc.healthPath ?? '/').replace(PATH_RE, '') || '/';
       const servers = replicaNames(upstreamHost, replicaCount)
         .map((n) => `          - url: "http://${n}:${svc.port}"`)
