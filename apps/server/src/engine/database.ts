@@ -1,9 +1,11 @@
 import { createReadStream, createWriteStream, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { open } from 'node:fs/promises';
+import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { Database } from '@ninedeploy/db';
+import { config } from '../config.js';
 import { createBackupCipher, createBackupDecipher, decrypt } from '../lib/crypto.js';
 import { ensureDockerImage, pullDockerImage } from '../lib/dockerPull.js';
 import { capture, run } from '../lib/exec.js';
@@ -11,10 +13,45 @@ import { HELPER_IMAGE } from '../lib/inventory.js';
 import { connectContainerToServiceBridge, ensureServiceBridge } from '../lib/serviceBridge.js';
 import { writeSecretFile } from '../lib/secretFile.js';
 import { createKeyedOperationGuard } from '../lib/keyedOperationGuard.js';
+import { acquireCrossProcessLock, LockUnavailableError } from '../lib/crossProcessLock.js';
+import { conflict } from '../lib/errors.js';
 import { NETWORK } from './proxy.js';
 
 const swallow = () => {};
 const withDatabaseBackupOperation = createKeyedOperationGuard<number>();
+const withVolumeOperation = createKeyedOperationGuard<string>();
+
+/**
+ * Wrap a long backup/restore operation in BOTH serialization layers: the
+ * in-process keyed queue (fast path) and a cross-process lock file under the
+ * data directory, so an overlapping panel process (systemd restart overlap,
+ * a second instance on the same data dir) cannot interleave a backup with a
+ * restore on the same target. A busy lock surfaces as 409, not a 500.
+ */
+async function withExclusiveOperation<T>(
+  kind: string,
+  log: (line: string) => void,
+  op: () => Promise<T>,
+): Promise<T> {
+  const lockPath = path.join(config.paths.dataDir, 'op-locks', `${kind.replace(/[^a-zA-Z0-9._-]/g, '_')}.lock`);
+  let lock;
+  try {
+    // A genuinely overlapping process is rare (restart overlap); fail fast
+    // with a clear 409 instead of hanging the request for the default wait.
+    lock = await acquireCrossProcessLock(lockPath, { acquireTimeoutMs: 2_000 });
+  } catch (error) {
+    if (error instanceof LockUnavailableError) {
+      log(`operation lock busy: ${kind}`);
+      throw conflict(`Another backup/restore operation is already running for ${kind}`);
+    }
+    throw error;
+  }
+  try {
+    return await op();
+  } finally {
+    lock.release();
+  }
+}
 
 /** Matches a versioned secret envelope ("v<ver>:…"). Backups written since the
  *  encryption change carry this prefix; anything else is a legacy plaintext dump. */
@@ -741,7 +778,16 @@ export async function createDockerVolume(
 /** Snapshot a named volume into a gzipped tarball on the host, encrypted at
  * rest under the master-key envelope — the same posture as database dumps,
  * so a stolen data directory leaks neither DB credentials nor volume files. */
-export async function backupVolume(
+export function backupVolume(
+  name: string,
+  destFile: string,
+  log: (line: string) => void,
+): Promise<void> {
+  return withVolumeOperation(name, () =>
+    withExclusiveOperation(`volume-${name}`, log, () => backupVolumeUnlocked(name, destFile, log)));
+}
+
+async function backupVolumeUnlocked(
   name: string,
   destFile: string,
   log: (line: string) => void,
@@ -826,7 +872,16 @@ function volumeRestoreScript(suffix: string): string {
  * a short sequence of same-filesystem renames. A failure during extraction
  * (corrupt member, ENOSPC) leaves the volume exactly as it was.
  */
-export async function restoreVolume(
+export function restoreVolume(
+  name: string,
+  srcFile: string,
+  log: (line: string) => void,
+): Promise<void> {
+  return withVolumeOperation(name, () =>
+    withExclusiveOperation(`volume-${name}`, log, () => restoreVolumeUnlocked(name, srcFile, log)));
+}
+
+async function restoreVolumeUnlocked(
   name: string,
   srcFile: string,
   log: (line: string) => void,
@@ -918,7 +973,8 @@ export async function databaseSize(d: Database): Promise<number> {
  * shell-injectable) rather than an interpolated shell string.
  */
 export function backupDatabase(d: Database, file: string, log: (line: string) => void): Promise<void> {
-  return withDatabaseBackupOperation(d.id, () => backupDatabaseUnlocked(d, file, log));
+  return withDatabaseBackupOperation(d.id, () =>
+    withExclusiveOperation(`database-${d.id}`, log, () => backupDatabaseUnlocked(d, file, log)));
 }
 
 async function backupDatabaseUnlocked(d: Database, file: string, log: (line: string) => void): Promise<void> {
@@ -980,7 +1036,8 @@ async function backupDatabaseUnlocked(d: Database, file: string, log: (line: str
  * plaintext backups (pre-encryption) restore as-is.
  */
 export function restoreDatabase(d: Database, file: string, log: (line: string) => void): Promise<void> {
-  return withDatabaseBackupOperation(d.id, () => restoreDatabaseUnlocked(d, file, log));
+  return withDatabaseBackupOperation(d.id, () =>
+    withExclusiveOperation(`database-${d.id}`, log, () => restoreDatabaseUnlocked(d, file, log)));
 }
 
 async function restoreDatabaseUnlocked(d: Database, file: string, log: (line: string) => void): Promise<void> {

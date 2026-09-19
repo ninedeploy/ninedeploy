@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Volume restores no longer empty the volume before extracting. The archive is fully extracted into a hidden staging directory inside the volume and only then swapped into place with same-filesystem renames, so a corrupt member or a full disk during extraction aborts the restore with the volume's previous contents untouched (a disk or filesystem failure mid-extraction could previously leave a partial restore and lose the old data). The staging copy transiently needs space for both the old and the restored contents.
+- Backup and restore operations on the same database or volume now hold a cross-process lock file, so an overlapping panel process (systemd restart overlap, a second instance on the same data directory) can no longer interleave a backup with a restore; a busy lock answers 409 and a lock abandoned by a crashed process is reclaimed after its liveness heartbeat goes stale. Volume operations also gained the in-process serialization databases already had.
 
 ## [0.10.2] - 2026-09-18
 

@@ -1,7 +1,7 @@
-import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * The three managed-volume helpers all work through a throwaway sidecar
@@ -11,6 +11,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * real against a stubbed master key — the cipher path itself is under test.
  */
 vi.stubEnv('NINEDEPLOY_MASTER_KEY', 'a'.repeat(64));
+
+// The volume operations take a cross-process lock file under the configured
+// data dir — point it at a throwaway directory instead of the real one. The
+// directory itself is created lazily by the lock; vi.hoisted may only touch
+// globals, hence the primitive string building.
+const lockDir = vi.hoisted(() => ({
+  dataDir: `${process.env.TEMP ?? process.env.TMPDIR ?? '/tmp'}/nd-volsnap-${process.pid}`,
+}));
+vi.mock('../../src/config.js', () => ({ config: { paths: lockDir } }));
 
 const execMocks = vi.hoisted(() => ({
   run: vi.fn(async () => undefined),
@@ -187,5 +196,22 @@ describe('restoreVolume', () => {
     });
     await expect(restoreVolume('nd-svc-web-data', LEGACY, vi.fn())).rejects.toThrow('bad archive');
     expect(runArgs()).toContainEqual(['rm', '-f', 'sidecar-id']);
+  });
+});
+
+afterAll(() => {
+  rmSync(lockDir.dataDir, { recursive: true, force: true });
+});
+
+describe('cross-process operation lock', () => {
+  it('refuses with 409 while another process holds the volume lock', async () => {
+    const lockFile = path.join(lockDir.dataDir, 'op-locks', 'volume-nd-svc-web-data.lock');
+    mkdirSync(path.dirname(lockFile), { recursive: true });
+    writeFileSync(lockFile, `different-process ${Date.now()}`);
+    try {
+      await expect(backupVolume('nd-svc-web-data', SNAP, vi.fn())).rejects.toMatchObject({ statusCode: 409 });
+    } finally {
+      rmSync(lockFile, { force: true });
+    }
   });
 });
