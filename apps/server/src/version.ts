@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.3';
+export const VERSION = '0.10.4';
 
 export interface ChangelogEntry {
   version: string;
@@ -11,6 +11,14 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.10.4',
+    date: '2026-09-19',
+    title: 'The Scaling Fix — Replicas That Actually Run',
+    changes: [
+      'Scaling a docker service past one replica no longer collapses to a single container and no longer answers 502s: replica clones stop inheriting the primary\'s published host port (the "port already allocated" failure), and the Traefik config now renders the replica count the last deploy actually achieved (new runtime_replicas column, migration 0063) instead of the desired one — a backend that does not exist can never receive traffic. Redeploy replica services once after upgrading to record their running count.',
+    ],
+  },
   {
     version: '0.10.3',
     date: '2026-09-19',
