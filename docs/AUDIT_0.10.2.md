@@ -24,6 +24,22 @@ exited 127. The runtime image now installs `docker-cli` (verified in the
 base image: CLI present, both pinned plugin checksums pass, compose v5.5.1
 and buildx v0.37.1 report their versions).
 
+## Release record — v0.10.2 (2026-09-19)
+
+Tag `v0.10.2` (d95f2de) pushed after a fully green CI run on main — the
+first green push CI since v0.10.0 (0.10.1 and 0.10.2's first candidate had
+failed on the SDK coverage branch gap, the trixie docker-cli split, a
+Storage.prototype spy that does not intercept on the Linux runner, and
+coverage floors stale since 0.10.1). The Release workflow passed its full
+gate chain (release checks, database integration, multi-arch image build)
+and published the GitHub release plus `ghcr.io/ninedeploy/ninedeploy:v0.10.2`
+and `:latest`. Artifact smoke test on the published image: `/health`
+answers 200 with `"version":"0.10.2"` and `db: ok`; `/v1/about` reports
+0.10.2; `docker compose version` (v5.5.1) and `docker buildx version`
+(v0.37.1) both run inside the container. npm packages were not published:
+the registry lineage intentionally stops at 0.7.0 and no 0.8+/0.9+/0.10.x
+release has published packages.
+
 ## Findings addressed in source
 
 | Surface | Fault | Change |
