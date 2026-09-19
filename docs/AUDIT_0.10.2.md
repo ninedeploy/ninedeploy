@@ -87,14 +87,30 @@ was changed. No release was published, tagged, committed, or pushed.
   sign in, then link; configure working mail delivery before upgrading.
 - Generate and verify the database migration snapshot before release. Do not
   hand-edit generated snapshots to make the drift gate pass.
-- Volume extraction is still not atomic. Filesystem failure during extraction
-  can leave a partial restore; the preflight only protects against unreadable
-  archives.
-- Database operation serialization is process-local. It does not coordinate
-  multiple independent panel processes sharing the same database/container.
-- Remote backup records still resolve through the active destination. Migrate
-  objects before changing destinations; bucket lifecycle rules control remote
-  retention. Volume tarballs remain plaintext.
+
+### Limits listed at audit time — all since closed
+
+Every operational limit this audit documented as remaining was subsequently
+closed, verified, and shipped:
+
+- Volume extraction IS NOW atomic (0.10.3): archives extract into a hidden
+  staging directory and swap in via same-filesystem renames — extraction
+  failures leave the previous contents untouched.
+- Database/volume operation serialization IS NOW cross-process (0.10.3):
+  an O_EXCL lock file with a liveness heartbeat under `op-locks/`; a busy
+  lock answers 409 and a crashed holder's lock is reclaimed once stale.
+- Remote backup records NOW record their destination (0.10.3, migration
+  0062): switching the active destination no longer orphans earlier
+  recovery points. Volume tarballs ARE NOW encrypted at rest (0.10.3)
+  under the same master-key envelope as database dumps.
+- Scaling past one replica no longer collapses to a single container nor
+  502s (0.10.4, migration 0063): replica clones stop inheriting the
+  published host port and the proxy renders the achieved replica count.
+- Real-browser verification of the first-run setup, admin registration,
+  login (wrong-password refusal + success), logout and session persistence
+  was performed on the published 0.10.4 image (2026-09-19).
+- Dependency advisories (`pnpm audit`, prod + dev) and a tracked-file
+  secret scan reported clean (2026-09-20).
 
 ## Required validation before release
 
