@@ -974,7 +974,7 @@ export async function databaseSize(d: Database): Promise<number> {
  */
 export function backupDatabase(d: Database, file: string, log: (line: string) => void): Promise<void> {
   return withDatabaseBackupOperation(d.id, () =>
-    withExclusiveOperation(`database-${d.id}`, log, () => backupDatabaseUnlocked(d, file, log)));
+    withExclusiveOperation(`database-${d.containerName ?? d.id}`, log, () => backupDatabaseUnlocked(d, file, log)));
 }
 
 async function backupDatabaseUnlocked(d: Database, file: string, log: (line: string) => void): Promise<void> {
@@ -1037,7 +1037,7 @@ async function backupDatabaseUnlocked(d: Database, file: string, log: (line: str
  */
 export function restoreDatabase(d: Database, file: string, log: (line: string) => void): Promise<void> {
   return withDatabaseBackupOperation(d.id, () =>
-    withExclusiveOperation(`database-${d.id}`, log, () => restoreDatabaseUnlocked(d, file, log)));
+    withExclusiveOperation(`database-${d.containerName ?? d.id}`, log, () => restoreDatabaseUnlocked(d, file, log)));
 }
 
 async function restoreDatabaseUnlocked(d: Database, file: string, log: (line: string) => void): Promise<void> {
