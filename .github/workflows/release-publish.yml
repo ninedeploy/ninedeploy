@@ -89,6 +89,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Build the whole workspace BEFORE the checks: server tests resolve the
+      # built web dashboard layout (apps/web/dist) and turbo has no dependency
+      # edge forcing web#build ahead of server#test, so the serialized
+      # release:check alone can schedule them in either order. CI's test job
+      # builds first for exactly this reason.
+      - name: Build workspace
+        run: pnpm build
+
       # A tag is a release artifact — never push an image that does not pass
       # the same verification gates CI enforces on every commit.
       - name: Release checks (typecheck · lint · build · test)

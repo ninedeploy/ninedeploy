@@ -23,6 +23,17 @@ describe('release delivery invariants', () => {
     expect(push).toBeGreaterThan(integration);
   });
 
+  it('builds the workspace before the release checks', () => {
+    // Server tests resolve the built web dashboard layout; turbo has no edge
+    // forcing web#build ahead of server#test, so the checks alone can run
+    // them in either order (this raced a v0.10.3 release attempt).
+    const steps = readWorkflow('release-publish.yml').jobs['publish-image']!.steps;
+    const build = steps.findIndex((step) => step.run === 'pnpm build');
+    const checks = steps.findIndex((step) => step.run === 'pnpm release:check');
+    expect(build).toBeGreaterThan(-1);
+    expect(checks).toBeGreaterThan(build);
+  });
+
   it('uses lowercase OCI repository names on the main publishing path', () => {
     const steps = readWorkflow('ci.yml').jobs['publish-image']!.steps;
     const push = steps.find((step) => step.with?.['push'] === true)!;
