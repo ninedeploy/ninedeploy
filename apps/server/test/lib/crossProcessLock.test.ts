@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { acquireCrossProcessLock, LockUnavailableError } from '../../src/lib/crossProcessLock.js';
 
 const dir = mkdtempSync(path.join(os.tmpdir(), 'nd-lock-test-'));

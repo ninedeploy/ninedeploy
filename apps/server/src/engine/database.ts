@@ -13,7 +13,7 @@ import { HELPER_IMAGE } from '../lib/inventory.js';
 import { connectContainerToServiceBridge, ensureServiceBridge } from '../lib/serviceBridge.js';
 import { writeSecretFile } from '../lib/secretFile.js';
 import { createKeyedOperationGuard } from '../lib/keyedOperationGuard.js';
-import { acquireCrossProcessLock, LockUnavailableError } from '../lib/crossProcessLock.js';
+import { acquireCrossProcessLock, LockUnavailableError, type CrossProcessLock } from '../lib/crossProcessLock.js';
 import { conflict } from '../lib/errors.js';
 import { NETWORK } from './proxy.js';
 
@@ -34,7 +34,7 @@ async function withExclusiveOperation<T>(
   op: () => Promise<T>,
 ): Promise<T> {
   const lockPath = path.join(config.paths.dataDir, 'op-locks', `${kind.replace(/[^a-zA-Z0-9._-]/g, '_')}.lock`);
-  let lock;
+  let lock: CrossProcessLock | undefined;
   try {
     // A genuinely overlapping process is rare (restart overlap); fail fast
     // with a clear 409 instead of hanging the request for the default wait.
