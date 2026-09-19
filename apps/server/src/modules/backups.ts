@@ -127,7 +127,7 @@ export const databaseBackupRoutes: FastifyPluginAsync = async (app) => {
       if (!b.remoteKey) throw notFound('Backup not found');
       restorePath = path.join(config.paths.backupsDir, `${path.basename(b.path)}.remote`);
       log(`Fetching remote object ${b.remoteKey}`);
-      await fetchRemoteBackup(app.db, b.remoteKey, restorePath);
+      await fetchRemoteBackup(app.db, b, restorePath);
     }
     try {
       log(`Restoring ${d.name} from ${path.basename(restorePath)}`);
@@ -222,7 +222,7 @@ export const backupRoutes: FastifyPluginAsync = async (app) => {
     const b = await app.db.query.backups.findFirst({ where: eq(backups.id, bid) });
     await assertMayManageBackup(app, b, req.user!);
     if (b && existsSync(b.path)) unlinkSync(b.path);
-    if (b) await deleteRemoteBackup(app.db, b.remoteKey);
+    if (b) await deleteRemoteBackup(app.db, b);
     await app.db.delete(backups).where(eq(backups.id, bid));
     void audit(app.db, req.user!.id, 'backup.delete', `#${bid}`);
     return { ok: true };

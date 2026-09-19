@@ -215,7 +215,7 @@ export const volumeBackupRoutes: FastifyPluginAsync = async (app) => {
       if (!b.remoteKey) throw notFound('Backup not found');
       restorePath = `${b.path}.remote`;
       log(`Fetching remote object ${b.remoteKey}`);
-      await fetchRemoteBackup(app.db, b.remoteKey, restorePath);
+      await fetchRemoteBackup(app.db, b, restorePath);
       isRemoteTemp = true;
     }
 
@@ -281,7 +281,7 @@ export async function pruneOldBackups(
   if (toDelete.length === 0) return { deleted: 0, kept };
   for (const row of toDelete) {
     try { unlinkSync(row.path); } catch { /* file may already be gone */ }
-    if (row.remoteKey) await deleteRemoteBackup(db, row.remoteKey).catch(() => undefined);
+    if (row.remoteKey) await deleteRemoteBackup(db, row).catch(() => undefined);
     await db.delete(backups).where(eq(backups.id, row.id));
   }
   log(`Pruned ${toDelete.length} old backup(s) for ${volumeName} (kept ${kept})`);

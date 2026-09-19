@@ -78,8 +78,8 @@ vi.mock('../../src/lib/backupCrypto.js', () => ({
 }));
 
 vi.mock('../../src/lib/backupRemote.js', () => ({
-  fetchRemoteBackup: vi.fn(async (_db: unknown, remoteKey: string, dest: string) => {
-    remoteState.fetchedTo.set(remoteKey, dest);
+  fetchRemoteBackup: vi.fn(async (_db: unknown, remote: { remoteKey: string | null }, dest: string) => {
+    remoteState.fetchedTo.set(remote.remoteKey ?? '', dest);
     // Same shape so the header-sniff path lands the drill.
     await writeFile(dest, 'CREATE TABLE remote (id INT);\n', 'utf8');
   }),
@@ -323,8 +323,8 @@ describe('lib/backupDrill', () => {
       dbState.databases.set(1, { id: 1, engine: 'postgres' });
       dbState.backups.set(1, { id: 1, databaseId: 1, path: '/no/such/file', remoteKey: 's3://bucket/enc' });
       const { fetchRemoteBackup } = await import('../../src/lib/backupRemote.js');
-      vi.mocked(fetchRemoteBackup).mockImplementationOnce(async (_db, key, dest) => {
-        remoteState.fetchedTo.set(key, dest);
+      vi.mocked(fetchRemoteBackup).mockImplementationOnce(async (_db, remote, dest) => {
+        remoteState.fetchedTo.set(remote.remoteKey ?? '', dest);
         await writeFile(dest, 'NDBK1:ciphertext', 'utf8');
         cryptoState.encryptedPaths.add(dest); // what really lands in the bucket
       });

@@ -24,7 +24,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { desc, eq } from 'drizzle-orm';
 import { backupDrills, backups, databases, type DB } from '@ninedeploy/db';
-import { fetchRemoteBackup } from './backupRemote.js';
+import { fetchRemoteBackup, type RemoteBackupRef } from './backupRemote.js';
 import { decryptBackupFile, isEncryptedBackupFile } from './backupCrypto.js';
 import { capture, run } from './exec.js';
 import { readBackupBytes } from '../engine/database.js';
@@ -87,7 +87,7 @@ export async function runBackupDrill(
   let result: { passed: true; details: Record<string, unknown> } | { passed: false; error: string; details?: Record<string, unknown> };
 
   try {
-    const ctx = await stageForDrill(db, bRow.path, bRow.remoteKey, dRow.engine);
+    const ctx = await stageForDrill(db, bRow.path, bRow, dRow.engine);
     try {
       result = await validateDump(ctx);
     } finally {
@@ -180,18 +180,18 @@ export async function listBackupDrills(
 async function stageForDrill(
   db: DB,
   path: string,
-  remoteKey: string | null,
+  remote: RemoteBackupRef,
   _engine: string,
 ): Promise<DrillContext> {
   // Remote-only backup: pull to a local temp file first.
   let source = path;
   let fetched: string | null = null;
   if (!await fileExists(path).catch(() => false)) {
-    if (!remoteKey) {
+    if (!remote.remoteKey) {
       throw new Error('Backup file is missing on disk and no remote key is recorded');
     }
     fetched = join(tmpdir(), `nd-drill-${process.pid}-${Date.now()}.dump`);
-    await fetchRemoteBackup(db, remoteKey, fetched);
+    await fetchRemoteBackup(db, remote, fetched);
     source = fetched;
   }
   const dropFetched = async () => {

@@ -36,7 +36,7 @@ Automated backup jobs upload backups to S3-compatible cloud storage. Database du
 - **MinIO / Self-Hosted S3**
 - **Wasabi / DigitalOcean Spaces**
 
-The same destination stores attached-volume snapshots as `tar.gz` archives encrypted with the same streaming AES-256-GCM envelope as database dumps; downloads and restores decrypt transparently, and legacy plaintext archives written before encryption keep restoring unchanged. Snapshots taken before the encryption change remain plaintext on disk until they age out of retention — restrict access to the backup directory and bucket accordingly.
+The same destination stores attached-volume snapshots as `tar.gz` archives encrypted with the same streaming AES-256-GCM envelope as database dumps; downloads and restores decrypt transparently, and legacy plaintext archives written before encryption keep restoring unchanged. Snapshots taken before the encryption change remain plaintext on disk until they age out of retention — restrict access to the backup directory and bucket accordingly. Each uploaded backup records which destination holds its object, so switching the active destination does not orphan earlier recovery points — restores and remote deletions resolve the bucket that actually holds the object (rows whose destination was deleted fall back to the active one).
 
 Retention counts completed recovery points separately from failed attempts and leaves running backups untouched. Failed attempts cannot evict the last successful backups.
 

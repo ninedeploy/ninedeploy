@@ -756,6 +756,11 @@ export const backups = sqliteTable(
     path: text('path').notNull(),
     // S3 object key when the encrypted envelope was uploaded to a destination.
     remoteKey: text('remote_key'),
+    // Destination that received the remote object, so fetch/delete resolve
+    // against the bucket that actually holds it after the active destination
+    // changes. NULL for local-only rows and for rows whose destination was
+    // deleted (those fall back to the active destination).
+    destinationId: integer('destination_id').references(() => backupDestinations.id, { onDelete: 'set null' }),
     sizeBytes: integer('size_bytes').notNull().default(0),
     createdAt: ts('created_at'),
   },

@@ -183,7 +183,7 @@ describe('database backup routes', () => {
     fsMocks.exists = false;
     const res = await app.inject({ method: 'POST', url: '/1/backups/4/restore', headers: asUser() });
     expect(res.statusCode).toBe(200);
-    expect(remoteMocks.fetchRemoteBackup).toHaveBeenCalledWith(expect.anything(), 'nd/gone.dump', expect.stringContaining('gone.dump'));
+    expect(remoteMocks.fetchRemoteBackup).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ remoteKey: 'nd/gone.dump' }), expect.stringContaining('gone.dump'));
     expect(engineMocks.restoreDatabase).toHaveBeenCalled();
   });
 
@@ -298,7 +298,7 @@ describe('backup routes', () => {
     expect(res.json()).toEqual({ ok: true });
     expect(fs.readdirSync(path.dirname(dumpFile))).toEqual([]);
     // The remote object is removed too.
-    expect(remoteMocks.deleteRemoteBackup).toHaveBeenCalledWith(expect.anything(), 'nd/x.dump');
+    expect(remoteMocks.deleteRemoteBackup).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ remoteKey: 'nd/x.dump' }));
   });
 
   it('deletes a backup row even when the file is gone', async () => {

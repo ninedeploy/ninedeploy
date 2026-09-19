@@ -1,0 +1,1 @@
+ALTER TABLE `backups` ADD `destination_id` integer REFERENCES backup_destinations(id);

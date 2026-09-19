@@ -49,15 +49,19 @@ describe('uploadBackup', () => {
   });
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
-  it('uploads the encrypted envelope from disk (streamed) and stamps remoteKey', async () => {
+  it('uploads the encrypted envelope from disk (streamed) and stamps remoteKey + destination', async () => {
     const file = path.join(tmp, 'db-2026.dump');
     writeFileSync(file, 'v0:ZW5j');
+    const stamp = vi.fn(() => [{}]);
     const db = createFakeDb({
       findMany: { backupDestinations: [dest] },
-      update: { backups: [{}] },
+      update: { backups: stamp },
     });
     const lines: string[] = [];
     await uploadBackup(db, 5, file, (l) => lines.push(l));
+    // The destination is recorded so a later fetch resolves the bucket that
+    // actually holds the object, even after the active destination changes.
+    expect(stamp).toHaveBeenCalledWith(expect.objectContaining({ remoteKey: 'nd/db-2026.dump', destinationId: 1 }), expect.anything());
     // The upload streams the on-disk file (bounded memory) — the envelope
     // bytes never pass through the heap as a readFileSync buffer.
     expect(s3Mocks.s3PutFile).toHaveBeenCalledWith(
@@ -97,7 +101,7 @@ describe('fetchRemoteBackup / deleteRemoteBackup', () => {
   it('streams the remote object straight to a local file', async () => {
     const db = createFakeDb({ findMany: { backupDestinations: [dest] } });
     const target = path.join(os.tmpdir(), `fetch-${Date.now()}`);
-    const p = await fetchRemoteBackup(db, 'nd/k', target);
+    const p = await fetchRemoteBackup(db, { remoteKey: 'nd/k' }, target);
     expect(p).toBe(target);
     // The GET pipes to disk (s3GetToFile) — multi-GB restores never buffer.
     expect(s3Mocks.s3GetToFile).toHaveBeenCalledWith(
@@ -111,21 +115,56 @@ describe('fetchRemoteBackup / deleteRemoteBackup', () => {
 
   it('throws when no destination is configured for a fetch', async () => {
     const db = createFakeDb({ findMany: { backupDestinations: [] } });
-    await expect(fetchRemoteBackup(db, 'k', '/tmp/x')).rejects.toThrow('No backup destination');
+    await expect(fetchRemoteBackup(db, { remoteKey: 'k' }, '/tmp/x')).rejects.toThrow('No backup destination');
+  });
+
+  it('resolves the RECORDED destination, not the active one', async () => {
+    // The backup was uploaded to destination 1; the operator has since made
+    // destination 2 active. The fetch must go to the bucket holding the
+    // object — the old row's key does not exist in the new bucket.
+    const old = { ...dest, id: 1, bucket: 'old-bucket', active: false };
+    const now = { ...dest, id: 2, bucket: 'new-bucket', active: true };
+    const db = createFakeDb({ findMany: { backupDestinations: [old, now] } });
+    await fetchRemoteBackup(db, { remoteKey: 'nd/k', destinationId: 1 }, '/tmp/x');
+    expect(s3Mocks.s3GetToFile).toHaveBeenCalledWith(
+      expect.objectContaining({ bucket: 'old-bucket' }),
+      'nd/k',
+      '/tmp/x',
+    );
+    await deleteRemoteBackup(db, { remoteKey: 'nd/k', destinationId: 1 });
+    expect(s3Mocks.s3Delete).toHaveBeenCalledWith(
+      expect.objectContaining({ bucket: 'old-bucket' }),
+      'nd/k',
+    );
+  });
+
+  it('falls back to the active destination for legacy rows and deleted destinations', async () => {
+    const active = { ...dest, id: 2, bucket: 'new-bucket' };
+    const db = createFakeDb({ findMany: { backupDestinations: [active] } });
+    // destinationId 1 has no row anymore; a legacy row has no id at all.
+    await fetchRemoteBackup(db, { remoteKey: 'nd/k', destinationId: 1 }, '/tmp/x');
+    await fetchRemoteBackup(db, { remoteKey: 'nd/k' }, '/tmp/y');
+    expect(s3Mocks.s3GetToFile).toHaveBeenNthCalledWith(1, expect.objectContaining({ bucket: 'new-bucket' }), 'nd/k', '/tmp/x');
+    expect(s3Mocks.s3GetToFile).toHaveBeenNthCalledWith(2, expect.objectContaining({ bucket: 'new-bucket' }), 'nd/k', '/tmp/y');
   });
 
   it('deletes remote objects and swallows failures', async () => {
     const db = createFakeDb({ findMany: { backupDestinations: [dest] } });
-    await deleteRemoteBackup(db, 'nd/k');
+    await deleteRemoteBackup(db, { remoteKey: 'nd/k' });
     expect(s3Mocks.s3Delete).toHaveBeenCalled();
     s3Mocks.s3Delete.mockRejectedValueOnce(new Error('gone'));
-    await expect(deleteRemoteBackup(db, 'nd/k')).resolves.toBeUndefined();
-    await expect(deleteRemoteBackup(db, null)).resolves.toBeUndefined();
+    await expect(deleteRemoteBackup(db, { remoteKey: 'nd/k' })).resolves.toBeUndefined();
+    await expect(deleteRemoteBackup(db, { remoteKey: null })).resolves.toBeUndefined();
+  });
+
+  it('refuses a fetch when no remote key is recorded', async () => {
+    const db = createFakeDb({ findMany: { backupDestinations: [dest] } });
+    await expect(fetchRemoteBackup(db, { remoteKey: null }, '/tmp/x')).rejects.toThrow('No remote key');
   });
 
   it('skips the remote delete when no destination is configured', async () => {
     const db = createFakeDb({ findMany: { backupDestinations: [] } });
-    await deleteRemoteBackup(db, 'nd/k');
+    await deleteRemoteBackup(db, { remoteKey: 'nd/k' });
     expect(s3Mocks.s3Delete).not.toHaveBeenCalled();
   });
 });

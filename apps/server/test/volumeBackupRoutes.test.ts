@@ -339,7 +339,7 @@ describe('volume backup routes', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(remoteMocks.fetchRemoteBackup).toHaveBeenCalledWith(expect.anything(), 'r/10', `${missing}.remote`);
+    expect(remoteMocks.fetchRemoteBackup).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ remoteKey: 'r/10' }), `${missing}.remote`);
     expect(engineMocks.restoreVolume).toHaveBeenCalledWith(VOLUME, `${missing}.remote`, expect.any(Function));
   });
 
