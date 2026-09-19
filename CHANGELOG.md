@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The per-domain www toggle now actually secures `www.`: the Traefik router rule claims both hosts of the apex/www pair, so www traffic reaches the redirect middleware and Traefik finally requests a certificate for it (previously the router matched only the stored hostname — `https://www.…` answered with the default certificate and the redirect never ran). The redirect regex now matches only the www form, which also removes a latent self-redirect loop on the apex. Both hosts are listed as separate ACME `domains` entries so a www host with broken DNS fails only its own certificate, the rule is not extended when another active domain row already routes the companion host, and the Cloudflare integration creates the missing companion DNS record when the toggle is turned on.
+
+## [0.10.3] - 2026-09-19
+
+> The follow-through patch: the 0.10.2 audit's remaining limits closed —
+> encrypted volume snapshots, atomic restores, cross-process operation
+> locks and destination-recorded remote backups.
+
 ### Security
 
 - Volume snapshots are now encrypted at rest with the same streaming AES-256-GCM master-key envelope as database dumps — a stolen data directory or backup bucket no longer leaks volume files in the clear. Downloads and restores decrypt transparently; legacy plaintext archives written before this change keep restoring unchanged.

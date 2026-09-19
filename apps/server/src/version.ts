@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.2';
+export const VERSION = '0.10.3';
 
 export interface ChangelogEntry {
   version: string;
@@ -11,6 +11,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.10.3',
+    date: '2026-09-19',
+    title: 'The Follow-Through Patch — Encrypted Volumes, Atomic Restores',
+    changes: [
+      'Volume snapshots are encrypted at rest with the same streaming AES-256-GCM master-key envelope as database dumps, and restores no longer empty the volume before extracting: the archive is fully unpacked into a hidden staging directory and swapped in with same-filesystem renames, so a corrupt member or a full disk aborts with the previous contents untouched. Downloads decrypt transparently and legacy plaintext archives keep restoring unchanged.',
+      'Backup and restore operations hold a cross-process lock file, so overlapping panel processes (a restart overlap, a second instance on the same data directory) can no longer interleave them — a busy lock answers 409 and a crashed holder\'s lock is reclaimed once its heartbeat goes stale. Remote backups record which destination holds their object, so switching the active destination no longer orphans earlier recovery points.',
+    ],
+  },
   {
     version: '0.10.2',
     date: '2026-09-18',
