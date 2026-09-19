@@ -57,5 +57,5 @@ Each managed Docker volume can be snapshotted (`tar.gz`), restored or downloaded
 ## 🛡️ 5. Restore Safety
 
 - Restores can be initiated via Web UI, CLI (`ninedeploy backups restore`), or MCP tool.
-- Volume restores first check that the archive can be listed, then replace the volume contents inside a temporary helper container. Corrupt archives fail before existing data is deleted. Extraction is not atomic: a disk or filesystem failure during extraction can still leave a partial restore.
+- Volume restores first check that the archive can be listed, then extract the whole archive into a hidden staging directory inside the volume and swap it into place with same-filesystem renames. Corrupt archives and extraction failures (including a full disk) abort before any existing data is touched; the transient staging copy means the volume needs space for both the old and the restored contents during a restore.
 - Database operations use separate staging files. Failed decryption removes partial plaintext instead of retaining an unauthenticated dump on disk.

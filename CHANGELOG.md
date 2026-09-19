@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Volume restores no longer empty the volume before extracting. The archive is fully extracted into a hidden staging directory inside the volume and only then swapped into place with same-filesystem renames, so a corrupt member or a full disk during extraction aborts the restore with the volume's previous contents untouched (a disk or filesystem failure mid-extraction could previously leave a partial restore and lose the old data). The staging copy transiently needs space for both the old and the restored contents.
+
 ## [0.10.2] - 2026-09-18
 
 > The hardening patch: the security and reliability follow-up to the

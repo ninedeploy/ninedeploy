@@ -180,10 +180,11 @@ export const volumeBackupRoutes: FastifyPluginAsync = async (app) => {
   // ── POST /:name/backups/:bid/restore — restore one backup to its volume ─
   // The target service must be stopped so the restored contents are not
   // immediately re-overwritten by a still-running process. The volume
-  // itself can stay mounted; tar extract overwrites in place. We refuse
-  // if the service is running because the operating container holds
-  // open file handles and a clean restore means "swap the bytes under
-  // the live process" which corrupts anything that was mmap()'d.
+  // itself can stay mounted; the engine extracts into a staging directory
+  // and swaps the contents in. We refuse if the service is running because
+  // the operating container holds open file handles and a clean restore
+  // means "swap the bytes under the live process" which corrupts anything
+  // that was mmap()'d.
   app.post('/:name/backups/:bid/restore', { preHandler: [app.requireAdmin] }, async (req) => {
     const name = (req.params as { name: string }).name;
     const bid = num((req.params as { bid: string }).bid);

@@ -74,26 +74,43 @@ describe('backupVolume', () => {
 });
 
 describe('restoreVolume', () => {
-  it('empties the volume before extracting, then cleans up', async () => {
+  it('extracts into staging first and only then swaps the volume contents', async () => {
     const log = vi.fn();
     await restoreVolume('nd-svc-web-data', '/backups/web.tar.gz', log);
 
-    // Read-write mount plus an rm-then-extract command: extracting over the
-    // existing contents would merge them and keep files the snapshot lacks.
+    // Read-write mount; the script does the whole job inside the sidecar.
     const created = execMocks.capture.mock.calls[0]![1] as unknown as string[];
     expect(created).toContain('nd-svc-web-data:/v');
-    expect(created.join(' ')).toContain('rm -rf');
-    expect(created.join(' ')).toContain('tar -xzf');
     const script = created.at(-1)!;
-    // Listing must complete successfully before the destructive group starts:
-    // invalid gzip/tar input exits without executing rm or extraction.
-    expect(script).toMatch(/^tar -tzf \S+ >\/dev\/null && \{ rm -rf /);
+    expect(script.startsWith('set -e')).toBe(true);
+    // Preflight rejects unreadable archives before any work.
+    expect(script).toMatch(/^set -e\ntar -tzf \S+ >\/dev\/null$/m);
+    // Extraction targets a hidden staging directory inside the volume, not
+    // the volume root — a corrupt member or a full disk aborts with the
+    // current contents untouched.
+    expect(script).toMatch(/mkdir \/v\/\.nd-restore-[0-9a-f]{8}\ntar -xzf \S+ -C \/v\/\.nd-restore-[0-9a-f]{8}/);
+    // The destructive phase (moving current data aside) may only run AFTER
+    // extraction has completed, and cleanup never removes volume contents.
+    const extractAt = script.indexOf('tar -xzf');
+    const asideAt = script.indexOf('for f in /v/..?* /v/.[!.]* /v/*; do');
+    expect(asideAt).toBeGreaterThan(extractAt);
+    expect(script).not.toMatch(/rm -rf \/v\/\.\.\?\* /);
+    // A rename failure rolls the aside-move back instead of leaving a mix.
+    expect(script).toContain('rollback; exit 1');
 
     const args = runArgs();
     expect(args[0]).toEqual(['cp', '/backups/web.tar.gz', 'sidecar-id:/tmp/ninedeploy-volume.tar.gz']);
     expect(args[1]).toEqual(['start', '-a', 'sidecar-id']);
     expect(args[2]).toEqual(['rm', '-f', 'sidecar-id']);
     expect(log).toHaveBeenCalledWith(expect.stringContaining('restored'));
+  });
+
+  it('uses a fresh staging suffix per restore so leftovers cannot collide', async () => {
+    await restoreVolume('nd-svc-web-data', '/backups/web.tar.gz', vi.fn());
+    await restoreVolume('nd-svc-web-data', '/backups/web.tar.gz', vi.fn());
+    const first = (execMocks.capture.mock.calls[0]![1] as unknown as string[]).at(-1)!;
+    const second = (execMocks.capture.mock.calls[1]![1] as unknown as string[]).at(-1)!;
+    expect(first).not.toBe(second);
   });
 
   it('removes the sidecar even when the restore fails', async () => {

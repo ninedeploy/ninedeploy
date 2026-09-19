@@ -764,11 +764,64 @@ export async function backupVolume(
 }
 
 /**
+ * The sidecar script that restores an archive into the mounted volume at
+ * `/v`. Extraction goes to a hidden staging directory FIRST; only after the
+ * whole archive has been extracted do same-filesystem renames swap the
+ * restored tree into place — so a corrupt member or a full disk aborts the
+ * restore with the volume's previous contents untouched. Restoring into
+ * staging without emptying the volume first would instead merge the two
+ * trees and leave the volume in a state that never existed.
+ *
+ * Trade-off: the staging copy means the volume transiently needs space for
+ * both the old and the restored contents — but running out of space now
+ * fails the restore harmlessly instead of destroying the old data halfway
+ * through an in-place extraction.
+ */
+function volumeRestoreScript(suffix: string): string {
+  const stage = `/v/.nd-restore-${suffix}`;
+  const old = `/v/.nd-restore-old-${suffix}`;
+  return [
+    'set -e',
+    // Preflight: reject unreadable archives before any work at all.
+    `tar -tzf ${VOLUME_TMP_ARCHIVE} >/dev/null`,
+    // Full extraction into staging — the long, failure-prone phase happens
+    // before a single byte of current data is touched.
+    `mkdir ${stage}`,
+    `tar -xzf ${VOLUME_TMP_ARCHIVE} -C ${stage}`,
+    // Commit phase: pure renames. Current data moves aside, the restored
+    // tree takes its place, then the old copy is deleted. Any rename
+    // failure rolls the aside-move back (the old copy is still intact).
+    `mkdir ${old}`,
+    `rollback() {`,
+    `  for g in ${old}/..?* ${old}/.[!.]* ${old}/*; do`,
+    '    [ -e "$g" ] && mv -f "$g" /v/ || true',
+    '  done',
+    `  rm -rf ${stage} ${old}`,
+    '}',
+    'for f in /v/..?* /v/.[!.]* /v/*; do',
+    `  case "$f" in ${stage}|${old}) continue ;; esac`,
+    '  if [ -e "$f" ]; then',
+    `    mv -f "$f" ${old}/ || { rollback; exit 1; }`,
+    '  fi',
+    'done',
+    `for f in ${stage}/..?* ${stage}/.[!.]* ${stage}/*; do`,
+    '  if [ -e "$f" ]; then',
+    '    mv -f "$f" /v/ || { rollback; exit 1; }',
+    '  fi',
+    'done',
+    // Best-effort: the restore is committed; a stale aside copy must not
+    // fail the operation after the data is already in place.
+    `rm -rf ${old} ${stage} 2>/dev/null || true`,
+  ].join('\n');
+}
+
+/**
  * Restore a gzipped tarball back into a named volume.
  *
- * The volume is emptied first. Extracting over the existing contents would
- * merge the two, silently keeping files the snapshot does not contain and
- * leaving the volume in a state that never existed.
+ * Atomicity: the archive is fully extracted into a staging directory inside
+ * the volume before any existing content is moved away; the swap itself is
+ * a short sequence of same-filesystem renames. A failure during extraction
+ * (corrupt member, ENOSPC) leaves the volume exactly as it was.
  */
 export async function restoreVolume(
   name: string,
@@ -783,10 +836,7 @@ export async function restoreVolume(
       '-v', `${name}:/v`,
       VOLUME_TAR_IMAGE,
       'sh', '-c',
-      // Reject corrupt/truncated archives before touching the existing data.
-      // This is a preflight, not an atomic restore: extraction can still fail
-      // later because of disk or filesystem errors.
-      `tar -tzf ${VOLUME_TMP_ARCHIVE} >/dev/null && { rm -rf /v/..?* /v/.[!.]* /v/* 2>/dev/null; tar -xzf ${VOLUME_TMP_ARCHIVE} -C /v; }`,
+      volumeRestoreScript(randomUUID().slice(0, 8)),
     ])
   ).trim();
   try {
