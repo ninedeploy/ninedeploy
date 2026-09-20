@@ -4,7 +4,7 @@ import { domains, type Domain } from '@ninedeploy/db';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { createDomain, domainPatch } from '@ninedeploy/schemas';
 import { parseHeaders, writeDynamicConfig } from '../engine/proxy.js';
-import { createDnsRecord, deleteDnsRecord, detectPublicIp, getDnsRecordsConfig } from '../lib/cloudflare.js';
+import { createDnsRecord, deleteDnsRecord, detectPublicIp, getDnsRecordsConfig, listDnsRecordsByName } from '../lib/cloudflare.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { assertServiceRole } from '../lib/resourceAccess.js';
 import { badRequest, conflict, notFound, parseId as num } from '../lib/errors.js';
@@ -18,6 +18,7 @@ import {
   normalizeHost,
   requiresOwnershipProof,
   ownZoneClaimRefusal,
+  wwwCompanionHost,
 } from '../lib/domainVerification.js';
 
 /**
@@ -86,6 +87,20 @@ function serialize(d: Domain) {
     createdAt: d.createdAt.toISOString(),
     updatedAt: d.updatedAt.toISOString(),
   };
+}
+
+/**
+ * Ensure the companion www/apex record exists in the provider zone. A www
+ * redirect routes (and requests a certificate for) the companion host too —
+ * without DNS pointing here, that certificate can never issue. Idempotent: a
+ * zone that already has a record for the host — created manually or by an
+ * earlier toggle — is left alone rather than gaining a duplicate.
+ */
+async function ensureCompanionRecord(token: string, hostname: string, content: string): Promise<void> {
+  const companion = wwwCompanionHost(hostname);
+  if (!companion) return;
+  const existing = await listDnsRecordsByName(token, companion);
+  if (existing.length === 0) await createDnsRecord(token, companion, content);
 }
 
 /** What the caller has to publish in DNS for a domain still awaiting proof. */
@@ -165,6 +180,7 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
         const content = dnsCfg.content || (await detectPublicIp());
         dnsRecordId = await createDnsRecord(dnsCfg.token, hostname, content);
         await app.db.update(domains).set({ dnsRecordId }).where(eq(domains.id, d.id));
+        if (input.redirectWww) await ensureCompanionRecord(dnsCfg.token, hostname, content);
       } catch (err) {
         dnsWarning = err instanceof Error ? err.message : String(err);
       }
@@ -227,6 +243,10 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
         const content = dnsCfg.content || (await detectPublicIp());
         const dnsRecordId = await createDnsRecord(dnsCfg.token, updated.hostname, content);
         await app.db.update(domains).set({ dnsRecordId }).where(eq(domains.id, updated.id));
+        // A redirectWww domain routes (and orders a certificate for) its
+        // companion host too — the record must exist the moment the domain
+        // goes active, not only when the toggle is (re-)saved.
+        if (updated.redirectWww) await ensureCompanionRecord(dnsCfg.token, updated.hostname, content);
       } catch (err) {
         dnsWarning = err instanceof Error ? err.message : String(err);
       }
@@ -296,9 +316,26 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
       .where(and(eq(domains.id, domainId), eq(domains.serviceId, id)))
       .returning();
     if (!d) throw notFound('Domain not found');
+    // A patch that leaves redirectWww ON adds the companion host to routing
+    // and to ACME — it needs a DNS record like the stored hostname has one.
+    // `ensureCompanionRecord` is idempotent (a zone record that already exists
+    // is left alone), so no-op re-saves cost only one provider list call.
+    // Best effort like every provider interaction: the toggle itself must not
+    // fail over DNS, the warning rides along on the response instead.
+    let dnsWarning: string | null = null;
+    if (input.redirectWww === true && d.status === 'active') {
+      const dnsCfg = await getDnsRecordsConfig(app.db);
+      if (dnsCfg.enabled && dnsCfg.token) {
+        try {
+          await ensureCompanionRecord(dnsCfg.token, d.hostname, dnsCfg.content || (await detectPublicIp()));
+        } catch (err) {
+          dnsWarning = err instanceof Error ? err.message : String(err);
+        }
+      }
+    }
     await writeDynamicConfig(app.db);
     void audit(app.db, req.user!.id, 'domain.update', d.hostname);
-    return serialize(d);
+    return dnsWarning ? { ...serialize(d), dnsWarning } : serialize(d);
   });
 
   app.delete('/:id/domains/:domainId', async (req) => {

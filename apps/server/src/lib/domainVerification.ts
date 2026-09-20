@@ -168,3 +168,18 @@ export function hostsCollide(a: string, b: string): boolean {
       : false;
   return covers(x, y) || covers(y, x);
 }
+
+/**
+ * The other half of an apex/www pair for a `redirectWww` domain: the `www.`
+ * form for an apex host, the bare apex for a `www.` host. Null for wildcards
+ * (the www redirect never applies to them) and for hosts whose stripped form
+ * has no dot left — `www.com` is treated as its own apex, not a www form of
+ * the `com` TLD.
+ */
+export function wwwCompanionHost(hostname: string): string | null {
+  const host = normalizeHost(hostname);
+  if (!host || host.startsWith('*.')) return null;
+  const stripped = host.replace(/^www\./, '');
+  const apex = stripped.includes('.') ? stripped : host;
+  return host === apex ? `www.${apex}` : apex;
+}

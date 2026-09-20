@@ -135,3 +135,17 @@ export async function deleteDnsRecord(token: string, hostname: string, recordId:
   if (!zoneId) return;
   await cf(`/zones/${zoneId}/dns_records/${recordId}`, token, { method: 'DELETE' }).catch(() => undefined);
 }
+
+/**
+ * List a hostname's records in its zone. Companion www records are created
+ * without storing their id, so callers use this to keep them idempotent
+ * (create only when the zone has none yet) instead of piling duplicates.
+ */
+export async function listDnsRecordsByName(
+  token: string,
+  hostname: string,
+): Promise<Array<{ id: string; type: string; name: string; content: string }>> {
+  const zoneId = await findZoneId(token, hostname);
+  if (!zoneId) return [];
+  return cf(`/zones/${zoneId}/dns_records?name=${encodeURIComponent(hostname)}&per_page=100`, token);
+}

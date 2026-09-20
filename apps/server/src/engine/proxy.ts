@@ -9,6 +9,7 @@ import { capture, run, sleep } from '../lib/exec.js';
 import { getSettingString } from '../lib/settings.js';
 import { decrypt, encrypt } from '../lib/crypto.js';
 import { ensureDockerImage } from '../lib/dockerPull.js';
+import { hostsCollide, wwwCompanionHost } from '../lib/domainVerification.js';
 import { reapTraefikNetworks } from '../lib/serviceBridge.js';
 import { MAX_REPLICAS, NETWORK, replicaNames, TRAEFIK_CONTAINER, TRAEFIK_IMAGE } from './dockerNames.js';
 
@@ -551,32 +552,60 @@ export async function renderDynamicConfig(
     if (!host) continue; // every char was stripped → the hostname is unusable/unsafe
     const cleanPath = String(d.path ?? '').replace(PATH_RE, '');
     const entry = d.ssl ? 'websecure' : 'web';
+    // Per-domain middlewares: www→apex redirect + custom response headers + basicAuth + ipAllowlist + rateLimit.
+    const mwList: string[] = [];
+
+    // www→apex redirect. The router must claim BOTH hosts of the pair or the
+    // feature is dead on the wire: a request for the `www.` form matches no
+    // router, so the redirect middleware never runs AND Traefik never asks
+    // ACME for a `www.` certificate (the browser sees the default cert).
+    // The rule is only extended when no other active row already routes the
+    // companion host — Traefik ranks routers by rule length, so the extended
+    // rule would silently steal that row's traffic.
+    const companion = d.redirectWww && !host.startsWith('*.') ? wwwCompanionHost(host) : null;
+    const companionTaken =
+      companion != null &&
+      all.some((o) => {
+        if (o.id === d.id || o.status !== 'active') return false;
+        const osvc = servicesById.get(o.serviceId);
+        return !!osvc?.port && !!osvc.runtimeId && hostsCollide(o.hostname, companion);
+      });
+    const wwwPair = companion != null && !companionTaken;
+    // The apex form of the pair — `www.` stripped when that left a real host.
+    const stripped = host.replace(/^www\./, '');
+    const apexHost = host.startsWith('*.') || !stripped.includes('.') ? host : stripped;
+    if (companion != null) {
+      const mw = `mw_${key}_www`;
+      mwList.push(mw);
+      // The regex must match ONLY the www form: matching the apex too would
+      // redirect it to itself — an infinite loop, since redirectRegex fires
+      // on every match without comparing old and new URL.
+      middlewares.push(
+        `    ${mw}:\n` +
+          '      redirectRegex:\n' +
+          `        regex: "${yamlDoubleQuoted(`^https?://www\\.${escapeRegexp(apexHost)}(.*)`)}"\n` +
+          `        replacement: "https://${apexHost}$1"\n`,
+      );
+    }
     // TLS routers reference the ACME resolver when automatic HTTPS is enabled;
     // otherwise keep the old behavior (Traefik's default self-signed cert).
+    // A www pair lists both domains SEPARATELY — Traefik orders one
+    // certificate per `domains` entry, so a `www.` host whose DNS never
+    // points here fails only its own issuance and leaves the apex intact.
     const tlsBlock = d.ssl
       ? acmeEmail
-        ? '\n      tls:\n        certResolver: letsencrypt'
+        ? wwwPair
+          ? '\n      tls:\n        certResolver: letsencrypt\n        domains:\n' +
+            `          - main: "${apexHost}"\n          - main: "www.${apexHost}"\n`
+          : '\n      tls:\n        certResolver: letsencrypt'
         : '\n      tls: {}'
       : '';
     // Traefik's Host() matcher is literal — a wildcard hostname needs a
     // HostRegexp rule instead (`*.example.com` → one label + the suffix).
-    const hostMatcher = host.startsWith('*.')
+    let hostMatcher = host.startsWith('*.')
       ? `HostRegexp(\`^[a-zA-Z0-9-]+\\.${escapeRegexp(host.slice(2))}$\`)`
       : `Host(\`${host}\`)`;
-
-    // Per-domain middlewares: www→apex redirect + custom response headers + basicAuth + ipAllowlist + rateLimit.
-    const mwList: string[] = [];
-    const apexHost = host.startsWith('*.') ? host : host.replace(/^www\./, '');
-    if (d.redirectWww && !host.startsWith('*.')) {
-      const mw = `mw_${key}_www`;
-      mwList.push(mw);
-      middlewares.push(
-        `    ${mw}:\n` +
-          '      redirectRegex:\n' +
-          `        regex: "${yamlDoubleQuoted(`^https?://(?:www\\.)?${escapeRegexp(apexHost)}(.*)`)}"\n` +
-          `        replacement: "https://${apexHost}$1"\n`,
-      );
-    }
+    if (wwwPair) hostMatcher = `Host(\`${apexHost}\`) || Host(\`www.${apexHost}\`)`;
     const headerList = parseHeaders(d.headers);
     if (headerList.length > 0) {
       const mw = `mw_${key}_headers`;
@@ -628,8 +657,12 @@ export async function renderDynamicConfig(
       }
     }
 
+    // Traefik v3's rule grammar forbids mixing `&&` and `||` without
+    // parentheses — a pair rule joined to a PathPrefix must be wrapped.
+    const needParens = hostMatcher.includes('||') && cleanPath && cleanPath !== '/';
     const fullRule =
-      hostMatcher + (cleanPath && cleanPath !== '/' ? ` && PathPrefix(\`${cleanPath}\`)` : '');
+      (needParens ? `(${hostMatcher})` : hostMatcher) +
+      (cleanPath && cleanPath !== '/' ? ` && PathPrefix(\`${cleanPath}\`)` : '');
 
     routers.push(
       `    ${key}:\n` +

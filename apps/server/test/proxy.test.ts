@@ -852,7 +852,8 @@ describe('DNS-01 challenge (wildcard SSL)', () => {
     h.config.wildcardDomain = '';
   });
 
-  it('emits a www→apex redirect middleware and wires it to the router', async () => {
+  it('claims the apex/www pair, redirects www→apex and splits the certs (www-stored host)', async () => {
+    h.config.acmeEmail = 'ops@example.com';
     const db = makeDb(
       [{ id: 1, serviceId: 1, hostname: 'www.example.com', path: '/', ssl: true, redirectWww: true, status: 'active' }],
       [{ id: 1, slug: 'web', port: 3000, runtimeId: 'web-1' }],
@@ -861,12 +862,82 @@ describe('DNS-01 challenge (wildcard SSL)', () => {
     await writeDynamicConfig(db as never);
 
     const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    // The router claims BOTH hosts — a www request that matches no router
+    // would never reach the redirect and never get a certificate.
+    expect(yaml).toContain('rule: "Host(`example.com`) || Host(`www.example.com`)"');
     expect(yaml).toContain('mw_web_1_www:');
-    expect(yaml).toContain('regex: "^https?://(?:www\\\\.)?example\\\\.com(.*)"');
+    // The regex matches ONLY the www form — matching the apex too would
+    // redirect it onto itself in an endless loop.
+    expect(yaml).toContain('regex: "^https?://www\\\\.example\\\\.com(.*)"');
+    expect(yaml).not.toContain('(?:www');
     expect(yaml).toContain('replacement: "https://example.com$1"');
     expect(yaml).toContain('middlewares:\n        - mw_web_1_www');
+    // One ACME order per host: a www host with broken DNS fails only itself.
+    expect(yaml).toContain('certResolver: letsencrypt\n        domains:');
+    expect(yaml).toContain('- main: "example.com"');
+    expect(yaml).toContain('- main: "www.example.com"');
     // The empty middlewares section is never emitted when one exists.
     expect(yaml).not.toContain('middlewares:    {}');
+    h.config.acmeEmail = null;
+  });
+
+  it('claims the apex/www pair for an apex-stored host too', async () => {
+    h.config.acmeEmail = 'ops@example.com';
+    const db = makeDb(
+      [{ id: 1, serviceId: 1, hostname: 'example.com', path: '/', ssl: true, redirectWww: true, status: 'active' }],
+      [{ id: 1, slug: 'web', port: 3000, runtimeId: 'web-1' }],
+    );
+
+    await writeDynamicConfig(db as never);
+
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    expect(yaml).toContain('rule: "Host(`example.com`) || Host(`www.example.com`)"');
+    expect(yaml).toContain('mw_web_1_www:');
+    expect(yaml).toContain('replacement: "https://example.com$1"');
+    expect(yaml).toContain('- main: "www.example.com"');
+    h.config.acmeEmail = null;
+  });
+
+  it('does not claim a www companion another active row already routes', async () => {
+    h.config.acmeEmail = 'ops@example.com';
+    const db = makeDb(
+      [
+        { id: 1, serviceId: 1, hostname: 'example.com', path: '/', ssl: true, redirectWww: true, status: 'active' },
+        { id: 2, serviceId: 2, hostname: 'www.example.com', path: '/', ssl: true, status: 'active' },
+      ],
+      [
+        { id: 1, slug: 'web', port: 3000, runtimeId: 'web-1' },
+        { id: 2, slug: 'api', port: 4000, runtimeId: 'api-1' },
+      ],
+    );
+
+    await writeDynamicConfig(db as never);
+
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    // Extending the apex row's rule would outrank the www row's own router
+    // (Traefik ranks by rule length) and steal its traffic — so the apex row
+    // keeps its plain single-host rule and no per-router domains list.
+    expect(yaml).toContain('rule: "Host(`example.com`)"');
+    expect(yaml).not.toContain('||');
+    expect(yaml).not.toContain('- main: "www.example.com"');
+    // The www row keeps its own literal router.
+    expect(yaml).toContain('rule: "Host(`www.example.com`)"');
+    h.config.acmeEmail = null;
+  });
+
+  it('wraps a pair rule in parentheses before a PathPrefix', async () => {
+    const db = makeDb(
+      [
+        { id: 1, serviceId: 1, hostname: 'example.com', path: '/app', ssl: false, redirectWww: true, status: 'active' },
+      ],
+      [{ id: 1, slug: 'web', port: 3000, runtimeId: 'web-1' }],
+    );
+
+    await writeDynamicConfig(db as never);
+
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    // Traefik v3 refuses rules that mix && and || without parentheses.
+    expect(yaml).toContain('rule: "(Host(`example.com`) || Host(`www.example.com`)) && PathPrefix(`/app`)"');
   });
 
   it('skips the www redirect for wildcard hostnames', async () => {

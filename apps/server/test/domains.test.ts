@@ -27,6 +27,7 @@ const cfMocks = vi.hoisted(() => ({
   createDnsRecord: vi.fn(async () => 'rec-1'),
   deleteDnsRecord: vi.fn(async () => undefined),
   detectPublicIp: vi.fn(async () => '203.0.113.5'),
+  listDnsRecordsByName: vi.fn(async () => []),
 }));
 vi.mock('../src/lib/cloudflare.js', () => cfMocks);
 
@@ -48,6 +49,96 @@ describe('domains routes (Cloudflare integration)', () => {
     expect(res.json().dnsWarning).toBeNull();
     expect(cfMocks.detectPublicIp).toHaveBeenCalled();
     expect(cfMocks.createDnsRecord).toHaveBeenCalledWith('tok', 'app.example.com', '203.0.113.5');
+  });
+
+  it('creates the companion www record when the domain is created with the www redirect', async () => {
+    cfMocks.getDnsRecordsConfig.mockResolvedValueOnce({ enabled: true, token: 'tok', content: null });
+    const db = createFakeDb({
+      findFirst: { services: svcRow() },
+      insert: { domains: [domainRow({ hostname: 'app.example.com', redirectWww: true })] },
+      update: { domains: [domainRow({ dnsRecordId: 'rec-1' })] },
+    });
+    const app = await buildTestApp({ db });
+    await app.register(domainsRoutes);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/1/domains',
+      headers: asUser(),
+      payload: { ...createPayload, redirectWww: true },
+    });
+    expect(res.statusCode).toBe(200);
+    // The www form needs DNS pointing here or its certificate can never issue.
+    expect(cfMocks.listDnsRecordsByName).toHaveBeenCalledWith('tok', 'www.app.example.com');
+    expect(cfMocks.createDnsRecord).toHaveBeenCalledWith('tok', 'www.app.example.com', '203.0.113.5');
+  });
+
+  it('does not duplicate an existing companion www record', async () => {
+    // Mock history accumulates across this file's tests — read the call log
+    // from a clean slate so only THIS request's provider traffic counts.
+    cfMocks.createDnsRecord.mockClear();
+    cfMocks.getDnsRecordsConfig.mockResolvedValueOnce({ enabled: true, token: 'tok', content: '1.2.3.4' });
+    cfMocks.listDnsRecordsByName.mockResolvedValueOnce([{ id: 'rec-x', type: 'A', name: 'www.app.example.com', content: '1.2.3.4' }]);
+    const db = createFakeDb({
+      findFirst: { services: svcRow() },
+      insert: { domains: [domainRow({ redirectWww: true })] },
+      update: { domains: [domainRow({ dnsRecordId: 'rec-1' })] },
+    });
+    const app = await buildTestApp({ db });
+    await app.register(domainsRoutes);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/1/domains',
+      headers: asUser(),
+      payload: { ...createPayload, redirectWww: true },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(cfMocks.createDnsRecord).toHaveBeenCalledTimes(1);
+    expect(cfMocks.createDnsRecord).toHaveBeenCalledWith('tok', 'app.example.com', '1.2.3.4');
+  });
+
+  it('ensures the companion www record when the redirect is toggled on', async () => {
+    cfMocks.getDnsRecordsConfig.mockResolvedValueOnce({ enabled: true, token: 'tok', content: null });
+    const db = createFakeDb({
+      findFirst: { services: svcRow() },
+      update: { domains: [domainRow({ id: 3, redirectWww: true })] },
+    });
+    const app = await buildTestApp({ db });
+    await app.register(domainsRoutes);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/1/domains/3',
+      headers: asUser(),
+      payload: { redirectWww: true },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ id: 3, redirectWww: true });
+    expect(cfMocks.createDnsRecord).toHaveBeenCalledWith('tok', 'www.app.example.com', '203.0.113.5');
+  });
+
+  it('ensures the companion www record when a pending redirectWww domain is verified', async () => {
+    // Domains created before a DNS provider was configured stay pending; when
+    // they later verify, the companion www record must be created too — the
+    // redirect routes (and orders a certificate for) that host the moment the
+    // domain goes active, not only when the toggle is re-saved.
+    cfMocks.detectPublicIp.mockResolvedValue('203.0.113.5');
+    cfMocks.getDnsRecordsConfig.mockResolvedValueOnce({ enabled: true, token: 'tok', content: null });
+    dnsMocks.resolveTxt.mockResolvedValueOnce([['nd-verify-pending-token']]);
+    const db = createFakeDb({
+      findFirst: {
+        services: svcRow(),
+        domains: domainRow({
+          id: 4, status: 'pending', redirectWww: true, verificationToken: 'nd-verify-pending-token',
+        }),
+      },
+      update: { domains: [domainRow({ id: 4, status: 'active', redirectWww: true, dnsRecordId: 'rec-1' })] },
+    });
+    const app = await buildTestApp({ db });
+    await app.register(domainsRoutes);
+    const res = await app.inject({ method: 'POST', url: '/1/domains/4/verify', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ id: 4, verified: true });
+    expect(cfMocks.createDnsRecord).toHaveBeenCalledWith('tok', 'app.example.com', '203.0.113.5');
+    expect(cfMocks.createDnsRecord).toHaveBeenCalledWith('tok', 'www.app.example.com', '203.0.113.5');
   });
 
   it('uses the configured record content directly', async () => {
