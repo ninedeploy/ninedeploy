@@ -405,7 +405,10 @@ export interface TestAppOpts {
  *   - the same error envelope app.ts produces (ZodError → 400, HttpError → status)
  */
 export async function buildTestApp(opts: TestAppOpts = {}): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false });
+  // pluginTimeout: the test kernel's onReady wires the whole plugin graph
+  // (PGlite migrations included); under load that has blown the 10s default
+  // and flaked suites (observed on oidc.test.ts during parallel runs).
+  const app = Fastify({ logger: false, pluginTimeout: 30_000 });
   if (opts.rawBody) await app.register(rawBodyPlugin);
   if (opts.websocket) await app.register(websocket);
 

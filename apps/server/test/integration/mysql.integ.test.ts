@@ -49,8 +49,24 @@ describe.skipIf(!ENABLED)('database backup/restore (real MySQL container)', () =
     if (container) await container.stop();
   });
 
-  const execSql = (sql: string) =>
-    capture('docker', ['exec', db.containerName, 'mysql', '-uroot', `-p${PASSWORD}`, '-e', sql]);
+  // mysqld's init sequence can briefly refuse connections AFTER the root
+  // credential starts working (observed once on CI: "Can't connect to the
+  // server" 69ms into the first statement). Retry transient connection
+  // errors instead of failing the whole suite on a startup blip.
+  const execSql = async (sql: string): Promise<string> => {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await capture('docker', ['exec', db.containerName, 'mysql', '-uroot', `-p${PASSWORD}`, '-e', sql]);
+      } catch (err) {
+        lastError = err;
+        const message = err instanceof Error ? err.message : String(err);
+        if (!/Can't connect|server has gone away|Lost connection/i.test(message)) throw err;
+        await new Promise((r) => setTimeout(r, 1_000));
+      }
+    }
+    throw lastError;
+  };
 
   it('round-trips a table through mysqldump backup and mysql restore', async () => {
     await execSql('CREATE DATABASE integ; USE integ; CREATE TABLE t (id INT, label VARCHAR(64)); INSERT INTO t VALUES (1, "roundtrip");');

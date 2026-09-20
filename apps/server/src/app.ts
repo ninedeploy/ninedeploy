@@ -43,6 +43,10 @@ export async function buildApp(): Promise<FastifyInstance> {
     // trusting that single hop, request.ip (and therefore every rate-limit
     // bucket and audit row) collapses onto the proxy's container IP.
     trustProxy: config.trustProxy,
+    // onReady wires the whole plugin graph — including self-migration over a
+    // possibly cold disk (restart overlap, container start). The 10s default
+    // has flaked under load; startup legitimately takes as long as it takes.
+    pluginTimeout: 30_000,
     logger: {
       // Never persist query strings. Current WebSocket clients use an auth
       // subprotocol header, while older clients may still send ?token=.
