@@ -51,7 +51,11 @@ beforeEach(() => {
 afterEach(() => {
   const { localStorage, createElement, clipboard } = getOriginalGlobals();
   if (typeof window !== 'undefined') {
-    if (localStorage) window.localStorage = localStorage;
+    // defineProperty, not assignment: jsdom 30.1 made window.localStorage a
+    // getter-only accessor, and a strict-mode assignment throws on it.
+    if (localStorage) {
+      Object.defineProperty(window, 'localStorage', { configurable: true, value: localStorage });
+    }
   }
   if (typeof document !== 'undefined') {
     if (createElement) document.createElement = createElement;

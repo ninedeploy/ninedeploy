@@ -29,6 +29,11 @@ import {
   websocketAuthProtocols,
 } from '../src/lib/api.js';
 
+// Vitest 5 clears mock state between module evaluation and the first test, so
+// evidence about the import-time createClient() call must be captured NOW —
+// the live mock.calls is empty by the time any test runs.
+const createClientCallsAtImport = sdkMock.createClient.mock.calls;
+
 const TOKEN_KEY = 'ninedeploy.token';
 const REFRESH_KEY = 'ninedeploy.refreshToken';
 
@@ -177,8 +182,8 @@ describe('api client', () => {
   });
 
   it('creates the SDK client with the configured baseUrl and a token reader', () => {
-    expect(sdkMock.createClient).toHaveBeenCalledTimes(1);
-    const opts = sdkMock.createClient.mock.calls[0]?.[0] as {
+    expect(createClientCallsAtImport).toHaveLength(1);
+    const opts = createClientCallsAtImport[0]?.[0] as {
       baseUrl: string;
       getToken?: () => string | undefined;
       fetch?: typeof fetch;

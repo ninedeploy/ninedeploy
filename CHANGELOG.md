@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Test tooling moves to Vitest 5 (dev-only): the suite passes unchanged after adapting two web tests — api.test now captures the import-time createClient call evidence at module-evaluation time (Vitest 5 clears mock state before the first test), and ManifestCreator restores window.localStorage via defineProperty (jsdom 30.1 made it a getter-only accessor). Server and SDK coverage measured identical to Vitest 4 (±0.06pp) on an isolated upgrade run.
+
 
 ## [0.10.5] - 2026-09-20
 
