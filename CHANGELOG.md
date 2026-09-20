@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+
+## [0.10.5] - 2026-09-20
+
+> The www patch: redirects that reach the wire — routers claim the
+> whole apex/www pair, certificates split per host.
+
+### Fixed
+
 - The per-domain www toggle now actually secures `www.`: the Traefik router rule claims both hosts of the apex/www pair, so www traffic reaches the redirect middleware and Traefik finally requests a certificate for it (previously the router matched only the stored hostname — `https://www.…` answered with the default certificate and the redirect never ran). The redirect regex now matches only the www form, which also removes a latent self-redirect loop on the apex. Both hosts are listed as separate ACME `domains` entries so a www host with broken DNS fails only its own certificate, the rule is not extended when another active domain row already routes the companion host, and the Cloudflare integration creates the missing companion DNS record when the toggle is turned on.
 
 ## [0.10.4] - 2026-09-19

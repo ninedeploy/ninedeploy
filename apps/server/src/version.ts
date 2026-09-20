@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.4';
+export const VERSION = '0.10.5';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.5',
+    date: '2026-09-20',
+    title: 'The www Patch — Redirects That Reach the Wire',
+    changes: [
+      'A redirectWww domain now routes the whole apex/www pair: the Traefik router claims both hosts so www requests reach the redirect middleware and Traefik orders a certificate for the www form (previously the router matched only the stored hostname — www traffic answered with the default certificate and never redirected). The redirect regex matches only the www form, removing a latent self-redirect loop; certificate orders are split per host so a www host with broken DNS fails alone; and the companion DNS record is created idempotently on create, on toggle, and on verification of domains that started pending.',
+    ],
+  },
+{
     version: '0.10.4',
     date: '2026-09-19',
     title: 'The Scaling Fix — Replicas That Actually Run',
