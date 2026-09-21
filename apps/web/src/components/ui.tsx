@@ -3,6 +3,7 @@ import {
   cloneElement,
   type InputHTMLAttributes,
   isValidElement,
+  type ReactElement,
   type ReactNode,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
@@ -231,7 +232,9 @@ export function Field({
         )}
         {hint && <span className="text-[11px] text-slate-500">{hint}</span>}
       </div>
-      {control ? cloneElement(control, { id: controlId }) : children}
+      {control
+        ? cloneElement(control as ReactElement<{ id?: string }>, { id: controlId })
+        : children}
       {error != null && <p className="mt-1.5 text-[11px] leading-relaxed text-rose-300">{error}</p>}
     </div>
   );
