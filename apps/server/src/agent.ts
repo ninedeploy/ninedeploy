@@ -823,7 +823,18 @@ export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: 
 // Boot when the agent flag is set. Tests set NINEDEPLOY_AGENT=1 explicitly
 // (via test/agentBoot.test.ts) so the boot path stays covered.
 if (process.env['NINEDEPLOY_AGENT'] === '1') {
-  void main();
+  // Parity with the panel's r168 guard: a stray rejected promise in a
+  // fire-and-forget path must be logged, not kill the agent mid-deploy.
+  process.on('unhandledRejection', (reason) => {
+    console.error(`[NineDeploy Agent] Unhandled rejection: ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}`);
+  });
+  // A failed BOOT, by contrast, should exit nonzero so systemd's
+  // Restart=on-failure sees a clean failure instead of a half-booted agent
+  // idling against the panel forever.
+  void main().catch((err: unknown) => {
+    console.error(`[NineDeploy Agent] Boot failed: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  });
 }
 
 export const agentMode = { main, OPS };
