@@ -16,7 +16,7 @@ describe('autoPrune engine', () => {
       findMany: { services: [{ runtimeId: 'web-41', replicas: 2 }, { runtimeId: null, replicas: 1 }] },
     });
     const old = '2020-01-01 00:00:00 +0000 UTC';
-    const fresh = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' +0000 UTC';
+    const fresh = `${new Date().toISOString().replace('T', ' ').slice(0, 19)} +0000 UTC`;
     const runner = vi.fn(async (_cmd: string, args: string[]) => {
       if (args[0] === 'ps') {
         return {

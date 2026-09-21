@@ -19,6 +19,27 @@ import './web-utils.js';
  */
 const NODE_NPM_PRESET = `Node ${recommendedRuntimeVersion('node')} (npm)`;
 
+/**
+ * jsdom's Blob-URL plumbing differs across versions (30.0 ships no
+ * createObjectURL; 30.1 implements it against internal Blob fields that this
+ * environment's string parts don't survive). The download tests only assert
+ * that the anchor click happens, so pin the Blob-URL plumbing out of the
+ * picture and restore whatever the environment had.
+ */
+function stubBlobUrls(): () => void {
+  const url = URL as unknown as Record<string, unknown>;
+  const create = url.createObjectURL;
+  const revoke = url.revokeObjectURL;
+  url.createObjectURL = () => 'blob:manifest-creator-test';
+  url.revokeObjectURL = () => undefined;
+  return () => {
+    if (create === undefined) delete url.createObjectURL;
+    else url.createObjectURL = create;
+    if (revoke === undefined) delete url.revokeObjectURL;
+    else url.revokeObjectURL = revoke;
+  };
+}
+
 /** Render the page with both Router + QueryClient providers. */
 function renderPage(initialRoute = '/manifest-creator') {
   return renderWithProviders(<ManifestCreator />, {
@@ -166,6 +187,7 @@ describe('ManifestCreator', () => {
 
   it('downloads the file when the Download button is clicked', async () => {
     const user = userEvent.setup();
+    const restoreBlobUrls = stubBlobUrls();
     let anchorClickCount = 0;
     // The download flow calls `document.createElement('a')` and clicks it.
     // Intercept the click to count invocations without actually downloading.
@@ -187,6 +209,7 @@ describe('ManifestCreator', () => {
     await user.click(screen.getByRole('button', { name: /Download/ }));
     expect(anchorClickCount).toBeGreaterThan(0);
     createElementSpy.mockRestore();
+    restoreBlobUrls();
   });
 
   it('copies the YAML to the clipboard via the Copy button', async () => {
@@ -410,6 +433,7 @@ describe('ManifestCreator', () => {
 
   it('renders the preview modal Download button', async () => {
     const user = userEvent.setup();
+    const restoreBlobUrls = stubBlobUrls();
     let anchorClickCount = 0;
     const realCreateElement = document.createElement.bind(document);
     const createElementSpy = vi.spyOn(document, 'createElement');
@@ -432,6 +456,7 @@ describe('ManifestCreator', () => {
     await user.click(downloadButtons[0]!);
     expect(anchorClickCount).toBeGreaterThan(0);
     createElementSpy.mockRestore();
+    restoreBlobUrls();
   });
 
   it('previews the modal, closes it via the header X, and reopens cleanly', async () => {
