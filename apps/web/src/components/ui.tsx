@@ -1,6 +1,8 @@
 import {
   type ButtonHTMLAttributes,
+  cloneElement,
   type InputHTMLAttributes,
+  isValidElement,
   type ReactNode,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
@@ -202,13 +204,33 @@ export function Field({
   error?: ReactNode;
   children: ReactNode;
 }) {
+  const id = useId();
+  // Associate the visible label with the control when the Field wraps a
+  // single form control (the overwhelmingly common shape) so screen readers
+  // announce the field name. Button groups, multi-control rows and fragments
+  // keep the previous unnamed behavior — a wrapping label would leak its
+  // whole text into every descendant button's accessible name.
+  const control =
+    isValidElement(children) &&
+    (children.type === Input || children.type === Textarea || children.type === Select)
+      ? children
+      : null;
+  const labelClass = 'block text-xs font-semibold uppercase tracking-wide text-slate-400';
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
-        <span className="block text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+        {control ? (
+          <label htmlFor={id} className={labelClass}>
+            {label}
+          </label>
+        ) : (
+          <span className={labelClass}>{label}</span>
+        )}
         {hint && <span className="text-[11px] text-slate-500">{hint}</span>}
       </div>
-      {children}
+      {control
+        ? cloneElement(control, { id: (control.props as { id?: string }).id ?? id })
+        : children}
       {error != null && <p className="mt-1.5 text-[11px] leading-relaxed text-rose-300">{error}</p>}
     </div>
   );
