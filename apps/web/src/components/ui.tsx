@@ -216,11 +216,14 @@ export function Field({
       ? children
       : null;
   const labelClass = 'block text-xs font-semibold uppercase tracking-wide text-slate-400';
+  // The label must point at the id the control will ACTUALLY carry: a
+  // caller-provided id wins over the generated one.
+  const controlId = control ? ((control.props as { id?: string }).id ?? id) : id;
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
         {control ? (
-          <label htmlFor={id} className={labelClass}>
+          <label htmlFor={controlId} className={labelClass}>
             {label}
           </label>
         ) : (
@@ -228,9 +231,7 @@ export function Field({
         )}
         {hint && <span className="text-[11px] text-slate-500">{hint}</span>}
       </div>
-      {control
-        ? cloneElement(control, { id: (control.props as { id?: string }).id ?? id })
-        : children}
+      {control ? cloneElement(control, { id: controlId }) : children}
       {error != null && <p className="mt-1.5 text-[11px] leading-relaxed text-rose-300">{error}</p>}
     </div>
   );
