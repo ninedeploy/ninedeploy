@@ -1890,7 +1890,37 @@
       "volumeMount": "/var/www/html/upload",
       "website": "https://limesurvey.org",
       "runtimeVerified": false,
-      "verifiedAt": "2026-09-16"
+      "verifiedAt": "2026-09-16",
+      "dbEngine": "mysql",
+      "databaseEnv": {
+        "DB_HOST": "host",
+        "DB_PORT": "port",
+        "DB_NAME": "database",
+        "DB_USER": "username",
+        "DB_PASSWORD": "password"
+      },
+      "env": [
+        {
+          "key": "DB_TYPE",
+          "value": "mysql",
+          "secret": false
+        },
+        {
+          "key": "ADMIN_PASSWORD",
+          "value": "generated",
+          "secret": true
+        },
+        {
+          "key": "ADMIN_NAME",
+          "value": "Administrator",
+          "secret": false
+        },
+        {
+          "key": "ADMIN_LOGIN",
+          "value": "admin@limesurvey.local",
+          "secret": false
+        }
+      ]
     },
     {
       "id": "redmine",
@@ -1927,12 +1957,20 @@
       "description": "A Drone fork with a simpler license story: pipelines as YAML, every step in its own container, native Gitea/Forgejo/GitHub/GitLab integration. SQLite-backed server — one container to start.",
       "category": "CI/CD",
       "emoji": "🐦",
-      "image": "woodpeckerci/woodpecker-server:latest",
+      "image": "woodpeckerci/woodpecker-server:v3",
       "port": 8000,
       "volumeMount": "/var/lib/woodpecker",
       "website": "https://woodpecker-ci.org",
       "runtimeVerified": false,
-      "verifiedAt": "2026-09-16"
+      "verifiedAt": "2026-09-16",
+      "env": [
+        {
+          "key": "WOODPECKER_HOST",
+          "value": "http://localhost:8000",
+          "secret": false
+        }
+      ],
+      "requires": "A Git forge (GitHub, Gitea, GitLab…) with OAuth credentials: set WOODPECKER_* forge env vars on the service after deploy — v3 refuses to boot without one."
     },
     {
       "id": "drone-ci",
@@ -1946,7 +1984,8 @@
       "volumeMount": "/data",
       "website": "https://drone.io",
       "runtimeVerified": false,
-      "verifiedAt": "2026-09-16"
+      "verifiedAt": "2026-09-16",
+      "requires": "Needs a source-control management server (GitHub, Gitea, GitLab…) configured via DRONE_* environment variables — v3 refuses to boot without one."
     },
     {
       "id": "fathom",
@@ -1988,7 +2027,8 @@
       "volumeMount": "/config",
       "website": "https://piwigo.org",
       "runtimeVerified": false,
-      "verifiedAt": "2026-09-16"
+      "verifiedAt": "2026-09-16",
+      "requires": "Needs a MySQL database and PIWIGO_DB_HOST/PIWIGO_DB_USER/PIWIGO_DB_PASSWORD/PIWIGO_DB_NAME environment variables set on the service before its web server starts."
     },
     {
       "id": "docker-registry",
@@ -2023,7 +2063,8 @@
         "DB_PASSWORD": "password"
       },
       "runtimeVerified": false,
-      "verifiedAt": "2026-09-16"
+      "verifiedAt": "2026-09-16",
+      "requires": "Needs a reachable MySQL/MariaDB database (attach one in Databases) — provisioning can take minutes before port 80 answers."
     },
     {
       "id": "fider",
@@ -2032,7 +2073,7 @@
       "description": "A portal where users suggest and vote on ideas — public or private boards, status workflow (open/planned/done) and comments. Attaches its managed PostgreSQL automatically.",
       "category": "Productivity",
       "emoji": "🗳️",
-      "image": "fider/fider:latest",
+      "image": "getfider/fider:main",
       "port": 3000,
       "volumeMount": null,
       "website": "https://fider.io",
@@ -2041,7 +2082,39 @@
         "DATABASE_URL": "url"
       },
       "runtimeVerified": false,
-      "verifiedAt": "2026-09-16"
+      "verifiedAt": "2026-09-16",
+      "env": [
+        {
+          "key": "JWT_SECRET",
+          "value": "generated",
+          "secret": true
+        },
+        {
+          "key": "BASE_URL",
+          "value": "http://localhost:3000",
+          "secret": false
+        },
+        {
+          "key": "EMAIL_NOREPLY",
+          "value": "no-reply@ninedeploy.local",
+          "secret": false
+        },
+        {
+          "key": "EMAIL_SMTP_HOST",
+          "value": "localhost",
+          "secret": false
+        },
+        {
+          "key": "EMAIL_SMTP_PORT",
+          "value": "25",
+          "secret": false
+        },
+        {
+          "key": "PGSSLMODE",
+          "value": "disable",
+          "secret": false
+        }
+      ]
     },
     {
       "id": "privatebin",
@@ -2065,11 +2138,23 @@
       "category": "DevOps",
       "emoji": "👀",
       "image": "getwud/wud:latest",
-      "port": 8000,
+      "port": 3000,
       "volumeMount": "/var/run/docker.sock",
       "website": "https://getwud.github.io",
       "runtimeVerified": false,
-      "verifiedAt": "2026-09-16"
+      "verifiedAt": "2026-09-16",
+      "env": [
+        {
+          "key": "WUD_AUTH_ADMIN_USER",
+          "value": "admin",
+          "secret": false
+        },
+        {
+          "key": "WUD_AUTH_ADMIN_PASSWORD",
+          "value": "generated",
+          "secret": true
+        }
+      ]
     },
     {
       "id": "organizr",
@@ -2126,7 +2211,15 @@
       "volumeMount": "/config",
       "website": "https://komga.org",
       "runtimeVerified": false,
-      "verifiedAt": "2026-09-16"
+      "verifiedAt": "2026-09-16",
+      "startTimeoutSeconds": 600,
+      "dbEngine": "postgres",
+      "databaseEnv": {
+        "SPRING_DATASOURCE_URL": "url",
+        "SPRING_DATASOURCE_USERNAME": "username",
+        "SPRING_DATASOURCE_PASSWORD": "password"
+      },
+      "requires": "Needs a PostgreSQL database configured via SPRING_DATASOURCE_URL (jdbc:postgresql://…) — set the SPRING_DATASOURCE_* env vars on the service after deploy; the managed-database URL contract does not match Komga’s JDBC format."
     },
     {
       "id": "metube",
@@ -2158,7 +2251,14 @@
         "MONGO_URL": "url"
       },
       "runtimeVerified": false,
-      "verifiedAt": "2026-09-16"
+      "verifiedAt": "2026-09-16",
+      "env": [
+        {
+          "key": "ROOT_URL",
+          "value": "http://localhost:8080",
+          "secret": false
+        }
+      ]
     },
     {
       "id": "filestash",
@@ -2167,7 +2267,7 @@
       "description": "A Dropbox-like web interface over FTP, SFTP, S3, WebDAV, Git and more — manage all your storage backends from one modern UI, with sharing and office-file previews.",
       "category": "Files",
       "emoji": "📁",
-      "image": "machine/filestash:latest",
+      "image": "machines/filestash:latest",
       "port": 8334,
       "volumeMount": "/app/data",
       "website": "https://filestash.app",
