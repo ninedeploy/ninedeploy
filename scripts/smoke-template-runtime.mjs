@@ -89,7 +89,8 @@ async function probePort(probeNetwork, ip, port) {
 
 /** Wait for `running` + listening on template.port; throws with tail logs. */
 async function waitListening(template, container, probeNetwork) {
-  const deadline = Date.now() + timeoutSeconds * 1000;
+  // Per-template override for slow cold starts (model-loading services).
+  const deadline = Date.now() + (template.startTimeoutSeconds ?? timeoutSeconds) * 1000;
   while (Date.now() < deadline) {
     const { stdout: state } = await docker(['inspect', container, '--format', '{{.State.Status}}']);
     if (state.trim() !== 'running') {

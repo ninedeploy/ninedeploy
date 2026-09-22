@@ -673,6 +673,11 @@ export const template = z.object({
   emoji: z.string(),
   image: z.string(),
   port: z.number().int(),
+  /** Override for the isolated smoke run's readiness window (seconds).
+   *  Upstream images whose cold start legitimately exceeds the 300s default
+   *  (model-loading services) set this so re-verification stays honest
+   *  instead of timing out a working image. */
+  startTimeoutSeconds: z.number().int().min(30).max(1800).optional(),
   volumeMount: z.string().nullable().optional(),
   env: z.array(z.object({ key: z.string(), value: z.string(), secret: z.boolean().optional() })).optional(),
   website: z.string().optional(),

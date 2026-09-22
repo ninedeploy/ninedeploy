@@ -103,7 +103,7 @@ describe('bundled Hub template contract', () => {
     // test fixtures (74d6eab removed it from the repo root, which left this
     // contract reading a file that no longer existed).
     const run = JSON.parse(
-      readFileSync(new URL('../fixtures/runtime-verify-2026-09-16.json', import.meta.url), 'utf8'),
+      readFileSync(new URL('../fixtures/runtime-verify-2026-09-22.json', import.meta.url), 'utf8'),
     ) as { results: Array<{ id: string; ok: boolean }> };
     const okIds = new Set(run.results.filter((r) => r.ok).map((r) => r.id));
     const verifiedIds = new Set(templates.filter((t) => t.runtimeVerified).map((t) => t.id));

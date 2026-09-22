@@ -1,18 +1,18 @@
 {
-  "generatedAt": "2026-09-16T08:46:38.961Z",
+  "generatedAt": "2026-09-22",
   "registryVersion": 2,
   "results": [
     {
       "id": "n8n",
       "profile": "plain",
       "ok": true,
-      "seconds": 7
+      "seconds": 11
     },
     {
       "id": "activepieces",
       "profile": "compose",
       "ok": true,
-      "seconds": 24
+      "seconds": 31
     },
     {
       "id": "directus",
@@ -48,7 +48,7 @@
       "id": "flowise",
       "profile": "plain",
       "ok": true,
-      "seconds": 7
+      "seconds": 11
     },
     {
       "id": "localai",
@@ -72,19 +72,19 @@
       "id": "chromadb",
       "profile": "plain",
       "ok": true,
-      "seconds": 1
+      "seconds": 2
     },
     {
       "id": "weaviate",
       "profile": "plain",
       "ok": true,
-      "seconds": 4
+      "seconds": 5
     },
     {
       "id": "libretranslate",
       "profile": "plain",
       "ok": true,
-      "seconds": 524
+      "seconds": 537
     },
     {
       "id": "umami",
@@ -96,13 +96,13 @@
       "id": "matomo",
       "profile": "db",
       "ok": true,
-      "seconds": 17
+      "seconds": 19
     },
     {
       "id": "metabase",
       "profile": "plain",
       "ok": true,
-      "seconds": 18
+      "seconds": 22
     },
     {
       "id": "yourls",
@@ -114,73 +114,73 @@
       "id": "uptime-kuma",
       "profile": "plain",
       "ok": true,
-      "seconds": 6
+      "seconds": 5
     },
     {
       "id": "grafana",
       "profile": "plain",
       "ok": true,
-      "seconds": 11
+      "seconds": 13
     },
     {
       "id": "prometheus",
       "profile": "plain",
       "ok": true,
-      "seconds": 2
+      "seconds": 3
     },
     {
       "id": "loki",
       "profile": "plain",
       "ok": true,
-      "seconds": 2
+      "seconds": 3
     },
     {
       "id": "beszel",
       "profile": "plain",
       "ok": true,
-      "seconds": 2
+      "seconds": 3
     },
     {
       "id": "jaeger",
       "profile": "plain",
       "ok": true,
-      "seconds": 2
+      "seconds": 3
     },
     {
       "id": "victoriametrics",
       "profile": "plain",
       "ok": true,
-      "seconds": 2
+      "seconds": 3
     },
     {
       "id": "nextcloud",
       "profile": "plain",
       "ok": true,
-      "seconds": 16
+      "seconds": 17
     },
     {
       "id": "memos",
       "profile": "plain",
       "ok": true,
-      "seconds": 2
+      "seconds": 3
     },
     {
       "id": "trilium",
       "profile": "plain",
       "ok": true,
-      "seconds": 5
+      "seconds": 7
     },
     {
       "id": "silverbullet",
       "profile": "plain",
       "ok": true,
-      "seconds": 2
+      "seconds": 3
     },
     {
       "id": "vikunja",
       "profile": "db",
       "ok": true,
-      "seconds": 7
+      "seconds": 9
     },
     {
       "id": "focalboard",
@@ -192,31 +192,31 @@
       "id": "stirling-pdf",
       "profile": "plain",
       "ok": true,
-      "seconds": 28
+      "seconds": 34
     },
     {
       "id": "excalidraw",
       "profile": "plain",
       "ok": true,
-      "seconds": 3
+      "seconds": 4
     },
     {
       "id": "it-tools",
       "profile": "plain",
       "ok": true,
-      "seconds": 2
+      "seconds": 4
     },
     {
       "id": "actual-budget",
       "profile": "plain",
       "ok": true,
-      "seconds": 6
+      "seconds": 8
     },
     {
       "id": "mealie",
       "profile": "plain",
       "ok": true,
-      "seconds": 12
+      "seconds": 14
     },
     {
       "id": "grocy",
@@ -228,55 +228,55 @@
       "id": "linkding",
       "profile": "plain",
       "ok": true,
-      "seconds": 13
+      "seconds": 9
     },
     {
       "id": "gotify",
       "profile": "plain",
       "ok": true,
-      "seconds": 3
+      "seconds": 2
     },
     {
       "id": "gitea",
       "profile": "plain",
       "ok": true,
-      "seconds": 2
+      "seconds": 5
     },
     {
       "id": "forgejo",
       "profile": "plain",
       "ok": true,
-      "seconds": 3
+      "seconds": 5
     },
     {
       "id": "gitlab-ce",
       "profile": "plain",
       "ok": true,
-      "seconds": 168
+      "seconds": 171
     },
     {
       "id": "code-server",
       "profile": "plain",
       "ok": true,
-      "seconds": 2
+      "seconds": 5
     },
     {
       "id": "dozzle",
       "profile": "socket",
       "ok": true,
-      "seconds": 2
+      "seconds": 3
     },
     {
       "id": "dockge",
       "profile": "socket",
       "ok": true,
-      "seconds": 5
+      "seconds": 6
     },
     {
       "id": "portainer-ce",
       "profile": "socket",
       "ok": true,
-      "seconds": 2
+      "seconds": 3
     },
     {
       "id": "caddy",
@@ -288,37 +288,37 @@
       "id": "nginx-proxy-manager",
       "profile": "plain",
       "ok": true,
-      "seconds": 6
+      "seconds": 5
     },
     {
       "id": "vaultwarden",
       "profile": "plain",
       "ok": true,
-      "seconds": 3
+      "seconds": 2
     },
     {
       "id": "keycloak",
       "profile": "plain",
       "ok": true,
-      "seconds": 38
+      "seconds": 28
     },
     {
       "id": "verdaccio",
       "profile": "plain",
       "ok": true,
-      "seconds": 6
+      "seconds": 5
     },
     {
       "id": "nexus",
       "profile": "plain",
       "ok": true,
-      "seconds": 35
+      "seconds": 34
     },
     {
       "id": "mailpit",
       "profile": "plain",
       "ok": true,
-      "seconds": 3
+      "seconds": 2
     },
     {
       "id": "cyberchef",
@@ -360,7 +360,7 @@
       "id": "minio",
       "profile": "plain",
       "ok": true,
-      "seconds": 2
+      "seconds": 3
     },
     {
       "id": "cloudcmd",
@@ -372,19 +372,19 @@
       "id": "filebrowser",
       "profile": "plain",
       "ok": true,
-      "seconds": 2
+      "seconds": 3
     },
     {
       "id": "restic-rest-server",
       "profile": "plain",
       "ok": true,
-      "seconds": 3
+      "seconds": 2
     },
     {
       "id": "jellyfin",
       "profile": "plain",
       "ok": true,
-      "seconds": 6
+      "seconds": 3
     },
     {
       "id": "plex",
@@ -402,13 +402,13 @@
       "id": "audiobookshelf",
       "profile": "plain",
       "ok": true,
-      "seconds": 5
+      "seconds": 7
     },
     {
       "id": "navidrome",
       "profile": "plain",
       "ok": true,
-      "seconds": 5
+      "seconds": 4
     },
     {
       "id": "photoprism",
@@ -426,19 +426,19 @@
       "id": "kavita",
       "profile": "plain",
       "ok": true,
-      "seconds": 18
+      "seconds": 17
     },
     {
       "id": "qbittorrent",
       "profile": "plain",
       "ok": true,
-      "seconds": 6
+      "seconds": 3
     },
     {
       "id": "transmission",
       "profile": "plain",
       "ok": true,
-      "seconds": 2
+      "seconds": 3
     },
     {
       "id": "sonarr",
@@ -450,7 +450,7 @@
       "id": "radarr",
       "profile": "plain",
       "ok": true,
-      "seconds": 7
+      "seconds": 8
     },
     {
       "id": "prowlarr",
@@ -474,7 +474,7 @@
       "id": "jellyseerr",
       "profile": "plain",
       "ok": true,
-      "seconds": 9
+      "seconds": 13
     },
     {
       "id": "flaresolverr",
@@ -486,13 +486,13 @@
       "id": "homarr",
       "profile": "plain",
       "ok": true,
-      "seconds": 3
+      "seconds": 6
     },
     {
       "id": "heimdall",
       "profile": "plain",
       "ok": true,
-      "seconds": 18
+      "seconds": 19
     },
     {
       "id": "homepage",
@@ -504,31 +504,31 @@
       "id": "dashy",
       "profile": "plain",
       "ok": true,
-      "seconds": 3
+      "seconds": 2
     },
     {
       "id": "adguard-home",
       "profile": "plain",
       "ok": true,
-      "seconds": 3
+      "seconds": 2
     },
     {
       "id": "home-assistant",
       "profile": "plain",
       "ok": true,
-      "seconds": 10
+      "seconds": 12
     },
     {
       "id": "ghost",
       "profile": "db",
       "ok": true,
-      "seconds": 16
+      "seconds": 20
     },
     {
       "id": "wordpress",
       "profile": "db",
       "ok": true,
-      "seconds": 20
+      "seconds": 19
     },
     {
       "id": "umami-stack",
@@ -558,49 +558,49 @@
       "id": "shiori",
       "profile": "plain",
       "ok": true,
-      "seconds": 4
+      "seconds": 2
     },
     {
       "id": "wallos",
       "profile": "plain",
       "ok": true,
-      "seconds": 7
+      "seconds": 6
     },
     {
       "id": "speedtest-tracker",
       "profile": "db",
       "ok": true,
-      "seconds": 19
+      "seconds": 24
     },
     {
       "id": "homebox",
       "profile": "plain",
       "ok": true,
-      "seconds": 4
+      "seconds": 3
     },
     {
       "id": "firefly-iii",
       "profile": "plain",
       "ok": true,
-      "seconds": 14
+      "seconds": 17
     },
     {
       "id": "syncthing",
       "profile": "plain",
       "ok": true,
-      "seconds": 4
+      "seconds": 2
     },
     {
       "id": "lidarr",
       "profile": "plain",
       "ok": true,
-      "seconds": 7
+      "seconds": 9
     },
     {
       "id": "sabnzbd",
       "profile": "plain",
       "ok": true,
-      "seconds": 7
+      "seconds": 5
     },
     {
       "id": "drawio",

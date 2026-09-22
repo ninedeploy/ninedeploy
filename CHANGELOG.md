@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Template runtime re-verification (2026-09-22): all 101 certified templates pass.** Six days of upstream drift had silently broken three certified images: flowise's `:latest` tag had lost the 2.2.8 pin (3.x crash regression) — re-pinned; libretranslate's new 1.9.6 cold start legitimately exceeds the 300s smoke window (listens at ~537s) — templates can now declare a per-template `startTimeoutSeconds` override; and vikunja 0.24.6 moved its webserver port config from `HTTPPort` to `Interface` — the template now pins `VIKUNJA_SERVICE_INTERFACE=[::]:8080` so the declared port stays true regardless of upstream defaults. Evidence fixture refreshed; 10 community (uncertified) templates currently fail their smoke runs and are recorded as such in the run — they never claimed the verified badge.
+
 ### Fixed
 
 - The agent entrypoint now logs stray unhandled rejections instead of crashing mid-deploy (the panel had this guard since r168; the agent never did), and a failed agent BOOT exits nonzero so systemd's `Restart=on-failure` sees a clean failure instead of a half-booted agent idling forever.
