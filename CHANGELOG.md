@@ -11,7 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Test tooling moves to Vitest 5 (dev-only): the suite passes unchanged after adapting two web tests — api.test now captures the import-time createClient call evidence at module-evaluation time (Vitest 5 clears mock state before the first test), and ManifestCreator restores window.localStorage via defineProperty (jsdom 30.1 made it a getter-only accessor). Server and SDK coverage measured identical to Vitest 4 (±0.06pp) on an isolated upgrade run.
+- The agent entrypoint now logs stray unhandled rejections instead of crashing mid-deploy (the panel had this guard since r168; the agent never did), and a failed agent BOOT exits nonzero so systemd's `Restart=on-failure` sees a clean failure instead of a half-booted agent idling forever.
+- Form field labels are now programmatically associated with their controls (screen readers announce field names across the panel's 137 Field usages). Non-control children — button groups like the Sources auth-method toggle — keep their own accessible names; a wrapping label would have leaked the field's whole label text into every descendant button.
+- Test tooling moves to Vitest 5 (dev-only): the suite passes unchanged after adapting two web tests — api.test now captures the import-time createClient call evidence at module-evaluation time (Vitest 5 clears mock state before the first test), and ManifestCreator restores window.localStorage via defineProperty (jsdom 30.1 made it a getter-only accessor). Server and SDK coverage measured identical to Vitest 4 (±0.06pp) on an isolated upgrade run. Dev toolchain otherwise fully refreshed (biome 2.5.14, turbo 2.11.2, jsdom 30.1).
 
 
 ## [0.10.5] - 2026-09-20

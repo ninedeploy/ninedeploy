@@ -15,6 +15,14 @@
 #     -e NINEDEPLOY_PUBLIC_URL=https://your-host \
 #     ghcr.io/ninedeploy/ninedeploy
 #
+# CONTAINERIZED TRAEFIK CAVEAT: the panel mounts its Traefik config directory
+# (`${NINEDEPLOY_DATA_DIR}/traefik`) into the Traefik container as a
+# HOST-PATH bind, so that path must resolve to the SAME files on the docker
+# host. Bind the host's /data straight through at the SAME absolute path
+# (`-v /data:/data`) instead of using a named volume, or Traefik reads an
+# empty directory and every domain answers 404. The bare-metal install
+# (install.sh) shares the host filesystem by construction and has no such
+# requirement.
 # The --group-add is REQUIRED when running as the non-root `ninedeploy` user:
 # the host socket is typically root:docker mode 0660, and without the host
 # docker group's GID every `docker` call fails with permission denied.
