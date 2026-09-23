@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.6] - 2026-09-22
+
+> The resilience patch: the agent stops dying from stray rejections,
+> form fields speak to screen readers, the toolchain modernizes to
+> Vitest 5, and the template catalog re-certifies with three upstream-
+> drift repairs plus five community-template fixes.
+
+
 ### Changed
 
 - **Template runtime re-verification (2026-09-22): all 101 certified templates pass.** Six days of upstream drift had silently broken three certified images: flowise's `:latest` tag had lost the 2.2.8 pin (3.x crash regression) — re-pinned; libretranslate's new 1.9.6 cold start legitimately exceeds the 300s smoke window (listens at ~537s) — templates can now declare a per-template `startTimeoutSeconds` override; and vikunja 0.24.6 moved its webserver port config from `HTTPPort` to `Interface` — the template now pins `VIKUNJA_SERVICE_INTERFACE=[::]:8080` so the declared port stays true regardless of upstream defaults. Evidence fixture refreshed; 10 community (uncertified) templates currently fail their smoke runs and are recorded as such in the run — they never claimed the verified badge.
@@ -18,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The agent entrypoint now logs stray unhandled rejections instead of crashing mid-deploy (the panel had this guard since r168; the agent never did), and a failed agent BOOT exits nonzero so systemd's `Restart=on-failure` sees a clean failure instead of a half-booted agent idling forever.
 - Form field labels are now programmatically associated with their controls (screen readers announce field names across the panel's 137 Field usages). Non-control children — button groups like the Sources auth-method toggle — keep their own accessible names; a wrapping label would have leaked the field's whole label text into every descendant button.
 - Test tooling moves to Vitest 5 (dev-only): the suite passes unchanged after adapting two web tests — api.test now captures the import-time createClient call evidence at module-evaluation time (Vitest 5 clears mock state before the first test), and ManifestCreator restores window.localStorage via defineProperty (jsdom 30.1 made it a getter-only accessor). Server and SDK coverage measured identical to Vitest 4 (±0.06pp) on an isolated upgrade run. Dev toolchain otherwise fully refreshed (biome 2.5.14, turbo 2.11.2, jsdom 30.1).
+
 
 
 ## [0.10.5] - 2026-09-20

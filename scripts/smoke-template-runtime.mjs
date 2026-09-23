@@ -133,13 +133,16 @@ async function runPlainLike(template, container) {
 /** Mirror of ENGINES defaults (engine/database.ts) — same images, users, db names. */
 async function startManagedDatabase(template, password) {
   const postgres = template.dbEngine === 'postgres';
-  const image = postgres ? 'postgres:18' : 'mysql:9.7';
+  const mongo = template.dbEngine === 'mongo';
+  const image = postgres ? 'postgres:18' : mongo ? 'mongo:7' : 'mysql:9.7';
   await pullIfNeeded(image);
   const container = `nd-smoke-${template.id}-db-${suffix}`.replace(/[^a-z0-9_.-]/g, '-');
   createdContainers.push(container);
   const env = postgres
     ? ['POSTGRES_USER=nine', `POSTGRES_PASSWORD=${password}`, 'POSTGRES_DB=app']
-    : [`MYSQL_ROOT_PASSWORD=${password}`, 'MYSQL_DATABASE=app'];
+    : mongo
+      ? ['MONGO_INITDB_DATABASE=app']
+      : [`MYSQL_ROOT_PASSWORD=${password}`, `MYSQL_DATABASE=app`];
   await docker(['run', '-d', '--name', container, '--network', network, '--network-alias', 'db', '--restart', 'no',
     ...env.map((e) => ['-e', e]).flat(), image], { timeout: 120_000 });
   // Authenticated probe, not a bare ping: both entrypoints boot a temporary
@@ -147,7 +150,9 @@ async function startManagedDatabase(template, password) {
   // it long before the app database and final credentials exist.
   const ready = postgres
     ? ['exec', '-e', `PGPASSWORD=${password}`, container, 'psql', '-U', 'nine', '-d', 'app', '-c', 'SELECT 1']
-    : ['exec', container, 'mysql', '-uroot', `-p${password}`, '-e', 'USE app'];
+    : mongo
+      ? ['exec', container, 'mongosh', '--quiet', '--eval', 'db.runCommand({ ping: 1 })']
+      : ['exec', container, 'mysql', '-uroot', `-p${password}`, '-e', 'USE app'];
   const deadline = Date.now() + 180_000;
   while (Date.now() < deadline) {
     if (await docker(ready).then(() => true).catch(() => false)) return;
@@ -159,9 +164,14 @@ async function startManagedDatabase(template, password) {
 /** Same mapping engine/pipeline.ts bakes at deploy time for databaseEnv rows. */
 function resolveDatabaseEnv(template, password) {
   const postgres = template.dbEngine === 'postgres';
-  const port = postgres ? 5432 : 3306;
+  const mongo = template.dbEngine === 'mongo';
+  const port = postgres ? 5432 : mongo ? 27017 : 3306;
   const values = {
-    url: postgres ? `postgres://nine:${password}@db:${port}/app` : `mysql://root:${password}@db:${port}/app`,
+    url: postgres
+      ? `postgres://nine:${password}@db:${port}/app`
+      : mongo
+        ? `mongodb://db:${port}/app`
+        : `mysql://root:${password}@db:${port}/app`,
     host: 'db',
     hostPort: `db:${port}`,
     port: String(port),

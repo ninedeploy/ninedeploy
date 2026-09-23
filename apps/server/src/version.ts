@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.5';
+export const VERSION = '0.10.6';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.6',
+    date: '2026-09-23',
+    title: 'The Resilience Patch — Tougher Agent, Louder Forms, Fresher Catalog',
+    changes: [
+      'The agent now survives stray unhandled rejections (the panel had that guard; the agent did not) and exits cleanly on boot failure so systemd restarts it predictably. Form field labels are programmatically associated with their controls across the dashboard, and the test toolchain moved to Vitest 5 with a fully refreshed dev dependency set.',
+      'The 130-template catalog was re-certified against live containers: three certified images broken by upstream drift were repaired (flowise re-pinned to 2.2.8, libretranslate gained a per-template smoke timeout, vikunja pins its new Interface port config) and five community templates were fixed (wekan, filestash, fider, limesurvey, wud) with four more documenting their setup requirements.',
+    ],
+  },
+{
     version: '0.10.5',
     date: '2026-09-20',
     title: 'The www Patch — Redirects That Reach the Wire',
