@@ -2064,7 +2064,13 @@
       },
       "runtimeVerified": false,
       "verifiedAt": "2026-09-16",
-      "requires": "Needs a reachable MySQL/MariaDB database (attach one in Databases) — provisioning can take minutes before port 80 answers."
+      "env": [
+        {
+          "key": "APP_KEY",
+          "value": "base64:",
+          "secret": true
+        }
+      ]
     },
     {
       "id": "fider",

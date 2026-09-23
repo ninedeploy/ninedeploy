@@ -16,6 +16,7 @@ import {
   removeCommunityTemplate as removeCommunityTemplateLib,
 } from '../lib/communityTemplates.js';
 import { encrypt, randomToken } from '../lib/crypto.js';
+import { randomBytes } from 'node:crypto';
 import { badRequest, forbidden, notFound } from '../lib/errors.js';
 import { assertMayUseHostPrivilege } from '../lib/hostPrivilege.js';
 import type { AuthedUser } from '../lib/resourceAccess.js';
@@ -101,7 +102,13 @@ export async function reconcileEnvironment(
       // value can never fail such a policy. Only generated on first install —
       // retries never rotate existing secrets.
       const mint = entry.secret === true && entry.generate !== false;
-      const value = mint ? randomToken(32) : entry.value;
+      let value = mint ? randomToken(32) : entry.value;
+      // A value of exactly `base64:` asks for a Laravel-style APP_KEY: keep
+      // the prefix, mint 32 raw bytes behind it. Without the prefix Laravel
+      // would reject the 43-char base64url token as a key-length error.
+      if (mint && entry.value === 'base64:') {
+        value = `base64:${randomBytes(32).toString('base64')}`;
+      }
       // Pre-resolved secrets are still reported back for one-time display —
       // a compose stack's generated password is exactly what the installer
       // needs to see once.

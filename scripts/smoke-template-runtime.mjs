@@ -110,7 +110,12 @@ async function waitListening(template, container, probeNetwork) {
 function envArgs(template) {
   const out = [];
   for (const entry of template.env ?? []) {
-    out.push('-e', `${entry.key}=${entry.secret ? randomBytes(24).toString('hex') : entry.value}`);
+    // A value of exactly `base64:` mints a Laravel-style APP_KEY
+    // (prefix kept, 32 raw bytes behind it) instead of the generic hex.
+    const value = entry.value === 'base64:'
+      ? 'base64:' + randomBytes(32).toString('base64')
+      : entry.secret ? randomBytes(24).toString('hex') : entry.value;
+    out.push('-e', `${entry.key}=${value}`);
   }
   return out;
 }
