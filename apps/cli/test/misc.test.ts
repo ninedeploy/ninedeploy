@@ -111,6 +111,19 @@ describe('dbCreate', () => {
     errSpy.mockRestore();
   });
 
+  it.each([
+    ['postgres', 'postgres'],
+    ['MYSQL', 'mysql'],
+    ['RabbitMQ', 'rabbitmq'],
+  ])('accepts the engine NAME (%s) as well as the number', async (typed, engine) => {
+    const create = vi.fn().mockResolvedValue({ id: 9, name: 'db1', connectionString: 'postgres://x' });
+    h.prompt.mockResolvedValueOnce('db1').mockResolvedValueOnce(typed);
+
+    await dbCreate({ databases: { create } } as never);
+
+    expect(create).toHaveBeenCalledWith({ name: 'db1', engine });
+  });
+
   it('skips the connection string when absent', async () => {
     const create = vi.fn().mockResolvedValue({ id: 1, name: 'db1' });
     h.prompt.mockResolvedValueOnce('db1').mockResolvedValueOnce('1');

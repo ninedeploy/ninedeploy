@@ -20,9 +20,13 @@ export async function dbCreate(client: NineDeployClient): Promise<void> {
   const name = await prompt('Database name');
   if (!name) return error('Name required');
   console.log('  Engines: 1=PostgreSQL  2=MySQL  3=MariaDB  4=Redis  5=MongoDB  6=Valkey  7=ClickHouse  8=Meilisearch  9=RabbitMQ');
-  const choice = await prompt('Select engine (1-9)', '1');
+  const choice = (await prompt('Select engine (1-9 or name)', '1')).trim();
   const engines = ['postgres', 'mysql', 'mariadb', 'redis', 'mongo', 'valkey', 'clickhouse', 'meilisearch', 'rabbitmq'] as const;
-  const engine = engines[Number(choice) - 1];
+  // Accept the menu number OR the engine name (`postgres`, `MYSQL`…) —
+  // first-time users type the name they just read in the hint above.
+  const engine = /^\d+$/.test(choice)
+    ? engines[Number(choice) - 1]
+    : engines.find((candidate) => candidate === choice.toLowerCase());
   // A fat-fingered number used to silently provision PostgreSQL — fail
   // instead of guessing.
   if (!engine) return error(`Unknown engine selection: ${choice}`);
