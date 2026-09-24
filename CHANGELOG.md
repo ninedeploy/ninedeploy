@@ -9,9 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+## [0.10.7] - 2026-09-24
+
+> The catalog patch: ten broken community templates repaired, three
+> setup-requirement hints added, the wizard accepts engine names, and
+> the smoke runner provisions real MongoDB.
+
+### Fixed
 
 - Five broken community Hub templates are repaired and now boot one-click: wekan (sets ROOT_URL — the image exits silently without it), filestash (image name corrected to machines/filestash), fider (moved to getfider/fider:main with its mandatory JWT_SECRET/BASE_URL/EMAIL_* envs plus PGSSLMODE=disable), limesurvey (managed-MySQL contract, port corrected to 8080, admin bootstrap envs), and wud (listens on 3000 in current releases; admin bootstrap envs added). bookstack gains a Laravel-style APP_KEY: template env values of exactly base64: now mint a prefixed 32-byte key at install time (and in the smoke runner), which the current image requires before it starts.
+- The ninedeploy databases create wizard accepts the engine NAME (postgres, MYSQL, RabbitMQ — case-insensitive) as well as the menu number it prints.
 
 
 ## [0.10.6] - 2026-09-22

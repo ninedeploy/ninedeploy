@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.6';
+export const VERSION = '0.10.7';
 
 export interface ChangelogEntry {
   version: string;
@@ -11,6 +11,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.10.7',
+    date: '2026-09-24',
+    title: 'The Catalog Patch — Every Template Boots',
+    changes: [
+      'The template catalog was swept against live containers and ten broken community entries were fixed: wekan (ROOT_URL), filestash (machines/ image name), fider (getfider/fider:main plus its mandatory JWT_SECRET, BASE_URL and EMAIL_* envs with PGSSLMODE=disable), limesurvey (managed-MySQL contract on port 8080 with admin bootstrap), wud (port 3000 plus admin bootstrap), and bookstack — which now mints a Laravel-style APP_KEY from base64: secret values at install time. Four templates that genuinely cannot boot one-click (woodpecker-ci, drone-ci, komga, piwigo) document their setup requirements in the Hub instead of failing silently.',
+      'The ninedeploy databases create wizard accepts the engine NAME as well as the menu number, and the smoke runner provisions real MongoDB for mongo-profile templates.',
+    ],
+  },
   {
     version: '0.10.6',
     date: '2026-09-23',
