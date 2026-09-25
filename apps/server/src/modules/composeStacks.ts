@@ -6,6 +6,7 @@ import type { ComposePreviewResponse } from '@ninedeploy/schemas';
 import { badRequest } from '../lib/errors.js';
 import { randomToken } from '../lib/crypto.js';
 import { slugify, slugifyWithSuffix } from '../lib/slug.js';
+import { assertSlugVolumeNotRetained } from '../lib/retainedSlugVolume.js';
 import { config } from '../config.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
 import { getAcmeEmail } from '../engine/proxy.js';
@@ -165,6 +166,9 @@ export async function prepareComposeStack(
     await app.db.update(services).set(patch).where(eq(services.id, service.id));
     service = { ...service, ...patch };
   } else {
+    // r351: same retained-volume gate as POST /services — a stack's `type`
+    // can later be PATCHed to docker, which mounts `nd-svc-<slug>-data`.
+    await assertSlugVolumeNotRetained(slug, 'compose');
     const [created] = await app.db.insert(services).values({
       ownerUserId: user.id,
       name,

@@ -45,6 +45,7 @@ import { visibleLabelIds } from './labels.js';
 import { assertMayUseHostPrivilege } from '../lib/hostPrivilege.js';
 import { assertMayPublishPort } from '../lib/hostPort.js';
 import { slugify, slugifyWithSuffix } from '../lib/slug.js';
+import { assertSlugVolumeNotRetained } from '../lib/retainedSlugVolume.js';
 import { composeBuilder } from '../engine/builders/compose.js';
 import { dockerBuilder } from '../engine/builders/docker.js';
 import { pm2Builder, pm2Logs, pm2Restart, pm2Start, pm2Stop } from '../engine/builders/pm2.js';
@@ -350,6 +351,10 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       }
       throw badRequest(`A service with slug '${slug}' already exists`, 'slug_taken');
     }
+    // r351: no live row holds the slug — but a deleted service's
+    // `nd-svc-<slug>-data` may still be on the host, and the new row would
+    // mount it on its first deploy (another tenant's data, read-write).
+    await assertSlugVolumeNotRetained(slug, input.type);
     const [svc] = await app.db
       .insert(services)
       .values({
@@ -1127,6 +1132,9 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       }
       newSlug = slugifyWithSuffix(newName, String(counter++));
     }
+    // r351: same retained-volume gate as create — the clone copies
+    // `volumeMount`, so a freed slug would re-mount a deleted service's data.
+    await assertSlugVolumeNotRetained(newSlug, svc.type);
 
     const [created] = await app.db
       .insert(services)

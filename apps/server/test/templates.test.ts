@@ -11,6 +11,9 @@ const databaseMocks = vi.hoisted(() => ({
   },
 }));
 vi.mock('../src/engine/database.js', () => databaseMocks);
+// r351: the retained-volume probe asks Docker; stubbed here, asserted as wired below.
+const retainedMocks = vi.hoisted(() => ({ assertSlugVolumeNotRetained: vi.fn(async (_slug: string, _type: string) => undefined) }));
+vi.mock('../src/lib/retainedSlugVolume.js', () => retainedMocks);
 
 describe('template routes', () => {
   beforeEach(() => {
@@ -145,6 +148,22 @@ describe('template routes', () => {
     const res = await app.inject({ method: 'POST', url: '/n8n/deploy', headers: asUser() });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ serviceId: 7, deploymentId: 8 });
+  });
+
+  it('r351: refuses a template deploy whose slug would re-mount a deleted service\'s retained volume', async () => {
+    const { HttpError } = await import('../src/lib/errors.js');
+    retainedMocks.assertSlugVolumeNotRetained.mockRejectedValueOnce(
+      new HttpError(409, 'slug_volume_retained', "The data volume 'nd-svc-blog-data' of a deleted service still exists"),
+    );
+    const db = createFakeDb({ insert: { services: [svcRow({ id: 7, slug: 'blog' })], deployments: [depRow({ id: 8 })] } });
+    const insert = vi.spyOn(db, 'insert');
+    const app = await buildTestApp({ db });
+    await app.register(templateRoutes);
+    const res = await app.inject({ method: 'POST', url: '/n8n/deploy', headers: asUser(), payload: { name: 'blog' } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('slug_volume_retained');
+    expect(retainedMocks.assertSlugVolumeNotRetained).toHaveBeenCalledWith('blog', 'docker');
+    expect(insert).not.toHaveBeenCalled();
   });
 
   it('deploys a template without a volume mount', async () => {

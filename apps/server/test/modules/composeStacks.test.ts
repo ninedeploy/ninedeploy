@@ -40,6 +40,10 @@ const proxyMock = vi.hoisted(() => ({
 }));
 vi.mock('../../src/engine/proxy.js', () => proxyMock);
 
+// r351: the retained-volume probe asks Docker; stubbed here, asserted as wired below.
+const retainedMocks = vi.hoisted(() => ({ assertSlugVolumeNotRetained: vi.fn(async (_slug: string, _type: string) => undefined) }));
+vi.mock('../../src/lib/retainedSlugVolume.js', () => retainedMocks);
+
 // ── config mocks (the route reads `config.wildcardDomain` to
 //     compute the publicUrl; without a wildcard the route
 //     hard-codes `http://localhost` regardless of the ACME
@@ -210,6 +214,19 @@ describe('prepareComposeStack', () => {
     // File writes still happen — every (re)deploy refetches the
     // compose file from the template registry.
     expect(fsMock.writeFileSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('r351: gates a NEW stack row on a deleted service\'s retained volume (the reuse path is not gated)', async () => {
+    const { HttpError } = await import('../../src/lib/errors.js');
+    retainedMocks.assertSlugVolumeNotRetained.mockRejectedValueOnce(new HttpError(409, 'slug_volume_retained', 'retained'));
+    const app = makeFakeApp();
+    const insert = vi.spyOn(app.db, 'insert');
+    await expect(
+      prepareComposeStack(app as never, TEMPLATE as never, { name: 'Shop' }, { id: 7, isOperator: true }),
+    ).rejects.toMatchObject({ statusCode: 409, code: 'slug_volume_retained' });
+    expect(retainedMocks.assertSlugVolumeNotRetained).toHaveBeenCalledWith('shop', 'compose');
+    expect(insert).not.toHaveBeenCalled();
+    expect(fsMock.writeFileSync).not.toHaveBeenCalled();
   });
 
   it('rejects the install with 400 when preflightCompose flags the compose content', async () => {

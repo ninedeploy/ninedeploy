@@ -23,6 +23,7 @@ import { assertMayUseHostPrivilege } from '../lib/hostPrivilege.js';
 import type { AuthedUser } from '../lib/resourceAccess.js';
 import { assertMayPublishPort } from '../lib/hostPort.js';
 import { slugify } from '../lib/slug.js';
+import { assertSlugVolumeNotRetained } from '../lib/retainedSlugVolume.js';
 import { visibleProjectIds } from './projects.js';
 import { applyDefaultTags, defaultWorkspaceIdsForUser, replaceServiceTags } from './serviceTags.js';
 import { prepareComposeStack } from './composeStacks.js';
@@ -204,6 +205,9 @@ async function prepareTemplateService(
     service = { ...service, ...trusted };
     stages.push({ id: 'service', status: 'success', message: 'Existing interrupted service reconciled' });
   } else {
+    // r351: a template's `volumeMount` would re-mount a deleted service's
+    // retained `nd-svc-<slug>-data` under a freed slug.
+    await assertSlugVolumeNotRetained(slug, 'docker');
     const [created] = await app.db.insert(services).values({
       ownerUserId,
       name,

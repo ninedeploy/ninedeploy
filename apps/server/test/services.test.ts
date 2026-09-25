@@ -1,7 +1,7 @@
 ﻿import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 import { servicesRoutes } from '../src/modules/services.js';
 import { getBundledTemplates } from '../src/templates/registry.js';
 import { asUser, buildTestApp, createFakeDb, svcRow, trackStatusUpdates } from './helpers.js';
@@ -259,6 +259,72 @@ describe('services routes', () => {
         WORDPRESS_DB_PASSWORD: 'password',
         WORDPRESS_DB_NAME: 'database',
       },
+    });
+  });
+
+  // r351: deleting a service keeps `nd-svc-<slug>-data`; slug uniqueness
+  // only covers live rows, so a new service under the freed slug used to
+  // mount the deleted service's data on its first deploy.
+  describe("r351: a deleted service's retained data volume", () => {
+    const volumeLs = (names: string[]) =>
+      execMocks.capture.mockImplementation((async (_cmd: string, args: string[]) =>
+        args[0] === 'volume' ? names.join('\n') : '') as never);
+    // clearAllMocks keeps implementations — put the file-wide default back.
+    afterEach(() => {
+      execMocks.capture.mockImplementation(async () => 'line1\nline2');
+    });
+
+    it('refuses a create whose slug would re-mount it (409 slug_volume_retained, no row written)', async () => {
+      volumeLs(['nd-svc-my-app-data', 'nd-db-pg-data']);
+      const db = createFakeDb({ insert: { services: [svcRow({ id: 4, name: 'My App', slug: 'my-app' })] } });
+      const insert = vi.spyOn(db, 'insert');
+      const app = await buildTestApp({ db });
+      await app.register(servicesRoutes);
+      const res = await app.inject({ method: 'POST', url: '/', headers: asUser(), payload: validCreate });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error.code).toBe('slug_volume_retained');
+      expect(res.json().error.message).toContain('nd-svc-my-app-data');
+      expect(insert).not.toHaveBeenCalled();
+    });
+
+    it("does not confuse another slug's volume with this one", async () => {
+      volumeLs(['nd-svc-my-app-2-data', 'nd-svc-my-data']);
+      const app = await buildTestApp({
+        db: createFakeDb({ insert: { services: [svcRow({ id: 4, name: 'My App', slug: 'my-app' })] } }),
+      });
+      await app.register(servicesRoutes);
+      const res = await app.inject({ method: 'POST', url: '/', headers: asUser(), payload: validCreate });
+      expect(res.statusCode).toBe(200);
+    });
+
+    it('fails closed when Docker cannot be asked, except for a PM2 service', async () => {
+      execMocks.capture.mockImplementation((async () => {
+        throw new Error('Cannot connect to the Docker daemon');
+      }) as never);
+      const app = await buildTestApp({
+        db: createFakeDb({ insert: { services: [svcRow({ id: 4, name: 'My App', slug: 'my-app', type: 'pm2' })] } }),
+      });
+      await app.register(servicesRoutes);
+      const docker = await app.inject({ method: 'POST', url: '/', headers: asUser(), payload: validCreate });
+      expect(docker.statusCode).toBe(409);
+      expect(docker.json().error.code).toBe('slug_volume_retained');
+      const pm2 = await app.inject({ method: 'POST', url: '/', headers: asUser(), payload: { ...validCreate, type: 'pm2' } });
+      expect(pm2.statusCode).toBe(200);
+    });
+
+    it('gates a clone the same way (the clone copies volumeMount)', async () => {
+      volumeLs(['nd-svc-fresh-copy-data']);
+      const db = createFakeDb({
+        findFirst: { services: (() => { let n = 0; return () => (n++ === 0 ? svcRow({ id: 1, slug: 'orig', volumeMount: '/data' }) : undefined); })() as never },
+        insert: { services: [svcRow({ id: 2, slug: 'fresh-copy' })] },
+      });
+      const insert = vi.spyOn(db, 'insert');
+      const app = await buildTestApp({ db });
+      await app.register(servicesRoutes);
+      const res = await app.inject({ method: 'POST', url: '/1/clone', headers: asUser(), payload: { name: 'x', slug: 'fresh-copy' } });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error.code).toBe('slug_volume_retained');
+      expect(insert).not.toHaveBeenCalled();
     });
   });
 

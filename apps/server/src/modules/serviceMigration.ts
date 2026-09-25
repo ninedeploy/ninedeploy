@@ -8,6 +8,7 @@ import { decrypt, encrypt } from '../lib/crypto.js';
 import { badRequest, notFound, parseId as num } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
 import { slugifyWithSuffix } from '../lib/slug.js';
+import { assertSlugVolumeNotRetained } from '../lib/retainedSlugVolume.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
 
 interface ServiceBundle {
@@ -138,6 +139,9 @@ export const serviceMigrationRoutes: FastifyPluginAsync = async (app) => {
 
     // Unique slug to avoid conflicts
     const slug = slugifyWithSuffix(bundle.service.name, Date.now().toString(36).slice(-4));
+    // r351: the suffix is time-derived, not a guarantee — an imported
+    // `volumeMount` must not land on a deleted service's retained volume.
+    await assertSlugVolumeNotRetained(slug, bundle.service.type);
 
     const [svc] = await app.db.insert(services).values({
       name: bundle.service.name,

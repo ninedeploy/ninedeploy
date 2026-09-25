@@ -1,7 +1,11 @@
-﻿import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 import { encrypt } from '../src/lib/crypto.js';
 import { serviceMigrationRoutes } from '../src/modules/serviceMigration.js';
 import { asUser, buildTestApp, captureAudits, createFakeDb, dbRow, svcRow } from './helpers.js';
+
+// r351: the retained-volume probe asks Docker; stubbed here, asserted as wired below.
+const retainedMocks = vi.hoisted(() => ({ assertSlugVolumeNotRetained: vi.fn(async (_slug: string, _type: string) => undefined) }));
+vi.mock('../src/lib/retainedSlugVolume.js', () => retainedMocks);
 
 async function buildApp(db: ReturnType<typeof createFakeDb>) {
   const app = await buildTestApp({ db });
@@ -141,6 +145,21 @@ describe('service migration routes', () => {
       const res = await app.inject({ method: 'POST', url: '/services/import', headers: asUser(), payload: bare });
       expect(res.statusCode).toBe(200);
       expect(res.json().ok).toBe(true);
+    });
+
+    it('r351: gates the imported slug on a deleted service\'s retained volume before inserting', async () => {
+      const { HttpError } = await import('../src/lib/errors.js');
+      retainedMocks.assertSlugVolumeNotRetained.mockRejectedValueOnce(new HttpError(409, 'slug_volume_retained', 'retained'));
+      const db = createFakeDb({ insert: { services: () => [svcRow({ id: 9 })] } });
+      const insert = vi.spyOn(db, 'insert');
+      const app = await buildApp(db);
+      const res = await app.inject({ method: 'POST', url: '/services/import', headers: asUser(), payload: bundle });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error.code).toBe('slug_volume_retained');
+      const [slug, type] = retainedMocks.assertSlugVolumeNotRetained.mock.calls.at(-1)!;
+      expect(slug).toMatch(/^[a-z0-9-]+$/);
+      expect(type).toBe(bundle.service.type);
+      expect(insert).not.toHaveBeenCalled();
     });
 
     it('imports a full bundle and recreates every entity', async () => {
