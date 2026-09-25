@@ -264,6 +264,21 @@ describe('the Docker builder writes the generated nixpacks.toml', () => {
     expect(existsSync(path.join(dir, 'nixpacks.toml'))).toBe(false);
   });
 
+  it('r274: treats an UNTRACKED unmarked nixpacks.toml (pre-marker release) as its own', async () => {
+    const dir = repo();
+    writeFileSync(path.join(dir, 'nixpacks.toml'), '[phases.install]\ncmds = ["npm ci"]\n', 'utf8');
+    // `git ls-files -- nixpacks.toml` prints nothing: the repo does not track it.
+    execMocks.capture.mockImplementation(async (cmd: string) => (cmd === 'git' ? '' : 'nixpacks 1.41.0'));
+    try {
+      await buildWith(manifest({ build: { install: 'pnpm install --frozen-lockfile' } }), dir);
+    } finally {
+      execMocks.capture.mockImplementation(async () => 'nixpacks 1.41.0');
+    }
+    const toml = readFileSync(path.join(dir, 'nixpacks.toml'), 'utf8');
+    expect(toml).toContain('pnpm install --frozen-lockfile');
+    expect(toml).not.toContain('npm ci');
+  });
+
   it('writes nothing when the service ships no manifest', async () => {
     const dir = repo();
     await buildWith(undefined, dir);
