@@ -472,6 +472,15 @@ async function composeRestartPolicyOp(params: Params, onLine: (l: string) => voi
 /** Env files the agent writes for docker.runEnv live under this fixed dir. */
 const ENV_DIR = '.agent-env';
 
+/**
+ * r267: env-file keys. RE_NAME (the container-name rule) refused a leading
+ * `_`, which the panel's env key rule (`^[A-Za-z_][A-Za-z0-9_]*$`) accepts —
+ * a service with `_JAVA_OPTIONS` deployed locally and failed on every node.
+ * A strict superset of the old rule, so nothing that worked stops working;
+ * still no `=`, whitespace or newline, so a key cannot split an env-file line.
+ */
+const RE_ENV_KEY = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
+
 /** Write an env file (KEY=VALUE lines) for a subsequent docker.runEnv call. */
 async function writeEnvFileOp(params: Params): Promise<{ path: string }> {
   const { mkdirSync, writeFileSync } = await import('node:fs');
@@ -482,7 +491,7 @@ async function writeEnvFileOp(params: Params): Promise<{ path: string }> {
   if (typeof entries !== 'object' || entries === null) throw new Error('Invalid env');
   const lines: string[] = [];
   for (const [k, v] of Object.entries(entries as Record<string, unknown>)) {
-    if (!RE_NAME.test(k) || typeof v !== 'string' || v.includes('\n') || v.includes('\0') || v.length > 32768) {
+    if (!RE_ENV_KEY.test(k) || typeof v !== 'string' || v.includes('\n') || v.includes('\0') || v.length > 32768) {
       throw new Error(`Invalid env value for ${k}`);
     }
     lines.push(`${k}=${v}`);

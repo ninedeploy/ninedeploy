@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { serviceTargets, servers, type DB } from '@ninedeploy/db';
 import { agentOp } from '../lib/agentClient.js';
 import { acquireRegistryLock, registryLockKey } from '../lib/registryLock.js';
+import { envForAgent } from './builders/remoteDocker.js';
 
 /**
  * Multi-server fan-out (phase 1): push an IMAGE-based release to additional
@@ -170,7 +171,8 @@ export async function deployToTargets(
       const sequential = Boolean(ctx.service.publishedPort && ctx.service.port);
       if (target.runtimeId && sequential) await retire(target.runtimeId);
       const envName = `${ctx.service.slug}-t${target.serverId}-${ctx.deploymentId}`;
-      const wrote = await agent('file.writeEnv', { name: envName, env: ctx.env }, log);
+      // r267: multi-line values travel escaped, as for the primary.
+      const wrote = await agent('file.writeEnv', { name: envName, env: envForAgent(ctx.env) }, log);
       const envFile = wrote.lines.find((l) => l.startsWith('wrote '))?.slice('wrote '.length) ?? `.agent-env/${envName}.env`;
       const runParams: Record<string, unknown> = { name, image: release, envFile };
       if (ctx.service.cpuShares > 0) runParams['cpuShares'] = String(ctx.service.cpuShares);

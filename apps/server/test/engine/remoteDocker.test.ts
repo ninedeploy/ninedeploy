@@ -109,6 +109,18 @@ describe('remote docker builder — image services', () => {
     expect(ops().indexOf('file.deleteEnv')).toBeGreaterThan(ops().indexOf('docker.runEnv'));
   });
 
+  it('r267: escapes multi-line values the agent would otherwise refuse', async () => {
+    const { agent, calls } = fakeAgent();
+    await createRemoteDockerBuilder(agent).buildAndRun(
+      ctx({ service: svc({ image: 'nginx:1' }), env: { KEY: '-----BEGIN-----\nabc\r\n-----END-----', _JAVA_OPTIONS: '-Xmx1g' } }),
+    );
+    // Same literal `\n` convention the local builder's env-file uses.
+    expect(calls.find((c) => c.op === 'file.writeEnv')!.params['env']).toEqual({
+      KEY: '-----BEGIN-----\\nabc\\n-----END-----',
+      _JAVA_OPTIONS: '-Xmx1g',
+    });
+  });
+
   it('deletes the env file even when the run fails', async () => {
     const { agent, ops } = fakeAgent();
     const failing: AgentCall = async (op, params, sink) => {

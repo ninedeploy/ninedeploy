@@ -295,6 +295,39 @@ describe('agent workspaces', () => {
   });
 });
 
+/**
+ * r267: the env-file keys the agent accepts must cover every key the panel
+ * accepts (`^[A-Za-z_][A-Za-z0-9_]*$`) — `_JAVA_OPTIONS` used to deploy
+ * locally and fail on every node.
+ */
+describe('agent env files', () => {
+  const work = mkdtempSync(join(tmpdir(), 'nd-agent-env-'));
+  let cwdSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(work);
+  });
+  afterEach(() => {
+    cwdSpy.mockRestore();
+  });
+
+  it('accepts a key with a leading underscore', async () => {
+    await expect(
+      runOp('file.writeEnv', { name: 'web-1', env: { _JAVA_OPTIONS: '-Xmx1g', FOO: 'bar' } }, () => {}),
+    ).resolves.toBe(0);
+    expect(readFileSync(join(work, '.agent-env', 'web-1.env'), 'utf8')).toBe('_JAVA_OPTIONS=-Xmx1g\nFOO=bar\n');
+  });
+
+  it('still refuses a key or value that could split an env-file line', async () => {
+    await expect(runOp('file.writeEnv', { name: 'web-1', env: { 'A=B': 'x' } }, () => {})).rejects.toThrow(
+      /Invalid env value/,
+    );
+    await expect(runOp('file.writeEnv', { name: 'web-1', env: { A: 'x\nB=y' } }, () => {})).rejects.toThrow(
+      /Invalid env value/,
+    );
+  });
+});
+
 describe('agent publish ports', () => {
   beforeEach(() => {
     spawnMock.mockReset();

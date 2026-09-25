@@ -52,6 +52,21 @@ describe('multi-server fan-out (phase 1)', () => {
     expect(run).toMatchObject({ name: 'web-t5-9', image: 'nginx:1.25@sha256:abc' });
   });
 
+  it('r267: sends multi-line env values escaped, as the local builder writes them', async () => {
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string) =>
+      op === 'docker.inspect' ? { exitCode: 0, lines: ['running|10.0.0.9'] } : { exitCode: 0, lines: [] },
+    );
+    const db = dbWithTargets([{ serverId: 5, runtimeId: null }]);
+    await deployToTargets(
+      db as never,
+      { service: svc, deploymentId: 9, image: 'nginx:1.25', env: { PEM: 'a\nb\r\nc' }, primaryServerId: null },
+      vi.fn(),
+    );
+    const write = agentMocks.agentOp.mock.calls.find((c) => c[2] === 'file.writeEnv')![3] as { env: Record<string, string> };
+    // The agent refuses a physical newline; the node used to fail the target.
+    expect(write.env).toEqual({ PEM: 'a\\nb\\nc' });
+  });
+
   it('keeps the primary serving when a target node fails', async () => {
     agentMocks.agentOp.mockRejectedValue(new Error('node unreachable'));
     const db = dbWithTargets([{ serverId: 6, runtimeId: 'web-t6-8' }]);

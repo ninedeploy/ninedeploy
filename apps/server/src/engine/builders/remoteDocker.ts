@@ -83,6 +83,20 @@ const TERMINAL_BAD = new Set(['exited', 'dead', 'removing']);
 const STABLE_SAMPLES = 3;
 const CRASH_LOOP_RESTARTS = 3;
 
+/**
+ * r267: the env map as it must travel to an agent's `file.writeEnv`. The
+ * agent refuses any value containing a newline (a physical newline would let
+ * the rest of the value be parsed as further env-file keys), while the panel
+ * accepts multi-line values and the local builder (`writeEnvFile` in
+ * docker.ts) stores them as literal `\n` escapes — so a service with a PEM
+ * key or a multi-line JSON secret deployed locally and failed on every node.
+ * Escaping here, panel-side, applies the local convention and works with
+ * agents already in the field.
+ */
+export function envForAgent(env: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(env).map(([k, v]) => [k, v.replace(/\r\n?|\n/g, '\\n')]));
+}
+
 export function createRemoteDockerBuilder(agent: AgentCall, opts: { pollMs?: number } = {}): Builder {
   const pollMs = opts.pollMs ?? 2000;
   /** Parse the `health` inspect format: `<status>|<health>|<failingStreak>|<restartCount>`. */
@@ -197,7 +211,7 @@ export function createRemoteDockerBuilder(agent: AgentCall, opts: { pollMs?: num
       // never as argv: `docker.runEnv` mounts it with --env-file, so no secret
       // is visible in the node's process table.
       const envFileName = `${service.slug}-${deploymentId}`;
-      const wrote = await agent('file.writeEnv', { name: envFileName, env }, sink);
+      const wrote = await agent('file.writeEnv', { name: envFileName, env: envForAgent(env) }, sink);
       const envFile =
         wrote.lines.find((l) => l.startsWith('wrote '))?.slice('wrote '.length) ??
         `.agent-env/${envFileName}.env`;
