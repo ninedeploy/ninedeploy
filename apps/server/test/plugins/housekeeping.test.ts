@@ -1,6 +1,16 @@
 ﻿import Fastify from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { auditLog, deployments, jobRuns, notificationLog, sessions } from '@ninedeploy/db';
+import {
+  auditLog,
+  backupDrills,
+  cacheRegistryBlobs,
+  deployments,
+  domainTransfers,
+  jobRuns,
+  notificationLog,
+  sessions,
+  workspaceInvitations,
+} from '@ninedeploy/db';
 
 const logsMock = vi.hoisted(() => ({ pruneOldLogs: vi.fn(() => 0), deleteLog: vi.fn(() => true) }));
 const execMock = vi.hoisted(() => ({
@@ -23,6 +33,8 @@ vi.mock('../../src/engine/logs.js', () => ({
   deleteLog: logsMock.deleteLog,
 }));
 vi.mock('../../src/lib/exec.js', () => ({ run: execMock.run }));
+const drillMock = vi.hoisted(() => ({ pruneDrillLeftovers: vi.fn(async () => 0) }));
+vi.mock('../../src/lib/backupDrill.js', () => drillMock);
 vi.mock('../../src/engine/autoPrune.js', () => ({
   getAutoPruneStatus: autoPruneMock.getAutoPruneStatus,
   executeAutoPrune: autoPruneMock.executeAutoPrune,
@@ -93,6 +105,38 @@ describe('housekeeping plugin', () => {
     expect(tables).toContain(sessions);
     // Auto-prune was triggered because 90% >= 85%
     expect(autoPruneMock.executeAutoPrune).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
+  /**
+   * r302: these tables had no retention at all, and the drill's plaintext
+   * scratch files survived any drill whose process died before cleanup. The
+   * sweeps themselves are exercised against real SQLite in
+   * housekeepingRetention.test.ts; this asserts the tick actually runs them.
+   */
+  it('sweeps drills, invitations, domain transfers, cold cache rows and drill leftovers each tick (r302)', async () => {
+    const { db, deleted } = makeDb();
+    const app = await buildApp(db);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    const tables = deleted.map((d) => d.table);
+    for (const t of [backupDrills, workspaceInvitations, domainTransfers, cacheRegistryBlobs]) expect(tables).toContain(t);
+    expect(drillMock.pruneDrillLeftovers).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.stringContaining('backups')]),
+      expect.any(Number),
+    );
+    await app.close();
+  });
+
+  it('exempts the log files of non-terminal deployments from the mtime sweep (r302)', async () => {
+    // The fake select answers every query with these rows — here, the live ids.
+    const { db } = makeDb([{ id: 5 }]);
+    const app = await buildApp(db);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(logsMock.pruneOldLogs).toHaveBeenCalledWith(expect.any(Number), new Set([5]));
     await app.close();
   });
 

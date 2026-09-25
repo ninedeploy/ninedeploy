@@ -95,6 +95,22 @@ describe('pruneOldLogs', () => {
     expect(existsSync(ignored)).toBe(true); // non-.log files are never touched
   });
 
+  it('keeps the log of a non-terminal deployment whatever its age (r302)', () => {
+    // A `running` deployment stops writing its log once it is up; the mtime
+    // sweep used to delete the build log of the deploy currently serving.
+    const live = path.join(dir, '7.log');
+    const finished = path.join(dir, '8.log');
+    writeFileSync(live, 'live');
+    writeFileSync(finished, 'done');
+    const old = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000);
+    utimesSync(live, old, old);
+    utimesSync(finished, old, old);
+
+    expect(pruneOldLogs(30 * 24 * 60 * 60 * 1000, new Set([7]))).toBe(1);
+    expect(existsSync(live)).toBe(true);
+    expect(existsSync(finished)).toBe(false);
+  });
+
   it('returns 0 when the logs directory is missing', () => {
     h.config.paths.logsDir = path.join(dir, 'does-not-exist');
     expect(pruneOldLogs(60_000)).toBe(0);

@@ -19,7 +19,7 @@
  * backups are fetched to a local temp first via
  * `lib/backupRemote.ts`.
  */
-import { open, stat, unlink, writeFile } from 'node:fs/promises';
+import { open, readdir, stat, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { desc, eq } from 'drizzle-orm';
@@ -36,6 +36,17 @@ export interface DrillResult {
   details: Record<string, unknown> | null;
   error: string | null;
 }
+
+/**
+ * Names of the drill's scratch files. A drill decrypts the backup to
+ * `<backup>.<pid>-drill.dec` (PLAINTEXT) and fetches a remote-only backup to
+ * `<tmpdir>/nd-drill-<pid>-<ms>.dump`; both are unlinked by the drill's
+ * cleanup hook, which never runs when the process dies mid-drill.
+ * `pruneDrillLeftovers` (housekeeping) matches the same names.
+ */
+const DRILL_PLAINTEXT_SUFFIX = '-drill.dec';
+const DRILL_FETCH_PREFIX = 'nd-drill-';
+const DRILL_FETCH_RE = /^nd-drill-\d+-\d+\.dump$/;
 
 interface DrillContext {
   /** Host path to a plaintext dump ready for the engine-specific
@@ -190,7 +201,7 @@ async function stageForDrill(
     if (!remote.remoteKey) {
       throw new Error('Backup file is missing on disk and no remote key is recorded');
     }
-    fetched = join(tmpdir(), `nd-drill-${process.pid}-${Date.now()}.dump`);
+    fetched = join(tmpdir(), `${DRILL_FETCH_PREFIX}${process.pid}-${Date.now()}.dump`);
     await fetchRemoteBackup(db, remote, fetched);
     source = fetched;
   }
@@ -203,7 +214,7 @@ async function stageForDrill(
   // NDBK1 envelope — and it used to be handed straight to the validator,
   // so every drill of a pruned-locally backup "failed" on ciphertext.
   if (await isEncryptedBackupFile(source)) {
-    const dec = `${source}.${process.pid}-drill.dec`;
+    const dec = `${source}.${process.pid}${DRILL_PLAINTEXT_SUFFIX}`;
     await decryptBackupFile(source, dec);
     return {
       file: dec,
@@ -218,7 +229,7 @@ async function stageForDrill(
   // Legacy single-line `v<n>:` envelope (pre-streaming backups), which the
   // restore path still reads: decrypt it the same way restore does.
   if (LEGACY_ENVELOPE_RE.test(await readHead(source, 32).catch(() => ''))) {
-    const dec = `${source}.${process.pid}-drill.dec`;
+    const dec = `${source}.${process.pid}${DRILL_PLAINTEXT_SUFFIX}`;
     await writeFile(dec, readBackupBytes(source), { mode: 0o600 });
     return {
       file: dec,
@@ -424,4 +435,44 @@ export async function findDrillById(
     startedAt: row.startedAt instanceof Date ? row.startedAt.getTime() : Number(row.startedAt),
     completedAt: row.completedAt != null ? Number(row.completedAt) : null,
   };
+}
+
+/**
+ * r302: delete drill scratch files a crashed drill left behind — the
+ * PLAINTEXT `*-drill.dec` decryptions next to the backups, and the
+ * `nd-drill-*.dump` copies fetched from a destination. The drill's own
+ * cleanup hook is the normal path; this is for a process that died (OOM,
+ * restart, an update of the panel itself) between staging and cleanup, which
+ * otherwise left a decrypted database dump on disk forever — outside the
+ * encryption the operator turned on for backups.
+ *
+ * Only files older than `maxAgeMs` go, so a drill still validating a large
+ * dump is not pulled out from under. Non-recursive and best-effort: a missing
+ * directory or a file that vanished mid-scan is not an error. Returns the
+ * count removed.
+ */
+export async function pruneDrillLeftovers(dirs: readonly string[], maxAgeMs: number): Promise<number> {
+  const cutoff = Date.now() - maxAgeMs;
+  let removed = 0;
+  for (const dir of dirs) {
+    let names: string[];
+    try {
+      names = await readdir(dir);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (!name.endsWith(DRILL_PLAINTEXT_SUFFIX) && !DRILL_FETCH_RE.test(name)) continue;
+      const file = join(dir, name);
+      try {
+        const st = await stat(file);
+        if (!st.isFile() || st.mtimeMs >= cutoff) continue;
+        await unlink(file);
+        removed++;
+      } catch {
+        /* best effort */
+      }
+    }
+  }
+  return removed;
 }

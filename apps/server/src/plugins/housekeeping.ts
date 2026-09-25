@@ -1,6 +1,19 @@
-import { and, lt, notInArray, or } from 'drizzle-orm';
-import { auditLog, deployments, jobRuns, notificationLog, sessions } from '@ninedeploy/db';
+import { tmpdir } from 'node:os';
+import { and, inArray, lt, notInArray, or, sql } from 'drizzle-orm';
+import {
+  auditLog,
+  backupDrills,
+  cacheRegistryBlobs,
+  deployments,
+  domainTransfers,
+  jobRuns,
+  notificationLog,
+  sessions,
+  workspaceInvitations,
+} from '@ninedeploy/db';
 import fp from 'fastify-plugin';
+import { config } from '../config.js';
+import { pruneDrillLeftovers } from '../lib/backupDrill.js';
 import { run } from '../lib/exec.js';
 import { deleteLog, pruneOldLogs } from '../engine/logs.js';
 import { pruneResetTokens } from '../lib/passwordReset.js';
@@ -50,6 +63,36 @@ const JOB_RUN_MAX_AGE_MS = LOG_MAX_AGE_MS;
  */
 const DEAD_SESSION_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 /**
+ * r302: finished backup-drill rows older than this are deleted — except the
+ * newest finished drill of each database, which is the "last verified" answer
+ * the drill history exists to give. `backup_drills` had no retention; its rows
+ * only went when their backup did (FK cascade), and a database whose backups
+ * are kept forever kept every drill with them. `pending`/`running` rows are
+ * never swept: a `running` row is the only trace of a drill that died mid-run.
+ */
+const DRILL_MAX_AGE_MS = AUDIT_MAX_AGE_MS;
+/**
+ * r302: workspace invitations and domain transfers are deleted this long after
+ * they stopped being usable (revoked / accepted / expired). Neither table had
+ * retention; since r301 a revoke → re-invite adds a row instead of failing, so
+ * invitation history now grows with use. A live (pending, unexpired) row is
+ * never touched — every condition below is on a terminal timestamp.
+ */
+const RETIRED_INVITE_GRACE_MS = 30 * 24 * 60 * 60 * 1000;
+/**
+ * r302: registry build-cache rows not hit or stored for this long are deleted.
+ * Safe by the driver's contract (`kernel/drivers/registryBuildCache.ts`): a row
+ * is bookkeeping (digest, hit counter), not the cache — a key with no row is
+ * looked up against the registry itself, which still holds the layers.
+ */
+const COLD_CACHE_ROW_MAX_AGE_MS = AUDIT_MAX_AGE_MS;
+/**
+ * r302: drill scratch files (a PLAINTEXT decryption of a backup, or a fetched
+ * copy) older than this are leftovers of a drill whose process died before its
+ * cleanup ran. Short, but far longer than any drill validates a dump.
+ */
+const DRILL_LEFTOVER_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+/**
  * Never swept, whatever their age:
  *   • the in-flight statuses — the worker and the pipeline still write to them;
  *   • `running` — that row records what is serving traffic right now, carries
@@ -79,6 +122,56 @@ async function pruneOldDeployments(db: import('@ninedeploy/db').DB, maxAgeMs: nu
     .where(and(lt(deployments.createdAt, cutoff), notInArray(deployments.status, [...UNSWEEPABLE_STATUSES])));
   for (const row of doomed) deleteLog(row.id);
   return doomed.length;
+}
+
+/**
+ * r302: ids of the deployments whose rows are never swept — their log files
+ * must not be swept either. `pruneOldLogs` judges by mtime alone, and a
+ * `running` deployment stops writing its log once it is up, so after 30 days
+ * the build log of the deploy currently serving traffic was deleted.
+ */
+export async function unsweepableDeploymentIds(db: import('@ninedeploy/db').DB): Promise<Set<number>> {
+  const rows = await db
+    .select({ id: deployments.id })
+    .from(deployments)
+    .where(inArray(deployments.status, [...UNSWEEPABLE_STATUSES]));
+  return new Set(rows.map((r) => r.id));
+}
+
+/**
+ * r302: retention for the tables that had none — finished backup drills,
+ * retired workspace invitations and domain transfers, and cold registry
+ * build-cache rows. See the window constants above for what each keeps.
+ */
+export async function pruneRetiredRecords(db: import('@ninedeploy/db').DB, now: number = Date.now()): Promise<void> {
+  const drillCutoff = new Date(now - DRILL_MAX_AGE_MS);
+  await db.delete(backupDrills).where(
+    and(
+      inArray(backupDrills.status, ['passed', 'failed']),
+      lt(backupDrills.startedAt, drillCutoff),
+      sql`${backupDrills.id} NOT IN (SELECT MAX(${backupDrills.id}) FROM ${backupDrills} WHERE ${backupDrills.status} IN ('passed', 'failed') GROUP BY ${backupDrills.databaseId})`,
+    ),
+  );
+
+  const inviteCutoff = new Date(now - RETIRED_INVITE_GRACE_MS);
+  await db
+    .delete(workspaceInvitations)
+    .where(
+      or(
+        lt(workspaceInvitations.revokedAt, inviteCutoff),
+        lt(workspaceInvitations.acceptedAt, inviteCutoff),
+        lt(workspaceInvitations.expiresAt, inviteCutoff),
+      ),
+    );
+
+  // `expires_at` is unix SECONDS here. Every transfer — pending, accepted or
+  // cancelled — is past any state change once it is past its expiry (accept
+  // and cancel both require a pending, unexpired row), so expiry + grace is
+  // the terminal timestamp for all of them.
+  const transferCutoffSec = Math.floor((now - RETIRED_INVITE_GRACE_MS) / 1000);
+  await db.delete(domainTransfers).where(lt(domainTransfers.expiresAt, transferCutoffSec));
+
+  await db.delete(cacheRegistryBlobs).where(lt(cacheRegistryBlobs.lastHitAt, new Date(now - COLD_CACHE_ROW_MAX_AGE_MS)));
 }
 
 /**
@@ -130,7 +223,9 @@ function pruneDanglingImages(): void {
 
 /**
  * Periodic housekeeping: prunes deploy-log files, finished deployment rows,
- * scheduled-job run history, dead session rows, time-series/audit tables, the
+ * scheduled-job run history, dead session rows, time-series/audit tables,
+ * finished backup drills and their leftover scratch files, retired
+ * invitations and domain transfers, cold build-cache rows, the
  * archived metric-history rows, and dangling Docker images so a long-running
  * instance doesn't slowly fill its disk. Live metric retention is handled by
  * the collector plugin (a 24h ring, matching the 1440-minute cap the
@@ -143,7 +238,7 @@ export default fp(
 
     const tick = async () => {
       try {
-        pruneOldLogs(LOG_MAX_AGE_MS);
+        pruneOldLogs(LOG_MAX_AGE_MS, await unsweepableDeploymentIds(fastify.db));
         const now = Date.now();
         await fastify.db.delete(auditLog).where(lt(auditLog.ts, new Date(now - AUDIT_MAX_AGE_MS)));
         await fastify.db.delete(notificationLog).where(lt(notificationLog.ts, new Date(now - NOTIF_MAX_AGE_MS)));
@@ -151,6 +246,8 @@ export default fp(
         await fastify.db.delete(jobRuns).where(lt(jobRuns.createdAt, new Date(now - JOB_RUN_MAX_AGE_MS)));
         await pruneResetTokens(fastify.db);
         await pruneDeadSessions(fastify.db, DEAD_SESSION_GRACE_MS);
+        await pruneRetiredRecords(fastify.db, now);
+        await pruneDrillLeftovers([config.paths.backupsDir, tmpdir()], DRILL_LEFTOVER_MAX_AGE_MS);
         await pruneMetricHistory(fastify);
         pruneDanglingImages();
 

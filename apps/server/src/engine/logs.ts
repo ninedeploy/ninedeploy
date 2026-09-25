@@ -61,8 +61,14 @@ export function deleteLog(deploymentId: number): boolean {
  * Remove deploy-log files older than `maxAgeMs` (judged by mtime). Deploy logs
  * accumulate one file per deployment and are never otherwise cleaned up, so
  * without this the logs directory grows without bound. Returns the count removed.
+ *
+ * r302: `keep` names deployments whose log must survive whatever its mtime —
+ * the non-terminal ones. A deploy that is `running` (serving traffic) stops
+ * writing its log once it is up, so after 30 days the mtime sweep deleted the
+ * build log of the very deployment the Deploys tab shows as live, while the
+ * row itself is deliberately never swept.
  */
-export function pruneOldLogs(maxAgeMs: number): number {
+export function pruneOldLogs(maxAgeMs: number, keep: ReadonlySet<number> = new Set()): number {
   const dir = config.paths.logsDir;
   const cutoff = Date.now() - maxAgeMs;
   let removed = 0;
@@ -74,6 +80,8 @@ export function pruneOldLogs(maxAgeMs: number): number {
   }
   for (const name of entries) {
     if (!name.endsWith('.log')) continue;
+    const id = /^(\d+)\.log$/.exec(name)?.[1];
+    if (id !== undefined && keep.has(Number(id))) continue;
     const file = path.join(dir, name);
     try {
       if (statSync(file).mtimeMs < cutoff) {
