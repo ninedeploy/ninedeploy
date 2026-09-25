@@ -390,6 +390,30 @@ describe('isReplayedDelivery', () => {
     expect(isReplayedDelivery(githubHeaders('{}'), 'github')).toBe(false);
     expect(isReplayedDelivery(githubHeaders('{}'), 'github')).toBe(false);
   });
+
+  // r313 regression: the delivery id is not signed. A captured push replayed
+  // with a FRESH id must still be recognised, because the signed body is the
+  // same bytes.
+  it('flags a replayed signed body even when the delivery id is fresh (r313)', () => {
+    const body = JSON.stringify({ ref: 'refs/heads/main', after: 'r313aaaa' });
+    const first = { ...githubHeaders(body), 'x-github-delivery': 'r313-d1' };
+    const forged = { ...githubHeaders(body), 'x-github-delivery': 'r313-attacker-fresh' };
+    expect(isReplayedDelivery(first, 'github', { rawBody: body, scope: 7 })).toBe(false);
+    expect(isReplayedDelivery(forged, 'github', { rawBody: body, scope: 7 })).toBe(true);
+    // no delivery id at all does not bypass the body check either
+    expect(isReplayedDelivery(githubHeaders(body), 'github', { rawBody: body, scope: 7 })).toBe(true);
+  });
+
+  it('scopes body dedupe per service and still dedupes on the id (r313)', () => {
+    const body = JSON.stringify({ ref: 'refs/heads/main', after: 'r313bbbb' });
+    // the same push fanned out to two services is two legitimate deliveries
+    expect(isReplayedDelivery({ 'x-gitlab-uuid': 'r313-u1' }, 'gitlab', { rawBody: body, scope: 1 })).toBe(false);
+    expect(isReplayedDelivery({ 'x-gitlab-uuid': 'r313-u2' }, 'gitlab', { rawBody: body, scope: 2 })).toBe(false);
+    // a different body under an already-seen id is still a replay
+    expect(isReplayedDelivery({ 'x-gitlab-uuid': 'r313-u1' }, 'gitlab', { rawBody: `${body} `, scope: 1 })).toBe(true);
+    // ...and a genuinely new push is not
+    expect(isReplayedDelivery({ 'x-gitlab-uuid': 'r313-u3' }, 'gitlab', { rawBody: `${body}\n`, scope: 1 })).toBe(false);
+  });
 });
 
 describe('Bitbucket', () => {

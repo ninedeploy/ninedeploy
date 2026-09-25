@@ -107,13 +107,33 @@ function deliveryId(headers: Record<string, string | string[] | undefined>, prov
 }
 
 /**
- * True when this delivery id was already accepted inside the replay window.
- * Absent ids (older providers, hand-rolled senders) fail OPEN — the HMAC
- * remains the primary authentication.
+ * True when this delivery was already accepted inside the replay window.
+ *
+ * r313: the delivery-id header is NOT covered by the signature — the HMAC
+ * signs the body only. Keying on the id alone let a captured signed payload
+ * be replayed with a fresh `X-GitHub-Delivery` (any string) and redeploy an
+ * old commit as often as the attacker liked. The signed thing is the body,
+ * so the body is also remembered: sha256(rawBody), scoped per service (one
+ * repository legitimately feeds several services with the same payload).
+ * A provider's own redelivery of the same body inside the window is deduped
+ * too — that is intended; a manual redeploy is a panel action, not a replay.
+ *
+ * Absent ids (older providers, hand-rolled senders) fail OPEN on the id
+ * check — the HMAC remains the primary authentication — but the body check
+ * still applies whenever `rawBody` is given.
  */
-export function isReplayedDelivery(headers: Record<string, string | string[] | undefined>, provider: Provider): boolean {
+export function isReplayedDelivery(
+  headers: Record<string, string | string[] | undefined>,
+  provider: Provider,
+  body?: { rawBody: string; scope: string | number },
+): boolean {
+  const keys: string[] = [];
   const id = deliveryId(headers, provider);
-  if (!id) return false;
+  if (id) keys.push(id);
+  if (body?.rawBody) {
+    keys.push(`body:${provider}:${body.scope}:${createHash('sha256').update(body.rawBody).digest('hex')}`);
+  }
+  if (keys.length === 0) return false;
   const now = Date.now();
   if (seenDeliveries.size > REPLAY_MAP_SOFT_CAP) {
     for (const [k, at] of seenDeliveries) {
@@ -129,9 +149,19 @@ export function isReplayedDelivery(headers: Record<string, string | string[] | u
       }
     }
   }
-  const seenAt = seenDeliveries.get(id);
-  seenDeliveries.set(id, now);
-  return seenAt !== undefined;
+  // Record EVERY key before answering, so a replay caught by one key still
+  // pins the other (a fresh id on an old body must not become reusable).
+  let replayed = false;
+  for (const key of keys) {
+    if (seenDeliveries.has(key)) replayed = true;
+    seenDeliveries.set(key, now);
+  }
+  return replayed;
+}
+
+/** Test hook: forget every remembered delivery (the window is process-global). */
+export function resetReplayWindowForTests(): void {
+  seenDeliveries.clear();
 }
 
 /** Collect added/modified/removed paths from a commits array. */
