@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, Globe, Plus, Radio, Shield, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { api } from '../../lib/api.js';
+import { api, authedFetch } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, Input, Skeleton, cn } from '../../components/ui.js';
 
@@ -224,15 +224,40 @@ function cleanDomainInput(raw: string): string {
   return value.replace(/:\d+$/, '').replace(/\.$/, '');
 }
 
+/** The TXT record a `pending` domain must publish to prove ownership. */
+type DomainChallenge = { recordName: string; recordType: 'TXT'; recordValue: string };
+
+/**
+ * Prove ownership of a pending domain (`POST …/domains/:domainId/verify`).
+ * Raw request: the SDK has no method for this route yet.
+ */
+async function verifyDomain(
+  serviceId: number,
+  domainId: number,
+): Promise<{ verified: boolean; error?: string; verification: DomainChallenge | null }> {
+  const res = await authedFetch(`/v1/services/${serviceId}/domains/${domainId}/verify`, { method: 'POST' });
+  const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+  if (!res.ok) throw new Error(body?.error?.message ?? 'Could not verify the domain');
+  return body as { verified: boolean; error?: string; verification: DomainChallenge | null };
+}
+
 function DomainsCard({ serviceId }: { serviceId: number }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [hostname, setHostname] = useState('');
+  // r345: the TXT challenge is only in the create / verify responses (the
+  // list omits it), so keep the latest one per domain for display.
+  const [challenges, setChallenges] = useState<Record<number, DomainChallenge>>({});
 
   const domains = useQuery({ queryKey: ['domains', serviceId], queryFn: () => api.domains.list(serviceId) });
   const add = useMutation({
     mutationFn: (host: string) => api.domains.create(serviceId, { hostname: host }),
-    onSuccess: () => {
+    onSuccess: (created) => {
+      const verification = (created as { verification?: DomainChallenge | null } | undefined)?.verification;
+      if (created && verification) {
+        setChallenges((c) => ({ ...c, [created.id]: verification }));
+        toast(`${created.hostname} added — publish the TXT record to bring it live`, 'info');
+      }
       setHostname('');
       qc.invalidateQueries({ queryKey: ['domains', serviceId] });
       qc.invalidateQueries({ queryKey: ['domains-all'] });
@@ -279,7 +304,13 @@ function DomainsCard({ serviceId }: { serviceId: number }) {
             <p className="py-2 text-xs text-slate-600">No domains attached.</p>
           ) : (
             domains.data.map((d) => (
-              <DomainItemRow key={d.id} domain={d} serviceId={serviceId} />
+              <DomainItemRow
+                key={d.id}
+                domain={d}
+                serviceId={serviceId}
+                challenge={challenges[d.id] ?? null}
+                onChallenge={(ch) => setChallenges((c) => ({ ...c, [d.id]: ch }))}
+              />
             ))
           )}
         </div>
@@ -288,9 +319,35 @@ function DomainsCard({ serviceId }: { serviceId: number }) {
   );
 }
 
-function DomainItemRow({ domain: d, serviceId }: { domain: any; serviceId: number }) {
+function DomainItemRow({
+  domain: d,
+  serviceId,
+  challenge,
+  onChallenge,
+}: {
+  domain: any;
+  serviceId: number;
+  challenge: DomainChallenge | null;
+  onChallenge: (ch: DomainChallenge) => void;
+}) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const pending = d.status === 'pending';
+
+  const verify = useMutation({
+    mutationFn: () => verifyDomain(serviceId, d.id),
+    onSuccess: (res) => {
+      if (res.verified) {
+        toast(`${d.hostname} verified — it is routed now`, 'success');
+        qc.invalidateQueries({ queryKey: ['domains', serviceId] });
+        qc.invalidateQueries({ queryKey: ['domains-all'] });
+        return;
+      }
+      if (res.verification) onChallenge(res.verification);
+      toast(res.error ?? 'The TXT record was not found yet — DNS can take a few minutes', 'error');
+    },
+    onError: (err) => toast(err instanceof Error ? err.message : 'Could not verify the domain', 'error'),
+  });
   const [expanded, setExpanded] = useState(false);
   const [basicAuth, setBasicAuth] = useState(d.basicAuth ?? '');
   const [ipAllowlist, setIpAllowlist] = useState(d.ipAllowlist ?? '');
@@ -369,8 +426,27 @@ function DomainItemRow({ domain: d, serviceId }: { domain: any; serviceId: numbe
             {d.path !== '/' && <span className="text-slate-500">{d.path}</span>}
             <ExternalLink size={11} className="shrink-0 opacity-0 transition group-hover:opacity-100" />
           </a>
+          {pending && (
+            <span
+              className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20"
+              title="Ownership not proven yet — this domain is not routed"
+            >
+              pending
+            </span>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {pending && (
+            <button
+              type="button"
+              onClick={() => verify.mutate()}
+              disabled={verify.isPending}
+              className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition hover:bg-amber-500/25"
+              title="Check the ownership TXT record and bring the domain live"
+            >
+              {verify.isPending ? 'verifying…' : 'Verify'}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => checkDns.mutate()}
@@ -441,6 +517,18 @@ function DomainItemRow({ domain: d, serviceId }: { domain: any; serviceId: numbe
           </button>
         </div>
       </div>
+
+      {pending && challenge && (
+        <div className="border-t border-white/5 bg-amber-500/[0.04] px-3 py-2 text-[11px] text-slate-400">
+          <p>Prove you control this domain: publish this DNS record, then press Verify.</p>
+          <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 font-mono">
+            <dt className="text-slate-500">{challenge.recordType}</dt>
+            <dd className="break-all text-slate-200">{challenge.recordName}</dd>
+            <dt className="text-slate-500">value</dt>
+            <dd className="break-all text-slate-200">{challenge.recordValue}</dd>
+          </dl>
+        </div>
+      )}
 
       {expanded && (
         <div className="border-t border-white/5 bg-slate-950/40 p-3 space-y-3">

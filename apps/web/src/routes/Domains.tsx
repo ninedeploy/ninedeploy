@@ -89,7 +89,14 @@ export function Domains() {
                       </span>
                     )}
                   </td>
-                  <td className="px-5 py-3"><StatusBadge status={d.ssl ? 'active' : d.status} /></td>
+                  <td className="px-5 py-3">
+                    {/* r345: the row's real routing status. `ssl` says nothing
+                        about it — a `pending` domain (ownership unproven) is
+                        not routed at all, whatever its HTTPS toggle. */}
+                    <span title={d.status === 'pending' ? "Awaiting DNS ownership proof — not routed yet. Verify it from the service's Network tab." : undefined}>
+                      <StatusBadge status={d.status} />
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>

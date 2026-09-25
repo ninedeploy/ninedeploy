@@ -21,6 +21,7 @@ const apiMock = vi.hoisted(() => ({
     },
     ports: { list: vi.fn() },
   },
+  authedFetch: vi.fn(),
 }));
 vi.mock('../src/lib/api.js', () => apiMock);
 
@@ -77,5 +78,55 @@ describe('NetworkTab DNS chip', () => {
     fireEvent.click(chip);
     await waitFor(() => expect(apiMock.api.domains.dnsCheck).toHaveBeenCalledWith(1, 9));
     await screen.findByText('DNS: ok');
+  });
+});
+
+describe('NetworkTab domain ownership (r345)', () => {
+  afterEach(cleanup);
+
+  const challenge = { recordName: '_ninedeploy-challenge.claimed.example.org', recordType: 'TXT', recordValue: 'nd-verify-abc123' };
+  const pendingRow = { id: 5, hostname: 'claimed.example.org', path: '/', ssl: true, redirectWww: false, status: 'pending' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    apiMock.api.ports.list.mockResolvedValue([]);
+    apiMock.api.domains.list.mockResolvedValue([]);
+  });
+
+  it('shows the TXT challenge from the create response for a pending domain', async () => {
+    apiMock.api.domains.create.mockResolvedValue({ ...pendingRow, verification: challenge });
+    renderTab();
+    const input = await screen.findByPlaceholderText('app.example.com');
+    apiMock.api.domains.list.mockResolvedValue([pendingRow]);
+    fireEvent.change(input, { target: { value: 'claimed.example.org' } });
+    fireEvent.submit(input.closest('form')!);
+    expect(await screen.findByText(challenge.recordName)).toBeInTheDocument();
+    expect(screen.getByText(challenge.recordValue)).toBeInTheDocument();
+    expect(screen.getByText('pending')).toBeInTheDocument();
+  });
+
+  it('verifies a pending domain through the raw verify route', async () => {
+    apiMock.api.domains.list.mockResolvedValue([pendingRow]);
+    apiMock.authedFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ verified: false, error: 'TXT record not found', verification: challenge }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ verified: true, verification: null }) });
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: 'Verify' }));
+    await waitFor(() =>
+      expect(apiMock.authedFetch).toHaveBeenCalledWith('/v1/services/1/domains/5/verify', { method: 'POST' }),
+    );
+    // A failed check still hands back the record to publish.
+    expect(await screen.findByText(challenge.recordValue)).toBeInTheDocument();
+    apiMock.api.domains.list.mockResolvedValue([{ ...pendingRow, status: 'active' }]);
+    fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Verify' })).not.toBeInTheDocument());
+  });
+
+  it('surfaces a refused verification', async () => {
+    apiMock.api.domains.list.mockResolvedValue([pendingRow]);
+    apiMock.authedFetch.mockResolvedValueOnce({ ok: false, json: async () => ({ error: { code: 'forbidden', message: 'nope' } }) });
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: 'Verify' }));
+    expect(await screen.findByText('nope')).toBeInTheDocument();
   });
 });

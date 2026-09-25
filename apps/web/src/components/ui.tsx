@@ -287,6 +287,7 @@ const STATUS_TONES: Record<string, string> = {
   building: 'bg-amber-500/15 text-amber-300 ring-amber-500/20',
   failed: 'bg-rose-500/15 text-rose-300 ring-rose-500/20',
   active: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/20',
+  pending: 'bg-amber-500/15 text-amber-300 ring-amber-500/20',
 };
 
 export function StatusBadge({ status }: { status: string }) {

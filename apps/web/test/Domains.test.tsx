@@ -11,7 +11,7 @@ vi.mock('../src/lib/api.js', async () => {
 });
 
 const domains = [
-  { id: 1, hostname: 'app.example.com', path: '/', serviceId: 5, serviceName: 'app', port: 3000, container: 'nd-app', ssl: true, status: 'running', certExpiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString() },
+  { id: 1, hostname: 'app.example.com', path: '/', serviceId: 5, serviceName: 'app', port: 3000, container: 'nd-app', ssl: true, status: 'active', certExpiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString() },
   { id: 2, hostname: 'blog.example.com', path: '/blog', serviceId: null, serviceName: null, port: null, container: null, ssl: false, status: 'idle' },
   { id: 3, hostname: 'api.example.com', path: '/', serviceId: 9, serviceName: 'api', port: null, container: 'nd-api', ssl: false, status: 'deploying' },
 ];
@@ -63,10 +63,20 @@ describe('Domains', () => {
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
     // container fallback
     expect(screen.getByText('nd-app')).toBeInTheDocument();
-    // status badge: ssl true -> active, ssl false -> underlying status
+    // status badge: the domain's own status
     expect(screen.getByText('active')).toBeInTheDocument();
     expect(screen.getByText('idle')).toBeInTheDocument();
     expect(screen.getByText('deploying')).toBeInTheDocument();
+  });
+
+  it('shows an unverified domain as pending even with HTTPS on (r345)', async () => {
+    mockOf(api.domains.all).mockResolvedValue([
+      { id: 4, hostname: 'claimed.example.org', path: '/', serviceId: 5, serviceName: 'app', port: 3000, container: 'nd-app', ssl: true, status: 'pending', certExpiresAt: null },
+    ] as never);
+    renderWithProviders(<Domains />);
+    await screen.findByText('claimed.example.org');
+    expect(screen.getByText('pending')).toBeInTheDocument();
+    expect(screen.queryByText('active')).not.toBeInTheDocument();
   });
 
   it('toggles ssl on click and invalidates the list', async () => {
