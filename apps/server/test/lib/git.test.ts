@@ -217,7 +217,7 @@ describe('checkoutCommit — fresh clone', () => {
 });
 
 describe('checkoutCommit — existing checkout', () => {
-  it('fetches, checks out, pulls, and reuses the working tree', async () => {
+  it('fetches, moves to the remote tip, and reuses the working tree', async () => {
     const dir = existingCheckout('existing-public', 'https://github.com/ada/repo.git');
     const git = makeGit();
     gitState.simpleGit.mockImplementation(() => git);
@@ -227,8 +227,9 @@ describe('checkoutCommit — existing checkout', () => {
 
     expect(gitState.simpleGit).toHaveBeenCalledWith(dir, HARDENED);
     expect(git.fetch).toHaveBeenCalledWith(['--all']);
-    expect(git.checkout).toHaveBeenCalledWith('main');
-    expect(git.pull).toHaveBeenCalledWith('origin', 'main');
+    // r273: no swallowed `pull` — the checkout is reset to origin's tip.
+    expect(git.raw).toHaveBeenCalledWith(['checkout', '-f', '-B', 'main', 'refs/remotes/origin/main', '--']);
+    expect(git.pull).not.toHaveBeenCalled();
     expect(git.raw).toHaveBeenCalledWith(['log', '-1', '--format=%H']);
     expect(sink).toHaveBeenCalledWith('Fetching latest…');
     expect(resolved).toBe('0123456789abcdef');
@@ -293,17 +294,37 @@ describe('checkoutCommit — existing checkout', () => {
 });
 
 describe('checkoutCommit — edge cases', () => {
-  it('continues when pull fails (detached/empty remote)', async () => {
-    const dir = existingCheckout('existing-pull-fail', 'https://github.com/ada/repo.git');
+  it('r273: falls back to the local branch only when origin has no such ref', async () => {
+    const dir = existingCheckout('existing-no-remote-ref', 'https://github.com/ada/repo.git');
     const git = makeGit();
-    git.pull = vi.fn(async () => {
-      throw new Error('no upstream');
+    const baseRaw = git.raw;
+    git.raw = vi.fn(async (args: string[]) => {
+      if (args[0] === 'rev-parse') throw new Error('exit 1');
+      return baseRaw(args);
+    });
+    gitState.simpleGit.mockImplementation(() => git);
+    const sink = vi.fn();
+
+    await expect(checkoutCommit('https://github.com/ada/repo.git', 'main', undefined, dir, sink)).resolves.toBe(
+      '0123456789abcdef',
+    );
+    expect(git.checkout).toHaveBeenCalledWith('main');
+    expect(sink).toHaveBeenCalledWith('origin has no branch main — using the local checkout');
+  });
+
+  it('r273: fails the checkout when moving to the remote tip fails', async () => {
+    const dir = existingCheckout('existing-reset-fail', 'https://github.com/ada/repo.git');
+    const git = makeGit();
+    const baseRaw = git.raw;
+    git.raw = vi.fn(async (args: string[]) => {
+      if (args[0] === 'checkout') throw new Error('unable to unlink old file');
+      return baseRaw(args);
     });
     gitState.simpleGit.mockImplementation(() => git);
 
-    await expect(
-      checkoutCommit('https://github.com/ada/repo.git', 'main', undefined, dir, vi.fn()),
-    ).resolves.toBe('0123456789abcdef');
+    await expect(checkoutCommit('https://github.com/ada/repo.git', 'main', undefined, dir, vi.fn())).rejects.toThrow(
+      'unable to unlink old file',
+    );
   });
 
   it('checks out the pinned sha and falls back to it when the log is empty', async () => {

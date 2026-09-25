@@ -196,11 +196,26 @@ export async function checkoutCommit(
       git = simpleGit(dir, gitOptions);
     }
 
-    await git.checkout(branch);
-    try {
-      await git.pull('origin', branch);
-    } catch {
-      /* detached/empty remote is fine */
+    // r273: move to the fetched remote tip deterministically. This used to be
+    // `checkout <branch>` + `pull origin <branch>` with the pull's failure
+    // swallowed as "detached/empty remote" — so after a force-push (divergent
+    // history) or a merge conflict, every deploy without a pinned sha built
+    // the OLD local HEAD and reported success. Only a genuinely missing
+    // remote ref falls back to the local branch; any other failure throws.
+    const remoteRef = `refs/remotes/origin/${branch}`;
+    const hasRemoteRef = await git
+      .raw(['rev-parse', '--verify', '--quiet', `${remoteRef}^{commit}`])
+      .then(
+        (out) => out.trim() !== '',
+        () => false,
+      );
+    if (hasRemoteRef) {
+      // `-f` discards leftovers of earlier builds in this reused working
+      // tree, so they can neither block nor survive the switch.
+      await git.raw(['checkout', '-f', '-B', branch, remoteRef, '--']);
+    } else {
+      sink(`origin has no branch ${branch} — using the local checkout`);
+      await git.checkout(branch);
     }
     if (sha) await git.checkout(sha);
 
