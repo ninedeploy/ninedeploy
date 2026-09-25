@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Activity, Building2, ChevronLeft, ChevronRight, Clock, Cloud, Container, Database, FolderKanban, Globe, HardDrive,
-  FileCode, Info, KeyRound, Layers, LayoutDashboard, ListOrdered, Moon, Network, Shield, Stethoscope, Tag, type LucideIcon,
+  FileCode, Info, KeyRound, Layers, LayoutDashboard, LifeBuoy, ListOrdered, Moon, Network, Shield, Stethoscope, Tag, type LucideIcon,
   Rocket, Search, Server, Settings as SettingsIcon, Sparkles, Sun, Users, X,
 } from 'lucide-react';
 import { Link, Outlet, useLocation } from 'react-router';
@@ -21,6 +21,7 @@ import { DeployQueueBadge } from './DeployQueueBadge.js';
 import { HelpProvider } from '../help/HelpContext.js';
 import { useExperienceMode } from '../lib/mode.js';
 import { installPanelAutofillGuard } from '../lib/autofill.js';
+import { useBranding } from '../lib/branding.js';
 
 interface NavItem { to: string; label: string; icon: LucideIcon; advancedOnly?: boolean; operatorOnly?: boolean }
 
@@ -144,6 +145,7 @@ export function Layout() {
   const { theme, toggleTheme } = useTheme();
   const { isSimple } = useExperienceMode();
   const location = useLocation();
+  const branding = useBranding();
 
   useLayoutEffect(() => installPanelAutofillGuard(document), []);
 
@@ -241,7 +243,16 @@ export function Layout() {
       <div className="relative z-30 flex w-12 shrink-0 flex-col items-center border-r border-white/[0.06] bg-slate-950/70 py-3 backdrop-blur">
         {/* Brand mark */}
         <div className="mb-3 grid h-8 w-8 place-items-center">
-          <Logo className="h-8 w-8" />
+          {branding.logoUrl ? (
+            <img
+              src={branding.logoUrl}
+              alt="Logo"
+              referrerPolicy="no-referrer"
+              className="h-8 w-8 rounded-md object-contain"
+            />
+          ) : (
+            <Logo className="h-8 w-8" />
+          )}
         </div>
 
         {/* Group icons */}
@@ -270,6 +281,18 @@ export function Layout() {
         })}
 
         <div className="flex-1" />
+
+        {/* r360: the operator's support contact (`ninedeploy branding set`). */}
+        {branding.supportEmail && (
+          <a
+            href={`mailto:${branding.supportEmail}`}
+            title={`Support: ${branding.supportEmail}`}
+            aria-label={`Contact support (${branding.supportEmail})`}
+            className="mb-2 grid h-9 w-9 place-items-center rounded-xl text-slate-500 transition hover:bg-white/[0.06] hover:text-slate-200"
+          >
+            <LifeBuoy size={17} />
+          </a>
+        )}
 
         {/* User avatar */}
         <button type="button"

@@ -37,6 +37,7 @@ const apiMock = vi.hoisted(() => ({
     workspaces: { list: vi.fn() },
     plugins: { list: vi.fn() },
     menus: { list: vi.fn() },
+    branding: { get: vi.fn() },
   },
 }));
 
@@ -92,6 +93,7 @@ describe('Layout', () => {
     apiMock.api.projects.list.mockResolvedValue([]);
     apiMock.api.plugins.list.mockResolvedValue({ plugins: [] });
     apiMock.api.menus.list.mockResolvedValue({ items: [] });
+    apiMock.api.branding.get.mockResolvedValue({ logoUrl: null, primaryColor: null, supportEmail: null, footerHtml: null });
     FakeWebSocket.instances.length = 0;
     vi.stubGlobal('WebSocket', FakeWebSocket);
   });
@@ -109,6 +111,44 @@ describe('Layout', () => {
     }
     expect(screen.getByText('A')).toBeInTheDocument(); // avatar initial
     expect(screen.getByText('ada@example.com · Sign out')).toBeInTheDocument();
+  });
+
+  it('r360: applies the instance branding — logo and support contact', async () => {
+    apiMock.api.branding.get.mockResolvedValue({
+      logoUrl: 'https://cdn.example.com/acme.png',
+      primaryColor: '#ff0000',
+      supportEmail: 'help@acme.test',
+      footerHtml: '<b>x</b>',
+    });
+    renderLayout();
+    const logo = await screen.findByRole('img', { name: 'Logo' });
+    expect(logo).toHaveAttribute('src', 'https://cdn.example.com/acme.png');
+    expect(screen.getByRole('link', { name: 'Contact support (help@acme.test)' })).toHaveAttribute(
+      'href',
+      'mailto:help@acme.test',
+    );
+  });
+
+  it('r360: refuses an unsafe logo URL and a malformed support address, keeping the defaults', async () => {
+    apiMock.api.branding.get.mockResolvedValue({
+      logoUrl: 'javascript:alert(1)',
+      primaryColor: null,
+      supportEmail: 'x@y.z?cc=evil@z.z',
+      footerHtml: null,
+    });
+    renderLayout();
+    await waitFor(() => expect(apiMock.api.branding.get).toHaveBeenCalled());
+    expect(screen.queryByRole('img', { name: 'Logo' })).toBeNull();
+    expect(document.querySelector('.flex.w-12 svg')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Contact support/ })).toBeNull();
+  });
+
+  it('r360: keeps the stock mark when branding cannot be read', async () => {
+    apiMock.api.branding.get.mockRejectedValue(new Error('404'));
+    renderLayout();
+    await waitFor(() => expect(apiMock.api.branding.get).toHaveBeenCalled());
+    expect(screen.queryByRole('img', { name: 'Logo' })).toBeNull();
+    expect(document.querySelector('.flex.w-12 svg')).toBeInTheDocument();
   });
 
   it('shows the Doctor sidebar link to instance operators', () => {

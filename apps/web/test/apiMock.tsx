@@ -159,6 +159,10 @@ export function createFakeApiModule() {
       vault: { get: vi.fn(), set: vi.fn(), test: vi.fn() },
     },
     about: { get: vi.fn() },
+    branding: {
+      get: vi.fn().mockResolvedValue({ logoUrl: null, primaryColor: null, supportEmail: null, footerHtml: null }),
+      set: vi.fn(),
+    },
     notifications: {
       listChannels: vi.fn(),
       createChannel: vi.fn(),
