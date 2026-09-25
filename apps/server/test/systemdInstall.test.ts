@@ -88,4 +88,20 @@ describe('bare-metal systemd installation policy', () => {
     expect(installer).not.toContain('[ -r /dev/tty ] && [ -w /dev/tty ]');
     expect(installer).toContain('[ -z "$' + '{ND_SELF_UPDATE_TARGET:-}" ] && { : <>/dev/tty; } 2>/dev/null');
   });
+
+  it('r262: an upgrade that dies after stopping the panel starts it again, and keeps a build to start', () => {
+    const installer = rootFile('install.sh');
+    const at = (needle: string) => {
+      const i = installer.indexOf(needle);
+      expect(i, needle).toBeGreaterThanOrEqual(0);
+      return i;
+    };
+    // Armed before the stop, disarmed only once the normal restart ran.
+    expect(at('trap restore_service_on_exit EXIT')).toBeLessThan(at('sudo systemctl stop ninedeploy'));
+    expect(at('sudo systemctl restart ninedeploy\n  # r262')).toBeGreaterThan(at('sudo systemctl stop ninedeploy'));
+    expect(installer).toMatch(/sudo systemctl restart ninedeploy\n(?:\s*#.*\n)*\s*SERVICE_STOPPED_BY_UPGRADE=false/);
+    // Previous dist/ is cleared only after dependencies installed.
+    expect(at('rm -rf apps/*/dist packages/*/dist')).toBeGreaterThan(at('run_quiet_step "pnpm install" pnpm install --frozen-lockfile'));
+    expect(at('rm -rf apps/*/dist packages/*/dist')).toBeLessThan(at('run_quiet_step "pnpm build" pnpm build'));
+  });
 });

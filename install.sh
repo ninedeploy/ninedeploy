@@ -1157,6 +1157,39 @@ update_from_git() {
   ok "Source tree at $_ref ($(git rev-parse --short HEAD 2>/dev/null || echo unknown))"
 }
 
+# r262: an upgrade stops the running ninedeploy unit below, and the only
+# place that started it again was the normal `systemctl restart` in section
+# 5. Every `fail`/set -e exit in between — tarball fetch failure, a registry
+# outage in `pnpm install`, a broken build, a SIGTERM to the self-update
+# unit — left the panel stopped, and with it the UI that reports the failed
+# update. This EXIT trap puts the unit back whenever the upgrade stopped it
+# and did not reach that restart. Fresh installs (no unit was running) never
+# arm it. `start` on a unit that is already active is a no-op, so a path that
+# restarted it itself (update_from_git's fail branches) is not restarted
+# twice. The exit status of the failed run is preserved.
+SERVICE_STOPPED_BY_UPGRADE=false
+restore_service_on_exit() {
+  local _rc=$?
+  [ "${SERVICE_STOPPED_BY_UPGRADE:-false}" = true ] || return 0
+  SERVICE_STOPPED_BY_UPGRADE=false
+  systemctl is-active --quiet ninedeploy 2>/dev/null && return 0
+  # The unit's ExecStart is apps/server/dist/server.js. A release-tarball
+  # upgrade replaces apps/ wholesale, so past that point there is no build to
+  # start — say so instead of kicking off a Restart=always crash loop.
+  if [ ! -f "${INSTALL_DIR:-.}/apps/server/dist/server.js" ]; then
+    warn "The upgrade did not complete (exit ${_rc}) and no server build is left to restart the panel on."
+    warn "The panel is DOWN. Fix the cause above and re-run the installer: cd ${INSTALL_DIR:-.} && ./install.sh"
+    return 0
+  fi
+  warn "The upgrade did not complete (exit ${_rc}) — starting the ninedeploy service again so the panel is not left down."
+  if sudo systemctl start ninedeploy; then
+    warn "ninedeploy was started again. Re-run the installer once the cause above is fixed."
+  else
+    warn "ninedeploy could not be restarted — inspect: journalctl -u ninedeploy -n 50"
+  fi
+  return 0
+}
+
 
 if [ -f "$INSTALL_DIR/package.json" ]; then
   # What is on disk right now, so the upgrade reports both ends of the jump.
@@ -1172,6 +1205,10 @@ if [ -f "$INSTALL_DIR/package.json" ]; then
   HAS_SYSTEMD=false
   if [ "$(uname -s)" = "Linux" ] && command -v systemctl &>/dev/null && systemctl is-active --quiet ninedeploy 2>/dev/null; then
     HAS_SYSTEMD=true
+    # r262: arm the restart BEFORE stopping, so no exit path in between can
+    # leave the panel down (see restore_service_on_exit).
+    SERVICE_STOPPED_BY_UPGRADE=true
+    trap restore_service_on_exit EXIT
     info "Stopping the service for a consistent backup…"
     sudo systemctl stop ninedeploy
   fi
@@ -1276,15 +1313,6 @@ fi
 # so without this an upgrade has no way to report the version it replaced.
 printf '%s\n' "$REF" > "$INSTALL_DIR/$RELEASE_STAMP_FILE" 2>/dev/null || true
 
-# A build artifact from the previous release is not overwritten by a checkout
-# — dist/ is gitignored, so an upgrade that rebuilds nothing keeps serving the
-# old panel bundle, which is exactly the "upgraded but the UI still shows the
-# previous version" failure. Drop the artifacts and the turbo cache so the
-# build below cannot be skipped.
-info "Clearing build artifacts from the previous release…"
-rm -rf .turbo apps/*/.turbo packages/*/.turbo 2>/dev/null || true
-rm -rf apps/*/dist packages/*/dist 2>/dev/null || true
-rm -rf node_modules/.cache node_modules/.vite 2>/dev/null || true
 if [ "$FORCE_REFRESH" = "1" ] && [ "$SOURCE_MODE" = "git" ]; then
   # Untracked leftovers can shadow a moved or renamed source file. .data,
   # .env and the upgrade backups are gitignored on purpose and must survive,
@@ -1316,6 +1344,20 @@ if ! run_quiet_step "pnpm install" pnpm install --frozen-lockfile; then
     fail "pnpm install --frozen-lockfile failed: the lockfile does not match package.json (or the registry is unreachable). Fix the checkout, or re-run with NINEDEPLOY_ALLOW_LOOSE_INSTALL=1 to explicitly accept a re-resolved dependency graph on this host."
   fi
 fi
+
+# A build artifact from the previous release is not overwritten by a checkout
+# — dist/ is gitignored, so an upgrade that rebuilds nothing keeps serving the
+# old panel bundle, which is exactly the "upgraded but the UI still shows the
+# previous version" failure. Drop the artifacts and the turbo cache so the
+# build below cannot be skipped.
+#
+# r262: only AFTER dependencies installed. Clearing dist/ first meant a
+# registry outage in `pnpm install` left no build for the service to be
+# restarted on; nothing in the install step reads these directories.
+info "Clearing build artifacts from the previous release…"
+rm -rf .turbo apps/*/.turbo packages/*/.turbo 2>/dev/null || true
+rm -rf apps/*/dist packages/*/dist 2>/dev/null || true
+rm -rf node_modules/.cache node_modules/.vite 2>/dev/null || true
 
 info "Building the panel, API and CLI… (silent — often 5-10 min)"
 run_quiet_step "pnpm build" pnpm build \
@@ -1509,6 +1551,9 @@ if [ "$(uname -s)" = "Linux" ] && command -v systemctl &>/dev/null; then
 
   sudo systemctl enable ninedeploy
   sudo systemctl restart ninedeploy
+  # r262: the unit is running the new build now; a later failure (health
+  # gate, Traefik check) is reported as such, not papered over by the trap.
+  SERVICE_STOPPED_BY_UPGRADE=false
 
   # Everything the operator would otherwise have to go and collect by hand.
   # A readiness failure is the single most common place an install ends, and
