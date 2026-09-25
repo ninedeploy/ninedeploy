@@ -9,9 +9,9 @@
  * existing `requireAdmin` decorator is the right gate.
  */
 import { z } from 'zod';
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { eq } from 'drizzle-orm';
-import { databases } from '@ninedeploy/db';
+import { databases, type Database } from '@ninedeploy/db';
 import { audit } from '../lib/audit.js';
 import { badRequest, notFound, parseId as num, unprocessable } from '../lib/errors.js';
 import {
@@ -21,6 +21,17 @@ import {
   pooledConnectionString,
 } from '../lib/pgbouncer.js';
 import { loadDatabaseForUser, assertDatabaseRole } from '../lib/resourceAccess.js';
+
+/**
+ * r331: `enablePgbouncer` / `disablePgbouncer` stamp the DATABASE ROW, not the
+ * in-memory object the route loaded before the change. Building the response
+ * from that stale object reported the pre-change state — the CLI printed
+ * "Connection URL: (pending)" right after a successful enable and "still
+ * reporting enabled" after a successful disable. Re-read the row first.
+ */
+async function reloadRow(app: FastifyInstance, d: Database): Promise<Database> {
+  return (await app.db.query.databases.findFirst({ where: eq(databases.id, d.id) })) ?? d;
+}
 
 const enableBody = z.object({
   /** Override the listen port. Defaults to 6432 on the row. */
@@ -73,8 +84,7 @@ export const pgbouncerRoutes: FastifyPluginAsync = async (app) => {
           throw badRequest(err instanceof Error ? err.message : String(err));
         }
         void audit(app.db, req.user!.id, 'database.pgbouncer_enable', `${d.name} (port=${d.pgbouncerPort})`);
-        const status = await pgbouncerStatusFor(d);
-        return status;
+        return pgbouncerStatusFor(await reloadRow(app, d));
       },
     );
 
@@ -88,7 +98,7 @@ export const pgbouncerRoutes: FastifyPluginAsync = async (app) => {
         throw badRequest(err instanceof Error ? err.message : String(err));
       }
       void audit(app.db, req.user!.id, 'database.pgbouncer_disable', d.name);
-      return pgbouncerStatusFor(d);
+      return pgbouncerStatusFor(await reloadRow(app, d));
     });
   });
 };

@@ -42,20 +42,30 @@ const lib = vi.hoisted(() => ({
   disableCalls: 0,
   enableThrow: null as Error | null,
   disableThrow: null as Error | null,
+  /** The row each pgbouncerStatusFor call was handed (r331). */
+  statusRows: [] as Array<Record<string, unknown>>,
+  /** Simulates the real helper stamping the DB row (r331). */
+  onEnable: null as (() => void) | null,
+  onDisable: null as (() => void) | null,
 }));
 
 vi.mock('../../src/lib/pgbouncer.js', async () => {
   const actual = await vi.importActual<unknown>('../../src/lib/pgbouncer.js');
   return {
     ...(actual as Record<string, unknown>),
-    pgbouncerStatusFor: vi.fn(async () => lib.status),
+    pgbouncerStatusFor: vi.fn(async (row: Record<string, unknown>) => {
+      lib.statusRows.push({ ...row });
+      return lib.status;
+    }),
     enablePgbouncer: vi.fn(async () => {
       lib.enableCalls++;
       if (lib.enableThrow) throw lib.enableThrow;
+      lib.onEnable?.();
     }),
     disablePgbouncer: vi.fn(async () => {
       lib.disableCalls++;
       if (lib.disableThrow) throw lib.disableThrow;
+      lib.onDisable?.();
     }),
   };
 });
@@ -138,6 +148,9 @@ beforeEach(() => {
   lib.disableCalls = 0;
   lib.enableThrow = null;
   lib.disableThrow = null;
+  lib.statusRows = [];
+  lib.onEnable = null;
+  lib.onDisable = null;
 });
 
 afterEach(async () => {
@@ -316,6 +329,43 @@ describe('POST /:id/pgbouncer/disable', () => {
       body: '{}',
     });
     expect(res.status).toBe(400);
+  });
+});
+
+// r331: the lib helpers update the DB row only. The route used to build its
+// response from the row it loaded BEFORE the change, so enable answered
+// `enabled: false` (CLI: "Connection URL: (pending)") and disable answered
+// `enabled: true` (CLI: "still reporting enabled").
+describe('r331: enable/disable report the post-change row', () => {
+  it('enable builds the status from the freshly stamped row', async () => {
+    // The real helper writes the row via db.update; model that as the fake
+    // DB now serving a NEW row object, as a real re-query would.
+    lib.onEnable = () => {
+      currentRow = { ...currentRow, pgbouncerEnabled: true, pgbouncerContainerName: 'nd-pgb-mydb', pgbouncerPort: 6432 };
+    };
+    const { port } = await startApp();
+    const res = await fetch(`http://127.0.0.1:${port}/1/pgbouncer/enable`, {
+      method: 'POST',
+      headers: { ...asUser(1), 'content-type': 'application/json' },
+      body: '{}',
+    });
+    expect(res.status).toBe(200);
+    expect(lib.statusRows.at(-1)).toMatchObject({ pgbouncerEnabled: true, pgbouncerContainerName: 'nd-pgb-mydb' });
+  });
+
+  it('disable builds the status from the freshly cleared row', async () => {
+    currentRow = rowDbFixture({ pgbouncerEnabled: true, pgbouncerContainerName: 'nd-pgb-mydb' });
+    lib.onDisable = () => {
+      currentRow = { ...currentRow, pgbouncerEnabled: false, pgbouncerContainerName: null };
+    };
+    const { port } = await startApp();
+    const res = await fetch(`http://127.0.0.1:${port}/1/pgbouncer/disable`, {
+      method: 'POST',
+      headers: { ...asUser(1), 'content-type': 'application/json' },
+      body: '{}',
+    });
+    expect(res.status).toBe(200);
+    expect(lib.statusRows.at(-1)).toMatchObject({ pgbouncerEnabled: false, pgbouncerContainerName: null });
   });
 });
 
