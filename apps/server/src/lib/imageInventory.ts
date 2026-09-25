@@ -34,7 +34,7 @@ export interface ImageInfo {
   ageHours: number;
   /** True when the image is dangling (repo/tag both `<none>`). */
   dangling: boolean;
-  /** True when at least one container is currently using the image. */
+  /** True when at least one container (running or stopped) uses the image. */
   inUse: boolean;
 }
 
@@ -118,7 +118,7 @@ export async function listImages(): Promise<ImageInfo[]> {
     if (id) ids.add(id);
   }
 
-  // Second pass: `docker ps` reports which images are in use.
+  // Second pass: `docker ps -aq` + `docker inspect` report which images are in use.
   // A single round-trip covers every container, including ones
   // NineDeploy did not start (operator's own side-car work).
   const inUse = await inUseImageIds(ids);
@@ -278,20 +278,46 @@ export async function pruneImages(opts: PruneOptions = {}): Promise<PruneResult>
 
 async function inUseImageIds(allIds: Set<string>): Promise<Set<string>> {
   if (allIds.size === 0) return new Set();
-  // `--format '{{.Image}}'` reports the image id (sha) of
-  // every running container, including ones NineDeploy did
-  // not start. The grep filter on the truncated form is
-  // intentionally NOT used — we want exact matches.
+  // r311: `docker ps --format '{{.Image}}'` is NOT the image id — it is the
+  // reference the container was started from (`nginx:1.27`, `ghcr.io/o/a`),
+  // falling back to a sha only when that tag has since moved. Compared
+  // against `docker image ls --no-trunc` ids (`sha256:…`) it never matched,
+  // so every image was reported as not in use and prune/dry-run offered
+  // images that containers depend on. Resolve the containers' image ids
+  // instead: `docker inspect --format '{{.Image}}'` on a CONTAINER is the
+  // full `sha256:` id. `-a` includes stopped containers — `docker image rm`
+  // refuses those images too, so the dry-run must not offer them either.
   let raw: string;
   try {
-    raw = await capture('docker', ['ps', '--no-trunc', '--format', '{{.Image}}']);
+    raw = await capture('docker', ['ps', '-aq', '--no-trunc']);
   } catch {
     return new Set();
   }
+  const containers = raw.split('\n').map((l) => l.trim()).filter(Boolean);
   const used = new Set<string>();
-  for (const line of raw.split('\n')) {
-    const id = line.trim();
-    if (id && allIds.has(id)) used.add(id);
+  const collect = (out: string): void => {
+    for (const line of out.split('\n')) {
+      const id = line.trim();
+      if (id && allIds.has(id)) used.add(id);
+    }
+  };
+  const CHUNK = 100;
+  for (let i = 0; i < containers.length; i += CHUNK) {
+    const slice = containers.slice(i, i + CHUNK);
+    try {
+      collect(await capture('docker', ['inspect', '--format', '{{.Image}}', ...slice]));
+    } catch {
+      // A container removed between `ps` and `inspect` fails the whole
+      // batch (docker exits 1 and capture drops stdout). Re-ask one by one
+      // so the survivors still count; a vanished container holds no image.
+      for (const c of slice) {
+        try {
+          collect(await capture('docker', ['inspect', '--format', '{{.Image}}', c]));
+        } catch {
+          /* container gone */
+        }
+      }
+    }
   }
   return used;
 }

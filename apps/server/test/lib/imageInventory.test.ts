@@ -97,15 +97,31 @@ const IMG_LS_JSON = [
   }),
 ].join('\n');
 
+/**
+ * r311: fake the container side the way a REAL docker answers it. The old
+ * fixture had `docker ps --format {{.Image}}` print `sha256:…` ids, which is
+ * exactly what hid the bug — real docker prints the REFERENCE the container
+ * was started from (`nginx:1.27-alpine`). Only `docker inspect` on the
+ * container yields the image id. Every shape is registered so a regression
+ * to the `ps --format {{.Image}}` query sees realistic output and fails.
+ */
+function fakeContainers(list: Array<{ container: string; ref: string; imageId: string }>): void {
+  execState.byArgs.set('docker ps --no-trunc --format {{.Image}}', {
+    stdout: list.map((c) => `${c.ref}\n`).join(''),
+  });
+  execState.byArgs.set('docker ps -aq --no-trunc', { stdout: list.map((c) => `${c.container}\n`).join('') });
+  execState.byArgs.set(`docker inspect --format {{.Image}} ${list.map((c) => c.container).join(' ')}`, {
+    stdout: list.map((c) => `${c.imageId}\n`).join(''),
+  });
+  for (const c of list) {
+    execState.byArgs.set(`docker inspect --format {{.Image}} ${c.container}`, { stdout: `${c.imageId}\n` });
+  }
+}
+
 describe('listImages', () => {
-  it('parses docker image ls JSON output, marks in-use from docker ps', async () => {
+  it('parses docker image ls JSON output, marks in-use from the containers', async () => {
     execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', { stdout: IMG_LS_JSON });
-    // The `docker ps --format` query is what `inUseImageIds` runs.
-    // Note: lib uses `--format {{.Image}}`, not `{{.ImageID}}`.
-    execState.byArgs.set(
-      'docker ps --no-trunc --format {{.Image}}',
-      { stdout: 'sha256:aaaa\n' },
-    );
+    fakeContainers([{ container: 'c0ffee01', ref: 'nginx:1.27-alpine', imageId: 'sha256:aaaa' }]);
     const rows = await listImages();
     expect(rows).toHaveLength(4);
     const nginx1 = rows.find((r) => r.id === 'sha256:aaaa')!;
@@ -123,7 +139,7 @@ describe('listImages', () => {
   it('tolerates bad lines in the docker ls output (skips them)', async () => {
     const noisy = `${IMG_LS_JSON}\n{not json}\n`;
     execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', { stdout: noisy });
-    execState.byArgs.set('docker ps --no-trunc --format {{.Image}}', { stdout: '' });
+    execState.byArgs.set('docker ps -aq --no-trunc', { stdout: '' });
     const rows = await listImages();
     expect(rows).toHaveLength(4);
   });
@@ -137,7 +153,7 @@ describe('listImages', () => {
 
   it('returns an empty list when there are no images', async () => {
     execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', { stdout: '' });
-    execState.byArgs.set('docker ps --no-trunc --format {{.Image}}', { stdout: '' });
+    execState.byArgs.set('docker ps -aq --no-trunc', { stdout: '' });
     const rows = await listImages();
     expect(rows).toEqual([]);
   });
@@ -146,7 +162,7 @@ describe('listImages', () => {
 describe('pruneImages', () => {
   it('runs `docker image prune -f` for danglingOnly and parses the freed bytes', async () => {
     execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', { stdout: IMG_LS_JSON });
-    execState.byArgs.set('docker ps --no-trunc --format {{.Image}}', { stdout: '' });
+    execState.byArgs.set('docker ps -aq --no-trunc', { stdout: '' });
     execState.byArgs.set('docker image prune -f', {
       stdout: 'Deleted Images:\ndeleted: sha256:dddd\nTotal reclaimed space: 12.0MB',
     });
@@ -157,7 +173,7 @@ describe('pruneImages', () => {
 
   it('passes olderThanHours as a `until=` filter on the dangling prune', async () => {
     execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', { stdout: '' });
-    execState.byArgs.set('docker ps --no-trunc --format {{.Image}}', { stdout: '' });
+    execState.byArgs.set('docker ps -aq --no-trunc', { stdout: '' });
     execState.byArgs.set('docker image prune -f --filter until=24h', { stdout: '' });
     const result = await pruneImages({ danglingOnly: true, olderThanHours: 24 });
     expect(result.output).toBe('');
@@ -165,7 +181,7 @@ describe('pruneImages', () => {
 
   it('keeps the newest N images per repository and prunes the rest on dryRun', async () => {
     execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', { stdout: IMG_LS_JSON });
-    execState.byArgs.set('docker ps --no-trunc --format {{.Image}}', { stdout: '' });
+    execState.byArgs.set('docker ps -aq --no-trunc', { stdout: '' });
     const result = await pruneImages({ keepLast: 1, dryRun: true });
     expect(result.dryRun).toBe(true);
     // One nginx repository with three tags (1.27 / 1.26 / 1.25-alpine —
@@ -183,7 +199,7 @@ describe('pruneImages', () => {
   // protected the whole tagged inventory — the prune deleted nothing.
   it('keeps the N newest versions of a repo and retires only older ones (r017)', async () => {
     execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', { stdout: IMG_LS_JSON });
-    execState.byArgs.set('docker ps --no-trunc --format {{.Image}}', { stdout: '' });
+    execState.byArgs.set('docker ps -aq --no-trunc', { stdout: '' });
     const result = await pruneImages({ keepLast: 2, dryRun: true });
     // keepLast=2 protects the two newest nginx versions (aaaa, bbbb);
     // only the oldest (cccc) is a candidate.
@@ -193,9 +209,7 @@ describe('pruneImages', () => {
 
   it('skips in-use images even when they would otherwise be candidates', async () => {
     execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', { stdout: IMG_LS_JSON });
-    execState.byArgs.set('docker ps --no-trunc --format {{.Image}}', {
-      stdout: 'sha256:aaaa\n',
-    });
+    fakeContainers([{ container: 'c0ffee01', ref: 'nginx:1.27-alpine', imageId: 'sha256:aaaa' }]);
     const result = await pruneImages({ keepLast: 1, dryRun: true });
     // aaaa is the newest nginx image → protected, AND in use.
     // bbbb and cccc are older versions → candidates (neither
@@ -204,9 +218,53 @@ describe('pruneImages', () => {
     expect(result.removed).toEqual(['sha256:bbbb', 'sha256:cccc']);
   });
 
+  // r311 regression: with keepLast=0 nothing is protected by retention, so
+  // the ONLY thing keeping an in-use image out of the candidate set is the
+  // in-use check. It compared container image REFERENCES to sha256 ids and
+  // never matched, so the dry-run offered the running nginx image.
+  it('never offers an image a container runs from, even with keepLast=0 (r311)', async () => {
+    execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', { stdout: IMG_LS_JSON });
+    fakeContainers([
+      { container: 'c0ffee01', ref: 'nginx:1.27-alpine', imageId: 'sha256:aaaa' },
+      // started from a tag that has since moved — still pins bbbb
+      { container: 'c0ffee02', ref: 'nginx:1.26-alpine', imageId: 'sha256:bbbb' },
+    ]);
+    const rows = await listImages();
+    expect(rows.find((r) => r.id === 'sha256:aaaa')!.inUse).toBe(true);
+    expect(rows.find((r) => r.id === 'sha256:bbbb')!.inUse).toBe(true);
+    expect(rows.find((r) => r.id === 'sha256:cccc')!.inUse).toBe(false);
+    const result = await pruneImages({ keepLast: 0, dryRun: true });
+    expect(result.removed).toEqual(['sha256:cccc']);
+  });
+
+  it('a container that vanishes between ps and inspect does not blind the rest (r311)', async () => {
+    execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', { stdout: IMG_LS_JSON });
+    fakeContainers([
+      { container: 'c0ffee01', ref: 'nginx:1.27-alpine', imageId: 'sha256:aaaa' },
+      { container: 'deadbeef', ref: 'nginx:1.25-alpine', imageId: 'sha256:cccc' },
+    ]);
+    // the batch inspect fails (one id is gone); the per-id retry for it too
+    execState.byArgs.set('docker inspect --format {{.Image}} c0ffee01 deadbeef', { throw: new Error('No such object: deadbeef') });
+    execState.byArgs.set('docker inspect --format {{.Image}} deadbeef', { throw: new Error('No such object: deadbeef') });
+    const rows = await listImages();
+    expect(rows.find((r) => r.id === 'sha256:aaaa')!.inUse).toBe(true);
+    expect(rows.find((r) => r.id === 'sha256:cccc')!.inUse).toBe(false);
+  });
+
+  it('no containers at all: no docker inspect is issued (r311)', async () => {
+    execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', { stdout: IMG_LS_JSON });
+    fakeContainers([]);
+    const { capture } = await import('../../src/lib/exec.js');
+    const calls = (capture as unknown as { mock: { calls: Array<[string, string[]]> } }).mock.calls;
+    const before = calls.length;
+    const rows = await listImages();
+    expect(rows.every((r) => !r.inUse)).toBe(true);
+    expect(calls.slice(before).some(([, args]) => args[0] === 'inspect')).toBe(false);
+  });
+
   it('filters by olderThanHours on the candidate set', async () => {
     execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', { stdout: IMG_LS_JSON });
-    execState.byArgs.set('docker ps --no-trunc --format {{.Image}}', { stdout: '' });
+    execState.byArgs.set('docker ps -aq --no-trunc', { stdout: '' });
     // With keepLast=1, the protected set is {aaaa}. Candidates
     // by age: bbbb is 2h old (too young for 12h), cccc is 24h
     // old (old enough) → only cccc is pruned.
@@ -238,7 +296,7 @@ describe('pruneImages', () => {
     execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', {
       stdout: lines.join('\n'),
     });
-    execState.byArgs.set('docker ps --no-trunc --format {{.Image}}', { stdout: '' });
+    execState.byArgs.set('docker ps -aq --no-trunc', { stdout: '' });
     const result = await pruneImages({ keepLast: 1, dryRun: false });
     expect(result.removed).toHaveLength(120);
     expect(execState.rmCalls).toHaveLength(3);
@@ -248,7 +306,7 @@ describe('pruneImages', () => {
 
   it('treats keepLast=0 as "keep nothing" — every non-dangling image is a candidate', async () => {
     execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', { stdout: IMG_LS_JSON });
-    execState.byArgs.set('docker ps --no-trunc --format {{.Image}}', { stdout: '' });
+    execState.byArgs.set('docker ps -aq --no-trunc', { stdout: '' });
     // The fixture has 3 non-dangling images (aaaa, bbbb, cccc)
     // and 1 dangling (dddd). keepLast=0 protects none of the
     // non-dangling images → all 3 are candidates.
@@ -260,7 +318,7 @@ describe('pruneImages', () => {
 
   it('clamps keepLast to the per-group size — never deletes the only image of a tag', async () => {
     execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', { stdout: IMG_LS_JSON });
-    execState.byArgs.set('docker ps --no-trunc --format {{.Image}}', { stdout: '' });
+    execState.byArgs.set('docker ps -aq --no-trunc', { stdout: '' });
     // The nginx repository has 3 images; keepLast=10 exceeds the
     // group size, so keep=min(10,3)=3 protects all of them.
     // Nothing is removed.
@@ -293,7 +351,7 @@ describe('parseHumanBytes / parseReclaimedBytes', () => {
     execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', {
       stdout: lines,
     });
-    execState.byArgs.set('docker ps --no-trunc --format {{.Image}}', { stdout: '' });
+    execState.byArgs.set('docker ps -aq --no-trunc', { stdout: '' });
     const rows = await listImages();
     const one = rows.find((r) => r.id === 'sha256:1')!;
     expect(one.sizeBytes).toBe(Math.round(1.5 * 1024 * 1024 * 1024));
@@ -312,7 +370,7 @@ describe('parseHumanBytes / parseReclaimedBytes', () => {
     execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', {
       stdout: lines,
     });
-    execState.byArgs.set('docker ps --no-trunc --format {{.Image}}', { stdout: '' });
+    execState.byArgs.set('docker ps -aq --no-trunc', { stdout: '' });
     const rows = await listImages();
     expect(rows[0]?.ageHours).toBe(0);
   });
@@ -328,7 +386,7 @@ describe('parseHumanBytes / parseReclaimedBytes', () => {
     execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', {
       stdout: lines,
     });
-    execState.byArgs.set('docker ps --no-trunc --format {{.Image}}', {
+    execState.byArgs.set('docker ps -aq --no-trunc', {
       throw: new Error('Cannot connect to the Docker daemon'),
     });
     // No throw — the lib swallows the ps error and treats every
@@ -341,7 +399,7 @@ describe('parseHumanBytes / parseReclaimedBytes', () => {
 describe('pruneImages error + edge branches', () => {
   it('throws a friendly error when docker image prune fails (danglingOnly)', async () => {
     execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', { stdout: '' });
-    execState.byArgs.set('docker ps --no-trunc --format {{.Image}}', { stdout: '' });
+    execState.byArgs.set('docker ps -aq --no-trunc', { stdout: '' });
     execState.byArgs.set('docker image prune -f', {
       throw: new Error('No such image'),
     });
@@ -373,7 +431,7 @@ describe('pruneImages error + edge branches', () => {
     execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', {
       stdout: lines.join('\n'),
     });
-    execState.byArgs.set('docker ps --no-trunc --format {{.Image}}', { stdout: '' });
+    execState.byArgs.set('docker ps -aq --no-trunc', { stdout: '' });
     // Throw for the first chunk's docker image rm, succeed for the second.
     const originalRun = execState.toolResults;
     void originalRun;
@@ -410,7 +468,7 @@ describe('pruneImages error + edge branches', () => {
 describe('formatBytes via listImages / pruneImages output', () => {
   it('formats the freed-bytes summary in MB when candidates are small', async () => {
     execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', { stdout: IMG_LS_JSON });
-    execState.byArgs.set('docker ps --no-trunc --format {{.Image}}', { stdout: '' });
+    execState.byArgs.set('docker ps -aq --no-trunc', { stdout: '' });
     const result = await pruneImages({ keepLast: 1, dryRun: true });
     // The dryRun output is `dryRun: would remove N images (X<unit>)`.
     expect(result.output).toMatch(/dryRun: would remove \d+ images \(\d/);
