@@ -498,6 +498,16 @@ describe('createClient', () => {
       expect(JSON.parse(last(calls).init.body ?? '{}')).toEqual({ ssl: true });
     });
 
+    it('r332: verify POSTs the ownership check for a pending domain', async () => {
+      const { fetchMock, calls } = makeFetch(() => ok({ id: 2, status: 'active', verified: true, verification: null }));
+      const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+
+      const res = await client.domains.verify(1, 2);
+      expect(last(calls).url).toBe('/v1/services/1/domains/2/verify');
+      expect(last(calls).init.method).toBe('POST');
+      expect(res).toMatchObject({ verified: true, verification: null });
+    });
+
     it('exercises setStickySession (G-28) — POST /v1/services/:id/sticky-session', async () => {
       const { fetchMock, calls } = makeFetch(() => ok({ id: 1, enabled: true, active: true }));
       const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });

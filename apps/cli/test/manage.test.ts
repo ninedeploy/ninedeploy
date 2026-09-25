@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   activityList, alertsCreate, alertsList, alertsRemove,
   backupsCreate, backupsList, backupsRestore,
-  deploysWatch, domainsAdd, domainsList, domainsRemove,
+  deploysWatch, domainsAdd, domainsList, domainsRemove, domainsVerify,
   envList, envRemove, envSet, networksCreate, networksList, networksRemove,
   sessionsList, sessionsRevoke, systemExport, systemImport,
   usersList, usersResetLink, volumesList, volumesRemove,
@@ -107,6 +107,51 @@ describe('domains commands', () => {
     const client = { domains: { create: vi.fn().mockResolvedValue({ id: 3, hostname: 'c.example.com' }) } };
     await domainsAdd(client as never, '1', 'c.example.com', { path: '/api', ssl: false });
     expect(client.domains.create).toHaveBeenCalledWith(1, { hostname: 'c.example.com', path: '/api', ssl: false });
+  });
+
+  // r332: a pending (out-of-zone) domain is not routed until its TXT
+  // challenge is published and verified — the CLI had no way to do either.
+  it('r332: prints the TXT challenge when the new domain is pending', async () => {
+    const client = { domains: { create: vi.fn().mockResolvedValue({
+      id: 4, hostname: 'app.customer.test', status: 'pending',
+      verification: { recordName: '_ninedeploy-challenge.app.customer.test', recordType: 'TXT', recordValue: 'tok123' },
+    }) } };
+    await domainsAdd(client as never, '1', 'app.customer.test', {});
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('tok123'));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('ninedeploy domains verify 1 4'));
+  });
+
+  it('r332: verify brings a pending domain live', async () => {
+    const client = { domains: { verify: vi.fn().mockResolvedValue({
+      id: 4, hostname: 'app.customer.test', verified: true, verification: null, dnsWarning: 'cf down',
+    }) } };
+    await domainsVerify(client as never, '1', '4');
+    expect(client.domains.verify).toHaveBeenCalledWith(1, 4);
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('verified'));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('cf down'));
+  });
+
+  it('r332: verify explains a failed check and repeats the expected record', async () => {
+    const client = { domains: { verify: vi.fn().mockResolvedValue({
+      id: 4, hostname: 'app.customer.test', verified: false,
+      error: 'No TXT record found yet', found: ['stale'],
+      verification: { recordName: '_ninedeploy-challenge.app.customer.test', recordType: 'TXT', recordValue: 'tok123' },
+    }) } };
+    await domainsVerify(client as never, '1', '4');
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('No TXT record found yet'));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('stale'));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('tok123'));
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('r332: verify falls back to a generic message and reports api failures', async () => {
+    const client = { domains: { verify: vi.fn()
+      .mockResolvedValueOnce({ id: 4, hostname: 'h.test', verified: false, verification: null })
+      .mockRejectedValueOnce(new Error('boom')) } };
+    await domainsVerify(client as never, '1', '4');
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('h.test is not verified yet'));
+    await domainsVerify(client as never, '1', '4');
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('boom'));
   });
 
   it('removes a domain', async () => {

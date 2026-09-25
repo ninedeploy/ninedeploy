@@ -86,6 +86,35 @@ export async function domainsAdd(client: NineDeployClient, idStr: string, host: 
   try {
     const d = await client.domains.create(id, { hostname: host, path: opts.path ?? '/', ssl: opts.ssl !== false });
     success(`Domain ${c.cyan(d.hostname)} added (id: ${d.id}).`);
+    // r332: a hostname outside the instance zone is stored `pending` and is
+    // not routed until its DNS owner publishes the TXT challenge — say so,
+    // and how to finish, instead of leaving a silently dead domain.
+    if (d.verification) {
+      info('Pending ownership proof — this domain is not routed yet. Publish this DNS record:');
+      info(`  ${d.verification.recordType}  ${c.cyan(d.verification.recordName)}  "${d.verification.recordValue}"`);
+      info(`then run: ninedeploy domains verify ${id} ${d.id}`);
+    }
+  } catch (err) { fail(err); }
+}
+
+/** `ninedeploy domains verify <serviceId> <domainId>` — r332: check the TXT
+ *  ownership challenge of a pending domain and bring it live. Safe to re-run
+ *  while DNS propagates. */
+export async function domainsVerify(client: NineDeployClient, idStr: string, domainIdStr: string): Promise<void> {
+  const serviceId = num(idStr, 'Usage: ninedeploy domains verify <serviceId> <domainId>');
+  const domainId = num(domainIdStr, 'Usage: ninedeploy domains verify <serviceId> <domainId>');
+  try {
+    const res = await spinner('Checking DNS', () => client.domains.verify(serviceId, domainId));
+    if (res.verified) {
+      success(`Domain ${c.cyan(res.hostname)} verified — it is live.`);
+      if (res.dnsWarning) info(`DNS provider: ${res.dnsWarning}`);
+      return;
+    }
+    error(res.error ?? `Domain ${res.hostname} is not verified yet.`);
+    if (res.found?.length) info(`TXT values found: ${res.found.join(', ')}`);
+    if (res.verification) {
+      info(`Expected: ${res.verification.recordType}  ${c.cyan(res.verification.recordName)}  "${res.verification.recordValue}"`);
+    }
   } catch (err) { fail(err); }
 }
 

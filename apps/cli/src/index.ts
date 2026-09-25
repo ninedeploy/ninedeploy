@@ -20,7 +20,7 @@ import {
   activityList, alertsCreate, alertsList, alertsRemove,
   backupsCreate, backupsDrill, backupsDrills, backupsList, backupsRestore,
   deploysWatch, domainsAcceptTransfer, domainsAdd, domainsCancelTransfer, domainsList,
-  domainsPreviewTransfer, domainsRemove, domainsTransfer,
+  domainsPreviewTransfer, domainsRemove, domainsTransfer, domainsVerify,
   envList, envRemove, envSet, networksCreate, networksList, networksRemove,
   sessionsList, sessionsRevoke, systemExport, systemImport,
   usersList, usersResetLink, volumesList, volumesRemove,
@@ -317,6 +317,10 @@ domainsCmd.command('add <serviceId> <host>')
   .action((id: string, host: string, opts: { path?: string; ssl?: boolean }) => domainsAdd(getClient(), id, host, opts));
 
 domainsCmd.command('rm <serviceId> <domainId>').description('Remove a domain').action((svcId: string, domId: string) => domainsRemove(getClient(), svcId, domId));
+
+domainsCmd.command('verify <serviceId> <domainId>')
+  .description('Check a pending domain TXT ownership challenge and bring it live')
+  .action((svcId: string, domId: string) => domainsVerify(getClient(), svcId, domId));
 
 // Domain transfer (G-29) — start / preview / accept / cancel.
 domainsCmd

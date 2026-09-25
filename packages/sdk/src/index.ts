@@ -386,6 +386,44 @@ export interface PruneImagesResult {
 }
 
 /**
+ * r332: the DNS challenge that proves control of a hostname outside this
+ * instance's own zone. Publish a TXT record named `recordName` whose value is
+ * `recordValue`, then call `domains.verify` — until then the domain is
+ * `status: 'pending'` and Traefik does not route it.
+ */
+export interface DomainVerificationChallenge {
+  recordName: string;
+  recordType: 'TXT';
+  recordValue: string;
+}
+
+/** Response of `POST /v1/services/:id/domains`. `verification` is non-null
+ *  exactly when the new domain is `pending` ownership proof. */
+export type CreatedDomain = Domain & {
+  verifiedAt: string | null;
+  dnsRecordId: string | null;
+  dnsWarning: string | null;
+  verification: DomainVerificationChallenge | null;
+};
+
+/**
+ * Response of `POST /v1/services/:id/domains/:domainId/verify`. Safe to poll:
+ * a failed check (`verified: false`) keeps the challenge and says what DNS
+ * answered in `error` / `found`; a success flips the domain `active`.
+ */
+export type DomainVerifyResult = Domain & {
+  verifiedAt: string | null;
+  verified: boolean;
+  verification: DomainVerificationChallenge | null;
+  /** Why the check failed (only when `verified` is false). */
+  error?: string;
+  /** TXT values DNS returned at `recordName` (only when `verified` is false). */
+  found?: string[];
+  /** Provider DNS-record failure after a successful verify (the domain is live regardless). */
+  dnsWarning?: string | null;
+};
+
+/**
  * Result of `POST /v1/domains/:id/transfer` (start a
  * transfer). The caller forwards `acceptUrl` to the target
  * user out-of-band; the token is the only secret embedded
@@ -632,7 +670,14 @@ export interface NineDeployClient {
   };
   domains: {
     list: (serviceId: number) => Promise<Domain[]>;
-    create: (serviceId: number, input: CreateDomainInput) => Promise<Domain>;
+    /** Add a domain. A non-operator's hostname outside the instance zone comes back `pending` with a TXT `verification` challenge. */
+    create: (serviceId: number, input: CreateDomainInput) => Promise<CreatedDomain>;
+    /**
+     * r332: prove ownership of a `pending` domain and bring it live. Checks
+     * the TXT challenge `create` returned; idempotent (an `active` domain
+     * answers `verified: true`) and safe to poll while DNS propagates.
+     */
+    verify: (serviceId: number, domainId: number) => Promise<DomainVerifyResult>;
     remove: (serviceId: number, domainId: number) => Promise<void>;
     /**
      * DNS status for a domain: does the hostname resolve to the addresses
@@ -1598,7 +1643,9 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
     },
     domains: {
       list: (serviceId) => get<Domain[]>(`/v1/services/${serviceId}/domains`),
-      create: (serviceId, input) => send<Domain>('POST', `/v1/services/${serviceId}/domains`, input),
+      create: (serviceId, input) => send<CreatedDomain>('POST', `/v1/services/${serviceId}/domains`, input),
+      verify: (serviceId, domainId) =>
+        send<DomainVerifyResult>('POST', `/v1/services/${serviceId}/domains/${domainId}/verify`, {}),
       dnsCheck: (serviceId, domainId) =>
         get<{
           hostname: string;

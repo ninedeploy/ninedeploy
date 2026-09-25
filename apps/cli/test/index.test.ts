@@ -85,7 +85,7 @@ const h = vi.hoisted(() => {
     saveConfig: vi.fn(),
     loginAction: vi.fn(),
     envList: vi.fn(), envSet: vi.fn(), envRemove: vi.fn(),
-    domainsList: vi.fn(), domainsAdd: vi.fn(), domainsRemove: vi.fn(),
+    domainsList: vi.fn(), domainsAdd: vi.fn(), domainsRemove: vi.fn(), domainsVerify: vi.fn(),
     volumesList: vi.fn(), volumesRemove: vi.fn(),
     networksList: vi.fn(), networksCreate: vi.fn(), networksRemove: vi.fn(),
     sessionsList: vi.fn(), sessionsRevoke: vi.fn(),
@@ -278,6 +278,7 @@ vi.mock('../src/commands/manage.js', () => ({
   domainsAdd: h.domainsAdd,
   domainsList: h.domainsList,
   domainsRemove: h.domainsRemove,
+  domainsVerify: h.domainsVerify,
   envList: h.envList,
   envRemove: h.envRemove,
   envSet: h.envSet,
@@ -379,7 +380,7 @@ describe('program registration', () => {
     expect(findCommand('system').children).toHaveLength(7);
     expect(findCommand('workspaces').children).toHaveLength(4);
     expect(findCommand('env').children).toHaveLength(3);
-    expect(findCommand('domains').children).toHaveLength(8);
+    expect(findCommand('domains').children).toHaveLength(9);
     expect(findCommand('volumes').children).toHaveLength(2);
     expect(findCommand('backups').children).toHaveLength(5);
     expect(findCommand('alerts').children).toHaveLength(3);
@@ -394,7 +395,7 @@ describe('program registration', () => {
     expect(findCommand('branding').children).toHaveLength(2);
     expect(findCommand('egress').children).toHaveLength(3);
     expect(findCommand('sso').children).toHaveLength(3);
-    expect(h.FakeCommand.instances).toHaveLength(186);
+    expect(h.FakeCommand.instances).toHaveLength(187);
     // sanity: every new command we added has at least the subcommands it owns
     expect(findCommand('sources').children.length).toBeGreaterThanOrEqual(6);
     expect(findCommand('deploy').children.length).toBeGreaterThanOrEqual(1);
@@ -751,6 +752,8 @@ describe('delegating actions', () => {
     await sub('domains', 'list').actionFn!();
     await sub('domains', 'add').actionFn!('1', 'h.test', {});
     await sub('domains', 'rm').actionFn!('1', '2');
+    await sub('domains', 'verify').actionFn!('1', '2');
+    expect(h.domainsVerify).toHaveBeenCalledWith(client, '1', '2');
     await sub('volumes', 'list').actionFn!();
     await sub('volumes', 'rm').actionFn!('v');
     await sub('backups', 'list').actionFn!('1');
