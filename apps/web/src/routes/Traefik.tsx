@@ -150,10 +150,12 @@ function StatusBanner({ status, isAdmin }: { status: TraefikStatus; isAdmin: boo
     mutationFn: async () => {
       const res = await authedFetch('/v1/traefik/update', { method: 'POST' });
       if (!res.ok) throw new Error('Failed to update Traefik');
-      return res.json() as Promise<{ ok: boolean; newVersion: string }>;
+      return res.json() as Promise<{ ok: boolean; newVersion: string | null }>;
     },
     onSuccess: (data) => {
-      toast(`Traefik updated to v${data.newVersion}`, 'success');
+      // r346: the server reports newVersion: null when the registry lookup
+      // fails (the pull still happened) — that used to read "updated to vnull".
+      toast(data.newVersion ? `Traefik updated to v${data.newVersion}` : 'Traefik updated to the latest image', 'success');
       qc.invalidateQueries({ queryKey: ['traefik'] });
     },
     onError: (err) => toast(`Failed to update Traefik: ${err.message}`, 'error'),

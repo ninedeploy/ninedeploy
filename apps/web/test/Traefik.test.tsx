@@ -337,6 +337,13 @@ describe('Traefik route', () => {
     expect(await screen.findByText('Updating…')).toBeInTheDocument();
     resolveUpdate({ ok: true, json: () => Promise.resolve({ ok: true, newVersion: '3.1.0' }) });
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Traefik updated to v3.1.0', 'success'));
+
+    // r346: an unknown new version (registry lookup failed) never reads "vnull".
+    fireEvent.click(await screen.findByRole('button', { name: /Update to v3.1.0/ }));
+    await screen.findByText('Updating…');
+    resolveUpdate({ ok: true, json: () => Promise.resolve({ ok: true, newVersion: null }) });
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Traefik updated to the latest image', 'success'));
+    expect(toastSpy.toast).not.toHaveBeenCalledWith('Traefik updated to vnull', 'success');
   });
 
   it('handles Traefik update error gracefully', async () => {
