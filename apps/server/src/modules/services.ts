@@ -527,6 +527,17 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     const existing = await loadServiceForUser(app.db, id, req.user!);
     // Read access is any workspace seat; editing the definition is `member`+.
     await assertServiceRole(app.db, existing, req.user!, 'member');
+    // r335: tag assignment has its own route with its own (admin) gate.
+    // PATCH used to accept the tag fields and silently drop them — the caller
+    // got a 200 and unchanged tags. Refuse loudly instead of pretending.
+    const rawBody = (req.body ?? {}) as Record<string, unknown>;
+    const tagFields = ['tagProjectIds', 'tagWorkspaceIds', 'tagLabelIds'].filter((k) => rawBody[k] !== undefined);
+    if (tagFields.length > 0) {
+      throw badRequest(
+        `${tagFields.join(', ')} cannot be changed with PATCH — use PUT /v1/services/${id}/tags`,
+        'tags_via_put',
+      );
+    }
     const { build, ...patch } = updateService.parse(req.body ?? {});
     // r182: the slug is an identity, not a label — it names the data volume
     // (`nd-svc-<slug>-data`), the private bridge and the auto-domain. A rename

@@ -105,12 +105,10 @@ export type CreateService = z.infer<typeof createService>;
  * still applies `.default()` values for absent keys, which would silently
  * rewrite `type` back to 'docker' and `branch` to 'main' on every PATCH. */
 export const updateService = z.object({
-  // Tag updates are usually handled by `PUT /v1/services/:id/tags`; these
-  // convenience fields let a single PATCH reassign tags together with other
-  // service edits without an extra round-trip.
-  tagProjectIds: tagIds,
-  tagWorkspaceIds: tagIds,
-  tagLabelIds: tagIds,
+  // r335: no tag fields. Tags change only through `PUT /v1/services/:id/tags`
+  // (admin-gated, with the r156 foreign-link rules). The PATCH route used to
+  // accept tagProjectIds/tagWorkspaceIds/tagLabelIds here and then silently
+  // drop them; it now answers 400 `tags_via_put` when a body carries them.
   name: z.string().min(1).max(100).optional(),
   slug: slug.optional(),
   type: serviceType.optional(),

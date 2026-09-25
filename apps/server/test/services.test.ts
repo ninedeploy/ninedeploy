@@ -509,6 +509,27 @@ describe('services routes', () => {
     expect(same.statusCode).toBe(200);
   });
 
+  // r335: the PATCH schema accepted tagProjectIds/tagWorkspaceIds/tagLabelIds
+  // and the handler dropped them — a 200 with the tags unchanged.
+  it('r335: refuses tag fields on PATCH (400 tags_via_put) instead of silently dropping them', async () => {
+    const updates: unknown[] = [];
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { services: svcRow() },
+        update: { services: (v: unknown) => { updates.push(v); return [svcRow()]; } },
+      }),
+    });
+    await app.register(servicesRoutes);
+    for (const payload of [{ tagProjectIds: [2] }, { name: 'x', tagWorkspaceIds: [] }, { tagLabelIds: [3] }]) {
+      const res = await app.inject({ method: 'PATCH', url: '/1', headers: asUser(), payload });
+      expect(res.statusCode, res.body).toBe(400);
+      expect(res.json().error.code).toBe('tags_via_put');
+      expect(res.json().error.message).toContain('PUT /v1/services/1/tags');
+    }
+    // Nothing was half-applied.
+    expect(updates).toEqual([]);
+  });
+
   it('patches restart policy and stop grace into the build config', async () => {
     const app = await buildTestApp({
       db: createFakeDb({
