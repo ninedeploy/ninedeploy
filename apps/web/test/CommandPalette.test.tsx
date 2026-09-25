@@ -126,6 +126,16 @@ describe('CommandPalette', () => {
     await waitFor(() => expect(screen.getByText('Custom Ext')).toBeInTheDocument());
   });
 
+  it('opens a database result on its own detail page, not the list (r296)', async () => {
+    apiMock.api.databases.list.mockResolvedValue([
+      { id: 9, name: 'pg-main', engine: 'postgres', status: 'running' },
+    ] as never);
+    renderPalette();
+    fireEvent.change(screen.getByPlaceholderText(/Search services/), { target: { value: 'pg-main' } });
+    fireEvent.click(await screen.findByText('pg-main'));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/databases/9'));
+  });
+
   it('executes the selected command with Enter and closes', async () => {
     const { onClose } = renderPalette();
     await waitFor(() => expect(screen.getByText('Hub')).toBeInTheDocument());

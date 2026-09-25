@@ -73,7 +73,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         type: 'Service', label: s.name, sub: `${s.type} · ${s.status}`, to: `/services/${s.id}`, icon: Server,
       })),
       ...(databases.data ?? []).map((d) => ({
-        type: 'Database', label: d.name, sub: `${d.engine} · ${d.status}`, to: '/databases', icon: Database,
+        type: 'Database', label: d.name, sub: `${d.engine} · ${d.status}`, to: `/databases/${d.id}`, icon: Database,
       })),
       ...(templates.data ?? []).map((t) => ({
         type: 'Template', label: `Deploy ${t.name}`, sub: t.tagline, to: '/hub', icon: Sparkles,
