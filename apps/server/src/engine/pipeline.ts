@@ -708,6 +708,16 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       log('##[stage:DEPENDENCIES:success]');
     }
 
+    // r269: backstop for the up-front database refusal. A `.ninedeploy`
+    // `database:` section (PREPARE) or a template reconcile for a row that
+    // predates `templateDatabaseEnv` attaches a panel-host database AFTER that
+    // check ran — and the node deploy then went green against a hostname it
+    // cannot resolve.
+    if (service.serverId != null) {
+      const lateDbRefusal = await remoteDatabaseRefusal(db, service);
+      if (lateDbRefusal) throw new Error(lateDbRefusal);
+    }
+
     const runtimeEnvironment = await loadRuntimeEnv(db, service);
     fanoutEnv = runtimeEnvironment.values;
     if (runtimeEnvironment.readyAttachmentCount !== runtimeEnvironment.attachmentCount) {

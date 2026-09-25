@@ -1724,6 +1724,50 @@ describe('runDeployment on a remote-server target', () => {
     }
   });
 
+  it('r269: refuses a DB-backed template on a node before the database is provisioned', async () => {
+    const { db } = makeDb();
+    baseSetup(db, {
+      ownerUserId: 42,
+      image: 'ghost:5',
+      serverId: 4,
+      templateId: 'ghost',
+      templateDatabaseEnv: { database__connection__host: 'host' },
+    });
+    const lines = collectLogs(1);
+    agentAnswersRunning();
+    h.agentOp.mockClear();
+    h.reconcileTemplateDependencies.mockClear();
+
+    await runDeployment(db as never, 1);
+
+    // The attachment does not exist yet on the first deploy — it is created by
+    // the reconcile below the refusal — so r229's attachment check passed and
+    // the node deployed green against a panel-local database host.
+    expect(h.reconcileTemplateDependencies).not.toHaveBeenCalled();
+    expect(h.agentOp).not.toHaveBeenCalled();
+    expect(lines.join(' ')).toMatch(/provisions a managed database/);
+  });
+
+  it('r269: a database attached during the deploy still stops it before the node runs anything', async () => {
+    const { db } = makeDb();
+    // A template row that predates `templateDatabaseEnv`: only the reconcile
+    // reveals (and creates) the database attachment.
+    baseSetup(db, { ownerUserId: 42, image: 'ghost:5', serverId: 4, templateId: 'ghost', templateDatabaseEnv: null });
+    const lines = collectLogs(1);
+    agentAnswersRunning();
+    h.agentOp.mockClear();
+    h.reconcileTemplateDependencies.mockImplementationOnce(async () => {
+      db.query.databaseAttachments.findMany.mockResolvedValue([{ serviceId: 5, databaseId: 2, envAlias: 'DATABASE_URL' }]);
+      return { database: { slug: 'ghost-db' }, alreadyAttached: false };
+    });
+
+    await runDeployment(db as never, 1);
+
+    const ops = h.agentOp.mock.calls.map((c) => (c as unknown[])[2] as string);
+    expect(ops).not.toContain('docker.runEnv');
+    expect(lines.join(' ')).toMatch(/does not resolve on the node/);
+  });
+
   it('r268: refuses a private repository on a node before the panel even clones it', async () => {
     const { db } = makeDb();
     baseSetup(db, { ownerUserId: 42, serverId: 4, sourceId: 3, repoUrl: 'https://github.com/acme/private.git' });

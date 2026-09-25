@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assertRemoteDeploySupported,
   assertRemoteServiceSupported,
+  remoteDatabaseRefusal,
   remoteDeploySupported,
   remoteDeployUnsupportedReason,
   remoteServiceRefusal,
@@ -68,6 +69,25 @@ describe('assertRemoteDeploySupported', () => {
       expect(e.code).toBe('remote_deploy_unsupported');
       expect(e.message).toMatch(/host processes/);
     }
+  });
+});
+
+describe('remoteDatabaseRefusal (r269)', () => {
+  const noAttachments = { query: { databaseAttachments: { findMany: async () => [] } } } as never;
+
+  it('refuses a template that declares a managed database before it is attached', async () => {
+    // The attachment only appears once reconcileTemplateDependencies has run —
+    // after this check — so the mapping is the signal on the first deploy.
+    expect(
+      await remoteDatabaseRefusal(noAttachments, { id: 1, serverId: 4, templateDatabaseEnv: { DB_HOST: 'host' } }),
+    ).toMatch(/provisions a managed database/);
+  });
+
+  it('passes a template without a database, and any panel-host service', async () => {
+    expect(await remoteDatabaseRefusal(noAttachments, { id: 1, serverId: 4, templateDatabaseEnv: null })).toBeNull();
+    expect(
+      await remoteDatabaseRefusal(noAttachments, { id: 1, serverId: null, templateDatabaseEnv: { DB_HOST: 'host' } }),
+    ).toBeNull();
   });
 });
 
