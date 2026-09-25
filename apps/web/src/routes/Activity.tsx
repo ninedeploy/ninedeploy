@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import {
   Activity as ActivityIcon,
@@ -32,20 +32,24 @@ export function Activity() {
   const [inspectEntry, setInspectEntry] = useState<ActivityEntry | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
-  const activityQuery = useQuery({
+  // r344: the server pages 50 rows at a time and hands back `nextCursor`
+  // (the oldest id on the page) to send as `before`. Dropping it capped
+  // search and export at the newest 50 rows with no way to see more.
+  const activityQuery = useInfiniteQuery({
     queryKey: ['activity-list', entityFilter, actionFilter, userFilter],
-    queryFn: async () => {
-      const res = await api.activity.list({
+    queryFn: ({ pageParam }) =>
+      api.activity.list({
         entity: entityFilter || undefined,
         action: actionFilter || undefined,
         userId: userFilter ? Number(userFilter) : undefined,
-      });
-      return res.entries;
-    },
+        before: pageParam,
+      }),
+    initialPageParam: undefined as number | undefined,
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
     refetchInterval: autoRefresh ? 5000 : false,
   });
 
-  const entries = activityQuery.data ?? [];
+  const entries = useMemo(() => activityQuery.data?.pages.flatMap((p) => p.entries) ?? [], [activityQuery.data]);
 
   const filteredEntries = useMemo(() => {
     if (!searchQuery.trim()) return entries;
@@ -339,6 +343,18 @@ export function Activity() {
               </tbody>
             </table>
           </div>
+        )}
+        {activityQuery.hasNextPage && (
+          <CardBody className="flex justify-center border-t border-white/[0.04] p-3">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => activityQuery.fetchNextPage()}
+              disabled={activityQuery.isFetchingNextPage}
+            >
+              {activityQuery.isFetchingNextPage ? 'Loading…' : 'Load older entries'}
+            </Button>
+          </CardBody>
         )}
       </Card>
 

@@ -1389,6 +1389,22 @@ describe('ServiceDetail', () => {
     expect(screen.getByText('service.stop')).toBeInTheDocument();
   });
 
+  it('does not query the operator-only audit feed for a member and says why (r344)', async () => {
+    authMock.user = { id: 5, isOperator: false, email: 'm@test', name: 'M' };
+    renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+    await openTab('Activity');
+    expect(await screen.findByText(/visible to instance operators only/)).toBeInTheDocument();
+    expect(screen.queryByText('No recorded activity for this service yet.')).not.toBeInTheDocument();
+    expect(api.activity.list).not.toHaveBeenCalled();
+  });
+
+  it('reports an audit-feed failure instead of claiming there is no activity', async () => {
+    mockOf(api.activity.list).mockRejectedValue(new Error('boom'));
+    renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+    await openTab('Activity');
+    expect(await screen.findByText('Could not load the audit trail.')).toBeInTheDocument();
+  });
+
   it('shows the activity empty state', async () => {
     renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
     await openTab('Activity');

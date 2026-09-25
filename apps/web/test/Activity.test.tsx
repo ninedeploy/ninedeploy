@@ -70,6 +70,23 @@ describe('Activity Page', () => {
     mockOf(api.activity.list).mockResolvedValue({ entries: sampleActivities });
   });
 
+  it('pages older entries with the server cursor (r344)', async () => {
+    mockOf(api.activity.list).mockImplementation(async (q?: { before?: number }) =>
+      q?.before === 101
+        ? { entries: [{ ...sampleActivities[1]!, id: 7, action: 'service.oldest' }], nextCursor: null }
+        : { entries: [sampleActivities[0]!], nextCursor: 101 },
+    );
+    renderWithProviders(<Activity />);
+    expect((await screen.findAllByText('service.create')).length).toBeGreaterThan(0);
+    expect(screen.queryAllByText('service.oldest')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: /Load older entries/ }));
+    await waitFor(() => expect(api.activity.list).toHaveBeenCalledWith(expect.objectContaining({ before: 101 })));
+    // Older rows are appended (and so reach search / export), and the last page ends paging.
+    expect((await screen.findAllByText('service.oldest')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('service.create').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: /Load older entries/ })).not.toBeInTheDocument();
+  });
+
   it('renders loading skeleton when loading', () => {
     mockOf(api.activity.list).mockReturnValue(new Promise(() => {}));
     const { container } = renderWithProviders(<Activity />);
