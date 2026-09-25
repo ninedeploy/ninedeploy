@@ -23,6 +23,8 @@ const apiMock = vi.hoisted(() => ({
   },
   deployLogsWsUrl: vi.fn(() => 'ws://localhost/v1/logs'),
   websocketAuthProtocols: vi.fn(() => ['ninedeploy.bearer.test']),
+  // r359: the enrolment card reads /v1/settings/enrolment through the raw helper.
+  authedFetch: vi.fn(),
 }));
 
 vi.mock('../src/lib/api.js', () => apiMock);
@@ -53,12 +55,25 @@ const servers = [
 const PROBE_PASS = ['probe', 'pass'].join('-');
 const FORM_PASS = ['secretPass', '!'].join('');
 
+/** Route the card's raw requests: GET answers `current`, rotate/delete their own shapes. */
+function enrolmentReplies(current: { enabled: boolean; token: string | null }) {
+  apiMock.authedFetch.mockImplementation(async (_url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    const body =
+      method === 'POST' ? { ok: true, enabled: true, token: 'enrol-secret-2' }
+      : method === 'DELETE' ? { ok: true, enabled: false }
+      : current;
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+  });
+}
+
 describe('Servers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     toastSpy.toast.mockClear();
     mockOf(api.services.list).mockResolvedValue([] as never);
     mockOf(api.databases.list).mockResolvedValue([] as never);
+    enrolmentReplies({ enabled: true, token: 'enrol-secret-1' });
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: vi.fn().mockResolvedValue(undefined) },
       configurable: true,
@@ -265,6 +280,23 @@ describe('Servers', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Register server' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Copy command' }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining('NINEDEPLOY_AGENT=1')));
+  });
+
+  it('r359: the auto-join instruction points at the enrolment card, and the copy carries the real token', async () => {
+    mockOf(api.servers.list).mockResolvedValue([] as never);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    renderWithProviders(<Servers />);
+    const card = await screen.findByTestId('enrolment-card');
+    expect(card).toHaveTextContent('Enrolment token');
+    // The on-screen command keeps a placeholder (the token is a secret) that
+    // no longer names a Settings screen that never existed.
+    expect(screen.queryByText(/enrolment-token-from-settings/)).toBeNull();
+    expect(screen.getAllByText(/<enrolment-token>/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/enrol-secret-1/)).toBeNull();
+    await waitFor(() => expect(apiMock.authedFetch).toHaveBeenCalledWith('/v1/settings/enrolment', { method: 'GET' }));
+    fireEvent.click(screen.getByRole('button', { name: /Copy Auto-Join Command/i }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining('enrol-secret-1')));
   });
 
   it('copies the auto-join command and toggles between docker and npx tabs', async () => {

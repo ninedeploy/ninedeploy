@@ -24,6 +24,8 @@ import { useToast } from '../components/Toast.js';
 import { Button, Card, ConfirmDialog, EmptyState, ErrorCard, Field, Input, Modal, PageHeader, Skeleton, cn } from '../components/ui.js';
 import { formatRelative, useCopy } from '../lib/format.js';
 import { agentDockerRunCommand } from '@ninedeploy/schemas';
+import { useAuth } from '../lib/auth.js';
+import { EnrolmentTokenCard, useEnrolmentToken } from '../components/EnrolmentTokenCard.js';
 
 /**
  * Remote server registry (admin). Supports zero-touch SSH auto-onboarding,
@@ -31,6 +33,8 @@ import { agentDockerRunCommand } from '@ninedeploy/schemas';
  */
 export function Servers() {
   const qc = useQueryClient();
+  const { user } = useAuth();
+  const isOperator = user?.isOperator === true;
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [addMode, setAddMode] = useState<'ssh' | 'manual'>('ssh');
@@ -194,14 +198,15 @@ export function Servers() {
   const registeredServers = list.data?.filter((s) => s.status !== 'pending') ?? [];
 
   const masterOrigin = window.location.origin;
-  // r175: one builder for every agent command (@ninedeploy/schemas). The
-  // enrolment secret is generated in Settings; /announce refuses without it.
-  const autoJoinCommand = agentDockerRunCommand({
-    hostPort: 4600,
-    imageTag: 'latest',
-    masterUrl: masterOrigin,
-    enrolmentToken: '<enrolment-token-from-settings>',
-  });
+  // r175: one builder for every agent command (@ninedeploy/schemas).
+  // r359: /announce refuses without the enrolment secret, which the card
+  // under the command shows. The command on screen keeps a placeholder (it is
+  // a secret); the copied one carries the real token when there is one.
+  const enrolment = useEnrolmentToken(isOperator);
+  const buildAutoJoin = (enrolmentToken: string) =>
+    agentDockerRunCommand({ hostPort: 4600, imageTag: 'latest', masterUrl: masterOrigin, enrolmentToken });
+  const autoJoinCommand = buildAutoJoin('<enrolment-token>');
+  const autoJoinCopy = buildAutoJoin(enrolment.data?.token ?? '<enrolment-token>');
 
   // The server returns the exact command for the node it just registered
   // (pinned to the core's release). `@ninedeploy/server` is not published to
@@ -291,7 +296,7 @@ export function Servers() {
             <Button
               size="sm"
               variant="secondary"
-              onClick={() => void autoCopy(autoJoinCommand)}
+              onClick={() => void autoCopy(autoJoinCopy)}
               className="text-xs h-7"
             >
               <Copy size={12} className="mr-1" />
@@ -304,6 +309,11 @@ export function Servers() {
           <code className="block break-all rounded-lg bg-black/40 p-3 font-mono text-[11px] text-indigo-200/90 ring-1 ring-white/5">
             {autoJoinCommand}
           </code>
+          <p className="mt-2 text-[11px] text-slate-500">
+            <code className="text-indigo-300">&lt;enrolment-token&gt;</code> is the enrolment token below — the copy
+            button fills it in. Without one, announcing nodes are refused.
+          </p>
+          {isOperator && <EnrolmentTokenCard />}
         </div>
       </Card>
 
