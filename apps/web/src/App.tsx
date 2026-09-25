@@ -25,6 +25,9 @@ const Dashboard = lazy(() => import('./routes/Dashboard.js').then((m) => ({ defa
 const Databases = lazy(() => import('./routes/Databases.js').then((m) => ({ default: m.Databases })));
 const DatabaseDetail = lazy(() => import('./routes/DatabaseDetail.js').then((m) => ({ default: m.DatabaseDetail })));
 const Domains = lazy(() => import('./routes/Domains.js').then((m) => ({ default: m.Domains })));
+const DomainTransferAccept = lazy(() =>
+  import('./routes/DomainTransferAccept.js').then((m) => ({ default: m.DomainTransferAccept })),
+);
 const Hub = lazy(() => import('./routes/Hub.js').then((m) => ({ default: m.Hub })));
 const ManifestCreator = lazy(() => import('./routes/ManifestCreator.js').then((m) => ({ default: m.ManifestCreator })));
 const ServiceDetail = lazy(() => import('./routes/service/index.js').then((m) => ({ default: m.ServiceDetail })));
@@ -108,6 +111,10 @@ export default function App() {
           <Route path="doctor" element={<Doctor />} />
           <Route path="databases" element={<Databases />} />
           <Route path="domains" element={<Domains />} />
+          {/* r358: the accept link `lib/domainTransfer.ts` builds and the CLI
+              prints. Inside RequireAuth — accepting needs the addressed
+              account — so a logged-out recipient goes via /login and back. */}
+          <Route path="domains/transfers/:token/accept" element={<DomainTransferAccept />} />
           <Route path="tunnels" element={<Tunnels />} />
           <Route path="users" element={<Users />} />
           <Route path="volumes" element={<Volumes />} />

@@ -149,6 +149,45 @@ describe('App', () => {
     expect(await screen.findByText('pg-app')).toBeInTheDocument();
   });
 
+  it('r358: mounts the domain-transfer accept link the server prints', async () => {
+    authState({ id: 2, email: 'bob@example.com' });
+    mockOf(api.domains.previewTransfer).mockResolvedValue({
+      id: 7,
+      status: 'pending',
+      hostname: 'shop.example.com',
+      sourceEmail: 'alice@example.com',
+      targetEmail: 'bob@example.com',
+      expiresAt: Math.floor(Date.now() / 1000) + 3600,
+      createdAt: 0,
+      acceptedAt: null,
+      cancelledAt: null,
+      effectivelyExpired: false,
+    } as never);
+    renderWithProviders(<App />, { route: '/domains/transfers/tok123/accept' });
+    await screen.findByTestId('layout');
+    expect(await screen.findByText('Domain transfer: shop.example.com')).toBeInTheDocument();
+    expect(screen.queryByText('Not found')).toBeNull();
+  });
+
+  it('r358: sends a logged-out recipient to /login, remembering the accept link', async () => {
+    authState(null);
+    mockOf(api.auth.status).mockResolvedValue({ initialized: true } as never);
+    function StateProbe() {
+      const loc = useLocation();
+      return <div data-testid="from">{(loc.state as { from?: string } | null)?.from ?? ''}</div>;
+    }
+    renderWithProviders(
+      <>
+        <App />
+        <LocationProbe />
+        <StateProbe />
+      </>,
+      { route: '/domains/transfers/tok123/accept' },
+    );
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/login'));
+    expect(screen.getByTestId('from')).toHaveTextContent('/domains/transfers/tok123/accept');
+  });
+
   it('renders the login route for unauthenticated users', async () => {
     authState(null);
     mockOf(api.auth.status).mockResolvedValue({ initialized: true } as never);
