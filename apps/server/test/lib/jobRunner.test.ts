@@ -135,6 +135,33 @@ describe('runJob — exec jobs', () => {
     const { db } = makeDb({ job: JOB, svc: null });
     await expect(runJob(db as never, 7)).resolves.toBeUndefined();
   });
+
+  /**
+   * r303: the scheduler re-arms its crons from a snapshot only every 5
+   * minutes, so a job the operator had just disabled kept firing until then.
+   */
+  it('does not run a scheduled tick of a job that has since been disabled', async () => {
+    const { db, inserts, jobRunUpdates } = makeDb({ job: { ...JOB, enabled: false } });
+    await runJob(db as never, 7, { scheduled: true });
+    expect(execMocks.run).not.toHaveBeenCalled();
+    expect(inserts).toHaveLength(0);
+    // Not even lastRunAt: the job did not run.
+    expect(jobRunUpdates).toHaveLength(0);
+  });
+
+  it('still runs a disabled job on an explicit run-now', async () => {
+    execMocks.run.mockResolvedValue(undefined);
+    const { db } = makeDb({ job: { ...JOB, enabled: false } });
+    await runJob(db as never, 7);
+    expect(execMocks.run).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs a scheduled tick of an enabled job', async () => {
+    execMocks.run.mockResolvedValue(undefined);
+    const { db } = makeDb({ job: { ...JOB, enabled: true } });
+    await runJob(db as never, 7, { scheduled: true });
+    expect(execMocks.run).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('runJob — backup jobs (r039 coverage)', () => {

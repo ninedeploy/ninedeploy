@@ -42,8 +42,9 @@ describe('job scheduler plugin', () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(CronMock.Cron).toHaveBeenCalledTimes(1);
     expect(CronMock.Cron).toHaveBeenCalledWith('0 3 * * *', expect.anything(), expect.any(Function));
-    // The scheduled callback runs the job.
-    expect(runnerMock.runJob).toHaveBeenCalledWith(expect.anything(), 1);
+    // The scheduled callback runs the job — flagged as scheduled, so runJob
+    // re-checks `enabled` on the live row (r303).
+    expect(runnerMock.runJob).toHaveBeenCalledWith(expect.anything(), 1, { scheduled: true });
     await app.close();
   });
 

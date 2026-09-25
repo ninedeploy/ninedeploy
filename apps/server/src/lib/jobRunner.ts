@@ -38,6 +38,14 @@ async function assertJobMayDeploy(
  */
 const runningJobIds = new Set<number>();
 
+export interface RunJobOptions {
+  /**
+   * True when a cron tick (plugins/jobScheduler.ts) fired this run, false /
+   * absent for the run-now route. See the r303 check in `runJobInner`.
+   */
+  scheduled?: boolean;
+}
+
 /**
  * Execute one scheduled job now (used by both the cron scheduler and the
  * run-now route). `deploy` jobs enqueue a deployment (trigger: schedule);
@@ -45,19 +53,25 @@ const runningJobIds = new Set<number>();
  * output + exit code recorded on a job_runs row; `backup` jobs snapshot
  * every volume currently attached to the service.
  */
-export async function runJob(db: DB, jobId: number): Promise<void> {
+export async function runJob(db: DB, jobId: number, opts: RunJobOptions = {}): Promise<void> {
   if (runningJobIds.has(jobId)) return;
   runningJobIds.add(jobId);
   try {
-    await runJobInner(db, jobId);
+    await runJobInner(db, jobId, opts);
   } finally {
     runningJobIds.delete(jobId);
   }
 }
 
-async function runJobInner(db: DB, jobId: number): Promise<void> {
+async function runJobInner(db: DB, jobId: number, opts: RunJobOptions): Promise<void> {
   const job = await db.query.scheduledJobs.findFirst({ where: eq(scheduledJobs.id, jobId) });
   if (!job) return;
+  // r303: the scheduler arms its crons from a snapshot it reloads only every
+  // 5 minutes, so a job the operator just disabled kept firing — deploying,
+  // exec'ing, backing up — until the next reload. The row read above is
+  // current: a scheduled run of a disabled job stops here. A manual run-now
+  // is an explicit request and still runs a disabled job.
+  if (opts.scheduled && !job.enabled) return;
 
   await db.update(scheduledJobs).set({ lastRunAt: new Date() }).where(eq(scheduledJobs.id, job.id));
   const svc = await db.query.services.findFirst({ where: eq(services.id, job.serviceId) });
