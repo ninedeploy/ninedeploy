@@ -187,6 +187,20 @@ describe('dockerBuilder.buildAndRun', () => {
     expect(runtime).toEqual({ runtimeId: 'web-3', port: 3000, healthPath: '/health', imageDigest: expect.any(String), replicas: 1 });
   });
 
+  it('r321: mounts the volume attachments next to the primary volume', async () => {
+    const ctx = makeCtx({
+      service: { slug: 'web', image: 'nginx:1.25', port: 3000, cpuShares: 0, memLimitMb: 0, volumeMount: '/data', healthPath: '/' },
+      volumeAttachments: [
+        { id: 1, serviceId: 1, volumeName: 'nd-svc-web-uploads', containerPath: '/uploads', readOnly: false },
+        { id: 2, serviceId: 1, volumeName: 'shared-assets', containerPath: '/assets', readOnly: true },
+      ],
+    });
+    await dockerBuilder.buildAndRun(ctx as never);
+    const runArgs = h.run.mock.calls.find(([, argv]) => (argv as unknown[])[0] === 'run')![1] as string[];
+    const mounts = runArgs.flatMap((a, i) => (a === '-v' ? [runArgs[i + 1]] : []));
+    expect(mounts).toEqual(['nd-svc-web-data:/data', 'nd-svc-web-uploads:/uploads', 'shared-assets:/assets:ro']);
+  });
+
   it('logs a pull warning when the rejection is not an Error instance', async () => {
     h.run.mockRejectedValueOnce('network down').mockResolvedValueOnce(undefined);
     const ctx = makeCtx({ service: { slug: 'web', image: 'nginx:1.25', port: 3000, cpuShares: 0, memLimitMb: 0, volumeMount: null, healthPath: '/health' } });

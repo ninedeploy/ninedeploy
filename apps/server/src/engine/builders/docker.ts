@@ -700,6 +700,15 @@ export const dockerBuilder: Builder = {
     // swap. A limit means a limit.
     if (service.memLimitMb > 0) args.push('--memory', `${service.memLimitMb}m`, '--memory-swap', `${service.memLimitMb}m`);
     if (service.volumeMount) args.push('-v', `nd-svc-${service.slug}-data:${service.volumeMount}`);
+    // r321: the Volumes tab's attachments. The pipeline loads them into
+    // ctx.volumeAttachments and the attach route queues a redeploy for them,
+    // but only the compose builder ever read the list — on a docker service
+    // an attach "succeeded", redeployed, and mounted nothing. Names and paths
+    // are validated by the attachment schema; argv, never a shell. Replicas
+    // clone these args, so every replica mounts them too.
+    for (const a of ctx.volumeAttachments ?? []) {
+      args.push('-v', `${a.volumeName}:${a.containerPath}${a.readOnly ? ':ro' : ''}`);
+    }
     // Direct host port mapping (e.g. 8080:3000) for domain-less external access.
     if (service.publishedPort) {
       const containerPort = resolvedPort ?? service.publishedPort;
