@@ -83,7 +83,7 @@ describe('remote docker builder — image services', () => {
 
     expect(ops()).toEqual(['docker.pull', 'file.writeEnv', 'docker.runEnv', 'file.deleteEnv']);
     expect(calls[0]!.params).toMatchObject({ image: 'nginx:1.27' });
-    expect(runtime).toMatchObject({ runtimeId: 'web-7', port: 3000, imageDigest: 'nginx:1.27' });
+    expect(runtime).toMatchObject({ runtimeId: 'web-7', port: 3000 });
   });
 
   it('pins the exact digest on a rollback rather than the mutable tag', async () => {
@@ -92,6 +92,27 @@ describe('remote docker builder — image services', () => {
       ctx({ service: svc({ image: 'nginx:1.27' }), imageDigest: 'nginx@sha256:abc' }),
     );
     expect(calls[0]!.params).toMatchObject({ image: 'nginx@sha256:abc' });
+  });
+
+  it('r270: never records a mutable tag as the release digest', async () => {
+    const { agent } = fakeAgent();
+    const runtime = await createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1.27' }) }));
+    // A rollback copies this onto the new deployment and pulls it: a tag here
+    // re-pulled today's image while the history claimed a pinned digest.
+    expect(runtime.imageDigest).toBeUndefined();
+
+    const built = await createRemoteDockerBuilder(fakeAgent().agent).buildAndRun(
+      ctx({ service: svc({ repoUrl: 'https://github.com/acme/app.git' }), commitSha: 'deadbeefcafe' }),
+    );
+    expect(built.imageDigest).toBeUndefined();
+  });
+
+  it('r270: keeps a genuine digest pin', async () => {
+    const pinned = `nginx@sha256:${'a'.repeat(64)}`;
+    const runtime = await createRemoteDockerBuilder(fakeAgent().agent).buildAndRun(
+      ctx({ service: svc({ image: 'nginx:1.27' }), imageDigest: pinned }),
+    );
+    expect(runtime.imageDigest).toBe(pinned);
   });
 
   it('sends the environment as a file and deletes it once the container has it', async () => {

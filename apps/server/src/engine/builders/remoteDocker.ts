@@ -269,7 +269,12 @@ export function createRemoteDockerBuilder(agent: AgentCall, opts: { pollMs?: num
         runtimeId: name,
         port: resolvedPort,
         healthPath: service.healthPath ?? '/',
-        imageDigest: target,
+        // r270: only a real digest is a digest. Recording the mutable tag (or
+        // the node-local build tag) here made the deployment row claim digest
+        // pinning while a rollback re-pulled whatever the tag points at today.
+        // The node offers no repo-digest lookup, so an unpinned release
+        // records none and rollback honestly means "this tag".
+        imageDigest: service.image && /@sha256:[0-9a-f]{64}$/i.test(target) ? target : undefined,
       };
     },
 
