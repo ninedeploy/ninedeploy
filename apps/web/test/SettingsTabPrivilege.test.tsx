@@ -139,3 +139,42 @@ describe('SettingsTab host-privilege gating', () => {
     expect(build.buildCmd).toBe('npm run build');
   }, TIMEOUT);
 });
+
+describe('SettingsTab clearable fields (r341)', () => {
+  afterEach(cleanup);
+  const TIMEOUT = 60_000;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authMock.user = { id: 1, isOperator: true, email: 'a@test', name: 'A' };
+    apiMock.api.services.update.mockResolvedValue(service);
+    apiMock.api.limits.setService.mockResolvedValue({ cpuShares: 0, memLimitMb: 0 });
+  });
+
+  async function savedPatch(): Promise<Record<string, unknown>> {
+    await waitFor(() => expect(apiMock.api.services.update).toHaveBeenCalled(), { timeout: 30_000 });
+    return (apiMock.api.services.update.mock.calls[0] as [number, Record<string, unknown>])[1];
+  }
+
+  it('sends a cleared volume mount and image as "" so the server drops them', async () => {
+    apiMock.api.services.get.mockResolvedValue({ ...service, volumeMount: '/app/data', image: 'nginx:1' });
+    renderTab();
+    const mount = await screen.findByDisplayValue('/app/data');
+    fireEvent.change(mount, { target: { value: '' } });
+    fireEvent.change(screen.getByDisplayValue('nginx:1'), { target: { value: '' } });
+    fireEvent.submit(mount.closest('form')!);
+    const patch = await savedPatch();
+    expect(patch.volumeMount).toBe('');
+    expect(patch.image).toBe('');
+  }, TIMEOUT);
+
+  it('keeps never-set image / volume mount out of the patch', async () => {
+    apiMock.api.services.get.mockResolvedValue({ ...service, volumeMount: null, image: null });
+    renderTab();
+    await screen.findByText('Service settings');
+    fireEvent.submit(screen.getByRole('button', { name: /Save settings/ }).closest('form')!);
+    const patch = await savedPatch();
+    expect('volumeMount' in patch && patch.volumeMount !== undefined).toBe(false);
+    expect('image' in patch && patch.image !== undefined).toBe(false);
+  }, TIMEOUT);
+});

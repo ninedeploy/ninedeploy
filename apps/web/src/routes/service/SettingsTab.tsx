@@ -152,16 +152,22 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
     mutationFn: () => {
       const f = form!;
       // Omit empty service fields the schema cannot take blank (repo URL,
-      // image, port, health path).
+      // port, health path).
       const orUndef = <T,>(v: T) => (v === '' ? undefined : v);
+      // r341: image and volume mount accept '' as "unset" (every consumer
+      // reads them truthily). A field emptied by the user is sent as '' so
+      // the server actually drops the old value — omitting it kept the old
+      // mount while Save reported success. A field that was never set stays
+      // omitted.
+      const clearable = (v: string, stored: string | null | undefined) => (v === '' && !stored ? undefined : v);
       return api.services.update(serviceId, {
         name: f.name,
         branch: f.branch,
         repoUrl: orUndef(f.repoUrl),
-        image: orUndef(f.image),
+        image: clearable(f.image, svc?.image),
         port: orUndef(f.port) ? toInt(f.port) : undefined,
         healthPath: orUndef(f.healthPath),
-        volumeMount: orUndef(f.volumeMount),
+        volumeMount: clearable(f.volumeMount, svc?.volumeMount),
         // Admins may attach or clear the credential; members keep the current
         // one (an omitted key leaves it untouched server-side).
         sourceId: isAdmin ? (f.sourceId ? toInt(f.sourceId) : null) : undefined,
