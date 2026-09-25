@@ -522,6 +522,29 @@ describe('DatabaseDetail', () => {
     await waitFor(() => expect(screen.queryByTitle('Web Studio')).not.toBeInTheDocument());
   });
 
+  it('opens the Web Studio through the panel proxy on the API origin, never the loopback port (r340)', async () => {
+    vi.stubEnv('VITE_API_URL', 'https://api.example.test/');
+    try {
+      mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, webGuiEnabled: true, webGuiPort: 18001 } as any);
+      mockOf(api.databases.startStudio).mockResolvedValue({ ok: true, port: 18001, url: '/v1/databases/1/studio-proxy/' } as any);
+      renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1' });
+      await screen.findByText('Database Web Studio');
+      // No raw link to host:port — the studio is bound to 127.0.0.1.
+      expect(document.querySelector('a[href*=":18001"]')).toBeNull();
+      // Opening re-mints the proxy cookie via the start route, then embeds the proxy path.
+      fireEvent.click(screen.getByRole('button', { name: /Open Web Studio/i }));
+      await waitFor(() => expect(api.databases.startStudio).toHaveBeenCalledWith(1));
+      const frame = await screen.findByTitle('Web Studio');
+      expect(frame).toHaveAttribute('src', 'https://api.example.test/v1/databases/1/studio-proxy/');
+      expect(screen.getByRole('link', { name: /Open in new tab/i })).toHaveAttribute(
+        'href',
+        'https://api.example.test/v1/databases/1/studio-proxy/',
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('renders the Files tab with live database container file browser', async () => {
     mockOf(api.databases.get).mockResolvedValue(sampleDb as any);
     mockOf(api.containers.listFiles).mockResolvedValue({

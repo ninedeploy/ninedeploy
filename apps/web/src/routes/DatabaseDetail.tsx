@@ -25,6 +25,7 @@ import {
 import { Link, useNavigate, useParams } from 'react-router';
 import type { DatabaseDetail as IDatabaseDetail } from '@ninedeploy/sdk';
 import { api, authedFetch } from '../lib/api.js';
+import { apiUrl } from '../lib/apiUrl.js';
 import { useToast } from '../components/Toast.js';
 import {
   Button,
@@ -109,7 +110,9 @@ export function DatabaseDetail() {
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['database-detail', id] });
       toast(`Web Studio ready on port ${data.port}`, 'success');
-      setEmbeddedStudioUrl(data.url);
+      // The server answers with its same-origin proxy path (the studio itself
+      // is loopback-bound); resolve it against the API origin.
+      setEmbeddedStudioUrl(apiUrl(data.url));
     },
     onError: () => toast('Could not launch Web Studio', 'error'),
   });
@@ -345,7 +348,6 @@ function OverviewPanel({
   const creds = credsQuery.data;
   const isRunning = db.status === 'running';
   const studioPort = db.webGuiPort || (18000 + (db.id % 1000));
-  const studioUrl = `http://${window.location.hostname}:${studioPort}`;
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -503,15 +505,19 @@ function OverviewPanel({
           <div className="flex flex-wrap items-center gap-2 pt-1">
             {db.webGuiEnabled ? (
               <>
-                <a
-                  href={studioUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-500"
+                {/* r340: the studio port is loopback-bound — the only way in is the
+                    panel's /studio-proxy/, gated by a cookie that the start
+                    route mints. Opening therefore re-runs start (idempotent
+                    while running) so the cookie is fresh in THIS browser. */}
+                <button
+                  type="button"
+                  onClick={onStartStudio}
+                  disabled={isStudioPending}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-500 disabled:opacity-50"
                 >
                   <ExternalLink size={13} />
                   Open Web Studio
-                </a>
+                </button>
                 <Button
                   variant="secondary"
                   size="sm"

@@ -1,4 +1,5 @@
 import { createClient, type NineDeployClient } from '@ninedeploy/sdk';
+import { apiUrl } from './apiUrl.js';
 
 const TOKEN_KEY = 'ninedeploy.token';
 const REFRESH_KEY = 'ninedeploy.refreshToken';
@@ -156,9 +157,7 @@ export async function authedFetch(url: string, init?: RequestInit): Promise<Resp
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
   // fetchWithRefresh transparently refreshes + retries on a 401.
-  const baseUrl = (import.meta.env['VITE_API_URL'] ?? '').replace(/\/$/, '');
-  const target = url.startsWith('/') && !url.startsWith('//') ? `${baseUrl}${url}` : url;
-  return fetchWithRefresh(target, { ...init, headers });
+  return fetchWithRefresh(apiUrl(url), { ...init, headers });
 }
 
 /**
