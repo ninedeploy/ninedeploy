@@ -1,6 +1,7 @@
 ﻿import { createHmac } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { encrypt } from '../src/lib/crypto.js';
+import { resetReplayWindowForTests } from '../src/lib/webhooks.js';
 import { hookReceiveRoutes, webhookMgmtRoutes } from '../src/modules/hooks.js';
 import { asUser, buildConfigRow, buildTestApp, createFakeDb, depRow, svcRow, webhookRow } from './helpers.js';
 import type { domainRow } from './helpers.js';
@@ -40,6 +41,9 @@ describe('webhook receiver', () => {
   beforeEach(() => {
     teardownMocks.deleteLog.mockClear();
     teardownMocks.removeServiceBridgeIfEmpty.mockClear();
+    // r313: the replay window also remembers signed BODIES now, and these
+    // cases reuse the same payloads — each case starts with an empty window.
+    resetReplayWindowForTests();
   });
 
   it('returns 404 for an unknown webhook', async () => {
@@ -120,6 +124,37 @@ describe('webhook receiver', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ok: true, provider: 'github', deploymentId: 7 });
+  });
+
+  // r313 regression: the signature covers the body, not X-GitHub-Delivery.
+  // A captured push re-sent with a fresh delivery id redeployed the old
+  // commit once the SHA dedup (queued/building only) no longer matched.
+  it('ignores a captured push replayed with a fresh delivery id (r313)', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { webhooks: hook(), services: svcRow() },
+        insert: { deployments: [depRow({ id: 7, trigger: 'webhook' })] },
+      }),
+      rawBody: true,
+    });
+    await app.register(hookReceiveRoutes);
+    const body = JSON.stringify(pushPayload('main'));
+    const send = (delivery: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/1',
+        headers: {
+          'content-type': 'application/json',
+          'x-github-event': 'push',
+          'x-github-delivery': delivery,
+          'x-hub-signature-256': sig(body),
+        },
+        payload: body,
+      });
+    expect((await send('r313-original')).json()).toEqual({ ok: true, provider: 'github', deploymentId: 7 });
+    const replay = await send('r313-attacker-chosen');
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toEqual({ ok: 'ignored', reason: 'replayed_delivery' });
   });
 
   // r070 regression: push webhook must sync service.branch after inserting
@@ -995,6 +1030,7 @@ describe('webhook receiver', () => {
     });
     expect(res.json()).toEqual({ ok: 'skipped', reason: 'auto_destroy_disabled' });
 
+    resetReplayWindowForTests(); // r313: same signed body, new scenario
     let c4 = 0;
     const app4 = await buildTestApp({
       db: createFakeDb({
@@ -1023,6 +1059,7 @@ describe('webhook receiver', () => {
       pull_request: { number: 1, title: 't', head: { ref: 'b', sha: 's' } },
     });
     for (const type of ['pm2', 'compose', 'unknown'] as const) {
+      resetReplayWindowForTests(); // r313: same signed body, new scenario
       let c = 0;
       const app = await buildTestApp({
         db: createFakeDb({
@@ -1047,6 +1084,7 @@ describe('webhook receiver', () => {
       expect(res.json()).toMatchObject({ ok: true, action: 'preview_destroyed' });
     }
 
+    resetReplayWindowForTests(); // r313: same signed body, new scenario
     let c9 = 0;
     const app9 = await buildTestApp({
       db: createFakeDb({
@@ -1110,6 +1148,7 @@ describe('webhook receiver', () => {
       svcRow({ id: 50, runtimeId: null }),
       svcRow({ id: 50, runtimeId: 'c-docker', type: 'docker' }),
     ]) {
+      resetReplayWindowForTests(); // r313: same signed body, new scenario
       let c = 0;
       const app = await buildTestApp({
         db: createFakeDb({
@@ -1144,6 +1183,7 @@ describe('webhook receiver', () => {
     }
 
     // Service insert fails -> failed_to_create_preview
+    resetReplayWindowForTests(); // r313: same signed body, new scenario
     let c8 = 0;
     const app8 = await buildTestApp({
       db: createFakeDb({

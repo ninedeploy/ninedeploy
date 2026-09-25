@@ -127,7 +127,8 @@ export const hookReceiveRoutes: FastifyPluginAsync = async (app) => {
     // commit once the SHA dedup has expired. Checked AFTER the HMAC so only
     // authenticated deliveries consume dedup slots. Absent delivery ids fail
     // open (isReplayedDelivery) — the signature remains authoritative.
-    if (isReplayedDelivery(req.headers, provider)) {
+    // r313: the body is the signed part — dedupe on it too (per service).
+    if (isReplayedDelivery(req.headers, provider, { rawBody, scope: hook.serviceId })) {
       return { ok: 'ignored', reason: 'replayed_delivery' };
     }
 
