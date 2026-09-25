@@ -164,6 +164,74 @@ describe('startSelfUpdate', () => {
     expect(script).toContain('install.sh');
   });
 
+  describe('r371: runs the target release installer', () => {
+    // Executes the generated wrapper for real (bash + a fake curl on PATH):
+    // the string checks above cannot tell a working fallback from a typo.
+    const realCp = () => vi.importActual<typeof import('node:child_process')>('node:child_process');
+    const hasBash = async () => (await realCp()).spawnSync('bash', ['-c', 'exit 0']).status === 0;
+
+    async function runWrapper(curl: 'serve' | 'fail' | 'garbage') {
+      configMock.isProd = true;
+      const installDir = newInstallDir();
+      const marker = path.join(installDir, 'ran.txt').replaceAll('\\', '/');
+      fs.writeFileSync(path.join(installDir, 'install.sh'), `#!/usr/bin/env bash\necho "installed $*" > "${marker}"\n`);
+      const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'nd-fakebin-'));
+      createdDirs.push(bin);
+      const target = `#!/usr/bin/env bash\necho "target $* dir=$NINEDEPLOY_INSTALL_DIR" > "${marker}"\n`;
+      const body = curl === 'serve' ? target : curl === 'garbage' ? '<html>rate limited</html>\n' : '';
+      fs.writeFileSync(path.join(bin, 'body'), body);
+      fs.writeFileSync(
+        path.join(bin, 'curl'),
+        [
+          '#!/usr/bin/env bash',
+          `echo "$@" > "${path.join(bin, 'args').replaceAll('\\', '/')}"`,
+          curl === 'fail' ? 'exit 22' : '',
+          'out=""; while [ $# -gt 0 ]; do [ "$1" = "-o" ] && out="$2"; shift; done',
+          `cat "${path.join(bin, 'body').replaceAll('\\', '/')}" > "$out"`,
+        ].join('\n'),
+        { mode: 0o755 },
+      );
+      const lib = await loadLib();
+      await lib.startSelfUpdate('v99.0.0', { installDir });
+      const cp = await realCp();
+      const PATH = `${cp.spawnSync('bash', ['-c', `cygpath -u '${bin}' 2>/dev/null || echo '${bin}'`]).stdout.toString().trim()}:${process.env.PATH}`;
+      const res = cp.spawnSync('bash', [path.join(stateDir(), 'run-update.sh')], {
+        env: { ...process.env, PATH, ND_SELF_UPDATE_TARGET: 'v99.0.0' },
+      });
+      return {
+        status: res.status,
+        ran: fs.readFileSync(path.join(installDir, 'ran.txt'), 'utf8').trim(),
+        curlArgs: fs.readFileSync(path.join(bin, 'args'), 'utf8'),
+        exitCode: fs.readFileSync(path.join(stateDir(), 'exit-code'), 'utf8').trim(),
+        installDir,
+      };
+    }
+
+    it('fetches the pinned tag installer and runs it against the install dir', async () => {
+      if (!(await hasBash())) return;
+      const r = await runWrapper('serve');
+      expect(r.curlArgs).toContain('https://raw.githubusercontent.com/NineDeploy/NineDeploy/v99.0.0/install.sh');
+      expect(r.ran).toMatch(/^target --version v99\.0\.0 dir=/);
+      expect(r.ran).toContain(path.basename(r.installDir));
+      expect(r.exitCode).toBe('0');
+    });
+
+    it('falls back to the installed installer when the fetch fails', async () => {
+      if (!(await hasBash())) return;
+      const r = await runWrapper('fail');
+      expect(r.ran).toBe('installed --version v99.0.0');
+      expect(r.exitCode).toBe('0');
+      expect(fs.existsSync(path.join(stateDir(), 'install-target.sh.part'))).toBe(false);
+    });
+
+    it('never executes a fetched body that is not a bash script', async () => {
+      if (!(await hasBash())) return;
+      const r = await runWrapper('garbage');
+      expect(r.ran).toBe('installed --version v99.0.0');
+      expect(fs.existsSync(path.join(stateDir(), 'install-target.sh'))).toBe(false);
+    });
+  });
+
   it('keeps the updater state directory and its log owner-only', async () => {
     // The wrapper script was already 0700; the log beside it was created at the
     // default 0644 while capturing the installer's entire output stream, and
