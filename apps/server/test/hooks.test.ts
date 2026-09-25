@@ -20,6 +20,22 @@ vi.mock('../src/engine/logs.js', () => ({ deleteLog: teardownMocks.deleteLog }))
 vi.mock('../src/lib/serviceBridge.js', () => ({
   removeServiceBridgeIfEmpty: teardownMocks.removeServiceBridgeIfEmpty,
 }));
+// Tearing a preview down stops its runtime and rewrites the proxy config. The
+// real builders run `docker stop/rm`, `docker compose down` and pm2.connect()
+// (which spawns a PM2 daemon that outlives the test run) against the HOST, and
+// the real writeDynamicConfig writes into the data dir — stub all of them.
+const runtimeMocks = vi.hoisted(() => ({
+  dockerStop: vi.fn(async (_id: string) => undefined),
+  pm2Stop: vi.fn(async (_id: string) => undefined),
+  composeStop: vi.fn(async (_id: string) => undefined),
+}));
+vi.mock('../src/engine/builders/docker.js', () => ({ dockerBuilder: { stop: runtimeMocks.dockerStop } }));
+vi.mock('../src/engine/builders/pm2.js', () => ({ pm2Builder: { stop: runtimeMocks.pm2Stop } }));
+vi.mock('../src/engine/builders/compose.js', () => ({ composeBuilder: { stop: runtimeMocks.composeStop } }));
+vi.mock('../src/engine/proxy.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/engine/proxy.js')>()),
+  writeDynamicConfig: vi.fn(async () => undefined),
+}));
 
 const SECRET = 'hook-secret';
 const hook = (over: Record<string, unknown> = {}) =>
@@ -41,6 +57,7 @@ describe('webhook receiver', () => {
   beforeEach(() => {
     teardownMocks.deleteLog.mockClear();
     teardownMocks.removeServiceBridgeIfEmpty.mockClear();
+    for (const m of Object.values(runtimeMocks)) m.mockClear();
     // r313: the replay window also remembers signed BODIES now, and these
     // cases reuse the same payloads — each case starts with an empty window.
     resetReplayWindowForTests();
@@ -1083,6 +1100,11 @@ describe('webhook receiver', () => {
       });
       expect(res.json()).toMatchObject({ ok: true, action: 'preview_destroyed' });
     }
+    // Each runtime type reaches its own builder's stop; an unknown type none.
+    expect(runtimeMocks.pm2Stop).toHaveBeenCalledWith('rt-1');
+    expect(runtimeMocks.composeStop).toHaveBeenCalledWith('rt-1');
+    expect(runtimeMocks.pm2Stop).toHaveBeenCalledTimes(1);
+    expect(runtimeMocks.composeStop).toHaveBeenCalledTimes(1);
 
     resetReplayWindowForTests(); // r313: same signed body, new scenario
     let c9 = 0;
