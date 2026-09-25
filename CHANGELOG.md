@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.8] - 2026-09-25
+
+> The audit patch: a full-system review (r260–r347, see
+> docs/AUDIT_0.10.8.md) — an API-token scope bypass closed, deploys made
+> deterministic, remote nodes made honest, and the panel's contract with
+> the server repaired.
+
+### Security
+
+- **Fine-grained API tokens could reach sub-resources they were not scoped for (r260).** Route ids were parsed with `Number()`, which accepts `1e0`, `0x1`, `+1` and `1.0`, while the env/webhooks/deploys/volumes/insights/domains scope overrides matched only `\d+` — so `PUT /v1/services/1e0/env` was judged as plain `services` and still reached the env handler for service 1. A token holding only `nd://scope/write/services` could read and write secrets, mint webhook secrets and trigger deploys (the WebSocket log URL too). Ids must now be canonical decimals and the overrides match any id segment.
+- Deleting an exec/backup job requires an operator (as creating, editing and running always did) and answers 404 on a miss; non-operators no longer see exec job commands or captured output (r280). `GET /v1/alerts` lists only rules on services the caller can see (r281). A tag PUT no longer strips labels from workspaces the caller has no seat in (r285). Non-operators may only search logs through enabled drains that are global or bound to their service (r287). Marketplace refresh is operator-only (r286).
+- Env overwrites through `POST /:id/env`, service exports (which carry decrypted secrets), metric-history flushes and build-cache stores are now audited — and therefore reach notifications, the live feed and the plugin bus (r282, r283, r286). Applying a config preset no longer rewrites an ad-hoc secret key as plaintext (r284).
+- Egress refusals name only the origin: the full URL — Slack/Discord webhook paths, Gotify `?token=`, the Namecheap API key — used to land in logs and the plaintext `notification_log` (r310). The webhook replay guard also dedupes the signed body per service, so a captured push cannot be replayed with a fresh delivery id (r313).
+
+### Fixed
+
+- **Deploy engine.** A force-pushed or conflicting branch no longer silently deploys the old HEAD — checkouts move to the fetched remote tip and real failures fail the deploy (r273). Cancelling and immediately redeploying no longer runs two pipelines in one working copy (r272). Docker services now actually mount the volumes attached in the Volumes tab — only compose read them before (r321). The generated `nixpacks.toml` is regenerated or removed on every deploy instead of freezing the first deploy's manifest, including files written by earlier releases (r274). The container and volume file editors refuse files over 1 MiB instead of truncating them to their last megabyte and saving that (r275, r277).
+- **Backups and storage.** A failed backup no longer leaves its plaintext dump in the database container or the backups folder (r276). An S3 multipart upload answered with HTTP 200 and an `<Error>` body is a failure, not a phantom remote recovery point (r312). The cross-process operation lock can no longer be held by two processes after a stale takeover, and release only removes its own lock (r314). The image inventory's "in use" check compares image ids, not references — it was always false (r311).
+- **Remote nodes.** Services with a published host port redeploy (the old container kept the port — every redeploy failed); crash-looping containers no longer pass the health check; multi-line env values and `_`-prefixed keys reach the node; a changed repository URL is honoured; image deploys no longer record a mutable tag as the rollback digest. Services that need a template command, the Docker socket, extra volumes, a Git credential or a panel-local managed database are refused up front with a reason instead of deploying broken (r264–r270).
+- **Database.** Deleting a deployment lane or a backup destination no longer fails with a foreign-key error: migration 0064 gives `services.environment_id` and `backups.destination_id` the `ON DELETE SET NULL` rule the schema always declared, and the drift test now compares foreign keys (r300). Revoking an invitation and inviting the same address again no longer 500s (r301). `backup_drills`, `workspace_invitations`, `domain_transfers` and `cache_registry_blobs` gained retention sweeps, a running deployment's log is no longer pruned, and leftover drill plaintext is removed (r302). A disabled scheduled job stops firing immediately (r303).
+- **Installer.** A tty-less self-update no longer aborts at the Let's Encrypt email prompt after stopping the panel (r261); a failed upgrade restarts the panel instead of leaving it down (r262); `install.sh --docker` passes its image check (the image repository is lowercase) and a pinned `--version` pulls `:vX.Y.Z` instead of `:latest` (r263).
+- **Templates.** Community templates open and deploy instead of 404ing after they list (r330); wud gets the real Docker socket and speedtest-tracker mints the APP_KEY its image requires (r320).
+- **Panel and clients.** Pending domains show as pending with their TXT record and can be verified from the panel, the SDK (`domains.verify`) and the CLI (r332, r345); services can be put in a deployment lane (r347); Activity pages past 50 rows (r344); "Open Web Studio" goes through the panel's studio proxy instead of a loopback-only port (r340); clearing a volume mount or image actually clears it (r341); saves refresh the views that cache what they changed (r342); database tabs follow `?tab=` (r343); PgBouncer enable/disable report the new state (r331); MCP tools declare scopes the server can actually satisfy (r333); SDK types match the server's responses (r334); `PATCH /services/:id` refuses tag fields instead of dropping them (r335). The live build log can be scrolled up, the update toast fires once, Hub cards and the hand-rolled dialogs work from the keyboard, dialogs restore focus, accepting an invite lands in the joined workspace, and log streams no longer double lines (r290–r299).
+
+### Changed
+
+- Runtime dependency refresh: fastify 5.12.5, @fastify/static 10.1.4, @fastify/websocket 11.3.1, jose 6.2.12, pm2 7.0.4, MCP SDK 1.30.1, TanStack Query 5.103.2, xyflow 12.11.6.
+- Upgrade notes: migration 0064 rebuilds the `services` and `backups` tables (ids and counters preserved); deploy working copies now discard local edits (`checkout -f`); upgrade node agents alongside the panel.
+
 ## [0.10.7] - 2026-09-24
 
 > The catalog patch: ten broken community templates repaired, three

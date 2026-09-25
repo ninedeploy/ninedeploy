@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.7';
+export const VERSION = '0.10.8';
 
 export interface ChangelogEntry {
   version: string;
@@ -11,6 +11,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.10.8',
+    date: '2026-09-25',
+    title: 'The Audit Patch — Honest Scopes, Safer Deploys, Truthful Panels',
+    changes: [
+      'A full-system audit closed an API-token scope bypass (a services-only token reached env vars, webhooks and deploys through ids like 1e0), tightened authorization and audit coverage across jobs, alerts, tags, log search, exports and config presets, and stopped egress errors from writing webhook tokens into logs.',
+      'Deploys became deterministic and lossless: force-pushed branches build their new tip instead of the old HEAD, cancel-then-redeploy no longer runs two pipelines at once, docker services finally mount their attached volumes, the generated nixpacks.toml follows manifest changes, failed backups leave no plaintext behind, and the container/volume file editors refuse files over 1 MiB instead of truncating them on save.',
+      'Remote nodes redeploy published-port services, catch crash loops, carry multi-line env values, and refuse what they cannot run faithfully (template commands, the Docker socket, extra volumes, credentialed repositories, panel-local databases) with a clear reason. Migration 0064 gives environment and backup-destination deletes the SET NULL rule they always promised, re-inviting a revoked address works, and four more tables gained retention sweeps.',
+      'The installer survives tty-less self-updates, restarts the panel when an upgrade fails, and its --docker mode works with pinned versions. The panel gained domain verification, deployment-lane selection, paginated activity, a working Web Studio link and keyboard-accessible dialogs, and a dozen stale-cache and contract mismatches between the web, SDK, CLI and MCP were fixed.',
+    ],
+  },
   {
     version: '0.10.7',
     date: '2026-09-24',

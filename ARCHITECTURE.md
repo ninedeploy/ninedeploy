@@ -14,16 +14,21 @@ server runs bare-metal (systemd) for direct PM2 + Docker daemon access; a
 container image is also published for Docker-based installs (host socket
 mounted, `DOCKER_GID` supplied so the non-root image user can reach it). Remote
 hosts run the same binary in agent mode (`NINEDEPLOY_AGENT=1`) and execute a
-fixed table of typed, validated operations for the core — used today by network
-management; the deploy builders are still local-only, so a service assigned to a
-remote node is refused rather than deployed on the wrong host. App containers live on
+fixed table of typed, validated operations for the core — network management,
+and (since 0.7.0) docker and compose deploys to a node through
+`engine/builders/remoteDocker.ts` / `remoteCompose.ts`, each node fronted by its
+own Traefik. What a node cannot run faithfully is refused up front with a reason
+(`lib/remoteDeploy.ts`) rather than deployed half-configured: PM2 and Nixpacks
+source builds, containers that need a template command, the Docker socket or
+extra volume attachments, repositories cloned with a Git credential, and
+services backed by a panel-local managed database. App containers live on
 a shared Docker network (`ninedeploy`); Traefik is the intended sole public
 listener on :80/:443, with an explicit, operator-gated escape hatch for direct
 host port publishing (`services.published_port`).
 
 - **Runtime**: Node ≥ 22.13, pnpm 11 workspace, Turborepo (`turbo run build/dev/lint/typecheck/test/clean/db:*`)
 - **Language**: TypeScript 7 strict (`noUncheckedIndexedAccess`, `verbatimModuleSyntax`, `isolatedModules`), Biome for lint/format
-- **Testing**: Vitest 4 + `@vitest/coverage-v8`, Testing Library. Server: 186 files / 2 589 tests, green. Monorepo: 4 879 tests across 309 files, all green. Coverage gates are **tiered**, not uniformly 100 — see [§13](#13-testing)
+- **Testing**: Vitest 5 + `@vitest/coverage-v8`, Testing Library. Server: 307 files / 4 596 tests, green. Monorepo: 7 424 tests across 465 files, all green (0.10.8). Coverage gates are **tiered**, not uniformly 100 — see [§13](#13-testing)
 
 ## 1. System diagram
 
