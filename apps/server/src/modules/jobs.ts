@@ -35,14 +35,23 @@ async function assertMayScheduleDeploy(
   assertMayUseHostPrivilege(user, { type: svc.type, dockerSocket: svc.dockerSocket ?? false, build: build ?? null });
 }
 
-function serializeJob(j: typeof scheduledJobs.$inferSelect) {
+/**
+ * r280: an exec job's command (and its captured output) is operator material —
+ * only operators may create, edit or run one, and the command line routinely
+ * carries credentials (`pg_dump postgres://user:pass@…`) that the env route
+ * hides from viewers. Non-operators still see the job exists; the command and
+ * run output come back empty.
+ */
+const mayReadExec = (user: { isOperator?: boolean } | null | undefined): boolean => user?.isOperator === true;
+
+function serializeJob(j: typeof scheduledJobs.$inferSelect, showCommand = true) {
   return {
     id: j.id,
     serviceId: j.serviceId,
     name: j.name,
     cron: j.cron,
     kind: j.kind,
-    command: j.command ?? '',
+    command: showCommand || j.kind !== 'exec' ? (j.command ?? '') : '',
     enabled: j.enabled,
     lastRunAt: j.lastRunAt ? j.lastRunAt.toISOString() : null,
     createdAt: j.createdAt.toISOString(),
@@ -60,7 +69,8 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
       where: eq(scheduledJobs.serviceId, id),
       orderBy: desc(scheduledJobs.createdAt),
     });
-    return rows.map(serializeJob);
+    const showCommand = mayReadExec(req.user);
+    return rows.map((r) => serializeJob(r, showCommand));
   });
 
   app.post('/:id/jobs', async (req) => {
@@ -149,8 +159,19 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
     const jobId = parseId((req.params as { jobId: string }).jobId);
     const svc = await loadServiceForUser(app.db, id, req.user!);
     await assertServiceRole(app.db, svc, req.user!, 'member');
+    // r280: deleting an exec/backup job is gated like creating, editing and
+    // running one (a member could silently remove the operator's nightly
+    // backup), and a miss is a 404 — it used to answer ok and write a
+    // `job.delete` audit row for a job that never existed.
+    const job = await app.db.query.scheduledJobs.findFirst({
+      where: and(eq(scheduledJobs.id, jobId), eq(scheduledJobs.serviceId, id)),
+    });
+    if (!job) throw notFound('Job not found');
+    if ((job.kind === 'exec' || job.kind === 'backup') && !req.user?.isOperator) {
+      throw forbidden('Operator access required');
+    }
     await app.db.delete(scheduledJobs).where(and(eq(scheduledJobs.id, jobId), eq(scheduledJobs.serviceId, id)));
-    void audit(app.db, req.user!.id, 'job.delete', `#${jobId}`);
+    void audit(app.db, req.user!.id, 'job.delete', job.name);
     return { ok: true };
   });
 
@@ -188,6 +209,8 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
       where: and(eq(scheduledJobs.id, jobId), eq(scheduledJobs.serviceId, id)),
     });
     if (!job) throw notFound('Job not found');
+    // r280: exec output is up to 60 KB of in-container command results.
+    const redact = job.kind === 'exec' && !mayReadExec(req.user);
     const rows = await app.db.query.jobRuns.findMany({
       where: eq(jobRuns.jobId, jobId),
       orderBy: desc(jobRuns.createdAt),
@@ -197,7 +220,7 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
       id: r.id,
       jobId: r.jobId,
       status: r.status,
-      output: r.output,
+      output: redact ? '' : r.output,
       exitCode: r.exitCode,
       startedAt: r.startedAt ? r.startedAt.toISOString() : null,
       finishedAt: r.finishedAt ? r.finishedAt.toISOString() : null,

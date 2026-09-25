@@ -260,10 +260,67 @@ describe('jobs routes', () => {
   });
 
   it('deletes a job', async () => {
-    const app = await appWith({ findFirst: { services: svcRow() } });
+    const app = await appWith({ findFirst: { services: svcRow(), scheduledJobs: jobRow({ id: 3 }) } });
     const res = await app.inject({ method: 'DELETE', url: '/services/1/jobs/3', headers: asUser() });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ok: true });
+  });
+
+  describe('r280: exec/backup jobs are operator material on delete and read too', () => {
+    const member = { ...asUser(), 'x-test-role': 'member' };
+
+    it('a member cannot delete an exec or backup job', async () => {
+      for (const kind of ['exec', 'backup'] as const) {
+        const app = await appWith({
+          findFirst: { services: svcRow({ ownerUserId: 1 }), scheduledJobs: jobRow({ id: 3, kind, command: kind === 'exec' ? 'uptime' : null }) },
+        });
+        const res = await app.inject({ method: 'DELETE', url: '/services/1/jobs/3', headers: member });
+        expect(res.statusCode, kind).toBe(403);
+      }
+      expect(auditMocks.audit).not.toHaveBeenCalled();
+    });
+
+    it('a member may still delete a deploy job', async () => {
+      const app = await appWith({ findFirst: { services: svcRow({ ownerUserId: 1 }), scheduledJobs: jobRow({ id: 3, kind: 'deploy' }) } });
+      const res = await app.inject({ method: 'DELETE', url: '/services/1/jobs/3', headers: member });
+      expect(res.statusCode).toBe(200);
+    });
+
+    it('deleting a job that does not exist is a 404 and writes no audit row', async () => {
+      const app = await appWith({ findFirst: { services: svcRow(), scheduledJobs: undefined } });
+      const res = await app.inject({ method: 'DELETE', url: '/services/1/jobs/99', headers: asUser() });
+      expect(res.statusCode).toBe(404);
+      expect(auditMocks.audit).not.toHaveBeenCalled();
+    });
+
+    it('a non-operator sees an exec job but not its command', async () => {
+      const secret = 'pg_dump postgres://app:hunter2@db/app';
+      const fixtures = {
+        findFirst: { services: svcRow({ ownerUserId: 1 }) },
+        findMany: { scheduledJobs: [jobRow({ id: 3, kind: 'exec', command: secret })] },
+      };
+      const asMember = await (await appWith(fixtures)).inject({ method: 'GET', url: '/services/1/jobs', headers: member });
+      expect(asMember.statusCode).toBe(200);
+      expect(asMember.json()[0]).toMatchObject({ id: 3, kind: 'exec', command: '' });
+      expect(asMember.body).not.toContain('hunter2');
+      const asOperator = await (await appWith(fixtures)).inject({ method: 'GET', url: '/services/1/jobs', headers: asUser() });
+      expect(asOperator.json()[0].command).toBe(secret);
+    });
+
+    it('a non-operator gets exec run history without the captured output', async () => {
+      const fixtures = {
+        findFirst: { services: svcRow({ ownerUserId: 1 }), scheduledJobs: jobRow({ id: 3, kind: 'exec', command: 'env' }) },
+        findMany: {
+          jobRuns: [{ id: 9, jobId: 3, status: 'completed', output: 'DATABASE_URL=postgres://app:hunter2@db', exitCode: 0, startedAt: null, finishedAt: null, createdAt: new Date(0) }],
+        },
+      };
+      const asMember = await (await appWith(fixtures)).inject({ method: 'GET', url: '/services/1/jobs/3/runs', headers: member });
+      expect(asMember.statusCode).toBe(200);
+      expect(asMember.json()[0]).toMatchObject({ id: 9, status: 'completed', exitCode: 0, output: '' });
+      expect(asMember.body).not.toContain('hunter2');
+      const asOperator = await (await appWith(fixtures)).inject({ method: 'GET', url: '/services/1/jobs/3/runs', headers: asUser() });
+      expect(asOperator.json()[0].output).toContain('hunter2');
+    });
   });
 
   it('runs a job immediately', async () => {
