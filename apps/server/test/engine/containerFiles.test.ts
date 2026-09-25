@@ -99,8 +99,27 @@ describe('containerFiles operations (docker exec)', () => {
       'nd-svc-web-1',
       'sh',
       '-c',
-      expect.stringContaining("tail -c 1048576 '/app/index.js'"),
+      expect.stringContaining("head -c 1048577 '/app/index.js'"),
     ]);
+  });
+
+  // r275: `tail -c 1048576` silently returned the LAST MiB of a larger file,
+  // and the web editor then saved that tail over the whole file.
+  it('r275: refuses a file over the 1 MiB cap instead of returning its tail', async () => {
+    const overCap = Buffer.alloc(1024 * 1024 + 1, 0x61).toString('base64');
+    // `base64` wraps its output at 76 columns.
+    execMocks.capture.mockResolvedValueOnce(`${overCap.replace(/(.{76})/g, '$1\n')}\n`);
+    await expect(readContainerFile('nd-svc-web-1', '/var/log/big.log')).rejects.toMatchObject({
+      statusCode: 413,
+      code: 'file_too_large',
+    });
+  });
+
+  it('r275: still reads a file of exactly 1 MiB', async () => {
+    const atCap = Buffer.alloc(1024 * 1024, 0x61).toString('base64');
+    execMocks.capture.mockResolvedValueOnce(`${atCap.replace(/(.{76})/g, '$1\n')}\n`);
+    const res = await readContainerFile('nd-svc-web-1', '/app/data.txt');
+    expect(Buffer.from(res.content, 'base64')).toHaveLength(1024 * 1024);
   });
 
   it('writes container file content via stdin', async () => {

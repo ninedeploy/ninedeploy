@@ -1,3 +1,4 @@
+import { HttpError } from '../lib/errors.js';
 import { capture, run } from '../lib/exec.js';
 
 export interface ContainerFileEntry {
@@ -94,7 +95,18 @@ export async function listContainerDir(container: string, path: string): Promise
   return entries;
 }
 
-/** Read a file (base64 encoded) out of the container with a 1MB safety cap. */
+/** Largest file the in-browser editor reads (and can therefore write back). */
+export const CONTAINER_FILE_READ_CAP = 1024 * 1024;
+
+/**
+ * Read a file (base64 encoded) out of the container with a 1MB safety cap.
+ *
+ * r275: a file over the cap is REFUSED (413). The read used to be
+ * `tail -c 1048576`, silently returning the last MiB of a larger file — and
+ * the web editor then let the user save it, overwriting the whole file with
+ * its tail. Reading one byte past the cap detects the overflow in a single
+ * read, with no stat/read race.
+ */
 export async function readContainerFile(
   container: string,
   path: string,
@@ -108,9 +120,17 @@ export async function readContainerFile(
     container,
     'sh',
     '-c',
-    `test -f ${shellQuote(target)} && tail -c 1048576 ${shellQuote(target)} | base64`,
+    `test -f ${shellQuote(target)} && head -c ${CONTAINER_FILE_READ_CAP + 1} ${shellQuote(target)} | base64`,
   ]);
-  return { content: out.trim(), encoding: 'base64' };
+  const content = out.trim();
+  if (Buffer.byteLength(content.replace(/\s+/g, ''), 'base64') > CONTAINER_FILE_READ_CAP) {
+    throw new HttpError(
+      413,
+      'file_too_large',
+      'File is larger than 1 MB — too large to open in the editor (it was not read, so it cannot be overwritten).',
+    );
+  }
+  return { content, encoding: 'base64' };
 }
 
 /** Write (overwrite) a file inside the container with base64 content. */
