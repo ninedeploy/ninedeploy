@@ -84,6 +84,41 @@ describe('buildServer', () => {
     expect(names).not.toContain('inspect_container');
   });
 
+  // r333: a fine-grained token is a 403 on every route the server's scope map
+  // does not classify, so advertising those tools to it only produced errors.
+  it('r333: hides unmapped-route tools from fine-grained tokens, whatever scopes they hold', async () => {
+    const mcp = await connected(fake(), {
+      tokenScopes: ['operator', 'nd://scope/read/services', 'nd://scope/read/config'],
+    });
+    const names = (await mcp.listTools()).tools.map((tool) => tool.name);
+    for (const hidden of ['activity_log', 'system_stats', 'list_plugins', 'list_menus', 'list_workspaces', 'inspect_container', 'list_log_drains', 'seed_demo']) {
+      expect(names).not.toContain(hidden);
+    }
+    expect(names).toContain('list_services');
+    expect(names).toContain('list_queue');
+    expect(names).toContain('list_configs');
+    expect(names).toContain('health');
+  });
+
+  it('r333: coarse tokens keep unmapped-route tools, gated by the operator flag', async () => {
+    const read = (await (await connected(fake(), { tokenScopes: ['read'] })).listTools()).tools.map((t) => t.name);
+    expect(read).toContain('system_stats');
+    expect(read).toContain('list_workspaces');
+    expect(read).not.toContain('activity_log');
+    expect(read).not.toContain('list_configs');
+    const op = (await (await connected(fake(), { tokenScopes: ['operator'] })).listTools()).tools.map((t) => t.name);
+    expect(op).toContain('activity_log');
+    expect(op).toContain('list_configs');
+    expect(op).toContain('inspect_container');
+  });
+
+  it('r333: list_queue is offered to a read/services token, not a read/deploys one', async () => {
+    const svc = (await (await connected(fake(), { tokenScopes: ['nd://scope/read/services'] })).listTools()).tools.map((t) => t.name);
+    expect(svc).toContain('list_queue');
+    const dep = (await (await connected(fake(), { tokenScopes: ['nd://scope/read/deploys'] })).listTools()).tools.map((t) => t.name);
+    expect(dep).not.toContain('list_queue');
+  });
+
   it('uses a fail-closed allowlist in read-only mode', async () => {
     const mcp = await connected(fake(), { readOnly: true });
     const names = (await mcp.listTools()).tools.map((tool) => tool.name);

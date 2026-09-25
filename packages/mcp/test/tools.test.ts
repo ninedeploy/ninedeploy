@@ -126,7 +126,9 @@ describe('MCP tools', () => {
     const c = fakeClient();
     expect(await byName('list_queue').handler(c, {})).toBe('QUEUE');
     expect(c.deploys.queue).toHaveBeenCalled();
-    expect(byName('list_queue').requiredScopes).toEqual(['nd://scope/read/deploys']);
+    // r333: /v1/services/queue is classified `services` by the server's
+    // route map — `read/deploys` alone was always a 403 there.
+    expect(byName('list_queue').requiredScopes).toEqual(['nd://scope/read/services']);
   });
 
   it('activity_log forwards the optional entity filter', async () => {

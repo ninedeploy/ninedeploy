@@ -47,7 +47,13 @@ export function buildServer(
     const scopes = options.tokenScopes;
     const unrestricted = scopes === null || scopes.length === 0 || scopes.includes('session');
     if (!unrestricted) {
-      tools = tools.filter((tool) => toolMeetsScope(tool.requiredScopes, scopes));
+      // r333: a token holding ANY fine-grained `nd://scope/…` entry is judged
+      // against the server's route map on every request, and a route the map
+      // does not classify is a 403 for it no matter what else it holds.
+      const fineGrained = scopes.some((s) => s.startsWith('nd://scope/'));
+      tools = tools.filter(
+        (tool) => !(fineGrained && tool.coarseTokenOnly) && toolMeetsScope(tool.requiredScopes, scopes),
+      );
     }
   }
   for (const tool of tools) {

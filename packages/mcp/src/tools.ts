@@ -27,8 +27,27 @@ export interface ToolDef {
    * `read` / `write` / `operator` shorthand to the
    * resource-scoped form, so a `write` token covers
    * `nd://scope/write/<resource>` for every resource.
+   *
+   * r333: the fine-grained entries must be EXACTLY the scope the server's
+   * route map (apps/server/src/plugins/auth.ts `requiredFineGrainedScope`)
+   * demands for the tool's route — not a guess at a related resource. The
+   * literal `operator` is listed when the route is operator-only
+   * (requireAdmin / requireOperator): the server drops the owner's operator
+   * flag from every token that does not carry the `operator` scope.
+   * apps/server/test/mcpScopeContract.test.ts pins the route half against
+   * the server's classifier.
    */
   requiredScopes?: string[];
+  /**
+   * r333: the tool's route has NO entry in the server's fine-grained route
+   * map. The server refuses (403 "not scoped for this resource") such a
+   * route for every token that carries any `nd://scope/…` entry, whatever
+   * else the token holds — only interactive sessions, legacy unrestricted
+   * tokens and coarse `read` / `write` / `operator` tokens reach it. Such a
+   * tool is hidden from fine-grained tokens; `requiredScopes` then states
+   * only the coarse requirement.
+   */
+  coarseTokenOnly?: true;
 }
 
 const serviceId = z.object({ serviceId: z.number().int().positive() });
@@ -101,13 +120,17 @@ export const TOOLS: ToolDef[] = [
     name: 'activity_log',
     description: 'Recent audit activity; optionally filter by entity name.',
     input: entityOpt,
-    requiredScopes: ['nd://scope/read/audit'],
+    // GET /v1/activity: unmapped prefix, operator-only (requireAdmin).
+    coarseTokenOnly: true,
+    requiredScopes: ['operator'],
     handler: (c, input) => c.activity.list({ entity: (input as { entity?: string }).entity }),
   },
   {
     name: 'system_stats',
     description: 'Live host + per-container resource snapshot.',
     input: z.object({}),
+    // GET /v1/stats: unmapped prefix.
+    coarseTokenOnly: true,
     handler: (c) => c.stats.snapshot(),
   },
   {
@@ -121,7 +144,9 @@ export const TOOLS: ToolDef[] = [
     name: 'health',
     description: 'NineDeploy instance health (API + DB).',
     input: z.object({}),
-    requiredScopes: ['nd://scope/read/health'],
+    // r333: GET /health is unauthenticated — every token reaches it, so it
+    // declares no scope (the old `read/health` hid it from fine-grained
+    // tokens that could call it).
     handler: (c) => c.health(),
   },
   // ── Actions (mutating) ─────────────────────────────────────────────────
@@ -176,7 +201,9 @@ export const TOOLS: ToolDef[] = [
     description:
       'List every in-flight (queued / building / deploying) deployment across every service the caller can see. Mirrors the web panel\'s /deploys page so an agent can audit the build pipeline without opening a browser.',
     input: z.object({}),
-    requiredScopes: ['nd://scope/read/deploys'],
+    // r333: GET /v1/services/queue is classified as `services` — the
+    // `deploys` override only matches /services/<id>/deploys.
+    requiredScopes: ['nd://scope/read/services'],
     handler: (c) => c.deploys.queue(),
   },
   // ── Plugins & Microkernel Extensibility ────────────────────────────────
@@ -184,14 +211,15 @@ export const TOOLS: ToolDef[] = [
     name: 'list_plugins',
     description: 'List all installed and active kernel plugins, extensions, and their operational status.',
     input: z.object({}),
-    requiredScopes: ['nd://scope/read/config'],
+    // GET /v1/plugins: unmapped prefix.
+    coarseTokenOnly: true,
     handler: (c) => c.plugins.list(),
   },
   {
     name: 'marketplace_plugins',
     description: 'Get verified plugins and extensions from the official NineDeploy Marketplace catalog.',
     input: z.object({}),
-    requiredScopes: ['nd://scope/read/config'],
+    coarseTokenOnly: true,
     handler: (c) => c.plugins.marketplace(),
   },
   {
@@ -204,28 +232,33 @@ export const TOOLS: ToolDef[] = [
       version: z.string().optional(),
       description: z.string().optional(),
     }),
-    requiredScopes: ['nd://scope/admin/config'],
+    // POST /v1/plugins/…: unmapped prefix, operator-only (requireAdmin).
+    coarseTokenOnly: true,
+    requiredScopes: ['operator'],
     handler: (c, input) => c.plugins.install(input as any),
   },
   {
     name: 'enable_plugin',
     description: 'Enable an installed plugin in the microkernel runtime.',
     input: z.object({ id: z.string() }),
-    requiredScopes: ['nd://scope/admin/config'],
+    coarseTokenOnly: true,
+    requiredScopes: ['operator'],
     handler: (c, input) => c.plugins.enable((input as { id: string }).id),
   },
   {
     name: 'disable_plugin',
     description: 'Disable a plugin and temporarily unload its runtime hooks and menu integrations.',
     input: z.object({ id: z.string() }),
-    requiredScopes: ['nd://scope/admin/config'],
+    coarseTokenOnly: true,
+    requiredScopes: ['operator'],
     handler: (c, input) => c.plugins.disable((input as { id: string }).id),
   },
   {
     name: 'uninstall_plugin',
     description: 'Uninstall a plugin, destroying its runtime resources and purging its registered menus/schemas.',
     input: z.object({ id: z.string() }),
-    requiredScopes: ['nd://scope/admin/config'],
+    coarseTokenOnly: true,
+    requiredScopes: ['operator'],
     handler: (c, input) => c.plugins.uninstall((input as { id: string }).id),
   },
   // ── Configuration Center ───────────────────────────────────────────────
@@ -237,14 +270,16 @@ export const TOOLS: ToolDef[] = [
       pluginId: z.string().optional(),
       reveal: z.boolean().optional(),
     }),
-    requiredScopes: ['nd://scope/read/config'],
+    // r333: /v1/config is mapped (read|write/config) AND operator-only
+    // (requireOperator), so a token needs both.
+    requiredScopes: ['operator', 'nd://scope/read/config'],
     handler: (c, input) => c.config.list(input as any),
   },
   {
     name: 'get_config',
     description: 'Get details and value for a specific configuration key.',
     input: z.object({ key: z.string() }),
-    requiredScopes: ['nd://scope/read/config'],
+    requiredScopes: ['operator', 'nd://scope/read/config'],
     handler: (c, input) => c.config.get((input as { key: string }).key),
   },
   {
@@ -257,7 +292,7 @@ export const TOOLS: ToolDef[] = [
       description: z.string().optional(),
       tags: z.array(z.string()).optional(),
     }),
-    requiredScopes: ['nd://scope/write/config'],
+    requiredScopes: ['operator', 'nd://scope/write/config'],
     handler: (c, input) => {
       const { key, ...body } = input as { key: string; value: unknown; isSecret?: boolean; description?: string; tags?: string[] };
       return c.config.set(key, body);
@@ -267,7 +302,8 @@ export const TOOLS: ToolDef[] = [
     name: 'delete_config',
     description: 'Delete a custom configuration key from the configuration center.',
     input: z.object({ key: z.string() }),
-    requiredScopes: ['nd://scope/admin/config'],
+    // DELETE needs `write/config` — the route map has no admin tier.
+    requiredScopes: ['operator', 'nd://scope/write/config'],
     handler: (c, input) => c.config.delete((input as { key: string }).key),
   },
   // ── Navigation & Menus ─────────────────────────────────────────────────
@@ -275,7 +311,8 @@ export const TOOLS: ToolDef[] = [
     name: 'list_menus',
     description: 'List dynamic navigation menu items contributed by official and community plugins.',
     input: z.object({ slot: z.string().optional() }),
-    requiredScopes: ['nd://scope/read/config'],
+    // GET /v1/menus: unmapped prefix.
+    coarseTokenOnly: true,
     handler: (c, input) => c.menus.list(input as any),
   },
   // ── Demo & Service Configuration ───────────────────────────────────────
@@ -283,7 +320,9 @@ export const TOOLS: ToolDef[] = [
     name: 'seed_demo',
     description: 'Create the demo service: a Docker source build of github.com/ersinkoc/nextjs-test (port 3000 published) and queue its first deployment. No database, no PM2.',
     input: z.object({}),
-    requiredScopes: ['nd://scope/admin/services'],
+    // POST /v1/demo/seed: unmapped prefix, operator-only (requireAdmin).
+    coarseTokenOnly: true,
+    requiredScopes: ['operator'],
     handler: (c) => c.demo.seed(),
   },
   {
@@ -307,14 +346,15 @@ export const TOOLS: ToolDef[] = [
     name: 'list_workspaces',
     description: 'List all accessible workspaces and organizations with roles and member counts.',
     input: z.object({}),
-    requiredScopes: ['nd://scope/read/projects'],
+    // GET /v1/workspaces: unmapped prefix (it is not `projects`).
+    coarseTokenOnly: true,
     handler: (c) => c.workspaces.list(),
   },
   {
     name: 'get_workspace',
     description: 'Get details of a specific workspace including full member list and roles.',
     input: z.object({ id: z.number().int().positive() }),
-    requiredScopes: ['nd://scope/read/projects'],
+    coarseTokenOnly: true,
     handler: (c, input) => c.workspaces.get((input as { id: number }).id),
   },
   // ── Containers & Files ─────────────────────────────────────────────────
@@ -325,7 +365,9 @@ export const TOOLS: ToolDef[] = [
       container: z.string().min(1),
       path: z.string().optional(),
     }),
-    requiredScopes: ['nd://scope/admin/services'],
+    // /v1/containers: unmapped prefix, operator-only (requireAdmin).
+    coarseTokenOnly: true,
+    requiredScopes: ['operator'],
     handler: (c, input) => {
       const { container, path } = input as { container: string; path?: string };
       return c.containers.listFiles(container, path);
@@ -335,14 +377,16 @@ export const TOOLS: ToolDef[] = [
     name: 'inspect_container',
     description: 'Get deep runtime inspection data for a container including state, mounts, network IP, resource limits, and Traefik tags.',
     input: z.object({ container: z.string().min(1) }),
-    requiredScopes: ['nd://scope/admin/services'],
+    coarseTokenOnly: true,
+    requiredScopes: ['operator'],
     handler: (c, input) => c.containers.inspect((input as { container: string }).container),
   },
   {
     name: 'get_container_compose',
     description: 'Generate and retrieve the live Docker Compose YAML manifest for a running container or service.',
     input: z.object({ container: z.string().min(1) }),
-    requiredScopes: ['nd://scope/admin/services'],
+    coarseTokenOnly: true,
+    requiredScopes: ['operator'],
     handler: (c, input) => c.containers.compose((input as { container: string }).container),
   },
   // ── Observability & Log Drains ─────────────────────────────────────────
@@ -350,7 +394,9 @@ export const TOOLS: ToolDef[] = [
     name: 'list_log_drains',
     description: 'List structured log drain endpoints (Loki, Datadog, Vector, Syslog, HTTP) forwarding runtime logs.',
     input: z.object({ serviceId: z.number().int().positive().optional() }),
-    requiredScopes: ['nd://scope/read/services'],
+    // GET /v1/log-drains: unmapped prefix, operator-only (requireAdmin).
+    coarseTokenOnly: true,
+    requiredScopes: ['operator'],
     handler: (c, input) => c.logDrains.list(input as { serviceId?: number }),
   },
   // ── Housekeeping & Maintenance ─────────────────────────────────────────
@@ -358,7 +404,8 @@ export const TOOLS: ToolDef[] = [
     name: 'system_autoprune',
     description: 'Trigger immediate housekeeping prune to purge dangling Docker images, stopped containers, and expired build artifacts.',
     input: z.object({}),
-    requiredScopes: ['nd://scope/write/housekeeping'],
+    // Mapped (write/housekeeping) AND operator-only (requireAdmin).
+    requiredScopes: ['operator', 'nd://scope/write/housekeeping'],
     handler: (c) => c.housekeeping.runPrune(),
   },
 ];
