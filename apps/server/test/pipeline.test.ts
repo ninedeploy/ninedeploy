@@ -1724,6 +1724,22 @@ describe('runDeployment on a remote-server target', () => {
     }
   });
 
+  it('r268: refuses a private repository on a node before the panel even clones it', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { ownerUserId: 42, serverId: 4, sourceId: 3, repoUrl: 'https://github.com/acme/private.git' });
+    db.query.sources.findFirst.mockResolvedValue({ id: 3, type: 'github', tokenEncrypted: 'enc' });
+    const lines = collectLogs(1);
+    agentAnswersRunning();
+    h.agentOp.mockClear();
+    h.checkoutCommit.mockClear();
+
+    await runDeployment(db as never, 1);
+
+    expect(h.agentOp).not.toHaveBeenCalled();
+    expect(h.checkoutCommit).not.toHaveBeenCalled();
+    expect(lines.join(' ')).toMatch(/node clones anonymously/);
+  });
+
   it('refuses a pm2 service on a node instead of running it on the panel host', async () => {
     const { db, inserts } = makeDb();
     baseSetup(db, { ownerUserId: 42, type: 'pm2', serverId: 4 });

@@ -114,6 +114,37 @@ describe('remoteServiceRefusal (r266)', () => {
     ).toBeNull();
   });
 
+  it('r268: refuses a repository the node would have to clone with the panel credential', async () => {
+    const withSource = (src: Record<string, unknown> | undefined) =>
+      ({
+        select: () => ({ from: () => ({ where: async () => [] }) }),
+        query: { sources: { findFirst: async () => src } },
+      }) as never;
+    const repoSvc = { id: 1, serverId: 4, type: 'docker', sourceId: 3, repoUrl: 'https://github.com/acme/private.git' };
+    // The panel clones with the token; the node's git.ensure has no credential
+    // operand and failed "repository not found" after the panel checkout passed.
+    expect(await remoteServiceRefusal(withSource({ type: 'github', tokenEncrypted: 'x' }), repoSvc)).toMatch(
+      /node clones anonymously/,
+    );
+    expect(
+      await remoteServiceRefusal(withSource({ type: 'custom', deployKeyEncrypted: 'k' }), { ...repoSvc, type: 'compose' }),
+    ).toMatch(/Git credential/);
+    // No credential material, a registry source (image pulls), an image deploy
+    // or an inline stack: nothing for the node to clone privately.
+    expect(await remoteServiceRefusal(withSource({ type: 'github' }), repoSvc)).toBeNull();
+    expect(await remoteServiceRefusal(withSource({ type: 'registry', tokenEncrypted: 'x' }), repoSvc)).toBeNull();
+    expect(
+      await remoteServiceRefusal(withSource({ type: 'github', tokenEncrypted: 'x' }), { ...repoSvc, image: 'nginx:1' }),
+    ).toBeNull();
+    expect(
+      await remoteServiceRefusal(withSource({ type: 'github', tokenEncrypted: 'x' }), {
+        ...repoSvc,
+        type: 'compose',
+        composeContent: 'services: {}',
+      }),
+    ).toBeNull();
+  });
+
   it('assertRemoteServiceSupported throws the 400 the panel switches on', async () => {
     await expect(
       assertRemoteServiceSupported(attachmentsDb(), { id: 1, serverId: 4, dockerSocket: true }),

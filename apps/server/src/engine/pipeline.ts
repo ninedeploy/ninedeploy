@@ -565,7 +565,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       return;
     }
     // r266: container shapes the agent has no slot for (command, docker
-    // socket, extra volumes) — refused rather than silently dropped.
+    // socket, extra volumes) — refused rather than silently dropped; r268: and
+    // a repository the node would have to clone with the panel's credential.
     const serviceRefusal = await remoteServiceRefusal(db, service);
     if (serviceRefusal) {
       log(`✗ ${serviceRefusal}`);

@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { databaseAttachments, type DB, serviceVolumeAttachments } from '@ninedeploy/db';
+import { databaseAttachments, type DB, serviceVolumeAttachments, sources } from '@ninedeploy/db';
 import { badRequest } from './errors.js';
 
 /**
@@ -19,6 +19,8 @@ import { badRequest } from './errors.js';
  *   - PM2 has no agent operation at all, and it is host-privileged.
  *   - A docker service whose container needs a command, the Docker socket or
  *     extra volume attachments (r266, {@link remoteServiceRefusal}).
+ *   - A repository cloned with a Git credential: the node clones anonymously
+ *     (r268, same function).
  *
  * Compose stacks DO run on a node now (`engine/builders/remoteCompose.ts`):
  * the panel ships an inline stack's YAML, or the node checks the repository
@@ -74,6 +76,12 @@ export async function remoteDatabaseRefusal(
  * (which lives on the PANEL host anyway) simply was not there. Refused up
  * front rather than taught to the protocol in a patch release — a node may
  * run an older agent than the panel.
+ *
+ * r268: the same goes for a repository behind a Git credential. The panel
+ * clones with the attached source's token / deploy key, but the node's
+ * `git.ensure` has no credential operand and clones anonymously — a private
+ * repository failed on the node with git's ambiguous "repository not found"
+ * after the panel-side checkout had succeeded.
  */
 export async function remoteServiceRefusal(
   db: DB,
@@ -83,9 +91,23 @@ export async function remoteServiceRefusal(
     type?: string | null;
     cmd?: string[] | null;
     dockerSocket?: boolean | null;
+    sourceId?: number | null;
+    repoUrl?: string | null;
+    image?: string | null;
+    composeContent?: string | null;
   },
 ): Promise<string | null> {
-  if (service.serverId == null || (service.type ?? 'docker') !== 'docker') return null;
+  if (service.serverId == null) return null;
+  const type = service.type ?? 'docker';
+  // Only a service the NODE clones: an image deploy never clones, and an
+  // inline compose stack is shipped from the panel.
+  if (service.sourceId != null && service.repoUrl && !service.image && !service.composeContent) {
+    const src = await db.query.sources.findFirst({ where: eq(sources.id, service.sourceId) });
+    if (src && src.type !== 'registry' && (src.tokenEncrypted || src.deployKeyEncrypted)) {
+      return 'Deployments to a remote server are not available for this service: its repository is cloned with a Git credential, and the node clones anonymously — the credential never leaves the panel. Detach the credential if the repository is public, or clear the target server to deploy it on the panel host.';
+    }
+  }
+  if (type !== 'docker') return null;
   const missing: string[] = [];
   if (service.cmd?.length) missing.push('a container command (this template starts its image with arguments)');
   if (service.dockerSocket) missing.push('the Docker socket mount');
