@@ -105,6 +105,14 @@ export const serviceMigrationRoutes: FastifyPluginAsync = async (app) => {
       attachments: attachmentInfos,
     };
 
+    // r283: the bundle is every env var and webhook secret of the service in
+    // plaintext — the most sensitive read on the instance leaves a trail.
+    // Counts only; never the values.
+    void audit(app.db, req.user!.id, 'service.export', svc.name, {
+      serviceId: svc.id,
+      envVars: bundle.envVars.length,
+      webhooks: bundle.webhooks.length,
+    });
     reply.type('application/json').header('content-disposition', `attachment; filename="${svc.slug}-export.json"`);
     return bundle;
   });

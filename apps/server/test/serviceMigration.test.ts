@@ -1,7 +1,7 @@
 ﻿import { describe, expect, it } from 'vitest';
 import { encrypt } from '../src/lib/crypto.js';
 import { serviceMigrationRoutes } from '../src/modules/serviceMigration.js';
-import { asUser, buildTestApp, createFakeDb, dbRow, svcRow } from './helpers.js';
+import { asUser, buildTestApp, captureAudits, createFakeDb, dbRow, svcRow } from './helpers.js';
 
 async function buildApp(db: ReturnType<typeof createFakeDb>) {
   const app = await buildTestApp({ db });
@@ -39,6 +39,24 @@ describe('service migration routes', () => {
       expect(body.webhooks).toEqual([{ branch: 'main', events: ['push'], secret: 'hooksecret' }]);
       expect(body.attachments).toEqual([{ envAlias: 'DB_URL', databaseName: 'pg', databaseEngine: 'postgres' }]);
       expect(res.headers['content-disposition']).toContain('web-export.json');
+    });
+
+    it('r283: an export (every secret in plaintext) writes a service.export audit row without the values', async () => {
+      const db = createFakeDb({
+        findFirst: { services: svcRow() },
+        findMany: {
+          envVars: [{ id: 1, serviceId: 1, key: 'DB_PASSWORD', valueEncrypted: encrypt('hunter2'), isSecret: true }],
+          webhooks: [{ id: 1, serviceId: 1, branch: 'main', events: ['push'], secretEncrypted: encrypt('hooksecret') }],
+        },
+      });
+      const audits = captureAudits(db);
+      const app = await buildApp(db);
+      const res = await app.inject({ method: 'GET', url: '/services/1/export', headers: asUser() });
+      expect(res.statusCode).toBe(200);
+      expect(audits).toEqual([
+        expect.objectContaining({ action: 'service.export', entity: 'web', meta: expect.objectContaining({ envVars: 1, webhooks: 1 }) }),
+      ]);
+      expect(JSON.stringify(audits)).not.toMatch(/hunter2|hooksecret/);
     });
 
     it('exports with no build config and skips attachments whose database is missing', async () => {
