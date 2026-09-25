@@ -104,4 +104,14 @@ describe('bare-metal systemd installation policy', () => {
     expect(at('rm -rf apps/*/dist packages/*/dist')).toBeGreaterThan(at('run_quiet_step "pnpm install" pnpm install --frozen-lockfile'));
     expect(at('rm -rf apps/*/dist packages/*/dist')).toBeLessThan(at('run_quiet_step "pnpm build" pnpm build'));
   });
+
+  it('r263: --docker targets the lowercase GHCR image and pulls the pinned version tag', () => {
+    const installer = rootFile('install.sh');
+    const compose = rootFile('docker-compose.prod.yml');
+    expect(compose).toMatch(/image:\s*ghcr\.io\/ninedeploy\/ninedeploy:latest/);
+    expect(installer).toContain(`IMAGE_REPO="$(printf '%s' "$REPO_SLUG" | tr '[:upper:]' '[:lower:]')"`);
+    // No image reference may be built from the mixed-case GitHub slug.
+    expect(installer).not.toMatch(/ghcr\\?\.io\/\$\{REPO_SLUG/);
+    expect(installer).toMatch(/if \[ -n "\$PINNED_VERSION" \]; then\n\s*IMAGE_TAG="\$PINNED_VERSION"/);
+  });
 });

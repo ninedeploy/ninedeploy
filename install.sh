@@ -223,6 +223,11 @@ fi
 REPO_URL="https://github.com/NineDeploy/NineDeploy.git"
 # Same repository as REPO_URL, in the owner/name form the GitHub API wants.
 REPO_SLUG="NineDeploy/NineDeploy"
+# r263: the panel image's repository. OCI/GHCR names are lowercase-only, so
+# the release workflow publishes ghcr.io/ninedeploy/ninedeploy — deriving it
+# from the mixed-case slug above made the --docker image checks reject the
+# compose file and `docker manifest inspect` look up an invalid reference.
+IMAGE_REPO="$(printf '%s' "$REPO_SLUG" | tr '[:upper:]' '[:lower:]')"
 NEEDS_CLONE=false
 
 echo ""
@@ -908,7 +913,7 @@ install_docker_mode() {
   grep -q '^services:' "$DOCKER_INSTALL_DIR/docker-compose.yml.new" \
     || fail "The fetched compose file does not look right (missing 'services:') — refusing to deploy it"
   if [ "$(grep -cE '^[[:space:]]*image:[[:space:]]*' "$DOCKER_INSTALL_DIR/docker-compose.yml.new")" != "1" ] \
-    || ! grep -Eq "image:[[:space:]]*ghcr\.io/${REPO_SLUG//./\\.}:" "$DOCKER_INSTALL_DIR/docker-compose.yml.new"; then
+    || ! grep -Eq "image:[[:space:]]*ghcr\.io/${IMAGE_REPO//./\\.}:" "$DOCKER_INSTALL_DIR/docker-compose.yml.new"; then
     fail "The fetched compose file references an unexpected image — refusing to deploy it"
   fi
   NINEDEPLOY_JWT_SECRET=provenance-check DOCKER_GID=1 docker_cmd compose \
@@ -917,20 +922,24 @@ install_docker_mode() {
   mv "$DOCKER_INSTALL_DIR/docker-compose.yml.new" "$DOCKER_INSTALL_DIR/docker-compose.yml"
 
   # Substitute the image tag the release workflow tagged for this ref.
-  # `:latest` for release tags (set by release.yml on tag push) and `:edge`
-  # for the main channel (set by ci.yml on every push to main). A pinned
-  # `--version` always uses `:latest` because the tag was promoted to
-  # :latest at release time.
+  # `:latest` for the release channel (re-pointed by release-publish.yml on
+  # every tag push) and `:edge` for the main channel (set by ci.yml on every
+  # push to main).
+  # r263: a pinned `--version vX.Y.Z` pulls `:vX.Y.Z` — release-publish.yml
+  # pushes exactly that tag and keeps it. It used to pull `:latest` too,
+  # i.e. whatever was released last rather than the version asked for.
   IMAGE_TAG="latest"
-  if [ "$CHANNEL" = "main" ] && [ -z "$PINNED_VERSION" ]; then
+  if [ -n "$PINNED_VERSION" ]; then
+    IMAGE_TAG="$PINNED_VERSION"
+  elif [ "$CHANNEL" = "main" ]; then
     IMAGE_TAG="edge"
   fi
   if grep -q 'ghcr.io/.*:latest' "$DOCKER_INSTALL_DIR/docker-compose.yml"; then
-    sed -i.bak "s|ghcr.io/${REPO_SLUG}:latest|ghcr.io/${REPO_SLUG}:${IMAGE_TAG}|" \
+    sed -i.bak "s|ghcr.io/${IMAGE_REPO}:latest|ghcr.io/${IMAGE_REPO}:${IMAGE_TAG}|" \
       "$DOCKER_INSTALL_DIR/docker-compose.yml" \
       && rm -f "$DOCKER_INSTALL_DIR/docker-compose.yml.bak" \
       || fail "Could not substitute the image tag in docker-compose.yml"
-    info "Compose file pinned to ghcr.io/${REPO_SLUG}:${IMAGE_TAG}"
+    info "Compose file pinned to ghcr.io/${IMAGE_REPO}:${IMAGE_TAG}"
   fi
 
   cd "$DOCKER_INSTALL_DIR"
@@ -987,8 +996,8 @@ install_docker_mode() {
   # — the docs page (docs/INSTALL.md) has a one-time checklist. Failing
   # fast here is friendlier than the generic "image pull failed" the
   # compose call would otherwise surface ten seconds later.
-  if ! docker_cmd manifest inspect "ghcr.io/${REPO_SLUG}:${IMAGE_TAG}" >/dev/null 2>&1; then
-    fail "ghcr.io/${REPO_SLUG}:${IMAGE_TAG} is not publicly pullable. Make the GHCR package 'Public' at https://github.com/orgs/NineDeploy/packages/container/ninedeploy/settings (one-time setup), or use the bare-metal installer (./install.sh without --docker) which builds from source."
+  if ! docker_cmd manifest inspect "ghcr.io/${IMAGE_REPO}:${IMAGE_TAG}" >/dev/null 2>&1; then
+    fail "ghcr.io/${IMAGE_REPO}:${IMAGE_TAG} is not publicly pullable. Make the GHCR package 'Public' at https://github.com/orgs/NineDeploy/packages/container/ninedeploy/settings (one-time setup), or use the bare-metal installer (./install.sh without --docker) which builds from source."
   fi
   docker_cmd compose pull \
     || fail "Image pull failed — check registry connectivity and re-run the installer."
