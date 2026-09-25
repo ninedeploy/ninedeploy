@@ -566,6 +566,14 @@ export async function runOp(op: string, params: Params, onLine: (l: string) => v
       // single-branch, and `fetch --all` follows only its refspec) so every
       // branch's tip is fetched.
       await spawnValidated('git', ['config', 'remote.origin.fetch', '+refs/heads/*:refs/remotes/origin/*'], () => undefined, { cwd: dir });
+      // r268: `url` used to be ignored once a checkout existed, so a service
+      // whose repository URL changed (or a new service reusing a slug) kept
+      // fetching the OLD origin forever and deployed its code. Point origin
+      // at the requested URL — already validated by `isRepoUrl` above, so it
+      // cannot be a local path or read as an option. `set-url` to the same
+      // value is a no-op, so this runs unconditionally.
+      const setUrl = await spawnValidated('git', ['remote', 'set-url', 'origin', url], onLine, { cwd: dir });
+      if (setUrl !== 0) return setUrl;
       return spawnValidated('git', [...GIT_EGRESS_FLAGS, 'fetch', '--all', '--prune'], onLine, { cwd: dir });
     }
     const depth = str(params, 'depth');

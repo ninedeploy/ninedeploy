@@ -258,6 +258,27 @@ describe('agent workspaces', () => {
     expect(argv).toEqual([...EGRESS, 'clone', '--depth', '1', '--no-single-branch', 'https://x/y.git', '.']);
   });
 
+  it('r268: an existing checkout is re-pointed at the requested URL before fetching', async () => {
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(mkdtempSync(join(tmpdir(), 'nd-agent-git-')));
+    try {
+      const dir = await resolveWorkspace('r268-existing');
+      const { mkdirSync } = await import('node:fs');
+      mkdirSync(join(dir, '.git'), { recursive: true });
+      await runOp('git.ensure', { workspace: 'r268-existing', url: 'https://example.com/new/repo.git', depth: '1' }, () => {});
+      const argvs = spawnMock.mock.calls.map((c) => (c as unknown[])[1] as string[]);
+      const setUrl = argvs.findIndex((a) => a.join(' ') === 'remote set-url origin https://example.com/new/repo.git');
+      // The changed URL used to be ignored: the node fetched the old origin forever.
+      expect(setUrl).toBeGreaterThanOrEqual(0);
+      expect(setUrl).toBeLessThan(argvs.findIndex((a) => a.includes('fetch')));
+      // The same scheme allowlist still guards the URL on this path.
+      await expect(
+        runOp('git.ensure', { workspace: 'r268-existing', url: 'file:///etc', depth: '1' }, () => {}),
+      ).rejects.toThrow(/Invalid repo url/);
+    } finally {
+      cwdSpy.mockRestore();
+    }
+  });
+
   it('r227: git.reset fetches a pinned commit the shallow checkout lacks', async () => {
     // cat-file -e says "missing" → fetch exactly that sha → reset.
     spawnMock.mockResolvedValueOnce(1);
