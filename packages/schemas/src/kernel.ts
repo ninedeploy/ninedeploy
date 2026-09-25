@@ -162,8 +162,10 @@ export const pluginInspectSchema = z.object({
   error: z.string().nullable().optional(),
   installedAt: z.string().optional(),
   runtimeStats: z.object({
-    eventsHandled: z.number(),
-    uptimeSeconds: z.number(),
+    /** null = not tracked per plugin by the kernel (r286: was a hard-coded 42). */
+    eventsHandled: z.number().nullable(),
+    /** null = not tracked per plugin by the kernel (r286: was a hard-coded 3600). */
+    uptimeSeconds: z.number().nullable(),
     loadedAt: z.string().optional(),
   }),
 });

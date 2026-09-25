@@ -67,7 +67,10 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
   app.get<{ Querystring: { refresh?: string } }>('/marketplace', async (req) => {
     const dbPlugins = await app.db.query.installedPlugins.findMany();
     const installedIds = new Set(dbPlugins.map((p) => p.id));
-    const force = req.query.refresh === 'true' || req.query.refresh === '1';
+    // r286: a forced refresh bypasses the cache and makes the server fetch
+    // the upstream index — operator-only, like POST /marketplace/refresh.
+    // A non-operator's `?refresh=true` is served from the cache.
+    const force = (req.query.refresh === 'true' || req.query.refresh === '1') && req.user?.isOperator === true;
     if (force) clearMarketplaceCache();
     const result = await loadMarketplaceCatalog(installedIds, { force });
     return {
@@ -80,8 +83,10 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
 
   // Force-refresh the in-process catalog cache. Useful
   // for `ninedeploy plugins marketplace refresh` in CI
-  // after the upstream rotated its key.
-  app.post('/marketplace/refresh', async (req) => {
+  // after the upstream rotated its key. r286: operator-only — any seat
+  // (viewer included) could force an outbound fetch of the signed index on
+  // demand and churn the shared cache.
+  app.post('/marketplace/refresh', { preHandler: app.requireOperator }, async (req) => {
     const dbPlugins = await app.db.query.installedPlugins.findMany();
     const installedIds = new Set(dbPlugins.map((p) => p.id));
     const result = await loadMarketplaceCatalog(installedIds, { force: true });
@@ -215,8 +220,8 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
     const status = dbRow ? dbRow.status : 'active';
     const dependencies = kernelPlugin?.dependencies ?? manifest.dependencies ?? [];
     const configSchema = kernelPlugin?.configSchema ?? manifest.configSchema ?? [];
-    const installedAt = dbRow && dbRow.createdAt ? dbRow.createdAt.toISOString() : new Date().toISOString();
-    const loadedAt = dbRow && dbRow.updatedAt ? dbRow.updatedAt.toISOString() : installedAt;
+    const installedAt = dbRow?.createdAt ? dbRow.createdAt.toISOString() : undefined;
+    const loadedAt = dbRow?.updatedAt ? dbRow.updatedAt.toISOString() : installedAt;
 
     return {
       id,
@@ -228,15 +233,19 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
       enabled,
       status,
       dependencies,
-      hooks: ['service.created', 'deploy.completed', 'backup.finished'],
-      services: [`plugin:${id}:worker`],
+      // r286: these used to be hard-coded — every plugin "tapped" the same
+      // three hooks, ran a `plugin:<id>:worker` and had handled 42 events in
+      // 3600 s of uptime. The kernel tracks none of that per plugin, so the
+      // honest answer is empty lists and null counters, not invented ones.
+      hooks: [] as string[],
+      services: [] as string[],
       menus,
       configSchema,
       error: dbRow?.error ?? null,
       installedAt,
       runtimeStats: {
-        eventsHandled: kernelPlugin ? 42 : 0,
-        uptimeSeconds: kernelPlugin ? 3600 : 0,
+        eventsHandled: null,
+        uptimeSeconds: null,
         loadedAt,
       },
     };

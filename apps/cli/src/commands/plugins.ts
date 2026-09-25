@@ -110,8 +110,9 @@ export async function pluginsInspect(client: NineDeployClient, id: string): Prom
   if (p.error) {
     console.log(`  Error:        ${p.error}`);
   }
-  console.log(`  Events Run:   ${p.runtimeStats.eventsHandled}`);
-  console.log(`  Uptime:       ${p.runtimeStats.uptimeSeconds}s`);
+  // r286: null = the kernel does not track this per plugin.
+  console.log(`  Events Run:   ${p.runtimeStats.eventsHandled ?? 'not tracked'}`);
+  console.log(`  Uptime:       ${p.runtimeStats.uptimeSeconds == null ? 'not tracked' : `${p.runtimeStats.uptimeSeconds}s`}`);
 }
 
 export async function pluginsReload(client: NineDeployClient, id: string): Promise<void> {

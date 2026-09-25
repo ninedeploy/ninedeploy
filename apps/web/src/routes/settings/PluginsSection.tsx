@@ -676,8 +676,9 @@ function PluginInspectModal({
             <div className="rounded-lg bg-black/40 p-3 ring-1 ring-inset ring-white/5">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Runtime Telemetry</span>
               <div className="mt-1.5 space-y-1 font-mono text-[11px] text-slate-300">
-                <div>Events: <span className="text-indigo-300">{p.runtimeStats.eventsHandled}</span></div>
-                <div>Uptime: <span className="text-emerald-300">{p.runtimeStats.uptimeSeconds}s</span></div>
+                {/* r286: null = the kernel does not track this per plugin. */}
+                <div>Events: <span className="text-indigo-300">{p.runtimeStats.eventsHandled ?? 'not tracked'}</span></div>
+                <div>Uptime: <span className="text-emerald-300">{p.runtimeStats.uptimeSeconds == null ? 'not tracked' : `${p.runtimeStats.uptimeSeconds}s`}</span></div>
               </div>
             </div>
           </div>
