@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.11] - 2026-09-25
+
+> The installer patch: a panel update runs the target release's installer.
+
 ### Fixed
 
 - **A panel update ran the installer of the release being replaced (r371).** "Update & Restart" executed the `install.sh` already on disk — the old release's — so every installer fix (build, migrate, rollback) reached an operator one update late, and a bug in the old installer could break the very update that shipped its fix. The updater now fetches the target tag's `install.sh` (the documented `curl …/install.sh | bash` path, same bytes as the release tarball), requires a bash shebang and a clean `bash -n` parse, and runs it against the install dir; any fetch or validation failure falls back to the installed installer.

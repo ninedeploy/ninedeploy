@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.10';
+export const VERSION = '0.10.11';
 
 export interface ChangelogEntry {
   version: string;
@@ -11,6 +11,14 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.10.11',
+    date: '2026-09-25',
+    title: 'The Installer Patch — Updates Run the New Release’s Installer',
+    changes: [
+      'Update & Restart now runs the installer of the release it is moving to instead of the one already on disk, so installer fixes take effect on the very update that ships them. The updater fetches the target tag’s install.sh, checks that it is a valid bash script, and falls back to the installed installer if the download or the check fails.',
+    ],
+  },
   {
     version: '0.10.10',
     date: '2026-09-25',
