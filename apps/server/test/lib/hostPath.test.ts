@@ -48,7 +48,10 @@ describe('r245: hostPathFor', () => {
   it('is what the Traefik container mounts go through (wiring guard)', () => {
     const src = readFileSync(new URL('../../src/engine/proxy.ts', import.meta.url), 'utf8');
     const d = '$';
-    expect(src).toContain(`\`${d}{await hostPathFor(dir())}:/etc/traefik:ro\``);
+    // r350: the config-dir host path is resolved once (it is also compared
+    // with the running container's mount) and then used for the mount.
+    expect(src).toContain('const hostConfigDir = await hostPathFor(dir());');
+    expect(src).toContain(`\`${d}{hostConfigDir}:/etc/traefik:ro\``);
     expect(src).toContain(`\`${d}{await hostPathFor(acmePath())}:/etc/traefik/acme.json\``);
   });
 });
