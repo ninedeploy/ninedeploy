@@ -298,6 +298,32 @@ async function hasConfigFingerprint(container: string, fingerprint: string): Pro
   }
 }
 
+/**
+ * r350: the host directory a running Traefik container serves `/etc/traefik`
+ * from. The config fingerprint covers what is IN the static config, not where
+ * it is mounted from — so a container created by another data dir (a moved
+ * install, a second checkout, a test run on a developer box) kept serving that
+ * directory's routes after this panel "ensured" it, and every route this panel
+ * wrote landed in a file the proxy never read.
+ */
+function normalizeMountSource(value: string): string {
+  let out = value.trim().replace(/\\/g, '/').replace(/\/+$/, '');
+  if (/^[A-Za-z]:\//.test(out)) out = out.toLowerCase();
+  return out;
+}
+
+async function mountsConfigDir(container: string, hostDir: string): Promise<boolean> {
+  try {
+    const out = await capture('docker', [
+      'inspect', container, '--format',
+      '{{range .Mounts}}{{if eq .Destination "/etc/traefik"}}{{.Source}}{{end}}{{end}}',
+    ]);
+    return normalizeMountSource(out) === normalizeMountSource(hostDir);
+  } catch {
+    return false;
+  }
+}
+
 /** Ensure the Traefik reverse-proxy container is running on the shared network (idempotent). */
 async function ensureTraefikUnlocked(
   log: (line: string) => void,
@@ -330,11 +356,15 @@ async function ensureTraefikUnlocked(
     const running = (await capture('docker', ['ps', '-q', '-f', `name=^${TRAEFIK_CONTAINER}$`])).trim();
     const runningOnNetwork = !!running && await onNetwork(TRAEFIK_CONTAINER, NETWORK);
     const runningCurrentConfig = runningOnNetwork && await hasConfigFingerprint(TRAEFIK_CONTAINER, configFingerprint);
-    if (runningCurrentConfig && !staticConfigChanged) {
+    const hostConfigDir = await hostPathFor(dir());
+    const runningOurDir = runningCurrentConfig && await mountsConfigDir(TRAEFIK_CONTAINER, hostConfigDir);
+    if (runningOurDir && !staticConfigChanged) {
       log('traefik already running on shared network');
       return;
     }
-    if (runningOnNetwork && (!runningCurrentConfig || staticConfigChanged)) {
+    if (runningCurrentConfig && !runningOurDir) {
+      log(`traefik serves another config directory; recreating it on ${hostConfigDir}`);
+    } else if (runningOnNetwork && (!runningCurrentConfig || staticConfigChanged)) {
       log('traefik static configuration changed; recreating container to apply it');
     }
     // Prepare the replacement before removing a currently serving proxy. A
@@ -357,7 +387,7 @@ async function ensureTraefikUnlocked(
       '--add-host', 'host.docker.internal:host-gateway',
       '-p', '80:80', '-p', '443:443',
       // r245: resolved to the HOST path when the panel itself runs in a container.
-      '-v', `${await hostPathFor(dir())}:/etc/traefik:ro`,
+      '-v', `${hostConfigDir}:/etc/traefik:ro`,
     ];
     if (acmeEmail) {
       // ACME needs a writable storage file for the account key + certificates.

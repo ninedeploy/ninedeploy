@@ -412,9 +412,10 @@ describe('ensureNetwork', () => {
 });
 
 describe('ensureTraefik', () => {
-  const psWith = (ps: string, inspect = '{}') =>
+  const psWith = (ps: string, inspect = '{}', mountSource = traefikDir) =>
     h.capture.mockImplementation((_cmd: string, args: string[]) => {
       if (args[0] === 'ps') return Promise.resolve(ps);
+      if (args[0] === 'inspect' && args[3]?.includes('.Mounts')) return Promise.resolve(`${mountSource}\n`);
       if (args[0] === 'inspect' && args[3]?.includes('.State.Running')) {
         return Promise.resolve(`true|{"${NETWORK}":{}}`);
       }
@@ -442,6 +443,37 @@ describe('ensureTraefik', () => {
     expect(h.run).not.toHaveBeenCalled();
     expect(existsSync(path.join(traefikDir, 'traefik.yml'))).toBe(true);
     expect(existsSync(path.join(traefikDir, 'dynamic.yml'))).toBe(true);
+  });
+
+  // r350: a container created from ANOTHER data dir (a moved install, a
+  // second checkout) carries the same config fingerprint but serves that
+  // directory's routes — it must be recreated on ours, not left alone.
+  it('r350: recreates a container that mounts another config directory', async () => {
+    writeFileSync(path.join(traefikDir, 'traefik.yml'), renderStaticConfig(null, null));
+    psWith('abc123\n', `{"${NETWORK}":{}}`, '/somewhere/else/.data/traefik');
+    const log = vi.fn();
+
+    await ensureTraefik(log);
+
+    expect(log).toHaveBeenCalledWith(`traefik serves another config directory; recreating it on ${traefikDir}`);
+    expect(h.run).toHaveBeenCalledWith(
+      'docker',
+      expect.arrayContaining(['-v', `${traefikDir}:/etc/traefik:ro`]),
+      {},
+      expect.any(Function),
+    );
+  });
+
+  it('r350: treats Windows-style and trailing-slash mount sources as the same directory', async () => {
+    writeFileSync(path.join(traefikDir, 'traefik.yml'), renderStaticConfig(null, null));
+    const variant = `${traefikDir.replace(/\//g, '\\')}\\`;
+    psWith('abc123\n', `{"${NETWORK}":{}}`, variant);
+    const log = vi.fn();
+
+    await ensureTraefik(log);
+
+    expect(log).toHaveBeenCalledWith('traefik already running on shared network');
+    expect(h.run).not.toHaveBeenCalled();
   });
 
   it('recreates the container when it is running but off the network', async () => {
