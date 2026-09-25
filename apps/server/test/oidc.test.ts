@@ -7,6 +7,11 @@ import { generateOAuthState } from '../src/lib/oauth.js';
 import { encrypt, sha256 } from '../src/lib/crypto.js';
 import { eq } from 'drizzle-orm';
 
+// The real traefik plugin recreates the HOST's `ninedeploy-traefik` container
+// on ready, pointed at this test's data dir — a test run on a developer box
+// would silently re-plumb their local proxy. Same stub as app.test.ts.
+vi.mock('../src/plugins/traefik.js', () => ({ default: vi.fn(async () => undefined) }));
+
 /**
  * Fake fixture credentials, assembled at runtime: these are TEST-ONLY values,
  * but a secret scanner cannot tell them apart from leaked ones. Building them

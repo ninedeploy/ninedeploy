@@ -21,13 +21,18 @@ import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb, users, workspaceMembers, workspaces, type DB } from '@ninedeploy/db';
 import authPlugin from '../src/plugins/auth.js';
 import { workspaceRoutes } from '../src/modules/workspaces.js';
 import { userRoutes } from '../src/modules/users.js';
 import { isOperator } from '../src/lib/resourceAccess.js';
 import { issueSessionTokens } from '../src/lib/sessions.js';
+
+// The real traefik plugin recreates the HOST's `ninedeploy-traefik` container
+// on ready, pointed at this test's data dir — a test run on a developer box
+// would silently re-plumb their local proxy. Same stub as app.test.ts.
+vi.mock('../src/plugins/traefik.js', () => ({ default: vi.fn(async () => undefined) }));
 
 const MIGRATIONS = fileURLToPath(
   new URL('../../../packages/db/src/migrations', import.meta.url),
