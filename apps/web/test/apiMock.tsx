@@ -312,6 +312,7 @@ export function createThemeMock() {
 export function createWorkspaceMock() {
   return {
     WorkspaceProvider: ({ children }: { children?: ReactNode }) => <>{children}</>,
+    rememberWorkspace: vi.fn(),
     useWorkspace: vi.fn(() => ({
       workspaces: [],
       currentWorkspace: null,

@@ -17,6 +17,15 @@ const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
 const STORAGE_KEY = 'nd_current_workspace_id';
 
+/**
+ * Make `workspaceId` the active workspace for the next WorkspaceProvider
+ * mount. For pages outside the provider (the public /invite/:token route)
+ * that hand the user over to the authed shell.
+ */
+export function rememberWorkspace(workspaceId: number): void {
+  localStorage.setItem(STORAGE_KEY, String(workspaceId));
+}
+
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();

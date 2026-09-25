@@ -3,7 +3,9 @@ import { screen, fireEvent } from '@testing-library/react';
 import { AcceptInvite } from '../src/routes/AcceptInvite.js';
 import { api } from '../src/lib/api.js';
 import { useAuth } from '../src/lib/auth.js';
-import { renderRoute, mockOf } from './helpers.js';
+import { Route, Routes } from 'react-router';
+import { WorkspaceProvider, useWorkspace } from '../src/lib/workspace.js';
+import { renderRoute, renderWithProviders, mockOf } from './helpers.js';
 
 vi.mock('../src/lib/api.js', async () => {
   const { createFakeApiModule } = await import('./apiMock.js');
@@ -167,6 +169,59 @@ describe('AcceptInvite page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Accept invitation' }));
     expect(await screen.findByText('Welcome aboard')).toBeInTheDocument();
     expect(api.workspaces.acceptInvitation).toHaveBeenCalledWith('abc123');
+  });
+
+  it('lands the user in the workspace they just joined, not their previous one (r295)', async () => {
+    const personal = { id: 1, name: 'Personal', slug: 'personal' };
+    const acme = { id: 7, name: 'Acme', slug: 'acme' };
+    window.localStorage.setItem('nd_current_workspace_id', '1');
+    mockOf(api.workspaces.list).mockResolvedValue([personal] as never);
+    mockOf(api.workspaces.previewInvitation).mockResolvedValueOnce({
+      workspaceId: 7,
+      workspaceName: 'Acme',
+      workspaceSlug: 'acme',
+      email: 'invitee@example.com',
+      isOperator: false,
+      invitedByName: 'Owner',
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+    } as never);
+    mockOf(api.workspaces.acceptInvitation).mockImplementationOnce(async () => {
+      mockOf(api.workspaces.list).mockResolvedValue([personal, acme] as never);
+      return { ok: true, workspaceId: 7, isOperator: false } as never;
+    });
+    mockOf(useAuth).mockReturnValue({
+      user: { id: 1, email: 'invitee@example.com', name: 'Invitee', isOperator: false },
+      loading: false,
+      login: vi.fn(),
+      setup: vi.fn(),
+      loginWithPasskey: vi.fn(),
+      logout: vi.fn(),
+      refresh: vi.fn(),
+    });
+    function Current() {
+      const { currentWorkspace } = useWorkspace();
+      return <p>in:{currentWorkspace?.name ?? 'none'}</p>;
+    }
+    // As in App.tsx: the invite page sits outside the authed shell, whose
+    // WorkspaceProvider mounts only once the user is sent to "/".
+    renderWithProviders(
+      <Routes>
+        <Route path="/invite/:token" element={<AcceptInvite />} />
+        <Route
+          path="/"
+          element={
+            <WorkspaceProvider>
+              <Current />
+            </WorkspaceProvider>
+          }
+        />
+      </Routes>,
+      { route: '/invite/abc123' },
+    );
+    expect(await screen.findByText('Join Acme')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Accept invitation' }));
+    expect(await screen.findByText('in:Acme', {}, { timeout: 4000 })).toBeInTheDocument();
+    window.localStorage.removeItem('nd_current_workspace_id');
   });
 
   it('shows a fallback message when the token is unknown', async () => {

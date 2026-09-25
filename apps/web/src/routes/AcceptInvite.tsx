@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, KeyRound, LogIn, XCircle } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
+import { rememberWorkspace } from '../lib/workspace.js';
 import { Button, Card, Spinner } from '../components/ui.js';
 import type { WorkspaceInvitationPublic } from '@ninedeploy/sdk';
 
@@ -66,9 +67,15 @@ export function AcceptInvite() {
       if (result.ok) {
         setStatus('accepted');
         // Refresh workspace list so the new membership shows up on the
-        // dashboard, then route the user into the workspace.
-        await queryClient.invalidateQueries({ queryKey: ['workspaces'] });
-        window.setTimeout(() => navigate(`/?workspace=${result.workspaceId}`), 1200);
+        // dashboard, then route the user into the workspace. r295: this page
+        // sits outside WorkspaceProvider and nothing read the old
+        // `/?workspace=<id>` hint, so the user landed in their previous
+        // workspace. Select it for the provider that mounts on arrival
+        // instead — and refetch even an inactive cached list first, or the
+        // provider would find the new id missing and fall back to the first.
+        await queryClient.invalidateQueries({ queryKey: ['workspaces'], refetchType: 'all' });
+        rememberWorkspace(result.workspaceId);
+        window.setTimeout(() => navigate('/'), 1200);
       } else {
         // The API resolves { ok: false } for business-level failures (used
         // token, wrong e-mail) — without this branch the page sat on the
