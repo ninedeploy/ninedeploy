@@ -277,6 +277,12 @@ export const source = z.object({
 export type Source = z.infer<typeof source>;
 
 export const triggerDeploy = z.object({
+  /**
+   * @deprecated r334: IGNORED by `POST /v1/services/:id/deploys` — a manual
+   * trigger always builds the configured branch head. Pinning a commit here
+   * was never wired (the route reads no body). To redeploy an exact commit,
+   * use `deploys.promote` (another lane's running SHA) or `deploys.rollback`.
+   */
   commitSha: z.string().optional(),
 });
 export type TriggerDeploy = z.infer<typeof triggerDeploy>;
@@ -402,8 +408,12 @@ export const webhook = z.object({
 });
 export type Webhook = z.infer<typeof webhook>;
 
-/** Returned once at creation time — the secret is never retrievable again. */
-export const createdWebhook = webhook.extend({ secret: z.string() });
+/**
+ * Returned once at creation time — the secret is never retrievable again.
+ * r334: the create route answers id/branch/active/sourceId/url/secret only;
+ * `watchPaths` and `createdAt` come from `webhooks.list`.
+ */
+export const createdWebhook = webhook.omit({ watchPaths: true, createdAt: true }).extend({ secret: z.string() });
 export type CreatedWebhook = z.infer<typeof createdWebhook>;
 
 // ── Managed databases ─────────────────────────────────────────────────────

@@ -673,6 +673,13 @@ describe('service', () => {
       expect(data?.secret).toBe('s3cr3t');
       bad(createdWebhook, { id: 1, branch: 'main', active: true, url: 'https://x', createdAt: '2026-01-01T00:00:00Z' });
     });
+
+    it('r334: createdWebhook matches what POST /services/:id/webhooks actually returns', () => {
+      // The create route answers id/branch/active/sourceId/url/secret — no
+      // watchPaths, no createdAt (those come from the list route).
+      const data = ok(createdWebhook, { id: 1, branch: 'main', active: true, sourceId: null, url: 'https://x', secret: 's3cr3t' });
+      expect(data?.secret).toBe('s3cr3t');
+    });
   });
 
   describe('databases', () => {

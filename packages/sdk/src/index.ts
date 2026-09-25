@@ -555,8 +555,14 @@ export interface NineDeployClient {
     update: (id: number, input: WorkspaceUpdateInput) => Promise<WorkspaceEntry>;
     delete: (id: number) => Promise<{ ok: boolean }>;
     addMember: (id: number, input: WorkspaceMemberAddInput) => Promise<WorkspaceMemberEntry | WorkspaceMemberInviteEntry>;
-    /** Create a pending invitation for an email address that isn't a user yet. */
-    inviteMember: (id: number, input: WorkspaceMemberAddInput) => Promise<WorkspaceInvitationEntry & { acceptUrl: string }>;
+    /**
+     * Create a pending invitation for an email address that isn't a user yet.
+     * r334: the response is the invitation row only — the server does NOT
+     * return an `acceptUrl` here (the token travels in the `x-invitation-token`
+     * response header and in the invite email). `addMember` returns the accept
+     * link in its body for the same case.
+     */
+    inviteMember: (id: number, input: WorkspaceMemberAddInput) => Promise<WorkspaceInvitationEntry>;
     listInvitations: (id: number) => Promise<WorkspaceInvitationEntry[]>;
     revokeInvitation: (id: number, inviteId: number) => Promise<{ ok: boolean }>;
     /** Look up a pending invitation by its public token (no auth required). */
@@ -639,7 +645,12 @@ export interface NineDeployClient {
     set: (serviceId: number, input: SetServiceTagsInput) => Promise<ServiceTags>;
   };
   deploys: {
-    trigger: (serviceId: number, input?: TriggerDeploy) => Promise<{ deploymentId: number }>;
+    /**
+     * Queue a deployment of the service's configured branch head. Answers
+     * `alreadyInProgress: true` with the in-flight deployment's id when one
+     * is already building or deploying.
+     */
+    trigger: (serviceId: number, input?: TriggerDeploy) => Promise<{ deploymentId: number; alreadyInProgress?: boolean }>;
     list: (serviceId: number) => Promise<Deployment[]>;
     /**
      * Global deploy queue view: every in-flight (queued / building /
@@ -1290,7 +1301,8 @@ export interface NineDeployClient {
     expiringCertificates: (opts?: { days?: number }) => Promise<{ threshold: number; count: number; certificates: CertificateInventoryEntry[] }>;
     logs: (lines?: number) => Promise<{ logs: string[] }>;
     restart: () => Promise<{ ok: boolean; message?: string }>;
-    backupCerts: () => Promise<{ ok: boolean; message?: string; filename?: string }>;
+    /** r334: the server answers the host path of the copied acme.json. */
+    backupCerts: () => Promise<{ ok: boolean; backupPath: string }>;
   };
   config: {
     list: (query?: { category?: string; pluginId?: string; reveal?: boolean }) => Promise<ConfigListResponse>;
@@ -1551,11 +1563,7 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       addMember: (id, input) =>
         send<WorkspaceMemberEntry | WorkspaceMemberInviteEntry>('POST', `/v1/workspaces/${id}/members`, input),
       inviteMember: (id, input) =>
-        send<WorkspaceInvitationEntry & { acceptUrl: string }>(
-          'POST',
-          `/v1/workspaces/${id}/invitations`,
-          input,
-        ),
+        send<WorkspaceInvitationEntry>('POST', `/v1/workspaces/${id}/invitations`, input),
       listInvitations: (id) => get<WorkspaceInvitationEntry[]>(`/v1/workspaces/${id}/invitations`),
       revokeInvitation: (id, inviteId) =>
         send<{ ok: boolean }>('DELETE', `/v1/workspaces/${id}/invitations/${inviteId}`),
@@ -1618,7 +1626,7 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
     },
     deploys: {
       trigger: (serviceId, input) =>
-        send<{ deploymentId: number }>('POST', `/v1/services/${serviceId}/deploys`, input ?? {}),
+        send<{ deploymentId: number; alreadyInProgress?: boolean }>('POST', `/v1/services/${serviceId}/deploys`, input ?? {}),
       list: (serviceId) => get<Deployment[]>(`/v1/services/${serviceId}/deploys`),
       queue: (query) =>
         get<QueueResponse>(`/v1/services/queue${query ? (query.startsWith('?') ? query : `?${query}`) : ''}`),
@@ -2178,7 +2186,7 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
         ),
       logs: (lines = 50) => get<{ logs: string[] }>(`/v1/traefik/logs?lines=${lines}`),
       restart: () => send<{ ok: boolean; message: string }>('POST', '/v1/traefik/restart'),
-      backupCerts: () => send<{ ok: boolean; message: string; filename?: string }>('POST', '/v1/traefik/backup-certs'),
+      backupCerts: () => send<{ ok: boolean; backupPath: string }>('POST', '/v1/traefik/backup-certs'),
     },
     config: {
       list: (query) => {
