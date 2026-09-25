@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { MetricHistoryPlugin } from '../kernel/plugins/metricHistory.js';
+import { audit } from '../lib/audit.js';
 
 /**
  * Metric History HTTP surface — Sprint 3, Gap G-09 (PR-A).
@@ -93,6 +94,8 @@ export const metricHistoryRoutes: FastifyPluginAsync = async (app) => {
       ts: Date.now(),
       actorUserId: req.user?.id ?? null,
     });
+    // r286: an instance-wide delete of metric history left no audit trail.
+    void audit(app.db, req.user!.id, 'metric.flush', 'metric-history', { backend: 'builtin', deleted });
     return { ok: true, backend: 'builtin' as const, deleted };
   });
 };

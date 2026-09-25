@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BuildCachePlugin } from '../../src/kernel/plugins/buildCachePlugin.js';
 import { buildCacheRoutes } from '../../src/modules/buildCache.js';
-import { asUser, buildTestApp } from '../helpers.js';
+import { asUser, buildTestApp, captureAudits, type createFakeDb } from '../helpers.js';
 
 async function newApp() {
   const a = await buildTestApp();
@@ -75,6 +75,25 @@ describe('POST /v1/build-cache/store', () => {
     expect(body.backend).toBe('inline');
     expect(body.ref.sizeBytes).toBe(4096);
     expect(fakeCache.store).toHaveBeenCalledOnce();
+  });
+
+  it('r286: publishing a shared digest writes a buildcache.store audit row', async () => {
+    const { app } = await newApp();
+    const fakeCache = { name: 'inline', store: vi.fn().mockResolvedValue({
+      digest: 'sha256:def', sizeBytes: 8, storedAt: '2026-08-29T00:00:00.000Z',
+    }) };
+    app.kernel.registry.registerBuildCache(fakeCache as never);
+    const audits = captureAudits(app.db as ReturnType<typeof createFakeDb>);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/store',
+      headers: asUser(),
+      payload: { key: 'ndbuild:abc', digest: 'sha256:def' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(audits).toEqual([
+      expect.objectContaining({ action: 'buildcache.store', entity: 'ndbuild:abc', meta: expect.objectContaining({ backend: 'inline' }) }),
+    ]);
   });
 
   it('rejects when key is missing', async () => {

@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { BuildCachePlugin } from '../kernel/plugins/buildCachePlugin.js';
+import { audit } from '../lib/audit.js';
 
 /**
  * Build Cache HTTP surface — Sprint 3, Gap G-01 (PR-A).
@@ -84,6 +85,9 @@ export const buildCacheRoutes: FastifyPluginAsync = async (app) => {
       }
       const blob = Buffer.from(JSON.stringify({ digest, ts: Date.now() }));
       const ref = await cache.store(key, blob);
+      // r286: a digest written here is what every later build chaining on
+      // `key` trusts — record who published it.
+      void audit(app.db, req.user!.id, 'buildcache.store', key, { backend: cache.name, digest: ref.digest });
       return {
         ok: true,
         backend: cache.name,

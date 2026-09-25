@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MetricHistoryPlugin } from '../../src/kernel/plugins/metricHistory.js';
 import { metricHistoryRoutes } from '../../src/modules/metricHistory.js';
-import { asUser, buildTestApp } from '../helpers.js';
+import { asUser, buildTestApp, captureAudits, type createFakeDb } from '../helpers.js';
 
 async function newApp() {
   const a = await buildTestApp();
@@ -156,6 +156,15 @@ describe('POST /v1/metric-history/flush', () => {
     const body = res.json() as { ok: boolean; backend: string; deleted: number };
     expect(body).toEqual({ ok: true, backend: 'builtin', deleted: 7 });
     expect(plugin.runRetention).toHaveBeenCalledOnce();
+  });
+
+  it('r286: the instance-wide delete writes a metric.flush audit row', async () => {
+    const { app, plugin } = await newApp();
+    vi.spyOn(plugin, 'runRetention').mockResolvedValue(7);
+    const audits = captureAudits(app.db as ReturnType<typeof createFakeDb>);
+    const res = await app.inject({ method: 'POST', url: '/flush', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(audits).toEqual([expect.objectContaining({ action: 'metric.flush', meta: expect.objectContaining({ deleted: 7 }) })]);
   });
 
   it('emits a metric.flush.completed event with the actor user id', async () => {
