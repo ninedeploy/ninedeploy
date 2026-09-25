@@ -3,7 +3,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { environments, services, workspaceMembers } from '@ninedeploy/db';
 import { audit } from '../lib/audit.js';
-import { assertWorkspaceRole } from '../lib/resourceAccess.js';
+import { assertWorkspaceRole, isWorkspaceMember } from '../lib/resourceAccess.js';
 import { badRequest, notFound, parseId } from '../lib/errors.js';
 
 /**
@@ -35,6 +35,24 @@ function serialize(row: typeof environments.$inferSelect, serviceCount: number) 
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+/**
+ * r361: a lane in a workspace the caller holds no seat in answers the same 404
+ * as a missing id (the loader convention in lib/resourceAccess.ts) — a 403
+ * confirmed another tenant's lane existed. A seat below the required role
+ * still gets 403: that caller can already list the lane.
+ */
+async function assertEnvironmentRole(
+  db: Parameters<typeof assertWorkspaceRole>[0],
+  workspaceId: number,
+  user: Parameters<typeof assertWorkspaceRole>[2],
+  required: 'member' | 'admin',
+): Promise<void> {
+  if (!user.isOperator && !(await isWorkspaceMember(db, workspaceId, user))) {
+    throw notFound('Environment not found');
+  }
+  await assertWorkspaceRole(db, workspaceId, user, required);
 }
 
 export const environmentRoutes: FastifyPluginAsync = async (app) => {
@@ -97,7 +115,7 @@ export const environmentRoutes: FastifyPluginAsync = async (app) => {
     const user = req.user!;
     const row = await app.db.query.environments.findFirst({ where: eq(environments.id, id) });
     if (!row) throw notFound('Environment not found');
-    await assertWorkspaceRole(app.db, row.workspaceId, user, 'member');
+    await assertEnvironmentRole(app.db, row.workspaceId, user, 'member');
     const [updated] = await app.db
       .update(environments)
       .set({ ...(input.name != null ? { name: input.name.trim() } : {}), updatedAt: new Date() })
@@ -115,7 +133,7 @@ export const environmentRoutes: FastifyPluginAsync = async (app) => {
     const user = req.user!;
     const row = await app.db.query.environments.findFirst({ where: eq(environments.id, id) });
     if (!row) throw notFound('Environment not found');
-    await assertWorkspaceRole(app.db, row.workspaceId, user, 'admin');
+    await assertEnvironmentRole(app.db, row.workspaceId, user, 'admin');
     await app.db.delete(environments).where(eq(environments.id, id));
     void audit(app.db, user.id, 'environment.delete', row.name);
     return { ok: true };

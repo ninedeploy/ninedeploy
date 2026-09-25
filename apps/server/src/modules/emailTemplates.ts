@@ -20,15 +20,18 @@ import {
   setOverride,
   clearOverride,
 } from '../lib/emailTemplates.js';
-import { assertWorkspaceRole } from '../lib/resourceAccess.js';
+import { assertWorkspaceRole, isWorkspaceMember, type AuthedUser } from '../lib/resourceAccess.js';
 
 /** Lightweight workspace loader — the route needs the
- *  workspace's name for audit messages, but the
- *  access check is `assertWorkspaceRole` (which already
- *  throws 403 on the no-membership case). */
-async function loadWorkspaceRow(db: DB, id: number): Promise<{ id: number; name: string }> {
+ *  workspace's name for audit messages; the role check is
+ *  `assertWorkspaceRole`, run after it. A caller with no seat
+ *  gets this loader's 404, never that check's 403 (r361). */
+async function loadWorkspaceRow(db: DB, id: number, user: AuthedUser): Promise<{ id: number; name: string }> {
   const row = await db.query.workspaces.findFirst({ where: eq(workspaces.id, id) });
   if (!row) throw notFound('Workspace not found');
+  // r361: another tenant's workspace answers the same 404 as a missing one.
+  // The admin check that follows used to 403 it, confirming the id existed.
+  if (!user.isOperator && !(await isWorkspaceMember(db, id, user))) throw notFound('Workspace not found');
   return row;
 }
 
@@ -109,7 +112,7 @@ export const emailTemplateRoutes: FastifyPluginAsync = async (app) => {
       if (!ALL_TEMPLATE_NAMES.includes(name)) {
         throw badRequest(`Unknown email template: ${name}`);
       }
-      const ws = await loadWorkspaceRow(app.db, wid);
+      const ws = await loadWorkspaceRow(app.db, wid, req.user!);
       await assertWorkspaceRole(app.db, wid, req.user!, 'admin');
       const body = setBody.safeParse({ ...req.body, name });
       if (!body.success) throw unprocessable(body.error.issues[0]!.message);
@@ -133,7 +136,7 @@ export const emailTemplateRoutes: FastifyPluginAsync = async (app) => {
       if (!ALL_TEMPLATE_NAMES.includes(name)) {
         throw badRequest(`Unknown email template: ${name}`);
       }
-      const ws = await loadWorkspaceRow(app.db, wid);
+      const ws = await loadWorkspaceRow(app.db, wid, req.user!);
       await assertWorkspaceRole(app.db, wid, req.user!, 'admin');
       await clearOverride(app.db, wid, name);
       void audit(

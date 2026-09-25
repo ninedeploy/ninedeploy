@@ -239,7 +239,7 @@ describe('label routes', () => {
     ).toBe(404);
   });
 
-  it('forbids a member from touching an unscoped label', async () => {
+  it('r361: an unscoped label answers a member the same 404 as a missing one', async () => {
     const app = await appWith({
       findFirst: { labels: labelRow({ workspaceId: null }) },
       findMany: { workspaceMembers: memberSeat },
@@ -250,8 +250,37 @@ describe('label routes', () => {
       headers: { ...asMember(), 'content-type': 'application/json' },
       payload: { name: 'x' },
     });
-    expect(patch.statusCode).toBe(403);
+    expect(patch.statusCode).toBe(404);
+    expect(patch.json().error.message).toBe('Label not found');
 
+    const del = await app.inject({ method: 'DELETE', url: '/labels/1', headers: asMember() });
+    expect(del.statusCode).toBe(404);
+    expect(del.json().error.message).toBe('Label not found');
+  });
+
+  it("r361: another tenant's label answers the same 404 as a missing id, not 403", async () => {
+    // Label 1 lives in workspace 2; the member holds no seat there.
+    const app = await appWith({
+      findFirst: { labels: labelRow({ workspaceId: 2 }), workspaceMembers: undefined },
+      findMany: { workspaceMembers: memberSeat },
+    });
+    const missing = await appWith({ findFirst: { labels: undefined } });
+    const patchBody = { headers: { ...asMember(), 'content-type': 'application/json' }, payload: { name: 'x' } };
+    const foreignPatch = await app.inject({ method: 'PATCH', url: '/labels/1', ...patchBody });
+    const missingPatch = await missing.inject({ method: 'PATCH', url: '/labels/1', ...patchBody });
+    expect(foreignPatch.statusCode).toBe(404);
+    expect(foreignPatch.json()).toEqual(missingPatch.json());
+
+    const foreignDel = await app.inject({ method: 'DELETE', url: '/labels/1', headers: asMember() });
+    const missingDel = await missing.inject({ method: 'DELETE', url: '/labels/1', headers: asMember() });
+    expect(foreignDel.statusCode).toBe(404);
+    expect(foreignDel.json()).toEqual(missingDel.json());
+  });
+
+  it('still 403s a viewer seat, who can already see the label', async () => {
+    const app = await appWith({
+      findFirst: { labels: labelRow(), workspaceMembers: { id: 1, workspaceId: 1, userId: 7, role: 'viewer' } },
+    });
     const del = await app.inject({ method: 'DELETE', url: '/labels/1', headers: asMember() });
     expect(del.statusCode).toBe(403);
   });

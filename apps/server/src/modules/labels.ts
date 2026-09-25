@@ -3,7 +3,7 @@ import { labels, serviceLabels } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import { createLabel, labelPatch, type Label, type LabelColor } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
-import { assertWorkspaceRole } from '../lib/resourceAccess.js';
+import { assertWorkspaceRole, isWorkspaceMember } from '../lib/resourceAccess.js';
 import { badRequest, forbidden, notFound, parseId } from '../lib/errors.js';
 import { iso } from '../lib/serialize.js';
 
@@ -44,6 +44,26 @@ async function serializeLabel(row: SerializedLabelRow): Promise<Label> {
     createdAt: iso(row.createdAt) as string,
     updatedAt: iso(row.updatedAt) as string,
   };
+}
+
+/**
+ * Write gate for PATCH / DELETE by id. r361: a label the caller cannot see —
+ * a personal label for a non-operator, or one in a workspace they hold no seat
+ * in — answers the same 404 as an id that does not exist (the loader
+ * convention in lib/resourceAccess.ts). A 403 there confirmed the row existed
+ * and let label ids across tenants be enumerated. A seat below `member`
+ * (viewer) still gets 403: that caller can already list the label.
+ */
+async function assertLabelWritable(
+  db: Parameters<typeof isWorkspaceMember>[0],
+  label: { workspaceId: number | null },
+  user: Parameters<typeof assertWorkspaceRole>[2],
+): Promise<void> {
+  if (user.isOperator) return;
+  if (label.workspaceId == null || !(await isWorkspaceMember(db, label.workspaceId, user))) {
+    throw notFound('Label not found');
+  }
+  await assertWorkspaceRole(db, label.workspaceId, user, 'member');
 }
 
 /**
@@ -146,11 +166,7 @@ export const labelRoutes: FastifyPluginAsync = async (app) => {
     const user = req.user!;
     const existing = await app.db.query.labels.findFirst({ where: eq(labels.id, id) });
     if (!existing) throw notFound('Label not found');
-    if (existing.workspaceId == null) {
-      if (!user.isOperator) throw forbidden('Personal labels are operator-only');
-    } else {
-      await assertWorkspaceRole(app.db, existing.workspaceId, user, 'member');
-    }
+    await assertLabelWritable(app.db, existing, user);
     const [updated] = await app.db
       .update(labels)
       .set({
@@ -181,11 +197,7 @@ export const labelRoutes: FastifyPluginAsync = async (app) => {
     const user = req.user!;
     const existing = await app.db.query.labels.findFirst({ where: eq(labels.id, id) });
     if (!existing) throw notFound('Label not found');
-    if (existing.workspaceId == null) {
-      if (!user.isOperator) throw forbidden('Personal labels are operator-only');
-    } else {
-      await assertWorkspaceRole(app.db, existing.workspaceId, user, 'member');
-    }
+    await assertLabelWritable(app.db, existing, user);
     await app.db.delete(labels).where(eq(labels.id, id));
     void audit(app.db, user.id, 'label.delete', existing.name);
     return { ok: true };

@@ -198,6 +198,31 @@ describe('POST /domains/:id/transfer (start)', () => {
     expect([403, 404]).toContain(res.status);
   });
 
+  it("r361: a domain on a service the caller cannot see is 404 'Domain not found', same as a missing one", async () => {
+    // Before r361 the service loader's 'Service not found' (also 404) told a
+    // foreign domain apart from a missing id, so ids could be enumerated.
+    const outsider = asUser({ id: 7, isOperator: false });
+    const call = async () => {
+      const { port } = await startStartApp();
+      const res = await fetch(`http://127.0.0.1:${port}/1/transfer`, {
+        method: 'POST',
+        headers: { ...outsider, 'content-type': 'application/json' },
+        body: JSON.stringify({ targetEmail: 'bob@example.com' }),
+      });
+      await appRef?.close();
+      appRef = null;
+      return { status: res.status, body: await res.json() };
+    };
+    serviceRow = { id: 1, name: 'web', projectId: 1, workspaceId: 1, ownerUserId: 1 } as ServiceRow;
+    const foreign = await call();
+    domainRow = null;
+    const missing = await call();
+    expect(foreign.status).toBe(404);
+    expect(foreign).toEqual(missing);
+    expect(foreign.body.error.message).toBe('Domain not found');
+    expect(lib.startCalls).toEqual([]);
+  });
+
   it('starts a transfer and returns the accept URL', async () => {
     const { port, app } = await startStartApp();
     const audit = (await import('../../src/lib/audit.js')).audit as unknown as ReturnType<typeof vi.fn>;

@@ -33,7 +33,7 @@ import {
 } from '../lib/domainTransfer.js';
 import { writeDynamicConfig } from '../engine/proxy.js';
 import { audit } from '../lib/audit.js';
-import { badRequest, notFound, parseId as num, unprocessable } from '../lib/errors.js';
+import { badRequest, HttpError, notFound, parseId as num, unprocessable } from '../lib/errors.js';
 import { loadServiceForUser, assertServiceRole } from '../lib/resourceAccess.js';
 import { eq } from 'drizzle-orm';
 import { domains } from '@ninedeploy/db';
@@ -64,7 +64,12 @@ export const domainTransferStartRoutes: FastifyPluginAsync = async (app) => {
       if (!domain) throw notFound('Domain not found');
       // Admin on the source service — same gate as deleting
       // the domain (a transfer is no less destructive).
-      const svc = await loadServiceForUser(app.db, domain.serviceId, req.user!);
+      // r361: a domain on a service the caller cannot see answers the SAME 404
+      // as a missing domain. The loader's "Service not found" told the two
+      // apart, so domain ids across tenants could be enumerated.
+      const svc = await loadServiceForUser(app.db, domain.serviceId, req.user!).catch((err: unknown) => {
+        throw err instanceof HttpError && err.statusCode === 404 ? notFound('Domain not found') : err;
+      });
       await assertServiceRole(app.db, svc, req.user!, 'admin');
       const panelOrigin = readPanelOrigin(req);
       let result: Awaited<ReturnType<typeof startTransfer>>;

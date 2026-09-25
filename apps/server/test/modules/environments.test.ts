@@ -314,4 +314,33 @@ describe('environments', () => {
     expect(res.statusCode).toBe(403);
     await app.close();
   });
+
+  it("r361: another tenant's lane answers the same 404 as a missing id, not 403", async () => {
+    const appFor = async (env: unknown) => {
+      const app = await buildTestApp({
+        db: createFakeDb({
+          // No seat in the lane's workspace.
+          findFirst: { environments: env as never, workspaceMembers: undefined },
+          update: { environments: [envRow()] },
+          delete: { environments: [{ id: 1 }] },
+        }),
+      });
+      await app.register(environmentRoutes);
+      return app;
+    };
+    const foreign = await appFor(envRow({ workspaceId: 2 }));
+    const missing = await appFor(null);
+    const headers = asUser({ id: 7, isOperator: false });
+    for (const req of [
+      { method: 'PATCH' as const, url: '/1', headers, payload: { name: 'x' } },
+      { method: 'DELETE' as const, url: '/1', headers },
+    ]) {
+      const a = await foreign.inject(req);
+      const b = await missing.inject(req);
+      expect(a.statusCode).toBe(404);
+      expect(a.json()).toEqual(b.json());
+    }
+    await foreign.close();
+    await missing.close();
+  });
 });

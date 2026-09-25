@@ -17,7 +17,8 @@
  *  - set/reset enforce admin on the workspace and reject unknown
  *    names. set also validates `subject` / `text` length.
  *  - a missing workspace row 404s on the set/reset path (the read
- *    routes don't 404 because the access check is the gate).
+ *    routes don't 404 because the access check is the gate), and so
+ *    does another tenant's workspace (r361) — never a telling 403.
  *  - audit messages are emitted on every successful write.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -65,8 +66,8 @@ interface WorkspaceRow {
 }
 
 let workspaceRow: WorkspaceRow | null = { id: 1, name: 'MyWS' };
-/** The caller's seat in workspace 1. */
-let seatRole = 'owner';
+/** The caller's seat in workspace 1 (null: no seat at all). */
+let seatRole: string | null = 'owner';
 let overrides: Array<{ workspaceId: number; name: string; subject: string; text: string }> = [];
 let appRef: Awaited<ReturnType<typeof buildTestApp>> | null = null;
 
@@ -78,7 +79,7 @@ async function startApp() {
       // for any table (only `findMany` has a `workspaceMembers`
       // fallback). For this test we explicitly hand an `owner` seat
       // to user 1 so `assertWorkspaceRole(_, 'admin')` passes.
-      workspaceMembers: () => ({ id: 1, workspaceId: 1, userId: 1, role: seatRole }),
+      workspaceMembers: () => (seatRole ? { id: 1, workspaceId: 1, userId: 1, role: seatRole } : undefined),
     },
     findMany: {
       emailTemplateOverrides: () => overrides.filter((o) => o.workspaceId === 1),
@@ -313,4 +314,35 @@ describe('DELETE /:wid/email-templates/:name', () => {
       expect.stringMatching(/MyWS\/password-reset/),
     );
   });
+});
+
+describe("r361: another tenant's workspace answers the same 404 as a missing one", () => {
+  const nonOperator = asUser({ id: 1, isOperator: false });
+  for (const method of ['PUT', 'DELETE'] as const) {
+    it(`${method} with no seat in the workspace is 404, identical to a missing workspace`, async () => {
+      const call = async () => {
+        const { port } = await startApp();
+        const res = await fetch(`http://127.0.0.1:${port}/1/email-templates/password-reset`, {
+          method,
+          ...(method === 'PUT'
+            ? {
+                headers: { ...nonOperator, 'content-type': 'application/json' },
+                body: JSON.stringify({ subject: 'S', text: 'T' }),
+              }
+            : { headers: nonOperator }),
+        });
+        await appRef?.close();
+        appRef = null;
+        return { status: res.status, body: await res.json() };
+      };
+      seatRole = null;
+      const foreign = await call();
+      workspaceRow = null;
+      const missing = await call();
+      expect(foreign.status).toBe(404);
+      expect(foreign).toEqual(missing);
+      expect(lib.setCalls).toEqual([]);
+      expect(lib.clearCalls).toEqual([]);
+    });
+  }
 });
