@@ -34,7 +34,11 @@ const ALLOWED_ENV_REMOVALS = new Set<string>([
 const ALLOWED_ENGINE_REMOVALS = new Set<string>([]);
 
 /** Deliberate volume-mount removals: templateId → why. */
-const ALLOWED_VOLUME_REMOVALS = new Set<string>([]);
+const ALLOWED_VOLUME_REMOVALS = new Set<string>([
+  // r320: the "volume" was /var/run/docker.sock — a named volume mounted
+  // there is an empty directory, not the socket. Replaced by dockerSocket.
+  'wud',
+]);
 
 function previousTag(): string | null {
   // No quotes around v*: execSync on Windows routes through cmd.exe, which

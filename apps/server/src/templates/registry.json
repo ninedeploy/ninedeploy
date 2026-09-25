@@ -1670,6 +1670,11 @@
         {
           "key": "DB_CONNECTION",
           "value": "mysql"
+        },
+        {
+          "key": "APP_KEY",
+          "value": "base64:",
+          "secret": true
         }
       ],
       "runtimeVerified": true,
@@ -2145,8 +2150,9 @@
       "emoji": "👀",
       "image": "getwud/wud:latest",
       "port": 3000,
-      "volumeMount": "/var/run/docker.sock",
+      "dockerSocket": true,
       "website": "https://getwud.github.io",
+      "requires": "WUD 9.x (the current :latest) ignores the generated WUD_AUTH_ADMIN_* bootstrap credentials — they take effect from WUD's next release. Until then the UI is unauthenticated: set WUD_AUTH_BASIC_<NAME>_USER and WUD_AUTH_BASIC_<NAME>_HASH (an APR1 htpasswd hash) before attaching a public domain",
       "runtimeVerified": false,
       "verifiedAt": "2026-09-16",
       "env": [

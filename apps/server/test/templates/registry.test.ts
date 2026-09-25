@@ -67,6 +67,20 @@ describe('bundled registry (default source)', () => {
     expect(byId.get('grafana')?.env?.some((e) => e.key === 'GF_SECURITY_ADMIN_PASSWORD')).toBe(true);
   });
 
+  it('r320: a Docker socket is requested with dockerSocket, never mounted as a named volume', () => {
+    // A volumeMount at /var/run/docker.sock creates an empty named-volume
+    // DIRECTORY where the socket should be — wud watched nothing.
+    for (const t of getBundledTemplates()) {
+      expect(t.volumeMount ?? '', t.id).not.toMatch(/\.sock$/);
+    }
+    expect(getBundledTemplates().find((t) => t.id === 'wud')?.dockerSocket).toBe(true);
+  });
+
+  it('r320: speedtest-tracker mints the APP_KEY its image refuses to start without', () => {
+    const t = getBundledTemplates().find((x) => x.id === 'speedtest-tracker');
+    expect(t?.env?.find((e) => e.key === 'APP_KEY')).toMatchObject({ value: 'base64:', secret: true });
+  });
+
   it('the bundled bundle parses cleanly', () => {
     expect(() => parseBundle(BUNDLED_REGISTRY)).not.toThrow();
     expect(getBundledTemplates().some((template) => template.id === 'ghost')).toBe(true);
