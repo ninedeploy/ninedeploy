@@ -1,14 +1,16 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router";
 
 import { Layout } from "./components/Layout";
 import { Home } from "./pages/Home";
 import { Features } from "./pages/Features";
 import { DocsLayout, docPages, DocPage } from "./pages/Docs";
-import { Changelog } from "./pages/Changelog";
 import { Faq } from "./pages/Faq";
 import { Templates } from "./pages/Templates";
 import { NotFound } from "./pages/NotFound";
+
+// The changelog page bundles the whole CHANGELOG.md — load it only on visit.
+const Changelog = lazy(() => import("./pages/Changelog").then((m) => ({ default: m.Changelog })));
 
 const titles: Record<string, string> = {
   "/": "NineDeploy — ship like you mean it",
@@ -61,7 +63,14 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/features" element={<Features />} />
         <Route path="/templates" element={<Templates />} />
-        <Route path="/changelog" element={<Changelog />} />
+        <Route
+          path="/changelog"
+          element={
+            <Suspense fallback={<div className="min-h-screen" />}>
+              <Changelog />
+            </Suspense>
+          }
+        />
         <Route path="/faq" element={<Faq />} />
         <Route path="/docs" element={<DocsLayout />}>
           <Route index element={<Navigate to="/docs/introduction" replace />} />
