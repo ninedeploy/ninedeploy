@@ -407,9 +407,19 @@ export function Modal({
     initialFocusRefSnapshot.current = initialFocusRef;
   });
 
+  // r293: remember what had focus when the dialog opened so closing it hands
+  // focus back (keyboard users were dropped at the top of the page). Read at
+  // render time on the closed→open transition: by the time any effect runs,
+  // an autoFocus field inside the dialog has already taken focus.
+  const returnFocusRef = useRef<Element | null>(null);
+  const wasOpenRef = useRef(false);
+  if (isOpen && !wasOpenRef.current) returnFocusRef.current = document.activeElement;
+  wasOpenRef.current = isOpen;
+
   useEffect(() => {
     // The portal only mounts when isOpen; skip side-effects when closed.
     if (!isOpen) return;
+    const returnFocus = returnFocusRef.current;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
@@ -446,6 +456,11 @@ export function Modal({
     return () => {
       document.body.style.overflow = prevOverflow;
       window.removeEventListener('keydown', onKey);
+      // Skip an opener that has since left the DOM (a row deleted by the
+      // dialog's own action) — focusing a detached node is a no-op at best.
+      if (returnFocus instanceof HTMLElement && returnFocus.isConnected && returnFocus !== document.body) {
+        returnFocus.focus();
+      }
     };
   }, [isOpen]);
 

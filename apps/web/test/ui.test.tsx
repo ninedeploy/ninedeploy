@@ -419,6 +419,52 @@ describe('Modal', () => {
     expect(name).toHaveFocus();
     expect(name).toHaveValue('abc');
   });
+
+  it('hands focus back to the control that opened it on close (r293)', async () => {
+    function Host() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <Button onClick={() => setOpen(true)}>Open settings</Button>
+          {open && (
+            <Modal title="Settings" onClose={() => setOpen(false)}>
+              <Input aria-label="field" autoFocus />
+            </Modal>
+          )}
+        </>
+      );
+    }
+    render(<Host />);
+    const user = userEvent.setup();
+    const opener = screen.getByRole('button', { name: 'Open settings' });
+    await user.click(opener);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(opener).not.toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+  });
+
+  it('does not try to refocus an opener that left the DOM (r293)', async () => {
+    function Host() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          {!open && <Button onClick={() => setOpen(true)}>Open</Button>}
+          {open && (
+            <Modal title="T" onClose={() => setOpen(false)}>
+              body
+            </Modal>
+          )}
+        </>
+      );
+    }
+    render(<Host />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Open' }));
+    await user.keyboard('{Escape}');
+    expect(document.activeElement).toBe(document.body);
+  });
 });
 
 describe('ConfirmDialog', () => {
