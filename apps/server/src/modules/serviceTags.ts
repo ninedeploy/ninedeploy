@@ -58,6 +58,7 @@ export const serviceTagRoutes: FastifyPluginAsync = async (app) => {
     // Operators skip these checks.
     let workspaceIds = input.workspaceIds;
     let projectIds = input.projectIds;
+    let labelIds = input.labelIds;
     if (!user.isOperator) {
       // r156: links the caller cannot manage are NOT theirs to remove. A
       // service shared into workspaces A and B let an admin of A evict B's
@@ -88,13 +89,22 @@ export const serviceTagRoutes: FastifyPluginAsync = async (app) => {
       }
       const manageableProjects = new Set(await visibleProjectIds(app.db, user, currentProjects, 'admin'));
       projectIds = [...new Set([...input.projectIds, ...currentProjects.filter((p) => !manageableProjects.has(p))])];
-      const allowedLabels = await visibleLabelIds(app.db, user, input.labelIds);
-      if (allowedLabels.length !== input.labelIds.length) {
+      // r285: the same r156 rule for labels. Labels are workspace-scoped, so
+      // an admin of workspace A PUTting `labelIds: []` stripped workspace B's
+      // labels off a shared service. Labels the caller cannot see survive;
+      // only newly added ones need visibility (so the UI's full-set
+      // round-trip of B's labels no longer 403s either).
+      const currentLabels = current.labels.map((l) => l.id);
+      const addedLabels = input.labelIds.filter((l) => !currentLabels.includes(l));
+      const allowedLabels = await visibleLabelIds(app.db, user, addedLabels);
+      if (allowedLabels.length !== addedLabels.length) {
         throw forbidden('One or more target labels are not visible to you');
       }
+      const manageableLabels = new Set(await visibleLabelIds(app.db, user, currentLabels));
+      labelIds = [...new Set([...input.labelIds, ...currentLabels.filter((l) => !manageableLabels.has(l))])];
     }
 
-    await replaceServiceTags(app.db, id, projectIds, workspaceIds, input.labelIds);
+    await replaceServiceTags(app.db, id, projectIds, workspaceIds, labelIds);
     void audit(app.db, user.id, 'service.tags', `service #${id}`);
     return getServiceTags(app.db, id);
   });

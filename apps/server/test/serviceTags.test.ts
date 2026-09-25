@@ -207,6 +207,48 @@ describe('service tag routes', () => {
         { serviceId: 1, workspaceId: 10 },
       ]);
     });
+
+    it("r285: an admin of workspace A cannot strip workspace B's labels off a shared service", async () => {
+      // Label 5 belongs to A (4, caller is admin); label 20 to B (10, no seat).
+      const inserted: unknown[] = [];
+      const app = await appWith({
+        findFirst: { services: svcRow({ id: 1, ownerUserId: 7 }) },
+        findMany: {
+          workspaceMembers: [{ id: 1, workspaceId: 4, userId: 7, role: 'admin' }],
+          labels: [{ id: 5, workspaceId: 4 }, { id: 20, workspaceId: 10 }],
+        },
+        select: {
+          service_projects: [],
+          service_workspaces: [workspace],
+          service_labels: [label, { id: 20, name: 'b-tier', color: 'indigo' }],
+        },
+        insert: {
+          service_labels: (v: unknown) => {
+            inserted.push(v);
+            return [];
+          },
+        },
+      });
+      const res = await app.inject({
+        method: 'PUT',
+        url: '/services/1/tags',
+        headers: { ...asMember(), 'content-type': 'application/json' },
+        payload: { projectIds: [], workspaceIds: [4], labelIds: [] },
+      });
+      expect(res.statusCode).toBe(200);
+      // A's own label is removed; B's survives.
+      expect(inserted).toEqual([[{ serviceId: 1, labelId: 20 }]]);
+
+      // Resending B's label unchanged (the UI's full-set round-trip) is not an
+      // "add" and must not 403.
+      const roundTrip = await app.inject({
+        method: 'PUT',
+        url: '/services/1/tags',
+        headers: { ...asMember(), 'content-type': 'application/json' },
+        payload: { projectIds: [], workspaceIds: [4], labelIds: [5, 20] },
+      });
+      expect(roundTrip.statusCode).toBe(200);
+    });
   });
 });
 
