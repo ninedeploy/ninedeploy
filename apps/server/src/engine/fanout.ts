@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { serviceTargets, servers, type DB } from '@ninedeploy/db';
 import { agentOp } from '../lib/agentClient.js';
 import { acquireRegistryLock, registryLockKey } from '../lib/registryLock.js';
+import { assertCloneTargetAllowed } from '../lib/gitEgress.js';
 import { envForAgent } from './builders/remoteDocker.js';
 
 /**
@@ -126,6 +127,10 @@ export async function deployToTargets(
         // travels between nodes (that would need a registry).
         const { repoUrl, branch, commitSha, dockerfilePath, baseDir } = ctx.source;
         log(`target node #${target.serverId}: building from ${repoUrl} @ ${commitSha.slice(0, 7)} …`);
+        // r353: same egress gate as the primary's remote checkout (r099) —
+        // the clone runs from the target NODE's network position, and this
+        // path used to skip it.
+        await assertCloneTargetAllowed(repoUrl);
         await agent('git.ensure', { workspace: ctx.service.slug, url: repoUrl, depth: '1' }, log);
         if (branch) {
           await agent('git.fetch', { workspace: ctx.service.slug }, log);

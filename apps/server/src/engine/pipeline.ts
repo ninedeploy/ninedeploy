@@ -8,7 +8,7 @@ import { decrypt } from '../lib/crypto.js';
 import { checkoutCommit, type CloneCreds } from '../lib/git.js';
 import { detectDeployHints } from '../lib/deployHints.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
-import { remoteDatabaseRefusal, remoteDeploySupported, remoteDeployUnsupportedReason, remoteServiceRefusal } from '../lib/remoteDeploy.js';
+import { remoteDatabaseRefusal, remoteDeploySupported, remoteDeployUnsupportedReason, remoteServiceRefusal, sourceHasGitCredential } from '../lib/remoteDeploy.js';
 import { agentOp } from '../lib/agentClient.js';
 import { createRemoteDockerBuilder } from './builders/remoteDocker.js';
 import { deployToTargets, pullableReleaseRef, recordFanoutResults, targetsForService } from './fanout.js';
@@ -1135,19 +1135,30 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   }
   log('##[stage:COMPLETE:success] Service is live and healthy on production');
 
-  // ── Multi-server fan-out (phase 1) ────────────────────────────────────────
-  // Image-based docker releases are pushed to every extra target node AFTER
-  // the primary is live — additive, best-effort, never blocking the success.
-  // Source builds are excluded on purpose: their image exists only where the
-  // build ran (see engine/fanout.ts for the honest scope note).
-  const buildableSource =
+  // ── Multi-server fan-out ──────────────────────────────────────────────────
+  // Docker releases are pushed to every extra target node AFTER the primary
+  // is live — additive, best-effort, never blocking the success. An image
+  // release is pulled on each node; a source build (phase 2) is REBUILT on
+  // each node from the same pinned commit through git.* + docker.build, since
+  // the image exists only where the build ran (see engine/fanout.ts).
+  //
+  // r353: this comment used to claim source builds were excluded while the
+  // code fanned them out — including repositories behind a Git credential,
+  // which every node then tried to clone anonymously (the agent's git.ensure
+  // has no credential operand, and the credential never leaves the panel).
+  // Those are skipped with a deploy-log line, the rule remoteServiceRefusal
+  // applies to a remote PRIMARY (r268).
+  const sourceCandidate =
     service.type === 'docker' &&
     !service.image &&
     service.repoUrl &&
     sha &&
     // Nixpacks has no agent operation on a node — the local builder ran it on
     // the panel; a target node could not reproduce it.
-    (buildConfig?.buildPack ?? 'auto') !== 'nixpacks'
+    (buildConfig?.buildPack ?? 'auto') !== 'nixpacks';
+  const credentialedSource = Boolean(sourceCandidate) && (await sourceHasGitCredential(db, service.sourceId));
+  const buildableSource =
+    sourceCandidate && !credentialedSource && service.repoUrl
       ? {
           repoUrl: service.repoUrl,
           branch: service.branch,
@@ -1157,6 +1168,13 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
           baseDir: (buildConfig?.baseDir || '.').replace(/^\/+/, '') || '.',
         }
       : undefined;
+  if (credentialedSource && (await targetsForService(db, service.id)).length > 0) {
+    log(
+      'Fan-out skipped: this repository is cloned with a Git credential, and target nodes clone anonymously — ' +
+        'the credential never leaves the panel. Detach the credential if the repository is public, or deploy an image ' +
+        'release to fan it out. The panel-hosted release is live.',
+    );
+  }
   if (service.type === 'docker' && (service.image || buildableSource)) {
     const extra = await targetsForService(db, service.id);
     if (extra.length > 0) {

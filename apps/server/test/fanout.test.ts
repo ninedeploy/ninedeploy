@@ -6,6 +6,9 @@ const agentMocks = vi.hoisted(() => ({ agentOp: vi.fn() }));
 vi.mock('../src/lib/agentClient.js', () => ({ agentOp: agentMocks.agentOp }));
 const execMocks = vi.hoisted(() => ({ capture: vi.fn() }));
 vi.mock('../src/lib/exec.js', () => execMocks);
+// The egress gate resolves DNS; tests never touch the network (r099, r353).
+const egressMocks = vi.hoisted(() => ({ assertCloneTargetAllowed: vi.fn(async (_url: string) => undefined) }));
+vi.mock('../src/lib/gitEgress.js', () => egressMocks);
 
 const svc = {
   id: 1,
@@ -154,6 +157,32 @@ describe('multi-server fan-out (phase 1)', () => {
     expect(calls).toContainEqual(['docker.build', { workspace: 'web', tag: 'ninedeploy/web:t5-abcdef1', dockerfile: 'Dockerfile', context: '.' }]);
     // No pull: the image was built right there.
     expect(calls.some(([op]) => op === 'docker.pull')).toBe(false);
+  });
+
+  it('r353: a source release clears the clone egress gate before any node clones it', async () => {
+    egressMocks.assertCloneTargetAllowed.mockRejectedValueOnce(new Error('Refusing to send an outbound request'));
+    const db = dbWithTargets([{ serverId: 5, runtimeId: null }]);
+    const results = await deployToTargets(
+      db as never,
+      {
+        service: { ...svc, image: null },
+        deploymentId: 13,
+        env: {},
+        primaryServerId: null,
+        source: {
+          repoUrl: 'http://169.254.169.254/latest.git',
+          branch: 'main',
+          commitSha: 'abcdef1234567890',
+          dockerfilePath: 'Dockerfile',
+          baseDir: '.',
+        },
+      },
+      vi.fn(),
+    );
+    expect(egressMocks.assertCloneTargetAllowed).toHaveBeenCalledWith('http://169.254.169.254/latest.git');
+    expect(results).toEqual([expect.objectContaining({ serverId: 5, ok: false })]);
+    // Refused before the node was asked to dial anything.
+    expect(agentMocks.agentOp.mock.calls.some((c) => c[2] === 'git.ensure')).toBe(false);
   });
 
   it('skips targets equal to the primary placement', async () => {

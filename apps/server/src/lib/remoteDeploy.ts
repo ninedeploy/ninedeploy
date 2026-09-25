@@ -77,6 +77,18 @@ export async function remoteDatabaseRefusal(
 }
 
 /**
+ * Whether a service's repository is cloned with a Git credential (the attached
+ * source carries a token or deploy key). A node agent's `git.ensure` has no
+ * credential operand — any clone it runs is anonymous — so a credentialed
+ * repository cannot be checked out on a node (r268, r353).
+ */
+export async function sourceHasGitCredential(db: DB, sourceId: number | null | undefined): Promise<boolean> {
+  if (sourceId == null) return false;
+  const src = await db.query.sources.findFirst({ where: eq(sources.id, sourceId) });
+  return Boolean(src && src.type !== 'registry' && (src.tokenEncrypted || src.deployKeyEncrypted));
+}
+
+/**
  * r266: why the node cannot run this service the way the panel would, or null.
  *
  * The agent's `docker.runEnv` has no slot for a container command, a Docker
@@ -111,9 +123,8 @@ export async function remoteServiceRefusal(
   const type = service.type ?? 'docker';
   // Only a service the NODE clones: an image deploy never clones, and an
   // inline compose stack is shipped from the panel.
-  if (service.sourceId != null && service.repoUrl && !service.image && !service.composeContent) {
-    const src = await db.query.sources.findFirst({ where: eq(sources.id, service.sourceId) });
-    if (src && src.type !== 'registry' && (src.tokenEncrypted || src.deployKeyEncrypted)) {
+  if (service.repoUrl && !service.image && !service.composeContent) {
+    if (await sourceHasGitCredential(db, service.sourceId)) {
       return 'Deployments to a remote server are not available for this service: its repository is cloned with a Git credential, and the node clones anonymously — the credential never leaves the panel. Detach the credential if the repository is public, or clear the target server to deploy it on the panel host.';
     }
   }

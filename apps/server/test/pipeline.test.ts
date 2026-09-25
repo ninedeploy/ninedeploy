@@ -2,7 +2,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { auditLog, deployments, domains, services } from '@ninedeploy/db';
+import { auditLog, deployments, domains, services, serviceTargets } from '@ninedeploy/db';
 import { logBus } from '../src/engine/logs.js';
 import { filterTrustworthyProjectLinks, runDeployment, splitHookCommand } from '../src/engine/pipeline.js';
 
@@ -2004,5 +2004,78 @@ describe('r239: kernel service lifecycle events', () => {
     const emit = vi.fn();
     await runDeployment(db as never, 1, { useBuildKit: false, events: { emit } as never });
     expect(emit.mock.calls.map((c) => c[0])).toEqual(['service.deploying']);
+  });
+});
+
+describe('r353: source fan-out and Git credentials', () => {
+  let egressEnv: string | undefined;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    logBus.removeAllListeners();
+    h.builder.buildAndRun.mockImplementation(async () => ({ runtimeId: 'c-1', port: 3000, healthPath: '/' }));
+    h.builder.isHealthy.mockImplementation(async () => true);
+    h.builder.stop.mockImplementation(async () => undefined);
+    h.checkoutCommit.mockImplementation(async () => 'sha-1234567');
+    h.writeDynamicConfig.mockImplementation(async () => undefined);
+    // The node answers every op; the new container is reported running.
+    h.agentOp.mockImplementation(async (...args: unknown[]) =>
+      args[2] === 'docker.inspect' ? { exitCode: 0, lines: ['running|10.0.0.9'] } : { exitCode: 0, lines: [] },
+    );
+    // No DNS in unit tests: the clone egress gate is bypassed for the control
+    // case (the refusal itself is covered in fanout.test.ts).
+    egressEnv = process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'];
+    process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'] = '1';
+  });
+  afterEach(() => {
+    logBus.removeAllListeners();
+    if (egressEnv === undefined) delete process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'];
+    else process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'] = egressEnv;
+  });
+
+  /** A panel-hosted source service with one extra fan-out node (#9). */
+  const withTarget = (db: FakeDb) => {
+    db.select.mockImplementation(() => ({
+      from: vi.fn((table: unknown) => {
+        const rows = table === serviceTargets ? [{ serverId: 9, runtimeId: null }] : [];
+        return {
+          where: vi.fn(() => Object.assign(Promise.resolve(rows), { limit: vi.fn(() => Promise.resolve(rows)) })),
+          leftJoin: vi.fn(() => Promise.resolve([])),
+          innerJoin: vi.fn(() => Promise.resolve([])),
+          orderBy: vi.fn(() => Promise.resolve([])),
+          // biome-ignore lint/suspicious/noThenProperty: intentional thenable — the fake DB query result must be awaitable by the code under test.
+          then: (ok: (v: unknown) => unknown) => ok(rows),
+        };
+      }),
+    }));
+  };
+  const nodeOps = () => h.agentOp.mock.calls.map((c) => c[2]);
+
+  it('skips source fan-out with a log line when the repository is cloned with a Git credential', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { sourceId: 7 });
+    db.query.sources.findFirst.mockResolvedValue({ id: 7, type: 'github', tokenEncrypted: 'tok', deployKeyEncrypted: null });
+    withTarget(db);
+    const lines = collectLogs(1);
+
+    await runDeployment(db as never, 1);
+
+    expect(lines).toContain('✓ Deployment successful');
+    expect(lines.some((l) => l.startsWith('Fan-out skipped: this repository is cloned with a Git credential'))).toBe(true);
+    // No node was asked to clone the private repository anonymously.
+    expect(nodeOps()).not.toContain('git.ensure');
+  });
+
+  it('still fans a public source release out to the extra node (control)', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { sourceId: 7 });
+    db.query.sources.findFirst.mockResolvedValue({ id: 7, type: 'custom', tokenEncrypted: null, deployKeyEncrypted: null });
+    withTarget(db);
+    const lines = collectLogs(1);
+
+    await runDeployment(db as never, 1);
+
+    expect(lines.some((l) => l.startsWith('Fan-out skipped'))).toBe(false);
+    expect(nodeOps()).toContain('git.ensure');
+    expect(nodeOps()).toContain('docker.build');
   });
 });
