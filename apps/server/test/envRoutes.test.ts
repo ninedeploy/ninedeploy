@@ -1,7 +1,7 @@
 ﻿import { describe, expect, it } from 'vitest';
 import { encrypt } from '../src/lib/crypto.js';
 import { envRoutes } from '../src/modules/env.js';
-import { asUser, buildTestApp, createFakeDb, envVarRow } from './helpers.js';
+import { asUser, buildTestApp, captureAudits, createFakeDb, envVarRow } from './helpers.js';
 
 describe('env routes (src/modules/env.ts)', () => {
   it('lists env vars, decrypting non-secret values and masking secrets', async () => {
@@ -69,6 +69,24 @@ describe('env routes (src/modules/env.ts)', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ id: 3, key: 'TOKEN', isSecret: true });
+  });
+
+  it('r282: overwriting an existing var via POST is audited as env.update, without the value', async () => {
+    const existing = envVarRow({ id: 3, serviceId: 1, key: 'TOKEN', valueEncrypted: encrypt('old'), isSecret: true });
+    const updated = envVarRow({ id: 3, serviceId: 1, key: 'TOKEN', valueEncrypted: encrypt('s3cr3t-new'), isSecret: true });
+    const db = createFakeDb({ findFirst: { services: { id: 1, name: 'api' }, envVars: existing }, update: { env_vars: [updated] } });
+    const audits = captureAudits(db);
+    const app = await buildTestApp({ db });
+    await app.register(envRoutes);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/1/env',
+      headers: asUser(),
+      payload: { key: 'TOKEN', value: 's3cr3t-new', overwriteExisting: true },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(audits).toEqual([expect.objectContaining({ action: 'env.update', entity: 'api/TOKEN' })]);
+    expect(JSON.stringify(audits)).not.toContain('s3cr3t-new');
   });
 
   it('updates an env var', async () => {

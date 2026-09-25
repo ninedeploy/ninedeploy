@@ -613,6 +613,26 @@ export function trackStatusUpdates(db: ReturnType<typeof createFakeDb>) {
   return { updates };
 }
 
+/** Record every audit_log row written through db.insert(...) — `{ action, entity, meta }`
+ * — for asserting which audit() calls a route made (r282). Install before the
+ * request; other tables pass through untouched. */
+export function captureAudits(db: ReturnType<typeof createFakeDb>) {
+  const rows: Array<{ action?: unknown; entity?: unknown; meta?: unknown }> = [];
+  const original = db.insert.bind(db) as (table: unknown) => { values: (v: Record<string, unknown>) => unknown };
+  (db as unknown as { insert: (table: unknown) => unknown }).insert = (table: unknown) => {
+    const builder = original(table);
+    if (tableName(table) !== 'audit_log') return builder;
+    return {
+      ...builder,
+      values: (v: Record<string, unknown>) => {
+        rows.push(v);
+        return builder.values(v);
+      },
+    };
+  };
+  return rows;
+}
+
 export const svcRow = (over: Record<string, unknown> = {}) => ({
   id: 1,
   projectId: null,

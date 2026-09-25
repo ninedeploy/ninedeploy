@@ -84,6 +84,9 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
           .where(and(eq(envVars.id, existing.id), eq(envVars.serviceId, id)))
           .returning();
         if (!updated) throw badRequest('Could not update existing env var');
+        // r282: this replaces a (possibly secret) value exactly like PATCH
+        // does, so it is audited the same way — key only, never the value.
+        void audit(app.db, req.user!.id, 'env.update', `${svc.name}/${updated.key}`);
         return serialize(updated);
       }
     }
