@@ -9,7 +9,7 @@ import { HELP_TOPICS } from './content.js';
  * Settings page validates `?section=` against its own list.
  */
 export const SERVICE_TAB_IDS = [
-  'overview', 'terminal', 'architecture', 'manifest', 'deploys', 'environment',
+  'overview', 'terminal', 'architecture', 'manifest', 'compose', 'deploys', 'environment',
   'network', 'volumes', 'files', 'framework', 'settings', 'activity', 'danger',
 ] as const;
 
@@ -18,7 +18,7 @@ export const DATABASE_TAB_IDS = [
 ] as const;
 
 export const SETTINGS_SECTION_IDS = [
-  'account', 'appearance', 'security', 'sso', 'integrations', 'notifications',
+  'account', 'appearance', 'security', 'sso', 'integrations', 'ai', 'notifications',
   'log-drains', 'storage', 'firewall', 'config', 'plugins', 'system', 'migration',
 ] as const;
 

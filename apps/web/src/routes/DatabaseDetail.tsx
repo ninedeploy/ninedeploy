@@ -22,7 +22,7 @@ import {
   Cpu,
   MemoryStick,
 } from 'lucide-react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { DatabaseDetail as IDatabaseDetail } from '@ninedeploy/sdk';
 import { api, authedFetch } from '../lib/api.js';
 import { apiUrl } from '../lib/apiUrl.js';
@@ -60,13 +60,27 @@ const ENGINE_LABEL: Record<string, string> = {
   rabbitmq: 'RabbitMQ',
 };
 
+const DB_TABS = ['overview', 'topology', 'manifest', 'files', 'backups', 'logs', 'settings'] as const;
+type DbTab = (typeof DB_TABS)[number];
+
 export function DatabaseDetail() {
   const { id: idParam } = useParams<{ id: string }>();
   const id = Number(idParam);
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<'overview' | 'topology' | 'manifest' | 'files' | 'backups' | 'logs' | 'settings'>('overview');
+  // r343: the tab is OWNED by `?tab=` (as on the service page), so deep links
+  // like /databases/7?tab=backups land on that tab and the help drawer —
+  // which resolves its topic from the same param — matches what is shown.
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const activeTab: DbTab = (DB_TABS as readonly string[]).includes(tabParam ?? '') ? (tabParam as DbTab) : 'overview';
+  const setActiveTab = (next: DbTab) => {
+    const sp = new URLSearchParams(searchParams);
+    if (next === 'overview') sp.delete('tab');
+    else sp.set('tab', next);
+    navigate({ search: sp.toString() });
+  };
   const [embeddedStudioUrl, setEmbeddedStudioUrl] = useState<string | null>(null);
   const studioTitleId = useId();
   useEscapeToClose(() => setEmbeddedStudioUrl(null), embeddedStudioUrl != null);
@@ -234,7 +248,7 @@ export function DatabaseDetail() {
       {/* Tabs */}
       <Tabs
         active={activeTab}
-        onChange={(t) => setActiveTab(t as any)}
+        onChange={(t) => setActiveTab(t as DbTab)}
         tabs={[
           { id: 'overview', label: 'Overview' },
           { id: 'topology', label: 'Topology' },

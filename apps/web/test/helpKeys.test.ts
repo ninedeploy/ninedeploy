@@ -44,7 +44,12 @@ describe('helpKeys', () => {
     const settingsKeys = new Set(
       HELP_ROUTE_TABLE.filter((e) => e.key.startsWith('settings.')).map((e) => e.key),
     );
-    expect(settingsKeys.size).toBe(13);
+    expect(settingsKeys.size).toBe(14);
+  });
+
+  it('r343: resolves the Settings AI section and the service Compose tab to their own topics', () => {
+    expect(helpKeyForLocation('/settings', '?section=ai')).toBe('settings.ai');
+    expect(helpKeyForLocation('/services/3', '?tab=compose')).toBe('service.compose');
   });
 
   it('falls back to the general topic for unknown routes', () => {

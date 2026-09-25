@@ -236,6 +236,18 @@ describe('DatabaseDetail', () => {
     expect(await screen.findByText('Database is stopped. Start database to stream logs.')).toBeInTheDocument();
   });
 
+  it('opens the tab named by ?tab= and keeps the URL in step with tab clicks (r343)', async () => {
+    mockOf(api.databases.get).mockResolvedValue(sampleDb as any);
+    mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);
+    renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1?tab=backups' });
+    expect(await screen.findByText('10.0 MB')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Backups' })).toHaveAttribute('aria-selected', 'true');
+    // Back to Overview via the tab strip: the backups panel goes away.
+    fireEvent.click(screen.getByRole('tab', { name: 'Overview' }));
+    await waitFor(() => expect(screen.queryByText('10.0 MB')).not.toBeInTheDocument());
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+  });
+
   it('manages backups tab, restores snapshot successfully and downloads file', async () => {
     mockOf(api.databases.get).mockResolvedValue(sampleDb as any);
     mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);

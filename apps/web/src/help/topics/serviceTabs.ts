@@ -5,7 +5,7 @@ import type { HelpTopic } from '../types.js';
 const REF_INFISICAL = '\u0024\u007B\u007Binfisical:KEY\u007D\u007D';
 const REF_DOPPLER = '\u0024\u007B\u007Bdoppler:KEY\u007D\u007D';
 
-/** Help topics for the 13 tabs of a single service (/services/:id?tab=…). */
+/** Help topics for the 14 tabs of a single service (/services/:id?tab=…). */
 export const SERVICE_TAB_TOPICS: Record<string, HelpTopic> = {
   'service.overview': {
     title: 'Service · Overview',
@@ -120,6 +120,26 @@ export const SERVICE_TAB_TOPICS: Record<string, HelpTopic> = {
     related: [
       { label: 'Manifest Creator', helpId: 'manifest-creator' },
       { label: 'Service · Network & domains', helpId: 'service.network' },
+    ],
+  },
+
+  'service.compose': {
+    title: 'Service · Compose File',
+    summary:
+      'The YAML of an inline compose stack — the stack you pasted when creating the service. Only shown for inline stacks; a git-repo compose service keeps its file in the repository.',
+    sections: [
+      {
+        heading: 'Editing the stack',
+        steps: [
+          'Edit the YAML and press Save — the server validates it with the same preflight the create wizard runs.',
+          'Press Save & redeploy (or redeploy later) — running containers only change on the next deploy.',
+        ],
+        tip: 'The routed compose service must still be declared in the file, or the save is refused.',
+      },
+    ],
+    related: [
+      { label: 'Service · Deploys', helpId: 'service.deploys' },
+      { label: 'Service · Manifest & Traefik', helpId: 'service.manifest' },
     ],
   },
 

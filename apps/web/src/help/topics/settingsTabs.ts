@@ -4,7 +4,7 @@ import type { HelpTopic } from '../types.js';
 const REF_INFISICAL = '\u0024\u007B\u007Binfisical:KEY\u007D\u007D';
 const REF_DOPPLER = '\u0024\u007B\u007Bdoppler:KEY\u007D\u007D';
 
-/** Help topics for the 13 sections of the Settings page (/settings?section=…). */
+/** Help topics for the 14 sections of the Settings page (/settings?section=…). */
 export const SETTINGS_TAB_TOPICS: Record<string, HelpTopic> = {
   'settings.account': {
     title: 'Settings · Account',
@@ -132,6 +132,24 @@ export const SETTINGS_TAB_TOPICS: Record<string, HelpTopic> = {
       { label: 'Service · Network & domains', helpId: 'service.network' },
       { label: 'Hub (templates)', helpId: 'hub' },
     ],
+  },
+
+  'settings.ai': {
+    title: 'Settings · AI Diagnosis',
+    summary:
+      'Bring-your-own-key failure diagnosis: one OpenAI-compatible endpoint, model and API key for the whole instance, used to explain failed build logs.',
+    sections: [
+      {
+        heading: 'Setting it up',
+        bullets: [
+          'Base URL — any OpenAI-compatible chat-completions endpoint (OpenAI, a gateway, or a local model server).',
+          'Model — the model name that endpoint expects.',
+          'API key — sent once and sealed server-side; the form never shows it again. Leave it empty to keep the stored key.',
+        ],
+        tip: 'The sanitized tail of a failed build log is sent to the provider — pick one you trust with your build output.',
+      },
+    ],
+    related: [{ label: 'Service · Deploys', helpId: 'service.deploys' }],
   },
 
   'settings.notifications': {
