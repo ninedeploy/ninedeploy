@@ -249,7 +249,9 @@ export interface ApplyManifestInput {
 export interface BackupDrillResult {
   drillId: number;
   ok: true;
-  status: 'passed' | 'failed';
+  /** `unverifiable` (r356): the check could not run — docker, the engine
+   *  image or its tool unavailable, or a timeout. Not a verdict on the backup. */
+  status: 'passed' | 'failed' | 'unverifiable';
   durationMs: number;
   details: Record<string, unknown> | null;
   error: string | null;
@@ -260,7 +262,7 @@ export interface BackupDrillEntry {
   id: number;
   databaseId: number;
   backupId: number;
-  status: 'pending' | 'running' | 'passed' | 'failed';
+  status: 'pending' | 'running' | 'passed' | 'failed' | 'unverifiable';
   engine: string;
   durationMs: number;
   error: string | null;
@@ -1148,7 +1150,8 @@ export interface NineDeployClient {
      * header parse, ...). Returns the drill row with `status`
      * of `passed` or `failed`; a failed drill is a real
      * signal that the backup cannot be restored cleanly, not
-     * a warning. Requires the `member` role on the database.
+     * a warning. `unverifiable` (r356) means the check could
+     * not run at all. Requires the `member` role on the database.
      */
     drillBackup: (id: number, input: { backupId: number }) => Promise<BackupDrillResult>;
     /** List the most recent drills for a database, newest first. */

@@ -147,7 +147,9 @@ export async function pruneRetiredRecords(db: import('@ninedeploy/db').DB, now: 
   const drillCutoff = new Date(now - DRILL_MAX_AGE_MS);
   await db.delete(backupDrills).where(
     and(
-      inArray(backupDrills.status, ['passed', 'failed']),
+      // r356: an old `unverifiable` row goes too, but never counts as the
+      // database's kept "last verified" answer — it verified nothing.
+      inArray(backupDrills.status, ['passed', 'failed', 'unverifiable']),
       lt(backupDrills.startedAt, drillCutoff),
       sql`${backupDrills.id} NOT IN (SELECT MAX(${backupDrills.id}) FROM ${backupDrills} WHERE ${backupDrills.status} IN ('passed', 'failed') GROUP BY ${backupDrills.databaseId})`,
     ),

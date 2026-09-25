@@ -366,6 +366,10 @@ export async function backupsDrill(client: NineDeployClient, idStr: string, back
   } catch (err) { fail(err); return; }
   if (result.status === 'passed') {
     success(`Backup #${backupId} passed the drill in ${result.durationMs} ms.`);
+  } else if (result.status === 'unverifiable') {
+    // r356: the check could not run (docker / engine image / tool missing) —
+    // not a verdict on the backup. Exit 2 keeps it apart from a real failure.
+    console.log(`  ${c.yellow('!')} ${c.yellow(`Backup #${backupId} could not be verified: ${result.error ?? 'tool unavailable'}`)}`);
   } else {
     error(`Backup #${backupId} FAILED the drill: ${result.error ?? 'unknown reason'}`);
   }
@@ -374,7 +378,7 @@ export async function backupsDrill(client: NineDeployClient, idStr: string, back
       console.log(`  ${c.dim(`${k}:`)} ${typeof v === 'string' ? v : JSON.stringify(v)}`);
     }
   }
-  process.exitCode = result.status === 'passed' ? 0 : 1;
+  process.exitCode = result.status === 'passed' ? 0 : result.status === 'unverifiable' ? 2 : 1;
 }
 
 /**

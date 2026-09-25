@@ -2,34 +2,58 @@
  * G-17 backup drill — lib coverage.
  *
  * `backupDrill.ts` runs an engine-specific smoke check on a
- * backup file (pg_restore --list, mysqldump header sniff,
- * redis-check-rdb, bsondump) and records the outcome. The
- * behaviour worth pinning down:
+ * backup file and records the outcome. The behaviour worth
+ * pinning down:
  *  - the run always inserts a `running` row first so a
  *    process-killed drill is visible in the history list.
  *  - the final status is `passed` only when the engine
- *    validator succeeds; any other outcome (validator error,
- *    missing file without remote, unknown engine, etc.) lands
- *    in `failed` with an explanatory `error` string.
+ *    validator succeeds; a broken dump lands in `failed` with
+ *    an explanatory `error` string, and (r356) a check that
+ *    could not run at all lands in `unverifiable`.
+ *  - r356: engine tools run inside a throwaway container of the
+ *    database's OWN image (docker create/cp/start/rm, argv only),
+ *    never as host binaries; postgres plain-SQL and mysql dumps
+ *    are checked structurally (header + "finished" trailer);
+ *    mongo `--archive --gzip` dumps are gunzipped end to end.
  *  - a database/backup id mismatch is rejected before any
  *    row is written.
- *  - the engine dispatch covers postgres / mysql / mariadb /
- *    redis / valkey / mongo; an unknown engine produces a
- *    deterministic "Drill not supported" error.
  *  - encrypted envelopes and remote-only backups are staged
- *    to a temp file and cleaned up; plaintext files are used
- *    in place.
+ *    to a temp file and cleaned up on every path; plaintext
+ *    files are used in place.
  *  - `listBackupDrills` returns the most recent N rows in
  *    descending order, parsing `detailsJson` back to an
  *    object.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const TMP = join(tmpdir(), `ninedeploy-drill-${process.pid}-${Date.now()}`);
+
+/** What `pg_dump --file` (plain format) really writes: header, body, trailer. */
+const PG_PLAIN = [
+  '--',
+  '-- PostgreSQL database dump',
+  '--',
+  '',
+  '\\restrict k3yK3y',
+  '',
+  'SET statement_timeout = 0;',
+  'CREATE TABLE public.users (id integer);',
+  '',
+  '--',
+  '-- PostgreSQL database dump complete',
+  '--',
+  '',
+  '\\unrestrict k3yK3y',
+  '',
+].join('\n');
+
+type ExecReply = { stdout?: string; lines?: string[]; throw?: Error } | undefined;
+
 const {
   dbState,
   execState,
@@ -37,54 +61,74 @@ const {
   remoteState,
 } = vi.hoisted(() => ({
   dbState: {
-    databases: new Map<number, { id: number; engine: string }>(),
+    databases: new Map<number, { id: number; engine: string; version?: string | null }>(),
     backups: new Map<number, { id: number; databaseId: number; path: string; remoteKey: string | null }>(),
     drills: new Map<number, Record<string, unknown>>(),
     nextDrillId: 1,
   },
   execState: {
-    /** Maps a tool name to the (output, exitCode) pair to return. */
-    toolResults: new Map<string, { stdout: string; throw?: Error }>(),
+    calls: [] as Array<{ cmd: string; args: string[] }>,
+    /** Scripted reply per (cmd, args); undefined = exit 0 with no output. */
+    handler: (_cmd: string, _args: string[]): { stdout?: string; lines?: string[]; throw?: Error } | undefined => undefined,
+    /** Files that existed when `docker cp` copied them (the staged dump). */
+    copied: [] as Array<{ src: string; existed: boolean }>,
   },
   cryptoState: {
     encryptedPaths: new Set<string>(),
     decryptedTo: new Map<string, string>(),
+    /** Body the decrypt mock writes. */
+    plaintext: '',
   },
   remoteState: {
     fetchedTo: new Map<string, string>(),
   },
 }));
 
-vi.mock('../../src/lib/exec.js', () => ({
-  capture: vi.fn(async (tool: string) => {
-    const r = execState.toolResults.get(tool);
-    if (r?.throw) throw r.throw;
-    return r?.stdout ?? '';
-  }),
-  run: vi.fn(async (tool: string, _args: unknown) => {
-    const r = execState.toolResults.get(tool);
-    if (r?.throw) throw r.throw;
-  }),
-}));
+vi.mock('../../src/lib/exec.js', async () => {
+  const { existsSync: exists } = await import('node:fs');
+  class ExecTimeoutError extends Error {
+    constructor(cmd: string, timeoutMs: number) {
+      super(`\`${cmd}\` timed out after ${timeoutMs}ms`);
+      this.name = 'ExecTimeoutError';
+    }
+  }
+  const record = (cmd: string, args: string[]) => {
+    execState.calls.push({ cmd, args });
+    if (cmd === 'docker' && args[0] === 'cp') execState.copied.push({ src: args[1]!, existed: exists(args[1]!) });
+    return execState.handler(cmd, args);
+  };
+  return {
+    ExecTimeoutError,
+    capture: vi.fn(async (cmd: string, args: string[]) => {
+      const r = record(cmd, args);
+      if (r?.throw) throw r.throw;
+      return r?.stdout ?? '';
+    }),
+    run: vi.fn(async (cmd: string, args: string[], _opts: unknown, sink: (line: string) => void) => {
+      const r = record(cmd, args);
+      for (const line of r?.lines ?? []) sink(line);
+      if (r?.throw) throw r.throw;
+    }),
+  };
+});
 
 vi.mock('../../src/lib/backupCrypto.js', () => ({
   isEncryptedBackupFile: vi.fn(async (path: string) => cryptoState.encryptedPaths.has(path)),
   decryptBackupFile: vi.fn(async (src: string, dest: string) => {
     cryptoState.decryptedTo.set(src, dest);
-    // Body matches the postgres plain-SQL header-sniff regex
-    // (one of: PostgreSQL / pg_dump / SELECT / SET / CREATE / INSERT).
-    await writeFile(dest, 'CREATE TABLE users (id INT);\n', 'utf8');
+    await writeFile(dest, cryptoState.plaintext, 'utf8');
   }),
 }));
 
 vi.mock('../../src/lib/backupRemote.js', () => ({
   fetchRemoteBackup: vi.fn(async (_db: unknown, remote: { remoteKey: string | null }, dest: string) => {
     remoteState.fetchedTo.set(remote.remoteKey ?? '', dest);
-    // Same shape so the header-sniff path lands the drill.
-    await writeFile(dest, 'CREATE TABLE remote (id INT);\n', 'utf8');
+    // A complete plain pg_dump, so the postgres structural check passes.
+    await writeFile(dest, PG_PLAIN, 'utf8');
   }),
 }));
 
+import { ExecTimeoutError } from '../../src/lib/exec.js';
 import {
   findDrillById,
   listBackupDrills,
@@ -151,15 +195,50 @@ function buildDb() {
   });
 }
 
+/** Seed database #1 (engine/version) with backup #1 at `path`. */
+function seed(engine: string, path: string, version: string | null = null, remoteKey: string | null = null) {
+  dbState.databases.set(1, { id: 1, engine, version });
+  dbState.backups.set(1, { id: 1, databaseId: 1, path, remoteKey });
+}
+
+async function dumpFile(name: string, body: string | Buffer): Promise<string> {
+  const p = join(TMP, name);
+  await writeFile(p, body);
+  return p;
+}
+
+/** A healthy docker whose drill container prints `lines` from the check. */
+function dockerReplies(start: ExecReply = {}): (cmd: string, args: string[]) => ExecReply {
+  return (cmd, args) => {
+    if (cmd !== 'docker') return { throw: new Error(`spawn ${cmd} ENOENT`) };
+    if (args[0] === 'image') return { stdout: 'sha256:abc\n' };
+    if (args[0] === 'create') return { stdout: 'cid123\n' };
+    if (args[0] === 'start') return start;
+    return undefined;
+  };
+}
+
+const dockerCall = (sub: string) => execState.calls.find((c) => c.cmd === 'docker' && c.args[0] === sub);
+
+/** A mongo-tools archive: magic, some BSON-ish payload, the -1 terminator. */
+function mongoArchive(opts: { terminator?: boolean } = {}): Buffer {
+  const parts = [Buffer.from([0x6d, 0xe2, 0x99, 0x81]), Buffer.from('\x16\x00\x00\x00\x02name\x00\x04\x00\x00\x00app\x00\x00'.repeat(50), 'latin1')];
+  if (opts.terminator !== false) parts.push(Buffer.from([0xff, 0xff, 0xff, 0xff]));
+  return Buffer.concat(parts);
+}
+
 beforeEach(async () => {
   await mkdir(TMP, { recursive: true });
   dbState.databases.clear();
   dbState.backups.clear();
   dbState.drills.clear();
   dbState.nextDrillId = 1;
-  execState.toolResults.clear();
+  execState.calls = [];
+  execState.copied = [];
+  execState.handler = dockerReplies();
   cryptoState.encryptedPaths.clear();
   cryptoState.decryptedTo.clear();
+  cryptoState.plaintext = PG_PLAIN;
   remoteState.fetchedTo.clear();
 });
 
@@ -188,147 +267,281 @@ describe('lib/backupDrill', () => {
       await expect(runBackupDrill(db, 1, 2)).rejects.toThrow(/does not belong/);
     });
 
-    it('passes a postgres drill when pg_restore --list exits 0', async () => {
-      const db = buildDb();
-      const dump = join(TMP, 'plain.dump');
-      await writeFile(dump, 'fake', 'utf8');
-      dbState.databases.set(1, { id: 1, engine: 'postgres' });
-      dbState.backups.set(1, { id: 1, databaseId: 1, path: dump, remoteKey: null });
-      execState.toolResults.set('pg_restore', { stdout: '1; 1259 TABLE public users\n' });
-      const result = await runBackupDrill(db, 1, 1);
-      expect(result.status).toBe('passed');
-      expect(result.details).toMatchObject({ tool: 'pg_restore' });
-      expect(typeof result.durationMs).toBe('number');
-      expect(result.error).toBeNull();
-    });
-
-    it('falls back to header sniff for a plain-SQL postgres dump', async () => {
-      const db = buildDb();
-      const dump = join(TMP, 'plain.sql');
-      await writeFile(dump, 'CREATE TABLE users (id INT);\nINSERT INTO ...\n', 'utf8');
-      dbState.databases.set(1, { id: 1, engine: 'postgres' });
-      dbState.backups.set(1, { id: 1, databaseId: 1, path: dump, remoteKey: null });
-      // pg_restore fails on plain SQL
-      execState.toolResults.set('pg_restore', { throw: new Error('input file does not appear to be a valid archive') });
-      const result = await runBackupDrill(db, 1, 1);
-      expect(result.status).toBe('passed');
-      expect(result.details).toMatchObject({ tool: 'header-sniff', mode: 'plain-sql' });
-    });
-
-    it('fails when pg_restore rejects AND the file is not a plain-SQL dump', async () => {
-      const db = buildDb();
-      const dump = join(TMP, 'bad.dump');
-      await writeFile(dump, 'random binary data', 'utf8');
-      dbState.databases.set(1, { id: 1, engine: 'postgres' });
-      dbState.backups.set(1, { id: 1, databaseId: 1, path: dump, remoteKey: null });
-      execState.toolResults.set('pg_restore', { throw: new Error('not a Postgres archive') });
-      const result = await runBackupDrill(db, 1, 1);
-      expect(result.status).toBe('failed');
-      expect(result.error).toMatch(/not a recognised Postgres SQL script/);
-    });
-
-    it('passes a mysql drill when the mysqldump banner is present', async () => {
-      const db = buildDb();
-      const dump = join(TMP, 'mysql.sql');
-      await writeFile(dump, '-- MySQL dump 10.13  Distrib 8.0.36\nCREATE TABLE ...\n', 'utf8');
-      dbState.databases.set(1, { id: 1, engine: 'mysql' });
-      dbState.backups.set(1, { id: 1, databaseId: 1, path: dump, remoteKey: null });
-      const result = await runBackupDrill(db, 1, 1);
-      expect(result.status).toBe('passed');
-      expect(result.details).toMatchObject({ tool: 'header-sniff' });
-    });
-
-    it('fails a mysql drill when the banner is missing', async () => {
-      const db = buildDb();
-      const dump = join(TMP, 'mysql.sql');
-      await writeFile(dump, 'CREATE TABLE only\n', 'utf8');
-      dbState.databases.set(1, { id: 1, engine: 'mysql' });
-      dbState.backups.set(1, { id: 1, databaseId: 1, path: dump, remoteKey: null });
-      const result = await runBackupDrill(db, 1, 1);
-      expect(result.status).toBe('failed');
-      expect(result.error).toMatch(/No mysqldump \/ mariadb-dump banner/);
-    });
-
-    it('passes a redis drill when redis-check-rdb exits 0', async () => {
-      const db = buildDb();
-      const dump = join(TMP, 'dump.rdb');
-      await writeFile(dump, 'REDIS0009', 'utf8');
-      dbState.databases.set(1, { id: 1, engine: 'redis' });
-      dbState.backups.set(1, { id: 1, databaseId: 1, path: dump, remoteKey: null });
-      const result = await runBackupDrill(db, 1, 1);
-      expect(result.status).toBe('passed');
-      expect(result.details).toMatchObject({ tool: 'redis-check-rdb' });
-    });
-
-    it('fails a redis drill when redis-check-rdb rejects the file', async () => {
-      const db = buildDb();
-      const dump = join(TMP, 'dump.rdb');
-      await writeFile(dump, 'REDIS0009', 'utf8');
-      dbState.databases.set(1, { id: 1, engine: 'redis' });
-      dbState.backups.set(1, { id: 1, databaseId: 1, path: dump, remoteKey: null });
-      execState.toolResults.set('redis-check-rdb', { throw: new Error('offset 12: CRC error') });
-      const result = await runBackupDrill(db, 1, 1);
-      expect(result.status).toBe('failed');
-      expect(result.error).toMatch(/redis-check-rdb rejected/);
-    });
-
-    it('treats valkey like redis', async () => {
-      const db = buildDb();
-      const dump = join(TMP, 'dump.rdb');
-      await writeFile(dump, 'REDIS0009', 'utf8');
-      dbState.databases.set(1, { id: 1, engine: 'valkey' });
-      dbState.backups.set(1, { id: 1, databaseId: 1, path: dump, remoteKey: null });
-      const result = await runBackupDrill(db, 1, 1);
-      expect(result.status).toBe('passed');
-      expect(result.details).toMatchObject({ tool: 'redis-check-rdb' });
-    });
-
-    it('passes a mongo drill when bsondump exits 0', async () => {
-      const db = buildDb();
-      const dump = join(TMP, 'dump.bson');
-      await writeFile(dump, 'fake bson', 'utf8');
-      dbState.databases.set(1, { id: 1, engine: 'mongo' });
-      dbState.backups.set(1, { id: 1, databaseId: 1, path: dump, remoteKey: null });
-      const result = await runBackupDrill(db, 1, 1);
-      expect(result.status).toBe('passed');
-      expect(result.details).toMatchObject({ tool: 'bsondump' });
-    });
-
     it('fails for an unsupported engine without a validator', async () => {
       const db = buildDb();
-      const dump = join(TMP, 'dump.bin');
-      await writeFile(dump, 'fake', 'utf8');
-      dbState.databases.set(1, { id: 1, engine: 'clickhouse' });
-      dbState.backups.set(1, { id: 1, databaseId: 1, path: dump, remoteKey: null });
+      seed('clickhouse', await dumpFile('dump.bin', 'fake'));
       const result = await runBackupDrill(db, 1, 1);
       expect(result.status).toBe('failed');
       expect(result.error).toMatch(/Drill not supported for engine/);
     });
+  });
 
-    it('fetches a missing remote-only backup and cleans up the temp file', async () => {
+  // ── r356: postgres ──────────────────────────────────────────────────────
+  // engine/database.ts writes PLAIN-SQL dumps (`pg_dump --file`, no -Fc).
+  // The drill ran a HOST `pg_restore --list` first — which refuses plain SQL
+  // by design (and is absent on a stock host) — then fell back to a sniff that
+  // passed any file containing SET/CREATE, truncated or not.
+  describe('r356: postgres', () => {
+    it('passes a complete plain-SQL pg_dump structurally, with no tool and no docker', async () => {
       const db = buildDb();
-      dbState.databases.set(1, { id: 1, engine: 'postgres' });
-      dbState.backups.set(1, { id: 1, databaseId: 1, path: '/no/such/file', remoteKey: 's3://bucket/dump' });
-      // The fetched plaintext happens to have a Postgres banner so
-      // the header-sniff path is what the lib lands on.
-      // We override fetchRemoteBackup via the mock to write a
-      // "plain-sql" header.
+      seed('postgres', await dumpFile('pg.sql', PG_PLAIN));
       const result = await runBackupDrill(db, 1, 1);
       expect(result.status).toBe('passed');
-      expect(remoteState.fetchedTo.get('s3://bucket/dump')).toBeTruthy();
+      expect(result.details).toMatchObject({ tool: 'pg_dump-structure', mode: 'plain-sql' });
+      expect(execState.calls).toEqual([]);
+    });
+
+    it('fails a truncated plain-SQL dump (no "dump complete" trailer)', async () => {
+      const db = buildDb();
+      seed('postgres', await dumpFile('pg.sql', PG_PLAIN.slice(0, PG_PLAIN.indexOf('-- PostgreSQL database dump complete'))));
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('failed');
+      expect(result.error).toMatch(/Truncated pg_dump.*dump complete/);
+    });
+
+    it('fails a dump whose \\restrict key has no matching \\unrestrict', async () => {
+      const db = buildDb();
+      seed('postgres', await dumpFile('pg.sql', PG_PLAIN.replace('\\unrestrict k3yK3y', '')));
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('failed');
+      expect(result.error).toMatch(/unrestrict/);
+    });
+
+    it('fails SQL that is not a pg_dump at all', async () => {
+      const db = buildDb();
+      seed('postgres', await dumpFile('x.sql', 'CREATE TABLE users (id INT);\nINSERT INTO users VALUES (1);\n'));
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('failed');
+      expect(result.error).toMatch(/Not a pg_dump dump/);
+    });
+
+    it('lists a custom-format archive with pg_restore INSIDE the database image (argv, no network)', async () => {
+      const db = buildDb();
+      const file = await dumpFile('pg.dump', 'PGDMP\x01\x0e\x00binary');
+      seed('postgres', file);
+      execState.handler = dockerReplies({ lines: [';', '; Archive created at …', '215; 1259 16385 TABLE public users nine', '216; 1259 16390 TABLE public posts nine'] });
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('passed');
+      expect(result.details).toMatchObject({ tool: 'pg_restore', mode: 'custom', image: 'postgres:18', objectCount: 2 });
+      expect(execState.calls.map((c) => c.cmd)).toEqual(['docker', 'docker', 'docker', 'docker', 'docker']);
+      expect(dockerCall('image')!.args).toEqual(['image', 'inspect', '--format', '{{.Id}}', 'postgres:18']);
+      expect(dockerCall('create')!.args).toEqual([
+        'create', '--network', 'none', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
+        '--user', '0:0', '--pull', 'never', '--entrypoint', 'pg_restore', 'postgres:18',
+        '--list', '/tmp/ninedeploy-drill.dump',
+      ]);
+      expect(dockerCall('cp')!.args).toEqual(['cp', file, 'cid123:/tmp/ninedeploy-drill.dump']);
+      expect(dockerCall('start')!.args).toEqual(['start', '-a', 'cid123']);
+      expect(dockerCall('rm')!.args).toEqual(['rm', '-f', 'cid123']);
+    });
+
+    it('uses the pgvector image for a pgvector database', async () => {
+      const db = buildDb();
+      seed('postgres', await dumpFile('pg.dump', 'PGDMP\x01binary'), 'vector');
+      await runBackupDrill(db, 1, 1);
+      expect(dockerCall('create')!.args).toContain('pgvector/pgvector:pg18');
+    });
+
+    it('fails when pg_restore rejects the custom archive', async () => {
+      const db = buildDb();
+      seed('postgres', await dumpFile('pg.dump', 'PGDMP\x01binary'));
+      execState.handler = dockerReplies({ lines: ['pg_restore: error: could not read from input file: end of file'], throw: new Error('`docker start -a cid123` exited with code 1') });
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('failed');
+      expect(result.error).toMatch(/pg_restore --list rejected the archive: pg_restore: error: could not read/);
+      expect(dockerCall('rm')).toBeTruthy();
+    });
+
+    it('is unverifiable — not failed — when docker is unreachable', async () => {
+      const db = buildDb();
+      seed('postgres', await dumpFile('pg.dump', 'PGDMP\x01binary'));
+      execState.handler = () => ({ throw: new Error('Cannot connect to the Docker daemon') });
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('unverifiable');
+      expect(result.error).toMatch(/^unverifiable: tool unavailable — docker or the engine image postgres:18/);
+      expect(dockerCall('create')).toBeUndefined();
+      expect(dbState.drills.get(result.drillId)).toMatchObject({ status: 'unverifiable' });
+    });
+  });
+
+  describe('r356: mysql / mariadb', () => {
+    const MYSQL = '-- MySQL dump 10.13  Distrib 9.7.0\n--\nCREATE TABLE t (id INT);\n-- Dump completed on 2026-09-25 10:00:00\n';
+
+    it('passes a dump with the banner and the "Dump completed" trailer', async () => {
+      const db = buildDb();
+      seed('mysql', await dumpFile('mysql.sql', MYSQL));
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('passed');
+      expect(result.details).toMatchObject({ tool: 'mysqldump-structure' });
+      expect(execState.calls).toEqual([]);
+    });
+
+    it('fails a truncated dump that lost its "Dump completed" trailer', async () => {
+      const db = buildDb();
+      seed('mariadb', await dumpFile('maria.sql', '-- MariaDB dump 10.19  Distrib 12.3.2\nCREATE TABLE t (id INT);\nINSERT INTO t VALUES (1'));
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('failed');
+      expect(result.error).toMatch(/Dump completed/);
+    });
+
+    it('fails a dump when the banner is missing', async () => {
+      const db = buildDb();
+      seed('mysql', await dumpFile('mysql.sql', 'CREATE TABLE only\n'));
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('failed');
+      expect(result.error).toMatch(/No mysqldump \/ mariadb-dump banner/);
+    });
+  });
+
+  // ── r356: redis / valkey ────────────────────────────────────────────────
+  // The drill ran a HOST `redis-check-rdb`, which no installer provides: on a
+  // stock host every redis drill "failed" with ENOENT.
+  describe('r356: redis / valkey', () => {
+    it('runs redis-check-rdb inside the redis image, never on the host', async () => {
+      const db = buildDb();
+      const file = await dumpFile('dump.rdb', 'REDIS0012');
+      seed('redis', file);
+      execState.handler = dockerReplies({ lines: ['[offset 0] Checking RDB file dump.rdb', '\\o/ RDB looks OK! \\o/'] });
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('passed');
+      expect(result.details).toMatchObject({ tool: 'redis-check-rdb', image: 'redis:8.8' });
+      expect(execState.calls.every((c) => c.cmd === 'docker')).toBe(true);
+      expect(dockerCall('create')!.args.slice(-4)).toEqual(['--entrypoint', 'redis-check-rdb', 'redis:8.8', '/tmp/ninedeploy-drill.dump']);
+      expect(dockerCall('create')!.args.slice(1, 3)).toEqual(['--network', 'none']);
+      expect(dockerCall('cp')!.args).toEqual(['cp', file, 'cid123:/tmp/ninedeploy-drill.dump']);
+    });
+
+    it('uses the database\'s pinned version for the image', async () => {
+      const db = buildDb();
+      seed('redis', await dumpFile('dump.rdb', 'REDIS0011'), '7.4');
+      await runBackupDrill(db, 1, 1);
+      expect(dockerCall('image')!.args.at(-1)).toBe('redis:7.4');
+      expect(dockerCall('create')!.args).toContain('redis:7.4');
+    });
+
+    it('runs valkey-check-rdb inside the valkey image', async () => {
+      const db = buildDb();
+      seed('valkey', await dumpFile('dump.rdb', 'REDIS0011'));
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('passed');
+      expect(result.details).toMatchObject({ tool: 'valkey-check-rdb', image: 'valkey/valkey:9.1' });
+      expect(dockerCall('create')!.args.slice(-4)).toEqual(['--entrypoint', 'valkey-check-rdb', 'valkey/valkey:9.1', '/tmp/ninedeploy-drill.dump']);
+    });
+
+    it('fails when the checker rejects the file, and still removes the container', async () => {
+      const db = buildDb();
+      seed('redis', await dumpFile('dump.rdb', 'REDIS0012'));
+      execState.handler = dockerReplies({
+        lines: ['--- RDB ERROR DETECTED ---', '[offset 12] Unexpected EOF reading RDB file'],
+        throw: new Error('`docker start -a cid123` exited with code 1'),
+      });
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('failed');
+      expect(result.error).toMatch(/redis-check-rdb rejected the file: .*Unexpected EOF/);
+      expect(dockerCall('rm')!.args).toEqual(['rm', '-f', 'cid123']);
+    });
+
+    it('is unverifiable when docker is not installed (spawn ENOENT)', async () => {
+      const db = buildDb();
+      seed('redis', await dumpFile('dump.rdb', 'REDIS0012'));
+      execState.handler = () => ({ throw: new Error('spawn docker ENOENT') });
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('unverifiable');
+      expect(result.error).toMatch(/^unverifiable: tool unavailable/);
+    });
+
+    it('is unverifiable when the image does not carry the checker', async () => {
+      const db = buildDb();
+      seed('valkey', await dumpFile('dump.rdb', 'REDIS0012'));
+      execState.handler = dockerReplies({
+        lines: ['Error response from daemon: failed to create task for container: OCI runtime create failed: exec: "valkey-check-rdb": executable file not found in $PATH: unknown'],
+        throw: new Error('`docker start -a cid123` exited with code 1'),
+      });
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('unverifiable');
+      expect(result.error).toMatch(/valkey-check-rdb is not present in valkey\/valkey:9\.1/);
+      expect(dockerCall('rm')).toBeTruthy();
+    });
+
+    it('is unverifiable when the check times out', async () => {
+      const db = buildDb();
+      seed('redis', await dumpFile('dump.rdb', 'REDIS0012'));
+      execState.handler = dockerReplies({ throw: new ExecTimeoutError('docker start -a cid123', 300_000) });
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('unverifiable');
+      expect(result.error).toMatch(/did not finish/);
+      expect(dockerCall('rm')).toBeTruthy();
+    });
+  });
+
+  // ── r356: mongo ─────────────────────────────────────────────────────────
+  // Backups are `mongodump --archive --gzip`: one gzip stream around the
+  // mongo-tools archive. The drill ran a HOST `bsondump`, which cannot read
+  // that format at all (and is absent on a stock host) — every good mongo
+  // backup "failed".
+  describe('r356: mongo', () => {
+    it('passes a complete gzipped mongodump archive with no tool and no docker', async () => {
+      const db = buildDb();
+      seed('mongo', await dumpFile('mongo.archive', gzipSync(mongoArchive())));
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('passed');
+      expect(result.details).toMatchObject({ tool: 'gzip+archive-structure', archiveBytes: mongoArchive().length });
+      expect(execState.calls).toEqual([]);
+    });
+
+    it('fails a truncated gzip stream', async () => {
+      const db = buildDb();
+      const gz = gzipSync(mongoArchive());
+      seed('mongo', await dumpFile('mongo.archive', gz.subarray(0, gz.length - 12)));
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('failed');
+      expect(result.error).toMatch(/Not a complete mongodump --gzip archive/);
+    });
+
+    it('fails an archive that does not end with the terminator', async () => {
+      const db = buildDb();
+      seed('mongo', await dumpFile('mongo.archive', gzipSync(mongoArchive({ terminator: false }))));
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('failed');
+      expect(result.error).toMatch(/terminator/);
+    });
+
+    it('fails a gzip stream that is not a mongodump archive', async () => {
+      const db = buildDb();
+      seed('mongo', await dumpFile('mongo.archive', gzipSync(Buffer.from('hello world\xff\xff\xff\xff', 'latin1'))));
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('failed');
+      expect(result.error).toMatch(/archive magic/);
+    });
+
+    it('fails a file that is not gzip at all', async () => {
+      const db = buildDb();
+      seed('mongo', await dumpFile('mongo.archive', 'fake bson'));
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('failed');
+    });
+  });
+
+  describe('staging and cleanup', () => {
+    it('fetches a missing remote-only backup and cleans up the temp file', async () => {
+      const db = buildDb();
+      seed('postgres', '/no/such/file', null, 's3://bucket/dump');
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('passed');
+      const fetched = remoteState.fetchedTo.get('s3://bucket/dump')!;
+      expect(fetched).toBeTruthy();
+      expect(existsSync(fetched)).toBe(false);
     });
 
     it('r189: decrypts a fetched remote copy that is an encrypted envelope', async () => {
       const db = buildDb();
-      dbState.databases.set(1, { id: 1, engine: 'postgres' });
-      dbState.backups.set(1, { id: 1, databaseId: 1, path: '/no/such/file', remoteKey: 's3://bucket/enc' });
+      seed('postgres', '/no/such/file', null, 's3://bucket/enc');
       const { fetchRemoteBackup } = await import('../../src/lib/backupRemote.js');
       vi.mocked(fetchRemoteBackup).mockImplementationOnce(async (_db, remote, dest) => {
         remoteState.fetchedTo.set(remote.remoteKey ?? '', dest);
         await writeFile(dest, 'NDBK1:ciphertext', 'utf8');
         cryptoState.encryptedPaths.add(dest); // what really lands in the bucket
       });
-      execState.toolResults.set('pg_restore', { throw: new Error('not a Postgres archive') });
       const result = await runBackupDrill(db, 1, 1);
       expect(result.status).toBe('passed');
       const fetched = remoteState.fetchedTo.get('s3://bucket/enc')!;
@@ -337,8 +550,7 @@ describe('lib/backupDrill', () => {
 
     it('fails cleanly when the file is missing and no remote key is recorded', async () => {
       const db = buildDb();
-      dbState.databases.set(1, { id: 1, engine: 'postgres' });
-      dbState.backups.set(1, { id: 1, databaseId: 1, path: '/no/such/file', remoteKey: null });
+      seed('postgres', '/no/such/file');
       const result = await runBackupDrill(db, 1, 1);
       expect(result.status).toBe('failed');
       expect(result.error).toMatch(/Drill setup failed/);
@@ -346,17 +558,44 @@ describe('lib/backupDrill', () => {
 
     it('decrypts an encrypted envelope to a temp file and cleans up', async () => {
       const db = buildDb();
-      const enc = join(TMP, 'enc.dump');
-      await writeFile(enc, 'fake', 'utf8');
+      const enc = await dumpFile('enc.dump', 'fake');
       cryptoState.encryptedPaths.add(enc);
-      dbState.databases.set(1, { id: 1, engine: 'postgres' });
-      dbState.backups.set(1, { id: 1, databaseId: 1, path: enc, remoteKey: null });
-      // The decrypt mock writes a plain-SQL body; pg_restore
-      // refuses it, header-sniff passes.
-      execState.toolResults.set('pg_restore', { throw: new Error('not a Postgres archive') });
+      seed('postgres', enc);
       const result = await runBackupDrill(db, 1, 1);
       expect(result.status).toBe('passed');
-      expect(cryptoState.decryptedTo.get(enc)).toBeTruthy();
+      const dec = cryptoState.decryptedTo.get(enc)!;
+      expect(dec).toMatch(/-drill\.dec$/);
+      expect(existsSync(dec)).toBe(false);
+    });
+
+    it('r356: the decrypted dump is what enters the drill container, and it is removed afterwards', async () => {
+      const db = buildDb();
+      const enc = await dumpFile('enc.rdb', 'NDBK1:ciphertext');
+      cryptoState.encryptedPaths.add(enc);
+      cryptoState.plaintext = 'REDIS0012';
+      seed('redis', enc);
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('passed');
+      const dec = cryptoState.decryptedTo.get(enc)!;
+      expect(execState.copied).toEqual([{ src: dec, existed: true }]);
+      expect(existsSync(dec)).toBe(false);
+    });
+
+    it('r356: the decrypted dump is removed on the unverifiable and failed paths too', async () => {
+      for (const [handler, status] of [
+        [() => ({ throw: new Error('spawn docker ENOENT') }), 'unverifiable'],
+        [dockerReplies({ throw: new Error('`docker start -a cid123` exited with code 1') }), 'failed'],
+      ] as const) {
+        const db = buildDb();
+        const enc = await dumpFile(`enc-${status}.rdb`, 'NDBK1:ciphertext');
+        cryptoState.encryptedPaths.add(enc);
+        cryptoState.plaintext = 'REDIS0012';
+        seed('redis', enc);
+        execState.handler = handler;
+        const result = await runBackupDrill(db, 1, 1);
+        expect(result.status).toBe(status);
+        expect(existsSync(cryptoState.decryptedTo.get(enc)!)).toBe(false);
+      }
     });
   });
 

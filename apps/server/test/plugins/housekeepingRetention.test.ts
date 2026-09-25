@@ -80,6 +80,26 @@ describe('r302: pruneRetiredRecords', () => {
     expect(left).not.toContain(oldFailed!.id);
   });
 
+  // r356: `unverifiable` (the check could not run) is a finished drill too —
+  // it used to fall outside the sweep and pile up forever — but it verified
+  // nothing, so it never displaces a database's kept "last answer".
+  it('r356: sweeps old unverifiable drills and never keeps one as the last answer', async () => {
+    const [d1] = await db.insert(databases).values({ name: 'u', slug: 'u', engine: 'redis', passwordEncrypted: 'x' }).returning();
+    const [b1] = await db.insert(backups).values({ databaseId: d1!.id, scope: 'db', path: '/u' }).returning();
+    const drill = (status: 'passed' | 'unverifiable', days: number) =>
+      db.insert(backupDrills).values({ databaseId: d1!.id, backupId: b1!.id, status, engine: 'redis', startedAt: ago(days) }).returning();
+    const [lastVerdict] = await drill('passed', 400);
+    const [oldUnverifiable] = await drill('unverifiable', 200);
+    const [recentUnverifiable] = await drill('unverifiable', 3);
+
+    await pruneRetiredRecords(db, NOW);
+
+    const left = (await db.select({ id: backupDrills.id }).from(backupDrills)).map((r) => r.id);
+    expect(left).toContain(lastVerdict!.id);
+    expect(left).toContain(recentUnverifiable!.id);
+    expect(left).not.toContain(oldUnverifiable!.id);
+  });
+
   it('sweeps invitations revoked, accepted or expired past the grace period, never a live one', async () => {
     const [u] = await db.insert(users).values({ email: 'o@example.com', passwordHash: 'x' }).returning();
     const [ws] = await db.insert(workspaces).values({ name: 'W', slug: 'w', ownerId: u!.id }).returning();

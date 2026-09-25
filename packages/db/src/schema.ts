@@ -784,12 +784,16 @@ export const backups = sqliteTable(
 
 // ─── backup drills (G-17) ──────────────────────────────────────────────────
 // One row per drill attempt. The drill reads a backup file and runs an
-// engine-specific smoke check (pg_restore --list, redis-check-rdb, ...)
-// to confirm the dump is at least parseable, without spinning up a real
-// database container. `details_json` carries the engine-specific result
+// engine-specific smoke check (pg_dump trailer, redis-check-rdb in the
+// engine image, ...) to confirm the dump is at least parseable, without
+// restoring it. `details_json` carries the engine-specific result
 // (object counts, file size) so a future operator can see *what* the
 // drill actually verified, not just that it passed.
-export const backupDrillStatus = ['pending', 'running', 'passed', 'failed'] as const;
+// r356: `unverifiable` — the check could not run (docker, the engine image or
+// its tool unavailable; a timeout). No verdict on the backup, so not `failed`.
+// The column is plain TEXT with no CHECK constraint (0044), so the new value
+// needs no migration.
+export const backupDrillStatus = ['pending', 'running', 'passed', 'failed', 'unverifiable'] as const;
 
 export const backupDrills = sqliteTable(
   'backup_drills',
