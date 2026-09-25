@@ -1,4 +1,4 @@
-﻿import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+﻿import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
@@ -1056,6 +1056,28 @@ describe('DeployWizard — advanced review and repository-picker variants', () =
     expect(await screen.findByText('Node.js', {}, { timeout: 4000 })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Re-analyze' }));
     expect(await screen.findByText('Could not analyze the repository', {}, { timeout: 4000 })).toBeInTheDocument();
+  });
+
+  it('discards an in-flight analysis of the previous URL once the URL changes (r298)', async () => {
+    const user = userEvent.setup();
+    const first = deferred<typeof bareAnalysis>();
+    const oldRepo = { ...bareAnalysis, framework: { ...bareAnalysis.framework, id: 'django', name: 'Django', port: 8000 } };
+    apiMock.api.insights.analyze.mockReturnValueOnce(first.promise).mockResolvedValue(bareAnalysis);
+    renderWizard();
+
+    await fillRepo(user, 'https://github.com/x/old');
+    await waitFor(() => expect(apiMock.api.insights.analyze).toHaveBeenCalledTimes(1), { timeout: 4000 });
+    // The user moves on to another repository while the old clone runs…
+    fireEvent.change(screen.getByPlaceholderText('https://github.com/you/repo'), {
+      target: { value: 'https://github.com/x/new' },
+    });
+    // …and the old repository's result lands inside the new URL's debounce.
+    await act(async () => first.resolve(oldRepo));
+    expect(screen.queryByText('Django')).not.toBeInTheDocument();
+    // The new URL's own analysis still arrives.
+    expect(await screen.findByText('Node.js', {}, { timeout: 4000 })).toBeInTheDocument();
+    expect(apiMock.api.insights.analyze).toHaveBeenLastCalledWith({ repoUrl: 'https://github.com/x/new', branch: 'main' });
+    expect(screen.queryByText('Django')).not.toBeInTheDocument();
   });
 
   it('skips re-analysis when only the credential changed', async () => {

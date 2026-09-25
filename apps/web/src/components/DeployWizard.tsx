@@ -224,7 +224,12 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
     const key = `${repoUrl}|${branch}|${baseDir.trim()}`;
     if (key === lastAnalyzedRef.current) return;
     // Immediately drop stale results for a different repo/branch; the analysis
-    // itself fires after the user stops typing.
+    // itself fires after the user stops typing. r298: retire any analysis
+    // still in flight NOW, not when the debounced one starts — the old repo's
+    // result used to land inside the 900ms window and offer its framework and
+    // port as suggestions for the new URL.
+    analyzeSeqRef.current++;
+    setAnalyzing(false);
     setInsights(null);
     setAnalyzeError(null);
     const t = setTimeout(() => void runAnalyze(), 900);
