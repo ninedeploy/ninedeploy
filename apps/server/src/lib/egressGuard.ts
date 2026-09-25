@@ -123,10 +123,34 @@ export function privateEgressAllowed(): boolean {
   return process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'] === '1';
 }
 
+/**
+ * r310: the part of a target URL that is safe to repeat in an error message —
+ * scheme + host + port, never the path, query or userinfo. The guarded URLs
+ * carry their credential IN the URL: a Slack/Discord webhook's secret is its
+ * path, a Gotify target has `?token=`, the Namecheap call has `ApiKey=` in the
+ * query and a git remote may be `https://user:token@host/…`. This message is
+ * stored verbatim in `notification_log.error` (plaintext, shown in the panel)
+ * and returned by API errors, so echoing the whole URL published the secret
+ * the moment DNS hiccupped.
+ */
+export function redactEgressTarget(target: string): string {
+  try {
+    const url = new URL(target);
+    // `host` is hostname[:port] with IPv6 brackets kept, and excludes userinfo.
+    if (url.host) return `${url.protocol}//${url.host}`;
+    return `a ${url.protocol} URL`;
+  } catch {
+    // scp-style git remote (`git@host:path`) — the host alone.
+    const scp = /^[^@\s/]+@([^:\s/]+):/.exec(target);
+    if (scp) return scp[1]!;
+    return 'an unparseable URL';
+  }
+}
+
 export class EgressBlockedError extends Error {
   constructor(target: string, reason: string) {
     super(
-      `Refusing to send an outbound request to ${target}: ${reason}. Set NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1 if this instance really must reach internal addresses.`,
+      `Refusing to send an outbound request to ${redactEgressTarget(target)}: ${reason}. Set NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1 if this instance really must reach internal addresses.`,
     );
     this.name = 'EgressBlockedError';
   }
