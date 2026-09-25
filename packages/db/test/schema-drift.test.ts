@@ -60,6 +60,70 @@ describe('schema ↔ migrations', () => {
     });
   });
 
+  it('creates every foreign key with the delete/update rule the schema declares (r300)', async () => {
+    // r300: 0052 and 0062 added `services.environment_id` and
+    // `backups.destination_id` with a bare `REFERENCES x(id)` — NO ACTION —
+    // while `schema.ts` declared `onDelete: 'set null'`. The column check above
+    // passes (the columns exist), so deleting an environment that still held a
+    // service, or a backup destination a backup had recorded, failed with a
+    // FOREIGN KEY constraint error in production. Compare every FK, both
+    // directions: target table/column and both actions.
+    const { db, client } = schema.createDb({ url: ':memory:' });
+    await migrate(db, { migrationsFolder });
+
+    const describeFk = (target: string, to: string, onDelete: string, onUpdate: string) =>
+      `${target}(${to}) ON DELETE ${onDelete.toLowerCase()} ON UPDATE ${onUpdate.toLowerCase()}`;
+
+    const drift: string[] = [];
+    let compared = 0;
+    for (const table of tables) {
+      const cfg = getTableConfig(table);
+      const declared = new Map<string, string>();
+      for (const fk of cfg.foreignKeys) {
+        const ref = fk.reference();
+        declared.set(
+          ref.columns.map((c) => c.name).join(','),
+          describeFk(
+            getTableConfig(ref.foreignTable).name,
+            ref.foreignColumns.map((c) => c.name).join(','),
+            fk.onDelete ?? 'no action',
+            fk.onUpdate ?? 'no action',
+          ),
+        );
+      }
+      const rows = (await client.execute(`PRAGMA foreign_key_list("${cfg.name}")`)).rows;
+      // PRAGMA foreign_key_list emits one row per column; group composite keys by id.
+      const byId = new Map<number, { from: string[]; to: string[]; table: string; onDelete: string; onUpdate: string }>();
+      for (const r of rows) {
+        const id = Number(r['id']);
+        const entry = byId.get(id) ?? {
+          from: [],
+          to: [],
+          table: String(r['table']),
+          onDelete: String(r['on_delete']),
+          onUpdate: String(r['on_update']),
+        };
+        entry.from.push(String(r['from']));
+        entry.to.push(String(r['to']));
+        byId.set(id, entry);
+      }
+      const actual = new Map<string, string>();
+      for (const e of byId.values()) {
+        actual.set(e.from.join(','), describeFk(e.table, e.to.join(','), e.onDelete, e.onUpdate));
+      }
+      for (const cols of new Set([...declared.keys(), ...actual.keys()])) {
+        compared++;
+        const want = declared.get(cols);
+        const got = actual.get(cols);
+        if (want !== got) drift.push(`${cfg.name}.${cols}: schema ${want ?? '(none)'} ≠ db ${got ?? '(none)'}`);
+      }
+    }
+
+    // Guards the loop: a broken lookup would make the comparison vacuous.
+    expect(compared).toBeGreaterThan(40);
+    expect(drift).toEqual([]);
+  });
+
   it('round-trips a log drain (the table the drift check found missing)', async () => {
     // `log_drains` was in `schema.ts` and in drizzle-kit's snapshot but in no
     // migration, so a fresh install had no table and Settings → Log Drains
