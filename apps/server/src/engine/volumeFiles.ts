@@ -1,3 +1,4 @@
+import { HttpError } from '../lib/errors.js';
 import { capture, run } from '../lib/exec.js';
 import { ensureDockerImage } from '../lib/dockerPull.js';
 import { HELPER_IMAGE } from '../lib/inventory.js';
@@ -98,6 +99,9 @@ function toIso(mtime: string | undefined): string | null {
   return Number.isFinite(secs) && secs > 0 ? new Date(secs * 1000).toISOString() : null;
 }
 
+/** Largest file the volume editor reads (and can therefore write back). */
+export const VOLUME_FILE_READ_CAP = 1024 * 1024;
+
 /** Read a file (text or base64 for binaries) out of the volume. */
 export async function readVolumeFile(
   volume: string,
@@ -112,10 +116,20 @@ export async function readVolumeFile(
   const out = await capture('docker', [
     'run', '--rm', '-v', `${volume}:${VOL_ROOT}`, VOLUME_HELPER_IMAGE,
     'sh', '-c',
-    `test -f ${shellQuote(volPath(rel))} && tail -c 1048576 ${shellQuote(volPath(rel))} | base64`,
+    `test -f ${shellQuote(volPath(rel))} && head -c ${VOLUME_FILE_READ_CAP + 1} ${shellQuote(volPath(rel))} | base64`,
   ]);
-  // `tail -c 1M` caps reads so a runaway log can't blow up the API/UI.
-  return { content: out.trim(), encoding: 'base64' };
+  // The cap keeps a runaway log from blowing up the API/UI. r277: a file over
+  // it is REFUSED — `tail -c 1M` returned the last MiB as if it were the whole
+  // file, and the VolumeBrowser editor then saved that tail over the file.
+  const content = out.trim();
+  if (Buffer.byteLength(content.replace(/\s+/g, ''), 'base64') > VOLUME_FILE_READ_CAP) {
+    throw new HttpError(
+      413,
+      'file_too_large',
+      'File is larger than 1 MB — too large to open in the editor (it was not read, so it cannot be overwritten).',
+    );
+  }
+  return { content, encoding: 'base64' };
 }
 
 /** Write (overwrite) a file with base64 content, creating parents as needed. */

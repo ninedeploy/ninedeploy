@@ -56,7 +56,16 @@ describe('volume file operations (docker sidecar)', () => {
     const file = await readVolumeFile('nd-svc-web-data', 'app.env');
     expect(file).toEqual({ content: 'aGVsbG8=', encoding: 'base64' });
     const args = execMocks.capture.mock.calls.at(-1)?.[1] as string[];
-    expect(args.join(' ')).toContain('tail -c 1048576');
+    expect(args.join(' ')).toContain('head -c 1048577');
+  });
+
+  it('r277: refuses a file over the 1 MiB cap instead of returning its tail', async () => {
+    const overCap = Buffer.alloc(1024 * 1024 + 1, 0x61).toString('base64');
+    execMocks.capture.mockResolvedValue(`${overCap.replace(/(.{76})/g, '$1\n')}\n`);
+    await expect(readVolumeFile('nd-svc-web-data', 'logs/app.log')).rejects.toMatchObject({
+      statusCode: 413,
+      code: 'file_too_large',
+    });
   });
 
   it('writes base64 content through stdin, never argv', async () => {
