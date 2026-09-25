@@ -148,21 +148,40 @@ export function About() {
                 <p className="mb-3 text-sm text-slate-400">
                   {update.data.reason === 'disabled'
                     ? 'Update checks are switched off on this instance (NINEDEPLOY_UPDATE_CHECK_URL=disabled).'
-                    : `Update check unavailable (offline or disabled).${
-                        update.data.detail ? ` Feed said: ${update.data.detail}` : ''
-                      }`}
+                    : 'Could not reach GitHub from this server to look up the latest release.'}
                 </p>
+                {update.data.detail && update.data.reason !== 'disabled' && (
+                  <p className="mb-3 break-words font-mono text-[11px] leading-relaxed text-slate-500">{update.data.detail}</p>
+                )}
                 <Button size="sm" onClick={recheck} disabled={rechecking}>
                   <RefreshCw size={14} className={rechecking ? 'animate-spin' : undefined} /> Check again
                 </Button>
               </>
             ) : (
-              <p className="mb-3 text-sm text-slate-400">
-                You're running <span className="font-mono font-medium text-indigo-300">v{update.data.current}</span>.{' '}
-                {update.data.updateAvailable
-                  ? <>A new release is out: <span className="font-mono font-medium text-amber-300">{update.data.latest}</span>.</>
-                  : 'This is the latest release.'}
-              </p>
+              <>
+                <p className="mb-2 text-sm text-slate-400">
+                  You're running <span className="font-mono font-medium text-indigo-300">v{update.data.current}</span>.{' '}
+                  {update.data.updateAvailable
+                    ? <>A new release is out: <span className="font-mono font-medium text-amber-300">{update.data.latest}</span>.</>
+                    : 'This is the latest release.'}
+                </p>
+                <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                  <span>
+                    Checked {new Date(update.data.checkedAt).toLocaleString()}
+                    {update.data.source ? ` via ${update.data.source}` : ''}
+                  </span>
+                  <button type="button" onClick={recheck} disabled={rechecking}
+                    className="inline-flex items-center gap-1 font-medium text-slate-400 transition hover:text-slate-200 disabled:opacity-50">
+                    <RefreshCw size={11} className={rechecking ? 'animate-spin' : undefined} /> Check now
+                  </button>
+                </div>
+                {update.data.stale && (
+                  <p className="mb-3 break-words text-xs text-amber-300/80">
+                    The latest check could not reach GitHub, so this is the last release seen.
+                    {update.data.detail ? <span className="mt-1 block font-mono text-[11px] text-slate-500">{update.data.detail}</span> : null}
+                  </p>
+                )}
+              </>
             )
           ) : (
             <p className="mb-3 text-sm text-slate-400">

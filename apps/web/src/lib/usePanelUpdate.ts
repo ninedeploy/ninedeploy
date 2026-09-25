@@ -93,12 +93,15 @@ export function usePanelUpdate() {
   const queryClient = useQueryClient();
   const enabled = user?.isOperator === true;
 
-  // Availability (6h server cache; About/Settings share this query key).
+  // Availability (1h server cache, stale-while-revalidate; About/Settings
+  // share this query key). A tab left open all day still hears about a
+  // release published after it loaded.
   const check = useQuery({
     queryKey: ['update-check'],
     queryFn: () => api.system.updateCheck(),
     enabled,
     staleTime: 60_000,
+    refetchInterval: 30 * 60_000,
     retry: false,
   });
 

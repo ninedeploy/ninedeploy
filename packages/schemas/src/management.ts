@@ -20,8 +20,12 @@ export const updateCheckResult = z.object({
   checkedAt: z.string().datetime(),
   /** Present only when updateAvailable is null: why no verdict exists. */
   reason: z.enum(['disabled', 'unreachable']).optional(),
-  /** Short feed-side detail (status line / abort reason). */
-  detail: z.string().max(200).optional(),
+  /** Why the live check failed (per-source reasons), when it did. */
+  detail: z.string().max(500).optional(),
+  /** Which source answered: 'github-api', 'release-page', 'git', … (+ ' via curl'). */
+  source: z.string().optional(),
+  /** True when every source failed and this is the last successful answer (checkedAt = its time). */
+  stale: z.boolean().optional(),
 });
 export type UpdateCheckResult = z.infer<typeof updateCheckResult>;
 

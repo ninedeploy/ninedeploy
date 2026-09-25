@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **"Update check unavailable — fetch failed" while `curl` reached GitHub fine (r370).** The update check asked one source (the GitHub API) through Node's `fetch`, which fails where the host's curl does not: it ignores `HTTPS_PROXY` and the system CA store (TLS-inspecting middleboxes), and its happy-eyeballs gives each address only 250 ms. A single failure hid the release, the banner and the **Update & Restart** button, and the reason shown was undici's bare "fetch failed". The check now tries five sources until one answers — the API, the github.com release-page redirect (no API rate limit), both again through `curl`, then `git ls-remote` (install.sh's own source). The failure detail names the real cause per source (errno, TLS error, rate limit). The last successful answer is saved under the data dir and shown, marked stale, when every source fails, so the update button survives a network blip or a restart. Successes are cached for 1 hour instead of 6, an expired one is served while a background refresh runs, and open tabs re-check every 30 minutes. The About page shows when and via which source the check ran, with a **Check now** link. Settings → System no longer shows a hard-coded `v0.0.0`.
+
 ## [0.10.9] - 2026-09-25
 
 > The cold-boot patch: routes survive a panel that starts before Docker does.
