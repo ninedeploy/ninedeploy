@@ -39,4 +39,21 @@ describe('LogPanel auto-scroll (r212)', () => {
     rerender(<LogPanel serviceId={1} deploymentId={2} deployStatus="building" />);
     expect(pre.scrollTop).toBe(200);
   });
+
+  it('lets the user scroll up when the panel first mounted with no deployment (r290)', () => {
+    logs.lines = 'line 1\n';
+    // First deploy / wizard hand-off / rollback: no deployment id yet, so
+    // no <pre> is rendered on mount.
+    const { container, rerender } = render(<LogPanel serviceId={1} deploymentId={null} />);
+    expect(container.querySelector('pre')).toBeNull();
+    rerender(<LogPanel serviceId={1} deploymentId={2} deployStatus="building" />);
+    const pre = container.querySelector('pre')!;
+    geometry(pre, { scrollHeight: 1000, clientHeight: 100 });
+    pre.scrollTop = 200;
+    fireEvent.scroll(pre);
+    logs.lines = `${logs.lines}next\n`;
+    geometry(pre, { scrollHeight: 1020, clientHeight: 100 });
+    rerender(<LogPanel serviceId={1} deploymentId={2} deployStatus="building" />);
+    expect(pre.scrollTop).toBe(200);
+  });
 });

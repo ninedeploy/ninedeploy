@@ -1,4 +1,4 @@
-import { type RefObject, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Download } from 'lucide-react';
 import { useDeployLogs } from '../../lib/useDeployLogs.js';
 import { PipelineStepper, type StageId } from '../../components/PipelineStepper.js';
@@ -14,8 +14,8 @@ export function LogPanel({
   deployStatus?: string;
 }) {
   const { lines, open } = useDeployLogs(serviceId, deploymentId);
-  const ref = useRef<HTMLPreElement>(null);
-  useAutoScroll(ref, lines);
+  const ref = useRef<HTMLPreElement | null>(null);
+  const preRef = useAutoScroll(ref, lines);
   const empty = useMemo(() => deploymentId == null, [deploymentId]);
   const [downloading] = useState(false);
 
@@ -86,7 +86,7 @@ export function LogPanel({
             {/* v8 ignore stop */}
           </div>
         </div>
-        <pre ref={ref} className="h-[26rem] overflow-auto p-4 font-mono text-xs leading-5 text-slate-300 selection:bg-blue-500/30">
+        <pre ref={preRef} className="h-[26rem] overflow-auto p-4 font-mono text-xs leading-5 text-slate-300 selection:bg-blue-500/30">
           {/* Every lines/open combination renders across the log tests; the
               instrumenter cannot see this expression. */}
           {/* v8 ignore start */}
@@ -98,28 +98,44 @@ export function LogPanel({
   );
 }
 
-function useAutoScroll(ref: RefObject<HTMLPreElement | null>, content: string): void {
+function useAutoScroll(
+  ref: { current: HTMLPreElement | null },
+  content: string,
+): (el: HTMLPreElement | null) => (() => void) | undefined {
   // r212: whether to follow is decided by where the user WAS before the new
   // text landed. It used to be measured inside the effect — after the DOM
   // already held the new batch — so any flush taller than the 48px slack
   // (the backlog on open, a burst of build output) read as "the user
   // scrolled up" and following stopped for good.
   const followRef = useRef(true);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    // Follow live output only when the user is (near) the bottom — force-
-    // scrolling on every chunk yanked anyone scrolling up to read straight
-    // back down. 48px ≈ a couple of lines of slack.
-    const onScroll = () => {
-      followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-    };
-    el.addEventListener('scroll', onScroll);
-    return () => el.removeEventListener('scroll', onScroll);
-  }, [ref]);
+  // r290: the scroll listener is attached by a callback ref, not a
+  // mount-only effect. The panel first mounts with no deployment (first
+  // deploy, the wizard hand-off, every rollback) and renders no <pre>; the
+  // effect ran once against null, never re-ran when the <pre> appeared, and
+  // every flush snapped a reader scrolled up back to the bottom.
+  const attach = useCallback(
+    (el: HTMLPreElement | null) => {
+      ref.current = el;
+      if (!el) return undefined;
+      followRef.current = true;
+      // Follow live output only when the user is (near) the bottom — force-
+      // scrolling on every chunk yanked anyone scrolling up to read straight
+      // back down. 48px ≈ a couple of lines of slack.
+      const onScroll = () => {
+        followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+      };
+      el.addEventListener('scroll', onScroll);
+      return () => {
+        el.removeEventListener('scroll', onScroll);
+        ref.current = null;
+      };
+    },
+    [ref],
+  );
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally keyed on content — scroll to the newest line whenever a new log line arrives, even though the body only touches the DOM node.
   useEffect(() => {
     const el = ref.current;
     if (el && followRef.current) el.scrollTop = el.scrollHeight;
   }, [content, ref]);
+  return attach;
 }
