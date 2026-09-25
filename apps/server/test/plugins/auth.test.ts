@@ -630,6 +630,27 @@ describe('auth plugin — fine-grained URI scopes narrow centrally', () => {
     expect(session.isOperator).toBe(true);
   });
 
+  it('r260: non-canonical numeric ids are still classified as the sub-resource', async () => {
+    const { requiredFineGrainedScope } = await import('../../src/plugins/auth.js');
+    for (const id of ['1e0', '0x1', '+1', '1.0', '01']) {
+      expect(requiredFineGrainedScope(`/v1/services/${id}/env`, 'PUT')).toBe('nd://scope/write/env');
+      expect(requiredFineGrainedScope(`/v1/services/${id}/webhooks`, 'POST')).toBe('nd://scope/write/webhooks');
+      expect(requiredFineGrainedScope(`/v1/projects/${id}/env`, 'GET')).toBe('nd://scope/read/env');
+    }
+    const { authorizeWebsocketUser } = await import('../../src/plugins/auth.js');
+    const services = { id: 1, isOperator: false, tokenScopes: ['nd://scope/read/services'], viaApiToken: true };
+    expect(authorizeWebsocketUser(services, '/v1/services/1e0/deploys/9/logs')).toBe(false);
+  });
+
+  it('r260: a services-only token cannot reach env through an exponent-form id', async () => {
+    const app = await scopedApp(['nd://scope/write/services']);
+    for (const id of ['1e0', '0x1', '+1']) {
+      const res = await app.inject({ method: 'PUT', url: `/v1/services/${id}/env`, headers: { authorization: 'Bearer t' } });
+      expect(res.statusCode).toBe(403);
+    }
+    await app.close();
+  });
+
   it('r150: a services-only token cannot reach env through an encoded path', async () => {
     const app = await scopedApp(['nd://scope/write/services']);
     const res = await app.inject({ method: 'PUT', url: '/v1/services/1/%65nv', headers: { authorization: 'Bearer t' } });

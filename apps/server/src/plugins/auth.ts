@@ -71,15 +71,22 @@ const PREFIX_SCOPES: Record<string, readonly [string, string]> = {
  * Sub-resources mounted under a parent prefix but scoped on their own
  * (api.ts registers `webhookMgmtRoutes` under `/services`, for example).
  * Checked BEFORE the prefix table, most specific first.
+ *
+ * r260: the id segment is matched as ANY segment (`[^/]+`), not `\d+`. The
+ * router hands the raw segment to `parseId`, and `Number()` used to accept
+ * `1e0`, `0x1`, `+1` and `1.0` — so `/services/1e0/env` missed the env
+ * override, was judged as plain `services`, and still reached the env
+ * handler for service 1. `parseId` is strict now too; matching any segment
+ * here keeps the classifier from depending on that.
  */
 const ROUTE_SCOPE_OVERRIDES: Array<[RegExp, readonly [string, string]]> = [
-  [/^projects\/\d+\/env\b/, ['nd://scope/read/env', 'nd://scope/write/env']],
-  [/^services\/\d+\/env\b/, ['nd://scope/read/env', 'nd://scope/write/env']],
-  [/^services\/\d+\/webhooks\b/, ['nd://scope/read/webhooks', 'nd://scope/write/webhooks']],
-  [/^services\/\d+\/deploys\b/, ['nd://scope/read/deploys', 'nd://scope/write/deploys']],
-  [/^services\/\d+\/volumes\b/, ['nd://scope/read/volumes', 'nd://scope/write/volumes']],
-  [/^services\/\d+\/insights\b/, ['nd://scope/read/manifests', 'nd://scope/write/manifests']],
-  [/^services\/\d+\/domains\b/, ['nd://scope/read/domains', 'nd://scope/write/domains']],
+  [/^projects\/[^/]+\/env\b/, ['nd://scope/read/env', 'nd://scope/write/env']],
+  [/^services\/[^/]+\/env\b/, ['nd://scope/read/env', 'nd://scope/write/env']],
+  [/^services\/[^/]+\/webhooks\b/, ['nd://scope/read/webhooks', 'nd://scope/write/webhooks']],
+  [/^services\/[^/]+\/deploys\b/, ['nd://scope/read/deploys', 'nd://scope/write/deploys']],
+  [/^services\/[^/]+\/volumes\b/, ['nd://scope/read/volumes', 'nd://scope/write/volumes']],
+  [/^services\/[^/]+\/insights\b/, ['nd://scope/read/manifests', 'nd://scope/write/manifests']],
+  [/^services\/[^/]+\/domains\b/, ['nd://scope/read/domains', 'nd://scope/write/domains']],
 ];
 
 /**

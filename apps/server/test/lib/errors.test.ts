@@ -77,6 +77,13 @@ describe('parseId', () => {
     expect(() => parseId('-5')).toThrow(HttpError);
   });
 
+  it('r260: rejects non-canonical numeric forms Number() would accept', () => {
+    for (const v of ['1e0', '0x1', '+1', '1.0', '01', ' 1', '1 ', '', '9007199254740993']) {
+      expect(() => parseId(v)).toThrow(HttpError);
+    }
+    expect(parseId('9007199254740991')).toBe(9007199254740991);
+  });
+
   it('throws for a non-integer', () => {
     expect(() => parseId('1.5')).toThrow(HttpError);
   });

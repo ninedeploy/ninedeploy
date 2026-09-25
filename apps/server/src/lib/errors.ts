@@ -26,7 +26,11 @@ export const unprocessable = (message = 'Unprocessable entity', code = 'unproces
  * instead of silently becoming NaN and yielding a misleading "not found".
  */
 export const parseId = (value: string, message = 'Invalid id parameter'): number => {
+  // r260: canonical decimal only. `Number()` alone accepted `1e0`, `0x1`,
+  // `+1` and `1.0`, which let a path name a resource in a form the API-token
+  // scope classifier did not recognise (see ROUTE_SCOPE_OVERRIDES).
+  if (typeof value !== 'string' || !/^[1-9]\d*$/.test(value)) throw badRequest(message, 'invalid_id');
   const n = Number(value);
-  if (!Number.isInteger(n) || n < 1) throw badRequest(message, 'invalid_id');
+  if (!Number.isSafeInteger(n)) throw badRequest(message, 'invalid_id');
   return n;
 };
