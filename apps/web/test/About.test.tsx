@@ -142,10 +142,23 @@ describe('About', () => {
       reason: 'unreachable', detail: 'update feed 500',
     } as never);
     renderWithProviders(<About />);
-    expect(await screen.findByText(/Update check unavailable/)).toBeInTheDocument();
-    expect(screen.getByText(/Feed said: update feed 500/)).toBeInTheDocument();
+    expect(await screen.findByText(/Could not reach GitHub/)).toBeInTheDocument();
+    expect(screen.getByText('update feed 500')).toBeInTheDocument();
     // The feed failure is transient — the operator gets a manual re-check.
     expect(screen.getByRole('button', { name: /Check again/ })).toBeInTheDocument();
+  });
+
+  it('r370: keeps showing the last release seen when the live check failed', async () => {
+    mockOf(api.about.get).mockResolvedValue(aboutData as never);
+    mockOf(api.system.updateCheck).mockResolvedValue({
+      current: '0.0.1', latest: 'v9.9.9', updateAvailable: true, notesUrl: null, checkedAt: '2026-08-15T00:00:00Z',
+      source: 'git', stale: true, detail: 'github-api: fetch failed ← connect ETIMEDOUT 140.82.121.6:443',
+    } as never);
+    renderWithProviders(<About />);
+    expect(await screen.findByText(/could not reach GitHub, so this is the last release seen/)).toBeInTheDocument();
+    expect(screen.getByText(/connect ETIMEDOUT 140\.82\.121\.6:443/)).toBeInTheDocument();
+    expect(screen.getByText(/via git/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Check now/ })).toBeInTheDocument();
   });
 
   it('says so plainly when update checks are switched off', async () => {

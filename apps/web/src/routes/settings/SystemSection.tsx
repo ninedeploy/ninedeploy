@@ -18,7 +18,7 @@ export function SystemSection() {
         <CardBody>
           <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">System</h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <InfoRow icon={<Server size={14} />} label="NineDeploy" value={update.data ? `v${update.data.current} · MIT` : 'MIT'} />
+            <InfoRow icon={<Server size={14} />} label="NineDeploy" value={update.data ? `v${update.data.current.replace(/^v/, '')} · MIT` : 'MIT'} />
             <InfoRow icon={<Network size={14} />} label="Docker network" value={s?.network ?? 'ninedeploy'} />
             <InfoRow icon={<Cpu size={14} />} label="CPU cores" value={host ? String(host.cpuCores) : '—'} />
             <InfoRow icon={<HardDrive size={14} />} label="Containers" value={s ? String(s.containers) : '—'} />
