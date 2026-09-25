@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, } from 'vitest';
 import { configPresetsRoutes } from '../../src/modules/configPresets.js';
-import { asUser, buildTestApp } from '../helpers.js';
+import { asUser, buildTestApp, createFakeDb } from '../helpers.js';
 
 interface CcEntry {
   key: string;
@@ -10,7 +10,7 @@ interface CcEntry {
 
 interface CcStore {
   entries: Map<string, CcEntry>;
-  setCalls: Array<{ key: string; value: unknown; opts?: { userId?: number; pluginId?: string } }>;
+  setCalls: Array<{ key: string; value: unknown; opts?: { userId?: number; pluginId?: string; isSecret?: boolean; category?: string; tags?: string[] } }>;
   deleteCalls: string[];
 }
 
@@ -24,6 +24,9 @@ function makeConfigCenter() {
   };
   ccStores.push(store);
   return {
+    getDefinition(_key: string): undefined {
+      return undefined;
+    },
     async get<T>(key: string, def: T): Promise<T> {
       const row = store.entries.get(key);
       if (!row) return def;
@@ -33,7 +36,7 @@ function makeConfigCenter() {
         return row.value as unknown as T;
       }
     },
-    async set(key: string, value: unknown, opts?: { userId?: number; pluginId?: string }): Promise<void> {
+    async set(key: string, value: unknown, opts?: CcStore['setCalls'][number]['opts']): Promise<void> {
       store.setCalls.push({ key, value, opts });
       store.entries.set(key, {
         key,
@@ -48,8 +51,8 @@ function makeConfigCenter() {
   };
 }
 
-async function newApp() {
-  const a = await buildTestApp();
+async function newApp(db?: ReturnType<typeof createFakeDb>) {
+  const a = await buildTestApp(db ? { db } : {});
   // `buildTestApp` already decorates `app.kernel` with a real `NineDeployKernel`
   // instance; we swap in a stub `configCenter` rather than re-decorating the
   // symbol (Fastify refuses duplicate `decorate()` calls). The same pattern
@@ -168,6 +171,32 @@ describe('Config Presets routes (G-23 PR-A)', () => {
     expect(res.json()).toEqual({ ok: true, id: 'p1', keyCount: 2 });
     const writtenKeys = store.setCalls.map((c) => c.key).sort();
     expect(writtenKeys).toEqual(['dns_records_content', 'dns_records_provider'].sort());
+  });
+
+  it('r284: applying a preset keeps an existing ad-hoc secret key secret (and its metadata)', async () => {
+    // `custom:api:token` has no static definition — it was saved as a secret
+    // through the Config Center with isSecret: true.
+    const { app, store } = await newApp(
+      createFakeDb({
+        findFirst: {
+          configEntries: { key: 'custom:api:token', value: 'enc', isSecret: true, category: 'ops', tags: ['prod'] },
+        },
+      }),
+    );
+    await app.inject({
+      method: 'POST',
+      url: '/',
+      headers: asUser(),
+      payload: { id: 'rotate', values: { 'custom:api:token': 'rotated-secret' } },
+    });
+    store.setCalls = [];
+    const res = await app.inject({ method: 'PUT', url: '/rotate/apply', headers: asUser(), payload: {} });
+    expect(res.statusCode).toBe(200);
+    expect(store.setCalls).toHaveLength(1);
+    expect(store.setCalls[0]).toMatchObject({
+      key: 'custom:api:token',
+      opts: { isSecret: true, category: 'ops', tags: ['prod'] },
+    });
   });
 
   it('PUT /:id/apply with override replaces the stored value for that one call only', async () => {

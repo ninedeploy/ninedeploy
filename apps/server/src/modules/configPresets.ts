@@ -1,3 +1,5 @@
+import { eq } from 'drizzle-orm';
+import { configEntries } from '@ninedeploy/db';
 import { z } from 'zod';
 import { audit } from '../lib/audit.js';
 import { eventBus } from '../lib/events.js';
@@ -146,7 +148,16 @@ export const configPresetsRoutes: FastifyPluginAsync = async (app) => {
     const written: Array<{ key: string; status: 'ok' | 'failed'; reason?: string }> = [];
     for (const [key, value] of Object.entries(values)) {
       try {
+        // r284: resolve secrecy the way the Config Center POST route does
+        // (r155). `set()` only falls back to a static definition, so a preset
+        // touching an AD-HOC secret key rewrote it in plaintext with
+        // is_secret=0 (and reset its category/tags to defaults).
+        const def = app.kernel.configCenter.getDefinition(key);
+        const row = await app.db.query.configEntries.findFirst({ where: eq(configEntries.key, key) });
         await app.kernel.configCenter.set(key, value, {
+          isSecret: def?.isSecret ?? row?.isSecret ?? false,
+          category: row?.category ?? undefined,
+          tags: (row?.tags as string[] | null | undefined) ?? undefined,
           userId: req.user!.id,
           pluginId: 'config-presets',
           description: `Applied by preset "${id}"`,
