@@ -124,6 +124,29 @@ describe('useDeployLogs', () => {
     expect(result.current.open).toBe(false);
   });
 
+  it('r299: an orphaned socket from an A→B→A switch neither doubles lines nor closes the live stream', () => {
+    vi.useFakeTimers();
+    const { result, rerender } = renderHook(({ did }) => useDeployLogs(1, did), { initialProps: { did: 2 } });
+    const orphan = FakeWebSocket.instances[0]!;
+    act(() => orphan.open());
+    rerender({ did: 3 });
+    rerender({ did: 2 }); // back to A before the first socket's close landed
+    expect(FakeWebSocket.instances).toHaveLength(3);
+    const live = FakeWebSocket.instances[2]!;
+    act(() => live.open());
+    act(() => live.message('line\n'));
+    act(() => orphan.message('line\n')); // the torn-down socket still delivers
+    act(() => vi.advanceTimersByTime(200));
+    expect(result.current.lines).toBe('line\n');
+
+    // Its (async) close must not flag the live stream closed or reconnect.
+    act(() => orphan.closeFromServer());
+    expect(result.current.open).toBe(true);
+    act(() => vi.advanceTimersByTime(2000));
+    expect(FakeWebSocket.instances).toHaveLength(3);
+    vi.useRealTimers();
+  });
+
   it('closes the socket and resets on unmount', () => {
     const { unmount } = renderHook(() => useDeployLogs(1, 2));
     const ws = FakeWebSocket.instances[0];

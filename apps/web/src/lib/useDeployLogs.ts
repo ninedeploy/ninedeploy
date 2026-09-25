@@ -34,6 +34,11 @@ export function useDeployLogs(serviceId: number | null, deploymentId: number | n
     let attempts = 0;
     let connectedBefore = false;
     let expectReplay = false;
+    // r299: per-connection teardown flag. activeId is shared across effect
+    // runs, so a StrictMode re-mount or an A→B→A switch set it back to this
+    // deployment before the old socket's (async) close fired: the orphan kept
+    // appending lines, reconnected, and flagged the live stream "closed".
+    let disposed = false;
 
     const flush = () => {
       if (chunksRef.current.length === 0) return;
@@ -49,6 +54,7 @@ export function useDeployLogs(serviceId: number | null, deploymentId: number | n
     const connect = () => {
       ws = new WebSocket(deployLogsWsUrl(serviceId, deploymentId), websocketAuthProtocols());
       ws.onopen = () => {
+        if (disposed) return;
         setOpen(true);
         attempts = 0; // a healthy connection refills the reconnect budget
         // r209: the server replays the WHOLE backlog on every connect, so the
@@ -57,7 +63,7 @@ export function useDeployLogs(serviceId: number | null, deploymentId: number | n
         connectedBefore = true;
       };
       ws.onmessage = (event) => {
-        if (activeId.current !== deploymentId) return;
+        if (disposed || activeId.current !== deploymentId) return;
         const data = String(event.data);
         if (expectReplay) {
           expectReplay = false;
@@ -72,8 +78,11 @@ export function useDeployLogs(serviceId: number | null, deploymentId: number | n
         }
         chunksRef.current.push(data);
       };
-      ws.onerror = () => setOpen(false);
+      ws.onerror = () => {
+        if (!disposed) setOpen(false);
+      };
       ws.onclose = () => {
+        if (disposed) return;
         setOpen(false);
         flush();
         if (activeId.current === deploymentId && attempts < RECONNECT_ATTEMPTS) {
@@ -88,6 +97,7 @@ export function useDeployLogs(serviceId: number | null, deploymentId: number | n
       // Setting activeId to null first makes the onclose handler below a
       // no-op for reconnects when the teardown is an unmount/switch.
       activeId.current = null;
+      disposed = true;
       clearInterval(flushTimer);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (ws) ws.close();
