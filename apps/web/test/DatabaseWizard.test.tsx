@@ -162,6 +162,16 @@ describe('DatabaseWizard', () => {
     expect(back.className).toContain('invisible');
   });
 
+  it('is announced as a labelled modal dialog and closes on Escape (r294)', async () => {
+    const user = userEvent.setup();
+    const { onClose } = renderWizard();
+    const dialog = screen.getByRole('dialog', { name: 'New database' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('closes via the X button and the backdrop', async () => {
     const user = userEvent.setup();
     const { container, onClose } = renderWizard();

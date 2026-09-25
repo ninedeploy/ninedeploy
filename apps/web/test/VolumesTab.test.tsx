@@ -166,4 +166,16 @@ describe('VolumesTab', () => {
     fireEvent.click(toggle);
     await waitFor(() => expect(screen.queryByTestId('volume-backups-panel')).not.toBeInTheDocument());
   });
+
+  it('announces the attach-volume dialog as a labelled modal and closes it on Escape (r294)', async () => {
+    mockOf(api.volumes.list).mockResolvedValue([] as never);
+    mockOf(api.attachments.list).mockResolvedValue([] as never);
+    renderWithProviders(<VolumesTab serviceId={1} svc={svc()} />);
+    fireEvent.click(await screen.findByTestId('attach-volume-button'));
+    const dialog = screen.getByRole('dialog', { name: 'Attach Volume' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
 });

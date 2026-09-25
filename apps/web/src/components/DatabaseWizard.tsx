@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useId, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Database, HardDrive, Sparkles, Terminal, X, Zap } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { formatBytes } from '../lib/format.js';
 import { useExperienceMode } from '../lib/mode.js';
-import { Button, Input, cn } from './ui.js';
+import { Button, Input, cn, useEscapeToClose } from './ui.js';
 import { useToast } from './Toast.js';
 
 const ENGINES = [
@@ -31,6 +31,8 @@ export function DatabaseWizard({ onClose }: { onClose: () => void }) {
   const [version, setVersion] = useState('');
   const [selectedVolume, setSelectedVolume] = useState<string>('');
   const [pgvector, setPgvector] = useState(false);
+  const titleId = useId();
+  useEscapeToClose(onClose);
 
   const volumes = useQuery({
     queryKey: ['volumes'],
@@ -78,18 +80,18 @@ export function DatabaseWizard({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6">
       <button type="button" aria-label="Close dialog" tabIndex={-1} aria-hidden="true" onClick={onClose} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-      <div className="nd-fade relative w-full max-w-lg overflow-hidden rounded-t-2xl border border-white/10 bg-slate-950 shadow-2xl sm:rounded-2xl">
+      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="nd-fade relative w-full max-w-lg overflow-hidden rounded-t-2xl border border-white/10 bg-slate-950 shadow-2xl sm:rounded-2xl">
         {/* Header + stepper */}
         <div className="border-b border-white/5 p-5">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="flex items-center gap-2 text-lg font-semibold">
               <Database size={18} className="text-emerald-400" />
-              <span>New database</span>
+              <span id={titleId}>New database</span>
               <span className={cn('ml-1 rounded-full px-2 py-0.5 text-[10px] font-semibold border inline-flex items-center gap-1', isAdvanced ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300')}>
                 {isAdvanced ? <><Terminal size={10} /> DevOps Pro</> : <><Sparkles size={10} /> Quick Mode</>}
               </span>
             </h2>
-            <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-slate-500 hover:bg-white/5 hover:text-slate-300"><X size={16} /></button>
+            <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-slate-500 hover:bg-white/5 hover:text-slate-300"><X size={16} /></button>
           </div>
           <div className="flex items-center gap-2">
             {STEPS.map((label, i) => (

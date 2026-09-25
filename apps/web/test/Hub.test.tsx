@@ -262,6 +262,20 @@ describe('Hub', () => {
     expect(await screen.findByText('A workflow tool')).toBeInTheDocument();
   });
 
+  it('announces the template detail as a labelled modal dialog and closes it on Escape (r294)', async () => {
+    mockOf(api.templates.list).mockResolvedValue(templates as never);
+    mockOf(api.templates.get).mockResolvedValue(templateDetail as never);
+    const user = userEvent.setup();
+    renderWithProviders(<Hub />);
+    fireEvent.click(await screen.findByRole('button', { name: /n8n/ }));
+    await screen.findByText('A workflow tool');
+    const dialog = screen.getByRole('dialog', { name: 'n8n' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
   it('closes the template detail modal via the close button', async () => {
     mockOf(api.templates.list).mockResolvedValue(templates as never);
     mockOf(api.templates.get).mockResolvedValue(templateDetail as never);

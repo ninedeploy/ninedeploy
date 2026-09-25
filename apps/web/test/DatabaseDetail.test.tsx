@@ -511,6 +511,17 @@ describe('DatabaseDetail', () => {
     await waitFor(() => expect(api.databases.stopStudio).toHaveBeenCalledTimes(2));
   });
 
+  it('announces the embedded Web Studio as a labelled modal dialog that Escape closes (r294)', async () => {
+    mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, webGuiEnabled: false, webGuiPort: null } as any);
+    mockOf(api.databases.startStudio).mockResolvedValue({ ok: true, port: 18001, url: 'http://localhost:18001' } as any);
+    renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Launch Web Studio/i }));
+    await screen.findByTitle('Web Studio');
+    expect(screen.getByRole('dialog', { name: /Web Database Studio/ })).toHaveAttribute('aria-modal', 'true');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTitle('Web Studio')).not.toBeInTheDocument());
+  });
+
   it('renders the Files tab with live database container file browser', async () => {
     mockOf(api.databases.get).mockResolvedValue(sampleDb as any);
     mockOf(api.containers.listFiles).mockResolvedValue({

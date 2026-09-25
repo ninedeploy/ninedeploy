@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import {
   Activity,
   ArrowLeft,
@@ -39,6 +39,7 @@ import {
   StatusBadge,
   Tabs,
   cn,
+  useEscapeToClose,
 } from '../components/ui.js';
 import { PluginSlot } from '../components/PluginSlot.js';
 import { downloadBlob, formatBytes, formatDateTime, useCopy } from '../lib/format.js';
@@ -66,6 +67,8 @@ export function DatabaseDetail() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<'overview' | 'topology' | 'manifest' | 'files' | 'backups' | 'logs' | 'settings'>('overview');
   const [embeddedStudioUrl, setEmbeddedStudioUrl] = useState<string | null>(null);
+  const studioTitleId = useId();
+  useEscapeToClose(() => setEmbeddedStudioUrl(null), embeddedStudioUrl != null);
 
   const dbQuery = useQuery({
     queryKey: ['database-detail', id],
@@ -271,11 +274,16 @@ export function DatabaseDetail() {
       {/* Embedded Web Studio Modal */}
       {embeddedStudioUrl && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md nd-fade">
-          <div className="flex h-[90vh] w-[95vw] max-w-7xl flex-col rounded-2xl border border-white/15 bg-slate-950 shadow-2xl overflow-hidden">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={studioTitleId}
+            className="flex h-[90vh] w-[95vw] max-w-7xl flex-col rounded-2xl border border-white/15 bg-slate-950 shadow-2xl overflow-hidden"
+          >
             <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 bg-slate-900/80">
               <div className="flex items-center gap-2.5">
                 <Database size={16} className="text-emerald-400" />
-                <span className="text-sm font-semibold text-slate-100">Web Database Studio — {db.name}</span>
+                <span id={studioTitleId} className="text-sm font-semibold text-slate-100">Web Database Studio — {db.name}</span>
                 <span className="rounded bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] text-emerald-400 font-bold uppercase">
                   {db.engine}
                 </span>

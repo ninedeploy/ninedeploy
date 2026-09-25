@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Archive, ArrowUpRight, Database, ExternalLink, FolderOpen, HardDrive, Info, Layers, Plus, Server, ShieldCheck, Trash2, Wrench, X } from 'lucide-react';
 import { Link } from 'react-router';
 import type { Service, ServiceVolumeAttachment as SdkServiceVolumeAttachment } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
-import { Button, Card, cn } from '../../components/ui.js';
+import { Button, Card, cn, useEscapeToClose } from '../../components/ui.js';
 import { formatBytes } from '../../lib/format.js';
 import { VolumeBrowser } from '../../components/VolumeBrowser.js';
 import { VolumeBackupsPanel } from '../../components/VolumeBackupsPanel.js';
@@ -497,6 +497,8 @@ function AttachVolumeModal({
   const [containerPath, setContainerPath] = useState('/data');
   const [readOnly, setReadOnly] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const titleId = useId();
+  useEscapeToClose(onClose);
 
   const inventory = useQuery({
     queryKey: ['volumes'],
@@ -531,10 +533,16 @@ function AttachVolumeModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4" onClick={onClose}>
-      <Card className="w-full max-w-lg p-6 bg-slate-900" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+      <Card
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="w-full max-w-lg p-6 bg-slate-900"
+        onClick={(e: React.MouseEvent) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-slate-100">Attach Volume</h2>
-          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-200"><X size={18} /></button>
+          <h2 id={titleId} className="text-lg font-semibold text-slate-100">Attach Volume</h2>
+          <button type="button" onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-slate-200"><X size={18} /></button>
         </div>
 
         <div className="flex items-center gap-2 mb-4 border-b border-white/[0.06]">

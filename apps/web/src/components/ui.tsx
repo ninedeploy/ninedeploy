@@ -362,6 +362,26 @@ export function ErrorCard({ title = 'Something went wrong', error, onRetry }: { 
 
 // ── Modal ─────────────────────────────────────────────────────────────────
 /**
+ * Escape-to-close for the few hand-rolled overlays that do not (yet) use
+ * Modal (r294). Keyed on nothing the caller re-creates per render, so an
+ * inline `onClose` arrow does not reinstall the listener every keystroke.
+ */
+export function useEscapeToClose(onClose: () => void, enabled = true): void {
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+  useEffect(() => {
+    if (!enabled) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCloseRef.current();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [enabled]);
+}
+
+/**
  * Shared modal chrome: backdrop click + Escape close, scroll lock, focus
  * trap and initial focus on the first focusable element (or `initialFocusRef`).
  * Extracted from the DeployWizard's hand-rolled implementation so every

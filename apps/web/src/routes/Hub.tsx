@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import {
   CheckCircle2, Download, ExternalLink,
   Layers, Package, RefreshCw, Rocket, Search, ShieldCheck, Sparkles, Store, X,
@@ -7,7 +7,7 @@ import {
 import type { Template } from '@ninedeploy/sdk';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
-import { Button, Card, EmptyState, ErrorCard, Input, PageHeader, Skeleton, cn } from '../components/ui.js';
+import { Button, Card, EmptyState, ErrorCard, Input, PageHeader, Skeleton, cn, useEscapeToClose } from '../components/ui.js';
 import { DeployWizard } from '../components/DeployWizard.js';
 
 export function Hub() {
@@ -411,6 +411,8 @@ function TemplateDetail({
   const detail = useQuery({ queryKey: ['template', id], queryFn: () => api.templates.get(id) });
   const [subTab, setSubTab] = useState<'overview' | 'compose'>('overview');
   const [copied, setCopied] = useState(false);
+  const titleId = useId();
+  useEscapeToClose(onClose);
 
   const copyCompose = (yaml: string) => {
     navigator.clipboard?.writeText(yaml);
@@ -428,7 +430,13 @@ function TemplateDetail({
         onClick={onClose}
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
       />
-      <div className="nd-fade relative w-full max-w-lg overflow-hidden rounded-t-2xl border border-white/10 bg-slate-950 shadow-2xl sm:rounded-2xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={detail.data ? titleId : undefined}
+        aria-label={detail.data ? undefined : 'Template details'}
+        className="nd-fade relative w-full max-w-lg overflow-hidden rounded-t-2xl border border-white/10 bg-slate-950 shadow-2xl sm:rounded-2xl"
+      >
         {detail.isLoading || !detail.data ? (
           <div className="p-6">
             <Skeleton className="h-20 w-full" />
@@ -441,13 +449,14 @@ function TemplateDetail({
                   <Package size={22} />
                 </span>
                 <div>
-                  <h2 className="text-lg font-semibold">{detail.data.name}</h2>
+                  <h2 id={titleId} className="text-lg font-semibold">{detail.data.name}</h2>
                   <p className="text-xs text-slate-400">{detail.data.tagline}</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={onClose}
+                aria-label="Close"
                 className="rounded-lg p-1.5 text-slate-500 hover:bg-white/5 hover:text-slate-300"
               >
                 <X size={16} />
