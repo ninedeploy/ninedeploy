@@ -1386,9 +1386,17 @@ set -a
 set +a
 if [ -z "${NINEDEPLOY_ACME_EMAIL:-}" ]; then
   ACME_INPUT=""
-  if [ -r /dev/tty ] && [ -w /dev/tty ]; then
-    printf "Let's Encrypt account email (required for automatic HTTPS; Enter to configure later): " > /dev/tty
-    IFS= read -r ACME_INPUT < /dev/tty || ACME_INPUT=""
+  # r261: the old `-r`/`-w` test on /dev/tty only read the device node's
+  # permission bits (crw-rw-rw-, true for everyone). With NO controlling
+  # terminal — the panel's self-update runs this script inside a systemd-run
+  # unit — opening /dev/tty fails with ENXIO, the prompt's redirection failed,
+  # and `set -e` aborted the upgrade here: after the panel was stopped and
+  # before migrate/restart. Prompt only when the terminal can actually be
+  # opened, never during a panel-driven self-update, and never let a failing
+  # prompt abort the run.
+  if [ -z "${ND_SELF_UPDATE_TARGET:-}" ] && { : <>/dev/tty; } 2>/dev/null; then
+    { printf "Let's Encrypt account email (required for automatic HTTPS; Enter to configure later): " >/dev/tty; } 2>/dev/null || true
+    IFS= read -r ACME_INPUT </dev/tty 2>/dev/null || ACME_INPUT=""
   fi
   if [ -n "$ACME_INPUT" ] && printf '%s' "$ACME_INPUT" | grep -Eq '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'; then
     sed -i.bak "s|^NINEDEPLOY_ACME_EMAIL=.*|NINEDEPLOY_ACME_EMAIL=${ACME_INPUT}|" .env && rm -f .env.bak

@@ -80,4 +80,12 @@ describe('bare-metal systemd installation policy', () => {
     // so the operator knows to update the table after auditing GitHub.
     expect(installer).toContain('is not in the installer');
   });
+
+  it('r261: only prompts on a terminal it can actually open (self-update has none)', () => {
+    const installer = rootFile('install.sh');
+    // Permission bits on /dev/tty are world-rw even with no controlling
+    // terminal; the open itself fails (ENXIO) and set -e killed the upgrade.
+    expect(installer).not.toContain('[ -r /dev/tty ] && [ -w /dev/tty ]');
+    expect(installer).toContain('[ -z "$' + '{ND_SELF_UPDATE_TARGET:-}" ] && { : <>/dev/tty; } 2>/dev/null');
+  });
 });
