@@ -34,7 +34,12 @@ function newestConflictingMigration(): { millis: number; tag: string } {
     // An ADD COLUMN has no IF NOT EXISTS in SQLite, so replaying it throws
     // `duplicate column name` — which is precisely the upgrade state the
     // recovery path exists to survive.
-    if (/ALTER TABLE/i.test(body) && / ADD /i.test(body)) return { millis: entry.when, tag: entry.tag };
+    // Match a real `ALTER TABLE … ADD` STATEMENT, comments stripped: 0064's
+    // header comment mentions "ALTER TABLE … ADD" while the file itself only
+    // rebuilds tables (which replays cleanly), and the loose two-regex test
+    // picked it — the suite stayed green without reaching the recovery path.
+    const statements = body.replace(/--[^\n]*/g, '');
+    if (/ALTER TABLE\s+\S+\s+ADD\b/i.test(statements)) return { millis: entry.when, tag: entry.tag };
   }
   throw new Error('no ALTER TABLE … ADD migration found to exercise the recovery path');
 }
