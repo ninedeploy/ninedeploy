@@ -9,7 +9,8 @@ import { deployTemplate, sameImageRepository, type DeployTemplate } from '@nined
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { audit } from '../lib/audit.js';
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
-import { getTemplates, type Template } from '../templates/registry.js';
+import type { Template } from '../templates/registry.js';
+import { findCatalogTemplate, getCatalogTemplates } from '../templates/catalog.js';
 import {
   importCommunityTemplate as importCommunityTemplateLib,
   listCommunityTemplates,
@@ -254,17 +255,13 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
     // installable baseline; a community entry that
     // collides on `id` is dropped (the curated entry
     // wins) so the operator can't accidentally shadow a
-    // shipped template.
-    const curated = await getTemplates(app.db);
-    const curatedIds = new Set(curated.map((t) => t.id));
-    const community = (await listCommunityTemplates()).entries
-      .filter((e) => !curatedIds.has(e.id))
-      .map((e) => e.template);
-    return [...curated, ...community].map(summary);
+    // shipped template. r330: the detail and deploy
+    // lookups below use the same merge (templates/catalog.ts).
+    return (await getCatalogTemplates(app.db)).map(summary);
   });
 
   app.get('/:id', async (req) => {
-    const t = (await getTemplates(app.db)).find((x) => x.id === (req.params as { id: string }).id);
+    const t = await findCatalogTemplate(app.db, (req.params as { id: string }).id);
     if (!t) throw notFound('Template not found');
     return { ...t, runtimeVerified: t.runtimeVerified === true };
   });
@@ -325,7 +322,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
   );
 
   const queue = async (req: FastifyRequest) => {
-    const t = (await getTemplates(app.db)).find((x) => x.id === (req.params as { id: string }).id);
+    const t = await findCatalogTemplate(app.db, (req.params as { id: string }).id);
     if (!t) throw notFound('Template not found');
     const input = deployTemplate.parse(req.body ?? {});
     // Templates that mount the Docker socket (Portainer, Dockge, Dozzle,

@@ -3,12 +3,21 @@ import { createFakeDb, dbRow, svcRow } from './helpers.js';
 
 const mocks = vi.hoisted(() => ({
   templates: [] as Array<Record<string, unknown>>,
+  community: [] as Array<Record<string, unknown>>,
   startDatabase: vi.fn(async () => undefined),
   adoptRetainedVolume: vi.fn(async () => ({ action: 'fresh' as const })),
 }));
 
 vi.mock('../src/templates/registry.js', () => ({
   getTemplates: vi.fn(async () => mocks.templates),
+}));
+// r330: community-imported templates are part of the installable catalog.
+vi.mock('../src/lib/communityTemplates.js', () => ({
+  listCommunityTemplates: vi.fn(async () => ({
+    entries: mocks.community.map((template) => ({ id: template.id, template })),
+    errors: [],
+    totalBytes: 0,
+  })),
 }));
 vi.mock('../src/engine/database.js', async (importOriginal) => {
   // The real module is imported for its pure helpers (needsVolumeAdoption);
@@ -56,6 +65,7 @@ describe('vanished template resilience', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.templates = [];
+    mocks.community = [];
   });
 
   it('redeploys compose stacks (no databaseEnv) even when the template left the registry', async () => {
@@ -75,6 +85,23 @@ describe('template dependency recovery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.templates = [mysqlTemplate];
+    mocks.community = [];
+  });
+
+  it('r330: resolves the managed-database contract of a community-imported template', async () => {
+    mocks.templates = [];
+    mocks.community = [{ ...mysqlTemplate, id: 'community-wp' }];
+    const db = createFakeDb({
+      insert: {
+        databases: (value) => [dbRow({ ...(value as Record<string, unknown>), id: 9 })],
+        database_attachments: (value) => [value as Record<string, unknown>],
+      },
+      update: { databases: (value) => [value as Record<string, unknown>] },
+    });
+    // Before r330 this threw "Hub template 'community-wp' is no longer available".
+    await expect(
+      reconcileTemplateDependencies(db, service({ templateId: 'community-wp', templateDatabaseEnv: { WORDPRESS_DB_HOST: 'hostPort' } }), vi.fn()),
+    ).resolves.toMatchObject({ database: { id: 9 }, alreadyAttached: false });
   });
 
   it('skips ordinary services and templates without a database', async () => {

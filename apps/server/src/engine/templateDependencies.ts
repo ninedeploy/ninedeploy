@@ -9,7 +9,7 @@ import {
 } from '@ninedeploy/db';
 import { eq } from 'drizzle-orm';
 import { encrypt, randomToken } from '../lib/crypto.js';
-import { getTemplates } from '../templates/registry.js';
+import { findCatalogTemplate } from '../templates/catalog.js';
 import { adoptRetainedVolume, attachDatabaseToServiceBridges, defaultPort, ENGINES, needsVolumeAdoption, startDatabase } from './database.js';
 
 export type TemplateDependencyResult = { database: Database; alreadyAttached: boolean } | null;
@@ -25,7 +25,9 @@ export async function reconcileTemplateDependencies(
   log: (line: string) => void,
 ): Promise<TemplateDependencyResult> {
   if (!service.templateId) return null;
-  const template = (await getTemplates(db)).find((candidate) => candidate.id === service.templateId);
+  // r330: community-imported templates are installable too, so their
+  // managed-database contract must resolve here as well.
+  const template = await findCatalogTemplate(db, service.templateId);
   if (!template) {
     // A vanished template must never brick redeploys of already-installed
     // services. Managed-database stacks genuinely depend on the registry

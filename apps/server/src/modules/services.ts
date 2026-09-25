@@ -18,7 +18,7 @@ import {
   type Service,
 } from '@ninedeploy/db';
 import { composePreviewRequest, createService, sameImageRepository, setLimits, updateService } from '@ninedeploy/schemas';
-import { getTemplates } from '../templates/registry.js';
+import { findCatalogTemplate } from '../templates/catalog.js';
 
 /** Fan-out target set for a service — up to 10 extra nodes, operator-set. */
 const setTargets = z.object({ serverIds: z.array(z.number().int().positive()).max(10) });
@@ -244,7 +244,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       }
     }
     const template = input.templateId
-      ? (await getTemplates(app.db)).find((candidate) => candidate.id === input.templateId)
+      // r330: the same catalog the Hub lists (curated + community).
+      ? await findCatalogTemplate(app.db, input.templateId)
       : undefined;
     if (input.templateId && !template) throw badRequest('Template not found');
     // The image may be pinned to a different TAG of the template's own
