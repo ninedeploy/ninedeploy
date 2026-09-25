@@ -10,6 +10,8 @@ build
 
 # runtime data
 .data
+# install.sh r357: the previous release, kept while an upgrade runs
+.upgrade-rollback-*/
 *.db
 *.db-journal
 *.db-shm

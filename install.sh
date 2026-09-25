@@ -1051,8 +1051,9 @@ fi
 # unreachable or the tag has no tarball yet.
 
 # Replace the tracked source tree in $INSTALL_DIR with the release tarball for
-# $1, preserving .env, .data and node_modules. Returns non-zero when the
-# tarball could not be fetched, leaving the existing install untouched.
+# $1, preserving .env and .data. Returns non-zero when the tarball could not
+# be fetched, leaving the existing install untouched. (r357: the replaced
+# tree, node_modules included, is renamed into .upgrade-rollback-<ts>/ first.)
 upgrade_from_release() {
   local _ref="$1" _stage
   _stage=$(mktemp -d) || return 1
@@ -1064,9 +1065,22 @@ upgrade_from_release() {
     return 1
   fi
 
+  # r357: set the running release aside (same-filesystem renames, no copy)
+  # before anything below replaces it, so a failure between here and the
+  # section-5 restart can put it back and start the panel on it — see
+  # prepare_upgrade_rollback / rollback_failed_upgrade. Not being able to is
+  # a warning, not a failure: the upgrade proceeds as it did before r357.
+  if prepare_upgrade_rollback "$_stage"; then
+    ok "Previous release set aside for rollback in $ROLLBACK_DIR"
+    BACKUP_HINT="${BACKUP_HINT:-No pre-update backup was taken}. The previous release's tree is kept in $ROLLBACK_DIR"
+  else
+    warn "Could not set the previous release aside — continuing WITHOUT a code rollback point: if this upgrade fails, the panel stays down until the installer is re-run."
+  fi
+
   # Drop source directories that the new tree owns wholesale, so a file
   # deleted in this release does not survive as a stale module. Everything
   # holding state — .env, .data, node_modules — is outside this list.
+  # (r357: a no-op when prepare_upgrade_rollback already moved them.)
   local _d
   for _d in apps packages scripts systemd patches docs .github; do
     rm -rf "${INSTALL_DIR:?}/$_d"
@@ -1179,6 +1193,28 @@ update_from_git() {
 SERVICE_STOPPED_BY_UPGRADE=false
 restore_service_on_exit() {
   local _rc=$?
+  # r357: a failed release-tarball upgrade first puts the previous release
+  # back (and its database, when migrations already ran), so the start below
+  # has a build to start. Every success path disarms the rollback before it
+  # can exit, so an armed rollback here IS a failure — $? is not consulted:
+  # after a SIGTERM (the self-update unit being stopped) bash reports 0.
+  # Called under `|| true`: errexit is off inside, and nothing it does can cut
+  # the service start short.
+  if [ "${ROLLBACK_ARMED:-false}" = true ]; then
+    ROLLBACK_ARMED=false
+    rollback_failed_upgrade "$_rc" || true
+  fi
+  start_service_after_failed_upgrade "$_rc" || true
+  # r357: the failed new tree is deleted only once the panel is back up — a
+  # big node_modules takes a while, and systemd's stop timeout is finite.
+  if [ -n "${ROLLBACK_DISCARD:-}" ]; then
+    rm -rf "${ROLLBACK_DISCARD:?}" 2>/dev/null || true
+    ROLLBACK_DISCARD=""
+  fi
+  return 0
+}
+start_service_after_failed_upgrade() {
+  local _rc="$1"
   [ "${SERVICE_STOPPED_BY_UPGRADE:-false}" = true ] || return 0
   SERVICE_STOPPED_BY_UPGRADE=false
   systemctl is-active --quiet ninedeploy 2>/dev/null && return 0
@@ -1197,6 +1233,243 @@ restore_service_on_exit() {
     warn "ninedeploy could not be restarted — inspect: journalctl -u ninedeploy -n 50"
   fi
   return 0
+}
+
+# r357: r262 restarts the unit after a failed upgrade, but the release-tarball
+# path (which is what the panel's self-update takes) replaced apps/ wholesale
+# and pnpm then rewrites node_modules — so a failure after the unpack (registry
+# outage in `pnpm install`, a broken build, a failed migration, a unit that
+# does not render) left no build to start, and the panel stayed DOWN until an
+# operator re-ran the installer by hand.
+#
+# Before the unpack, every top-level entry the new tree will replace — plus
+# node_modules, the stamp and the running installer — is RENAMED into
+# $INSTALL_DIR/.upgrade-rollback-<ts>/old (same filesystem: no copy, no extra
+# disk). A manifest records what was moved (M) and what the new release adds
+# (A). On a failed exit before the section-5 restart the EXIT trap moves the
+# new tree aside, renames the old one back, and then r262 starts the unit on
+# it. A successful, healthy upgrade deletes the rollback dir(s).
+#
+# Database: the DB snapshot above is taken with the service already stopped,
+# and it stays stopped until section 5 — nothing writes to the database in
+# between except `pnpm db:migrate`. So:
+#   * failure BEFORE the migrate step: the DB is untouched; code-only rollback.
+#   * failure AT/AFTER the migrate step: the DB may be on the NEW schema, which
+#     the old code must not run against. The pre-upgrade snapshot is restored
+#     (losing nothing: no writes happened since it was taken) and only then is
+#     the old code put back. When no snapshot covers the database the server
+#     actually uses, or it cannot be restored, the code is NOT rolled back —
+#     new code on a migrated DB beats old code on it — and r262 decides.
+ROLLBACK_DIR=""
+ROLLBACK_DISCARD=""
+ROLLBACK_ARMED=false
+DB_MIGRATION_STARTED=false
+DB_BACKUP_COVERS_MIGRATION=false
+
+# Device number of a path (not following symlinks); a rename is only possible
+# within one device, and `mv` across devices silently degrades to a copy.
+path_device() { stat -c %d "$1" 2>/dev/null || stat -f %d "$1" 2>/dev/null || printf '?%s\n' "$1"; }
+
+# Rename $INSTALL_DIR/$1 into the rollback dir and record it. Returns non-zero
+# (leaving the entry where it was) when it cannot be renamed.
+rollback_take_entry() {
+  local _name="$1" _src
+  case "$_name" in
+    ''|.|..|.env|.data|.git|install.sh|.upgrade-rollback-*|"$RELEASE_STAMP_FILE") return 0 ;;
+  esac
+  grep -qxF -e "M $_name" -e "A $_name" "$ROLLBACK_DIR/manifest" 2>/dev/null && return 0
+  _src="$INSTALL_DIR/$_name"
+  if [ -e "$_src" ] || [ -L "$_src" ]; then
+    [ "$(path_device "$_src")" = "$(path_device "$ROLLBACK_DIR")" ] || return 1
+    mv "$_src" "$ROLLBACK_DIR/old/$_name" || return 1
+    if ! printf 'M %s\n' "$_name" >> "$ROLLBACK_DIR/manifest"; then
+      mv "$ROLLBACK_DIR/old/$_name" "$_src"
+      return 1
+    fi
+  else
+    # New in this release: removed again on rollback.
+    printf 'A %s\n' "$_name" >> "$ROLLBACK_DIR/manifest" || return 1
+  fi
+  return 0
+}
+
+# $1 = the verified, unpacked release tree. On success ROLLBACK_DIR is set,
+# ROLLBACK_ARMED=true and the old tree is out of the way (the unpack lands in
+# an empty slot). On failure every entry already moved is put back and it
+# returns non-zero with the install exactly as it was.
+prepare_upgrade_rollback() {
+  local _stage="$1" _dir _p
+  _dir="$INSTALL_DIR/.upgrade-rollback-$(date +%Y%m%d-%H%M%S)"
+  [ -e "$_dir" ] && _dir="$_dir-$$"
+  if ! mkdir -p "$_dir/old" 2>/dev/null || ! : > "$_dir/manifest" 2>/dev/null; then
+    rm -rf "${_dir:?}" 2>/dev/null || true
+    return 1
+  fi
+  ROLLBACK_DIR="$_dir"
+  # Armed before the first rename, so no exit path in between loses a moved
+  # entry. The trap is (re)installed here too: a host whose unit was not
+  # running never armed r262's.
+  ROLLBACK_ARMED=true
+  trap restore_service_on_exit EXIT
+
+  # The stamp is rewritten after the unpack, and the installer is swapped by
+  # rename — keep the old inode (hard link; copy as a fallback) and stamp.
+  if [ -f "$INSTALL_DIR/$RELEASE_STAMP_FILE" ]; then
+    cp -p "$INSTALL_DIR/$RELEASE_STAMP_FILE" "$_dir/old/$RELEASE_STAMP_FILE" && printf 'S\n' >> "$_dir/manifest"
+  else
+    printf 'N\n' >> "$_dir/manifest"
+  fi
+  if [ -f "$INSTALL_DIR/install.sh" ]; then
+    { ln "$INSTALL_DIR/install.sh" "$_dir/old/install.sh" 2>/dev/null \
+        || cp -p "$INSTALL_DIR/install.sh" "$_dir/old/install.sh"; } && printf 'I\n' >> "$_dir/manifest"
+  fi
+
+  # node_modules is rewritten in place by `pnpm install`, and the list below
+  # is what the pre-r357 unpack deleted outright; everything else the new
+  # tree carries at its top level is overwritten by the unpack.
+  for _p in node_modules apps packages scripts systemd patches docs .github \
+            "$_stage"/* "$_stage"/.[!.]* "$_stage"/..?*; do
+    case "$_p" in
+      "$_stage"/*) [ -e "$_p" ] || [ -L "$_p" ] || continue; _p="${_p##*/}" ;;
+    esac
+    if ! rollback_take_entry "$_p"; then
+      warn "Could not move $INSTALL_DIR/$_p aside (different filesystem or mount point?)"
+      if rollback_upgrade_tree; then
+        ROLLBACK_ARMED=false
+        rm -rf "${ROLLBACK_DISCARD:?}"
+        ROLLBACK_DISCARD=""
+        return 1
+      fi
+      fail "Could not put the previous release back after a failed rollback preparation — its pieces are in $_dir"
+    fi
+  done
+  return 0
+}
+
+# Undo the swap: new tree -> $ROLLBACK_DIR/failed (then deleted), old tree ->
+# its place. Returns non-zero, keeping $ROLLBACK_DIR, if anything did not move.
+rollback_upgrade_tree() {
+  local _dir="${ROLLBACK_DIR:-}" _kind _name _ok=true
+  [ -n "$_dir" ] && [ -f "$_dir/manifest" ] || return 1
+  mkdir -p "$_dir/failed" || return 1
+  while IFS=' ' read -r _kind _name; do
+    case "$_kind" in M|A) ;; *) continue ;; esac
+    [ -n "$_name" ] || continue
+    if [ -e "$INSTALL_DIR/$_name" ] || [ -L "$INSTALL_DIR/$_name" ]; then
+      if [ -e "$_dir/failed/$_name" ] || [ -L "$_dir/failed/$_name" ]; then
+        rm -rf "${INSTALL_DIR:?}/${_name:?}" || _ok=false
+      else
+        mv "$INSTALL_DIR/$_name" "$_dir/failed/$_name" || _ok=false
+      fi
+    fi
+  done < "$_dir/manifest"
+  while IFS=' ' read -r _kind _name; do
+    [ "$_kind" = M ] && [ -n "$_name" ] || continue
+    [ -e "$_dir/old/$_name" ] || [ -L "$_dir/old/$_name" ] || continue
+    if [ -e "$INSTALL_DIR/$_name" ] || [ -L "$INSTALL_DIR/$_name" ]; then
+      _ok=false
+      continue
+    fi
+    mv "$_dir/old/$_name" "$INSTALL_DIR/$_name" || _ok=false
+  done < "$_dir/manifest"
+  if grep -qx 'I' "$_dir/manifest" && [ -f "$_dir/old/install.sh" ]; then
+    # Still the same inode when the installer was never swapped (the hard
+    # link above); `mv` refuses to rename a file onto itself.
+    if [ "$_dir/old/install.sh" -ef "$INSTALL_DIR/install.sh" ]; then
+      rm -f "$_dir/old/install.sh"
+    else
+      mv -f "$_dir/old/install.sh" "$INSTALL_DIR/install.sh" || _ok=false
+    fi
+  fi
+  if grep -qx 'S' "$_dir/manifest" && [ -f "$_dir/old/$RELEASE_STAMP_FILE" ]; then
+    mv -f "$_dir/old/$RELEASE_STAMP_FILE" "$INSTALL_DIR/$RELEASE_STAMP_FILE" || _ok=false
+  elif grep -qx 'N' "$_dir/manifest"; then
+    rm -f "$INSTALL_DIR/$RELEASE_STAMP_FILE"
+  fi
+  [ "$_ok" = true ] || return 1
+  # Only the failed new tree (and emptied bookkeeping) is left in $_dir; the
+  # caller deletes it — the EXIT trap after the service is back up.
+  ROLLBACK_DISCARD="$_dir"
+  ROLLBACK_DIR=""
+  return 0
+}
+
+# Put the pre-update snapshot of the database back. The migrated files are
+# moved aside first and returned if the restore cannot complete, so a failure
+# here never leaves a database that is neither schema.
+restore_pre_upgrade_database() {
+  local _archive _tmp _data="$INSTALL_DIR/.data" _f _ok=true
+  [ -n "${BACKUP_FILE:-}" ] || return 1
+  _archive="$INSTALL_DIR/${BACKUP_FILE#./}"
+  [ -f "$_archive" ] || return 1
+  _tmp="$_data/.r357-db-restore.$$"
+  rm -rf "${_tmp:?}"
+  (umask 077 && mkdir -p "$_tmp/migrated") || return 1
+  if ! tar -xzf "$_archive" -C "$_tmp" || [ ! -f "$_tmp/.data/ninedeploy.db" ]; then
+    rm -rf "${_tmp:?}"
+    return 1
+  fi
+  # A -wal/-shm left by the migrated database must never be replayed over the
+  # restored file: move the whole set aside, then install the snapshot's set.
+  for _f in ninedeploy.db ninedeploy.db-wal ninedeploy.db-shm ninedeploy.db-journal; do
+    if [ -e "$_data/$_f" ]; then
+      mv -f "$_data/$_f" "$_tmp/migrated/$_f" || _ok=false
+    fi
+  done
+  if [ "$_ok" = true ]; then
+    for _f in ninedeploy.db-wal ninedeploy.db-shm ninedeploy.db; do
+      if [ -f "$_tmp/.data/$_f" ]; then
+        mv -f "$_tmp/.data/$_f" "$_data/$_f" || _ok=false
+      fi
+    done
+  fi
+  if [ "$_ok" != true ]; then
+    for _f in ninedeploy.db ninedeploy.db-wal ninedeploy.db-shm ninedeploy.db-journal; do
+      rm -f "$_data/$_f"
+      if [ -e "$_tmp/migrated/$_f" ]; then mv -f "$_tmp/migrated/$_f" "$_data/$_f"; fi
+    done
+    warn "Could not restore the database snapshot; the database was left as the migration step left it."
+    return 1
+  fi
+  rm -rf "${_tmp:?}"
+  return 0
+}
+
+# Called by the EXIT trap after a failed run with the rollback armed.
+rollback_failed_upgrade() {
+  local _rc="$1"
+  [ -n "${ROLLBACK_DIR:-}" ] && [ -f "$ROLLBACK_DIR/manifest" ] || return 0
+  warn "The upgrade failed (exit ${_rc}) — rolling back to the previous release (${PREVIOUS_REF:-v${PREVIOUS_VERSION:-?}})…"
+  if [ "${DB_MIGRATION_STARTED:-false}" = true ]; then
+    if [ "${DB_BACKUP_COVERS_MIGRATION:-false}" != true ]; then
+      warn "Migrations already ran and no pre-update snapshot covers the database the panel uses — NOT putting the previous code back on a database it may not understand."
+      warn "The previous release's tree is kept in $ROLLBACK_DIR"
+      return 1
+    fi
+    if ! restore_pre_upgrade_database; then
+      warn "The previous release's tree is kept in $ROLLBACK_DIR; the pre-update snapshot is ${INSTALL_DIR}/${BACKUP_FILE#./}"
+      return 1
+    fi
+    ok "Database restored from the pre-update snapshot ${BACKUP_FILE}"
+  fi
+  if rollback_upgrade_tree; then
+    ok "Previous release restored in $INSTALL_DIR"
+    return 0
+  fi
+  warn "The rollback did not complete — the previous release's remaining pieces are in $ROLLBACK_DIR"
+  return 1
+}
+
+# A healthy upgrade: nothing to roll back to any more, including rollback dirs
+# a previously failed run kept.
+prune_upgrade_rollbacks() {
+  local _d
+  ROLLBACK_ARMED=false
+  for _d in "$INSTALL_DIR"/.upgrade-rollback-*; do
+    [ -d "$_d" ] || continue
+    rm -rf "${_d:?}" || warn "Could not remove the rollback copy $_d"
+  done
+  ROLLBACK_DIR=""
 }
 
 
@@ -1458,6 +1731,21 @@ if [ -z "${NINEDEPLOY_ACME_EMAIL:-}" ]; then
     warn "Automatic HTTPS is not active yet: set the Let's Encrypt account email in Settings -> Security after signing in. NineDeploy will apply it to Traefik immediately."
   fi
 fi
+# r357: from here on the database may be on the new schema, so a rollback to
+# the previous release must restore the pre-update snapshot first — which is
+# only possible when that snapshot (.data/ninedeploy.db) IS the database the
+# panel runs on (NINEDEPLOY_DB_PATH resolves against the install root, as in
+# apps/server/src/config.ts). Anything else: no code rollback past this line.
+_r357_db_path="${NINEDEPLOY_DB_PATH:-./.data/ninedeploy.db}"
+_r357_db_path="${_r357_db_path#file:}"
+case "$_r357_db_path" in
+  /*) ;;
+  *) _r357_db_path="$INSTALL_DIR/${_r357_db_path#./}" ;;
+esac
+if [ "${BACKUP_OK:-false}" = true ] && [ "$_r357_db_path" = "$INSTALL_DIR/.data/ninedeploy.db" ]; then
+  DB_BACKUP_COVERS_MIGRATION=true
+fi
+DB_MIGRATION_STARTED=true
 pnpm db:migrate
 
 # ── 5. Systemd (Linux) ────────────────────────────────────────────────────
@@ -1563,6 +1851,10 @@ if [ "$(uname -s)" = "Linux" ] && command -v systemctl &>/dev/null; then
   # r262: the unit is running the new build now; a later failure (health
   # gate, Traefik check) is reported as such, not papered over by the trap.
   SERVICE_STOPPED_BY_UPGRADE=false
+  # r357: likewise the code rollback — a failure from here on is the new
+  # release's to report; the rollback dir is kept for a manual rollback until
+  # the health gate below passes.
+  ROLLBACK_ARMED=false
 
   # Everything the operator would otherwise have to go and collect by hand.
   # A readiness failure is the single most common place an install ends, and
@@ -1635,6 +1927,8 @@ if [ "$(uname -s)" = "Linux" ] && command -v systemctl &>/dev/null; then
   else
     ok "NineDeploy service started (systemd, hardened unit)"
   fi
+  # r357: the new release is up — drop the previous one's rollback copy.
+  prune_upgrade_rollbacks
 
   # /health is only a valid installation gate when the mandatory ingress
   # container is also live on the shared network. Never print a successful
@@ -1728,6 +2022,8 @@ if [ "$(uname -s)" = "Linux" ] && command -v systemctl &>/dev/null; then
     warn "PM2 CLI or unit template not found; bare-metal deployments will not auto-restore at boot"
   fi
 else
+  # r357: nothing is restarted here, so the build is the success criterion.
+  prune_upgrade_rollbacks
   warn "systemd not available — starting in foreground…"
   info "For production, set up a process manager (systemd/pm2/launchd)."
 fi
