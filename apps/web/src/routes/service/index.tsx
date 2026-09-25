@@ -45,6 +45,9 @@ const SERVICE_TABS: Array<{ id: TabId; label: string; icon: typeof LayoutDashboa
   { id: 'danger', label: 'Danger Zone', icon: ShieldAlert },
 ];
 
+/** Past tense for the lifecycle toast (`${action}ed` read "Service stoped"). */
+const LIFECYCLE_DONE = { stop: 'stopped', start: 'started', restart: 'restarted' } as const;
+
 export function ServiceDetail() {
   const params = useParams();
   const id = Number(params['id']);
@@ -111,13 +114,21 @@ export function ServiceDetail() {
   // confirmation before the build is queued.
   const [confirmRedeploy, setConfirmRedeploy] = useState(false);
 
+  // r299: the deploy is keyed on the service it was triggered FOR. A quick
+  // navigation to another service before the trigger answered used to open
+  // the Deploys tab of the new page on the old service's deployment id.
+  const currentIdRef = useRef(id);
+  useEffect(() => {
+    currentIdRef.current = id;
+  }, [id]);
   const trigger = useMutation({
-    mutationFn: () => api.deploys.trigger(id),
-    onSuccess: (res) => {
+    mutationFn: (serviceId: number) => api.deploys.trigger(serviceId),
+    onSuccess: (res, serviceId) => {
+      qc.invalidateQueries({ queryKey: ['deploys', serviceId] });
+      qc.invalidateQueries({ queryKey: ['service', serviceId] });
+      if (serviceId !== currentIdRef.current) return;
       setActiveDeploy(res.deploymentId);
       switchTab('deploys');
-      qc.invalidateQueries({ queryKey: ['deploys', id] });
-      qc.invalidateQueries({ queryKey: ['service', id] });
     },
     onError: (err) => toast(err instanceof Error ? `Deploy failed: ${err.message}` : 'Deploy failed', 'error'),
   });
@@ -126,7 +137,7 @@ export function ServiceDetail() {
     mutationFn: (action: 'stop' | 'start' | 'restart') => api.services[action](id),
     onSuccess: (_d, action) => {
       qc.invalidateQueries({ queryKey: ['service', id] });
-      toast(`Service ${action}ed`, 'success');
+      toast(`Service ${LIFECYCLE_DONE[action]}`, 'success');
     },
     onError: () => toast('Action failed', 'error'),
   });
@@ -187,7 +198,7 @@ export function ServiceDetail() {
   // confirmation before the build is queued.
   const requestDeploy = () => {
     if (svc?.status === 'running') setConfirmRedeploy(true);
-    else trigger.mutate();
+    else trigger.mutate(id);
   };
   const activeDeployRow = deploys.data?.find((d) => d.id === activeDeploy) ?? null;
 
@@ -432,7 +443,7 @@ export function ServiceDetail() {
           confirmLabel="Redeploy"
           onConfirm={() => {
             setConfirmRedeploy(false);
-            trigger.mutate();
+            trigger.mutate(id);
           }}
           onClose={() => setConfirmRedeploy(false)}
         />

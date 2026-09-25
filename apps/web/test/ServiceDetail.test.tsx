@@ -1,7 +1,7 @@
 ﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { screen, waitFor, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { Route, Routes } from 'react-router';
+import { Link, Route, Routes, useLocation } from 'react-router';
 import { ServiceDetail } from '../src/routes/service/index.js';
 import { api, getToken } from '../src/lib/api.js';
 import { renderRoute, renderWithProviders, mockOf } from './helpers.js';
@@ -368,6 +368,37 @@ describe('ServiceDetail', () => {
     await waitFor(() => expect(api.deploys.trigger).toHaveBeenCalledWith(1));
   });
 
+  it('r299: a deploy answered after navigating to another service leaves that page alone', async () => {
+    let answer!: (v: { deploymentId: number }) => void;
+    mockOf(api.deploys.trigger).mockReturnValue(new Promise((r) => { answer = r; }) as never);
+    function Probe() {
+      const loc = useLocation();
+      return (
+        <>
+          <Link to="/services/2">other service</Link>
+          <span data-testid="loc">{loc.pathname + loc.search}</span>
+        </>
+      );
+    }
+    renderWithProviders(
+      <>
+        <Probe />
+        <Routes>
+          <Route path="/services/:id" element={<ServiceDetail />} />
+        </Routes>
+      </>,
+      { initialEntries: ['/services/1'] },
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Redeploy' }));
+    await waitFor(() => expect(api.deploys.trigger).toHaveBeenCalledWith(1));
+    fireEvent.click(screen.getByRole('link', { name: 'other service' }));
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/services/2'));
+    await act(async () => answer({ deploymentId: 9 }));
+    // Service 2's page must not be flipped to the Deploys tab for service 1's build.
+    expect(screen.getByTestId('loc').textContent).toBe('/services/2');
+  });
+
   it('shows the pending label while a deploy is being triggered', async () => {
     mockOf(api.deploys.trigger).mockReturnValue(new Promise(() => {}) as never);
     renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
@@ -392,8 +423,8 @@ describe('ServiceDetail', () => {
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Service restarted', 'success'));
     fireEvent.click(screen.getByRole('button', { name: /Stop/ }));
     await waitFor(() => expect(api.services.stop).toHaveBeenCalledWith(1));
-    // source interpolates `${action}ed` -> "stoped"
-    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Service stoped', 'success'));
+    // r299: `${action}ed` used to read "Service stoped".
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Service stopped', 'success'));
     first.unmount();
 
     // stopped service -> start action
