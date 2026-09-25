@@ -271,6 +271,32 @@ describe('EnvCard', () => {
     });
   });
 
+  it('refetches the table after a partially applied .env edit fails (r297)', async () => {
+    // The create lands but the update is refused: the table must not keep
+    // showing the pre-edit rows for what was in fact saved.
+    const create = deferred<unknown>();
+    apiMock.api.env.create.mockReturnValueOnce(create.promise);
+    apiMock.api.env.update.mockRejectedValueOnce(new Error('refused'));
+    renderWithProviders(<EnvCard serviceId={7} />, {
+      queryClient: createQueryClient(),
+      wrapper: (children) => <ToastProvider>{children}</ToastProvider>,
+    });
+    await waitFor(() => expect(screen.getByText('PORT')).toBeInTheDocument());
+    expect(apiMock.api.env.list).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit as .env' }));
+    const text = screen.getByLabelText('Raw .env content') as HTMLTextAreaElement;
+    fireEvent.change(text, { target: { value: 'PORT=8080\nAPI_KEY=hunter2\nNEW_FLAG=1' } });
+    fireEvent.click(screen.getByRole('button', { name: /Apply 3 vars/ }));
+    await waitFor(() => expect(apiMock.api.env.update).toHaveBeenCalled());
+    // Still waiting on the create: nothing is reported (or refetched) yet.
+    expect(screen.queryByText(/Could not apply the .env edit/)).not.toBeInTheDocument();
+
+    await act(async () => create.resolve({ id: 3, key: 'NEW_FLAG', value: '1', isSecret: false }));
+    expect(await screen.findByText(/Could not apply the .env edit/)).toBeInTheDocument();
+    await waitFor(() => expect(apiMock.api.env.list).toHaveBeenCalledTimes(2));
+  });
+
   it('blocks Apply and lists problems when a line is malformed', async () => {
     renderCard();
     await waitFor(() => expect(screen.getByText('PORT')).toBeInTheDocument());

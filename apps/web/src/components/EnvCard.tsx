@@ -117,11 +117,17 @@ export function EnvCard({ serviceId }: { serviceId: number }) {
       const removes = current.filter((v) => !wanted.has(v.key)).map((v) => api.env.remove(serviceId, v.id));
       // Independent single-variable calls; one failure among many still leaves
       // a coherent subset persisted, which the refetch below renders truthfully.
-      await Promise.all([...creates, ...updates, ...removes]);
+      // r297: wait for every call to land (Promise.all rejected on the first
+      // failure while the rest were still in flight) before reporting.
+      const results = await Promise.allSettled([...creates, ...updates, ...removes]);
+      const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+      if (failed) throw failed.reason;
       return { added: creates.length, updated: updates.length, removed: removes.length };
     },
+    // r297: refetch on failure too — a partial apply left the table showing
+    // the pre-edit values for variables that had in fact been saved.
+    onSettled: invalidate,
     onSuccess: ({ added, updated, removed }) => {
-      invalidate();
       toast(`Saved ${added} added · ${updated} updated · ${removed} removed`, 'success');
       setRawMode(false);
     },
