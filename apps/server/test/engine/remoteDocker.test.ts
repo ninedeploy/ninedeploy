@@ -276,6 +276,47 @@ describe('remote docker builder — runtime shape', () => {
       publish: '8080:3000',
     });
   });
+
+  it('r264: retires the previous runtime before re-binding a published host port', async () => {
+    const { agent, calls, ops } = fakeAgent();
+    await createRemoteDockerBuilder(agent).buildAndRun(
+      ctx({ service: svc({ image: 'nginx:1', publishedPort: 8080 }) }),
+      { runtimeId: 'web-6', port: 3000, healthPath: '/' },
+    );
+    // Both generations cannot bind 8080: the old one must be gone before the
+    // new `docker run -p`, or every redeploy fails "port is already allocated".
+    const rm = calls.findIndex((c) => c.op === 'docker.rm' && c.params['name'] === 'web-6');
+    expect(rm).toBeGreaterThanOrEqual(0);
+    expect(rm).toBeLessThan(ops().indexOf('docker.runEnv'));
+  });
+
+  it('r264: keeps blue-green (previous untouched) when no host port is published', async () => {
+    const { agent, ops } = fakeAgent();
+    await createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1' }) }), {
+      runtimeId: 'web-6',
+      port: 3000,
+      healthPath: '/',
+    });
+    expect(ops()).not.toContain('docker.rm');
+  });
+
+  it('r264: a failed run removes its Created container and still fails the deploy', async () => {
+    const { agent, calls } = fakeAgent();
+    const failing: AgentCall = async (op, params, sink) => {
+      if (op === 'docker.runEnv') {
+        await agent(op, params, sink);
+        throw new Error('agent docker.runEnv exited with 125');
+      }
+      return agent(op, params, sink);
+    };
+    await expect(
+      createRemoteDockerBuilder(failing).buildAndRun(
+        ctx({ service: svc({ image: 'nginx:1', publishedPort: 8080 }) }),
+        { runtimeId: 'web-6', port: 3000, healthPath: '/' },
+      ),
+    ).rejects.toThrow(/exited with 125/);
+    expect(calls.some((c) => c.op === 'docker.rm' && c.params['name'] === 'web-7')).toBe(true);
+  });
 });
 
 describe('remote docker builder — health and teardown', () => {

@@ -84,7 +84,6 @@ export function createRemoteDockerBuilder(agent: AgentCall): Builder {
 
   return {
     async buildAndRun(ctx: BuildContext, previous?: DeployRuntime): Promise<DeployRuntime> {
-      void previous;
       const { service, buildConfig, deploymentId, commitSha, env, imageDigest, registryAuth, log } = ctx;
 
       if (service.type !== 'docker') {
@@ -202,9 +201,33 @@ export function createRemoteDockerBuilder(agent: AgentCall): Builder {
         runParams['publish'] = `${service.publishedPort}:${resolvedPort}`;
       }
 
+      // r264: a host-published port cannot run blue-green — Docker refuses to
+      // bind the same host port twice, so every redeploy after the first died
+      // on "port is already allocated" (leaving a Created container behind)
+      // while the old generation kept the port. Same rule as the local builder
+      // (docker.ts) and the fan-out (fanout.ts): retire the previous runtime
+      // FIRST and deploy sequentially.
+      if (runParams['publish'] !== undefined && previous?.runtimeId && previous.runtimeId !== name) {
+        log(
+          `Host port ${service.publishedPort} is published — retiring previous runtime ${previous.runtimeId} on the node before start (sequential deploy, no blue-green)`,
+        );
+        await agent('docker.rm', { name: previous.runtimeId }, sink).catch((err: unknown) =>
+          log(
+            `warning: could not remove ${previous.runtimeId}: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+      }
+
       log(`Starting ${name} on the node …`);
       try {
         await agent('docker.runEnv', runParams, sink);
+      } catch (err) {
+        // r264: `docker run -d` that fails after create (a port conflict, a bad
+        // mount) leaves a Created container under this deployment's name, and
+        // the pipeline has no runtime to stop. Remove it; the run error is
+        // still what fails the deployment.
+        await agent('docker.rm', { name }, () => undefined).catch(() => undefined);
+        throw err;
       } finally {
         // The env-file has been consumed by `docker run`; leaving decrypted
         // secrets on the node's disk after that is pure exposure.
