@@ -1634,14 +1634,15 @@ describe('runDeployment with an inline compose stack', () => {
 
 describe('runDeployment on a remote-server target', () => {
   /**
-   * Make the mocked agent answer `docker.inspect --format state` with a
+   * Make the mocked agent answer `docker.inspect --format health` with a
    * running container, so the remote builder's state-based health check
-   * settles instead of polling to its deadline.
+   * settles instead of polling to its deadline (r265: it needs a few stable
+   * samples, a poll apart).
    */
   const agentAnswersRunning = () => {
     h.agentOp.mockImplementation(async (_db: unknown, _serverId: unknown, op: string) =>
       op === 'docker.inspect'
-        ? { exitCode: 0, lines: ['running|172.18.0.9'] }
+        ? { exitCode: 0, lines: ['running|none|0|0'] }
         : { exitCode: 0, lines: [] },
     );
   };

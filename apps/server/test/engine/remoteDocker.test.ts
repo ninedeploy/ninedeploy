@@ -38,7 +38,7 @@ function fakeAgent(overrides: Record<string, { exitCode: number; lines: string[]
     sink(`${op} ok`);
     if (overrides[op]) return overrides[op]!;
     if (op === 'file.writeEnv') return { exitCode: 0, lines: ['wrote .agent-env/web-7.env'] };
-    if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|172.18.0.9'] };
+    if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|none|0|0'] };
     return { exitCode: 0, lines: [] };
   };
   return { agent, calls, ops: () => calls.map((c) => c.op) };
@@ -324,7 +324,68 @@ describe('remote docker builder — health and teardown', () => {
 
   it('reports healthy once the node says the container is running', async () => {
     const { agent } = fakeAgent();
-    await expect(createRemoteDockerBuilder(agent).isHealthy(runtime, 5000)).resolves.toBe(true);
+    await expect(createRemoteDockerBuilder(agent, { pollMs: 1 }).isHealthy(runtime, 5000)).resolves.toBe(true);
+  });
+
+  /** An agent whose `docker.inspect` answers walk through `samples` (the last one repeats). */
+  const sampledAgent = (samples: string[]) => {
+    let i = 0;
+    const inner = fakeAgent();
+    const agent: AgentCall = async (op, params, sink) => {
+      if (op === 'docker.inspect') {
+        inner.calls.push({ op, params });
+        const line = samples[Math.min(i, samples.length - 1)]!;
+        i += 1;
+        return { exitCode: 0, lines: [line] };
+      }
+      return inner.agent(op, params, sink);
+    };
+    return { agent, ops: inner.ops, inspects: () => i };
+  };
+
+  it('r265: fails a crash-looping container even though it samples as running', async () => {
+    // `--restart unless-stopped` brings a crashing app straight back, so it is
+    // `running` between crashes — the first sample used to deploy it green.
+    const { agent, ops } = sampledAgent([
+      'running|none|0|0',
+      'restarting|none|0|1',
+      'running|none|0|2',
+      'running|none|0|3',
+    ]);
+    const lines: string[] = [];
+    await expect(
+      createRemoteDockerBuilder(agent, { pollMs: 1 }).isHealthy(runtime, 5000, 10_000, (l) => lines.push(l)),
+    ).resolves.toBe(false);
+    expect(lines.join('\n')).toMatch(/crash-looping/);
+    expect(ops()).toContain('docker.logs');
+  });
+
+  it('r265: needs several consecutive running samples with no restart in between', async () => {
+    const { agent, inspects } = sampledAgent([
+      'running|none|0|0',
+      'running|none|0|1', // restarted between samples: the count starts over
+      'running|none|0|1',
+      'running|none|0|1',
+    ]);
+    await expect(createRemoteDockerBuilder(agent, { pollMs: 1 }).isHealthy(runtime, 5000)).resolves.toBe(true);
+    expect(inspects()).toBe(4);
+  });
+
+  it('r265: `restarting` never counts as healthy', async () => {
+    const { agent } = sampledAgent(['restarting|none|0|0']);
+    await expect(createRemoteDockerBuilder(agent, { pollMs: 1 }).isHealthy(runtime, 200)).resolves.toBe(false);
+  });
+
+  it('r265: waits for an image HEALTHCHECK to pass', async () => {
+    const { agent, inspects } = sampledAgent(['running|starting|0|0', 'running|healthy|0|0']);
+    await expect(createRemoteDockerBuilder(agent, { pollMs: 1 }).isHealthy(runtime, 5000)).resolves.toBe(true);
+    expect(inspects()).toBe(4);
+  });
+
+  it('r265: the rollback probe (grace 0) settles on one good sample', async () => {
+    const { agent, inspects } = sampledAgent(['running|none|0|7']);
+    await expect(createRemoteDockerBuilder(agent, { pollMs: 1 }).isHealthy(runtime, 3000, 0)).resolves.toBe(true);
+    expect(inspects()).toBe(1);
   });
 
   it('reports unhealthy and pulls the container logs when it exited', async () => {

@@ -48,8 +48,9 @@ import { acquireRegistryLock, registryLockKey } from '../../lib/registryLock.js'
  * the node's Docker network and cannot reach the container, and publishing a
  * host port purely to be probed would expose every remote service on the node's
  * public interface. `isHealthy` polls `docker.inspect` until the container
- * reports `running` and stays there. This is a weaker signal than the local
- * builder's HTTP probe and the deploy log says so.
+ * reports `running` and stays there over several samples without restarting
+ * (r265). This is a weaker signal than the local builder's HTTP probe and the
+ * deploy log says so.
  */
 
 /** The typed-op caller the pipeline binds for a service pinned to a node. */
@@ -74,12 +75,28 @@ export class RemoteDeployUnsupportedError extends Error {
  */
 const TERMINAL_BAD = new Set(['exited', 'dead', 'removing']);
 
-export function createRemoteDockerBuilder(agent: AgentCall): Builder {
-  /** Parse the `state` inspect format: `<status>|<ip>`. */
-  const parseState = (lines: string[]): { status: string; ip: string } => {
+/**
+ * r265: consecutive good `docker.inspect` samples (one poll apart) a new
+ * container must hold before it counts as healthy, and the restart-count rise
+ * that marks it as crash-looping. Mirrors remoteCompose.isHealthy.
+ */
+const STABLE_SAMPLES = 3;
+const CRASH_LOOP_RESTARTS = 3;
+
+export function createRemoteDockerBuilder(agent: AgentCall, opts: { pollMs?: number } = {}): Builder {
+  const pollMs = opts.pollMs ?? 2000;
+  /** Parse the `health` inspect format: `<status>|<health>|<failingStreak>|<restartCount>`. */
+  const parseHealth = (
+    lines: string[],
+  ): { status: string; health: string; failingStreak: number; restarts: number } => {
     const raw = lines.filter((l) => l.trim() !== '').at(-1) ?? '';
-    const [status = '', ip = ''] = raw.trim().split('|');
-    return { status, ip };
+    const [status = '', health = '', failingStreak = '', restarts = ''] = raw.trim().split('|');
+    return {
+      status,
+      health,
+      failingStreak: Number(failingStreak),
+      restarts: restarts === '' ? Number.NaN : Number(restarts),
+    };
   };
 
   return {
@@ -248,41 +265,78 @@ export function createRemoteDockerBuilder(agent: AgentCall): Builder {
       directGraceMs = 10_000,
       log: (line: string) => void = () => undefined,
     ): Promise<boolean> {
-      void directGraceMs;
       const deadline = Date.now() + timeoutMs;
-      let reported = false;
+      // r265: the first `running` sample used to be the verdict and
+      // `restarting` just kept the poll going — under `--restart
+      // unless-stopped` a crash-looping container is `running` between
+      // crashes, so it deployed green. A new container must now hold `running`
+      // (and pass its image HEALTHCHECK, if it has one) over several
+      // consecutive samples with no restart in between, and a rising restart
+      // count fails fast: remoteCompose.isHealthy's signals, over the same
+      // `health` inspect format (shipped with the remote builders, so every
+      // agent that can run this builder answers it). The rollback probe
+      // (grace 0) only asks whether the previous runtime is still up, so one
+      // good sample answers it.
+      const needed = directGraceMs > 0 ? STABLE_SAMPLES : 1;
+      const failWithLogs = async (why: string): Promise<false> => {
+        log(why);
+        // Pull the container's own output so the failure is diagnosable
+        // from the deploy log rather than only from the node.
+        await agent('docker.logs', { name: runtime.runtimeId }, log).catch(() => undefined);
+        return false;
+      };
+      let stable = 0;
+      let baselineRestarts: number | undefined;
+      let lastRestarts: number | undefined;
       while (Date.now() < deadline) {
         try {
           const res = await agent(
             'docker.inspect',
-            { name: runtime.runtimeId, format: 'state' },
+            { name: runtime.runtimeId, format: 'health' },
             () => undefined,
           );
-          const { status } = parseState(res.lines);
-          if (status === 'running') {
-            if (!reported) {
+          const { status, health, failingStreak, restarts } = parseHealth(res.lines);
+          if (TERMINAL_BAD.has(status)) {
+            return failWithLogs(`${runtime.runtimeId} reached state "${status}" on the node`);
+          }
+          if (Number.isFinite(restarts)) {
+            baselineRestarts ??= restarts;
+            // A restart between two samples means the "stable" run so far
+            // belonged to a process that has since died — count again.
+            if (lastRestarts !== undefined && restarts !== lastRestarts) stable = 0;
+            lastRestarts = restarts;
+            if (restarts - baselineRestarts >= CRASH_LOOP_RESTARTS) {
+              return failWithLogs(
+                `${runtime.runtimeId} is crash-looping on the node (restart count ${restarts}) — failing fast`,
+              );
+            }
+          }
+          if (status === 'running' && (health === 'none' || health === 'healthy')) {
+            stable += 1;
+            if (stable >= needed) {
               log(
                 `${runtime.runtimeId} is running on the node. Remote health is container state, not an ` +
                   'HTTP probe: the panel is outside the node network.',
               );
+              return true;
             }
-            return true;
+          } else {
+            // `restarting`, `created`, or an image HEALTHCHECK still
+            // `starting` / `unhealthy`: not a stable run.
+            stable = 0;
+            if (failingStreak >= 15) {
+              return failWithLogs(
+                `${runtime.runtimeId} healthcheck keeps failing (streak ${failingStreak}) — failing fast`,
+              );
+            }
           }
-          if (TERMINAL_BAD.has(status)) {
-            log(`${runtime.runtimeId} reached state "${status}" on the node`);
-            // Pull the container's own output so the failure is diagnosable
-            // from the deploy log rather than only from the node.
-            await agent('docker.logs', { name: runtime.runtimeId }, log).catch(() => undefined);
-            return false;
-          }
-          reported = true;
         } catch (err) {
           // Inspect fails while the container is still being created, and also
           // when the node is briefly unreachable. Both are worth retrying
           // inside the deadline; the last failure is reported on timeout.
           log(`waiting for ${runtime.runtimeId}: ${err instanceof Error ? err.message : String(err)}`);
         }
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        await new Promise((resolve) => setTimeout(resolve, pollMs));
       }
       log(`${runtime.runtimeId} did not reach a running state on the node within ${Math.round(timeoutMs / 1000)}s`);
       return false;
