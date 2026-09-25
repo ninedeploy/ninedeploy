@@ -100,7 +100,8 @@ export function AccountSection() {
 function SsoLinkCard() {
   const { toast } = useToast();
   const providers = useQuery({
-    queryKey: ['oidc-public-providers'],
+    // r342: same key as Login — SsoSection invalidates this one on save.
+    queryKey: ['public-oidc-providers'],
     queryFn: () => api.auth.oidc.publicProviders(),
   });
   const link = useMutation({

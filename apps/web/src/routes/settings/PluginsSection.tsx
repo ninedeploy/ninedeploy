@@ -64,6 +64,7 @@ export function PluginsSection() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['plugins-list'] });
+      queryClient.invalidateQueries({ queryKey: ['plugins'] }); // command palette
       queryClient.invalidateQueries({ queryKey: ['menus'] });
     },
   });
@@ -74,6 +75,7 @@ export function PluginsSection() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['plugins-list'] });
+      queryClient.invalidateQueries({ queryKey: ['plugins'] }); // command palette
       queryClient.invalidateQueries({ queryKey: ['plugin-inspect', inspectPluginId] });
       queryClient.invalidateQueries({ queryKey: ['menus'] });
     },
@@ -85,6 +87,7 @@ export function PluginsSection() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['plugins-list'] });
+      queryClient.invalidateQueries({ queryKey: ['plugins'] }); // command palette
       queryClient.invalidateQueries({ queryKey: ['plugins-marketplace'] });
       queryClient.invalidateQueries({ queryKey: ['menus'] });
       setIsInstallModalOpen(false);
@@ -102,6 +105,7 @@ export function PluginsSection() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['plugins-list'] });
+      queryClient.invalidateQueries({ queryKey: ['plugins'] }); // command palette
       queryClient.invalidateQueries({ queryKey: ['plugins-marketplace'] });
       queryClient.invalidateQueries({ queryKey: ['menus'] });
     },

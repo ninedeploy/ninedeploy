@@ -63,7 +63,8 @@ describe('AiSection', () => {
   it('saves endpoint, model and key — then clears the key field', async () => {
     const updateSpy = vi.fn().mockResolvedValue({ ok: true });
     mockOf(api.ai.updateConfig).mockImplementation(updateSpy);
-    renderWithProviders(<AiSection />);
+    const { queryClient } = renderWithProviders(<AiSection />);
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
     const user = userEvent.setup();
     await screen.findByText(/Not configured/);
     await user.clear(screen.getByLabelText(/Model/i));
@@ -74,6 +75,8 @@ describe('AiSection', () => {
       expect(updateSpy).toHaveBeenCalledWith({ baseUrl: 'https://api.openai.com/v1', model: 'llama3.1', apiKey: 'sk-local-12345678' }),
     );
     expect(screen.getByLabelText(/API key/i)).toHaveValue('');
+    // r342: the "configured" banner (and the deploy page's Diagnose card) re-read.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['ai-config'] });
   });
 
   it('keeps the stored key when the field is left empty', async () => {

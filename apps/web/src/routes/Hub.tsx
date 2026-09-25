@@ -44,7 +44,10 @@ export function Hub() {
       });
     },
     onSuccess: () => {
+      // r342: ['plugins'] feeds the command palette, ['plugins-list'] the
+      // Settings → Plugins table — both must see the new install.
       queryClient.invalidateQueries({ queryKey: ['plugins'] });
+      queryClient.invalidateQueries({ queryKey: ['plugins-list'] });
       queryClient.invalidateQueries({ queryKey: ['plugins-marketplace'] });
       queryClient.invalidateQueries({ queryKey: ['menus'] });
       setInstallingId(null);

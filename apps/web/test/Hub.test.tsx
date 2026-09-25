@@ -348,7 +348,8 @@ describe('Hub', () => {
       const user = userEvent.setup();
       mockOf(api.plugins.install).mockResolvedValue({ ok: true, id: 's3-backups', status: 'active' });
 
-      renderWithProviders(<Hub />);
+      const { queryClient } = renderWithProviders(<Hub />);
+      const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
       await user.click(screen.getByRole('button', { name: /Extension Marketplace/ }));
 
       await waitFor(() => {
@@ -373,6 +374,8 @@ describe('Hub', () => {
           target: 's3-backups',
         });
       });
+      // r342: Settings → Plugins caches the list under ['plugins-list'].
+      await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['plugins-list'] }));
     });
 
     it('switches back to templates tab and tests non-admin disabled install', async () => {

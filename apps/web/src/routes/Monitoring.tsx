@@ -877,6 +877,9 @@ function LimitsRow({ kind, id, memLimitMb }: { kind: 'service' | 'database'; id:
       qc.invalidateQueries({ queryKey: ['live-stats-snapshot'] });
       qc.invalidateQueries({ queryKey: ['services'] });
       qc.invalidateQueries({ queryKey: ['databases'] });
+      // r342: the service / database detail pages cache the row (limits
+      // included) under their own keys.
+      qc.invalidateQueries({ queryKey: kind === 'service' ? ['service', id] : ['database-detail', id] });
       toast('Limits updated successfully', 'success');
     },
     onError: () => toast('Could not update the limits', 'error'),

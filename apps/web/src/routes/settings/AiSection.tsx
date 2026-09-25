@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bot } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.js';
@@ -15,6 +15,7 @@ export function AiSection() {
   const { user } = useAuth();
   const isOperator = user?.isOperator === true;
   const { toast } = useToast();
+  const qc = useQueryClient();
 
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
@@ -40,6 +41,9 @@ export function AiSection() {
     },
     onSuccess: () => {
       setApiKey('');
+      // r342: the "configured" banner here and the deploy page's Diagnose
+      // card both read ['ai-config'] — without this they stayed stale.
+      qc.invalidateQueries({ queryKey: ['ai-config'] });
       toast('AI diagnosis settings saved', 'info');
     },
     onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Failed to save', 'error'),

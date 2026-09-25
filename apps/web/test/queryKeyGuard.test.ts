@@ -16,4 +16,11 @@ describe('query key guard', () => {
     const offenders = files(SRC).filter((f) => readFileSync(f, 'utf8').includes("'service-deploys'"));
     expect(offenders).toEqual([]);
   });
+
+  it("r342: the public OIDC provider list is cached under one key, ['public-oidc-providers']", () => {
+    // SsoSection invalidates ['public-oidc-providers'] after every provider
+    // edit; a second spelling left Account → linked sign-in stale.
+    const offenders = files(SRC).filter((f) => readFileSync(f, 'utf8').includes("'oidc-public-providers'"));
+    expect(offenders).toEqual([]);
+  });
 });

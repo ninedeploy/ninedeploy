@@ -134,7 +134,8 @@ describe('Monitoring', () => {
     apiMock.api.stats.snapshot.mockResolvedValue(snapshot as never);
     apiMock.api.stats.metrics.mockResolvedValue({ points: [{ value: 50 }, { value: 80 }] } as never);
     apiMock.api.limits.setService.mockResolvedValue({ cpuShares: 512, memLimitMb: 1024 } as never);
-    renderWithProviders(<Monitoring />);
+    const { queryClient } = renderWithProviders(<Monitoring />);
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
     expect((await screen.findAllByText('api')).length).toBeGreaterThan(0);
     expect(screen.getAllByText((_, el) => el?.textContent === '12.50%').length).toBeGreaterThan(0);
     expect(screen.getAllByText((_, el) => el?.textContent?.startsWith('256MB') === true).length).toBeGreaterThan(0);
@@ -153,6 +154,8 @@ describe('Monitoring', () => {
     await userEvent.type(memInput, '1024');
     fireEvent.submit(cpuInput.closest('form')!);
     await waitFor(() => expect(apiMock.api.limits.setService).toHaveBeenCalledWith(1, { cpuShares: 512, memLimitMb: 1024 }));
+    // r342: the service page caches its row (limits included) under ['service', id].
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['service', 1] }));
   });
 
   it('r204: clearing memory leaves the unprefilled CPU limits untouched; 0 clears them', async () => {
