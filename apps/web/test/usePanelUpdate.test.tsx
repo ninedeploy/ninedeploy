@@ -193,4 +193,57 @@ describe('usePanelUpdate', () => {
     act(() => result.current.clearFailure());
     expect(result.current.phase).toBe('idle');
   });
+
+  // r291: the server keeps the terminal phase until the next update, so the
+  // outcome used to be toasted again on every page load and in every tab.
+  describe('announces a finished run once per browser (r291)', () => {
+    it('stays quiet on a later page load about a run it already announced', async () => {
+      window.localStorage.setItem('ninedeploy.updateAnnounced', 'success:v0.5.0:2026-09-01T10:00:00Z');
+      mockOf(api.system.updateStatus).mockResolvedValue(
+        status({ phase: 'success', currentVersion: 'v0.5.0', targetVersion: 'v0.5.0', finishedAt: '2026-09-01T10:00:00Z' }),
+      );
+      const { result } = renderHookWith();
+      await waitFor(() => expect(result.current.ready).toBe(true));
+      await waitFor(() => expect(result.current.phase).toBe('idle'));
+      expect(toast.toast).not.toHaveBeenCalled();
+    });
+
+    it('a second hook instance (About beside the banner) shows the result without a second toast', async () => {
+      mockOf(api.system.updateStatus).mockResolvedValue(
+        status({ phase: 'success', targetVersion: 'v0.5.1', finishedAt: '2026-09-02T10:00:00Z' }),
+      );
+      const first = renderHookWith();
+      await waitFor(() => expect(first.result.current.phase).toBe('done'));
+      const second = renderHookWith();
+      await waitFor(() => expect(second.result.current.phase).toBe('done'));
+      expect(toast.toast).toHaveBeenCalledTimes(1);
+    });
+
+    it('still announces a newer run to an operator who reloaded mid-update', async () => {
+      window.localStorage.setItem('ninedeploy.updateAnnounced', 'success:v0.5.0:2026-09-01T10:00:00Z');
+      mockOf(api.system.updateStatus).mockResolvedValue(
+        status({ phase: 'success', targetVersion: 'v0.5.2', finishedAt: '2026-09-03T10:00:00Z' }),
+      );
+      const { result } = renderHookWith();
+      await waitFor(() => expect(result.current.phase).toBe('done'));
+      expect(toast.toast).toHaveBeenCalledWith(expect.stringContaining('v0.5.2'), 'success');
+    });
+
+    it('keeps an unacknowledged failure on screen without re-toasting, and a dismissal sticks', async () => {
+      window.localStorage.setItem('ninedeploy.updateAnnounced', 'failed:v0.5.3:2026-09-04T10:00:00Z');
+      mockOf(api.system.updateStatus).mockResolvedValue(
+        status({ phase: 'failed', targetVersion: 'v0.5.3', finishedAt: '2026-09-04T10:00:00Z', errorTail: 'boom' }),
+      );
+      const first = renderHookWith();
+      await waitFor(() => expect(first.result.current.phase).toBe('failed'));
+      expect(toast.toast).not.toHaveBeenCalled();
+      act(() => first.result.current.clearFailure());
+      first.unmount();
+
+      const again = renderHookWith();
+      await waitFor(() => expect(again.result.current.ready).toBe(true));
+      await waitFor(() => expect(again.result.current.phase).toBe('idle'));
+      expect(toast.toast).not.toHaveBeenCalled();
+    });
+  });
 });

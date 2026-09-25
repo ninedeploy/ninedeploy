@@ -51,6 +51,40 @@ function readDismissed(): string | null {
   }
 }
 
+/**
+ * r291: the server keeps reporting a finished run's terminal phase until the
+ * next update starts, so "we saw success/failed" is not news on its own. The
+ * last run (phase:target:finishedAt) this browser already announced lives
+ * here; a later page load or another tab stays quiet about it. Keyed on
+ * finishedAt, so an operator who reloads mid-update still hears the outcome.
+ */
+const ANNOUNCED_KEY = 'ninedeploy.updateAnnounced';
+/** Failed run whose banner the operator dismissed on this device. */
+const FAILURE_DISMISSED_KEY = 'ninedeploy.updateFailureDismissed';
+
+function readStored(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStored(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    /* storage unavailable — the outcome may be announced again next load */
+  }
+}
+
+/**
+ * Runs announced by some hook instance during THIS page load. The About page
+ * mounts a second instance beside the banner; it still shows the result, just
+ * without a second toast.
+ */
+const announcedThisPage = new Set<string>();
+
 export type UpdatePhase = 'checking' | 'idle' | 'available' | 'starting' | 'updating' | 'done' | 'failed';
 
 export function usePanelUpdate() {
@@ -120,11 +154,27 @@ export function usePanelUpdate() {
       }
       case 'success': {
         const target = data.targetVersion ?? readLocalTarget();
-        if (target && settledTargetRef.current !== target) {
-          settledTargetRef.current = target;
-          writeLocalTarget(null);
-          setErrorTail(null);
-          setPhase('done');
+        if (!target) {
+          setPhase('idle');
+          break;
+        }
+        const run = `success:${target}:${data.finishedAt ?? ''}`;
+        if (settledTargetRef.current === run) break;
+        if (readStored(ANNOUNCED_KEY) === run && !announcedThisPage.has(run)) {
+          // Announced on an earlier page load or in another tab: history, not
+          // news. (The availability cache may still compare against the old
+          // release, so never offer the version we already moved to.)
+          const latest = check.data?.updateAvailable ? check.data.latest : null;
+          setPhase(readLocalTarget() ? 'updating' : latest && latest !== target ? 'available' : 'idle');
+          break;
+        }
+        settledTargetRef.current = run;
+        writeLocalTarget(null);
+        setErrorTail(null);
+        setPhase('done');
+        if (!announcedThisPage.has(run)) {
+          announcedThisPage.add(run);
+          writeStored(ANNOUNCED_KEY, run);
           toast(`NineDeploy updated to ${target} — all systems on the new release`, 'success');
           // The availability cache still reports the pre-update comparison for
           // up to 6h; force one refresh so every badge clears immediately.
@@ -132,19 +182,26 @@ export function usePanelUpdate() {
             .updateCheck(true)
             .then((fresh) => queryClient.setQueryData(['update-check'], fresh))
             .catch(() => undefined);
-          window.setTimeout(() => setPhase((p) => (p === 'done' ? 'idle' : p)), 12_000);
-        } else if (!target) {
-          setPhase('idle');
         }
+        window.setTimeout(() => setPhase((p) => (p === 'done' ? 'idle' : p)), 12_000);
         break;
       }
       case 'failed': {
         const target = data.targetVersion ?? readLocalTarget();
-        if (target && settledTargetRef.current !== `failed:${target}`) {
-          settledTargetRef.current = `failed:${target}`;
-          writeLocalTarget(null);
-          setErrorTail(data.errorTail);
-          setPhase('failed');
+        if (!target) break;
+        const run = `failed:${target}:${data.finishedAt ?? ''}`;
+        if (settledTargetRef.current === run) break;
+        if (readStored(FAILURE_DISMISSED_KEY) === run) {
+          setPhase(readLocalTarget() ? 'updating' : check.data?.updateAvailable && check.data.latest ? 'available' : 'idle');
+          break;
+        }
+        settledTargetRef.current = run;
+        writeLocalTarget(null);
+        setErrorTail(data.errorTail);
+        setPhase('failed');
+        // The failure banner stays up until dismissed; the toast fires once.
+        if (readStored(ANNOUNCED_KEY) !== run) {
+          writeStored(ANNOUNCED_KEY, run);
           toast(`The update to ${target} failed — the previous release keeps running`, 'error');
         }
         break;
@@ -190,6 +247,10 @@ export function usePanelUpdate() {
     starting: startMutation.isPending,
     startUpdating: (version: string) => startMutation.mutate(version),
     retryStatus: () => status.refetch(),
-    clearFailure: () => setPhase('idle'),
+    clearFailure: () => {
+      const run = settledTargetRef.current;
+      if (run?.startsWith('failed:')) writeStored(FAILURE_DISMISSED_KEY, run);
+      setPhase('idle');
+    },
   };
 }
