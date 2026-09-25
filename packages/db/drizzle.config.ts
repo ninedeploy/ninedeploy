@@ -9,8 +9,16 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../..');
 const defaultDb = path.join(repoRoot, '.data', 'ninedeploy.db');
 
-const dbPath = process.env['NINEDEPLOY_DB_PATH'] ?? defaultDb;
-const cleanPath = dbPath.replace(/^file:/, '');
+// r362: a RELATIVE NINEDEPLOY_DB_PATH (.env.example ships `./.data/ninedeploy.db`)
+// must also be anchored at the repo root. `pnpm db:migrate` runs drizzle-kit
+// with cwd=packages/db, so the installer's migrate step — which exports .env —
+// migrated a stray `packages/db/.data/ninedeploy.db` while the server (cwd =
+// the install dir) kept reading the real one. The server then migrated on its
+// own boot, which hid it; the installer's upgrade rollback (r357) keys its
+// database handling on that step.
+const rawPath = (process.env['NINEDEPLOY_DB_PATH'] ?? defaultDb).replace(/^file:/, '');
+const dbPath = path.isAbsolute(rawPath) ? rawPath : path.resolve(repoRoot, rawPath);
+const cleanPath = dbPath;
 try {
   mkdirSync(path.dirname(path.resolve(cleanPath)), { recursive: true });
 } catch {
@@ -22,7 +30,7 @@ export default defineConfig({
   out: './src/migrations',
   dialect: 'turso',
   dbCredentials: {
-    url: dbPath.startsWith('file:') ? dbPath : `file:${dbPath}`,
+    url: `file:${dbPath}`,
   },
   verbose: true,
   strict: true,
