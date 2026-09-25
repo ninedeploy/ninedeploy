@@ -39,7 +39,9 @@ const h = vi.hoisted(() => {
   const pullDockerImage = vi.fn(async () => undefined);
   const ensureDockerImage = vi.fn(async () => undefined);
   const config: { paths: { dataDir: string } } = { paths: { dataDir: '/tmp/nd-db-test' } };
-  return { decrypt, encrypt, run, capture, pullDockerImage, ensureDockerImage, config };
+  /** r276: make the next backup encryption fail mid-stream. */
+  const cipher = { fail: false };
+  return { decrypt, encrypt, run, capture, pullDockerImage, ensureDockerImage, config, cipher };
 });
 
 vi.mock('../src/lib/crypto.js', async () => {
@@ -48,7 +50,9 @@ vi.mock('../src/lib/crypto.js', async () => {
     decrypt: h.decrypt,
     encrypt: h.encrypt,
     createBackupCipher: () => {
-      const cipher = new PassThrough() as InstanceType<typeof PassThrough> & { getAuthTag: () => Buffer };
+      const cipher = new PassThrough(
+        h.cipher.fail ? { transform: (_c, _e, cb) => cb(new Error('ENOSPC: no space left on device')) } : {},
+      ) as InstanceType<typeof PassThrough> & { getAuthTag: () => Buffer };
       cipher.getAuthTag = () => Buffer.alloc(16, 7);
       return { cipher, header: Buffer.from('NDBK1:v0:AAAAAAAAAAAAAAAA\n') };
     },
@@ -737,6 +741,48 @@ describe('backupDatabase', () => {
     expect(h.run).toHaveBeenCalledWith('docker', ['cp', expect.stringMatching(/^c:\/tmp\/ninedeploy-dump-[a-f0-9-]+$/), file], {}, log);
     expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'rm', '-f', expect.stringMatching(/^\/tmp\/ninedeploy-dump-[a-f0-9-]+$/)], {}, expect.any(Function));
     expect(readFileSync(file).includes(Buffer.from('MONGO-BYTES'))).toBe(true);
+  });
+
+  // r276: a failed backup used to leave the PLAINTEXT dump in the database
+  // container's /tmp (the rm only ran on the happy path) and a partial or
+  // unencrypted file in backupsDir, while the row was marked failed.
+  const stagedRm = ['exec', 'c', 'rm', '-f', expect.stringMatching(/^\/tmp\/ninedeploy-dump-[a-f0-9-]+$/)];
+
+  it('r276: a failed docker cp removes the container temp dump and the partial host file', async () => {
+    const file = path.join(tmp, 'cp-fails.sql');
+    h.run.mockImplementation(async (_cmd: string, args: unknown[]) => {
+      if ((args as string[])[0] === 'cp') {
+        writeFileSync(file, 'PLAINTEXT-PARTIAL'); // disk fills mid-copy
+        throw new Error('ENOSPC: no space left on device');
+      }
+    });
+    await expect(backupDatabase(dbRow({ engine: 'postgres' }), file, vi.fn())).rejects.toThrow('ENOSPC');
+    expect(h.run).toHaveBeenCalledWith('docker', stagedRm, {}, expect.any(Function));
+    expect(existsSyncMock(file)).toBe(false);
+  });
+
+  it('r276: a failed dump still removes whatever it left in the container', async () => {
+    h.run.mockImplementation(async (_cmd: string, args: unknown[]) => {
+      if ((args as string[])[2] === 'mysqldump') throw new Error('mysqldump: Got errno 28 on write');
+    });
+    await expect(backupDatabase(dbRow({ engine: 'mysql' }), path.join(tmp, 'dump-fails.sql'), vi.fn())).rejects.toThrow(
+      'errno 28',
+    );
+    expect(h.run).toHaveBeenCalledWith('docker', stagedRm, {}, expect.any(Function));
+  });
+
+  it('r276: a failed encryption unlinks the plaintext dump instead of leaving it in backupsDir', async () => {
+    const file = path.join(tmp, 'encrypt-fails.archive');
+    writeFileSync(file, 'PLAINTEXT-DUMP'); // the (mocked) docker cp landed it
+    h.cipher.fail = true;
+    try {
+      await expect(backupDatabase(dbRow({ engine: 'mongo' }), file, vi.fn())).rejects.toThrow('ENOSPC');
+    } finally {
+      h.cipher.fail = false;
+    }
+    expect(existsSyncMock(file)).toBe(false);
+    expect(readdirSync(tmp).filter((f) => f.startsWith('encrypt-fails'))).toEqual([]);
+    expect(h.run).toHaveBeenCalledWith('docker', stagedRm, {}, expect.any(Function));
   });
 
   it('throws for databases that are not runnable', async () => {

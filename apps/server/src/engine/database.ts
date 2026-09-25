@@ -982,50 +982,68 @@ async function backupDatabaseUnlocked(d: Database, file: string, log: (line: str
   const cfg = ENGINES[d.engine];
   if (!cfg || !d.containerName) throw new Error('database not runnable');
   const cn = d.containerName;
-  if (d.engine === 'postgres') {
-    // Dump to a file INSIDE the container, then `docker cp` it out — the
-    // whole dump never sits in this process's memory (a `capture`d stdout
-    // string would OOM the server on large databases).
-    // r165: --clean --if-exists makes the dump replace what is there. Without
-    // it the restore's first CREATE hit "already exists" under ON_ERROR_STOP,
-    // so a backup could only ever be restored into an EMPTY database.
-    await run('docker', ['exec', cn, 'pg_dump', '-U', cfg.username()!, '-d', cfg.dbName()!, '--clean', '--if-exists', `--file=${DUMP_TMP}`], {}, log);
-    await run('docker', ['cp', `${cn}:${DUMP_TMP}`, file], {}, log);
-    await run('docker', ['exec', cn, 'rm', '-f', DUMP_TMP], {}, swallow);
-  } else if (d.engine === 'mysql' || d.engine === 'mariadb') {
-    const pass = decrypt(d.passwordEncrypted);
-    const dumper = d.engine === 'mysql' ? 'mysqldump' : 'mariadb-dump';
-    // --single-transaction: InnoDB dumps run inside one consistent snapshot
-    // instead of taking per-table locks — without it a scheduled backup blocks
-    // writes on the live databases it is supposed to protect, and a multi-DB
-    // dump is not even a point-in-time-consistent restore. --quick streams
-    // row-by-row instead of buffering each table.
-    await run('docker', ['exec', cn, dumper, '-uroot', `--password=${pass}`, '--single-transaction', '--quick', '--all-databases', `--result-file=${DUMP_TMP}`], {}, log);
-    await run('docker', ['cp', `${cn}:${DUMP_TMP}`, file], {}, log);
-    await run('docker', ['exec', cn, 'rm', '-f', DUMP_TMP], {}, swallow);
-  } else if (d.engine === 'redis' || d.engine === 'valkey') {
-    const pass = decrypt(d.passwordEncrypted);
-    await run('docker', ['exec', cn, 'redis-cli', '-a', pass, '--no-auth-warning', 'SAVE'], {}, log);
-    await run('docker', ['cp', `${cn}:/data/dump.rdb`, file], {}, log);
-  } else if (d.engine === 'mongo') {
-    // mongodump can write its binary archive straight to a file via
-    // --archive=<path> — no shell, no stdout plumbing. Auth is mandatory (the
-    // container is initialized with a root user), so credentials travel via
-    // argv exactly like the mysqldump path.
-    const pass = decrypt(d.passwordEncrypted);
-    await run('docker', [
-      'exec', cn, 'mongodump',
-      '-u', cfg.username()!, '-p', pass, '--authenticationDatabase', 'admin',
-      `--archive=${DUMP_TMP}`, '--gzip',
-    ], {}, log);
-    await run('docker', ['cp', `${cn}:${DUMP_TMP}`, file], {}, log);
-    await run('docker', ['exec', cn, 'rm', '-f', DUMP_TMP], {}, swallow);
-  } else {
-    throw new Error(`backup not supported for ${d.engine}`);
+  // r276: a failed backup (dump error, `docker cp` failure, full disk, a failed
+  // encryption) used to leave the PLAINTEXT dump behind — in the database
+  // container's /tmp (the `rm` only ran on the happy path) and/or as a
+  // partial or unencrypted file in backupsDir — while the row was marked
+  // failed. The in-container temp is now always removed, and the host file
+  // is unlinked on any failure.
+  let usesDumpTmp = false;
+  try {
+    if (d.engine === 'postgres') {
+      // Dump to a file INSIDE the container, then `docker cp` it out — the
+      // whole dump never sits in this process's memory (a `capture`d stdout
+      // string would OOM the server on large databases).
+      // r165: --clean --if-exists makes the dump replace what is there. Without
+      // it the restore's first CREATE hit "already exists" under ON_ERROR_STOP,
+      // so a backup could only ever be restored into an EMPTY database.
+      usesDumpTmp = true;
+      await run('docker', ['exec', cn, 'pg_dump', '-U', cfg.username()!, '-d', cfg.dbName()!, '--clean', '--if-exists', `--file=${DUMP_TMP}`], {}, log);
+      await run('docker', ['cp', `${cn}:${DUMP_TMP}`, file], {}, log);
+    } else if (d.engine === 'mysql' || d.engine === 'mariadb') {
+      const pass = decrypt(d.passwordEncrypted);
+      const dumper = d.engine === 'mysql' ? 'mysqldump' : 'mariadb-dump';
+      // --single-transaction: InnoDB dumps run inside one consistent snapshot
+      // instead of taking per-table locks — without it a scheduled backup blocks
+      // writes on the live databases it is supposed to protect, and a multi-DB
+      // dump is not even a point-in-time-consistent restore. --quick streams
+      // row-by-row instead of buffering each table.
+      usesDumpTmp = true;
+      await run('docker', ['exec', cn, dumper, '-uroot', `--password=${pass}`, '--single-transaction', '--quick', '--all-databases', `--result-file=${DUMP_TMP}`], {}, log);
+      await run('docker', ['cp', `${cn}:${DUMP_TMP}`, file], {}, log);
+    } else if (d.engine === 'redis' || d.engine === 'valkey') {
+      const pass = decrypt(d.passwordEncrypted);
+      await run('docker', ['exec', cn, 'redis-cli', '-a', pass, '--no-auth-warning', 'SAVE'], {}, log);
+      await run('docker', ['cp', `${cn}:/data/dump.rdb`, file], {}, log);
+    } else if (d.engine === 'mongo') {
+      // mongodump can write its binary archive straight to a file via
+      // --archive=<path> — no shell, no stdout plumbing. Auth is mandatory (the
+      // container is initialized with a root user), so credentials travel via
+      // argv exactly like the mysqldump path.
+      const pass = decrypt(d.passwordEncrypted);
+      usesDumpTmp = true;
+      await run('docker', [
+        'exec', cn, 'mongodump',
+        '-u', cfg.username()!, '-p', pass, '--authenticationDatabase', 'admin',
+        `--archive=${DUMP_TMP}`, '--gzip',
+      ], {}, log);
+      await run('docker', ['cp', `${cn}:${DUMP_TMP}`, file], {}, log);
+    } else {
+      throw new Error(`backup not supported for ${d.engine}`);
+    }
+    // Everything on disk is encrypted with the master key: a stolen data dir
+    // must not leak the (otherwise encrypted-at-rest) DB credentials via dumps.
+    await encryptFileInPlace(file);
+  } catch (err) {
+    try { unlinkSync(file); } catch { /* never written */ }
+    throw err;
+  } finally {
+    if (usesDumpTmp) {
+      await run('docker', ['exec', cn, 'rm', '-f', DUMP_TMP], {}, swallow).catch(() => {
+        log(`⚠ could not remove the temporary dump ${DUMP_TMP} from ${cn} — delete it by hand`);
+      });
+    }
   }
-  // Everything on disk is encrypted with the master key: a stolen data dir
-  // must not leak the (otherwise encrypted-at-rest) DB credentials via dumps.
-  await encryptFileInPlace(file);
 }
 
 /**
