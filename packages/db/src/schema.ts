@@ -285,7 +285,13 @@ export const workspaceInvitations = sqliteTable(
     // One outstanding (non-revoked, unaccepted) invite per (workspace, email).
     // Once consumed, a fresh invite to the same address is allowed (separate
     // row) so a re-add after a member was removed can be tracked independently.
-    workspaceEmailIdx: uniqueIndex('workspace_invitations_workspace_email_idx').on(t.workspaceId, t.email),
+    // r301: the index is PARTIAL so that promise holds. It was a full unique
+    // on (workspace_id, email) until 0064, which made revoke → re-invite the
+    // same address (and re-invite after an accepted member was deleted) a
+    // 500 on the constraint — the create path only refreshes a PENDING row.
+    workspaceEmailIdx: uniqueIndex('workspace_invitations_workspace_email_idx')
+      .on(t.workspaceId, t.email)
+      .where(sql`accepted_at IS NULL AND revoked_at IS NULL`),
     workspaceIdx: index('workspace_invitations_workspace_idx').on(t.workspaceId),
     emailIdx: index('workspace_invitations_email_idx').on(t.email),
   }),

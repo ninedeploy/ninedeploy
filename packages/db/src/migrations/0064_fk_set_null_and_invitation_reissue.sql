@@ -141,3 +141,13 @@ CREATE INDEX `backups_db_status_idx` ON `backups` (`database_id`,`status`);
 CREATE INDEX `backups_volume_created_idx` ON `backups` (`volume_name`,`created_at`);
 --> statement-breakpoint
 PRAGMA foreign_keys=ON;
+--> statement-breakpoint
+-- r301: one OUTSTANDING invite per (workspace, email), not one ever. The full
+-- unique index made revoke → re-invite the same address (and re-inviting an
+-- address whose accepted user was later deleted) fail on the constraint:
+-- createOrRefreshInvitation only refreshes a pending row and INSERTs
+-- otherwise. The old index was stricter, so no existing data can violate
+-- the partial one.
+DROP INDEX IF EXISTS `workspace_invitations_workspace_email_idx`;
+--> statement-breakpoint
+CREATE UNIQUE INDEX `workspace_invitations_workspace_email_idx` ON `workspace_invitations` (`workspace_id`,`email`) WHERE accepted_at IS NULL AND revoked_at IS NULL;

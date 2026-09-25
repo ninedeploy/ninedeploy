@@ -5268,7 +5268,8 @@
             "workspace_id",
             "email"
           ],
-          "isUnique": true
+          "isUnique": true,
+          "where": "accepted_at IS NULL AND revoked_at IS NULL"
         },
         "workspace_invitations_workspace_idx": {
           "name": "workspace_invitations_workspace_idx",
