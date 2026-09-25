@@ -35,6 +35,7 @@ interface DrainRow {
   enabled: boolean;
   url: string;
   apiKeyEncrypted: string | null;
+  serviceId?: number | null;
 }
 
 interface ServiceRow {
@@ -421,5 +422,42 @@ describe('lib/logSearch', () => {
     // drainId is set — callers know what they want.
     expect(result.drain).toEqual({ id: 11, name: 'vector', type: 'vector' });
     expect(result.unsupported).toBe(true);
+  });
+
+  describe('r287: restrictToServiceId (non-operator callers)', () => {
+    it("refuses an explicit drainId bound to another service — its api key is never spent", async () => {
+      const db = buildDb();
+      state.drains.set(5, { id: 5, name: 'tenant-b', type: 'loki', enabled: true, url: 'https://loki-b.example.com', apiKeyEncrypted: 'kb', serviceId: 99 });
+      await expect(searchLogs(db, { query: 'x', serviceId: 1, drainId: 5, restrictToServiceId: 1 })).rejects.toThrow(/No enabled Loki drain/);
+      expect(state.captured).toHaveLength(0);
+    });
+
+    it('refuses an explicit drainId that is disabled', async () => {
+      const db = buildDb();
+      state.drains.set(6, { id: 6, name: 'off', type: 'loki', enabled: false, url: 'https://loki-off.example.com', apiKeyEncrypted: 'ko', serviceId: null });
+      await expect(searchLogs(db, { query: 'x', serviceId: 1, drainId: 6, restrictToServiceId: 1 })).rejects.toThrow(/No enabled Loki drain/);
+      expect(state.captured).toHaveLength(0);
+    });
+
+    it('accepts an enabled drain that is global or bound to the queried service', async () => {
+      for (const serviceId of [null, 1]) {
+        state.drains.clear();
+        state.captured = [];
+        const db = buildDb();
+        state.drains.set(7, { id: 7, name: 'ok', type: 'loki', enabled: true, url: 'https://loki-ok.example.com', apiKeyEncrypted: null, serviceId });
+        const result = await searchLogs(db, { query: 'x', serviceId: 1, drainId: 7, restrictToServiceId: 1 });
+        expect(result.drain.id, `drain.serviceId=${serviceId}`).toBe(7);
+        expect(state.captured).toHaveLength(1);
+      }
+    });
+
+    it("skips another service's drain when picking the default", async () => {
+      const db = buildDb();
+      state.drains.set(1, { id: 1, name: 'tenant-b', type: 'loki', enabled: true, url: 'https://loki-b.example.com', apiKeyEncrypted: 'kb', serviceId: 99 });
+      state.drains.set(2, { id: 2, name: 'global', type: 'loki', enabled: true, url: 'https://loki-g.example.com', apiKeyEncrypted: null, serviceId: null });
+      const result = await searchLogs(db, { query: 'x', serviceId: 1, restrictToServiceId: 1 });
+      expect(result.drain.id).toBe(2);
+      expect(state.captured[0]?.url).toMatch(/^https:\/\/loki-g\.example\.com/);
+    });
   });
 });

@@ -35,6 +35,11 @@ export interface LogSearchOptions {
   /** Query a specific drain. When omitted, the route
    *  picks the first enabled Loki drain. */
   drainId?: number;
+  /** r287: when set (a non-operator caller), only ENABLED drains that are
+   *  global (`serviceId` null) or bound to this service may be used — for an
+   *  explicit `drainId` and for the automatic pick alike. A drain bound to
+   *  another service (or switched off) is treated as absent. */
+  restrictToServiceId?: number;
 }
 
 export interface LogSearchResult {
@@ -108,16 +113,22 @@ export async function searchLogs(
 // ── helpers ────────────────────────────────────────────────────────────────
 
 async function pickDrain(db: DB, opts: LogSearchOptions): Promise<LogDrain | null> {
+  // r287: every drain carries its own (decrypted-on-use) API key. A member
+  // could name any drainId — disabled, or bound to another tenant's service —
+  // and spend that drain's credentials against its log host.
+  const usable = (r: LogDrain): boolean =>
+    opts.restrictToServiceId === undefined ||
+    (r.enabled && (r.serviceId == null || r.serviceId === opts.restrictToServiceId));
   if (opts.drainId !== undefined) {
     const row = await db.query.logDrains.findFirst({ where: eq(logDrains.id, opts.drainId) });
-    return row ?? null;
+    return row && usable(row) ? row : null;
   }
   // The first enabled Loki drain wins. Other types are
   // listed so the operator's `logs drains ls` shows the
   // candidate; the search route is the only caller that
   // ever picks one.
   const rows = await db.query.logDrains.findMany();
-  return rows.find((r) => r.enabled && r.type === 'loki') ?? null;
+  return rows.find((r) => r.enabled && r.type === 'loki' && usable(r)) ?? null;
 }
 
 async function resolveServiceLabel(db: DB, serviceId: number | undefined): Promise<string | null> {

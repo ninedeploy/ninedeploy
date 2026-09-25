@@ -62,6 +62,9 @@ export const logSearchRoutes: FastifyPluginAsync = async (app) => {
         since,
         limit: body.data.limit,
         drainId: body.data.drainId,
+        // r287: a non-operator may only use enabled drains that are global or
+        // bound to the service they searched (serviceId is mandatory for them).
+        restrictToServiceId: req.user!.isOperator ? undefined : body.data.serviceId,
       });
     } catch (err) {
       if (err instanceof Error && err.message.startsWith('No enabled Loki drain')) {

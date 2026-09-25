@@ -154,6 +154,26 @@ describe('POST /search', () => {
     expect(Math.abs(since.getTime() - expected)).toBeLessThan(5_000);
   });
 
+  it('r287: a non-operator search is restricted to drains usable for that service; an operator is not', async () => {
+    serviceRow = { id: 1, projectId: 1, workspaceId: 1, ownerUserId: 1 } as typeof serviceRow;
+    const { port } = await startApp();
+    const asMember = await fetch(`http://127.0.0.1:${port}/search`, {
+      method: 'POST',
+      headers: { ...asUser({ id: 1, isOperator: false }), 'content-type': 'application/json' },
+      body: JSON.stringify({ query: 'error', serviceId: 1, drainId: 5 }),
+    });
+    expect(asMember.status).toBe(200);
+    expect(lib.calls[0]).toMatchObject({ drainId: 5, restrictToServiceId: 1 });
+
+    const asOperator = await fetch(`http://127.0.0.1:${port}/search`, {
+      method: 'POST',
+      headers: { ...asUser(1), 'content-type': 'application/json' },
+      body: JSON.stringify({ query: 'error', serviceId: 1, drainId: 5 }),
+    });
+    expect(asOperator.status).toBe(200);
+    expect(lib.calls[1]?.['restrictToServiceId']).toBeUndefined();
+  });
+
   it('translates "No enabled Loki drain" into a 404', async () => {
     lib.throw = new Error('No enabled Loki drain configured for this cluster');
     const { port } = await startApp();
