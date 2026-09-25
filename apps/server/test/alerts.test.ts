@@ -70,6 +70,32 @@ describe('alert routes', () => {
     expect(res.statusCode).toBe(200);
   });
 
+  it("r281: a non-operator sees only rules on services they can see — not other tenants' or host-wide ones", async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findMany: {
+          alertRules: [
+            ruleRow({ id: 1, serviceId: null, name: 'host-disk' }),
+            ruleRow({ id: 2, serviceId: 10, name: 'mine-cpu' }),
+            ruleRow({ id: 3, serviceId: 20, name: 'other-tenant-cpu' }),
+          ],
+          alertState: [stateRow({ ruleId: 3, status: 'firing', lastValue: 97 })],
+        },
+        // User 2 owns service 10 only (and holds no workspace seat).
+        select: { services: () => [{ id: 10 }] },
+      }),
+    });
+    await app.register(alertRoutes);
+    const member = await app.inject({ method: 'GET', url: '/', headers: asMember() });
+    expect(member.statusCode).toBe(200);
+    expect(member.json().map((r: { id: number }) => r.id)).toEqual([2]);
+    expect(member.body).not.toContain('other-tenant-cpu');
+    expect(member.body).not.toContain('host-disk');
+
+    const operator = await app.inject({ method: 'GET', url: '/', headers: asUser() });
+    expect(operator.json().map((r: { id: number }) => r.id)).toEqual([1, 2, 3]);
+  });
+
   it('creates a rule with defaults and seeds its state', async () => {
     const app = await buildTestApp({
       db: createFakeDb({ insert: { alert_rules: [ruleRow({ id: 9, name: 'cpu-hot', durationWindows: 1 })] } }),

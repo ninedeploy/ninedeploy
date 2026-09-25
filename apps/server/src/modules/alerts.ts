@@ -5,6 +5,7 @@ import { alertRuleCreate, alertRulePatch } from '@ninedeploy/schemas';
 import { ensureAlertState, resetAlertState } from '../lib/alerting.js';
 import { notFound, parseId } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
+import { visibleServiceIdSet } from '../lib/resourceAccess.js';
 
 function serialize(rule: typeof alertRules.$inferSelect, state?: typeof alertState.$inferSelect) {
   return {
@@ -26,12 +27,19 @@ function serialize(rule: typeof alertRules.$inferSelect, state?: typeof alertSta
   };
 }
 
-/** Alert rule management. Mounted under /alerts. Members read; admins manage. */
+/** Alert rule management. Mounted under /alerts. Members read (their services' rules); admins manage. */
 export const alertRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', app.authenticate);
 
-  app.get('/', async () => {
-    const rules = await app.db.query.alertRules.findMany({ orderBy: desc(alertRules.id) });
+  app.get('/', async (req) => {
+    const all = await app.db.query.alertRules.findMany({ orderBy: desc(alertRules.id) });
+    // r281: rules are instance-wide rows, but a service-scoped rule names a
+    // service and carries its live metric value and fire time. Non-operators
+    // see only the rules on services they can already see; host-wide rules
+    // (serviceId null — host CPU/disk, cert expiry) are operator material.
+    const visible = await visibleServiceIdSet(app.db, req.user!);
+    const rules = visible === null ? all : all.filter((r) => r.serviceId !== null && visible.has(r.serviceId));
+    if (rules.length === 0) return [];
     const states = await app.db.query.alertState.findMany();
     const byRule = new Map(states.map((s) => [s.ruleId, s]));
     return rules.map((r) => serialize(r, byRule.get(r.id)));
