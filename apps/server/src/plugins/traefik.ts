@@ -7,10 +7,11 @@ import { ensureNetwork, ensureTraefik, getAcmeEmail, getDnsConfig, writeDynamicC
  */
 export default fp(
   async (fastify) => {
-    const healTraefik = async (component: string) => {
+    /** True when Traefik was (re)started or its route file was re-seeded empty. */
+    const healTraefik = async (component: string): Promise<boolean> => {
       const log = (line: string) => fastify.log.info({ component }, line);
       await ensureNetwork(log);
-      await ensureTraefik(
+      return ensureTraefik(
         log,
         await getAcmeEmail(fastify.db).catch(() => null),
         await getDnsConfig(fastify.db).catch(() => null),
@@ -35,7 +36,14 @@ export default fp(
     // Periodic self-healing watchdog: checks every 5 minutes and revives Traefik if stopped
     const watchdogTimer = setInterval(async () => {
       try {
-        await healTraefik('traefik-watchdog');
+        // r363: a Traefik the watchdog had to (re)start — the boot heal failed
+        // because Docker was down, or the container died — gets the current
+        // routes rendered again. The heal only ever seeds an EMPTY route file,
+        // so without this every domain answered 404 until the next deploy or
+        // domain change happened to rewrite it.
+        if (await healTraefik('traefik-watchdog')) {
+          await writeDynamicConfig(fastify.db);
+        }
       } catch (err) {
         fastify.log.warn({ err }, 'traefik watchdog check failed');
       }

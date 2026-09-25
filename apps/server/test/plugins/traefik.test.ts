@@ -133,4 +133,32 @@ describe('traefik plugin', () => {
       vi.useRealTimers();
     }
   });
+
+  // r363: a boot while Docker was down leaves Traefik to the watchdog, which
+  // only ever seeds an EMPTY route file — the routes must be rendered again
+  // when the watchdog (re)starts Traefik, and not on every healthy tick.
+  it('r363: rewrites the routes when the watchdog (re)starts Traefik, not on a healthy tick', async () => {
+    vi.useFakeTimers();
+    try {
+      proxyMock.ensureTraefik.mockClear();
+      proxyMock.writeDynamicConfig.mockClear();
+      const db = { select: vi.fn() };
+      const app = await buildApp(db);
+      await app.ready();
+      expect(proxyMock.writeDynamicConfig).toHaveBeenCalledTimes(1); // boot
+
+      proxyMock.ensureTraefik.mockResolvedValueOnce(false as never); // already running
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+      expect(proxyMock.writeDynamicConfig).toHaveBeenCalledTimes(1);
+
+      proxyMock.ensureTraefik.mockResolvedValueOnce(true as never); // watchdog started it
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+      expect(proxyMock.writeDynamicConfig).toHaveBeenCalledTimes(2);
+      expect(proxyMock.writeDynamicConfig).toHaveBeenLastCalledWith(db);
+
+      await app.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

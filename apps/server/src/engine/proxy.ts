@@ -1,6 +1,6 @@
 import { hostPathFor } from '../lib/hostPath.js';
 import { createHash, randomUUID } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { domains, serviceTargets, servers, services, type DB } from '@ninedeploy/db';
 import { eq } from 'drizzle-orm';
@@ -44,8 +44,21 @@ function writeAtomic(file: string, content: string): void {
   // point in Node), but a second process — or a stale `.tmp` from a crashed
   // run — must never collide with this write.
   const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`;
-  writeFileSync(tmp, content);
-  renameSync(tmp, file);
+  // r363: the directory is only created by ensureTraefik, which runs AFTER
+  // ensureNetwork — so a boot while Docker was unreachable never created it,
+  // the boot-time route write failed with ENOENT, and once the watchdog
+  // brought Traefik up it served an empty placeholder: every domain 404'd
+  // until the next deploy or domain change happened to rewrite the file.
+  mkdirSync(path.dirname(file), { recursive: true });
+  try {
+    writeFileSync(tmp, content);
+    renameSync(tmp, file);
+  } catch (err) {
+    // A failed rename (a full disk, a Windows lock on the mounted file) used
+    // to leave the temp file behind for good.
+    rmSync(tmp, { force: true });
+    throw err;
+  }
 }
 
 /** Ensure the shared `ninedeploy` network exists (idempotent). */
@@ -329,14 +342,17 @@ async function ensureTraefikUnlocked(
   log: (line: string) => void,
   acmeEmail: string | null = config.acmeEmail ?? null,
   dns: DnsConfig | null = null,
-): Promise<void> {
+): Promise<boolean> {
   mkdirSync(dir(), { recursive: true });
   const renderedStaticConfig = renderStaticConfig(acmeEmail, dns);
   const configFingerprint = traefikConfigFingerprint(acmeEmail, dns);
   const staticConfigChanged =
     !existsSync(staticPath()) || readFileSync(staticPath(), 'utf8') !== renderedStaticConfig;
   if (staticConfigChanged) writeAtomic(staticPath(), renderedStaticConfig);
-  if (!existsSync(dynamicPath())) writeFileSync(dynamicPath(), 'http:\n  routers:\n  services:\n');
+  // r363: an empty placeholder has no routes — report it so the caller
+  // renders the real ones instead of serving 404s until the next deploy.
+  const seededPlaceholder = !existsSync(dynamicPath());
+  if (seededPlaceholder) writeFileSync(dynamicPath(), 'http:\n  routers:\n  services:\n');
   if (acmeEmail) {
     if (!existsSync(acmePath())) {
       // Seed the ACME storage file so the bind mount below is a FILE and not an
@@ -360,7 +376,7 @@ async function ensureTraefikUnlocked(
     const runningOurDir = runningCurrentConfig && await mountsConfigDir(TRAEFIK_CONTAINER, hostConfigDir);
     if (runningOurDir && !staticConfigChanged) {
       log('traefik already running on shared network');
-      return;
+      return seededPlaceholder;
     }
     if (runningCurrentConfig && !runningOurDir) {
       log(`traefik serves another config directory; recreating it on ${hostConfigDir}`);
@@ -429,6 +445,7 @@ async function ensureTraefikUnlocked(
       throw new Error(`traefik container did not stay running on network '${NETWORK}': ${logs.trim()}`);
     }
     log('traefik started (http :80 / https :443) on shared network');
+    return true;
   } catch (err) {
     log(`traefik warning: ${err instanceof Error ? err.message : err}`);
     log('domain routing will be unavailable until traefik can bind :80/:443');
@@ -445,7 +462,7 @@ export function ensureTraefik(
   log: (line: string) => void,
   acmeEmail: string | null = config.acmeEmail ?? null,
   dns: DnsConfig | null = null,
-): Promise<void> {
+): Promise<boolean> {
   const runEnsure = traefikEnsureTail.then(() => ensureTraefikUnlocked(log, acmeEmail, dns));
   traefikEnsureTail = runEnsure.then(() => undefined, () => undefined);
   return runEnsure;

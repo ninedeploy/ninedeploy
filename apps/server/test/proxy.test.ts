@@ -1,4 +1,4 @@
-﻿import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+﻿import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -148,6 +148,33 @@ const makeDb = (domainRows: unknown[], serviceRows: unknown[], targetRows: unkno
 describe('writeDynamicConfig', () => {
   beforeEach(() => {
     mkdirSync(traefikDir, { recursive: true });
+  });
+
+  // r363: a boot while Docker was unreachable never ran ensureTraefik's
+  // mkdir, so this write failed with ENOENT and the routes were lost until
+  // the next deploy. It must create the directory itself.
+  it('r363: creates the traefik directory when it does not exist yet', async () => {
+    rmSync(traefikDir, { recursive: true, force: true });
+    const db = makeDb(
+      [{ id: 1, serviceId: 1, hostname: 'app.example.com', path: '/', ssl: true, status: 'active' }],
+      [{ id: 1, slug: 'web', port: 3000, runtimeId: 'web-1' }],
+    );
+
+    await writeDynamicConfig(db as never);
+
+    expect(readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8')).toContain('app.example.com');
+  });
+
+  it('r363: leaves no temp file behind when the rename fails', async () => {
+    // A DIRECTORY where dynamic.yml should be makes renameSync fail.
+    rmSync(path.join(traefikDir, 'dynamic.yml'), { recursive: true, force: true });
+    mkdirSync(path.join(traefikDir, 'dynamic.yml', 'blocker'), { recursive: true });
+    try {
+      await expect(writeDynamicConfig(makeDb([], []) as never)).rejects.toThrow();
+      expect(readdirSync(traefikDir).filter((f) => f.endsWith('.tmp'))).toEqual([]);
+    } finally {
+      rmSync(path.join(traefikDir, 'dynamic.yml'), { recursive: true, force: true });
+    }
   });
 
   it('generates routers and service blocks for domains pointing at running services', async () => {
@@ -317,13 +344,20 @@ describe('writeDynamicConfig', () => {
   });
 
   it('propagates write failures', async () => {
+    // r363: a missing directory is now created, so the failure is a FILE
+    // where the directory should be — nothing can write through that.
     rmSync(traefikDir, { recursive: true, force: true });
+    writeFileSync(traefikDir, 'not a directory');
     const db = makeDb(
       [{ id: 1, serviceId: 1, hostname: 'a.example.com', path: '/', ssl: false, status: 'active' }],
       [{ id: 1, slug: 'web', port: 3000, runtimeId: 'web-1' }],
     );
 
-    await expect(writeDynamicConfig(db as never)).rejects.toThrow();
+    try {
+      await expect(writeDynamicConfig(db as never)).rejects.toThrow();
+    } finally {
+      rmSync(traefikDir, { force: true });
+    }
   });
 
   it('sanitizes hostile characters out of the hostname and path (rule/YAML injection)', async () => {
@@ -443,6 +477,20 @@ describe('ensureTraefik', () => {
     expect(h.run).not.toHaveBeenCalled();
     expect(existsSync(path.join(traefikDir, 'traefik.yml'))).toBe(true);
     expect(existsSync(path.join(traefikDir, 'dynamic.yml'))).toBe(true);
+  });
+
+  // r363: the caller rewrites the routes when this reports true.
+  it('r363: reports whether it started traefik or seeded an empty route file', async () => {
+    writeFileSync(path.join(traefikDir, 'traefik.yml'), renderStaticConfig(null, null));
+    psWith('abc123\n', '{"ninedeploy":{}}');
+    // beforeEach removed dynamic.yml → a placeholder is seeded.
+    await expect(ensureTraefik(vi.fn())).resolves.toBe(true);
+    // Running, current, and the route file is already there.
+    await expect(ensureTraefik(vi.fn())).resolves.toBe(false);
+    // Started (off the network → recreated).
+    psWith('abc123\n', '{"other":{}}');
+    h.run.mockResolvedValue(undefined);
+    await expect(ensureTraefik(vi.fn())).resolves.toBe(true);
   });
 
   // r350: a container created from ANOTHER data dir (a moved install, a
