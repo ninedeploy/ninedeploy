@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.8';
+export const VERSION = '0.10.9';
 
 export interface ChangelogEntry {
   version: string;
@@ -11,6 +11,14 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.10.9',
+    date: '2026-09-25',
+    title: 'The Cold-Boot Patch — Routes Survive a Late Docker',
+    changes: [
+      'A panel that boots while Docker is still unreachable — a reboot where the daemon comes up late, a Docker restart — no longer leaves every domain answering 404 once Traefik is back: the route file is written even before Traefik exists, and when the watchdog has to start Traefik it renders the current routes again instead of leaving the empty placeholder in place until the next deploy. Failed route writes also stop leaving stale temp files in the Traefik config directory.',
+    ],
+  },
   {
     version: '0.10.8',
     date: '2026-09-25',

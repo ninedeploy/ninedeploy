@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.9] - 2026-09-25
+
+> The cold-boot patch: routes survive a panel that starts before Docker does.
+
+### Fixed
+
+- **Every domain answered 404 after a boot during a Docker outage (r363).** The Traefik config directory was only created by the Traefik bootstrap, which runs after the network check — so when Docker was unreachable at boot (a reboot where the daemon starts late, a Docker restart) the boot-time route write failed with `ENOENT`, and the 5-minute watchdog later started Traefik on the empty placeholder route file. Every domain then answered 404 until a deploy or domain change happened to rewrite it. The route file now creates its own directory, and when the watchdog has to (re)start Traefik — or re-seed an empty route file — it renders the current routes again (not on every healthy tick, since a route write also refreshes every node's proxy). A failed route write no longer leaves `dynamic.yml.*.tmp` files behind. Found by smoke-testing the published 0.10.8 image.
+
 ## [0.10.8] - 2026-09-25
 
 > The audit patch: a full-system review (r260–r362, see
