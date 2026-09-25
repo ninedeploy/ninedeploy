@@ -1,6 +1,6 @@
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { EgressBlockedError } from '../../src/lib/egressGuard.js';
-import { assertCloneTargetAllowed } from '../../src/lib/gitEgress.js';
+import { assertCloneTargetAllowed, curlResolveEntry, vetCloneTarget } from '../../src/lib/gitEgress.js';
 
 const h = vi.hoisted(() => ({ lookup: vi.fn() }));
 vi.mock('node:dns/promises', () => ({ lookup: h.lookup }));
@@ -80,6 +80,45 @@ describe('assertCloneTargetAllowed (git SSRF gate)', () => {
     // No DNS lookup needed — the escape hatch short-circuits before parsing.
     await expect(assertCloneTargetAllowed('http://169.254.169.254/latest/meta-data/')).resolves.toBeUndefined();
     expect(h.lookup).not.toHaveBeenCalled();
+  });
+});
+
+describe('vetCloneTarget (r355 — the gate returns what it vetted)', () => {
+  it('returns the vetted addresses of an https remote for git to be pinned to', async () => {
+    h.lookup.mockResolvedValue([{ address: '140.82.121.4' }, { address: '2606:50c0:8000::153' }]);
+    await expect(vetCloneTarget('https://user:tok@GitHub.com/acme/app.git')).resolves.toEqual({
+      host: 'github.com',
+      port: 443,
+      addresses: ['140.82.121.4', '2606:50c0:8000::153'],
+    });
+    expect(h.lookup).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the default http port and an explicit one', async () => {
+    h.lookup.mockResolvedValue([{ address: '140.82.121.4' }]);
+    await expect(vetCloneTarget('http://git.example.com/a.git')).resolves.toMatchObject({ port: 80 });
+    await expect(vetCloneTarget('https://git.example.com:8443/a.git')).resolves.toMatchObject({ port: 8443 });
+  });
+
+  it('still refuses when any answer is private — nothing is pinned to a private address', async () => {
+    h.lookup.mockResolvedValue([{ address: '140.82.121.4' }, { address: '169.254.169.254' }]);
+    await expect(vetCloneTarget('https://rebind.example/a.git')).rejects.toBeInstanceOf(EgressBlockedError);
+  });
+
+  it('returns no pin for IP literals, ssh/scp/git:// remotes, and when private egress is allowed', async () => {
+    h.lookup.mockResolvedValue([{ address: '140.82.121.4' }]);
+    await expect(vetCloneTarget('https://140.82.121.4/a.git')).resolves.toBeNull();
+    await expect(vetCloneTarget('ssh://git@github.com/a.git')).resolves.toBeNull();
+    await expect(vetCloneTarget('git@github.com:a/b.git')).resolves.toBeNull();
+    await expect(vetCloneTarget('git://github.com/a/b.git')).resolves.toBeNull();
+    process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'] = '1';
+    await expect(vetCloneTarget('https://github.com/a.git')).resolves.toBeNull();
+  });
+
+  it('formats a CURLOPT_RESOLVE entry, bracketing IPv6', () => {
+    expect(curlResolveEntry({ host: 'github.com', port: 443, addresses: ['140.82.121.4', '2606:50c0:8000::153'] })).toBe(
+      'github.com:443:140.82.121.4,[2606:50c0:8000::153]',
+    );
   });
 });
 

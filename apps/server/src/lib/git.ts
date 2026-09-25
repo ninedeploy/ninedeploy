@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { simpleGit, type SimpleGit, type SimpleGitOptions } from 'simple-git';
-import { assertCloneTargetAllowed } from './gitEgress.js';
+import { type CloneTargetPin, curlResolveEntry, vetCloneTarget } from './gitEgress.js';
 
 export interface CloneCreds {
   type?: string; // github | gitlab | gitea | custom
@@ -55,6 +55,19 @@ function sameRemote(current: string, repoUrl: string): boolean {
 
 const MAX_SUBMODULE_DEPTH = 5;
 
+/** Redirect hardening (r099) — on every git invocation. */
+const NO_REDIRECTS = 'http.followRedirects=false';
+
+/**
+ * r355: `-c http.curloptResolve=<host>:<port>:<ip>` for a vetted remote, so
+ * libcurl connects to the address the egress gate approved instead of
+ * resolving the name again (DNS rebinding). One entry per host; git accepts
+ * the key multiple times. Unknown to git < 2.37, which ignores it.
+ */
+function pinConfig(pin: CloneTargetPin | null): string[] {
+  return pin ? [`http.curloptResolve=${curlResolveEntry(pin)}`] : [];
+}
+
 /**
  * r173: submodule URLs come from the repository's own `.gitmodules`, so they
  * are as attacker-controlled as the repo — and `git submodule update
@@ -64,7 +77,13 @@ const MAX_SUBMODULE_DEPTH = 5;
  * every URL first: relative URLs resolve against the already-vetted origin;
  * anything else must be a network form the egress gate understands.
  */
-async function initSubmodules(git: SimpleGit, repoDir: string, sink: (line: string) => void, depth = 0): Promise<void> {
+async function initSubmodules(
+  git: SimpleGit,
+  repoDir: string,
+  sink: (line: string) => void,
+  config: string[],
+  depth = 0,
+): Promise<void> {
   if (depth >= MAX_SUBMODULE_DEPTH || !existsSync(path.join(repoDir, '.gitmodules'))) return;
   let raw = '';
   try {
@@ -73,6 +92,9 @@ async function initSubmodules(git: SimpleGit, repoDir: string, sink: (line: stri
     return; // no url/path entries at all
   }
   const paths: string[] = [];
+  // r355: the pins of every level so far — relative submodule URLs resolve
+  // against an already-pinned parent, absolute https ones add their own.
+  const levelConfig = [...config];
   for (const line of raw.split('\n')) {
     const m = /^submodule\..*\.(url|path) (.+)$/.exec(line.trim());
     if (!m) continue;
@@ -85,15 +107,20 @@ async function initSubmodules(git: SimpleGit, repoDir: string, sink: (line: stri
     if (!/^(https?:\/\/|ssh:\/\/|git:\/\/|[\w.-]+@[\w.-]+:)/i.test(value)) {
       throw new Error(`Refusing submodule URL with an unsupported transport: ${maskUrl(value).slice(0, 120)}`);
     }
-    await assertCloneTargetAllowed(value);
+    for (const entry of pinConfig(await vetCloneTarget(value))) {
+      if (!levelConfig.includes(entry)) levelConfig.push(entry);
+    }
   }
   if (depth === 0) sink('Initialising git submodules …');
-  await git.submoduleUpdate(['--init']);
+  // `-c` settings reach the child clones `submodule update` spawns (git keeps
+  // GIT_CONFIG_PARAMETERS for submodule processes), so the pins apply there.
+  const updater = levelConfig.length === config.length ? git : simpleGit(repoDir, { config: levelConfig });
+  await updater.submoduleUpdate(['--init']);
   for (const rel of paths) {
     const subDir = path.resolve(repoDir, rel);
     if (!subDir.startsWith(path.resolve(repoDir) + path.sep)) continue;
     if (!existsSync(path.join(subDir, '.gitmodules'))) continue;
-    await initSubmodules(simpleGit(subDir, { config: ['http.followRedirects=false'] }), subDir, sink, depth + 1);
+    await initSubmodules(simpleGit(subDir, { config: levelConfig }), subDir, sink, levelConfig, depth + 1);
   }
 }
 
@@ -113,8 +140,9 @@ export async function checkoutCommit(
     throw new Error(`Refusing to check out an invalid commit sha: ${sha.slice(0, 40)}`);
   }
   // Egress gate (see lib/gitEgress.ts): refuse private-network remotes before
-  // any git operation starts.
-  await assertCloneTargetAllowed(repoUrl);
+  // any git operation starts. For http(s) it also returns the addresses it
+  // vetted, which every git invocation below is pinned to (r355).
+  const pin = await vetCloneTarget(repoUrl);
   const useKey = !!creds?.deployKey && (isSshUrl(repoUrl) || !creds?.token);
   // simple-git refuses `core.sshCommand` unless the caller opts in, because the
   // value is normally attacker-reachable. Here it is not: `keyFile` is derived
@@ -130,8 +158,14 @@ export async function checkoutCommit(
   // `302 → http://169.254.169.254/…` turned a checkout into a request from the
   // panel's network position. Cost: a renamed GitHub repo (301) must be
   // updated to its new URL instead of being followed.
+  //
+  // r355: `http.curloptResolve` pins the remote's hostname to the vetted
+  // addresses for this checkout's clone/fetch/submodule runs — git no longer
+  // resolves the name itself, so a rebinding DNS answer between the gate and
+  // git's connect cannot redirect it. TLS still validates the hostname.
+  const gitConfig = [NO_REDIRECTS, ...pinConfig(pin)];
   const gitOptions: Partial<SimpleGitOptions> = {
-    config: ['http.followRedirects=false'],
+    config: gitConfig,
     ...(useKey ? { unsafe: { allowUnsafeSshCommand: true } } : {}),
   };
   const keyFile = path.join(path.dirname(dir), `${path.basename(dir)}.sshkey`);
@@ -221,7 +255,7 @@ export async function checkoutCommit(
 
     // Submodules: if the repo ships a `.gitmodules`, init + fetch them so
     // builds that reference submodule paths don't fail on empty directories.
-    await initSubmodules(git, dir, sink);
+    await initSubmodules(git, dir, sink, gitConfig);
 
     const resolved = (await git.raw(['log', '-1', '--format=%H'])).trim() || sha || '';
     sink(`Checked out ${resolved.slice(0, 7)} on ${branch}`);

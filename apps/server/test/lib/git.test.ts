@@ -12,10 +12,17 @@ const gitState = vi.hoisted(() => ({
 
 vi.mock('simple-git', () => ({ simpleGit: gitState.simpleGit }));
 
+// Deterministic DNS for the egress gate: every hostname answers one public
+// address, which the checkout must then pin git to (r355).
+const dns = vi.hoisted(() => ({ lookup: vi.fn() }));
+vi.mock('node:dns/promises', () => ({ lookup: dns.lookup, default: { lookup: dns.lookup } }));
+const VETTED_IP = '140.82.121.4';
+
 const { checkoutCommit } = await import('../../src/lib/git.js');
 
-/** Every simple-git instance carries the redirect hardening (r099). */
-const HARDENED = { config: ['http.followRedirects=false'] };
+/** Every simple-git instance carries the redirect hardening (r099) and, for an
+ *  https remote, the pin to the address the gate vetted (r355). */
+const HARDENED = { config: ['http.followRedirects=false', `http.curloptResolve=github.com:443:${VETTED_IP}`] };
 
 const tmpRoot = path.join(os.tmpdir(), `ninedeploy-git-${process.pid}-${Date.now()}`);
 
@@ -71,6 +78,8 @@ function makeFailingCloneGit() {
 }
 
 beforeEach(() => {
+  dns.lookup.mockReset();
+  dns.lookup.mockResolvedValue([{ address: VETTED_IP, family: 4 }]);
   gitState.origin = undefined;
   gitState.lastDir = undefined;
   gitState.simpleGit.mockReset();
@@ -400,5 +409,64 @@ describe('checkoutCommit — edge cases', () => {
 
     await checkoutCommit('https://github.com/ada/repo.git', 'main', undefined, dir, vi.fn());
     expect(subUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('checkoutCommit — r355 DNS-rebinding pin', () => {
+  it('pins git to the address the gate vetted, even when the name re-resolves to a private one', async () => {
+    // Rebinding DNS: the gate's lookup sees public addresses; any later
+    // resolution (git/libcurl's own) would see the metadata service.
+    dns.lookup.mockReset();
+    dns.lookup
+      .mockResolvedValueOnce([
+        { address: '140.82.121.4', family: 4 },
+        { address: '2606:50c0:8000::153', family: 6 },
+      ])
+      .mockResolvedValue([{ address: '169.254.169.254', family: 4 }]);
+    const dir = gitDir('pin-rebind');
+    await checkoutCommit('https://github.com/ada/repo.git', 'main', undefined, dir, vi.fn());
+
+    const pinned = 'http.curloptResolve=github.com:443:140.82.121.4,[2606:50c0:8000::153]';
+    // The clone and the checkout instance both carry the pin…
+    expect(gitState.simpleGit.mock.calls[0]).toEqual([{ config: ['http.followRedirects=false', pinned] }]);
+    expect(gitState.simpleGit.mock.calls[1]).toEqual([dir, { config: ['http.followRedirects=false', pinned] }]);
+    // …and the name was resolved exactly once — by the gate.
+    expect(dns.lookup).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(gitState.simpleGit.mock.calls)).not.toContain('169.254.169.254');
+  });
+
+  it('pins the fetch of a reused checkout too, with the explicit port of the remote', async () => {
+    const dir = existingCheckout('pin-reuse', 'https://git.example.com:8443/team/app.git');
+    const git = makeGit();
+    gitState.simpleGit.mockImplementation(() => git);
+    await checkoutCommit('https://git.example.com:8443/team/app.git', 'main', undefined, dir, vi.fn());
+    expect(gitState.simpleGit).toHaveBeenCalledWith(dir, {
+      config: ['http.followRedirects=false', `http.curloptResolve=git.example.com:8443:${VETTED_IP}`],
+    });
+    expect(git.fetch).toHaveBeenCalledWith(['--all']);
+  });
+
+  it('adds the pin of an absolute https submodule to the submodule update', async () => {
+    const dir = existingCheckout('pin-submodule', 'https://github.com/ada/repo.git');
+    writeFileSync(path.join(dir, '.gitmodules'), '[submodule "lib"]\n\tpath = lib\n\turl = https://gitlab.com/acme/lib.git\n');
+    const git = makeGit();
+    gitState.simpleGit.mockImplementation(() => git);
+    await checkoutCommit('https://github.com/ada/repo.git', 'main', undefined, dir, vi.fn());
+    expect(gitState.simpleGit).toHaveBeenCalledWith(dir, {
+      config: [
+        'http.followRedirects=false',
+        `http.curloptResolve=github.com:443:${VETTED_IP}`,
+        `http.curloptResolve=gitlab.com:443:${VETTED_IP}`,
+      ],
+    });
+    expect(git.submoduleUpdate).toHaveBeenCalledWith(['--init']);
+  });
+
+  it('adds no pin for an ssh remote (documented residual gap) or an IP-literal https remote', async () => {
+    await checkoutCommit('git@github.com:org/repo.git', 'main', undefined, gitDir('pin-ssh'), vi.fn());
+    expect(gitState.simpleGit.mock.calls[0]).toEqual([{ config: ['http.followRedirects=false'] }]);
+    gitState.simpleGit.mockClear();
+    await checkoutCommit('https://140.82.121.4/org/repo.git', 'main', undefined, gitDir('pin-literal'), vi.fn());
+    expect(gitState.simpleGit.mock.calls[0]).toEqual([{ config: ['http.followRedirects=false'] }]);
   });
 });

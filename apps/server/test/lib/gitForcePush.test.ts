@@ -6,7 +6,11 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 
 // A local-path remote is not a network URL the egress gate understands; this
 // suite exercises real git behaviour, not the gate (covered in gitEgress.test).
-vi.mock('../../src/lib/gitEgress.js', () => ({ assertCloneTargetAllowed: async () => undefined }));
+vi.mock('../../src/lib/gitEgress.js', () => ({
+  assertCloneTargetAllowed: async () => undefined,
+  vetCloneTarget: async () => null,
+  curlResolveEntry: () => '',
+}));
 
 const { checkoutCommit } = await import('../../src/lib/git.js');
 
