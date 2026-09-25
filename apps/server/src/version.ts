@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.9';
+export const VERSION = '0.10.10';
 
 export interface ChangelogEntry {
   version: string;
@@ -11,6 +11,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.10.10',
+    date: '2026-09-25',
+    title: 'The Update-Check Patch — The Release Is Always Found',
+    changes: [
+      'A server whose curl reached GitHub fine could still show "Update check unavailable — fetch failed" and no Update & Restart button: the panel asked only the GitHub API through Node’s fetch, which ignores proxy settings and the system CA store and gives up on slow IPv4/IPv6 fallbacks. It now tries the API, the github.com release page, both again through curl, and finally git ls-remote — the same sources the installer uses — and names the real cause of each failure.',
+      'The last release the panel saw is kept on disk and shown (marked as such) when every source fails, so the update banner and button survive a network blip or a restart. Results refresh hourly instead of every six hours, open tabs re-check every 30 minutes, and the About page shows when and how the check ran with a Check now link.',
+    ],
+  },
   {
     version: '0.10.9',
     date: '2026-09-25',
