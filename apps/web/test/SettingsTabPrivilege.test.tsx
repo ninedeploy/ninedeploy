@@ -19,6 +19,7 @@ const apiMock = vi.hoisted(() => ({
   api: {
     services: { get: vi.fn(), update: vi.fn() },
     limits: { setService: vi.fn() },
+    environments: { list: vi.fn() },
   },
 }));
 vi.mock('../src/lib/api.js', () => apiMock);
@@ -176,5 +177,49 @@ describe('SettingsTab clearable fields (r341)', () => {
     const patch = await savedPatch();
     expect('volumeMount' in patch && patch.volumeMount !== undefined).toBe(false);
     expect('image' in patch && patch.image !== undefined).toBe(false);
+  }, TIMEOUT);
+});
+
+describe('SettingsTab deployment lane (r347)', () => {
+  afterEach(cleanup);
+  const TIMEOUT = 60_000;
+  const lanes = [
+    { id: 3, workspaceId: 1, name: 'staging', slug: 'staging', serviceCount: 0 },
+    { id: 4, workspaceId: 2, name: 'elsewhere', slug: 'elsewhere', serviceCount: 0 },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authMock.user = { id: 1, isOperator: true, email: 'a@test', name: 'A' };
+    apiMock.api.environments.list.mockResolvedValue(lanes);
+    apiMock.api.services.update.mockResolvedValue(service);
+  });
+
+  it("assigns the service to one of its workspace's lanes", async () => {
+    apiMock.api.services.get.mockResolvedValue({ ...service, workspaceIds: [1], environmentId: null });
+    renderTab();
+    const select = await screen.findByRole('combobox', { name: 'Deployment lane' });
+    expect(screen.getByRole('option', { name: 'staging' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'elsewhere' })).not.toBeInTheDocument();
+    fireEvent.change(select, { target: { value: '3' } });
+    await waitFor(() => expect(apiMock.api.services.update).toHaveBeenCalledWith(1, { environmentId: 3 }), { timeout: 30_000 });
+  }, TIMEOUT);
+
+  it('clears the lane with None', async () => {
+    apiMock.api.services.get.mockResolvedValue({ ...service, workspaceIds: [1], environmentId: 3 });
+    renderTab();
+    const select = await screen.findByRole('combobox', { name: 'Deployment lane' });
+    expect(select).toHaveValue('3');
+    fireEvent.change(select, { target: { value: '' } });
+    await waitFor(() => expect(apiMock.api.services.update).toHaveBeenCalledWith(1, { environmentId: null }), { timeout: 30_000 });
+  }, TIMEOUT);
+
+  it('reports a refused lane change', async () => {
+    apiMock.api.services.get.mockResolvedValue({ ...service, workspaceIds: [], environmentId: null });
+    apiMock.api.services.update.mockRejectedValue(new Error('forbidden'));
+    renderTab();
+    const select = await screen.findByRole('combobox', { name: 'Deployment lane' });
+    fireEvent.change(select, { target: { value: '4' } });
+    expect(await screen.findByText('Could not change the deployment lane')).toBeInTheDocument();
   }, TIMEOUT);
 });

@@ -115,6 +115,22 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
     onError: () => toast('Could not change auto-update', 'error'),
   });
 
+  // r347: deployment lane. The server has always accepted `environmentId`
+  // on PATCH, but nothing in the panel sent it, so every lane counted 0
+  // services. Saved immediately, like auto-update. The lane list is
+  // readable by any seat (scoped server-side to the caller's workspaces).
+  const lanes = useQuery({ queryKey: ['environments'], queryFn: () => api.environments.list() });
+  const laneMutation = useMutation({
+    mutationFn: (environmentId: number | null) => api.services.update(serviceId, { environmentId }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['service', serviceId] });
+      qc.invalidateQueries({ queryKey: ['services'] });
+      qc.invalidateQueries({ queryKey: ['environments'] });
+      toast('Deployment lane updated', 'success');
+    },
+    onError: () => toast('Could not change the deployment lane', 'error'),
+  });
+
   const [form, setForm] = useState<{
     name: string; branch: string; repoUrl: string; image: string; port: string;
     healthPath: string; volumeMount: string; sourceId: string;
@@ -232,6 +248,31 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
               <Input value={svc.sourceName ?? 'public / none'} disabled className="h-9" title="Credentials are managed by admins under System → Sources" />
             )}
           </Field>
+          {lanes.data && (
+            <Field label="Deployment lane" hint="Saved immediately · manage lanes from Services → Lanes">
+              <Select
+                value={svc.environmentId != null ? String(svc.environmentId) : ''}
+                onChange={(e) => laneMutation.mutate(e.target.value ? Number(e.target.value) : null)}
+                disabled={laneMutation.isPending}
+                className="h-9"
+                aria-label="Deployment lane"
+              >
+                <option value="">None</option>
+                {lanes.data
+                  // Lanes live in a workspace: offer the ones of this
+                  // service's workspace(s), plus whatever it is in now.
+                  .filter(
+                    (l) =>
+                      (svc.workspaceIds ?? []).length === 0 ||
+                      (svc.workspaceIds ?? []).includes(l.workspaceId) ||
+                      l.id === svc.environmentId,
+                  )
+                  .map((l) => (
+                    <option key={l.id} value={String(l.id)}>{l.name}</option>
+                  ))}
+              </Select>
+            </Field>
+          )}
           <Field label="Image (image deploys)"><Input value={form.image} onChange={set('image')} placeholder="nginx:latest" className="h-9 font-mono text-xs" /></Field>
           {svc.image && svc.type === 'docker' && (
             <div className="col-span-full flex items-center justify-between gap-3 rounded-lg border border-white/[0.05] bg-white/[0.02] px-3 py-2.5">
