@@ -8,7 +8,7 @@ import { decrypt } from '../lib/crypto.js';
 import { checkoutCommit, type CloneCreds } from '../lib/git.js';
 import { detectDeployHints } from '../lib/deployHints.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
-import { remoteDatabaseRefusal, remoteDeploySupported, remoteDeployUnsupportedReason } from '../lib/remoteDeploy.js';
+import { remoteDatabaseRefusal, remoteDeploySupported, remoteDeployUnsupportedReason, remoteServiceRefusal } from '../lib/remoteDeploy.js';
 import { agentOp } from '../lib/agentClient.js';
 import { createRemoteDockerBuilder } from './builders/remoteDocker.js';
 import { deployToTargets, pullableReleaseRef, recordFanoutResults, targetsForService } from './fanout.js';
@@ -564,7 +564,16 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       await auditOutcome(db, service, deploymentId, 'failed', dbRefusal);
       return;
     }
-    const call = (op: string, params: Record<string, unknown>, sink: (line: string) => void) =>
+    // r266: container shapes the agent has no slot for (command, docker
+    // socket, extra volumes) — refused rather than silently dropped.
+    const serviceRefusal = await remoteServiceRefusal(db, service);
+    if (serviceRefusal) {
+      log(`✗ ${serviceRefusal}`);
+      await safeFail(db, deploymentId, service.id, service.runtimeId);
+      await auditOutcome(db, service, deploymentId, 'failed', serviceRefusal);
+      return;
+    }
+    const call =(op: string, params: Record<string, unknown>, sink: (line: string) => void) =>
       agentOp(db, serverId, op, params, sink);
     builder = service.type === 'compose' ? createRemoteComposeBuilder(call) : createRemoteDockerBuilder(call);
   }

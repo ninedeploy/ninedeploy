@@ -1704,6 +1704,26 @@ describe('runDeployment on a remote-server target', () => {
     expect(audits[0]).toMatchObject({ action: 'deploy.failed' });
   });
 
+  it('r266: refuses a template container the agent cannot start as the panel would (cmd / docker socket)', async () => {
+    for (const shape of [{ cmd: ['server', '/data'] }, { dockerSocket: true }]) {
+      const { db, inserts } = makeDb();
+      baseSetup(db, { ownerUserId: 42, image: 'minio/minio:latest', serverId: 4, ...shape });
+      const lines = collectLogs(1);
+      agentAnswersRunning();
+      h.agentOp.mockClear();
+
+      await runDeployment(db as never, 1);
+
+      // Nothing reaches the node: the container would have started without
+      // its command / socket and "deployed" broken.
+      expect(h.agentOp).not.toHaveBeenCalled();
+      expect(lines.join(' ')).toMatch(/node agent cannot give the container/);
+      const audits = inserts.filter((i) => i.table === auditLog).map((i) => i.values);
+      expect(audits[0]).toMatchObject({ action: 'deploy.failed' });
+      logBus.removeAllListeners();
+    }
+  });
+
   it('refuses a pm2 service on a node instead of running it on the panel host', async () => {
     const { db, inserts } = makeDb();
     baseSetup(db, { ownerUserId: 42, type: 'pm2', serverId: 4 });

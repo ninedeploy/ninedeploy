@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { databaseAttachments, type DB } from '@ninedeploy/db';
+import { databaseAttachments, type DB, serviceVolumeAttachments } from '@ninedeploy/db';
 import { badRequest } from './errors.js';
 
 /**
@@ -17,6 +17,8 @@ import { badRequest } from './errors.js';
  * still-honest one: the shapes the agent has no operation for.
  *
  *   - PM2 has no agent operation at all, and it is host-privileged.
+ *   - A docker service whose container needs a command, the Docker socket or
+ *     extra volume attachments (r266, {@link remoteServiceRefusal}).
  *
  * Compose stacks DO run on a node now (`engine/builders/remoteCompose.ts`):
  * the panel ships an inline stack's YAML, or the node checks the repository
@@ -60,6 +62,49 @@ export async function remoteDatabaseRefusal(
   const attached = await db.query.databaseAttachments.findMany({ where: eq(databaseAttachments.serviceId, service.id) });
   if (attached.length === 0) return null;
   return 'Deployments to a remote server are not available for a service with an attached managed database: the database runs on the panel host and its hostname does not resolve on the node. Detach it (use an external database URL) or clear the target server.';
+}
+
+/**
+ * r266: why the node cannot run this service the way the panel would, or null.
+ *
+ * The agent's `docker.runEnv` has no slot for a container command, a Docker
+ * socket mount or extra volume attachments, and the remote builder used to
+ * drop all three silently: minio (`server /data`) printed its help and exited,
+ * portainer/dozzle came up with no Docker to talk to, and an attached volume
+ * (which lives on the PANEL host anyway) simply was not there. Refused up
+ * front rather than taught to the protocol in a patch release — a node may
+ * run an older agent than the panel.
+ */
+export async function remoteServiceRefusal(
+  db: DB,
+  service: {
+    id: number;
+    serverId?: number | null;
+    type?: string | null;
+    cmd?: string[] | null;
+    dockerSocket?: boolean | null;
+  },
+): Promise<string | null> {
+  if (service.serverId == null || (service.type ?? 'docker') !== 'docker') return null;
+  const missing: string[] = [];
+  if (service.cmd?.length) missing.push('a container command (this template starts its image with arguments)');
+  if (service.dockerSocket) missing.push('the Docker socket mount');
+  const attachments = await db
+    .select({ id: serviceVolumeAttachments.id })
+    .from(serviceVolumeAttachments)
+    .where(eq(serviceVolumeAttachments.serviceId, service.id));
+  if (attachments.length > 0) missing.push('attached volumes (they live on the panel host)');
+  if (missing.length === 0) return null;
+  return `Deployments to a remote server are not available for this service: the node agent cannot give the container ${missing.join(', ')}, so it would start without ${missing.length > 1 ? 'them' : 'it'}. Clear the target server to deploy it on the panel host.`;
+}
+
+/** Queue-time 400 for {@link remoteServiceRefusal}. */
+export async function assertRemoteServiceSupported(
+  db: DB,
+  service: Parameters<typeof remoteServiceRefusal>[1],
+): Promise<void> {
+  const reason = await remoteServiceRefusal(db, service);
+  if (reason) throw badRequest(reason, 'remote_deploy_unsupported');
 }
 
 /** Queue-time 400 for {@link remoteDatabaseRefusal}. */

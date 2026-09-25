@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertRemoteDeploySupported,
+  assertRemoteServiceSupported,
   remoteDeploySupported,
   remoteDeployUnsupportedReason,
+  remoteServiceRefusal,
 } from '../../src/lib/remoteDeploy.js';
 
 /**
@@ -66,5 +68,55 @@ describe('assertRemoteDeploySupported', () => {
       expect(e.code).toBe('remote_deploy_unsupported');
       expect(e.message).toMatch(/host processes/);
     }
+  });
+});
+
+/** A db whose volume-attachment select answers `rows`. */
+const attachmentsDb = (rows: unknown[] = []) =>
+  ({ select: () => ({ from: () => ({ where: async () => rows }) }) }) as never;
+
+describe('remoteServiceRefusal (r266)', () => {
+  it('refuses a docker service whose container needs a command on a node', async () => {
+    // minio's bare entrypoint prints help and exits: without `server /data`
+    // it "deployed" and was never up.
+    const reason = await remoteServiceRefusal(attachmentsDb(), {
+      id: 1,
+      serverId: 4,
+      type: 'docker',
+      cmd: ['server', '/data'],
+    });
+    expect(reason).toMatch(/container command/);
+    expect(reason).toMatch(/Clear the target server/);
+  });
+
+  it('refuses the Docker socket mount and extra volume attachments', async () => {
+    expect(await remoteServiceRefusal(attachmentsDb(), { id: 1, serverId: 4, dockerSocket: true })).toMatch(
+      /Docker socket/,
+    );
+    expect(
+      await remoteServiceRefusal(attachmentsDb([{ id: 9 }]), { id: 1, serverId: 4, type: 'docker' }),
+    ).toMatch(/attached volumes/);
+  });
+
+  it('passes a plain docker service, a compose service and any panel-host service', async () => {
+    expect(await remoteServiceRefusal(attachmentsDb(), { id: 1, serverId: 4, type: 'docker', cmd: [] })).toBeNull();
+    // Compose carries its own command and volumes inside the stack.
+    expect(
+      await remoteServiceRefusal(attachmentsDb([{ id: 9 }]), { id: 1, serverId: 4, type: 'compose' }),
+    ).toBeNull();
+    expect(
+      await remoteServiceRefusal(attachmentsDb([{ id: 9 }]), {
+        id: 1,
+        serverId: null,
+        dockerSocket: true,
+        cmd: ['x'],
+      }),
+    ).toBeNull();
+  });
+
+  it('assertRemoteServiceSupported throws the 400 the panel switches on', async () => {
+    await expect(
+      assertRemoteServiceSupported(attachmentsDb(), { id: 1, serverId: 4, dockerSocket: true }),
+    ).rejects.toMatchObject({ statusCode: 400, code: 'remote_deploy_unsupported' });
   });
 });

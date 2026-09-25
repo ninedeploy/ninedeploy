@@ -14,7 +14,7 @@ import { resolveUser } from '../lib/auth.js';
 import { authorizeWebsocketUser } from '../plugins/auth.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { assertMayDeployStoredService } from '../lib/hostPrivilege.js';
-import { assertRemoteDatabaseReachable, assertRemoteDeploySupported } from '../lib/remoteDeploy.js';
+import { assertRemoteDatabaseReachable, assertRemoteDeploySupported, assertRemoteServiceSupported } from '../lib/remoteDeploy.js';
 import { assertServiceRole, visibleServiceIdSet } from '../lib/resourceAccess.js';
 import { badRequest, notFound, parseId as num } from '../lib/errors.js';
 import { websocketBearerToken } from '../lib/websocketAuth.js';
@@ -50,6 +50,7 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     // through). A docker service passes straight through to the node.
     assertRemoteDeploySupported(svc);
     await assertRemoteDatabaseReachable(app.db, svc);
+    await assertRemoteServiceSupported(app.db, svc);
     // In-progress dedup: a service that is CURRENTLY building or deploying
     // gets that deployment returned (the worker only claims a queued
     // row once the in-flight one finishes, so a brand-new trigger
@@ -99,6 +100,7 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     await assertMayDeployStoredService(app.db, req.user!, target);
     assertRemoteDeploySupported(target);
     await assertRemoteDatabaseReachable(app.db, target);
+    await assertRemoteServiceSupported(app.db, target);
     // Same repository is the promotion invariant: the target redeploys at the
     // source's pinned SHA, which only makes sense over a shared history.
     if (source.repoUrl && target.repoUrl && source.repoUrl !== target.repoUrl) {
@@ -264,6 +266,7 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     // through). A docker service passes straight through to the node.
     assertRemoteDeploySupported(svc);
     await assertRemoteDatabaseReachable(app.db, svc);
+    await assertRemoteServiceSupported(app.db, svc);
     const old = await app.db.query.deployments.findFirst({ where: eq(deployments.id, depId) });
     if (!old || old.serviceId !== id) throw notFound('Deployment not found');
     // An inline compose stack is defined by the YAML on the service row, and
