@@ -224,6 +224,14 @@ export function Hub() {
                 role="button"
                 tabIndex={0}
                 onClick={() => setSelected(t.id)}
+                // r292: role="button" promises keyboard activation too.
+                onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setSelected(t.id);
+                  }
+                }}
                 className="group p-5"
               >
                 <div className="flex items-start gap-3">

@@ -246,6 +246,22 @@ describe('Hub', () => {
     expect(screen.getByText('Ephemeral')).toBeInTheDocument();
   });
 
+  it('opens a template card from the keyboard with Enter or Space (r292)', async () => {
+    mockOf(api.templates.list).mockResolvedValue(templates as never);
+    mockOf(api.templates.get).mockResolvedValue(templateDetail as never);
+    const user = userEvent.setup();
+    renderWithProviders(<Hub />);
+    const card = await screen.findByRole('button', { name: /n8n/ });
+    card.focus();
+    await user.keyboard('{Enter}');
+    expect(await screen.findByText('A workflow tool')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button').find((b) => b.querySelector('.lucide-x'))!);
+    expect(screen.queryByText('A workflow tool')).not.toBeInTheDocument();
+    card.focus();
+    await user.keyboard(' ');
+    expect(await screen.findByText('A workflow tool')).toBeInTheDocument();
+  });
+
   it('closes the template detail modal via the close button', async () => {
     mockOf(api.templates.list).mockResolvedValue(templates as never);
     mockOf(api.templates.get).mockResolvedValue(templateDetail as never);
