@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { ssoRoutes } from '../../src/modules/sso.js';
+import { SAML_UNAVAILABLE, ssoRoutes } from '../../src/modules/sso.js';
 import { buildTestApp, asUser } from '../helpers.js';
 
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -247,6 +247,52 @@ describe('POST /v1/sso/providers', () => {
     await app.close();
   });
 
+  it('r354: refuses to create a SAML provider — SAML sign-in is unavailable, not silently broken', async () => {
+    // Before r354 this returned ok:true and stored a provider whose login could
+    // never succeed: the IdP's form POST carries no Bearer header, so the
+    // assertion consumer answered 401 before its handler ran.
+    const insert = vi.fn();
+    const db = {
+      select: () => ({ from: () => Promise.resolve([]) }),
+      insert,
+      delete: () => ({ where: () => Promise.resolve() }),
+      query: { ssoProviders: { findFirst: () => Promise.resolve(undefined) } },
+    };
+    const app = await buildTestApp({ db: db as never });
+    await app.register(ssoRoutes);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/providers',
+      headers: asUser(),
+      payload: {
+        type: 'saml',
+        name: 'corp-saml',
+        config: { idpMetadata: '<EntityDescriptor entityID="https://idp.example.com" />' },
+      },
+    });
+    const body = res.json() as { ok: boolean; code?: string; error?: string; id?: number };
+    expect(body.ok).toBe(false);
+    expect(body.code).toBe('saml_unavailable');
+    expect(body.error).toBe(SAML_UNAVAILABLE);
+    expect(body.error).toMatch(/OIDC/);
+    expect(body.id).toBeUndefined();
+    expect(insert).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('r354: an IdP-style form POST (no Bearer) to the SAML consumer is refused — it is not a login path', async () => {
+    const app = await buildTestApp();
+    await app.register(ssoRoutes);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/corp-saml/saml-callback',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'SAMLResponse=PHNhbWxwOlJlc3BvbnNlIC8%2B&RelayState=x',
+    });
+    expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
   it('accepts a valid OIDC provider payload', async () => {
     const app = await buildTestApp();
     await app.register(ssoRoutes);
@@ -337,25 +383,22 @@ describe('GET /v1/sso/:name/login', () => {
     await app.close();
   });
 
-  it('rejects a non-OIDC provider (SAML login is wired in PR #23-b)', async () => {
+  it('r354: a SAML row created before the refusal answers "SAML unavailable", not a login redirect', async () => {
     const db = statefulDb();
+    // Seeded directly: the create route no longer accepts SAML (r354).
+    await db.insert().values({
+      type: 'saml',
+      name: 'corp-saml',
+      configJson: JSON.stringify({ idpMetadataUrl: 'https://idp.example.com/metadata' }),
+    }).returning();
     const app = await buildTestApp({ db: db as never });
     await app.register(ssoRoutes);
-    const create = await app.inject({
-      method: 'POST',
-      url: '/providers',
-      headers: asUser(),
-      payload: {
-        type: 'saml',
-        name: 'corp-saml',
-        config: { idpMetadataUrl: 'https://idp.example.com/metadata' },
-      },
-    });
-    expect(create.json().ok).toBe(true);
     const login = await app.inject({ method: 'GET', url: '/corp-saml/login', headers: asUser() });
-    const body = login.json() as { ok: boolean; error?: string };
+    const body = login.json() as { ok: boolean; code?: string; error?: string; redirectUrl?: string };
     expect(body.ok).toBe(false);
-    expect(body.error).toMatch(/not an OIDC provider/);
+    expect(body.code).toBe('saml_unavailable');
+    expect(body.error).toBe(SAML_UNAVAILABLE);
+    expect(body.redirectUrl).toBeUndefined();
     await app.close();
   });
 
@@ -437,14 +480,9 @@ describe('GET /v1/sso/:name/callback', () => {
 
   it('rejects a non-OIDC provider', async () => {
     const db = statefulDb();
+    await db.insert().values({ type: 'saml', name: 'corp-saml', configJson: JSON.stringify({ idpMetadataUrl: 'x' }) }).returning();
     const app = await buildTestApp({ db: db as never });
     await app.register(ssoRoutes);
-    await app.inject({
-      method: 'POST',
-      url: '/providers',
-      headers: asUser(),
-      payload: { type: 'saml', name: 'corp-saml', config: { idpMetadataUrl: 'x' } },
-    });
     const res = await app.inject({ method: 'GET', url: '/corp-saml/callback?code=x', headers: asUser() });
     const body = res.json() as { ok: boolean; error?: string };
     expect(body.ok).toBe(false);

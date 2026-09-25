@@ -74,6 +74,16 @@ Tests: `plugins/auth.test.ts` (central narrowing + classification),
   `InResponseTo` refused (the panel never initiates SAML), and
   `Audience` / `Destination` / `Recipient` are enforced when the operator
   configures `spEntityId` / `spAcsUrl` on the provider.
+- SAML sign-in is **unavailable** (r354). The assertion consumer was only
+  reachable with a Bearer session, so an IdP's browser POST always got 401,
+  and the verifier has no XML canonicalization / enveloped-signature
+  transform, so it cannot match a mainstream IdP's signature even if made
+  public. Rather than expose a hand-rolled XML-DSig verifier to
+  unauthenticated callers, `POST /v1/sso/providers` refuses `type: "saml"`
+  (`code: "saml_unavailable"`) and `/v1/sso/:name/login` answers the same for
+  older SAML rows. Use OIDC. A real SAML login (vetted c14n + transforms,
+  SP-initiated AuthnRequest bound to `InResponseTo` and a RelayState cookie)
+  is feature-release work.
 - Login lockout is two-tier: 5 failures lock the **(account, IP) pair** (the
   guesser locks itself out; the real user is unaffected — the old
   per-account lock was a 15-minute DoS lever), and 25 failures across

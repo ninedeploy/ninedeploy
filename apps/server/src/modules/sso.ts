@@ -39,8 +39,10 @@ import {
  *   - `GET /v1/sso/:name/login`            — start the OIDC / SAML
  *                                              login (302 to IdP)
  *   - `GET /v1/sso/:name/callback`         — finalize the OIDC flow
- *                                              (SAML callback lands
- *                                              in PR #23-b)
+ *
+ * SAML: provider creation and login are refused (r354, see
+ * `SAML_UNAVAILABLE` below); the older notes about the SAML wire path
+ * describe code that exists but is not a login path.
  *
  * PR #23 ships the provider list / create / delete + the OIDC
  * login + callback. The SAML wire path lands in the same PR (via
@@ -53,6 +55,42 @@ import {
  * is stored as-is (client secrets are encrypted at rest by
  * `lib/crypto.ts` on the way in if `isSecret: true`).
  */
+/**
+ * r354 — SAML sign-in is NOT available, and the API says so instead of
+ * accepting a provider that can never sign anyone in.
+ *
+ * The assertion consumer below was only ever reachable by a caller that is
+ * ALREADY signed in (module-wide `authenticate` + `requireInteractive`, and
+ * the minted session must belong to that same account), so an IdP's browser
+ * form POST — which carries no Bearer header — got 401 before the handler
+ * ran. Making it public is not a patch-sized change that can be done safely:
+ *
+ *   - `lib/saml.ts` verifies `<SignedInfo>` over its raw bytes and digests
+ *     the raw assertion bytes: there is no Exclusive XML Canonicalization and
+ *     no enveloped-signature transform. Every mainstream IdP (Okta, Entra ID,
+ *     ADFS, Keycloak, Google) signs the c14n form with the `<Signature>`
+ *     enveloped INSIDE the signed element, which this verifier can never
+ *     match — the tests pass only because they sign a detached,
+ *     pre-canonical shape. A reachable login would still not work.
+ *   - The panel never emits an `<AuthnRequest>`, so there is no request ID
+ *     to bind `InResponseTo` to; the only binding available would be a
+ *     RelayState cookie over IdP-initiated responses.
+ *   - Exposing a hand-rolled, regex-based XML-DSig verifier to
+ *     unauthenticated callers is exactly the surface that produced r093
+ *     (signature wrapping). Doing it for a feature that still cannot
+ *     interoperate would add risk without adding a working login.
+ *
+ * So: creating a SAML provider is refused with this message, `/:name/login`
+ * answers it for any SAML row created before this release, and the
+ * authenticated consumer stays as it was (it cannot sign in anyone who is not
+ * already signed in as that same account). A working SAML login needs a
+ * vetted XML-DSig implementation (c14n + transforms) plus SP-initiated
+ * AuthnRequest/InResponseTo binding — a feature release, not a patch. Use an
+ * OIDC provider (`/v1/auth/oidc/*`) meanwhile; most SAML IdPs also speak OIDC.
+ */
+export const SAML_UNAVAILABLE =
+  'SAML sign-in is not available in this release: the panel cannot yet verify standard (canonicalized, enveloped) SAML signatures. Configure the identity provider as an OIDC provider instead (Settings → SSO & OIDC).';
+
 interface SsoProviderListItem {
   id: number;
   type: 'oidc' | 'saml';
@@ -90,6 +128,10 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
       if (type !== 'oidc' && type !== 'saml') {
         return { ok: false, error: '`type` must be "oidc" or "saml"' };
       }
+      // r354: refuse a provider that can never sign anyone in (see SAML_UNAVAILABLE).
+      if (type === 'saml') {
+        return { ok: false, code: 'saml_unavailable', error: SAML_UNAVAILABLE };
+      }
       if (typeof name !== 'string' || name.length === 0) {
         return { ok: false, error: '`name` is required' };
       }
@@ -124,6 +166,9 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
       where: eq(ssoProviders.name, req.params.name),
     });
     if (!provider) return { ok: false, error: `SSO provider "${req.params.name}" not found` };
+    // r354: a SAML row created before this release gets the honest answer,
+    // not "not an OIDC provider".
+    if (provider.type === 'saml') return { ok: false, code: 'saml_unavailable', error: SAML_UNAVAILABLE };
     if (provider.type !== 'oidc') {
       return { ok: false, error: `Provider "${req.params.name}" is not an OIDC provider` };
     }
@@ -262,6 +307,11 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
   // session. Unknown users are rejected — SAML is for existing
   // operators, not a public sign-up path. (Invitations remain the
   // operator-issuance flow.)
+  //
+  // r354: this consumer is deliberately NOT public — it stays behind the
+  // module's `authenticate` + `requireInteractive` and only re-issues a
+  // session for the account that is already signed in. It is not a login
+  // path; see SAML_UNAVAILABLE for why SAML login is refused instead.
   app.post<{ Params: { name: string }; Body: { SAMLResponse?: string } }>(
     '/:name/saml-callback',
     { onRequest: [app.requireInteractive] },
