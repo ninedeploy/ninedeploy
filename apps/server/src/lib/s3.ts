@@ -186,7 +186,19 @@ export async function s3PutFile(
       cfg, 'POST', key, completeXml, 'application/xml',
       new URLSearchParams({ uploadId }),
     );
-    if (!done.ok) throw new Error(`S3 multipart complete failed (${done.status}): ${(await done.text()).slice(0, 200)}`);
+    const doneBody = await done.text();
+    if (!done.ok) throw new Error(`S3 multipart complete failed (${done.status}): ${doneBody.slice(0, 200)}`);
+    // r312: CompleteMultipartUpload is the one S3 call that can fail AFTER
+    // the 200 status line — S3 sends the headers early and reports e.g.
+    // InternalError / EntityTooSmall as an <Error> document in the body.
+    // Checking `ok` alone recorded such an upload as a success: backupRemote
+    // saved the remoteKey, retention could then delete the local file, and
+    // the only copy was a recovery point that did not exist. Success is a
+    // <CompleteMultipartUploadResult>; an <Error> element is a failure (the
+    // catch below aborts the upload so its parts stop billing).
+    if (/<Error[\s>]/.test(doneBody)) {
+      throw new Error(`S3 multipart complete failed (${done.status} with an error body): ${doneBody.slice(0, 200)}`);
+    }
   } catch (err) {
     // An abandoned multipart upload keeps billing for stored parts — always
     // abort on the way out of a failed upload.

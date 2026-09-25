@@ -223,6 +223,39 @@ describe('s3PutFile / s3GetToFile (streamed transfers)', () => {
     rmSync(file, { force: true });
   });
 
+  // r312 regression: S3 can answer CompleteMultipartUpload with HTTP 200 and
+  // an <Error> document (the status line goes out before the assembly
+  // finishes). That must reject — otherwise backupRemote records a remoteKey
+  // for an object that does not exist — and the upload must be aborted.
+  it('s3PutFile rejects and aborts when complete returns 200 with an <Error> body (r312)', async () => {
+    const initiate = { ok: true, status: 200, text: async () => '<UploadId>up-z</UploadId>', headers: new Headers() };
+    const part = { ok: true, status: 200, text: async () => '', headers: new Headers({ etag: '"e1"' }) };
+    const done = {
+      ok: true,
+      status: 200,
+      text: async () =>
+        '<?xml version="1.0" encoding="UTF-8"?>\n\n<Error><Code>InternalError</Code><Message>We encountered an internal error. Please try again.</Message></Error>',
+      headers: new Headers(),
+    };
+    const abort = { ok: true, status: 204, text: async () => '', headers: new Headers() };
+    fetchMock
+      .mockResolvedValueOnce(initiate)
+      .mockResolvedValueOnce(part)
+      .mockResolvedValueOnce(part)
+      .mockResolvedValueOnce(part)
+      .mockResolvedValueOnce(done)
+      .mockResolvedValueOnce(abort);
+    vi.stubGlobal('fetch', fetchMock);
+    const file = path.join(tmpdir(), `s3-done200-${Date.now()}`);
+    writeFileSync(file, Buffer.from('aaabbbcccddd'));
+    await expect(s3PutFile(CFG, 'k/big', file, { partSize: 4, threshold: 10 })).rejects.toThrow(/S3 multipart complete failed \(200[\s\S]*InternalError/);
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+    const [abortUrl, abortInit] = fetchMock.mock.calls[5] as [URL, RequestInit];
+    expect(abortInit.method).toBe('DELETE');
+    expect((abortUrl as URL).search).toBe('?uploadId=up-z');
+    rmSync(file, { force: true });
+  });
+
   it('s3GetToFile pipes the response body to disk without buffering', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
