@@ -28,7 +28,7 @@ host port publishing (`services.published_port`).
 
 - **Runtime**: Node ≥ 22.13, pnpm 11 workspace, Turborepo (`turbo run build/dev/lint/typecheck/test/clean/db:*`)
 - **Language**: TypeScript 7 strict (`noUncheckedIndexedAccess`, `verbatimModuleSyntax`, `isolatedModules`), Biome for lint/format
-- **Testing**: Vitest 5 + `@vitest/coverage-v8`, Testing Library. Server: 307 files / 4 596 tests, green. Monorepo: 7 424 tests across 465 files, all green (0.10.8). Coverage gates are **tiered**, not uniformly 100 — see [§13](#13-testing)
+- **Testing**: Vitest 5 + `@vitest/coverage-v8`, Testing Library. Server: 308 files / 4 647 tests, green. Monorepo: 7 498 tests across 470 files, all green (0.10.8). Coverage gates are **tiered**, not uniformly 100 — see [§13](#13-testing)
 
 ## 1. System diagram
 

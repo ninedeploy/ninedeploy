@@ -9,7 +9,7 @@ MCP; lib/plugins/retention/migrations; node agent, installer, CI and the
 template catalog; web UI correctness). Every candidate was re-confirmed against
 the code before fixing. Each fix carries a regression test that was run against
 the pre-fix source (old file written back with `git show`, never a stash) and
-seen to fail. Defect ids r260–r347.
+seen to fail. Defect ids r260–r362.
 
 Validation: the serialized release gate (`pnpm release:check` — typecheck,
 lint, build, every workspace test suite with coverage floors) passes on the
@@ -48,7 +48,16 @@ with a fake `systemctl`), and real-browser flows.
 | Templates | r320, r330 | wud mounted a volume where the Docker socket belongs; speedtest-tracker lacked APP_KEY; community templates 404'd on open/deploy | Fixed |
 | Contract | r331–r335, r340–r347 | Stale PgBouncer responses; no domain verify in SDK/CLI/web; MCP scopes that could never pass; SDK types that disagreed with the server; PATCH silently dropping tag fields; Web Studio link to a loopback port; clearing a volume mount ignored; stale caches after saves; unpaginated Activity; no way to set a deployment lane | Fixed |
 | Web UI | r290–r299 | Log autoscroll trap, repeating update toast, keyboard-inaccessible Hub cards and dialogs, focus not restored, invite landing in the wrong workspace, stale env table, stale analysis, doubled log lines | Fixed |
-| Test hygiene | — | Two suites booted the real Traefik plugin, recreating the host's `ninedeploy-traefik` container on a developer machine | Stubbed |
+| Test hygiene | — | Two suites booted the real Traefik plugin, recreating the host's `ninedeploy-traefik` container on a developer machine; the webhook suite called the real builders (`docker stop/rm`, `compose down`, a PM2 daemon that outlived the run) | Stubbed |
+| Proxy | r350 | A Traefik container serving another data dir's config matched the fingerprint and was kept | Mount source compared too |
+| Tenancy | r351 (was r096b) | A new service under a deleted service's slug mounted its retained data volume | 409 `slug_volume_retained` on every create path |
+| Compose | r352 | A repo-committed `.env` was replaced by panel values, then deleted | Panel values layered on top, original restored |
+| Fan-out | r353 | Extra nodes cloned credentialed repos anonymously, with no egress gate | Skipped with a log line; gate added |
+| SSO | r354 | SAML could never sign anyone in, yet providers could be created | Refused with `saml_unavailable` |
+| Egress | r355 (was r099b) | DNS rebinding between the git egress check and git's own resolution | `http.curloptResolve` pinned to the vetted addresses (https) |
+| Backups | r356 | Drills used host tools no installer provides and could not read Mongo archives | In-image checks, completion trailers, `unverifiable` status |
+| Installer | r357, r362 | A failed tarball upgrade left the panel down; `db:migrate` migrated a stray database | Rollback to the previous release (DB restored when migrated); relative DB path anchored at the repo root |
+| Panel | r358–r361 | Transfer accept link 404; enrolment token unreachable; branding invisible; 404/403 existence leak | Pages/cards added; uniform 404 |
 
 Dependencies: fastify 5.12.5, @fastify/static 10.1.4, @fastify/websocket
 11.3.1, jose 6.2.12, pm2 7.0.4, MCP SDK 1.30.1, TanStack Query 5.103.2,
@@ -72,19 +81,19 @@ xyflow 12.11.6.
 
 ## Known, not fixed in this release
 
-- Backup drills: Mongo drills run `bsondump` on a gzipped `mongodump
-  --archive`, so they always fail; Redis/Mongo drill tools are expected on the
-  panel host, which no installer provides. Needs the checks to run inside the
-  engine image.
-- The compose builder replaces a repository's committed `.env` with
-  panel-only values; remote compose does not export env to the compose
-  process for value-less entries.
-- Fan-out builds on extra nodes clone anonymously.
-- A self-update that fails after the release tarball is unpacked has no old
-  build to restart on (the trap reports the panel as down).
-- Domain transfer accept links, the enrolment token and branding have server
-  routes but no panel UI.
-- Some routes still answer 404 vs 403 differently for missing vs foreign ids
-  (labels, environments, email templates, domain transfers).
-- WUD 9.x ignores the generated bootstrap credentials (documented in the Hub).
-- Still open from earlier audits: r094b, r096b, r099b, SAML, wave 4.
+- SAML sign-in (r354 refuses it): needs a vetted XML-signature library and an
+  AuthnRequest bound to `InResponseTo` + a RelayState cookie.
+- ssh / git:// remotes are egress-checked but not DNS-pinned; node-side
+  (`git.ensure`) clones re-resolve on the node.
+- Remote compose still overwrites a repo's `.env` on the node (agent
+  protocol unchanged in a patch).
+- Compose-stack named volumes (`ndcmp-<slug>_*`) outlive a deleted stack and
+  are not covered by the r351 slug check.
+- The upgrade rollback (r357) protects upgrades started by this installer
+  onward; a health-gate failure after the restart is not rolled back
+  automatically (the rollback folder is kept and named).
+- Some branding fields (`primaryColor`, `footerHtml`) are not applied —
+  footer HTML would need a sanitiser.
+- r094b is closed by refusal: TOTP users cannot sign in through OIDC (they
+  use password + code); a pending-2FA step would let them.
+- Wave 4 of the 2026-09 security plan (host/supply chain) has not started.
