@@ -1,4 +1,4 @@
-import { existsSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Builder, DeployRuntime } from '../types.js';
 import { capture, run } from '../../lib/exec.js';
@@ -174,10 +174,29 @@ export const composeBuilder: Builder = {
 
     // Compose reads project env vars from the working directory's .env — we
     // write one so both interpolation below and container creation see the
-    // resolved runtime secrets. Deleted again in `finally`.
+    // resolved runtime secrets. Put back as it was in `finally`.
+    //
+    // r352: the repo may commit its own `.env` (interpolation defaults such
+    // as `${PG_VERSION}` or `${APP_PORT}`). Overwriting it with panel-only
+    // values — and then unlinking it unconditionally, even when the panel had
+    // nothing to add — made those defaults resolve blank. Panel values are
+    // appended AFTER the repo's lines (compose-go's dotenv parser is
+    // last-wins per key, so a panel value overrides the repo's), and the
+    // repo's exact bytes are restored afterwards; only a file this builder
+    // created is removed.
     const dotEnv = path.join(workDir, '.env');
-    if (Object.keys(env).length > 0) {
-      writeFileSync(dotEnv, `${Object.entries(env).map(([k, v]) => `${k}=${dotenvValue(v)}`).join('\n')}\n`, { mode: 0o600 });
+    let repoDotEnv: Buffer | null = null;
+    try {
+      repoDotEnv = readFileSync(dotEnv);
+    } catch {
+      /* no repo .env */
+    }
+    const wroteDotEnv = Object.keys(env).length > 0;
+    if (wroteDotEnv) {
+      const panelLines = `${Object.entries(env).map(([k, v]) => `${k}=${dotenvValue(v)}`).join('\n')}\n`;
+      const repoText = repoDotEnv?.toString('utf8') ?? '';
+      const merged = repoText === '' || repoText.endsWith('\n') ? repoText + panelLines : `${repoText}\n${panelLines}`;
+      writeFileSync(dotEnv, merged, { mode: 0o600 });
     }
 
     try {
@@ -224,10 +243,13 @@ export const composeBuilder: Builder = {
         log,
       );
     } finally {
+      // r352: restore the repo's own .env byte-for-byte, or remove only the
+      // file this builder created. Untouched when the panel had no values.
       try {
-        unlinkSync(dotEnv);
+        if (wroteDotEnv && repoDotEnv !== null) writeFileSync(dotEnv, repoDotEnv);
+        else if (wroteDotEnv) unlinkSync(dotEnv);
       } catch {
-        /* no .env written */
+        /* best-effort cleanup */
       }
       try {
         if (overrideFile) unlinkSync(overrideFile);

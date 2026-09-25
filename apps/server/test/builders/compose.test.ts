@@ -125,6 +125,59 @@ describe('composeBuilder.buildAndRun', () => {
     expect(existsSync(dotEnvPath)).toBe(false);
   });
 
+  // r352: a repo-committed .env carries compose interpolation defaults. It
+  // used to be overwritten with panel-only values (defaults resolved blank)
+  // and then deleted from the checkout even when nothing was written.
+  describe('r352: a repo-committed .env', () => {
+    const repoEnv = '# committed defaults\r\nPG_VERSION=16\nTOKEN=from-repo';
+
+    it('is merged with panel values (panel wins) during the deploy and restored byte-for-byte after', async () => {
+      const dotEnvPath = path.join(tmp, '.env');
+      writeFileSync(dotEnvPath, repoEnv);
+      let seen: string | null = null;
+      h.run.mockImplementation(async (_c, a, _o, sink) => {
+        sink?.('');
+        if ((a as string[])[5] === 'config') seen = readFileSync(dotEnvPath, 'utf8');
+      });
+      try {
+        await composeBuilder.buildAndRun(makeCtx() as never);
+        expect(seen).toContain('PG_VERSION=16');
+        // Repo line first, panel value after it — compose-go's dotenv is
+        // last-wins, so the panel's TOKEN is the one interpolated.
+        expect(seen!.indexOf('TOKEN=from-repo')).toBeLessThan(seen!.indexOf('TOKEN="secret-value"'));
+        expect(readFileSync(dotEnvPath, 'utf8')).toBe(repoEnv);
+      } finally {
+        rmSync(dotEnvPath, { force: true });
+      }
+    });
+
+    it('is restored even when the deploy fails', async () => {
+      const dotEnvPath = path.join(tmp, '.env');
+      writeFileSync(dotEnvPath, repoEnv);
+      h.run.mockImplementation(async (_c, a, _o, sink) => {
+        sink?.('');
+        if ((a as string[])[5] === 'up') throw new Error('build failed');
+      });
+      try {
+        await expect(composeBuilder.buildAndRun(makeCtx() as never)).rejects.toThrow('build failed');
+        expect(readFileSync(dotEnvPath, 'utf8')).toBe(repoEnv);
+      } finally {
+        rmSync(dotEnvPath, { force: true });
+      }
+    });
+
+    it('is left untouched when the panel has no env vars', async () => {
+      const dotEnvPath = path.join(tmp, '.env');
+      writeFileSync(dotEnvPath, repoEnv);
+      try {
+        await composeBuilder.buildAndRun(makeCtx({ env: {} }) as never);
+        expect(readFileSync(dotEnvPath, 'utf8')).toBe(repoEnv);
+      } finally {
+        rmSync(dotEnvPath, { force: true });
+      }
+    });
+  });
+
   it('tolerates a failing previous-revision teardown', async () => {
     h.run.mockImplementation(async (_c, a, _o, sink) => {
       sink?.('');
