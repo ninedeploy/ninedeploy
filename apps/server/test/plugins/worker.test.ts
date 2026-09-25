@@ -489,7 +489,7 @@ describe('worker plugin', () => {
       queued: [],
       selectImpl: async () => {
         outerCalls++;
-        return outerCalls <= 2 ? [{ id: outerCalls }] : [];
+        return outerCalls <= 2 ? [{ id: outerCalls, serviceId: outerCalls }] : [];
       },
     });
     // Both runs stay in flight until the test releases them.
@@ -521,8 +521,8 @@ describe('worker plugin', () => {
       queued: [],
       selectImpl: async () => {
         outerCalls++;
-        if (outerCalls === 1) return [{ id: 1, serverId: 7 }];
-        if (outerCalls === 2) return [{ id: 2, serverId: null }];
+        if (outerCalls === 1) return [{ id: 1, serverId: 7, serviceId: 1 }];
+        if (outerCalls === 2) return [{ id: 2, serverId: null, serviceId: 2 }];
         return [];
       },
     });
@@ -535,6 +535,35 @@ describe('worker plugin', () => {
     await app.close();
   });
 
+  it('r272: a cancelled deploy whose pipeline is still running blocks a redeploy of that service', async () => {
+    vi.useFakeTimers();
+    configMock.config.deployConcurrency = 1;
+    // Tick 1 claims #1 of service 42. The user then cancels it (the row
+    // flips building→cancelled at once, so the DB shows nothing `building`)
+    // and redeploys: #2 of service 42 is queued. The old pipeline has not
+    // reached a cancellation checkpoint yet — it is still running.
+    let outerCalls = 0;
+    const { db, updates } = makeDb({
+      queued: [],
+      selectImpl: async () => {
+        outerCalls++;
+        return outerCalls === 1 ? [{ id: 1, serviceId: 42 }] : [{ id: 2, serviceId: 42 }];
+      },
+    });
+    const old = deferred();
+    pipelineMock.runDeployment.mockReturnValueOnce(old.promise as never).mockResolvedValue(undefined);
+    const app = await buildApp(db);
+    await vi.advanceTimersByTimeAsync(POLL_MS * 3 + 100);
+    // #2 waits in `queued`: never claimed, never run beside the old pipeline.
+    expect(pipelineMock.runDeployment.mock.calls.map((c) => c[1])).toEqual([1]);
+    expect(updates.filter((u) => u.status === 'building')).toHaveLength(1);
+    // Once the old pipeline exits, the redeploy is claimed.
+    old.resolve();
+    await vi.advanceTimersByTimeAsync(POLL_MS + 100);
+    expect(pipelineMock.runDeployment.mock.calls.map((c) => c[1])).toEqual([1, 2]);
+    await app.close();
+  });
+
   it('stop() waits for all in-flight slots and re-polls none', async () => {
     vi.useFakeTimers();
     configMock.config.deployConcurrency = 2;
@@ -543,7 +572,7 @@ describe('worker plugin', () => {
       queued: [],
       selectImpl: async () => {
         outerCalls++;
-        return outerCalls <= 2 ? [{ id: outerCalls }] : [];
+        return outerCalls <= 2 ? [{ id: outerCalls, serviceId: outerCalls }] : [];
       },
     });
     const gate1 = deferred();

@@ -55,7 +55,8 @@ declare module 'fastify' {
  *   • Each loop claims atomically (queued→building UPDATE guarded by
  *     rowsAffected === 1), so loops — and any future second process sharing
  *     the database — can never double-run a deployment.
- *   • The claim query skips services with a `building` deployment, so the
+ *   • The claim query skips services with a `building` deployment (or, r272,
+ *     a pipeline still running here after its row was cancelled), so the
  *     same service is never deployed concurrently.
  *   • A slot does not wait for the run it launched (r238): the per-server
  *     partition counts, not the loop count, bound how many builds run.
@@ -66,6 +67,17 @@ export default fp(
     const currents: Array<Promise<void>> = [];
     /** Deployment ids this process is running right now — never "stale". */
     const inFlight = new Set<number>();
+    /**
+     * r272: service ids whose pipeline is still running in this process,
+     * whatever its row says. Cancelling a `building` deploy flips the row to
+     * `cancelled` at once, but the pipeline only notices at its next
+     * checkpoint — up to the build timeout later. The claim guard below only
+     * looks at `building` rows, so a redeploy was claimed while the old
+     * pipeline still ran in the same reposDir/<serviceId>, and the old run
+     * later overwrote services.status. Such a service's queued rows wait here
+     * until the old pipeline actually exits.
+     */
+    const inFlightServices = new Set<number>();
     /**
      * Pending poll timers, one per concurrency slot.
      *
@@ -136,7 +148,7 @@ export default fp(
      * partitioned by the service's target server (null = this host): each
      * partition independently gets `deployConcurrency` build slots, so a long
      * build on a remote server never starves local deployments. */
-    const nextClaimable = async (): Promise<{ id: number } | undefined> => {
+    const nextClaimable = async (): Promise<{ id: number; serviceId: number } | undefined> => {
       const buildingServices = fastify.db
         .select({ serviceId: deployments.serviceId })
         .from(deployments)
@@ -154,14 +166,15 @@ export default fp(
       }
       // Candidate queue, oldest first.
       const queued = await fastify.db
-        .select({ id: deployments.id, serverId: services.serverId })
+        .select({ id: deployments.id, serverId: services.serverId, serviceId: deployments.serviceId })
         .from(deployments)
         .innerJoin(services, eq(services.id, deployments.serviceId))
         .where(and(eq(deployments.status, 'queued'), notInArray(deployments.serviceId, buildingServices)))
         .orderBy(asc(deployments.createdAt));
       for (const row of queued) {
+        if (inFlightServices.has(row.serviceId)) continue; // r272
         const key = String(row.serverId ?? 0);
-        if ((perPartition.get(key) ?? 0) < config.deployConcurrency) return { id: row.id };
+        if ((perPartition.get(key) ?? 0) < config.deployConcurrency) return { id: row.id, serviceId: row.serviceId };
       }
       return undefined;
     };
@@ -260,9 +273,11 @@ export default fp(
                 // Drop the settled entry so stop() waits only on live work.
                 currents.splice(currents.indexOf(tracked), 1);
                 inFlight.delete(queued.id);
+                inFlightServices.delete(queued.serviceId);
               });
             currents.push(tracked);
             inFlight.add(queued.id);
+            inFlightServices.add(queued.serviceId);
         }
       } catch (err) {
         fastify.log.error({ err }, 'worker tick failed');
