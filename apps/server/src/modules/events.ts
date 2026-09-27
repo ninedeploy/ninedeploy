@@ -8,7 +8,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
   app.get('/v1/events', { websocket: true }, async (socket, req) => {
     const token = websocketBearerToken(req.headers);
     const user = token ? await resolveUser(app.db, token) : null;
-    if (!user) {
+    if (!user || !token) {
       socket.close(1008, 'unauthorized');
       return;
     }
