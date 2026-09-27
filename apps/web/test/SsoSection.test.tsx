@@ -191,6 +191,16 @@ describe('SsoSection', () => {
     });
   });
 
+  it('r402: a failed provider deletion renders its error instead of dying silently', async () => {
+    mockOf(api.auth.oidc.delete).mockRejectedValueOnce(new Error('boom') as never);
+
+    renderWithProviders(<SsoSection />);
+    fireEvent.click(await screen.findByTitle('Delete Provider'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+
+    expect(await screen.findByText(/Could not delete the provider/)).toBeInTheDocument();
+  });
+
   it('shows the empty state when no providers are configured', async () => {
     mockOf(api.auth.oidc.list).mockResolvedValue([] as never);
     renderWithProviders(<SsoSection />);

@@ -26,6 +26,7 @@ import {
   Select,
   Textarea,
 } from '../components/ui.js';
+import { useToast } from '../components/Toast.js';
 import type {
   WorkspaceInvitationEntry,
   WorkspaceMemberAddInput,
@@ -36,6 +37,7 @@ import type {
 export function Workspaces() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const { workspaces, currentWorkspace, switchWorkspace, refreshWorkspaces } = useWorkspace();
 
   const [memberSearch, setMemberSearch] = useState('');
@@ -106,7 +108,9 @@ export function Workspaces() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workspace-invitations', workspaceId] });
     },
-    onError: (err: Error) => setError(err.message),
+    // No form is open for a revoke — the inline banner lives inside the
+    // invite/edit dialogs — so failures toast instead of dying silently.
+    onError: (err: Error) => toast(err.message, 'error'),
   });
 
   const copyAcceptUrl = async (url: string) => {
@@ -124,7 +128,7 @@ export function Workspaces() {
       queryClient.invalidateQueries({ queryKey: ['workspace-detail', workspaceId] });
       refreshWorkspaces();
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: Error) => toast(err.message, 'error'),
   });
 
   const removeMemberMutation = useMutation({
@@ -133,7 +137,7 @@ export function Workspaces() {
       queryClient.invalidateQueries({ queryKey: ['workspace-detail', workspaceId] });
       refreshWorkspaces();
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: Error) => toast(err.message, 'error'),
   });
 
   const updateWsMutation = useMutation({

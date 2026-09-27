@@ -326,4 +326,15 @@ describe('Backups', () => {
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Destination reachable — credentials work', 'success'));
     expect(alertSpy).not.toHaveBeenCalled();
   });
+
+  it('r402: a failed destination toggle says so instead of silently doing nothing', async () => {
+    mockOf(api.backups.list).mockResolvedValue([] as never);
+    mockOf(api.backupDestinations.list).mockResolvedValue([
+      { id: 1, name: 'minio', endpoint: 'https://s3.example.com', region: 'eu', bucket: 'b', prefix: 'nd', active: true, createdAt: 'x' },
+    ] as never);
+    mockOf(api.backupDestinations.update).mockRejectedValueOnce(new Error('locked') as never);
+    renderWithProviders(<Backups />);
+    fireEvent.click(await screen.findByText('active'));
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Could not change the destination', 'error'));
+  });
 });

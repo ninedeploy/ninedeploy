@@ -22,6 +22,14 @@ vi.mock('../src/lib/workspace.js', async () => {
   return createWorkspaceMock();
 });
 
+// The route toasts mutation failures (r402); renderWithProviders ships no
+// ToastProvider, so the hook falls back to a no-op — observe it through here.
+const toastSpy = vi.hoisted(() => ({ toast: vi.fn() }));
+vi.mock('../src/components/Toast.js', async () => {
+  const actual = await vi.importActual<typeof import('../src/components/Toast.js')>('../src/components/Toast.js');
+  return { ...actual, useToast: () => toastSpy };
+});
+
 describe('Workspaces route', () => {
   const mockWs = {
     id: 1,
@@ -196,6 +204,23 @@ describe('Workspaces route', () => {
     await waitFor(() => {
       expect(api.workspaces.revokeInvitation).toHaveBeenCalledWith(1, 90);
     });
+  });
+
+  it('r402: surfaces a revoke failure as a toast instead of a dead button', async () => {
+    mockOf(api.workspaces.listInvitations).mockResolvedValueOnce([
+      {
+        id: 90, workspaceId: 1, email: 'pending@acme.com', role: 'admin', invitedByUserId: 1,
+        invitedByName: null, expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+        acceptedAt: null, acceptedByUserId: null, revokedAt: null, createdAt: new Date().toISOString(),
+      },
+    ] as never);
+    mockOf(api.workspaces.revokeInvitation).mockRejectedValueOnce(new Error('nope') as never);
+
+    renderWithProviders(<Workspaces />);
+    expect(await screen.findByText('pending@acme.com')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('nope', 'error'));
   });
 
   it('reports invite failures inline', async () => {
