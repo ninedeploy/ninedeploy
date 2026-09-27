@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.13] - 2026-09-28
+
+> The deferred-round patch: everything verified in the 0.10.12 audit but left
+> for a round of its own (r397–r402) — rollback that survives autoPrune, a
+> proxy failure that no longer lies, node endpoints that cannot fork, and
+> honest healthchecks.
+
+### Fixed
+
+- **Rollback pinned an unpullable image reference (r397).** Image deploys recorded `docker inspect {{.Image}}` — the LOCAL image id. `docker pull sha256:<id>` resolves to `docker.io/library/sha256` and always fails, after which rollback fell back to the local copy that autoPrune removes after a week: an image-based service with a newer deploy could not be rolled back at all (the fix `pullableReleaseRef` existed for fan-out, never for rollback). Deploys now record the repo digest (`repo@sha256:…`, pullable from any host forever); rollback resolves legacy ids to their repo digest while the local image still exists, and locally built images (never pushed) keep their id with their rollback staying local-only.
+- **A failed Traefik config write still finalized the deploy GREEN (r398).** By the proxy-swap step the service row already pointed at the new container; a config-write failure (ENOSPC, permission damage, a locked file) logged one warning and finished green while Traefik kept routing to the previous generation — traffic, deploy log and panel disagreed, and Stop/Restart/Logs acted on the unrouted container. The swap now retries once; a second failure records the deployment failed, reverts the service row to the still-routed previous runtime (port, commit and replicas included), retires the unrouted new container, and skips fan-out. In-place redeploys and PM2 (where the swap already happened inside the runtime) keep the live version and say exactly that.
+- **A node endpoint could exist as two server rows (r399).** Re-running SSH bootstrap for an existing host inserted a SECOND `(host, port)` row whose fresh agent token silently invalidated the first row's — the old row kept reporting `online` while every deploy targeting it failed auth with no hint why. Migration 0065 repairs existing duplicates (services and fan-out targets are re-pointed at the newest row, the one whose token the running agent holds, before the unique index is created — proven against a seeded database in `serversMigration.test.ts`), the schema enforces `unique(host, port)`, bootstrap upserts by endpoint, manual create answers 409 for a taken endpoint, and `DELETE /servers/:id?force=true` now names the services it orphans instead of a bare `{ ok: true }`.
+- **The metrics retention sweep full-scanned the time-series table every 30 seconds (with 0065).** The only index led with `serviceId`, which the delete predicate never mentions; a `ts`-leading index makes the hourly-window delete an index walk.
+- **The PM2 healthcheck passed on the first `online` sample (r400).** An app whose server crashes at second N>1 (bad env, missing migration) deployed green while PM2 restart-looped it. Health now requires two consecutive online samples whose restart counter did not move — the same fix r265 gave the remote docker twin.
+- **The events WebSocket authenticated once, forever (r401).** A bumped `tokenVersion` (logout-everywhere, password change) or a deleted user kept streaming the operator feed until the CLIENT closed the socket. The socket now re-resolves its token every minute, closes itself on a dead session, and swaps in the fresh user so a granted/revoked operator flag applies mid-stream without a reconnect.
+- **Destructive one-clicks gained their confirmation (r402).** Rollback (the hover-revealed icon), domain removal (instantly unroutes production traffic), webhook removal (breaks auto-deploy and re-mints the secret), SSO-provider deletion (native `confirm()`, inconsistent with the app pattern) and instance-operator grant/revoke (full host control on a misclick) all go through the app-wide ConfirmDialog now. Workspace member mutations (invite/revoke/role/remove) and the backup-destination toggle surface their errors instead of dead-button silence, and the Activity live refresh keeps at most three pages loaded (the 5 s refetch used to re-fetch every loaded page).
+
 ## [0.10.12] - 2026-09-27
 
 > The follow-up audit patch: a member-level host-execution hole closed, the

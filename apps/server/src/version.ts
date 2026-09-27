@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.12';
+export const VERSION = '0.10.13';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.13',
+    date: '2026-09-28',
+    title: 'The Deferred-Round Patch — Pullable Rollbacks, an Honest Proxy Finalize and Real Endpoint Identity',
+    changes: [
+      'Image rollback pins a PULLABLE repo digest: rows used to store the local image id, which no registry can fetch and autoPrune deletes after a week — rollback then failed outright (r397).',
+      'A failed Traefik config write no longer finalizes the deploy green. The proxy swap retries once, then the deployment is recorded failed, the service reverts to the still-routed previous runtime, and the unrouted new container is retired (r398).',
+      'A node endpoint (host:port) is one server row: migration 0065 repairs duplicates and enforces uniqueness, SSH bootstrap rebinds the existing row instead of silently invalidating its token, and a force-delete names the services it orphans (r399).',
+      'The PM2 healthcheck requires two consecutive stable samples — an app that crashes on boot no longer deploys green while PM2 restart-loops it (r400); the /v1/events socket re-validates its token every minute, so a revoked session stops streaming (r401).',
+      'Rollback, domain removal, webhook removal, SSO-provider deletion and instance-operator grants now confirm through the app-wide dialog, and several silent-failure mutations surface their errors (r402).',
+    ],
+  },
+{
     version: '0.10.12',
     date: '2026-09-27',
     title: 'The Follow-Up Audit Patch — the Static-Pack Gate, Honest Volumes and a Calmer Update Path',
