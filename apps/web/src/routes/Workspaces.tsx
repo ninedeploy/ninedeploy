@@ -95,6 +95,9 @@ export function Workspaces() {
       setInviteEmail('');
       setInviteRole('member');
     },
+    // A 403 or a server error used to leave a dead button — surface it in the
+    // same banner the form errors use.
+    onError: (err: Error) => setError(err.message),
   });
 
   const revokeInvitationMutation = useMutation({
@@ -103,6 +106,7 @@ export function Workspaces() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workspace-invitations', workspaceId] });
     },
+    onError: (err: Error) => setError(err.message),
   });
 
   const copyAcceptUrl = async (url: string) => {
@@ -120,6 +124,7 @@ export function Workspaces() {
       queryClient.invalidateQueries({ queryKey: ['workspace-detail', workspaceId] });
       refreshWorkspaces();
     },
+    onError: (err: Error) => setError(err.message),
   });
 
   const removeMemberMutation = useMutation({
@@ -128,6 +133,7 @@ export function Workspaces() {
       queryClient.invalidateQueries({ queryKey: ['workspace-detail', workspaceId] });
       refreshWorkspaces();
     },
+    onError: (err: Error) => setError(err.message),
   });
 
   const updateWsMutation = useMutation({

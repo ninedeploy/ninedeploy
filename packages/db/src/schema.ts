@@ -850,8 +850,13 @@ export const metrics = sqliteTable(
     ts: ts('ts'),
   },
   // High-volume time-series table: every read filters serviceId + kind + ts>=,
-  // and retention deletes by ts. A composite index makes both fast.
-  (t) => ({ serviceKindTsIdx: index('metrics_service_kind_ts_idx').on(t.serviceId, t.kind, t.ts) }),
+  // and retention deletes by ts alone. The composite index serves the reads;
+  // the ts-leading index serves the hourly retention sweep, which otherwise
+  // full-scanned the whole table every 30 s on a busy instance.
+  (t) => ({
+    serviceKindTsIdx: index('metrics_service_kind_ts_idx').on(t.serviceId, t.kind, t.ts),
+    tsIdx: index('metrics_ts_idx').on(t.ts),
+  }),
 );
 
 export const auditLog = sqliteTable(
@@ -1276,19 +1281,27 @@ export const jobRuns = sqliteTable(
 );
 
 // ─── remote servers (agent-based multi-server) ────────────────────────────
-export const servers = sqliteTable('servers', {
-  id: id(),
-  name: text('name').notNull(),
-  host: text('host').notNull(),
-  port: integer('port').notNull().default(4600),
-  status: text('status', { enum: serverStatus }).notNull().default('offline'),
-  // Shared secret the agent presents. The raw token is encrypted at rest so
-  // the core can use it for exec calls; sha256 hash would be one-way.
-  tokenEncrypted: text('token_encrypted').notNull(),
-  lastSeenAt: integer('last_seen_at', { mode: 'timestamp' }),
-  createdAt: ts('created_at'),
-  updatedAt: tsUpdatable('updated_at'),
-});
+export const servers = sqliteTable(
+  'servers',
+  {
+    id: id(),
+    name: text('name').notNull(),
+    host: text('host').notNull(),
+    port: integer('port').notNull().default(4600),
+    status: text('status', { enum: serverStatus }).notNull().default('offline'),
+    // Shared secret the agent presents. The raw token is encrypted at rest so
+    // the core can use it for exec calls; sha256 hash would be one-way.
+    tokenEncrypted: text('token_encrypted').notNull(),
+    lastSeenAt: integer('last_seen_at', { mode: 'timestamp' }),
+    createdAt: ts('created_at'),
+    updatedAt: tsUpdatable('updated_at'),
+  },
+  // One row per agent endpoint. Re-running SSH bootstrap for an existing node
+  // used to insert a SECOND row whose fresh token silently invalidated the
+  // first row's — the old row kept saying `online` while every agentOp
+  // targeting it failed auth with no hint why (r399).
+  (t) => ({ hostPortUnique: uniqueIndex('servers_host_port_unique').on(t.host, t.port) }),
+);
 
 export const passwordResetTokens = sqliteTable('password_reset_tokens', {
   id: integer('id').primaryKey({ autoIncrement: true }),

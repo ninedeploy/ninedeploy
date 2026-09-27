@@ -101,6 +101,10 @@ export function Users() {
     },
     onError: (err: Error) => toast(err.message, 'error'),
   });
+  // Granting instance-operator is full host control (host-privileged deploys,
+  // exec, the Docker socket) — a single misclick on a member row used to
+  // grant it, while deleting a user asks for a typed confirmation.
+  const [pendingOperator, setPendingOperator] = useState<{ id: number; name: string; grant: boolean } | null>(null);
 
   const resetLink = useMutation({
     mutationFn: (id: number) => api.users.resetLink(id),
@@ -238,7 +242,7 @@ export function Users() {
                       {!isMe && (
                         <button
                           type="button"
-                          onClick={() => setOperator.mutate({ id: u.id, isOperator: !u.isOperator })}
+                          onClick={() => setPendingOperator({ id: u.id, name: u.name || u.email, grant: !u.isOperator })}
                           disabled={setOperator.isPending}
                           className="ml-2 text-xs text-slate-500 underline-offset-2 transition hover:text-indigo-300 hover:underline"
                           title={
@@ -328,6 +332,19 @@ export function Users() {
         confirmLabel="Delete"
         onConfirm={() => pendingDelete && remove.mutate(pendingDelete.id)}
         onClose={() => setPendingDelete(null)}
+      />
+
+      <ConfirmDialog
+        open={pendingOperator != null}
+        title={pendingOperator?.grant ? 'Grant instance-operator?' : 'Revoke instance-operator?'}
+        message={
+          pendingOperator?.grant
+            ? `${pendingOperator.name} gains FULL control of this server: host-privileged deploys (PM2, compose, lifecycle hooks), the exec terminal, volumes and the Docker socket — on every workspace and service.`
+            : `${pendingOperator?.name} loses instance-operator access. Workspace-level roles are unaffected. Deploys that need host privilege will refuse for them afterwards.`
+        }
+        confirmLabel={pendingOperator?.grant ? 'Grant' : 'Revoke'}
+        onConfirm={() => pendingOperator && setOperator.mutate({ id: pendingOperator.id, isOperator: pendingOperator.grant })}
+        onClose={() => setPendingOperator(null)}
       />
     </div>
   );

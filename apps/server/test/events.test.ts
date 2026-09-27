@@ -117,6 +117,37 @@ describe('events websocket', () => {
     await app.close();
     expect(true).toBe(true);
   });
+
+  it('r401: closes the socket when the session is revoked mid-stream', async () => {
+    // The socket used to authenticate ONCE at connect: a bumped tokenVersion
+    // (logout-everywhere, password change) or a deleted user kept the feed
+    // streaming until the client itself closed. The route now re-resolves the
+    // token every minute. Fake timers with shouldAdvanceTime keep the ws
+    // handshake working while making the 60 s interval fire on demand.
+    const defaultImpl = authMocks.resolveUser.getMockImplementation()!;
+    let revoked = false;
+    authMocks.resolveUser.mockImplementation(async (db: unknown, token: string) => {
+      if (token === 'valid' && !revoked) return { id: 1, isOperator: true as const };
+      return null;
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const app = await buildTestApp({ websocket: true });
+      await app.register(eventRoutes);
+      const port = await listen(app);
+      const ws = await openWs(wsUrl(port, '/v1/events'), 'ninedeploy.bearer.valid');
+      sockets.push(ws);
+      await waitFor(() => ws.readyState === WebSocket.OPEN);
+
+      revoked = true;
+      await vi.advanceTimersByTimeAsync(60_000);
+      await waitFor(() => ws.readyState === WebSocket.CLOSED);
+      await app.close();
+    } finally {
+      vi.useRealTimers();
+      authMocks.resolveUser.mockImplementation(defaultImpl);
+    }
+  });
 });
 
 /**

@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import type { Deployment } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
-import { Card, CardBody, Button, Skeleton, Spinner, StatusBadge, cn } from '../../components/ui.js';
+import { Card, CardBody, Button, ConfirmDialog, Skeleton, Spinner, StatusBadge, cn } from '../../components/ui.js';
 import { LogPanel } from './LogPanel.js';
 
 export const IN_FLIGHT = ['queued', 'building', 'deploying'];
@@ -37,6 +37,10 @@ export function DeploysTab({
   const { toast } = useToast();
   const activeDeployRow = deploys.find((d) => d.id === activeId) ?? null;
   const inFlight = !!activeDeployRow && IN_FLIGHT.includes(activeDeployRow.status);
+  // Rollback swaps the LIVE release to an older one — the more disruptive
+  // action on this page got the LESS protection (a hover-revealed icon, no
+  // confirm), while a plain redeploy of a running service asks first.
+  const [pendingRollback, setPendingRollback] = useState<number | null>(null);
 
   // Per-row queue position so the per-service tab carries the same
   // affordance the global /deploys page exposes. Oldest queued id
@@ -94,14 +98,27 @@ export function DeploysTab({
 
   return (
     <div className="mt-5 space-y-5">
+      <ConfirmDialog
+        open={pendingRollback != null}
+        title="Rollback to this deployment?"
+        message={(() => {
+          const row = deploys.find((d) => d.id === pendingRollback);
+          return `The live release will be replaced by deployment #${pendingRollback}${row?.commitSha ? ` (${row.commitSha.slice(0, 7)})` : ''}. The currently running version stays in history and can be rolled back to.`;
+        })()}
+        confirmLabel="Rollback"
+        onConfirm={() => {
+          if (pendingRollback != null) {
+            rollback.mutate(pendingRollback);
+            onSelect(null);
+          }
+        }}
+        onClose={() => setPendingRollback(null)}
+      />
       <DeploymentsCard
         deploys={deploys}
         activeId={activeId}
         onSelect={onSelect}
-        onRollback={(depId) => {
-          rollback.mutate(depId);
-          onSelect(null);
-        }}
+        onRollback={(depId) => setPendingRollback(depId)}
         onCancel={(depId) => cancelDeploy.mutate(depId)}
         onRemove={(depId) => removeDeploy.mutate(depId)}
         loading={loading}

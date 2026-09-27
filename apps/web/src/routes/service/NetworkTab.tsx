@@ -3,7 +3,7 @@ import { ExternalLink, Globe, Plus, Radio, Shield, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api, authedFetch } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
-import { Button, Card, CardBody, Input, Skeleton, cn } from '../../components/ui.js';
+import { Button, Card, CardBody, ConfirmDialog, Input, Skeleton, cn } from '../../components/ui.js';
 
 import type { Service } from '@ninedeploy/sdk';
 
@@ -374,6 +374,9 @@ function DomainItemRow({
     },
     onError: () => toast('Could not remove the domain', 'error'),
   });
+  // Removing a domain instantly unroutes production traffic for that host —
+  // confirm it, like every other destructive action in the app.
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   const toggleSsl = useMutation({
     mutationFn: () => api.domains.setSsl(d.id, !d.ssl),
@@ -509,7 +512,7 @@ function DomainItemRow({
           </button>
           <button
             type="button"
-            onClick={() => remove.mutate()}
+            onClick={() => setConfirmRemove(true)}
             className="text-slate-600 transition hover:text-rose-400"
             title="Remove domain"
           >
@@ -517,6 +520,15 @@ function DomainItemRow({
           </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmRemove}
+        title={`Remove ${d.hostname}?`}
+        message="The domain stops routing immediately — requests to it will fail until it is added back and verified. The service itself keeps running."
+        confirmLabel="Remove"
+        onConfirm={() => remove.mutate()}
+        onClose={() => setConfirmRemove(false)}
+      />
 
       {pending && challenge && (
         <div className="border-t border-white/5 bg-amber-500/[0.04] px-3 py-2 text-[11px] text-slate-400">

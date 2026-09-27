@@ -8,7 +8,7 @@ import { formatDateTime, formatRelative, useCopy } from '../../lib/format.js';
 import { AttachmentsCard } from '../../components/AttachmentsCard.js';
 import { EnvCard } from '../../components/EnvCard.js';
 import { useToast } from '../../components/Toast.js';
-import { Button, Card, CardBody, Input, Skeleton, cn } from '../../components/ui.js';
+import { Button, Card, CardBody, ConfirmDialog, Input, Skeleton, cn } from '../../components/ui.js';
 import { SecretRow } from './SecretRow.js';
 
 /** Environment variables, auto-deploy webhooks, file attachments and cron jobs. */
@@ -49,6 +49,10 @@ function WebhooksCard({ serviceId }: { serviceId: number }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['webhooks', serviceId] }),
     onError: () => toast('Could not remove the webhook', 'error'),
   });
+  // Deleting a webhook breaks the repo's auto-deploy, and re-creating it
+  // mints a NEW secret that must be re-registered with the provider —
+  // confirm the loss instead of removing on a stray click.
+  const [pendingRemove, setPendingRemove] = useState<number | null>(null);
 
   const { copy } = useCopy();
 
@@ -137,7 +141,7 @@ function WebhooksCard({ serviceId }: { serviceId: number }) {
                   </button>
                 </div>
                 <button type="button"
-                  onClick={() => remove.mutate(w.id)}
+                  onClick={() => setPendingRemove(w.id)}
                   className="text-slate-600 transition hover:text-rose-400"
                   title="Remove webhook"
                 >
@@ -148,6 +152,14 @@ function WebhooksCard({ serviceId }: { serviceId: number }) {
           )}
         </div>
       </CardBody>
+      <ConfirmDialog
+        open={pendingRemove != null}
+        title="Remove webhook?"
+        message="Auto-deploys from this webhook stop immediately. Re-creating it later mints a NEW secret that must be registered with the Git provider again."
+        confirmLabel="Remove"
+        onConfirm={() => pendingRemove != null && remove.mutate(pendingRemove)}
+        onClose={() => setPendingRemove(null)}
+      />
     </Card>
   );
 }

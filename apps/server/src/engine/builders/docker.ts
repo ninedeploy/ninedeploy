@@ -13,6 +13,7 @@ import { buildWithBuildKit } from './buildkit.js';
 import { buildStaticSite } from './staticSite.js';
 import { buildProbeUrl, safeProbePath } from '../../lib/probeUrl.js';
 import { writeSecretFile, type SecretFile } from '../../lib/secretFile.js';
+import { pullableReleaseRef } from '../fanout.js';
 import { repoRelative, resolveInRepo } from '../../lib/repoPath.js';
 import { acquireRegistryLock, registryLockKey } from '../../lib/registryLock.js';
 
@@ -514,8 +515,15 @@ export const dockerBuilder: Builder = {
     let resolvedPort: number | null = service.port ?? validPort(env.PORT);
     try {
     if (service.image) {
-      // On rollback, pin the exact image by digest instead of the mutable tag.
-      target = imageDigest ?? service.image;
+      // On rollback, pin the exact image by digest instead of the mutable
+      // tag. r397: a stored imageDigest on OLD rows is the LOCAL image id —
+      // `docker pull sha256:<id>` resolves to docker.io/library/sha256 and
+      // always fails, after which rollback fell back to the local copy that
+      // autoPrune may have removed after a week. Resolve the id to its
+      // pullable repo digest while the local image still exists; rows written
+      // since r397 already store the repo digest directly.
+      target = await pullableReleaseRef(service.image, imageDigest ?? '');
+      if (imageDigest) log(`Rollback pin ${imageDigest.slice(0, 24)}… → ${target}`);
       log(`Pulling image ${target} …`);
       try {
         await pullDockerImage(target, log);
@@ -809,10 +817,21 @@ export const dockerBuilder: Builder = {
       replicaEnvFile?.cleanup();
     }
 
-    // Capture the resolved image digest so rollback can later pin this exact image.
+    // Capture the resolved image reference so rollback can later pin this
+    // exact image. r397: prefer the REPO digest (`repo@sha256:…`, pullable
+    // from any host forever) — `{{.Image}}` is the local config digest,
+    // which no registry can pull and autoPrune deletes with the local copy.
+    // Locally built images (nixpacks/static, never pushed) have no
+    // RepoDigests and keep the local id, whose rollback stays local-only.
     let digest: string | undefined;
     try {
-      digest = (await capture('docker', ['inspect', name, '--format', '{{.Image}}'])).trim() || undefined;
+      const imageId = (await capture('docker', ['inspect', name, '--format', '{{.Image}}'])).trim() || undefined;
+      if (imageId && service.image) {
+        const pullable = await pullableReleaseRef(service.image, imageId);
+        digest = pullable && pullable !== service.image ? pullable : imageId;
+      } else {
+        digest = imageId;
+      }
     } catch {
       /* non-fatal — digest is best-effort */
     }

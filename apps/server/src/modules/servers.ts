@@ -4,7 +4,7 @@ import { serverAnnounce, serverCreate, serverSshBootstrap, serverSshTest } from 
 import type { FastifyPluginAsync } from 'fastify';
 import { audit } from '../lib/audit.js';
 import { decrypt, encrypt, secretEquals } from '../lib/crypto.js';
-import { badRequest, notFound, parseId, unauthorized } from '../lib/errors.js';
+import { badRequest, conflict, notFound, parseId, unauthorized } from '../lib/errors.js';
 import { agentPing, generateAgentToken } from '../lib/agentClient.js';
 import { ENROLMENT_HEADER, assertEnrolmentAllowed } from '../lib/enrolment.js';
 import { bootstrapServer, getBootstrapLogs, testSshConnection } from '../engine/serverProvisioner.js';
@@ -107,6 +107,12 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
 
     authed.post('/', async (req) => {
       const { name, host, port } = serverCreate.parse(req.body ?? {});
+      // r399: (host, port) is unique — a second row for the same endpoint
+      // would fight the first over which token the agent actually holds.
+      const existing = await authed.db.query.servers.findFirst({ where: and(eq(servers.host, host), eq(servers.port, port)) });
+      if (existing) {
+        throw conflict(`Node "${existing.name}" is already registered at ${host}:${port} — re-run its bootstrap or delete it first`);
+      }
       const token = generateAgentToken();
       const [row] = await authed.db
         .insert(servers)
@@ -144,7 +150,18 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
 
       await authed.db.delete(servers).where(eq(servers.id, id));
       void audit(authed.db, req.user!.id, 'server.delete', `#${id}`);
-      return { ok: true };
+      // r399: with ?force=true the hosted services survive as orphans — their
+      // containers live on the removed node while the panel now believes they
+      // are local. Name them so the operator knows what was left behind.
+      return {
+        ok: true,
+        ...(force && hostedServices.length > 0
+          ? {
+              orphanedServices: hostedServices.map((s) => ({ id: s.id, name: s.name, slug: s.slug })),
+              note: `${hostedServices.length} service(s) were hosted on this node; their containers remain on the removed host and the services now read as local — delete or reassign them.`,
+            }
+          : {}),
+      };
     });
 
     // Connectivity + auth probe; on success the server is marked online.

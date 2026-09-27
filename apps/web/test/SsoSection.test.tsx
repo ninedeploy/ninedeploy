@@ -173,8 +173,7 @@ describe('SsoSection', () => {
     });
   });
 
-  it('deletes an SSO provider', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+  it('deletes an SSO provider via the confirm dialog (r402)', async () => {
     mockOf(api.auth.oidc.delete).mockResolvedValueOnce({ ok: true } as never);
 
     renderWithProviders(<SsoSection />);
@@ -184,6 +183,8 @@ describe('SsoSection', () => {
     });
 
     fireEvent.click(screen.getByTitle('Delete Provider'));
+    // The native confirm() is gone; the app-wide dialog replaces it.
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
 
     await waitFor(() => {
       expect(api.auth.oidc.delete).toHaveBeenCalledWith(1);

@@ -197,12 +197,26 @@ describe('pm2Builder.buildAndRun', () => {
 });
 
 describe('pm2Builder.isHealthy', () => {
-  it('returns true when a described process is online', async () => {
-    h.pm2.describe.mockImplementationOnce((_name: string, cb: (err: Error | null, desc?: unknown[]) => void) =>
-      cb(null, [{ pm2_env: { status: 'online' } }]),
+  it('returns true once the process is online and STABLE (two samples, restart count unmoved)', async () => {
+    // r400: the first `online` sample passes for an app that crashes a second
+    // later — health now requires a second sample with the same restart count.
+    h.pm2.describe.mockImplementation((_name: string, cb: (err: Error | null, desc?: unknown[]) => void) =>
+      cb(null, [{ pm2_env: { status: 'online', restart_time: 0 } }]),
     );
 
-    await expect(pm2Builder.isHealthy({ runtimeId: 'api-2', port: null, healthPath: '/' }, 1000)).resolves.toBe(true);
+    await expect(pm2Builder.isHealthy({ runtimeId: 'api-2', port: null, healthPath: '/' }, 5000)).resolves.toBe(true);
+    expect(h.pm2.describe).toHaveBeenCalledTimes(2);
+  });
+
+  it('r400: a crash-looping process (restart count moving every sample) never reads healthy', async () => {
+    let restarts = 0;
+    h.pm2.describe.mockImplementation((_name: string, cb: (err: Error | null, desc?: unknown[]) => void) => {
+      restarts += 1; // PM2 restarted the app between every two samples
+      cb(null, [{ pm2_env: { status: 'online', restart_time: restarts } }]);
+    });
+
+    await expect(pm2Builder.isHealthy({ runtimeId: 'api-2', port: null, healthPath: '/' }, 100)).resolves.toBe(false);
+    expect(h.pm2.describe.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
   it('returns false when no process becomes online before the deadline', async () => {

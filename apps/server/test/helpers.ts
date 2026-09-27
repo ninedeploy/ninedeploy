@@ -256,13 +256,21 @@ export function createFakeDb(opts: FakeDbOpts = {}): DB {
         const rows = () => resolveRows(target, [v], v);
         const builder: {
           returning: () => Promise<Row[]>;
-          onConflictDoUpdate: () => Promise<Row[]>;
+          onConflictDoUpdate: () => { returning: () => Promise<Row[]>; then: (ok: (v?: unknown) => unknown, rej?: (e: Error) => unknown) => unknown };
           onConflictDoNothing: () => Promise<Row[]>;
-          then: (ok: (v?: unknown) => unknown, rej?: (e: Error) => unknown) => unknown;
+          then: (ok: (v?: unknown) => unknown, rej?: (e: Error) => void) => unknown;
         } = {
           returning: () => rows(),
-          // Settings-style upserts resolve like a plain insert in the fake.
-          onConflictDoUpdate: () => rows(),
+          // Settings-style upserts resolve like a plain insert in the fake;
+          // the chainable .returning() mirrors drizzle's upsert builder
+          // (used by the bootstrap upsert, r399).
+          onConflictDoUpdate: () => ({
+            returning: () => rows(),
+            then: (ok, rej) => {
+              rows().then(ok, rej);
+              return undefined;
+            },
+          }),
           // Idempotent link-table inserts (service_projects, service_workspaces,
           // service_labels) resolve the same way.
           onConflictDoNothing: () => rows(),

@@ -35,6 +35,11 @@ export function Activity() {
   // r344: the server pages 50 rows at a time and hands back `nextCursor`
   // (the oldest id on the page) to send as `before`. Dropping it capped
   // search and export at the newest 50 rows with no way to see more.
+  // maxPages: the 5 s live refresh refetches EVERY loaded page with its stored
+  // cursor — a deep scroll turned each tick into an N×50-row refetch and let
+  // rows slip through the gap where page 1 slid forward but page 2's cursor
+  // did not. Three pages of live window is the honest bound; older history
+  // stays reachable by narrowing the filters.
   const activityQuery = useInfiniteQuery({
     queryKey: ['activity-list', entityFilter, actionFilter, userFilter],
     queryFn: ({ pageParam }) =>
@@ -46,6 +51,7 @@ export function Activity() {
       }),
     initialPageParam: undefined as number | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+    maxPages: 3,
     refetchInterval: autoRefresh ? 5000 : false,
   });
 

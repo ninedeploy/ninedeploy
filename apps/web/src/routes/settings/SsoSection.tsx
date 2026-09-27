@@ -10,6 +10,7 @@ import {
   Badge,
   Button,
   Card,
+  ConfirmDialog,
   Modal,
   Field,
   Input,
@@ -68,7 +69,13 @@ export function SsoSection() {
       queryClient.invalidateQueries({ queryKey: ['oidc-providers'] });
       queryClient.invalidateQueries({ queryKey: ['public-oidc-providers'] });
     },
+    onError: () => setDeleteError('Could not delete the provider — try again'),
   });
+  // The app-wide ConfirmDialog replaces the native confirm() (inconsistent
+  // focus/keyboard behaviour) and a failure now says so instead of dying
+  // silently behind the dialog.
+  const [pendingDelete, setPendingDelete] = useState<OidcProviderEntry | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const resetForm = () => {
     setName('');
@@ -255,9 +262,8 @@ export function SsoSection() {
                     className="px-2"
                     title="Delete Provider"
                     onClick={() => {
-                      if (confirm(`Delete ${p.name} SSO provider?`)) {
-                        deleteMutation.mutate(p.id);
-                      }
+                      setDeleteError(null);
+                      setPendingDelete(p);
                     }}
                   >
                     <Trash2 size={13} />
@@ -394,6 +400,18 @@ export function SsoSection() {
           </form>
         </Modal>
       )}
+      <ConfirmDialog
+        open={pendingDelete != null}
+        title="Delete SSO provider"
+        message={`Delete ${pendingDelete?.name}? Everyone signing in through it falls back to password login; linked accounts keep their data.`}
+        confirmLabel="Delete"
+        onConfirm={() => {
+          if (pendingDelete) deleteMutation.mutate(pendingDelete.id);
+          setPendingDelete(null);
+        }}
+        onClose={() => setPendingDelete(null)}
+      />
+      {deleteError && <p className="text-xs text-rose-400">{deleteError}</p>}
       <ScimTokensCard />
     </div>
   );

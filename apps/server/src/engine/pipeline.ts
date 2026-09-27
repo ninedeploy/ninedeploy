@@ -1084,14 +1084,62 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   // this stop is a harmless no-op.
   // IMPORTANT: only stop the previous container when routing actually flipped —
   // otherwise we'd kill the still-serving old version and cause an outage.
+  // r398: a config write that cannot be completed fails the deploy HONESTLY.
+  // Swallowing it used to finalize green while Traefik kept routing to the
+  // previous generation — the service row pointed at an unrouted container,
+  // and only a single warning line in the build log hinted at it.
   let routingFlipped = false;
+  log('##[stage:PROXY_SWAP:running] Updating Traefik dynamic router & shifting live traffic');
   try {
-    log('##[stage:PROXY_SWAP:running] Updating Traefik dynamic router & shifting live traffic');
     await writeDynamicConfig(db);
     routingFlipped = true;
     log('##[stage:PROXY_SWAP:success]');
-  } catch (err) {
-    log(`proxy warning: ${msg(err)}`);
+  } catch (firstErr) {
+    log(`proxy warning: ${msg(firstErr)} — retrying once in 2s`);
+    await sleep(2000);
+    try {
+      await writeDynamicConfig(db);
+      routingFlipped = true;
+      log('##[stage:PROXY_SWAP:success] (second attempt)');
+    } catch (err) {
+      log(`##[stage:PROXY_SWAP:failed] ${msg(err)}`);
+      log('✗ The Traefik config could not be written — the new version is NOT reachable. Reverting to the previous runtime.');
+      // The deployment row was finalized `running` a moment ago and the
+      // service row points at the new container; undo both. Traffic never
+      // moved: the previous container is still routed and healthy.
+      await db.update(deployments).set({ status: 'failed', finishedAt: new Date() }).where(eq(deployments.id, deploymentId));
+      if (inPlaceRedeploy || service.type === 'pm2') {
+        // Compose re-created the runtime under the SAME id, and a PM2 deploy
+        // stops the previous process inside buildAndRun — in both the swap
+        // already happened and cannot be unwound (PM2 routes target the host
+        // port, which the new process already owns). Record that the new
+        // version IS live while the routing file could not be updated (new
+        // domains/labels apply on the next successful write).
+        log('↩ The live runtime already carries the new version; only the routing write failed.');
+        await db.update(services).set({ status: 'running' }).where(eq(services.id, service.id));
+      } else if (previous) {
+        await db
+          .update(services)
+          .set({
+            status: 'running',
+            runtimeId: previous.runtimeId,
+            port: previous.port ?? null,
+            // `service` is the pre-deploy row: its fields ARE the previous
+            // generation's values.
+            commitSha: service.commitSha,
+            runtimeReplicas: service.runtimeReplicas ?? 1,
+          })
+          .where(eq(services.id, service.id));
+        await builder.stop(newRuntimeId).catch((stopErr) => log(`revert warning (new container stop): ${msg(stopErr)}`));
+      } else {
+        // First-ever deploy: nothing is serving, and the unrouted new
+        // container must not leak.
+        await db.update(services).set({ status: 'error', runtimeId: null }).where(eq(services.id, service.id));
+        await builder.stop(newRuntimeId).catch(() => undefined);
+      }
+      await auditOutcome(db, service, deploymentId, 'failed', `proxy config write failed: ${msg(err)}`);
+      return;
+    }
   }
   if (previous && !inPlaceRedeploy) {
     // Only retire the previous container once routing has actually flipped to

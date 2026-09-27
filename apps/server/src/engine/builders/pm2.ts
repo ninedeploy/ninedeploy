@@ -130,14 +130,25 @@ export const pm2Builder: Builder = {
 
   async isHealthy(runtime, timeoutMs = 20_000) {
     const deadline = Date.now() + timeoutMs;
+    // r400: a single `online` sample passes for an app that crashes at second
+    // N>1 — PM2 restart-loops it while the deploy finalizes green (r265 fixed
+    // exactly this for the remote docker twin). Health requires TWO
+    // consecutive online samples whose restart counter did not move between
+    // them: one sample apart, an actively crash-looping process always shows
+    // a growing restart_time (or a non-online status).
+    let prev: { online: boolean; restarts: number } | null = null;
     while (Date.now() < deadline) {
-      const online = await withPm2(async () => {
+      const sample = await withPm2(async () => {
         const procs = await new Promise<ProcessDescription[]>((res, rej) =>
           pm2.describe(runtime.runtimeId, (err, desc) => (err ? rej(err) : res(desc ?? []))),
         );
-        return procs.some((proc) => proc?.pm2_env?.status === 'online');
-      }).catch(() => false);
-      if (online) return true;
+        const proc = procs.find((p) => p?.pm2_env?.status === 'online');
+        return { online: !!proc, restarts: proc?.pm2_env?.restart_time ?? 0 };
+      }).catch(() => ({ online: false, restarts: -1 }));
+      if (prev?.online && sample.online && prev.restarts === sample.restarts) {
+        return true;
+      }
+      prev = sample;
       await sleep(1000);
     }
     return false;

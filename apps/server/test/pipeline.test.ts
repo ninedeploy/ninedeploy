@@ -616,6 +616,60 @@ describe('runDeployment', () => {
     expect(h.builder.stop).toHaveBeenCalledWith('old-c', { graceSeconds: undefined });
   });
 
+  it('r398: a proxy-write failure after two attempts fails the deploy and reverts to the previous runtime', async () => {
+    // The old behavior swallowed the error and finalized GREEN: the service
+    // row pointed at an unrouted new container while Traefik kept serving the
+    // previous generation — traffic, log and panel disagreed.
+    const { db, updates } = makeDb();
+    baseSetup(db, { runtimeId: 'old-c', port: 8080, commitSha: 'oldsha1' });
+    h.builder.buildAndRun.mockResolvedValue({ runtimeId: 'c-2', port: 3000, healthPath: '/' });
+    h.writeDynamicConfig.mockRejectedValue(new Error('ENOSPC: no space left on device'));
+    const lines = collectLogs(1);
+
+    await runDeployment(db as never, 1);
+
+    // One retry before giving up.
+    expect(h.writeDynamicConfig).toHaveBeenCalledTimes(2);
+    // The deployment is recorded failed, not green.
+    expect(updates.some((u) => u.table === deployments && u.values.status === 'failed')).toBe(true);
+    // The service row points back at the still-routed previous runtime.
+    const revert = updates.find((u) => u.table === services && u.values.runtimeId === 'old-c');
+    expect(revert?.values).toMatchObject({ status: 'running', port: 8080, commitSha: 'oldsha1' });
+    // The unrouted new container is retired; the previous one is NOT.
+    expect(h.builder.stop).toHaveBeenCalledWith('c-2');
+    expect(h.builder.stop).not.toHaveBeenCalledWith('old-c', expect.anything());
+    expect(lines.some((l) => l.includes('Reverting to the previous runtime'))).toBe(true);
+    expect(lines).not.toContain('✓ Deployment successful');
+  });
+
+  it('r398: a transient proxy-write failure is rescued by the second attempt', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { runtimeId: 'old-c' });
+    h.builder.buildAndRun.mockResolvedValue({ runtimeId: 'c-2', port: 3000, healthPath: '/' });
+    h.writeDynamicConfig.mockRejectedValueOnce(new Error('transient')).mockResolvedValueOnce(undefined);
+    const lines = collectLogs(1);
+
+    await runDeployment(db as never, 1);
+
+    expect(h.writeDynamicConfig).toHaveBeenCalledTimes(2);
+    expect(lines).toContain('✓ Deployment successful');
+    expect(updates.some((u) => u.table === deployments && u.values.status === 'failed')).toBe(false);
+  });
+
+  it('r398: a first-ever deploy whose proxy write fails marks the service errored and stops the container', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { runtimeId: null });
+    h.builder.buildAndRun.mockResolvedValue({ runtimeId: 'c-9', port: 3000, healthPath: '/' });
+    h.writeDynamicConfig.mockRejectedValue(new Error('EACCES'));
+    const lines = collectLogs(1);
+
+    await runDeployment(db as never, 1);
+
+    expect(updates.some((u) => u.table === services && u.values.status === 'error' && u.values.runtimeId === null)).toBe(true);
+    expect(h.builder.stop).toHaveBeenCalledWith('c-9');
+    expect(lines).not.toContain('✓ Deployment successful');
+  });
+
   it('rolls back to the previous runtime when the new one fails healthcheck (blue-green)', async () => {
     const { db, updates } = makeDb();
     baseSetup(db, { runtimeId: 'old-c', port: 8080, healthPath: '/health' });
@@ -779,32 +833,37 @@ describe('runDeployment', () => {
     expect(lines.some((line) => line.includes('Auto-assigned URL:'))).toBe(false);
   });
 
-  it('logs a proxy warning and still succeeds when the dynamic config write fails', async () => {
-    const { db } = makeDb();
+  it('r398: names the proxy failure in the log (Error) and fails the deploy — no green finalize', async () => {
+    // The write fails on BOTH attempts (r398 retries once). The old contract
+    // ("warning + still succeeds") was the bug: the panel showed green while
+    // Traefik kept routing to the previous generation.
+    const { db, updates } = makeDb();
     baseSetup(db);
     h.writeDynamicConfig.mockRejectedValue(new Error('disk full'));
     const lines = collectLogs(1);
 
     await runDeployment(db as never, 1);
 
-    expect(lines).toContain('proxy warning: disk full');
-    expect(lines).toContain('✓ Deployment successful');
+    expect(lines.some((l) => l.includes('disk full'))).toBe(true);
+    expect(lines).not.toContain('✓ Deployment successful');
+    expect(updates.some((u) => u.table === deployments && u.values.status === 'failed')).toBe(true);
   });
 
-  it('logs a proxy warning with the raw value when the failure is not an Error', async () => {
-    const { db } = makeDb();
+  it('r398: stringifies a non-Error proxy failure and fails the deploy', async () => {
+    const { db, updates } = makeDb();
     baseSetup(db);
     h.writeDynamicConfig.mockRejectedValue('disk full');
     const lines = collectLogs(1);
 
     await runDeployment(db as never, 1);
 
-    expect(lines).toContain('proxy warning: disk full');
-    expect(lines).toContain('✓ Deployment successful');
+    expect(lines.some((l) => l.includes('disk full'))).toBe(true);
+    expect(lines).not.toContain('✓ Deployment successful');
+    expect(updates.some((u) => u.table === deployments && u.values.status === 'failed')).toBe(true);
   });
 
-  it('keeps the previous container serving when the routing flip fails (no silent outage)', async () => {
-    const { db } = makeDb();
+  it('r398: keeps the previous container SERVING when the routing flip fails (revert, not outage)', async () => {
+    const { db, updates } = makeDb();
     baseSetup(db, { runtimeId: 'old-c' }); // a previous container is serving
     h.builder.buildAndRun.mockResolvedValue({ runtimeId: 'c-2', port: 3000, healthPath: '/' });
     h.writeDynamicConfig.mockRejectedValue(new Error('disk full'));
@@ -812,9 +871,12 @@ describe('runDeployment', () => {
 
     await runDeployment(db as never, 1);
 
-    // Routing did not flip → the previous container must NOT be retired.
+    // Routing did not flip → the previous container keeps serving, the new
+    // unrouted one is retired, and the deployment is recorded failed.
     expect(h.builder.stop).not.toHaveBeenCalledWith('old-c');
-    expect(lines).toContain('↩ finalize skipped: routing did not flip, the previous container stays live');
+    expect(h.builder.stop).toHaveBeenCalledWith('c-2');
+    expect(updates.some((u) => u.table === services && u.values.runtimeId === 'old-c' && u.values.status === 'running')).toBe(true);
+    expect(lines.some((l) => l.includes('Reverting to the previous runtime'))).toBe(true);
   });
 
   it('fails the deployment with a stringified reason when the failure is not an Error', async () => {

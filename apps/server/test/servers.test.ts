@@ -157,7 +157,7 @@ describe('servers routes', () => {
   it('deletes a server when no services are hosted or force is true', async () => {
     const app = await appWith({
       findFirst: { servers: serverRow({ id: 1, name: 'edge-host' }) },
-      findMany: { services: [{ id: 10, name: 'hosted-api', serverId: 1 }] },
+      findMany: { services: [{ id: 10, name: 'hosted-api', serverId: 1, slug: 'hosted-api' }] },
     });
 
     // Blocked without force
@@ -166,10 +166,28 @@ describe('servers routes', () => {
     expect(resBlocked.json().error.message).toContain('locked');
     expect(resBlocked.json().error.message).toContain('hosted-api');
 
-    // Allowed with force
+    // Allowed with force — and the response names what was orphaned: their
+    // containers live on the removed node while the panel now reads them as
+    // local (r399; the old `{ ok: true }` hid that entirely).
     const resForce = await app.inject({ method: 'DELETE', url: '/servers/1?force=true', headers: asUser() });
     expect(resForce.statusCode).toBe(200);
-    expect(resForce.json()).toEqual({ ok: true });
+    expect(resForce.json()).toMatchObject({
+      ok: true,
+      orphanedServices: [{ id: 10, name: 'hosted-api', slug: 'hosted-api' }],
+    });
+    expect(resForce.json().note).toContain('hosted on this node');
+  });
+
+  it('r399: refuses a manual create for an endpoint that is already registered', async () => {
+    const app = await appWith({
+      findFirst: { servers: serverRow({ id: 3, name: 'node-a', host: '10.0.0.5', port: 4600 }) },
+    });
+    const res = await app.inject({
+      method: 'POST', url: '/servers', headers: asUser(),
+      payload: { name: 'node-b', host: '10.0.0.5', port: 4600 },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.message).toContain('node-a');
   });
 
   it('404s when deleting a missing server', async () => {

@@ -22,15 +22,37 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     // subscriber may see. The bus is process-wide and carries every tenant's
     // activity (and, for user.*/auth.* actions, email addresses), so the
     // authorization decision belongs on delivery, not only on connect.
+    // `live` is what the delivery filter consults: the revalidation below
+    // swaps in the FRESH user so a granted/revoked operator flag applies
+    // without a reconnect.
+    let live = user;
     for (const event of eventBus.backlog()) {
-      if (!canReceiveEvent(event, user)) continue;
+      if (!canReceiveEvent(event, live)) continue;
       try { socket.send(`${JSON.stringify(event)}\n`); } catch { /* closed */ }
     }
     const unsub = eventBus.subscribe((event) => {
-      if (!canReceiveEvent(event, user)) return;
+      if (!canReceiveEvent(event, live)) return;
       try { socket.send(`${JSON.stringify(event)}\n`); } catch { /* closed */ }
     });
-    socket.on('close', unsub);
-    socket.on('error', unsub);
+    // r401: an established socket was authenticated ONCE at connect — a
+    // bumped tokenVersion (logout-everywhere, password change) or a revoked
+    // operator flag kept streaming the feed until the client closed it.
+    // Re-resolve the token every minute; a dead session closes the socket.
+    const revalidate = setInterval(async () => {
+      const fresh = await resolveUser(app.db, token).catch(() => null);
+      if (!fresh) {
+        socket.close(1008, 'session revoked');
+        cleanup();
+        return;
+      }
+      narrowScopes(fresh);
+      live = fresh;
+    }, 60_000);
+    const cleanup = () => {
+      clearInterval(revalidate);
+      unsub();
+    };
+    socket.on('close', cleanup);
+    socket.on('error', cleanup);
   });
 };

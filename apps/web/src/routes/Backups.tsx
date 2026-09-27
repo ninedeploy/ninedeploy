@@ -187,6 +187,7 @@ function DestinationsCard({ onRemove }: { onRemove: (id: number, name: string) =
   const toggle = useMutation({
     mutationFn: (d: { id: number; active: boolean }) => api.backupDestinations.update(d.id, { active: !d.active }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['backup-destinations'] }),
+    onError: () => toast('Could not change the destination', 'error'),
   });
   // The parent owns the destructive-confirm flow for removal (onRemove).
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm({ ...form, [k]: e.target.value });

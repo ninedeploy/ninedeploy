@@ -142,15 +142,16 @@ describe('Users', () => {
   // The instance-operator flag is what actually gates the operator-only routes
   // and the host-privilege boundary. It used to be implied by owning any
   // workspace (self-grantable); it is now granted explicitly from this table.
-  it('grants the instance-operator flag to a member', async () => {
+  it('grants the instance-operator flag to a member (after confirming, r402)', async () => {
     mockOf(api.users.list).mockResolvedValue(users as never);
     mockOf(api.users.setOperator).mockResolvedValue({ ok: true, id: 2, isOperator: true } as never);
     renderWithProviders(<Users />);
     fireEvent.click(await screen.findByTitle('Grant instance-operator access (full control of this server)'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Grant' }));
     await waitFor(() => expect(api.users.setOperator).toHaveBeenCalledWith(2, true));
   });
 
-  it('revokes the flag from another operator', async () => {
+  it('revokes the flag from another operator (after confirming)', async () => {
     mockOf(api.users.list).mockResolvedValue(users as never);
     mockOf(api.users.setOperator).mockResolvedValue({ ok: true, id: 3, isOperator: false } as never);
     renderWithProviders(<Users />);
@@ -159,6 +160,9 @@ describe('Users', () => {
     const revokes = await screen.findAllByTitle('Revoke instance-operator access');
     expect(revokes).toHaveLength(1);
     fireEvent.click(revokes[0]!);
+    // Two "Revoke" buttons now exist (the row link + the dialog confirm); the
+    // dialog's is the last one rendered.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Revoke' }).at(-1)!);
     await waitFor(() => expect(api.users.setOperator).toHaveBeenCalledWith(3, false));
   });
 
@@ -167,6 +171,7 @@ describe('Users', () => {
     mockOf(api.users.setOperator).mockRejectedValue(new Error('Cannot remove the last instance operator') as never);
     renderWithProviders(<Users />);
     fireEvent.click(await screen.findByTitle('Grant instance-operator access (full control of this server)'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Grant' }));
     await waitFor(() =>
       expect(toastSpy.toast).toHaveBeenCalledWith('Cannot remove the last instance operator', 'error'),
     );

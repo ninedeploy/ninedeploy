@@ -533,7 +533,9 @@ describe('ServiceDetail', () => {
     await user.type(screen.getByPlaceholderText('app.example.com'), 'new.example.com');
     await user.click(screen.getByRole('button', { name: /Add/ }));
     await waitFor(() => expect(api.domains.create).toHaveBeenCalledWith(1, { hostname: 'new.example.com' }));
+    // Removal asks for confirmation first (r402): icon → dialog → confirm.
     fireEvent.click(screen.getByTitle('Remove domain'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(api.domains.remove).toHaveBeenCalledWith(1, 1));
   });
 
@@ -595,7 +597,9 @@ describe('ServiceDetail', () => {
     renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
     await openTab('Environment');
     await screen.findAllByText('main');
+    // Removal asks for confirmation first (r402).
     fireEvent.click(screen.getByTitle('Remove webhook'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(api.webhooks.remove).toHaveBeenCalledWith(1, 1));
     // copy url button on the webhook row
     const copyButton = screen.getByTitle('https://hook.example.com/1');
@@ -955,9 +959,10 @@ describe('ServiceDetail', () => {
     const user = userEvent.setup();
     renderRoute(<ServiceDetail />, { path: '/services/:id', initialEntries: ['/services/1'] });
 
-    // Rollback failure (deploys tab).
+    // Rollback failure (deploys tab) — after the confirmation dialog (r402).
     await openTab('Deploys');
     fireEvent.click(await screen.findByTitle('Rollback to #10'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Rollback' }));
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Rollback failed', 'error'));
 
     // Domain add/remove failures (network tab).
@@ -966,6 +971,7 @@ describe('ServiceDetail', () => {
     fireEvent.click(screen.getByRole('button', { name: /Add/ }));
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Could not add the domain', 'error'));
     fireEvent.click(screen.getByTitle('Remove domain'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Could not remove the domain', 'error'));
 
     // Webhook create/remove failures (config tab).
@@ -973,6 +979,7 @@ describe('ServiceDetail', () => {
     fireEvent.click(screen.getByRole('button', { name: /New/ }));
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Could not create the webhook', 'error'));
     fireEvent.click(screen.getByTitle('Remove webhook'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Could not remove the webhook', 'error'));
 
     // Danger zone delete failure (own tab now).
@@ -993,6 +1000,8 @@ describe('ServiceDetail', () => {
     await openTab('Deploys');
     const rb = await screen.findByTitle('Rollback to #10');
     fireEvent.click(rb);
+    // Rollback asks for confirmation first (r402).
+    fireEvent.click(await screen.findByRole('button', { name: 'Rollback' }));
     await waitFor(() => expect(api.deploys.rollback).toHaveBeenCalledWith(service.id, 10));
     // Failed deploys never offer rollback.
     expect(screen.queryByTitle('Rollback to #9')).not.toBeInTheDocument();
@@ -1035,6 +1044,7 @@ describe('ServiceDetail', () => {
     await openTab('Deploys');
     await screen.findByText('#5');
     fireEvent.click(await screen.findByTitle('Rollback to #4'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Rollback' }));
     await waitFor(() => expect(api.deploys.rollback).toHaveBeenCalledWith(1, 4));
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Rollback started', 'info'));
   });

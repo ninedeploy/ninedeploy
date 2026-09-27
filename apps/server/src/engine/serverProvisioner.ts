@@ -274,15 +274,31 @@ export async function bootstrapServer(
       await agentPing(input.host, input.agentPort, agentToken);
     }
 
+    // r399: (host, port) is the endpoint's identity — re-bootstrapping an
+    // existing node (host reinstall, a retried bootstrap) must REBIND this
+    // row to the fresh agent token, not insert a second row whose token
+    // silently invalidates the first one's (the old row kept saying `online`
+    // while every agentOp targeting it failed auth).
+    const tokenEncrypted = encrypt(agentToken);
     const [row] = await db
       .insert(servers)
       .values({
         name: input.name,
         host: input.host,
         port: input.agentPort,
-        tokenEncrypted: encrypt(agentToken),
+        tokenEncrypted,
         status: 'online',
         lastSeenAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [servers.host, servers.port],
+        set: {
+          name: input.name,
+          tokenEncrypted,
+          status: 'online',
+          lastSeenAt: new Date(),
+          updatedAt: new Date(),
+        },
       })
       .returning();
 

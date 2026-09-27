@@ -526,6 +526,43 @@ describe('dockerBuilder.buildAndRun', () => {
     const runArgs = h.run.mock.calls.at(-1)![1] as unknown[];
     expect(runArgs[runArgs.length - 1]).toBe('nginx:1.25@sha256:abc123');
   });
+
+  it('r397: resolves an OLD-form local-id rollback pin to its pullable repo digest', async () => {
+    // Rows written before r397 stored `{{.Image}}` — the local config digest.
+    // `docker pull sha256:<that>` resolves to docker.io/library/sha256 and can
+    // never succeed; the rollback must resolve it to repo@sha256 while the
+    // local image still exists (and fall back to the tag when it does not).
+    h.capture.mockImplementation(async (_cmd: string, args: string[]) => {
+      const argv = args as string[];
+      if (argv[0] === 'image' && argv[1] === 'inspect') return 'nginx:1.25@sha256:repo123';
+      return 'sha256:localid';
+    });
+    const ctx = makeCtx({
+      service: { slug: 'web', image: 'nginx:1.25', port: 3000, cpuShares: 0, memLimitMb: 0, volumeMount: null, healthPath: '/health' },
+      imageDigest: 'sha256:' + 'a'.repeat(64),
+    });
+
+    await dockerBuilder.buildAndRun(ctx as never);
+
+    const runArgs = h.run.mock.calls.at(-1)![1] as unknown[];
+    expect(runArgs[runArgs.length - 1]).toBe('nginx:1.25@sha256:repo123');
+  });
+
+  it('r397: records the pullable repo digest, not the local image id, on image deploys', async () => {
+    h.capture.mockImplementation(async (_cmd: string, args: string[]) => {
+      const argv = args as string[];
+      if (argv[0] === 'image' && argv[1] === 'inspect') return 'nginx:1.25@sha256:repo456';
+      return 'sha256:' + 'b'.repeat(64);
+    });
+    const ctx = makeCtx({
+      service: { slug: 'web', image: 'nginx:1.25', port: 3000, cpuShares: 0, memLimitMb: 0, volumeMount: null, healthPath: '/health' },
+    });
+
+    const runtime = await dockerBuilder.buildAndRun(ctx as never);
+
+    // Future rollbacks pin a ref any registry can pull, surviving autoPrune.
+    expect(runtime.imageDigest).toBe('nginx:1.25@sha256:repo456');
+  });
   it('auto falls back to nixpacks when the repo has no Dockerfile', async () => {
     h2.exists.mockReturnValue(false); // Dockerfile-less repo (e.g. plain Next.js)
     const ctx = makeCtx({ buildConfig: undefined });
