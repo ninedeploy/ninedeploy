@@ -266,6 +266,7 @@ export function createFakeDb(opts: FakeDbOpts = {}): DB {
           // (used by the bootstrap upsert, r399).
           onConflictDoUpdate: () => ({
             returning: () => rows(),
+            // biome-ignore lint/suspicious/noThenProperty: intentional thenable — the fake upsert result must be awaitable by the code under test.
             then: (ok, rej) => {
               rows().then(ok, rej);
               return undefined;
