@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 import { Check, Copy, ExternalLink, KeyRound, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { copyText } from '../lib/format.js';
 import { useToast } from '../components/Toast.js';
 import { Button, Card, ConfirmDialog, EmptyState, ErrorCard, Field, Input, PageHeader, Select, Skeleton, Textarea, cn } from '../components/ui.js';
 
@@ -338,12 +339,9 @@ export function Sources() {
                     variant="secondary"
                     size="sm"
                     onClick={() => {
-                      if (typeof navigator !== 'undefined' && navigator.clipboard) {
-                        void navigator.clipboard.writeText(generated.publicKey).then(
-                          () => toast('Public key copied', 'success'),
-                          () => toast('Copy failed — select the text manually', 'error'),
-                        );
-                      }
+                      void copyText(generated.publicKey).then(
+                        (ok) => toast(ok ? 'Public key copied' : 'Copy failed — select the text manually', ok ? 'success' : 'error'),
+                      );
                     }}
                   >
                     <Copy size={12} /> Copy

@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowRight, Check, Download, GitBranch, Globe, Hammer, Heart
 import { useNavigate } from 'react-router';
 import type { ComposePreviewResponse, RepoInsights, Template } from '@ninedeploy/sdk';
 import { api } from '../lib/api.js';
-import { toInt } from '../lib/format.js';
+import { copyText, toInt } from '../lib/format.js';
 import { useAuth } from '../lib/auth.js';
 import { useExperienceMode } from '../lib/mode.js';
 import { useToast } from './Toast.js';
@@ -79,14 +79,9 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
     mutationFn: (id: number) => api.sources.generateDeployKey(id),
     onSuccess: (data) => {
       setQuickAddPublicKey(data);
-      if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        void navigator.clipboard.writeText(data.publicKey).then(
-          () => toast('Deploy key generated. Public key copied to clipboard.', 'success'),
-          () => toast('Deploy key generated. Copy it from the field below.', 'info'),
-        );
-      } else {
-        toast('Deploy key generated. Copy it from the field below.', 'info');
-      }
+      void copyText(data.publicKey).then(
+        (ok) => toast(ok ? 'Deploy key generated. Public key copied to clipboard.' : 'Deploy key generated. Copy it from the field below.', ok ? 'success' : 'info'),
+      );
     },
     onError: (err: Error) => {
       toast(`Could not generate key: ${err.message}`, 'error');

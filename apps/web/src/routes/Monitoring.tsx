@@ -202,25 +202,29 @@ export function Monitoring() {
         </Card>
       )}
 
-      {/* Host / Selected Node Overview Metric Cards */}
+      {/* Host Overview Metric Cards — always the PANEL HOST. The numbers come
+          from /v1/stats, which has no per-node variant: relabeling them "Node
+          …" when a remote node card is clicked showed the master's disk/RAM
+          as the node's (r-next). Per-node health lives on each node's card
+          and the Servers page. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           icon={<Cpu size={18} className="text-indigo-400" />}
-          label={selectedServerId === 'local' ? 'Host CPU' : 'Node CPU (Telemetry)'}
+          label="Host CPU"
           value={host ? `${host.cpuCores} cores` : '—'}
           sub={host ? `load avg: ${host.load1.toFixed(2)} · total load: ${totalCpuUsage.toFixed(1)}%` : ''}
           tone="indigo"
         />
         <BarCard
           icon={<MemoryStick size={18} className="text-violet-400" />}
-          label={selectedServerId === 'local' ? 'Host Memory' : 'Node Memory'}
+          label="Host Memory"
           pct={memPct}
           text={host ? `${formatBytes(host.memUsedBytes)} / ${formatBytes(host.memTotalBytes)}` : '—'}
           sub={`${totalMemUsageMb.toFixed(0)} MB container allocation`}
         />
         <BarCard
           icon={<HardDrive size={18} className="text-amber-400" />}
-          label={selectedServerId === 'local' ? 'Disk Storage' : 'Node Storage'}
+          label="Disk Storage"
           pct={diskPct}
           text={host ? `${formatBytes(host.diskUsedBytes)} / ${formatBytes(host.diskTotalBytes)}` : '—'}
           sub={host ? `${formatBytes(host.diskTotalBytes - host.diskUsedBytes)} free` : ''}
@@ -233,6 +237,12 @@ export function Monitoring() {
           tone="emerald"
         />
       </div>
+      {selectedServerId !== 'local' && (
+        <p className="-mt-4 text-xs text-slate-500">
+          The overview cards and workload grid always show the panel host. Remote-node runtimes are managed by each node&apos;s agent — see{' '}
+          <Link to="/servers" className="text-indigo-400 hover:underline">Servers</Link>.
+        </p>
+      )}
 
       {/* Resource Allocation Breakdown Visualizer */}
       {containers.length > 0 && (

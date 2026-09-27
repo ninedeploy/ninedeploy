@@ -10,6 +10,7 @@ import { audit } from '../lib/audit.js';
 import { slugifyWithSuffix } from '../lib/slug.js';
 import { assertSlugVolumeNotRetained } from '../lib/retainedSlugVolume.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
+import { assertMayUseHostPrivilege } from '../lib/hostPrivilege.js';
 
 interface ServiceBundle {
   version: string;
@@ -128,6 +129,17 @@ export const serviceMigrationRoutes: FastifyPluginAsync = async (app) => {
     if (raw.service.type !== 'docker' && raw.service.type !== 'pm2' && raw.service.type !== 'compose') {
       throw badRequest('Invalid bundle: service.type must be "docker", "pm2", or "compose"');
     }
+    // A bundle rebuilds the service row from foreign JSON — the same
+    // host-privilege gate POST /services applies has to apply here, or an
+    // imported pm2/compose/static-pack bundle would create a member-owned
+    // service the deploy gate then has to refuse one step later.
+    assertMayUseHostPrivilege(req.user!, {
+      type: raw.service.type,
+      build: raw.buildConfig ?? null,
+    });
+    if (raw.buildConfig && !['auto', 'nixpacks', 'dockerfile', 'railpack', 'static'].includes(raw.buildConfig.buildPack)) {
+      throw badRequest('Invalid bundle: buildConfig.buildPack must be auto, nixpacks, dockerfile, railpack or static');
+    }
     const bundle: ServiceBundle = {
       ...raw,
       envVars: Array.isArray(raw.envVars) ? raw.envVars : [],
@@ -172,7 +184,7 @@ export const serviceMigrationRoutes: FastifyPluginAsync = async (app) => {
       const bc = bundle.buildConfig;
       await app.db.insert(buildConfigs).values({
         serviceId: svc.id,
-        buildPack: bc.buildPack as 'auto' | 'nixpacks' | 'dockerfile',
+        buildPack: bc.buildPack as 'auto' | 'nixpacks' | 'dockerfile' | 'railpack' | 'static',
         baseDir: bc.baseDir || '/',
         installCmd: bc.installCmd,
         buildCmd: bc.buildCmd,

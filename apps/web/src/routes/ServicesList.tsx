@@ -26,8 +26,10 @@ export function ServicesList() {
   const qc = useQueryClient();
   const [togglingId, setTogglingId] = useState<number | null>(null);
   const toggleService = useMutation({
-    mutationFn: ({ id, start }: { id: number; start: boolean }) =>
-      start ? api.services.start(id) : api.services.stop(id),
+    mutationFn: ({ id, start }: { id: number; start: boolean }) => {
+      setTogglingId(id);
+      return start ? api.services.start(id) : api.services.stop(id);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['services', workspaceIds, projectIds, labelIds] });
       setTogglingId(null);

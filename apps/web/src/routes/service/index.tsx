@@ -407,15 +407,20 @@ export function ServiceDetail() {
             />
           )}
           {tab === 'environment' && <EnvironmentTab serviceId={id} />}
-          {tab === 'network' && <NetworkTab serviceId={id} svc={svc} />}
-          {tab === 'volumes' && <VolumesTab serviceId={id} svc={svc} />}
+          {tab === 'network' && <NetworkTab key={id} serviceId={id} svc={svc} />}
+          {tab === 'volumes' && <VolumesTab key={id} serviceId={id} svc={svc} />}
           {tab === 'files' && (
             <div>
               {/* Both naming paths render across the files tests. */}
               <ContainerFileBrowser container={/* v8 ignore start */ svc.runtimeId || `nd-svc-${svc.slug}` /* v8 ignore stop */} />
             </div>
           )}
-          {tab === 'settings' && <SettingsTab serviceId={id} svc={svc} />}
+          {/* key={id}: navigating service→service keeps this route mounted
+              (only the param changes), and the tabs hold per-service useState
+              (limits, replicas, preview pattern, target node) — without the
+              key, service B's Settings form opened with service A's values
+              and Save wrote them onto B. */}
+          {tab === 'settings' && <SettingsTab key={id} serviceId={id} svc={svc} />}
           {tab === 'framework' && <FrameworkTab serviceId={id} svc={svc} />}
           {tab === 'activity' && <ActivityTab serviceId={id} name={svc.name} />}
           {tab === 'danger' && (

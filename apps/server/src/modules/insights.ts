@@ -81,7 +81,13 @@ export const serviceInsightsRoutes: FastifyPluginAsync = async (app) => {
     return row ? serializeInsights(row) : null;
   });
 
-  app.post('/:id/insights/refresh', async (req) => {
+  // Refresh synchronously clones the full repository on the request path —
+  // same rate limit as the analysis route, or a member can loop it against a
+  // large repo and pin panel disk/network/CPU.
+  app.post(
+    '/:id/insights/refresh',
+    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    async (req) => {
     const id = parseId((req.params as { id: string }).id);
     const svc = await loadServiceForUser(app.db, id, req.user!);
     // Refresh re-clones the repository and rewrites the stored analysis — a

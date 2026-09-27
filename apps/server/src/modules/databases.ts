@@ -430,7 +430,15 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
     }
     if (updated && updated.status === 'running') {
       await stopDatabase(updated, () => undefined);
-      await startDatabase(updated, (line) => app.log.info({ component: 'database' }, line));
+      try {
+        await startDatabase(updated, (line) => app.log.info({ component: 'database' }, line));
+      } catch (err) {
+        // A failed restart must not leave the row claiming `running` with no
+        // container — every attached service's healthcheck would then fail
+        // against a database the panel insists is up.
+        await app.db.update(databases).set({ status: 'error' }).where(eq(databases.id, d.id));
+        throw err;
+      }
     }
     return { cpuShares: updated!.cpuShares, cpuLimitMilli: updated!.cpuLimitMilli, memLimitMb: updated!.memLimitMb };
   });

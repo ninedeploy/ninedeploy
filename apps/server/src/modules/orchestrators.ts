@@ -1,4 +1,11 @@
 import type { FastifyPluginAsync } from 'fastify';
+import { badRequest } from '../lib/errors.js';
+
+/** Stack and orchestrator names reach fs path joins inside the drivers
+ *  (`join(STACK_ROOT, name, …)` + readFileSync). The drivers themselves
+ *  create names via slugify, so anything outside this shape is not a stack
+ *  this panel made — refuse it rather than read outside STACK_ROOT. */
+const NAME_RE = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
 
 /**
  * Orchestrator HTTP surface — Sprint 4, Gap G-10 (PR-A).
@@ -56,6 +63,7 @@ export const orchestratorsRoutes: FastifyPluginAsync = async (app) => {
     if (!driver) {
       return { error: `Orchestrator "${req.params.name}" is not registered` };
     }
+    if (!NAME_RE.test(req.params.stack)) throw badRequest('invalid stack name');
     return await driver.getStackStatus(req.params.stack);
   });
 };

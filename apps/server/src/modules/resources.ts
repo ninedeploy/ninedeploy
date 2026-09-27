@@ -123,6 +123,18 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
     const archive = path.join(config.paths.dataDir, `ninedeploy-backup-${stamp}.tar.gz`);
     const envTmp = `_env-${stamp}`;
     const metaTmp = `_meta-${stamp}.json`;
+    // Cleanup runs when the RESPONSE is finished (stream close), not when the
+    // handler returns — see the comment at the send below.
+    let streamed = false;
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      try { unlinkSync(path.join(config.paths.dataDir, envTmp)); } catch { /* */ }
+      try { unlinkSync(path.join(config.paths.dataDir, metaTmp)); } catch { /* */ }
+      try { unlinkSync(path.join(config.paths.dataDir, `_db-${stamp}.db`)); } catch { /* */ }
+      try { unlinkSync(archive); } catch { /* */ }
+    };
 
     try {
       // Tar'ing the LIVE database races concurrent writes: a transaction
@@ -183,15 +195,24 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
       });
 
       const size = statSync(archive).size;
+      const stream = createReadStream(archive);
+      // The old finally unlinked these artifacts in the same tick as
+      // reply.send(), racing the stream's own open() (intermittent ENOENT
+      // downloads on Linux; on Windows the unlink of an open file fails
+      // silently and the archive — DB + master key + .env — leaked into the
+      // data dir forever). 'close' fires after the fd is released (normal
+      // end, consumer abort, or error) — the first moment the unlink can
+      // actually succeed everywhere.
+      stream.once('close', cleanup);
+      stream.once('error', cleanup);
+      streamed = true;
       reply.type('application/gzip')
         .header('content-disposition', `attachment; filename="ninedeploy-backup-${new Date().toISOString().slice(0, 10)}.tar.gz"`)
         .header('content-length', size);
-      return reply.send(createReadStream(archive));
+      return reply.send(stream);
     } finally {
-      try { unlinkSync(path.join(config.paths.dataDir, envTmp)); } catch { /* */ }
-      try { unlinkSync(path.join(config.paths.dataDir, metaTmp)); } catch { /* */ }
-      try { unlinkSync(path.join(config.paths.dataDir, `_db-${stamp}.db`)); } catch { /* */ }
-      try { unlinkSync(archive); } catch { /* */ }
+      // Failure paths (VACUUM/tar threw) never created a stream — clean now.
+      if (!streamed) cleanup();
     }
   });
 

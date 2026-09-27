@@ -476,8 +476,29 @@ export const dockerBuilder: Builder = {
         child.stdin.on('error', swallow);
         child.stdin.write(`${registryAuth.password}\n`);
         child.stdin.end();
-        child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`docker login failed with exit code ${code}`))));
-        child.on('error', reject);
+        // A registry that accepts TCP then stalls must not hang the pipeline
+        // (and with it this registry's lock — every later deploy queues
+        // behind it). Every other subprocess here is bounded by lib/exec's
+        // 30-minute timeout; this hand-rolled spawn had none.
+        const LOGIN_TIMEOUT_MS = 120_000;
+        let settled = false;
+        const finish = (err: Error | null) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          if (err) {
+            child.kill('SIGKILL');
+            reject(err);
+          } else {
+            resolve();
+          }
+        };
+        const timer = setTimeout(() => {
+          child.kill('SIGTERM');
+          finish(new Error(`docker login timed out after ${LOGIN_TIMEOUT_MS / 1000}s (registry ${server || '(default)'} unreachable or stalling)`));
+        }, LOGIN_TIMEOUT_MS);
+        child.on('exit', (code) => (code === 0 ? finish(null) : finish(new Error(`docker login failed with exit code ${code}`))));
+        child.on('error', (err) => finish(err instanceof Error ? err : new Error(String(err))));
       });
       loggedIn = true;
     }

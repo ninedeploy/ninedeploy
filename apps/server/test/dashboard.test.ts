@@ -234,6 +234,26 @@ describe('dashboard routes', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('reports a remote-node service as unknown instead of probing the local daemon', async () => {
+    // The node-pinned runtime's container lives on the NODE; inspecting the
+    // panel's own daemon answers null and used to paint every remote service
+    // permanently red (the r228 Doctor lesson, applied to the dashboard).
+    const fetchMock = vi.fn(async () => ({ status: 200, ok: true })) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchMock);
+    const app = await buildTestApp({
+      db: createFakeDb({
+        select: { services: [svcRow({ id: 1, status: 'running', port: 3000, runtimeId: 'node-c1', serverId: 4 })] },
+        counts: {},
+      }),
+    });
+    await app.register(dashboardRoutes);
+    const res = await app.inject({ method: 'GET', url: '/', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().health[0]).toMatchObject({ healthy: null, responseMs: null });
+    expect(execMocks.capture).not.toHaveBeenCalledWith('docker', expect.arrayContaining(['inspect']));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('treats a missing docker binary as zero containers', async () => {
     execMocks.capture.mockRejectedValueOnce(new Error('docker not found'));
     const app = await buildTestApp({

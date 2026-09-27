@@ -34,7 +34,13 @@ ExecStart=@NODE@ @INSTALL_DIR@/apps/server/dist/server.js
 Restart=always
 RestartSec=5
 KillMode=mixed
-TimeoutStopSec=30
+# The deploy worker's shutdown grace is 60 s (plugins/worker.ts STOP_GRACE_MS):
+# in-flight deploys finish their current step and checkpoint-cancel cleanly
+# inside it. SIGKILLing the cgroup at the default 30 s killed builds mid-step,
+# leaving the deployment row `building` — and its service undeployable until
+# the 45-minute staleness sweep requeued it. 90 s gives the designed window
+# plus settle time.
+TimeoutStopSec=90
 
 # Hardening & Permissions
 NoNewPrivileges=true

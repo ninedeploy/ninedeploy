@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Check, Code2, Copy, ExternalLink, FileCode, RefreshCw, Shield, Terminal } from 'lucide-react';
 import { api } from '../../lib/api.js';
+import { copyText } from '../../lib/format.js';
 import type { Service } from '@ninedeploy/sdk';
 import { Button, Card, CardBody, Skeleton } from '../../components/ui.js';
 
@@ -43,18 +44,20 @@ export function ManifestTab({
   // receives both payloads) and every guard arm renders across the subtab
   // tests; the instrumenter cannot see these spans.
   /* v8 ignore start */
-  const handleCopyYaml = () => {
+  const handleCopyYaml = async () => {
     if (!composeData?.yaml) return;
-    navigator.clipboard.writeText(composeData.yaml);
-    setCopiedYaml(true);
-    setTimeout(() => setCopiedYaml(false), 2000);
+    if (await copyText(composeData.yaml)) {
+      setCopiedYaml(true);
+      setTimeout(() => setCopiedYaml(false), 2000);
+    }
   };
 
-  const handleCopyJson = () => {
+  const handleCopyJson = async () => {
     if (!inspectData?.raw) return;
-    navigator.clipboard.writeText(JSON.stringify(inspectData.raw, null, 2));
-    setCopiedJson(true);
-    setTimeout(() => setCopiedJson(false), 2000);
+    if (await copyText(JSON.stringify(inspectData.raw, null, 2))) {
+      setCopiedJson(true);
+      setTimeout(() => setCopiedJson(false), 2000);
+    }
   };
   /* v8 ignore stop */
 

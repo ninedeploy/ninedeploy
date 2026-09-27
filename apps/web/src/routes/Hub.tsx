@@ -7,6 +7,7 @@ import {
 import type { Template } from '@ninedeploy/sdk';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
+import { copyText } from '../lib/format.js';
 import { Button, Card, EmptyState, ErrorCard, Input, PageHeader, Skeleton, cn, useEscapeToClose } from '../components/ui.js';
 import { DeployWizard } from '../components/DeployWizard.js';
 
@@ -417,10 +418,14 @@ function TemplateDetail({
   const titleId = useId();
   useEscapeToClose(onClose);
 
-  const copyCompose = (yaml: string) => {
-    navigator.clipboard?.writeText(yaml);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const copyCompose = async (yaml: string) => {
+    // copyText falls back to execCommand on plain-http panels; claiming
+    // "Copied" without a copy strands a compose file the user believes is on
+    // their clipboard.
+    if (await copyText(yaml)) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   return (

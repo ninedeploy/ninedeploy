@@ -340,6 +340,29 @@ esac
 if [ "$INSTALL_MODE" = "docker" ] && bare_metal_present; then
   fail "A bare-metal installation is already present. Upgrade it in place (re-run without --docker) or uninstall it first — running both would fight over the same ports and the Traefik ingress."
 fi
+# The symmetric case: an explicit --bare-metal onto a docker-mode host would
+# build and start a SECOND panel (fresh .data, new master key) that fights the
+# container over port 3000 and the shared ninedeploy-traefik ingress.
+if [ "$INSTALL_MODE" = "bare-metal" ] && docker_install_present; then
+  fail "A Docker installation is already present at $DOCKER_INSTALL_DIR. Upgrade it in place (re-run with --docker) or remove it first — running both would fight over the same ports and the Traefik ingress."
+fi
+
+# One installer at a time per target dir: a self-update (launched via
+# systemd-run by the panel) racing an operator's SSH run interleaves
+# rm -rf / tar -x / pnpm install / migrations on ONE tree, and on failure each
+# EXIT trap rolls back from its own manifest over whatever the other left.
+# Wait up to 30 minutes (a full update takes minutes), then give up loudly.
+if command -v flock >/dev/null 2>&1; then
+  case "$INSTALL_MODE" in
+    docker) _lock_key="$DOCKER_INSTALL_DIR" ;;
+    *)      _lock_key="$INSTALL_DIR" ;;
+  esac
+  _lock_key="$(printf '%s' "$_lock_key" | cksum | tr -d ' ')"
+  exec 9>>"/tmp/ninedeploy-install-${_lock_key}.lock"
+  if ! flock -w 1800 9; then
+    fail "Another installer run has held the lock for over 30 minutes — investigate that run before starting a new one."
+  fi
+fi
 ok "Deployment mode: $INSTALL_MODE"
 
 # ── 1. Prerequisites ───────────────────────────────────────────────────────
@@ -910,15 +933,24 @@ install_docker_mode() {
   # exist, the project must reference exactly ONE image and it must be this
   # panel's own repository, and the compose engine itself must accept the
   # file (dummy values satisfy the required-variable defaults at parse time).
+  # The dummy values travel in an --env-file: a `VAR=x docker_cmd …` prefix
+  # dies under `DOCKER=(sudo docker)` — sudo's env_reset strips it before
+  # docker runs, so a FRESH install (no .env beside the compose file yet)
+  # failed this check on a perfectly good compose file.
   grep -q '^services:' "$DOCKER_INSTALL_DIR/docker-compose.yml.new" \
     || fail "The fetched compose file does not look right (missing 'services:') — refusing to deploy it"
   if [ "$(grep -cE '^[[:space:]]*image:[[:space:]]*' "$DOCKER_INSTALL_DIR/docker-compose.yml.new")" != "1" ] \
     || ! grep -Eq "image:[[:space:]]*ghcr\.io/${IMAGE_REPO//./\\.}:" "$DOCKER_INSTALL_DIR/docker-compose.yml.new"; then
     fail "The fetched compose file references an unexpected image — refusing to deploy it"
   fi
-  NINEDEPLOY_JWT_SECRET=provenance-check DOCKER_GID=1 docker_cmd compose \
-    --file "$DOCKER_INSTALL_DIR/docker-compose.yml.new" config --quiet \
-    || fail "The fetched compose file is not a valid compose project — refusing to deploy it"
+  _prov_env="$(mktemp)"
+  printf 'NINEDEPLOY_JWT_SECRET=provenance-check\nDOCKER_GID=1\n' > "$_prov_env"
+  if ! docker_cmd compose --env-file "$_prov_env" \
+      --file "$DOCKER_INSTALL_DIR/docker-compose.yml.new" config --quiet; then
+    rm -f "$_prov_env"
+    fail "The fetched compose file is not a valid compose project — refusing to deploy it"
+  fi
+  rm -f "$_prov_env"
   mv "$DOCKER_INSTALL_DIR/docker-compose.yml.new" "$DOCKER_INSTALL_DIR/docker-compose.yml"
 
   # Substitute the image tag the release workflow tagged for this ref.

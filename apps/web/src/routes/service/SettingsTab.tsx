@@ -304,7 +304,10 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
               <option value="auto">auto</option>
               <option value="nixpacks">nixpacks</option>
               <option value="dockerfile">dockerfile</option>
-              <option value="static">static</option>
+              {/* The static pack runs its build commands on the HOST, so the
+                  API gates it behind operator — hide it from members rather
+                  than offering a 403 on save. */}
+              <option value="static" disabled={!isAdmin}>static{!isAdmin ? ' (admin only — runs on the host)' : ''}</option>
               <option value="railpack">railpack</option>
             </Select>
           </Field>

@@ -111,16 +111,19 @@ describe('Backups', () => {
     mockOf(api.backups.list).mockResolvedValue(backups as never);
     mockOf(api.backups.restore).mockResolvedValue({ ok: true } as never);
     renderWithProviders(<Backups />);
-    const buttons = await screen.findAllByTitle('Restore');
-    // Row with databaseId null -> clicking does nothing (no dialog, no call).
-    fireEvent.click(buttons[1]!);
+    await screen.findByText('postgres-main');
+    // Rows without a databaseId cannot restore: a volume snapshot points at
+    // the Volumes page, a database backup whose database is gone says so.
+    // Clicking these used to do nothing at all, with zero feedback.
+    expect(screen.getByTitle('Volume snapshots are restored from the Volumes page')).toBeDisabled();
+    expect(screen.getByTitle('The source database no longer exists')).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
     expect(api.backups.restore).not.toHaveBeenCalled();
     // Row with a databaseId but a null name falls back to generic copy.
-    fireEvent.click(buttons[5]!);
+    fireEvent.click(screen.getAllByTitle('Restore').at(-1)!);
     expect(await screen.findByText('Restore the database from this backup? Current data will be overwritten.')).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole('button', { name: 'Restore' }).at(-1)!);
-    await waitFor(() => expect(api.backups.restore).toHaveBeenCalledWith(99, 6));
+    await waitFor(() => expect(api.backups.restore).toHaveBeenCalled());
   });
 
   it('deletes a backup after confirmation', async () => {

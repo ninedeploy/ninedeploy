@@ -132,6 +132,33 @@ function atomicWriteJson(file: string, value: unknown): void {
   renameSync(tmp, file);
 }
 
+/**
+ * Atomic claim for the running-check → state-write window in startSelfUpdate.
+ * Two POST /update-start arriving in the same few milliseconds BOTH used to
+ * pass the `phase === 'running'` read and BOTH spawned an updater — two
+ * installers then interleaved `rm -rf`/`tar -x`/`pnpm install` on one tree.
+ * The lock is created with exclusive-create ('wx'), held only until the
+ * durable 'running' state is persisted, and a claim older than 10 s belongs
+ * to a crashed claimer (the window is milliseconds) and is stolen.
+ */
+function tryClaimUpdate(p: { state: string }): (() => void) | null {
+  const lock = `${p.state}.lock`;
+  try {
+    if (Date.now() - statSync(lock).mtimeMs > 10_000) unlinkSync(lock);
+  } catch { /* no lock, or unreadable — the wx create below decides */ }
+  try {
+    writeFileSync(lock, String(process.pid), { flag: 'wx' });
+  } catch {
+    return null; // lost the race — the other request holds the claim
+  }
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    try { unlinkSync(lock); } catch { /* already gone */ }
+  };
+}
+
 function tailLog(p: SelfUpdatePaths, lines = ERROR_TAIL_LINES): string | null {
   const text = readFileText(p.log);
   if (text == null || text.trim() === '') return null;
@@ -189,7 +216,7 @@ function resolveRun(p: SelfUpdatePaths): ResolvedRun | null {
       ...base,
       phase: resolved.phase,
       finishedAt: resolved.finishedAt!,
-      errorTail: ok ? null : (tailLog(p) ?? `The updater exited ${exitRaw} without leaving output.`),
+      errorTail: ok ? null : (tailLog(p) ?? 'The updater failed without leaving output (killed before the installer could log anything — see journalctl for the transient update unit).'),
     };
   };
 
@@ -353,28 +380,44 @@ export async function startSelfUpdate(version: string, opts: { installDir?: stri
   const p = paths(opts.stateDir);
   // 0700: this directory holds the generated updater script and the captured
   // installer output. `install.sh` is careful to chmod 600 the .env it writes;
-  // the place its output lands deserves the same treatment.
+  // the place its output lands deserves the same treatment. Created BEFORE
+  // the claim below — the claim writes into this directory.
   mkdirSync(p.dir, { recursive: true, mode: 0o700 });
 
-  writeFileSync(p.script, updaterScript(p, support.installDir!), { mode: 0o700 });
-  try { unlinkSync(p.exitCode); } catch { /* first run */ }
-  // Truncate with the same restriction as the script beside it. The updater
-  // appends the installer's whole stream here, and `errorTail` surfaces the
-  // last lines of it through the API on failure.
-  writeFileSync(p.log, '', { mode: 0o600 });
+  // Close the check-then-write race: without the claim, a second POST in the
+  // same milliseconds read the same non-running state and both updaters ran.
+  const releaseClaim = tryClaimUpdate(p);
+  if (!releaseClaim) {
+    // The winner either just persisted the running state (the standard
+    // conflict below, on re-read) or crashed instantly — retry, don't race.
+    const reread = getSelfUpdateStatus({ installDir: opts.installDir, stateDir: opts.stateDir });
+    if (reread.phase === 'running') throw conflict(`An update to ${reread.targetVersion} is already in progress`);
+    throw conflict('Another update attempt just started — try again in a moment');
+  }
+  try {
+    writeFileSync(p.script, updaterScript(p, support.installDir!), { mode: 0o700 });
+    try { unlinkSync(p.exitCode); } catch { /* first run */ }
+    // Truncate with the same restriction as the script beside it. The updater
+    // appends the installer's whole stream here, and `errorTail` surfaces the
+    // last lines of it through the API on failure.
+    writeFileSync(p.log, '', { mode: 0o600 });
 
-  const state: SelfUpdateState = {
-    phase: 'running',
-    from: currentTag(),
-    to: target,
-    startedAt: new Date().toISOString(),
-  };
-  // Persist BEFORE spawning: losing power between spawn and bookkeeping must
-  // leave a "running" marker the staleness bound can resolve, not silence.
-  atomicWriteJson(p.state, state);
+    const state: SelfUpdateState = {
+      phase: 'running',
+      from: currentTag(),
+      to: target,
+      startedAt: new Date().toISOString(),
+    };
+    // Persist BEFORE spawning: losing power between spawn and bookkeeping must
+    // leave a "running" marker the staleness bound can resolve, not silence.
+    atomicWriteJson(p.state, state);
 
-  await launchUpdater(p.script, { ...updaterEnvironment(), ND_SELF_UPDATE_TARGET: target }, p.state, state);
-  return { ok: true };
+    await launchUpdater(p.script, { ...updaterEnvironment(), ND_SELF_UPDATE_TARGET: target }, p.state, state);
+    return { ok: true };
+  } finally {
+    // The durable guard from here on is state.json's 'running' phase.
+    releaseClaim();
+  }
 }
 
 async function launchUpdater(

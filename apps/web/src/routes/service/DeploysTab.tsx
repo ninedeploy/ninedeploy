@@ -426,8 +426,9 @@ function DeploymentsCard({
                   {onCancel && IN_FLIGHT.includes(d.status) && (
                     <button type="button"
                       onClick={() => onCancel(d.id)}
-                      className="shrink-0 rounded p-1.5 text-slate-500 opacity-0 transition hover:bg-white/5 hover:text-amber-300 group-hover:opacity-100"
+                      className="shrink-0 rounded p-1.5 text-slate-500 opacity-0 transition hover:bg-white/5 hover:text-amber-300 group-hover:opacity-100 focus-visible:opacity-100"
                       title={`Cancel deployment #${d.id}`}
+                      aria-label={`Cancel deployment #${d.id}`}
                     >
                       <X size={12} />
                     </button>
@@ -435,8 +436,9 @@ function DeploymentsCard({
                   {onRollback && i > 0 && !IN_FLIGHT.includes(d.status) && d.status !== 'failed' && d.status !== 'cancelled' && (
                     <button type="button"
                       onClick={() => onRollback(d.id)}
-                      className="shrink-0 rounded p-1.5 text-slate-600 opacity-0 transition hover:bg-white/5 hover:text-indigo-300 group-hover:opacity-100"
+                      className="shrink-0 rounded p-1.5 text-slate-600 opacity-0 transition hover:bg-white/5 hover:text-indigo-300 group-hover:opacity-100 focus-visible:opacity-100"
                       title={`Rollback to #${d.id}`}
+                      aria-label={`Rollback to deployment #${d.id}`}
                     >
                       <RotateCcw size={12} />
                     </button>
@@ -444,7 +446,7 @@ function DeploymentsCard({
                   {onRemove && isRemovable(d.status) && (
                     <button type="button"
                       onClick={() => onRemove(d.id)}
-                      className="shrink-0 rounded p-1.5 text-slate-600 opacity-0 transition hover:bg-white/5 hover:text-rose-300 group-hover:opacity-100"
+                      className="shrink-0 rounded p-1.5 text-slate-600 opacity-0 transition hover:bg-white/5 hover:text-rose-300 group-hover:opacity-100 focus-visible:opacity-100"
                       title={`Remove deployment #${d.id} from history`}
                       aria-label={`Remove deployment #${d.id}`}
                     >

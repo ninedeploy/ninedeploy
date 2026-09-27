@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
+import { copyText } from '../lib/format.js';
 import { useWorkspace } from '../lib/workspace.js';
 import {
   Badge,
@@ -105,13 +106,11 @@ export function Workspaces() {
   });
 
   const copyAcceptUrl = async (url: string) => {
-    try {
-      await navigator.clipboard.writeText(url);
+    if (await copyText(url)) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* clipboard not available — fall back to manual selection */
     }
+    /* copy failed — the link stays selectable for manual copying */
   };
 
   const updateRoleMutation = useMutation({

@@ -567,9 +567,15 @@ export function ConfirmDialog({
   onClose: () => void;
 }) {
   const [word, setWord] = useState('');
+  // A double-click on Confirm fires onConfirm twice before React re-renders
+  // — for mutations like Update & Restart, each click spawns its own updater.
+  const [fired, setFired] = useState(false);
   // Reset the typed confirmation whenever the dialog reopens.
   useEffect(() => {
-    if (open) setWord('');
+    if (open) {
+      setWord('');
+      setFired(false);
+    }
   }, [open]);
   if (!open) return null;
 
@@ -582,7 +588,7 @@ export function ConfirmDialog({
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="danger" disabled={confirmWord != null && word !== confirmWord} onClick={() => { onConfirm(); onClose(); }}>
+          <Button variant="danger" disabled={fired || (confirmWord != null && word !== confirmWord)} onClick={() => { setFired(true); onConfirm(); onClose(); }}>
             {confirmLabel}
           </Button>
         </>

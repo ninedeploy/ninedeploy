@@ -119,6 +119,23 @@ describe('service migration routes', () => {
       expect(res.json().error.message).toContain('service.type');
     });
 
+    it('rejects an unknown buildPack instead of casting it into the build row', async () => {
+      const app = await buildApp(createFakeDb());
+      const res = await app.inject({
+        method: 'POST', url: '/services/import', headers: asUser(),
+        payload: { ...bundle, buildConfig: { ...bundle.buildConfig, buildPack: 'turbo' } },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.message).toContain('buildConfig.buildPack');
+    });
+
+    it('refuses a non-admin the import route outright (it is admin-gated like export)', async () => {
+      const member = asUser({ id: 7, isOperator: false });
+      const app = await buildApp(createFakeDb());
+      const res = await app.inject({ method: 'POST', url: '/services/import', headers: member, payload: bundle });
+      expect(res.statusCode).toBe(403);
+    });
+
     it('rejects a bundle with an env var key that would inject into the env-file', async () => {
       const app = await buildApp(createFakeDb());
       const res = await app.inject({

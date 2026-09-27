@@ -283,6 +283,43 @@ describe('startSelfUpdate', () => {
     });
   });
 
+  it('r-next: two SIMULTANEOUS starts spawn exactly one updater (claim race)', async () => {
+    // The running-check and the state write are separate steps; two POSTs in
+    // the same milliseconds both used to pass the check and both spawned an
+    // updater. The exclusive-create claim must let exactly one through.
+    configMock.isProd = true;
+    const lib = await loadLib();
+    const results = await Promise.allSettled([
+      lib.startSelfUpdate('v99.0.0', { installDir: newInstallDir() }),
+      lib.startSelfUpdate('v99.0.0', { installDir: newInstallDir() }),
+    ]);
+    const ok = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected');
+    expect(ok).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({ statusCode: 409 });
+    expect(spawnMock.calls).toHaveLength(1);
+    // The winner's claim is released once the durable running state exists.
+    expect(fs.existsSync(path.join(stateDir(), 'state.json.lock'))).toBe(false);
+  });
+
+  it('r-next: steals a claim left behind by a crashed claimer', async () => {
+    configMock.isProd = true;
+    const lib = await loadLib();
+    const installDir = newInstallDir();
+    // Pre-age the lock past the claim window (10 s): a claimer that died
+    // between creating the lock and writing state.json must not block the
+    // next update attempt forever.
+    fs.mkdirSync(stateDir(), { recursive: true });
+    const lock = path.join(stateDir(), 'state.json.lock');
+    fs.writeFileSync(lock, '99999');
+    const stale = new Date(Date.now() - 60_000);
+    fs.utimesSync(lock, stale, stale);
+    const res = await lib.startSelfUpdate('v99.0.0', { installDir });
+    expect(res.ok).toBe(true);
+    expect(spawnMock.calls).toHaveLength(1);
+  });
+
   it('falls back to a plain detached bash child when systemd-run is unavailable', async () => {
     configMock.isProd = true;
     const lib = await loadLib();

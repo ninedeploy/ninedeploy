@@ -1,4 +1,6 @@
 import { tmpdir } from 'node:os';
+import { readdirSync, statSync, unlinkSync } from 'node:fs';
+import path from 'node:path';
 import { and, inArray, lt, notInArray, or, sql } from 'drizzle-orm';
 import {
   auditLog,
@@ -21,6 +23,9 @@ import { executeAutoPrune, getAutoPruneStatus } from '../engine/autoPrune.js';
 
 const swallow = () => {};
 const INTERVAL_MS = 60 * 60 * 1000; // hourly
+/** Export artifacts (secret-bearing archives + scratch files) older than this
+ * are crash leftovers — a live export cleans up within seconds. */
+const EXPORT_LEFTOVER_MAX_AGE_MS = 60 * 60 * 1000; // 1 hour
 /** Deploy-log files older than this are deleted. */
 const LOG_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 /** Audit rows older than this are deleted. */
@@ -224,6 +229,35 @@ function pruneDanglingImages(): void {
 }
 
 /**
+ * Sweep crash-orphaned export artifacts from the data dir: the secret-bearing
+ * `ninedeploy-backup-*.tar.gz` (DB + master key + .env) and its scratch files
+ * (`_db-*.db`, `_env-*`, `_meta-*.json`). A live export cleans up in seconds,
+ * so anything older than an hour belongs to a crashed run. Without this, a
+ * crash-looping instance slowly fills its disk with plaintext secrets.
+ */
+function pruneExportLeftovers(maxAgeMs: number): void {
+  let entries: string[];
+  try {
+    entries = readdirSync(config.paths.dataDir);
+  } catch {
+    return;
+  }
+  const cutoff = Date.now() - maxAgeMs;
+  for (const entry of entries) {
+    if (
+      !entry.startsWith('ninedeploy-backup-')
+      && !entry.startsWith('_db-')
+      && !entry.startsWith('_env-')
+      && !entry.startsWith('_meta-')
+    ) continue;
+    const full = path.join(config.paths.dataDir, entry);
+    try {
+      if (statSync(full).mtimeMs < cutoff) unlinkSync(full);
+    } catch { /* raced or unreadable — next sweep retries */ }
+  }
+}
+
+/**
  * Periodic housekeeping: prunes deploy-log files, finished deployment rows,
  * scheduled-job run history, dead session rows, time-series/audit tables,
  * finished backup drills and their leftover scratch files, retired
@@ -250,6 +284,7 @@ export default fp(
         await pruneDeadSessions(fastify.db, DEAD_SESSION_GRACE_MS);
         await pruneRetiredRecords(fastify.db, now);
         await pruneDrillLeftovers([config.paths.backupsDir, tmpdir()], DRILL_LEFTOVER_MAX_AGE_MS);
+        pruneExportLeftovers(EXPORT_LEFTOVER_MAX_AGE_MS);
         await pruneMetricHistory(fastify);
         pruneDanglingImages();
 

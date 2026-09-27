@@ -6,6 +6,7 @@ const execMocks = vi.hoisted(() => ({ capture: vi.fn() }));
 const dbEngineMocks = vi.hoisted(() => ({
   removeVolume: vi.fn(async (_n: string, log: (l: string) => void) => { log('deleting'); }),
   volumeLabels: vi.fn(async (_n: string) => ({}) as Record<string, string>),
+  volumeExists: vi.fn(async () => false),
 }));
 
 vi.mock('../src/lib/exec.js', () => execMocks);
@@ -331,6 +332,20 @@ describe('volume routes', () => {
     expect(dbEngineMocks.removeVolume).toHaveBeenCalledWith('nd-svc-web-data', expect.any(Function));
   });
 
+  it('answers 409 when the volume SURVIVES the delete (docker volume rm failed silently)', async () => {
+    // removeVolume swallows docker errors by design; the route used to answer
+    // { ok: true } and write a volume.delete audit row for a volume that was
+    // still on disk — the r351 operator flow ("delete it from the Volumes
+    // page") then never completes while the UI says it did.
+    dbEngineMocks.volumeExists.mockResolvedValueOnce(true);
+    const app = await buildTestApp({ db: createFakeDb() });
+    await app.register(volumeRoutes);
+    const res = await app.inject({ method: 'DELETE', url: '/nd-svc-web-data', headers: asUser() });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.message).toContain('could not be deleted');
+    expect(dbEngineMocks.removeVolume).toHaveBeenCalled();
+  });
+
   it('treats a failing docker ps as not-running (never blocks deletes on docker hiccups)', async () => {
     execMocks.capture.mockImplementation((_cmd: string, args: string[]) => {
       if (args[0] === 'ps') return Promise.reject(new Error('docker hiccup'));
@@ -407,6 +422,25 @@ describe('volume routes', () => {
       const res = await app.inject({ method: 'POST', url: '/prune', headers: asUser() });
       expect(res.statusCode).toBe(200);
       expect(res.json()).toMatchObject({ ok: true, deleted: 1, freedBytes: 2048 });
+      expect(dbEngineMocks.removeVolume).toHaveBeenCalledWith('nd-db-old-data', expect.any(Function));
+    });
+
+    it('does not count a volume that survived prune as deleted/freed', async () => {
+      // An ownerless volume still mounted by an orphaned container: docker
+      // volume rm fails, removeVolume swallows it, and the old code answered
+      // "deleted: 1, freedBytes: N" for a volume that never went away.
+      execMocks.capture.mockImplementation((_cmd: string, args: string[]) => {
+        if (args[0] === 'volume' && args[1] === 'ls') {
+          return Promise.resolve('nd-db-old-data\n');
+        }
+        return Promise.resolve('2048 /v\n');
+      });
+      dbEngineMocks.volumeExists.mockResolvedValue(true); // survives removal
+      const app = await buildTestApp({ db: createFakeDb() });
+      await app.register(volumeRoutes);
+      const res = await app.inject({ method: 'POST', url: '/prune', headers: asUser() });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ ok: true, deleted: 0, freedBytes: 0 });
       expect(dbEngineMocks.removeVolume).toHaveBeenCalledWith('nd-db-old-data', expect.any(Function));
     });
 

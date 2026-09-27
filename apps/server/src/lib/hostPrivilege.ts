@@ -9,7 +9,7 @@ import type { AuthedUser } from './resourceAccess.js';
  *
  * The `member` role is a real privilege boundary: exec, the volume and
  * container file managers and exec-jobs are all admin-only because they give
- * host-level reach. Four deploy-path features gave a member the same reach
+ * host-level reach. Five deploy-path features gave a member the same reach
  * without going through any of those gates:
  *
  *   • PM2 services run `sh -c <installCmd>` / `<buildCmd>` on the host, and
@@ -20,6 +20,10 @@ import type { AuthedUser } from './resourceAccess.js';
  *     `privileged: true` or bind-mount `/` (engine/builders/compose.ts).
  *   • A template with `dockerSocket` mounts /var/run/docker.sock into the
  *     container, which is equivalent to host root (engine/builders/docker.ts).
+ *   • The `static` build pack runs `sh -c <installCmd>` / `<buildCmd>` on
+ *     the host before containerising the output — same reach as PM2, hidden
+ *     behind an innocent-looking `type: 'docker'` service
+ *     (engine/builders/staticSite.ts).
  *
  * Reasons are returned rather than a bare boolean so the 403 can say WHICH
  * part of the request needs an admin — "forbidden" with no explanation on a
@@ -29,6 +33,7 @@ export interface PrivilegeInput {
   type?: string | null;
   dockerSocket?: boolean | null;
   build?: {
+    buildPack?: string | null;
     preDeployCmd?: string | null;
     postDeployCmd?: string | null;
     preStopCmd?: string | null;
@@ -45,6 +50,9 @@ export function hostPrivilegeReasons(input: PrivilegeInput): string[] {
   }
   if (input.build?.preDeployCmd || input.build?.postDeployCmd || input.build?.preStopCmd) {
     reasons.push('Deployment lifecycle hooks (pre-deploy / post-deploy / pre-stop) execute binaries on the host');
+  }
+  if (input.build?.buildPack === 'static') {
+    reasons.push('The static build pack runs its install and build commands directly on the host');
   }
   if (input.dockerSocket) {
     reasons.push('This template mounts the Docker socket, which grants control of every container on the host');

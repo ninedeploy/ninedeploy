@@ -56,6 +56,7 @@ const spawnMocks = vi.hoisted(() => {
     on: vi.fn((ev: string, cb: (code: number | null) => void) => {
       if (ev === 'exit') handlers.push({ ev, cb });
     }),
+    kill: vi.fn(),
   };
   const spawn = vi.fn(() => child);
   return { spawn, child, handlers, stdinHandlers };
@@ -1065,6 +1066,28 @@ describe('dockerBuilder registry auth', () => {
     );
     expect(spawnMocks.spawn).not.toHaveBeenCalled();
     expect(h.run.mock.calls.some((c) => (c[1] as string[])[0] === 'logout')).toBe(false);
+  });
+
+  it('kills a stalled docker login after 120s instead of hanging the pipeline forever', async () => {
+    // A registry that accepts TCP then never answers: the child never exits,
+    // the deployment row stays `building` and the registry lock is never
+    // released. The timeout is the only exit.
+    vi.useFakeTimers();
+    try {
+      // No exit/error ever fires — the spawn mock's default keeps handlers.
+      const promise = dockerBuilder.buildAndRun(
+        makeCtx({
+          service: { slug: 'web', image: 'ghcr.io/acme/app:1', port: 3000, cpuShares: 0, memLimitMb: 0, healthPath: '/' },
+          registryAuth: { username: 'u', password: 'p', server: 'ghcr.io' },
+        }) as never,
+      );
+      const expectation = expect(promise).rejects.toThrow('docker login timed out');
+      await vi.advanceTimersByTimeAsync(120_000);
+      await expectation;
+      expect(spawnMocks.child.kill).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

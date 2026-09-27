@@ -39,11 +39,10 @@ const configMock = vi.hoisted(() => ({
 }));
 vi.mock('../src/config.js', () => ({ config: configMock }));
 
-// The route's `finally` unlinks the archive immediately after reply.send() —
-// a real stream would open the file after it is gone. Mock createReadStream so
-// the export branch completes deterministically.
+// createReadStream is NOT mocked: the route cleans its secret-bearing
+// artifacts on the stream's 'close' (not in a finally that raced the open),
+// and the export tests assert that contract against the real stream.
 const fsMocks = vi.hoisted(() => ({
-  createReadStream: vi.fn(() => 'mocked-archive-payload'),
   // When set, renameSync calls whose destination path contains this substring throw.
   failRename: null as string | null,
   // Same idea for copyFileSync destinations.
@@ -53,7 +52,6 @@ vi.mock('node:fs', async (importOriginal) => {
   const real = await importOriginal<typeof import('node:fs')>();
   return {
     ...real,
-    createReadStream: fsMocks.createReadStream,
     renameSync: (from: string, to: string) => {
       if (fsMocks.failRename && to.includes(fsMocks.failRename)) {
         throw Object.assign(new Error('EACCES: read-only file system'), { code: 'EACCES' });
@@ -320,28 +318,45 @@ describe('system resources routes', () => {
     expect(updateCheckMock.checkForUpdate).toHaveBeenCalledWith(true);
   });
 
-  it('exports system state as a tar.gz', async () => {
-    const dir = configMock.paths.dataDir;
-    fs.writeFileSync(configMock.paths.dbFile, 'db-bytes');
-    fs.writeFileSync(configMock.paths.masterKeyFile, 'key-bytes');
-    fs.mkdirSync(path.join(dir, 'traefik'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'traefik', 'dynamic.yml'), 'http: {}');
-    const app = await appWith({
-      counts: {
-        services: [{ n: 2 }],
-        databases: [{ n: 1 }],
-        deployments: [{ n: 4 }],
-        users: [{ n: 1 }],
-      },
-    });
-    const res = await app.inject({ method: 'GET', url: '/export', headers: asUser() });
-    expect(res.statusCode).toBe(200);
-    expect(res.headers['content-type']).toContain('application/gzip');
-    expect(res.headers['content-disposition']).toContain('ninedeploy-backup-');
-    // Artifacts are cleaned up by the finally block.
-    expect(fs.existsSync(path.join(dir, '_meta.json'))).toBe(false);
-    expect(fs.existsSync(path.join(dir, '_env'))).toBe(false);
+/** Wait (bounded) until pred() is true — 'close' fires a tick after the
+ * response stream is consumed, so cleanup assertions need a short grace. */
+async function soon(pred: () => boolean, ms = 2000): Promise<boolean> {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (pred()) return true;
+    await new Promise((r) => setImmediate(r));
+  }
+  return pred();
+}
+
+it('exports system state as a tar.gz and cleans up only after the stream closed', async () => {
+  const dir = configMock.paths.dataDir;
+  fs.writeFileSync(configMock.paths.dbFile, 'db-bytes');
+  fs.writeFileSync(configMock.paths.masterKeyFile, 'key-bytes');
+  fs.mkdirSync(path.join(dir, 'traefik'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'traefik', 'dynamic.yml'), 'http: {}');
+  const app = await appWith({
+    counts: {
+      services: [{ n: 2 }],
+      databases: [{ n: 1 }],
+      deployments: [{ n: 4 }],
+      users: [{ n: 1 }],
+    },
   });
+  const res = await app.inject({ method: 'GET', url: '/export', headers: asUser() });
+  expect(res.statusCode).toBe(200);
+  expect(res.headers['content-type']).toContain('application/gzip');
+  expect(res.headers['content-disposition']).toContain('ninedeploy-backup-');
+  // A real payload came through the stream (the old test mocked the stream
+  // away precisely because the finally deleted the file before it opened).
+  expect(res.rawPayload.length).toBeGreaterThan(0);
+  // Every stamped artifact — archive, meta, env copy — is gone once the
+  // stream has closed; none of the secret-bearing files may outlive the
+  // download.
+  const leftovers = () =>
+    fs.readdirSync(dir).filter((f) => f.startsWith('ninedeploy-backup-') || f.startsWith('_meta-') || f.startsWith('_env-') || f.startsWith('_db-'));
+  expect(await soon(() => leftovers().length === 0)).toBe(true);
+});
 
   it('includes the cwd .env file when present', async () => {
     const oldCwd = process.cwd();
@@ -353,7 +368,8 @@ describe('system resources routes', () => {
       const app = await appWith({ counts: {} });
       const res = await app.inject({ method: 'GET', url: '/export', headers: asUser() });
       expect(res.statusCode).toBe(200);
-      expect(fs.existsSync(path.join(configMock.paths.dataDir, '_env'))).toBe(false);
+      const envLeft = () => fs.readdirSync(configMock.paths.dataDir).some((f) => f.startsWith('_env-'));
+      expect(await soon(() => !envLeft())).toBe(true);
     } finally {
       process.chdir(oldCwd);
     }

@@ -68,6 +68,12 @@ export function VolumeBackupsPanel({ volumeName }: { volumeName: string }) {
         </Card>
       )}
 
+      {restore.isError && (
+        <Card className="p-3 border-rose-500/30 bg-rose-500/[0.04]">
+          <p className="text-xs text-rose-300">Restore failed: {(restore.error as Error).message}</p>
+        </Card>
+      )}
+
       {backups.isLoading ? (
         <Card className="p-4 text-center text-slate-500 text-xs">
           <Loader2 size={16} className="mx-auto animate-spin mb-1" />

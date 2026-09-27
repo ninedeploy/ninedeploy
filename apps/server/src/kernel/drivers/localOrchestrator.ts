@@ -42,6 +42,25 @@ import type {
  */
 const STACK_ROOT = '/var/lib/ninedeploy/stacks';
 
+/**
+ * Top-level service names from a compose file's `services:` block. Lines that
+ * start with exactly two spaces and a `name:` (no trailing whitespace, no
+ * children); the block runs until the next column-0 key (`volumes:` /
+ * `networks:` / …) or end-of-file. A consecutive-`  name:\n` regex (the
+ * original parser) matched only services with NO body — every compose file
+ * this driver emits (`    image: …` under each service) reported a single
+ * service. 4+-space indented lines are body of `environment` / `volumes` /
+ * `labels` and are not counted.
+ */
+function composeServiceNames(text: string): string[] {
+  const servicesIdx = text.indexOf('services:\n');
+  if (servicesIdx === -1) return [];
+  const after = text.slice(servicesIdx + 'services:\n'.length);
+  const nextSection = after.search(/^[A-Za-z]/m);
+  const block = nextSection === -1 ? after : after.slice(0, nextSection);
+  return (block.match(/^ {2}[A-Za-z0-9_.-]+:$/gm) ?? []).map((line) => line.trim().slice(0, -1));
+}
+
 export class LocalOrchestrator implements IOrchestrator {
   readonly name = 'local';
 
@@ -141,28 +160,7 @@ export class LocalOrchestrator implements IOrchestrator {
       if (!existsSync(composePath)) continue;
       let count = 0;
       try {
-        const text = readFileSync(composePath, 'utf8');
-        // Count every top-level service entry inside the `services:`
-        // block — lines that start with two spaces and a `name:` (no
-        // trailing whitespace, no children). The previous regex
-        // required consecutive `  name:\n` lines, which collapsed to
-        // zero entries for any compose file with body under the
-        // service (the format the driver itself emits). 4+-space
-        // indented lines are body of `environment` / `volumes` /
-        // `labels` etc. and must not be counted.
-        // Locate `services:\n` whether it appears mid-file (after a
-        // top-level `version:` / `name:`) or at column 0 (e.g. a
-        // hand-curated minimal compose file). The first \n is the
-        // end of the previous top-level key, not a leading separator.
-        const servicesIdx = text.indexOf('services:\n');
-        if (servicesIdx !== -1) {
-          const after = text.slice(servicesIdx + 'services:\n'.length);
-          // The block runs until the next column-0 key (volumes /
-          // networks / configs / secrets) or end-of-file.
-          const nextSection = after.search(/^[A-Za-z]/m);
-          const block = nextSection === -1 ? after : after.slice(0, nextSection);
-          count = (block.match(/^ {2}[A-Za-z0-9_.-]+:$/gm) ?? []).length;
-        }
+        count = composeServiceNames(readFileSync(composePath, 'utf8')).length;
       } catch {
         // ignore — the stack is half-written; report 0 services
       }
@@ -180,13 +178,11 @@ export class LocalOrchestrator implements IOrchestrator {
     } catch {
       return null;
     }
-    const match = text.match(/^services:\n((?: {2}[A-Za-z0-9_.-]+:\n)+)/m);
-    if (!match) return { name, services: [], appliedAt: new Date(0).toISOString() };
-    const serviceNames = (match[1] ?? '')
-      .split('\n  ')
-      .map((s) => s.trim())
-      .filter((s) => s.endsWith(':'))
-      .map((s) => s.slice(0, -1));
+    // Same parser as listStacks: the old consecutive-`  name:\n` regex
+    // matched only services with NO body, so every stack this driver itself
+    // created (it always emits `    image: …`) reported exactly one service.
+    const serviceNames = composeServiceNames(text);
+    if (serviceNames.length === 0) return { name, services: [], appliedAt: new Date(0).toISOString() };
     const services: StackStatus['services'] = [];
     for (const svcName of serviceNames) {
       try {

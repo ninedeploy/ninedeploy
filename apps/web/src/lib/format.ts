@@ -68,19 +68,59 @@ export function formatDuration(seconds: number): string {
   return `${h}h ${String(m % 60).padStart(2, '0')}m`;
 }
 
-/** Copy-to-clipboard with transient "copied" state; feedback via the caller's toast or the hook state. */
+/**
+ * Copy-to-clipboard with transient "copied" state; feedback via the caller's
+ * toast or the hook state.
+ *
+ * `navigator.clipboard` exists only in secure contexts — the panel is
+ * routinely reached over plain http://<server-ip>:<port> (see the Security
+ * settings note), where every Copy button silently did nothing, including on
+ * once-only secrets (webhook tokens, enrolment commands) whose reveal
+ * disappears on dismiss. Fall back to the legacy execCommand path there.
+ */
+function copyViaExecCommand(text: string): boolean {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  // Keep it off-screen and unfocusable so the page never scrolls to it.
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.top = '-9999px';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  ta.setSelectionRange(0, text.length);
+  let ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch {
+    ok = false;
+  }
+  document.body.removeChild(ta);
+  return ok;
+}
+
+/** One-shot copy usable outside React (Hub cards, wizards): the
+ *  Clipboard API when present (secure contexts), with a legacy execCommand
+ *  fallback for plain-http panels where `navigator.clipboard` is undefined
+ *  or refuses to write. */
+export async function copyText(text: string): Promise<boolean> {
+  if (navigator.clipboard) {
+    const ok = await navigator.clipboard.writeText(text).then(() => true, () => false);
+    if (ok) return true;
+  }
+  return copyViaExecCommand(text);
+}
+
 export function useCopy(timeoutMs = 1500): { copied: boolean; copy: (text: string) => Promise<boolean> } {
   const [copied, setCopied] = useState(false);
   const copy = useCallback(
     async (text: string) => {
-      try {
-        await navigator.clipboard.writeText(text);
+      const ok = await copyText(text);
+      if (ok) {
         setCopied(true);
         setTimeout(() => setCopied(false), timeoutMs);
-        return true;
-      } catch {
-        return false;
       }
+      return ok;
     },
     [timeoutMs],
   );

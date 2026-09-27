@@ -74,8 +74,10 @@ export function Dashboard() {
     return <ErrorCard title="Couldn't load the dashboard" error={dash.error} onRetry={() => dash.refetch()} />;
   }
   const s = data.stats;
-  const allHealthy = data.health.every((h) => h.healthy || h.status !== 'running');
-  const unhealthyCount = data.health.filter((h) => !h.healthy && h.status === 'running').length;
+  // Unknown health (a remote node's runtime — the panel cannot probe it) is
+  // NOT an alarm: only an explicit false counts against the banner.
+  const allHealthy = data.health.every((h) => h.status !== 'running' || h.healthy !== false);
+  const unhealthyCount = data.health.filter((h) => h.status === 'running' && h.healthy === false).length;
 
   const host = snapshot.data?.host;
   const memPct = host && host.memTotalBytes > 0 ? Math.round((host.memUsedBytes / host.memTotalBytes) * 100) : 0;
@@ -274,7 +276,10 @@ export function Dashboard() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {data.health.map((h) => {
               const isRunning = h.status === 'running';
+              // null = the runtime lives on a remote node the panel cannot
+              // probe — show the running state without a health verdict.
               const isHealthy = h.healthy;
+              const isRemote = isRunning && isHealthy == null;
               const liveStat = snapshot.data?.containers.find((c) => c.refId === h.serviceId && c.kind === 'service');
 
               return (
@@ -286,13 +291,15 @@ export function Dashboard() {
                         <div className="flex items-center gap-2.5">
                           <div className={cn(
                             'grid h-9 w-9 place-items-center rounded-lg ring-1 ring-inset transition',
-                            isRunning && isHealthy ? 'bg-emerald-500/10 text-emerald-300 ring-emerald-500/20' :
-                            isRunning && !isHealthy ? 'bg-rose-500/10 text-rose-300 ring-rose-500/20' :
+                            isRunning && isHealthy === true ? 'bg-emerald-500/10 text-emerald-300 ring-emerald-500/20' :
+                            isRunning && isHealthy === false ? 'bg-rose-500/10 text-rose-300 ring-rose-500/20' :
+                            isRemote ? 'bg-indigo-500/10 text-indigo-300 ring-indigo-500/20' :
                             h.status === 'stopped' ? 'bg-slate-500/10 text-slate-400 ring-slate-500/20' :
                             'bg-amber-500/10 text-amber-300 ring-amber-500/20',
                           )}>
-                            {isRunning && isHealthy ? <CheckCircle2 size={17} /> :
-                             isRunning && !isHealthy ? <XCircle size={17} /> :
+                            {isRunning && isHealthy === true ? <CheckCircle2 size={17} /> :
+                             isRunning && isHealthy === false ? <XCircle size={17} /> :
+                             isRemote ? <Server size={17} /> :
                              h.status === 'stopped' ? <Server size={17} /> :
                              <AlertCircle size={17} />}
                           </div>
@@ -312,11 +319,12 @@ export function Dashboard() {
                           )}
                           <div className={cn(
                             'text-[10px] font-medium uppercase',
-                            isRunning && isHealthy ? 'text-emerald-400' :
-                            isRunning && !isHealthy ? 'text-rose-400' :
+                            isRunning && isHealthy === true ? 'text-emerald-400' :
+                            isRunning && isHealthy === false ? 'text-rose-400' :
+                            isRemote ? 'text-indigo-400' :
                             h.status === 'stopped' ? 'text-slate-500' : 'text-amber-400',
                           )}>
-                            {isRunning && isHealthy ? 'healthy' : isRunning && !isHealthy ? 'unhealthy' : h.status}
+                            {isRunning && isHealthy === true ? 'healthy' : isRunning && isHealthy === false ? 'unhealthy' : isRemote ? 'on node' : h.status}
                           </div>
                         </div>
                       </div>

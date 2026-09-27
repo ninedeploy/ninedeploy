@@ -506,9 +506,13 @@ describe('Monitoring', () => {
     expect(screen.getByText('vps-eu-1')).toBeInTheDocument();
     expect(screen.getByText('edge-us-2')).toBeInTheDocument();
 
-    // Select remote server
+    // Select remote server — the overview cards always show the PANEL HOST
+    // (/v1/stats has no per-node variant); relabeling them "Node …" showed
+    // the master's numbers as the node's. The selection now shows an honest
+    // hint instead.
     fireEvent.click(screen.getByText('vps-eu-1'));
-    expect(screen.getByText('Node CPU (Telemetry)')).toBeInTheDocument();
-    expect(screen.getByText('Node Memory')).toBeInTheDocument();
+    expect(screen.getByText('Host CPU')).toBeInTheDocument();
+    expect(screen.getByText('Host Memory')).toBeInTheDocument();
+    expect(screen.getByText(/overview cards and workload grid always show the panel host/i)).toBeInTheDocument();
   });
 });

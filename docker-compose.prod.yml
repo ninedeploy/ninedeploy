@@ -36,6 +36,11 @@ services:
     #   context: .
     #   dockerfile: Dockerfile
     restart: unless-stopped
+    # The deploy worker's shutdown grace is 60 s: a `compose up -d` update
+    # SIGKILLs at the 10 s default, killing in-flight builds mid-step and
+    # leaving their services undeployable until the 45-minute staleness
+    # sweep. 90 s lets deploys checkpoint-cancel cleanly first.
+    stop_grace_period: 90s
     ports:
       # Host-side port is variable; the container always listens on 3000.
       # Bound to LOOPBACK by default: this port speaks plain HTTP, and login

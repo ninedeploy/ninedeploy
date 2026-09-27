@@ -585,14 +585,16 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     }
     // The gate has to consider the MERGED result, not just the payload: a
     // member could otherwise switch `type` to pm2 on its own, or add a single
-    // lifecycle hook, and reach host execution one field at a time.
+    // lifecycle hook — or select the static build pack — and reach host
+    // execution one field at a time.
     const currentBuild = await app.db.query.buildConfigs.findFirst({ where: eq(buildConfigs.serviceId, id) });
-    const merged = (key: 'preDeployCmd' | 'postDeployCmd' | 'preStopCmd') =>
+    const merged = (key: 'buildPack' | 'preDeployCmd' | 'postDeployCmd' | 'preStopCmd') =>
       build?.[key] !== undefined ? build[key] : currentBuild?.[key];
     assertMayUseHostPrivilege(req.user!, {
       type: patch.type ?? existing.type,
       dockerSocket: existing.dockerSocket ?? false,
       build: {
+        buildPack: merged('buildPack'),
         preDeployCmd: merged('preDeployCmd'),
         postDeployCmd: merged('postDeployCmd'),
         preStopCmd: merged('preStopCmd'),

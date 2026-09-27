@@ -102,8 +102,17 @@ export function Backups() {
                     <div className="flex items-center justify-end gap-1">
                       <button type="button"
                         onClick={() => b.databaseId && setPending({ kind: 'restore', databaseId: b.databaseId, id: b.id, name: b.databaseName ?? '' })}
+                        // Restores address a database id: volume snapshots
+                        // restore from the Volumes page, and a backup whose
+                        // database is gone has nothing to restore into.
+                        // Clicking here used to do nothing at all, silently.
+                        disabled={!b.databaseId}
                         className="rounded p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-indigo-300 disabled:opacity-40"
-                        title="Restore"
+                        title={
+                          b.databaseId ? 'Restore'
+                            : b.scope === 'volumes' ? 'Volume snapshots are restored from the Volumes page'
+                              : 'The source database no longer exists'
+                        }
                       >
                         <RotateCcw size={14} />
                       </button>

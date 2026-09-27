@@ -8,7 +8,10 @@ import { TRAEFIK_CONTAINER } from '../engine/proxy.js';
 import { buildProbeUrl, safeProbePath } from '../lib/probeUrl.js';
 import { ensureDockerImage } from '../lib/dockerPull.js';
 
-const NETNS_PROBE_IMAGE = 'curlimages/curl:latest';
+// Pinned, never `:latest` — this image runs with the target's network
+// namespace on every probe (lib/inventory.ts pins helper images for the same
+// supply-chain reason).
+const NETNS_PROBE_IMAGE = 'curlimages/curl:8.16.0';
 
 /**
  * The set of service ids a non-operator may see: services they own, plus
@@ -23,7 +26,10 @@ interface HealthStatus {
   slug: string;
   type: string;
   status: string;
-  healthy: boolean;
+  /** true/false = probed from the panel; null = not probed here (the runtime
+   * lives on a remote node — the panel has no route to its container IP and
+   * must not report a healthy service as down, the r228 lesson from Doctor). */
+  healthy: boolean | null;
   responseMs: number | null;
   port: number | null;
   runtimeId: string | null;
@@ -93,15 +99,20 @@ async function probeViaNetns(runtimeId: string, port: number, path: string): Pro
  */
 async function probeService(svc: {
   type: string;
+  serverId: number | null | undefined;
   runtimeId: string | null;
   port: number;
   healthPath: string;
-}): Promise<{ healthy: boolean; responseMs: number | null }> {
+}): Promise<{ healthy: boolean | null; responseMs: number | null }> {
   // Never concatenate a stored healthPath onto an origin — see lib/probeUrl.ts.
   const path = safeProbePath(svc.healthPath);
   if (svc.type === 'pm2') return probeUrl(buildProbeUrl('127.0.0.1', svc.port, path));
   const runtimeId = svc.runtimeId;
   if (!runtimeId) return { healthy: false, responseMs: null };
+  // A node-pinned runtime's container lives on the NODE's daemon: inspecting
+  // the local one answers null and used to paint every remote service red.
+  // The node's own agent health-checked the deploy; report "unknown" here.
+  if (svc.serverId != null) return { healthy: null, responseMs: null };
   const ip = await containerIp(runtimeId);
   if (!ip) return { healthy: false, responseMs: null }; // container not running
   // Race the transports: the direct fetch and the mesh probe run CONCURRENTLY
@@ -217,12 +228,13 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
           orderBy: desc(deployments.id),
         });
 
-        let healthy = false;
+        let healthy: boolean | null = false;
         let responseMs: number | null = null;
 
         if (svc.status === 'running' && svc.port) {
           const probe = await probeService({
             type: svc.type,
+            serverId: svc.serverId,
             runtimeId: svc.runtimeId,
             port: svc.port,
             healthPath: svc.healthPath,

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Check, Code2, Container, Copy, Cpu, FileCode, ImageIcon, Radio, RefreshCw, Search, Shield, Terminal, X } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
+import { copyText } from '../lib/format.js';
 import { Button, Card, EmptyState, Input, PageHeader, Skeleton } from '../components/ui.js';
 
 function fmtEventTime(raw: string): string {
@@ -74,18 +75,20 @@ export function DockerDashboard() {
   // the YAML/JSON payloads); the instrumenter cannot see these spans, and the
   // query null-arms below are gated off by their `enabled` flags.
   /* v8 ignore start */
-  const handleCopyYaml = () => {
+  const handleCopyYaml = async () => {
     if (!composeData?.yaml) return;
-    void navigator.clipboard?.writeText(composeData.yaml).catch(() => undefined);
-    setCopiedYaml(true);
-    setTimeout(() => setCopiedYaml(false), 2000);
+    if (await copyText(composeData.yaml)) {
+      setCopiedYaml(true);
+      setTimeout(() => setCopiedYaml(false), 2000);
+    }
   };
 
-  const handleCopyJson = () => {
+  const handleCopyJson = async () => {
     if (!inspectData?.raw) return;
-    void navigator.clipboard?.writeText(JSON.stringify(inspectData.raw, null, 2)).catch(() => undefined);
-    setCopiedJson(true);
-    setTimeout(() => setCopiedJson(false), 2000);
+    if (await copyText(JSON.stringify(inspectData.raw, null, 2))) {
+      setCopiedJson(true);
+      setTimeout(() => setCopiedJson(false), 2000);
+    }
   };
   /* v8 ignore stop */
 

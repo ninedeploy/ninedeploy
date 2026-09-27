@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { databases, services, serviceVolumeAttachments } from '@ninedeploy/db';
 import { volumeFileWrite, volumePathCreate } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
-import { removeVolume, volumeLabels } from '../engine/database.js';
+import { removeVolume, volumeExists, volumeLabels } from '../engine/database.js';
 import { capture } from '../lib/exec.js';
 import { ensureDockerImage } from '../lib/dockerPull.js';
 import { containerRunning, resolveVolumeOwner, HELPER_IMAGE } from '../lib/inventory.js';
@@ -26,22 +26,29 @@ interface VolumeOwner {
 }
 
 /**
- * Resolve the owner (service/database) of a managed volume name, if any.
- * Callers guarantee the name starts with nd-svc-/nd-db-; anything else is
- * ownerless (orphan) by definition. Also consults the
- * `service_volume_attachments` table so user-attached volumes (which do
- * not have to follow the legacy `nd-svc-<slug>-data` naming) resolve to
- * the right owning service.
+ * Resolve owners for a whole batch of volume names with ONE read of each
+ * table. The old per-volume `volumeOwner` re-read services/databases/
+ * attachments (full tables) for every name — the Volumes page cost 3V queries
+ * before it even started measuring sizes.
  */
-async function volumeOwner(db: FastifyInstance['db'], name: string): Promise<VolumeOwner | null> {
+async function volumeOwners(
+  db: FastifyInstance['db'],
+  names: string[],
+): Promise<Map<string, VolumeOwner>> {
+  if (names.length === 0) return new Map();
   const [svcs, dbs, atts] = await Promise.all([
     db.select().from(services),
     db.select().from(databases),
     db.select().from(serviceVolumeAttachments),
   ]);
-  const owner = resolveVolumeOwner(svcs, dbs, name, atts);
-  if (!owner) return null;
-  return { kind: owner.kind, id: owner.refId, name: owner.name, engine: owner.engine, containerName: owner.containerName };
+  const out = new Map<string, VolumeOwner>();
+  for (const name of names) {
+    const owner = resolveVolumeOwner(svcs, dbs, name, atts);
+    if (owner) {
+      out.set(name, { kind: owner.kind, id: owner.refId, name: owner.name, engine: owner.engine, containerName: owner.containerName });
+    }
+  }
+  return out;
 }
 
 /** Volume size for a named Docker volume (bytes), via a throwaway alpine container. */
@@ -96,8 +103,9 @@ export const volumeRoutes: FastifyPluginAsync = async (app) => {
       .filter((n) => n.startsWith('nd-svc-') || n.startsWith('nd-db-'));
 
     const out: Array<{ name: string; sizeBytes: number; owner: { kind: 'service' | 'database'; id: number; name: string; engine?: string } | null; inUse: boolean; retainedFrom?: { name: string | null; engine: string | null } }> = [];
+    const owners = await volumeOwners(app.db, names);
     for (const name of names) {
-      const owner = await volumeOwner(app.db, name);
+      const owner = owners.get(name) ?? null;
       const inUse = owner ? await containerRunning(owner.containerName) : false;
       out.push({
         name,
@@ -128,14 +136,20 @@ export const volumeRoutes: FastifyPluginAsync = async (app) => {
 
     let deletedCount = 0;
     let freedBytes = 0;
+    const owners = await volumeOwners(app.db, names);
     for (const name of names) {
-      const owner = await volumeOwner(app.db, name);
-      if (!owner) {
-        const size = await volumeSize(name);
-        await removeVolume(name, (line) => req.log.info(line));
-        freedBytes += size;
-        deletedCount++;
+      if (owners.has(name)) continue;
+      const size = await volumeSize(name);
+      await removeVolume(name, (line) => req.log.info(line));
+      // removeVolume tolerates a failed `docker volume rm` (an ownerless
+      // volume can still be mounted by an orphaned container) — reporting it
+      // deleted while it survived would be a lie, so verify it landed.
+      if (await volumeExists(name)) {
+        req.log.warn(`volume ${name} survived prune (in use by an unmanaged container?) — skipping`);
+        continue;
       }
+      freedBytes += size;
+      deletedCount++;
     }
 
     void audit(app.db, req.user!.id, 'volume.prune', `pruned ${deletedCount} retained volume(s)`);
@@ -151,12 +165,15 @@ export const volumeRoutes: FastifyPluginAsync = async (app) => {
     if (!name.startsWith('nd-svc-') && !name.startsWith('nd-db-')) {
       throw badRequest('not a managed volume');
     }
-    const owner = await volumeOwner(app.db, name);
+    const owner = (await volumeOwners(app.db, [name])).get(name) ?? null;
     if (owner && (await containerRunning(owner.containerName))) {
       throw conflict(`Volume is in use by ${owner.kind} "${owner.name}" — stop it before deleting the volume`);
     }
     void audit(app.db, req.user!.id, 'volume.delete', name);
     await removeVolume(name, (line) => req.log.info(line));
+    if (await volumeExists(name)) {
+      throw conflict(`Volume could not be deleted — it is still mounted by a container docker did not name (docker volume rm failed silently)`);
+    }
     return { ok: true };
   });
 
