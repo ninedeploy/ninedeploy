@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.11';
+export const VERSION = '0.10.12';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,21 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.12',
+    date: '2026-09-27',
+    title: 'The Follow-Up Audit Patch — the Static-Pack Gate, Honest Volumes and a Calmer Update Path',
+    changes: [
+      'The static build pack ran member-supplied install and build commands directly on the host behind an innocent-looking Docker service; the operator gate now covers it on create, edit, clone, import and deploy (r380).',
+      'The dashboard stopped painting every remote-node service red: a node-pinned runtime is reported as unknown instead of failed, because its container lives on the node the panel cannot probe (r382).',
+      'Volume delete and prune answered success while docker volume rm had failed — both now verify the removal landed, and the Volumes page loads its owner tables once instead of three full reads per volume (r383).',
+      'The one-click system export deleted its secret-bearing archive before the download stream had opened it; cleanup now runs when the stream closes, and crash leftovers are swept hourly (r384).',
+      'A stalling registry could hang docker login — and every later deploy behind the registry lock — forever; login now times out after two minutes (r385).',
+      'Two clicks on Update & Restart could race two installers onto one tree: the update start now claims an atomic lock, install.sh takes a flock, and the confirm button cannot double-fire; a fresh docker-mode install no longer fails its own provenance check under sudo (r386–r389).',
+      'Stopping the panel killed in-flight deploys at 30 s that the worker gives 60 s to finish cleanly — the systemd unit and the container now allow 90 s, so a restart no longer locks a service out of deploys for up to 45 minutes (r390).',
+      'Copy buttons worked only on HTTPS: on a plain-http panel (server IP and port) every copy — including one-time secrets — silently did nothing; a legacy-clipboard fallback restores them (r393).',
+    ],
+  },
+{
     version: '0.10.11',
     date: '2026-09-25',
     title: 'The Installer Patch — Updates Run the New Release’s Installer',
