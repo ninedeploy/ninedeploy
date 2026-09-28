@@ -519,12 +519,21 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   const configSnapshot = await snapshotConfig(db, service, buildConfig);
 
   const log = (line: string) => logBus.publish(deploymentId, line);
-  await db
+  // The worker's claim flipped queued→building; a cancel in the milliseconds
+  // before THIS write flipped building→cancelled — and an unconditional write
+  // here used to erase it, running the cancelled deploy to a green finish.
+  // Conditional on still `building` (like the finalize write); when the row
+  // was taken away, the first checkpoint inside the try below resolves the
+  // cancellation with the full cleanup semantics (r404).
+  const claimed = await db
     .update(deployments)
     .set({ status: 'building', startedAt: new Date(), configSnapshot })
-    .where(eq(deployments.id, deploymentId));
-  await db.update(services).set({ status: 'deploying' }).where(eq(services.id, service.id));
-  log(`▶ Deployment #${deploymentId} for "${service.name}" (${service.type})`);
+    .where(and(eq(deployments.id, deploymentId), eq(deployments.status, 'building')))
+    .returning({ id: deployments.id });
+  if (claimed.length > 0) {
+    await db.update(services).set({ status: 'deploying' }).where(eq(services.id, service.id));
+    log(`▶ Deployment #${deploymentId} for "${service.name}" (${service.type})`);
+  }
 
   // Remote-server deploys route through the node's agent (r037). Everything
   // this builder cannot honestly do on a node — PM2, Compose, and Nixpacks

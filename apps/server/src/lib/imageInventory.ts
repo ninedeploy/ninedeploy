@@ -244,6 +244,14 @@ export async function pruneImages(opts: PruneOptions = {}): Promise<PruneResult>
   const removedLabels: string[] = [];
   const CHUNK = 50;
   const sink = (_line: string): void => undefined;
+  const stillExists = async (id: string): Promise<boolean> => {
+    try {
+      await capture('docker', ['image', 'inspect', id, '--format', '{{.Id}}']);
+      return true;
+    } catch {
+      return false;
+    }
+  };
   for (let i = 0; i < candidates.length; i += CHUNK) {
     const slice = candidates.slice(i, i + CHUNK);
     const args = ['image', 'rm', ...slice.map((c) => c.id)];
@@ -254,12 +262,18 @@ export async function pruneImages(opts: PruneOptions = {}): Promise<PruneResult>
         removedLabels.push(`${c.repository}:${c.tag}`);
       }
     } catch (err) {
-      // Continue with the rest; a single `rm` failure
-      // (image already gone, dangling ref, etc.) should
-      // not block the other chunks.
+      // Continue with the rest; a single `rm` failure should not block the
+      // other chunks. A nonzero exit still removed the subset it could —
+      // re-inspect the chunk and credit what actually went away, instead of
+      // reporting removed=0 after freeing gigabytes (r406).
       const msg = err instanceof Error ? err.message : String(err);
       // eslint-disable-next-line no-console
       console.warn(`[images] prune chunk failed: ${msg}`);
+      for (const c of slice) {
+        if (await stillExists(c.id)) continue;
+        removed.push(c.id);
+        removedLabels.push(`${c.repository}:${c.tag}`);
+      }
     }
   }
 

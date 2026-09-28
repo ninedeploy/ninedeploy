@@ -96,13 +96,16 @@ export async function evaluateAlerts(db: DB, snapshots: MetricSnapshot[], now = 
       continue;
     }
 
+    // r405: `durationWindows` counts the CONSECUTIVE BREACHING SAMPLES the
+    // condition must hold for, per its schema comment. The first breaching
+    // sample IS sample #1 (breachSince), so the Nth arrives (N-1) intervals
+    // later — the old `N × interval` elapsed bound fired one sample late
+    // (durationWindows: 1 fired on the second sample, 60 s in).
     const breachSince = asDate(state.breachSince) ?? now;
-    const requiredMs = Math.max(1, rule.durationWindows) * SAMPLE_INTERVAL_MS;
+    const requiredMs = (Math.max(1, rule.durationWindows) - 1) * SAMPLE_INTERVAL_MS;
     const elapsed = now.getTime() - breachSince.getTime();
 
-    if (prevStatus === 'ok') {
-      await db.update(alertState).set({ status: 'breaching', breachSince: now, lastValue: snap.value }).where(eq(alertState.ruleId, rule.id));
-    } else if (elapsed >= requiredMs) {
+    if (elapsed >= requiredMs) {
       const lastNotified = asDate(state.lastNotifiedAt);
       const cooldownPassed = !lastNotified || now.getTime() - lastNotified.getTime() >= NOTIFY_COOLDOWN_MS;
       if (prevStatus !== 'firing' || cooldownPassed) {
@@ -121,7 +124,13 @@ export async function evaluateAlerts(db: DB, snapshots: MetricSnapshot[], now = 
         await db.update(alertState).set({ lastValue: snap.value }).where(eq(alertState.ruleId, rule.id));
       }
     } else {
-      await db.update(alertState).set({ lastValue: snap.value }).where(eq(alertState.ruleId, rule.id));
+      // Stamp/hold the breach window: the first breaching sample sets
+      // `breaching` + breachSince; later pre-window samples only refresh the
+      // value.
+      await db
+        .update(alertState)
+        .set({ status: prevStatus === 'ok' ? 'breaching' : prevStatus, breachSince, lastValue: snap.value })
+        .where(eq(alertState.ruleId, rule.id));
     }
   }
 }

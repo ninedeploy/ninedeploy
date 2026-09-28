@@ -16,7 +16,11 @@ import { agentPing, generateAgentToken } from '../lib/agentClient.js';
 import { VERSION } from '../version.js';
 import { agentDockerRunCommand } from '@ninedeploy/schemas';
 
-// In-memory log cache for recently run bootstraps (keyed by serverId or host)
+// In-memory log cache for recently run bootstraps (keyed by serverId or host).
+// Bounded: each SSH bootstrap keeps its FULL log here, and re-provisioned
+// hosts accumulate under fresh keys — an unbounded map grew for the process
+// lifetime (r407).
+const BOOTSTRAP_LOG_LIMIT = 25;
 const bootstrapLogStore = new Map<string, string[]>();
 
 export function getBootstrapLogs(key: string | number): string[] {
@@ -24,7 +28,15 @@ export function getBootstrapLogs(key: string | number): string[] {
 }
 
 export function setBootstrapLogs(key: string | number, logs: string[]): void {
-  bootstrapLogStore.set(String(key), logs);
+  const k = String(key);
+  // Re-insert so LRU order tracks recency, then trim the oldest overflow.
+  bootstrapLogStore.delete(k);
+  bootstrapLogStore.set(k, logs);
+  while (bootstrapLogStore.size > BOOTSTRAP_LOG_LIMIT) {
+    const oldest = bootstrapLogStore.keys().next().value;
+    if (oldest === undefined) break;
+    bootstrapLogStore.delete(oldest);
+  }
 }
 
 export function clearBootstrapLogs(key: string | number): void {

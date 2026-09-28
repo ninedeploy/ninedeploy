@@ -12,11 +12,14 @@ import { Button, Card, CardBody, ConfirmDialog, Input, Skeleton, cn } from '../.
 import { SecretRow } from './SecretRow.js';
 
 /** Environment variables, auto-deploy webhooks, file attachments and cron jobs. */
-export function EnvironmentTab({ serviceId }: { serviceId: number }) {
+export function EnvironmentTab({ serviceId, svc }: { serviceId: number; svc?: { type: string } }) {
   return (
     <div className="mt-5 grid max-w-6xl grid-cols-1 gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       <div className="space-y-5">
-        <EnvCard serviceId={serviceId} />
+        {/* Compose decodes \n escapes in env values and PM2 passes the object
+            through; the plain docker builder's env-file cannot carry real
+            newlines — let the editor say so when one shows up (r409). */}
+        <EnvCard serviceId={serviceId} literalNewlines={svc?.type === 'docker'} />
         <WebhooksCard serviceId={serviceId} />
       </div>
       <div className="space-y-5">

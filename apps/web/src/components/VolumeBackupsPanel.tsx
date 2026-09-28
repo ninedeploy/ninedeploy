@@ -4,7 +4,7 @@ import { Archive, Download, History, Loader2, RotateCcw, ShieldCheck, Tag, Trash
 import type { Backup } from '@ninedeploy/sdk';
 import { api, authedFetch } from '../lib/api.js';
 import { Button, Card, Input } from './ui.js';
-import { downloadBlob, formatBytes } from '../lib/format.js';
+import { downloadBlob, formatBytes, formatDateTime } from '../lib/format.js';
 import { useToast } from './Toast.js';
 
 export function VolumeBackupsPanel({ volumeName }: { volumeName: string }) {
@@ -159,7 +159,9 @@ function BackupRow({
               {backup.label ?? 'Snapshot'}
             </span>
             <span className="font-mono text-[11px] text-slate-500">
-              {date.toISOString().slice(0, 16).replace('T', ' ')}
+              {/* r409: local time like every other timestamp in the app — the
+                  raw UTC slice was off by the viewer's timezone with no Z. */}
+              {formatDateTime(date)}
             </span>
             <StatusBadge status={backup.status} />
             {backup.hasRemoteCopy && (

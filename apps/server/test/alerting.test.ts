@@ -147,8 +147,23 @@ describe('evaluateAlerts', () => {
       [{ ruleId: 1, status: 'breaching', breachSince: new Date(T0.getTime() - 10_000), firedAt: null, lastNotifiedAt: null, lastValue: 85 }],
     );
     await evaluateAlerts(db, [snap()], T0);
-    expect(updates).toEqual([{ lastValue: 90 }]);
+    // r405: the breach-window write is idempotent — status and breachSince
+    // are re-asserted with the values the row already holds.
+    expect(updates).toEqual([{ status: 'breaching', breachSince: new Date(T0.getTime() - 10_000), lastValue: 90 }]);
     expect(auditInserts).toHaveLength(0);
+  });
+
+  it('r405: durationWindows=1 fires on the FIRST consecutive breaching sample', async () => {
+    // The schema comment promises "number of consecutive 30s samples that
+    // must breach before firing" — one sample means the first breach fires,
+    // not the second (the old off-by-one waited 60 s).
+    const { db, auditInserts } = makeDb(
+      [rule({ durationWindows: 1 })],
+      [{ ruleId: 1, status: 'ok', breachSince: null, firedAt: null, lastNotifiedAt: null, lastValue: 40 }],
+    );
+    await evaluateAlerts(db, [snap()], T0);
+    await new Promise((r) => setImmediate(r));
+    expect(auditInserts[0]).toMatchObject({ action: 'alert.fired' });
   });
 
   it('notifies recovery when a firing alert clears', async () => {
@@ -186,8 +201,9 @@ describe('evaluateAlerts', () => {
       [{ ruleId: 1, status: 'breaching', breachSince: null, firedAt: null, lastNotifiedAt: null, lastValue: 85 }],
     );
     await evaluateAlerts(db, [snap()], T0);
-    // elapsed = 0 < required 60s → still breaching, only lastValue touched.
-    expect(updates).toEqual([{ lastValue: 90 }]);
+    // elapsed = 0 < required 30s (2 windows) → the breach window is stamped
+    // from now (r405 idempotent re-assert).
+    expect(updates).toEqual([{ status: 'breaching', breachSince: T0, lastValue: 90 }]);
   });
 
   it('treats numeric timestamps as epoch milliseconds', async () => {

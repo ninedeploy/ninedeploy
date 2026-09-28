@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { screen, waitFor, fireEvent } from '@testing-library/react';
 import { VolumeBackupsPanel } from '../src/components/VolumeBackupsPanel.js';
 import { api, getToken } from '../src/lib/api.js';
+import { formatDateTime } from '../src/lib/format.js';
 import { renderWithProviders, mockOf } from './helpers.js';
 
 vi.mock('../src/lib/api.js', async () => {
@@ -78,7 +79,9 @@ describe('VolumeBackupsPanel', () => {
 
     expect(await screen.findByTestId('backup-row-1')).toBeInTheDocument();
     expect(screen.getByText('Volume Backups (3)')).toBeInTheDocument();
-    expect(screen.getAllByText('2026-02-03 04:05')).toHaveLength(3);
+    // r409: snapshots render in LOCAL time via the shared formatter — the
+    // raw UTC slice was off by the viewer's timezone with no Z.
+    expect(screen.getAllByText(formatDateTime(new Date('2026-02-03T04:05:06.000Z')))).toHaveLength(3);
     expect(screen.getByText('Off-site')).toBeInTheDocument();
     expect(screen.getByText('archived')).toBeInTheDocument();
   });

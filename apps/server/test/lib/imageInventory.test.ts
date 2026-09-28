@@ -448,11 +448,72 @@ describe('pruneImages error + edge branches', () => {
     );
     try {
       const result = await pruneImages({ keepLast: 1, dryRun: false });
-      // Only the second chunk's ids land in `removed`.
+      // Only the second chunk's ids land in `removed` (the inspect stub
+      // answers "exists" for everything unset, so the failed chunk credits
+      // nothing).
       expect(rmCount).toBe(2);
       expect(result.removed).toHaveLength(10);
     } finally {
       // Restore the simple mock by re-importing + resetting the mock.
+      (run as { mockReset: () => void }).mockReset();
+      (run as { mockImplementation: (fn: (...a: unknown[]) => Promise<void>) => void }).mockImplementation(
+        async (tool: string, args: string[]) => {
+          if (tool === 'docker' && args[0] === 'image' && args[1] === 'rm') {
+            execState.rmCalls.push({ args });
+          }
+        },
+      );
+    }
+  });
+
+  it('r406: credits the images a FAILED chunk actually removed (docker rm is partial)', async () => {
+    // `docker image rm a b c` removes the subset it can and exits nonzero:
+    // the old code recorded removed=0 for the whole chunk even after freeing
+    // gigabytes. The first chunk fails; of its 50 candidates, the first 25
+    // inspect as gone (removed before the failure) and 25 still exist.
+    const lines: string[] = [];
+    for (let i = 0; i < 60; i += 1) {
+      for (let v = 0; v < 2; v += 1) {
+        const id = `sha256:${(i * 2 + v).toString().padStart(4, '0')}`;
+        lines.push(
+          JSON.stringify({
+            Repository: `x${i}`,
+            Tag: `v${v}`,
+            ID: id,
+            Size: '1MB',
+            CreatedAt: new Date(Date.now() - (v + 1) * 3_600_000).toISOString(),
+          }),
+        );
+      }
+    }
+    execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', {
+      stdout: lines.join('\n'),
+    });
+    execState.byArgs.set('docker ps -aq --no-trunc', { stdout: '' });
+    // The candidates are the odd ids (v1 rows): 0001, 0003 … 0119. Mark the
+    // first 25 as gone (inspect throws "No such image").
+    for (let k = 0; k < 25; k += 1) {
+      const id = `sha256:${(k * 2 + 1).toString().padStart(4, '0')}`;
+      execState.byArgs.set(`docker image inspect ${id} --format {{.Id}}`, {
+        throw: new Error('No such image'),
+      });
+    }
+    let rmCount = 0;
+    const { run } = await import('../../src/lib/exec.js');
+    (run as { mockImplementation: (fn: (...a: unknown[]) => Promise<void>) => void }).mockImplementation(
+      async (tool: string, args: string[]) => {
+        if (tool === 'docker' && args[0] === 'image' && args[1] === 'rm') {
+          rmCount += 1;
+          if (rmCount === 1) throw new Error('chunk failed partway');
+        }
+      },
+    );
+    try {
+      const result = await pruneImages({ keepLast: 1, dryRun: false });
+      // 25 partial removals from the failed chunk + the 10 of chunk 2.
+      expect(result.removed).toHaveLength(35);
+      expect(result.removedLabels).toContain('x0:v1');
+    } finally {
       (run as { mockReset: () => void }).mockReset();
       (run as { mockImplementation: (fn: (...a: unknown[]) => Promise<void>) => void }).mockImplementation(
         async (tool: string, args: string[]) => {

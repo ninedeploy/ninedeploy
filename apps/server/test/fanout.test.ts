@@ -210,15 +210,18 @@ describe('multi-server fan-out (phase 1)', () => {
     expect(results).toEqual([{ serverId: 5, runtimeId: 'web-t5-10', ok: false, error: 'container did not reach running state' }]);
   });
 
-  it('upserts fan-out results onto the target rows', async () => {
+  it('updates existing rows and RETIRES the container of a row deleted mid-fan-out (r403)', async () => {
     const updates: Array<Record<string, unknown>> = [];
     const inserts: Array<Record<string, unknown>> = [];
     let lookups = 0;
+    agentMocks.agentOp.mockResolvedValue({ exitCode: 0, lines: [] });
     const db = createFakeDb({
       select: {
         // First lookup (server 5) finds the row; the second (server 6) finds
-        // none — exercising the update and insert arms respectively.
-        serviceTargets: () => (lookups++ === 0 ? [{ id: 3 }] : []),
+        // none — the operator removed that target WHILE the fan-out loop was
+        // running. Re-inserting would resurrect the deleted row and leave an
+        // untracked container on the node.
+      serviceTargets: () => (lookups++ === 0 ? [{ id: 3 }] : []),
       },
       update: {
         serviceTargets: (v: Record<string, unknown>) => {
@@ -235,10 +238,14 @@ describe('multi-server fan-out (phase 1)', () => {
     });
     await recordFanoutResults(db as never, 1, [
       { serverId: 5, runtimeId: 'web-t5-9', ok: true },
-      { serverId: 6, runtimeId: null, ok: false, error: 'pull failed' },
+      { serverId: 6, runtimeId: 'web-t6-9', ok: true },
     ]);
     expect(updates[0]).toMatchObject({ runtimeId: 'web-t5-9', status: 'running' });
-    expect(inserts[0]).toMatchObject({ serviceId: 1, serverId: 6, status: 'error' });
+    expect(inserts).toHaveLength(0);
+    // The orphaned node container is retired best-effort instead.
+    const ops = agentMocks.agentOp.mock.calls.map((c) => [c[2], c[3]]);
+    expect(ops).toContainEqual(['docker.stop', { name: 'web-t6-9' }]);
+    expect(ops).toContainEqual(['docker.rm', { name: 'web-t6-9' }]);
   });
 
   it('lists fan-out candidate nodes', async () => {

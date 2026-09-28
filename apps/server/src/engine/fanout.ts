@@ -271,7 +271,15 @@ export async function recordFanoutResults(
     if (existing) {
       await db.update(serviceTargets).set(values).where(eq(serviceTargets.id, existing.id));
     } else {
-      await db.insert(serviceTargets).values({ serviceId, serverId: r.serverId, ...values });
+      // The target row was REMOVED while this deploy's fan-out was running
+      // (PATCH targets / service delete raced it). Re-inserting would
+      // resurrect a row the operator just deleted — and the container this
+      // deploy started on the node must not be left running untracked, so
+      // retire it best-effort instead (r403).
+      if (r.runtimeId) {
+        await agentOp(db, r.serverId, 'docker.stop', { name: r.runtimeId }, () => undefined).catch(() => undefined);
+        await agentOp(db, r.serverId, 'docker.rm', { name: r.runtimeId }, () => undefined).catch(() => undefined);
+      }
     }
   }
 }

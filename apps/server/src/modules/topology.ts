@@ -59,10 +59,21 @@ export const topologyRoutes: FastifyPluginAsync = async (app) => {
     const visibleSlugs = new Set(svcs.map((service) => service.slug));
     const visibleNets = isAdmin
       ? nets
-      : nets.filter((network) =>
-          network.name === NETWORK ||
-          (network.name.startsWith('nd-svc-') && visibleSlugs.has(network.name.slice('nd-svc-'.length))),
-        );
+      : nets.filter((network) => {
+          if (network.name === NETWORK) return true;
+          // A member's own services: the per-service bridge and their inline
+          // compose stacks (`ndcmp-<slug>_default` — r408: operators saw
+          // these, the member graph silently dropped them).
+          if (network.name.startsWith('nd-svc-')) {
+            return visibleSlugs.has(network.name.slice('nd-svc-'.length));
+          }
+          if (network.name.startsWith('ndcmp-')) {
+            const rest = network.name.slice('ndcmp-'.length);
+            const slug = rest.slice(0, rest.indexOf('_') === -1 ? rest.length : rest.indexOf('_'));
+            return visibleSlugs.has(slug);
+          }
+          return false;
+        });
     const networks = await Promise.all(
       visibleNets.map(async (n) => {
         // Show member lists on every managed bridge we can see — `network

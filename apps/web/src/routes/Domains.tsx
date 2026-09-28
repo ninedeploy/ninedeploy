@@ -53,9 +53,17 @@ export function Domains() {
               {list.data.map((d) => (
                 <tr key={d.id} className="border-b border-white/5 last:border-0 hover:bg-white/[0.02]">
                   <td className="px-5 py-3">
-                    <a href={`http${d.ssl ? 's' : ''}://${d.hostname}`} target="_blank" rel="noreferrer" className="font-mono text-xs text-slate-200 hover:text-indigo-300">
-                      {d.hostname}
-                    </a>
+                    {/* r409: a pending domain is not routed — linking it just
+                        opened a connection error. Plain text until verified. */}
+                    {d.status === 'pending' ? (
+                      <span className="font-mono text-xs text-slate-200" title="Awaiting DNS ownership proof — not routed yet">
+                        {d.hostname}
+                      </span>
+                    ) : (
+                      <a href={`http${d.ssl ? 's' : ''}://${d.hostname}`} target="_blank" rel="noreferrer" className="font-mono text-xs text-slate-200 hover:text-indigo-300">
+                        {d.hostname}
+                      </a>
+                    )}
                     {d.path !== '/' && <span className="ml-1 font-mono text-[10px] text-slate-600">{d.path}</span>}
                   </td>
                   <td className="px-5 py-3">
@@ -75,19 +83,27 @@ export function Domains() {
                       label={d.ssl ? 'HTTPS on' : 'Enable HTTPS'}
                     />
                     {d.ssl && <Lock size={11} className="ml-1.5 inline text-emerald-400" />}
-                    {d.certExpiresAt && (
-                      <span
-                        className={cn(
-                          'ml-2 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
-                          daysUntil(d.certExpiresAt) < 14
-                            ? 'bg-amber-500/15 text-amber-300 ring-amber-500/20'
-                            : 'bg-emerald-500/10 text-emerald-300 ring-emerald-500/20',
-                        )}
-                        title="Certificate expiry (Let's Encrypt)"
-                      >
-                        cert {daysUntil(d.certExpiresAt)}d
-                      </span>
-                    )}
+                    {d.certExpiresAt && (() => {
+                      // r409: an expired cert said "cert -3d" in amber; name
+                      // the state and colour it like the failure it is.
+                      const days = daysUntil(d.certExpiresAt);
+                      const expired = days < 0;
+                      return (
+                        <span
+                          className={cn(
+                            'ml-2 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
+                            expired
+                              ? 'bg-rose-500/15 text-rose-300 ring-rose-500/20'
+                              : days < 14
+                                ? 'bg-amber-500/15 text-amber-300 ring-amber-500/20'
+                                : 'bg-emerald-500/10 text-emerald-300 ring-emerald-500/20',
+                          )}
+                          title={expired ? 'Certificate EXPIRED — reissue by toggling HTTPS off/on' : "Certificate expiry (Let's Encrypt)"}
+                        >
+                          {expired ? `expired ${Math.abs(days)}d ago` : `cert ${days}d`}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="px-5 py-3">
                     {/* r345: the row's real routing status. `ssl` says nothing

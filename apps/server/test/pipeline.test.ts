@@ -251,8 +251,7 @@ describe('runDeployment', () => {
     logBus.removeAllListeners();
   });
 
-  it('treats a deployment row deleted mid-flight as cancelled (stops the zombie pipeline)', async () => {
-    const { db, updates } = makeDb();
+  it('treats a deployment row deleted mid-flight as cancelled (stops the zombie pipeline)', async () => {    const { db, updates } = makeDb();
     baseSetup(db, { image: 'nginx:latest', port: null, runtimeId: null });
     // The entry lookup sees the row; every later read (the cancel checkpoints)
     // sees NOTHING — the operator cancelled the deploy and removed the already
@@ -271,6 +270,43 @@ describe('runDeployment', () => {
     expect(updates.map((u) => [u.table, u.values.status])).toEqual([
       [deployments, 'building'],
       [services, 'deploying'],
+      [services, 'idle'],
+      [deployments, 'cancelled'],
+    ]);
+  });
+
+  it('r404: a cancel landing between the claim and the first status write survives', async () => {
+    // The worker's claim flipped queued→building; the cancel route flipped
+    // building→cancelled milliseconds later — before this pipeline's own
+    // status write. That write used to resurrect `building` unconditionally
+    // and the cancelled deploy ran to a green finish.
+    const { db, updates } = makeDb();
+    baseSetup(db, { image: 'nginx:latest', port: null, runtimeId: null });
+    const origUpdate = db.update;
+    (db as unknown as { update: typeof origUpdate }).update = vi.fn((table: unknown) => {
+      const chain = origUpdate(table as never);
+      return {
+        set: (values: Record<string, unknown>) => {
+          if (table === deployments && values.status === 'building') {
+            // The conditional claim write matches ZERO rows: the cancel won.
+            return { where: () => ({ returning: () => Promise.resolve([]) }) };
+          }
+          return chain.set(values);
+        },
+      };
+    });
+    // Entry lookup sees the queued row; every checkpoint read sees cancelled.
+    db.query.deployments.findFirst
+      .mockResolvedValueOnce(dep)
+      .mockResolvedValue({ ...dep, status: 'cancelled' });
+    const lines = collectLogs(1);
+
+    await runDeployment(db as never, 1);
+
+    expect(h.builder.buildAndRun).not.toHaveBeenCalled();
+    expect(lines.some((l) => l.startsWith('▶ Deployment'))).toBe(false);
+    expect(lines).toContain('⏹ Deployment cancelled');
+    expect(updates.map((u) => [u.table, u.values.status])).toEqual([
       [services, 'idle'],
       [deployments, 'cancelled'],
     ]);
@@ -740,14 +776,21 @@ describe('runDeployment', () => {
     const { db } = makeDb();
     baseSetup(db);
     h.builder.buildAndRun.mockRejectedValue(new Error('build boom'));
-    // Make only the failure-status writes inside safeFail reject.
+    // Make only the failure-status writes inside safeFail reject. The object
+    // must stay awaitable (`where()` is awaited directly elsewhere) while also
+    // carrying the .returning() the conditional claim write chains (r404).
     db.update = vi.fn(() => ({
-      set: (values: Record<string, unknown>) => ({
-        where:
-          values.status === 'failed' || values.status === 'error'
-            ? vi.fn().mockRejectedValue(new Error('db locked'))
-            : vi.fn().mockResolvedValue(undefined),
-      }),
+      set: (values: Record<string, unknown>) => {
+        const failWrite = values.status === 'failed' || values.status === 'error';
+        return {
+          where: () => ({
+            returning: () => (failWrite ? Promise.reject(new Error('db locked')) : Promise.resolve([{ id: 1 }])),
+            // biome-ignore lint/suspicious/noThenProperty: intentional thenable — mirrors the chained query builders.
+            then: (ok: (v: unknown) => unknown, rej?: (e: Error) => unknown) =>
+              (failWrite ? Promise.reject(new Error('db locked')) : Promise.resolve(undefined)).then(ok, rej),
+          }),
+        };
+      },
     }));
     const lines = collectLogs(1);
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Download } from 'lucide-react';
+import { downloadBlob } from '../../lib/format.js';
 import { useDeployLogs } from '../../lib/useDeployLogs.js';
 import { PipelineStepper, type StageId } from '../../components/PipelineStepper.js';
 
@@ -21,13 +22,9 @@ export function LogPanel({
 
   const downloadLog = () => {
     if (!lines || downloading) return;
-    const blob = new Blob([lines], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `deploy-${deploymentId}.log`;
-    a.click();
-    URL.revokeObjectURL(url);
+    // downloadBlob delays the URL revoke — a synchronous revoke cancels the
+    // download in Safari (r409).
+    downloadBlob(lines, `deploy-${deploymentId}.log`, 'text/plain');
   };
 
   const handleStageClick = (stageId: StageId) => {

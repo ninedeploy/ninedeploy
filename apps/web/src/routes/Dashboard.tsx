@@ -329,14 +329,16 @@ export function Dashboard() {
                         </div>
                       </div>
 
-                      {/* Live Telemetry Badges if running */}
+                      {/* Live Telemetry Badges if running. '—' until the first
+                          snapshot — a fake 0.0% read as "idle" during a storm
+                          on first paint (r409). */}
                       {isRunning && (
                         <div className="mt-2.5 flex items-center gap-1.5">
                           <span className="inline-flex items-center gap-1 rounded bg-indigo-500/10 px-1.5 py-0.5 font-mono text-[10px] text-indigo-300 ring-1 ring-inset ring-indigo-500/20">
-                            <Cpu size={10} className="text-indigo-400" /> {liveStat ? `${liveStat.cpuPct.toFixed(1)}%` : '0.0%'}
+                            <Cpu size={10} className="text-indigo-400" /> {liveStat ? `${liveStat.cpuPct.toFixed(1)}%` : '—'}
                           </span>
                           <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] text-emerald-300 ring-1 ring-inset ring-emerald-500/20">
-                            <MemoryStick size={10} className="text-emerald-400" /> {liveStat ? `${liveStat.memMb.toFixed(1)} MiB` : '0.0 MiB'}
+                            <MemoryStick size={10} className="text-emerald-400" /> {liveStat ? `${liveStat.memMb.toFixed(1)} MiB` : '—'}
                           </span>
                         </div>
                       )}

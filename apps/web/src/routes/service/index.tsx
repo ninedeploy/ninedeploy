@@ -406,7 +406,7 @@ export function ServiceDetail() {
               onSelect={setActiveDeploy}
             />
           )}
-          {tab === 'environment' && <EnvironmentTab serviceId={id} />}
+          {tab === 'environment' && <EnvironmentTab serviceId={id} svc={svc} />}
           {tab === 'network' && <NetworkTab key={id} serviceId={id} svc={svc} />}
           {tab === 'volumes' && <VolumesTab key={id} serviceId={id} svc={svc} />}
           {tab === 'files' && (

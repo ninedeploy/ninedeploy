@@ -229,11 +229,13 @@ export function ServicesList() {
                           <div className="mt-3.5 flex flex-wrap items-center gap-2">
                             <span className="inline-flex items-center gap-1 rounded-md bg-indigo-500/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-indigo-300 ring-1 ring-inset ring-indigo-500/20">
                               <Cpu size={11} className="text-indigo-400" />
-                              {liveStat ? `${liveStat.cpuPct.toFixed(1)}%` : '0.0%'}
+                              {/* '—' until the snapshot arrives: a fake 0.0% read as
+                                  "idle" during a CPU storm on first paint (r409). */}
+                              {liveStat ? `${liveStat.cpuPct.toFixed(1)}%` : '—'}
                             </span>
                             <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-300 ring-1 ring-inset ring-emerald-500/20">
                               <MemoryStick size={11} className="text-emerald-400" />
-                              {liveStat ? `${liveStat.memMb.toFixed(1)} MiB` : '0.0 MiB'}
+                              {liveStat ? `${liveStat.memMb.toFixed(1)} MiB` : '—'}
                             </span>
                             {s.volumeMount && (
                               <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-amber-300 ring-1 ring-inset ring-amber-500/20" title={`Volume mounted at ${s.volumeMount}`}>

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useMemo, useState } from 'react';
 import { FileCode, KeyRound, Lock, Plus, Rows3, Save, Trash2 } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { downloadBlob } from '../lib/format.js';
 import { useToast } from './Toast.js';
 import { Button, Card, CardBody, Input, Skeleton, Textarea, cn } from './ui.js';
 
@@ -53,7 +54,7 @@ export function parseEnvText(text: string): { entries: Array<{ key: string; valu
   return { entries, errors };
 }
 
-export function EnvCard({ serviceId }: { serviceId: number }) {
+export function EnvCard({ serviceId, literalNewlines = false }: { serviceId: number; literalNewlines?: boolean }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [key, setKey] = useState('');
@@ -147,6 +148,18 @@ export function EnvCard({ serviceId }: { serviceId: number }) {
           <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
             <KeyRound size={15} className="text-slate-500" /> Environment
           </div>
+          {/* r409: docker-builder services deliver env through docker's env
+              file, which cannot carry real newlines — a PEM key or multi-line
+              JSON arrives as the two characters \n. Compose decodes them; PM2
+              passes the object through. Warn only when such a value exists. */}
+          {literalNewlines &&
+            (value.includes('\n') ||
+              Object.values(drafts).some((d) => d.includes('\n')) ||
+              (env.data ?? []).some((v) => v.value.includes('\n'))) && (
+              <p className="w-full text-[11px] leading-relaxed text-amber-300/80">
+                Heads-up: this service type passes env values through docker&apos;s env-file, where real line breaks cannot travel — a multi-line value (PEM keys, JSON documents) reaches the container as a literal <code className="font-mono">\n</code>. Base64-encode the value, or use a Compose service for it.
+              </p>
+            )}
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -155,13 +168,9 @@ export function EnvCard({ serviceId }: { serviceId: number }) {
                   .filter((v) => !v.isSecret)
                   .map((v) => `${v.key}=${v.value}`)
                   .join('\n')}\n`;
-                const blob = new Blob([content], { type: 'text/plain' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = '.env';
-                a.click();
-                URL.revokeObjectURL(url);
+                // downloadBlob delays the URL revoke — a synchronous revoke
+                // cancels the download in Safari (r409).
+                downloadBlob(content, '.env', 'text/plain');
               }}
               disabled={(env.data?.length ?? 0) === 0}
               className="flex items-center gap-1.5 rounded-lg bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400 ring-1 ring-inset ring-white/10 transition hover:bg-white/[0.08] hover:text-slate-200 disabled:opacity-30"

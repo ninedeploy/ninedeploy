@@ -578,7 +578,7 @@ function AttachVolumeModal({
                   <option key={v.name} value={v.name}>{v.name}</option>
                 ))}
               </select>
-              <p className="text-[11px] text-slate-500 mt-1">Only volumes with no current owner are listed. Volumes already in use appear greyed-out below.</p>
+              <p className="text-[11px] text-slate-500 mt-1">Only volumes with no current owner can be attached. An in-use volume is not listed — detach it from its current service first.</p>
             </div>
           ) : (
             <div>
