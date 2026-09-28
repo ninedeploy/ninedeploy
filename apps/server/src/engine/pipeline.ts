@@ -522,13 +522,15 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   // The worker's claim flipped queued→building; a cancel in the milliseconds
   // before THIS write flipped building→cancelled — and an unconditional write
   // here used to erase it, running the cancelled deploy to a green finish.
-  // Conditional on still `building` (like the finalize write); when the row
-  // was taken away, the first checkpoint inside the try below resolves the
-  // cancellation with the full cleanup semantics (r404).
+  // Conditional on a live status (like the finalize write). `queued` is
+  // accepted too: callers that invoke the pipeline directly (the integration
+  // harness) never pass through the worker's claim. When the row was taken
+  // away, the first checkpoint inside the try below resolves the cancellation
+  // with the full cleanup semantics (r404).
   const claimed = await db
     .update(deployments)
     .set({ status: 'building', startedAt: new Date(), configSnapshot })
-    .where(and(eq(deployments.id, deploymentId), eq(deployments.status, 'building')))
+    .where(and(eq(deployments.id, deploymentId), inArray(deployments.status, ['queued', 'building'])))
     .returning({ id: deployments.id });
   if (claimed.length > 0) {
     await db.update(services).set({ status: 'deploying' }).where(eq(services.id, service.id));
