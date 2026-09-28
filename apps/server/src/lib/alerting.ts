@@ -127,7 +127,7 @@ export async function evaluateAlerts(db: DB, snapshots: MetricSnapshot[], now = 
       // Stamp/hold the breach window: the first breaching sample sets
       // `breaching` + breachSince; later pre-window samples only refresh the
       // value.
-      const held: 'breaching' | 'firing' = prevStatus === 'ok' ? 'breaching' : prevStatus;
+      const held: 'breaching' | 'firing' = prevStatus === 'firing' ? 'firing' : 'breaching';
       await db
         .update(alertState)
         .set({ status: held, breachSince, lastValue: snap.value })
