@@ -1,6 +1,6 @@
 {
   "name": "@ninedeploy/plugin-sdk",
-  "version": "0.10.13",
+  "version": "0.10.14",
   "description": "Plugin development kit for NineDeploy microkernel and driver registries",
   "license": "MIT",
   "repository": {

@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.14] - 2026-09-28
+
+> The backlog-clearing patch: the deferred findings from the audit rounds that
+> fit a patch (r403–r409) — races closed, semantics made literal, and the
+> panel's small dishonesties fixed.
+
+### Fixed
+
+- **Fan-out resurrected target rows the operator had just deleted (r403).** `recordFanoutResults` upserted unconditionally: removing a node from a service's targets (or deleting the service) while its deploy's fan-out loop was still running re-INSERTED the row — the panel showed a target the operator had removed, and the container this deploy started on that node kept running with no row tracking it. A missing row is now skipped, and the just-deployed container is retired best-effort through the node's agent.
+- **A cancel in the claim-to-first-write window was silently overwritten (r404).** The worker's claim flips `queued → building`; the cancel route legitimately flips `building → cancelled`; the pipeline's first status write then wrote `building` back unconditionally and the cancelled deploy ran to a green finish — the API had already answered `{ ok: true, status: 'cancelled' }`. The write is now conditional on the row still being `building` (the same guard the finalize uses), and a lost claim hands the row to the existing cancel checkpoint for full cleanup semantics.
+- **`durationWindows` fired one sample late (r405).** The bound required `N × 30 s` of elapsed breach measured FROM the first breaching sample — which itself is sample #1 — so `durationWindows: 1` fired on the second sample, 60 s in, contradicting the schema's "number of consecutive 30s samples that must breach before firing". The window is now `(N-1) × 30 s`: N consecutive breaches fire on the Nth sample, and N=1 fires immediately. The breach-window writes are idempotent re-asserts of the row's own values.
+- **A failed prune chunk reported nothing removed (r406).** `docker image rm a b c` removes the subset it can and exits nonzero; the chunk catch recorded `removed=0` while gigabytes were freed — an operator comparing dry-run with the real run saw the real one do "less". The failed chunk is now re-inspected image by image, and everything actually gone is credited.
+- **Two slow leaks (r407/r408).** The SSH-bootstrap log cache (full per-run logs, unbounded map) is now LRU-capped at 25 entries; and members' topology graphs dropped their own inline-compose networks (`ndcmp-<slug>_default`) while operators saw them — the member filter allows them for visible slugs now.
+- **The panel's small dishonesties (r409).** Live CPU/RAM badges showed a confident `0.0%` before the first snapshot arrived — now `—` (a running service read "idle" during a CPU storm on first paint). The .env export and deploy-log download revoked their blob URLs synchronously, which cancels the download in Safari — both use the Safari-safe `downloadBlob` the rest of the app already had. Volume snapshot times rendered raw UTC with no Z (off by the viewer's timezone against every other timestamp in the app) — local time now. An expired certificate rendered `cert -3d` in amber — it says `expired 3d ago` in rose with a reissue hint. Pending (unrouted, unverified) domains linked to `https://<host>` and inevitably errored — plain text until verified. The volume-attach helper described a greyed-out in-use list that never existed. And a docker-type service holding a multi-line env value (PEM key, JSON document) now gets a heads-up in the env editor that docker's env-file cannot carry real newlines — the value arrives as a literal `\n`, which compose services decode and PM2 passes through; the fix for the transport itself is feature work.
+
 ## [0.10.13] - 2026-09-28
 
 > The deferred-round patch: everything verified in the 0.10.12 audit but left

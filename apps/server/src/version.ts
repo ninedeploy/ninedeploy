@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.13';
+export const VERSION = '0.10.14';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.14',
+    date: '2026-09-28',
+    title: 'The Backlog-Clearing Patch — No Resurrected Targets, Surviving Cancels, Honest Alerts and Telemetry',
+    changes: [
+      'Fan-out no longer resurrects a target row the operator deleted mid-deploy — the container this deploy started on that node is retired instead of left running untracked (r403).',
+      'A cancel landing between the worker claim and the pipeline’s first status write survives: the write is conditional, so a cancelled deploy can no longer run to green (r404).',
+      'Alert durationWindows now means N consecutive breaching samples — the old bound fired one sample late (r405), and a failed prune chunk credits the images docker actually removed (r406).',
+      'The panel got more honest in the small places: live-stat badges stop faking 0.0%, expired certificates say so, volume snapshot times are local, pending domains stop linking to an unrouted host, Safari downloads no longer cancel, and multi-line env values on docker services warn that docker’s env-file cannot carry real newlines (r409).',
+    ],
+  },
+{
     version: '0.10.13',
     date: '2026-09-28',
     title: 'The Deferred-Round Patch — Pullable Rollbacks, an Honest Proxy Finalize and Real Endpoint Identity',
