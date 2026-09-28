@@ -97,7 +97,8 @@ describe('topology routes', () => {
     execMocks.capture.mockImplementation((_cmd: string, args: string[]) => {
       const joined = args.join(' ');
       if (joined.startsWith('volume ls')) return 'nd-svc-mine-data\nnd-svc-theirs-data\nnd-svc-orphan-data\n';
-      if (joined.startsWith('network ls')) return 'ninedeploy\tbridge\nother-net\tbridge\n';
+      if (joined.startsWith('network ls'))
+        return 'ninedeploy\tbridge\nother-net\tbridge\nndcmp-mine_default\tbridge\nndcmp-theirs_default\tbridge\n';
       if (joined.startsWith('network inspect')) return 'mine-1 theirs-2 ninedeploy-traefik ';
       return '';
     });
@@ -109,9 +110,12 @@ describe('topology routes', () => {
       { name: 'nd-svc-mine-data', owner: { kind: 'service', refId: 1, name: 'web' } },
     ]);
     // The shared Traefik gateway stays visible: it is not another tenant's
-    // resource and is already reported to every caller as `gateway`.
+    // resource and is already reported to every caller as `gateway`. r408:
+    // the member's OWN inline-compose network (ndcmp-<their slug>_) is
+    // visible too, while another tenant's compose network is not.
     expect(res.json().networks).toEqual([
       { name: 'ninedeploy', driver: 'bridge', containers: ['mine-1', 'ninedeploy-traefik'] },
+      { name: 'ndcmp-mine_default', driver: 'bridge', containers: ['mine-1', 'ninedeploy-traefik'] },
     ]);
   });
 
