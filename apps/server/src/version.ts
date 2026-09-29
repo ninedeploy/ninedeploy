@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.15';
+export const VERSION = '0.10.16';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.16',
+    date: '2026-09-29',
+    title: 'The Deep-Scan Patch — a Sealed Credential Boundary, Leak-Free Sockets and a Zero-Vulnerability Tree',
+    changes: [
+      'The operator-managed git credential can no longer be aimed at someone else\'s repository: a member\'s clone of a sourced service arrives with the source stripped (r427), and PATCH refuses to retarget repoUrl/branch on a service that uses a managed source unless the caller is the operator (r428) — both closed the road where a workspace member pointed the operator\'s decrypted token at any repo it can read and streamed the exfiltrating build log. No-op PATCHes keep working.',
+      'WebSockets tear down cleanly now: a client that drops during the auth roundtrip used to fire close before any listener existed, leaking the 60 s revalidation interval and the bus subscription — bearer token and all — for the process lifetime (r429, events + deploy-log streams); the container-exec socket closes with 1008 instead of hanging forever when the service lookup throws on the hijacked reply (r430).',
+      'A crashed system import can no longer poison the next one: the fixed _import scratch dir is cleared up front and cleaned on a malformed _meta.json, so a leftover _db-<stamp>.db from a dead request can never be swapped in while auditing a new archive (r431).',
+      'Volume-attachment paths are validated the way the schema always claimed: NUL bytes, embedded newlines, ".." segments and interior empty segments are rejected before they reach docker run -v (r432) — the old regex prefix-matched them through. The web activity feed finally resolves its socket through VITE_API_URL like every other stream (r433), and the CLI\'s 401-refresh path list is byte-identical to the web client\'s again (r434).',
+      'Supply chain: fast-uri pinned to 3.1.7/4.1.4 (the old pins were the still-vulnerable versions), ip-address forced to >=10.5.1 and nodemailer upgraded 9→10 (GHSA-6vj9-mwq6-2f5v, GHSA-qw65-cvwx-89v3, GHSA-rpw4-54j3-4h4q, GHSA-2vr4-cq9g-mvrc) — pnpm audit reports zero known vulnerabilities for the first time this cycle.',
+    ],
+  },
+{
     version: '0.10.15',
     date: '2026-09-29',
     title: 'The Fresh-Audit Patch — Secret-Free Error Labels, a Working First Node Deploy, and Plugins That Actually Stop',

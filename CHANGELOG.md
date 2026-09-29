@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.16] - 2026-09-29
+
+> The deep-scan patch: a full pass over the server, web, CLI and packages by
+> two parallel review agents, everything verified fixed in place (r427–r434) —
+> the operator credential boundary sealed at every sink, WebSockets that
+> clean up after themselves, and a dependency tree with zero known
+> vulnerabilities.
+
+### Security
+
+- **A workspace member could aim the operator's git credential at any repository it can read (r427/r428).** Two roads, one root cause: the clone route copied `sourceId` verbatim into a service owned by the CALLER (create and PATCH refuse exactly that attachment for members), and PATCH placed no restriction on `repoUrl`/`branch` for a service that USES a managed source — a member retargeted the repository, deployed, and streamed the build log while the pipeline cloned their chosen URL with the operator's decrypted PAT. A non-operator's clone now arrives with the source stripped, and a repository/branch change on a sourced service is operator-only. No-op PATCHes (a UI resending the same value) keep working, and members keep full control of their own unsourced services.
+- **Supply chain: seven known advisories closed, `pnpm audit` reports zero (r434).** The fast-uri overrides were sitting on 3.1.6/4.1.3 — the exact versions two 2026 GHSAs still flag; both majors are pinned to their patched releases (3.1.7/4.1.4). `ip-address` (SSRF/trust-boundary bypasses via misread link-local and NAT64 ranges, reachable through @fastify/rate-limit, the MCP SDK and pm2's socks chain) is forced to ≥10.5.1. Nodemailer jumps 9→10 (cross-transport TLS `servername` reuse, GHSA-6vj9-mwq6-2f5v) — the panel uses the three-call core API, identical across the major.
+
+### Fixed
+
+- **WebSockets leaked a timer and a subscription per dropped connection (r429).** The events and deploy-log handlers await a DB roundtrip (auth) BEFORE attaching their close listeners — a client disconnecting inside that window emits `close` with no listener registered, so cleanup never ran: the 60-second revalidation interval ticked forever and the bus subscription (closure holding the socket and the raw bearer token) lived for the process lifetime. Both handlers now check the socket state after the awaits and inside the interval; live connections behave exactly as before.
+- **The container-exec socket hung open forever on an unknown service (r430).** A websocket route's reply is hijacked — the 404 `loadServiceForUser` throws cannot become an HTTP response, so the handler rejected and the client stared at an unusable "shell" that never closed. The lookup is wrapped like the sibling log route's: closed with 1008 `not found`.
+- **A crashed system import poisoned the next one (r431).** Import extracts into a FIXED `_import` scratch dir and cleans it only on paths that reach the end; a crash (or a malformed `_meta.json`, which rejected with the files still in place) left the previous archive's `_db-<stamp>.db` behind — and the next import's prefix-based finds could select the STALE files, silently restoring the wrong database while auditing the new archive. The scratch dir is cleared before reuse and the malformed-meta path cleans up too.
+- **Volume-attachment container paths are validated the way the schema always claimed (r432).** The documented rejections — NUL bytes, embedded newlines, `..` segments — were never enforced: the regex prefix-matched `/a/../b`, `/a\0b` and `/a\nb` through, and the value flows straight into `docker run -v <volume>:<path>`. The pattern is anchored on both ends now; a lone `/` and ordinary deep paths stay valid.
+- **The web activity feed ignored `VITE_API_URL` (r433).** Every HTTP call and both other WebSockets resolve through it; the events socket alone hardcoded the page origin — in a split deployment (bundle served from the web host, API elsewhere) the drawer retried a dead endpoint with backoff forever, permanently showing "Stream closed" while the rest of the dashboard worked. It uses the shared resolver like its siblings.
+- **The CLI's 401-refresh path list had drifted from the web client's (r434).** The web copy learned the r193 exemption for `oidc/<slug>/link` (an authenticated route); the CLI's mirror never did — latent until a command wires `auth.oidc.link()`, which would then fail permanently once the 15-minute access token expired instead of silently refreshing. The regexes are byte-identical again, with a comment on each side naming its twin.
+
 ## [0.10.15] - 2026-09-29
 
 > The fresh-audit patch: four parallel reviews of the never-audited surfaces
