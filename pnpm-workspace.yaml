@@ -23,13 +23,20 @@ overrides:
   # resolves into the maintained 13.x line already in the tree.
   "@esbuild-kit/esm-loader": "-"
   "glob@^10.0.0": "^13.0.6"
-  # fast-uri <3.1.6 / <4.1.3 (2026 GHSA set: host confusion + SSRF via IDN /
-  # IPv6 / percent-encoding normalization) arrives on BOTH majors via fastify:
-  # ajv + ajv-formats declare ^3, @fastify/ajv-compiler and
-  # fast-json-stringify declare ^4. Pin each major to its first patched
-  # release — a blanket bump to 4.x would yank ajv's edge across a major.
-  "fast-uri@^3.0.0": "3.1.6"
-  "fast-uri@^4.0.0": "4.1.3"
+  # fast-uri <3.1.7 / <4.1.4 (GHSA-qw65-cvwx-89v3 authority injection via an
+  # unvalidated port, layered on the GHSA-58mr-gqgx-xq4g host-confusion set
+  # that 3.1.6/4.1.3 fixed) arrives on BOTH majors via fastify: ajv +
+  # ajv-formats declare ^3, @fastify/ajv-compiler and fast-json-stringify
+  # declare ^4. Pin each major to its first patched release — a blanket bump
+  # to 4.x would yank ajv's edge across a major.
+  "fast-uri@^3.0.0": "3.1.7"
+  "fast-uri@^4.0.0": "4.1.4"
+  # ip-address <=10.5.0 (GHSA-rpw4-54j3-4h4q: fe80::/64 read as the link-local
+  # range instead of fe80::/10; GHSA-2vr4-cq9g-pvrc: NAT64 64:ff9b:1::/48
+  # unrecognized — both SSRF / trust-boundary bypasses) arrives via
+  # @fastify/rate-limit, the MCP SDK's express-rate-limit and pm2's socks
+  # chain, all on the 10.x line, so a single-range pin is safe.
+  ip-address: "^10.5.1"
   # qs <6.16.0 (GHSA-x5fp-wj9c-mxmx, GHSA-4mjr-xmp4-gh2g — DoS via bracket-key
   # comma parsing / attacker-controlled isBuffer) arrives solely through the
   # MCP SDK's express → body-parser edge, all on the 6.x line. Single pin is

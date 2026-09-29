@@ -107,7 +107,11 @@ export const containerPath = z
   .string()
   .min(1)
   .max(1024)
-  .regex(/^\/[^/].*|^\/$/, 'must be an absolute path starting with a single "/"');
+  // Anchored on both ends: the old `^\/[^/].*` prefix-match let `/a/../b`,
+  // embedded NUL/newline and interior `//` through. Segments are non-empty,
+  // slash-free and control-char-free; a lone `/` stays valid.
+  .regex(/^\/(?:[^/\0\n\r]+\/?)*$/, 'must be an absolute path starting with a single "/"')
+  .refine((v) => !v.split('/').includes('..'), { message: 'must not contain ".." segments' });
 
 /**
  * Docker named-volume name. Lowercase letters, digits, underscores, hyphens

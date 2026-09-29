@@ -452,6 +452,13 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     }
 
     // Replay backlog, then stream live lines.
+    //
+    // Same late-close race the events socket guards against: `close` can fire
+    // during the awaits above, before the cleanup listeners exist. Check the
+    // socket state before subscribing and inside the interval (WebSocket.OPEN
+    // is a constructor static in ws, hence the literal).
+    const open = () => socket.readyState === 1;
+    if (!open()) return;
     const backlog = logBus.read(depId);
     if (backlog) socket.send(backlog);
     const unsub = logBus.subscribe(depId, (line) => {
@@ -466,6 +473,7 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     // logs (they routinely echo secrets), not hold the socket until the
     // client closes it.
     const revalidate = setInterval(async () => {
+      if (!open()) { cleanup(); return; }
       const fresh = token ? await resolveUser(app.db, token).catch(() => null) : null;
       if (!fresh || !authorizeWebsocketUser(fresh, req.url)) {
         socket.close(1008, 'session revoked');
@@ -518,7 +526,15 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     // Workspace guard: match the deploy handler — the operator must have membership
     // in the service's workspace before they can open a shell in any of its containers.
     // Without this, an instance operator could exec into any workspace's service.
-    await loadServiceForUser(app.db, id, user);
+    // The reply is hijacked on a websocket route, so a thrown 404 cannot become an
+    // HTTP response — it would strand the socket open forever. Close it explicitly,
+    // like the log-stream route above.
+    try {
+      await loadServiceForUser(app.db, id, user);
+    } catch {
+      socket.close(1008, 'not found');
+      return;
+    }
     const svc = await app.db.query.services.findFirst({ where: eq(services.id, id) });
     if (!svc) {
       socket.close(1008, 'service not found');

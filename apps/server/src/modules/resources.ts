@@ -228,6 +228,12 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
 
     const tmpDir = path.join(config.paths.dataDir, '_import');
     const archivePath = path.join(tmpDir, 'upload.tar.gz');
+    // A previous import that crashed (or hit one of the early throws below)
+    // leaves its extracted `_db-<stamp>.db` / `_meta-<stamp>.json` behind, and
+    // the prefix finds further down would pick the STALE files over the new
+    // archive's — silently restoring the wrong database. Clear the scratch
+    // dir before reusing it; a leftover can only come from a dead request.
+    rmSync(tmpDir, { recursive: true, force: true });
     mkdirSync(tmpDir, { recursive: true });
     writeFileSync(archivePath, Buffer.from(body, 'binary'));
 
@@ -297,11 +303,20 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(400).send({ error: { code: 'bad_request', message: 'Invalid archive: no _meta.json' } });
     }
     const metaPath = path.join(tmpDir, metaFilename);
-    const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
+    // A malformed _meta.json must clean the scratch dir too — leaving it
+    // behind poisons the next import's prefix finds (see the note at the top
+    // of this handler).
+    let meta: unknown;
+    try {
+      meta = JSON.parse(readFileSync(metaPath, 'utf8'));
+    } catch {
+      rmSync(tmpDir, { recursive: true, force: true });
+      return reply.status(400).send({ error: { code: 'bad_request', message: 'Invalid archive: _meta.json is not valid JSON' } });
+    }
 
     // Audited BEFORE the swap: once the imported database is in place this
     // connection's file is the backup. The event still fans out live.
-    void audit(app.db, req.user?.id ?? null, 'system.import', String(meta?.exportedAt ?? 'unknown export'));
+    void audit(app.db, req.user?.id ?? null, 'system.import', String((meta as { exportedAt?: string } | null)?.exportedAt ?? 'unknown export'));
     try { const inst = app as unknown as { worker?: { stop: () => Promise<void> } }; if (inst.worker) await inst.worker.stop(); } catch { /* */ }
 
     const backupDir = path.join(config.paths.dataDir, `_backup-${Date.now()}`);

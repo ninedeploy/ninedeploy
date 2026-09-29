@@ -118,6 +118,40 @@ describe('events websocket', () => {
     expect(true).toBe(true);
   });
 
+  it('does not subscribe when the client drops during the auth await (late-close race)', async () => {
+    // The handler awaits resolveUser (a DB roundtrip) BEFORE attaching the
+    // close listeners; a client disconnecting inside that window emits
+    // `close` with no listener attached, so cleanup could never run and the
+    // bus subscription + 60 s interval leaked for the process lifetime. The
+    // route must check the socket state after the awaits and bail.
+    const defaultImpl = authMocks.resolveUser.getMockImplementation()!;
+    let releaseAuth: ((u: unknown) => void) | null = null;
+    authMocks.resolveUser.mockImplementation((db: unknown, token: string) => {
+      if (token !== 'slow') return defaultImpl(db, token);
+      return new Promise((resolve) => { releaseAuth = resolve; });
+    });
+    const subSpy = vi.spyOn(eventBus, 'subscribe');
+    try {
+      const app = await buildTestApp({ websocket: true });
+      await app.register(eventRoutes);
+      const port = await listen(app);
+      const ws = await openWs(wsUrl(port, '/v1/events'), 'ninedeploy.bearer.slow');
+      sockets.push(ws);
+      // The server handler is now parked inside the auth await.
+      await waitFor(() => releaseAuth !== null);
+      ws.close();
+      // Let the server observe the close BEFORE auth resolves.
+      await new Promise((r) => setTimeout(r, 150));
+      releaseAuth?.({ id: 1, isOperator: true });
+      await new Promise((r) => setTimeout(r, 150));
+      expect(subSpy).not.toHaveBeenCalled();
+      await app.close();
+    } finally {
+      subSpy.mockRestore();
+      authMocks.resolveUser.mockImplementation(defaultImpl);
+    }
+  });
+
   it('r401: closes the socket when the session is revoked mid-stream', async () => {
     // The socket used to authenticate ONCE at connect: a bumped tokenVersion
     // (logout-everywhere, password change) or a deleted user kept the feed

@@ -496,6 +496,20 @@ describe('service', () => {
       bad(createServiceVolumeAttachment, { volumeName: 'nd-svc-x', containerPath: '//double' });
     });
 
+    it('rejects container paths the old unanchored regex let through', () => {
+      // The pre-fix `^\/[^/].*` prefix-match accepted these; all flow into
+      // `docker run -v <volume>:<containerPath>`.
+      bad(createServiceVolumeAttachment, { volumeName: 'nd-svc-x', containerPath: '/a/../b' }); // parent-relative
+      bad(createServiceVolumeAttachment, { volumeName: 'nd-svc-x', containerPath: '/a\u0000b' }); // NUL
+      bad(createServiceVolumeAttachment, { volumeName: 'nd-svc-x', containerPath: '/a\nb' }); // newline
+      bad(createServiceVolumeAttachment, { volumeName: 'nd-svc-x', containerPath: '/a//b' }); // interior empty segment
+      // A lone root and ordinary deep paths stay valid.
+      const root = ok(createServiceVolumeAttachment, { volumeName: 'nd-svc-x', containerPath: '/' });
+      expect(root?.containerPath).toBe('/');
+      const deep = ok(createServiceVolumeAttachment, { volumeName: 'nd-svc-x', containerPath: '/var/lib/uploads' });
+      expect(deep?.containerPath).toBe('/var/lib/uploads');
+    });
+
     it('rejects invalid docker volume names', () => {
       bad(createServiceVolumeAttachment, { volumeName: 'has space', containerPath: '/x' });
       bad(createServiceVolumeAttachment, { volumeName: '-leading-hyphen', containerPath: '/x' });

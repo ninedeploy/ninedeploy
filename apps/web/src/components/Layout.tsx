@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { Link, Outlet, useLocation } from 'react-router';
 import { useAuth } from '../lib/auth.js';
-import { api, getToken } from '../lib/api.js';
+import { api, eventsWsUrl, getToken } from '../lib/api.js';
 import { useTheme } from '../lib/theme.js';
 import { Logo } from './Logo.js';
 import { cn } from './ui.js';
@@ -432,7 +432,6 @@ function ActivityDrawer({ onClose }: { onClose: () => void }) {
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
     let ws: WebSocket | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let attempts = 0;
@@ -441,10 +440,11 @@ function ActivityDrawer({ onClose }: { onClose: () => void }) {
     const connect = () => {
       if (disposed) return;
       const token = getToken();
-      ws = new WebSocket(
-        `${proto}://${window.location.host}/v1/events`,
-        token ? [`ninedeploy.bearer.${token}`] : ['ninedeploy'],
-      );
+      // eventsWsUrl (not the page origin): in a split deployment the bundle is
+      // served from a different host than the API, and every other socket
+      // already resolves through VITE_API_URL — a page-origin URL here made
+      // the drawer retry a dead endpoint forever.
+      ws = new WebSocket(eventsWsUrl(), token ? [`ninedeploy.bearer.${token}`] : ['ninedeploy']);
       ws.onopen = () => {
         attempts = 0;
         setConnected(true);

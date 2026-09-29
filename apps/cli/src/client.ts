@@ -16,9 +16,13 @@ let refreshInflight: Promise<boolean> | null = null;
  * r193: every `/auth/` path used to be skipped, so the authenticated ones
  * (`/auth/me`, `/auth/tokens`, `/auth/sessions`, 2FA, passkey registration)
  * failed permanently once the 15-minute access token expired.
+ * Keep byte-identical to apps/web/src/lib/api.ts — the web copy also exempts
+ * `oidc/<slug>/link` (an authenticated route); this copy had drifted and
+ * would have re-inherited the r193 failure the moment a CLI command wired
+ * auth.oidc.link().
  */
 export const NO_REFRESH_PATH =
-  /\/(?:v1\/setup|v1\/auth\/(?:login|refresh|register|logout|forgot-password|reset-password|status|oidc\/(?!providers(?:\/|$|\?))|passkey\/login\/))/;
+  /\/(?:v1\/setup|v1\/auth\/(?:login|refresh|register|logout|forgot-password|reset-password|status|oidc\/(?!providers(?:\/|$|\?)|[^/]+\/link(?:$|\?))|passkey\/login\/))/;
 
 async function refreshSession(baseUrl: string, refreshToken: string): Promise<boolean> {
   try {

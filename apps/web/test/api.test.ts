@@ -21,6 +21,7 @@ import {
   authedFetch,
   clearTokens,
   deployLogsWsUrl,
+  eventsWsUrl,
   execWsUrl,
   getToken,
   refreshAccessToken,
@@ -569,6 +570,19 @@ describe('deployLogsWsUrl', () => {
       // An http API URL downgrades to plain ws.
       vi.stubEnv('VITE_API_URL', 'http://api.local:8080');
       expect(deployLogsWsUrl(7, 42)).toBe('ws://api.local:8080/v1/services/7/deploys/42/logs');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('builds the activity-feed URL like every other socket (VITE_API_URL honoured)', () => {
+    // The events socket used to hardcode the page origin; in a split
+    // deployment (bundle served elsewhere, API at VITE_API_URL) it retried a
+    // dead endpoint forever while every HTTP call succeeded.
+    expect(eventsWsUrl()).toBe('ws://localhost/v1/events');
+    vi.stubEnv('VITE_API_URL', 'https://api.example.com');
+    try {
+      expect(eventsWsUrl()).toBe('wss://api.example.com/v1/events');
     } finally {
       vi.unstubAllEnvs();
     }

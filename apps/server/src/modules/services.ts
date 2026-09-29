@@ -557,6 +557,19 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     if (patch.sourceId !== undefined && patch.sourceId !== null && !req.user!.isOperator) {
       throw forbidden('Only operators may attach a managed source to a service');
     }
+    // The mirror image of that gate: while a service USES a managed source,
+    // its repository pointer is part of the operator attachment. A member
+    // retargeting repoUrl/branch would point the operator's decrypted token
+    // at an arbitrary repository and stream the clone log — the same
+    // exfiltration the sourceId gate exists to block. No-op sends (same
+    // value) stay allowed so full-object PATCHes keep working.
+    if (!req.user!.isOperator && existing.sourceId != null) {
+      const repoChanged = patch.repoUrl !== undefined && patch.repoUrl !== existing.repoUrl;
+      const branchChanged = patch.branch !== undefined && patch.branch !== existing.branch;
+      if (repoChanged || branchChanged) {
+        throw forbidden('Only operators may change the repository of a service that uses a managed git source');
+      }
+    }
     // Same for remote-server placement (r097). Moving a service back to the
     // local host (`serverId: null`) stays open: it takes nothing from anyone.
     if (patch.serverId !== undefined && patch.serverId !== null && !req.user!.isOperator) {
@@ -1160,7 +1173,11 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         status: 'idle',
         repoUrl: svc.repoUrl,
         branch: svc.branch,
-        sourceId: svc.sourceId,
+        // Same gate as create: a managed source is an operator credential. A
+        // member cloning a sourced service must not receive it — the clone is
+        // theirs, and PATCHing its repoUrl would retarget the operator's
+        // decrypted token at any repository the token can read.
+        sourceId: req.user!.isOperator ? svc.sourceId : null,
         image: svc.image,
         volumeMount: svc.volumeMount,
         composeService: svc.composeService,

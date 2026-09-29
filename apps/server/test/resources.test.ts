@@ -535,6 +535,56 @@ it('exports system state as a tar.gz and cleans up only after the stream closed'
     expect(fs.existsSync(configMock.paths.dbFile)).toBe(false);
   });
 
+  it('clears a crashed import leftover before reusing the scratch dir (no stale-db poisoning)', async () => {
+    // A previous import that crashed between extraction and cleanup left its
+    // `_db-<stamp>.db` / `_meta-<stamp>.json` in the FIXED `_import` dir. The
+    // next import's prefix finds used to pick those up, silently swapping the
+    // previous archive's database into place while auditing the new one.
+    const dir = configMock.paths.dataDir;
+    fs.mkdirSync(path.join(dir, '_import'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '_import', '_db-stale.db'), 'STALE-DB');
+    fs.writeFileSync(path.join(dir, '_import', '_meta-stale.json'), JSON.stringify({ version: '0.0.0-stale' }));
+    fs.writeFileSync(configMock.paths.dbFile, 'current-db');
+
+    const buildDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nd-build-'));
+    createdDirs.push(buildDir);
+    fs.writeFileSync(path.join(buildDir, '_meta.json'), JSON.stringify({ version: '9.9.9', stats: {} }));
+    const body = await makeArchive(buildDir);
+
+    const app = await appWith();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/import',
+      headers: { 'content-type': 'application/octet-stream', ...asUser() },
+      payload: body,
+    });
+    expect(res.statusCode).toBe(200);
+    // The NEW archive's meta won the find — not the stale stamped one.
+    expect(res.json().meta).toEqual({ version: '9.9.9', stats: {} });
+    // And the stale database never moved into place.
+    expect(fs.readFileSync(configMock.paths.dbFile, 'utf8')).toBe('current-db');
+    expect(fs.existsSync(path.join(dir, '_import'))).toBe(false);
+  });
+
+  it('rejects an archive with malformed _meta.json and still cleans the scratch dir', async () => {
+    const buildDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nd-build-'));
+    createdDirs.push(buildDir);
+    fs.writeFileSync(path.join(buildDir, '_meta.json'), '{not json');
+    const body = await makeArchive(buildDir);
+
+    const app = await appWith();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/import',
+      headers: { 'content-type': 'application/octet-stream', ...asUser() },
+      payload: body,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toContain('_meta.json');
+    // The JSON.parse used to reject with the extracted files still in place.
+    expect(fs.existsSync(path.join(configMock.paths.dataDir, '_import'))).toBe(false);
+  });
+
   it('rejects an archive with path-traversal members (tar-slip)', async () => {
     // Craft an archive with a literal `../evil` member, built in-process as a
     // minimal USTAR+gzip so the fixture never shells out.

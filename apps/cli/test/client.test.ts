@@ -43,7 +43,7 @@ describe('r193: 401 refresh scope', () => {
   };
 
   it('refreshes on authenticated /auth/ endpoints', async () => {
-    for (const path of ['/v1/auth/me', '/v1/auth/tokens', '/v1/auth/sessions', '/v1/auth/oidc/providers']) {
+    for (const path of ['/v1/auth/me', '/v1/auth/tokens', '/v1/auth/sessions', '/v1/auth/oidc/providers', '/v1/auth/oidc/github/link']) {
       expect(await run(`http://srv${path}`)).toEqual({ status: 200, refreshed: true });
     }
   });

@@ -28,6 +28,12 @@ const workspaceMock = vi.hoisted(() => ({
 }));
 const apiMock = vi.hoisted(() => ({
   getToken: vi.fn((): string | null => 'tok'),
+  // Mirrors the real eventsWsUrl's same-origin fallback (no VITE_API_URL in
+  // tests) so the drawer's socket URL expectations stay meaningful.
+  eventsWsUrl: vi.fn(
+    () =>
+      `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/v1/events`,
+  ),
   api: {
     services: { list: vi.fn() },
     databases: { list: vi.fn() },

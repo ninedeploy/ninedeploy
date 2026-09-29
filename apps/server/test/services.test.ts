@@ -220,6 +220,55 @@ describe('services routes', () => {
     expect(res.statusCode).toBe(403);
   });
 
+  it('refuses a member retargeting repoUrl/branch on a sourced service (same gate, mirror image)', async () => {
+    // The operator attached their managed source; the repository pointer is
+    // part of that attachment. A member swapping repoUrl would point the
+    // operator's decrypted token at an arbitrary repo and stream the clone.
+    const sourced = svcRow({
+      id: 1, ownerUserId: 7, runtimeId: 'nd-svc-web', sourceId: 5,
+      repoUrl: 'https://github.com/acme/original.git', branch: 'main',
+    });
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { services: sourced }, update: { services: [sourced] } }),
+    });
+    await app.register(servicesRoutes);
+    const member = asUser({ id: 7, isOperator: false });
+    const retarget = await app.inject({
+      method: 'PATCH', url: '/1', headers: member,
+      payload: { repoUrl: 'https://github.com/acme/attacker.git' },
+    });
+    expect(retarget.statusCode).toBe(403);
+    expect(retarget.json().error.message).toContain('managed git source');
+    const branch = await app.inject({
+      method: 'PATCH', url: '/1', headers: member,
+      payload: { branch: 'evil' },
+    });
+    expect(branch.statusCode).toBe(403);
+    // A no-op send (same value, e.g. a full-object UI PATCH) stays allowed.
+    const noop = await app.inject({
+      method: 'PATCH', url: '/1', headers: member,
+      payload: { repoUrl: 'https://github.com/acme/original.git' },
+    });
+    expect(noop.statusCode).not.toBe(403);
+    // The operator retargets freely — attaching the credential was their act.
+    const op = await app.inject({
+      method: 'PATCH', url: '/1', headers: asUser({ id: 1, isOperator: true }),
+      payload: { repoUrl: 'https://github.com/acme/next.git' },
+    });
+    expect(op.statusCode).not.toBe(403);
+    // And an unsourced service keeps the member-writable repoUrl it always had.
+    const plain = svcRow({ id: 1, ownerUserId: 7, runtimeId: 'nd-svc-web', sourceId: null, repoUrl: 'https://x/a.git' });
+    const appPlain = await buildTestApp({
+      db: createFakeDb({ findFirst: { services: plain }, update: { services: [plain] } }),
+    });
+    await appPlain.register(servicesRoutes);
+    const free = await appPlain.inject({
+      method: 'PATCH', url: '/1', headers: member,
+      payload: { repoUrl: 'https://github.com/acme/own-repo.git' },
+    });
+    expect(free.statusCode).not.toBe(403);
+  });
+
   it('persists trusted command, socket and database mappings from a Hub template', async () => {
     let inserted: Record<string, unknown> | undefined;
     const app = await buildTestApp({
@@ -1250,6 +1299,43 @@ describe('services routes', () => {
       cpuLimitMilli: 1500, replicas: 3, environmentId: 4,
     });
     expect(values[1]).toMatchObject({ outputDir: 'dist', staticSpa: true });
+  });
+
+  it('strips the operator-managed sourceId from a member-owned clone (create gate, clone path)', async () => {
+    // Same trust boundary as create/patch: the clone belongs to the CALLER,
+    // and a copied sourceId would let them retarget repoUrl on their own
+    // service and exfiltrate with the operator's decrypted token.
+    const insertCalls: Record<string, unknown>[] = [];
+    const db = createFakeDb({
+      findFirst: {
+        // The operator attached their source to a member's service — exactly
+        // the state a clone must not spread further.
+        services: svcRow({ id: 1, name: 'private', slug: 'private', sourceId: 5, ownerUserId: 7 }),
+        buildConfigs: null,
+      },
+      findMany: { envVars: [] as any },
+      insert: { services: [svcRow({ id: 2, name: 'private (Copy)', slug: 'private-copy' })] },
+    });
+    const insert = db.insert.bind(db);
+    (db as { insert: unknown }).insert = (table: unknown) => {
+      const q = insert(table as never) as { values: (v: Record<string, unknown>) => unknown };
+      const original = q.values.bind(q);
+      q.values = (v) => {
+        insertCalls.push(v);
+        return original(v);
+      };
+      return q;
+    };
+    const app = await buildTestApp({ db });
+    await app.register(servicesRoutes);
+    const member = await app.inject({ method: 'POST', url: '/1/clone', headers: asUser({ id: 7, isOperator: false }) });
+    expect(member.statusCode).toBe(200);
+    expect(insertCalls[0]).toMatchObject({ ownerUserId: 7, sourceId: null });
+
+    insertCalls.length = 0;
+    const op = await app.inject({ method: 'POST', url: '/1/clone', headers: asUser() });
+    expect(op.statusCode).toBe(200);
+    expect(insertCalls[0]).toMatchObject({ ownerUserId: 1, sourceId: 5 });
   });
 
   it('clones an existing service with its build configs and env vars', async () => {

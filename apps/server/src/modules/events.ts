@@ -33,6 +33,15 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     // `live` is what the delivery filter consults: the revalidation below
     // swaps in the FRESH user so a granted/revoked operator flag applies
     // without a reconnect.
+    //
+    // ws emits `close` the moment the TCP connection drops, and the handler
+    // already awaited a DB roundtrip above — a client that disconnects inside
+    // that window fires `close` BEFORE the listeners below are attached, so
+    // cleanup would never run. Guard on the socket state before subscribing
+    // and inside the interval; WebSocket.OPEN is a constructor static in ws,
+    // hence the literal.
+    const open = () => socket.readyState === 1;
+    if (!open()) return;
     let live = user;
     for (const event of eventBus.backlog()) {
       if (!canReceiveEvent(event, live)) continue;
@@ -47,6 +56,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     // operator flag kept streaming the feed until the client closed it.
     // Re-resolve the token every minute; a dead session closes the socket.
     const revalidate = setInterval(async () => {
+      if (!open()) { cleanup(); return; }
       const fresh = await resolveUser(app.db, token).catch(() => null);
       if (!fresh || !authorizeWebsocketUser(fresh, req.url)) {
         socket.close(1008, 'session revoked');

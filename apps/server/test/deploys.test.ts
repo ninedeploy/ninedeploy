@@ -542,6 +542,54 @@ describe('deploys routes', () => {
     await app.close();
   });
 
+  it('does not subscribe the log stream when the client drops during the auth await (late-close race)', async () => {
+    // Same race the events socket guards against: the handler awaits auth
+    // (and loadServiceForUser) before attaching the close listeners, so a
+    // disconnect in that window left the logBus subscription + 60 s interval
+    // leaked. The route must check the socket state and bail.
+    const defaultImpl = authMocks.resolveUser.getMockImplementation()!;
+    let releaseAuth: ((u: unknown) => void) | null = null;
+    authMocks.resolveUser.mockImplementation((db: unknown, token: string) => {
+      if (token !== 'slow') return defaultImpl(db, token);
+      return new Promise((resolve) => { releaseAuth = resolve; });
+    });
+    const subSpy = vi.spyOn(logBus, 'subscribe');
+    try {
+      const app = await buildTestApp({
+        websocket: true,
+        db: createFakeDb({ findFirst: { services: svcRow({ id: 1 }), deployments: depRow({ id: 5, serviceId: 1 }) } }),
+      });
+      await app.register(deploysRoutes, { prefix: '/services' });
+      const port = await listen(app);
+      const ws = await openWs(wsUrl(port, '/services/1/deploys/5/logs'), 'ninedeploy.bearer.slow');
+      sockets.push(ws);
+      await waitFor(() => releaseAuth !== null);
+      ws.close();
+      await new Promise((r) => setTimeout(r, 150));
+      releaseAuth?.({ id: 1, isOperator: true });
+      await new Promise((r) => setTimeout(r, 150));
+      expect(subSpy).not.toHaveBeenCalled();
+      await app.close();
+    } finally {
+      subSpy.mockRestore();
+      authMocks.resolveUser.mockImplementation(defaultImpl);
+    }
+  });
+
+  it('closes the exec socket when the service is unknown (a thrown 404 must not strand it)', async () => {
+    // The reply is hijacked on a websocket route, so the 404 from
+    // loadServiceForUser cannot become an HTTP response — unwrapped it
+    // rejected the handler and left the socket open forever.
+    const app = await buildTestApp({ websocket: true, db: createFakeDb({ findFirst: { services: null } }) });
+    await app.register(deploysRoutes, { prefix: '/services' });
+    const port = await listen(app);
+    const ws = await openWs(wsUrl(port, '/services/99/exec'), 'ninedeploy.bearer.valid');
+    sockets.push(ws);
+    const closed = new Promise<number>((resolve) => ws.addEventListener('close', (ev) => resolve(ev.code)));
+    expect(await closed).toBe(1008);
+    await app.close();
+  });
+
   it('opens a container exec terminal over websocket', async () => {
     // python3 pty probe unavailable → legacy pipe mode
     execMocks.capture.mockRejectedValue(new Error('no python3'));

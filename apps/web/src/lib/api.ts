@@ -205,6 +205,12 @@ export function deployLogsWsUrl(serviceId: number, deploymentId: number): string
   return `${proto}://${host}/v1/services/${serviceId}/deploys/${deploymentId}/logs`;
 }
 
+/** Build a WebSocket URL for the live activity feed. */
+export function eventsWsUrl(): string {
+  const { proto, host } = getWsBase();
+  return `${proto}://${host}/v1/events`;
+}
+
 /** Build a WebSocket URL for container interactive exec terminal. */
 export function execWsUrl(serviceId: number): string {
   const { proto, host } = getWsBase();
