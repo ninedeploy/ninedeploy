@@ -105,7 +105,15 @@ describe('studio proxy', () => {
 
   it('refuses a cookie with a forged signature', async () => {
     const app = await makeApp();
-    const forged = `nd-studio-3=${studioCookieValue(3).value.slice(0, -2)}ff`;
+    // Tamper DETERMINISTICALLY. The old slice(0,-2)+'ff' forged a VALID
+    // cookie whenever the genuine HMAC already ended in 'ff' (1/256 per
+    // mint — the expiry is stamped per second, so every run rolls the dice)
+    // and the proxy rightly answered 200. Swap in a tail pair this mint's
+    // real signature cannot have.
+    const real = studioCookieValue(3).value;
+    const tail = real.slice(-2);
+    const forgedTail = tail === 'ff' ? '00' : 'ff';
+    const forged = `nd-studio-3=${real.slice(0, -2)}${forgedTail}`;
     const res = await app.inject({ method: 'GET', url: '/databases/3/studio-proxy/', headers: { cookie: forged } });
     expect(res.statusCode).toBe(401);
     await app.close();
