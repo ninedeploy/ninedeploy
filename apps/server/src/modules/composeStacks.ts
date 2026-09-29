@@ -82,6 +82,7 @@ export function analyseComposeContent(content: string, port?: number): ComposePr
       reasons: ['`services:` must be a mapping of service-name → definition'],
       warnings: pre.warnings,
       services: [],
+      suggestedService: null,
       magicTokens: [],
       openPlaceholders: [],
       configurableEnv: [],

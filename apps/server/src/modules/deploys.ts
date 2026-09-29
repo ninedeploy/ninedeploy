@@ -466,7 +466,7 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     // logs (they routinely echo secrets), not hold the socket until the
     // client closes it.
     const revalidate = setInterval(async () => {
-      const fresh = await resolveUser(app.db, token).catch(() => null);
+      const fresh = token ? await resolveUser(app.db, token).catch(() => null) : null;
       if (!fresh || !authorizeWebsocketUser(fresh, req.url)) {
         socket.close(1008, 'session revoked');
         cleanup();
@@ -612,7 +612,7 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     // tokenVersion, password change, operator flag pulled) kills the shell
     // within a minute instead of keeping it open until the client closes.
     const execRevalidate = setInterval(async () => {
-      const fresh = await resolveUser(app.db, token).catch(() => null);
+      const fresh = token ? await resolveUser(app.db, token).catch(() => null) : null;
       const stillOperator = fresh && fresh.isOperator
         && !(Array.isArray(fresh.tokenScopes) && !fresh.tokenScopes.includes('operator'));
       if (!stillOperator) {

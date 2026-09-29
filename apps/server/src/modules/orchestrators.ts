@@ -50,7 +50,7 @@ export const orchestratorsRoutes: FastifyPluginAsync = async (app) => {
     return { orchestrators };
   });
 
-  app.get<{ Params: { name: string } }>('/:name/stacks', async (req, reply) => {
+  app.get<{ Params: { name: string } }>('/:name/stacks', async (req) => {
     const driver = app.kernel.registry.getOrchestrator(req.params.name);
     if (!driver) {
       // r422: a 200 body carrying {error} typed as the success shape crashed
@@ -61,7 +61,7 @@ export const orchestratorsRoutes: FastifyPluginAsync = async (app) => {
     return { stacks: await driver.listStacks() };
   });
 
-  app.get<{ Params: { name: string; stack: string } }>('/:name/stacks/:stack', async (req, reply) => {
+  app.get<{ Params: { name: string; stack: string } }>('/:name/stacks/:stack', async (req) => {
     const driver = app.kernel.registry.getOrchestrator(req.params.name);
     if (!driver) {
       throw notFound(`Orchestrator "${req.params.name}" is not registered`);
