@@ -62,11 +62,23 @@ export class SandboxPlugin implements KernelPlugin {
     );
     const targetScript = this.workerPath || defaultBootstrapPath;
 
-    // Launch worker thread with resource limits if supported
+    // Launch worker thread with resource limits if supported.
+    // r414: the worker gets a SCRUBBED environment — by default a worker
+    // thread receives a COPY of the panel's process env, which includes
+    // NINEDEPLOY_MASTER_KEY(S)/JWT secret, i.e. the key that decrypts every
+    // stored secret. Third-party plugin code must not read them for free.
+    // (This is containment hygiene, NOT a security boundary: the worker can
+    // still dynamically import node:fs — installing third-party plugins
+    // remains an operator-level trust decision, like PM2 services.)
     this.worker = new Worker(targetScript, {
       resourceLimits: {
         maxYoungGenerationSizeMb: 16,
         maxOldGenerationSizeMb: 64,
+      },
+      env: {
+        PATH: process.env['PATH'] ?? '/usr/local/bin:/usr/bin:/bin',
+        LANG: process.env['LANG'] ?? 'C.UTF-8',
+        TZ: process.env['TZ'] ?? 'UTC',
       },
     });
 

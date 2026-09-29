@@ -110,7 +110,10 @@ describe('agent /agent/exec route', () => {
   });
 
   it('reports non-Error op failures generically', async () => {
-    dockerPullMock.mockRejectedValueOnce('plain boom');
+    // r417: docker.pull runs through spawnValidated like every other op — a
+    // plain-string rejection from the spawn layer still answers 400 Invalid
+    // params (the pull-recovery machine is gone from the agent).
+    spawnMock.mockRejectedValueOnce('plain boom');
     const app = await appWith();
     const res = await app.inject({
       method: 'POST', url: '/agent/exec',

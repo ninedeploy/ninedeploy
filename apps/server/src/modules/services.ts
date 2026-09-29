@@ -677,7 +677,19 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // Keep the workspace copy in step with the row. The deploy would rewrite
     // it anyway, but a stale file on disk makes `docker compose` run by hand
     // (or a File Browser peek) disagree with what the panel shows.
-    if (patch.composeContent !== undefined) materialiseComposeFile(id, patch.composeContent);
+    if (patch.composeContent !== undefined) {
+      materialiseComposeFile(id, patch.composeContent);
+      // r424: NEW `SERVICE_*` tokens in the edited YAML used to deploy GREEN
+      // with blank values — compose interpolates an unset variable to an
+      // empty string with a warning, `config --quiet` still passes, and the
+      // stack boots with empty credentials. Seed exactly like the create
+      // path (same generator, same never-rotate reconciliation).
+      const resolved = resolveStackEnvironment(patch.composeContent, {
+        publicUrl: await stackPublicUrl(app.db, svc.slug),
+      });
+      const stackEnv = stackEnvSeeds(resolved);
+      if (stackEnv.length > 0) await reconcileEnvironment(app, id, { env: stackEnv }, []);
+    }
     void audit(app.db, req.user!.id, 'service.update', svc.name);
     return serialize(svc, await sourceNameFor(app.db, svc.sourceId), await tagIdsOf(app.db, svc.id));
   });

@@ -699,16 +699,36 @@ export async function installPlugin(
     },
   }).onConflictDoUpdate({
     target: installedPlugins.id,
+    // r420: the conflict arm UPDATES the stored definition too. It used to
+    // flip only enabled/status — reinstalling a sandbox plugin over an
+    // errored/disabled row registered the NEW instance at runtime while the
+    // row kept the OLD code, so the next boot resurrected the broken one.
     set: {
+      name: dynamicPlugin.name,
+      version: dynamicPlugin.version,
+      isOfficial: !!dynamicPlugin.isOfficial,
       enabled: true,
       status: 'active',
       error: null,
       updatedAt: new Date(),
+      manifest: {
+        description: dynamicPlugin.description,
+        author: dynamicPlugin.author,
+        source: input.source,
+        target: input.target,
+        ...(input.source === 'sandbox'
+          ? { code: input.code, sandboxManifest: input.manifest }
+          : {}),
+      },
     },
   });
 
-  // Register into kernel if not already present
-  if (!kernel.getPlugin(dynamicPlugin.id)) {
+  // Register the FRESH instance — an already-registered runtime (a row that
+  // was disabled while still loaded, pre-r420) is replaced, not kept.
+  if (kernel.getPlugin(dynamicPlugin.id)) {
+    await kernel.unregisterPlugin(dynamicPlugin.id);
+  }
+  {
     try {
       await kernel.registerPlugin(dynamicPlugin);
     } catch (err) {
@@ -749,6 +769,43 @@ export async function uninstallPlugin(
   return { ok: true, id };
 }
 
+/**
+ * Re-register a plugin from its stored row (boot restore, enable, reload).
+ * Throws when the row is unrestorable (unsupported source, sandbox row with
+ * no code) — callers decide whether that is a boot warning or a 400.
+ */
+export async function restorePluginFromRow(
+  row: typeof installedPlugins.$inferSelect,
+  kernel: KernelContext,
+): Promise<void> {
+  const manifest = (row.manifest || {}) as Record<string, any>;
+  const source = (manifest.source as string) || (row.isOfficial ? 'marketplace' : 'local');
+  if (!isLoadableSource(source)) {
+    throw new Error(
+      `Plugin "${row.id}" was installed from an unsupported source ("${source}") and cannot be loaded. Uninstall it from Settings → Plugins.`,
+    );
+  }
+  const plugin = createDynamicPlugin({
+    source: source as any,
+    target: (manifest.target as string) || row.id,
+    name: row.name,
+    version: row.version,
+    description: row.description ?? undefined,
+    author: row.author ?? undefined,
+    icon: row.icon ?? undefined,
+    configSchema: manifest.configSchema,
+    menuItems: manifest.menuItems,
+    dependencies: manifest.dependencies,
+    // Restored sandbox payloads — written by installPlugin at install
+    // time. A row from before this column carried them registers as a
+    // sandbox plugin with no code, which createDynamicPlugin now
+    // refuses with a pointed error instead of a silent no-op.
+    code: manifest.code as string | undefined,
+    manifest: manifest.sandboxManifest as Record<string, unknown> | undefined,
+  });
+  await kernel.registerPlugin(plugin);
+}
+
 export async function loadInstalledPlugins(db: DB, kernel: KernelContext): Promise<number> {
   const rows = await db.query.installedPlugins.findMany({
     where: eq(installedPlugins.enabled, true),
@@ -758,37 +815,7 @@ export async function loadInstalledPlugins(db: DB, kernel: KernelContext): Promi
   for (const row of rows) {
     if (!kernel.getPlugin(row.id)) {
       try {
-        const manifest = (row.manifest || {}) as Record<string, any>;
-        const source = (manifest.source as string) || (row.isOfficial ? 'marketplace' : 'local');
-        if (!isLoadableSource(source)) {
-          // Installed by an older build that accepted npm/git/local. The row is
-          // inert — say so once per boot instead of restoring a shell that
-          // reports itself as "active".
-          console.warn(
-            `[PluginLoader] Plugin "${row.id}" was installed from an unsupported source ("${source}") and does nothing. ` +
-              'Uninstall it from Settings → Plugins.',
-          );
-          continue;
-        }
-        const plugin = createDynamicPlugin({
-          source: source as any,
-          target: (manifest.target as string) || row.id,
-          name: row.name,
-          version: row.version,
-          description: row.description ?? undefined,
-          author: row.author ?? undefined,
-          icon: row.icon ?? undefined,
-          configSchema: manifest.configSchema,
-          menuItems: manifest.menuItems,
-          dependencies: manifest.dependencies,
-          // Restored sandbox payloads — written by installPlugin at install
-          // time. A row from before this column carried them registers as a
-          // sandbox plugin with no code, which createDynamicPlugin now
-          // refuses with a pointed error instead of a silent no-op.
-          code: manifest.code as string | undefined,
-          manifest: manifest.sandboxManifest as Record<string, unknown> | undefined,
-        });
-        await kernel.registerPlugin(plugin);
+        await restorePluginFromRow(row, kernel);
         loaded++;
       } catch (err) {
         console.error(`[PluginLoader] Failed to restore plugin "${row.id}":`, err);

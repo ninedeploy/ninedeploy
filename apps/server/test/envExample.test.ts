@@ -61,6 +61,11 @@ describe('.env.example', () => {
     const read = envVarsTheCodeReads();
     // Supplied by the runtime, not by the operator.
     read.delete('NODE_ENV');
+    // Copied into the plugin-sandbox worker's scrubbed env (r414) — runtime
+    // values, never operator configuration.
+    read.delete('PATH');
+    read.delete('LANG');
+    read.delete('TZ');
     const documented = envVarsDocumented();
     expect([...read].filter((v) => !documented.has(v)).sort()).toEqual([]);
   });

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Builder, DeployRuntime } from '../types.js';
 import { capture, run } from '../../lib/exec.js';
@@ -193,6 +193,21 @@ export const composeBuilder: Builder = {
     }
     const wroteDotEnv = Object.keys(env).length > 0;
     if (wroteDotEnv) {
+      // r423: a repo-committed `.env` SYMLINK routes the merged write — repo
+      // bytes plus panel secrets in plaintext — through the link, and a
+      // dangling one makes writeFileSync CREATE the target (secretFile.ts
+      // documents this exact threat; repoPath.ts symlink-checks every build
+      // path). Compose services are operator-gated, but the guard is cheap.
+      try {
+        const st = lstatSync(dotEnv);
+        if (st.isSymbolicLink()) {
+          throw new Error(
+            'the repository commits .env as a symlink — refusing to write resolved secrets through it. Replace the symlink with a regular file.',
+          );
+        }
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      }
       const panelLines = `${Object.entries(env).map(([k, v]) => `${k}=${dotenvValue(v)}`).join('\n')}\n`;
       const repoText = repoDotEnv?.toString('utf8') ?? '';
       const merged = repoText === '' || repoText.endsWith('\n') ? repoText + panelLines : `${repoText}\n${panelLines}`;

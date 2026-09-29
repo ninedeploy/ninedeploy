@@ -25,11 +25,13 @@ describe('agent typed-op argv templates', () => {
     spawnMock.mockResolvedValue(0);
   });
 
-  it('docker.pull', async () => {
+  it('docker.pull runs through the validated spawn layer (r417)', async () => {
     const log = vi.fn();
     await expect(runOp('docker.pull', { image: 'nginx:1' }, log)).resolves.toBe(0);
-    expect(dockerPullMock).toHaveBeenCalledWith('nginx:1', log);
-    expect(spawnMock).not.toHaveBeenCalled();
+    expect(spawnMock).toHaveBeenCalledWith('docker', ['pull', 'nginx:1'], log);
+    // The panel-side pull-recovery machine (30-60 min crane/ctr chains) is
+    // gone from the agent entirely.
+    expect(dockerPullMock).not.toHaveBeenCalled();
   });
 
   it('docker.networkCreate builds a validated argv', async () => {
@@ -463,8 +465,11 @@ describe('agent node proxy', () => {
 
     const argvs = spawnMock.mock.calls.map((c) => (c as unknown[])[1] as string[]);
     expect(argvs[0]).toEqual(['network', 'create', 'ninedeploy']);
-    expect(argvs[1]).toEqual(['rm', '-f', 'ninedeploy-proxy']);
-    const runArgv = argvs[2]!;
+    // r416: the image is PULLED before the live proxy is removed — a failed
+    // pull can no longer leave the node's only proxy destroyed.
+    expect(argvs[1]).toEqual(['pull', 'traefik:v3.1']);
+    expect(argvs[2]).toEqual(['rm', '-f', 'ninedeploy-proxy']);
+    const runArgv = argvs[3]!;
     expect(runArgv.slice(0, 6)).toEqual([
       'run', '-d', '--name', 'ninedeploy-proxy', '--restart', 'unless-stopped',
     ]);

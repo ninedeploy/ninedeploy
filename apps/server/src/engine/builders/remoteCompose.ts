@@ -95,6 +95,11 @@ export function createRemoteComposeBuilder(agent: AgentCall): Builder {
       const composeService = service.composeService ?? service.slug;
       const sink = (line: string) => log(line);
 
+      // r415: the shared mesh must exist before anything connects to it —
+      // on a fresh node nothing else creates it until the first successful
+      // deploy's proxy sync (see remoteDocker's identical guard).
+      await agent('docker.networkCreate', { name: 'ninedeploy', driver: 'bridge' }, sink).catch(() => undefined);
+
       // An inline stack is shipped from the panel; a repository stack is
       // checked out on the node. A service with neither has nothing to bring up.
       let composeFile: string;

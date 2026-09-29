@@ -89,6 +89,8 @@ describe('Plugins HTTP API', () => {
       isOfficial: true,
       enabled: true,
       status: 'active',
+      // r420: reload re-registers from the row, so the row must be loadable.
+      manifest: { source: 'marketplace', target: 'datadog-apm' },
       createdAt: new Date(),
     });
 
@@ -131,7 +133,29 @@ describe('Plugins HTTP API', () => {
     expect(plugins.some((p: any) => p.id === 'test-notifier')).toBe(true);
     expect(plugins.some((p: any) => p.id === 'offline-plugin')).toBe(true);
 
-    // 2. Disable plugin as admin (insert branch)
+    // 2. Disable plugin as admin. r420: the route refuses ids with no DB row
+    // (it used to FABRICATE one for a plugin that never existed) and actually
+    // unregisters the runtime — so seed the row first, like a real install.
+    const disableUnknown = await app.inject({
+      method: 'POST',
+      url: '/never-installed/disable',
+      headers: asUser({ isOperator: true }),
+    });
+    expect(disableUnknown.statusCode).toBe(404);
+
+    pluginStore.set('test-notifier', {
+      id: 'test-notifier',
+      name: 'Test Notifier',
+      version: '1.2.0',
+      isOfficial: false,
+      enabled: true,
+      status: 'active',
+      // A loadable manifest so r420's enable can actually re-register the
+      // plugin from the row (sandbox source with trivial code).
+      manifest: { source: 'marketplace', target: 's3-backups' },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
     const disableRes = await app.inject({
       method: 'POST',
       url: '/test-notifier/disable',
@@ -139,6 +163,8 @@ describe('Plugins HTTP API', () => {
     });
     expect(disableRes.statusCode).toBe(200);
     expect(disableRes.json()).toEqual({ ok: true, id: 'test-notifier', status: 'disabled' });
+    // r420: the runtime instance is torn down with the row, not left running.
+    expect(app.kernel.getPlugin('test-notifier')).toBeUndefined();
 
     // Disable plugin when already existing in DB (update branch)
     const disableExistingRes = await app.inject({
@@ -151,13 +177,13 @@ describe('Plugins HTTP API', () => {
     // Verify menu item was purged
     expect(app.kernel.menuRegistry.getAllItems().some((m) => m.id === 'test-notifier-menu')).toBe(false);
 
-    // Disable a plugin row that did not previously exist in DB
+    // r420: disabling an id with no row is a 404, not a fabricated row.
     const disableNewRes = await app.inject({
       method: 'POST',
       url: '/unregistered-plugin/disable',
       headers: asUser({ isOperator: true }),
     });
-    expect(disableNewRes.statusCode).toBe(200);
+    expect(disableNewRes.statusCode).toBe(404);
 
     // 3. Enable plugin as admin
     const enableRes = await app.inject({
@@ -168,13 +194,14 @@ describe('Plugins HTTP API', () => {
     expect(enableRes.statusCode).toBe(200);
     expect(enableRes.json()).toEqual({ ok: true, id: 'test-notifier', status: 'active' });
 
-    // Enable an unrecorded plugin
+    // r420: enabling an id that was never installed is a 404 too — the old
+    // route fabricated an 'active' row for a plugin that does not exist.
     const enableNewRes = await app.inject({
       method: 'POST',
       url: '/brand-new-plugin/enable',
       headers: asUser({ isOperator: true }),
     });
-    expect(enableNewRes.statusCode).toBe(200);
+    expect(enableNewRes.statusCode).toBe(404);
 
     // 4. Member forbidden
     const memberMutateRes = await app.inject({
@@ -313,14 +340,14 @@ describe('Plugins HTTP API', () => {
     expect(reloadRes.statusCode).toBe(200);
     expect(reloadRes.json()).toEqual({ ok: true, id: 'active-in-db', status: 'active' });
 
-    // Hot-reload kernel-only plugin
+    // r420: reload of a kernel-only plugin with no installed row is a 404 —
+    // the old route pretended to reload it (emit + ok) while doing nothing.
     const reloadKernelRes = await app.inject({
       method: 'POST',
       url: '/kernel-only-addon/reload',
       headers: asUser({ isOperator: true }),
     });
-    expect(reloadKernelRes.statusCode).toBe(200);
-    expect(reloadKernelRes.json()).toEqual({ ok: true, id: 'kernel-only-addon', status: 'active' });
+    expect(reloadKernelRes.statusCode).toBe(404);
 
     // Hot-reload not found (404)
     const reloadNotFoundRes = await app.inject({

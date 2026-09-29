@@ -137,7 +137,7 @@ export async function testSshConnection(input: ServerSshTest): Promise<ServerSsh
   try {
     const res = await runSshCommand(
       {
-        host: input.host,
+        host: input.host.replace(/:d+$/, ''), // r421: one endpoint spelling per row
         sshPort: input.sshPort,
         sshUser: input.sshUser,
         authType: input.authType,

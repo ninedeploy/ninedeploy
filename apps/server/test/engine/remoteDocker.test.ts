@@ -81,8 +81,8 @@ describe('remote docker builder — image services', () => {
       ctx({ service: svc({ image: 'nginx:1.27' }) }),
     );
 
-    expect(ops()).toEqual(['docker.pull', 'file.writeEnv', 'docker.runEnv', 'file.deleteEnv']);
-    expect(calls[0]!.params).toMatchObject({ image: 'nginx:1.27' });
+    expect(ops()).toEqual(['docker.networkCreate', 'docker.pull', 'file.writeEnv', 'docker.runEnv', 'file.deleteEnv']);
+    expect(calls[1]!.params).toMatchObject({ image: 'nginx:1.27' });
     expect(runtime).toMatchObject({ runtimeId: 'web-7', port: 3000 });
   });
 
@@ -91,7 +91,7 @@ describe('remote docker builder — image services', () => {
     await createRemoteDockerBuilder(agent).buildAndRun(
       ctx({ service: svc({ image: 'nginx:1.27' }), imageDigest: 'nginx@sha256:abc' }),
     );
-    expect(calls[0]!.params).toMatchObject({ image: 'nginx@sha256:abc' });
+    expect(calls[1]!.params).toMatchObject({ image: 'nginx@sha256:abc' });
   });
 
   it('r270: never records a mutable tag as the release digest', async () => {
@@ -162,9 +162,9 @@ describe('remote docker builder — image services', () => {
         registryAuth: { username: 'u', password: 'p', server: 'ghcr.io' },
       }),
     );
-    expect(ops().slice(0, 3)).toEqual(['docker.login', 'docker.pull', 'docker.logout']);
+    expect(ops().slice(1, 4)).toEqual(['docker.login', 'docker.pull', 'docker.logout']);
     // The password goes in params, and the agent hands it to stdin — never argv.
-    expect(calls[0]!.params).toMatchObject({ username: 'u', password: 'p', server: 'ghcr.io' });
+    expect(calls[1]!.params).toMatchObject({ username: 'u', password: 'p', server: 'ghcr.io' });
   });
 
   it('logs out even when the pull fails, so no credential lingers on the node', async () => {
@@ -196,7 +196,7 @@ describe('remote docker builder — repository services', () => {
       }),
     );
 
-    expect(ops().slice(0, 4)).toEqual(['git.ensure', 'git.fetch', 'git.checkout', 'git.reset']);
+    expect(ops().slice(1, 5)).toEqual(['git.ensure', 'git.fetch', 'git.checkout', 'git.reset']);
     // Every git op names the same per-service workspace: without one, a node
     // could hold exactly ONE checkout and two services would overwrite each
     // other's source tree.

@@ -72,11 +72,20 @@ describe('servers routes', () => {
   });
 
   it('lists servers without tokens', async () => {
-    const app = await appWith({ findMany: { servers: [serverRow({ status: 'online', lastSeenAt: new Date(0) })] } });
+    const app = await appWith({ findMany: { servers: [serverRow({ status: 'online', lastSeenAt: new Date() })] } });
     const res = await app.inject({ method: 'GET', url: '/servers', headers: asUser() });
     expect(res.statusCode).toBe(200);
     expect(res.json()[0]).toMatchObject({ id: 1, name: 'edge-1', host: '10.0.0.5', status: 'online' });
     expect(Object.keys(res.json()[0])).not.toContain('tokenEncrypted');
+  });
+
+  it('r421: reports a stale `online` node as offline at read time', async () => {
+    // `online` used to mean "last BOOT" — a dead node kept its green badge
+    // forever. The row itself is untouched; the listing is honest.
+    const app = await appWith({ findMany: { servers: [serverRow({ status: 'online', lastSeenAt: new Date(Date.now() - 10 * 60_000) })] } });
+    const res = await app.inject({ method: 'GET', url: '/servers', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()[0]).toMatchObject({ status: 'offline' });
   });
 
   it('registers a server and returns the token exactly once', async () => {

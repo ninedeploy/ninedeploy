@@ -389,12 +389,15 @@ describe('PluginLoader', () => {
       // Only s3-backups is restored. `custom-untyped` has no manifest, so it
       // falls back to source 'local' — a source this build cannot load code
       // from. It used to come back as a shell reporting itself active; it is
-      // now skipped with a one-line warning naming the row.
+      // now skipped, and since r420 the restore failure (a thrown error, so
+      // enable/reload surface it as a 400) lands in the boot error log.
       expect(count).toBe(1);
       expect(kernel.getPlugin('s3-backups')).toBeDefined();
       expect(kernel.getPlugin('custom-untyped')).toBeUndefined();
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('custom-untyped'));
-      expect(errSpy).toHaveBeenCalled();
+      expect(errSpy).toHaveBeenCalledWith(
+        expect.stringContaining('custom-untyped'),
+        expect.any(Error),
+      );
       warnSpy.mockRestore();
       errSpy.mockRestore();
     });

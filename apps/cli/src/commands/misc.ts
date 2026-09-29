@@ -246,7 +246,10 @@ export async function systemDashboard(client: NineDeployClient): Promise<void> {
   await spinner('Probing health', async () => {
     const dash = await client.dashboard.get();
     const s = dash.stats;
-    const allHealthy = dash.health.every((h) => h.healthy || h.status !== 'running');
+    // r426: null health = a remote node's runtime the panel cannot probe —
+    // not a failure (the web banner got this in r382; the CLI predicate
+    // counted every healthy node service as needing attention).
+    const allHealthy = dash.health.every((h) => h.status !== 'running' || h.healthy !== false);
     console.log(`  ${allHealthy ? '✅ All systems operational' : '⚠️  Some services need attention'}`);
     console.log();
     kv('Services', `${s.running} running / ${s.services} total`);
@@ -258,7 +261,7 @@ export async function systemDashboard(client: NineDeployClient): Promise<void> {
     console.log();
     header('Service Health');
     if (dash.health.length === 0) { info('No services.'); return; }
-    table(dash.health.map((h) => ({ id: h.serviceId, name: h.name, status: h.healthy ? 'healthy' : h.status, ms: h.responseMs ? `${h.responseMs}ms` : '—', type: h.type })), ['id', 'name', 'status', 'ms', 'type']);
+    table(dash.health.map((h) => ({ id: h.serviceId, name: h.name, status: h.healthy === true ? 'healthy' : h.healthy === false ? 'unhealthy' : h.healthy == null && h.status === 'running' ? 'on node' : h.status, ms: h.responseMs ? `${h.responseMs}ms` : '—', type: h.type })), ['id', 'name', 'status', 'ms', 'type']);
     console.log();
     header('Recent Deploys');
     if (dash.recentDeploys.length === 0) { info('No deployments.'); return; }

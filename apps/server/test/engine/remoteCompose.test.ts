@@ -243,7 +243,7 @@ describe('remote compose builder — repository stacks', () => {
         buildConfig: { dockerfilePath: '/deploy/compose.yml' } as never,
       }),
     );
-    expect(ops().slice(0, 4)).toEqual(['git.ensure', 'git.fetch', 'git.checkout', 'git.reset']);
+    expect(ops().slice(1, 5)).toEqual(['git.ensure', 'git.fetch', 'git.checkout', 'git.reset']);
     // A leading slash means "repo root" in the panel's field; on the node it
     // would be the filesystem root.
     expect(calls.find((c) => c.op === 'docker.composeUp')!.params).toMatchObject({

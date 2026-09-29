@@ -4,7 +4,6 @@ import { buildAgentApp } from './agentApp.js';
 import { tokenMatches } from './lib/agentClient.js';
 import { MAX_SKEW_MS, open as openSealed, seal as sealResponse } from './lib/agentSeal.js';
 import { spawnValidated } from './lib/spawnValidated.js';
-import { pullDockerImage } from './lib/dockerPull.js';
 
 /**
  * Agent mode (NINEDEPLOY_AGENT=1): a minimal HTTP surface for the core to run
@@ -359,6 +358,13 @@ async function proxyEnsureOp(params: Params, onLine: (l: string) => void): Promi
   // node nothing has created it yet. An "already exists" failure is expected
   // and ignored.
   await spawnValidated('docker', ['network', 'create', 'ninedeploy'], () => {});
+  // r416: PULL THE IMAGE BEFORE touching the live proxy. The old order
+  // (`rm -f` → `run`) destroyed the node's only proxy FIRST — a failed pull
+  // or a transient daemon error then left every domain on the node dark while
+  // the panel logged "the node keeps serving its previous routing". With the
+  // image local, the only remaining run-failure window is tiny; on failure
+  // the proxy is GONE and the caller must be told so (see nodeProxy.ts).
+  await spawnValidated('docker', ['pull', image], () => {});
   await spawnValidated('docker', ['rm', '-f', PROXY_CONTAINER], () => {});
   return spawnValidated(
     'docker',
@@ -611,8 +617,14 @@ export async function runOp(op: string, params: Params, onLine: (l: string) => v
   }
   if (op === 'docker.pull') {
     const image = validated(str(params, 'image'), RE_IMAGE, 'image');
-    await pullDockerImage(image, onLine);
-    return 0;
+    // r417: a plain validated pull. This used to call the PANEL-side
+    // pullDockerImage recovery machine (3 retries, ctr/tar crane downloads
+    // from GitHub, 30-60 MINUTE step timeouts) — bypassing the agent's
+    // spawnValidated invariant, outliving the panel's 600 s request budget
+    // while the deploy had already failed, and relying on binaries the agent
+    // container does not ship. A failed pull on a node now fails fast and
+    // honestly; the panel surfaces the error and the deploy can be retried.
+    return spawnValidated('docker', ['pull', image], onLine);
   }
   const def = OPS[op];
   if (!def) return -1;
@@ -719,12 +731,21 @@ async function main(): Promise<void> {
     const { hostname } = await import('node:os');
     const nodeName = process.env['NINEDEPLOY_NODE_NAME'] || hostname();
     const advertiseHost = process.env['NINEDEPLOY_ADVERTISE_HOST'] || undefined;
-    void announceToMaster(masterUrl, {
-      name: nodeName,
-      host: advertiseHost,
-      port,
-      token: rawToken,
-    });
+    const announce = () =>
+      announceToMaster(masterUrl, {
+        name: nodeName,
+        host: advertiseHost,
+        port,
+        token: rawToken,
+      }).catch(() => undefined);
+    void announce();
+    // r421 heartbeat: `online` used to mean "last BOOT" — the panel reported
+    // a dead node green forever (nothing else advanced lastSeenAt). A 60 s
+    // re-announce makes lastSeenAt real and the panel's staleness display
+    // honest. Announce is idempotent for a matched token (name/lastSeenAt
+    // refresh only).
+    const heartbeat = setInterval(announce, 60_000);
+    heartbeat.unref();
   }
 
   const shutdown = async () => {

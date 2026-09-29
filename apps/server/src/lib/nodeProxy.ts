@@ -82,7 +82,17 @@ export async function syncNodeProxy(
     return { ok: true };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    log(`⚠ node proxy sync failed: ${reason}. The node keeps serving its previous routing.`);
+    // r416: the failure honestly depends on WHERE it happened. `proxy.ensure`
+    // recreates the proxy with rm+run — if THAT op failed, the node's only
+    // proxy is down and every domain on the node is dark until the next
+    // successful sync (the old "keeps serving its previous routing" message
+    // was a lie in exactly this case).
+    const ensureFailed = reason.includes('proxy.ensure');
+    log(
+      ensureFailed
+        ? `⚠ node proxy sync failed: ${reason}. THE NODE'S PROXY IS DOWN — every domain on this node answers nothing until the next successful sync. Retry from Settings or re-run a deploy.`
+        : `⚠ node proxy sync failed: ${reason}. The config write failed before the proxy was touched; the node keeps serving its previous routing.`,
+    );
     return { ok: false, reason };
   }
 }

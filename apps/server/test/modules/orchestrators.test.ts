@@ -100,15 +100,17 @@ describe('orchestrators routes', () => {
     await app.close();
   });
 
-  it('returns an error envelope when the named orchestrator is not registered', async () => {
+  it('r422: answers a uniform 404 when the named orchestrator is not registered', async () => {
     const app = await buildTestApp();
     await app.register(orchestratorsRoutes);
     (app as unknown as { kernel: { registry: { getOrchestrator: () => undefined } } }).kernel.registry.getOrchestrator = () => undefined;
 
     for (const url of ['/unknown/stacks', '/unknown/stacks/web']) {
       const res = await app.inject({ method: 'GET', url, headers: asUser() });
-      expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({ error: 'Orchestrator "unknown" is not registered' });
+      // The old 200-with-{error} shape typed as the success payload crashed
+      // typed callers (r361's uniform-404 treatment, belatedly applied here).
+      expect(res.statusCode).toBe(404);
+      expect(res.json().error.message).toContain('is not registered');
     }
     await app.close();
   });

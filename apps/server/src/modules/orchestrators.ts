@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { badRequest } from '../lib/errors.js';
+import { badRequest, notFound } from '../lib/errors.js';
 
 /** Stack and orchestrator names reach fs path joins inside the drivers
  *  (`join(STACK_ROOT, name, …)` + readFileSync). The drivers themselves
@@ -50,18 +50,21 @@ export const orchestratorsRoutes: FastifyPluginAsync = async (app) => {
     return { orchestrators };
   });
 
-  app.get<{ Params: { name: string } }>('/:name/stacks', async (req) => {
+  app.get<{ Params: { name: string } }>('/:name/stacks', async (req, reply) => {
     const driver = app.kernel.registry.getOrchestrator(req.params.name);
     if (!driver) {
-      return { error: `Orchestrator "${req.params.name}" is not registered` };
+      // r422: a 200 body carrying {error} typed as the success shape crashed
+      // typed callers (r361 gave labels/environments the uniform 404; this
+      // module kept the old shape).
+      throw notFound(`Orchestrator "${req.params.name}" is not registered`);
     }
     return { stacks: await driver.listStacks() };
   });
 
-  app.get<{ Params: { name: string; stack: string } }>('/:name/stacks/:stack', async (req) => {
+  app.get<{ Params: { name: string; stack: string } }>('/:name/stacks/:stack', async (req, reply) => {
     const driver = app.kernel.registry.getOrchestrator(req.params.name);
     if (!driver) {
-      return { error: `Orchestrator "${req.params.name}" is not registered` };
+      throw notFound(`Orchestrator "${req.params.name}" is not registered`);
     }
     if (!NAME_RE.test(req.params.stack)) throw badRequest('invalid stack name');
     return await driver.getStackStatus(req.params.stack);

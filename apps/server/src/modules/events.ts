@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { canReceiveEvent, eventBus } from '../lib/events.js';
 import { narrowScopes, resolveUser } from '../lib/auth.js';
+import { authorizeWebsocketUser } from '../plugins/auth.js';
 import { websocketBearerToken } from '../lib/websocketAuth.js';
 
 /** Real-time event stream over WebSocket. Mounted at root level. */
@@ -15,8 +16,15 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     // Same narrowing the HTTP auth plugin applies: a scope-restricted API
     // token must not inherit its owner's operator flag here, or it would see
     // the global feed (system events are delivered to operators only) plus
-    // every tenant's activity.
+    // every tenant's activity. r419: the fine-grained URI-scope check the
+    // log socket already applies (r154) — a `services`-scoped CI token
+    // cannot hold a live `/v1/events` stream, matching the HTTP route's
+    // fail-closed classification.
     narrowScopes(user);
+    if (!authorizeWebsocketUser(user, req.url)) {
+      socket.close(1008, 'forbidden');
+      return;
+    }
 
     // Replay recent events, then stream live — both filtered to what this
     // subscriber may see. The bus is process-wide and carries every tenant's
@@ -40,7 +48,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     // Re-resolve the token every minute; a dead session closes the socket.
     const revalidate = setInterval(async () => {
       const fresh = await resolveUser(app.db, token).catch(() => null);
-      if (!fresh) {
+      if (!fresh || !authorizeWebsocketUser(fresh, req.url)) {
         socket.close(1008, 'session revoked');
         cleanup();
         return;

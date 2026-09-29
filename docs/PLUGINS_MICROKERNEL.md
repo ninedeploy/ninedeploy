@@ -85,7 +85,8 @@ NineDeploy executes third-party community extensions in dedicated `node:worker_t
 
 - **Memory Limits**: Isolated workers are constrained by V8 generation size bounds (`maxYoungGenerationSizeMb: 16`, `maxOldGenerationSizeMb: 64`).
 - **Crash Isolation**: If an external plugin throws a fatal exception or crashes its worker, the NineDeploy core API and database remain unaffected. The kernel flags the plugin state as `errored` and continues running.
-- **Secure RPC Bridge**: Sandboxed plugins interact strictly via `PluginContext` APIs (`events.on`, `tapHook`, `scopedConfig.get/set`). Direct host process tampering is prevented.
+- **Scoped RPC Bridge**: Sandboxed plugins interact through `PluginContext` APIs (`events.on`, `tapHook`, `scopedConfig.get/set`); the bridge namespaces config access per plugin id.
+- **Honesty note (r414)**: this is resource containment, NOT a security sandbox. The worker runs with a scrubbed environment (no `NINEDEPLOY_MASTER_KEY`/JWT secrets — a worker thread otherwise inherits a copy of the panel's env), but its code can still dynamically import Node builtins and read files the panel user can read. Installing any third-party plugin — sandboxed or not — is an operator-level trust decision, exactly like a PM2 service or a lifecycle hook, and the install route is admin-gated accordingly.
 
 ### 🗂️ 3. Dynamic UI Menus, Widgets & Driver Registries
 

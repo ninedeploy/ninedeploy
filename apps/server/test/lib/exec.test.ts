@@ -61,6 +61,28 @@ describe('buildEnv', () => {
     expect(buildEnv()['LC_MESSAGES']).toBeUndefined();
   });
 
+  it('r413: user env can never override the docker transport keys', async () => {
+    // A member setting DOCKER_HOST on their own docker service used to
+    // redirect every build/pull of that pipeline to a daemon they control —
+    // effective precisely when the HOST defines no value of its own.
+    const { spawn: cpSpawn } = await import('node:child_process');
+    void cpSpawn;
+    const env = buildEnv({
+      DOCKER_HOST: 'tcp://attacker:2375',
+      DOCKER_CONTEXT: 'evil',
+      DOCKER_CONFIG: '/repo/.docker',
+      COMPOSE_FILE: '/repo/pwn.yml',
+      DOCKER_BUILDKIT: '0',
+      NODE_ENV: 'production',
+    });
+    expect(env['DOCKER_HOST']).toBeUndefined();
+    expect(env['DOCKER_CONTEXT']).toBeUndefined();
+    expect(env['DOCKER_CONFIG']).toBeUndefined();
+    expect(env['COMPOSE_FILE']).toBeUndefined();
+    // Non-transport user keys still flow through (builds need them).
+    expect(env['NODE_ENV']).toBe('production');
+  });
+
   it('works with no caller env', () => {
     expect(() => buildEnv()).not.toThrow();
   });
@@ -530,5 +552,27 @@ describe('error labels redact credential argv (audit fix)', () => {
     const promise = run('docker', ['exec', 'cn', 'pg_dump', '-U', 'nine', '-d', 'app'], {}, vi.fn());
     emitClose(child, 1);
     await expect(promise).rejects.toThrow(/pg_dump -U nine -d app/);
+  });
+
+  it('r412: masks --env values (nixpacks builds carry the whole runtime env on argv)', async () => {
+    // A failed nixpacks build used to paste every project secret and
+    // managed-database URL into the deploy log (readable by workspace
+    // members), the audit trail and notifications. The KEY stays readable.
+    const child = makeChild();
+    mockSpawn.mockReturnValue(child);
+    const onePiece = run(
+      'nixpacks',
+      ['build', '.', '--name', 'ninedeploy/web:abc1234', '--env', 'DATABASE_URL=postgres://nine:p%40ss@db/app'],
+      {},
+      vi.fn(),
+    );
+    emitClose(child, 1);
+    await expect(onePiece).rejects.toThrow(/--env \*\*\*/);
+    await expect(onePiece).rejects.not.toThrow(/p%40ss/);
+
+    const joined = run('nixpacks', ['build', '.', '--env=SHARED_SECRET=hunter2'], {}, vi.fn());
+    emitClose(child, 1);
+    await expect(joined).rejects.toThrow(/--env=SHARED_SECRET=\*\*\*/);
+    await expect(joined).rejects.not.toThrow(/hunter2/);
   });
 });

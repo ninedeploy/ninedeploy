@@ -71,7 +71,24 @@ export function analyseComposeContent(content: string, port?: number): ComposePr
     };
   }
 
-  const serviceMap = (parsed?.services ?? {}) as Parameters<typeof pickMainService>[0];
+  // r422: js-yaml happily yields arrays/strings for a non-mapping
+  // `services:` block — the wizard then called `['0','1']` valid service
+  // names and the deploy died late at `docker compose config`. Reject the
+  // shape here, where the message can say what to fix.
+  const rawServices: unknown = parsed?.services;
+  if (rawServices !== undefined && (typeof rawServices !== 'object' || rawServices === null || Array.isArray(rawServices))) {
+    return {
+      ok: false,
+      reasons: ['`services:` must be a mapping of service-name → definition'],
+      warnings: pre.warnings,
+      services: [],
+      magicTokens: [],
+      openPlaceholders: [],
+      configurableEnv: [],
+    };
+  }
+
+  const serviceMap = (rawServices ?? {}) as Parameters<typeof pickMainService>[0];
   const names = Object.keys(serviceMap);
   const reasons = [...pre.reasons];
   // `docker compose up` on a file with no services is a no-op that reports

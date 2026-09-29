@@ -5,7 +5,7 @@ import type { InstallPluginInput } from '@ninedeploy/schemas';
 import { installPluginSchema } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
 import { clearMarketplaceCache, loadMarketplaceCatalog } from '../lib/marketplaceCatalog.js';
-import { installPlugin, uninstallPlugin } from '../kernel/pluginLoader.js';
+import { installPlugin, restorePluginFromRow, uninstallPlugin } from '../kernel/pluginLoader.js';
 
 export const pluginRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', app.authenticate);
@@ -26,7 +26,10 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
         name: kp.name,
         version: kp.version,
         description: kp.description,
-        isOfficial: dbRow ? dbRow.isOfficial : false,
+        // r420: the twelve built-ins have no DB row — take the flag from the
+        // KERNEL registration, which the built-in loader sets (the CLI used to
+        // label every official plugin "Community").
+        isOfficial: dbRow ? dbRow.isOfficial : (kp.isOfficial ?? false),
         enabled: dbRow ? dbRow.enabled : true,
         status: dbRow ? dbRow.status : 'active',
         configSchema: kp.configSchema ?? [],
@@ -138,26 +141,32 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // Enable plugin (admin only)
-  app.post<{ Params: { id: string } }>('/:id/enable', { preHandler: app.requireAdmin }, async (req) => {
+  app.post<{ Params: { id: string } }>('/:id/enable', { preHandler: app.requireAdmin }, async (req, reply) => {
     const { id } = req.params;
     const existing = await app.db.query.installedPlugins.findFirst({
       where: eq(installedPlugins.id, id),
     });
 
+    // r420: enabling an id that was never installed used to FABRICATE a row
+    // for a plugin that does not exist, shown as `active`.
     if (!existing) {
-      // Record and mark enabled
-      await app.db.insert(installedPlugins).values({
-        id,
-        name: id,
-        version: '1.0.0',
-        enabled: true,
-        status: 'active',
-      }).onConflictDoUpdate({
-        target: installedPlugins.id,
-        set: { enabled: true, status: 'active', updatedAt: new Date() },
-      });
-    } else {
-      await app.db.update(installedPlugins).set({ enabled: true, status: 'active', updatedAt: new Date() }).where(eq(installedPlugins.id, id));
+      return reply.code(404).send({ error: `Plugin "${id}" is not installed` });
+    }
+    await app.db.update(installedPlugins).set({ enabled: true, status: 'active', error: null, updatedAt: new Date() }).where(eq(installedPlugins.id, id));
+
+    // r420: enable used to flip only the DB row — a plugin disabled before a
+    // restart never loaded again (the boot restore reads enabled rows only),
+    // and the panel reported `active` for an unloaded plugin. Actually load it.
+    if (!req.kernel.getPlugin(id)) {
+      try {
+        await restorePluginFromRow({ ...existing, enabled: true, status: 'active' }, req.kernel);
+      } catch (err) {
+        await app.db
+          .update(installedPlugins)
+          .set({ status: 'errored', error: (err as Error).message.slice(0, 500), updatedAt: new Date() })
+          .where(eq(installedPlugins.id, id));
+        return reply.code(400).send({ error: (err as Error).message });
+      }
     }
 
     req.kernel.events.emit('plugin.status_changed', { pluginId: id, status: 'active' });
@@ -167,28 +176,24 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // Disable plugin (admin only)
-  app.post<{ Params: { id: string } }>('/:id/disable', { preHandler: app.requireAdmin }, async (req) => {
+  app.post<{ Params: { id: string } }>('/:id/disable', { preHandler: app.requireAdmin }, async (req, reply) => {
     const { id } = req.params;
     const existing = await app.db.query.installedPlugins.findFirst({
       where: eq(installedPlugins.id, id),
     });
 
+    // r420: like enable, disable of a never-installed id fabricated a row.
     if (!existing) {
-      await app.db.insert(installedPlugins).values({
-        id,
-        name: id,
-        version: '1.0.0',
-        enabled: false,
-        status: 'disabled',
-      }).onConflictDoUpdate({
-        target: installedPlugins.id,
-        set: { enabled: false, status: 'disabled', updatedAt: new Date() },
-      });
-    } else {
-      await app.db.update(installedPlugins).set({ enabled: false, status: 'disabled', updatedAt: new Date() }).where(eq(installedPlugins.id, id));
+      return reply.code(404).send({ error: `Plugin "${id}" is not installed` });
     }
+    await app.db.update(installedPlugins).set({ enabled: false, status: 'disabled', updatedAt: new Date() }).where(eq(installedPlugins.id, id));
 
-    // Purge runtime menus contributed by disabled plugin
+    // r420: disable used to flip the row and purge the menus while the
+    // plugin's worker, hooks and event subscriptions KEPT RUNNING — exactly
+    // the state an operator disables a suspicious plugin to escape. Actually
+    // tear the runtime down (destroy + untap + unsubscribe + terminate).
+    await req.kernel.unregisterPlugin(id).catch(() => undefined);
+
     req.kernel.menuRegistry.purgePluginMenus(id);
     req.kernel.events.emit('plugin.status_changed', { pluginId: id, status: 'disabled' });
     await audit(app.db, req.user!.id, 'plugin.disable', 'system', { pluginId: id });
@@ -257,16 +262,32 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
     const dbRow = await app.db.query.installedPlugins.findFirst({
       where: eq(installedPlugins.id, id),
     });
-    const kernelPlugin = req.kernel.getPlugin(id);
 
-    if (!dbRow && !kernelPlugin) {
-      return reply.code(404).send({ error: `Plugin "${id}" not found` });
+    if (!dbRow) {
+      return reply.code(404).send({ error: `Plugin "${id}" is not installed` });
     }
 
-    const status = dbRow ? (dbRow.status as 'active' | 'disabled' | 'errored') : 'active';
-    req.kernel.events.emit('plugin.reloaded', { pluginId: id, status });
+    // r420: reload used to emit an event and return ok WITHOUT touching the
+    // runtime. Actually swap the instance: tear the old one down (worker,
+    // hooks, subscriptions) and re-register from the stored row.
+    await req.kernel.unregisterPlugin(id).catch(() => undefined);
+    try {
+      await restorePluginFromRow(dbRow, req.kernel);
+    } catch (err) {
+      await app.db
+        .update(installedPlugins)
+        .set({ status: 'errored', error: (err as Error).message.slice(0, 500), updatedAt: new Date() })
+        .where(eq(installedPlugins.id, id));
+      return reply.code(400).send({ error: (err as Error).message });
+    }
+    await app.db
+      .update(installedPlugins)
+      .set({ status: 'active', error: null, updatedAt: new Date() })
+      .where(eq(installedPlugins.id, id));
+
+    req.kernel.events.emit('plugin.reloaded', { pluginId: id, status: 'active' });
     await audit(app.db, req.user!.id, 'plugin.reload', 'system', { pluginId: id });
 
-    return { ok: true, id, status };
+    return { ok: true, id, status: 'active' };
   });
 };

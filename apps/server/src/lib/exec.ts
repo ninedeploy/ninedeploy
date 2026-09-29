@@ -45,14 +45,31 @@ const SAFE_INHERITED_ENV = new Set([
   'DOCKER_CONFIG',
 ]);
 
-/** Build an isolated environment: only safe host vars + the caller-supplied env. */
+/**
+ * Build an isolated environment: only safe host vars + the caller-supplied env.
+ *
+ * r413: caller-supplied env can NEVER override the transport keys from
+ * `SAFE_INHERITED_ENV` — user env rows flow in here as `extra` (nixpacks
+ * builds, compose gates), and a member setting `DOCKER_HOST=tcp://attacker`
+ * on their own docker service used to redirect every build/pull of that
+ * pipeline to a daemon they control, handing over the build context and every
+ * injected secret. Non-transport user keys pass through unchanged.
+ */
+const UNOVERRIDABLE_ENV = new Set(['DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_CONFIG', 'COMPOSE_FILE', 'DOCKER_BUILDKIT']);
 export function buildEnv(extra?: Record<string, string>): Record<string, string> {
   const env: Record<string, string> = {};
   for (const key of SAFE_INHERITED_ENV) {
     const value = process.env[key];
     if (value !== undefined) env[key] = value;
   }
-  if (extra) for (const [key, value] of Object.entries(extra)) env[key] = value;
+  if (extra) {
+    for (const [key, value] of Object.entries(extra)) {
+      // Always dropped from user env — the attack works precisely when the
+      // host defines NO value of its own and the user's becomes effective.
+      if (UNOVERRIDABLE_ENV.has(key)) continue;
+      env[key] = value;
+    }
+  }
   return env;
 }
 
@@ -172,8 +189,13 @@ export function armTimeout(child: ChildProcess, timeoutMs: number, onTimeout: ()
  * value in place; `-p` / `-a` style flags mask the NEXT argv element (the
  * same flag doubles as docker publish, where masking a port is a cosmetic
  * cost next to leaking a password).
+ *
+ * `--env KEY=VALUE` (nixpacks builds carry the service's WHOLE runtime env —
+ * project-shared secrets, managed-database URLs with plaintext passwords)
+ * keeps the key but masks the value: a failed build's error string reaches
+ * the deploy log, which every workspace member with the service can read.
  */
-const REDACT_NEXT_FLAGS = new Set(['-p', '-a', '--password']);
+const REDACT_NEXT_FLAGS = new Set(['-p', '-a', '--password', '-e']);
 function redactedLabel(cmd: string, args: string[]): string {
   const parts: string[] = [cmd];
   let maskNext = false;
@@ -185,6 +207,17 @@ function redactedLabel(cmd: string, args: string[]): string {
     }
     if (arg.startsWith('--password=')) {
       parts.push('--password=***');
+      continue;
+    }
+    if (arg.startsWith('--env=')) {
+      const eq = arg.indexOf('=', 6);
+      parts.push(eq === -1 ? '--env=***' : `${arg.slice(0, eq)}=***`);
+      continue;
+    }
+    if (arg.startsWith('--env') && !arg.includes('=')) {
+      // `--env KEY=VALUE` as two argv elements.
+      parts.push(arg);
+      maskNext = true;
       continue;
     }
     parts.push(arg);

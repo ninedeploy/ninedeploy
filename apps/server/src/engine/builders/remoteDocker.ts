@@ -131,6 +131,14 @@ export function createRemoteDockerBuilder(agent: AgentCall, opts: { pollMs?: num
       const name = `${service.slug}-${deploymentId}`;
       const sink = (line: string) => log(line);
 
+      // r415: every container below starts with `--network ninedeploy`, but
+      // nothing created that network on the node until the FIRST SUCCESSFUL
+      // deploy's proxy sync — a chicken-and-egg that made a fresh node's
+      // every deploy fail with "network ninedeploy not found" (and the
+      // failure path never syncs the proxy, so it never self-healed).
+      // networkCreate is idempotent: an existing network is a logged no-op.
+      await agent('docker.networkCreate', { name: 'ninedeploy', driver: 'bridge' }, sink).catch(() => undefined);
+
       let target: string;
       if (service.image) {
         // Pre-built image (template / one-click). On rollback the deployment

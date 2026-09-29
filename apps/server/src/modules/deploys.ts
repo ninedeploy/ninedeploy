@@ -461,8 +461,23 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
         /* socket closed */
       }
     });
-    socket.on('close', unsub);
-    socket.on('error', unsub);
+    // r418: same revalidation the events socket got in r401 — a revoked
+    // session (logout-everywhere, password change) must stop streaming build
+    // logs (they routinely echo secrets), not hold the socket until the
+    // client closes it.
+    const revalidate = setInterval(async () => {
+      const fresh = await resolveUser(app.db, token).catch(() => null);
+      if (!fresh || !authorizeWebsocketUser(fresh, req.url)) {
+        socket.close(1008, 'session revoked');
+        cleanup();
+      }
+    }, 60_000);
+    const cleanup = () => {
+      clearInterval(revalidate);
+      unsub();
+    };
+    socket.on('close', cleanup);
+    socket.on('error', cleanup);
   });
 
   // Container exec — interactive shell via WebSocket (`docker exec -it`).
@@ -591,6 +606,24 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
         // ignore
       }
     });
+
+    // r418: this socket IS a root shell in the container — the r401
+    // revalidation standard matters most here. A revoked session (bumped
+    // tokenVersion, password change, operator flag pulled) kills the shell
+    // within a minute instead of keeping it open until the client closes.
+    const execRevalidate = setInterval(async () => {
+      const fresh = await resolveUser(app.db, token).catch(() => null);
+      const stillOperator = fresh && fresh.isOperator
+        && !(Array.isArray(fresh.tokenScopes) && !fresh.tokenScopes.includes('operator'));
+      if (!stillOperator) {
+        try {
+          socket.send('\r\n\x1b[31m✕ Session revoked — disconnecting.\x1b[0m\r\n');
+        } catch { /* already closed */ }
+        try { child.kill(); } catch { /* already gone */ }
+        socket.close(1008, 'session revoked');
+      }
+    }, 60_000);
+    socket.on('close', () => clearInterval(execRevalidate));
 
     socket.on('error', () => {
       try {

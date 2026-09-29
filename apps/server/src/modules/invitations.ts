@@ -438,11 +438,20 @@ export const acceptInvitationRoutes: FastifyPluginAsync = async (app) => {
     });
     const now = new Date();
     if (!existing) {
-      await app.db.insert(workspaceMembers).values({
-        workspaceId: inv.workspaceId,
-        userId: req.user!.id,
-        role: inv.role as WorkspaceRole,
-      });
+      try {
+        await app.db.insert(workspaceMembers).values({
+          workspaceId: inv.workspaceId,
+          userId: req.user!.id,
+          role: inv.role as WorkspaceRole,
+        });
+      } catch (err) {
+        // r425: two tabs accepting concurrently both passed the
+        // existence check; the loser hit the unique (workspace, user) index
+        // and answered 500 — the loser's acceptance is the same fact, so
+        // treat the collision as success like the idempotent re-accept.
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.includes('workspace_members_workspace_user_idx') && !msg.includes('UNIQUE constraint failed')) throw err;
+      }
     }
     await app.db
       .update(workspaceInvitations)

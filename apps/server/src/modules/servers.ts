@@ -11,13 +11,28 @@ import { bootstrapServer, getBootstrapLogs, testSshConnection } from '../engine/
 import { agentDockerRunCommand } from '@ninedeploy/schemas';
 import { VERSION } from '../version.js';
 
+/** r421: an endpoint's identity is (host, port) — but the announce/create
+ *  schema accepts `host:port` spellings and DNS-vs-IP aliases. Strip a
+ *  trailing `:port` from the host so `10.0.0.5:4600` + port 4600 does not
+ *  fork a second row for one endpoint (r399's exact failure mode, returning
+ *  through a spelling difference) or build `http://host:4600:4600/` URLs. */
+function normalizeHost(raw: string): string {
+  return raw.replace(/:\d+$/, '');
+}
+
 function serialize(s: ServerRow) {
+  // r421 honesty: `online` was written by the LAST contact (boot announce,
+  // manual test/approve) and nothing ever flipped it back — a node that died
+  // kept its green badge forever. Report staleness at read time; the row's
+  // own status stays untouched.
+  const STALE_AFTER_MS = 5 * 60 * 1000;
+  const stale = s.status === 'online' && (!s.lastSeenAt || Date.now() - s.lastSeenAt.getTime() > STALE_AFTER_MS);
   return {
     id: s.id,
     name: s.name,
     host: s.host,
     port: s.port,
-    status: s.status,
+    status: stale ? 'offline' : s.status,
     lastSeenAt: s.lastSeenAt ? s.lastSeenAt.toISOString() : null,
     createdAt: s.createdAt.toISOString(),
   };
@@ -38,7 +53,9 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
     // read so it is not an existence oracle for host:port either.
     await assertEnrolmentAllowed(app.db, req.headers[ENROLMENT_HEADER] as string | undefined);
     const { name, host: providedHost, port, token } = serverAnnounce.parse(req.body ?? {});
-    const host = providedHost || (req.ip === '::1' || req.ip === '127.0.0.1' ? '127.0.0.1' : req.ip.replace(/^::ffff:/, ''));
+    const host = normalizeHost(
+      providedHost || (req.ip === '::1' || req.ip === '127.0.0.1' ? '127.0.0.1' : req.ip.replace(/^::ffff:/, '')),
+    );
 
     const existing = await app.db.query.servers.findFirst({
       where: and(eq(servers.host, host), eq(servers.port, port)),
@@ -106,7 +123,8 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
     });
 
     authed.post('/', async (req) => {
-      const { name, host, port } = serverCreate.parse(req.body ?? {});
+      const { name, host: rawHost, port } = serverCreate.parse(req.body ?? {});
+      const host = normalizeHost(rawHost);
       // r399: (host, port) is unique — a second row for the same endpoint
       // would fight the first over which token the agent actually holds.
       const existing = await authed.db.query.servers.findFirst({ where: and(eq(servers.host, host), eq(servers.port, port)) });
