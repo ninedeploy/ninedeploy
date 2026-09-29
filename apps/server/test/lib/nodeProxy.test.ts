@@ -111,6 +111,26 @@ describe('syncNodeProxy', () => {
     expect(res.reason).toMatch(/ECONNREFUSED/);
     expect(lines.join('\n')).toMatch(/keeps serving its previous routing/);
   });
+
+  it('r416: says the node is DARK when the proxy.ensure step itself failed', async () => {
+    // proxy.ensure recreates the node's only proxy with rm+run; when THAT op
+    // fails the old "keeps serving its previous routing" line was a lie in
+    // exactly the case an operator needs the truth.
+    h.agentOp.mockReset();
+    h.agentOp.mockImplementation(async (_db: unknown, _id: unknown, op: string) => {
+      if (op === 'proxy.writeConfig') return { exitCode: 0, lines: ['proxy-config x changed'] };
+      if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|172.18.0.2'] };
+      if (op === 'proxy.ensure') throw new Error('agent proxy.ensure failed (500): image pull refused');
+      return { exitCode: 0, lines: [] };
+    });
+    const lines: string[] = [];
+
+    const res = await syncNodeProxy(db, 4, (l) => lines.push(l));
+
+    expect(res.ok).toBe(false);
+    expect(lines.join('\n')).toMatch(/PROXY IS DOWN/);
+    expect(lines.join('\n')).not.toMatch(/keeps serving its previous routing/);
+  });
 });
 
 describe('syncAllNodeProxies', () => {
