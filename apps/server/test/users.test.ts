@@ -245,6 +245,34 @@ describe('users routes', () => {
     expect(upd).toHaveBeenCalledWith(sessions);
   });
 
+  it('r444: an operator reset also bumps the studio-cookie epoch (studio sessions die too)', async () => {
+    const insertedSettings: Array<Record<string, unknown>> = [];
+    const updated = userRow({ id: 7 });
+    const db = createFakeDb({
+      findFirst: { users: updated },
+      update: { users: [updated] },
+      insert: {
+        settings: (v: Record<string, unknown>) => {
+          insertedSettings.push(v);
+          return [];
+        },
+      },
+    } as never);
+    const app = await buildTestApp({ db });
+    await app.register(userRoutes);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/7/password',
+      headers: asUser(),
+      payload: { newPassword: ['fresh', 'pass', '123'].join('-') },
+    });
+    expect(res.statusCode).toBe(200);
+    const epoch = insertedSettings.find((v) => v.key === 'studio.cookie_epoch');
+    expect(epoch).toBeDefined();
+    expect(String(epoch!.value)).toMatch(/^\d+$/);
+    await app.close();
+  });
+
   it('404s when resetting the password of a missing user', async () => {
     const app = await appWith({ findFirst: { users: undefined }, update: { users: [] } });
     const res = await app.inject({

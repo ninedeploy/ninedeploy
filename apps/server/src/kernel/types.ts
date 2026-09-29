@@ -56,7 +56,7 @@ export interface DomainEvents {
   // Plugin Ecosystem Events
   'deployment.status_changed': { deploymentId?: number; status?: string; serviceName?: string };
   'service.health_changed': { serviceId?: number; status?: string };
-  'backup.completed': { databaseId?: number; sizeBytes?: number };
+  'backup.completed': { database?: string | null }; // r445: matches what the audit bridge emits
   'tunnel.route_evaluated': { serviceId?: number; domain?: string };
   'telemetry.recorded': { sourceEvent: string; timestamp: string; data: unknown };
   'custom.system_event': Record<string, unknown>;

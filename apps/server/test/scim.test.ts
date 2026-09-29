@@ -616,3 +616,37 @@ describe('SCIM management API', () => {
     await app.close();
   });
 });
+
+// ── r444: deactivation ends studio cookies with every other credential ──
+describe('SCIM deactivation bumps the studio-cookie epoch (r444)', () => {
+  it('a PATCH active=false writes a fresh studio.cookie_epoch setting', async () => {
+    const insertedSettings: Array<Record<string, unknown>> = [];
+    const db = createFakeDb({
+      select: { scimTokens: [TOKEN_ROW] },
+      findFirst: {
+        workspaceMembers: () => memberRow(),
+        users: () => userRow({ deactivatedAt: null }),
+      },
+      update: { users: [userRow()] },
+      delete: { apiTokens: [], workspaceMembers: [] },
+      insert: {
+        settings: (v: Record<string, unknown>) => {
+          insertedSettings.push(v);
+          return [];
+        },
+      },
+    } as never);
+    const app = await scimApp(db);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/scim/v2/Users/11',
+      headers: auth,
+      payload: { Operations: [{ op: 'replace', path: 'active', value: false }] },
+    });
+    expect(res.statusCode).toBe(200);
+    const epoch = insertedSettings.find((v) => v.key === 'studio.cookie_epoch');
+    expect(epoch).toBeDefined();
+    expect(String(epoch!.value)).toMatch(/^\d+$/);
+    await app.close();
+  });
+});

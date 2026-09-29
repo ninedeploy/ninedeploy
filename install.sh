@@ -347,6 +347,18 @@ if [ "$INSTALL_MODE" = "bare-metal" ] && docker_install_present; then
   fail "A Docker installation is already present at $DOCKER_INSTALL_DIR. Upgrade it in place (re-run with --docker) or remove it first — running both would fight over the same ports and the Traefik ingress."
 fi
 
+# r452: running the installer from a DIFFERENT clone silently re-points the
+# panel at the clone (fresh .env with a new JWT secret, empty .data) and
+# orphans the production tree — the cwd-checkout preference above wins over
+# the live unit's directory. The panel's self-update passes
+# NINEDEPLOY_INSTALL_DIR explicitly and is immune to this check.
+if [ "$INSTALL_MODE" = "bare-metal" ] && [ -f "$BARE_METAL_UNIT_FILE" ]; then
+  _unit_dir="$(sed -n 's/^WorkingDirectory=//p' "$BARE_METAL_UNIT_FILE" | tail -1)"
+  if [ -n "$_unit_dir" ] && [ "$_unit_dir" != "$INSTALL_DIR" ]; then
+    fail "This machine's ninedeploy service runs from $_unit_dir, but the installer would operate on $INSTALL_DIR. Re-run from the installed checkout, or set NINEDEPLOY_INSTALL_DIR=$_unit_dir to upgrade the live install — proceeding from a different clone would create a fresh panel and orphan the existing data."
+  fi
+fi
+
 # One installer at a time per target dir: a self-update (launched via
 # systemd-run by the panel) racing an operator's SSH run interleaves
 # rm -rf / tar -x / pnpm install / migrations on ONE tree, and on failure each
@@ -984,8 +996,16 @@ install_docker_mode() {
     else head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; fi
   }
   upsert_env() { # <key> <value>
+    # r449: the value is operator-supplied env (JWT secret, DNS token…) and
+    # must never ride through a sed REPLACEMENT — `&`, `|`, backslashes and
+    # newlines corrupted the secret or aborted the run after .env was already
+    # rewritten. Filter-and-append with printf instead.
     if [ -f .env ] && grep -q "^$1=" .env; then
-      sed -i.bak "s|^$1=.*|$1=$2|" .env && rm -f .env.bak
+      local _tmp
+      _tmp="$(mktemp)"
+      { grep -v "^$1=" .env; printf '%s=%s\n' "$1" "$2"; } > "$_tmp" \
+        && cat "$_tmp" > .env \
+        && rm -f "$_tmp"
     else
       printf '%s=%s\n' "$1" "$2" >> .env
     fi
@@ -1001,7 +1021,21 @@ install_docker_mode() {
   [ -n "$docker_gid" ] || fail "Could not resolve the host docker group id (getent group docker)"
   upsert_env NINEDEPLOY_JWT_SECRET "$jwt_secret"
   upsert_env DOCKER_GID "$docker_gid"
-  upsert_env NINEDEPLOY_PORT "${NINEDEPLOY_PORT:-3000}"
+  # r448: an operator-chosen port is a SETTING, not an ambient default — read
+  # it back from .env first so a re-run without the env var does not silently
+  # flip the published mapping to 3000 (which also collides with whatever made
+  # them change ports, and fails the recreate below).
+  local panel_port
+  panel_port="$(sed -n 's/^NINEDEPLOY_PORT=//p' .env | tail -1)"
+  [ -n "${NINEDEPLOY_PORT:-}" ] && panel_port="$NINEDEPLOY_PORT"
+  [ -z "$panel_port" ] && panel_port="3000"
+  upsert_env NINEDEPLOY_PORT "$panel_port"
+  # r451: persist an explicit bind address too — the compose file defaults the
+  # panel to loopback, and an operator's NINEDEPLOY_BIND=0.0.0.0 install would
+  # silently rebind on the next manual `docker compose up -d` without this.
+  if [ -n "${NINEDEPLOY_BIND:-}" ] && ! grep -q '^NINEDEPLOY_BIND=' .env; then
+    printf 'NINEDEPLOY_BIND=%s\n' "$NINEDEPLOY_BIND" >> .env
+  fi
   # Optional integrations: written only when provided by the environment and
   # never overwritten once present, so operator edits survive upgrades.
   for _var in NINEDEPLOY_PUBLIC_URL NINEDEPLOY_ACME_EMAIL NINEDEPLOY_DNS_PROVIDER NINEDEPLOY_DNS_TOKEN; do
@@ -1015,7 +1049,7 @@ install_docker_mode() {
   # Once the operator attaches a domain and an ACME email, Traefik serves
   # HTTPS on :443 and NINEDEPLOY_PUBLIC_URL should be set to that origin.
   grep -q '^NINEDEPLOY_PUBLIC_URL=' .env \
-    || upsert_env NINEDEPLOY_PUBLIC_URL "http://localhost:${NINEDEPLOY_PORT:-3000}"
+    || upsert_env NINEDEPLOY_PUBLIC_URL "http://localhost:${panel_port}"
   chmod 600 .env
   umask "$old_umask"
 
@@ -1033,8 +1067,20 @@ install_docker_mode() {
   fi
   docker_cmd compose pull \
     || fail "Image pull failed — check registry connectivity and re-run the installer."
-  docker_cmd compose up -d \
-    || { docker_cmd compose logs --tail 50 2>/dev/null || true; fail "docker compose up failed"; }
+  # r447: docker-mode upgrades never had the bare-metal r087 treatment — a
+  # failed `compose up -d` (recreate) leaves the OLD container stopped and the
+  # panel dark. compose v2 has no auto-rollback: capture the running container
+  # id and bring it back ourselves when the recreate does not land.
+  local _old_cid
+  _old_cid="$(docker_cmd compose ps -q ninedeploy 2>/dev/null || true)"
+  if ! docker_cmd compose up -d; then
+    docker_cmd compose logs --tail 50 2>/dev/null || true
+    if [ -n "$_old_cid" ] && ! docker_cmd ps -q --no-trunc | grep -q "$_old_cid"; then
+      info "compose up failed — restarting the previous panel container as a fallback…"
+      docker_cmd start "$_old_cid" 2>/dev/null || true
+    fi
+    fail "docker compose up failed"
+  fi
 
   HEALTH_PORT="$(sed -n 's/^NINEDEPLOY_PORT=//p' .env | tail -1)"
   HEALTH_PORT="${HEALTH_PORT:-3000}"
@@ -1589,6 +1635,10 @@ if [ -f "$INSTALL_DIR/package.json" ]; then
     SOURCE_MODE="release"
   elif [ -d "$INSTALL_DIR/.git" ]; then
     [ "$REF" = "main" ] || warn "Release tarball unavailable for $REF — falling back to git"
+    # r450: the git path has NO code-rollback point (only the release path
+    # prepares one) — say so BEFORE the tree is swapped, not in the failure
+    # message after the panel is already down.
+    warn "The git upgrade path has no automatic code rollback: if the build fails after this point, the previous tree is NOT restored — only the pre-update backup (if one was taken) survives."
     SOURCE_MODE="git"
     update_from_git "$REF"
   else
@@ -1730,7 +1780,17 @@ else
   ok ".env already exists"
 fi
 
-mkdir -p .data
+# r451: the data dir holds ninedeploy.db (credential hashes, sessions), the
+# repos/ checkouts (committed secrets included) and PM2's dump (managed-app
+# env) — the installer is meticulous about .env and backups; .data must not be
+# the one world-readable thing. 0750: the service runs as root, so owner rwx
+# suffices and no other local account can traverse in. Mode is only applied
+# on CREATE (chmod would fight operator tweaks on re-runs).
+if [ ! -d .data ]; then
+  install -d -m 0750 .data
+else
+  mkdir -p .data
+fi
 
 info "Running database migrations…"
 # Export .env first: drizzle.config reads NINEDEPLOY_DB_PATH/NINEDEPLOY_DATA_DIR

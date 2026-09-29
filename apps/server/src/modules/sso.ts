@@ -370,7 +370,11 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
         // The subject is read only AFTER signature + digest verification, and
         // only from the exact assertion the signature covers (r093).
         // The IdP cert comes from the metadata the operator registered.
-        const metadata = JSON.parse(provider.configJson) as {
+        // r442: parseProviderConfig, not bare JSON.parse — the boot
+        // normalization encrypts pre-r435 rows (including every legacy SAML
+        // row this route serves), and a bare parse would throw on the
+        // envelope forever.
+        const metadata = parseProviderConfig(provider.configJson) as {
           idpMetadata?: string;
           spEntityId?: string;
           spAcsUrl?: string;

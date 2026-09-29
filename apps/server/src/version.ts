@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.17';
+export const VERSION = '0.10.18';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.18',
+    date: '2026-09-29',
+    title: 'The Auditors-Audit Patch — the Installer Finally Gets the r087 Treatment',
+    changes: [
+      'Docker-mode upgrades can no longer strand the panel: a failed `docker compose up -d` recreate used to leave the OLD container stopped and the panel dark (compose v2 has no auto-rollback) — the previous container is captured first and restarted when the new one does not land (r447). An operator-chosen NINEDEPLOY_PORT also survives re-runs now instead of being silently reset to 3000 (r448), and .env values are never interpolated through a sed replacement again (`&`/`|` in operator-supplied secrets corrupted the file) (r449).',
+      'The installer refuses to re-point a live bare-metal install at a different clone (r452) — that path created a fresh .env with a new JWT secret over an empty .data and orphaned production. The git upgrade path warns about its missing code-rollback point BEFORE the tree swap (r450), .data is created 0750 (the DB, repo checkouts and PM2 dump were world-readable) (r451), and NINEDEPLOY_BIND persists to the docker-mode .env (r451).',
+      'The audit of the auditors closed the gaps in yesterday\'s fixes: the SAML consumer reads the encrypted provider config (it would have parse-errored forever on legacy rows after r435) (r442); the agent child-process scrub actually covers the enrolment token and DNS token it claimed (r443); admin-forced password resets and SCIM deprovisioning bump the studio-cookie epoch like self-service resets do — a deactivated operator\'s 8-hour database-GUI cookie no longer outlives the deactivation (r444); and the kernel event type matches what the backup bridge emits (r445).',
+      'A key rotation no longer aborts mid-sweep if a pre-r435 SSO row somehow escaped the boot normalization — the survivor is skipped for the next boot to encrypt (r446).',
+    ],
+  },
+{
     version: '0.10.17',
     date: '2026-09-29',
     title: 'The Deferred-Backlog Patch — Secrets Sealed, Sockets Scrubbed, Notifications That Tell the Truth',

@@ -1988,3 +1988,40 @@ describe('sso provider config at rest (r435)', () => {
     await app.close();
   });
 });
+
+// ── r442: the SAML consumer reads through the envelope too ────────────
+describe('saml-callback reads an encrypted provider row (r442)', () => {
+  it('parses an envelope configJson instead of dying on JSON.parse', async () => {
+    const { encrypt } = await import('../../src/lib/crypto.js');
+    const row = {
+      id: 1,
+      type: 'saml',
+      name: 'corp-saml',
+      // A pre-r435 row after the boot normalization: encrypted envelope over
+      // a config with NO idpMetadata — the honest early refusal proves the
+      // envelope was parsed (a bare JSON.parse would answer a parse error).
+      configJson: encrypt(JSON.stringify({ idpMetadata: '' })),
+      createdAt: new Date(),
+    };
+    const db = {
+      select: () => ({ from: () => Promise.resolve([row]) }),
+      insert: () => ({ values: () => ({ returning: () => Promise.resolve([row]) }) }),
+      update: () => ({ set: () => ({ where: () => Promise.resolve() }) }),
+      delete: () => ({ where: () => Promise.resolve() }),
+      query: { ssoProviders: { findFirst: () => Promise.resolve(row), findMany: () => Promise.resolve([row]) } },
+    };
+    const app = await buildTestApp({ db: db as never });
+    await app.register(ssoRoutes);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/corp-saml/saml-callback',
+      headers: asUser(),
+      payload: { SAMLResponse: Buffer.from('<samlp:Response />', 'utf8').toString('base64') },
+    });
+    const body = res.json() as { ok: boolean; error?: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toContain('idpMetadata');
+    expect(body.error).not.toMatch(/Unexpected token|JSON/i);
+    await app.close();
+  });
+});

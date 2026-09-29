@@ -1,6 +1,6 @@
 {
   "name": "ninedeploy",
-  "version": "0.10.17",
+  "version": "0.10.18",
   "description": "Interactive CLI for NineDeploy self-hosted PaaS",
   "license": "MIT",
   "repository": {

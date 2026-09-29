@@ -6,6 +6,8 @@ import type { FastifyPluginAsync } from 'fastify';
 import { operatorGrant, passwordReset, userCreate } from '@ninedeploy/schemas';
 import { badRequest, forbidden, notFound, parseId } from '../lib/errors.js';
 import { hashPassword } from '../lib/crypto.js';
+import { setSettingString } from '../lib/settings.js';
+import { STUDIO_EPOCH_KEY } from './studioProxy.js';
 import { issueResetToken } from '../lib/passwordReset.js';
 import { config } from '../config.js';
 import { normalizeEmail } from '../lib/authHelpers.js';
@@ -164,6 +166,13 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     // separate credentials and must go too (r094).
     await revokeAllSessions(app.db, id);
     await revokeApiTokens(app.db, id);
+    // r444: this is an admin-forced version of the self-service reset — the
+    // same "every credential the account holds" revocation. The 8-hour studio
+    // cookie fronts a pre-authenticated DB client (Redis studios even carry
+    // the decrypted password), so it must not outlive this either.
+    try {
+      await setSettingString(app.db, STUDIO_EPOCH_KEY, String(Date.now()));
+    } catch { /* a fixture without the settings table */ }
     void audit(app.db, req.user!.id, 'user.password', `reset for #${id}`);
     return { ok: true };
   });

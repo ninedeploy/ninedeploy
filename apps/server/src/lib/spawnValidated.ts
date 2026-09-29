@@ -23,6 +23,12 @@ const TIMEOUT_EXIT = 124;
 const SCRUBBED_ENV_KEYS = [
   'NINEDEPLOY_AGENT_TOKEN',
   'NINEDEPLOY_AGENT_RAW_TOKEN',
+  // r442: the enrolment secret the agent sends as x-ninedeploy-enrolment —
+  // the credential the 0.10.17 notes claimed was scrubbed but wasn't (the
+  // env var carries a different name than the agent token hash).
+  'NINEDEPLOY_ENROLMENT_TOKEN',
+  // dns-01 API tokens ride the same co-located .env via dotenv/config.
+  'NINEDEPLOY_DNS_TOKEN',
   'NINEDEPLOY_MASTER_URL',
   'NINEDEPLOY_JWT_SECRET',
   'NINEDEPLOY_MASTER_KEY',

@@ -95,12 +95,14 @@ const ENCRYPTED_COLUMNS = [
   },
   // ssoProviders.configJson is an envelope over the WHOLE provider config
   // (r435) — the OIDC clientSecret lives inside it. Pre-r435 plaintext rows
-  // are rewritten at boot by sso.ts's normalization, so every row here is an
-  // envelope by the time a rotation can run.
+  // are rewritten at boot by sso.ts's normalization; a survivor (the
+  // normalization is best-effort) is SKIPPED here rather than letting
+  // reencrypt's decrypt throw mid-sweep — the next boot normalizes it.
   {
     table: ssoProviders,
     select: { id: ssoProviders.id, v: ssoProviders.configJson },
-    pick: (r: { id: number; v: string }) => ({ configJson: reencrypt(r.v) }),
+    pick: (r: { id: number; v: string }) =>
+      r.v.startsWith('{') ? ({} as Partial<{ configJson: string }>) : { configJson: reencrypt(r.v) },
   },
 ] as const;
 

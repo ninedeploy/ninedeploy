@@ -59,15 +59,20 @@ describe('spawnValidated', () => {
     });
   });
 
-  it('r439: scrubs credential-bearing env keys but keeps the operational ones', async () => {
+  it('r439/r442: scrubs credential-bearing env keys but keeps the operational ones', async () => {
     // The agent process holds its enrolment token; the git/docker children
-    // must never inherit it (same class as the r414 sandbox scrub).
+    // must never inherit it (same class as the r414 sandbox scrub). r442
+    // added the ENROLMENT/DNS tokens the first list missed.
     const prev: Record<string, string | undefined> = {
       NINEDEPLOY_AGENT_TOKEN: process.env['NINEDEPLOY_AGENT_TOKEN'],
       NINEDEPLOY_AGENT_RAW_TOKEN: process.env['NINEDEPLOY_AGENT_RAW_TOKEN'],
+      NINEDEPLOY_ENROLMENT_TOKEN: process.env['NINEDEPLOY_ENROLMENT_TOKEN'],
+      NINEDEPLOY_DNS_TOKEN: process.env['NINEDEPLOY_DNS_TOKEN'],
     };
     process.env['NINEDEPLOY_AGENT_TOKEN'] = 'sha256-hash';
     process.env['NINEDEPLOY_AGENT_RAW_TOKEN'] = 'raw-token';
+    process.env['NINEDEPLOY_ENROLMENT_TOKEN'] = 'enrolment-secret';
+    process.env['NINEDEPLOY_DNS_TOKEN'] = 'dns-secret';
     try {
       const promise = spawnValidated('git', ['fetch'], () => {});
       childMocks.current!.emit('close', 0);
@@ -75,6 +80,8 @@ describe('spawnValidated', () => {
       const env = (childMocks.spawn.mock.calls.at(-1)![2] as { env: Record<string, string | undefined> }).env;
       expect(env['NINEDEPLOY_AGENT_TOKEN']).toBeUndefined();
       expect(env['NINEDEPLOY_AGENT_RAW_TOKEN']).toBeUndefined();
+      expect(env['NINEDEPLOY_ENROLMENT_TOKEN']).toBeUndefined();
+      expect(env['NINEDEPLOY_DNS_TOKEN']).toBeUndefined();
       expect(env['PATH']).toBe(process.env['PATH']);
     } finally {
       for (const [k, v] of Object.entries(prev)) {

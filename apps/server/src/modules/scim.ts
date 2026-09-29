@@ -5,6 +5,8 @@ import { apiTokens, scimTokens, users, workspaces, workspaceMembers, type DB } f
 import { audit } from '../lib/audit.js';
 import { randomToken, sha256 } from '../lib/crypto.js';
 import { unauthorized } from '../lib/errors.js';
+import { setSettingString } from '../lib/settings.js';
+import { STUDIO_EPOCH_KEY } from './studioProxy.js';
 
 /**
  * SCIM 2.0 user provisioning (RFC 7644) — the deprovisioning half of the
@@ -149,6 +151,12 @@ async function deactivateUser(
       .delete(workspaceMembers)
       .where(and(eq(workspaceMembers.userId, userId), eq(workspaceMembers.workspaceId, byWorkspaceId)));
   }
+  // r444: "every credential the account holds" includes the 8-hour studio
+  // cookie — a pre-authenticated DB client that must not outlive the
+  // deprovisioning. Same instance-wide epoch bump the password resets use.
+  try {
+    await setSettingString(db, STUDIO_EPOCH_KEY, String(Date.now()));
+  } catch { /* a fixture without the settings table */ }
 }
 
 const OPERATOR_REFUSED = 'Instance operators cannot be deprovisioned through SCIM';

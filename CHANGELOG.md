@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.18] - 2026-09-29
+
+> The auditors-audit patch: a fresh-eyes review of the 0.10.16/0.10.17 changes
+> closed the gaps in yesterday's fixes (r442–r446), and install.sh — the one
+> large artifact never deeply audited — got its first full pass (r447–r452),
+> headlined by docker-mode upgrades finally getting the r087 treatment.
+
+### Fixed
+
+- **A failed docker-mode upgrade left the panel down with no recovery (r447).** Bare metal has the full stop→rollback→restart machinery; docker mode had two bare `compose` calls. `docker compose up -d` recreating a changed container stops and renames the old one before creating the new — a failed recreate (port collision, mount error, bad env) left the old container stopped and the panel dark, and a SIGTERM mid-up did the same. The previous container is captured before the recreate and started again when the new one does not land.
+- **A docker-mode re-run silently reset an operator-chosen port (r448).** `NINEDEPLOY_PORT` was force-upserted from the ambient environment on every run — an operator who installed on 8080 (the documented escape from an occupied 3000) got the mapping flipped to 3000 on the next upgrade, external access broken behind a green "Installation Complete", and a recreate failure into the r447 window when 3000 was busy. The port is read back from `.env` first now, the same pattern the JWT secret always used.
+- **Operator-supplied `.env` values rode through a sed replacement (r449).** The docker-mode `upsert_env` interpolated values into `s|…|…|` — a JWT secret or DNS token containing `&` (valid chars) silently corrupted the file, `|` aborted the run after the rewrite. Values are written with grep+printf append semantics; the bare-metal seds stay (their inputs are literals, generated hex, or email-regex-validated).
+- **The installer could re-point a live install at a random clone (r452).** INSTALL_DIR prefers a checkout in the cwd, so running the script from any clone on a host with a systemd install took the "upgrade" branch against the CLONE: production stopped, a fresh `.env` minted over an empty `.data`, the unit re-rendered at the clone, and the panel came up empty with every deployment orphaned on disk. When the live unit's `WorkingDirectory` differs from the resolved install dir, the installer now refuses loudly. (The panel's own self-update was immune — it pins `NINEDEPLOY_INSTALL_DIR`.)
+- **`.data` was world-readable (r451).** The installer is meticulous about `.env` and backups; the data directory — home of `ninedeploy.db` (credential hashes, sessions), `repos/` checkouts (committed secrets included) and PM2's dump — was created with the ambient umask. It is `0750` on create now. `NINEDEPLOY_BIND` is also persisted to the docker-mode `.env` when provided, so the advertised manual `docker compose up -d` no longer silently rebinds the panel to loopback.
+- **The git upgrade path never warned it has no rollback (r450).** Only the release-tarball path prepares a code-rollback point; `--channel main` (and the tarball-fetch-failure fallback) swaps the tree with none, and a build failure surfaces as "The panel is DOWN" with no advance notice. The warning now fires BEFORE the swap.
+- **The audit of the auditors — gaps in the 0.10.16/0.10.17 fixes (r442–r446).** The SAML consumer read the provider config with a bare `JSON.parse`, which the r435 boot normalization breaks for every legacy SAML row it serves — it reads through the envelope helper now (r442). The agent child-process scrub claimed to remove the enrolment token but the list missed the env var that actually carries it — `NINEDEPLOY_ENROLMENT_TOKEN` and `NINEDEPLOY_DNS_TOKEN` are scrubbed too (r443). Admin-forced password resets and SCIM deprovisioning revoke "every credential the account holds" without touching the studio-cookie epoch — a deactivated operator's 8-hour pre-authenticated database-GUI cookie (Redis studios even carry the decrypted password) kept working; both bump the epoch like self-service resets (r444). The kernel `backup.completed` type matches what the bridge emits (r445), and a key rotation skips a pre-r435 SSO row that escaped the boot normalization instead of aborting the sweep (r446).
+
 ## [0.10.17] - 2026-09-29
 
 > The deferred-backlog patch: every verified item from the audit backlog that

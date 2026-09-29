@@ -169,3 +169,63 @@ describe('bare-metal systemd installation policy', () => {
     expect(installer).toMatch(/if \[ -n "\$PINNED_VERSION" \]; then\n\s*IMAGE_TAG="\$PINNED_VERSION"/);
   });
 });
+
+// ── r447–r452: docker-mode upgrade safety + env hygiene ────────────────
+describe('docker-mode upgrade safety (r447–r452)', () => {
+  const installer = () => rootFile('install.sh');
+
+  it('r447: a failed compose up -d restarts the previous container (docker mode finally gets the r087 treatment)', () => {
+    const sh = installer();
+    // The old container id is captured BEFORE the recreate…
+    expect(sh).toContain('_old_cid="$(docker_cmd compose ps -q ninedeploy 2>/dev/null || true)"');
+    // …and started again only when the new one is not running.
+    expect(sh).toContain('docker_cmd start "$_old_cid" 2>/dev/null || true');
+    // The old unconditional one-liner is gone.
+    expect(sh).not.toContain('docker_cmd compose up -d \\n    || { docker_cmd compose logs --tail 50 2>/dev/null || true; fail "docker compose up failed"; }');
+  });
+
+  it('r448: an operator-set NINEDEPLOY_PORT survives a re-run without the env var', () => {
+    const sh = installer();
+    // Read back from .env first, env override second, default last — the JWT
+    // secret pattern. The old unconditional clobber is gone.
+    expect(sh).not.toContain('upsert_env NINEDEPLOY_PORT "${NINEDEPLOY_PORT:-3000}"');
+    expect(sh).toContain(`panel_port="$(sed -n 's/^NINEDEPLOY_PORT=//p' .env | tail -1)"`);
+    expect(sh).toContain('[ -n "${NINEDEPLOY_PORT:-}" ] && panel_port="$NINEDEPLOY_PORT"');
+    expect(sh).toContain('upsert_env NINEDEPLOY_PORT "$panel_port"');
+  });
+
+  it('r449: upsert_env never interpolates values through a sed replacement', () => {
+    const sh = installer();
+    // The docker-mode upsert_env took RAW env values (JWT secret, DNS token)
+    // through a sed replacement — `&`/`|`/backslashes corrupted .env. The
+    // bare-metal seds stay: their inputs are literals, generated hex, or
+    // email-regex-validated.
+    expect(sh).not.toContain('sed -i.bak "s|^$1=.*|$1=$2|" .env');
+    expect(sh).toContain('grep -v "^$1=" .env');
+    // Written with printf (append semantics), never through a sed replacement.
+    expect(sh.indexOf('_tmp="$(mktemp)"')).toBeGreaterThan(sh.indexOf('upsert_env() {'));
+  });
+
+  it('r451: .data is created private (the DB, repos and PM2 dump live there)', () => {
+    expect(installer()).toContain('install -d -m 0750 .data');
+  });
+
+  it('r451: NINEDEPLOY_BIND is persisted when the operator provides it', () => {
+    expect(installer()).toContain('NINEDEPLOY_BIND=%s');
+    expect(installer()).toContain("grep -q '^NINEDEPLOY_BIND=' .env");
+  });
+
+  it('r450: the git upgrade path warns about its missing rollback point BEFORE the tree swap', () => {
+    const sh = installer();
+    const warnAt = sh.indexOf('The git upgrade path has no automatic code rollback');
+    const callAt = sh.indexOf('update_from_git "$REF"');
+    expect(warnAt).toBeGreaterThan(-1);
+    expect(warnAt).toBeLessThan(callAt);
+  });
+
+  it('r452: refuses to re-point the live install at a different clone', () => {
+    const sh = installer();
+    expect(sh).toContain(`sed -n 's/^WorkingDirectory=//p' "$BARE_METAL_UNIT_FILE" | tail -1`);
+    expect(sh).toContain('orphan the existing data');
+  });
+});
