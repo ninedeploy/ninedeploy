@@ -66,7 +66,9 @@ export async function pluginsMarketplaceRefresh(client: NineDeployClient): Promi
 export async function pluginsInstall(
   client: NineDeployClient,
   target: string,
-  opts: { source?: 'marketplace' | 'npm' | 'git' | 'local'; name?: string; version?: string; desc?: string },
+  // r440: matches the server's LOADABLE_SOURCES — the old union advertised
+  // npm/git/local, which the server refuses with 400 every time.
+  opts: { source?: 'marketplace' | 'sandbox'; name?: string; version?: string; desc?: string },
 ): Promise<void> {
   const source = opts.source ?? 'marketplace';
   const res = await client.plugins.install({

@@ -11,6 +11,16 @@ import rateLimitPlugin from './plugins/rateLimit.js';
  */
 export async function buildAgentApp() {
   const app = Fastify({
+    // r438: above the agent's OWN 1 MiB content caps on purpose. Those caps
+    // (MAX_PROXY_CONFIG_BYTES / MAX_WORKSPACE_FILE_BYTES in agent.ts) apply
+    // to the decoded content, but workspace files travel base64-wrapped in
+    // JSON — a ~4/3 inflation plus envelope overhead that pushed honest 1 MiB
+    // payloads past Fastify's default 1 MiB bodyLimit, so the request died
+    // with a generic 413 before the agent's own (better-messaged) check ever
+    // ran. The effective cap was ~0.75 MiB while the errors claimed 1 MiB.
+    // 4 MiB gives the wrapper generous headroom; the content limits stay the
+    // real gate.
+    bodyLimit: 4 * 1024 * 1024,
     // Same reasoning as buildApp(): the agent may sit behind the panel's
     // Traefik (agent enrolment routes are proxied), so trust the configured
     // hop count for rate-limit keying.

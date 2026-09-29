@@ -562,8 +562,10 @@ plugins.command('list').description('List all installed plugins').action(() => p
 plugins.command('marketplace').description('Browse verified marketplace extensions').action(() => pluginsMarketplace(getClient()));
 plugins.command('marketplace-refresh').description('Bypass the cache and re-fetch the live signed marketplace index').action(() => pluginsMarketplaceRefresh(getClient()));
 plugins.command('inspect <id>').description('Inspect plugin manifest and runtime telemetry').action((id: string) => pluginsInspect(getClient(), id));
-plugins.command('install <target>').description('Install a plugin (marketplace, npm, git, local)')
-  .option('-s, --source <source>', 'Source type (marketplace, npm, git, local)', 'marketplace')
+plugins.command('install <target>').description('Install a plugin (marketplace, sandbox)')
+  // r440: only what the server can actually load — npm/git/local were
+  // advertised here and always answered 400 UnsupportedPluginSourceError.
+  .option('-s, --source <source>', 'Source type (marketplace, sandbox)', 'marketplace')
   .option('-n, --name <name>', 'Custom display name')
   .option('-v, --version <version>', 'Custom version')
   .option('-d, --desc <description>', 'Description')

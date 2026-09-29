@@ -6,6 +6,7 @@ import { databases } from '@ninedeploy/db';
 import { config } from '../config.js';
 import { secretEquals } from '../lib/crypto.js';
 import { notFound, unauthorized } from '../lib/errors.js';
+import { getSettingString } from '../lib/settings.js';
 
 /**
  * Same-origin reverse proxy for the database Web Studio (Adminer / Redis
@@ -62,20 +63,48 @@ export function studioProxyPathFor(dbId: number): string {
   return `/v1/databases/${dbId}/studio-proxy/`;
 }
 
-export function studioCookieValue(dbId: number, ttlS: number = COOKIE_TTL_S): { value: string; maxAgeS: number } {
+/**
+ * r441: settings key holding the per-instance studio-cookie epoch. The epoch
+ * is folded into the cookie HMAC; bumping it (done by the password-reset
+ * route) invalidates every outstanding studio cookie at once. Without it an
+ * 8-hour studio cookie — a live shell into a database GUI — outlived the
+ * reset that revoked everything else.
+ */
+export const STUDIO_EPOCH_KEY = 'studio.cookie_epoch';
+
+/** Default epoch before any bump — valid cookies minted and checked with it. */
+const DEFAULT_EPOCH = '0';
+
+export function studioCookieValue(
+  dbId: number,
+  ttlS: number = COOKIE_TTL_S,
+  epoch: string = DEFAULT_EPOCH,
+): { value: string; maxAgeS: number } {
   const expiresAt = Math.floor(Date.now() / 1000) + ttlS;
-  const signature = createHmac('sha256', config.jwt.secret).update(`${dbId}:${expiresAt}`).digest('hex');
+  const signature = createHmac('sha256', config.jwt.secret)
+    .update(`${dbId}:${expiresAt}:${epoch}`)
+    .digest('hex');
   return { value: `${expiresAt}.${signature}`, maxAgeS: ttlS };
 }
 
-export function studioCookieSetHeader(dbId: number, isHttps: boolean, ttlS: number = COOKIE_TTL_S): string {
-  const { value, maxAgeS } = studioCookieValue(dbId, ttlS);
+export function studioCookieSetHeader(
+  dbId: number,
+  isHttps: boolean,
+  ttlS: number = COOKIE_TTL_S,
+  epoch: string = DEFAULT_EPOCH,
+): string {
+  const { value, maxAgeS } = studioCookieValue(dbId, ttlS, epoch);
   return `${studioCookieName(dbId)}=${value}; Path=/v1/databases/${dbId}/studio-proxy/; HttpOnly; SameSite=Strict; Max-Age=${maxAgeS}${
     isHttps ? '; Secure' : ''
   }`;
 }
 
-export function studioCookieValid(dbId: number, cookieHeader: string | undefined, now = Date.now()): boolean {
+export function studioCookieValid(
+  dbId: number,
+  cookieHeader: string | undefined,
+  now = Date.now(),
+  epoch: string = DEFAULT_EPOCH,
+): boolean {
   if (!cookieHeader) return false;
   const name = studioCookieName(dbId);
   const pair = cookieHeader
@@ -87,7 +116,7 @@ export function studioCookieValid(dbId: number, cookieHeader: string | undefined
   const expiresAt = Number(expS);
   if (!Number.isSafeInteger(expiresAt) || expiresAt * 1000 < now) return false;
   return secretEquals(
-    createHmac('sha256', config.jwt.secret).update(`${dbId}:${expiresAt}`).digest('hex'),
+    createHmac('sha256', config.jwt.secret).update(`${dbId}:${expiresAt}:${epoch}`).digest('hex'),
     sig ?? '',
   );
 }
@@ -99,6 +128,17 @@ function rewriteCookiePath(cookie: string, cookiePath: string): string {
   return /;\s*path=/i.test(cookie) ? cookie.replace(/;\s*path=[^;]*/i, `; Path=${cookiePath}`) : `${cookie}; Path=${cookiePath}`;
 }
 
+/** The epoch live cookies were minted under; `db`-aware (r441). */
+export async function studioCookieEpoch(db: unknown): Promise<string> {
+  try {
+    return (await getSettingString(db as never, STUDIO_EPOCH_KEY, DEFAULT_EPOCH)) ?? DEFAULT_EPOCH;
+  } catch {
+    // A test fixture without the settings table — cookies minted under the
+    // default epoch still work.
+    return DEFAULT_EPOCH;
+  }
+}
+
 const proxyHandler = async (
   app: FastifyInstance,
   req: FastifyRequest,
@@ -108,7 +148,7 @@ const proxyHandler = async (
   if (!Number.isSafeInteger(id) || id < 1) {
     throw notFound('Web Studio is not running');
   }
-  if (!studioCookieValid(id, req.headers.cookie)) {
+  if (!studioCookieValid(id, req.headers.cookie, Date.now(), await studioCookieEpoch(app.db))) {
     throw unauthorized('Studio session expired — start it again from the database page');
   }
   const d = await app.db.query.databases.findFirst({ where: eq(databases.id, id) });
@@ -207,7 +247,9 @@ export const studioProxyRoutes: FastifyPluginAsync = async (app) => {
   const requireStudioSession = async (req: FastifyRequest): Promise<void> => {
     const id = Number((req.params as { id?: string }).id);
     if (!Number.isSafeInteger(id) || id < 1) throw notFound('Web Studio is not running');
-    if (!studioCookieValid(id, req.headers.cookie)) {
+    // r441: epoch-aware, same as the handler's defence-in-depth check below —
+    // otherwise the pre-parse gate accepts cookies a bumped epoch killed.
+    if (!studioCookieValid(id, req.headers.cookie, Date.now(), await studioCookieEpoch(app.db))) {
       throw unauthorized('Studio session expired — start it again from the database page');
     }
   };

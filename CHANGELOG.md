@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.17] - 2026-09-29
+
+> The deferred-backlog patch: every verified item from the audit backlog that
+> fit a patch (r435–r441) — the SSO secret sealed at rest, discovery that
+> stops hammering the IdP, studio cookies that die with the password they
+> outlived, an agent that leaks nothing to its children, and notifications
+> that stop making numbers up.
+
+### Security
+
+- **The SSO provider config was stored cleartext — clientSecret included (r435).** The module's own docblock claimed secrets were "encrypted at rest by lib/crypto.ts on the way in"; nothing of the sort happened: `config_json` was `JSON.stringify(config)` verbatim, and unlike its sibling `oidc_providers.client_secret_encrypted` the column never rode the master key. Writes are envelopes now, a boot-time normalization rewrites pre-0.10.17 rows once (both shapes read — an upgrade never locks an operator out of their IdP), and the column is registered in the key-rotation registry so a master-key rotation carries it.
+- **The agent's git/docker children inherited the agent's credentials (r439).** `spawnValidated` passed no env, so every child saw `NINEDEPLOY_AGENT_TOKEN`, the raw enrolment token and the master URL — the same leak class the r414 sandbox scrub closed for plugin workers. The six credential-bearing keys are dropped from every spawn; PATH, HOME, `DOCKER_*` and proxy variables pass through untouched (docker and git legitimately need those).
+- **An 8-hour Web-Studio cookie outlived the password reset that revoked everything else (r441).** The studio proxy cookie is a self-contained HMAC — no session to revoke — so resetting a password left a live shell into a database GUI (Adminer) running for hours on dead credentials. The cookie is now bound to a per-instance epoch stored in settings; both the password-reset and password-change routes bump it, killing every outstanding studio cookie at once. Each studio iframe simply asks to be started again.
+
+### Fixed
+
+- **Every OIDC login start and callback fetched the IdP's discovery document (r436).** Near-immutable metadata, an outbound roundtrip per attempt — and an authenticated hammer turned the panel into an amplifier against the IdP. Successes are cached per issuer for 10 minutes (bounded, and a `bustOidcDiscoveryCache` escape hatch); failures are never cached, so a flaky IdP is not sticky.
+- **The agent's real 1 MiB limit was ~0.75 MiB, with the wrong error (r438).** Workspace files travel base64-wrapped in JSON — a ~4/3 inflation plus envelope overhead — so honest payloads at the agent's own `MAX_WORKSPACE_FILE_BYTES` died at Fastify's default 1 MiB bodyLimit with a generic 413 before the agent's better-messaged check could ever run. The agent app's bodyLimit now sits at 4 MiB; the agent's own content caps remain the real gate.
+- **Backup notifications fabricated their numbers (r437).** The audit bridge mapped `backup.create` onto `backup.completed` with an empty payload, and the dispatcher rendered what the payload never carried: "Database #0 backup succeeded (0 bytes)". The bridge carries the database NAME the backup route audits, and the notification says which database it was — "unknown" when the payload is genuinely empty, never an invented id and size.
+- **The CLI advertised plugin sources the server refuses (r440).** `ninedeploy plugins install --source npm|git|local` has answered `400 UnsupportedPluginSource` on every attempt since the loadable-source gate landed — the server only loads marketplace and sandbox code. The command's help, choices and types now offer exactly those two.
+
 ## [0.10.16] - 2026-09-29
 
 > The deep-scan patch: a full pass over the server, web, CLI and packages by

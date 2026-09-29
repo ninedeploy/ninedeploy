@@ -12,6 +12,8 @@ import { verifyJwt, type AppJwtPayload } from '../lib/jwt.js';
 import { isLocked, recordFailure, recordSuccess } from '../lib/loginLockout.js';
 import { consumeResetToken, issueResetToken } from '../lib/passwordReset.js';
 import { sendSystemEmail } from '../lib/notifier.js';
+import { setSettingString } from '../lib/settings.js';
+import { STUDIO_EPOCH_KEY } from './studioProxy.js';
 import { generateSecret, otpauthUri } from '../lib/totp.js';
 import { consumeTotpCode } from '../lib/totpReplay.js';
 import { audit } from '../lib/audit.js';
@@ -530,6 +532,12 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   app.post('/reset-password', { config: { rateLimit: AUTH_LIMIT } }, async (req) => {
     const input = passwordResetWithToken.parse(req.body);
     const user = await consumeResetToken(app.db, input.token, input.newPassword);
+    // r441: the reset revoked every session — the 8-hour studio cookies (live
+    // shells into database GUIs) must not outlive it. One epoch bump kills
+    // them all instance-wide; each studio iframe then asks to start again.
+    try {
+      await setSettingString(app.db, STUDIO_EPOCH_KEY, String(Date.now()));
+    } catch { /* a fixture without the settings table */ }
     void audit(app.db, user.id, 'auth.reset_password', user.email);
     return { ok: true };
   });
@@ -597,6 +605,11 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       .where(eq(users.id, user.id))
       .returning();
     if (!updated) throw unauthorized();
+    // r441: same reasoning as /reset-password — a changed password ends every
+    // studio cookie with the sessions it ended.
+    try {
+      await setSettingString(app.db, STUDIO_EPOCH_KEY, String(Date.now()));
+    } catch { /* a fixture without the settings table */ }
     await revokeAllSessions(app.db, user.id);
     await revokeApiTokens(app.db, user.id);
     void audit(app.db, user.id, 'auth.password_changed', user.email, undefined, {

@@ -43,14 +43,45 @@ describe('spawnValidated', () => {
     cur.emit('close', 0);
     await expect(promise).resolves.toBe(0);
     expect(lines).toEqual(['line1', 'line2', 'err-out']);
-    expect(childMocks.spawn).toHaveBeenCalledWith('docker', ['ps'], { detached: process.platform !== 'win32' });
+    expect(childMocks.spawn).toHaveBeenCalledWith('docker', ['ps'], {
+      detached: process.platform !== 'win32',
+      env: expect.any(Object),
+    });
   });
 
   it('spawns git for the git executable', async () => {
     const promise = spawnValidated('git', ['fetch', '--all'], () => {});
     childMocks.current!.emit('close', 1);
     await expect(promise).resolves.toBe(1);
-    expect(childMocks.spawn).toHaveBeenCalledWith('git', ['fetch', '--all'], { detached: process.platform !== 'win32' });
+    expect(childMocks.spawn).toHaveBeenCalledWith('git', ['fetch', '--all'], {
+      detached: process.platform !== 'win32',
+      env: expect.any(Object),
+    });
+  });
+
+  it('r439: scrubs credential-bearing env keys but keeps the operational ones', async () => {
+    // The agent process holds its enrolment token; the git/docker children
+    // must never inherit it (same class as the r414 sandbox scrub).
+    const prev: Record<string, string | undefined> = {
+      NINEDEPLOY_AGENT_TOKEN: process.env['NINEDEPLOY_AGENT_TOKEN'],
+      NINEDEPLOY_AGENT_RAW_TOKEN: process.env['NINEDEPLOY_AGENT_RAW_TOKEN'],
+    };
+    process.env['NINEDEPLOY_AGENT_TOKEN'] = 'sha256-hash';
+    process.env['NINEDEPLOY_AGENT_RAW_TOKEN'] = 'raw-token';
+    try {
+      const promise = spawnValidated('git', ['fetch'], () => {});
+      childMocks.current!.emit('close', 0);
+      await promise;
+      const env = (childMocks.spawn.mock.calls.at(-1)![2] as { env: Record<string, string | undefined> }).env;
+      expect(env['NINEDEPLOY_AGENT_TOKEN']).toBeUndefined();
+      expect(env['NINEDEPLOY_AGENT_RAW_TOKEN']).toBeUndefined();
+      expect(env['PATH']).toBe(process.env['PATH']);
+    } finally {
+      for (const [k, v] of Object.entries(prev)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
   });
 
   it('resolves 127 on a spawn error', async () => {

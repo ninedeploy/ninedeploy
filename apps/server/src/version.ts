@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.16';
+export const VERSION = '0.10.17';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.17',
+    date: '2026-09-29',
+    title: 'The Deferred-Backlog Patch — Secrets Sealed, Sockets Scrubbed, Notifications That Tell the Truth',
+    changes: [
+      'The SSO provider config — OIDC clientSecret included — is encrypted at rest under the master key (r435): writes are envelopes, pre-0.10.17 cleartext rows are rewritten once at boot, both shapes read, and key rotation carries the column. The docblock always claimed this; now it is true.',
+      'OIDC discovery documents are cached per issuer for 10 minutes (r436) — every login start AND every callback used to make an outbound roundtrip to the IdP, a self-inflicted amplification when the endpoint was hammered; failures are never cached.',
+      'A password reset (or change) now ends every Web-Studio cookie with the sessions it ended (r441): the studio cookie is bound to a per-instance epoch that the reset bumps, so an 8-hour shell into a database GUI can no longer outlive the credentials that were just revoked.',
+      'The agent\'s git/docker children no longer inherit the agent process\'s credential-bearing environment (r439) — the enrolment token, master URL and panel secrets are scrubbed from every spawnValidated child, the same treatment the plugin sandbox got in r414. And the agent\'s HTTP body limit now sits above its own 1 MiB content caps (r438): workspace files travel base64-wrapped (~4/3 inflation), so honest 1 MiB payloads died with a generic 413 before the agent\'s better-messaged check could run — the effective cap was ~0.75 MiB.',
+      'Backup notifications tell the truth (r437): the event bridge carries the database NAME instead of an empty payload the dispatcher rendered as "Database #0 backup succeeded (0 bytes)". And the CLI no longer advertises npm/git/local plugin sources the server refuses with a 400 every time (r440) — marketplace and sandbox, the two it can actually load.',
+    ],
+  },
+{
     version: '0.10.16',
     date: '2026-09-29',
     title: 'The Deep-Scan Patch — a Sealed Credential Boundary, Leak-Free Sockets and a Zero-Vulnerability Tree',

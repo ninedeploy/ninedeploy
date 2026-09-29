@@ -11,6 +11,7 @@ import {
   servers,
   settings,
   sources,
+  ssoProviders,
   tunnels,
   users,
   webhooks,
@@ -91,6 +92,15 @@ const ENCRYPTED_COLUMNS = [
     table: logDrains,
     select: { id: logDrains.id, v: logDrains.apiKeyEncrypted },
     pick: (r: { id: number; v: string | null }) => ({ apiKeyEncrypted: r.v === null ? null : reencrypt(r.v) }),
+  },
+  // ssoProviders.configJson is an envelope over the WHOLE provider config
+  // (r435) — the OIDC clientSecret lives inside it. Pre-r435 plaintext rows
+  // are rewritten at boot by sso.ts's normalization, so every row here is an
+  // envelope by the time a rotation can run.
+  {
+    table: ssoProviders,
+    select: { id: ssoProviders.id, v: ssoProviders.configJson },
+    pick: (r: { id: number; v: string }) => ({ configJson: reencrypt(r.v) }),
   },
 ] as const;
 

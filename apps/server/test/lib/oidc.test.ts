@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPrivateKey, generateKeyPairSync, sign as cryptoSign } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { generateOpaqueToken, hashState, hmacSha256, timingSafeStringEqual, verifyIdToken, type OidcConfig, type OidcDiscovery } from '../../src/lib/oidc.js';
+import { bustOidcDiscoveryCache, discover, generateOpaqueToken, hashState, hmacSha256, timingSafeStringEqual, verifyIdToken, type OidcConfig, type OidcDiscovery } from '../../src/lib/oidc.js';
 
 interface TestKey {
   kid: string;
@@ -193,5 +193,59 @@ describe('pure helpers (r039 coverage)', () => {
     expect(hmacSha256('secret', 'payload')).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(hmacSha256('secret', 'payload')).toBe(hmacSha256('secret', 'payload'));
     expect(hmacSha256('secret', 'payload')).not.toBe(hmacSha256('other', 'payload'));
+  });
+});
+
+describe('r436: discovery cache', () => {
+  const doc: OidcDiscovery = {
+    authorization_endpoint: 'https://idp.example.com/auth',
+    token_endpoint: 'https://idp.example.com/token',
+    jwks_uri: 'https://idp.example.com/jwks',
+  };
+
+  const stubFetch = () => {
+    const calls: string[] = [];
+    const fetchMock = vi.fn(async (input: unknown) => {
+      calls.push(String(input));
+      return new Response(JSON.stringify(doc), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return { calls, fetchMock };
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    bustOidcDiscoveryCache();
+  });
+
+  it('fetches once per issuer and serves the cached document afterwards', async () => {
+    const { calls } = stubFetch();
+    bustOidcDiscoveryCache();
+    const a = await discover(config);
+    const b = await discover(config);
+    expect(a).toEqual(doc);
+    expect(b).toEqual(doc);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('treats a trailing-slash issuer as the same key', async () => {
+    const { calls } = stubFetch();
+    bustOidcDiscoveryCache();
+    await discover(config);
+    await discover({ ...config, issuer: 'https://idp.example.com/' });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('never caches failures, and bustOidcDiscoveryCache forces a refetch', async () => {
+    const { fetchMock } = stubFetch();
+    bustOidcDiscoveryCache();
+    fetchMock.mockRejectedValueOnce(new Error('IdP down'));
+    await expect(discover(config)).rejects.toThrow('IdP down');
+    await discover(config); // failure not cached
+    bustOidcDiscoveryCache();
+    await discover(config); // forced refetch
+    // Count via the mock (mockRejectedValueOnce bypasses the impl that
+    // feeds the manual call log, so the rejected call would be missed).
+    expect(fetchMock.mock.calls).toHaveLength(3);
   });
 });

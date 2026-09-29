@@ -65,11 +65,36 @@ function timingSafeEqual(a: Buffer, b: Buffer): boolean {
   return mismatch === 0;
 }
 
+/**
+ * r436: discovery documents are near-immutable, yet every SSO login start AND
+ * every callback fetched one from the IdP — an outbound roundtrip per auth
+ * attempt, and a self-inflicted amplification when the endpoint is hammered.
+ * Successes are cached per issuer for 10 minutes; failures are never cached
+ * (a flaky IdP must not be sticky). Bounded: a panel is not a directory of
+ * the world's IdPs — 32 issuers is already generous, and a flush at the cap
+ * beats an LRU's complexity here.
+ */
+const DISCOVERY_TTL_MS = 10 * 60 * 1000;
+const DISCOVERY_CACHE_MAX = 32;
+const discoveryCache = new Map<string, { doc: OidcDiscovery; expires: number }>();
+
+/** Drop cached discovery documents (all, or one issuer's). */
+export function bustOidcDiscoveryCache(issuer?: string): void {
+  if (issuer === undefined) discoveryCache.clear();
+  else discoveryCache.delete(issuer.replace(/\/$/, ''));
+}
+
 export async function discover(config: OidcConfig): Promise<OidcDiscovery> {
-  const url = `${config.issuer.replace(/\/$/, '')}/.well-known/openid-configuration`;
+  const key = config.issuer.replace(/\/$/, '');
+  const hit = discoveryCache.get(key);
+  if (hit && hit.expires > Date.now()) return hit.doc;
+  const url = `${key}/.well-known/openid-configuration`;
   const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
   if (!res.ok) throw new Error(`OIDC discovery failed (${res.status}) for ${url}`);
-  return (await res.json()) as OidcDiscovery;
+  const doc = (await res.json()) as OidcDiscovery;
+  if (discoveryCache.size >= DISCOVERY_CACHE_MAX) discoveryCache.clear();
+  discoveryCache.set(key, { doc, expires: Date.now() + DISCOVERY_TTL_MS });
+  return doc;
 }
 
 export function buildAuthorizeUrl(discovery: OidcDiscovery, config: OidcConfig, state: string, nonce: string): string {

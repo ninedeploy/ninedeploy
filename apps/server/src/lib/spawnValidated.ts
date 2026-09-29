@@ -13,6 +13,29 @@ const OP_TIMEOUT_MS = 595_000;
 const TIMEOUT_EXIT = 124;
 
 /**
+ * r439: credential-bearing process env keys the child must never inherit.
+ * The agent process itself holds its enrolment token (and possibly the
+ * master URL / panel secrets when co-located) — the same class of leak the
+ * r414 sandbox scrub closed for plugin workers. Everything else (PATH, HOME,
+ * DOCKER_*, proxies, locale) passes through untouched: docker and git
+ * legitimately need those, and nothing in this list does.
+ */
+const SCRUBBED_ENV_KEYS = [
+  'NINEDEPLOY_AGENT_TOKEN',
+  'NINEDEPLOY_AGENT_RAW_TOKEN',
+  'NINEDEPLOY_MASTER_URL',
+  'NINEDEPLOY_JWT_SECRET',
+  'NINEDEPLOY_MASTER_KEY',
+  'NINEDEPLOY_MASTER_KEYS',
+] as const;
+
+function scrubbedEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const key of SCRUBBED_ENV_KEYS) delete env[key];
+  return env;
+}
+
+/**
  * Single choke-point for spawning the two agent executables. The argv arrays
  * passed here are produced exclusively by the typed operation table in
  * agent.ts (literal flags + regex-validated operands); this module exists so
@@ -48,7 +71,10 @@ export function spawnValidated(
   // can kill the whole tree — a `git fetch`'s remote helpers must die with
   // it. Skipped on Windows: detached spawns a visible console there, and the
   // libuv job object already tears descendants down with the child.
-  const spawnOpts: SpawnOptions = { detached: process.platform !== 'win32' };
+  const spawnOpts: SpawnOptions = {
+    detached: process.platform !== 'win32',
+    env: scrubbedEnv(),
+  };
   if (opts.cwd) spawnOpts.cwd = opts.cwd;
   const child: ChildProcess =
     executable === 'docker' ? spawn('docker', argv, spawnOpts) : spawn('git', argv, spawnOpts);

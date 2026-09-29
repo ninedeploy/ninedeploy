@@ -2,7 +2,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
-import { studioCookieSetHeader, studioCookieValid, studioCookieValue, studioProxyRoutes } from '../../src/modules/studioProxy.js';
+import { STUDIO_EPOCH_KEY, studioCookieSetHeader, studioCookieValid, studioCookieValue, studioProxyRoutes } from '../../src/modules/studioProxy.js';
 
 let upstream: http.Server;
 let upstreamPort: number;
@@ -12,11 +12,16 @@ const dbRow = { id: 3, webGuiEnabled: true, webGuiPort: -1 }; // port patched pe
 const cookieValue = () => studioCookieValue(3).value;
 const cookieHeader = () => `nd-studio-3=${cookieValue()}`;
 
-async function makeApp(row: unknown = dbRow) {
+async function makeApp(row: unknown = dbRow, settingsRow: { value: string } | null = null) {
   const app = Fastify();
   app.decorate(
     'db',
-    { query: { databases: { findFirst: vi.fn(async () => row) } } } as never,
+    {
+      query: {
+        databases: { findFirst: vi.fn(async () => row) },
+        settings: { findFirst: vi.fn(async () => settingsRow) },
+      },
+    } as never,
   );
   await app.register(studioProxyRoutes, { prefix: '/databases' });
   await app.ready();
@@ -177,5 +182,36 @@ describe('studio proxy', () => {
     expect(header).toContain('HttpOnly');
     expect(header).toContain('SameSite=Strict');
     expect(header).toContain('Max-Age=');
+  });
+});
+
+// ── r441: epoch-bound studio cookies ──────────────────────────────────
+describe('studio cookie epoch (r441)', () => {
+  it('the settings row decides the live epoch; a bumped epoch invalidates older cookies', async () => {
+    const app = await makeApp(dbRow, { value: 'epoch-2' });
+    // Minted under the LIVE epoch → passes.
+    const fresh = `nd-studio-3=${studioCookieValue(3, 8 * 60 * 60, 'epoch-2').value}`;
+    const ok = await app.inject({ method: 'GET', url: '/databases/3/studio-proxy/', headers: { cookie: fresh } });
+    expect(ok.statusCode).toBe(200);
+    // Minted under the PREVIOUS (default) epoch — what a password-reset bump
+    // leaves behind — is refused even though its HMAC and expiry are intact.
+    const stale = cookieHeader();
+    const denied = await app.inject({ method: 'GET', url: '/databases/3/studio-proxy/', headers: { cookie: stale } });
+    expect(denied.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('studioCookieValid is epoch-sensitive at the unit level', () => {
+    const header = `nd-studio-3=${studioCookieValue(3, 60, 'epoch-9').value}`;
+    expect(studioCookieValid(3, header, Date.now(), 'epoch-9')).toBe(true);
+    expect(studioCookieValid(3, header, Date.now(), 'epoch-10')).toBe(false);
+    // Default-epoch cookies still verify when no epoch was ever bumped.
+    const legacy = `nd-studio-3=${studioCookieValue(3, 60).value}`;
+    expect(studioCookieValid(3, legacy)).toBe(true);
+  });
+
+  it('exports the settings key the password-reset route bumps', () => {
+    expect(STUDIO_EPOCH_KEY).toBe('studio.cookie_epoch');
+    expect(studioCookieSetHeader(3, false, 60, 'e1')).toContain('Max-Age=60');
   });
 });

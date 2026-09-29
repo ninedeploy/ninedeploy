@@ -82,10 +82,13 @@ export class NotificationsDispatcherPlugin implements KernelPlugin {
 
     // 3. Listen for backup completion/failures
     const unsub3 = ctx.events.on('backup.completed', (payload) => {
-      const data = payload as { databaseId?: number; sizeBytes?: number };
+      // r437: the bridge carries the database NAME (the backup route audits
+      // it as the entity) — render it honestly instead of fabricating a
+      // "#0 (0 bytes)" the payload never contained.
+      const data = payload as { database?: string | null };
       return this.publish(ctx, {
         title: 'Database Backup Completed',
-        body: `Database #${data.databaseId ?? 0} backup succeeded (${data.sizeBytes ?? 0} bytes)`,
+        body: `Database "${data.database ?? 'unknown'}" backup succeeded`,
         level: 'info',
       });
     });

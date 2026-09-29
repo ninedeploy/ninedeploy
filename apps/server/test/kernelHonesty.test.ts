@@ -83,7 +83,12 @@ describe('mapAuditToDomainEvent', () => {
   });
 
   it('maps a completed backup', () => {
-    expect(mapAuditToDomainEvent(evt('backup.create', 'app-db'))?.name).toBe('backup.completed');
+    // r437: the payload carries the database NAME — the notifications plugin
+    // used to render the old empty payload as "Database #0 (0 bytes)".
+    expect(mapAuditToDomainEvent(evt('backup.create', 'app-db'))).toEqual({
+      name: 'backup.completed',
+      payload: { database: 'app-db' },
+    });
   });
 
   it('maps alert transitions with the right severity', () => {

@@ -28,7 +28,7 @@ import {
   loadServiceForUser,
   visibleDatabaseIds,
 } from '../lib/resourceAccess.js';
-import { studioCookieName, studioCookieSetHeader, studioProxyPathFor } from './studioProxy.js';
+import { studioCookieEpoch, studioCookieName, studioCookieSetHeader, studioProxyPathFor } from './studioProxy.js';
 import { badRequest, conflict, forbidden, notFound, parseId as num } from '../lib/errors.js';
 import { slugify } from '../lib/slug.js';
 
@@ -314,7 +314,7 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
     await startDatabaseStudio(d, port, (line) => app.log.info({ component: 'database-studio' }, line));
     await app.db.update(databases).set({ webGuiEnabled: true, webGuiPort: port }).where(eq(databases.id, d.id));
     void audit(app.db, req.user!.id, 'database.studio.start', `${d.name} on :${port}`);
-    reply.header('set-cookie', studioCookieSetHeader(id, req.protocol === 'https'));
+    reply.header('set-cookie', studioCookieSetHeader(id, req.protocol === 'https', undefined, await studioCookieEpoch(app.db)));
     return { ok: true, port, url: studioProxyPathFor(id) };
   });
 

@@ -712,6 +712,38 @@ describe('auth routes', () => {
     expect(res.json()).toEqual({ ok: true });
   });
 
+  it('r441: a password reset bumps the studio-cookie epoch (studio sessions die with the sessions)', async () => {
+    const insertedSettings: Array<Record<string, unknown>> = [];
+    const db = createFakeDb({
+      findFirst: {
+        passwordResetTokens: {
+          id: 7, userId: 1, tokenHash: 'tok-hash', expiresAt: new Date(Date.now() + 60_000),
+          usedAt: null, requestedFrom: null, createdAt: new Date(),
+        },
+        users: userRow({ id: 1, tokenVersion: 3 }),
+      },
+      update: { users: [userRow({ id: 1, tokenVersion: 4 })], password_reset_tokens: [{}] },
+      insert: {
+        settings: (v: Record<string, unknown>) => {
+          insertedSettings.push(v);
+          return [];
+        },
+      },
+    });
+    const app = await buildTestApp({ db });
+    await app.register(authRoutes);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/reset-password',
+      payload: { token: 'raw-token-1234567890abcdef', newPassword: 'fresh-password' },
+    });
+    expect(res.statusCode).toBe(200);
+    const epoch = insertedSettings.find((v) => v.key === 'studio.cookie_epoch');
+    expect(epoch).toBeDefined();
+    expect(String(epoch!.value)).toMatch(/^\d+$/);
+    await app.close();
+  });
+
   it('rejects a reset with an unknown token', async () => {
     const app = await buildTestApp({ db: createFakeDb() });
     await app.register(authRoutes);

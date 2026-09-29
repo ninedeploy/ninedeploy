@@ -94,23 +94,24 @@ describe('Official Kernel Plugins', () => {
       await settle();
       expect(notifications).toHaveLength(5);
 
-      // 7. Backup completed
-      kernel.events.emit('backup.completed', { databaseId: 2, sizeBytes: 102400 });
+      // 7. Backup completed (r437: the bridge carries the database NAME)
+      kernel.events.emit('backup.completed', { database: 'pg-primary' });
       await settle();
       expect(notifications).toHaveLength(6);
       expect(notifications[5]).toEqual({
         title: 'Database Backup Completed',
-        body: 'Database #2 backup succeeded (102400 bytes)',
+        body: 'Database "pg-primary" backup succeeded',
         level: 'info',
       });
 
-      // 8. Backup completed with empty payload
+      // 8. Backup completed with an empty payload — honest "unknown", not a
+      // fabricated "#0 (0 bytes)" (r437)
       kernel.events.emit('backup.completed', {});
       await settle();
       expect(notifications).toHaveLength(7);
       expect(notifications[6]).toEqual({
         title: 'Database Backup Completed',
-        body: 'Database #0 backup succeeded (0 bytes)',
+        body: 'Database "unknown" backup succeeded',
         level: 'info',
       });
 

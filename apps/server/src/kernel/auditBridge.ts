@@ -102,7 +102,10 @@ export function mapAuditToDomainEvent(event: AppEvent): MappedEvent | null {
   }
 
   if (action === 'backup.create') {
-    return { name: 'backup.completed', payload: {} } as MappedEvent;
+    // r437: the backup route audits the DATABASE NAME as the entity — carry
+    // it through instead of an empty payload, which the notifications plugin
+    // rendered as "Database #0 backup succeeded (0 bytes)".
+    return { name: 'backup.completed', payload: { database: entity ?? null } } as MappedEvent;
   }
 
   if (action === 'alert.fired' || action === 'alert.recovered') {

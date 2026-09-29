@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
+import { bustOidcDiscoveryCache } from '../../src/lib/oidc.js';
 import { SAML_UNAVAILABLE, ssoRoutes } from '../../src/modules/sso.js';
 import { buildTestApp, asUser } from '../helpers.js';
 
@@ -25,6 +26,11 @@ vi.mock('drizzle-orm', async (importOriginal) => {
 });
 
 beforeEach(() => {
+  // r436: discover() caches per issuer now. These tests' issuer-uniqueness
+  // trick (unique issuer per test, shared generic discovery doc) would
+  // collapse every test onto one cached discovery + one stale JWKS — clear
+  // the cache so each test fetches under its own fetch stub.
+  bustOidcDiscoveryCache();
   fetchMock = vi.fn(async (url: string) => {
     if (url.includes('.well-known/openid-configuration')) {
       return {
@@ -615,6 +621,12 @@ describe('POST-style OIDC callback (Sprint 6 PR #30)', () => {
     // failure mode.
     const idToken = makeIdToken(kp, { ...idTokenClaims, nonce });
     stubIdp(issuer, kp, idToken);
+    // r436: /login above ran under the generic beforeEach fetch stub, so
+    // discover() cached THAT document under this issuer's key. Drop it —
+    // the callback must re-discover under stubIdp and get this test's
+    // unique jwks_uri, or the shared JWKS cache leaks the previous test's
+    // signing key (exactly the leak the unique-issuer trick exists for).
+    bustOidcDiscoveryCache();
     // Step 3: /callback with the cookies the login set.
     return app.inject({
       method: 'GET',
@@ -1855,3 +1867,124 @@ function makeSsoDb() {
     } as never,
   };
 }
+
+// ── r435: config encrypted at rest ────────────────────────────────────
+describe('sso provider config at rest (r435)', () => {
+  const CFG = {
+    issuer: 'https://idp.example.com',
+    clientId: 'panel-client',
+    clientSecret: 'super-secret-value',
+    redirectUri: 'https://panel.example.com/v1/sso/test-sso/callback',
+  };
+
+  it('stores the config as an encrypted envelope, not cleartext JSON', async () => {
+    let inserted: Record<string, unknown> | undefined;
+    const db = {
+      select: () => ({ from: () => Promise.resolve([]) }),
+      insert: () => ({
+        values: (v: Record<string, unknown>) => {
+          // Only the provider insert carries configJson — the route's async
+          // audit() insert lands on this stub too and would overwrite it.
+          if ('configJson' in v) inserted = v;
+          return { returning: () => Promise.resolve([{ id: 1, ...v, createdAt: new Date() }]) };
+        },
+      }),
+      delete: () => ({ where: () => Promise.resolve() }),
+      query: { ssoProviders: { findFirst: () => Promise.resolve(undefined), findMany: () => Promise.resolve([]) } },
+    };
+    const app = await buildTestApp({ db: db as never });
+    await app.register(ssoRoutes);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/providers',
+      headers: asUser(),
+      payload: { type: 'oidc', name: 'test-sso', config: CFG },
+    });
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as { ok: boolean }).ok).toBe(true);
+    const stored = String(inserted?.configJson);
+    expect(stored.startsWith('{')).toBe(false); // not bare JSON
+    expect(stored).toMatch(/^v\d+:/); // a key-versioned envelope
+    expect(stored).not.toContain('super-secret-value');
+    await app.close();
+  });
+
+  it('rewrites a pre-r435 cleartext row once at boot', async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const db = {
+      select: () => ({ from: () => Promise.resolve([]) }),
+      insert: () => ({ values: () => ({ returning: () => Promise.resolve([]) }) }),
+      update: (table: unknown) => ({
+        set: (values: Record<string, unknown>) => ({
+          where: () => {
+            updates.push({ table, values });
+            return Promise.resolve();
+          },
+        }),
+      }),
+      delete: () => ({ where: () => Promise.resolve() }),
+      query: {
+        ssoProviders: {
+          findFirst: () => Promise.resolve(undefined),
+          findMany: () => Promise.resolve([{ id: 7, type: 'oidc', name: 'legacy', configJson: JSON.stringify(CFG), createdAt: new Date() }]),
+        },
+      },
+    };
+    const app = await buildTestApp({ db: db as never });
+    await app.register(ssoRoutes);
+    expect(updates).toHaveLength(1);
+    const rewritten = String(updates[0]!.values.configJson);
+    expect(rewritten.startsWith('{')).toBe(false);
+    expect(rewritten).not.toContain('super-secret-value');
+    await app.close();
+  });
+
+  it('starts a login from an encrypted row (envelope read path)', async () => {
+    const { encrypt } = await import('../../src/lib/crypto.js');
+    const row = {
+      id: 1,
+      type: 'oidc',
+      name: 'test-sso',
+      configJson: encrypt(JSON.stringify(CFG)),
+      createdAt: new Date(),
+    };
+    const db = {
+      select: () => ({ from: () => Promise.resolve([row]) }),
+      insert: () => ({ values: () => ({ returning: () => Promise.resolve([row]) }) }),
+      update: () => ({ set: () => ({ where: () => Promise.resolve() }) }),
+      delete: () => ({ where: () => Promise.resolve() }),
+      query: { ssoProviders: { findFirst: () => Promise.resolve(row), findMany: () => Promise.resolve([row]) } },
+    };
+    const app = await buildTestApp({ db: db as never });
+    await app.register(ssoRoutes);
+    const res = await app.inject({ method: 'GET', url: '/test-sso/login', headers: asUser() });
+    const body = res.json() as { ok: boolean; redirectUrl?: string };
+    expect(body.ok).toBe(true);
+    expect(body.redirectUrl).toContain('client_id=panel-client');
+    await app.close();
+  });
+
+  it('still reads a legacy cleartext row (tolerant parse)', async () => {
+    const row = {
+      id: 1,
+      type: 'oidc',
+      name: 'test-sso',
+      configJson: JSON.stringify(CFG),
+      createdAt: new Date(),
+    };
+    const db = {
+      select: () => ({ from: () => Promise.resolve([row]) }),
+      insert: () => ({ values: () => ({ returning: () => Promise.resolve([row]) }) }),
+      update: () => ({ set: () => ({ where: () => Promise.resolve() }) }),
+      delete: () => ({ where: () => Promise.resolve() }),
+      query: { ssoProviders: { findFirst: () => Promise.resolve(row), findMany: () => Promise.resolve([]) } },
+    };
+    const app = await buildTestApp({ db: db as never });
+    await app.register(ssoRoutes);
+    const res = await app.inject({ method: 'GET', url: '/test-sso/login', headers: asUser() });
+    const body = res.json() as { ok: boolean; redirectUrl?: string };
+    expect(body.ok).toBe(true);
+    expect(body.redirectUrl).toContain('client_id=panel-client');
+    await app.close();
+  });
+});

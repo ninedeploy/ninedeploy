@@ -21,6 +21,7 @@ import {
 import { issueSessionTokens } from '../lib/sessions.js';
 import { findUserByEmail, SSO_TOTP_REFUSAL } from '../lib/authHelpers.js';
 import { audit } from '../lib/audit.js';
+import { decrypt, encrypt } from '../lib/crypto.js';
 
 import {
   clearSsoCookies,
@@ -51,9 +52,9 @@ import {
  * today. The next patch adds the SAML POST consumer + the matching
  * UI affordance.
  *
- * The module never logs secret material. The `config_json` blob
- * is stored as-is (client secrets are encrypted at rest by
- * `lib/crypto.ts` on the way in if `isSecret: true`).
+ * The module never logs secret material. The `config_json` blob (which
+ * carries the OIDC clientSecret) is encrypted at rest with the master key
+ * (r435): see `parseProviderConfig` and the boot normalization below.
  */
 /**
  * r354 — SAML sign-in is NOT available, and the API says so instead of
@@ -98,8 +99,35 @@ interface SsoProviderListItem {
   createdAt: string;
 }
 
+/**
+ * r435: decrypt a stored provider config, tolerating rows written before
+ * secrets were encrypted at rest (bare JSON starts with `{`; an envelope
+ * starts with `v<digits>:`).
+ */
+function parseProviderConfig(raw: string): OidcConfig {
+  return JSON.parse(raw.startsWith('{') ? raw : decrypt(raw)) as OidcConfig;
+}
+
 export const ssoRoutes: FastifyPluginAsync = async (app) => {
   const db = app.db as DB;
+
+  // r435 boot normalization: encrypt any pre-r435 cleartext rows in place so
+  // the key-rotation registry below only ever sees envelopes. Idempotent —
+  // encrypted rows are left untouched — and best-effort: a failure logs and
+  // skips (the tolerant read path above keeps the panel working either way).
+  try {
+    const legacy = await db.query.ssoProviders.findMany({});
+    for (const row of legacy) {
+      if (row.configJson.startsWith('{')) {
+        await db
+          .update(ssoProviders)
+          .set({ configJson: encrypt(row.configJson), updatedAt: new Date() })
+          .where(eq(ssoProviders.id, row.id));
+      }
+    }
+  } catch {
+    /* fresh installs and test fixtures without the table — nothing to do */
+  }
 
   app.addHook('onRequest', app.authenticate);
 
@@ -139,9 +167,13 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
         return { ok: false, error: '`config` is required (object)' };
       }
       try {
+        // r435: the config blob carries the OIDC clientSecret — store it
+        // under the master key, not cleartext. Rows written before this
+        // change hold bare JSON and keep working (see parseProviderConfig);
+        // the boot normalization below rewrites them once.
         const [row] = await db
           .insert(ssoProviders)
-          .values({ type, name, configJson: JSON.stringify(config) })
+          .values({ type, name, configJson: encrypt(JSON.stringify(config)) })
           .returning();
         void audit(db, req.user?.id ?? null, 'sso.provider_create', `${type}:${name}`);
         return { ok: true, id: row?.id, name, type };
@@ -172,7 +204,7 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
     if (provider.type !== 'oidc') {
       return { ok: false, error: `Provider "${req.params.name}" is not an OIDC provider` };
     }
-    const config = JSON.parse(provider.configJson) as OidcConfig;
+    const config = parseProviderConfig(provider.configJson);
     const discovery = await oidcDiscover(config);
     // PR #31: the `state` + `nonce` are now stored in HttpOnly
     // cookies instead of being echoed to the client. The IdP only
@@ -246,7 +278,7 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
         clearSsoCookies({ reply, provider: provider.name });
         return { ok: false, error: 'OIDC `state` does not match the cookie (CSRF check failed)' };
       }
-      const config = JSON.parse(provider.configJson) as OidcConfig;
+      const config = parseProviderConfig(provider.configJson);
       let claims: Awaited<ReturnType<typeof oidcVerifyIdToken>>;
       try {
         const discovery = await oidcDiscover(config);
