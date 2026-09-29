@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.14';
+export const VERSION = '0.10.15';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,19 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.15',
+    date: '2026-09-29',
+    title: 'The Fresh-Audit Patch — Secret-Free Error Labels, a Working First Node Deploy, and Plugins That Actually Stop',
+    changes: [
+      'Failed nixpacks builds no longer paste every runtime secret into the deploy log — --env values are masked in error labels (r412), and user env rows can no longer override DOCKER_HOST to redirect builds to an attacker daemon (r413).',
+      'A fresh node’s FIRST deploy can actually succeed: both remote builders create the shared network up front, breaking the chicken-and-egg that failed every attempt (r415); the agent’s pull is a bounded validated operation (r417) and a failed proxy sync says the node is dark instead of claiming routing is intact (r416).',
+      'The plugin sandbox worker gets a scrubbed environment — no master key (r414) — and the docs state the honest trust model.',
+      'Disable actually stops a plugin (worker, hooks, subscriptions); enable loads it instead of fabricating rows; reload really reloads; reinstall updates the stored code (r420).',
+      'The exec and log WebSockets revalidate their token every minute — a revoked session loses its root shell (r418) — and the events socket enforces fine-grained scopes (r419).',
+      'Honest node status via a 60 s agent heartbeat and read-time staleness (r421); inline-stack edits seed new SERVICE_* tokens instead of deploying blank credentials (r424); plus a .env symlink guard (r423), a mapping check for services: (r422), a race-free invitation accept (r425), a uniform 404 for unknown orchestrators (r422) and an honest CLI health banner (r426).',
+    ],
+  },
+{
     version: '0.10.14',
     date: '2026-09-28',
     title: 'The Backlog-Clearing Patch — No Resurrected Targets, Surviving Cancels, Honest Alerts and Telemetry',

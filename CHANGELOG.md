@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.15] - 2026-09-29
+
+> The fresh-audit patch: four parallel reviews of the never-audited surfaces
+> (auth/session, the node-agent protocol, the compose engine, the plugin
+> kernel + packages contract) — r412–r426.
+
+### Security
+
+- **Failed Nixpacks builds leaked every runtime secret into the deploy log (r412).** The build passed the service's WHOLE resolved env — project-shared secrets, managed-database URLs with plaintext passwords — as `--env KEY=VALUE` argv, and the exec layer's error label embeds the raw argv: one failed build and the string carried the secrets into the deploy log (readable by every workspace member with the service), the audit trail and notification channels. Values following `--env` (and `-e`) are masked in labels now, keys kept readable — the same treatment `--password` already had.
+- **A member env row could redirect builds to an attacker's Docker daemon (r413).** `buildEnv` let caller-supplied values override the transport keys it deliberately inherits; a member setting `DOCKER_HOST=tcp://attacker:2375` on their own docker service handed the build context and every injected secret to a daemon they control. `DOCKER_HOST`/`DOCKER_CONTEXT`/`DOCKER_CONFIG`/`COMPOSE_FILE`/`DOCKER_BUILDKIT` are dropped from user env unconditionally — effective precisely when the host defines no value of its own.
+- **The plugin sandbox worker inherited the panel's environment — master key included (r414).** A worker thread receives a copy of the parent env at spawn; third-party plugin code could read `NINEDEPLOY_MASTER_KEY` for free (the key that decrypts every stored secret). The worker now gets a scrubbed three-variable environment, and the docs state the honest trust model: the sandbox is resource containment, not a security boundary — installing plugins is an operator-level trust decision like PM2 services.
+- **The events socket skipped the fine-grained scope check its HTTP route enforces (r419)** — a `services`-scoped CI token could hold a live `/v1/events` stream. The exec and log WebSockets now also revalidate their token every minute (r418): a revoked session (logout-everywhere, password change) loses its interactive root shell and its secret-echoing build log within a minute, not when the client feels like closing — r401 fixed only the events socket of the three.
+
+### Fixed
+
+- **A fresh node's first deploy could never succeed (r415).** Every remote container starts with `--network ninedeploy`, but on a node that network was created only by a SUCCESSFUL deploy's proxy sync — and the failure path never syncs. Register a node, deploy anything, and it fails with "network ninedeploy not found", forever, with no UI action that prepares the node. Both remote builders ensure the network (idempotently) before touching docker.
+- **The agent's `docker.pull` bypassed the spawn-validation invariant (r417).** It ran the PANEL-side pull-recovery machine — three retries, `ctr`/`tar` chains, a crane binary downloaded from GitHub — with 30–60-minute step timeouts, outliving the panel's 600 s request budget while the deploy had already failed, on binaries the agent container does not ship. It is a plain validated `docker pull` now: a failed pull on a node fails fast and honestly.
+- **`proxy.ensure` destroyed the node's only proxy before starting the new one (r416).** `rm -f` came first; a failed image pull or transient daemon error then left every domain on the node dark while the panel logged "the node keeps serving its previous routing" — a lie in exactly that case. The image is pulled BEFORE the removal, and the failure message now says which of the two states the node is in.
+- **Disabling a plugin stopped nothing (r420).** The worker thread, its deploy hooks and its event subscriptions kept running — the operator's first move against a suspicious plugin was a no-op — while enable FABRICATED rows for plugins that never existed (and never loaded a plugin disabled before a restart), `reload` reported success without touching the runtime, and reinstalling left the OLD code in the stored row (the next boot resurrected the broken version). All four routes now drive the kernel's (un)registration and the stored manifest; unknown ids answer 404.
+- **Honest node status (r421).** The agent announces every 60 s (lastSeenAt used to mean "last boot"), the server list reports a stale `online` node as `offline` at read time, and `host:port` spellings are normalized so one endpoint cannot fork two rows through `NINEDEPLOY_ADVERTISE_HOST=10.0.0.5:4600`.
+- **Assorted (r422–r426).** Editing an inline stack's YAML seeds NEW `SERVICE_*` tokens — the stack used to deploy green with blank credentials, because compose interpolates unset variables to empty strings and the preflight still passes. A repo-committed `.env` symlink can no longer route the merged write (repo bytes + plaintext panel secrets) outside the workdir. A non-mapping `services:` block is refused where the message helps instead of dying late at `docker compose config`. Concurrent invitation accepts treat the unique-index collision as the success it is. Unknown orchestrators answer a uniform 404 instead of a 200 body typed as the success payload. Official plugins list as Official (the CLI labeled all twelve built-ins "Community"). The CLI health banner no longer counts every healthy remote-node service as needing attention.
+
 ## [0.10.14] - 2026-09-28
 
 > The backlog-clearing patch: the deferred findings from the audit rounds that
