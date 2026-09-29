@@ -82,7 +82,12 @@ export default defineConfig({
         // integration-shaped paths (real WS lifecycles, real agent round
         // trips) — the unit fake-DB suites cover the happy paths. Floor
         // follows the measurement: 91.0.
-        statements: 93.3,
+        //
+        // Same release, statements on the CI runner: local Node 24 measures
+        // 93.44, CI Node 26 measures 93.29 (v8's function/statement
+        // accounting differs across engines for the same tree — r131 noted
+        // the same class). Floor moves to just under the LOWER measurement.
+        statements: 93.25,
         branches: 87.3,
         functions: 91.0,
         lines: 95.1,
