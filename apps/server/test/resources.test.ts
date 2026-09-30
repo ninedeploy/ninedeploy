@@ -96,7 +96,7 @@ vi.mock('node:child_process', async (importOriginal) => {
         spawnMock.forceNth = null;
         return fakeChild((emit) => { emit('close', code); });
       }
-      return real.spawn(cmd, args, opts);
+      return spawnMock.spawn(cmd, args, opts);
     },
   };
 });
@@ -769,6 +769,57 @@ it('exports system state as a tar.gz and cleans up only after the stream closed'
       expect(fs.readFileSync(path.join(cwdDir, '.env'), 'utf8')).toBe('NEW=1');
     } finally {
       process.chdir(oldCwd);
+    }
+  });
+});
+
+// ── r454: concurrent imports serialize on one scratch dir ─────────────
+describe('import concurrency (r454)', () => {
+  it('answers 409 while another import is in flight', async () => {
+    const buildDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nd-build-'));
+    createdDirs.push(buildDir);
+    fs.writeFileSync(path.join(buildDir, '_meta.json'), JSON.stringify({ version: '1.0.0', stats: {} }));
+    const body = await makeArchive(buildDir);
+
+    // Hold the FIRST import inside its member listing on a gated fake child:
+    // the route's await pends until we emit 'close', so the in-flight flag is
+    // observably set (no Promise.all ordering luck involved).
+    const realSpawn = spawnMock.spawn;
+    let gate: ((ev: string, code: number) => void) | null = null;
+    let listings = 0;
+    (spawnMock as unknown as { spawn: unknown }).spawn = (cmd: string, args: string[], opts?: unknown) => {
+      if (cmd === 'tar' && args[0] === '-tzf' && listings === 0) {
+        listings++;
+        return fakeChild((emit) => {
+          gate = emit as unknown as (ev: string, code: number) => void;
+          // Intentionally emits nothing yet — the listing hangs.
+        });
+      }
+      return realSpawn(cmd, args, opts);
+    };
+    const app = await appWith();
+    try {
+      const first = app.inject({
+        method: 'POST', url: '/import',
+        headers: { 'content-type': 'application/octet-stream', ...asUser() }, payload: body,
+      });
+      for (let spin = 0; gate === null && spin < 500; spin++) {
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      expect(gate).not.toBeNull();
+      const second = await app.inject({
+        method: 'POST', url: '/import',
+        headers: { 'content-type': 'application/octet-stream', ...asUser() }, payload: body,
+      });
+      expect(second.statusCode).toBe(409);
+      expect(second.json().error.message).toContain('Another import');
+      // Release the first: the empty gated listing has no unsafe members, so
+      // the import proceeds through the REAL verbose/extract spawns to 200.
+      gate!('close', 0);
+      expect((await first).statusCode).toBe(200);
+    } finally {
+      (spawnMock as unknown as { spawn: unknown }).spawn = realSpawn;
+      await app.close();
     }
   });
 });

@@ -220,11 +220,26 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
   // A backup archive is the sole large request this API accepts. Keep the
   // 256 MB allowance local so login, webhooks and ordinary JSON endpoints
   // cannot allocate a quarter-gigabyte Buffer before authentication runs.
+  //
+  // r454: the extraction uses one FIXED scratch dir, so two concurrent
+  // imports would delete each other's in-flight files (the second request's
+  // up-front `rmSync` wipes the first's archive mid-extraction). Single-panel
+  // is single-process — a promise mutex serializes them and the loser gets an
+  // explicit 409 instead of a mysterious half-import.
+  let importInFlight: Promise<unknown> | null = null;
   app.post('/import', { bodyLimit: 256 * 1024 * 1024 }, async (req, reply) => {
     const body = req.body;
     if (!body || typeof body !== 'string') {
       return reply.status(400).send({ error: { code: 'bad_request', message: 'No body received' } });
     }
+    if (importInFlight) {
+      return reply.status(409).send({
+        error: { code: 'conflict', message: 'Another import is already running — wait for it to finish' },
+      });
+    }
+    let release: () => void = () => {};
+    importInFlight = new Promise<void>((r) => (release = r));
+    try {
 
     const tmpDir = path.join(config.paths.dataDir, '_import');
     const archivePath = path.join(tmpDir, 'upload.tar.gz');
@@ -396,5 +411,9 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
       meta,
       backupPath: backupDir,
     };
+    } finally {
+      release();
+      importInFlight = null;
+    }
   });
 };

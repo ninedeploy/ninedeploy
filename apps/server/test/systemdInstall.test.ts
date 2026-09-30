@@ -229,3 +229,39 @@ describe('docker-mode upgrade safety (r447–r452)', () => {
     expect(sh).toContain('orphan the existing data');
   });
 });
+
+// ── r457–r460: installer P3 sweep ───────────────────────────────────────
+describe('installer P3 sweep (r457–r460)', () => {
+  const installer = () => rootFile('install.sh');
+
+  it('r457: fstab swap persistence ignores commented lines', () => {
+    expect(installer()).not.toContain("grep -q '/swapfile' /etc/fstab");
+    expect(installer()).toContain("grep -Eq '^[^#]*/swapfile' /etc/fstab");
+  });
+
+  it('r458: the docker health gate probes the bound address, not hardcoded loopback', () => {
+    const sh = installer();
+    expect(sh).toContain(`HEALTH_HOST="$(sed -n 's/^NINEDEPLOY_BIND=//p' .env | tail -1)"`);
+    expect(sh).toContain('case "$HEALTH_HOST" in ""|0.0.0.0|127.0.0.1|localhost) HEALTH_HOST="127.0.0.1" ;; esac');
+    expect(sh).toContain('"http://${HEALTH_HOST}:${HEALTH_PORT}/health"');
+  });
+
+  it('r459: a no-systemd UPGRADE warns that the old code is still running', () => {
+    const sh = installer();
+    expect(sh).toContain('still executes the OLD code');
+    expect(sh).toContain('restart it manually now');
+  });
+
+  it('r460: pre-update snapshots are pruned to the newest five', () => {
+    const sh = installer();
+    expect(sh).toContain('tail -n +6');
+    expect(sh).toContain('pre-update-*.tar.gz');
+  });
+
+  it('r458: GitHub API fallbacks and the compose fetch retry like the tarball fetch', () => {
+    const sh = installer();
+    const retryApi = sh.match(/curl -fsSL -m 15 --retry 3 --retry-delay 2 -H 'Accept: application\/vnd\.github\+json'/g) ?? [];
+    expect(retryApi).toHaveLength(2);
+    expect(sh).toContain('--retry 3 --retry-delay 2 "https://raw.githubusercontent.com/NineDeploy/NineDeploy/${REF}/docker-compose.prod.yml"');
+  });
+});

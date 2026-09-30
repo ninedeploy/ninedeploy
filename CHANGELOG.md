@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.19] - 2026-09-30
+
+> The edge sweep: every deliberately-deferred P3 from the deep-audit rounds
+> (r453–r461) — bounded caches, serialized imports, an honest no-systemd
+> upgrade, a health gate that probes the real bind address, and an installer
+> that stops growing `.data` forever.
+
+### Fixed
+
+- **The OIDC JWKS cache was an unbounded Map (r453).** Growth is slow (per operator-registered issuer) but unbounded is unbounded — it is capped at 32 entries with the same flush-at-the-cap policy the discovery cache uses.
+- **Two concurrent system imports deleted each other's files (r454).** The import extracts into one fixed scratch dir; a second request's up-front clear wiped the first's archive mid-extraction. The panel is single-process — imports now serialize on a promise mutex and the loser gets an explicit 409 ("Another import is already running") instead of a mysterious half-import.
+- **The studio proxy read the cookie epoch twice per request (r455).** The pre-parse gate's read is stashed on the request and the handler's defence-in-depth check reuses it — one settings lookup per proxied request instead of two, on top of the existing database row read.
+- **The agent's 4 MiB body limit was more headroom than needed (r456).** Tightened to 2 MiB: still above the ~1.4 MiB base64 worst case for a 1 MiB workspace file, less pre-auth per-request buffering (bodies parse before the token check; rate-limited per IP).
+- **Installer edges (r457–r461):** swap persistence ignores commented fstab lines (`#/swapfile` used to silently skip it); the GitHub API fallbacks and the compose-file fetch carry `--retry 3` like the release tarball always did; the docker-mode health gate probes the bound address — a specific non-loopback `NINEDEPLOY_BIND` made the hardcoded `127.0.0.1` probe false-fail the entire install; a no-systemd UPGRADE now warns that the running foreground panel still executes the OLD code over the replaced tree instead of printing a bare "Installation Complete"; and pre-update snapshots (master.key-bearing full DB copies) are pruned to the newest five — `.data` used to grow by one per upgrade, forever.
+- **Test coverage (r462):** the log-shipper plugin's timer-only lifecycle (tick, partial-failure warning, throw-survival, post-close stop) had never been exercised — the largest uncovered function gap in the server suite. Fake timers drive all four arms now.
+
 ## [0.10.18] - 2026-09-29
 
 > The auditors-audit patch: a fresh-eyes review of the 0.10.16/0.10.17 changes

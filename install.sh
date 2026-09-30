@@ -613,7 +613,7 @@ if [ "$(uname -s)" = "Linux" ]; then
       fi
       if sudo swapon /swapfile >/dev/null 2>&1; then
         ok "2GB swapfile activated"
-        if ! grep -q '/swapfile' /etc/fstab 2>/dev/null; then
+        if ! grep -Eq '^[^#]*/swapfile' /etc/fstab 2>/dev/null; then
           echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null 2>&1 || true
         fi
       else
@@ -797,7 +797,7 @@ latest_tag() {
 
   warn "git ls-remote returned no tags — asking the GitHub releases API"
   _tag=$(
-    (curl -fsSL -m 15 -H 'Accept: application/vnd.github+json' \
+    (curl -fsSL -m 15 --retry 3 --retry-delay 2 -H 'Accept: application/vnd.github+json' \
       "https://api.github.com/repos/${REPO_SLUG}/releases/latest" 2>/dev/null || true) \
       | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' \
       | head -1 | sed 's/.*"\([^"]*\)"$/\1/' | highest_semver_tag
@@ -806,7 +806,7 @@ latest_tag() {
 
   warn "No published release — falling back to the GitHub tags API"
   _tag=$(
-    (curl -fsSL -m 15 -H 'Accept: application/vnd.github+json' \
+    (curl -fsSL -m 15 --retry 3 --retry-delay 2 -H 'Accept: application/vnd.github+json' \
       "https://api.github.com/repos/${REPO_SLUG}/tags?per_page=100" 2>/dev/null || true) \
       | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' \
       | sed 's/.*"\([^"]*\)"$/\1/' | highest_semver_tag
@@ -936,7 +936,7 @@ install_docker_mode() {
       || fail "Could not stage the compose file"
   else
     info "Fetching docker-compose.prod.yml for $REF…"
-    curl -fsSL "https://raw.githubusercontent.com/NineDeploy/NineDeploy/${REF}/docker-compose.prod.yml" \
+    curl -fsSL --retry 3 --retry-delay 2 "https://raw.githubusercontent.com/NineDeploy/NineDeploy/${REF}/docker-compose.prod.yml" \
       -o "$DOCKER_INSTALL_DIR/docker-compose.yml.new" \
       || fail "Could not fetch docker-compose.prod.yml for $REF"
   fi
@@ -1084,10 +1084,15 @@ install_docker_mode() {
 
   HEALTH_PORT="$(sed -n 's/^NINEDEPLOY_PORT=//p' .env | tail -1)"
   HEALTH_PORT="${HEALTH_PORT:-3000}"
+  # r458: probe the address the panel is actually bound to — a specific
+  # non-loopback NINEDEPLOY_BIND made the hardcoded 127.0.0.1 probe (and the
+  # whole install) false-fail. 0.0.0.0 and empty both mean loopback works.
+  HEALTH_HOST="$(sed -n 's/^NINEDEPLOY_BIND=//p' .env | tail -1)"
+  case "$HEALTH_HOST" in ""|0.0.0.0|127.0.0.1|localhost) HEALTH_HOST="127.0.0.1" ;; esac
   info "Waiting for the panel to become healthy (up to 120s)…"
   _healthy=false
   for _i in $(seq 1 120); do
-    if curl -fsS -m 2 "http://127.0.0.1:${HEALTH_PORT}/health" >/dev/null 2>&1; then _healthy=true; break; fi
+    if curl -fsS -m 2 "http://${HEALTH_HOST}:${HEALTH_PORT}/health" >/dev/null 2>&1; then _healthy=true; break; fi
     sleep 1
   done
   if [ "$_healthy" != "true" ]; then
@@ -1548,6 +1553,12 @@ prune_upgrade_rollbacks() {
     rm -rf "${_d:?}" || warn "Could not remove the rollback copy $_d"
   done
   ROLLBACK_DIR=""
+  # r460: pre-update snapshots carry master.key and a full DB copy each —
+  # without pruning every upgrade grows .data by the size of the database.
+  # Keep the newest five; filenames are installer-generated (no spaces).
+  if [ -d "$INSTALL_DIR/.data/upgrade-backups" ]; then
+    ls -1t "$INSTALL_DIR/.data/upgrade-backups"/pre-update-*.tar.gz 2>/dev/null       | tail -n +6       | while IFS= read -r _b; do rm -f -- "$_b" || true; done
+  fi
 }
 
 
@@ -2116,7 +2127,14 @@ if [ "$(uname -s)" = "Linux" ] && command -v systemctl &>/dev/null; then
 else
   # r357: nothing is restarted here, so the build is the success criterion.
   prune_upgrade_rollbacks
-  warn "systemd not available — starting in foreground…"
+  if [ -n "${PREVIOUS_VERSION:-}" ]; then
+    # r459: this was an UPGRADE — any running foreground panel still executes
+    # the OLD code over the replaced tree (node's lazy requires can even crash
+    # it). Do not let the banner below read as "restarted".
+    warn "systemd not available and this was an upgrade: a running foreground panel still executes the OLD code — restart it manually now."
+  else
+    warn "systemd not available — start the panel in the foreground when ready."
+  fi
   info "For production, set up a process manager (systemd/pm2/launchd)."
 fi
 

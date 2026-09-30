@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.18';
+export const VERSION = '0.10.19';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.19',
+    date: '2026-09-30',
+    title: 'The Edge Sweep — Bounded Caches, One Import at a Time, an Installer That Prunes Its Own Backups',
+    changes: [
+      'The edge-case sweep from the deep-audit backlog (r453–r461): the OIDC JWKS cache is bounded like the discovery cache (32 issuers, was an unbounded Map); concurrent system imports serialize on a promise mutex — the second answers an explicit 409 instead of deleting the first\'s scratch files mid-extraction; the studio proxy reads the cookie epoch once per request (the pre-parse gate stashes it for the handler\'s defence-in-depth check instead of a second settings lookup); and the agent\'s body limit tightened from 4 MiB to 2 MiB — still above the ~1.4 MiB base64 worst case, less pre-auth buffering.',
+      'The installer edges: swap persistence ignores commented fstab lines (a "#/swapfile" note used to silently skip it); the GitHub API fallbacks and the compose-file fetch retry like the tarball always did; the docker-mode health gate probes the address the panel is actually bound to (a specific non-loopback NINEDEPLOY_BIND made the hardcoded 127.0.0.1 probe false-fail the whole install); a no-systemd UPGRADE now says the running foreground panel still executes the OLD code instead of printing a bare completion banner; and pre-update snapshots are pruned to the newest five — every upgrade used to grow .data by a full master.key-bearing database copy, forever.',
+      'Coverage note: the log-shipper plugin\'s timer-only lifecycle (tick, onClose) had never been exercised by a test — it is now, with fake timers driving the interval, the partial-failure warning, the throw-survival arm and the post-close stop.',
+    ],
+  },
+{
     version: '0.10.18',
     date: '2026-09-29',
     title: 'The Auditors-Audit Patch — the Installer Finally Gets the r087 Treatment',

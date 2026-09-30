@@ -160,6 +160,9 @@ interface Jwks {
 
 const jwksCache = new Map<string, { fetchedAt: number; keys: Jwk[] }>();
 const JWKS_TTL_MS = 5 * 60 * 1000;
+// r453: bounded like the discovery cache — entries are per operator-registered
+// issuer so growth is slow, but an unbounded Map is still an unbounded Map.
+const JWKS_CACHE_MAX = 32;
 
 async function fetchJwks(jwksUri: string, force = false): Promise<Jwk[]> {
   const cached = jwksCache.get(jwksUri);
@@ -167,6 +170,7 @@ async function fetchJwks(jwksUri: string, force = false): Promise<Jwk[]> {
   const res = await fetch(jwksUri, { signal: AbortSignal.timeout(10_000) });
   if (!res.ok) throw new Error(`JWKS fetch failed (${res.status}) for ${jwksUri}`);
   const jwks = (await res.json()) as Jwks;
+  if (jwksCache.size >= JWKS_CACHE_MAX) jwksCache.clear();
   jwksCache.set(jwksUri, { fetchedAt: Date.now(), keys: jwks.keys });
   return jwks.keys;
 }

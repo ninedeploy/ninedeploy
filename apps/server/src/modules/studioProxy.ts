@@ -148,7 +148,11 @@ const proxyHandler = async (
   if (!Number.isSafeInteger(id) || id < 1) {
     throw notFound('Web Studio is not running');
   }
-  if (!studioCookieValid(id, req.headers.cookie, Date.now(), await studioCookieEpoch(app.db))) {
+  // Defence in depth (the onRequest gate above already checked) — reusing the
+  // epoch that gate read (r455), falling back to a fresh read only for the
+  // direct-invocation shape tests use.
+  const epoch = (req as FastifyRequest & { studioEpoch?: string }).studioEpoch ?? (await studioCookieEpoch(app.db));
+  if (!studioCookieValid(id, req.headers.cookie, Date.now(), epoch)) {
     throw unauthorized('Studio session expired — start it again from the database page');
   }
   const d = await app.db.query.databases.findFirst({ where: eq(databases.id, id) });
@@ -249,7 +253,11 @@ export const studioProxyRoutes: FastifyPluginAsync = async (app) => {
     if (!Number.isSafeInteger(id) || id < 1) throw notFound('Web Studio is not running');
     // r441: epoch-aware, same as the handler's defence-in-depth check below —
     // otherwise the pre-parse gate accepts cookies a bumped epoch killed.
-    if (!studioCookieValid(id, req.headers.cookie, Date.now(), await studioCookieEpoch(app.db))) {
+    // r455: stashed on the request — the handler's own check reuses it instead
+    // of a second settings lookup per proxied request.
+    const epoch = await studioCookieEpoch(app.db);
+    (req as FastifyRequest & { studioEpoch?: string }).studioEpoch = epoch;
+    if (!studioCookieValid(id, req.headers.cookie, Date.now(), epoch)) {
       throw unauthorized('Studio session expired — start it again from the database page');
     }
   };
