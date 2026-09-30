@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.20] - 2026-09-30
+
+> The integration round: the two additive items left on the audit backlog —
+> remote compose stacks that report the container they actually run (r464),
+> and an SDK that can manage the node-enrolment token (r463).
+
+### Fixed
+
+- **A remote compose stack that pinned `container_name:` reported a container that did not exist (r464).** The remote builder always recorded the deterministic `<project>-<service>-1` name; the local builder has always resolved the ACTUAL container via `docker compose ps`, but the agent protocol had no such operation — so a template pinning its own container name (or a scale change) left health checks, routing and teardown all targeting a ghost while the deploy claimed its machinery around it. A new validated `docker.composePs` agent op (same operand regexes and workspace confinement as every other op) resolves the real name right after `up` — before the secrets-bearing override file is deleted, with the same `-f` set — and `stop()` tears the project down through the resolved id's mapping. Unparseable or failed resolution falls back to the deterministic name with a logged warning, never a failed deploy.
+
+### Added
+
+- **The SDK speaks enrolment (r463).** `client.settings.enrolment.get/rotate/disable` wrap the admin routes the server already exposed — the token an agent's `NINEDEPLOY_ENROLMENT_TOKEN` needs is now rotatable and revocable from scripts and the CLI, not only the dashboard. (Deliberately NOT surfaced through MCP's read-only tools: the token is secret material.)
+
 ## [0.10.19] - 2026-09-30
 
 > The edge sweep: every deliberately-deferred P3 from the deep-audit rounds

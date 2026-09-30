@@ -92,8 +92,10 @@ interface ComposePsEntry {
 /**
  * `docker compose ps --format json` output varies by CLI version: a JSON
  * array, or one JSON object per line. Accept both; null when unparseable.
+ * Exported for the remote compose builder — both must resolve the ACTUAL
+ * main container the same way (r464).
  */
-function parseComposePs(out: string): ComposePsEntry | null {
+export function parseComposePs(out: string): ComposePsEntry | null {
   const text = out.trim();
   if (!text) return null;
   try {

@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.19';
+export const VERSION = '0.10.20';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.20',
+    date: '2026-09-30',
+    title: 'The Integration Round — Honest Container Names on Nodes, an SDK That Speaks Enrolment',
+    changes: [
+      'A remote compose stack that pins container_name: finally reports the container it actually runs (r464). The remote builder always recorded the deterministic <project>-<service>-1 name — a template pinning its own name (or a scale change) meant health checks, routing and teardown all targeted a container that did not exist while the deploy claimed success machinery around a ghost. A new validated docker.composePs agent operation resolves the real name after up (before the secrets-bearing override is deleted, with the same -f set), the local builder\'s tolerant parser is shared, and stop() tears the project down through the resolved id\'s mapping. Fallback to the deterministic name is logged, never fatal.',
+      'The SDK speaks enrolment (r463): settings.enrolment.get/rotate/disable wrap the admin routes operators already had — the token an agent\'s NINEDEPLOY_ENROLMENT_TOKEN needs, rotatable and revocable from scripts and the CLI instead of only the dashboard.',
+    ],
+  },
+{
     version: '0.10.19',
     date: '2026-09-30',
     title: 'The Edge Sweep — Bounded Caches, One Import at a Time, an Installer That Prunes Its Own Backups',

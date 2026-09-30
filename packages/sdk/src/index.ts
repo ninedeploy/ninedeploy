@@ -1016,6 +1016,16 @@ export interface NineDeployClient {
       get: () => Promise<{ activeVersion: number; knownVersions: number[]; rotatable: boolean }>;
       rotate: () => Promise<{ rotated: number; activeVersion: number; backupsNotRotated: number; warning: string | null }>;
     };
+    /**
+     * Node-enrolment token (r463): the secret an operator pastes into a
+     * remote agent's NINEDEPLOY_ENROLMENT_TOKEN. Returned in clear — the
+     * server routes are admin-only for exactly that reason.
+     */
+    enrolment: {
+      get: () => Promise<{ enabled: boolean; token: string | null }>;
+      rotate: () => Promise<{ ok: boolean; enabled: boolean; token: string }>;
+      disable: () => Promise<{ ok: boolean; enabled: boolean }>;
+    };
   };
   firewall: {
     status: () => Promise<{
@@ -1943,6 +1953,11 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
             'POST',
             '/v1/settings/master-key/rotate',
           ),
+      },
+      enrolment: {
+        get: () => get<{ enabled: boolean; token: string | null }>('/v1/settings/enrolment'),
+        rotate: () => send<{ ok: boolean; enabled: boolean; token: string }>('POST', '/v1/settings/enrolment/rotate'),
+        disable: () => send<{ ok: boolean; enabled: boolean }>('DELETE', '/v1/settings/enrolment'),
       },
     },
     firewall: {

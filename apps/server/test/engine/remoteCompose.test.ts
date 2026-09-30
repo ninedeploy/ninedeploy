@@ -393,3 +393,59 @@ describe('remote compose builder — health and teardown', () => {
     ).resolves.toBeUndefined();
   });
 });
+
+// ── r464: resolve the ACTUAL main container on the node ────────────────
+describe('remote compose builder — main container resolution (r464)', () => {
+  it('uses the name the stack actually runs when it pins container_name', async () => {
+    const { agent, calls } = fakeAgent({
+      'docker.composePs': { exitCode: 0, lines: ['{"Name":"my-pinned-app","State":"running"}'] },
+    });
+    const builder = createRemoteComposeBuilder(agent);
+    const runtime = await builder.buildAndRun(ctx());
+    expect(runtime.runtimeId).toBe('my-pinned-app');
+    expect(calls.find((c) => c.op === 'docker.composePs')!.params).toMatchObject({
+      project: 'ndcmp-ghost',
+      file: 'docker-compose.yml',
+      service: 'ghost',
+    });
+    // stop() tears the project down through the RESOLVED id's mapping.
+    await builder.stop('my-pinned-app');
+    expect(calls.filter((c) => c.op === 'docker.composeDown')).toHaveLength(1);
+  });
+
+  it('keeps the deterministic name when ps is unparseable or the service is not running', async () => {
+    for (const lines of [[], ['not json'], ['{"Name":"x","State":"exited"}']]) {
+      const { agent } = fakeAgent({ 'docker.composePs': { exitCode: 0, lines } });
+      const runtime = await createRemoteComposeBuilder(agent).buildAndRun(ctx());
+      expect(runtime.runtimeId).toBe('ndcmp-ghost-ghost-1');
+    }
+  });
+
+  it('falls back to the deterministic name when the op itself fails', async () => {
+    const failing: AgentCall = async (op, params, sink) => {
+      if (op === 'docker.composePs') throw new Error('agent blinked');
+      sink(`${op} ok`);
+      return { exitCode: 0, lines: [] };
+    };
+    const logs: string[] = [];
+    const runtime = await createRemoteComposeBuilder(failing).buildAndRun({
+      ...ctx(),
+      log: (l: string) => logs.push(l),
+    });
+    expect(runtime.runtimeId).toBe('ndcmp-ghost-ghost-1');
+    expect(logs.some((l) => l.includes('could not resolve main container'))).toBe(true);
+  });
+
+  it('resolves BEFORE the override file is deleted from the node', async () => {
+    const { agent, ops } = fakeAgent({
+      'docker.composePs': { exitCode: 0, lines: ['{"Name":"pinned","State":"running"}'] },
+    });
+    await createRemoteComposeBuilder(agent).buildAndRun({
+      ...ctx(),
+      volumeAttachments: [{ volumeName: 'nd-svc-ghost-data', containerPath: '/var/lib/ghost' }],
+    } as never);
+    const order = ops();
+    expect(order.indexOf('docker.composePs')).toBeGreaterThan(order.indexOf('docker.composeUp'));
+    expect(order.indexOf('file.deleteWorkspace')).toBeGreaterThan(order.indexOf('docker.composePs'));
+  });
+});

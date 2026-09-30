@@ -1,6 +1,7 @@
 import type { Builder, BuildContext, DeployRuntime } from '../types.js';
 import type { AgentCall } from './remoteDocker.js';
 import { RemoteDeployUnsupportedError } from './remoteDocker.js';
+import { parseComposePs } from './compose.js';
 import { INLINE_COMPOSE_FILE } from '../../lib/composeWorkspace.js';
 import { assertCloneTargetAllowed } from '../../lib/gitEgress.js';
 
@@ -166,6 +167,10 @@ export function createRemoteComposeBuilder(agent: AgentCall): Builder {
         );
       }
 
+      // Declared before the try: the r464 resolution inside it may replace
+      // the deterministic name with the one the stack actually runs.
+      let runtimeId = mainContainer(project, composeService);
+
       try {
         // Preflight, in this order, BEFORE anything touches the running stack.
         log(`Validating compose project ${project} on the node …`);
@@ -209,6 +214,29 @@ export function createRemoteComposeBuilder(agent: AgentCall): Builder {
             `restart policy not applied: ${err instanceof Error ? err.message : String(err)} — containers keep whatever their compose file declared`,
           );
         });
+
+        // r464: resolve the ACTUAL main container, same as the local builder —
+        // a stack that pins `container_name:` (or a scale change) produces a
+        // different name than the deterministic `<project>-<service>-1`, and
+        // health, routing and stop would all target a container that does not
+        // exist. Runs INSIDE the try so the override file still exists (ps
+        // takes the same -f set `up` did); tolerant — anything unparseable
+        // keeps the deterministic name.
+        try {
+          const res = await agent('docker.composePs', { ...stack, service: composeService }, sink);
+          const parsed = parseComposePs(res.lines.join('\n'));
+          if (parsed?.Name && parsed.State === 'running') {
+            const resolved = parsed.Name.replace(/^\//, '');
+            if (resolved !== runtimeId) {
+              log(`main container resolved as ${resolved}`);
+              runtimeId = resolved;
+            }
+          }
+        } catch (err) {
+          log(
+            `warning: could not resolve main container name, using ${runtimeId}: ${err instanceof Error ? err.message : err}`,
+          );
+        }
       } finally {
         // Both files carry resolved secrets and compose has already read them.
         if (hasEnv) {
@@ -221,9 +249,9 @@ export function createRemoteComposeBuilder(agent: AgentCall): Builder {
         }
       }
 
-      const runtimeId = mainContainer(project, composeService);
-      // Record the project this builder MINTED for the runtimeId it MINTED,
-      // so `stop()` can tear down the right project without string surgery.
+      // Record the project this builder MINTED for the runtimeId it MINTED
+      // (possibly the r464-resolved one), so `stop()` can tear down the
+      // right project without string surgery.
       projectByRuntimeId.set(runtimeId, project);
       return {
         runtimeId,

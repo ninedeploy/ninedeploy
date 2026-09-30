@@ -645,3 +645,21 @@ describe('agent inspect formats', () => {
     expect(injected.at(-1)).toBe('{{.Image}}');
   });
 });
+
+// ── r464: main-container resolution over the agent protocol ────────────
+describe('docker.composePs (r464)', () => {
+  it('builds a validated ps argv with an optional service filter', async () => {
+    expect(
+      await argvOf('docker.composePs', { project: 'p', file: 'docker-compose.yml', service: 'web' }),
+    ).toEqual(['compose', '-p', 'p', '-f', 'docker-compose.yml', 'ps', '--format', 'json', 'web']);
+    expect(
+      await argvOf('docker.composePs', { project: 'p', file: 'docker-compose.yml', override: 'o.yml' }),
+    ).toEqual(['compose', '-p', 'p', '-f', 'docker-compose.yml', '-f', 'o.yml', 'ps', '--format', 'json']);
+  });
+
+  it('rejects an invalid service operand like every other op', async () => {
+    await expect(argvOf('docker.composePs', { project: 'p', file: 'f.yml', service: '-x' })).rejects.toThrow(
+      /compose service/,
+    );
+  });
+});

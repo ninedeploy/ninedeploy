@@ -256,6 +256,20 @@ const OPS: Record<string, { exe: 'docker' | 'git'; build: Op }> = {
     exe: 'docker',
     build: (p) => ['compose', '-p', validated(str(p, 'project'), RE_NAME, 'project'), 'down', '--remove-orphans'],
   },
+  // r464: resolves the ACTUAL main container of a stack the node just brought
+  // up. A compose file that pins `container_name:` (or a scale change)
+  // produces a different name than the deterministic `<project>-<service>-1`,
+  // and health/routing/stop would all target a container that does not exist —
+  // the local builder has always resolved this, the remote one now can too.
+  'docker.composePs': {
+    exe: 'docker',
+    build: (p) => {
+      const argv = [...composeStackArgs(p), 'ps', '--format', 'json'];
+      const service = str(p, 'service');
+      if (service !== undefined) argv.push(validated(service, RE_NAME, 'compose service'));
+      return argv;
+    },
+  },
   'git.clone': {
     exe: 'git',
     build: (p) => {

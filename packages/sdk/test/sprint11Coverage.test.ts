@@ -511,3 +511,35 @@ describe('Sprint 11 SDK surface (G-13 / G-15 / G-30 / G-24 / G-47 / G-16)', () =
     });
   });
 });
+
+// ── r463: enrolment routes reach the SDK ───────────────────────────────
+describe('settings.enrolment (r463)', () => {
+  it('get calls GET /v1/settings/enrolment', async () => {
+    const { fetchMock, calls } = makeFetch(() => ok({ enabled: true, token: 'tok' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const client = createClient({ baseUrl: 'https://panel.test', token: 't' });
+    const res = await client.settings.enrolment.get();
+    expect(res).toEqual({ enabled: true, token: 'tok' });
+    expect(calls[0]?.url).toBe('/v1/settings/enrolment');
+  });
+
+  it('rotate POSTs to /v1/settings/enrolment/rotate', async () => {
+    const { fetchMock, calls } = makeFetch(() => ok({ ok: true, enabled: true, token: 'fresh' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const client = createClient({ baseUrl: 'https://panel.test', token: 't' });
+    const res = await client.settings.enrolment.rotate();
+    expect(res.token).toBe('fresh');
+    expect(calls[0]?.url).toBe('/v1/settings/enrolment/rotate');
+    expect(calls[0]?.init.method).toBe('POST');
+  });
+
+  it('disable DELETEs /v1/settings/enrolment', async () => {
+    const { fetchMock, calls } = makeFetch(() => ok({ ok: true, enabled: false }));
+    vi.stubGlobal('fetch', fetchMock);
+    const client = createClient({ baseUrl: 'https://panel.test', token: 't' });
+    const res = await client.settings.enrolment.disable();
+    expect(res.enabled).toBe(false);
+    expect(calls[0]?.url).toBe('/v1/settings/enrolment');
+    expect(calls[0]?.init.method).toBe('DELETE');
+  });
+});
