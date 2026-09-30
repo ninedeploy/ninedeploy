@@ -284,6 +284,11 @@ export function Monitoring() {
           {nodeStats.isError && ' The agent is currently unreachable — cards show placeholders until it answers.'}
         </p>
       )}
+      {!viewingNode && !host && !(me?.isOperator ?? false) && (
+        <p className="-mt-4 text-xs text-slate-500">
+          Host-level metrics (CPU, memory, disk) are visible to operators only — your own services&apos; live usage is listed below.
+        </p>
+      )}
 
       {/* Resource Allocation Breakdown Visualizer */}
       {containers.length > 0 && (

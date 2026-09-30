@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.25] - 2026-09-30
+
+> The telemetry posture release: host figures are operator-only (r469) — the
+> last deferred audit item, closed with the conservative default (members keep
+> their own services' stats; machine-wide numbers stop leaking).
+
+### Security
+
+- **Host-level telemetry is operator-only (r469).** `/v1/stats` returned the host card (CPU cores, load average, total/used memory, disk usage) to every authenticated caller — but those figures expose machine capacity and the aggregate load of EVERY tenant's workloads, information a member has no business need for on a multi-tenant panel. The `host` object now comes back `null` for non-operators (the schema's `host` is nullable precisely for this); the per-service container stats stay scoped exactly as before (owned + workspace-visible). The Monitoring page replaces the member's blanked host cards with an explicit note — "Host-level metrics are visible to operators only — your own services' live usage is listed below" — instead of unexplained dashes. Operators see exactly what they saw before.
+
 ## [0.10.24] - 2026-09-30
 
 > The real sandbox release: third-party plugin code runs behind Node's

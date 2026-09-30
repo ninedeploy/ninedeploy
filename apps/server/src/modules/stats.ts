@@ -93,7 +93,11 @@ export const statsRoutes: FastifyPluginAsync = async (app) => {
         memLimitMb: st.memLimitBytes ? Math.round(st.memLimitBytes / MB) : 0,
       });
     }
-    return { host, containers: out };
+    // r469: host telemetry is operator-only. The host card exposes machine
+    // capacity and the aggregate load of EVERY tenant's workloads — members
+    // keep their own services' container stats (scoped above), but not the
+    // machine-wide figures. The schema's host is nullable precisely for this.
+    return { host: user.isOperator ? host : null, containers: out };
   });
 };
 

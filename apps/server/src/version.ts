@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.24';
+export const VERSION = '0.10.25';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.25',
+    date: '2026-09-30',
+    title: 'The Telemetry Posture Release — Host Figures Are Operator-Only',
+    changes: [
+      'Host-level telemetry is operator-only now (r469). /v1/stats always returned the host card (CPU cores, load, total/used memory, disk) to every caller — but those figures expose machine capacity and the aggregate load of EVERY tenant\'s workloads, information a member has no business need for on a multi-tenant panel. Members still get their own services\' live container stats (the scoping that already existed); the host object comes back null for them and the Monitoring page says so instead of showing misleading dashes. Operators see exactly what they saw before.',
+    ],
+  },
+{
     version: '0.10.24',
     date: '2026-09-30',
     title: 'The Real Sandbox Release — Plugin Code Runs Behind Node\'s Permission Model',

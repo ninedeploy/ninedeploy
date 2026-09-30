@@ -250,3 +250,34 @@ describe('metric routes', () => {
     expect(res.statusCode).toBe(404);
   });
 });
+
+// ── r469: host telemetry is operator-only ───────────────────────────────
+describe('r469: host figures in /v1/stats', () => {
+  it('are NULL for a member (machine capacity + every tenant\'s aggregate load)', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({ select: { services: [], databases: [] } }),
+      stats: { containers, host: { cpuCores: 8, memTotalBytes: 16_000_000_000, memUsedBytes: 4_000_000_000 } },
+    });
+    await app.register(statsRoutes);
+    const res = await app.inject({ method: 'GET', url: '/', headers: asUser({ id: 7, isOperator: false }) });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.host).toBeNull();
+    // Their own scoped containers keep flowing (the member-visibility tests
+    // above cover the scoping; this pins that ONLY the host is withheld).
+    expect(Array.isArray(body.containers)).toBe(true);
+    await app.close();
+  });
+
+  it('stay intact for an operator', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({ select: { services: [], databases: [] } }),
+      stats: { containers, host: { cpuCores: 8, memTotalBytes: 16_000_000_000, memUsedBytes: 4_000_000_000 } },
+    });
+    await app.register(statsRoutes);
+    const res = await app.inject({ method: 'GET', url: '/', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().host).toMatchObject({ cpuCores: 8, memTotalBytes: 16_000_000_000 });
+    await app.close();
+  });
+});
