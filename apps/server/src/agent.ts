@@ -544,12 +544,46 @@ async function deleteEnvFileOp(params: Params): Promise<void> {
 }
 
 /**
+ * r467: node telemetry for the Monitoring page. One composite read — host
+ * os-level stats as a single JSON line (`ND-HOST {...}`), then raw
+ * `docker stats --no-stream` lines (`name|cpu%|mem`) and one `df` line for
+ * the node's disk, all through the line-based op transport. The PANEL joins
+ * container names to service rows; the agent only reports what it can see.
+ * os.cpus()/totalmem()/loadavg() read /proc — the HOST's values even from
+ * inside the agent container (no lxcfs virtualization on a standard node).
+ */
+async function agentStatsOp(onLine: (l: string) => void): Promise<number> {
+  const os = await import('node:os');
+  const total = os.totalmem();
+  onLine(
+    `ND-HOST ${JSON.stringify({
+      cpuCores: os.cpus().length,
+      load1: os.loadavg()[0] ?? 0,
+      memTotalBytes: total,
+      memUsedBytes: total - os.freemem(),
+    })}`,
+  );
+  const dockerStats = await spawnValidated(
+    'docker',
+    ['stats', '--no-stream', '--format', '{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}'],
+    onLine,
+  );
+  // Node disk: df of the agent's own root — the workspaces and images live
+  // on the same filesystem on a standard node.
+  const df = await spawnValidated('df', ['-k', '.'], (l) => {
+    if (!l.startsWith('Filesystem') && l.trim() !== '') onLine(`ND-DF ${l}`);
+  });
+  return dockerStats !== 0 ? dockerStats : df;
+}
+
+/**
  * Operations handled by `runOp` directly rather than through the argv table.
  * The route consults this alongside `OPS` so a new handler cannot be reachable
  * without being listed here (or unreachable after being added).
  */
 const HANDLED_OPS = new Set([
   'agent.ping',
+  'agent.stats',
   'file.writeEnv',
   'file.deleteEnv',
   'file.writeWorkspace',
@@ -564,6 +598,7 @@ const HANDLED_OPS = new Set([
 /** Run one typed operation (exported for tests). */
 export async function runOp(op: string, params: Params, onLine: (l: string) => void): Promise<number> {
   if (op === 'agent.ping') return 0;
+  if (op === 'agent.stats') return agentStatsOp(onLine);
   if (op === 'file.writeEnv') {
     const { path } = await writeEnvFileOp(params);
     onLine(`wrote ${path}`);

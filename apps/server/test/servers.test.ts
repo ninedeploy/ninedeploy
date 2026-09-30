@@ -5,10 +5,11 @@ import { asUser, buildTestApp, createFakeDb } from './helpers.js';
 const agentMocks = vi.hoisted(() => ({
   agentPing: vi.fn(async () => undefined),
   generateAgentToken: vi.fn(() => 'raw-agent-token'),
+  agentOp: vi.fn(),
 }));
 vi.mock('../src/lib/agentClient.js', async () => {
   const actual = await vi.importActual<typeof import('../src/lib/agentClient.js')>('../src/lib/agentClient.js');
-  return { ...actual, agentPing: agentMocks.agentPing, generateAgentToken: agentMocks.generateAgentToken };
+  return { ...actual, agentPing: agentMocks.agentPing, generateAgentToken: agentMocks.generateAgentToken, agentOp: agentMocks.agentOp };
 });
 
 const cryptoMocks = vi.hoisted(() => ({ encrypt: vi.fn((s: string) => `enc:${s}`), decrypt: vi.fn((s: string) => s.replace('enc:', '')) }));
@@ -620,3 +621,137 @@ describe('servers routes', () => {
   });
 });
 
+
+// ── r467: per-node telemetry endpoint ───────────────────────────────────
+const statsAgentMock = vi.hoisted(() => ({ agentOp: vi.fn() }));
+describe('GET /:id/stats (r467)', () => {
+  const srvRow = (over: Record<string, unknown> = {}) => ({
+    id: 4, name: 'node-4', host: '10.0.0.4', port: 4600, status: 'online',
+    tokenEncrypted: 'enc:t', lastSeenAt: new Date(), createdAt: new Date(), ...over,
+  });
+  const svcRowRemote = (over: Record<string, unknown> = {}) => ({
+    id: 9, name: 'Ghost', slug: 'ghost', runtimeId: 'ghost-11', serverId: 4, memLimitMb: 256, ...over,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('parses the agent lines and joins containers to the node\'s services', async () => {
+    // Patch the module-level agentOp the route uses (the file imports it
+    // directly, so spy through the mocked client module).
+    vi.spyOn(statsAgentMock, 'agentOp');
+    const { agentOp } = await import('../src/lib/agentClient.js');
+    const realAgentOp = agentOp as unknown as ReturnType<typeof vi.fn>;
+    realAgentOp.mockImplementation(async (_db: unknown, id: number, op: string) => {
+      void id; void op;
+      return {
+        exitCode: 0,
+        lines: [
+          'ND-HOST {"cpuCores":8,"load1":0.42,"memTotalBytes":16000000000,"memUsedBytes":4000000000}',
+          'ghost-11|0.75%|51.2MiB / 256MiB',
+          'other-1|0.10%|10MiB / 1GiB',
+          'ND-DF /dev/sda1 100000000 40000000 60000000 40% /',
+        ],
+      };
+    });
+    const { servers: serversTable, services: servicesTable } = await import('@ninedeploy/db');
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { servers: srvRow() },
+        findMany: { services: [svcRowRemote()], servers: [srvRow()] },
+      } as never),
+    });
+    void serversTable; void servicesTable;
+    await app.register(serverRoutes, { prefix: '/v1/servers' });
+    const res = await app.inject({ method: 'GET', url: '/v1/servers/4/stats', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.host).toMatchObject({ cpuCores: 8, load1: 0.42 });
+    expect(body.disk).toEqual({ totalBytes: 100000000 * 1024, usedBytes: 40000000 * 1024 });
+    expect(body.containers).toHaveLength(1);
+    expect(body.containers[0]).toMatchObject({ refName: 'Ghost', name: 'ghost-11', memLimitMb: 256 });
+    expect(body.containers[0].memMb).toBeCloseTo(51.2, 0);
+    await app.close();
+  });
+
+  it('answers 400 with the agent error when the node is unreachable', async () => {
+    const { agentOp } = await import('../src/lib/agentClient.js');
+    (agentOp as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('fetch failed'));
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { servers: srvRow() }, findMany: { services: [], servers: [srvRow()] } } as never),
+    });
+    await app.register(serverRoutes, { prefix: '/v1/servers' });
+    const res = await app.inject({ method: 'GET', url: '/v1/servers/4/stats', headers: asUser() });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toContain('unreachable');
+    await app.close();
+  });
+});
+
+describe('GET /:id/stats (r467) — degraded arms', () => {
+  const srvRow = { id: 4, name: 'node-4', host: '10.0.0.4', port: 4600, status: 'online', tokenEncrypted: 'enc:t', lastSeenAt: new Date(), createdAt: new Date() };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('answers 400 when the agent exits non-zero', async () => {
+    agentMocks.agentOp.mockResolvedValue({ exitCode: 1, lines: [] });
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { servers: srvRow }, findMany: { services: [], servers: [srvRow] } } as never),
+    });
+    await app.register(serverRoutes, { prefix: '/v1/servers' });
+    const res = await app.inject({ method: 'GET', url: '/v1/servers/4/stats', headers: asUser() });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toContain('exit 1');
+    await app.close();
+  });
+
+  it('degrades a malformed ND-HOST line to null instead of failing', async () => {
+    agentMocks.agentOp.mockResolvedValue({ exitCode: 0, lines: ['ND-HOST {not-json', 'ND-DF /dev/sda1 100 40 60 40% /'] });
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { servers: srvRow }, findMany: { services: [], servers: [srvRow] } } as never),
+    });
+    await app.register(serverRoutes, { prefix: '/v1/servers' });
+    const res = await app.inject({ method: 'GET', url: '/v1/servers/4/stats', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().host).toBeNull();
+    expect(res.json().disk.totalBytes).toBe(100 * 1024);
+    await app.close();
+  });
+});
+
+describe('GET /:id/stats (r467) — parser edge arms', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('skips malformed container lines, short ND-DF lines and services without a runtime', async () => {
+    agentMocks.agentOp.mockResolvedValue({
+      exitCode: 0,
+      lines: [
+        'ND-HOST {"cpuCores":2,"load1":0.1,"memTotalBytes":10,"memUsedBytes":5}',
+        'no-cpu-field',
+        'x|notanumber%|',
+        'ND-DF tooshort',
+        'plain-noise-line',
+      ],
+    });
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { servers: { id: 4, name: 'n', host: 'h', port: 1, status: 'online', tokenEncrypted: 'enc:t', lastSeenAt: new Date(), createdAt: new Date() } },
+        // A service pinned to the node but never deployed — no runtimeId, no row.
+        findMany: { services: [{ id: 9, name: 'Pending', slug: 'pending', runtimeId: null, serverId: 4, memLimitMb: 0 }], servers: [] },
+      } as never),
+    });
+    await app.register(serverRoutes, { prefix: '/v1/servers' });
+    const res = await app.inject({ method: 'GET', url: '/v1/servers/4/stats', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.host.cpuCores).toBe(2);
+    expect(body.containers).toEqual([]);
+    expect(body.disk).toEqual({ totalBytes: 0, usedBytes: 0 });
+    await app.close();
+  });
+});

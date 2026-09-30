@@ -543,3 +543,17 @@ describe('settings.enrolment (r463)', () => {
     expect(calls[0]?.init.method).toBe('DELETE');
   });
 });
+
+// ── r467: node telemetry reaches the SDK ───────────────────────────────
+describe('servers.stats (r467)', () => {
+  it('calls GET /v1/servers/:id/stats', async () => {
+    const { fetchMock, calls } = makeFetch(() =>
+      ok({ host: { cpuCores: 4, load1: 0.3, memTotalBytes: 1, memUsedBytes: 1 }, disk: { totalBytes: 1, usedBytes: 0 }, containers: [] }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const client = createClient({ baseUrl: 'https://panel.test', token: 't' });
+    const res = await client.servers.stats(7);
+    expect(res.host?.cpuCores).toBe(4);
+    expect(calls[0]?.url).toBe('/v1/servers/7/stats');
+  });
+});

@@ -9,7 +9,7 @@ const apiMock = vi.hoisted(() => ({
     stats: { snapshot: vi.fn(), metrics: vi.fn() },
     alerts: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() },
     services: { list: vi.fn() },
-    servers: { list: vi.fn(), create: vi.fn(), remove: vi.fn(), test: vi.fn(), sshTest: vi.fn(), bootstrapLogs: vi.fn() },
+    servers: { list: vi.fn(), create: vi.fn(), remove: vi.fn(), test: vi.fn(), sshTest: vi.fn(), bootstrapLogs: vi.fn(), stats: vi.fn() },
     limits: { setService: vi.fn(), setDatabase: vi.fn() },
   },
 }));
@@ -506,13 +506,12 @@ describe('Monitoring', () => {
     expect(screen.getByText('vps-eu-1')).toBeInTheDocument();
     expect(screen.getByText('edge-us-2')).toBeInTheDocument();
 
-    // Select remote server — the overview cards always show the PANEL HOST
-    // (/v1/stats has no per-node variant); relabeling them "Node …" showed
-    // the master's numbers as the node's. The selection now shows an honest
-    // hint instead.
+    // r467: selecting a remote node switches the overview cards to the
+    // NODE's own live telemetry (agent-backed) — no more panel-host numbers
+    // mislabeled as the node's.
     fireEvent.click(screen.getByText('vps-eu-1'));
-    expect(screen.getByText('Host CPU')).toBeInTheDocument();
-    expect(screen.getByText('Host Memory')).toBeInTheDocument();
-    expect(screen.getByText(/overview cards and workload grid always show the panel host/i)).toBeInTheDocument();
+    expect(screen.getByText('Node CPU')).toBeInTheDocument();
+    expect(screen.getByText('Node Memory')).toBeInTheDocument();
+    expect(screen.getByText(/live telemetry from the selected node/i)).toBeInTheDocument();
   });
 });

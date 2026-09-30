@@ -5,7 +5,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { audit } from '../lib/audit.js';
 import { decrypt, encrypt, secretEquals } from '../lib/crypto.js';
 import { badRequest, conflict, notFound, parseId, unauthorized } from '../lib/errors.js';
-import { agentPing, generateAgentToken } from '../lib/agentClient.js';
+import { agentOp, agentPing, generateAgentToken } from '../lib/agentClient.js';
 import { ENROLMENT_HEADER, assertEnrolmentAllowed } from '../lib/enrolment.js';
 import { bootstrapServer, getBootstrapLogs, testSshConnection } from '../engine/serverProvisioner.js';
 import { agentDockerRunCommand } from '@ninedeploy/schemas';
@@ -16,6 +16,21 @@ import { VERSION } from '../version.js';
  *  trailing `:port` from the host so `10.0.0.5:4600` + port 4600 does not
  *  fork a second row for one endpoint (r399's exact failure mode, returning
  *  through a spelling difference) or build `http://host:4600:4600/` URLs. */
+/** Parse human sizes like "12.34MiB" into bytes (same rules as lib/stats.ts). */
+function parseHumanBytes(input: string): number {
+  const m = /^([\d.]+)\s*([A-Za-z]+)?$/.exec(input.trim());
+  if (!m) return 0;
+  const n = Number(m[1]);
+  const u = (m[2] ?? 'b').toLowerCase();
+  const mult =
+    u === 'kb' || u === 'kib' ? 1024
+    : u === 'mb' || u === 'mib' ? 1024 ** 2
+    : u === 'gb' || u === 'gib' ? 1024 ** 3
+    : u === 'tb' || u === 'tib' ? 1024 ** 4
+    : 1;
+  return n * mult;
+}
+
 function normalizeHost(raw: string): string {
   return raw.replace(/:\d+$/, '');
 }
@@ -196,6 +211,68 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
       await authed.db.update(servers).set({ status: 'online', lastSeenAt: new Date() }).where(eq(servers.id, id));
       void audit(authed.db, req.user!.id, 'server.test', row.name);
       return { ok: true, status: 'online' };
+    });
+
+    // r467: live node telemetry for the Monitoring page. The agent reports
+    // host os stats (one ND-HOST JSON line), per-container docker stats and
+    // one ND-DF line; the panel joins container names to the service rows
+    // pinned to this node, exactly like /v1/stats does for the panel host.
+    authed.get('/:id/stats', async (req) => {
+      const id = parseId((req.params as { id: string }).id);
+      let res: Awaited<ReturnType<typeof agentOp>>;
+      try {
+        res = await agentOp(authed.db, id, 'agent.stats', {}, () => undefined);
+      } catch (err) {
+        throw badRequest(`Node agent unreachable: ${err instanceof Error ? err.message : err}`);
+      }
+      if (res.exitCode !== 0) {
+        throw badRequest(`Node agent failed to collect stats (exit ${res.exitCode})`);
+      }
+      const MB = 1024 * 1024;
+      let host: { cpuCores: number; load1: number; memTotalBytes: number; memUsedBytes: number } | null = null;
+      let disk: { totalBytes: number; usedBytes: number } = { totalBytes: 0, usedBytes: 0 };
+      const containers = new Map<string, { cpuPct: number; memBytes: number }>();
+      for (const line of res.lines) {
+        if (line.startsWith('ND-HOST ')) {
+          try {
+            host = JSON.parse(line.slice('ND-HOST '.length)) as typeof host;
+          } catch { /* keep null — the cards degrade to placeholders */ }
+        } else if (line.startsWith('ND-DF ')) {
+          // df -k: blocks are 1K; cols: fs total used ...
+          const parts = line.slice('ND-DF '.length).trim().split(/\s+/);
+          if (parts.length >= 3) {
+            disk = { totalBytes: Number(parts[1]) * 1024, usedBytes: Number(parts[2]) * 1024 };
+          }
+        } else {
+          const [name, cpu, mem] = line.split('|');
+          const clean = (name ?? '').trim().replace(/^\//, '');
+          if (!clean || cpu === undefined) continue;
+          const used = String(mem ?? ' / ').split('/')[0]!;
+          containers.set(clean, {
+            cpuPct: Number(cpu!.replace('%', '').trim()) || 0,
+            memBytes: parseHumanBytes(used),
+          });
+        }
+      }
+      const nodeServices = await authed.db.query.services.findMany({
+        where: eq(services.serverId, id),
+      });
+      const out = [];
+      for (const s of nodeServices) {
+        if (!s.runtimeId) continue;
+        const st = containers.get(s.runtimeId);
+        if (!st) continue;
+        out.push({
+          name: s.runtimeId,
+          kind: 'service' as const,
+          refId: s.id,
+          refName: s.name,
+          cpuPct: st.cpuPct,
+          memMb: +(st.memBytes / MB).toFixed(1),
+          memLimitMb: s.memLimitMb ?? 0,
+        });
+      }
+      return { host, disk, containers: out };
     });
 
     // Approve a discovered / pending server node.

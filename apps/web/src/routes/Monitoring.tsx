@@ -57,16 +57,40 @@ export function Monitoring() {
     queryFn: () => api.servers.list(),
   });
 
-  const host = stats.data?.host;
-  const containers = stats.data?.containers ?? [];
+  // r467: live telemetry for a selected REMOTE node — the agent reports the
+  // node's own host + containers; the local query above stays the source for
+  // the panel host.
+  const selectedNode = selectedServerId !== 'local' ? Number(selectedServerId) : null;
+  const nodeStats = useQuery({
+    queryKey: ['node-stats', selectedNode],
+    queryFn: () => api.servers.stats(selectedNode!),
+    enabled: selectedNode !== null && (me?.isOperator ?? false),
+    refetchInterval: 8000,
+    retry: false,
+  });
+
+  const viewingNode = selectedNode !== null;
+  const host = viewingNode ? nodeStats.data?.host ?? null : stats.data?.host;
+  const containers = viewingNode ? nodeStats.data?.containers ?? [] : stats.data?.containers ?? [];
   const serverList = servers.data ?? [];
+  const nodeDisk = viewingNode ? nodeStats.data?.disk : undefined;
 
   const memPct = host && host.memTotalBytes > 0 ? Math.round((host.memUsedBytes / host.memTotalBytes) * 100) : 0;
-  const diskPct = host && host.diskTotalBytes > 0 ? Math.round((host.diskUsedBytes / host.diskTotalBytes) * 100) : 0;
+  const panelDisk = viewingNode ? null : stats.data?.host;
+  const diskPct =
+    viewingNode
+      ? nodeDisk && nodeDisk.totalBytes > 0
+        ? Math.round((nodeDisk.usedBytes / nodeDisk.totalBytes) * 100)
+        : 0
+      : panelDisk && panelDisk.diskTotalBytes > 0
+        ? Math.round((panelDisk.diskUsedBytes / panelDisk.diskTotalBytes) * 100)
+        : 0;
 
-  // Filtered containers
+  // Filtered containers (the union with the node-stats shape lacks `engine`)
+  type ContainerRow = { name: string; kind: 'service' | 'database'; refId: number; refName: string; engine?: string; cpuPct: number; memMb: number; memLimitMb: number };
+  const containerRows: ContainerRow[] = containers;
   const filteredContainers = useMemo(() => {
-    return containers.filter((c) => {
+    return containerRows.filter((c) => {
       const matchesSearch =
         c.refName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -83,11 +107,11 @@ export function Monitoring() {
       }
       return true;
     });
-  }, [containers, filterType, searchQuery]);
+  }, [containerRows, filterType, searchQuery]);
 
   // Aggregate telemetry
-  const totalCpuUsage = containers.reduce((acc, c) => acc + c.cpuPct, 0);
-  const totalMemUsageMb = containers.reduce((acc, c) => acc + c.memMb, 0);
+  const totalCpuUsage = containerRows.reduce((acc, c) => acc + c.cpuPct, 0);
+  const totalMemUsageMb = containerRows.reduce((acc, c) => acc + c.memMb, 0);
   const onlineServersCount = serverList.filter((s) => s.status === 'online').length + 1; // +1 for local
 
   return (
@@ -202,32 +226,49 @@ export function Monitoring() {
         </Card>
       )}
 
-      {/* Host Overview Metric Cards — always the PANEL HOST. The numbers come
-          from /v1/stats, which has no per-node variant: relabeling them "Node
-          …" when a remote node card is clicked showed the master's disk/RAM
-          as the node's (r-next). Per-node health lives on each node's card
-          and the Servers page. */}
+      {/* Host Overview Metric Cards — the PANEL HOST by default, the SELECTED
+          NODE's own host when a remote card is clicked (r467: the agent's
+          live numbers, no longer the master's disk/RAM mislabeled as the
+          node's). */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           icon={<Cpu size={18} className="text-indigo-400" />}
-          label="Host CPU"
+          label={viewingNode ? 'Node CPU' : 'Host CPU'}
           value={host ? `${host.cpuCores} cores` : '—'}
           sub={host ? `load avg: ${host.load1.toFixed(2)} · total load: ${totalCpuUsage.toFixed(1)}%` : ''}
           tone="indigo"
         />
         <BarCard
           icon={<MemoryStick size={18} className="text-violet-400" />}
-          label="Host Memory"
+          label={viewingNode ? 'Node Memory' : 'Host Memory'}
           pct={memPct}
           text={host ? `${formatBytes(host.memUsedBytes)} / ${formatBytes(host.memTotalBytes)}` : '—'}
           sub={`${totalMemUsageMb.toFixed(0)} MB container allocation`}
         />
         <BarCard
           icon={<HardDrive size={18} className="text-amber-400" />}
-          label="Disk Storage"
+          label={viewingNode ? 'Node Disk' : 'Disk Storage'}
           pct={diskPct}
-          text={host ? `${formatBytes(host.diskUsedBytes)} / ${formatBytes(host.diskTotalBytes)}` : '—'}
-          sub={host ? `${formatBytes(host.diskTotalBytes - host.diskUsedBytes)} free` : ''}
+          text={
+            viewingNode
+              ? nodeDisk && nodeDisk.totalBytes > 0
+                ? `${formatBytes(nodeDisk.usedBytes)} / ${formatBytes(nodeDisk.totalBytes)}`
+                : '—'
+              : panelDisk
+                ? `${formatBytes(panelDisk.diskUsedBytes)} / ${formatBytes(panelDisk.diskTotalBytes)}`
+                : '—'
+          }
+          sub={
+            viewingNode
+              ? nodeStats.isError
+                ? 'agent unreachable'
+                : nodeDisk && nodeDisk.totalBytes > 0
+                  ? `${formatBytes(nodeDisk.totalBytes - nodeDisk.usedBytes)} free`
+                  : ''
+              : panelDisk
+                ? `${formatBytes(panelDisk.diskTotalBytes - panelDisk.diskUsedBytes)} free`
+                : ''
+          }
         />
         <StatCard
           icon={<Gauge size={18} className="text-emerald-400" />}
@@ -237,10 +278,10 @@ export function Monitoring() {
           tone="emerald"
         />
       </div>
-      {selectedServerId !== 'local' && (
+      {viewingNode && (
         <p className="-mt-4 text-xs text-slate-500">
-          The overview cards and workload grid always show the panel host. Remote-node runtimes are managed by each node&apos;s agent — see{' '}
-          <Link to="/servers" className="text-indigo-400 hover:underline">Servers</Link>.
+          Showing live telemetry from the selected node&apos;s agent (refreshes every 8 s).
+          {nodeStats.isError && ' The agent is currently unreachable — cards show placeholders until it answers.'}
         </p>
       )}
 
@@ -271,7 +312,7 @@ export function Monitoring() {
                       </span>
                       <div className="min-w-0">
                         <div className="truncate text-xs font-semibold text-slate-200">{c.refName}</div>
-                        <div className="truncate font-mono text-[10px] text-slate-500">{c.engine ?? c.name}</div>
+                        <div className="truncate font-mono text-[10px] text-slate-500">{('engine' in c && c.engine) || c.name}</div>
                       </div>
                     </div>
 

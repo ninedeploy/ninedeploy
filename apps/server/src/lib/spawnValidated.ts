@@ -48,7 +48,7 @@ function scrubbedEnv(): NodeJS.ProcessEnv {
  * there is exactly ONE spawn site to audit.
  */
 
-export type AllowedExecutable = 'docker' | 'git';
+export type AllowedExecutable = 'docker' | 'git' | 'df';
 
 export interface SpawnValidatedOptions {
   /**

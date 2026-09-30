@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.22';
+export const VERSION = '0.10.23';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.23',
+    date: '2026-09-30',
+    title: 'The Node Telemetry Release — Monitoring Finally Sees Every Node',
+    changes: [
+      'The Monitoring page no longer shows the panel host\'s numbers under a node\'s name (r467). Clicking a remote node\'s card now switches the overview cards and workload grid to THAT node\'s live telemetry: a new composite agent.stats operation reports the node\'s own host stats (cores, load, memory from /proc — the host\'s real values even from inside the agent container), per-container CPU/memory via docker stats, and the node\'s disk via df — all through the sealed, nonce-bound agent protocol. The panel joins container names to the service rows pinned to that node, exactly like /v1/stats does for the panel host, and the cards refresh every 8 seconds with an honest "agent unreachable" state instead of silent placeholders. SDK: client.servers.stats(id). Node agents must be >=0.10.23 for the op — older agents answer unknown-op and the route reports the node as unreachable rather than guessing.',
+    ],
+  },
+{
     version: '0.10.22',
     date: '2026-09-30',
     title: 'The Node Volumes Release — Retention Guard and Cleanup Finally See the Nodes',

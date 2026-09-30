@@ -680,3 +680,56 @@ describe('docker volume ops (r466)', () => {
     await expect(argvOf('docker.volumeInspect', { name: '../escape' })).rejects.toThrow(/volume name/);
   });
 });
+
+// ── r467: composite node telemetry op ───────────────────────────────────
+describe('agent.stats (r467)', () => {
+  it('emits the ND-HOST line, fans docker stats lines and relays df', async () => {
+    spawnMock.mockImplementation(async (exe, argv, onLine) => {
+      if (argv[0] === 'stats') {
+        onLine('ghost-11|0.75%|51.2MiB / 256MiB');
+        return 0;
+      }
+      if (exe === 'df') {
+        // First line is the header the handler filters; second is data.
+        onLine('Filesystem 1K-blocks Used Available Use% Mounted on');
+        onLine('/dev/sda1 100 40 60 40% /');
+        return 0;
+      }
+      return 0;
+    });
+    const lines: string[] = [];
+    await expect(runOp('agent.stats', {}, (l) => lines.push(l))).resolves.toBe(0);
+    const host = lines.find((l) => l.startsWith('ND-HOST '));
+    expect(host).toBeDefined();
+    expect(JSON.parse(host!.slice(8))).toMatchObject({ cpuCores: expect.any(Number), load1: expect.any(Number) });
+    expect(lines).toContain('ghost-11|0.75%|51.2MiB / 256MiB');
+    // The df header is filtered; the data line is relayed with the marker.
+    expect(lines.some((l) => l === 'ND-DF /dev/sda1 100 40 60 40% /')).toBe(true);
+    expect(lines.some((l) => l.startsWith('ND-DF Filesystem'))).toBe(false);
+    // Docker stats runs first, df second.
+    expect(spawnMock.mock.calls[0]![1][0]).toBe('stats');
+    expect(spawnMock.mock.calls[1]![0]).toBe('df');
+  });
+
+  it('propagates a failed docker stats as the op exit code', async () => {
+    spawnMock.mockImplementation(async (exe, argv) => (argv[0] === 'stats' ? 1 : 0));
+    const lines: string[] = [];
+    await expect(runOp('agent.stats', {}, (l) => lines.push(l))).resolves.toBe(1);
+    expect(lines.some((l) => l.startsWith('ND-HOST '))).toBe(true);
+  });
+
+  it('is a handled op: registered and reachable without argv', async () => {
+    const mod = await import('../../src/agent.js');
+    // runOp dispatches handled ops before the OPS table; agent.stats answers
+    // 0 when docker+df succeed. Here we only pin REGISTRATION + dispatch by
+    // invoking it with spawn stubbed through the module's own exports —
+    // simplest honest check: the op name resolves (unknown ops answer -1).
+    const rc = await mod.runOp('agent.stats', {}, () => undefined).catch(() => -1);
+    expect(rc).not.toBe(-1);
+  });
+
+  it('unknown ops still answer -1 (the negative control)', async () => {
+    const mod = await import('../../src/agent.js');
+    await expect(mod.runOp('docker.nonsense', {}, () => undefined)).resolves.toBe(-1);
+  });
+});

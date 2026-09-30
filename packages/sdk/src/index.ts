@@ -1269,6 +1269,12 @@ export interface NineDeployClient {
     sshTest: (input: ServerSshTest) => Promise<ServerSshTestResult>;
     sshBootstrap: (input: ServerSshBootstrap) => Promise<ServerBootstrapResult>;
     bootstrapLogs: (id: number) => Promise<{ logs: string[] }>;
+    /** r467: live host + per-container telemetry from a node's agent. */
+    stats: (id: number) => Promise<{
+      host: { cpuCores: number; load1: number; memTotalBytes: number; memUsedBytes: number } | null;
+      disk: { totalBytes: number; usedBytes: number };
+      containers: Array<{ name: string; kind: 'service'; refId: number; refName: string; cpuPct: number; memMb: number; memLimitMb: number }>;
+    }>;
   };
   templates: {
     list: () => Promise<TemplateSummary[]>;
@@ -2180,6 +2186,7 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       sshTest: (input) => send<ServerSshTestResult>('POST', '/v1/servers/ssh-test', input),
       sshBootstrap: (input) => send<ServerBootstrapResult>('POST', '/v1/servers/ssh-bootstrap', input),
       bootstrapLogs: (id) => get<{ logs: string[] }>(`/v1/servers/${id}/bootstrap-logs`),
+      stats: (id) => get(`/v1/servers/${id}/stats`),
     },
     limits: {
       setService: (serviceId, input) =>

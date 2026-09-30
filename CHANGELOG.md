@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.23] - 2026-09-30
+
+> The node telemetry release: Monitoring finally sees every node (r467) —
+> the last purely additive item on the audit backlog, closed with a composite
+> agent op and a card row that stops lying about whose numbers they are.
+
+### Added
+
+- **Per-node telemetry on the Monitoring page (r467).** Clicking a remote node's card now switches the overview cards and the workload grid to THAT node's live numbers — CPU cores and load, memory, disk, and per-service CPU/memory — instead of the panel host's figures under a "Node" label (the old honest note said so; now it is simply true). A new composite `agent.stats` handled op runs on the node: host stats from `/proc` (the host's real values even from inside the agent container — no lxcfs virtualization on a standard node), per-container `docker stats --no-stream`, and the node's disk via `df`. Everything rides the sealed, nonce-bound agent protocol; the panel joins container names to the service rows pinned to that node exactly like `/v1/stats` does for the panel host. The cards refresh every 8 seconds; an unreachable agent degrades to placeholders with an explicit "agent unreachable" sub-label rather than silently showing the master's numbers. New endpoint `GET /v1/servers/:id/stats` (admin-only) and SDK `client.servers.stats(id)`; the panel-host view is byte-identical when "Local Host" is selected. Node agents must be ≥0.10.23 — an older agent answers `unknown_op`, which the route surfaces as "agent unreachable" instead of guessing.
+
 ## [0.10.22] - 2026-09-30
 
 > The node volumes release: remote services' data volumes finally have a
