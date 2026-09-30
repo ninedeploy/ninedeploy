@@ -4,6 +4,7 @@ import { volumeFileWrite, volumePathCreate } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
 import { removeVolume, volumeExists, volumeLabels } from '../engine/database.js';
 import { capture } from '../lib/exec.js';
+import { agentOp } from '../lib/agentClient.js';
 import { ensureDockerImage } from '../lib/dockerPull.js';
 import { containerRunning, resolveVolumeOwner, HELPER_IMAGE } from '../lib/inventory.js';
 import { badRequest, conflict } from '../lib/errors.js';
@@ -160,22 +161,43 @@ export const volumeRoutes: FastifyPluginAsync = async (app) => {
   // Admin-only + audited: this irreversibly destroys a service's or database's
   // persistent data — so it REFUSES volumes whose owner's container is running
   // (stop the service/database first) and non-managed volume names.
-  app.delete('/:name', { preHandler: [app.requireAdmin] }, async (req) => {
-    const name = (req.params as { name: string }).name;
-    if (!name.startsWith('nd-svc-') && !name.startsWith('nd-db-')) {
-      throw badRequest('not a managed volume');
-    }
-    const owner = (await volumeOwners(app.db, [name])).get(name) ?? null;
-    if (owner && (await containerRunning(owner.containerName))) {
-      throw conflict(`Volume is in use by ${owner.kind} "${owner.name}" — stop it before deleting the volume`);
-    }
-    void audit(app.db, req.user!.id, 'volume.delete', name);
-    await removeVolume(name, (line) => req.log.info(line));
-    if (await volumeExists(name)) {
-      throw conflict(`Volume could not be deleted — it is still mounted by a container docker did not name (docker volume rm failed silently)`);
-    }
-    return { ok: true };
-  });
+  //
+  // r466: `?serverId=N` deletes a NODE-side retained volume through that
+  // node's agent — a remote service's data volume lives on the node, was
+  // invisible to the panel's volume list, and could never be cleaned up. The
+  // in-use refusal rides docker itself: `volume rm` on the node fails while a
+  // container mounts it, and the verify below turns that into a 409.
+  app.delete<{ Params: { name: string }; Querystring: { serverId?: string } }>(
+    '/:name',
+    { preHandler: [app.requireAdmin] },
+    async (req) => {
+      const name = (req.params as { name: string }).name;
+      if (!name.startsWith('nd-svc-') && !name.startsWith('nd-db-')) {
+        throw badRequest('not a managed volume');
+      }
+      const serverId = Number((req.query as { serverId?: string }).serverId ?? 0) || null;
+      if (serverId !== null) {
+        const sink = (line: string) => req.log.info(line);
+        await agentOp(app.db, serverId, 'docker.volumeRm', { name }, sink);
+        const verify = await agentOp(app.db, serverId, 'docker.volumeInspect', { name }, sink);
+        if (verify.exitCode === 0) {
+          throw conflict(`Volume could not be deleted on node #${serverId} — it is still mounted by a running container there`);
+        }
+        void audit(app.db, req.user!.id, 'volume.delete', `${name} on node #${serverId}`);
+        return { ok: true, node: serverId };
+      }
+      const owner = (await volumeOwners(app.db, [name])).get(name) ?? null;
+      if (owner && (await containerRunning(owner.containerName))) {
+        throw conflict(`Volume is in use by ${owner.kind} "${owner.name}" — stop it before deleting the volume`);
+      }
+      void audit(app.db, req.user!.id, 'volume.delete', name);
+      await removeVolume(name, (line) => req.log.info(line));
+      if (await volumeExists(name)) {
+        throw conflict(`Volume could not be deleted — it is still mounted by a container docker did not name (docker volume rm failed silently)`);
+      }
+      return { ok: true };
+    },
+  );
 
   // ── File manager inside a volume ─────────────────────────────────────────
   // All routes are admin-only + audited: this is full read/write access to

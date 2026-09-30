@@ -217,11 +217,16 @@ export async function rotateSecrets(db: DB): Promise<number> {
     for (const row of rows) {
       const id = row['id'];
       if (typeof id !== 'number') continue;
+      const patch = entry.pick(row as never);
+      // r466: a tolerant entry (the ssoProviders pre-r435 plaintext survivor)
+      // yields an EMPTY patch — no update, no count. Counting it would report
+      // a rotation that never happened.
+      if (Object.keys(patch).length === 0) continue;
       await db
         .update(entry.table)
         // @ts-expect-error — drizzle's update types are not tuple-shaped for a
         // generic pick; the registry itself is the schema-drift guard.
-        .set(entry.pick(row as never))
+        .set(patch)
         .where(eq(entry.table.id, id));
       count++;
     }

@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.22] - 2026-09-30
+
+> The node volumes release: remote services' data volumes finally have a
+> lifecycle (r466) — the retention guard probes the right machine, and the
+> Volumes page can clean the far side of the wire.
+
+### Fixed
+
+- **The slug-retention guard probed the wrong machine for remote services (r466).** r351 refused a create whose slug would re-mount a deleted service's data — by listing the PANEL host's volumes. A service pinned to a node mounts `nd-svc-<slug>-data` ON THE NODE: a local volume of the same name is irrelevant (never mounted by the new service), and a node volume is invisible to a local check — so a freed slug silently re-mounted a deleted service's node data, another tenant's uploads and secrets included. Remote creates now probe the node through a new validated `docker.volumeInspect` agent op (same operand regexes and workspace confinement as every other op); a retained node volume is refused with a 409 `slug_volume_retained` that names the node and how to clean it, an unreachable or too-old agent fails CLOSED (treated as retained, pm2 exempt as always), and local creates keep the exact behaviour they had.
+- **A retained node volume could never be deleted (r466).** The Volumes page listed and removed local volumes only — a node-side leftover was invisible forever. `DELETE /v1/volumes/:name?serverId=N` routes the removal and the post-rm verification through that node's agent: docker itself refuses an in-use volume on the node, and the inspect-after-rm turns a silent failure into an honest 409. The local path is byte-identical when no serverId is given.
+- **A key rotation counted rotations that never happened (r466).** The tolerant ssoProviders entry (r446's pre-r435 plaintext survivor) skipped the re-encrypt but still incremented the count and issued an empty UPDATE — the report claimed work it did not do. An empty patch now skips the row entirely: no update, no count.
+
 ## [0.10.21] - 2026-09-30
 
 > The multi-line env release: PEM keys and JSON documents arrive intact (r465)

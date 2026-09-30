@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.21';
+export const VERSION = '0.10.22';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.22',
+    date: '2026-09-30',
+    title: 'The Node Volumes Release — Retention Guard and Cleanup Finally See the Nodes',
+    changes: [
+      'A remote service\'s data volume finally has a lifecycle (r466). The r351 retention guard only ever asked the PANEL host\'s docker daemon — for a service pinned to a node it probed the wrong machine entirely, so a freed slug silently re-mounted a deleted service\'s NODE data (the panel\'s local volume of the same name is irrelevant, and a node volume is invisible to a local check). Remote creates now probe the node through a new validated docker.volumeInspect agent operation; a retained node volume is refused with a 409 that names the node, an unreachable agent fails CLOSED (treated as retained), and pm2 stays exempt. The Volumes page can finally clean the far side too: DELETE /v1/volumes/:name?serverId=N routes rm+verify through that node\'s agent (docker refuses an in-use volume on the node itself; the post-rm inspect turns that into an honest 409), closing the loop the guard\'s message always promised. Also: a key rotation no longer COUNTS a pre-r435 SSO row it skips — the report had been claiming rotations that never happened.',
+    ],
+  },
+{
     version: '0.10.21',
     date: '2026-09-30',
     title: 'The Multi-Line Env Release — PEM Keys and JSON Documents Arrive Intact',

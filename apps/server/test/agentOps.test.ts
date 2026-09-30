@@ -663,3 +663,20 @@ describe('docker.composePs (r464)', () => {
     );
   });
 });
+
+// ── r466: node-side volume lifecycle ops ───────────────────────────────
+describe('docker volume ops (r466)', () => {
+  it('volumeInspect / volumeRm build validated argv', async () => {
+    expect(await argvOf('docker.volumeInspect', { name: 'nd-svc-web-data' })).toEqual([
+      'volume', 'inspect', 'nd-svc-web-data',
+    ]);
+    expect(await argvOf('docker.volumeRm', { name: 'nd-svc-web-data' })).toEqual([
+      'volume', 'rm', 'nd-svc-web-data',
+    ]);
+  });
+
+  it('rejects an invalid volume name operand', async () => {
+    await expect(argvOf('docker.volumeRm', { name: '-x' })).rejects.toThrow(/volume name/);
+    await expect(argvOf('docker.volumeInspect', { name: '../escape' })).rejects.toThrow(/volume name/);
+  });
+});

@@ -454,3 +454,51 @@ describe('volume routes', () => {
     });
   });
 });
+
+// ── r466: node-side retained volume deletion ───────────────────────────
+const agentMocks = vi.hoisted(() => ({ agentOp: vi.fn(async () => ({ exitCode: 1, lines: [] })) }));
+vi.mock('../src/lib/agentClient.js', () => ({ agentOp: agentMocks.agentOp }));
+
+describe('volume routes — node deletion (r466)', () => {
+  beforeEach(() => {
+    agentMocks.agentOp.mockReset();
+    agentMocks.agentOp.mockResolvedValue({ exitCode: 1, lines: [] });
+  });
+
+  it('DELETE ?serverId= routes rm+verify through the node agent, never the local engine', async () => {
+    agentMocks.agentOp.mockResolvedValue({ exitCode: 1, lines: [] });
+    const app = await buildTestApp({ db: createFakeDb() });
+    await app.register(volumeRoutes);
+    const res = await app.inject({ method: 'DELETE', url: '/nd-svc-web-data?serverId=7', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, node: 7 });
+    const ops = agentMocks.agentOp.mock.calls.map((c) => c[2]);
+    expect(ops).toEqual(['docker.volumeRm', 'docker.volumeInspect']);
+    expect(agentMocks.agentOp.mock.calls[0]![3]).toEqual({ name: 'nd-svc-web-data' });
+    expect(dbEngineMocks.removeVolume).not.toHaveBeenCalled();
+  });
+
+  it('answers 409 when the volume still exists on the node after rm (in use there)', async () => {
+    agentMocks.agentOp.mockResolvedValue({ exitCode: 0, lines: ['[]'] });
+    const app = await buildTestApp({ db: createFakeDb() });
+    await app.register(volumeRoutes);
+    const res = await app.inject({ method: 'DELETE', url: '/nd-svc-web-data?serverId=7', headers: asUser() });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.message).toContain('node #7');
+  });
+
+  it('keeps the local path byte-identical when no serverId is given', async () => {
+    // Earlier tests in this file leave capture/volumeExists implementations
+    // behind (clearAllMocks clears calls, not impls) — pin them explicitly.
+    execMocks.capture.mockImplementation(async () => '');
+    dbEngineMocks.volumeExists.mockResolvedValue(false);
+    dbEngineMocks.removeVolume.mockImplementation(async (_n: string, log: (l: string) => void) => { log('deleting'); });
+    const app = await buildTestApp({ db: createFakeDb() });
+    await app.register(volumeRoutes);
+    const res = await app.inject({ method: 'DELETE', url: '/nd-svc-web-data', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true });
+    expect(agentMocks.agentOp).not.toHaveBeenCalled();
+    expect(dbEngineMocks.removeVolume).toHaveBeenCalled();
+  });
+});

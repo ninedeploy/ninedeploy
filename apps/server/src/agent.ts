@@ -237,6 +237,19 @@ const OPS: Record<string, { exe: 'docker' | 'git'; build: Op }> = {
       validated(str(p, 'container'), RE_NAME, 'container name'),
     ],
   },
+  // r466: node-side volume lifecycle. A remote service's data volume lives on
+  // the NODE — the panel's local `docker volume ls` never saw it, so a freed
+  // slug could re-mount a deleted service's node data and the Volumes page
+  // could never clean it. `inspect` doubles as the existence probe (exit 0 =
+  // exists); callers interpret the exit code.
+  'docker.volumeInspect': {
+    exe: 'docker',
+    build: (p) => ['volume', 'inspect', validated(str(p, 'name'), RE_NAME, 'volume name')],
+  },
+  'docker.volumeRm': {
+    exe: 'docker',
+    build: (p) => ['volume', 'rm', validated(str(p, 'name'), RE_NAME, 'volume name')],
+  },
   'docker.composeUp': {
     exe: 'docker',
     build: (p) => [...composeStackArgs(p), 'up', '-d', '--build', '--remove-orphans'],

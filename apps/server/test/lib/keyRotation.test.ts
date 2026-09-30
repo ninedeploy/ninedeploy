@@ -12,11 +12,12 @@ import {
   sources,
   tunnels,
   users,
+  ssoProviders,
   webhooks,
 } from '@ninedeploy/db';
 
 const cryptoMock = vi.hoisted(() => ({ reencrypt: vi.fn((v: string) => `re:${v}`) }));
-vi.mock('../../src/lib/crypto.js', () => ({ reencrypt: cryptoMock.reencrypt }));
+vi.mock('../../src/lib/crypto.js', () => ({ reencrypt: cryptoMock.reencrypt, activeKeyVersion: () => 1 }));
 
 beforeEach(() => {
   cryptoMock.reencrypt.mockClear();
@@ -123,5 +124,27 @@ describe('rotateSecrets', () => {
     const count = await rotateSecrets(db as never);
     expect(count).toBe(0);
     expect(cryptoMock.reencrypt).not.toHaveBeenCalled();
+  });
+});
+
+// ── r466 coverage: the report wrapper and the ssoProviders tolerant entry ──
+describe('rotateSecretsWithReport', () => {
+  it('reports the rotated count, the active version and the backup warning', async () => {
+    const { rotateSecretsWithReport } = await import('../../src/lib/keyRotation.js');
+    const { backups } = await import('@ninedeploy/db');
+    const updates: Array<{ table: unknown; values: Record<string, unknown> }> = [];
+    const rows = new Map<unknown, Array<Record<string, unknown>>>([
+      [envVars, [{ id: 1, v: 'ev-enc' }]],
+      // r446: an unnormalized pre-r435 SSO row is SKIPPED, not fatal.
+      [ssoProviders, [{ id: 2, v: JSON.stringify({ issuer: 'x' }) }]],
+      [backups, [{ id: 9 }]],
+    ]);
+    const db = makeDb(rows, updates);
+    const report = await rotateSecretsWithReport(db as never);
+    expect(report.rotated).toBe(1);
+    expect(typeof report.activeVersion).toBe('number');
+    expect(report.backupsNotRotated).toBe(1);
+    // The plaintext SSO survivor produced no update at all.
+    expect(updates.every((u) => u.table !== ssoProviders)).toBe(true);
   });
 });

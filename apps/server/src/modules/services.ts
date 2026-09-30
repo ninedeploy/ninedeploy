@@ -354,7 +354,9 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // r351: no live row holds the slug — but a deleted service's
     // `nd-svc-<slug>-data` may still be on the host, and the new row would
     // mount it on its first deploy (another tenant's data, read-write).
-    await assertSlugVolumeNotRetained(slug, input.type);
+    // r351/r466: a remote service mounts its data volume ON THE NODE — the
+    // guard probes the node's agent for those, the local daemon otherwise.
+    await assertSlugVolumeNotRetained(slug, input.type, { db: app.db, serverId: input.serverId ?? null });
     const [svc] = await app.db
       .insert(services)
       .values({
