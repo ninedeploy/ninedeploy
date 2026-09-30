@@ -26,7 +26,20 @@ export default defineConfig({
       provider: 'v8',
       include: ['src/**/*.ts'],
       // types.ts and index.ts are interfaces-only / barrel re-exports.
-      exclude: ['src/engine/types.ts', 'src/kernel/types.ts', 'src/kernel/index.ts'],
+      // The sandbox bootstraps (r468) execute ONLY inside the worker thread
+      // / the permission-model child process — vitest's instruments cannot
+      // reach another process's modules, so counting them drags every global
+      // floor by construction. They are exercised by the forked-child
+      // handshake + permission-denial tests in test/kernel/sandboxPlugin.test.ts
+      // (the compiled processBootstrap answers INIT/REGISTER_HOOK/HOOK_RESPONSE
+      // under the real --permission flags).
+      exclude: [
+        'src/engine/types.ts',
+        'src/kernel/types.ts',
+        'src/kernel/index.ts',
+        'src/kernel/sandbox/workerBootstrap.ts',
+        'src/kernel/sandbox/processBootstrap.ts',
+      ],
       reporter: ['text', 'text-summary', 'json-summary'],
       // The README advertises 100% coverage; the actual reachable coverage
       // today is ~97% statements / ~94% branches once every defensive code

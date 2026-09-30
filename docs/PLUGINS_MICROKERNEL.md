@@ -79,14 +79,16 @@ export default definePlugin({
 The official plugins shipped in-tree are the reference implementations for the
 event and hook APIs.
 
-### 🛡️ 2. Isolated Worker Thread Sandboxing
+### 🛡️ 2. Permission-Model Process Sandboxing (r468)
 
-NineDeploy executes third-party community extensions in dedicated `node:worker_threads` isolates with memory limits and an asynchronous RPC bridge:
+NineDeploy executes third-party community extensions in a dedicated **child process running under Node's permission model**, with an asynchronous RPC bridge:
 
-- **Memory Limits**: Isolated workers are constrained by V8 generation size bounds (`maxYoungGenerationSizeMb: 16`, `maxOldGenerationSizeMb: 64`).
-- **Crash Isolation**: If an external plugin throws a fatal exception or crashes its worker, the NineDeploy core API and database remain unaffected. The kernel flags the plugin state as `errored` and continues running.
-- **Scoped RPC Bridge**: Sandboxed plugins interact through `PluginContext` APIs (`events.on`, `tapHook`, `scopedConfig.get/set`); the bridge namespaces config access per plugin id.
-- **Honesty note (r414)**: this is resource containment, NOT a security sandbox. The worker runs with a scrubbed environment (no `NINEDEPLOY_MASTER_KEY`/JWT secrets — a worker thread otherwise inherits a copy of the panel's env), but its code can still dynamically import Node builtins and read files the panel user can read. Installing any third-party plugin — sandboxed or not — is an operator-level trust decision, exactly like a PM2 service or a lifecycle hook, and the install route is admin-gated accordingly.
+- **Deny-by-default capabilities**: the sandbox process runs with `--permission` and exactly two fs-read allowlist entries (its own bootstrap directory and the package manifest the ESM loader needs). Filesystem read/write outside that, spawning child processes, opening worker threads and loading native addons are all denied by the runtime itself — a plugin that tries gets `ERR_ACCESS_DENIED`, not a warning. The classic exfiltration paths (read `master.key`/`.env`/the SQLite db, fork a shell) are physically closed.
+- **Memory Limits**: the child runs with `--max-old-space-size=64` and `--max-semi-space-size=16` (the V8 generation-size equivalents of the old worker limits).
+- **Crash Isolation**: if an external plugin throws a fatal exception or crashes its process, the NineDeploy core API and database remain unaffected. The kernel flags the plugin state as `errored` and continues running; a wedged child that ignores SIGTERM is SIGKILLed after a 3 s grace.
+- **Scoped RPC Bridge**: sandboxed plugins interact through `PluginContext` APIs (`events.on`, `tapHook`, `scopedConfig.get/set`); the bridge namespaces config access per plugin id.
+- **Scrubbed environment (r414, carried over)**: `process.env` is not part of the permission model, so the child still gets only `PATH`/`LANG`/`TZ` — no `NINEDEPLOY_MASTER_KEY(S)`/JWT secret.
+- **Remaining trust decision**: the sandboxed plugin can still DO everything its ctx APIs allow — read/write its own namespaced config (including secrets you store there), react to every event, and participate in deploy hooks. Installing a third-party plugin remains an operator-level trust decision about what it may do through the panel, exactly like granting it a limited API key; the boundary is that it can no longer reach around the API. The install route is admin-gated accordingly.
 
 ### 🗂️ 3. Dynamic UI Menus, Widgets & Driver Registries
 

@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { NineDeployKernel } from '../../src/kernel/kernel.js';
 import { SandboxPlugin } from '../../src/kernel/sandbox/sandboxPlugin.js';
 import { createFakeDb } from '../helpers.js';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { writeFileSync, unlinkSync } from 'node:fs';
+import { writeFileSync, unlinkSync, existsSync } from 'node:fs';
 
 describe('SandboxPlugin (Worker Threads)', () => {
   const mockConfig = { paths: { dataDir: '/tmp/test' } } as any;
@@ -183,4 +183,120 @@ describe('SandboxPlugin (Worker Threads)', () => {
       } catch {}
     }
   });
+});
+
+// ── r468: the permission-model child process transport ─────────────────
+import { fork } from 'node:child_process';
+import { SandboxPlugin as SB } from '../../src/kernel/sandbox/sandboxPlugin.js';
+
+describe('SandboxPlugin (process transport, r468)', () => {
+  const mockConfig2 = { paths: { dataDir: '/tmp/test' } } as any;
+
+  function writeProcessScript(body: string): string {
+    const p = join(tmpdir(), `test-sandbox-proc-${Date.now()}-${Math.random().toString(36).slice(2)}.mjs`);
+    writeFileSync(p, body);
+    return p;
+  }
+
+  it('routes by runtime: compiled sibling → process transport, source checkout → worker fallback', async () => {
+    // Spy the private transport pickers instead of spawning anything: init()
+    // must choose the process transport when the compiled processBootstrap.js
+    // sits next to the module, and the legacy worker transport otherwise (a
+    // source checkout — vitest/tsx have no loader for a forked child).
+    const anyProto = SandboxPlugin.prototype as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    const procSpy = vi.fn(async () => undefined);
+    const workerSpy = vi.fn(async () => undefined);
+    anyProto['initProcessTransport'] = procSpy;
+    anyProto['initWorkerTransport'] = workerSpy;
+    try {
+      const kernel = new NineDeployKernel(createFakeDb(), mockConfig2);
+      const ctx = kernel as unknown as Parameters<SandboxPlugin['init']>[0];
+      const plugin = new SandboxPlugin({ id: 'route-probe', name: 'Route Probe' });
+      await plugin.init(ctx);
+      // vitest executes the class from src → no compiled sibling → fallback.
+      expect(workerSpy).toHaveBeenCalledTimes(1);
+      expect(procSpy).toHaveBeenCalledTimes(0);
+      expect(workerSpy.mock.calls[0]![1]).toMatch(/workerBootstrap.js$/);
+    } finally {
+      delete anyProto['initProcessTransport'];
+      delete anyProto['initWorkerTransport'];
+    }
+  });
+
+  it('sandboxExecArgv builds the permission flags tests can fork with', () => {
+    const argv = SB.sandboxExecArgv(['/a', '/b.js']);
+    expect(argv[0]).toBe('--permission');
+    expect(argv).toContain('--allow-fs-read=/a');
+    expect(argv).toContain('--allow-fs-read=/b.js');
+    expect(argv).toContain('--max-old-space-size=64');
+    expect(argv).toContain('--max-semi-space-size=16');
+    // Nothing grants write, child processes, workers or addons.
+    expect(argv.some((a) => a.startsWith('--allow-fs-write'))).toBe(false);
+    expect(argv).not.toContain('--allow-child-process');
+    expect(argv).not.toContain('--allow-worker-threads');
+    expect(argv).not.toContain('--allow-addons');
+  });
+
+  it('a sandboxed child CANNOT read the filesystem (the flags actually deny)', async () => {
+    const secret = join(tmpdir(), `nd-sandbox-proof-${Date.now()}.txt`);
+    writeFileSync(secret, 'MASTER-KEY-MATERIAL');
+    const probe = writeProcessScript(`
+      import { readFileSync } from 'node:fs';
+      try {
+        readFileSync(process.argv[2], 'utf8');
+        process.send({ type: 'PROBE', payload: { code: 'READ_ALLOWED' } });
+      } catch (e) {
+        process.send({ type: 'PROBE', payload: { code: e.code ?? String(e).slice(0, 60) } });
+      }
+    `);
+    const result = await new Promise<{ code: string }>((resolve, reject) => {
+      const child = fork(probe, [secret], {
+        execArgv: SB.sandboxExecArgv([probe]),
+        silent: true,
+        serialization: 'json',
+      });
+      const timer = setTimeout(() => reject(new Error('probe timed out')), 15000);
+      child.on('message', (m: { type: string; payload: { code: string } }) => {
+        if (m.type === 'PROBE') {
+          clearTimeout(timer);
+          resolve(m.payload);
+          child.kill();
+        }
+      });
+      child.on('exit', (code) => {
+        clearTimeout(timer);
+        reject(new Error(`probe exited (${code}) before answering`));
+      });
+    });
+    expect(result.code).toBe('ERR_ACCESS_DENIED');
+    unlinkSync(secret);
+  }, 20000);
+
+  it('a sandboxed child cannot spawn processes or open worker threads', async () => {
+    const probe = writeProcessScript(`
+      import { spawn } from 'node:child_process';
+      import { Worker } from 'node:worker_threads';
+      const codes = {};
+      try { spawn('echo', ['x']); codes.spawn = 'ALLOWED'; } catch (e) { codes.spawn = e.code ?? 'DENIED'; }
+      try { new Worker(probe); codes.worker = 'ALLOWED'; } catch (e) { codes.worker = e.code ?? 'DENIED'; }
+      process.send({ type: 'PROBE', payload: codes });
+    `);
+    const result = await new Promise<Record<string, string>>((resolve, reject) => {
+      const child = fork(probe, [], { execArgv: SB.sandboxExecArgv([probe]), silent: true, serialization: 'json' });
+      const timer = setTimeout(() => reject(new Error('probe timed out')), 15000);
+      child.on('message', (m: { type: string; payload: Record<string, string> }) => {
+        if (m.type === 'PROBE') {
+          clearTimeout(timer);
+          resolve(m.payload);
+          child.kill();
+        }
+      });
+      child.on('exit', (code) => {
+        clearTimeout(timer);
+        reject(new Error(`probe exited (${code}) before answering`));
+      });
+    });
+    expect(result.spawn).not.toBe('ALLOWED');
+    expect(result.worker).not.toBe('ALLOWED');
+  }, 20000);
 });

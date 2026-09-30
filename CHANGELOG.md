@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.24] - 2026-09-30
+
+> The real sandbox release: third-party plugin code runs behind Node's
+> permission model (r468) — the last engineering item on the audit backlog.
+> What used to be an honest disclaimer ("containment, not a security
+> boundary") is now a boundary.
+
+### Security
+
+- **Sandbox plugins run in a permission-model child process (r468).** The old sandbox was a worker thread with a scrubbed environment (r414) and V8 memory caps — real containment, but its code could still `import('node:fs')` and read everything the panel user could: the master key, `.env`, the SQLite database. The production sandbox now forks `processBootstrap.js` with `--permission` and exactly two fs-read allowlist entries — the bootstrap's own directory and the package manifest the ESM loader needs for `"type":"module"` — so filesystem read/write outside that, spawning child processes, opening worker threads and loading native addons are denied by the Node runtime itself (`ERR_ACCESS_DENIED`), not by convention. Memory caps carry over as `--max-old-space-size=64` / `--max-semi-space-size=16`; the scrubbed env stays (r414 — `process.env` is not part of the permission model); a wedged child that ignores SIGTERM is SIGKILLed after a 3 s grace. Tests fork the real compiled bootstrap under the real flags and prove the denials (fs read of a secret file → `ERR_ACCESS_DENIED`; `spawn` and `new Worker` → denied), plus the full INIT/REGISTER_HOOK/HOOK_RESPONSE handshake. Dev/source checkouts (no compiled bootstrap, no loader for a forked child) fall back to the legacy worker transport; the plugin docs now state the upgraded trust model — installing a plugin remains a trust decision about what it may do THROUGH the ctx API, no longer about what it can reach around it.
+
 ## [0.10.23] - 2026-09-30
 
 > The node telemetry release: Monitoring finally sees every node (r467) —

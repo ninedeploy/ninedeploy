@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.23';
+export const VERSION = '0.10.24';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.24',
+    date: '2026-09-30',
+    title: 'The Real Sandbox Release — Plugin Code Runs Behind Node\'s Permission Model',
+    changes: [
+      'Third-party plugin code now runs in a child process under Node\'s permission model (r468). The old sandbox was a worker thread with scrubbed env and memory caps — honest containment, but the docs had to disclaim it as "NOT a security boundary" because the code could still dynamically import node:fs and read everything the panel user could (master key, .env, the database). The production sandbox now forks with --permission and exactly two fs-read allowlist entries (its own bootstrap directory and the package manifest the ESM loader needs): filesystem read/write outside that, child processes, worker threads and native addons are denied by the runtime itself — a plugin that tries gets ERR_ACCESS_DENIED. The classic exfiltration paths (read master.key, fork a shell) are physically closed; memory caps carry over as --max-old-space-size=64/--max-semi-space-size=16, the scrubbed env stays (process.env is not part of the permission model), and a wedged child that ignores SIGTERM is SIGKILLed after 3 s. Tests fork the real compiled bootstrap under the real flags and prove the denials; dev/source checkouts fall back to the legacy worker transport (no loader for a forked child), and the docs state the new trust model: installing a plugin remains a trust decision about what it may do THROUGH the ctx API, no longer about what it can reach around.',
+    ],
+  },
+{
     version: '0.10.23',
     date: '2026-09-30',
     title: 'The Node Telemetry Release — Monitoring Finally Sees Every Node',
