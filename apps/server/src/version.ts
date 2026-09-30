@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.20';
+export const VERSION = '0.10.21';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.21',
+    date: '2026-09-30',
+    title: 'The Multi-Line Env Release — PEM Keys and JSON Documents Arrive Intact',
+    changes: [
+      'Multi-line environment values finally survive the trip into a docker-type service (r465). docker\'s --env-file parser cannot carry a physical newline, so a PEM key or JSON credential reached the container as a literal "\\n" and apps choked on their own secrets. When any resolved env value spans lines, the container is now started through a one-service compose file whose dotenv parser decodes the escapes into REAL newlines — the same byte-verified format the compose and remote-compose builders have always used. The container NAME, its bridge, volumes, limits, replicas and the whole blue-green/health/routing/stop lifecycle stay byte-identical to the docker run path; every service without multi-line values keeps the exact invocation it has always had. The env editor\'s old "base64-encode it" warning is retired for the fixed path.',
+    ],
+  },
+{
     version: '0.10.20',
     date: '2026-09-30',
     title: 'The Integration Round — Honest Container Names on Nodes, an SDK That Speaks Enrolment',

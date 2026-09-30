@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.21] - 2026-09-30
+
+> The multi-line env release: PEM keys and JSON documents arrive intact (r465)
+> — the largest remaining user-facing limitation, closed with a one-service
+> compose bridge that changes nothing for anything else.
+
+### Fixed
+
+- **Multi-line environment values no longer arrive as a literal `\n` (r465).** docker's `--env-file` parser treats every line as `KEY=VALUE`, so a PEM private key or a JSON service credential reached the container with two characters where the line break belonged — apps failed on their own secrets, and the only workarounds were base64-encoding or switching to a compose service. When any resolved env value spans lines, the docker builder now starts the container through a generated one-service compose file: compose's dotenv parser decodes the quoted `\n` escapes into REAL newlines (the same byte-verified format the compose and remote-compose builders have always used), and the file carries the exact `docker run` line — same container name (the blue-green candidate), same `nd-svc-<slug>` bridge joined as an external network, same volumes (data mount and attachments, declared external, ensured with an idempotent create to match `-v` auto-create semantics), same CPU/memory limits, same restart policy, same template command, same published port for the primary (replicas stay portless, each in its own compose project). Everything downstream of "container exists" — health probes, Traefik routing, stop/rollback, replica naming — keys on the container name and is untouched. Services without multi-line values keep the byte-identical `docker run` invocation they have always had. The env editor's "base64-encode it" heads-up is retired into an upgrade note for older panels.
+
 ## [0.10.20] - 2026-09-30
 
 > The integration round: the two additive items left on the audit backlog —

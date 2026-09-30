@@ -148,16 +148,17 @@ export function EnvCard({ serviceId, literalNewlines = false }: { serviceId: num
           <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
             <KeyRound size={15} className="text-slate-500" /> Environment
           </div>
-          {/* r409: docker-builder services deliver env through docker's env
-              file, which cannot carry real newlines — a PEM key or multi-line
-              JSON arrives as the two characters \n. Compose decodes them; PM2
-              passes the object through. Warn only when such a value exists. */}
+          {/* r409/r465: docker-builder services with multi-line env values
+              start through a one-service compose bridge whose dotenv parser
+              delivers REAL newlines — the old warning (values arriving as a
+              literal \n) is resolved on panels ≥0.10.21. The hint stays for
+              older panels: the dashboard may be newer than its server. */}
           {literalNewlines &&
             (value.includes('\n') ||
               Object.values(drafts).some((d) => d.includes('\n')) ||
               (env.data ?? []).some((v) => v.value.includes('\n'))) && (
-              <p className="w-full text-[11px] leading-relaxed text-amber-300/80">
-                Heads-up: this service type passes env values through docker&apos;s env-file, where real line breaks cannot travel — a multi-line value (PEM keys, JSON documents) reaches the container as a literal <code className="font-mono">\n</code>. Base64-encode the value, or use a Compose service for it.
+              <p className="w-full text-[11px] leading-relaxed text-slate-400">
+                Multi-line values (PEM keys, JSON documents) are delivered with real line breaks on panels ≥0.10.21; on older panels they arrived as a literal <code className="font-mono">\n</code> — base64-encode them there, or upgrade the server.
               </p>
             )}
           <div className="flex items-center gap-2">

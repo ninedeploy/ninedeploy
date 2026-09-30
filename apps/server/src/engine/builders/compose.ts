@@ -19,7 +19,7 @@ const DEPLOY_HEARTBEAT_MS = 20_000;
  * verified byte-exact with `docker compose config --format json`:
  * `\\`, `\"`, `\$`, `\n`, `\r`, `\t`.
  */
-function dotenvValue(value: string): string {
+export function dotenvValue(value: string): string {
   return `"${value
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"')

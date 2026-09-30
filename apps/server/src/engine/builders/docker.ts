@@ -5,6 +5,7 @@ import type { BuildConfig } from '@ninedeploy/db';
 import type { NinedeployManifest } from '@ninedeploy/schemas';
 import { generateNixpacksToml } from '../../lib/ninedeployToNixpacks.js';
 import { buildEnv, capture, run, sleep } from '../../lib/exec.js';
+import { dotenvValue } from './compose.js';
 import { ensureDockerImage, pullDockerImage } from '../../lib/dockerPull.js';
 import { NETWORK } from '../proxy.js';
 import { MAX_REPLICAS, replicaNames } from '../dockerNames.js';
@@ -176,6 +177,95 @@ export function writeEnvFile(env: Record<string, string>): SecretFile | null {
   // attacker-controlled keys and the convention matches the Compose builder.
   const body = entries.map(([k, v]) => `${k}=${v.replace(/\r\n?|\n/g, '\\n')}`).join('\n');
   return writeSecretFile('nd-env', 'service.env', `${body}\n`);
+}
+
+/**
+ * r465: true when any resolved env value spans lines (PEM keys, JSON
+ * documents). docker's `--env-file` parser cannot carry a physical newline —
+ * such services used to receive a literal "\n" and choke on their own
+ * credentials. Those services start through the compose bridge below instead,
+ * whose dotenv parser decodes the escapes into REAL newlines (the same
+ * byte-verified format the compose and remote-compose builders use).
+ */
+export function hasMultiLineEnv(env: Record<string, string>): boolean {
+  return Object.values(env).some((v) => v.includes('\n'));
+}
+
+/** The compose-dotenv twin of the runtime env file: quoted, escape-decoded. */
+export function writeComposeEnvFile(env: Record<string, string>): SecretFile | null {
+  const entries = Object.entries(env);
+  if (entries.length === 0) return null;
+  const body = entries.map(([k, v]) => `${k}=${dotenvValue(v)}`).join('\n');
+  return writeSecretFile('nd-env', 'service.compose.env', `${body}\n`);
+}
+
+interface RuntimeComposeInput {
+  /** Container name — also the compose service key, so the network alias the
+   * bridge provides equals the name `docker run` would have given. */
+  name: string;
+  image: string;
+  restart: string;
+  /** The service's own `nd-svc-<slug>` bridge, joined as an external network. */
+  bridge: string;
+  cpuShares: number;
+  cpuLimitMilli: number;
+  memLimitMb: number;
+  dataVolume: string | null;
+  dataMount: string | null;
+  attachments: Array<{ volumeName: string; containerPath: string; readOnly?: boolean | null }>;
+  publishedPort: number | null;
+  containerPort: number | null;
+  dockerSocket: boolean;
+  cmd: string[] | null;
+  envFile: string | null;
+}
+
+/**
+ * One-service compose file that reproduces the `docker run` invocation line
+ * for line (r465). Everything downstream of "container exists" — blue-green
+ * naming, health probes, Traefik routing, stop/rm — keys on the container
+ * NAME, which this renders identically. Scalars are JSON-quoted: a JSON
+ * string is a valid YAML double-quoted scalar, so template-controlled values
+ * (image, command items, paths) can never break out of their field.
+ */
+export function renderRuntimeCompose(input: RuntimeComposeInput): string {
+  const svc: string[] = [];
+  svc.push(`  ${JSON.stringify(input.name)}:`);
+  svc.push(`    image: ${JSON.stringify(input.image)}`);
+  svc.push(`    container_name: ${JSON.stringify(input.name)}`);
+  svc.push(`    restart: ${JSON.stringify(input.restart)}`);
+  svc.push('    networks:', '      - default');
+  const volumes: string[] = [];
+  if (input.dataVolume && input.dataMount) volumes.push(`${input.dataVolume}:${input.dataMount}`);
+  for (const a of input.attachments) volumes.push(`${a.volumeName}:${a.containerPath}${a.readOnly ? ':ro' : ''}`);
+  if (input.dockerSocket) volumes.push('/var/run/docker.sock:/var/run/docker.sock');
+  if (volumes.length > 0) {
+    svc.push('    volumes:');
+    for (const v of volumes) svc.push(`      - ${JSON.stringify(v)}`);
+  }
+  if (input.publishedPort && input.containerPort) {
+    svc.push('    ports:', `      - ${JSON.stringify(`${input.publishedPort}:${input.containerPort}`)}`);
+  }
+  if (input.cpuShares > 0) svc.push(`    cpu_shares: ${input.cpuShares}`);
+  if (input.cpuLimitMilli > 0) svc.push(`    cpus: ${input.cpuLimitMilli / 1000}`);
+  if (input.memLimitMb > 0) svc.push(`    mem_limit: ${JSON.stringify(`${input.memLimitMb}m`)}`);
+  if (input.cmd?.length) {
+    svc.push('    command:');
+    for (const c of input.cmd) svc.push(`      - ${JSON.stringify(c)}`);
+  }
+  if (input.envFile) svc.push(`    env_file: ${JSON.stringify(input.envFile)}`);
+
+  const out: string[] = ['services:', ...svc];
+  out.push('networks:', '  default:', `    name: ${JSON.stringify(input.bridge)}`, '    external: true');
+  const namedVolumes = [
+    ...(input.dataVolume && input.dataMount ? [input.dataVolume] : []),
+    ...input.attachments.map((a) => a.volumeName),
+  ];
+  if (namedVolumes.length > 0) {
+    out.push('volumes:');
+    for (const v of new Set(namedVolumes)) out.push(`  ${JSON.stringify(v)}:`, '    external: true');
+  }
+  return `${out.join('\n')}\n`;
 }
 
 /**
@@ -714,6 +804,12 @@ export const dockerBuilder: Builder = {
     // this bridge. The shared `ninedeploy` mesh is no longer a fan-in point
     // for app traffic — only Traefik + the probe container still live there.
     const bridge = await ensureServiceBridge(service.slug, log);
+    // r465: multi-line env values cannot ride docker's --env-file (they would
+    // arrive as a literal "\n"). Such services start through a one-service
+    // compose file whose dotenv parser decodes the escapes into REAL
+    // newlines — container name, bridge, volumes, limits and lifecycle stay
+    // byte-identical to the docker run path.
+    const multiLine = hasMultiLineEnv(env);
     const args = ['run', '-d', '--name', name, '--restart', safeRestartPolicy(buildConfig?.restartPolicy), '--network', bridge];
     // NOTE: no `-p` host port is published at all. Public traffic enters
     // exclusively through Traefik, which reaches the container by name over the
@@ -746,23 +842,73 @@ export const dockerBuilder: Builder = {
     // Template-only flag (registry is admin-controlled): expose Docker control.
     if (service.dockerSocket) args.push('-v', '/var/run/docker.sock:/var/run/docker.sock');
 
-    const envFile = writeEnvFile(env);
+    const composeEnvFile = multiLine ? writeComposeEnvFile(env) : null;
+    const composeSpec = multiLine && composeEnvFile
+      ? writeSecretFile(
+          'nd-env',
+          'runtime-compose.yml',
+          renderRuntimeCompose({
+            name,
+            image: target,
+            restart: safeRestartPolicy(buildConfig?.restartPolicy),
+            bridge,
+            cpuShares: service.cpuShares ?? 0,
+            cpuLimitMilli: service.cpuLimitMilli ?? 0,
+            memLimitMb: service.memLimitMb ?? 0,
+            dataVolume: service.volumeMount ? `nd-svc-${service.slug}-data` : null,
+            dataMount: service.volumeMount ?? null,
+            attachments: ctx.volumeAttachments ?? [],
+            publishedPort: service.publishedPort ?? null,
+            containerPort: service.publishedPort ? (resolvedPort ?? service.publishedPort) : null,
+            dockerSocket: service.dockerSocket === true,
+            cmd: service.cmd?.length ? service.cmd : null,
+            envFile: composeEnvFile.path,
+          }),
+        )
+      : null;
+    // Compose declares named volumes as external and refuses to start when one
+    // is missing; `docker run -v` auto-creates. Match the run semantics with
+    // an idempotent create before up.
+    if (composeSpec) {
+      const ensureVolumes = new Set<string>([
+        ...(service.volumeMount ? [`nd-svc-${service.slug}-data`] : []),
+        ...(ctx.volumeAttachments ?? []).map((a) => a.volumeName),
+      ]);
+      for (const vol of ensureVolumes) {
+        await run('docker', ['volume', 'create', vol], {}, swallowLine).catch(() => undefined);
+      }
+    }
+
+    const envFile = composeSpec ? null : writeEnvFile(env);
     if (envFile) args.push('--env-file', envFile.path);
-    args.push(target);
-    // Template-defined command (argv after the image) — e.g. minio needs
-    // `server /data` because its bare entrypoint just prints help and exits.
-    if (service.cmd?.length) args.push(...service.cmd);
+    if (!composeSpec) {
+      args.push(target);
+      // Template-defined command (argv after the image) — e.g. minio needs
+      // `server /data` because its bare entrypoint just prints help and exits.
+      if (service.cmd?.length) args.push(...service.cmd);
+    }
 
     log(`Starting container ${name} …`);
     try {
-      await run(
-        'docker',
-        args,
-        { heartbeatMs: DEPLOY_HEARTBEAT_MS, heartbeatLabel: `Starting application container ${name}` },
-        log,
-      );
+      if (composeSpec) {
+        await run(
+          'docker',
+          ['compose', '-p', `ndrt-${name}`, '-f', composeSpec.path, 'up', '-d', '--no-build'],
+          { heartbeatMs: DEPLOY_HEARTBEAT_MS, heartbeatLabel: `Starting application container ${name} (compose bridge: real newlines in env)` },
+          log,
+        );
+      } else {
+        await run(
+          'docker',
+          args,
+          { heartbeatMs: DEPLOY_HEARTBEAT_MS, heartbeatLabel: `Starting application container ${name}` },
+          log,
+        );
+      }
     } finally {
       envFile?.cleanup();
+      composeEnvFile?.cleanup();
+      composeSpec?.cleanup();
     }
 
     // Horizontal replicas: N-1 extra containers of the SAME image/env on the
@@ -777,15 +923,18 @@ export const dockerBuilder: Builder = {
     // failed to start never becomes a dead round-robin backend.
     let achievedReplicas = 1;
     if (replicaCount > 1) {
-      // The primary's env-file was cleaned up above — replicas need their own.
-      // One file serves every replica; the values are identical.
-      const replicaEnvFile = writeEnvFile(env);
-      // `args` still carries everything except the primary's name, env-file
-      // path and host port publishing; swap the first two per replica and
-      // strip the third — only the primary may own the published host port
-      // (Docker refuses a second `-p` bind on the same port, so clones
-      // inheriting it fail to start and scaling silently collapses to 1).
-      // Public traffic reaches replicas over the shared bridge via Traefik.
+      // The primary's env files were cleaned up above — replicas need their
+      // own. One env file serves every replica; the values are identical.
+      const replicaEnvFile = composeSpec ? writeComposeEnvFile(env) : writeEnvFile(env);
+      // docker-run path: `args` still carries everything except the primary's
+      // name, env-file path and host port publishing; swap the first two per
+      // replica and strip the third — only the primary may own the published
+      // host port (Docker refuses a second `-p` bind on the same port, so
+      // clones inheriting it fail to start and scaling silently collapses to
+      // 1). Public traffic reaches replicas over the shared bridge via
+      // Traefik. Compose path (r465): render per replica, ports omitted for
+      // the same reason, each in its own project so `up` cannot treat the
+      // previous replica as an orphan.
       const cloneArgs = (replicaName: string): string[] => {
         const out: string[] = [];
         for (let i = 0; i < args.length; i++) {
@@ -799,23 +948,57 @@ export const dockerBuilder: Builder = {
         }
         return out;
       };
+      let replicaComposeSpec: SecretFile | null = null;
       for (let i = 2; i <= replicaCount; i++) {
-        const replicaName = `${name}-r${i}`;
-        try {
-          await run(
-            'docker',
-            cloneArgs(replicaName),
-            { heartbeatMs: DEPLOY_HEARTBEAT_MS, heartbeatLabel: `Starting replica ${replicaName}` },
-            log,
-          );
-          achievedReplicas++;
-          log(`Replica ${replicaName} started (${i}/${replicaCount})`);
-        } catch (err) {
-          log(`warning: replica ${replicaName} failed to start — continuing with fewer replicas (${msg(err)})`);
+          const replicaName = `${name}-r${i}`;
+          try {
+            if (composeSpec && replicaEnvFile) {
+              replicaComposeSpec = writeSecretFile(
+                'nd-env',
+                'runtime-compose.yml',
+                renderRuntimeCompose({
+                  name: replicaName,
+                  image: target,
+                  restart: safeRestartPolicy(buildConfig?.restartPolicy),
+                  bridge,
+                  cpuShares: service.cpuShares ?? 0,
+                  cpuLimitMilli: service.cpuLimitMilli ?? 0,
+                  memLimitMb: service.memLimitMb ?? 0,
+                  dataVolume: service.volumeMount ? `nd-svc-${service.slug}-data` : null,
+                  dataMount: service.volumeMount ?? null,
+                  attachments: ctx.volumeAttachments ?? [],
+                  publishedPort: null,
+                  containerPort: null,
+                  dockerSocket: service.dockerSocket === true,
+                  cmd: service.cmd?.length ? service.cmd : null,
+                  envFile: replicaEnvFile.path,
+                }),
+              );
+              await run(
+                'docker',
+                ['compose', '-p', `ndrt-${replicaName}`, '-f', replicaComposeSpec.path, 'up', '-d', '--no-build'],
+                { heartbeatMs: DEPLOY_HEARTBEAT_MS, heartbeatLabel: `Starting replica ${replicaName}` },
+                log,
+              );
+            } else {
+              await run(
+                'docker',
+                cloneArgs(replicaName),
+                { heartbeatMs: DEPLOY_HEARTBEAT_MS, heartbeatLabel: `Starting replica ${replicaName}` },
+                log,
+              );
+            }
+            achievedReplicas++;
+            log(`Replica ${replicaName} started (${i}/${replicaCount})`);
+          } catch (err) {
+            log(`warning: replica ${replicaName} failed to start — continuing with fewer replicas (${msg(err)})`);
+          } finally {
+            replicaComposeSpec?.cleanup();
+            replicaComposeSpec = null;
+          }
         }
+        replicaEnvFile?.cleanup();
       }
-      replicaEnvFile?.cleanup();
-    }
 
     // Capture the resolved image reference so rollback can later pin this
     // exact image. r397: prefer the REPO digest (`repo@sha256:…`, pullable

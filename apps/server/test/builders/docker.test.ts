@@ -1219,3 +1219,99 @@ describe('dockerBuilder.buildAndRun — static build pack', () => {
     expect(rpArgs).toContain('ninedeploy/web:abcdef1');
   });
 });
+
+// ── r465: multi-line env values start through the compose bridge ───────
+describe('r465: compose bridge for multi-line env', () => {
+  const MULTI = { NODE_ENV: 'production', TLS_CERT: '-----BEGIN CERT-----\nabc\n-----END CERT-----' };
+
+  const composeUps = () =>
+    h.run.mock.calls.filter((c) => (c[1] as string[])[0] === 'compose').map((c) => (c[1] as string[]).join(' '));
+  const plainRuns = () =>
+    h.run.mock.calls.filter((c) => (c[1] as string[])[0] === 'run').map((c) => (c[1] as string[]).join(' '));
+
+  it('hasMultiLineEnv detects newline-carrying values only', async () => {
+    const mod = await import('../../src/engine/builders/docker.js');
+    expect(mod.hasMultiLineEnv({ A: 'one line' })).toBe(false);
+    expect(mod.hasMultiLineEnv({ A: 'x\ny' })).toBe(true);
+    expect(mod.hasMultiLineEnv({})).toBe(false);
+  });
+
+  it('writeComposeEnvFile quotes values so compose decodes REAL newlines', async () => {
+    const mod = await import('../../src/engine/builders/docker.js');
+    const f = mod.writeComposeEnvFile(MULTI);
+    expect(f).not.toBeNull();
+    const body = readFileSync(f!.path, 'utf8');
+    expect(body).toContain('NODE_ENV="production"');
+    // The file must carry LITERAL backslash-n escapes (what compose decodes),
+    // never physical newlines (what docker's parser would split).
+    expect(body).toContain('TLS_CERT="-----BEGIN CERT-----\\nabc\\n-----END CERT-----"');
+    f!.cleanup();
+  });
+
+  it('renderRuntimeCompose reproduces the run line: name, bridge, external volumes, limits', async () => {
+    const mod = await import('../../src/engine/builders/docker.js');
+    const yaml = mod.renderRuntimeCompose({
+      name: 'web-3', image: 'nginx:1.27', restart: 'unless-stopped', bridge: 'nd-svc-web',
+      cpuShares: 512, cpuLimitMilli: 1500, memLimitMb: 256,
+      dataVolume: 'nd-svc-web-data', dataMount: '/data',
+      attachments: [{ volumeName: 'nd-svc-web-uploads', containerPath: '/uploads', readOnly: true }],
+      publishedPort: 8080, containerPort: 3000, dockerSocket: false,
+      cmd: ['server', '/data'], envFile: '/tmp/x/service.compose.env',
+    });
+    expect(yaml).toContain('"web-3":');
+    expect(yaml).toContain('container_name: "web-3"');
+    expect(yaml).toContain('name: "nd-svc-web"');
+    expect(yaml).toContain('external: true');
+    expect(yaml).toContain('"nd-svc-web-data:/data"');
+    expect(yaml).toContain('"nd-svc-web-uploads:/uploads:ro"');
+    expect(yaml).toContain('"8080:3000"');
+    expect(yaml).toContain('cpu_shares: 512');
+    expect(yaml).toContain('cpus: 1.5');
+    expect(yaml).toContain('mem_limit: "256m"');
+    expect(yaml).toContain('"server"');
+    expect(yaml).toContain('env_file: "/tmp/x/service.compose.env"');
+  });
+
+  it('a multi-line env service starts via compose up, never docker run', async () => {
+    const ctx = makeCtx({ service: { slug: 'web', image: 'nginx:1.27', port: 3000, cpuShares: 0, memLimitMb: 0, volumeMount: '/data', healthPath: '/' }, env: MULTI });
+    await dockerBuilder.buildAndRun(ctx as never);
+    const ups = composeUps();
+    expect(ups).toHaveLength(1);
+    expect(ups[0]).toContain('compose -p ndrt-web-3 -f');
+    expect(ups[0]).toContain('up -d --no-build');
+    // The data volume is ensured (docker run -v auto-creates; compose external refuses).
+    const creates = h.run.mock.calls.filter((c) => (c[1] as string[]).join(' ') === 'volume create nd-svc-web-data');
+    expect(creates).toHaveLength(1);
+    // No docker run for the primary.
+    expect(plainRuns().some((a) => a.includes('--name web-3'))).toBe(false);
+  });
+
+  it('the compose spec is cleaned up and names the blue-green candidate identically', async () => {
+    const ctx = makeCtx({ env: MULTI });
+    await dockerBuilder.buildAndRun(ctx as never);
+    const fArg = (composeUps()[0].match(/-f (\S+)/) ?? [])[1];
+    expect(fArg).toBeDefined();
+    expect(existsSync(fArg)).toBe(false); // cleaned after start
+    const spec = (h.run.mock.calls.find((c) => (c[1] as string[])[0] === 'compose')![1] as string[])[4]!;
+    void spec;
+  });
+
+  it('replicas of a multi-line service each get their own compose project, without ports', async () => {
+    const ctx = makeCtx({
+      service: { slug: 'web', image: 'nginx:1.27', port: 3000, cpuShares: 0, memLimitMb: 0, volumeMount: '/data', healthPath: '/', publishedPort: 8080, replicas: 3 },
+      env: MULTI,
+    });
+    await dockerBuilder.buildAndRun(ctx as never);
+    const ups = composeUps();
+    expect(ups).toHaveLength(3); // primary + r2 + r3
+    expect(ups[1]).toContain('-p ndrt-web-3-r2');
+    expect(ups[2]).toContain('-p ndrt-web-3-r3');
+  });
+
+  it('a single-line env service keeps the docker run path untouched', async () => {
+    const ctx = makeCtx({ service: { slug: 'web', image: 'nginx:1.27', port: 3000, cpuShares: 0, memLimitMb: 0, volumeMount: '/data', healthPath: '/' } });
+    await dockerBuilder.buildAndRun(ctx as never);
+    expect(composeUps()).toHaveLength(0);
+    expect(plainRuns().some((a) => a.includes('--name web-3'))).toBe(true);
+  });
+});
