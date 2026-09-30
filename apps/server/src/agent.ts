@@ -569,9 +569,18 @@ async function agentStatsOp(onLine: (l: string) => void): Promise<number> {
     onLine,
   );
   // Node disk: df of the agent's own root — the workspaces and images live
-  // on the same filesystem on a standard node.
-  const df = await spawnValidated('df', ['-k', '.'], (l) => {
-    if (!l.startsWith('Filesystem') && l.trim() !== '') onLine(`ND-DF ${l}`);
+  // on the same filesystem on a standard node. -P is the POSIX format (one
+  // line per filesystem, no wrapped long device names); the header is skipped
+  // BY POSITION because scrubbedEnv passes LANG through and coreutils
+  // translates it — matching the English text used to leak a translated
+  // header through as a bogus ND-DF row.
+  let firstDfLine = true;
+  const df = await spawnValidated('df', ['-kP', '.'], (l) => {
+    if (firstDfLine) {
+      firstDfLine = false;
+      return;
+    }
+    if (l.trim() !== '') onLine(`ND-DF ${l}`);
   });
   return dockerStats !== 0 ? dockerStats : df;
 }

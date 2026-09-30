@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.25';
+export const VERSION = '0.10.26';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,21 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.26',
+    date: '2026-09-30',
+    title: 'The Contract-Honesty Patch — the Audit of the Audit',
+    changes: [
+      'Fixed (P1): agentOp throws on non-zero exits, but its r466 callers used docker.volumeInspect as an existence probe — exit 1 IS the answer there. Every server-pinned service create answered 409 "treated as retained"; node volume deletes answered 500 instead of 409. agentOp grew { tolerateExit }; the slug-retention probe, node volume delete (rm refusal now a proper 409 "in use on node #N") and node stats route pass it, and their test mocks model the REAL contract (non-zero throws unless tolerated) instead of resolutions the library never produces.',
+      'Fixed (P1): spawnValidated dispatched df to git — a two-way ternary from the docker+git era, so every node disk probe ran `git df -k .` (exit 129) and node disk telemetry never worked once. Now a three-way table; the probe itself is `df -kP` (POSIX single-line) with a positional header skip, because coreutils translates the header under a non-C locale.',
+      'Fixed (P1): the sandbox SIGKILL escalation was dead code — `killed` only records that a signal was SENT, and the SIGTERM above had already set it, so a wedged sandbox child outlived its plugin forever. Armed unconditionally, disarmed on the real exit event.',
+      'Fixed: the sandbox child\'s silent pipes were never drained — an unread pipe fills its kernel buffer and the child blocks on its next write; stderr lines (the only place a bootstrap crash report can appear) now surface in the panel log.',
+      'Fixed: the compose bridge emits memswap_limit alongside mem_limit (docker run pins --memory-swap to the memory limit; the compose twin could balloon into swap) and escapes $ as $$ in command/volume scalars — compose interpolates $VAR inside every scalar, so a literal dollar was substituted from the panel\'s own environment.',
+      'Fixed: the dashboard\'s whole-node container count (every tenant\'s containers) leaked to members — operator-only now (null for members, no docker round-trip), same gating as the r469 host figures; the CLI prints "— (operator only)" and a failed docker probe reports unknown instead of a confident 0.',
+      'Added: the processBootstrap honesty tests — the COMPILED sandbox bootstrap is forked under the real --permission flags: INIT→READY handshake, hook round-trip, clean SHUTDOWN, and an in-plugin fs read outside the allowlist that must come back ERR_ACCESS_DENIED.',
+      'Dependencies: zod 4.6.5, dotenv 18.0.4, simple-git 4.0.2, @simplewebauthn 14.0.3 (v14 AuthenticatorTransport rename applied), @libsql/client 0.18.0, jsdom 30.1.1, drizzle-orm 0.45.3 (server pin unified), mcp vitest 5.0.1; fast-uri 3.1.8/4.1.5 and brace-expansion 5.0.12 overrides for the new advisories — pnpm audit clean.',
+    ],
+  },
+{
     version: '0.10.25',
     date: '2026-09-30',
     title: 'The Telemetry Posture Release — Host Figures Are Operator-Only',

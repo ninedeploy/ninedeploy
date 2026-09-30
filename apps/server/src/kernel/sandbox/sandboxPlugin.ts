@@ -3,6 +3,7 @@ import { fork, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { makeLineSplitter } from '../../lib/exec.js';
 import type { KernelContext, KernelPlugin } from '../types.js';
 import type { MainToWorkerMessage, WorkerToMainMessage } from './protocol.js';
 
@@ -130,6 +131,18 @@ export class SandboxPlugin implements KernelPlugin {
       // transport where console output goes to the worker's own stderr.
       silent: true,
       serialization: 'json',
+    });
+
+    // silent:true pipes stdout/stderr into the parent — and a piped stream
+    // nobody reads fills its kernel buffer until the child BLOCKS on its next
+    // write. stdout carries nothing by design (plugin console output travels
+    // the LOG protocol messages, so it is just drained); stderr is the only
+    // place a crash report from the bootstrap itself can ever surface, so its
+    // lines go to the panel log instead of the bit bucket.
+    this.child.stdout?.resume();
+    const stderrLines = makeLineSplitter();
+    this.child.stderr?.on('data', (d: Buffer) => {
+      for (const l of stderrLines.feed(d)) console.error(`[Sandbox:${this.id}] (stderr) ${l}`);
     });
 
     const send = (msg: MainToWorkerMessage) => {
@@ -440,14 +453,16 @@ export class SandboxPlugin implements KernelPlugin {
 
   private terminate(): void {
     if (this.child) {
+      const c = this.child;
       try {
-        this.child.kill('SIGTERM');
-        // A wedged child that ignored SIGTERM must not outlive its plugin:
-        // escalate after the grace window.
-        const c = this.child;
-        setTimeout(() => {
-          if (c.exitCode === null && !c.killed) c.kill('SIGKILL');
-        }, CHILD_KILL_GRACE_MS).unref();
+        c.kill('SIGTERM');
+        // r470: `killed` only records that a signal was SENT — it is already
+        // true from the SIGTERM above, so the old `!c.killed` guard made this
+        // SIGKILL dead code and a wedged child outlived its plugin forever.
+        // Arm it unconditionally and disarm it when the child actually exits.
+        const escalation = setTimeout(() => c.kill('SIGKILL'), CHILD_KILL_GRACE_MS);
+        escalation.unref();
+        c.once('exit', () => clearTimeout(escalation));
       } catch {}
       this.child = undefined;
       return;

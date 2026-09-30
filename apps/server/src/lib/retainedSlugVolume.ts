@@ -52,7 +52,12 @@ export async function assertSlugVolumeNotRetained(
   if (serverId != null) {
     if (db === null) throw new Error('assertSlugVolumeNotRetained needs the db to reach a node agent');
     try {
-      const res = await agentOp(db, serverId, 'docker.volumeInspect', { name: volume }, () => undefined);
+      // tolerateExit: `docker volume inspect` exits 1 for a MISSING volume —
+      // that is the answer, not a failure. Without it agentOp would throw on
+      // exactly the case we are probing for, and the catch below would
+      // fail-closed on every fresh slug (r470: every server-pinned create
+      // answered 409 "treated as retained").
+      const res = await agentOp(db, serverId, 'docker.volumeInspect', { name: volume }, () => undefined, { tolerateExit: true });
       retained = res.exitCode === 0;
     } catch (err) {
       // The agent itself blinked (offline node, unknown op on an old agent) —

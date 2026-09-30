@@ -254,7 +254,10 @@ describe('dashboard routes', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('treats a missing docker binary as zero containers', async () => {
+  it('treats a missing docker binary as unknown (null) containers, not zero', async () => {
+    // r470: "docker hiccup" is not "the node has no containers" — answering 0
+    // made the operator card under-report during a docker restart. Unknown is
+    // null; the CLI renders it as "—" instead of a confident lie.
     execMocks.capture.mockRejectedValueOnce(new Error('docker not found'));
     const app = await buildTestApp({
       db: createFakeDb({ select: { services: [] }, counts: {} }),
@@ -262,7 +265,18 @@ describe('dashboard routes', () => {
     await app.register(dashboardRoutes);
     const res = await app.inject({ method: 'GET', url: '/', headers: asUser() });
     expect(res.statusCode).toBe(200);
-    expect(res.json().stats.containers).toBe(0);
+    expect(res.json().stats.containers).toBeNull();
+  });
+
+  it('r470: members get null containers and no docker round-trip at all', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({ select: { services: [] }, counts: {} }),
+    });
+    await app.register(dashboardRoutes);
+    const res = await app.inject({ method: 'GET', url: '/', headers: asUser({ id: 7, isOperator: false }) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().stats.containers).toBeNull();
+    expect(execMocks.capture).not.toHaveBeenCalledWith('docker', ['ps', '-q']);
   });
 
   it('handles a service with no deployments', async () => {

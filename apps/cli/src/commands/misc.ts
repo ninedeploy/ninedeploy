@@ -254,7 +254,8 @@ export async function systemDashboard(client: NineDeployClient): Promise<void> {
     console.log();
     kv('Services', `${s.running} running / ${s.services} total`);
     kv('Databases', `${s.dbRunning} running / ${s.databases} total`);
-    kv('Containers', s.containers);
+    // r470: whole-node count is operator-only telemetry — members get null.
+    kv('Containers', s.containers ?? '— (operator only)');
     kv('Domains', s.domains);
     kv('Webhooks', s.webhooks);
     kv('Deployments', s.deployments);

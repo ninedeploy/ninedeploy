@@ -221,6 +221,18 @@ interface RuntimeComposeInput {
 }
 
 /**
+ * Compose interpolates `$VAR`/`${VAR}` inside EVERY scalar value, quoted or
+ * not — a literal `$` in a template-controlled string (a command item, a
+ * volume path) would be substituted from the panel's own environment, or
+ * emptied when unset there. `$$` is compose's escape for a literal dollar, and
+ * it is not special to YAML, so doubling after JSON.stringify keeps the
+ * quoting intact.
+ */
+function composeScalar(value: string): string {
+  return JSON.stringify(value).replace(/\$/g, '$$$$');
+}
+
+/**
  * One-service compose file that reproduces the `docker run` invocation line
  * for line (r465). Everything downstream of "container exists" — blue-green
  * naming, health probes, Traefik routing, stop/rm — keys on the container
@@ -231,7 +243,7 @@ interface RuntimeComposeInput {
 export function renderRuntimeCompose(input: RuntimeComposeInput): string {
   const svc: string[] = [];
   svc.push(`  ${JSON.stringify(input.name)}:`);
-  svc.push(`    image: ${JSON.stringify(input.image)}`);
+  svc.push(`    image: ${composeScalar(input.image)}`);
   svc.push(`    container_name: ${JSON.stringify(input.name)}`);
   svc.push(`    restart: ${JSON.stringify(input.restart)}`);
   svc.push('    networks:', '      - default');
@@ -241,17 +253,23 @@ export function renderRuntimeCompose(input: RuntimeComposeInput): string {
   if (input.dockerSocket) volumes.push('/var/run/docker.sock:/var/run/docker.sock');
   if (volumes.length > 0) {
     svc.push('    volumes:');
-    for (const v of volumes) svc.push(`      - ${JSON.stringify(v)}`);
+    for (const v of volumes) svc.push(`      - ${composeScalar(v)}`);
   }
   if (input.publishedPort && input.containerPort) {
     svc.push('    ports:', `      - ${JSON.stringify(`${input.publishedPort}:${input.containerPort}`)}`);
   }
   if (input.cpuShares > 0) svc.push(`    cpu_shares: ${input.cpuShares}`);
   if (input.cpuLimitMilli > 0) svc.push(`    cpus: ${input.cpuLimitMilli / 1000}`);
-  if (input.memLimitMb > 0) svc.push(`    mem_limit: ${JSON.stringify(`${input.memLimitMb}m`)}`);
+  if (input.memLimitMb > 0) {
+    svc.push(`    mem_limit: ${JSON.stringify(`${input.memLimitMb}m`)}`);
+    // Parity with the `docker run` line (--memory-swap = --memory): without
+    // this the compose-run twin of a service could balloon into swap on the
+    // same box where the docker-run original could not.
+    svc.push(`    memswap_limit: ${JSON.stringify(`${input.memLimitMb}m`)}`);
+  }
   if (input.cmd?.length) {
     svc.push('    command:');
-    for (const c of input.cmd) svc.push(`      - ${JSON.stringify(c)}`);
+    for (const c of input.cmd) svc.push(`      - ${composeScalar(c)}`);
   }
   if (input.envFile) svc.push(`    env_file: ${JSON.stringify(input.envFile)}`);
 

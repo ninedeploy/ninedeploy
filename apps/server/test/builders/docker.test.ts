@@ -1268,8 +1268,32 @@ describe('r465: compose bridge for multi-line env', () => {
     expect(yaml).toContain('cpu_shares: 512');
     expect(yaml).toContain('cpus: 1.5');
     expect(yaml).toContain('mem_limit: "256m"');
+    // r470: swap parity with the `docker run` line (--memory-swap = --memory);
+    // without memswap_limit the compose twin could balloon into swap.
+    expect(yaml).toContain('memswap_limit: "256m"');
     expect(yaml).toContain('"server"');
     expect(yaml).toContain('env_file: "/tmp/x/service.compose.env"');
+  });
+
+  it('r470: escapes a literal $ in compose scalars — compose would otherwise interpolate it', async () => {
+    // $VAR / ${VAR} inside ANY scalar is substituted from the panel's own
+    // environment (or emptied when unset there); $$ is compose's escape for a
+    // literal dollar and is not special to YAML.
+    const mod = await import('../../src/engine/builders/docker.js');
+    const yaml = mod.renderRuntimeCompose({
+      name: 'web-3', image: 'nginx:1.27', restart: 'unless-stopped', bridge: 'nd-svc-web',
+      cpuShares: 0, cpuLimitMilli: 0, memLimitMb: 0,
+      dataVolume: null, dataMount: null,
+      attachments: [{ volumeName: 'nd-svc-web-data', containerPath: '/data/$CONFIG' }],
+      publishedPort: null, containerPort: null, dockerSocket: false,
+      cmd: ['sh', '-c', 'echo $TOKEN'], envFile: null,
+    });
+    expect(yaml).toContain('nd-svc-web-data:/data/$$CONFIG');
+    expect(yaml).toContain('"echo $$TOKEN"');
+    // The single-dollar forms (what compose would interpolate) must not
+    // appear — after a `$` the escaped form always has another `$`.
+    expect(yaml).not.toContain('/data/$CONFIG');
+    expect(yaml).not.toContain('"echo $TOKEN"');
   });
 
   it('a multi-line env service starts via compose up, never docker run', async () => {

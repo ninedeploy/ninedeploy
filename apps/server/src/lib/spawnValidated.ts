@@ -42,8 +42,8 @@ function scrubbedEnv(): NodeJS.ProcessEnv {
 }
 
 /**
- * Single choke-point for spawning the two agent executables. The argv arrays
- * passed here are produced exclusively by the typed operation table in
+ * Single choke-point for spawning the agent's fixed executables. The argv
+ * arrays passed here are produced exclusively by the typed operation table in
  * agent.ts (literal flags + regex-validated operands); this module exists so
  * there is exactly ONE spawn site to audit.
  */
@@ -66,7 +66,16 @@ export interface SpawnValidatedOptions {
   timeoutMs?: number;
 }
 
-/** Spawn one of the two fixed executables and collect its output lines. */
+/**
+ * The executable each AllowedExecutable resolves to. r470: this used to be a
+ * two-way ternary (`docker ? docker : git`) written when the set was docker+git
+ * — adding `df` to the type silently made every df op spawn GIT, so
+ * agent.stats' disk probe exited 129 (`git df -k .` is not a command) and node
+ * disk telemetry never worked. A table cannot grow a stale default branch.
+ */
+const BINARIES: Record<AllowedExecutable, string> = { docker: 'docker', git: 'git', df: 'df' };
+
+/** Spawn one of the fixed executables and collect its output lines. */
 export function spawnValidated(
   executable: AllowedExecutable,
   argv: string[],
@@ -82,8 +91,7 @@ export function spawnValidated(
     env: scrubbedEnv(),
   };
   if (opts.cwd) spawnOpts.cwd = opts.cwd;
-  const child: ChildProcess =
-    executable === 'docker' ? spawn('docker', argv, spawnOpts) : spawn('git', argv, spawnOpts);
+  const child: ChildProcess = spawn(BINARIES[executable], argv, spawnOpts);
   if (opts.stdin !== undefined) {
     child.stdin?.end(opts.stdin);
   }

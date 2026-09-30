@@ -59,6 +59,19 @@ describe('spawnValidated', () => {
     });
   });
 
+  it('r470: spawns DF for the df executable — not git', async () => {
+    // The dispatch was a two-way ternary (docker ? docker : git) written when
+    // the set was docker+git; adding 'df' to the type made every disk probe
+    // run `git df -k .` (exit 129) and node disk telemetry never worked.
+    const promise = spawnValidated('df', ['-kP', '.'], () => {});
+    childMocks.current!.emit('close', 0);
+    await expect(promise).resolves.toBe(0);
+    expect(childMocks.spawn).toHaveBeenCalledWith('df', ['-kP', '.'], {
+      detached: process.platform !== 'win32',
+      env: expect.any(Object),
+    });
+  });
+
   it('r439/r442: scrubs credential-bearing env keys but keeps the operational ones', async () => {
     // The agent process holds its enrolment token; the git/docker children
     // must never inherit it (same class as the r414 sandbox scrub). r442

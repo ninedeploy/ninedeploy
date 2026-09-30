@@ -219,6 +219,23 @@ describe('agentOp', () => {
     ).rejects.toThrow('exited with 1');
   });
 
+  it('r470: tolerateExit hands the non-zero result back instead of throwing', async () => {
+    // Probe-style ops (docker.volumeInspect as an existence check) pass
+    // tolerateExit and read res.exitCode themselves — exit 1 is the ANSWER
+    // ("volume missing"), not a transport failure.
+    process.env['NINEDEPLOY_AGENT_ALLOW_CLEARTEXT'] = '1';
+    routeFetch({ sealed: false, exec: { lines: ['no such volume'], exitCode: 1 } });
+    const res = await agentOp(
+      createFakeDb({ findFirst: { servers: serverRow } }),
+      1,
+      'docker.volumeInspect',
+      {},
+      () => {},
+      { tolerateExit: true },
+    );
+    expect(res).toEqual({ exitCode: 1, lines: ['no such volume'] });
+  });
+
   it('rejects unknown ops through the null-def path', async () => {
     // No spawn mock needed: an unknown op returns -1 before any spawning.
     const code = await runOp('nope.nope', {}, () => {});

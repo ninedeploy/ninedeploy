@@ -690,8 +690,10 @@ describe('agent.stats (r467)', () => {
         return 0;
       }
       if (exe === 'df') {
-        // First line is the header the handler filters; second is data.
-        onLine('Filesystem 1K-blocks Used Available Use% Mounted on');
+        // First line is the header, skipped BY POSITION (r470): scrubbedEnv
+        // passes LANG through, so coreutils can translate it — a header match
+        // on the English text would leak a translated header as a data row.
+        onLine('Dosyasistemi 1K-blok Kullanılabilir Kullan% Bağlanılan');
         onLine('/dev/sda1 100 40 60 40% /');
         return 0;
       }
@@ -703,9 +705,12 @@ describe('agent.stats (r467)', () => {
     expect(host).toBeDefined();
     expect(JSON.parse(host!.slice(8))).toMatchObject({ cpuCores: expect.any(Number), load1: expect.any(Number) });
     expect(lines).toContain('ghost-11|0.75%|51.2MiB / 256MiB');
-    // The df header is filtered; the data line is relayed with the marker.
+    // The df header is filtered even when translated (positional skip); the
+    // data line is relayed with the marker.
     expect(lines.some((l) => l === 'ND-DF /dev/sda1 100 40 60 40% /')).toBe(true);
-    expect(lines.some((l) => l.startsWith('ND-DF Filesystem'))).toBe(false);
+    expect(lines.some((l) => l.startsWith('ND-DF Dosyasistemi'))).toBe(false);
+    // The disk probe is POSIX-shaped: one line per filesystem, no wrapping.
+    expect(spawnMock.mock.calls.find((c) => c[0] === 'df')![1]).toEqual(['-kP', '.']);
     // Docker stats runs first, df second.
     expect(spawnMock.mock.calls[0]![1][0]).toBe('stats');
     expect(spawnMock.mock.calls[1]![0]).toBe('df');

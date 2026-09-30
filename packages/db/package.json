@@ -1,6 +1,6 @@
 {
   "name": "@ninedeploy/db",
-  "version": "0.10.25",
+  "version": "0.10.26",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -27,8 +27,8 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
-    "@libsql/client": "^0.17.4",
-    "drizzle-orm": "^0.45.2"
+    "@libsql/client": "^0.18.0",
+    "drizzle-orm": "^0.45.3"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

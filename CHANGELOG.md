@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.26] - 2026-09-30
+
+> The contract-honesty patch (r470): a fresh-eyes audit of the previous two
+> releases' own code found three P1s where callers — and their tests — agreed
+> on a contract the library never had. All fixed, and the compiled sandbox
+> bootstrap is now pinned by tests that fork it for real.
+
+### Fixed
+
+- **agentOp's exit-code contract vs its r466 callers (P1).** `agentOp` throws on any non-zero exit — but `docker.volumeInspect`, used as an existence probe, exits 1 for exactly the answer being probed ("volume missing"). Result: every server-pinned service create answered 409 "treated as retained" (the probe threw, the catch failed closed on every fresh slug), and `DELETE /v1/volumes/:name?serverId=` answered 500 for an ordinary in-use volume instead of 409. `agentOp` now takes `{ tolerateExit }`; the slug-retention probe, the node volume delete (rm refusal → 409 "in use on node #N", verify probe → 409 "still there") and the node stats route (a failed docker-stats collection no longer masquerades as "node unreachable") pass it and read the code themselves. The two test suites had mocked `{ exitCode: 1 }` resolutions the real client never produces — they now mirror the real contract (non-zero throws unless tolerated), which is exactly how the drift shipped unnoticed.
+
+- **`df` dispatched to `git` (P1).** `spawnValidated`'s executable dispatch was a two-way ternary from the docker+git era; adding `df` to the type silently made every node disk probe run `git df -k .` (exit 129) — node disk telemetry never worked once. It is now a three-way table that cannot grow a stale default branch. The probe itself is `df -kP` (POSIX: one line per filesystem, no wrapped device names) with a positional header skip — coreutils translates the header under a non-C locale, and the old English-text match leaked it through as a bogus data row.
+
+- **Sandbox SIGKILL escalation was dead code (P1).** `terminate()` armed the SIGKILL behind `!child.killed` — but `killed` only records that a signal was SENT, and the SIGTERM above had already set it, so a wedged sandbox child outlived its plugin forever. The escalation is now armed unconditionally and disarmed when the child actually exits.
+
+- **Sandbox child pipes were never drained (P2).** `silent: true` pipes stdout/stderr into the parent; an unread pipe eventually fills its kernel buffer and the child blocks on its next write. stdout is now drained (plugin output travels the LOG protocol); stderr lines surface in the panel log — the only place a bootstrap crash report can ever appear.
+
+- **Compose bridge parity and interpolation (P2).** `renderRuntimeCompose` now emits `memswap_limit` alongside `mem_limit` (the `docker run` line pins `--memory-swap` to the memory limit; the compose twin could balloon into swap on the same box), and escapes `$` as `$$` in command/volume scalars — compose interpolates `$VAR`/`${VAR}` inside every scalar, so a literal dollar in a template-controlled path was substituted from (or emptied by) the panel's own environment.
+
+- **Dashboard container count is operator-only (P2).** The whole-node `docker ps` count (every tenant's containers) rode along to members in `/v1/dashboard`. Operators keep the card; members get `null` (the SDK type is nullable; the CLI prints "— (operator only)") and the docker round-trip is skipped entirely — the same gating r469 applied to host telemetry. A failing docker probe now reports unknown (`null`) instead of a confident 0.
+
+### Added
+
+- **The processBootstrap honesty tests.** The compiled sandbox bootstrap is forked under the REAL permission-model flags (`SandboxPlugin.sandboxExecArgv`): INIT→READY handshake, hook round-trip, clean SHUTDOWN (exit 0, not a kill), and an in-plugin `fs.readFileSync` outside the allowlist that must come back `ERR_ACCESS_DENIED`. If the plugin's fs-read allowlist ever stops booting the real bootstrap, this is the test that says so first.
+
+### Dependencies
+
+- zod 4.6.5, dotenv 18.0.4, simple-git 4.0.2 (security fix; our named imports were already 4.x-compatible), @simplewebauthn/server 14.0.3 + @simplewebauthn/browser 14.0.0 (Node 22+; the v14 `AuthenticatorTransport` rename applied), @libsql/client 0.18.0, jsdom 30.1.1, drizzle-orm 0.45.3 (the server's separate pin unified — two copies broke typecheck), mcp vitest/@vitest/coverage-v8 5.0.1. Supply-chain overrides refreshed for the new advisory set: fast-uri 3.1.8 / 4.1.5 and brace-expansion 5.0.12 — `pnpm audit` clean.
+
+
 ## [0.10.25] - 2026-09-30
 
 > The telemetry posture release: host figures are operator-only (r469) — the

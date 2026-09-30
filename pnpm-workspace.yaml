@@ -23,14 +23,17 @@ overrides:
   # resolves into the maintained 13.x line already in the tree.
   "@esbuild-kit/esm-loader": "-"
   "glob@^10.0.0": "^13.0.6"
-  # fast-uri <3.1.7 / <4.1.4 (GHSA-qw65-cvwx-89v3 authority injection via an
-  # unvalidated port, layered on the GHSA-58mr-gqgx-xq4g host-confusion set
-  # that 3.1.6/4.1.3 fixed) arrives on BOTH majors via fastify: ajv +
-  # ajv-formats declare ^3, @fastify/ajv-compiler and fast-json-stringify
-  # declare ^4. Pin each major to its first patched release — a blanket bump
-  # to 4.x would yank ajv's edge across a major.
-  "fast-uri@^3.0.0": "3.1.7"
-  "fast-uri@^4.0.0": "4.1.4"
+  # fast-uri (2026-10-01 GHSA set: host-case normalization + mailto percent-
+  # injection, on top of the earlier authority/port set) arrives on BOTH
+  # majors via fastify: ajv + ajv-formats declare ^3, @fastify/ajv-compiler
+  # and fast-json-stringify declare ^4. Pin each major to its first patched
+  # release — a blanket bump to 4.x would yank ajv's edge across a major.
+  "fast-uri@^3.0.0": "3.1.8"
+  "fast-uri@^4.0.0": "4.1.5"
+  # brace-expansion 4.x <5.0.12 (2026-10-01 GHSA set: DoS via nested-brace
+  # recursion in parseCommon) arrives through minimatch chains repo-wide. 5.x
+  # is API-compatible for every consumer here.
+  brace-expansion: "^5.0.12"
   # ip-address <=10.5.0 (GHSA-rpw4-54j3-4h4q: fe80::/64 read as the link-local
   # range instead of fe80::/10; GHSA-2vr4-cq9g-pvrc: NAT64 64:ff9b:1::/48
   # unrecognized — both SSRF / trust-boundary bypasses) arrives via

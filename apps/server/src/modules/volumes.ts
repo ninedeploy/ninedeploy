@@ -178,10 +178,19 @@ export const volumeRoutes: FastifyPluginAsync = async (app) => {
       const serverId = Number((req.query as { serverId?: string }).serverId ?? 0) || null;
       if (serverId !== null) {
         const sink = (line: string) => req.log.info(line);
-        await agentOp(app.db, serverId, 'docker.volumeRm', { name }, sink);
-        const verify = await agentOp(app.db, serverId, 'docker.volumeInspect', { name }, sink);
+        // r470: agentOp THROWS on non-zero exits by contract, so both calls
+        // below tolerate exits and read the code themselves. `volume rm` exit 1
+        // on the node is docker's "volume is in use" refusal — the caller's
+        // 409, not a panel 500. Transport failures (node offline, sealed reply
+        // refused) still throw and surface as 5xx, which is what they are.
+        const rm = await agentOp(app.db, serverId, 'docker.volumeRm', { name }, sink, { tolerateExit: true });
+        if (rm.exitCode !== 0) {
+          throw conflict(`Volume is in use on node #${serverId} — stop the service/database on that node before deleting the volume`);
+        }
+        // Existence probe: exit 1 means the volume is GONE, which is the goal.
+        const verify = await agentOp(app.db, serverId, 'docker.volumeInspect', { name }, sink, { tolerateExit: true });
         if (verify.exitCode === 0) {
-          throw conflict(`Volume could not be deleted on node #${serverId} — it is still mounted by a running container there`);
+          throw conflict(`Volume could not be deleted on node #${serverId} — docker reported success but the volume is still there`);
         }
         void audit(app.db, req.user!.id, 'volume.delete', `${name} on node #${serverId}`);
         return { ok: true, node: serverId };

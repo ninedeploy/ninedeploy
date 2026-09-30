@@ -118,7 +118,7 @@ export function Dashboard() {
               {allHealthy ? 'All systems operational' : `${unhealthyCount} service${unhealthyCount > 1 ? 's' : ''} need attention`}
             </h1>
             <p className="text-sm text-slate-400">
-              {s.running} running · {s.stopped} stopped · {s.errored} errored · {s.containers} containers · {s.dbRunning} databases
+              {s.running} running · {s.stopped} stopped · {s.errored} errored{s.containers !== null ? ` · ${s.containers} containers` : ''} · {s.dbRunning} databases
             </p>
           </div>
           <div className="ml-auto hidden items-center gap-1.5 rounded-full bg-white/[0.04] px-3 py-1 text-xs text-slate-400 sm:flex">
@@ -202,7 +202,8 @@ export function Dashboard() {
         <StatCard icon={<Rocket size={15} />} label="Deploys" value={s.deployments} sub="total" tone="sky" />
         <StatCard icon={<Globe size={15} />} label="Domains" value={s.domains} sub="routed" tone="amber" />
         <StatCard icon={<Link2 size={15} />} label="Webhooks" value={s.webhooks} sub="active" tone="violet" />
-        <StatCard icon={<Package size={15} />} label="Containers" value={s.containers} sub="docker" tone="slate" />
+        {/* Whole-node container count is operator-only telemetry (r470) — members simply don't get the card. */}
+        {s.containers !== null && <StatCard icon={<Package size={15} />} label="Containers" value={s.containers} sub="docker" tone="slate" />}
       </div>
 
       {/* Quick Actions Hub */}

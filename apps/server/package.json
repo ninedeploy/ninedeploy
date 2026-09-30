@@ -1,6 +1,6 @@
 {
   "name": "@ninedeploy/server",
-  "version": "0.10.25",
+  "version": "0.10.26",
   "private": true,
   "type": "module",
   "main": "./dist/server.js",
@@ -23,18 +23,18 @@
     "@ninedeploy/schemas": "workspace:*",
     "@ninedeploy/sdk": "workspace:*",
     "@node-rs/argon2": "^2.1.0",
-    "@simplewebauthn/server": "^13.3.2",
+    "@simplewebauthn/server": "^14.0.3",
     "croner": "^10.0.1",
-    "dotenv": "^17.4.2",
-    "drizzle-orm": "^0.45.2",
+    "dotenv": "^18.0.4",
+    "drizzle-orm": "^0.45.3",
     "fastify": "^5.12.5",
     "fastify-plugin": "^6.0.0",
     "jose": "^6.2.12",
     "js-yaml": "^4.3.2",
     "nodemailer": "^10.0.12",
     "pm2": "^7.0.4",
-    "simple-git": "^3.36.0",
-    "zod": "^4.4.3"
+    "simple-git": "^4.0.2",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@testcontainers/postgresql": "^12.1.0",

@@ -1,12 +1,33 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-  listManagedVolumeNames: vi.fn(async () => [] as string[]),
-  agentOp: vi.fn(async (_db: unknown, _id: unknown, _op: unknown, _p: unknown, sink?: (l: string) => void) => {
+const mocks = vi.hoisted(() => {
+  // The node probe's exit code, switchable per test.
+  const node = { exitCode: 0 };
+  // r470: the mock mirrors the REAL agentOp contract — non-zero exit codes
+  // THROW unless the caller passes { tolerateExit: true }. A mock that
+  // happily resolved { exitCode: 1 } is exactly how r466 shipped a probe
+  // that threw on the very case it was probing for.
+  const agentOpImpl = async (
+    _db: unknown,
+    _id: unknown,
+    op: unknown,
+    _p: unknown,
+    sink?: (l: string) => void,
+    opts?: { tolerateExit?: boolean },
+  ) => {
     sink?.('probe'); // exercise the module's sink arrow (coverage)
-    return { exitCode: 0, lines: [] };
-  }),
-}));
+    if (node.exitCode !== 0 && !opts?.tolerateExit) {
+      throw new Error(`agent ${String(op)} exited with ${node.exitCode}`);
+    }
+    return { exitCode: node.exitCode, lines: [] };
+  };
+  return {
+    node,
+    agentOpImpl,
+    listManagedVolumeNames: vi.fn(async () => [] as string[]),
+    agentOp: vi.fn(agentOpImpl),
+  };
+});
 vi.mock('../../src/lib/inventory.js', () => ({
   listManagedVolumeNames: mocks.listManagedVolumeNames,
 }));
@@ -18,8 +39,12 @@ import { assertSlugVolumeNotRetained } from '../../src/lib/retainedSlugVolume.js
 describe('assertSlugVolumeNotRetained (r351/r466)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // clearAllMocks clears CALLS, not implementations — a previous test's
+    // mockRejectedValue would otherwise leak into the next one. Re-bind the
+    // contract-faithful implementation every time.
+    mocks.agentOp.mockImplementation(mocks.agentOpImpl);
     mocks.listManagedVolumeNames.mockResolvedValue([]);
-    mocks.agentOp.mockResolvedValue({ exitCode: 1, lines: [] });
+    mocks.node.exitCode = 0;
   });
 
   it('local path: a retained local volume blocks the slug', async () => {
@@ -36,24 +61,27 @@ describe('assertSlugVolumeNotRetained (r351/r466)', () => {
     await expect(assertSlugVolumeNotRetained('web', 'pm2')).resolves.toBeUndefined();
   });
 
-  it('node path: probes the node agent, not the local daemon', async () => {
+  it('node path: probes the node agent with tolerateExit — exit 1 means MISSING, not failure', async () => {
     mocks.listManagedVolumeNames.mockResolvedValue(['nd-svc-web-data']); // local volume is IRRELEVANT
-    mocks.agentOp.mockResolvedValue({ exitCode: 1, lines: [] }); // node: missing
+    mocks.node.exitCode = 1; // node says: no such volume
     await expect(
       assertSlugVolumeNotRetained('web', 'docker', { db: {} as never, serverId: 7 }),
     ).resolves.toBeUndefined();
+    // The whole r470 fix is this 6th argument: without it the real agentOp
+    // throws on exit 1, the catch fails closed, and EVERY fresh slug 409s.
     expect(mocks.agentOp).toHaveBeenCalledWith(
       {} as never,
       7,
       'docker.volumeInspect',
       { name: 'nd-svc-web-data' },
       expect.any(Function),
+      { tolerateExit: true },
     );
     expect(mocks.listManagedVolumeNames).not.toHaveBeenCalled();
   });
 
   it('node path: a retained NODE volume blocks with a node-naming 409', async () => {
-    mocks.agentOp.mockResolvedValue({ exitCode: 0, lines: ['[]'] });
+    mocks.node.exitCode = 0; // volume exists on the node
     const err = await assertSlugVolumeNotRetained('web', 'docker', { db: {} as never, serverId: 7 }).catch((e: unknown) => e);
     expect(err).toMatchObject({ statusCode: 409, code: 'slug_volume_retained' });
     expect(String((err as Error).message)).toContain('ON NODE #7');
@@ -61,6 +89,10 @@ describe('assertSlugVolumeNotRetained (r351/r466)', () => {
   });
 
   it('node path: an unreachable agent fails closed (treated as retained), pm2 exempt', async () => {
+    // BOTH calls see the offline agent (mockRejectedValue, not ...Once): the
+    // docker create fails closed, and the pm2 create is exempted by the
+    // unreachable-only carve-out (a pm2 service never mounts a docker volume
+    // and must stay creatable while the node is down).
     mocks.agentOp.mockRejectedValue(new Error('node offline'));
     await expect(
       assertSlugVolumeNotRetained('web', 'docker', { db: {} as never, serverId: 7 }),
@@ -68,6 +100,13 @@ describe('assertSlugVolumeNotRetained (r351/r466)', () => {
     await expect(
       assertSlugVolumeNotRetained('web', 'pm2', { db: {} as never, serverId: 7 }),
     ).resolves.toBeUndefined();
+  });
+
+  it('node path: a pm2 service is NOT exempt when the node definitively says the volume exists', async () => {
+    mocks.node.exitCode = 0;
+    await expect(
+      assertSlugVolumeNotRetained('web', 'pm2', { db: {} as never, serverId: 7 }),
+    ).rejects.toMatchObject({ code: 'slug_volume_retained' });
   });
 });
 

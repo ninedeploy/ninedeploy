@@ -300,3 +300,124 @@ describe('SandboxPlugin (process transport, r468)', () => {
     expect(result.worker).not.toBe('ALLOWED');
   }, 20000);
 });
+
+// ── r470: the processBootstrap honesty tests ────────────────────────────
+// vitest cannot instrument a forked child, so src/kernel/sandbox/processBootstrap.ts
+// is excluded from coverage — which is exactly how r466 shipped two agentOp
+// call sites against a contract only their mocks knew. These tests fork the
+// COMPILED dist bootstrap with the REAL permission-model flags and prove the
+// full handshake plus the denial the whole r468 boundary rests on. Skipped
+// automatically in a source-only checkout (turbo's test task builds first).
+import { fileURLToPath } from 'node:url';
+
+const COMPILED_BOOTSTRAP = join(
+  dirname(fileURLToPath(import.meta.url)), '..', '..', 'dist', 'kernel', 'sandbox', 'processBootstrap.js',
+);
+
+describe.skipIf(!existsSync(COMPILED_BOOTSTRAP))('processBootstrap — the compiled handshake, for real (r470)', () => {
+  function forkSandbox(code: string) {
+    // allowReads mirrors initProcessTransport's computation 1:1 — if the
+    // plugin's allowlist is ever wrong, THIS is the test that cannot boot.
+    const dir = dirname(COMPILED_BOOTSTRAP);
+    const allowReads = [dir, join(dir, '..', '..', 'package.json')];
+    const child = fork(COMPILED_BOOTSTRAP, [], {
+      execArgv: SB.sandboxExecArgv(allowReads),
+      env: { PATH: process.env['PATH'] ?? '', LANG: 'C.UTF-8', TZ: 'UTC' },
+      silent: true,
+      serialization: 'json',
+    });
+    child.stdout?.resume();
+    child.stderr?.resume();
+    const messages: Array<{ type: string; payload?: any }> = [];
+    child.on('message', (m: { type: string; payload?: any }) => messages.push(m));
+    const waitFor = (pred: (m: { type: string; payload?: any }) => boolean, ms = 10_000) =>
+      new Promise<{ type: string; payload?: any }>((resolve, reject) => {
+        const existing = messages.find(pred);
+        if (existing) return resolve(existing);
+        const timer = setTimeout(
+          () => {
+            child.off('message', check);
+            reject(new Error(`bootstrap never answered; saw: ${messages.map((m) => m.type).join(',') || 'nothing'}`));
+          },
+          ms,
+        );
+        const check = (m: { type: string; payload?: any }) => {
+          if (pred(m)) {
+            clearTimeout(timer);
+            child.off('message', check);
+            resolve(m);
+          }
+        };
+        child.on('message', check);
+      });
+    child.send({ type: 'INIT', payload: { pluginId: 'honesty', code } });
+    return { child, waitFor };
+  }
+
+  const stop = (child: import('node:child_process').ChildProcess) =>
+    new Promise<void>((resolve) => {
+      child.on('exit', () => resolve());
+      try {
+        child.send({ type: 'SHUTDOWN', payload: {} });
+      } catch {
+        resolve();
+      }
+      setTimeout(() => {
+        child.kill('SIGKILL');
+        resolve();
+      }, 3000).unref();
+    });
+
+  it('boots under the real --permission flags and round-trips INIT→READY→HOOK', async () => {
+    const { child, waitFor } = forkSandbox(`
+      ctx.logger.info('booted');
+      ctx.tapHook('deploy:before', (p) => ({ ...p, targetCommit: 'honesty-sha' }));
+    `);
+    try {
+      await waitFor((m) => m.type === 'LOG' && String(m.payload?.message).includes('booted'));
+      const ready = await waitFor((m) => m.type === 'READY');
+      expect(ready.type).toBe('READY');
+      const reg = await waitFor((m) => m.type === 'REGISTER_HOOK');
+      expect(reg.payload?.hookName).toBe('deploy:before');
+      child.send({
+        type: 'HOOK_CALL',
+        payload: { hookId: reg.payload?.hookId, hookName: 'deploy:before', initialPayload: { targetCommit: 'orig' } },
+      });
+      const resp = await waitFor((m) => m.type === 'HOOK_RESPONSE');
+      expect(resp.payload?.result?.targetCommit).toBe('honesty-sha');
+      expect(resp.payload?.error).toBeUndefined();
+    } finally {
+      await stop(child);
+    }
+  }, 20000);
+
+  it('shuts down cleanly on SHUTDOWN (exit 0, not a kill)', async () => {
+    const { child, waitFor } = forkSandbox('');
+    const exitCode = new Promise<number | null>((resolve) => child.on('exit', (c) => resolve(c)));
+    await waitFor((m) => m.type === 'READY');
+    child.send({ type: 'SHUTDOWN', payload: {} });
+    expect(await exitCode).toBe(0);
+  }, 20000);
+
+  it('plugin code CANNOT read the filesystem from inside the real bootstrap', async () => {
+    // This test file itself lives in test/kernel — far outside the bootstrap's
+    // allowlist — so reading it must come back ERR_ACCESS_DENIED.
+    const deniedTarget = fileURLToPath(import.meta.url);
+    const { child, waitFor } = forkSandbox(`
+      try {
+        const fs = await import('node:fs');
+        fs.readFileSync(${JSON.stringify(deniedTarget)}, 'utf8');
+        ctx.logger.error('READ-SUCCEEDED — the r468 boundary is OPEN');
+      } catch (err) {
+        ctx.logger.error('READ-DENIED ' + (err && err.code));
+      }
+    `);
+    try {
+      const verdict = await waitFor((m) => m.type === 'LOG' && String(m.payload?.message).includes('READ-'));
+      expect(String(verdict.payload?.message)).toContain('READ-DENIED');
+      expect(String(verdict.payload?.message)).not.toContain('SUCCEEDED');
+    } finally {
+      await stop(child);
+    }
+  }, 20000);
+});

@@ -1,5 +1,5 @@
 import { generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse } from '@simplewebauthn/server';
-import type { AuthenticatorTransportFuture, VerifyAuthenticationResponseOpts, VerifyRegistrationResponseOpts } from '@simplewebauthn/server';
+import type { AuthenticatorTransport, VerifyAuthenticationResponseOpts, VerifyRegistrationResponseOpts } from '@simplewebauthn/server';
 import type { WebauthnCredential } from '@ninedeploy/db';
 import { config } from '../config.js';
 
@@ -13,7 +13,7 @@ function rpIdentity(): { rpID: string; rpName: string; origin: string } {
 }
 
 /** DB transports (plain strings) → the library's union type. */
-const asTransports = (t: string[]): AuthenticatorTransportFuture[] => t as AuthenticatorTransportFuture[];
+const asTransports = (t: string[]): AuthenticatorTransport[] => t as AuthenticatorTransport[];
 
 // ── challenge store ────────────────────────────────────────────────────────
 // In-memory with a 5-minute TTL: challenges are single-use and short-lived by

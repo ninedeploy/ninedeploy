@@ -85,6 +85,9 @@ async function supportsSealed(serverId: number, host: string, port: number): Pro
 /**
  * Run one typed operation on a remote agent. `sink` receives output lines;
  * non-zero exit codes throw (callers treat remote failures like local ones).
+ * The exceptions are ops whose RESULT is the exit code — `docker.volumeInspect`
+ * doubles as an existence probe — which pass `tolerateExit` and read
+ * `res.exitCode` themselves.
  *
  * The request is SEALED when the agent supports it (see lib/agentSeal.ts): the
  * token stops crossing the network, and so do the decrypted service secrets
@@ -98,6 +101,7 @@ export async function agentOp(
   op: string,
   params: Record<string, unknown>,
   sink: (line: string) => void,
+  opts?: { tolerateExit?: boolean },
 ): Promise<AgentOpResult> {
   const row = await db.query.servers.findFirst({ where: eq(servers.id, serverId) });
   if (!row) throw new Error('Unknown server');
@@ -170,7 +174,7 @@ export async function agentOp(
     throw new Error(`agent ${op}: invalid exit code in response`);
   }
   const exitCode = body.exitCode;
-  if (exitCode !== 0) throw new Error(`agent ${op} exited with ${exitCode}`);
+  if (exitCode !== 0 && !opts?.tolerateExit) throw new Error(`agent ${op} exited with ${exitCode}`);
   return { exitCode, lines };
 }
 

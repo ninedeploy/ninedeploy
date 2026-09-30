@@ -263,11 +263,16 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
       }),
     );
 
-    // Docker container count
-    let containerCount = 0;
-    try {
-      containerCount = (await capture('docker', ['ps', '-q'])).split('\n').filter(Boolean).length;
-    } catch { /* ignore */ }
+    // Whole-node container count is infrastructure telemetry — it counts
+    // EVERY tenant's containers and used to ride along to members. Operators
+    // only (same gating as the host block in stats.ts); members get null and
+    // the docker round-trip is skipped entirely.
+    let containerCount: number | null = null;
+    if (user.isOperator) {
+      try {
+        containerCount = (await capture('docker', ['ps', '-q'])).split('\n').filter(Boolean).length;
+      } catch { /* ignore */ }
+    }
 
     return {
       stats: {

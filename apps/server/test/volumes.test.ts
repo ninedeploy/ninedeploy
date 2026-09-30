@@ -455,36 +455,91 @@ describe('volume routes', () => {
   });
 });
 
-// ── r466: node-side retained volume deletion ───────────────────────────
-const agentMocks = vi.hoisted(() => ({ agentOp: vi.fn(async () => ({ exitCode: 1, lines: [] })) }));
+// ── r466/r470: node-side retained volume deletion ──────────────────────
+const agentMocks = vi.hoisted(() => {
+  // Per-op exit codes, switchable per test. The mock mirrors the REAL agentOp
+  // contract: non-zero exits THROW unless the caller passes tolerateExit — the
+  // old blanket { exitCode: 1 } resolution is how the route shipped calling
+  // inspect as if it could return 1 (it threw instead → 500, never 409).
+  const node = { rm: 0, inspect: 1 };
+  const agentOp = vi.fn(
+    async (
+      _db: unknown,
+      _id: unknown,
+      op: unknown,
+      _p: unknown,
+      _sink: unknown,
+      opts?: { tolerateExit?: boolean },
+    ) => {
+      const exitCode = op === 'docker.volumeRm' ? node.rm : node.inspect;
+      if (exitCode !== 0 && !opts?.tolerateExit) {
+        throw new Error(`agent ${String(op)} exited with ${exitCode}`);
+      }
+      return { exitCode, lines: [] };
+    },
+  );
+  return { agentOp, node };
+});
 vi.mock('../src/lib/agentClient.js', () => ({ agentOp: agentMocks.agentOp }));
 
 describe('volume routes — node deletion (r466)', () => {
   beforeEach(() => {
-    agentMocks.agentOp.mockReset();
-    agentMocks.agentOp.mockResolvedValue({ exitCode: 1, lines: [] });
+    agentMocks.agentOp.mockClear();
+    agentMocks.node.rm = 0;
+    agentMocks.node.inspect = 1;
   });
 
   it('DELETE ?serverId= routes rm+verify through the node agent, never the local engine', async () => {
-    agentMocks.agentOp.mockResolvedValue({ exitCode: 1, lines: [] });
+    agentMocks.node.rm = 0; // rm succeeds
+    agentMocks.node.inspect = 1; // volume gone — the probe's exit 1 IS the success
     const app = await buildTestApp({ db: createFakeDb() });
     await app.register(volumeRoutes);
     const res = await app.inject({ method: 'DELETE', url: '/nd-svc-web-data?serverId=7', headers: asUser() });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ok: true, node: 7 });
-    const ops = agentMocks.agentOp.mock.calls.map((c) => c[2]);
-    expect(ops).toEqual(['docker.volumeRm', 'docker.volumeInspect']);
-    expect(agentMocks.agentOp.mock.calls[0]![3]).toEqual({ name: 'nd-svc-web-data' });
+    const calls = agentMocks.agentOp.mock.calls as unknown as Array<[unknown, unknown, string, unknown, unknown, unknown]>;
+    expect(calls.map((c) => c[2])).toEqual(['docker.volumeRm', 'docker.volumeInspect']);
+    expect(calls[0]![3]).toEqual({ name: 'nd-svc-web-data' });
+    // Both calls MUST tolerate exits: rm's refusal is the 409 signal, inspect
+    // exit 1 means deleted. Without the 6th arg the real agentOp throws and
+    // the route answers 500 for an ordinary in-use volume.
+    expect(calls[0]![5]).toEqual({ tolerateExit: true });
+    expect(calls[1]![5]).toEqual({ tolerateExit: true });
     expect(dbEngineMocks.removeVolume).not.toHaveBeenCalled();
   });
 
-  it('answers 409 when the volume still exists on the node after rm (in use there)', async () => {
-    agentMocks.agentOp.mockResolvedValue({ exitCode: 0, lines: ['[]'] });
+  it('answers 409 (not 500) when the node refuses the rm — volume in use there', async () => {
+    agentMocks.node.rm = 1; // docker volume rm on the node: "volume is in use"
+    agentMocks.node.inspect = 0;
+    const app = await buildTestApp({ db: createFakeDb() });
+    await app.register(volumeRoutes);
+    const res = await app.inject({ method: 'DELETE', url: '/nd-svc-web-data?serverId=7', headers: asUser() });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.message).toContain('in use on node #7');
+    // The verify probe is pointless after a refused rm — and must not run.
+    const ops = (agentMocks.agentOp.mock.calls as unknown as Array<[unknown, unknown, string]>).map((c) => c[2]);
+    expect(ops).toEqual(['docker.volumeRm']);
+    expect(dbEngineMocks.removeVolume).not.toHaveBeenCalled();
+  });
+
+  it('answers 409 when the volume still exists on the node after a successful rm', async () => {
+    agentMocks.node.rm = 0;
+    agentMocks.node.inspect = 0; // rm said ok, but the volume is still there
     const app = await buildTestApp({ db: createFakeDb() });
     await app.register(volumeRoutes);
     const res = await app.inject({ method: 'DELETE', url: '/nd-svc-web-data?serverId=7', headers: asUser() });
     expect(res.statusCode).toBe(409);
     expect(res.json().error.message).toContain('node #7');
+    expect(res.json().error.message).toContain('still there');
+  });
+
+  it('answers 500 when the node itself is unreachable (transport, not docker, failure)', async () => {
+    agentMocks.agentOp.mockRejectedValueOnce(new Error('agent offline'));
+    const app = await buildTestApp({ db: createFakeDb() });
+    await app.register(volumeRoutes);
+    const res = await app.inject({ method: 'DELETE', url: '/nd-svc-web-data?serverId=7', headers: asUser() });
+    expect(res.statusCode).toBe(500);
+    expect(dbEngineMocks.removeVolume).not.toHaveBeenCalled();
   });
 
   it('keeps the local path byte-identical when no serverId is given', async () => {

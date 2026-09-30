@@ -221,7 +221,11 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
       const id = parseId((req.params as { id: string }).id);
       let res: Awaited<ReturnType<typeof agentOp>>;
       try {
-        res = await agentOp(authed.db, id, 'agent.stats', {}, () => undefined);
+        // tolerateExit (r470): agent.stats' exit code IS its result — docker
+        // stats failing on the node is a different failure from the node being
+        // unreachable, and agentOp's throw would collapse both into the
+        // "unreachable" message below.
+        res = await agentOp(authed.db, id, 'agent.stats', {}, () => undefined, { tolerateExit: true });
       } catch (err) {
         throw badRequest(`Node agent unreachable: ${err instanceof Error ? err.message : err}`);
       }
@@ -238,7 +242,7 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
             host = JSON.parse(line.slice('ND-HOST '.length)) as typeof host;
           } catch { /* keep null — the cards degrade to placeholders */ }
         } else if (line.startsWith('ND-DF ')) {
-          // df -k: blocks are 1K; cols: fs total used ...
+          // df -kP (POSIX, one line per fs): blocks are 1K; cols: fs total used ...
           const parts = line.slice('ND-DF '.length).trim().split(/\s+/);
           if (parts.length >= 3) {
             disk = { totalBytes: Number(parts[1]) * 1024, usedBytes: Number(parts[2]) * 1024 };

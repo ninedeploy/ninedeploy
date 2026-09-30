@@ -1226,7 +1226,7 @@ export interface NineDeployClient {
   };
   dashboard: {
     get: () => Promise<{
-      stats: { services: number; databases: number; deployments: number; domains: number; webhooks: number; running: number; stopped: number; errored: number; dbRunning: number; containers: number };
+      stats: { services: number; databases: number; deployments: number; domains: number; webhooks: number; running: number; stopped: number; errored: number; dbRunning: number; /** Whole-node count — operators only, null for members (r470). */ containers: number | null };
       health: Array<{ serviceId: number; name: string; slug: string; type: string; status: string; healthy: boolean | null; responseMs: number | null; port: number | null; runtimeId: string | null; commitSha: string | null; lastDeploy: string | null }>;
       recentDeploys: Array<{ id: number; serviceId: number; serviceName: string; status: string; commitSha: string | null; message: string | null; trigger: string; finishedAt: string | null; createdAt: string }>;
     }>;

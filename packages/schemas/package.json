@@ -1,6 +1,6 @@
 {
   "name": "@ninedeploy/schemas",
-  "version": "0.10.25",
+  "version": "0.10.26",
   "description": "Shared Zod schemas and validation types for NineDeploy",
   "license": "MIT",
   "repository": {
@@ -32,7 +32,7 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
-    "zod": "^4.4.3"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "typescript": "^7.0.2"
