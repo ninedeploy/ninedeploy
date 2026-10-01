@@ -142,7 +142,7 @@ async function main() {
 
   // ── teardown ────────────────────────────────────────────────────────────
   const del = await api(`/v1/services/${serviceId}`, { method: 'DELETE', token });
-  if (del.status !== 200) {
+  if (del.status !== 200 && del.status !== 204) { // 204 No Content is the route's own success
     // Diagnose: the panel log usually names the throwing step.
     try { console.log(docker(['logs', '--tail', '25', PANEL])); } catch { /* best effort */ }
     fail(`service delete failed: ${del.status} ${del.text.slice(0, 400)}`);
