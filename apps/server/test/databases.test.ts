@@ -4,6 +4,7 @@ import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { attachmentRoutes, databasesRoutes } from '../src/modules/databases.js';
 import { encrypt } from '../src/lib/crypto.js';
+import { studioCookieValid } from '../src/modules/studioProxy.js';
 import { asUser, attachmentRow, backupRow, buildTestApp, createFakeDb, dbRow, svcRow } from './helpers.js';
 
 const engineMocks = vi.hoisted(() => ({
@@ -552,9 +553,13 @@ describe('databases routes', () => {
   });
 
   it('starts and stops Web Studio for a database', async () => {
+    const operatorRow = { id: 1, tokenVersion: 3, isInstanceOperator: true, deactivatedAt: null };
     const app = await buildTestApp({
       db: createFakeDb({
-        findFirst: { databases: dbRow({ id: 10, name: 'pg-prod', slug: 'pg-prod', engine: 'postgres', webGuiPort: null }) },
+        findFirst: {
+          databases: dbRow({ id: 10, name: 'pg-prod', slug: 'pg-prod', engine: 'postgres', webGuiPort: null }),
+          users: operatorRow,
+        },
       }),
     });
     await app.register(databasesRoutes);
@@ -569,6 +574,12 @@ describe('databases routes', () => {
     expect(resCustom.statusCode).toBe(200);
     expect(resCustom.json()).toMatchObject({ ok: true, port: 18055 });
     expect(engineMocks.startDatabaseStudio).toHaveBeenCalledWith(expect.anything(), 18055, expect.anything());
+    // r560: the minted cookie is bound to the calling operator's tokenVersion —
+    // a later bump (logout) no longer verifies.
+    const minted = String(resCustom.headers['set-cookie']).split(';')[0];
+    expect(minted).toMatch(/^nd-studio-10=\d+\.1\.[0-9a-f]{64}$/);
+    expect(studioCookieValid(10, minted, operatorRow)).toBe(true);
+    expect(studioCookieValid(10, minted, { ...operatorRow, tokenVersion: 4 })).toBe(false);
 
     // Start with default calculated port
     const resDefault = await app.inject({
@@ -596,6 +607,16 @@ describe('databases routes', () => {
     expect(resNotFound1.statusCode).toBe(404);
     const resNotFound2 = await appEmpty.inject({ method: 'DELETE', url: '/999/studio', headers: asUser() });
     expect(resNotFound2.statusCode).toBe(404);
+
+    // r560: no backing user row (deleted mid-request) → nothing is started.
+    engineMocks.startDatabaseStudio.mockClear();
+    const appNoUser = await buildTestApp({
+      db: createFakeDb({ findFirst: { databases: dbRow({ id: 10, engine: 'postgres' }), users: null } }),
+    });
+    await appNoUser.register(databasesRoutes);
+    const resNoUser = await appNoUser.inject({ method: 'POST', url: '/10/studio', headers: asUser() });
+    expect(resNoUser.statusCode).toBe(401);
+    expect(engineMocks.startDatabaseStudio).not.toHaveBeenCalled();
   });
 
   it('creates a postgres database with pgvector extension and vector version', async () => {

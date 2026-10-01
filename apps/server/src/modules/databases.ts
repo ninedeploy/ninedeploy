@@ -1,7 +1,7 @@
 import { existsSync, unlinkSync } from 'node:fs';
 import { and, eq } from 'drizzle-orm';
 import { audit } from '../lib/audit.js';
-import { backups, databaseAttachments, databases, projects, type Database } from '@ninedeploy/db';
+import { backups, databaseAttachments, databases, projects, users, type Database } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import { createAttachment, createDatabase, setLimits } from '@ninedeploy/schemas';
 import {
@@ -29,7 +29,7 @@ import {
   visibleDatabaseIds,
 } from '../lib/resourceAccess.js';
 import { studioCookieEpoch, studioCookieName, studioCookieSetHeader, studioProxyPathFor } from './studioProxy.js';
-import { badRequest, conflict, forbidden, notFound, parseId as num } from '../lib/errors.js';
+import { badRequest, conflict, forbidden, notFound, parseId as num, unauthorized } from '../lib/errors.js';
 import { slugify } from '../lib/slug.js';
 
 /** Docker volume names only: prevents `existingVolume` from becoming a bind
@@ -311,10 +311,14 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
       throw badRequest('port must be an integer between 1024 and 65535');
     }
     const port = bodyPort ?? (d.webGuiPort || (18000 + (d.id % 1000)));
+    // r560: the studio cookie is bound to this operator's tokenVersion — load
+    // it before starting anything (logout / deactivation then end the cookie).
+    const me = await app.db.query.users.findFirst({ where: eq(users.id, req.user!.id) });
+    if (!me) throw unauthorized();
     await startDatabaseStudio(d, port, (line) => app.log.info({ component: 'database-studio' }, line));
     await app.db.update(databases).set({ webGuiEnabled: true, webGuiPort: port }).where(eq(databases.id, d.id));
     void audit(app.db, req.user!.id, 'database.studio.start', `${d.name} on :${port}`);
-    reply.header('set-cookie', studioCookieSetHeader(id, req.protocol === 'https', undefined, await studioCookieEpoch(app.db)));
+    reply.header('set-cookie', studioCookieSetHeader(id, me, req.protocol === 'https', undefined, await studioCookieEpoch(app.db)));
     return { ok: true, port, url: studioProxyPathFor(id) };
   });
 

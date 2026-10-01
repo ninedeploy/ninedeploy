@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto';
 import { request as loopbackRequest } from 'node:http';
 import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { eq } from 'drizzle-orm';
-import { databases } from '@ninedeploy/db';
+import { databases, users } from '@ninedeploy/db';
 import { config } from '../config.js';
 import { secretEquals } from '../lib/crypto.js';
 import { notFound, unauthorized } from '../lib/errors.js';
@@ -30,8 +30,19 @@ import { getSettingString } from '../lib/settings.js';
  *
  * Auth model: `POST /:id/studio` (requireAdmin) mints an HMAC-signed,
  * path-scoped, 8-hour cookie (`nd-studio-<id>`). The proxy accepts ONLY
- * that cookie — an iframe cannot send the panel's bearer header, and
- * SameSite=Strict stops cross-site requests from carrying it.
+ * that cookie — a browser tab cannot send the panel's bearer header, and
+ * SameSite=Strict stops cross-site requests from carrying it. r560: the
+ * cookie names the operator who minted it and its HMAC folds in their
+ * `tokenVersion`; every proxied request re-loads that user, so logout (which
+ * bumps tokenVersion), deactivation, deletion and operator demotion end the
+ * studio session on its next request instead of up to 8 hours later.
+ *
+ * Isolation (r560): the studio is third-party code served on the panel
+ * origin. The panel opens it in its own `noopener` tab (fresh
+ * sessionStorage, no opener handle) and every proxied response carries
+ * `frame-ancestors 'none'` / `X-Frame-Options: DENY`, so the studio can
+ * never be framed by the panel — where `parent.sessionStorage` would hand
+ * any studio XSS the panel's bearer tokens — or by anyone else.
  *
  * Subpath note: Adminer uses relative URLs and works under the proxy
  * prefix; Redis Commander is served root-relative upstream — if its assets
@@ -75,58 +86,132 @@ export const STUDIO_EPOCH_KEY = 'studio.cookie_epoch';
 /** Default epoch before any bump — valid cookies minted and checked with it. */
 const DEFAULT_EPOCH = '0';
 
+/** r560: the operator a studio cookie is bound to. */
+export interface StudioCookieUser {
+  id: number;
+  tokenVersion: number;
+}
+
+function studioSignature(dbId: number, expiresAt: number, epoch: string, user: StudioCookieUser): string {
+  return createHmac('sha256', config.jwt.secret)
+    .update(`${dbId}:${expiresAt}:${epoch}:${user.id}:${user.tokenVersion}`)
+    .digest('hex');
+}
+
+/** Value shape: `<expiresAt>.<userId>.<hmac>` (r560 — the pre-0.10.36
+ *  `<expiresAt>.<hmac>` shape carried no user and is refused). */
 export function studioCookieValue(
   dbId: number,
+  user: StudioCookieUser,
   ttlS: number = COOKIE_TTL_S,
   epoch: string = DEFAULT_EPOCH,
 ): { value: string; maxAgeS: number } {
   const expiresAt = Math.floor(Date.now() / 1000) + ttlS;
-  const signature = createHmac('sha256', config.jwt.secret)
-    .update(`${dbId}:${expiresAt}:${epoch}`)
-    .digest('hex');
-  return { value: `${expiresAt}.${signature}`, maxAgeS: ttlS };
+  return { value: `${expiresAt}.${user.id}.${studioSignature(dbId, expiresAt, epoch, user)}`, maxAgeS: ttlS };
 }
 
 export function studioCookieSetHeader(
   dbId: number,
+  user: StudioCookieUser,
   isHttps: boolean,
   ttlS: number = COOKIE_TTL_S,
   epoch: string = DEFAULT_EPOCH,
 ): string {
-  const { value, maxAgeS } = studioCookieValue(dbId, ttlS, epoch);
+  const { value, maxAgeS } = studioCookieValue(dbId, user, ttlS, epoch);
   return `${studioCookieName(dbId)}=${value}; Path=/v1/databases/${dbId}/studio-proxy/; HttpOnly; SameSite=Strict; Max-Age=${maxAgeS}${
     isHttps ? '; Secure' : ''
   }`;
 }
 
-export function studioCookieValid(
+/** Parse (not verify) this database's studio cookie: unexpired and
+ *  well-formed, or null. */
+export function parseStudioCookie(
   dbId: number,
   cookieHeader: string | undefined,
   now = Date.now(),
-  epoch: string = DEFAULT_EPOCH,
-): boolean {
-  if (!cookieHeader) return false;
+): { expiresAt: number; userId: number; sig: string } | null {
+  if (!cookieHeader) return null;
   const name = studioCookieName(dbId);
   const pair = cookieHeader
     .split(';')
     .map((c) => c.trim())
     .find((c) => c.startsWith(`${name}=`));
-  if (!pair) return false;
-  const [expS, sig] = pair.slice(name.length + 1).split('.');
-  const expiresAt = Number(expS);
-  if (!Number.isSafeInteger(expiresAt) || expiresAt * 1000 < now) return false;
-  return secretEquals(
-    createHmac('sha256', config.jwt.secret).update(`${dbId}:${expiresAt}:${epoch}`).digest('hex'),
-    sig ?? '',
-  );
+  if (!pair) return null;
+  const parts = pair.slice(name.length + 1).split('.');
+  if (parts.length !== 3) return null;
+  const expiresAt = Number(parts[0]);
+  const userId = Number(parts[1]);
+  if (!Number.isSafeInteger(expiresAt) || expiresAt * 1000 < now) return null;
+  if (!Number.isSafeInteger(userId) || userId < 1) return null;
+  return { expiresAt, userId, sig: parts[2] ?? '' };
+}
+
+/** Verify the cookie against the user it names (whose CURRENT tokenVersion
+ *  the caller supplies). */
+export function studioCookieValid(
+  dbId: number,
+  cookieHeader: string | undefined,
+  user: StudioCookieUser,
+  now = Date.now(),
+  epoch: string = DEFAULT_EPOCH,
+): boolean {
+  const parsed = parseStudioCookie(dbId, cookieHeader, now);
+  if (!parsed || parsed.userId !== user.id) return false;
+  return secretEquals(studioSignature(dbId, parsed.expiresAt, epoch, user), parsed.sig);
+}
+
+/**
+ * r560: the full session check — the cookie must verify against the named
+ * user's live row, and that user must still exist, be active and be an
+ * instance operator (the start route is operator-only; a demoted operator's
+ * studio session ends with the demotion).
+ */
+export async function studioSessionValid(
+  db: FastifyInstance['db'],
+  dbId: number,
+  cookieHeader: string | undefined,
+  epoch: string,
+  now = Date.now(),
+): Promise<boolean> {
+  const parsed = parseStudioCookie(dbId, cookieHeader, now);
+  if (!parsed) return false;
+  const user = await db.query.users.findFirst({ where: eq(users.id, parsed.userId) });
+  if (!user || user.deactivatedAt || user.isInstanceOperator !== true) return false;
+  return studioCookieValid(dbId, cookieHeader, user, now, epoch);
 }
 
 /** Rewrite a Set-Cookie line so the studio session cookie stays scoped to
  *  this database's proxy path — two studios on one origin must never share
  *  a session cookie. */
 function rewriteCookiePath(cookie: string, cookiePath: string): string {
-  return /;\s*path=/i.test(cookie) ? cookie.replace(/;\s*path=[^;]*/i, `; Path=${cookiePath}`) : `${cookie}; Path=${cookiePath}`;
+  // r560: a Domain attribute would widen the cookie to sibling hosts — drop it
+  // so the studio's cookies stay host-only as well as path-scoped.
+  const hostOnly = cookie.replace(/;\s*domain=[^;]*/gi, '');
+  return /;\s*path=/i.test(hostOnly) ? hostOnly.replace(/;\s*path=[^;]*/i, `; Path=${cookiePath}`) : `${hostOnly}; Path=${cookiePath}`;
 }
+
+/**
+ * r560: upstream response headers the proxy never relays. The studio shares
+ * the panel origin, so these would act on the PANEL, not just the studio:
+ *  - framing policy: replaced below by our own `frame-ancestors 'none'` /
+ *    `X-Frame-Options: DENY`;
+ *  - `clear-site-data` would wipe the panel's storage (a forced logout);
+ *  - `service-worker-allowed` would let a studio script register a service
+ *    worker scoped to `/` — i.e. controlling every panel page;
+ *  - `strict-transport-security` is the panel's decision, not a studio's.
+ */
+const STRIPPED_UPSTREAM = new Set([
+  'x-frame-options',
+  'clear-site-data',
+  'service-worker-allowed',
+  'strict-transport-security',
+]);
+
+/** r560: appended to every studio response. A separate CSP header is an
+ *  ADDITIONAL policy (browsers enforce all of them), so the studio's own CSP
+ *  — Adminer ships a nonce-based one — stays intact while framing is denied
+ *  regardless of any frame-ancestors the upstream sent. */
+const STUDIO_FRAME_CSP = "frame-ancestors 'none'";
 
 /** The epoch live cookies were minted under; `db`-aware (r441). */
 export async function studioCookieEpoch(db: unknown): Promise<string> {
@@ -139,6 +224,10 @@ export async function studioCookieEpoch(db: unknown): Promise<string> {
   }
 }
 
+const STUDIO_SESSION_EXPIRED = 'Studio session expired — open the studio again from the database page';
+
+type StudioRequest = FastifyRequest & { studioSessionOk?: boolean };
+
 const proxyHandler = async (
   app: FastifyInstance,
   req: FastifyRequest,
@@ -149,11 +238,14 @@ const proxyHandler = async (
     throw notFound('Web Studio is not running');
   }
   // Defence in depth (the onRequest gate above already checked) — reusing the
-  // epoch that gate read (r455), falling back to a fresh read only for the
-  // direct-invocation shape tests use.
-  const epoch = (req as FastifyRequest & { studioEpoch?: string }).studioEpoch ?? (await studioCookieEpoch(app.db));
-  if (!studioCookieValid(id, req.headers.cookie, Date.now(), epoch)) {
-    throw unauthorized('Studio session expired — start it again from the database page');
+  // gate's verdict (r455/r560: no second settings + users lookup per proxied
+  // request), falling back to a full check only for the direct-invocation
+  // shape tests use.
+  if ((req as StudioRequest).studioSessionOk !== true) {
+    const epoch = await studioCookieEpoch(app.db);
+    if (!(await studioSessionValid(app.db, id, req.headers.cookie, epoch))) {
+      throw unauthorized(STUDIO_SESSION_EXPIRED);
+    }
   }
   const d = await app.db.query.databases.findFirst({ where: eq(databases.id, id) });
   const port = d?.webGuiEnabled === true ? d.webGuiPort : null;
@@ -207,7 +299,7 @@ const proxyHandler = async (
         const key = ures.rawHeaders[i]!;
         const value = ures.rawHeaders[i + 1] ?? '';
         const lower = key.toLowerCase();
-        if (HOP_BY_HOP.has(lower)) continue;
+        if (HOP_BY_HOP.has(lower) || STRIPPED_UPSTREAM.has(lower)) continue;
         if (lower === 'set-cookie') {
           const existing = responseHeaders[key];
           responseHeaders[key] = existing === undefined ? rewriteCookiePath(value, cookiePath) : ([] as string[]).concat(existing, rewriteCookiePath(value, cookiePath));
@@ -216,6 +308,11 @@ const proxyHandler = async (
         const existing = responseHeaders[key];
         responseHeaders[key] = existing === undefined ? value : ([] as string[]).concat(existing, value);
       }
+      // r560: never frameable — not by the panel, not by anyone.
+      const cspKey = Object.keys(responseHeaders).find((k) => k.toLowerCase() === 'content-security-policy') ?? 'content-security-policy';
+      const upstreamCsp = responseHeaders[cspKey];
+      responseHeaders[cspKey] = upstreamCsp === undefined ? STUDIO_FRAME_CSP : ([] as string[]).concat(upstreamCsp, STUDIO_FRAME_CSP);
+      responseHeaders['x-frame-options'] = 'DENY';
       reply.raw.writeHead(ures.statusCode ?? 502, responseHeaders);
       ures.pipe(reply.raw);
     },
@@ -253,13 +350,14 @@ export const studioProxyRoutes: FastifyPluginAsync = async (app) => {
     if (!Number.isSafeInteger(id) || id < 1) throw notFound('Web Studio is not running');
     // r441: epoch-aware, same as the handler's defence-in-depth check below —
     // otherwise the pre-parse gate accepts cookies a bumped epoch killed.
-    // r455: stashed on the request — the handler's own check reuses it instead
-    // of a second settings lookup per proxied request.
+    // r560: user-bound — the named operator's live row must still back it.
+    // r455: the verdict is stashed on the request so the handler's own check
+    // does not repeat the lookups per proxied request.
     const epoch = await studioCookieEpoch(app.db);
-    (req as FastifyRequest & { studioEpoch?: string }).studioEpoch = epoch;
-    if (!studioCookieValid(id, req.headers.cookie, Date.now(), epoch)) {
-      throw unauthorized('Studio session expired — start it again from the database page');
+    if (!(await studioSessionValid(app.db, id, req.headers.cookie, epoch))) {
+      throw unauthorized(STUDIO_SESSION_EXPIRED);
     }
+    (req as StudioRequest).studioSessionOk = true;
   };
   const options = { bodyLimit: 256 * 1024 * 1024, onRequest: [requireStudioSession] };
   app.all('/:id/studio-proxy', options, (req, reply) => proxyHandler(app, req, reply));

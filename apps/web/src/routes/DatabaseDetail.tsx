@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useId, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Activity,
   ArrowLeft,
@@ -40,7 +40,6 @@ import {
   StatusBadge,
   Tabs,
   cn,
-  useEscapeToClose,
 } from '../components/ui.js';
 import { PluginSlot } from '../components/PluginSlot.js';
 import { downloadBlob, formatBytes, formatDateTime, useCopy } from '../lib/format.js';
@@ -81,9 +80,9 @@ export function DatabaseDetail() {
     else sp.set('tab', next);
     navigate({ search: sp.toString() });
   };
-  const [embeddedStudioUrl, setEmbeddedStudioUrl] = useState<string | null>(null);
-  const studioTitleId = useId();
-  useEscapeToClose(() => setEmbeddedStudioUrl(null), embeddedStudioUrl != null);
+  // r560: the studio URL once THIS browser holds a fresh studio cookie — shown
+  // as a fallback link in case the browser blocked the automatic new tab.
+  const [studioUrl, setStudioUrl] = useState<string | null>(null);
 
   const dbQuery = useQuery({
     queryKey: ['database-detail', id],
@@ -126,7 +125,13 @@ export function DatabaseDetail() {
       toast(`Web Studio ready on port ${data.port}`, 'success');
       // The server answers with its same-origin proxy path (the studio itself
       // is loopback-bound); resolve it against the API origin.
-      setEmbeddedStudioUrl(apiUrl(data.url));
+      const url = apiUrl(data.url);
+      setStudioUrl(url);
+      // r560: a separate top-level tab, never an iframe. The studio is
+      // third-party code on the panel origin; framed, `parent.sessionStorage`
+      // handed any studio XSS the panel's tokens. `noopener` gives the tab a
+      // fresh sessionStorage and no handle back to this window.
+      window.open(url, '_blank', 'noopener,noreferrer');
     },
     onError: () => toast('Could not launch Web Studio', 'error'),
   });
@@ -135,7 +140,7 @@ export function DatabaseDetail() {
     mutationFn: () => api.databases.stopStudio(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['database-detail', id] });
-      setEmbeddedStudioUrl(null);
+      setStudioUrl(null);
       toast('Web Studio stopped', 'success');
     },
     onError: () => toast('Could not stop Web Studio', 'error'),
@@ -266,6 +271,7 @@ export function DatabaseDetail() {
           db={db}
           onStartStudio={() => startStudioMutation.mutate()}
           onStopStudio={() => stopStudioMutation.mutate()}
+          studioUrl={studioUrl}
           isStudioPending={startStudioMutation.isPending || stopStudioMutation.isPending}
         />
       )}
@@ -288,45 +294,6 @@ export function DatabaseDetail() {
       {activeTab === 'logs' && <LogsPanel dbId={db.id} isRunning={isRunning} />}
       {activeTab === 'settings' && <SettingsPanel db={db} onDeleted={() => navigate('/databases')} />}
 
-      {/* Embedded Web Studio Modal */}
-      {embeddedStudioUrl && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md nd-fade">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={studioTitleId}
-            className="flex h-[90vh] w-[95vw] max-w-7xl flex-col rounded-2xl border border-white/15 bg-slate-950 shadow-2xl overflow-hidden"
-          >
-            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 bg-slate-900/80">
-              <div className="flex items-center gap-2.5">
-                <Database size={16} className="text-emerald-400" />
-                <span id={studioTitleId} className="text-sm font-semibold text-slate-100">Web Database Studio — {db.name}</span>
-                <span className="rounded bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] text-emerald-400 font-bold uppercase">
-                  {db.engine}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <a
-                  href={embeddedStudioUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 px-2 py-1"
-                >
-                  <ExternalLink size={13} /> Open in new tab
-                </a>
-                <Button size="sm" variant="ghost" onClick={() => setEmbeddedStudioUrl(null)}>
-                  ✕ Close
-                </Button>
-              </div>
-            </div>
-            <iframe
-              src={embeddedStudioUrl}
-              title="Web Studio"
-              className="h-full w-full border-0 bg-white"
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -336,11 +303,13 @@ function OverviewPanel({
   db,
   onStartStudio,
   onStopStudio,
+  studioUrl,
   isStudioPending,
 }: {
   db: IDatabaseDetail;
   onStartStudio: () => void;
   onStopStudio: () => void;
+  studioUrl: string | null;
   isStudioPending: boolean;
 }) {
   const { copied, copy } = useCopy();
@@ -515,6 +484,11 @@ function OverviewPanel({
           <p className="text-xs text-slate-400 leading-relaxed">
             One-click visual database browser (Adminer for SQL / Redis Commander for KV). Inspect tables, execute queries, and view records without leaving your browser.
           </p>
+          {/* r560: why it is a tab and not an embedded window. */}
+          <p className="text-xs text-slate-500 leading-relaxed">
+            The studio opens in its own browser tab, isolated from the panel. Its session is tied to your login —
+            signing out, or losing operator access, ends it.
+          </p>
 
           <div className="flex flex-wrap items-center gap-2 pt-1">
             {db.webGuiEnabled ? (
@@ -530,7 +504,7 @@ function OverviewPanel({
                   className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-500 disabled:opacity-50"
                 >
                   <ExternalLink size={13} />
-                  Open Web Studio
+                  Open studio
                 </button>
                 <Button
                   variant="secondary"
@@ -552,6 +526,19 @@ function OverviewPanel({
               </Button>
             )}
           </div>
+          {studioUrl && (
+            <p className="text-xs text-slate-400">
+              Tab didn't open?{' '}
+              <a
+                href={studioUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-indigo-400 hover:text-indigo-300"
+              >
+                Open the studio in a new tab <ExternalLink size={12} />
+              </a>
+            </p>
+          )}
         </Card>
 
         {/* Runtime info card */}

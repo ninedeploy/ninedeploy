@@ -488,15 +488,14 @@ describe('DatabaseDetail', () => {
     expect(await screen.findByText('Database Web Studio')).toBeInTheDocument();
     expect(screen.getByText('pgvector')).toBeInTheDocument();
 
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
     const launchBtn = screen.getByRole('button', { name: /Launch Web Studio/i });
     fireEvent.click(launchBtn);
     await waitFor(() => expect(api.databases.startStudio).toHaveBeenCalledWith(1));
-    // The studio opens embedded in a modal iframe instead of a new tab.
-    const frame = await screen.findByTitle('Web Studio');
-    expect(frame).toHaveAttribute('src', 'http://localhost:18001');
-    expect(screen.getByRole('link', { name: /Open in new tab/i })).toHaveAttribute('href', 'http://localhost:18001');
-    fireEvent.click(screen.getByRole('button', { name: /✕ Close/i }));
-    await waitFor(() => expect(screen.queryByTitle('Web Studio')).not.toBeInTheDocument());
+    // r560: a separate noopener tab, never an embedded iframe.
+    await waitFor(() => expect(openSpy).toHaveBeenCalledWith('http://localhost:18001', '_blank', 'noopener,noreferrer'));
+    expect(document.querySelector('iframe')).toBeNull();
+    openSpy.mockRestore();
 
     // Error on launch
     mockOf(api.databases.startStudio).mockRejectedValueOnce(new Error('fail'));
@@ -511,7 +510,7 @@ describe('DatabaseDetail', () => {
     } as any);
     renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1' });
     expect(await screen.findByText('Running on :18001')).toBeInTheDocument();
-    expect(screen.getByText('Open Web Studio')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Open studio/i })).toBeInTheDocument();
 
     const stopBtn = screen.getByRole('button', { name: /Stop Studio/i });
     fireEvent.click(stopBtn);
@@ -523,19 +522,33 @@ describe('DatabaseDetail', () => {
     await waitFor(() => expect(api.databases.stopStudio).toHaveBeenCalledTimes(2));
   });
 
-  it('announces the embedded Web Studio as a labelled modal dialog that Escape closes (r294)', async () => {
+  it('opens the studio in an isolated tab with a noopener fallback link, never an iframe (r560)', async () => {
     mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, webGuiEnabled: false, webGuiPort: null } as any);
-    mockOf(api.databases.startStudio).mockResolvedValue({ ok: true, port: 18001, url: 'http://localhost:18001' } as any);
-    renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1' });
-    fireEvent.click(await screen.findByRole('button', { name: /Launch Web Studio/i }));
-    await screen.findByTitle('Web Studio');
-    expect(screen.getByRole('dialog', { name: /Web Database Studio/ })).toHaveAttribute('aria-modal', 'true');
-    fireEvent.keyDown(window, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByTitle('Web Studio')).not.toBeInTheDocument());
+    mockOf(api.databases.startStudio).mockResolvedValue({ ok: true, port: 18001, url: '/v1/databases/1/studio-proxy/' } as any);
+    mockOf(api.databases.stopStudio).mockResolvedValue({ ok: true } as any);
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+    try {
+      renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1' });
+      expect(await screen.findByText(/opens in its own browser tab/i)).toBeInTheDocument();
+      fireEvent.click(await screen.findByRole('button', { name: /Launch Web Studio/i }));
+      await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
+      expect(openSpy.mock.calls[0]![2]).toContain('noopener');
+      // A popup blocker swallows window.open silently (noopener returns null
+      // either way) — the card offers a plain link that cannot be blocked.
+      const fallback = await screen.findByRole('link', { name: /Open the studio in a new tab/i });
+      expect(fallback).toHaveAttribute('target', '_blank');
+      expect(fallback.getAttribute('rel')).toContain('noopener');
+      expect(fallback.getAttribute('rel')).toContain('noreferrer');
+      expect(document.querySelector('iframe')).toBeNull();
+      expect(screen.queryByRole('dialog')).toBeNull();
+    } finally {
+      openSpy.mockRestore();
+    }
   });
 
   it('opens the Web Studio through the panel proxy on the API origin, never the loopback port (r340)', async () => {
     vi.stubEnv('VITE_API_URL', 'https://api.example.test/');
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
     try {
       mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, webGuiEnabled: true, webGuiPort: 18001 } as any);
       mockOf(api.databases.startStudio).mockResolvedValue({ ok: true, port: 18001, url: '/v1/databases/1/studio-proxy/' } as any);
@@ -543,16 +556,22 @@ describe('DatabaseDetail', () => {
       await screen.findByText('Database Web Studio');
       // No raw link to host:port — the studio is bound to 127.0.0.1.
       expect(document.querySelector('a[href*=":18001"]')).toBeNull();
-      // Opening re-mints the proxy cookie via the start route, then embeds the proxy path.
-      fireEvent.click(screen.getByRole('button', { name: /Open Web Studio/i }));
+      // Opening re-mints the proxy cookie via the start route, then opens the proxy path.
+      fireEvent.click(screen.getByRole('button', { name: /Open studio/i }));
       await waitFor(() => expect(api.databases.startStudio).toHaveBeenCalledWith(1));
-      const frame = await screen.findByTitle('Web Studio');
-      expect(frame).toHaveAttribute('src', 'https://api.example.test/v1/databases/1/studio-proxy/');
-      expect(screen.getByRole('link', { name: /Open in new tab/i })).toHaveAttribute(
+      await waitFor(() =>
+        expect(openSpy).toHaveBeenCalledWith('https://api.example.test/v1/databases/1/studio-proxy/', '_blank', 'noopener,noreferrer'),
+      );
+      expect(screen.getByRole('link', { name: /Open the studio in a new tab/i })).toHaveAttribute(
         'href',
         'https://api.example.test/v1/databases/1/studio-proxy/',
       );
+      // Stopping the studio drops the stale link.
+      mockOf(api.databases.stopStudio).mockResolvedValue({ ok: true } as any);
+      fireEvent.click(screen.getByRole('button', { name: /Stop Studio/i }));
+      await waitFor(() => expect(screen.queryByRole('link', { name: /Open the studio in a new tab/i })).toBeNull());
     } finally {
+      openSpy.mockRestore();
       vi.unstubAllEnvs();
     }
   });
