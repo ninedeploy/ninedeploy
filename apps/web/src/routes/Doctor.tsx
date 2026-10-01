@@ -39,6 +39,9 @@ export function Doctor() {
   const scan = useQuery({
     queryKey: ['doctor-report'],
     queryFn: () => api.doctor.scan() as Promise<DoctorReport>,
+    // r472: the scan is admin-only; the render guard below only changes what
+    // is DISPLAYED — a member hitting the URL directly must not fire it.
+    enabled: user?.isOperator === true,
   });
 
   const fix = useMutation({

@@ -6,7 +6,7 @@ NineDeploy is API-first. You can manage and automate your infrastructure via the
 
 ## 🤖 1. Model Context Protocol (MCP) for AI Assistants
 
-NineDeploy includes an official stdio MCP server exposing **35 dedicated tools** to AI agents (Claude Desktop, Cursor, Antigravity, Cline).
+NineDeploy includes an official stdio MCP server exposing **38 dedicated tools** to AI agents (Claude Desktop, Cursor, Antigravity, Cline).
 
 ### Adding to Claude Desktop / Cursor Config:
 ```json
@@ -94,14 +94,15 @@ import { createClient } from '@ninedeploy/sdk';
 
 const client = createClient({
   baseUrl: 'https://your-ninedeploy-instance.com',
-  token: 'nd_tok_xxxxxxxxxxxx',
+  // The client takes a token PROVIDER, not a static `token` option.
+  getToken: () => 'nd_tok_xxxxxxxxxxxx',
 });
 
 // List all services in a workspace
 const services = await client.services.list();
-console.log(`Found ${services.items.length} active services`);
+console.log(`Found ${services.length} active services`);
 
 // Trigger deployment
 const deploy = await client.deploys.trigger(serviceId);
-console.log(`Deployment ${deploy.id} started with status: ${deploy.status}`);
+console.log(`Deployment ${deploy.deploymentId} started`);
 ```

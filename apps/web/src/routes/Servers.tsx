@@ -68,7 +68,13 @@ export function Servers() {
   const [bootstrapResult, setBootstrapResult] = useState<ServerBootstrapResult | null>(null);
   const [activeLogServer, setActiveLogServer] = useState<{ id: number; name: string } | null>(null);
 
-  const list = useQuery({ queryKey: ['servers'], queryFn: () => api.servers.list() });
+  const list = useQuery({
+    queryKey: ['servers'],
+    queryFn: () => api.servers.list(),
+    // The whole servers module is operator-only (r472) — a member reaching the
+    // URL directly must not fire (and keep refetching) a refused listing.
+    enabled: isOperator,
+  });
 
   const create = useMutation({
     mutationFn: () => api.servers.create({ name, host, port: Number(port) || 4600 }),
@@ -231,6 +237,13 @@ export function Servers() {
 
   const totalNodes = (registeredServers.length || 0) + 1; // +1 Master
   const onlineNodes = registeredServers.filter((s) => s.status === 'online').length + 1;
+
+  // r472: everything below (capacity cards, auto-join command, wizard) is the
+  // operator console over operator-only routes — a member landing here
+  // directly saw the whole console rendered around a 403 error card.
+  if (!isOperator) {
+    return <PageHeader icon={<ServerIcon size={18} />} title="Servers & Cluster" subtitle="Remote node management — operators only." />;
+  }
 
   return (
     <div className="max-w-4xl space-y-6">

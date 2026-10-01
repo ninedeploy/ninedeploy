@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Archive, ArrowUpRight, Database, ExternalLink, FolderOpen, HardDrive, Layers, Lock, Package, Server, Trash2 } from 'lucide-react';
 import { Link } from 'react-router';
 import { api } from '../lib/api.js';
+import { useAuth } from '../lib/auth.js';
 import { useToast } from '../components/Toast.js';
 import { Button, Card, ConfirmDialog, EmptyState, ErrorCard, PageHeader, Skeleton, cn } from '../components/ui.js';
 import { formatBytes } from '../lib/format.js';
@@ -12,7 +13,14 @@ import { VolumeBackupsPanel } from '../components/VolumeBackupsPanel.js';
 export function Volumes() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const list = useQuery({ queryKey: ['volumes'], queryFn: () => api.volumes.list() });
+  const { user } = useAuth();
+  const list = useQuery({
+    queryKey: ['volumes'],
+    queryFn: () => api.volumes.list(),
+    // Instance-wide inventory is admin-only (L-12) — a member landing here
+    // directly must not fire (and poll) a refused call.
+    enabled: user?.isOperator === true,
+  });
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [confirmPrune, setConfirmPrune] = useState(false);
   const [browsing, setBrowsing] = useState<string | null>(null);
@@ -43,6 +51,10 @@ export function Volumes() {
   const retainedList = (list.data ?? []).filter((v) => !v.owner);
   const retained = retainedList.length;
   const retainedBytes = retainedList.reduce((s, v) => s + v.sizeBytes, 0);
+
+  if (!user?.isOperator) {
+    return <PageHeader icon={<Layers size={18} />} title="Volumes & Storage" subtitle="Instance-wide storage inventory — operators only." />;
+  }
 
   return (
     <div>

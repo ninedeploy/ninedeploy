@@ -3,6 +3,7 @@ import { AlertCircle, CheckCircle2, Cpu, Database, Globe, HardDrive, Link2, Memo
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { api } from '../lib/api.js';
+import { useAuth } from '../lib/auth.js';
 import { useToast } from '../components/Toast.js';
 import { Button, Card, CardBody, ErrorCard, Skeleton, cn } from '../components/ui.js';
 import { formatBytes, formatDateTime } from '../lib/format.js';
@@ -13,6 +14,8 @@ export function Dashboard() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isOperator = user?.isOperator === true;
   const dash = useQuery({ queryKey: ['dashboard'], queryFn: () => api.dashboard.get(), refetchInterval: 5000 });
   const snapshot = useQuery({
     queryKey: ['live-stats-snapshot'],
@@ -236,19 +239,23 @@ export function Dashboard() {
           </Card>
         </Link>
 
-        <Link to="/servers" className="group">
-          <Card interactive className="p-4 transition-all duration-200 group-hover:border-sky-500/30 group-hover:bg-sky-500/[0.03]">
-            <div className="flex items-center gap-3">
-              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-sky-500/10 text-sky-400 ring-1 ring-inset ring-sky-500/20 group-hover:bg-sky-500/20 group-hover:scale-105 transition-transform">
-                <Server size={18} />
+        {/* r472: /servers is the operator console — don't hand members a quick
+         * action that lands on a refused page. */}
+        {isOperator && (
+          <Link to="/servers" className="group">
+            <Card interactive className="p-4 transition-all duration-200 group-hover:border-sky-500/30 group-hover:bg-sky-500/[0.03]">
+              <div className="flex items-center gap-3">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-sky-500/10 text-sky-400 ring-1 ring-inset ring-sky-500/20 group-hover:bg-sky-500/20 group-hover:scale-105 transition-transform">
+                  <Server size={18} />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold text-white group-hover:text-sky-300 transition-colors">Cluster Nodes</h3>
+                  <p className="truncate text-xs text-slate-400">Multi-server &amp; edge agents</p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-white group-hover:text-sky-300 transition-colors">Cluster Nodes</h3>
-                <p className="truncate text-xs text-slate-400">Multi-server &amp; edge agents</p>
-              </div>
-            </div>
-          </Card>
-        </Link>
+            </Card>
+          </Link>
+        )}
 
         <Link to="/monitoring" className="group">
           <Card interactive className="p-4 transition-all duration-200 group-hover:border-amber-500/30 group-hover:bg-amber-500/[0.03]">

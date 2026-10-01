@@ -20,7 +20,12 @@ export function Users() {
   const { user: me } = useAuth();
   const { toast } = useToast();
   const { copy } = useCopy();
-  const list = useQuery({ queryKey: ['users'], queryFn: () => api.users.list() });
+  const list = useQuery({
+    queryKey: ['users'],
+    queryFn: () => api.users.list(),
+    // Instance-wide user management is operator-only (r472).
+    enabled: me?.isOperator === true,
+  });
 
   // ── Operator user creation ───────────────────────────────────────────────
   const [showAdd, setShowAdd] = useState(false);
@@ -116,6 +121,12 @@ export function Users() {
     if (ok) toast('Reset link copied', 'success');
     else toast('Copy failed — select the link manually', 'error');
   };
+
+  // r472: people management is operator-only server-side — a member landing
+  // here directly gets the honest one-liner instead of an error card.
+  if (!me?.isOperator) {
+    return <PageHeader icon={<UsersIcon size={18} />} title="People" subtitle="Instance user management — operators only." />;
+  }
 
   return (
     <div className="max-w-3xl">

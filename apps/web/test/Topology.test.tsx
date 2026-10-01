@@ -100,6 +100,13 @@ const graph = {
   gateway: { name: 'ninedeploy-traefik', network: 'ninedeploy', running: true },
 };
 
+// r472: the page/queries are operator-gated — these tests exercise the
+// operator view, so the auth mock hands out an operator.
+vi.mock('../src/lib/auth.js', () => ({
+  AuthProvider: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+  useAuth: vi.fn(() => ({ user: { id: 1, isOperator: true }, loading: false })),
+}));
+
 describe('Topology', () => {
   beforeEach(() => {
     vi.clearAllMocks();

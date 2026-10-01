@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { api } from '../lib/api.js';
+import { useAuth } from '../lib/auth.js';
 import { ICON_MAP } from './Layout.js';
 import { cn } from './ui.js';
 
@@ -16,6 +17,9 @@ interface Cmd {
   sub: string;
   to: string;
   icon: LucideIcon;
+  /** r472: pages whose backing APIs are operator-only — don't offer members a
+   * navigation that can only land on a 403 error card (Layout parity). */
+  operatorOnly?: boolean;
 }
 
 const NAV_COMMANDS: Cmd[] = [
@@ -29,17 +33,17 @@ const NAV_COMMANDS: Cmd[] = [
   { type: 'Navigate', label: 'Databases', sub: 'Managed databases', to: '/databases', icon: Database },
   { type: 'Navigate', label: 'Domains', sub: 'Domain routing & SSL', to: '/domains', icon: Globe },
   { type: 'Navigate', label: 'Tunnels', sub: 'Cloudflare tunnels', to: '/tunnels', icon: Cloud },
-  { type: 'Navigate', label: 'Volumes', sub: 'Persistent storage', to: '/volumes', icon: Layers },
+  { type: 'Navigate', label: 'Volumes', sub: 'Persistent storage', to: '/volumes', icon: Layers, operatorOnly: true },
   { type: 'Navigate', label: 'Networks', sub: 'Docker networks', to: '/networks', icon: Network },
   { type: 'Navigate', label: 'Traefik', sub: 'Ingress, routers & middlewares', to: '/traefik', icon: Shield },
-  { type: 'Navigate', label: 'Docker', sub: 'Containers, images & system', to: '/docker', icon: Container },
+  { type: 'Navigate', label: 'Docker', sub: 'Containers, images & system', to: '/docker', icon: Container, operatorOnly: true },
   { type: 'Navigate', label: 'Topology', sub: 'Service graph', to: '/topology', icon: Network },
   { type: 'Navigate', label: 'Backups', sub: 'Database snapshots', to: '/backups', icon: HardDrive },
-  { type: 'Navigate', label: 'Sources', sub: 'Private repo credentials', to: '/sources', icon: KeyRound },
-  { type: 'Navigate', label: 'Users', sub: 'Team management', to: '/users', icon: Users },
+  { type: 'Navigate', label: 'Sources', sub: 'Private repo credentials', to: '/sources', icon: KeyRound, operatorOnly: true },
+  { type: 'Navigate', label: 'Users', sub: 'Team management', to: '/users', icon: Users, operatorOnly: true },
   { type: 'Navigate', label: 'Monitoring', sub: 'Resource metrics', to: '/monitoring', icon: Activity },
-  { type: 'Navigate', label: 'Activity', sub: 'Audit logs & platform events', to: '/activity', icon: Activity },
-  { type: 'Navigate', label: 'Servers', sub: 'Remote hosts running the agent', to: '/servers', icon: HardDrive },
+  { type: 'Navigate', label: 'Activity', sub: 'Audit logs & platform events', to: '/activity', icon: Activity, operatorOnly: true },
+  { type: 'Navigate', label: 'Servers', sub: 'Remote hosts running the agent', to: '/servers', icon: HardDrive, operatorOnly: true },
   { type: 'Navigate', label: 'About', sub: 'System information', to: '/about', icon: HelpCircle },
   { type: 'Navigate', label: 'Settings', sub: 'System info', to: '/settings', icon: SettingsIcon },
 ];
@@ -48,6 +52,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(0);
+  const { user } = useAuth();
 
   const services = useQuery({ queryKey: ['services'], queryFn: () => api.services.list() });
   const databases = useQuery({ queryKey: ['databases'], queryFn: () => api.databases.list() });
@@ -86,7 +91,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       })),
     ];
 
-    const all = [...NAV_COMMANDS, ...dynamic];
+    const all = [...NAV_COMMANDS.filter((c) => !c.operatorOnly || user?.isOperator === true), ...dynamic];
     if (!query.trim()) return all.slice(0, 8);
     const q = query.toLowerCase();
 
@@ -111,7 +116,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       .sort((a, b) => a.r - b.r)
       .slice(0, 24)
       .map((e) => e.c);
-  }, [query, services.data, databases.data, templates.data, plugins.data, menus.data]);
+  }, [query, user?.isOperator, services.data, databases.data, templates.data, plugins.data, menus.data]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally keyed on query — the selection must reset whenever the search text changes, even though the body only touches the setter.
   useEffect(() => {

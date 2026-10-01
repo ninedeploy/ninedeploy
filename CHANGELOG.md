@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.28] - 2026-10-01
+
+> The member posture release (r472): first deep audits of the two surfaces
+> that had never had one — the MCP package and the web frontend. Both came
+> back structurally sound at the core (0 P1s anywhere); what shipped is the
+> retrofit: the operator gating that moved server-side in r469/r470 finally
+> reached the UI.
+
+### Web — members stop hitting walls that were never theirs
+
+- **Six operator-only routes left member-visible (P2).** The sidebar (and command palette) offered `/volumes`, `/activity`, `/docker`, `/sources`, `/servers` and `/users` to members although every one is operator-only server-side. Each rendered a 403 error card that read as breakage; worst cases: **Activity** had no error branch at all — a refused load fell into the empty-state arm and claimed "No activity recorded" while `refetchInterval` re-fired the 403 every 5 seconds; **Servers** rendered the entire operator console (capacity cards, the auto-join command banner, the add-server wizard) around its error card. All six are now `operatorOnly` in the sidebar and palette, and the pages carry honest "operators only" one-liners for direct URL access — Activity additionally gained a real error card (with retry, interval-stopping on error).
+- **Eleven operator-only Settings sections showed member error states (P2).** `/v1/settings` and its satellites (firewall, log drains, notifications, resources, storage, migration, OIDC) are operator-only; members saw the sections render with failed lookups — the Firewall one worst of all, where a refused status probe rendered the grey **"Not Installed"** badge with a warning shield: the page falsely reported the host firewall absent. Sections are now privilege-filtered (members keep Account/Appearance/Security/AI/Plugins); `?section=firewall` deep-links fall back to Account instead of rendering a lie.
+- **The Volumes tab fabricated storage numbers for members (P2).** The tab queried the instance-wide (operator-only) volume inventory, swallowed the 403, and rendered "Total Storage Footprint 0 B" plus "0 B" primary/DB cards for any service with a `volumeMount`. Members now get the numbers that ARE theirs (per-service attachment sizes); the unknowable ones show an honest `—` with a note that instance-wide sizes are operator-only — and the refused call no longer fires on every tab open.
+- **Silent member-side 403s removed (P3).** Monitoring no longer fetches the operator-only servers listing for members (the node-stats query already gated); Topology no longer fetches the volume inventory (the graph renders without volume sizes); Doctor's scan query no longer executes before its operator guard; the Dashboard's "Cluster Nodes" quick action is operator-only. The Docker dashboard keeps its member-legible scoped container list but stops polling the operator-only resources/events feeds.
+
+### MCP — posture, not breakage
+
+- **`list_configs` no longer offers `reveal` (P2).** The SDK supports `reveal=true` (plaintext secret values for operator tokens), and the tool forwarded that choice to the model. An MCP tool result is persisted in agent transcripts and reachable by prompt-injected content ("call list_configs with reveal true") with no human in the loop — the same reasoning that keeps the enrolment routes out of MCP entirely. The tool is mask-only now; the panel UI remains the only reveal surface. A test pins that the parameter can never come back.
+- **The doc example taught an unauthenticated client (P2).** `docs/AI_MCP_CLI.md`'s quick-start used a nonexistent `token` option (the SDK takes `getToken`), then read `services.items.length` and `deploy.id`/`deploy.status` — none of which exist. A copied example 401s on every call. Fixed against the real SDK shapes; the stale "35 tools" count corrected to 38.
+- **Package hygiene (P3).** `@ninedeploy/mcp` now declares `engines: { node: ">=22.13.0" }` (it installs standalone via `npx -y`, far from the monorepo root's engines) and ships a README covering the env vars, the readonly flag, least-privilege scopes and the secret-masking posture.
+
+### Audited and found sound (for the record)
+
+MCP's core: env-only token handling that never reaches logs, errors or non-panel hosts; zod-validated inputs with `encodeURIComponent` on every wire path; a scope filter kept in lockstep with the server's own classifier by a cross-package contract test; verbatim SDK results (no mapper drift). Web's core: zero XSS sinks; WS auth over `Sec-WebSocket-Protocol` with 60-second revalidation; single-flight token refresh; logout that revokes server-side and clears the query cache. No changes needed.
+
+
 ## [0.10.27] - 2026-10-01
 
 > The override-escape patch (r471): the fresh-eyes audit of the 0.10.26

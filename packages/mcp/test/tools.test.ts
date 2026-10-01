@@ -72,10 +72,17 @@ const byName = (name: string) => {
 };
 
 describe('MCP tools', () => {
-  it('exposes 37 unique tools with descriptions', () => {
+  it('exposes 38 unique tools with descriptions', () => {
     expect(TOOLS).toHaveLength(38);
     expect(new Set(TOOLS.map((t) => t.name)).size).toBe(38);
     for (const t of TOOLS) expect(t.description.length).toBeGreaterThan(10);
+  });
+
+  it('r472: list_configs declares no reveal parameter (mask-only over MCP)', () => {
+    // The SDK supports reveal=true; the tool must not forward the model that
+    // choice — transcripts persist and prompt injection has no human loop.
+    const shape = (byName('list_configs').input as { shape: Record<string, unknown> }).shape;
+    expect(Object.keys(shape)).not.toContain('reveal');
   });
 
   it('list_services scopes by project when given', async () => {
@@ -170,8 +177,12 @@ describe('MCP tools', () => {
 
   it('exercises config tools', async () => {
     const c = fakeClient();
-    await byName('list_configs').handler(c, { category: 'security', reveal: true });
-    expect(c.config.list).toHaveBeenCalledWith({ category: 'security', reveal: true });
+    // r472: list_configs deliberately exposes NO reveal param — an MCP result
+    // lands in agent transcripts, so secret disclosure must not be a
+    // per-call model decision. The input schema rejects it; the handler
+    // forwards only the filters.
+    await byName('list_configs').handler(c, { category: 'security' });
+    expect(c.config.list).toHaveBeenCalledWith({ category: 'security' });
 
     await byName('get_config').handler(c, { key: 'site_name' });
     expect(c.config.get).toHaveBeenCalledWith('site_name');

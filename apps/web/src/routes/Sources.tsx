@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 import { Check, Copy, ExternalLink, KeyRound, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { useAuth } from '../lib/auth.js';
 import { copyText } from '../lib/format.js';
 import { useToast } from '../components/Toast.js';
 import { Button, Card, ConfirmDialog, EmptyState, ErrorCard, Field, Input, PageHeader, Select, Skeleton, Textarea, cn } from '../components/ui.js';
@@ -32,6 +33,7 @@ type AuthKind = 'token' | 'ssh';
 export function Sources() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<{ id: number; name: string } | null>(null);
   const [name, setName] = useState('');
@@ -45,7 +47,12 @@ export function Sources() {
   const [keygenFor, setKeygenFor] = useState<{ id: number; name: string; type: string } | null>(null);
   const [generated, setGenerated] = useState<{ publicKey: string; fingerprint: string } | null>(null);
 
-  const list = useQuery({ queryKey: ['sources'], queryFn: () => api.sources.list() });
+  const list = useQuery({
+    queryKey: ['sources'],
+    queryFn: () => api.sources.list(),
+    // Credentials inventory is operator-only server-side (r472).
+    enabled: user?.isOperator === true,
+  });
   const create = useMutation({
     mutationFn: () => {
       // For SSH-key auth we still let the operator paste a key by hand (e.g.
@@ -100,6 +107,10 @@ export function Sources() {
   const deployKeyLabel = (t: typeof type): string => DEPLOY_KEY_DOCS[t]?.label ?? 'your Git host';
   const isKeygenDisabled = (sId: number): boolean => Boolean(keygen.isPending && keygenFor?.id === sId);
   const onKeygenClick = (sId: number, name: string, t: string): void => startKeygen(sId, name, t);
+
+  if (!user?.isOperator) {
+    return <PageHeader icon={<KeyRound size={18} />} title="Sources" subtitle="Private repo & registry credentials — operators only." />;
+  }
 
   return (
     <div>

@@ -23,6 +23,13 @@ const volumes = [
   { name: 'nd-old', sizeBytes: 100, owner: null, inUse: false },
 ];
 
+// r472: the page/queries are operator-gated — these tests exercise the
+// operator view, so the auth mock hands out an operator.
+vi.mock('../src/lib/auth.js', () => ({
+  AuthProvider: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+  useAuth: vi.fn(() => ({ user: { id: 1, isOperator: true }, loading: false })),
+}));
+
 describe('Volumes', () => {
   it('opens the volume browser from a volume card', async () => {
     mockOf(api.volumes.list).mockResolvedValue([

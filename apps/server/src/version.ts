@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.27';
+export const VERSION = '0.10.28';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.28',
+    date: '2026-10-01',
+    title: 'The Member Posture Release — the UI Catches Up with the API',
+    changes: [
+      'Fixed (web, P2): the operator gating that moved server-side in r469/r470 was never fully retrofitted to the frontend — members saw six operator-only routes in the sidebar (Volumes, Activity, Docker, Sources, Servers, Users) that render 403 error cards, Activity even masqueraded a refused load as "No activity recorded" while re-polling it every 5 s, Servers rendered the whole operator console (auto-join command, wizard) around its error card, and eleven operator-only Settings sections showed member-visible error states — Firewall\'s refused probe read as a false "Not Installed". All operator-only surfaces are now hidden from the sidebar, command palette and Settings for members, deep-links fall back honestly, and the operator-only queries no longer fire (or keep polling) for members at all.',
+      'Fixed (web, P2): a service\'s Volumes tab fabricated "0 B" storage for members — the instance-wide inventory query is operator-only, its failure was swallowed, and the total/primary/DB cards rendered zeros. Members now get their per-service attachment sizes; unknowable numbers show an honest "—" with a note instead of invented zeros.',
+      'Fixed (MCP, P2): list_configs no longer exposes a reveal parameter — an MCP tool result lands in agent transcripts and can be steered by prompt injection with no human in the loop, so secret disclosure must not be a per-call model decision. The panel UI stays the only reveal surface (same reasoning that keeps enrolment out of MCP).',
+      'Fixed (MCP, docs): the SDK quick-start example built a client that never authenticates (token instead of getToken) and read response fields that do not exist — a copied example 401s on every call. Tool count refreshed (38). @ninedeploy/mcp now declares engines >=22.13 and ships a README (scopes, readonly flag, secret-masking note).',
+      'First deep audits of two never-audited surfaces: MCP came back structurally sound (env-only token handling, airtight validation, scope filter pinned by a cross-package contract test); web\'s fundamentals held (no XSS sinks, subprotocol WS auth with 60 s revalidation, single-flight refresh). Verdicts: MCP 0 P1 / 2 P2 / 2 P3, web 0 P1 / 4 P2 / 4 P3 — all shipped here.',
+    ],
+  },
+{
     version: '0.10.27',
     date: '2026-10-01',
     title: 'The Override-Escape Patch — the Audit of the Audit of the Audit',

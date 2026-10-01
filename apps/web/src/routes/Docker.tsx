@@ -29,6 +29,10 @@ export function DockerDashboard() {
   const resources = useQuery({
     queryKey: ['docker-resources'],
     queryFn: () => api.system.resources(),
+    // r472: resources/events are operator-only routes — a member hitting /docker
+    // directly must not poll two refused calls every 20-30 s alongside the
+    // error card they render as.
+    enabled: isAdmin,
     refetchInterval: 30000,
   });
 
@@ -41,6 +45,7 @@ export function DockerDashboard() {
   const events = useQuery({
     queryKey: ['docker-events'],
     queryFn: () => api.system.dockerEvents(60),
+    enabled: isAdmin,
     refetchInterval: 20000,
   });
 

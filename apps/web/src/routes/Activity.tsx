@@ -12,11 +12,13 @@ import {
 } from 'lucide-react';
 import type { ActivityEntry } from '@ninedeploy/sdk';
 import { api } from '../lib/api.js';
+import { useAuth } from '../lib/auth.js';
 import {
   Button,
   Card,
   CardBody,
   EmptyState,
+  ErrorCard,
   Input,
   Modal,
   PageHeader,
@@ -25,6 +27,7 @@ import {
 } from '../components/ui.js';
 
 export function Activity() {
+  const { user } = useAuth();
   const [entityFilter, setEntityFilter] = useState('');
   const [actionFilter, setActionFilter] = useState('');
   const [userFilter, setUserFilter] = useState('');
@@ -52,7 +55,14 @@ export function Activity() {
     initialPageParam: undefined as number | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     maxPages: 3,
-    refetchInterval: autoRefresh ? 5000 : false,
+    // r472: the whole /v1/activity module is operator-only — a member landing
+    // here must not poll a 403 every 5 s, and an operator during an outage
+    // must not see the failure rendered as "No activity recorded" while the
+    // interval keeps re-firing it.
+    enabled: user?.isOperator === true,
+    refetchInterval: autoRefresh
+      ? (query) => (query.state.error ? false : 5000)
+      : false,
   });
 
   const entries = useMemo(() => activityQuery.data?.pages.flatMap((p) => p.entries) ?? [], [activityQuery.data]);
@@ -144,6 +154,12 @@ export function Activity() {
     }
     return 'text-slate-300 bg-slate-800/60 border-slate-700/50';
   };
+
+  // After every hook: a member reaching /activity directly gets the honest
+  // one-liner, not a fabricated "No activity recorded" over a hidden 403.
+  if (!user?.isOperator) {
+    return <PageHeader title="Activity" subtitle="The audit ledger — operators only." />;
+  }
 
   return (
     <div className="space-y-6">
@@ -271,6 +287,16 @@ export function Activity() {
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
+          </CardBody>
+        ) : activityQuery.isError ? (
+          // A failed load must not fall into the empty-state arm below and
+          // claim the ledger is empty (r472 — an outage read as "no activity").
+          <CardBody className="p-6">
+            <ErrorCard
+              title="Couldn't load the audit ledger"
+              error={activityQuery.error}
+              onRetry={() => activityQuery.refetch()}
+            />
           </CardBody>
         ) : filteredEntries.length === 0 ? (
           <CardBody className="p-12">

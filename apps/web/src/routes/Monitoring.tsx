@@ -55,6 +55,9 @@ export function Monitoring() {
   const servers = useQuery({
     queryKey: ['servers'],
     queryFn: () => api.servers.list(),
+    // r472: the servers listing is operator-only — members paid a silently
+    // swallowed 403 on every Monitoring load (nodeStats below already gated).
+    enabled: me?.isOperator === true,
   });
 
   // r467: live telemetry for a selected REMOTE node — the agent reports the

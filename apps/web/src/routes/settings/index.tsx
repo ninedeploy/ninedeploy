@@ -1,5 +1,6 @@
 import { type ReactNode, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
+import { useAuth } from '../../lib/auth.js';
 import {
   ArrowLeftRight,
   Bell,
@@ -55,6 +56,9 @@ interface SectionItem {
   label: string;
   desc: string;
   icon: ReactNode;
+  /** r472: backing routes are operator-only — members saw these sections
+   * render error states (the Firewall one even read as "Not Installed"). */
+  operatorOnly?: boolean;
 }
 
 interface SectionCategory {
@@ -69,64 +73,83 @@ const SETTING_GROUPS: SectionCategory[] = [
       { id: 'account', label: 'Account', desc: 'Profile, credentials & passkeys', icon: <User size={16} /> },
       { id: 'appearance', label: 'Appearance', desc: 'Theme colors & density', icon: <Palette size={16} /> },
       { id: 'security', label: 'Security', desc: '2FA, audit logs & sessions', icon: <Shield size={16} /> },
-      { id: 'sso', label: 'SSO & OIDC', desc: 'Identity providers & auto-enroll', icon: <KeyRound size={16} /> },
+      { id: 'sso', label: 'SSO & OIDC', desc: 'Identity providers & auto-enroll', icon: <KeyRound size={16} />, operatorOnly: true },
     ],
   },
   {
     category: 'Integrations & Alerts',
     items: [
-      { id: 'integrations', label: 'Integrations', desc: 'Vault secrets, DNS & S3', icon: <Boxes size={16} /> },
+      { id: 'integrations', label: 'Integrations', desc: 'Vault secrets, DNS & S3', icon: <Boxes size={16} />, operatorOnly: true },
       { id: 'ai', label: 'AI Diagnosis', desc: 'BYO-key failed-deploy analysis', icon: <Bot size={16} /> },
-      { id: 'notifications', label: 'Notifications', desc: 'Webhooks, Slack, Telegram', icon: <Bell size={16} /> },
-      { id: 'log-drains', label: 'Log Drains', desc: 'Syslog, Datadog & Vector', icon: <Terminal size={16} /> },
+      { id: 'notifications', label: 'Notifications', desc: 'Webhooks, Slack, Telegram', icon: <Bell size={16} />, operatorOnly: true },
+      { id: 'log-drains', label: 'Log Drains', desc: 'Syslog, Datadog & Vector', icon: <Terminal size={16} />, operatorOnly: true },
     ],
   },
   {
     category: 'DevOps & Engine',
     items: [
-      { id: 'firewall', label: 'Firewall (UFW)', desc: 'Host ports & inbound packet filter', icon: <Shield size={16} /> },
-      { id: 'storage', label: 'Storage & Prune', desc: 'Disks, Docker prune & logs', icon: <HardDrive size={16} /> },
-      { id: 'config', label: 'Config Center', desc: 'Global key-value configuration', icon: <Sliders size={16} /> },
+      { id: 'firewall', label: 'Firewall (UFW)', desc: 'Host ports & inbound packet filter', icon: <Shield size={16} />, operatorOnly: true },
+      { id: 'storage', label: 'Storage & Prune', desc: 'Disks, Docker prune & logs', icon: <HardDrive size={16} />, operatorOnly: true },
+      { id: 'config', label: 'Config Center', desc: 'Global key-value configuration', icon: <Sliders size={16} />, operatorOnly: true },
       { id: 'plugins', label: 'Plugins', desc: 'Community plugins & extensions', icon: <Puzzle size={16} /> },
     ],
   },
   {
     category: 'Platform & Lifecycle',
     items: [
-      { id: 'system', label: 'System', desc: 'Resources, version & updates', icon: <Server size={16} /> },
-      { id: 'migration', label: 'Migration', desc: 'Full backups import/export', icon: <ArrowLeftRight size={16} /> },
+      { id: 'system', label: 'System', desc: 'Resources, version & updates', icon: <Server size={16} />, operatorOnly: true },
+      { id: 'migration', label: 'Migration', desc: 'Full backups import/export', icon: <ArrowLeftRight size={16} />, operatorOnly: true },
     ],
   },
 ];
 
-/** Every valid section id, flattened for ?section= validation. */
+/** Every valid section id, flattened for ?section= validation. Kept for
+ * callers/tests that need the full operator-superset; the page itself now
+ * validates against the privilege-filtered groups. */
 const ALL_SECTION_IDS: SectionId[] = SETTING_GROUPS.flatMap((group) =>
   group.items.map((item) => item.id),
 );
+void ALL_SECTION_IDS;
 
 /** Settings page shell: clean vertical sidebar navigation layout with search filter. */
 export function Settings() {
+  const { user } = useAuth();
+  const isOperator = user?.isOperator === true;
   const [searchParams, setSearchParams] = useSearchParams();
+  // Privilege filter first (r472): operator-only sections vanish from the
+  // sidebar AND from deep-links — a member opening ?section=firewall falls
+  // back to the landing section instead of rendering the false
+  // "Not Installed" status a refused probe produced.
+  const baseGroups = useMemo(
+    () =>
+      isOperator
+        ? SETTING_GROUPS
+        : SETTING_GROUPS.map((group) => ({
+            ...group,
+            items: group.items.filter((item) => !item.operatorOnly),
+          })).filter((group) => group.items.length > 0),
+    [isOperator],
+  );
   // The active section lives in the URL (?section=…) so it deep-links and the
   // help drawer can show section-specific help. Unknown or missing values fall
   // back to the landing section instead of breaking the page.
   const sectionParam = searchParams.get('section');
-  const section: SectionId = ALL_SECTION_IDS.includes(sectionParam as SectionId)
+  const section: SectionId = baseGroups.some((group) => group.items.some((item) => item.id === sectionParam))
     ? (sectionParam as SectionId)
     : 'account';
   const setSection = (next: SectionId) => setSearchParams({ section: next }, { replace: true });
   const [search, setSearch] = useState('');
 
   const filteredGroups = useMemo(() => {
-    if (!search.trim()) return SETTING_GROUPS;
+    if (!search.trim()) return baseGroups;
     const q = search.toLowerCase();
-    return SETTING_GROUPS.map((group) => ({
+    return baseGroups.map((group) => ({
       ...group,
       items: group.items.filter(
         (item) => item.label.toLowerCase().includes(q) || item.desc.toLowerCase().includes(q),
       ),
     })).filter((group) => group.items.length > 0);
-  }, [search]);
+  }, [search, baseGroups]);
 
   return (
     <div className="space-y-6 nd-fade">

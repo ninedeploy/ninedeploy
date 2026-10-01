@@ -17,6 +17,13 @@ const apiMock = vi.hoisted(() => ({
 
 vi.mock('../src/lib/api.js', () => apiMock);
 
+// r472: the palette filters operator-only navigations by privilege.
+const authState = vi.hoisted(() => ({ user: { id: 1, isOperator: true } as { id: number; isOperator: boolean } | null }));
+vi.mock('../src/lib/auth.js', () => ({
+  AuthProvider: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+  useAuth: vi.fn(() => ({ user: authState.user, loading: false })),
+}));
+
 function LocationProbe() {
   const location = useLocation();
   return <div data-testid="location">{location.pathname}</div>;
@@ -44,6 +51,7 @@ function key(key: string, opts: KeyboardEventInit = {}) {
 describe('CommandPalette', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    authState.user = { id: 1, isOperator: true };
     apiMock.api.services.list.mockResolvedValue([]);
     apiMock.api.databases.list.mockResolvedValue([]);
     apiMock.api.templates.list.mockResolvedValue([]);
@@ -57,6 +65,18 @@ describe('CommandPalette', () => {
     expect(screen.getByText('Services')).toBeInTheDocument();
     expect(screen.getByText('Databases')).toBeInTheDocument();
     expect(screen.getAllByText('Navigate')).toHaveLength(8);
+  });
+
+  it('r472: a member never sees operator-only navigations offered', async () => {
+    authState.user = { id: 7, isOperator: false };
+    renderPalette();
+    await waitFor(() => expect(screen.getByText('Hub')).toBeInTheDocument());
+    // These exist as commands for operators — searching their exact labels
+    // must come up empty for a member.
+    for (const label of ['Volumes', 'Docker', 'Sources', 'Users', 'Servers', 'Activity']) {
+      fireEvent.change(screen.getByPlaceholderText(/Search services/), { target: { value: label } });
+      expect(screen.queryByText(label)).not.toBeInTheDocument();
+    }
   });
 
   it('filters commands by label', async () => {

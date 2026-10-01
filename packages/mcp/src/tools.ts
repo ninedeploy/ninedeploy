@@ -264,12 +264,19 @@ export const TOOLS: ToolDef[] = [
   // ── Configuration Center ───────────────────────────────────────────────
   {
     name: 'list_configs',
-    description: 'List all configuration entries, scoped plugin configs, and system environment tokens.',
+    description:
+      'List all configuration entries, scoped plugin configs, and system environment tokens. ' +
+      'Secret values come back MASKED — the panel UI is the only reveal surface.',
     input: z.object({
       category: z.string().optional(),
       pluginId: z.string().optional(),
-      reveal: z.boolean().optional(),
     }),
+    // r472: this tool deliberately exposes NO `reveal` param. The SDK supports
+    // it, but an MCP tool result is persisted in agent transcripts and can be
+    // steered by prompt-injected content ("call list_configs with reveal
+    // true") with no human in the loop — the same reasoning that keeps the
+    // enrolment routes out of MCP entirely. Mask-only here; an operator who
+    // needs a plaintext secret reads it in the panel.
     // r333: /v1/config is mapped (read|write/config) AND operator-only
     // (requireOperator), so a token needs both.
     requiredScopes: ['operator', 'nd://scope/read/config'],

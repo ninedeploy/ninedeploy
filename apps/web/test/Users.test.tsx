@@ -31,7 +31,8 @@ const users = [
 describe('Users', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockOf(useAuth).mockReturnValue({ user: { id: 1, email: 'admin@example.com' } } as never);
+    // People management is operator-only (r472) — the mock user is one.
+    mockOf(useAuth).mockReturnValue({ user: { id: 1, email: 'admin@example.com', isOperator: true } } as never);
     vi.stubGlobal('confirm', vi.fn(() => true));
   });
 

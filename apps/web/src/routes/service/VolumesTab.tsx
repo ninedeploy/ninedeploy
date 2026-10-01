@@ -4,6 +4,7 @@ import { Archive, ArrowUpRight, Database, ExternalLink, FolderOpen, HardDrive, I
 import { Link } from 'react-router';
 import type { Service, ServiceVolumeAttachment as SdkServiceVolumeAttachment } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
+import { useAuth } from '../../lib/auth.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Card, cn, useEscapeToClose } from '../../components/ui.js';
 import { formatBytes } from '../../lib/format.js';
@@ -19,16 +20,22 @@ type ServiceVolumeAttachment = SdkServiceVolumeAttachment & {
 };
 
 export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service }) {
+  const { user } = useAuth();
+  const isOperator = user?.isOperator === true;
   const [browsingVolume, setBrowsingVolume] = useState<string | null>(null);
   const [attaching, setAttaching] = useState(false);
   const [expandedBackup, setExpandedBackup] = useState<string | null>(null);
   const toggleBackups = (volumeName: string) =>
     setExpandedBackup((prev) => (prev === volumeName ? null : volumeName));
 
-  // 1. All volumes on the system (instance-wide inventory)
+  // 1. All volumes on the system (instance-wide inventory) — operator-only
+  // route (L-12). Members must not fire it (a 403 per tab open) NOR get its
+  // absence rendered as invented zeros: their numbers come from the
+  // per-service endpoints below (r472).
   const volumes = useQuery({
     queryKey: ['volumes'],
     queryFn: () => api.volumes.list(),
+    enabled: isOperator,
   });
 
   // 2. Attached databases for this service
@@ -56,10 +63,13 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
   const attachedDbIds = new Set(attachedDbs.map((a) => a.databaseId));
   const databaseVolumes = allVols.filter((v) => v.owner?.kind === 'database' && v.owner.id && attachedDbIds.has(v.owner.id));
 
-  const totalBytes =
-    (serviceVolume?.sizeBytes ?? 0) +
-    svcVolumeAttachments.reduce((acc: number, v: ServiceVolumeAttachment) => acc + v.sizeBytes, 0) +
-    databaseVolumes.reduce((acc: number, v: { sizeBytes: number }) => acc + v.sizeBytes, 0);
+  // Members: only the per-service attachment sizes are knowable — the primary
+  // and attached-DB sizes live in the operator-only inventory, and rendering
+  // their absence as 0 B was a fabricated number (r472).
+  const totalBytes = svcVolumeAttachments.reduce((acc: number, v: ServiceVolumeAttachment) => acc + v.sizeBytes, 0) +
+    (isOperator
+      ? (serviceVolume?.sizeBytes ?? 0) + databaseVolumes.reduce((acc: number, v: { sizeBytes: number }) => acc + v.sizeBytes, 0)
+      : 0);
 
   const hasPrimary = Boolean(svc.volumeMount);
   const hasAttachments = svcVolumeAttachments.length > 0;
@@ -76,7 +86,9 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
             {formatBytes(totalBytes)}
           </div>
           <p className="text-[11px] text-slate-400 mt-1">
-            Across service &amp; {databaseVolumes.length} attached database(s)
+            {isOperator
+              ? `Across service & ${databaseVolumes.length} attached database(s)`
+              : 'Custom attachments — instance-wide sizes are operator-only'}
           </p>
         </Card>
 
@@ -85,7 +97,7 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
             <Server size={14} className="text-sky-400" /> Service Primary Volume
           </div>
           <div className="text-2xl font-bold tracking-tight text-white font-mono mt-2">
-            {hasPrimary ? formatBytes(serviceVolume?.sizeBytes ?? 0) : 'None'}
+            {hasPrimary ? (isOperator ? formatBytes(serviceVolume?.sizeBytes ?? 0) : '—') : 'None'}
           </div>
           <p className="text-[11px] text-slate-400 mt-1 font-mono truncate">
             {hasPrimary ? `Mounted at ${svc.volumeMount}` : hasAttachments ? `${svcVolumeAttachments.length} custom attachment(s)` : 'Stateless container'}
@@ -97,7 +109,7 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
             <Database size={14} className="text-emerald-400" /> Attached DB Volumes
           </div>
           <div className="text-2xl font-bold tracking-tight text-white font-mono mt-2">
-            {formatBytes(databaseVolumes.reduce((acc, v) => acc + v.sizeBytes, 0))}
+            {isOperator ? formatBytes(databaseVolumes.reduce((acc, v) => acc + v.sizeBytes, 0)) : '—'}
           </div>
           <p className="text-[11px] text-slate-400 mt-1">
             {databaseVolumes.length} active database volume(s)

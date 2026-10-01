@@ -12,6 +12,15 @@ vi.mock('../src/lib/api.js', async () => {
   return createFakeApiModule();
 });
 
+// r472: operator-only settings sections are privilege-filtered — these tests
+// exercise them, so the auth mock hands out an operator (mutable for the
+// member-filter test).
+const authState = vi.hoisted(() => ({ user: { id: 1, isOperator: true } as { id: number; isOperator: boolean } | null }));
+vi.mock('../src/lib/auth.js', () => ({
+  AuthProvider: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+  useAuth: vi.fn(() => ({ user: authState.user, loading: false })),
+}));
+
 // Password fixtures are assembled at runtime so secret scanners do not
 // classify the literal `currentPassword: '…'` shape as a hardcoded credential.
 const OLD_PASS = ['old', 'pass', '123'].join('-');
@@ -64,6 +73,7 @@ const upToDate = { current: 'v0.0.0', latest: null, updateAvailable: false, note
 describe('Settings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    authState.user = { id: 1, isOperator: true };
     toastSpy.toast.mockClear();
     vi.stubGlobal('fetch', vi.fn());
     URL.createObjectURL = vi.fn(() => 'blob:settings');
@@ -1283,5 +1293,19 @@ describe('Settings', () => {
 
     await openSection('Firewall (UFW)');
     expect(await screen.findByText('Host Firewall & Port Control (UFW)')).toBeInTheDocument();
+  });
+
+  it('r472: a member sees only the personal sections — operator sections vanish from the sidebar and deep-links', async () => {
+    authState.user = { id: 7, isOperator: false };
+    renderWithProviders(<Settings />);
+    // Personal sections stay.
+    expect(await screen.findAllByText('Account')).not.toHaveLength(0);
+    expect(screen.getByText('Appearance')).toBeInTheDocument();
+    // Operator sections are neither in the sidebar…
+    expect(screen.queryByText('Firewall (UFW)')).not.toBeInTheDocument();
+    expect(screen.queryByText('System')).not.toBeInTheDocument();
+    expect(screen.queryByText('SSO & OIDC')).not.toBeInTheDocument();
+    // …nor reachable by deep link: ?section=firewall falls back to account.
+    expect(screen.queryByText('Host Firewall & Port Control (UFW)')).not.toBeInTheDocument();
   });
 });

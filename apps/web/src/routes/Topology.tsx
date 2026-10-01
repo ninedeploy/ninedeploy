@@ -40,6 +40,7 @@ import {
   Maximize2,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { useAuth } from '../lib/auth.js';
 import type { TopologyGraph } from '@ninedeploy/sdk';
 import { Button, ErrorCard, PageHeader, StatusBadge, cn } from '../components/ui.js';
 import { downloadBlob, formatBytes } from '../lib/format.js';
@@ -662,8 +663,15 @@ function TopologyLegend() {
 // ── Main Topology Page Component ──────────────────────────────────────────
 
 export function Topology() {
+  const { user } = useAuth();
   const graph = useQuery({ queryKey: ['topology'], queryFn: () => api.topology.get() });
-  const volumesQuery = useQuery({ queryKey: ['volumes'], queryFn: () => api.volumes.list() });
+  const volumesQuery = useQuery({
+    queryKey: ['volumes'],
+    queryFn: () => api.volumes.list(),
+    // r472: instance-wide volume inventory is operator-only — members' graphs
+    // simply render without volume sizes instead of firing a refused call.
+    enabled: user?.isOperator === true,
+  });
   const liveStats = useQuery({
     queryKey: ['live-stats-snapshot'],
     queryFn: () => api.stats.snapshot(),

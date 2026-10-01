@@ -1,4 +1,5 @@
 ﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
+import type { ReactNode } from 'react';
 import { screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Activity } from '../src/routes/Activity.js';
@@ -10,6 +11,15 @@ vi.mock('../src/lib/api.js', async () => {
   const { createFakeApiModule } = await import('./apiMock.js');
   return createFakeApiModule();
 });
+
+// r472: the page is operator-only — the auth mock hands out a mutable user so
+// tests can flip to a member for the guard/error-path cases.
+const authState = vi.hoisted(() => ({ user: { id: 1, isOperator: true } as { id: number; isOperator: boolean } | null }));
+vi.mock('../src/lib/auth.js', () => ({
+  AuthProvider: ({ children }: { children?: ReactNode }) => <>{children}</>,
+  useAuth: vi.fn(() => ({ user: authState.user, loading: false })),
+}));
+
 
 const sampleActivities = [
   {
@@ -66,6 +76,7 @@ const sampleActivities = [
 
 describe('Activity Page', () => {
   beforeEach(() => {
+    authState.user = { id: 1, isOperator: true };
     vi.clearAllMocks();
     mockOf(api.activity.list).mockResolvedValue({ entries: sampleActivities });
   });
@@ -327,5 +338,22 @@ describe('Activity Page', () => {
 
     expect(createObjectURLMock).toHaveBeenCalled();
     expect(revokeObjectURLMock).toHaveBeenCalled();
+  });
+
+  it('r472: a member gets the operators-only one-liner, no ledger fetch at all', async () => {
+    authState.user = { id: 7, isOperator: false };
+    renderWithProviders(<Activity />);
+    expect(await screen.findByText(/operators only/i)).toBeInTheDocument();
+    expect(mockOf(api.activity.list)).not.toHaveBeenCalled();
+  });
+
+  it('r472: a failed load shows an error card, never "No activity recorded"', async () => {
+    mockOf(api.activity.list).mockRejectedValue(new Error('boom'));
+    renderWithProviders(<Activity />);
+    expect(await screen.findByText(/Couldn't load the audit ledger/i)).toBeInTheDocument();
+    expect(screen.queryByText('No activity recorded')).not.toBeInTheDocument();
+    // Retry wires the query back up (and covers the retry handler itself).
+    fireEvent.click(screen.getByRole('button', { name: /Try again/i }));
+    await waitFor(() => expect(mockOf(api.activity.list)).toHaveBeenCalled());
   });
 });

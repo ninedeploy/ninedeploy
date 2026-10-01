@@ -75,7 +75,9 @@ const GROUPS: NavGroup[] = [
   {
     id: 'data', label: 'Data', icon: Database, items: [
       { to: '/databases', label: 'Databases', icon: Database },
-      { to: '/volumes', label: 'Volumes', icon: Layers },
+      // Instance-wide volume inventory is admin-only server-side (L-12) —
+      // linking members to it only ever produced a 403 error card.
+      { to: '/volumes', label: 'Volumes', icon: Layers, operatorOnly: true },
       { to: '/backups', label: 'Backups', icon: HardDrive },
     ],
   },
@@ -90,16 +92,19 @@ const GROUPS: NavGroup[] = [
   },
   {
     id: 'system', label: 'System', icon: SettingsIcon, items: [
-      { to: '/activity', label: 'Activity', icon: Clock },
+      // r472: these pages are operator-only server-side; the sidebar used to
+      // show them to members anyway, and every one of them answered a 403
+      // error card (Activity's even masqueraded as "No activity recorded").
+      { to: '/activity', label: 'Activity', icon: Clock, operatorOnly: true },
       { to: '/monitoring', label: 'Monitoring', icon: Activity },
       // Host-wide analysis + guarded cleanup (dead containers, orphan volumes,
       // row/runtime desync, reclaimable bloat). Operator-gated server-side, so
       // members don't get a sidebar link to a page that can only refuse them.
       { to: '/doctor', label: 'Doctor', icon: Stethoscope, operatorOnly: true },
-      { to: '/docker', label: 'Docker', icon: Container, advancedOnly: true },
-      { to: '/sources', label: 'Sources', icon: KeyRound },
-      { to: '/servers', label: 'Servers', icon: HardDrive, advancedOnly: true },
-      { to: '/users', label: 'Users', icon: Users },
+      { to: '/docker', label: 'Docker', icon: Container, advancedOnly: true, operatorOnly: true },
+      { to: '/sources', label: 'Sources', icon: KeyRound, operatorOnly: true },
+      { to: '/servers', label: 'Servers', icon: HardDrive, advancedOnly: true, operatorOnly: true },
+      { to: '/users', label: 'Users', icon: Users, operatorOnly: true },
       { to: '/settings', label: 'Settings', icon: SettingsIcon },
       { to: '/about', label: 'About', icon: Info },
     ],

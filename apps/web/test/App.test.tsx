@@ -109,7 +109,9 @@ describe('App', () => {
   });
 
   it('renders the activity route inside the authenticated shell', async () => {
-    authState({ id: 1, email: 'a@b.c' });
+    // The audit ledger is operator-only (r472) — the shell/route wiring this
+    // test pins needs an operator to see the page body at all.
+    authState({ id: 1, email: 'a@b.c', isOperator: true } as never);
     mockOf(api.activity.list).mockResolvedValue({ entries: [] } as never);
     renderWithProviders(<App />, { route: '/activity' });
     await screen.findByTestId('layout');
