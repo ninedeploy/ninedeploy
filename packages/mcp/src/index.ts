@@ -14,7 +14,7 @@ export { TOOLS };
  * AI assistants use this to inspect and operate a NineDeploy instance.
  * Credentials come from the environment — never from the model:
  *   NINEDEPLOY_URL   base URL of the control plane (default http://127.0.0.1:3000)
- *   NINEDEPLOY_TOKEN an API token (create one in Settings → API tokens)
+ *   NINEDEPLOY_TOKEN an API token (create one in Settings → Security → API tokens)
  *   NINEDEPLOY_MCP_READONLY=1 exposes only the non-mutating, non-secret allowlist
  */
 
@@ -132,7 +132,7 @@ export async function main(
   const url = env.NINEDEPLOY_URL ?? 'http://127.0.0.1:3000';
   const token = env.NINEDEPLOY_TOKEN;
   if (!token) {
-    io.error('NINEDEPLOY_TOKEN is required (Settings → API tokens in the web UI).');
+    io.error('NINEDEPLOY_TOKEN is required (Settings → Security → API tokens in the web UI).');
     io.exit(1);
     return;
   }

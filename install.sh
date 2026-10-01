@@ -1059,7 +1059,7 @@ install_docker_mode() {
   # GHCR package is still private and the operator must flip its
   # visibility to "Public" at
   # https://github.com/orgs/NineDeploy/packages/container/ninedeploy/settings
-  # — the docs page (docs/INSTALL.md) has a one-time checklist. Failing
+  # — docs/QUICKSTART.md walks the first deploy. Failing
   # fast here is friendlier than the generic "image pull failed" the
   # compose call would otherwise surface ten seconds later.
   if ! docker_cmd manifest inspect "ghcr.io/${IMAGE_REPO}:${IMAGE_TAG}" >/dev/null 2>&1; then

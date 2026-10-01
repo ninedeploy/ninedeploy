@@ -77,7 +77,7 @@ If you prefer SSH:
 ### Bitbucket specifics
 
 Create the Source with type `bitbucket` and a **Bitbucket Cloud API token**
-(account → Settings → API tokens — it authenticates as Bearer). The token
+(account → Settings → Security → API tokens — it authenticates as Bearer). The token
 powers the repos/branches pickers and the connection test. For cloning:
 
 - **Deploy keys work over SSH**: add the panel's public key under

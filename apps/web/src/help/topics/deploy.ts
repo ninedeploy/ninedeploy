@@ -122,7 +122,7 @@ export const DEPLOY_TOPICS: Record<string, HelpTopic> = {
       {
         heading: 'Creating a service',
         steps: [
-          'Click New Service and pick the origin: a Git repository (requires a credential from the Sources page) or a container image.',
+          'Click New Service and pick the origin: a Git repository (requires a Git credential — operators manage them on the Sources page) or a container image.',
           'For Git: choose the repository, branch and — if auto-detection needs help — the build pack and commands.',
           'Review the summary and create. The first Deploy builds the image and starts the blue-green release.',
         ],

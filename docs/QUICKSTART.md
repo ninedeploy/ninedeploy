@@ -89,8 +89,9 @@ pnpm install
 cp .env.example .env
 pnpm build
 
-# 3. Start development server (API on :3000, Web UI on :5173)
-pnpm dev
+# 3. Start the API (:3000) and, in a second shell, the Web UI (:5173)
+pnpm dev          # API server
+pnpm dev:web      # Vite dev server for the web UI
 ```
 
 Open `http://localhost:5173` in your browser to create the initial admin account.
@@ -106,7 +107,7 @@ Re-running the installation script performs a seamless, zero-data-loss upgrade:
 curl -fsSL https://raw.githubusercontent.com/NineDeploy/NineDeploy/main/install.sh | bash
 
 # Pin to a specific version
-bash install.sh --version v0.10.31
+bash install.sh --version v0.10.32
 
 # Track edge (main branch)
 bash install.sh --channel main

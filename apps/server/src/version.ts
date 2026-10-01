@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.31';
+export const VERSION = '0.10.32';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.32',
+    date: '2026-10-01',
+    title: 'The Truth-in-Docs Release',
+    changes: [
+      'The never-done documentation sweep found the docs actively lying in four P1 ways: the root README and the website both shipped copies of the exact unauthenticated-SDK bug r472 had fixed elsewhere (a static token: option the client silently ignores — every call 401s), the README taught a CLI command that does not exist, and the website CLI cheatsheet was written for an imaginary CLI (six of ten lines broken — name operands where the CLI takes numeric IDs, two commands that never existed). All fixed, and a repo-wide test now greps every doc surface so the token: bug family can never ship again.',
+      'Fixed in-product help that taught the pre-hardening privilege model: the help claimed workspace owner/admin makes you an operator — exactly the self-promotion path migration 0038 closed; help now states the operator flag is per-instance (People page) and names what it unlocks. Member-visible help no longer sends readers to operator-only pages (Sources, Volumes, Activity, Docker, Notifications marked operators-only), the webhook tip points at the real location (the service Environment tab, not Sources), and the agent-transport claim now states sealed envelopes instead of plain HTTP.',
+      'Docs accuracy wave: MCP plugin docs no longer teach the removed per-tap rollback option or a nonexistent ctx.hooks member; the website plugin example uses the real tapHook API and the real install sources (marketplace|sandbox); TROUBLESHOOTING gives a working logs command; the backups doc drops the nonexistent MCP restore tool; QUICKSTART names both dev commands (pnpm dev AND dev:web for :5173); API-token pointers say Settings > Security everywhere; counts refreshed against reality (38 MCP tools not 35, 52 tables not 41, 67 route modules not 48, 130 templates across twenty categories not 89/ten, test badge aligned with the table).',
+      'Release chain hardening (the r474/r475 diff audit): release:tag now refuses when the commitish is not HEAD — its compile gates certify the working tree, so tagging an older SHA certified the wrong tree (false pass AND false block); provenance checks ALL TEN package.jsons, not just the root; an unresolvable commitish dies with a diagnostic instead of a stack trace; and bump-version treats the --version install-command files (About, QUICKSTART, README) as critical — a silent miss pinned copiers to the previous release.',
+    ],
+  },
+{
     version: '0.10.31',
     date: '2026-10-01',
     title: 'The Chain-Guard Release — the Release Chain Audits Itself',

@@ -10,11 +10,11 @@ the databases, certificates, secrets, backups and access rules around it — fro
 terminal CLI, a typed SDK, or an AI agent over MCP.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Release](https://img.shields.io/badge/Release-0.10.31-blue.svg)](./CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Release-0.10.32-blue.svg)](./CHANGELOG.md)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522.13-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7-blue.svg)](https://www.typescriptlang.org)
 [![Docker](https://img.shields.io/badge/Docker-required-blue.svg)](https://docker.com)
-[![Tests](https://img.shields.io/badge/Tests-4%2C882%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/Tests-6%2C460%20passing-brightgreen.svg)](#testing)
 [![CI](https://github.com/NineDeploy/NineDeploy/actions/workflows/ci.yml/badge.svg)](https://github.com/NineDeploy/NineDeploy/actions/workflows/ci.yml)
 
 [Website](https://ninedeploy.com) · [Quickstart](./docs/QUICKSTART.md) · [Architecture](./ARCHITECTURE.md) · [Templates](https://ninedeploy.com/templates) · [Changelog](./CHANGELOG.md)
@@ -68,12 +68,12 @@ runs the SQLite migrations, and starts a hardened `systemd` unit (`ProtectSystem
 Re-running the same command is the upgrade path; it snapshots `.data` before touching anything.
 
 ```bash
-./install.sh --version v0.10.31     # pin an exact tag
+./install.sh --version v0.10.32     # pin an exact tag
 ./install.sh --channel main       # track edge
 ./install.sh --force              # discard local edits + stale build artifacts, then rebuild
 ```
 
-> **Where `main` stands:** the default channel installs the newest release tag (**0.10.31**).
+> **Where `main` stands:** the default channel installs the newest release tag (**0.10.32**).
 > The newest work (doctor mode, retained-volume re-keying) lands on `main` before it is tagged —
 > see [`CHANGELOG.md`](./CHANGELOG.md) under *Unreleased*, or run `--channel main` to get it today.
 
@@ -151,9 +151,9 @@ Full matrix — environment variables, upgrade paths, systemd internals — in
       ╔═════════════════════════════════════════════════════════════════════╗
       ║  NineDeploy panel — Fastify 5 API + React 19 dashboard, one process ║
       ║ ─────────────────────────────────────────────────────────────────── ║
-      ║  48 route modules under /v1       deploy engine (queue + worker)    ║
+      ║  67 route modules under /v1       deploy engine (queue + worker)    ║
       ║  microkernel: events · hooks      builders: docker · pm2 · compose  ║
-      ║  SQLite (41 tables, Drizzle)      AES-256-GCM vault + key ring      ║
+      ║  SQLite (52 tables, Drizzle)      AES-256-GCM vault + key ring      ║
       ╚═══╤═══════════════╤═══════════════════╤══════════════════╤══════════╝
           │ docker.sock   │ docker.sock       │ HTTP + token     │ S3 API
           ▼               ▼                   ▼                  ▼
@@ -161,7 +161,7 @@ Full matrix — environment variables, upgrade paths, systemd internals — in
     containers       Postgres · MySQL    (typed op calls;   R2 · AWS · MinIO ·
     PM2 processes    MariaDB · Redis     networks today,    Wasabi — db dumps
     Compose stacks   Valkey · Mongo      deploys not yet)   and volume tars
-    89 templates     ClickHouse ·
+   130 templates     ClickHouse ·
                      Meilisearch ·
                      RabbitMQ
 
@@ -322,7 +322,7 @@ Watch paths, `[skip ci]` handling, cancellation and PR previews: [**docs/DEPLOYM
 
 - A **microkernel** with an event bus, waterfall hook pipeline, service registry, config center and
   dynamic menu registry; plugins are written against `@ninedeploy/plugin-sdk`.
-- **89 one-click templates** (n8n, Directus, PocketBase, Ollama, Hasura, …) across ten categories.
+- **130 one-click templates** (n8n, Directus, PocketBase, Ollama, Hasura, …) across twenty categories.
 - **One-click panel self-update:** a dashboard banner runs *this install's own* `install.sh` for the
   pinned tag, detached through `systemd-run` so it survives stopping its own unit, and reports the
   installer output tail when it fails.
@@ -406,7 +406,7 @@ ninedeploy doctor                  # environment and connectivity diagnostics
 ninedeploy services list
 ninedeploy services create         # interactive wizard
 ninedeploy services deploy 12
-ninedeploy watch 12 480            # stream a running deployment's logs
+ninedeploy deploys watch 12 480    # stream a running deployment's logs
 ninedeploy deploys cancel 12 480   # stop a queued or in-flight deployment
 ninedeploy deploys rm 12 479       # drop a finished deployment from history
 ninedeploy env set 12 NODE_ENV production
@@ -424,7 +424,7 @@ tooling. The token is stored `0600` in `~/.ninedeploy/config.json`.
 ```ts
 import { createClient } from '@ninedeploy/sdk';
 
-const nd = createClient({ baseUrl: 'https://panel.example.com', token: process.env.ND_TOKEN });
+const nd = createClient({ baseUrl: 'https://panel.example.com', getToken: () => process.env.ND_TOKEN! });
 
 const services = await nd.services.list();
 await nd.deploys.trigger(services[0].id);
@@ -451,7 +451,7 @@ with.
 }
 ```
 
-**35 tools** over stdio, each mapping 1:1 onto the typed SDK so the MCP wire can never express
+**38 tools** over stdio, each mapping 1:1 onto the typed SDK so the MCP wire can never express
 anything the HTTP API could not: inspection (`list_services`, `service_logs`, `list_deploys`,
 `inspect_container`, `topology`, `system_stats`, `activity_log`, …), guarded actions
 (`deploy_service`, `restart_service`, `rollback_deploy`, `update_service`, `system_autoprune`), and
@@ -471,7 +471,7 @@ NineDeploy/                    pnpm 11 workspace + Turborepo
 │   ├── server/                Fastify 5 API, deploy engine, microkernel, agent mode
 │   │   ├── src/engine/        pipeline · builders (docker/pm2/compose) · database ·
 │   │   │                      proxy · tunnel · logs · autoPrune · repoInsights
-│   │   ├── src/modules/       48 route modules + one aggregator
+│   │   ├── src/modules/       67 route modules + one aggregator
 │   │   ├── src/lib/           crypto · jwt · sessions · totp · webauthn · oidc ·
 │   │   │                      resourceAccess (the authz choke point) · hostPrivilege ·
 │   │   │                      egressGuard · s3 · cloudflare · manifest apply
@@ -480,10 +480,10 @@ NineDeploy/                    pnpm 11 workspace + Turborepo
 │   ├── web/                   React 19 + Vite 8 + Tailwind v4 dashboard
 │   └── cli/                   `ninedeploy` (commander 15)
 ├── packages/
-│   ├── db/                    Drizzle schema (41 tables) + SQL migrations
+│   ├── db/                    Drizzle schema (52 tables) + SQL migrations
 │   ├── schemas/               Zod v4 DTOs shared by server, web, CLI, SDK and MCP
 │   ├── sdk/                   typed API client over an injectable fetch
-│   ├── mcp/                   Model Context Protocol server (35 tools, stdio)
+│   ├── mcp/                   Model Context Protocol server (38 tools, stdio)
 │   └── plugin-sdk/            definePlugin + scoped config helpers
 ├── website/                   marketing site, docs and template hub
 ├── docs/                      11 operator guides

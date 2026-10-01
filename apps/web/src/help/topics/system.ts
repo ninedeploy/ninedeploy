@@ -46,7 +46,7 @@ export const SYSTEM_TOPICS: Record<string, HelpTopic> = {
       {
         heading: 'Alerts',
         body: [
-          'Threshold alerts (CPU, memory, certificate expiry) are configured in Settings → Notifications, together with the channels that receive them (Telegram, Discord, Slack, webhook, ntfy, email). Alerts fire and recover on their own.',
+          'Threshold alerts (CPU, memory, certificate expiry) are configured in Settings → Notifications (operators only), together with the channels that receive them (Telegram, Discord, Slack, webhook, ntfy, email). Alerts fire and recover on their own.',
         ],
         tip: 'This page is per-node. A busy remote agent has its own view once registered on the Servers page.',
       },
@@ -136,7 +136,7 @@ export const SYSTEM_TOPICS: Record<string, HelpTopic> = {
       {
         heading: 'Constraints today',
         bullets: [
-          'Agent transport is plain HTTP — keep agents on a LAN or a VPN, not the public internet.',
+          'Agent traffic travels in sealed (authenticated-encrypted) envelopes by default; plaintext is refused unless an operator explicitly opts in for an old agent. Still prefer a LAN or VPN for node agents.',
           'Agents run the same binary, so the panel and agents should stay on compatible versions.',
         ],
         tip: 'Check each agent\'s connectivity from this page after registration — most setup problems are firewall rules between panel and agent.',

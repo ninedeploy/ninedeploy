@@ -75,7 +75,7 @@ The service status used to record the *last lifecycle result*, so a reboot or da
 1. Check the service's internal health check path (`/health`, `/api/health`, or custom port).
 2. Inspect new container logs before teardown:
    ```bash
-   ninedeploy logs <service-name>
+   ninedeploy services logs <service-id>
    ```
 3. Increase `healthCheckTimeout` in service configuration if the application has a long cold-start initialization phase.
 

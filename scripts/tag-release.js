@@ -45,6 +45,20 @@ if (status.trim() !== '') {
   die('working tree is not clean — commit or stash first; a tag must name exactly what was checked.');
 }
 
+// r476: the compile/test gates below certify the WORKING tree, so the
+// commitish MUST be HEAD — tagging an older SHA would run the gates against
+// the wrong tree (false pass AND false block). Check out what you mean.
+const head = sh('git', ['rev-parse', 'HEAD']).trim();
+let target = '';
+try {
+  target = sh('git', ['rev-parse', `${commitish}^{commit}`]).trim();
+} catch (err) {
+  die(`could not resolve commitish '${commitish}' — is it a valid ref? (${String(err).slice(0, 120)})`);
+}
+if (target !== head) {
+  die(`commitish ${commitish} is not HEAD — check out the commit first so the gates certify the tree being tagged.`);
+}
+
 // 2. Tag must not already exist (re-tagging after a botched release is
 // delete-and-recreate by hand, never a silent move).
 const tagExists = sh('git', ['tag', '-l', tag]).trim();
@@ -52,14 +66,36 @@ if (tagExists === tag) {
   die(`tag ${tag} already exists — delete it explicitly first (git tag -d ${tag} && git push origin :refs/tags/${tag}).`);
 }
 
-// 3. Provenance: what the commitish ACTUALLY contains (not the working tree).
-const show = (file) => sh('git', ['show', `${commitish}:${file}`]);
-const pkg = JSON.parse(show('package.json')).version;
+// 3. Provenance: what the commit actually contains (== HEAD, per check 1).
+const show = (file) => {
+  try {
+    return sh('git', ['show', `${commitish}:${file}`]);
+  } catch (err) {
+    die(`could not read ${file} on '${commitish}' — (${String(err).split('\n')[0]}…)`);
+  }
+};
+// r476: ALL TEN package.jsons, not just the root — the workspace packages are
+// what packages:publish ships; a partial revert must not slip through.
+const packageJsons = [
+  'package.json',
+  'apps/cli/package.json',
+  'apps/server/package.json',
+  'apps/web/package.json',
+  'packages/db/package.json',
+  'packages/mcp/package.json',
+  'packages/plugin-sdk/package.json',
+  'packages/schemas/package.json',
+  'packages/sdk/package.json',
+  'website/package.json',
+];
+for (const rel of packageJsons) {
+  const v = JSON.parse(show(rel)).version;
+  if (v !== bare) die(`${rel} on ${commitish} says ${v}, tag says ${bare}.`);
+}
 const versionTs = show('apps/server/src/version.ts');
 const versionMatch = versionTs.match(/export const VERSION = '([^']*)';/);
 if (!versionMatch) die(`could not read VERSION from ${commitish}:apps/server/src/version.ts`);
 const changelogHead = versionTs.match(/version: '([^']*)',/);
-if (pkg !== bare) die(`package.json on ${commitish} says ${pkg}, tag says ${bare}.`);
 if (versionMatch[1] !== bare) die(`version.ts VERSION on ${commitish} says ${versionMatch[1]}, tag says ${bare}.`);
 if (!changelogHead || changelogHead[1] !== bare) {
   die(`CHANGELOG[0].version on ${commitish} says ${changelogHead ? changelogHead[1] : '?'}, tag says ${bare} — fill the changelog entry first.`);

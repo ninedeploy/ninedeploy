@@ -222,7 +222,7 @@ const groups: {
       {
         icon: MonitorSmartphone,
         title: "Every interface",
-        body: "Web dashboard (dark/light + 6 accents, ⌘K palette), ninedeploy CLI, REST API + typed SDK, and an MCP server with 35 tools for AI assistants.",
+        body: "Web dashboard (dark/light + 6 accents, ⌘K palette), ninedeploy CLI, REST API + typed SDK, and an MCP server with 38 tools for AI assistants.",
       },
     ],
   },

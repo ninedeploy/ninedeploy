@@ -26,7 +26,7 @@ export const ORGANIZE_TOPICS: Record<string, HelpTopic> = {
       {
         heading: 'Operators',
         body: [
-          'Anyone who is owner or admin in at least one workspace is an "operator". Operator status unlocks host-level surfaces: the Docker page, remote Servers, exec terminals and parts of Settings.',
+          'An "operator" is a per-instance flag granted on the People page (instance operators only) — it is NOT inherited from workspace owner/admin roles. Operators unlock host-level surfaces: the Docker page, Volumes, Activity, remote Servers, Sources, Users and most of Settings; workspace owners manage their own workspace\'s members and services.',
         ],
         tip: 'Filter the whole panel to a single workspace with the workspace chip in the top bar — services outside it disappear from every list.',
       },

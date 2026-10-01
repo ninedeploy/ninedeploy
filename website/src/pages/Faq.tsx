@@ -25,7 +25,7 @@ const faqs = [
   },
   {
     q: "Is there an API, CLI, and AI integration for automation?",
-    a: "Everything in NineDeploy is API-first. You get the /v1 REST API with bearer tokens, a typed TypeScript SDK, an interactive CLI (`ninedeploy`), and an official Model Context Protocol (MCP) server with 35 tools for AI assistants (Claude Desktop, Cursor, Antigravity, Cline) to manage deployments, metrics, and configurations.",
+    a: "Everything in NineDeploy is API-first. You get the /v1 REST API with bearer tokens, a typed TypeScript SDK, an interactive CLI (`ninedeploy`), and an official Model Context Protocol (MCP) server with 38 tools for AI assistants (Claude Desktop, Cursor, Antigravity, Cline) to manage deployments, metrics, and configurations.",
   },
   {
     q: "What authentication and Single Sign-On methods are supported?",

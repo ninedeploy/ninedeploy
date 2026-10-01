@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { load } from 'js-yaml';
 import { describe, expect, it } from 'vitest';
 
@@ -84,5 +85,28 @@ describe('release delivery invariants', () => {
     for (const arg of args) expect(arg).toBe(`ARG PNPM_VERSION=${expected}`);
     const installer = readFileSync(new URL('../../../install.sh', import.meta.url), 'utf8');
     expect(installer).toContain(`PNPM_VERSION="${expected}"`);
+  });
+
+  it('r476: no documented createClient example uses the nonexistent token option', () => {
+    // The r472 audit found AI_MCP_CLI.md teaching an unauthenticated client;
+    // r476 found the SAME bug family copied in README.md and website docs.
+    // The SDK takes getToken (a provider); a static token: key is silently
+    // ignored at runtime and every call 401s. Sweep every doc-bearing
+    // surface so a new copy cannot ship.
+    const surfaces = ['../../../README.md', '../../../docs', '../../../website/src', '../../../packages/mcp', '../../../packages/plugin-sdk'];
+    const offenders: string[] = [];
+    for (const surface of surfaces) {
+      const url = new URL(surface, import.meta.url);
+      if (!existsSync(url)) continue;
+      const files = statSync(url).isFile()
+        ? [url]
+        : readdirSync(url, { recursive: true }).map((f) => new URL(`${surface}/${f}`, import.meta.url));
+      for (const file of files) {
+        const fp = file.pathname.replace(/^\/([A-Za-z]:)/, '$1');
+        if (!/\.(md|ts|tsx|js|mjs)$/.test(fp) || /node_modules|dist/.test(fp)) continue;
+        if (/createClient\(\{[^}]*token\s*:/s.test(readFileSync(file, 'utf8'))) offenders.push(fp);
+      }
+    }
+    expect(offenders, `docs teaching the nonexistent token: option: ${offenders.join(', ')}`).toEqual([]);
   });
 });

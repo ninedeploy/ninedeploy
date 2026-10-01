@@ -24,7 +24,7 @@ NineDeploy embeds Traefik as its reverse proxy and ingress controller, providing
 
 Apply security middlewares directly from the dashboard:
 - **IP Allowlisting / Denylisting**: Restrict internal admin services to VPN/office CIDRs.
-- **Basic Auth & Forward Auth**: Add an extra authentication layer in front of legacy web services.
+- **Basic Auth**: Add an extra authentication layer in front of legacy web services.
 - **Custom Headers & CORS**: Inject HSTS, Content-Security-Policy, and CORS headers automatically.
 
 ---

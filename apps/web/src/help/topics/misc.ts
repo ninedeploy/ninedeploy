@@ -24,14 +24,14 @@ export const MISC_TOPICS: Record<string, HelpTopic> = {
           'Organize group: Workspaces, Projects, Labels.',
           'Data group: Databases, Volumes, Backups.',
           'Network group: Domains, Traefik, Networks, Tunnels, Topology.',
-          'System group: Activity, Monitoring, Docker, Sources, Servers, Users, Settings, About. Some entries only appear in Advanced mode.',
+          'System group: Monitoring, Settings, About (plus Activity, Docker, Sources, Servers, Users and Volumes for instance operators). Some entries only appear in Advanced mode.',
         ],
       },
       {
         heading: 'Getting started',
         steps: [
           'Sign in and follow the setup banner on the Dashboard.',
-          'Add a Git credential on the Sources page (personal access token or SSH deploy key) — or skip this by deploying a template or a public image.',
+          'Operators add Git credentials on the Sources page (personal access token or SSH deploy key) — or skip this by deploying a template or a public image.',
           'Create a service (Services → New, or pick one in the Hub) and hit Deploy.',
           'Attach a domain on the service\'s Network tab and a managed database from the Databases page as needed.',
         ],

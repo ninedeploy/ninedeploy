@@ -125,12 +125,14 @@ prependChangelogEntry();
 // The CLI and the MCP server read their version from their own package.json
 // at runtime (r195), so there is no literal to rewrite in their sources; the
 // package.json bump above is what they report.
-replaceInFile('apps/web/src/routes/About.tsx', /--version v\d+\.\d+\.\d+/g, `--version v${newVersion}`);
-replaceInFile('docs/QUICKSTART.md', /--version v\d+\.\d+\.\d+/g, `--version v${newVersion}`);
+// The --version occurrences in these files are INSTALL COMMANDS users copy;
+// a silent miss pins copiers to the previous release (r476: critical).
+replaceInFile('apps/web/src/routes/About.tsx', /--version v\d+\.\d+\.\d+/g, `--version v${newVersion}`, true);
+replaceInFile('docs/QUICKSTART.md', /--version v\d+\.\d+\.\d+/g, `--version v${newVersion}`, true);
 replaceInFile('website/src/pages/Home.tsx', /<span className="tag font-bold">v\d+\.\d+\.\d+<\/span>/, `<span className="tag font-bold">v${newVersion}</span>`);
 replaceInFile('website/src/components/Layout.tsx', /v\d+\.\d+\.\d+ GA/g, `v${newVersion} GA`);
 replaceInFile('README.md', /Release-\d+\.\d+\.\d+-blue/, `Release-${newVersion}-blue`);
-replaceInFile('README.md', /--version v\d+\.\d+\.\d+/, `--version v${newVersion}`);
+replaceInFile('README.md', /--version v\d+\.\d+\.\d+/, `--version v${newVersion}`, true);
 replaceInFile('README.md', /newest release tag \(\*\*\d+\.\d+\.\d+\*\*\)/, `newest release tag (**${newVersion}**)`);
 
 // r475 closing assertion: the banner must not print over a desync. Every

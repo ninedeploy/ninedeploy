@@ -394,7 +394,7 @@ ninedeploy manifest show       # print the resolved manifest as a flat summary`,
         kind: "callout",
         tone: "info",
         title: "Applied automatically on every deploy",
-        text: "The docker builder reads the build and runtime sections at build time; the deploy pipeline reads the operational sections (routes, alerts, database ref) at deploy time. There is no separate apply step to remember — the on-demand manifest apply endpoint is still pending, and the CLI says so rather than pretending it ran.",
+        text: "The docker builder reads the build and runtime sections at build time; the deploy pipeline reads the operational sections (routes, alerts, database ref) at deploy time. There is no separate apply step to remember — the on-demand manifest apply endpoint shipped in 0.9.x, and the CLI says so rather than pretending it ran.",
       },
     ],
   },
@@ -423,10 +423,10 @@ ninedeploy manifest show       # print the resolved manifest as a flat summary`,
         body: `ninedeploy sources list
 ninedeploy sources add              # interactive: provider, token or deploy key
 ninedeploy sources test <id>        # live credential check
-ninedeploy sources deploy-key <id>  # generate an ed25519 pair, print the public half
+ninedeploy sources keygen <id>        # generate an ed25519 pair, print the public half
 
 ninedeploy webhooks list <service>
-ninedeploy webhooks create <service>   # returns the URL + HMAC secret once`,
+ninedeploy webhooks add <serviceId> [branch] # returns URL + HMAC secret once`,
       },
       { kind: "h2", text: "Auto-deploy webhooks" },
       {
@@ -526,7 +526,7 @@ ninedeploy webhooks create <service>   # returns the URL + HMAC secret once`,
           "Automatic Let's Encrypt HTTP-01 challenge for custom domains.",
           "Cloudflare DNS-01 integration for wildcard certificates (*.yourdomain.com).",
           "Automatic subdomains: configure NINEDEPLOY_WILDCARD_DOMAIN to auto-assign {service-name}.yourdomain.com.",
-          "Dynamic middleware: basic auth, rate limiting, IP whitelisting, and gzip/brotli compression.",
+          "Dynamic middleware: basic auth, rate limiting, IP whitelisting, and custom response headers.",
         ],
       },
       { kind: "h2", text: "Cloudflare Tunnels" },
@@ -612,13 +612,13 @@ ninedeploy webhooks create <service>   # returns the URL + HMAC secret once`,
         body: `ninedeploy setup                     # bootstrap first admin
 ninedeploy login                     # authenticate interactively
 ninedeploy services list             # list workspace services
-ninedeploy services deploy my-app    # trigger a deploy
-ninedeploy deploys watch my-app 7    # stream live build logs
-ninedeploy deploys rollback my-app 7 # rollback to exact digest
-ninedeploy env set my-app API_KEY …  # encrypted secret
-ninedeploy domains add my-app app.example.com
+ninedeploy services deploy 12        # trigger a deploy (service ID)
+ninedeploy deploys watch 12 480      # stream live build logs (IDs)
+ninedeploy deploys rollback 12 480   # rollback to exact digest
+ninedeploy env set 12 API_KEY …      # encrypted secret
+ninedeploy domains add 12 app.example.com
 ninedeploy backups create 3          # snapshot database #3
-ninedeploy system dashboard          # open web dashboard`,
+ninedeploy system dashboard          # live status board (terminal)`,
       },
     ],
   },
@@ -648,7 +648,7 @@ curl "http://localhost:3000/v1/services/1/metrics?kind=cpu&minutes=60" \\
         kind: "code",
         body: `import { createClient } from "@ninedeploy/sdk";
 
-const nd = createClient({ baseUrl: "http://localhost:3000", token: "nd_…" });
+const nd = createClient({ baseUrl: "http://localhost:3000", getToken: () => "nd_…" });
 const deploys = await nd.deploys.list(1);
 await nd.deploys.trigger(1);`,
       },
@@ -661,7 +661,7 @@ await nd.deploys.trigger(1);`,
   {
     slug: "mcp",
     title: "MCP server (AI Agents)",
-    description: "35 Model Context Protocol tools for AI assistants.",
+    description: "38 Model Context Protocol tools for AI assistants.",
     group: "Interfaces",
     blocks: [
       {
@@ -753,17 +753,17 @@ export default definePlugin({
     { key: 'api_token', type: 'string', isSecret: true, label: 'API Token' }
   ],
   init: (ctx) => {
-    ctx.hooks.tap('deploy.before', async (context) => {
-      console.log('Deploying service:', context.serviceId);
+    ctx.tapHook('deploy:before', async (context) => {
+      ctx.logger.info('Deploying service:', context.serviceId);
       return context;
-    });
+    }, { priority: 150 });
   }
 });`,
       },
       { kind: "h2", text: "Installing Extensions" },
       {
         kind: "p",
-        text: "Install verified extensions from the web marketplace or CLI via `ninedeploy plugins install <id>`. Supports Marketplace, NPM packages, Git repos, and local directories.",
+        text: "Install verified extensions from the web marketplace or CLI via `ninedeploy plugins install <id>`. Install sources: the verified marketplace, or a sandbox bundle.",
       },
     ],
   },

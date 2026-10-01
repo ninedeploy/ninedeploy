@@ -24,7 +24,7 @@ The official **Model Context Protocol (MCP)** server for [NineDeploy](https://gi
 | Variable | Meaning |
 | --- | --- |
 | `NINEDEPLOY_URL` | Base URL of the panel (`https://…`). |
-| `NINEDEPLOY_TOKEN` | An API token from the panel (Settings → API tokens). |
+| `NINEDEPLOY_TOKEN` | An API token from the panel (Settings → Security → API tokens). |
 | `NINEDEPLOY_MCP_READONLY` | Set to `1` to expose only the read-only tool subset (no deploys, no mutations). |
 
 ## Least privilege

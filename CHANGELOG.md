@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.32] - 2026-10-01
+
+> The truth-in-docs release (r476): the documentation sweep that had never
+> been done, plus the audit of the two chain-guard releases. The docs were
+> not merely stale — they actively lied, in four P1 ways, and two of them
+> were fresh copies of a bug this project had already fixed once.
+
+### Fixed — documentation that lied
+
+- **Two more copies of the unauthenticated-SDK bug (P1).** r472 found `docs/AI_MCP_CLI.md` teaching `createClient({ token: … })` — an option that does not exist (the SDK takes `getToken`), silently ignored, so a copied example 401s on every call. The sweep found the SAME example in the **root README** and in the **website's docs page**. Both fixed — and a repo-wide test now greps every doc-bearing surface (README, docs/, website, package READMEs) for the `token:` pattern so this bug family cannot ship a third generation.
+- **The README taught a nonexistent CLI command (P1)** — `ninedeploy watch 12 480`; the real command is `deploys watch`. And the **website's CLI cheatsheet was written for an imaginary CLI (P1)**: six of ten lines broken — `services deploy my-app` style operands where the CLI takes numeric IDs, `sources deploy-key` (real: `sources keygen`), `webhooks create` (real: `webhooks add <serviceId> [branch]`), plus a mislabeled `system dashboard`. Rewritten against the actual command surface.
+- **The in-product help taught the pre-hardening privilege model (P2)** — "anyone who is owner or admin in at least one workspace is an operator": precisely the self-promotion path migration 0038 eliminated. The help now states the operator flag is per-instance (granted on the People page, never inherited), and member-visible topics no longer point at operator-only surfaces (Sources/Volumes/Activity/Docker/Notifications are marked operators-only; the webhook tip points at the real location — the service's Environment tab, not Sources; the agent-transport claim now says sealed envelopes, not "plain HTTP").
+- **Docs accuracy wave (P2/P3):** the microkernel doc no longer teaches the r473-removed `rollback` option or the nonexistent `ctx.events.on` member; the website plugin example uses the real `ctx.tapHook` and the real install sources (marketplace|sandbox — not "NPM packages, Git repos, local directories", which r440 removed); TROUBLESHOOTING's diagnostic command works (`services logs <id>`); the backups doc drops the nonexistent "MCP restore tool"; QUICKSTART names BOTH dev commands (`pnpm dev` for the API, `pnpm dev:web` for :5173); every API-token pointer says Settings → **Security**; install.sh no longer cites a nonexistent docs page. Counts refreshed against reality: 38 MCP tools (was 35, in seven places), 52 tables (was 41), 67 route modules (was 48), 130 templates across twenty categories (was 89/ten), test badge aligned with its own table.
+
+### Fixed — release chain (the r474/r475 diff audit: 0 P1, 1 P2, 3 P3)
+
+- **`release:tag` certified the wrong tree when given a commit (P2).** Its compile/test gates run against the working tree, but provenance reads the commitish — tagging an older SHA ran the gates on HEAD while proving the old commit (false pass), and tagging during a mid-bump HEAD false-blocked. The gate now refuses unless commitish == HEAD: check out what you mean.
+- Provenance checks **all ten package.jsons**, not just the root (the workspace packages are what `packages:publish` ships). An unresolvable commitish now dies with a `✗` diagnostic instead of a Node stack trace.
+- **bump-version.js treats install-command files as critical**: a silent pattern miss on the `--version` occurrences in About/QUICKSTART/README used to pin every copier to the previous release while the script claimed success.
+
+
 ## [0.10.31] - 2026-10-01
 
 > The chain-guard release (r475): the release chain audited itself. The last

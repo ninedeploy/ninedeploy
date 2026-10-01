@@ -189,7 +189,7 @@ export const SERVICE_TAB_TOPICS: Record<string, HelpTopic> = {
       {
         heading: 'Automatic deploys',
         body: [
-          'Deploys can trigger themselves: create a webhook for this service on the Sources page with a branch match and watch-path globs, then add it to your Git host. Pushes that touch watched paths start a build.',
+          'Deploys can trigger themselves: create a webhook for this service on its Environment tab, with a branch match and watch-path globs, then add it to your Git host. Pushes that touch watched paths start a build.',
         ],
         tip: 'Rollback is digest-pinned, so it works even if the repository has moved on or the branch was force-pushed.',
       },
@@ -296,7 +296,7 @@ export const SERVICE_TAB_TOPICS: Record<string, HelpTopic> = {
         bullets: [
           'Both containers of a blue-green switch mount the same volume, so data written by the old release is seen by the new one.',
           'Anything outside a mounted volume (uploads written to the container layer, installed packages) disappears on the next release.',
-          'Snapshots, browsing and fleet-wide inventory live on the Volumes page.',
+          'Snapshots and file browsing live here; the fleet-wide inventory is on the Volumes page (operators only).',
         ],
         tip: 'Databases you manage through the Databases page wire up their volumes automatically — this tab is for your application\'s own state.',
       },

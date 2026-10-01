@@ -124,7 +124,7 @@ export function Home() {
               <span className="tag tag-accent">
                 self-hosted PaaS
               </span>
-              <span className="tag font-bold">v0.10.31</span>
+              <span className="tag font-bold">v0.10.32</span>
               <span className="tag">6,460 tests in CI</span>
             </div>
             <h1 className="text-5xl md:text-7xl font-bold leading-[0.95] tracking-tight">
@@ -285,7 +285,7 @@ export function Home() {
       <section className="mx-auto max-w-7xl px-4 py-16 grid grid-cols-2 md:grid-cols-4 gap-5">
         {[
           { icon: LayoutGrid, k: certifiedCount, suffix: "", v: "runtime-certified templates" },
-          { icon: Boxes, k: 41, suffix: "", v: "tables, one SQLite file" },
+          { icon: Boxes, k: 52, suffix: "", v: "tables, one SQLite file" },
           { icon: RotateCcw, k: 6460, suffix: "", v: "tests in CI" },
           { icon: KeyRound, k: 95, suffix: "%+", v: "enforced coverage floor" },
         ].map((s, i) => (

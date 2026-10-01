@@ -6,9 +6,9 @@ NineDeploy features an extensible Microkernel architecture allowing developers t
 
 ## 🔌 1. Kernel Events & Waterfall Hooks
 
-The kernel exposes two integration surfaces: a typed **event bus** (`ctx.events.on`) for observing lifecycle activity, and sequential **waterfall hooks** (`ctx.tapHook`) that can inspect — and in some cases abort or amend — pipeline steps.
+The kernel exposes two integration surfaces: a typed **event bus** (`ctx.on`) for observing lifecycle activity, and sequential **waterfall hooks** (`ctx.tapHook`) that can inspect — and in some cases abort or amend — pipeline steps.
 
-### Events (`events.on(event, handler)`)
+### Events (`ctx.on(event, handler)`)
 
 The bus is fed from the application's audit stream — every `audit()` call, which
 is the one choke point each meaningful state change already passes through (see
@@ -63,13 +63,10 @@ export default definePlugin({
         // Inspect or amend deployment payload
         return payload;
       },
-      {
-        priority: 150,
-        rollback: async (payload, error) => {
-          // Saga Rollback: cleanup provisioned sidecar or resources if a downstream hook fails
-          console.log(`Rolling back deployment hook due to: ${error?.message}`);
-        },
-      },
+      // Only `priority` is honoured — the host applies its own per-tap
+      // budget (5 s) and rejection-based rollback; per-tap rollback/
+      // timeoutMs/id options do not exist (r473 removed the phantom types).
+      { priority: 150 },
     );
     void untap;
   },
