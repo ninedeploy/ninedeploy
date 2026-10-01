@@ -138,6 +138,7 @@ const h = vi.hoisted(() => {
   workspacesCreate: vi.fn(),
   workspacesDelete: vi.fn(),
   housekeepingPrune: vi.fn(),
+  positiveIntOption: vi.fn((_max: number) => (v: string) => Number(v)),
   serverStartAction: vi.fn(),
   serverStopAction: vi.fn(),
   serverStatusAction: vi.fn(),
@@ -221,6 +222,7 @@ vi.mock('../src/commands/workspaces.js', () => ({
 }));
 vi.mock('../src/commands/housekeeping.js', () => ({
   housekeepingPrune: h.housekeepingPrune,
+  positiveIntOption: h.positiveIntOption,
 }));
 vi.mock('../src/commands/services.js', () => ({
   servicesCreate: h.servicesCreate,
@@ -630,40 +632,87 @@ describe('config action', () => {
   });
 });
 
+// r554: the prune flags must go through the validating parser, not Number().
+describe('images prune flag wiring', () => {
+  it('registers --keep-last / --older-than with the bounded integer parser', async () => {
+    await loadIndex();
+    expect(h.positiveIntOption).toHaveBeenCalledWith(1000);
+    expect(h.positiveIntOption).toHaveBeenCalledWith(8760);
+  });
+});
+
 describe('logout action', () => {
-  it('revokes server-side (best-effort) and clears stored credentials', async () => {
-    h.loadConfig.mockReturnValue({ baseUrl: 'http://srv:3000', token: 'tok' });
-    const logout = vi.fn().mockResolvedValue(undefined);
-    h.getClient.mockReturnValue({ auth: { logout } });
+  // r551: logout revokes ONLY the CLI's own session (`current` row) — the old
+  // `auth.logout()` bumped tokenVersion and signed every browser out too.
+  it('revokes only the current session and clears stored credentials', async () => {
+    h.loadConfig.mockReturnValue({ baseUrl: 'http://srv:3000', token: 'tok', refreshToken: 'rt' });
+    const logout = vi.fn();
+    const list = vi.fn().mockResolvedValue([
+      { id: 4, current: false },
+      { id: 9, current: true },
+    ]);
+    const revoke = vi.fn().mockResolvedValue({ ok: true });
+    h.getClient.mockReturnValue({ auth: { logout, sessions: { list, revoke } } });
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
     await loadIndex();
     await findCommand('logout').actionFn!();
 
-    expect(logout).toHaveBeenCalled();
+    expect(revoke).toHaveBeenCalledWith(9);
+    expect(revoke).toHaveBeenCalledTimes(1);
+    expect(logout).not.toHaveBeenCalled();
     expect(h.saveConfig).toHaveBeenCalledWith({ baseUrl: 'http://srv:3000' });
-    expect(logSpy).toHaveBeenCalledWith('  ✓ Signed out.');
+    expect(logSpy).toHaveBeenCalledWith('  ✓ Signed out (local credentials cleared).');
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Revoked this CLI session (#9)'));
   });
 
-  it('still signs out locally when the server is unreachable', async () => {
+  it('revokes nothing server-side when the credential is not a login session', async () => {
+    h.loadConfig.mockReturnValue({ baseUrl: 'http://srv:3000', token: 'nd_apitoken' });
+    const revoke = vi.fn();
+    h.getClient.mockReturnValue({ auth: { sessions: { list: vi.fn().mockResolvedValue([{ id: 1, current: false }]), revoke } } });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await loadIndex();
+    await findCommand('logout').actionFn!();
+
+    expect(revoke).not.toHaveBeenCalled();
+    expect(h.saveConfig).toHaveBeenCalledWith({ baseUrl: 'http://srv:3000' });
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('not a login session'));
+  });
+
+  it('still signs out locally (and says so) when the server is unreachable', async () => {
     h.loadConfig.mockReturnValue({ baseUrl: 'http://srv:3000', token: 'tok' });
-    h.getClient.mockReturnValue({ auth: { logout: vi.fn().mockRejectedValue(new Error('down')) } });
+    h.getClient.mockReturnValue({ auth: { sessions: { list: vi.fn().mockRejectedValue(new Error('down')) } } });
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
     await loadIndex();
     await findCommand('logout').actionFn!();
 
     expect(h.saveConfig).toHaveBeenCalledWith({ baseUrl: 'http://srv:3000' });
-    expect(logSpy).toHaveBeenCalledWith('  ✓ Signed out.');
+    expect(logSpy).toHaveBeenCalledWith('  ✓ Signed out (local credentials cleared).');
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Could not revoke the session on the server (down)'));
   });
 
-  it('skips the server revoke when no token is stored', async () => {
+  it('stringifies non-Error revoke failures', async () => {
+    h.loadConfig.mockReturnValue({ baseUrl: 'http://srv:3000', refreshToken: 'rt' });
+    h.getClient.mockReturnValue({ auth: { sessions: { list: vi.fn().mockRejectedValue('nope') } } });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await loadIndex();
+    await findCommand('logout').actionFn!();
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('(nope)'));
+  });
+
+  it('skips the server revoke when no credentials are stored', async () => {
     h.loadConfig.mockReturnValue({ baseUrl: 'http://srv:3000' });
     const getClient = h.getClient;
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     await loadIndex();
     await findCommand('logout').actionFn!();
     expect(getClient).not.toHaveBeenCalled();
     expect(h.saveConfig).toHaveBeenCalledWith({ baseUrl: 'http://srv:3000' });
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('nothing to revoke'));
   });
 
   it('stringifies non-Error whoami failures', async () => {

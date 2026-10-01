@@ -1,4 +1,5 @@
 import type { NineDeployClient } from '@ninedeploy/sdk';
+import { InvalidArgumentError } from 'commander';
 import { error, fmtBytes, header, info, spinner, success, table } from '../lib/format.js';
 
 export async function housekeepingPrune(client: NineDeployClient): Promise<void> {
@@ -54,6 +55,22 @@ export async function imagesList(
  * default expectation on a first run: the operator
  * eyeballs the would-delete set, then re-runs without it.
  */
+/**
+ * r554: commander option parser for a whole-number flag in `1..max`.
+ * `images prune` used to pass `Number(v)` straight through — `--older-than 1.5`
+ * or `--keep-last abc` sent 1.5 / NaN (JSON `null`) and the server answered an
+ * opaque 422. Commander prints this message and exits 1 before any request.
+ */
+export function positiveIntOption(max: number): (value: string) => number {
+  return (value: string) => {
+    const n = Number(value);
+    if (!/^\d+$/.test(value.trim()) || n < 1 || n > max) {
+      throw new InvalidArgumentError(`Expected a whole number between 1 and ${max} (got "${value}").`);
+    }
+    return n;
+  };
+}
+
 export async function imagesPrune(
   client: NineDeployClient,
   opts: {

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NineDeployClient } from '@ninedeploy/sdk';
-import { housekeepingPrune } from '../src/commands/housekeeping.js';
+import { InvalidArgumentError } from 'commander';
+import { housekeepingPrune, positiveIntOption } from '../src/commands/housekeeping.js';
 
 describe('CLI housekeeping command', () => {
   let logSpy: ReturnType<typeof vi.spyOn>;
@@ -52,5 +53,22 @@ describe('CLI housekeeping command', () => {
   it('handles housekeeping error', async () => {
     vi.mocked(fakeClient.housekeeping.runPrune).mockRejectedValueOnce(new Error('Prune failed'));
     await expect(housekeepingPrune(fakeClient)).rejects.toThrow('Prune failed');
+  });
+});
+
+// r554: `images prune --older-than 1.5` / `--keep-last abc` went through
+// `Number(v)` and reached the server as 1.5 / NaN (an opaque 422).
+describe('positiveIntOption (images prune flags)', () => {
+  const parse = positiveIntOption(1000);
+
+  it('accepts whole numbers in range', () => {
+    expect(parse('1')).toBe(1);
+    expect(parse(' 24 ')).toBe(24);
+    expect(parse('1000')).toBe(1000);
+  });
+
+  it.each(['1.5', 'abc', '', '0', '-3', '1e3', '0x10', '1001'])('rejects %j with a clear message', (v) => {
+    expect(() => parse(v)).toThrow(InvalidArgumentError);
+    expect(() => parse(v)).toThrow(/whole number between 1 and 1000/);
   });
 });
