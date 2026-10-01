@@ -30,6 +30,11 @@ overrides:
   # release — a blanket bump to 4.x would yank ajv's edge across a major.
   "fast-uri@^3.0.0": "3.1.8"
   "fast-uri@^4.0.0": "4.1.5"
+  # basic-ftp <=6.2.0 (quadratic CPU DoS in Client.list()'s Unix LIST parser —
+  # 2026-10-01 advisory) rides apps/server > pm2 > proxy-agent > pac-proxy-agent
+  # > get-uri. 6.2.1 is the patched release; scoped pin so a future pm2 that
+  # upgrades the chain itself stays free to.
+  "basic-ftp@<=6.2.0": "6.2.1"
   # brace-expansion 4.x <5.0.12 (2026-10-01 GHSA set: DoS via nested-brace
   # recursion in parseCommon) arrives through minimatch chains repo-wide. 5.x
   # is API-compatible for every consumer here.

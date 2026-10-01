@@ -18,6 +18,14 @@ export default fp(
       { parseAs: 'buffer' },
       (req, body, done) => {
         req.rawBody = body as Buffer;
+        // r477: an EMPTY body declared as JSON is a request plenty of real
+        // clients make (fetch wrappers that always set content-type on
+        // DELETEs). Fastify's own parser treats it as {}; the journey smoke
+        // caught this returning 500 via JSON.parse('') — mirror the default.
+        if (body.length === 0) {
+          done(null, {});
+          return;
+        }
         try {
           done(null, JSON.parse(body.toString()));
         } catch (err) {

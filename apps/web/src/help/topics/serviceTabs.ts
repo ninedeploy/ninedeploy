@@ -189,7 +189,7 @@ export const SERVICE_TAB_TOPICS: Record<string, HelpTopic> = {
       {
         heading: 'Automatic deploys',
         body: [
-          'Deploys can trigger themselves: create a webhook for this service on its Environment tab, with a branch match and watch-path globs, then add it to your Git host. Pushes that touch watched paths start a build.',
+          'Deploys can trigger themselves: create a webhook for this service on its Environment tab with watch-path globs — it matches the service branch by default (override via the CLI), then add it to your Git host. Pushes that touch watched paths start a build.',
         ],
         tip: 'Rollback is digest-pinned, so it works even if the repository has moved on or the branch was force-pushed.',
       },

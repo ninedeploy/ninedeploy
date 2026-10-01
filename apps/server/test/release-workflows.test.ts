@@ -93,7 +93,7 @@ describe('release delivery invariants', () => {
     // The SDK takes getToken (a provider); a static token: key is silently
     // ignored at runtime and every call 401s. Sweep every doc-bearing
     // surface so a new copy cannot ship.
-    const surfaces = ['../../../README.md', '../../../docs', '../../../website/src', '../../../packages/mcp', '../../../packages/plugin-sdk'];
+    const surfaces = ['../../../README.md', '../../../docs', '../../../website/src', '../../../apps/web/src', '../../../packages/mcp', '../../../packages/plugin-sdk'];
     const offenders: string[] = [];
     for (const surface of surfaces) {
       const url = new URL(surface, import.meta.url);
@@ -108,5 +108,24 @@ describe('release delivery invariants', () => {
       }
     }
     expect(offenders, `docs teaching the nonexistent token: option: ${offenders.join(', ')}`).toEqual([]);
+  });
+
+  it('r477: the release scripts shared package list covers every workspace package.json', () => {
+    // bump-version and tag-release rewrite/verify this list; an 11th package
+    // missing from it would ship at a stale version with every gate green.
+    // The list lives in scripts/lib/package-list.mjs (one home, imported by
+    // both scripts); this test pins it against the real workspace globs.
+    const listUrl = new URL('../../../scripts/lib/package-list.mjs', import.meta.url);
+    const list = readFileSync(listUrl, 'utf8');
+    const listed = [...list.matchAll(/'([^']*package\.json)'/g)].map((m) => m[1]);
+    expect(listed.length).toBeGreaterThanOrEqual(10);
+    const workspaces = ['.', 'apps/cli', 'apps/server', 'apps/web', 'packages/db', 'packages/mcp', 'packages/plugin-sdk', 'packages/schemas', 'packages/sdk', 'website'];
+    const expected = workspaces.map((w) => (w === '.' ? 'package.json' : `${w}/package.json`));
+    for (const rel of expected) expect(listed, `missing ${rel}`).toContain(rel);
+    // And both scripts import the shared module instead of a private copy.
+    const bump = readFileSync(new URL('../../../scripts/bump-version.js', import.meta.url), 'utf8');
+    const tag = readFileSync(new URL('../../../scripts/tag-release.js', import.meta.url), 'utf8');
+    expect(bump).toContain("from './lib/package-list.mjs'");
+    expect(tag).toContain("from './lib/package-list.mjs'");
   });
 });

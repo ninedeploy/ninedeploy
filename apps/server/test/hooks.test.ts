@@ -70,6 +70,22 @@ describe('webhook receiver', () => {
     expect(res.statusCode).toBe(404);
   });
 
+  it('r477: an EMPTY body declared as application/json parses to {} instead of 500', async () => {
+    // Found by the user-journey smoke: fetch wrappers that always set
+    // content-type on DELETEs sent JSON.parse('') into a 500. Fastify's own
+    // parser treats an empty body as {} — the rawBody override now mirrors it.
+    const app = await buildTestApp({ db: createFakeDb(), rawBody: true });
+    app.post('/empty-json-probe', async (req) => ({ ok: true, body: req.body ?? null }));
+    const res = await app.inject({
+      method: 'POST',
+      url: '/empty-json-probe',
+      headers: { 'content-type': 'application/json' },
+      payload: '',
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, body: {} });
+  });
+
   it('returns 404 for an inactive webhook', async () => {
     const app = await buildTestApp({
       db: createFakeDb({ findFirst: { webhooks: hook({ active: false }) } }),

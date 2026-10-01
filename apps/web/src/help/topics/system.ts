@@ -101,7 +101,7 @@ export const SYSTEM_TOPICS: Record<string, HelpTopic> = {
       {
         heading: 'Auto-deploy webhooks',
         steps: [
-          'Create a webhook for a service: pick the branch to match and the watch-path globs (e.g. apps/api/**).',
+          'Create a webhook from the service\'s Environment tab (watch-path globs; the service branch by default — a different branch via the CLI).',
           'Copy the signed webhook URL shown by the panel.',
           'Add it as a push webhook in GitHub/GitLab. Pushes that match branch and paths trigger a deploy automatically.',
         ],

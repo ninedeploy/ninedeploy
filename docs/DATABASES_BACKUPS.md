@@ -56,7 +56,7 @@ Each managed Docker volume can be snapshotted (`tar.gz`), restored or downloaded
 
 ## 🛡️ 5. Restore Safety
 
-- Restores can be initiated via Web UI or CLI (`ninedeploy backups restore <backupId>`).
+- Restores can be initiated via Web UI or CLI (`ninedeploy backups restore <databaseId> <backupId>`).
 - Volume restores first check that the archive can be listed, then extract the whole archive into a hidden staging directory inside the volume and swap it into place with same-filesystem renames. Corrupt archives and extraction failures (including a full disk) abort before any existing data is touched; the transient staging copy means the volume needs space for both the old and the restored contents during a restore.
 - Database operations use separate staging files. Failed decryption removes partial plaintext instead of retaining an unauthenticated dump on disk.
 - Backup and restore operations hold a cross-process lock file (under `op-locks/` in the data directory), so an overlapping panel process — a systemd restart overlap or a second instance on the same data directory — cannot interleave a backup with a restore on the same database or volume; a busy lock answers 409, and a lock abandoned by a crashed process is reclaimed after its heartbeat goes stale.

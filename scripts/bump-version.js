@@ -30,18 +30,9 @@ function resolveInRoot(rel) {
 }
 
 // 1. All package.json files
-const packageJsons = [
-  'package.json',
-  'apps/cli/package.json',
-  'apps/server/package.json',
-  'apps/web/package.json',
-  'packages/db/package.json',
-  'packages/mcp/package.json',
-  'packages/plugin-sdk/package.json',
-  'packages/schemas/package.json',
-  'packages/sdk/package.json',
-  'website/package.json',
-];
+// r477: shared with tag-release.js — the list has one home so an 11th
+// package cannot ship at a stale version with every gate green.
+import { PACKAGE_JSONS as packageJsons } from './lib/package-list.mjs';
 
 for (const rel of packageJsons) {
   const file = resolveInRoot(rel);

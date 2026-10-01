@@ -76,19 +76,7 @@ const show = (file) => {
 };
 // r476: ALL TEN package.jsons, not just the root — the workspace packages are
 // what packages:publish ships; a partial revert must not slip through.
-const packageJsons = [
-  'package.json',
-  'apps/cli/package.json',
-  'apps/server/package.json',
-  'apps/web/package.json',
-  'packages/db/package.json',
-  'packages/mcp/package.json',
-  'packages/plugin-sdk/package.json',
-  'packages/schemas/package.json',
-  'packages/sdk/package.json',
-  'website/package.json',
-];
-for (const rel of packageJsons) {
+import { PACKAGE_JSONS as packageJsons } from './lib/package-list.mjs';for (const rel of packageJsons) {
   const v = JSON.parse(show(rel)).version;
   if (v !== bare) die(`${rel} on ${commitish} says ${v}, tag says ${bare}.`);
 }

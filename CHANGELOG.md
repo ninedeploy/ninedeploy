@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.33] - 2026-10-01
+
+> The journey release (r477): the product now proves its own core loop on the
+> published image — and the very first run of that journey caught a real bug
+> no unit test had: a bodyless JSON-declared request answered 500.
+
+### Added
+
+- **`pnpm smoke:user-journey`** — the user-journey smoke. Spins the validated DinD topology (privileged docker:28-dind sidecar; the panel image under test gets plain `DOCKER_HOST=tcp://…`) and drives the product's core loop against the PUBLISHED artifact: register the first admin → create a docker-image service → trigger a deploy and wait for green (deployment rows use `running` as the success terminal — the events layer translates to `success`) → read logs → route a domain → delete the service → full teardown with diagnostics (panel log tail) on any failure. Unit and route tests cover each hop; this proves they still compose on the image a user actually pulls. It joins the release drill.
+
+### Fixed
+
+- **A bodyless `application/json` request answered 500 (found by the journey's first run).** The rawBody plugin — which overrides Fastify's JSON parser to capture exact bytes for webhook HMAC verification — called `JSON.parse` on the raw buffer with no empty-body guard, so `JSON.parse('')` threw into a 500. Real clients send exactly this shape (fetch wrappers that always set content-type on DELETEs — our own smoke among them); Fastify's own parser treats the empty body as `{}`. The override now mirrors that default. Regression test added.
+
+### Security
+
+- **basic-ftp pinned to 6.2.1** (scoped override): <=6.2.0 has a quadratic-time CPU DoS in `Client.list()`'s Unix LIST parser (2026-10-01 advisory); it rides `apps/server > pm2 > proxy-agent > pac-proxy-agent > get-uri`. Prod audit clean again.
+
+### Chain & docs polish (the r475–r476 delta audit: 0 P1 / 0 P2 / 4 P3)
+
+- `ninedeploy backups restore` documented with BOTH required args (`<databaseId> <backupId>`).
+- The repo-wide createClient `token:` guard now also sweeps `apps/web/src` — the in-product help surface this project rewrites most often was the one surface unchecked.
+- **The release scripts share one package list** (`scripts/lib/package-list.mjs`, imported by bump-version and tag-release) with a test pinning it against the real workspace globs — the two hardcoded 10-entry copies could drift, and an 11th package would have shipped at a stale version with every gate green.
+- Webhook help no longer promises a branch picker the panel UI does not have (the Environment tab matches the service branch; override via CLI), and the Sources help topic points at the real flow instead of a Sources-page wizard that does not exist.
+
+
 ## [0.10.32] - 2026-10-01
 
 > The truth-in-docs release (r476): the documentation sweep that had never

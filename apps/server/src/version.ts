@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.32';
+export const VERSION = '0.10.33';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.33',
+    date: '2026-10-01',
+    title: 'The Journey Release — the Product Proves Itself',
+    changes: [
+      'Added: pnpm smoke:user-journey — the product core loop proven on the PUBLISHED image, not the source tree: privileged DinD sidecar (the validated pattern) plus the panel image under test; register first admin, create a docker-image service, trigger a deploy and wait for it to go green (deployment rows use running as the success terminal — the events layer translates to success), read logs, route a domain, delete the service, full teardown. This is now part of the release drill.',
+      'Fixed (found BY the journey smoke, first run): a bodyless request declared as application/json answered 500 — the rawBody HMAC parser overrode Fastify with a bare JSON.parse that throws on the empty body. Plenty of real clients send exactly that (fetch wrappers that always set content-type, including our own smoke). The parser now mirrors the Fastify default: empty body parses to {}. Regression test added.',
+      'Security: basic-ftp <=6.2.0 (quadratic CPU DoS in the FTP LIST parser — rides apps/server > pm2 > proxy-agent > pac-proxy-agent > get-uri) pinned to the patched 6.2.1 via a scoped override; prod audit clean again.',
+      'Docs/chain polish (the r475-r476 delta audit, 0 P1 / 0 P2 / 4 P3): backups restore shown with BOTH required args; the createClient token: guard now also sweeps apps/web/src (the in-product help surface); the release scripts share ONE package list (scripts/lib/package-list.mjs) with a coverage test pinning it against the real workspace globs — an 11th package can no longer ship at a stale version with every gate green; the webhook help no longer promises a branch picker the panel UI does not have (Environment tab matches the service branch; override via CLI) and the Sources topic points at the real flow.',
+    ],
+  },
+{
     version: '0.10.32',
     date: '2026-10-01',
     title: 'The Truth-in-Docs Release',
