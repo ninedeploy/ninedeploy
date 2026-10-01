@@ -14,7 +14,7 @@
 // Usage: node scripts/smoke-user-journey.mjs [--image=ghcr.io/ninedeploy/ninedeploy:vX.Y.Z]
 
 import { spawnSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 
 const IMAGE = process.argv.find((a) => a.startsWith('--image='))?.slice('--image='.length)
   ?? 'ghcr.io/ninedeploy/ninedeploy:v0.10.32';
@@ -140,7 +140,61 @@ async function main() {
   if (domRes.status !== 200 && domRes.status !== 201) fail(`domain create failed: ${domRes.status} ${domRes.text.slice(0, 300)}`);
   step('domain routed');
 
+  // ── webhook trigger: HMAC-signed push redeploy (the rawBody happy path) ─
+  const hookRes = await api(`/v1/services/${serviceId}/webhooks`, { method: 'POST', token, body: {} });
+  if (hookRes.status !== 200 && hookRes.status !== 201) fail(`webhook create failed: ${hookRes.status} ${hookRes.text.slice(0, 300)}`);
+  // The panel-computed url carries its container-internal origin — address
+  // the receiver through OUR mapped port instead.
+  const hookUrl = `/v1/hooks/${hookRes.json?.id}`;
+  const hookSecret = hookRes.json?.secret;
+  if (!hookSecret) fail('webhook create returned no secret');
+  const pushBody = JSON.stringify({ ref: 'refs/heads/main', after: randomBytes(20).toString('hex'), repository: { full_name: 'journey/repo' } });
+  const sig = `sha256=${createHmac('sha256', hookSecret).update(pushBody).digest('hex')}`;
+  const pushRes = await fetch(`http://127.0.0.1:${PANEL_PORT}${hookUrl}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-github-event': 'push', 'x-hub-signature-256': sig },
+    body: pushBody,
+  });
+  if (pushRes.status !== 200) fail(`signed push rejected: ${pushRes.status} ${(await pushRes.text()).slice(0, 200)}`);
+  step('signed webhook push accepted');
+  let secondDeploy = null;
+  for (let i = 0; i < 150; i++) {
+    const list = await api(`/v1/services/${serviceId}/deploys`, { token });
+    const all = Array.isArray(list.json) ? list.json : (list.json?.deploys ?? []);
+    const d = all.find((x) => x.id !== deployId && TERMINAL.has(x.status));
+    if (d) { secondDeploy = d; break; }
+    if (i % 15 === 0) step(`  …waiting for webhook-triggered deploy (poll ${i}, latest ${all[0]?.id}:${all[0]?.status})`);
+    await sleep(2000);
+  }
+  if (secondDeploy?.status !== 'running') fail(`webhook-triggered deploy ended as '${secondDeploy?.status ?? 'none'}'`);
+  step(`webhook-triggered deploy #${secondDeploy.id} green`);
+
+  // ── compose stack: inline content, two services, main resolution ───────
+  const composeSvc = await api('/v1/services', { method: 'POST', token, body: {
+    name: 'journey-stack', type: 'compose',
+    composeService: 'web',
+    composeContent: 'services:\n  web:\n    image: nginx:1.27-alpine\n    restart: unless-stopped\n  sidecar:\n    image: redis:7-alpine\n    restart: unless-stopped\n',
+  } });
+  if (composeSvc.status !== 200 && composeSvc.status !== 201) fail(`compose create failed: ${composeSvc.status} ${composeSvc.text.slice(0, 300)}`);
+  const composeId = composeSvc.json?.id ?? composeSvc.json?.service?.id;
+  step(`compose service #${composeId} created (web + sidecar)`);
+  await api(`/v1/services/${composeId}/deploys`, { method: 'POST', token, body: {} });
+  let composeStatus = null;
+  for (let i = 0; i < 150; i++) {
+    const list = await api(`/v1/services/${composeId}/deploys`, { token });
+    const all = Array.isArray(list.json) ? list.json : (list.json?.deploys ?? []);
+    composeStatus = all[0]?.status ?? composeStatus;
+    if (TERMINAL.has(composeStatus)) break;
+    if (i % 15 === 0) step(`  …waiting for compose deploy (poll ${i}: ${composeStatus})`);
+    await sleep(2000);
+  }
+  if (composeStatus !== 'running') fail(`compose deploy ended as '${composeStatus}'`);
+  step('compose deploy green');
+
   // ── teardown ────────────────────────────────────────────────────────────
+  const delCompose = await api(`/v1/services/${composeId}`, { method: 'DELETE', token });
+  if (delCompose.status !== 200 && delCompose.status !== 204) fail(`compose delete failed: ${delCompose.status}`);
+  step('compose service deleted');
   const del = await api(`/v1/services/${serviceId}`, { method: 'DELETE', token });
   if (del.status !== 200 && del.status !== 204) { // 204 No Content is the route's own success
     // Diagnose: the panel log usually names the throwing step.
@@ -149,11 +203,12 @@ async function main() {
   }
   step('service deleted');
 
-  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → teardown');
+  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → signed webhook redeploy → compose stack → teardown');
 }
 
 main()
-  .catch(() => { process.exitCode = 1; })
+  .catch((err) => { console.error(`
+✗ journey aborted: ${err?.message ?? err}`); process.exitCode = 1; })
   .finally(() => {
     for (const c of [PANEL, DIND]) { try { docker(['rm', '-f', c], { quiet: true }); } catch { /* best effort */ } }
     try { docker(['network', 'rm', NET], { quiet: true }); } catch { /* best effort */ }

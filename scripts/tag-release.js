@@ -15,7 +15,6 @@
 // server (the exact step an unescaped-apostrophe version.ts fails).
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import process from 'node:process';
 
