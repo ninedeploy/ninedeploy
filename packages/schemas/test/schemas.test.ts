@@ -673,7 +673,10 @@ describe('service', () => {
     it('webhookCreate accepts a git-validated optional branch (r473: the live boundary schema)', () => {
       expect(webhookCreate.safeParse({ branch: 'main' }).success).toBe(true);
       expect(webhookCreate.safeParse({}).success).toBe(true);
-      bad(webhookCreate, { branch: '' });
+      // Empty/whitespace normalizes to absent — the route falls back to the
+      // service's own branch, exactly as it always did (r474).
+      expect(webhookCreate.parse({ branch: '' }).branch).toBeUndefined();
+      expect(webhookCreate.parse({ branch: '   ' }).branch).toBeUndefined();
       // r473: same charset rule as the service's own branch — a branch this
       // rejects could never match a push anyway.
       bad(webhookCreate, { branch: 'not a branch!' });

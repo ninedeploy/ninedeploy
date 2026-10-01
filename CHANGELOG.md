@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.30] - 2026-10-01
+
+> The clean-sweep release (r474): the fresh-eyes audit of 0.10.29 came back
+> **0 P1 / 0 P2** — the notification encryption, the SDK-honouring bootstraps
+> and the member gating all held. What ships here are the three P3s it did
+> find, plus the two debris items the r473 audit had noted and deferred.
+
+### Fixed
+
+- **The SDK type for the masked notification config (P3).** `listChannels` still promised `configJson: string | null` without the new `hasConfig` field — so a consumer read `null` on a webhook/FCM channel and had no way to distinguish "no config" from "masked". Worse, a read-modify-write flow that rebuilt `configJson` from that null and PATCHed it back would have **silently destroyed the stored HMAC secret / FCM service account** (PATCH treats any non-empty string as the full replacement). The type now carries `hasConfig: boolean` and documents that non-Discord blobs are write-only: send the full config or omit the field.
+
+- **Empty webhook branches fall back again (P3).** r473's charset rule turned `{"branch": ""}` (or whitespace-only) into a 400; the route's historical behaviour was to treat it as absent and use the service's own branch. The schema now normalizes empty/whitespace to `undefined` before validation — the git charset rule still applies to non-empty values.
+
+- **A malformed plugin definition no longer disguises itself as an init timeout (P3).** r473 forwards the object a plugin's code returns verbatim — unlike the install manifest, that object passed no schema. A `configSchema: 5` or a menu item with a numeric id threw inside the READY handler, the message wrapper swallowed it, and the only symptom was a ten-second "timed out during initialization" that hid the cause and stalled plugin load. The READY handler now validates the payload's shape, skips the malformed entries with a warning naming the plugin, and completes the handshake (tested: garbage + one well-formed menu item → plugin loads, the good item registers, the warning fires).
+
+### Hygiene
+
+- `dockerVolumeName`'s uppercase acceptance is documented as **deliberate**: docker itself accepts uppercase volume names, and rejecting them would break attach flows against pre-existing out-of-band volumes (the managed `nd-svc-`/`nd-db-` prefixes are lowercased by construction).
+- The `webhooks.events` column is marked **dead** in the schema (defaulted `["push"]`, never written otherwise, never branched on): kept physically — dropping needs a table-rebuild migration for zero value — but flagged so nobody builds on it.
+
+
 ## [0.10.29] - 2026-10-01
 
 > The contract-honest SDK + secrets-at-rest release (r473): the auditors-audit

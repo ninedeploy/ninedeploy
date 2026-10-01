@@ -731,6 +731,11 @@ export const webhooks = sqliteTable('webhooks', {
     .notNull()
     .references(() => services.id, { onDelete: 'cascade' }),
   branch: text('branch').notNull(),
+  // DEAD (r474 audit): defaulted '["push"]', never written with anything else
+  // and never branched on anywhere — only copied verbatim by service export/
+  // import. Kept physically (dropping needs a table-rebuild migration for
+  // zero value) but marked: do not build on it; a future webhook-events
+  // feature should redesign it rather than resurrect this column.
   events: text('events', { mode: 'json' }).$type<string[]>().notNull().default(sql`'["push"]'`),
   // Optional newline/comma-separated globs — deploy only when a changed file matches (monorepos).
   watchPaths: text('watch_paths'),

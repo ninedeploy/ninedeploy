@@ -60,14 +60,14 @@ export type SelfUpdateStatus = z.infer<typeof selfUpdateStatus>;
 
 export const webhookCreate = z.object({
   // r473: same charset rule the service's own branch field uses — a branch
-  // this rejects could never match a push anyway (it is string-compared
-  // against git-validated branch names). Whitespace-tolerant like the route
-  // always was: the value is trimmed before validation.
+  // this rejects could never match a push anyway. Empty/whitespace normalizes
+  // to ABSENT (the route then falls back to the service's own branch, exactly
+  // as it always did) instead of 400ing.
   branch: z
     .string()
     .max(200)
     .optional()
-    .transform((v) => v?.trim())
+    .transform((v) => v?.trim() || undefined)
     .pipe(gitBranch.optional()),
   /** Newline/comma-separated globs — deploy only when a changed file matches. */
   watchPaths: z.string().max(1024).refine((raw) => {

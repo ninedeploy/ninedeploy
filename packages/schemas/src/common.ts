@@ -114,11 +114,13 @@ export const containerPath = z
   .refine((v) => !v.split('/').includes('..'), { message: 'must not contain ".." segments' });
 
 /**
- * Docker named-volume name. Lowercase letters, digits, underscores, hyphens
- * and dots; must start with alnum; max 64 chars (the volume driver limit
- * on most filesystems). The managed prefixes `nd-svc-` / `nd-db-` are
- * accepted; clients sending a non-managed name attach a pre-existing volume
- * they have created out-of-band.
+ * Docker named-volume name: letters (BOTH cases — the `i` flag is deliberate,
+ * r474: docker itself accepts uppercase volume names, and rejecting them
+ * would break attach flows against pre-existing out-of-band volumes), digits,
+ * underscores, hyphens and dots; must start with alnum; max 64 chars (the
+ * volume driver limit on most filesystems). The managed prefixes `nd-svc-` /
+ * `nd-db-` are lowercased by construction; a non-managed name attaches a
+ * pre-existing volume the client created out-of-band.
  */
 export const dockerVolumeName = z
   .string()

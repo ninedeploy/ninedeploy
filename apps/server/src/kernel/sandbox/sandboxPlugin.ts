@@ -302,9 +302,23 @@ export class SandboxPlugin implements KernelPlugin {
   ): Promise<void> {
     switch (msg.type) {
       case 'READY': {
-        if (msg.payload.configSchema) {
-          this.configSchema = msg.payload.configSchema;
-          for (const def of msg.payload.configSchema) {
+        // r474: the payload is plugin-controlled (the r473 change forwards the
+        // object the plugin code returned, which — unlike the install
+        // manifest — passed no schema). A non-array configSchema or a
+        // non-string key used to throw inside this handler; the wrapper
+        // swallowed it and the only symptom was a misleading 10 s init
+        // timeout. Guard the shape, log the offender, still go READY: a
+        // malformed declaration must not wedge the plugin's whole load.
+        const rawSchema = msg.payload.configSchema;
+        const malformedSchema =
+          rawSchema !== undefined && (!Array.isArray(rawSchema) || rawSchema.some((d) => !d || typeof d.key !== 'string'));
+        const schema = Array.isArray(rawSchema) ? rawSchema.filter((d) => d && typeof d.key === 'string') : [];
+        if (malformedSchema) {
+          console.warn(`[Sandbox:${this.id}] READY carried malformed configSchema entries — skipped`);
+        }
+        if (schema.length > 0) {
+          this.configSchema = schema;
+          for (const def of schema) {
             const fullKey = def.key.startsWith(`plugin:${this.id}:`) ? def.key : `plugin:${this.id}:${def.key}`;
             ctx.configCenter.registerDefinition({
               ...def,
@@ -314,16 +328,23 @@ export class SandboxPlugin implements KernelPlugin {
             });
           }
         }
-        if (msg.payload.menuItems) {
-          this.menuItems = msg.payload.menuItems;
-          for (const item of msg.payload.menuItems) {
+        const rawMenu = msg.payload.menuItems;
+        const malformedMenu =
+          rawMenu !== undefined && (!Array.isArray(rawMenu) || rawMenu.some((i) => !i || typeof i.id !== 'string' || typeof i.route !== 'string'));
+        const menu = Array.isArray(rawMenu) ? rawMenu.filter((i) => i && typeof i.id === 'string' && typeof i.route === 'string') : [];
+        if (malformedMenu) {
+          console.warn(`[Sandbox:${this.id}] READY carried malformed menuItems — skipped`);
+        }
+        if (menu.length > 0) {
+          this.menuItems = menu;
+          for (const item of menu) {
             ctx.menuRegistry.registerMenuItem({
               ...item,
               pluginId: this.id,
             });
           }
         }
-        if (msg.payload.dependencies) this.dependencies = msg.payload.dependencies;
+        if (Array.isArray(msg.payload.dependencies)) this.dependencies = msg.payload.dependencies;
         onReady();
         break;
       }

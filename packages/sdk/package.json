@@ -1,6 +1,6 @@
 {
   "name": "@ninedeploy/sdk",
-  "version": "0.10.29",
+  "version": "0.10.30",
   "description": "Official TypeScript SDK for NineDeploy PaaS",
   "license": "MIT",
   "repository": {

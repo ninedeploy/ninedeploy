@@ -1087,7 +1087,14 @@ export interface NineDeployClient {
     }>;
   };
   notifications: {
-    listChannels: () => Promise<Array<{ id: number; name: string; type: string; eventFilter: string; active: boolean; configJson: string | null; createdAt: string }>>;
+    /**
+     * r473: the provider config blob is encrypted at rest and WRITE-ONLY over
+     * the API for everything but the secret-free Discord shape — `configJson`
+     * is null with `hasConfig: true` for webhook/FCM channels. Reading then
+     * PATCHing the null back would CLEAR the stored secret; send the full
+     * config or omit the field.
+     */
+    listChannels: () => Promise<Array<{ id: number; name: string; type: string; eventFilter: string; active: boolean; configJson: string | null; hasConfig: boolean; createdAt: string }>>;
     createChannel: (input: { name: string; type: string; target: string; eventFilter?: string; configJson?: string | null }) => Promise<{ id: number; name: string; type: string }>;
     updateChannel: (id: number, input: { name?: string; target?: string; eventFilter?: string; active?: boolean; configJson?: string | null }) => Promise<{ id: number; active: boolean }>;
     removeChannel: (id: number) => Promise<void>;
@@ -1995,7 +2002,7 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       get: () => get('/v1/about'),
     },
     notifications: {
-      listChannels: () => get<Array<{ id: number; name: string; type: string; eventFilter: string; active: boolean; configJson: string | null; createdAt: string }>>('/v1/notifications/channels'),
+      listChannels: () => get<Array<{ id: number; name: string; type: string; eventFilter: string; active: boolean; configJson: string | null; hasConfig: boolean; createdAt: string }>>('/v1/notifications/channels'),
       createChannel: (input) => send('POST', '/v1/notifications/channels', input),
       updateChannel: (id, input) => send('PATCH', `/v1/notifications/channels/${id}`, input),
       removeChannel: async (id) => { await request(`/v1/notifications/channels/${id}`, { method: 'DELETE' }); },

@@ -140,6 +140,52 @@ describe('SandboxPlugin (Worker Threads)', () => {
     }
   });
 
+  it('r474: a malformed READY payload still completes the handshake instead of timing out', async () => {
+    // The r473 change forwards the object the plugin code RETURNED — which,
+    // unlike the install manifest, passed no schema. Garbage declarations
+    // used to throw inside the READY handler, get swallowed by the message
+    // wrapper, and surface only as a 10 s init timeout that hid the cause.
+    const workerScriptPath = join(tmpdir(), `test-worker-malformed-${Date.now()}.mjs`);
+    writeFileSync(
+      workerScriptPath,
+      `
+      import { parentPort } from 'node:worker_threads';
+      parentPort.on('message', (msg) => {
+        if (msg.type === 'INIT') {
+          parentPort.postMessage({
+            type: 'READY',
+            payload: {
+              configSchema: 5,
+              menuItems: [{ id: 7, label: 'garbage' }, { id: 'ok-menu', label: 'OK', route: '/ok', slot: 'sidebar:main' }],
+              dependencies: 'nope',
+            },
+          });
+        }
+        if (msg.type === 'SHUTDOWN') process.exit(0);
+      });
+      `,
+      'utf8',
+    );
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const kernel = new NineDeployKernel(createFakeDb(), mockConfig);
+      const plugin = new SandboxPlugin({ id: 'malformed-sandbox', name: 'Malformed', workerPath: workerScriptPath });
+      // Must RESOLVE (handshake completes) — not reject on the 10s timeout.
+      await kernel.registerPlugin(plugin);
+      expect(kernel.getPlugin('malformed-sandbox')).toBeDefined();
+      // The one well-formed menu item registered; the garbage was skipped
+      // with a warning naming the plugin.
+      expect(kernel.menuRegistry.getAllItems().some((i) => i.id === 'ok-menu')).toBe(true);
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('malformed-sandbox'));
+      await kernel.unregisterPlugin('malformed-sandbox');
+    } finally {
+      warnSpy.mockRestore();
+      try {
+        unlinkSync(workerScriptPath);
+      } catch {}
+    }
+  }, 20000);
+
   it('handles worker error events gracefully without crashing kernel', async () => {
     const db = createFakeDb();
     const kernel = new NineDeployKernel(db, mockConfig);
