@@ -248,6 +248,23 @@ describe('auth routes', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  // r504: the unknown-email branch skipped argon2 — a timing oracle for
+  // account existence. It must pay the same verify a wrong password does.
+  it('runs the password verify even when the email has no account', async () => {
+    cryptoMocks.verifyPassword.mockClear();
+    const app = await buildTestApp({ db: createFakeDb() });
+    await app.register(authRoutes);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/login',
+      payload: { email: 'ghost2@example.com', password: 'whatever' },
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error.message).toBe('Invalid email or password');
+    expect(cryptoMocks.verifyPassword).toHaveBeenCalledTimes(1);
+    expect(cryptoMocks.verifyPassword).toHaveBeenCalledWith('', 'whatever');
+  });
+
   it('refreshes tokens with a valid refresh token', async () => {
     jwtMocks.verifyJwt.mockResolvedValueOnce({ type: 'refresh', sub: '1', jti: 'jti-1', ver: 0 });
     const app = await buildTestApp({

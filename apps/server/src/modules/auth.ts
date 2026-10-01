@@ -291,7 +291,11 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     const user = await app.db.query.users.findFirst({
       where: sql`lower(${users.email}) = lower(${input.email})`,
     });
-    if (!user || !(await verifyPassword(user.passwordHash, input.password))) {
+    // r504: an unknown email still pays one full argon2 verify (against a
+    // dummy hash — see verifyPassword), so response timing does not reveal
+    // which addresses have an account.
+    const passwordOk = await verifyPassword(user?.passwordHash ?? '', input.password);
+    if (!user || !passwordOk) {
       const locked = recordFailure(input.email, req.ip);
       if (locked) void audit(app.db, null, 'auth.lockout', input.email);
       throw unauthorized('Invalid email or password');
