@@ -21,6 +21,11 @@ import process from 'node:process';
 
 const root = resolve(import.meta.dirname, '..');
 const sh = (cmd, args, opts = {}) => execFileSync(cmd, args, { cwd: root, encoding: 'utf8', ...opts });
+// On Windows `pnpm` is a .cmd shim, which execFileSync cannot spawn without a
+// shell (Node >= 18 EINVALs). The args are static constants — no injection
+// surface — so shelling out on win32 only is safe.
+const pnpm = (args, opts = {}) =>
+  sh('pnpm', args, { shell: process.platform === 'win32', ...opts });
 
 const die = (msg) => {
   console.error(`✗ ${msg}`);
@@ -70,13 +75,13 @@ if (versionTs.includes('Placeholder')) {
 // tree (identical, per check 1).
 console.log(`Typechecking the server before tagging ${tag}…`);
 try {
-  sh('pnpm', ['--filter', '@ninedeploy/server', 'exec', 'tsc', '--noEmit'], { stdio: 'inherit' });
+  pnpm(['--filter', '@ninedeploy/server', 'exec', 'tsc', '--noEmit'], { stdio: 'inherit' });
 } catch {
   die('server typecheck failed — the tag would fail publish-image the same way. Fix first.');
 }
 console.log('Running the version invariants test…');
 try {
-  sh('pnpm', ['--filter', '@ninedeploy/server', 'exec', 'vitest', 'run', 'test/version.test.ts'], { stdio: 'inherit' });
+  pnpm(['--filter', '@ninedeploy/server', 'exec', 'vitest', 'run', 'test/version.test.ts'], { stdio: 'inherit' });
 } catch {
   die('test/version.test.ts failed — fill the changelog entry properly before tagging.');
 }
