@@ -13,6 +13,13 @@ declare module 'fastify' {
  */
 export default fp(
   async (fastify) => {
+    // r506: replacing Fastify's JSON parser with a bare JSON.parse dropped its
+    // prototype-poisoning guard — `{"__proto__":{…}}` and
+    // `{"constructor":{"prototype":{…}}}` reached every handler that spreads or
+    // merges req.body. Delegate to Fastify's own parser (secure-json-parse
+    // under the hood, no extra dependency) with its default 'error' actions,
+    // so a poisoned body is a 400 exactly as it is without this plugin.
+    const secureJsonParse = fastify.getDefaultJsonParser('error', 'error');
     fastify.addContentTypeParser(
       'application/json',
       { parseAs: 'buffer' },
@@ -26,11 +33,7 @@ export default fp(
           done(null, {});
           return;
         }
-        try {
-          done(null, JSON.parse(body.toString()));
-        } catch (err) {
-          done(err as Error, undefined);
-        }
+        secureJsonParse(req, body.toString(), done);
       },
     );
 
