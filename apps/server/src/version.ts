@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.34';
+export const VERSION = '0.10.35';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.35',
+    date: '2026-10-02',
+    title: 'The Backstop Release — the Throttle-Fix Audit',
+    changes: [
+      'Fixed (P2, found by auditing the owner-throttle fix): requests that pass authentication but die at a privilege guard were no longer rate-limited AT ALL. The principal limiter is appended to ROUTE-level preHandlers, but the module guards (requireAdmin/requireOperator across ~25 modules) are INSTANCE-level preHandlers — they run FIRST, and a thrown 403 short-circuited the lifecycle before the limiter fired. A valid low-privilege credential (a member session, a read-only API token) could hammer operator-gated routes unmetered — three DB round trips of auth per request, unbounded RPS, DB-pool exhaustion. The same applied to 401s and parse-failed 400s. Backstop added: responses that die with 400/401/403 are counted per IP in the same 1000/min window, and the IP is refused outright past the cap. Successful traffic is never counted at IP level (the principal limiter owns it), so the owner-throttle fix is intact; reaching the backstop requires a thousand guard-rejections in a minute, which is never legitimate.',
+      'Fixed: /v1/about still pooled an authenticated operator into the anonymous per-IP bucket (its optional auth resolved in the handler, after the limiter had already keyed by IP) — optional auth now runs at onRequest, so the limiter sees the principal on this route too.',
+      'Fixed (docs): the r478 note claimed WebSocket upgrades no longer pass the limiter — wrong (@fastify/websocket hijacks in the route handler, not onRequest): upgrades DO traverse the preHandler limiter, IP-keyed. The behavior was safer than documented; the comment and changelog now say what actually happens.',
+      'Hardened: the user-journey smoke derives its default image from the repo version instead of a hardcoded tag — a bare run could happily prove the journey green on a two-releases-old artifact.',
+    ],
+  },
+{
     version: '0.10.34',
     date: '2026-10-01',
     title: 'The Owner-Throttle Release — Your Panel Will Not Rate-Limit You',

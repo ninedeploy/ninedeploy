@@ -10,20 +10,23 @@ import { ABOUT } from '../version.js';
  * workloads an instance hosts.
  */
 export const aboutRoutes: FastifyPluginAsync = async (app) => {
-  app.get('/', async (req, reply) => {
-    // Optional auth: no Authorization header → public subset, never a 401
-    // (the login page links here and the About UI is authed anyway).
-    let authenticated = false;
-    if (req.headers.authorization) {
-      try {
-        await app.authenticate(req, reply);
-        authenticated = true;
-      } catch {
-        /* invalid token → still serves the public subset */
-      }
+  // Optional auth at ONREQUEST (r479): the rate limiter keys by principal at
+  // preHandler, so resolving the user here — instead of in the handler —
+  // keeps an authenticated operator out of the anonymous per-IP bucket on
+  // this route too (the exact pooling the r478 fix removed everywhere else).
+  // Invalid tokens are swallowed: no Authorization header, or a bad one,
+  // serves the public subset and never 401s (the login page links here).
+  app.addHook('onRequest', async (req, reply) => {
+    if (!req.headers.authorization) return;
+    try {
+      await app.authenticate(req, reply);
+    } catch {
+      /* invalid token → public subset */
     }
+  });
 
-    if (!authenticated) {
+  app.get('/', async (req) => {
+    if (!req.user) {
       return { ...ABOUT };
     }
 

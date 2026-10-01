@@ -17,10 +17,10 @@ import fp from 'fastify-plugin';
  *     ceilings on those routes (see `config.rateLimit`) are the real
  *     brute-force guards and are unaffected.
  *
- * Trade-off: WebSocket upgrades (which hijack the socket at onRequest) no
- * longer pass through the limiter — every WS endpoint authenticates in the
- * subprotocol and revalidates, and connection floods are a proxy-level
- * (Traefik) concern, not an application-rate one.
+ * Trade-off note (r479, corrected): WebSocket upgrades DO traverse the
+ * preHandler limiter (IP-keyed — no principal before auth) — @fastify/websocket
+ * hijacks the socket in the route handler, not at onRequest, as an earlier
+ * comment wrongly claimed.
  */
 export default fp(
   async (fastify) => {
@@ -33,6 +33,44 @@ export default fp(
       // Don't leak rate-limit headers (reduces fingerprinting / probing surface).
       addHeadersOnExceeding: { 'x-ratelimit-remaining': false, 'x-ratelimit-limit': false },
       addHeaders: { 'x-ratelimit-remaining': false, 'x-ratelimit-limit': false, 'retry-after': true },
+    });
+
+    // r479: the principal limiter is APPENDED to route-level preHandlers, but
+    // the module guards (requireAdmin/requireOperator) are INSTANCE-level
+    // preHandlers — they run FIRST, and a thrown 401/403 short-circuits the
+    // lifecycle before the limiter ever fires. A valid low-privilege
+    // credential could therefore hammer operator-gated routes unmetered
+    // (three DB round trips of auth per request). Backstop: count requests
+    // that DIE with 400/401/403 per IP and refuse the next ones past the
+    // same 1000/min ceiling. Successful traffic is never counted at IP level
+    // (the principal limiter owns it), so the owner-throttle fix is intact.
+    const REJECTION_WINDOW_MS = 60_000;
+    const REJECTION_CAP = 1000;
+    const PRE_HANDLER_DEATH = new Set([400, 401, 403]);
+    const rejections = new Map<string, number[]>();
+
+    fastify.addHook('onResponse', async (req, reply) => {
+      if (!PRE_HANDLER_DEATH.has(reply.statusCode)) return;
+      const key = req.ip;
+      const now = Date.now();
+      const stamps = (rejections.get(key) ?? []).filter((t) => now - t < REJECTION_WINDOW_MS);
+      stamps.push(now);
+      rejections.set(key, stamps);
+    });
+
+    fastify.addHook('onRequest', async (req, reply) => {
+      const now = Date.now();
+      const stamps = (rejections.get(req.ip) ?? []).filter((t) => now - t < REJECTION_WINDOW_MS);
+      if (stamps.length === 0) rejections.delete(req.ip);
+      else rejections.set(req.ip, stamps);
+      if (stamps.length < REJECTION_CAP) return;
+      const retryAfter = Math.max(1, Math.ceil((REJECTION_WINDOW_MS - (now - stamps[0]!)) / 1000));
+      reply.header('retry-after', String(retryAfter));
+      return await reply.code(429).send({
+        statusCode: 429,
+        error: 'Too Many Requests',
+        message: `Rate limit exceeded, retry in ${retryAfter} seconds`,
+      });
     });
   },
   { name: 'ninedeploy-rate-limit' },

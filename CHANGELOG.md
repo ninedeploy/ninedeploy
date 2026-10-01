@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.35] - 2026-10-02
+
+> The backstop release (r479): the fresh-eyes audit of the owner-throttle fix
+> found the fix's own hole — requests that die at a privilege guard had
+> escaped rate limiting entirely.
+
+### Fixed
+
+- **Guard-rejections were unmetered (P2, regression from r478 found by audit).** The principal limiter is appended to route-level preHandlers, but the module guards (`requireAdmin`/`requireOperator`, ~25 modules) are **instance-level** preHandlers — they run FIRST, and a thrown 403 short-circuits the lifecycle before the limiter ever fires. A valid low-privilege credential (member session, read-only API token) could hammer operator-gated routes unmetered: three DB round trips of auth per request, unbounded RPS, DB-pool exhaustion. The same blind spot covered 401s (bad tokens — a pre-existing hole, now closed too) and parse-failed 400s. **Backstop:** responses that die with 400/401/403 are counted per IP in the same 1000/min window; past the cap the IP is refused outright with the same retry-after shape. Successful traffic is never counted at IP level (the principal limiter owns it), so the owner-throttle guarantee is intact — reaching the backstop takes a thousand guard-rejections in a minute, which is never legitimate traffic. Regression test: an instance-level guard 403ing before the route-level limiter still ends in a 429.
+
+- **`/v1/about` pooled the operator into the anonymous bucket (P3).** Its optional auth resolved in the handler — after the limiter had already keyed by IP. Optional auth now runs at onRequest (invalid tokens still swallowed: the public subset serves, never a 401), so the limiter sees the principal here too.
+
+- **The r478 WebSocket trade-off note was factually wrong (P3).** `@fastify/websocket` hijacks the socket in the route handler, not at onRequest — upgrades DO traverse the preHandler limiter (IP-keyed). The behavior was safer than documented; comment and changelog corrected to say what actually happens.
+
+### Hardened
+
+- The user-journey smoke now derives its default image from the repo version instead of a hardcoded tag — a bare run could prove the journey green on a two-releases-old artifact, exactly the drift class the script exists to catch.
+
+
 ## [0.10.34] - 2026-10-01
 
 > The owner-throttle release (r478): reported live by the owner — the panel

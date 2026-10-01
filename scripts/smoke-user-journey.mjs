@@ -14,10 +14,17 @@
 // Usage: node scripts/smoke-user-journey.mjs [--image=ghcr.io/ninedeploy/ninedeploy:vX.Y.Z]
 
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { createHmac, randomBytes } from 'node:crypto';
 
+// Default to the CURRENT repo version (read from version.ts) — a hardcoded
+// tag drifts and a bare run would happily prove the journey on a stale
+// artifact (r479).
+const repoVersion = /export const VERSION = '([^']*)';/.exec(
+  readFileSync(new URL('../apps/server/src/version.ts', import.meta.url), 'utf8'),
+)?.[1] ?? "0.0.0";
 const IMAGE = process.argv.find((a) => a.startsWith('--image='))?.slice('--image='.length)
-  ?? 'ghcr.io/ninedeploy/ninedeploy:v0.10.32';
+  ?? `ghcr.io/ninedeploy/ninedeploy:v${repoVersion}`;
 const PANEL_PORT = 4640;
 const DIND_PORT = 2375;
 const suffix = randomBytes(4).toString('hex');
