@@ -220,6 +220,24 @@ describe('remote compose builder — secrets and attachments', () => {
     expect(calls.find((c) => c.op === 'docker.composeUp')!.params['override']).toBeUndefined();
   });
 
+  it('r471: escapes a literal $ in the override mounts — remotely compose runs with the service .env in scope', async () => {
+    // The .env carries the service's secrets; compose interpolates $VAR
+    // inside every scalar, so a $ in containerPath must not read a secret
+    // into the mount target.
+    const { agent, calls } = fakeAgent();
+    await createRemoteComposeBuilder(agent).buildAndRun(
+      ctx({
+        volumeAttachments: [
+          { volumeName: 'nd-data', containerPath: '/data/$CONFIG', readOnly: false },
+        ] as never,
+      }),
+    );
+    const body = calls.find((c) => c.params['kind'] === 'compose-override')!.params['content'] as string;
+    expect(body).toContain('- "nd-data:/data/$$CONFIG"');
+    // The single-$ form (what compose would interpolate) must not appear.
+    expect(body).not.toContain('/data/$CONFIG"');
+  });
+
   it('still removes the secret files when the up fails', async () => {
     const { agent, calls } = fakeAgent();
     const failing: AgentCall = async (op, params, sink) => {

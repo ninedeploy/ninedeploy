@@ -30,6 +30,21 @@ export function dotenvValue(value: string): string {
 }
 
 /**
+ * Render one scalar for a COMPOSE FILE body (r470/471). Compose interpolates
+ * `$VAR`/`${VAR}` inside EVERY scalar value, quoted or not — a literal `$` in
+ * a template-controlled string (a command item, a volume path) would be
+ * substituted from whatever environment compose runs under: locally the
+ * panel's own env, remotely the service's `.env` carrying its secrets. `$$`
+ * is compose's escape for a literal dollar and is not special to YAML.
+ * Lives here (not in docker.ts) because docker.ts already imports from this
+ * module — the reverse edge would be a cycle. Applied after JSON.stringify so
+ * the YAML double-quoted quoting (`"`, `\`, newlines) stays intact.
+ */
+export function composeScalar(value: string): string {
+  return JSON.stringify(value).replace(/\$/g, '$$$$');
+}
+
+/**
  * Docker Compose builder: `docker compose up -d --build` for multi-container
  * apps. Unlike the docker builder there is NO blue-green — compose replaces
  * the project in place (brief gap, like PM2). Rollback re-checks out the old
@@ -149,15 +164,16 @@ export const composeBuilder: Builder = {
         [composeService]: { volumes: overrides.map((a) => `${a.volumeName}:${a.containerPath}${a.readOnly ? ':ro' : ''}`) },
       };
       // YAML by hand for two known keys — pulling in a YAML dep just to emit
-      // this is not worth the install. `yaml.dump` is JS string-safe because
-      // volume names / container paths are validated against strict regexes
-      // upstream.
+      // this is not worth the install. Mount entries go through composeScalar:
+      // compose interpolates $VAR inside every scalar, and containerPath is
+      // schema-legal with `$` (r471 — the same attachment is $-safe on a
+      // docker-type service via renderRuntimeCompose and must be here too).
       const volumesTopLevel: Record<string, object> = {};
       for (const a of overrides) volumesTopLevel[a.volumeName] = { external: true };
       const body =
         `services:\n` +
         Object.entries(services)
-          .map(([svc, def]) => `  ${svc}:\n    volumes:\n${def.volumes.map((v) => `      - "${v}"`).join('\n')}\n`)
+          .map(([svc, def]) => `  ${svc}:\n    volumes:\n${def.volumes.map((v) => `      - ${composeScalar(v)}`).join('\n')}\n`)
           .join('') +
         `volumes:\n` +
         Object.entries(volumesTopLevel)

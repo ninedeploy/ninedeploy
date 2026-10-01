@@ -356,12 +356,16 @@ describe.skipIf(!existsSync(COMPILED_BOOTSTRAP))('processBootstrap — the compi
 
   const stop = (child: import('node:child_process').ChildProcess) =>
     new Promise<void>((resolve) => {
+      // Already gone (the clean-shutdown test's happy path): nothing to stop,
+      // and writing to the dead channel would throw.
+      if (child.exitCode !== null || !child.connected) return resolve();
       child.on('exit', () => resolve());
       try {
-        child.send({ type: 'SHUTDOWN', payload: {} });
-      } catch {
-        resolve();
-      }
+        // The callback absorbs the close-race: a channel that dies between
+        // the connected check and the write surfaces as an unhandled
+        // ERR_IPC_CHANNEL_CLOSED without it.
+        child.send({ type: 'SHUTDOWN', payload: {} }, () => undefined);
+      } catch { /* exited mid-send */ }
       setTimeout(() => {
         child.kill('SIGKILL');
         resolve();
@@ -394,9 +398,14 @@ describe.skipIf(!existsSync(COMPILED_BOOTSTRAP))('processBootstrap — the compi
   it('shuts down cleanly on SHUTDOWN (exit 0, not a kill)', async () => {
     const { child, waitFor } = forkSandbox('');
     const exitCode = new Promise<number | null>((resolve) => child.on('exit', (c) => resolve(c)));
-    await waitFor((m) => m.type === 'READY');
-    child.send({ type: 'SHUTDOWN', payload: {} });
-    expect(await exitCode).toBe(0);
+    try {
+      await waitFor((m) => m.type === 'READY');
+      child.send({ type: 'SHUTDOWN', payload: {} });
+      expect(await exitCode).toBe(0);
+    } finally {
+      // A rejected waitFor (broken bootstrap) must not leave the fork behind.
+      await stop(child);
+    }
   }, 20000);
 
   it('plugin code CANNOT read the filesystem from inside the real bootstrap', async () => {

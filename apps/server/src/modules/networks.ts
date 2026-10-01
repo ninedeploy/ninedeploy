@@ -116,16 +116,23 @@ export const networkRoutes: FastifyPluginAsync = async (app) => {
     if (!RE_NAME.test(name)) throw badRequest('Invalid network name');
     const serverId = Number((req.query as { serverId?: string }).serverId);
     if (Number.isInteger(serverId) && serverId > 0) {
+      // r471: collect the op's output lines — agentOp sinks them BEFORE it
+      // throws, so a refused `network rm` still carries docker's own reason
+      // ("has active endpoints"), which belongs in a 409 like the local
+      // branch, not a bare "exited with 1" 400 the operator can't act on.
+      const out: string[] = [];
       try {
         guardManaged(name);
-        await agentOr400(agentOp(app.db, serverId, 'docker.networkRm', { name }, noop));
+        await agentOr400(agentOp(app.db, serverId, 'docker.networkRm', { name }, (l) => out.push(l)));
       } catch (err) {
         if (err instanceof ManagedNamespaceError) {
           void audit(app.db, req.user!.id, 'network.delete.blocked', name, { reason: err.message, serverId });
           throw conflict(err.message);
         }
-        // Surface the real docker/agent error so the operator sees *why* the
-        // network could not be removed (active endpoints, not found, etc.).
+        const reason = out.join(' ').slice(0, 400).trim();
+        if (reason) throw conflict(reason);
+        // No docker output → the agent itself was unreachable: a 400 with
+        // the transport error, same as before.
         throw badRequest(err instanceof Error ? err.message : 'network remove failed');
       }
     } else {

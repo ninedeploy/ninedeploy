@@ -5,7 +5,7 @@ import type { BuildConfig } from '@ninedeploy/db';
 import type { NinedeployManifest } from '@ninedeploy/schemas';
 import { generateNixpacksToml } from '../../lib/ninedeployToNixpacks.js';
 import { buildEnv, capture, run, sleep } from '../../lib/exec.js';
-import { dotenvValue } from './compose.js';
+import { composeScalar, dotenvValue } from './compose.js';
 import { ensureDockerImage, pullDockerImage } from '../../lib/dockerPull.js';
 import { NETWORK } from '../proxy.js';
 import { MAX_REPLICAS, replicaNames } from '../dockerNames.js';
@@ -218,18 +218,6 @@ interface RuntimeComposeInput {
   dockerSocket: boolean;
   cmd: string[] | null;
   envFile: string | null;
-}
-
-/**
- * Compose interpolates `$VAR`/`${VAR}` inside EVERY scalar value, quoted or
- * not — a literal `$` in a template-controlled string (a command item, a
- * volume path) would be substituted from the panel's own environment, or
- * emptied when unset there. `$$` is compose's escape for a literal dollar, and
- * it is not special to YAML, so doubling after JSON.stringify keeps the
- * quoting intact.
- */
-function composeScalar(value: string): string {
-  return JSON.stringify(value).replace(/\$/g, '$$$$');
 }
 
 /**

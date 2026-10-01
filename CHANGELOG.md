@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.27] - 2026-10-01
+
+> The override-escape patch (r471): the fresh-eyes audit of the 0.10.26
+> changes came back 0 P1 / 1 P2 / 4 P3 — the contract sweep over all 21
+> agentOp call sites found the exit-code contract now holds everywhere.
+> This release ships those five.
+
+### Fixed
+
+- **The `$`-escape landed on one of three compose renderers (P2).** 0.10.26 added `composeScalar` to `renderRuntimeCompose` — but the volume-override files (the LOCAL builder's inline renderer and the remote builder's `renderVolumeOverride`) still emitted attachment mounts raw. Compose merges the override LAST, so it WINS — and compose interpolates `$VAR` inside every scalar: locally from the panel's own environment, remotely from the service's `.env`, which carries its secrets. A `$` in a `containerPath` (schema-legal) could read an env value straight into the mount target — the same attachment was `$`-safe on a docker-type service and interpolated on a compose-type one. `composeScalar` now lives in `compose.ts` (docker.ts already imports from that module — the reverse edge would be a cycle) and all three renderers share it.
+
+- **The fan-out patrol does what its docstring promised.** `patrolTargets`' comment has said "targets whose container is GONE get their row marked error" since the beginning — but since r466's agentOp contract, `docker inspect` on a missing container THROWS (exit 1), the catch skips the target, and the marking was dead code: the panel kept showing a running row for a container that no longer exists on the node. The probe now passes `tolerateExit` and treats a non-zero exit as the container being gone → the row is marked `error` (the next deploy recreates it); unreachable nodes are still skipped without judgement.
+
+- **A refused remote network delete carries docker's reason.** `DELETE /v1/networks/:name?serverId=` discarded the op's output lines (`noop` sink), so an in-use network answered a bare `400 "agent docker.networkRm exited with 1"` the operator could not act on. agentOp sinks the command's output BEFORE it throws on the non-zero exit — the route now collects those lines and answers `409` with docker's own "has active endpoints" (plus the same detach hint path as the local branch). An unreachable agent stays a 400 with the transport error.
+
+- **Sandbox crash reports survive their last line; test cleanup stops racing the dead channel.** The child's stderr line-splitter never flushed, so a crash report killed mid-write (no trailing newline) was swallowed exactly where the code said "the only place a bootstrap crash report can ever surface". The exit handler now flushes the trailing partial line. The honesty tests' `stop()` helper sent SHUTDOWN to an already-exited child (unhandled `ERR_IPC_CHANNEL_CLOSED`) and waited out a pointless 3-second tail on the happy path — it now checks `connected` first and passes send a callback that absorbs the close race (the suite dropped 3.5 s → 1.3 s).
+
+
 ## [0.10.26] - 2026-09-30
 
 > The contract-honesty patch (r470): a fresh-eyes audit of the previous two

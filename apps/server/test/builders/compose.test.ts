@@ -194,6 +194,10 @@ describe('composeBuilder.buildAndRun', () => {
       volumeAttachments: [
         { id: 1, serviceId: 1, volumeName: 'nd-svc-stack-uploads', containerPath: '/uploads', readOnly: false, createdAt: NOW, updatedAt: NOW },
         { id: 2, serviceId: 1, volumeName: 'nd-svc-stack-config', containerPath: '/etc/app', readOnly: true, createdAt: NOW, updatedAt: NOW },
+        // r471: `$` is schema-legal in a container path, and compose
+        // interpolates $VAR inside every scalar — locally from the panel's
+        // own environment.
+        { id: 3, serviceId: 1, volumeName: 'nd-svc-stack-secrets', containerPath: '/run/secrets/$DIR', readOnly: true, createdAt: NOW, updatedAt: NOW },
       ],
     });
 
@@ -214,6 +218,10 @@ describe('composeBuilder.buildAndRun', () => {
     expect(seenOverride).toContain('  api:');
     expect(seenOverride).toContain('      - "nd-svc-stack-uploads:/uploads"');
     expect(seenOverride).toContain('      - "nd-svc-stack-config:/etc/app:ro"');
+    // A literal $ is escaped as $$ (compose's own escape); the single-$ form
+    // would have compose substitute $DIR from the panel's environment.
+    expect(seenOverride).toContain('      - "nd-svc-stack-secrets:/run/secrets/$$DIR:ro"');
+    expect(seenOverride).not.toContain('/run/secrets/$DIR');
     expect(seenOverride).toContain('volumes:');
     expect(seenOverride).toContain('  nd-svc-stack-uploads:');
     expect(seenOverride).toContain('  nd-svc-stack-config:');

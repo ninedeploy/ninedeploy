@@ -168,6 +168,28 @@ describe('runtime state reconciliation', () => {
     expect(updates).toEqual([]);
   });
 
+  it('r471: marks a GONE fan-out target errored instead of showing a stale running row', async () => {
+    // docker inspect exits 1 for a missing container. The probe passes
+    // tolerateExit so the exit arrives as DATA — without it the throw landed
+    // in the skip-never-judge catch, the docstring's "marked error" promise
+    // was dead code, and the panel kept showing a running row for a
+    // container that no longer exists on the node.
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string) => {
+      if (op === 'docker.inspect') return { exitCode: 1, lines: ['Error: No such object: web-t8-9'] };
+      return { exitCode: 0, lines: [] };
+    });
+    const { updates } = await reconcileOnce(
+      svcRow({ id: 43, status: 'running', runtimeId: 'web-7', replicas: 1 }),
+      {
+        select: { serviceTargets: [{ id: 5, serviceId: 43, serverId: 8, runtimeId: 'web-t8-9', status: 'running' }] },
+      },
+    );
+    expect(updates).toContainEqual({ status: 'error' });
+    // No revival attempt against a container that does not exist.
+    expect(agentMocks.agentOp.mock.calls.some((c) => c[2] === 'docker.start')).toBe(false);
+    expect(agentMocks.agentOp.mock.calls.find((c) => c[2] === 'docker.inspect')![5]).toEqual({ tolerateExit: true });
+  });
+
   it('throttles repeated OOM alerts for the same service', async () => {
     mockDocker({ state: ['exited', 'running'], oom: 'true|137' });
     // Two passes for the same service: the in-memory cooldown (module-level,

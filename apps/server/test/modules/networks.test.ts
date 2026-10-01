@@ -140,6 +140,32 @@ describe('networks module', () => {
     );
   });
 
+  it('r471: surfaces a refused remote rm as 409 WITH docker\'s reason, not a bare exit-code 400', async () => {
+    // agentOp sinks docker's output lines BEFORE throwing on the non-zero
+    // exit — the route collects them so "has active endpoints" reaches the
+    // operator exactly like the local branch, instead of
+    // "agent docker.networkRm exited with 1".
+    agentMocks.agentOp.mockImplementationOnce(async (...args: unknown[]) => {
+      const op = args[2] as string;
+      (args[4] as (l: string) => void)?.('Error response from daemon: network net-a has active endpoints');
+      throw new Error(`agent ${op} exited with 1`);
+    });
+    const a = await app();
+    await a.register(networkRoutes);
+    const res = await a.inject({ method: 'DELETE', url: '/net-a?serverId=6', headers: asUser() });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.message).toContain('active endpoints');
+  });
+
+  it('r471: keeps an unreachable agent a 400 with the transport error', async () => {
+    agentMocks.agentOp.mockRejectedValueOnce(new Error('fetch failed'));
+    const a = await app();
+    await a.register(networkRoutes);
+    const res = await a.inject({ method: 'DELETE', url: '/net-a?serverId=6', headers: asUser() });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toContain('fetch failed');
+  });
+
   it('maps non-Error agent rejections to a generic message', async () => {
     agentMocks.agentOp.mockRejectedValueOnce('lost connection');
     const a = await app();

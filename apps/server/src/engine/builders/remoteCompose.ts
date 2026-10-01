@@ -1,7 +1,7 @@
 import type { Builder, BuildContext, DeployRuntime } from '../types.js';
 import type { AgentCall } from './remoteDocker.js';
 import { RemoteDeployUnsupportedError } from './remoteDocker.js';
-import { parseComposePs } from './compose.js';
+import { composeScalar, parseComposePs } from './compose.js';
 import { INLINE_COMPOSE_FILE } from '../../lib/composeWorkspace.js';
 import { assertCloneTargetAllowed } from '../../lib/gitEgress.js';
 
@@ -70,8 +70,11 @@ function renderVolumeOverride(
   composeService: string,
   attachments: Array<{ volumeName: string; containerPath: string; readOnly?: boolean | null }>,
 ): string {
+  // r471: mounts go through composeScalar — remotely compose runs with the
+  // service's own .env in scope, and compose interpolates `$VAR` inside every
+  // scalar; a `$` in containerPath must not read a secret into the mount path.
   const mounts = attachments
-    .map((a) => `      - "${a.volumeName}:${a.containerPath}${a.readOnly ? ':ro' : ''}"`)
+    .map((a) => `      - ${composeScalar(`${a.volumeName}:${a.containerPath}${a.readOnly ? ':ro' : ''}`)}`)
     .join('\n');
   const externals = attachments.map((a) => `  ${a.volumeName}:\n    external: true\n`).join('');
   return `services:\n  ${composeService}:\n    volumes:\n${mounts}\nvolumes:\n${externals}`;

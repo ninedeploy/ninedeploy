@@ -144,6 +144,12 @@ export class SandboxPlugin implements KernelPlugin {
     this.child.stderr?.on('data', (d: Buffer) => {
       for (const l of stderrLines.feed(d)) console.error(`[Sandbox:${this.id}] (stderr) ${l}`);
     });
+    // A crash report killed mid-write ends without a newline — flush the
+    // trailing partial line on exit or the last (often only) clue is lost.
+    this.child.once('exit', () => {
+      const tail = stderrLines.flush();
+      if (tail) console.error(`[Sandbox:${this.id}] (stderr) ${tail}`);
+    });
 
     const send = (msg: MainToWorkerMessage) => {
       this.child?.send(msg);

@@ -175,8 +175,11 @@ export default fp(
      * A node that is unreachable is skipped (not judged): the node being
      * down is not the service's fault, and starting a container on a dead
      * agent is impossible anyway. Targets whose container is GONE (scaled
-     * down generation) get their row marked error so the panel says so;
-     * the next deploy recreates them.
+     * down generation, removed behind our back) get their row marked error
+     * so the panel says so; the next deploy recreates them. (r471: "gone"
+     * arrives as `docker inspect` exit 1 — the agentOp contract throws on
+     * that unless the probe tolerates exits, so the marking below used to
+     * be unreachable and the docstring a promise the code never kept.)
      */
     const patrolTargets = async (
       serviceId: number,
@@ -189,17 +192,32 @@ export default fp(
         .where(eq(serviceTargets.serviceId, serviceId));
       for (const target of rows) {
         if (!target.runtimeId) continue;
-        const agent = (op: string, params: Record<string, unknown>) =>
-          agentOp(fastify.db, target.serverId, op, params, () => undefined);
+        // opts is spread only when set: an explicit undefined 6th argument
+        // would change the call shape every existing assertion pins.
+        const agent = (op: string, params: Record<string, unknown>, opts?: { tolerateExit?: boolean }) =>
+          opts === undefined
+            ? agentOp(fastify.db, target.serverId, op, params, () => undefined)
+            : agentOp(fastify.db, target.serverId, op, params, () => undefined, opts);
         try {
-          const state = (
-            await agent('docker.inspect', { name: target.runtimeId, format: 'state' })
-          ).lines
+          const res = await agent('docker.inspect', { name: target.runtimeId, format: 'state' }, { tolerateExit: true });
+          if (res.exitCode !== 0) {
+            // Container GONE on the node — mark the row so the panel says so
+            // instead of showing a stale running status. Never judged if the
+            // state cannot be asked for below; a missing container is certain.
+            if (target.status !== 'error') {
+              await fastify.db
+                .update(serviceTargets)
+                .set({ status: 'error' })
+                .where(eq(serviceTargets.id, target.id));
+            }
+            continue;
+          }
+          const state = res.lines
             .filter((l) => l.trim() !== '')
             .at(-1)
             ?.split('|')[0];
           if (state === 'running' || state === 'restarting') continue;
-          if (state === undefined) continue; // container gone — next deploy recreates
+          if (state === undefined) continue; // empty answer — skip, never judge
           await agent('docker.start', { name: target.runtimeId });
           log(`revived fan-out target ${target.runtimeId} on node #${target.serverId}`);
           if (target.status !== 'running') {
@@ -209,7 +227,7 @@ export default fp(
               .where(eq(serviceTargets.id, target.id));
           }
         } catch {
-          // node unreachable or inspect refused — skip, never judge
+          // node unreachable — skip, never judge
         }
       }
       void name;

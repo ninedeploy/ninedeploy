@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.26';
+export const VERSION = '0.10.27';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.27',
+    date: '2026-10-01',
+    title: 'The Override-Escape Patch — the Audit of the Audit of the Audit',
+    changes: [
+      'Fixed (P2): the $-escape landed on ONE of the three compose renderers in 0.10.26 — the volume-override files (local builder and remote renderVolumeOverride) still emitted attachment mounts raw, so a $ in a containerPath interpolated from the panel env locally and from the service\'s secret-bearing .env remotely. composeScalar now lives in compose.ts (docker.ts already imports from it — the reverse edge would be a cycle) and all three renderers share it.',
+      'Fixed: fan-out patrol finally does what its docstring promised — a GONE target container (docker inspect exit 1) is marked error on the row instead of leaving a stale running status; the probe passes tolerateExit so "gone" arrives as data instead of landing in the skip-never-judge catch (the marking was dead code since r466 tightened the agentOp contract).',
+      'Fixed: a refused remote network delete answers 409 WITH docker\'s own reason ("has active endpoints") instead of a bare "agent exited with 1" 400 — agentOp sinks output before throwing, and the route now collects it, mirroring the local branch.',
+      'Fixed: the sandbox child\'s stderr splitter flushes its trailing partial line on exit — a crash report killed mid-write was swallowed whole; the honesty-test cleanup no longer races a dead IPC channel (ERR_IPC_CHANNEL_CLOSED) or waits out a pointless 3s tail.',
+    ],
+  },
+{
     version: '0.10.26',
     date: '2026-09-30',
     title: 'The Contract-Honesty Patch — the Audit of the Audit',
