@@ -243,8 +243,8 @@ function SessionsCard() {
           <MonitorSmartphone size={14} /> Active sessions
         </h2>
         <p className="mb-4 text-xs text-slate-500">
-          Devices holding a valid refresh token for your account. Revoking signs that device out when its
-          access token expires (within minutes).
+          Devices holding a valid refresh token for your account. Revoking signs that device out on its
+          next request.
         </p>
         {sessions.isLoading ? (
           <Skeleton className="h-10 w-full" />
