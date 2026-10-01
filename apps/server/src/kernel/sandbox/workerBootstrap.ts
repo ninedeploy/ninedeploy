@@ -22,11 +22,26 @@ port.on('message', async (msg: MainToWorkerMessage) => {
       case 'INIT': {
         const { pluginId, manifest, code } = msg.payload;
 
+        // r473: the SDK's PluginLogger promises varargs — stringify extras so
+        // they actually reach the panel log instead of vanishing at the seam.
+        const fmt = (message: string, args: unknown[]): string =>
+          args.length
+            ? `${message} ${args
+                .map((a) => {
+                  if (typeof a === 'string') return a;
+                  try {
+                    return JSON.stringify(a);
+                  } catch {
+                    return String(a);
+                  }
+                })
+                .join(' ')}`
+            : message;
         const logger = {
-          debug: (message: string) => post({ type: 'LOG', payload: { level: 'debug', message: `[${pluginId}] ${message}` } }),
-          info: (message: string) => post({ type: 'LOG', payload: { level: 'info', message: `[${pluginId}] ${message}` } }),
-          warn: (message: string) => post({ type: 'LOG', payload: { level: 'warn', message: `[${pluginId}] ${message}` } }),
-          error: (message: string) => post({ type: 'LOG', payload: { level: 'error', message: `[${pluginId}] ${message}` } }),
+          debug: (message: string, ...args: unknown[]) => post({ type: 'LOG', payload: { level: 'debug', message: `[${pluginId}] ${fmt(message, args)}` } }),
+          info: (message: string, ...args: unknown[]) => post({ type: 'LOG', payload: { level: 'info', message: `[${pluginId}] ${fmt(message, args)}` } }),
+          warn: (message: string, ...args: unknown[]) => post({ type: 'LOG', payload: { level: 'warn', message: `[${pluginId}] ${fmt(message, args)}` } }),
+          error: (message: string, ...args: unknown[]) => post({ type: 'LOG', payload: { level: 'error', message: `[${pluginId}] ${fmt(message, args)}` } }),
         };
 
         const config = {
@@ -90,12 +105,18 @@ port.on('message', async (msg: MainToWorkerMessage) => {
           await activePlugin.init(ctx);
         }
 
+        // r473: honour the SDK's PluginDefinition contract — an author may
+        // declare configSchema/menuItems/dependencies on the object their
+        // code RETURNS (that is what definePlugin validates); the install
+        // manifest is only the fallback. Kept byte-for-byte in behavioural
+        // sync with processBootstrap.
+        const def = (activePlugin ?? {}) as Record<string, unknown>;
         post({
           type: 'READY',
           payload: {
-            menuItems: (manifest as any)?.menuItems,
-            configSchema: (manifest as any)?.configSchema,
-            dependencies: (manifest as any)?.dependencies,
+            menuItems: (def['menuItems'] as unknown) ?? (manifest as any)?.menuItems,
+            configSchema: (def['configSchema'] as unknown) ?? (manifest as any)?.configSchema,
+            dependencies: (def['dependencies'] as unknown) ?? (manifest as any)?.dependencies,
           },
         });
         post({ type: 'STATUS_CHANGED', payload: { status: 'active' } });

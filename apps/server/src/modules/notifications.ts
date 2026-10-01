@@ -3,11 +3,16 @@ import { notificationChannels, notificationLog } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import { notificationChannelCreate, notificationChannelPatch } from '@ninedeploy/schemas';
 import { decrypt, encrypt } from '../lib/crypto.js';
-import { dispatchChannel } from '../lib/notifier.js';
+import { channelConfigOf, dispatchChannel } from '../lib/notifier.js';
 import { badRequest, notFound, parseId } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
 
 function serialize(ch: typeof notificationChannels.$inferSelect) {
+  // r473: the blob is stored as an envelope (webhook HMAC secrets and FCM
+  // service-account keys ride inside it). Only the Discord shape is
+  // secret-free (username/avatar/title/color) and it is the only shape the
+  // UI edits — every other type answers hasConfig and stays write-only.
+  const config = channelConfigOf(ch);
   return {
     id: ch.id,
     name: ch.name,
@@ -15,10 +20,8 @@ function serialize(ch: typeof notificationChannels.$inferSelect) {
     hasTarget: !!ch.targetEncrypted,
     eventFilter: ch.eventFilter,
     active: ch.active,
-    // config_json is opaque to the API; we surface it as-is so the
-    // operator's UI can edit it. It's null on channels created
-    // before G-18 PR #24.
-    configJson: ch.configJson,
+    configJson: ch.type === 'discord' ? config : null,
+    hasConfig: config !== null,
     createdAt: ch.createdAt.toISOString(),
   };
 }
@@ -28,6 +31,24 @@ export const notificationRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', app.authenticate);
   // System-wide notification config — admin-only under the agreed RBAC model.
   app.addHook('preHandler', app.requireAdmin);
+
+  // r473 boot normalization: encrypt pre-r473 cleartext config blobs in place
+  // so the key-rotation registry only ever sees envelopes. Idempotent (an
+  // envelope starts with v<digits>:, bare JSON with '{') and best-effort — a
+  // failure logs and skips; the tolerant read path keeps the panel working.
+  try {
+    const legacy = await app.db.query.notificationChannels.findMany({});
+    for (const row of legacy) {
+      if (row.configJson && row.configJson.startsWith('{')) {
+        await app.db
+          .update(notificationChannels)
+          .set({ configJson: encrypt(row.configJson) })
+          .where(eq(notificationChannels.id, row.id));
+      }
+    }
+  } catch {
+    /* fresh installs and test fixtures without the table — nothing to do */
+  }
 
   // ── Channels ──────────────────────────────────────────────────────────
   app.get('/channels', async () => {
@@ -46,7 +67,9 @@ export const notificationRoutes: FastifyPluginAsync = async (app) => {
         targetEncrypted: encrypt(input.target),
         eventFilter: input.eventFilter ?? '',
         active: true,
-        configJson: input.configJson ?? null,
+        // r473: the blob carries provider secrets — envelope-encrypted like
+        // every other credential at rest.
+        configJson: input.configJson ? encrypt(input.configJson) : null,
       })
       .returning();
     void audit(app.db, req.user!.id, 'notification.channel_create', `${ch!.type}:${ch!.name}`);
@@ -65,8 +88,8 @@ export const notificationRoutes: FastifyPluginAsync = async (app) => {
     if (input.eventFilter !== undefined) patch.eventFilter = input.eventFilter;
     if (input.active !== undefined) patch.active = input.active;
     // Empty string clears the channel's provider-specific config;
-    // undefined leaves it untouched.
-    if (input.configJson !== undefined) patch.configJson = input.configJson === '' ? null : input.configJson;
+    // undefined leaves it untouched. Non-empty values envelope-encrypt (r473).
+    if (input.configJson !== undefined) patch.configJson = input.configJson === '' ? null : encrypt(input.configJson);
     const [ch] = await app.db.update(notificationChannels).set(patch).where(eq(notificationChannels.id, id)).returning();
     if (!ch) throw notFound('Channel not found');
     void audit(app.db, req.user!.id, 'notification.channel_update', `${ch.type}:${ch.name}`);
@@ -94,7 +117,7 @@ export const notificationRoutes: FastifyPluginAsync = async (app) => {
         target,
         { id: 0, action: 'notification.test', entity: ch.name, ts: new Date().toISOString(), actorUserId: req.user!.id },
         message,
-        { configJson: ch.configJson },
+        { configJson: channelConfigOf(ch) },
       );
       return { ok: true };
     } catch (err) {

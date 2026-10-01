@@ -987,7 +987,7 @@ export function Topology() {
                   <ArrowUpRight size={13} />
                 </Link>
               )}
-              {selectedNode.type === 'volume' && (
+              {selectedNode.type === 'volume' && user?.isOperator === true && (
                 <Link
                   to="/volumes"
                   className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-500 transition shadow-lg shadow-amber-600/30"

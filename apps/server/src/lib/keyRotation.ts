@@ -59,6 +59,20 @@ const ENCRYPTED_COLUMNS = [
     select: { id: notificationChannels.id, v: notificationChannels.targetEncrypted },
     pick: (r: { id: number; v: string }) => ({ targetEncrypted: reencrypt(r.v) }),
   },
+  // r473: notificationChannels.configJson is an envelope over the whole
+  // provider config blob — webhook HMAC signing secrets and FCM
+  // service-account private keys ride inside it. Pre-r473 plaintext rows are
+  // rewritten at boot by the notifications module's normalization; a survivor
+  // (normalization is best-effort) is SKIPPED here like the ssoProviders
+  // entry, never fed to reencrypt.
+  {
+    table: notificationChannels,
+    select: { id: notificationChannels.id, c: notificationChannels.configJson },
+    pick: (r: { id: number; c: string | null }) =>
+      r.c === null || r.c.startsWith('{')
+        ? ({} as Partial<{ configJson: string }>)
+        : { configJson: reencrypt(r.c) },
+  },
   // sources has two independent nullable credential columns.
   {
     table: sources,

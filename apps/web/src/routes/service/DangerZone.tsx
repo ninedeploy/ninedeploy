@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { HardDrive, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api.js';
+import { useAuth } from '../../lib/auth.js';
 import { formatBytes } from '../../lib/format.js';
 import { Button, Card, CardBody, Input } from '../../components/ui.js';
 
@@ -21,10 +22,15 @@ export function DangerZone({
   deleting: boolean;
 }) {
   const volumeName = `nd-svc-${slug}-data`;
+  const { user } = useAuth();
   const volumes = useQuery({
     queryKey: ['volumes'],
     queryFn: () => api.volumes.list(),
     select: (list) => list.find((v) => v.name === volumeName) ?? null,
+    // r473: the inventory is operator-only — members keep the delete flow,
+    // just without the volume-exists hint, instead of a swallowed 403 per
+    // danger-tab view.
+    enabled: user?.isOperator === true,
   });
   const dataVolume = volumes.data;
 

@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.29] - 2026-10-01
+
+> The contract-honest SDK + secrets-at-rest release (r473): the auditors-audit
+> of 0.10.28 plus the first deep pass over plugin-sdk, db and schemas. One
+> P1 (the plugin SDK promised a contract the sandbox never honoured), one
+> secrets-at-rest P2, and the last member-reachable 403 holes in the UI.
+
+### Security
+
+- **Notification channel configs are encrypted at rest (P2).** `notification_channels.config_json` carries real credentials — the webhook channel's HMAC signing `secret` and the FCM **service-account private key** — and sat in a plaintext column outside both the encrypted-at-rest model the schema file itself claims and the key-rotation sweep (a row only kept working across rotations because it was never encrypted). It now follows the r435 SSO pattern exactly: envelope-encrypted on write (POST and PATCH), a best-effort boot normalization rewrites pre-r473 cleartext rows in place, the rotation registry carries the column (plaintext survivors skipped, never fed to `reencrypt`), the dispatch paths and the test route read it through a tolerant `channelConfigOf`, and `GET /channels` answers `hasConfig` with the blob exposed only for the **Discord** shape — the one that is secret-free (username/avatar/title/color) and the only one the UI edits. Webhook/FCM configs are write-only over the API now.
+
+### Fixed
+
+- **The plugin SDK's declared contract is now the runtime's actual contract (P1).** `configSchema`, `menuItems` and `dependencies` declared on the object a plugin's code RETURNS — the thing `definePlugin` validates — were silently dropped: both sandbox bootstraps posted only the install-request manifest at READY, so an author's Settings fields and menu entries never registered and `ctx.config.getSecret` returned null forever unless an operator hand-wrote the key. Both bootstraps (process and worker, kept in behavioural sync) now prefer the returned definition, manifest as fallback. The logger's promised varargs are stringified through to the panel log. And the phantom half of the SDK was deleted rather than left as a trap: `start`/`stop` lifecycle hooks (never called), per-tap `rollback`/`timeoutMs`/`id` options (silently dropped — the host applies its own 5 s budget and rejection rollback), and `ctx.registerMenuItem` (a hard no-op). The flagship example was rewritten to the real sandbox code shape — an async function BODY (`plugin-body.txt`, no import/export, `ctx` is the only panel surface) — and the package ships a README documenting the two halves of a plugin. The unused `@ninedeploy/schemas` dependency no longer rides into every author install.
+
+- **The last member-reachable 403 holes in wizards and modals (P2).** The Deploy wizard (member-reachable from Services and Hub) fired the operator-only `sources` + `servers` listings on every open — doubled by the app-wide retry — and silently rendered "Public / none"; the Attach-Volume modal's inventory query made its DEFAULT tab dead for members (they now start on "Create New", the tab hidden); the Database wizard's retained-volume reuse and the service Danger tab's volume hint each fired a swallowed 403 (the option/hint simply doesn't exist for members now). The Volumes tab's remaining fabricated member numbers ("Host Storage: 0 B", "0 active database volume(s)", an empty "Attached Database Volumes" list for a member with attached DBs) are gone — unknowable values render an honest `—`, the DB-volumes section is operator-only, members' attached databases stay visible where they always were (Architecture tab). The events drawer's "View Full Audit Ledger" CTA and Topology's "Manage All Volumes" link no longer lead members to pages that can only refuse them.
+
+- **Schema boundary honesty (P3).** `webhookCreate.branch` now carries the same git charset rule as the service's own branch field (whitespace-tolerant — trimmed before validation, exactly as the route always did) instead of accepting any string; the dead, laxer twin `createWebhook` in service.ts (used by no route) was deleted before someone "hardened" the wrong copy — the SDK now types `webhooks.create` off the live schema. `createDomain.path` aligned with the manifest's `route.path` rule instead of relying on a downstream strip. Env-var values capped at the same 32 KB the Hub path applies. And the agent `docker run` line shell-quotes its env values — a panel URL legitimately containing `&` used to background the pasted command and mangle everything after it (plain values stay byte-identical).
+
+### Verified sound (for the record)
+
+db's migration chain (data-copying rebuilds, sequence preservation, index coverage for the hot query paths — checked against the real query patterns) and schemas' regexes (anchored, linear, transforms that never throw into a 500) both survived the deep pass; the remaining P3s (dockerVolumeName's `/i` flag contradicting its comment, the dead `webhooks.events` column) are noted, not shipped.
+
+
 ## [0.10.28] - 2026-10-01
 
 > The member posture release (r472): first deep audits of the two surfaces

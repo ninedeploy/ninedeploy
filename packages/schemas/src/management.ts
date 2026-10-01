@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { gitBranch } from './common.js';
 
 /**
  * Zod schemas for management/admin endpoints that previously used ad-hoc
@@ -58,7 +59,16 @@ export const selfUpdateStatus = z.object({
 export type SelfUpdateStatus = z.infer<typeof selfUpdateStatus>;
 
 export const webhookCreate = z.object({
-  branch: z.string().max(255).optional(),
+  // r473: same charset rule the service's own branch field uses — a branch
+  // this rejects could never match a push anyway (it is string-compared
+  // against git-validated branch names). Whitespace-tolerant like the route
+  // always was: the value is trimmed before validation.
+  branch: z
+    .string()
+    .max(200)
+    .optional()
+    .transform((v) => v?.trim())
+    .pipe(gitBranch.optional()),
   /** Newline/comma-separated globs — deploy only when a changed file matches. */
   watchPaths: z.string().max(1024).refine((raw) => {
     const patterns = raw.split(/[\n,]/).map((pattern) => pattern.trim()).filter(Boolean);

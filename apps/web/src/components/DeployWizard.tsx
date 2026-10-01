@@ -31,8 +31,11 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
   const { user } = useAuth();
   // Compose and PM2 both execute on the host, so the API admits operators only.
   const isAdmin = user?.isOperator === true;
-  const sources = useQuery({ queryKey: ['sources'], queryFn: () => api.sources.list() });
-  const servers = useQuery({ queryKey: ['servers'], queryFn: () => api.servers.list() });
+  // r473: the credential/node listings are operator-only routes — the wizard
+  // is member-reachable (ServicesList "New service", Hub), so gate the two
+  // queries instead of firing swallowed 403s on every member wizard open.
+  const sources = useQuery({ queryKey: ['sources'], queryFn: () => api.sources.list(), enabled: isAdmin });
+  const servers = useQuery({ queryKey: ['servers'], queryFn: () => api.servers.list(), enabled: isAdmin });
 
   const [step, setStep] = useState(0);
   const [name, setName] = useState(template?.name ?? '');

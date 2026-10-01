@@ -430,6 +430,7 @@ void function _ProjectSwitcherRemoved() {
 interface AppEvent { id: number; action: string; entity: string | null; ts: string }
 
 function ActivityDrawer({ onClose }: { onClose: () => void }) {
+  const { user } = useAuth();
   const [events, setEvents] = useState<AppEvent[]>([]);
   const [filter, setFilter] = useState('all');
   // Socket state drives the "live" badge: a dead socket must never advertise
@@ -572,14 +573,18 @@ function ActivityDrawer({ onClose }: { onClose: () => void }) {
           )}
         </div>
         <div className="border-t border-white/5 p-3">
-          <Link
-            to="/activity"
-            onClick={onClose}
-            className="flex items-center justify-center gap-1.5 rounded-lg bg-white/[0.04] py-2 text-xs font-medium text-slate-300 transition hover:bg-white/[0.08] hover:text-white"
-          >
-            <span>View Full Audit Ledger</span>
-            <ChevronRight size={13} />
-          </Link>
+          {/* The full ledger page is operator-only (r472) — members use the
+              drawer; a CTA to a page that can only refuse them is a dead end. */}
+          {user?.isOperator === true && (
+            <Link
+              to="/activity"
+              onClick={onClose}
+              className="flex items-center justify-center gap-1.5 rounded-lg bg-white/[0.04] py-2 text-xs font-medium text-slate-300 transition hover:bg-white/[0.08] hover:text-white"
+            >
+              <span>View Full Audit Ledger</span>
+              <ChevronRight size={13} />
+            </Link>
+          )}
         </div>
       </div>
     </div>

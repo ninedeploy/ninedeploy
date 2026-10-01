@@ -16,16 +16,18 @@ const sources = [
   { id: 2, name: 'custom-server', type: 'weird', hasToken: false, hasDeployKey: true },
 ];
 
-// r472: the page/queries are operator-gated — these tests exercise the
-// operator view, so the auth mock hands out an operator.
+// r472/r473: the page/queries are operator-gated — the auth mock hands out a
+// MUTABLE user so the member-arm test can flip it.
+const authState = vi.hoisted(() => ({ user: { id: 1, isOperator: true } as { id: number; isOperator: boolean } | null }));
 vi.mock('../src/lib/auth.js', () => ({
   AuthProvider: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
-  useAuth: vi.fn(() => ({ user: { id: 1, isOperator: true }, loading: false })),
+  useAuth: vi.fn(() => ({ user: authState.user, loading: false })),
 }));
 
 describe('Sources', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    authState.user = { id: 1, isOperator: true };
   });
 
   it('shows skeleton while loading', () => {
@@ -196,5 +198,12 @@ describe('Sources', () => {
     fireEvent.submit(userField.closest('form')!);
     await waitFor(() =>
       expect(api.sources.create).toHaveBeenCalledWith(expect.objectContaining({ type: 'registry', registryUsername: 'ci-bot', token: 'regpass' })));
+  });
+
+  it('r473: a member gets the operators-only one-liner and no listing call', async () => {
+    authState.user = { id: 7, isOperator: false };
+    renderWithProviders(<Sources />);
+    expect(await screen.findByText(/operators only/i)).toBeInTheDocument();
+    expect(mockOf(api.sources.list)).not.toHaveBeenCalled();
   });
 });

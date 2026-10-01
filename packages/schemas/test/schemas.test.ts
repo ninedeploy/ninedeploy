@@ -17,6 +17,7 @@ import {
   sshAuthType,
   backupWithDb,
   notificationChannelCreate,
+  webhookCreate,
   containerStat,
   apiTokenScope,
   createApiToken,
@@ -28,7 +29,6 @@ import {
   createServiceVolumeAttachment,
   createSource,
   createTunnel,
-  createWebhook,
   createdApiToken,
   operatorGrant,
   createdWebhook,
@@ -670,10 +670,13 @@ describe('service', () => {
   });
 
   describe('webhooks', () => {
-    it('createWebhook accepts optional branch', () => {
-      expect(createWebhook.safeParse({ branch: 'main' }).success).toBe(true);
-      expect(createWebhook.safeParse({}).success).toBe(true);
-      bad(createWebhook, { branch: '' });
+    it('webhookCreate accepts a git-validated optional branch (r473: the live boundary schema)', () => {
+      expect(webhookCreate.safeParse({ branch: 'main' }).success).toBe(true);
+      expect(webhookCreate.safeParse({}).success).toBe(true);
+      bad(webhookCreate, { branch: '' });
+      // r473: same charset rule as the service's own branch — a branch this
+      // rejects could never match a push anyway.
+      bad(webhookCreate, { branch: 'not a branch!' });
     });
 
     it('webhook accepts a row', () => {

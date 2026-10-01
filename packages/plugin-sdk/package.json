@@ -1,6 +1,6 @@
 {
   "name": "@ninedeploy/plugin-sdk",
-  "version": "0.10.28",
+  "version": "0.10.29",
   "description": "Plugin development kit for NineDeploy microkernel and driver registries",
   "license": "MIT",
   "repository": {
@@ -12,7 +12,8 @@
     "access": "public"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "type": "module",
   "main": "./dist/index.js",
@@ -30,9 +31,6 @@
     "lint": "biome lint .",
     "test": "vitest run --coverage",
     "clean": "rm -rf dist .turbo"
-  },
-  "dependencies": {
-    "@ninedeploy/schemas": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^7.0.2"

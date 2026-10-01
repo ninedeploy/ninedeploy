@@ -35,9 +35,12 @@ vi.mock('../src/components/Toast.js', () => ({
   useToast: () => toastSpy,
 }));
 
+// r473: mutable user — the console is operator-only and the member arm is
+// pinned by a test below.
+const authState = vi.hoisted(() => ({ user: { id: 1, email: 'admin@ninedeploy.com', isOperator: true } as { id: number; isOperator: boolean } | null }));
 const authMock = vi.hoisted(() => ({
   AuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  useAuth: () => ({ user: { id: 1, email: 'admin@ninedeploy.com', isOperator: true }, status: 'ready', logout: vi.fn() }),
+  useAuth: () => ({ user: authState.user, status: 'ready', logout: vi.fn() }),
 }));
 vi.mock('../src/lib/auth.js', () => authMock);
 
@@ -69,6 +72,7 @@ function enrolmentReplies(current: { enabled: boolean; token: string | null }) {
 
 describe('Servers', () => {
   beforeEach(() => {
+    authState.user = { id: 1, isOperator: true };
     vi.clearAllMocks();
     toastSpy.toast.mockClear();
     mockOf(api.services.list).mockResolvedValue([] as never);
@@ -653,5 +657,12 @@ describe('Servers', () => {
     expect(await screen.findByText('Connecting to host…')).toBeInTheDocument();
     expect(screen.getByText('Failed agent deploy')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+  });
+
+  it('r473: a member gets the operators-only one-liner, no console, no listing call', async () => {
+    authState.user = { id: 7, isOperator: false };
+    renderWithProviders(<Servers />);
+    expect(await screen.findByText(/operators only/i)).toBeInTheDocument();
+    expect(api.servers.list).not.toHaveBeenCalled();
   });
 });

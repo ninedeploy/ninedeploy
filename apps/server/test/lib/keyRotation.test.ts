@@ -47,7 +47,9 @@ describe('rotateSecrets', () => {
       [webhooks, [{ id: 2, v: 'wh-enc' }]],
       [databases, [{ id: 3, v: 'db-enc' }]],
       [tunnels, [{ id: 4, v: 'tn-enc' }]],
-      [notificationChannels, [{ id: 5, v: 'nc-enc' }]],
+      // r473: the channel carries BOTH encrypted columns — the target AND the
+      // (now envelope-encrypted) provider config blob; each rotates once.
+      [notificationChannels, [{ id: 5, v: 'nc-enc', c: 'nc-cfg-enc' }]],
       // sources: one null credential column to exercise the nullable path
       [sources, [{ id: 6, t: 'src-tok', k: null }]],
       [users, [{ id: 7, v: 'totp-enc' }]],
@@ -64,13 +66,14 @@ describe('rotateSecrets', () => {
 
     const count = await rotateSecrets(db as never);
 
-    expect(count).toBe(13); // 11 registry rows + 1 settings secret + 1 config-center secret
+    expect(count).toBe(14); // 12 registry rows (target + config blob) + 1 settings secret + 1 config-center secret
     // reencrypt was applied to every non-null secret (null source key is skipped).
     expect(cryptoMock.reencrypt).toHaveBeenCalledWith('ev-enc');
     expect(cryptoMock.reencrypt).toHaveBeenCalledWith('wh-enc');
     expect(cryptoMock.reencrypt).toHaveBeenCalledWith('db-enc');
     expect(cryptoMock.reencrypt).toHaveBeenCalledWith('tn-enc');
     expect(cryptoMock.reencrypt).toHaveBeenCalledWith('nc-enc');
+    expect(cryptoMock.reencrypt).toHaveBeenCalledWith('nc-cfg-enc');
     expect(cryptoMock.reencrypt).toHaveBeenCalledWith('src-tok');
     expect(cryptoMock.reencrypt).toHaveBeenCalledWith('totp-enc');
     expect(cryptoMock.reencrypt).toHaveBeenCalledWith('oidc-enc');

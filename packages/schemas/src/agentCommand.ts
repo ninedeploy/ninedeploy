@@ -34,6 +34,14 @@ export interface AgentCommandOptions {
   enrolmentToken?: string;
 }
 
+/** Render a value for the copy-paste shell line (r473): bare when it is
+ *  provably shell-safe (the common case — numbers, hex tokens, plain URLs),
+ *  double-quoted otherwise. Unquoted, a panel URL carrying `&` would
+ *  background the pasted command and mangle the rest of the line. */
+function shellValue(value: string): string {
+  return /^[\w.:/=-]+$/.test(value) ? value : `"${value.replace(/(["$`\\])/g, '\\$1')}"`;
+}
+
 export function agentDockerRunCommand(opts: AgentCommandOptions): string {
   const env: string[] = [
     'NINEDEPLOY_AGENT=1',
@@ -49,7 +57,10 @@ export function agentDockerRunCommand(opts: AgentCommandOptions): string {
     '-v /var/run/docker.sock:/var/run/docker.sock',
     `-v ${AGENT_HOME}:${AGENT_HOME}`,
     `-w ${AGENT_HOME}`,
-    ...env.map((e) => `-e ${e}`),
+    ...env.map((e) => {
+      const eq = e.indexOf('=');
+      return `-e ${e.slice(0, eq)}=${shellValue(e.slice(eq + 1))}`;
+    }),
     `${AGENT_IMAGE_REPO}:${opts.imageTag}`,
     'node /app/apps/server/dist/agent.js',
   ].join(' ');

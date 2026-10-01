@@ -22,7 +22,8 @@ import type {
   CreateServiceInput,
   CreateSourceInput,
   CreateTunnelInput,
-  CreateWebhookInput,
+  // r473: the live webhook-create shape (the dead service.ts twin was removed)
+  WebhookCreate,
   CreatedApiToken,
   CreatedWebhook,
   ConfigItem,
@@ -1120,7 +1121,7 @@ export interface NineDeployClient {
   };
   webhooks: {
     list: (serviceId: number) => Promise<Webhook[]>;
-    create: (serviceId: number, input?: CreateWebhookInput) => Promise<CreatedWebhook>;
+    create: (serviceId: number, input?: WebhookCreate) => Promise<CreatedWebhook>;
     remove: (serviceId: number, hookId: number) => Promise<void>;
   };
   databases: {

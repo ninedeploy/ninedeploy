@@ -1149,7 +1149,11 @@ export const notificationChannels = sqliteTable(
     // title/description/color and webhook identity overrides; the
     // `dispatchChannel` switch reads the keys it cares about. Nullable
     // so channels created before G-18 PR-A keep working with their
-    // existing plain-content payload.
+    // existing plain-content payload. r473: the blob carries provider
+    // secrets (webhook HMAC signing keys, FCM service-account private keys),
+    // so it is stored as an ENVELOPE under the master key — same regime as
+    // every other *_encrypted column; pre-r473 plaintext rows are rewritten
+    // at boot (notifications module normalization) and read tolerantly.
     configJson: text('config_json'),
     createdAt: ts('created_at'),
     updatedAt: tsUpdatable('updated_at'),

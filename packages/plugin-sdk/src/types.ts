@@ -57,11 +57,14 @@ export interface ScopedConfigAccessor {
   delete(key: string): Promise<void>;
 }
 
+/**
+ * Options for `ctx.tapHook`. r473: only `priority` is honoured by the host —
+ * the pipeline applies its own per-tap budget (5 s) and rejection-based
+ * rollback, so per-tap timeout/rollback/id options that previous type
+ * declarations promised were silently dropped and have been removed.
+ */
 export interface TapHookOptions {
   priority?: number;
-  id?: string;
-  timeoutMs?: number;
-  rollback?: (context: unknown, error?: Error) => Promise<void> | void;
 }
 
 export interface PluginContext {
@@ -75,7 +78,6 @@ export interface PluginContext {
     fn: (context: unknown) => unknown | Promise<unknown>,
     optsOrPriority?: number | TapHookOptions,
   ): () => void;
-  registerMenuItem(item: Omit<MenuItemDefinition, 'pluginId'>): void;
 }
 
 export interface PluginDefinition {
@@ -86,12 +88,20 @@ export interface PluginDefinition {
   author?: string;
   icon?: string;
   isOfficial?: boolean;
+  /** Declared on the object your code RETURNS (r473: honoured at READY, with the install manifest as fallback). */
   dependencies?: string[];
+  /** Declared on the object your code RETURNS — registers the plugin's Settings fields (r473: honoured at READY). */
   configSchema?: ConfigSchemaDefinition[];
+  /** Declared on the object your code RETURNS — registers menu entries (r473: honoured at READY). */
   menuItems?: Omit<MenuItemDefinition, 'pluginId'>[];
 
+  /** Called once after the plugin code is evaluated. */
   init?(ctx: PluginContext): Promise<void> | void;
-  start?(ctx: PluginContext): Promise<void> | void;
-  stop?(ctx: PluginContext): Promise<void> | void;
-  destroy?(ctx: PluginContext): Promise<void> | void;
+  /**
+   * Called on plugin disable/uninstall/reload. r473: `start`/`stop` hooks
+   * were removed from this interface — the runtime only ever called init and
+   * destroy, and a lifecycle hook that silently never runs is worse than an
+   * honest type.
+   */
+  destroy?(ctx?: PluginContext): Promise<void> | void;
 }

@@ -336,7 +336,9 @@ export type QueueResponse = z.infer<typeof queueResponse>;
 // ── Domains (Traefik routing) ─────────────────────────────────────────────
 export const createDomain = z.object({
   hostname: z.string().min(3).max(253),
-  path: z.string().default('/'),
+  // r473: aligned with the manifest's route.path rule — the consumer strips
+  // it downstream anyway, but the boundary should not depend on that.
+  path: z.string().min(1).max(200).regex(/^\/.*$/).default('/'),
   // Default matches the DB column default and the CLI (`ssl !== false`):
   // HTTPS everywhere unless explicitly disabled.
   ssl: z.boolean().default(true),
@@ -385,15 +387,10 @@ export const domain = z.object({
 export type Domain = z.infer<typeof domain>;
 
 // ── Webhooks (auto-deploy) ────────────────────────────────────────────────
-export const createWebhook = z.object({
-  branch: gitBranch.optional(),
-  /** Newline/comma-separated globs — deploy only when a changed file matches. */
-  watchPaths: z.string().max(1024).refine((raw) => {
-    const patterns = raw.split(/[\n,]/).map((pattern) => pattern.trim()).filter(Boolean);
-    return patterns.length <= 32 && patterns.every((pattern) => pattern.length <= 256 && (pattern.match(/\*\*/g) ?? []).length <= 4 && (pattern.match(/[?*]/g) ?? []).length <= 16);
-  }, 'watchPaths contains an unsafe glob pattern').optional(),
-});
-export type CreateWebhookInput = z.input<typeof createWebhook>;
+// Webhook CREATION is validated by `webhookCreate` in management.ts (the
+// route's schema). The former duplicate here (r473: `createWebhook`) was used
+// by no route and had drifted from the live one — removed rather than left
+// as a trap for someone "hardening" the wrong twin.
 
 export const webhook = z.object({
   id: z.number().int(),
@@ -479,7 +476,9 @@ export type Attachment = z.infer<typeof attachment>;
 // ── Environment variables ──────────────────────────────────────────────────
 export const upsertEnvVar = z.object({
   key: envVarName.max(100),
-  value: z.string(),
+  // r473: same 32 KB cap the Hub deployTemplate path applies — the sink
+  // escapes newlines either way, but the twins should not disagree.
+  value: z.string().max(32 * 1024),
   isSecret: z.boolean().optional(),
   overwriteExisting: z.boolean().optional(),
 });

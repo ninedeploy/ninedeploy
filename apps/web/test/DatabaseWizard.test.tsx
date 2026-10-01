@@ -35,6 +35,13 @@ function renderWizard(onClose = vi.fn()) {
   };
 }
 
+// r473: the wizard gates its inventory query on the operator flag — the
+// retained-volume tests need an operator in context.
+vi.mock('../src/lib/auth.js', () => ({
+  AuthProvider: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+  useAuth: vi.fn(() => ({ user: { id: 1, isOperator: true }, loading: false })),
+}));
+
 describe('DatabaseWizard', () => {
   beforeEach(() => {
     vi.clearAllMocks();

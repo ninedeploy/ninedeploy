@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.28';
+export const VERSION = '0.10.29';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.29',
+    date: '2026-10-01',
+    title: 'The Contract-Honest SDK + Secrets-at-Rest Release',
+    changes: [
+      'Security (P2): notification channel config blobs — webhook HMAC signing secrets, FCM service-account private keys — were stored in PLAINTEXT, outside the encrypted-at-rest regime and the key-rotation sweep. They now persist as master-key envelopes (the r435 SSO pattern): encrypted on write, boot normalization rewrites legacy rows in place, the rotation registry carries the column, the dispatch paths read it tolerantly, and GET answers hasConfig with the blob exposed only for the secret-free Discord shape the UI edits.',
+      'Fixed (P1, plugin-sdk): the SDK\'s central promise was fiction at runtime — configSchema/menuItems/dependencies declared on the object a plugin RETURNS were silently dropped (only the install manifest was read), so an author\'s Settings fields and menu entries never registered. Both sandbox bootstraps now honour the returned definition, with the manifest as fallback; the logger\'s promised varargs are stringified through to the panel log; and the phantom surface was removed from the types (start/stop lifecycle hooks, per-tap rollback/timeoutMs/id, ctx.registerMenuItem) — hooks that silently never run are worse than an honest type. The example is rewritten to the real sandbox code shape (an async function body, not a module) and the package ships a README.',
+      'Fixed (web, P2): member-reachable wizards and modals still fired operator-only listings — the Deploy wizard (sources+servers), the Attach-Volume modal\'s inventory, the Database wizard\'s retained-volume reuse and the service Danger tab each produced swallowed 403s on open, and the attach modal\'s default tab was dead for members (members now start on Create New; the DB-volumes section is operator-only; remaining unknowable numbers render as an honest dash). The events drawer\'s member dead-end CTA and Topology\'s Manage-All-Volumes link are operator-only now, and every gated page gained a member-arm regression test asserting both the one-liner and that the call never fired.',
+      'Fixed (schemas): webhookCreate\'s branch now carries the same git charset rule as the service\'s own branch (whitespace-tolerant — trimmed first, as the route always did); the dead, laxer twin createWebhook was deleted; createDomain.path aligned with the manifest\'s route.path rule; upsertEnvVar values capped at the same 32 KB the Hub path applies; and the agent docker-run line shell-quotes env values — a panel URL containing & used to background the pasted command.',
+      'plugin-sdk no longer drags @ninedeploy/schemas (unused) into every author install.',
+    ],
+  },
+{
     version: '0.10.28',
     date: '2026-10-01',
     title: 'The Member Posture Release — the UI Catches Up with the API',

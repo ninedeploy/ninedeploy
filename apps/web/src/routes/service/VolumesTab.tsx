@@ -112,7 +112,7 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
             {isOperator ? formatBytes(databaseVolumes.reduce((acc, v) => acc + v.sizeBytes, 0)) : '—'}
           </div>
           <p className="text-[11px] text-slate-400 mt-1">
-            {databaseVolumes.length} active database volume(s)
+            {isOperator ? `${databaseVolumes.length} active database volume(s)` : `${attachedDbs.length} attached database(s)`}
           </p>
         </Card>
       </div>
@@ -160,7 +160,7 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
                     Target Path: <code className="text-indigo-300 bg-white/[0.04] px-1.5 py-0.5 rounded">{svc.volumeMount}</code>
                   </p>
                   <p className="mt-1 text-xs text-slate-500">
-                    Host Storage: {formatBytes(serviceVolume?.sizeBytes ?? 0)} · Status: {svc.status === 'running' ? 'Mounted & Active' : 'Detached (Stopped)'}
+                    Host Storage: {isOperator ? formatBytes(serviceVolume?.sizeBytes ?? 0) : '—'} · Status: {svc.status === 'running' ? 'Mounted & Active' : 'Detached (Stopped)'}
                   </p>
                 </div>
               </div>
@@ -281,7 +281,10 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
         </div>
       )}
 
-      {/* Attached Database Volumes */}
+      {/* Attached Database Volumes — volume SIZES come from the operator-only
+          inventory; a member's attached databases stay visible in the
+          Architecture tab, so this whole section is operator-only (r473). */}
+      {isOperator && (
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -365,6 +368,7 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
           </div>
         )}
       </div>
+      )}
 
       {/* Safety & Retention Notice */}
       <Card className="p-4 border-amber-500/20 bg-amber-500/[0.03]">
@@ -503,7 +507,11 @@ function AttachVolumeModal({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
-  const [mode, setMode] = useState<'existing' | 'create'>('existing');
+  const { user } = useAuth();
+  const isOperator = user?.isOperator === true;
+  // The instance inventory is operator-only (r473) — for members the
+  // "Existing Volume" tab cannot work, so they start on "Create New".
+  const [mode, setMode] = useState<'existing' | 'create'>(isOperator ? 'existing' : 'create');
   const [volumeName, setVolumeName] = useState('');
   const [label, setLabel] = useState('');
   const [containerPath, setContainerPath] = useState('/data');
@@ -515,6 +523,7 @@ function AttachVolumeModal({
   const inventory = useQuery({
     queryKey: ['volumes'],
     queryFn: () => api.volumes.list(),
+    enabled: isOperator,
   });
 
   const attach = useMutation({
@@ -558,13 +567,15 @@ function AttachVolumeModal({
         </div>
 
         <div className="flex items-center gap-2 mb-4 border-b border-white/[0.06]">
-          <button
-            type="button"
-            onClick={() => setMode('existing')}
-            className={cn('px-3 py-1.5 text-xs font-medium', mode === 'existing' ? 'text-indigo-300 border-b-2 border-indigo-400' : 'text-slate-400')}
-          >
-            Existing Volume
-          </button>
+          {isOperator && (
+            <button
+              type="button"
+              onClick={() => setMode('existing')}
+              className={cn('px-3 py-1.5 text-xs font-medium', mode === 'existing' ? 'text-indigo-300 border-b-2 border-indigo-400' : 'text-slate-400')}
+            >
+              Existing Volume
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setMode('create')}

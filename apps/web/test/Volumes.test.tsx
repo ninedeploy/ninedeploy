@@ -23,11 +23,12 @@ const volumes = [
   { name: 'nd-old', sizeBytes: 100, owner: null, inUse: false },
 ];
 
-// r472: the page/queries are operator-gated — these tests exercise the
-// operator view, so the auth mock hands out an operator.
+// r472/r473: the page/queries are operator-gated — the auth mock hands out a
+// MUTABLE user so the member-arm test can flip it.
+const authState = vi.hoisted(() => ({ user: { id: 1, isOperator: true } as { id: number; isOperator: boolean } | null }));
 vi.mock('../src/lib/auth.js', () => ({
   AuthProvider: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
-  useAuth: vi.fn(() => ({ user: { id: 1, isOperator: true }, loading: false })),
+  useAuth: vi.fn(() => ({ user: authState.user, loading: false })),
 }));
 
 describe('Volumes', () => {
@@ -76,6 +77,7 @@ describe('Volumes', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    authState.user = { id: 1, isOperator: true };
   });
 
   it('shows skeleton while loading', () => {
@@ -274,5 +276,12 @@ describe('Volumes', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Prune retained/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Prune all' }));
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Prune failed', 'error'));
+  });
+
+  it('r473: a member gets the operators-only one-liner and no listing call', async () => {
+    authState.user = { id: 7, isOperator: false };
+    renderWithProviders(<Volumes />);
+    expect(await screen.findByText(/operators only/i)).toBeInTheDocument();
+    expect(mockOf(api.volumes.list)).not.toHaveBeenCalled();
   });
 });

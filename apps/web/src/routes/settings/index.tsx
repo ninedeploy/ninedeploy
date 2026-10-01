@@ -103,13 +103,7 @@ const SETTING_GROUPS: SectionCategory[] = [
   },
 ];
 
-/** Every valid section id, flattened for ?section= validation. Kept for
- * callers/tests that need the full operator-superset; the page itself now
- * validates against the privilege-filtered groups. */
-const ALL_SECTION_IDS: SectionId[] = SETTING_GROUPS.flatMap((group) =>
-  group.items.map((item) => item.id),
-);
-void ALL_SECTION_IDS;
+/** Settings page shell: clean vertical sidebar navigation layout with search filter. */
 
 /** Settings page shell: clean vertical sidebar navigation layout with search filter. */
 export function Settings() {

@@ -473,7 +473,56 @@ describe('notification channels configJson (G-18 PR-A)', () => {
       payload: { name: 'discord-ops', type: 'discord', target: 'https://h.example.com', configJson: cfg },
     });
     expect(res.statusCode).toBe(200);
-    expect(inserts[0]).toMatchObject({ configJson: cfg });
+    // r473: the blob carries provider secrets — it persists as an ENVELOPE,
+    // and a Discord channel (the secret-free, UI-editable shape) still comes
+    // back decrypted in the response.
+    const stored = (inserts[0] as { configJson: string }).configJson;
+    expect(stored.startsWith('v')).toBe(true);
+    expect(decrypt(stored)).toBe(cfg);
+    expect(res.json()).toMatchObject({ configJson: cfg, hasConfig: true });
+  });
+
+  it('r473: GET masks the config for secret-bearing channel types', async () => {
+    const cfg = JSON.stringify({ secret: 'hmac-signing-key' });
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findMany: {
+          notificationChannels: [
+            channelRow({ id: 2, name: 'hook', type: 'webhook', targetEncrypted: encrypt('https://h.example.com'), configJson: encrypt(cfg) }),
+          ],
+        },
+      }),
+    });
+    await app.register(notificationRoutes);
+    const res = await app.inject({ method: 'GET', url: '/channels', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()[0]).toMatchObject({ configJson: null, hasConfig: true });
+  });
+
+  it('r473: boot normalization rewrites legacy plaintext config rows to envelopes', async () => {
+    const updates: unknown[] = [];
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findMany: {
+          notificationChannels: [
+            channelRow({ id: 3, name: 'legacy', type: 'webhook', targetEncrypted: encrypt('https://h.example.com'), configJson: '{"secret":"k"}' }),
+            // Already an envelope — must be left untouched.
+            channelRow({ id: 4, name: 'modern', type: 'webhook', targetEncrypted: encrypt('https://h.example.com'), configJson: encrypt('{"secret":"k2"}') }),
+          ],
+        },
+        update: {
+          notification_channels: (set: unknown) => {
+            updates.push(set);
+            return [];
+          },
+        },
+      }),
+    });
+    await app.register(notificationRoutes); // registration runs the normalization
+    expect(updates).toHaveLength(1);
+    const stored = (updates[0] as { configJson: string }).configJson;
+    expect(stored.startsWith('v')).toBe(true);
+    expect(decrypt(stored)).toBe('{"secret":"k"}');
   });
 
   it('clears configJson when PATCH sends an empty string', async () => {

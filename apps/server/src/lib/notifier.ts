@@ -15,6 +15,18 @@ function matchesFilter(eventAction: string, filter: string): boolean {
 }
 
 /**
+ * r473: read a channel's stored `config_json` tolerantly. The blob carries
+ * provider secrets (webhook HMAC signing keys, FCM service-account private
+ * keys), so it is stored as an envelope under the master key; rows written
+ * before r473 hold bare JSON and keep working until the notifications
+ * module's boot normalization rewrites them.
+ */
+export function channelConfigOf(ch: { configJson: string | null }): string | null {
+  if (!ch.configJson) return null;
+  return ch.configJson.startsWith('{') ? ch.configJson : decrypt(ch.configJson);
+}
+
+/**
  * Does a per-service subscription `scope` cover this audit action?
  * Pure and exported — the manifest wiring and its tests share it.
  */
@@ -192,7 +204,7 @@ export interface DiscordChannelConfig {
  *  webhook's default identity.
  *
  *  Exported for tests; production code reaches it via
- *  `dispatchChannel(..., { configJson: ch.configJson })`.
+ *  `dispatchChannel(..., { configJson: channelConfigOf(ch) })`.
  */
 export async function sendDiscord(
   webhookUrl: string,
@@ -464,7 +476,7 @@ export async function notifyEvent(db: DB, event: AppEvent): Promise<void> {
       // vanished into audit()'s catch, so the operator never learned the
       // channel was dead.
       const target = decrypt(ch.targetEncrypted);
-      const attempts = await withRetry(() => dispatchChannel(ch.type, target, event, message, { configJson: ch.configJson }));
+      const attempts = await withRetry(() => dispatchChannel(ch.type, target, event, message, { configJson: channelConfigOf(ch) }));
       await db.insert(notificationLog).values({ channelId: ch.id, event: event.action, entity: event.entity, status: 'sent', attempts });
     } catch (err) {
       await db

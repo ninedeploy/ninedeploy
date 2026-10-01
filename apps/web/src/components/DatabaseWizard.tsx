@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useId, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Database, HardDrive, Sparkles, Terminal, X, Zap } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { useAuth } from '../lib/auth.js';
 import { formatBytes } from '../lib/format.js';
 import { useExperienceMode } from '../lib/mode.js';
 import { Button, Input, cn, useEscapeToClose } from './ui.js';
@@ -25,6 +26,8 @@ export function DatabaseWizard({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { isAdvanced } = useExperienceMode();
+  const { user } = useAuth();
+  const isOperator = user?.isOperator === true;
   const [step, setStep] = useState(0);
   const [engine, setEngine] = useState<typeof ENGINES[number]['id'] | null>(null);
   const [name, setName] = useState('');
@@ -37,6 +40,10 @@ export function DatabaseWizard({ onClose }: { onClose: () => void }) {
   const volumes = useQuery({
     queryKey: ['volumes'],
     queryFn: () => api.volumes.list(),
+    // r473: the instance-wide inventory is operator-only; the reuse-retained-
+    // volume option simply does not exist for members instead of firing a
+    // swallowed 403 per wizard open.
+    enabled: isOperator,
   });
 
   const retainedVolumes = (volumes.data || []).filter(

@@ -309,4 +309,11 @@ describe('Users one-time reset link', () => {
     fireEvent.click(screen.getByText('Save'));
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Password reset failed', 'error'));
   });
+
+  it('r473: a member gets the operators-only one-liner and no listing call', async () => {
+    mockOf(useAuth).mockReturnValue({ user: { id: 7, email: 'member@example.com', isOperator: false } } as never);
+    renderWithProviders(<Users />);
+    expect(await screen.findByText(/operators only/i)).toBeInTheDocument();
+    expect(api.users.list).not.toHaveBeenCalled();
+  });
 });

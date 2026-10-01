@@ -8,6 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { notificationRoutes } from '../../src/modules/notifications.js';
+import { decrypt } from '../../src/lib/crypto.js';
 import { asUser, buildTestApp, createFakeDb } from '../helpers.js';
 
 const notifierMock = vi.hoisted(() => ({
@@ -16,6 +17,9 @@ const notifierMock = vi.hoisted(() => ({
   // lands after the test — without this export the rejection escapes as an
   // unhandled error that fails the suite.
   notifyEvent: vi.fn(async () => undefined),
+  // r473: the module imports the tolerant storage-reader from notifier —
+  // fixtures here hold plaintext blobs, so a passthrough keeps them readable.
+  channelConfigOf: (c: { configJson: string | null }) => c.configJson,
 }));
 
 vi.mock('../../src/lib/notifier.js', () => notifierMock);
@@ -145,7 +149,9 @@ describe('notifications — channel CRUD', () => {
       throw new Error(`expected 200, got ${res.statusCode}: ${res.body}`);
     }
     expect(captured?.eventFilter).toBe('service.deployed,deploy.failed');
-    expect(captured?.configJson).toBe('{"retries":3}');
+    // r473: provider config persists as an envelope (secrets ride inside).
+    expect(String(captured?.configJson).startsWith('v')).toBe(true);
+    expect(decrypt(String(captured?.configJson))).toBe('{"retries":3}');
   });
 
   it('PATCH /channels/:id updates the supplied fields and re-encrypts a new target', async () => {

@@ -70,6 +70,9 @@ describe('Doctor', () => {
     mockOf(api.doctor.scan).mockReturnValue(new Promise(() => {}));
     renderWithProviders(<Doctor />);
     expect(screen.getByText('Host-wide analysis and cleanup — operators only.')).toBeInTheDocument();
+    // r473: the guard is not just cosmetic — the admin-only scan must not
+    // even fire (the enabled gate could regress while the header stays).
+    expect(api.doctor.scan).not.toHaveBeenCalled();
   });
 
   it('shows the skeleton while the scan is in flight', () => {
