@@ -63,13 +63,22 @@ if (versionTs.includes('Placeholder')) {
   die(`version.ts on ${commitish} still carries a Placeholder stub — fill it before tagging.`);
 }
 
-// 4. The gate that would have caught the 0.10.30 escape: typecheck the exact
-// tree being tagged. Uses the WORKING tree (identical, per check 1).
+// 4. The gates that would have caught the 0.10.30 escape: typecheck (an
+// unescaped-apostrophe changelog fails compile) AND the version test (whose
+// placeholder/duplicate guard once caught a release note that quoted the
+// word "Placeholder" — prose the compile step is blind to). Uses the WORKING
+// tree (identical, per check 1).
 console.log(`Typechecking the server before tagging ${tag}…`);
 try {
   sh('pnpm', ['--filter', '@ninedeploy/server', 'exec', 'tsc', '--noEmit'], { stdio: 'inherit' });
 } catch {
   die('server typecheck failed — the tag would fail publish-image the same way. Fix first.');
+}
+console.log('Running the version invariants test…');
+try {
+  sh('pnpm', ['--filter', '@ninedeploy/server', 'exec', 'vitest', 'run', 'test/version.test.ts'], { stdio: 'inherit' });
+} catch {
+  die('test/version.test.ts failed — fill the changelog entry properly before tagging.');
 }
 
 sh('git', ['tag', tag, commitish], { stdio: 'inherit' });

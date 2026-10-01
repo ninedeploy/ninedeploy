@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`pnpm release:tag` — the local tag gate.** Wraps `git tag` with the checks the drill previously held as discipline: clean working tree; the tag does not already exist (re-tagging stays an explicit delete-and-recreate); **tag == package.json == version.ts == CHANGELOG[0]** read from the exact commitish via `git show` (not the working tree); no `Placeholder` stub survives; and the server typechecks — the precise step an unescaped-apostrophe changelog fails. Used for this very release.
+- **`pnpm release:tag` — the local tag gate.** Wraps `git tag` with the checks the drill previously held as discipline: clean working tree; the tag does not already exist (re-tagging stays an explicit delete-and-recreate); **tag == package.json == version.ts == CHANGELOG[0]** read from the exact commitish via `git show` (not the working tree); no unfilled stub survives; and the server typechecks — the precise step an unescaped-apostrophe changelog fails. Used for this very release.
 
 ### Verified sound (for the record)
 
