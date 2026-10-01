@@ -188,15 +188,13 @@ export async function servicesExport(client: NineDeployClient, idStr: string): P
   const id = Number(idStr);
   if (!id) return error('Usage: ninedeploy services export <id>');
   const { writeFileSync } = await import('node:fs');
-  const { loadConfig } = await import('../config.js');
+  const { authedFetch } = await import('../client.js');
   try {
     const svc = await client.services.get(id);
-    const cfg = loadConfig();
     const data = await spinner('Exporting', () =>
       (async () => {
-        const res = await fetch(`${cfg.baseUrl}/v1/services/${id}/export`, {
-          headers: { Authorization: `Bearer ${cfg.token ?? ''}` },
-        });
+        // r550: refresh-aware and base-path preserving (was a bare fetch).
+        const res = await authedFetch(`/v1/services/${id}/export`);
         if (!res.ok) throw new Error(`Export failed (HTTP ${res.status})`);
         return res.text();
       })(),

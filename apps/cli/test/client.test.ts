@@ -79,3 +79,71 @@ describe('getClient', () => {
     expect(opts?.getToken()).toBeUndefined();
   });
 });
+
+describe('r550: raw-fetch helpers', () => {
+  it('apiUrl keeps a sub-path prefix and strips trailing slashes', async () => {
+    const { apiUrl } = await import('../src/client.js');
+    expect(apiUrl('/v1/x', 'https://host/panel/')).toBe('https://host/panel/v1/x');
+    expect(apiUrl('/v1/x', 'http://srv:3000')).toBe('http://srv:3000/v1/x');
+    h.loadConfig.mockReturnValue({ baseUrl: 'http://cfg' });
+    expect(apiUrl('/v1/y')).toBe('http://cfg/v1/y');
+  });
+
+  it('authedFetch sends no Authorization header without a stored token', async () => {
+    const { authedFetch } = await import('../src/client.js');
+    h.loadConfig.mockReturnValue({ baseUrl: 'http://srv' });
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 401 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const res = await authedFetch('/v1/system/export');
+    vi.unstubAllGlobals();
+    // No refresh token → the 401 is returned as-is, no refresh attempt.
+    expect(res.status).toBe(401);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1];
+    expect(new Headers(init.headers).has('Authorization')).toBe(false);
+  });
+
+  it('authedFetch returns the original 401 when the refresh is refused', async () => {
+    const { authedFetch } = await import('../src/client.js');
+    h.loadConfig.mockReturnValue({ baseUrl: 'http://srv', token: 'old', refreshToken: 'rt' });
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 401 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const res = await authedFetch('/v1/system/export');
+    vi.unstubAllGlobals();
+    expect(res.status).toBe(401);
+    expect(fetchMock).toHaveBeenCalledTimes(2); // original + refresh, no retry
+  });
+
+  it('a successful refresh with no token in the reloaded config retries without a bearer', async () => {
+    const { authedFetch } = await import('../src/client.js');
+    h.loadConfig
+      .mockReturnValueOnce({ baseUrl: 'http://srv', token: 'old' })
+      .mockReturnValueOnce({ baseUrl: 'http://srv', refreshToken: 'rt' })
+      .mockReturnValue({ baseUrl: 'http://srv' });
+    let n = 0;
+    const fetchMock = vi.fn(async (input: string) => {
+      n += 1;
+      if (input.endsWith('/v1/auth/refresh')) {
+        return new Response(JSON.stringify({ tokens: { accessToken: 'a', refreshToken: 'b' } }), { status: 200 });
+      }
+      return new Response('{}', { status: n === 1 ? 401 : 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const res = await authedFetch('/v1/system/export');
+    vi.unstubAllGlobals();
+    expect(res.status).toBe(200);
+  });
+
+  it('tokenExpiresSoon reads JWT exp and ignores opaque or malformed tokens', async () => {
+    const { tokenExpiresSoon } = await import('../src/client.js');
+    const jwt = (payload: unknown) => `h.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.s`;
+    const now = 1_000_000_000_000;
+    expect(tokenExpiresSoon(undefined)).toBe(false);
+    expect(tokenExpiresSoon('nd_opaque_token')).toBe(false);
+    expect(tokenExpiresSoon('h.%%%.s')).toBe(false);
+    expect(tokenExpiresSoon(jwt({ sub: 1 }), 60_000, now)).toBe(false);
+    expect(tokenExpiresSoon(jwt({ exp: now / 1000 + 30 }), 60_000, now)).toBe(true);
+    expect(tokenExpiresSoon(jwt({ exp: now / 1000 + 600 }), 60_000, now)).toBe(false);
+    expect(tokenExpiresSoon(jwt({ exp: now / 1000 - 1 }))).toBe(true);
+  });
+});

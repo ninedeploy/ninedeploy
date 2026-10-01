@@ -508,17 +508,15 @@ export async function activityList(client: NineDeployClient): Promise<void> {
 /** `ninedeploy system export [file]` — downloads the full system bundle. */
 export async function systemExport(file?: string): Promise<void> {
   const { writeFileSync } = await import('node:fs');
-  const { loadConfig } = await import('../config.js');
-  const cfg = loadConfig();
+  const { authedFetch } = await import('../client.js');
   // r192: the export is a gzip'd tar (`application/gzip`). It used to be read
   // with `res.text()` — UTF-8 decoding replaces every invalid byte with U+FFFD —
   // and saved as `.json`, so the file was corrupt and could never be imported.
   const filename = file ?? `ninedeploy-export-${new Date().toISOString().slice(0, 10)}.tar.gz`;
   try {
     const data = await spinner('Exporting system', async () => {
-      const res = await fetch(`${cfg.baseUrl}/v1/system/export`, {
-        headers: { Authorization: `Bearer ${cfg.token ?? ''}` },
-      });
+      // r550: refresh-aware and base-path preserving (was a bare fetch).
+      const res = await authedFetch('/v1/system/export');
       if (!res.ok) throw new Error(`Export failed (${res.status})`);
       return Buffer.from(await res.arrayBuffer());
     });
@@ -533,34 +531,69 @@ export async function deploysWatch(serviceIdStr: string, deployIdStr: string, ti
   const deployId = Number(deployIdStr);
   if (!serviceId || !deployId) return error('Usage: ninedeploy deploys watch <serviceId> <deployId>');
   const { loadConfig } = await import('../config.js');
-  const cfg = loadConfig();
+  const { apiUrl, refreshAccessToken, tokenExpiresSoon } = await import('../client.js');
   const { WebSocket } = await import('ws');
-  const url = new URL(`/v1/services/${serviceId}/deploys/${deployId}/logs`, cfg.baseUrl.replace(/^http/, 'ws'));
-  // L-3: the token travels as a WebSocket subprotocol, not `?token=`. A query
-  // string lands in Traefik's access log (`accessLog: {}` is on by default)
-  // and in any intermediate proxy's log; a subprotocol is a header.
-  const ws = new WebSocket(url, [`ninedeploy.bearer.${cfg.token ?? ''}`]);
+  // r550: built by concatenation so a sub-path base URL keeps its prefix
+  // (`new URL('/v1/…', base)` dropped it), and the token is refreshed before
+  // connecting — a WebSocket handshake never went through the client's 401
+  // refresh-and-retry, so `deploys watch` failed once the 15-minute access
+  // token expired.
+  const url = apiUrl(`/v1/services/${serviceId}/deploys/${deployId}/logs`).replace(/^http/, 'ws');
+  if (tokenExpiresSoon(loadConfig().token)) await refreshAccessToken();
   let closed = false;
-  ws.on('message', (data) => process.stdout.write(String(data)));
-  ws.on('close', () => {
-    closed = true;
-    info('Log stream closed.');
-  });
-  // `close` normally follows `error`, but `unexpected-response` (handshake
-  // rejection) never reaches the close event on some ws versions — flag the
-  // loop here too or it spins to the hard cap printing nothing.
-  ws.on('error', (err: Error) => {
-    closed = true;
-    error(`Stream error: ${err.message}`);
-  });
-  ws.on('unexpected-response', (_req, res) => {
-    closed = true;
-    error(`Stream rejected (${res.statusCode}).`);
-  });
+  let ws: InstanceType<typeof WebSocket> | undefined;
+  const connect = (retryOn401: boolean): void => {
+    // L-3: the token travels as a WebSocket subprotocol, not `?token=`. A query
+    // string lands in Traefik's access log (`accessLog: {}` is on by default)
+    // and in any intermediate proxy's log; a subprotocol is a header.
+    const socket = new WebSocket(url, [`ninedeploy.bearer.${loadConfig().token ?? ''}`]);
+    ws = socket;
+    let retrying = false;
+    // r550: the server accepts the upgrade and then closes 1008 "unauthorized"
+    // for a dead token (a proxy may instead answer the handshake with 401).
+    // Refresh once and reconnect; a second rejection is final.
+    const retryAfterRefresh = (why: string): boolean => {
+      if (!retryOn401) return false;
+      retrying = true;
+      void refreshAccessToken().then((ok) => {
+        if (closed) return; // Ctrl-C while refreshing
+        if (ok) return connect(false);
+        closed = true;
+        error(`Stream rejected (${why}): the session expired. Run \`ninedeploy login\` again.`);
+      });
+      return true;
+    };
+    socket.on('message', (data) => process.stdout.write(String(data)));
+    socket.on('close', (code?: number, reason?: Buffer) => {
+      if (retrying) return;
+      if (code === 1008 && String(reason ?? '') === 'unauthorized') {
+        if (retryAfterRefresh('unauthorized')) return;
+        closed = true;
+        error('Stream rejected (unauthorized). Run `ninedeploy login` again.');
+        return;
+      }
+      closed = true;
+      info('Log stream closed.');
+    });
+    // `close` normally follows `error`, but `unexpected-response` (handshake
+    // rejection) never reaches the close event on some ws versions — flag the
+    // loop here too or it spins to the hard cap printing nothing.
+    socket.on('error', (err: Error) => {
+      if (retrying) return;
+      closed = true;
+      error(`Stream error: ${err.message}`);
+    });
+    socket.on('unexpected-response', (_req, res) => {
+      if (res.statusCode === 401 && retryAfterRefresh('401')) return;
+      closed = true;
+      error(`Stream rejected (${res.statusCode}).`);
+    });
+  };
+  connect(true);
   // Exit when the server closes the stream (deploy finished) or on Ctrl-C.
   process.on('SIGINT', () => {
     closed = true;
-    ws.close();
+    ws?.close();
     process.exitCode = 0;
   });
   // Hard cap so a stuck stream can never hang the CLI forever.
@@ -568,25 +601,25 @@ export async function deploysWatch(serviceIdStr: string, deployIdStr: string, ti
   while (!closed && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  if (!closed) ws.close();
+  if (!closed) ws?.close();
 }
 
 /** `ninedeploy system import <file>` — restores a system bundle (destructive). */
 export async function systemImport(file: string): Promise<void> {
   if (!file) return error('Usage: ninedeploy system import <file>');
   const { readFileSync } = await import('node:fs');
-  const { loadConfig } = await import('../config.js');
-  const cfg = loadConfig();
+  const { authedFetch } = await import('../client.js');
   const confirm = await prompt('Import OVERWRITES the current system state. Type "yes" to continue');
   if (confirm.toLowerCase() !== 'yes') return error('Cancelled.');
   try {
     // r192: the server reads the raw archive (`application/octet-stream`),
     // as the web panel sends it. A multipart form was refused (415) or, at
     // best, restored from the multipart envelope instead of the archive.
+    // r550: refresh-aware and base-path preserving (was a bare fetch).
     const res = await spinner('Importing system', () =>
-      fetch(`${cfg.baseUrl}/v1/system/import`, {
+      authedFetch('/v1/system/import', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${cfg.token ?? ''}`, 'Content-Type': 'application/octet-stream' },
+        headers: { 'Content-Type': 'application/octet-stream' },
         body: readFileSync(file),
       }),
     );

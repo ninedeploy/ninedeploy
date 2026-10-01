@@ -16,10 +16,13 @@ const sys = vi.hoisted(() => ({
   readFileSync: vi.fn(() => Buffer.from('bundle')),
   fetch: vi.fn(),
   WebSocket: vi.fn(),
-  config: { baseUrl: 'http://srv.test', token: 'tok' },
+  config: { baseUrl: 'http://srv.test', token: 'tok' } as { baseUrl: string; token?: string; refreshToken?: string },
 }));
 vi.mock('node:fs', () => ({ writeFileSync: sys.writeFileSync, readFileSync: sys.readFileSync }));
-vi.mock('../src/config.js', () => ({ loadConfig: () => sys.config }));
+vi.mock('../src/config.js', () => ({
+  loadConfig: () => sys.config,
+  saveConfig: (next: typeof sys.config) => { sys.config = next; },
+}));
 vi.mock('ws', () => ({ WebSocket: sys.WebSocket }));
 
 let logSpy: ReturnType<typeof vi.spyOn>;
@@ -490,8 +493,9 @@ describe('system export/import', () => {
     await systemImport('bundle.json');
     expect(sys.fetch).toHaveBeenCalledWith('http://srv.test/v1/system/import', expect.objectContaining({ method: 'POST' }));
     // r192: raw archive bytes, not multipart.
-    const init = sys.fetch.mock.calls.at(-1)![1] as { headers: Record<string, string>; body: unknown };
-    expect(init.headers['Content-Type']).toBe('application/octet-stream');
+    const init = sys.fetch.mock.calls.at(-1)![1] as { headers: Headers; body: unknown };
+    expect(init.headers.get('Content-Type')).toBe('application/octet-stream');
+    expect(init.headers.get('Authorization')).toBe('Bearer tok');
     expect(Buffer.isBuffer(init.body)).toBe(true);
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('System imported.'));
   });
@@ -512,6 +516,59 @@ describe('system export/import', () => {
     sys.fetch.mockResolvedValueOnce({ ok: false, status: 422, text: async () => '' });
     await systemImport('bundle.json');
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Import failed (422)'));
+  });
+
+  // r550: the raw paths used to send the saved bearer with no refresh, so a
+  // 401 after the 15-minute access-token TTL was final.
+  describe('r550: refresh-and-retry and base-path preservation', () => {
+    const saved = { ...sys.config };
+    afterEach(() => { sys.config = { ...saved }; });
+    const refreshOk = () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ tokens: { accessToken: 'fresh', refreshToken: 'rt2' } }),
+    });
+
+    it('export refreshes on 401 and retries once with the new bearer', async () => {
+      sys.config = { baseUrl: 'http://srv.test', token: 'stale', refreshToken: 'rt' };
+      sys.fetch
+        .mockResolvedValueOnce({ ok: false, status: 401 })
+        .mockResolvedValueOnce(refreshOk())
+        .mockResolvedValueOnce(okRes());
+      await systemExport('out.tar.gz');
+      expect(sys.fetch.mock.calls.map((c) => c[0])).toEqual([
+        'http://srv.test/v1/system/export',
+        'http://srv.test/v1/auth/refresh',
+        'http://srv.test/v1/system/export',
+      ]);
+      const retry = sys.fetch.mock.calls[2]![1] as { headers: Headers };
+      expect(retry.headers.get('Authorization')).toBe('Bearer fresh');
+      expect(sys.writeFileSync).toHaveBeenCalled();
+      expect(sys.config.refreshToken).toBe('rt2');
+    });
+
+    it('import refreshes on 401 and re-sends the archive', async () => {
+      sys.config = { baseUrl: 'http://srv.test', token: 'stale', refreshToken: 'rt' };
+      h.prompt.mockResolvedValue('yes');
+      sys.fetch
+        .mockResolvedValueOnce({ ok: false, status: 401 })
+        .mockResolvedValueOnce(refreshOk())
+        .mockResolvedValueOnce(okRes());
+      await systemImport('bundle.tar.gz');
+      const retry = sys.fetch.mock.calls[2]![1] as { headers: Headers; body: unknown; method: string };
+      expect(retry.method).toBe('POST');
+      expect(retry.headers.get('Authorization')).toBe('Bearer fresh');
+      expect(retry.headers.get('Content-Type')).toBe('application/octet-stream');
+      expect(Buffer.isBuffer(retry.body)).toBe(true);
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('System imported.'));
+    });
+
+    it('keeps a sub-path prefix of the configured base URL', async () => {
+      sys.config = { baseUrl: 'https://host.test/ninedeploy/', token: 'tok' };
+      sys.fetch.mockResolvedValueOnce(okRes());
+      await systemExport('out.tar.gz');
+      expect(sys.fetch.mock.calls[0]![0]).toBe('https://host.test/ninedeploy/v1/system/export');
+    });
   });
 });
 
@@ -572,6 +629,118 @@ describe('deploys watch', () => {
     handlers['close']?.();
     await pending;
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('401'));
+  });
+
+  it('reports non-401 handshake rejections as-is', async () => {
+    const handlers = fakeSocket();
+    const pending = deploysWatch('1', '2');
+    await new Promise((r) => setTimeout(r, 10));
+    handlers['unexpected-response']?.({}, { statusCode: 502 });
+    await pending;
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Stream rejected (502)'));
+  });
+
+  describe('r550: token refresh and base path', () => {
+    const saved = { ...sys.config };
+    afterEach(() => { sys.config = { ...saved }; });
+    const refreshOk = () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ tokens: { accessToken: 'fresh', refreshToken: 'rt2' } }),
+    });
+    const jwt = (exp: number) => `h.${Buffer.from(JSON.stringify({ exp })).toString('base64url')}.s`;
+
+    it('keeps a sub-path prefix of the configured base URL', async () => {
+      sys.config = { baseUrl: 'https://host.test/ninedeploy', token: 'tok' };
+      const handlers = fakeSocket();
+      const pending = deploysWatch('1', '2');
+      await new Promise((r) => setTimeout(r, 10));
+      handlers['close']?.();
+      await pending;
+      expect(sys.WebSocket.mock.calls[0]![0]).toBe('wss://host.test/ninedeploy/v1/services/1/deploys/2/logs');
+    });
+
+    it('refreshes an expired access token before connecting', async () => {
+      sys.config = { baseUrl: 'http://srv.test', token: jwt(Math.floor(Date.now() / 1000) - 60), refreshToken: 'rt' };
+      sys.fetch.mockResolvedValueOnce(refreshOk());
+      const handlers = fakeSocket();
+      const pending = deploysWatch('1', '2');
+      await new Promise((r) => setTimeout(r, 10));
+      handlers['close']?.();
+      await pending;
+      expect(sys.fetch.mock.calls[0]![0]).toBe('http://srv.test/v1/auth/refresh');
+      expect(sys.WebSocket.mock.calls[0]![1]).toEqual(['ninedeploy.bearer.fresh']);
+    });
+
+    it('does not refresh a token that is still valid', async () => {
+      const token = jwt(Math.floor(Date.now() / 1000) + 600);
+      sys.config = { baseUrl: 'http://srv.test', token, refreshToken: 'rt' };
+      const handlers = fakeSocket();
+      const pending = deploysWatch('1', '2');
+      await new Promise((r) => setTimeout(r, 10));
+      handlers['close']?.();
+      await pending;
+      expect(sys.fetch).not.toHaveBeenCalled();
+      expect(sys.WebSocket.mock.calls[0]![1]).toEqual([`ninedeploy.bearer.${token}`]);
+    });
+
+    it('refreshes and reconnects once when the server closes 1008 unauthorized', async () => {
+      sys.config = { baseUrl: 'http://srv.test', token: 'stale', refreshToken: 'rt' };
+      sys.fetch.mockResolvedValueOnce(refreshOk());
+      const first = fakeSocket();
+      const second = fakeSocket();
+      const pending = deploysWatch('1', '2');
+      await new Promise((r) => setTimeout(r, 10));
+      first['close']?.(1008, Buffer.from('unauthorized'));
+      await new Promise((r) => setTimeout(r, 10));
+      expect(sys.WebSocket).toHaveBeenCalledTimes(2);
+      expect(sys.WebSocket.mock.calls[1]![1]).toEqual(['ninedeploy.bearer.fresh']);
+      second['close']?.(1000, Buffer.from(''));
+      await pending;
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Log stream closed.'));
+    });
+
+    it('gives up after the second unauthorized close', async () => {
+      sys.config = { baseUrl: 'http://srv.test', token: 'stale', refreshToken: 'rt' };
+      sys.fetch.mockResolvedValueOnce(refreshOk());
+      const first = fakeSocket();
+      const second = fakeSocket();
+      const pending = deploysWatch('1', '2');
+      await new Promise((r) => setTimeout(r, 10));
+      first['close']?.(1008, Buffer.from('unauthorized'));
+      await new Promise((r) => setTimeout(r, 10));
+      second['close']?.(1008, Buffer.from('unauthorized'));
+      await pending;
+      expect(sys.WebSocket).toHaveBeenCalledTimes(2);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Stream rejected (unauthorized)'));
+    });
+
+    it('reports the expiry when the refresh itself fails', async () => {
+      sys.config = { baseUrl: 'http://srv.test', token: 'stale', refreshToken: 'rt' };
+      sys.fetch.mockResolvedValueOnce({ ok: false, status: 401 });
+      const first = fakeSocket();
+      const pending = deploysWatch('1', '2');
+      await new Promise((r) => setTimeout(r, 10));
+      first['close']?.(1008, Buffer.from('unauthorized'));
+      await pending;
+      expect(sys.WebSocket).toHaveBeenCalledTimes(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('the session expired'));
+    });
+
+    it('does not reconnect when Ctrl-C lands during the refresh', async () => {
+      sys.config = { baseUrl: 'http://srv.test', token: 'stale', refreshToken: 'rt' };
+      let release: (v: unknown) => void = () => {};
+      sys.fetch.mockReturnValueOnce(new Promise((r) => { release = r; }));
+      const first = fakeSocket();
+      const pending = deploysWatch('1', '2');
+      await new Promise((r) => setTimeout(r, 10));
+      first['unexpected-response']?.({}, { statusCode: 401 });
+      process.emit('SIGINT');
+      release(refreshOk());
+      await pending;
+      await new Promise((r) => setTimeout(r, 10));
+      expect(sys.WebSocket).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('rejects usage without ids', async () => {
