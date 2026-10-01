@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Download } from 'lucide-react';
+import { api, authedFetch } from '../../lib/api.js';
 import { downloadBlob } from '../../lib/format.js';
+import { useToast } from '../../components/Toast.js';
 import { useDeployLogs } from '../../lib/useDeployLogs.js';
 import { PipelineStepper, type StageId } from '../../components/PipelineStepper.js';
 
@@ -18,13 +20,26 @@ export function LogPanel({
   const ref = useRef<HTMLPreElement | null>(null);
   const preRef = useAutoScroll(ref, lines);
   const empty = useMemo(() => deploymentId == null, [deploymentId]);
-  const [downloading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const { toast } = useToast();
 
-  const downloadLog = () => {
-    if (!lines || downloading) return;
-    // downloadBlob delays the URL revoke — a synchronous revoke cancels the
-    // download in Safari (r409).
-    downloadBlob(lines, `deploy-${deploymentId}.log`, 'text/plain');
+  // r561: download the FULL log from the server. The on-screen buffer is only
+  // the last 512 KiB (useDeployLogs trims it), so saving `lines` silently
+  // truncated big build logs from the head.
+  const downloadLog = async () => {
+    if (deploymentId == null || downloading) return;
+    setDownloading(true);
+    try {
+      const res = await authedFetch(api.deploys.logDownloadUrl(serviceId, deploymentId));
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // downloadBlob delays the URL revoke — a synchronous revoke cancels the
+      // download in Safari (r409).
+      downloadBlob(await res.blob(), `deploy-${deploymentId}.log`, 'text/plain');
+    } catch {
+      toast('Could not download the build log', 'error');
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const handleStageClick = (stageId: StageId) => {
@@ -65,12 +80,13 @@ export function LogPanel({
             {lines && lines.length > 0 && (
               <button
                 type="button"
-                onClick={downloadLog}
+                onClick={() => void downloadLog()}
                 disabled={downloading}
-                className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-slate-400 transition hover:bg-white/5 hover:text-slate-200"
-                title="Download build log"
+                aria-busy={downloading}
+                className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-slate-400 transition hover:bg-white/5 hover:text-slate-200 disabled:opacity-50"
+                title="Download the full build log"
               >
-                <Download size={11} /> {downloading ? '…' : 'Download'}
+                <Download size={11} /> {downloading ? 'Downloading…' : 'Download'}
               </button>
             )}
             {/* Both stream states render across the open/closed log tests; the
