@@ -109,6 +109,88 @@ describe('useDeployLogs', () => {
     vi.useRealTimers();
   });
 
+  it('r565: a reconnect after the buffer was trimmed neither doubles nor drops the log', () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useDeployLogs(1, 2));
+    const first = FakeWebSocket.instances[0]!;
+    act(() => first.open());
+    // > 512 KiB of numbered lines: the retained buffer gets trimmed, so what
+    // the hook holds no longer starts at the head of the log.
+    const backlog = Array.from({ length: 70_000 }, (_, i) => `line-${i}\n`).join('');
+    act(() => first.message(backlog));
+    act(() => vi.advanceTimersByTime(200));
+    expect(result.current.lines.startsWith('line-0\n')).toBe(false);
+    act(() => first.message('line-70000\n'));
+    act(() => first.closeFromServer());
+    act(() => vi.advanceTimersByTime(2000));
+    const second = FakeWebSocket.instances[1]!;
+    act(() => second.open());
+    // The server replays the WHOLE log file, plus a line published while
+    // the socket was down.
+    act(() => second.message(`${backlog}line-70000\nline-70001\n`));
+    act(() => second.message('line-70002\n')); // live
+    act(() => vi.advanceTimersByTime(200));
+    const lines = result.current.lines;
+    expect(lines.endsWith('line-69999\nline-70000\nline-70001\nline-70002\n')).toBe(true);
+    for (const marker of ['line-69999\n', 'line-70000\n', 'line-70001\n', 'line-65000\n']) {
+      expect(lines.split(marker).length - 1).toBe(1);
+    }
+    vi.useRealTimers();
+  });
+
+  it('r565: a replay that adds nothing new appends nothing', () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useDeployLogs(1, 2));
+    const first = FakeWebSocket.instances[0]!;
+    act(() => first.open());
+    act(() => first.message('a\nb\n'));
+    act(() => first.closeFromServer());
+    act(() => vi.advanceTimersByTime(2000));
+    const second = FakeWebSocket.instances[1]!;
+    act(() => second.open());
+    act(() => second.message('a\nb\n'));
+    act(() => vi.advanceTimersByTime(200));
+    expect(result.current.lines).toBe('a\nb\n');
+    vi.useRealTimers();
+  });
+
+  it('r565: a first frame that is not a replay of what we hold is appended, not swallowed', () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useDeployLogs(1, 2));
+    const first = FakeWebSocket.instances[0]!;
+    act(() => first.open());
+    act(() => first.message('a\nb\n'));
+    act(() => first.closeFromServer());
+    act(() => vi.advanceTimersByTime(2000));
+    const second = FakeWebSocket.instances[1]!;
+    act(() => second.open());
+    // No backlog on the server side (the file is gone) — the first frame is
+    // a live line and must be kept.
+    act(() => second.message('c\n'));
+    act(() => vi.advanceTimersByTime(200));
+    expect(result.current.lines).toBe('a\nb\nc\n');
+    vi.useRealTimers();
+  });
+
+  it('r565: a short held log is not mistaken for a replay just because the next frame contains it', () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useDeployLogs(1, 2));
+    const first = FakeWebSocket.instances[0]!;
+    act(() => first.open());
+    act(() => first.message('ok\n'));
+    act(() => first.closeFromServer());
+    act(() => vi.advanceTimersByTime(2000));
+    const second = FakeWebSocket.instances[1]!;
+    act(() => second.open());
+    // The server had no backlog to replay, so the first frame is a live line
+    // that merely CONTAINS what we hold. The old substring check took it for
+    // a replay and threw the held log away.
+    act(() => second.message('build ok\n'));
+    act(() => vi.advanceTimersByTime(200));
+    expect(result.current.lines).toBe('ok\nbuild ok\n');
+    vi.useRealTimers();
+  });
+
   it('marks the stream closed on error and on close', () => {
     const { result } = renderHook(() => useDeployLogs(1, 2));
     const ws = FakeWebSocket.instances[0];
