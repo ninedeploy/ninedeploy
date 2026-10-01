@@ -17,10 +17,10 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: 'The Clean-Sweep Release — the Curve Reaches Zero',
     changes: [
       'The auditors-audit of 0.10.29 came back 0 P1 / 0 P2 / 3 P3 — the notification encryption, the SDK-honouring bootstraps and the member gating all held under fresh eyes. This release closes those three plus the two noted debris items.',
-      'Fixed: the SDK's listChannels type now matches the masked API (configJson is write-only for everything but Discord; hasConfig distinguishes masked from absent) — a read-modify-write consumer retyping against the old surface could have PATCHed a null back and silently destroyed a stored webhook HMAC secret.',
-      'Fixed: an empty or whitespace-only webhook branch normalizes to absent again — the route falls back to the service's own branch exactly as it always did, instead of 400ing (the charset rule still applies to non-empty values).',
+      'Fixed: the SDK\'s listChannels type now matches the masked API (configJson is write-only for everything but Discord; hasConfig distinguishes masked from absent) — a read-modify-write consumer retyping against the old surface could have PATCHed a null back and silently destroyed a stored webhook HMAC secret.',
+      'Fixed: an empty or whitespace-only webhook branch normalizes to absent again — the route falls back to the service\'s own branch exactly as it always did, instead of 400ing (the charset rule still applies to non-empty values).',
       'Fixed: a plugin whose RETURNED definition carries malformed configSchema/menuItems (a non-array, a numeric key) no longer surfaces as a misleading 10-second init timeout — the READY handler validates the shape, skips the garbage with a named warning, and completes the handshake.',
-      'Docs/schema hygiene: dockerVolumeName's uppercase acceptance is now documented as deliberate (docker accepts it; rejecting would break out-of-band volume attach), and the dead webhooks.events column is marked dead in the schema so nobody builds on it.',
+      'Docs/schema hygiene: dockerVolumeName\'s uppercase acceptance is now documented as deliberate (docker accepts it; rejecting would break out-of-band volume attach), and the dead webhooks.events column is marked dead in the schema so nobody builds on it.',
     ],
   },
 {
