@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.34] - 2026-10-01
+
+> The owner-throttle release (r478): reported live by the owner — the panel
+> rate-limited its own operator on the dashboard. The limiter now buckets by
+> PRINCIPAL, not by IP.
+
+### Fixed
+
+- **An authenticated operator could be throttled by their own panel (P1, reported live).** The global limiter bucketed by IP only — behind a proxy or NAT, every client (browser tabs, the CLI, uptime monitors, anonymous probing) shared one 1000/min bucket, and a busy neighbor could lock the owner out of their own dashboard ("Rate limit exceeded, retry in 23 seconds"). The limiter now runs **after authentication** and buckets by principal:
+  - authenticated requests key as `user:<id>` — the dashboard's own polling can never be crowded out, and a runaway script with a valid token is still capped per account;
+  - unauthenticated requests (login brute-force, `/setup`, the public webhook receiver, agent `/announce`) keep the per-IP bucket — and the tight per-route ceilings on exactly those surfaces (20/min login, 10/min setup, 60/min hooks) are untouched, so the brute-force posture is unchanged;
+  - trade-off, stated openly: WebSocket upgrades hijack the socket at onRequest and no longer pass the limiter — every WS endpoint authenticates in the subprotocol and revalidates every 60 s, and connection floods are a proxy-level (Traefik) concern, not an application-rate one.
+
+  Verified by test: two authenticated users from the SAME IP draw independent buckets while anonymous traffic draws a third, and per-route ceilings still fire.
+
+
 ## [0.10.33] - 2026-10-01
 
 > The journey release (r477): the product now proves its own core loop on the

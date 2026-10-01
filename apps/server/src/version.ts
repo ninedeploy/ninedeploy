@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.33';
+export const VERSION = '0.10.34';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.34',
+    date: '2026-10-01',
+    title: 'The Owner-Throttle Release — Your Panel Will Not Rate-Limit You',
+    changes: [
+      'Fixed (reported by the owner, reproduced on the dashboard): an authenticated operator could be throttled by their OWN panel with 429 Rate limit exceeded — the global limiter bucketed by IP only, so every client behind one proxy or NAT (browser tabs, the CLI, uptime monitors, anonymous probing) shared a single 1000/min bucket, and a single busy neighbor could lock the owner out of the dashboard. The limiter now runs AFTER authentication and buckets by PRINCIPAL: authenticated requests key as user:<id> (a runaway script with a valid token is still capped per account), unauthenticated requests (login brute-force, setup, the public webhook receiver, agent announce) keep the per-IP bucket, and the tight per-route ceilings on those surfaces are untouched. Trade-off: WebSocket upgrades (socket hijacked at onRequest) no longer pass the limiter — every WS endpoint authenticates in the subprotocol and revalidates every 60 s, and connection floods are a proxy-level concern.',
+      'Verified by test: two authenticated users from the SAME IP draw independent buckets; anonymous traffic draws a third; per-route ceilings still fire. The user-journey smoke now also proves the unthrottled happy path end-to-end on the published image.',
+    ],
+  },
+{
     version: '0.10.33',
     date: '2026-10-01',
     title: 'The Journey Release — the Product Proves Itself',
