@@ -52,12 +52,20 @@ for (const rel of packageJsons) {
 }
 
 // 2. Code files with hardcoded version strings
-function replaceInFile(rel, regex, replacement) {
+function replaceInFile(rel, regex, replacement, critical = false) {
   const file = resolveInRoot(rel);
   const content = readFileSync(file, 'utf8');
   // Report the truth instead of a green tick: a pattern that matches nothing
   // silently rots the file while this script claims it was synchronized.
+  // `critical` files are load-bearing for the release (version.ts feeds the
+  // panel's self-reported VERSION): a silent miss would desync the 10
+  // package.jsons from the panel and ship a mislabeled image — r475 made
+  // that exit 1 instead of a warning.
   if (!regex.test(content)) {
+    if (critical) {
+      console.error(`✗ ${rel}: pattern did not match — the panel's VERSION would stay stale. Refusing.`);
+      process.exit(1);
+    }
     console.warn(`⚠ ${rel}: pattern did not match anything — file left untouched`);
     return;
   }
@@ -65,7 +73,7 @@ function replaceInFile(rel, regex, replacement) {
   console.log(`✓ Synchronized ${rel}`);
 }
 
-replaceInFile('apps/server/src/version.ts', /export const VERSION = '.*?';/, `export const VERSION = '${newVersion}';`);
+replaceInFile('apps/server/src/version.ts', /export const VERSION = '.*?';/, `export const VERSION = '${newVersion}';`, true);
 
 // 3. Prepend a new ChangelogEntry stub so CHANGELOG[0].version === VERSION
 //    (guarded by test/version.test.ts: "ABOUT links to the changelog")
@@ -124,5 +132,22 @@ replaceInFile('website/src/components/Layout.tsx', /v\d+\.\d+\.\d+ GA/g, `v${new
 replaceInFile('README.md', /Release-\d+\.\d+\.\d+-blue/, `Release-${newVersion}-blue`);
 replaceInFile('README.md', /--version v\d+\.\d+\.\d+/, `--version v${newVersion}`);
 replaceInFile('README.md', /newest release tag \(\*\*\d+\.\d+\.\d+\*\*\)/, `newest release tag (**${newVersion}**)`);
+
+// r475 closing assertion: the banner must not print over a desync. Every
+// package.json AND the panel's VERSION literal now have to say the same
+// thing — a partial bump (a pattern miss above, a concurrent edit) exits 1.
+const finalTs = readFileSync(resolveInRoot('apps/server/src/version.ts'), 'utf8');
+const tsMatch = finalTs.match(/export const VERSION = '([^']*)';/);
+if (!tsMatch || tsMatch[1] !== newVersion) {
+  console.error(`✗ version.ts reports '${tsMatch ? tsMatch[1] : '?'}' after the bump (expected ${newVersion}) — refusing.`);
+  process.exit(1);
+}
+for (const rel of packageJsons) {
+  const v = JSON.parse(readFileSync(resolveInRoot(rel), 'utf8')).version;
+  if (v !== newVersion) {
+    console.error(`✗ ${rel} reports ${v} after the bump (expected ${newVersion}) — refusing.`);
+    process.exit(1);
+  }
+}
 
 console.log(`\n🎉 Successfully bumped all monorepo packages and code to v${newVersion}\n`);

@@ -76,6 +76,23 @@ jobs:
           fi
           echo "Tag '$RELEASE_TAG' is a valid semver release."
 
+      # r475 (P1): version provenance. Tags are created by hand (`git tag vX
+      # <commit>`), and nothing else in the chain compares the tag's value to
+      # what the checkout actually contains — a typo or a stale SHA would pass
+      # every check (it IS a green commit) and publish a mislabeled image that
+      # also clobbers :latest. Refuse before install/build/push when the tag,
+      # package.json and version.ts disagree.
+      - name: Verify release provenance (tag == package.json == version.ts)
+        run: |
+          v="${RELEASE_TAG#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          ts="$(sed -n "s/^export const VERSION = '\([^']*\)';/\1/p" apps/server/src/version.ts)"
+          echo "tag=$v package.json=$pkg version.ts=$ts"
+          if [ "$v" != "$pkg" ] || [ "$v" != "$ts" ]; then
+            echo "::error::Provenance mismatch: tag=$v package.json=$pkg version.ts=$ts — tag the commit whose bump you mean."
+            exit 1
+          fi
+
       - name: Setup pnpm
         # Derived from "packageManager" in package.json — see ci.yml.
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10

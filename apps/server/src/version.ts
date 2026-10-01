@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.30';
+export const VERSION = '0.10.31';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.31',
+    date: '2026-10-01',
+    title: 'The Chain-Guard Release — the Release Chain Audits Itself',
+    changes: [
+      'The last never-audited surface was the release chain itself — and it produced this round\'s only P1: nothing anywhere compared a tag\'s VALUE to what the checkout contains. A mistyped or stale `git tag vX <commit>` would pass every check (it IS a green commit), publish a mislabeled image that reports a different VERSION, and silently clobber :latest. release-publish.yml now verifies tag == package.json == version.ts immediately after checkout, before install or build; a test pins the step and its position.',
+      'Fixed (P2): `pnpm release:check` was a single turbo invocation over four task names — turbo has no edges between typecheck/lint/build/test, so local green was schedulable differently (and weaker) than CI\'s four sequential invocations; the 0.10.30 escape (fill-after-check) slipped through exactly this gap. The script now runs the phases in CI order: typecheck, lint, build, then the sequential test suite.',
+      'Fixed (P2): bump-version.js exited 0 when the version.ts pattern missed — ten package.jsons could say 0.10.31 while the panel kept reporting 0.10.30, with every gate green. A miss on the VERSION literal is now fatal, and the script closes by asserting every package.json and the VERSION literal actually landed on the new version.',
+      'Added: `pnpm release:tag` — the local tag gate. Refuses unless the tree is clean, the tag does not already exist, tag == package.json == version.ts == CHANGELOG[0] on the exact commitish (read via git show, not the working tree), no Placeholder stub survives, and the server typechecks — the precise step an unescaped-apostrophe changelog fails, converted from discipline into a gate.',
+      'Verified sound under the same audit (no changes needed): CI\'s structure — build-before-checks, checks-before-push, needs-gated edge publish, least-privilege permissions, no pull_request_target/fork-secret exposure. The parked dependency majors stay parked with evidence: drizzle-kit 0.31.11 still depends on the deprecated @esbuild-kit/esm-loader (our patch remains required, the bump buys nothing), and js-yaml 4.3.2 carries no advisory while pm2 blocks 5.',
+    ],
+  },
+{
     version: '0.10.30',
     date: '2026-10-01',
     title: 'The Clean-Sweep Release — the Curve Reaches Zero',

@@ -41,4 +41,48 @@ describe('release delivery invariants', () => {
     expect(tags).not.toContain('github.repository');
     expect(tags).toContain('ghcr.io/ninedeploy/ninedeploy:edge');
   });
+
+  it('r475: verifies version provenance before anything is built or pushed', () => {
+    // Tags are typed by hand; a stale or mistyped tag would pass every check
+    // (it IS a green commit) and publish a mislabeled image that also
+    // clobbers :latest. The provenance step must sit before install/build.
+    const steps = readWorkflow('release-publish.yml').jobs['publish-image']!.steps;
+    const provenance = steps.findIndex((step) => step.name?.includes('provenance'));
+    expect(provenance).toBeGreaterThan(-1);
+    const step = steps[provenance]!;
+    expect(step.run).toContain("require('./package.json').version");
+    expect(step.run).toContain('apps/server/src/version.ts');
+    const install = steps.findIndex((step2) => step2.run === 'pnpm install --frozen-lockfile');
+    expect(install).toBeGreaterThan(provenance);
+  });
+
+  it('r475: checks out the requested tag, not the dispatching branch', () => {
+    // A manual workflow_dispatch run from a BRANCH must build the TAG; the
+    // ref pin is the only thing standing between the two.
+    const workflow = readWorkflow('release-publish.yml');
+    const checkout = workflow.jobs['publish-image']!.steps.find((step) => String(step.uses ?? '').startsWith('actions/checkout'));
+    expect(checkout?.with?.['ref']).toBe('${{ env.RELEASE_TAG }}');
+  });
+
+  it('r475: the local gate runs the phases in CI order (typecheck, lint, build, then tests)', () => {
+    // A single `turbo run typecheck lint build test` is NOT phase-ordered —
+    // turbo has no edges between those tasks, so local green could diverge
+    // from CI's sequential invocations (the 0.10.30 escape class).
+    const pkg = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
+    expect(pkg.scripts['release:check']).toBe('pnpm typecheck && pnpm lint && pnpm build && pnpm turbo run test --concurrency=1');
+  });
+
+  it('r475: the pnpm pins in the Dockerfile and installer track packageManager', () => {
+    // Three hardcoded copies must not drift from package.json — a pnpm major
+    // bump without touching them fails only inside a full CI round trip.
+    const pkg = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
+    const expected = /^pnpm@([\d.]+)/.exec(pkg.packageManager)?.[1];
+    expect(expected).toBeDefined();
+    const dockerfile = readFileSync(new URL('../../../Dockerfile', import.meta.url), 'utf8');
+    const args = dockerfile.match(/ARG PNPM_VERSION=([\d.]+)/g) ?? [];
+    expect(args.length).toBe(2); // builder + runner stage
+    for (const arg of args) expect(arg).toBe(`ARG PNPM_VERSION=${expected}`);
+    const installer = readFileSync(new URL('../../../install.sh', import.meta.url), 'utf8');
+    expect(installer).toContain(`PNPM_VERSION="${expected}"`);
+  });
 });
