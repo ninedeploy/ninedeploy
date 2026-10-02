@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto';
-import type { KernelContext, KernelPlugin } from '../types.js';
+import { isKernelOrigin } from '../eventBus.js';
+import type { EventOrigin, KernelContext, KernelPlugin } from '../types.js';
 
 /**
  * Telemetry & Real-Time Audit Streamer plugin.
@@ -115,8 +116,12 @@ export class TelemetryStreamerPlugin implements KernelPlugin {
     //    `telemetry.recorded` event; it does NOT call `export()` itself
     //    (the typed listener below is the single export point so the
     //    same record is never exported twice).
-    const unsubWild = ctx.events.onCustom('*', (payload: unknown, eventName?: string) => {
+    const unsubWild = ctx.events.onCustom('*', (payload: unknown, eventName?: string, origin?: EventOrigin) => {
       if (!eventName) return;
+      // r530: a sandbox plugin's emission is not panel telemetry — re-emitting
+      // it would let third-party code get arbitrary data HMAC-signed and
+      // POSTed to the operator's collector under the panel's name.
+      if (!isKernelOrigin(origin)) return;
       if (selfOrBookkeeping.has(eventName)) return;
       if (internalPrefixes.some((p) => eventName.startsWith(p))) return;
       ctx.events.emit('telemetry.recorded', {

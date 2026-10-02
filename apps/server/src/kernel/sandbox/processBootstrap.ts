@@ -149,18 +149,20 @@ process.on('message', async (msg: MainToWorkerMessage) => {
       }
 
       case 'HOOK_CALL': {
-        const { hookId, initialPayload } = msg.payload;
+        // r532: echo the per-invocation callId — the host keys its pending
+        // calls by it, so concurrent calls of one tap resolve independently.
+        const { hookId, callId, initialPayload } = msg.payload;
         const handler = hookHandlers.get(hookId);
         if (!handler) {
-          post({ type: 'HOOK_RESPONSE', payload: { hookId, result: initialPayload } });
+          post({ type: 'HOOK_RESPONSE', payload: { hookId, callId, result: initialPayload } });
           return;
         }
 
         try {
           const result = await handler(initialPayload);
-          post({ type: 'HOOK_RESPONSE', payload: { hookId, result: result ?? initialPayload } });
+          post({ type: 'HOOK_RESPONSE', payload: { hookId, callId, result: result ?? initialPayload } });
         } catch (err) {
-          post({ type: 'HOOK_RESPONSE', payload: { hookId, error: (err as Error).message } });
+          post({ type: 'HOOK_RESPONSE', payload: { hookId, callId, error: (err as Error).message } });
         }
         break;
       }

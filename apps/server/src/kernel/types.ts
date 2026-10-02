@@ -83,12 +83,31 @@ export interface HookDefinitions {
 }
 
 // ─── Event Bus Interface ───────────────────────────────────────────────────
+/**
+ * r530: who produced an emission. Set HOST-side — a sandbox plugin's
+ * `ctx.emit` is tagged `{ kind: 'plugin', pluginId }` by `SandboxPlugin`, and
+ * nothing a plugin sends over IPC can change that. In-process code (the
+ * kernel, the audit bridge, built-in plugins) emits as `kernel`.
+ */
+export type EventOrigin = { kind: 'kernel' } | { kind: 'plugin'; pluginId: string };
+
 export interface IEventBus {
   emit<K extends keyof DomainEvents>(event: K, payload: DomainEvents[K]): void;
-  emitCustom(event: string, payload: unknown): void;
+  /** `origin` defaults to kernel; only the sandbox bridge passes a plugin origin. */
+  emitCustom(event: string, payload: unknown, origin?: EventOrigin): void;
+  /** Kernel-origin emissions only — a plugin-origin emission never reaches a typed listener (r530). */
   on<K extends keyof DomainEvents>(event: K, listener: (payload: DomainEvents[K]) => Promise<void> | void): () => void;
-  /** A `'*'` listener also receives the concrete event name as its second argument. */
-  onCustom(event: string, listener: (payload: unknown, event?: string) => Promise<void> | void): () => void;
+  /**
+   * A `'*'` listener receives every emission with the concrete event name and
+   * its origin as the second and third arguments. An exact-name listener only
+   * receives plugin-origin emissions when registered with
+   * `{ acceptPluginOrigin: true }` (r530).
+   */
+  onCustom(
+    event: string,
+    listener: (payload: unknown, event?: string, origin?: EventOrigin) => Promise<void> | void,
+    opts?: { acceptPluginOrigin?: boolean },
+  ): () => void;
   once<K extends keyof DomainEvents>(event: K, listener: (payload: DomainEvents[K]) => Promise<void> | void): () => void;
   listenerCount(event: string): number;
   removeAllListeners(event?: string): void;
