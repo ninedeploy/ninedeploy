@@ -57,7 +57,8 @@ export function AiSection() {
         </h2>
         <p className="mt-1 text-xs text-slate-500">
           Bring your own key: the panel asks an OpenAI-compatible chat-completions endpoint to diagnose failed build
-          logs. The sanitized tail of the log is sent to the provider — pick a provider you trust.
+          logs. The sanitized tail of the log is sent to the provider — pick a provider you trust. It spends this
+          key's budget, so only instance operators and members of a workspace an operator owns can use it.
         </p>
       </div>
 
