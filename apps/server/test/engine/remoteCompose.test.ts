@@ -95,6 +95,28 @@ describe('remote compose builder — inline stacks', () => {
     expect(order.indexOf('docker.composePull')).toBeLessThan(order.indexOf('docker.composeUp'));
   });
 
+  it('r590: never tears the live stack down during a deploy — up --build builds before it recreates', async () => {
+    // The local builder used to `down` BEFORE `up --build`, making build time
+    // downtime. The remote one never runs `down` on a deploy: compose's own
+    // `up --build` builds every image before it recreates a single container,
+    // so a failed build leaves the previous revision serving.
+    const { agent, ops } = fakeAgent();
+    await createRemoteComposeBuilder(agent).buildAndRun(ctx());
+    expect(ops()).not.toContain('docker.composeDown');
+
+    const failing: AgentCall = async (op, params, sink) => {
+      if (op === 'docker.composeUp') throw new Error('failed to solve: Dockerfile:3');
+      return agent(op, params, sink);
+    };
+    const second = fakeAgent();
+    const wrapped: AgentCall = async (op, params, sink) => {
+      await second.agent(op, params, sink);
+      return failing(op, params, sink);
+    };
+    await expect(createRemoteComposeBuilder(wrapped).buildAndRun(ctx())).rejects.toThrow(/failed to solve/);
+    expect(second.ops()).not.toContain('docker.composeDown');
+  });
+
   it('continues to up --build when the pre-pull is unavailable', async () => {
     const { agent, ops } = fakeAgent();
     const noPull: AgentCall = async (op, params, sink) => {

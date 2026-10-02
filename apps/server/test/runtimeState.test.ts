@@ -1,4 +1,6 @@
 ﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
+import type { SQL } from 'drizzle-orm';
+import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core';
 import runtimeStatePlugin from '../src/plugins/runtimeState.js';
 import { buildTestApp, createFakeDb, svcRow, trackStatusUpdates } from './helpers.js';
 
@@ -357,5 +359,92 @@ describe('r525: node-pinned docker services are patrolled through their agent', 
     const { updates } = await reconcileOnce(remoteRow());
     expect(updates).toEqual([]);
     expect(auditMocks.audit).not.toHaveBeenCalled();
+  });
+});
+
+// r591: node-pinned COMPOSE services were left out of the r525 patrol (the
+// remote query filtered `type = 'docker'`), so a stack whose main container
+// died on a node stayed `running` in the panel and never alerted.
+describe('r591: node-pinned compose services are patrolled through their agent', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDocker({ state: [] });
+  });
+
+  /**
+   * The fake db does not evaluate `where`, so render the predicate drizzle
+   * built and serve rows only when the query would really select them: the
+   * remote pass names the service types it patrols as bound parameters.
+   */
+  const servedByTypeFilter = (rows: Array<Record<string, unknown>>) => async (args: unknown) => {
+    const where = (args as { where?: SQL } | undefined)?.where;
+    if (!where) return [];
+    const { params } = new SQLiteSyncDialect().sqlToQuery(where);
+    if (!params.includes('docker') && !params.includes('compose')) return []; // the local pass
+    return rows.filter((r) => params.includes(r['type'] as string));
+  };
+  const composeRow = (over: Record<string, unknown> = {}) =>
+    svcRow({ id: 61, name: 'ghost', status: 'running', runtimeId: 'ndcmp-ghost-ghost-1', serverId: 4, type: 'compose', ...over });
+
+  async function patrol(rows: Array<Record<string, unknown>>) {
+    const db = createFakeDb({ findMany: { services: servedByTypeFilter(rows) } });
+    const { updates } = trackStatusUpdates(db);
+    const app = await buildTestApp({ db });
+    await app.register(runtimeStatePlugin);
+    await app.ready();
+    await app.close();
+    return { updates };
+  }
+
+  it("inspects the stack's main container on its node and leaves a running one alone", async () => {
+    agentMocks.agentOp.mockResolvedValue({ exitCode: 0, lines: ['running|10.0.0.7'] });
+    const { updates } = await patrol([composeRow()]);
+    expect(agentMocks.agentOp).toHaveBeenCalledWith(
+      expect.anything(), 4, 'docker.inspect', { name: 'ndcmp-ghost-ghost-1', format: 'state' }, expect.any(Function), { tolerateExit: true },
+    );
+    expect(updates).toEqual([]);
+  });
+
+  it('marks a stack whose main container is GONE errored and fires alert.service_down', async () => {
+    agentMocks.agentOp.mockResolvedValue({ exitCode: 1, lines: ['Error: No such object: ndcmp-ghost-ghost-1'] });
+    const { updates } = await patrol([composeRow()]);
+    expect(updates).toContainEqual({ status: 'error' });
+    expect(auditMocks.audit).toHaveBeenCalledWith(
+      expect.anything(), null, 'alert.service_down', 'ghost #61', expect.objectContaining({ status: 'error' }),
+    );
+  });
+
+  it('revives a stopped main container on its node', async () => {
+    let inspects = 0;
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string) => {
+      if (op === 'docker.inspect') return { exitCode: 0, lines: [inspects++ === 0 ? 'exited|' : 'running|10.0.0.7'] };
+      return { exitCode: 0, lines: [] };
+    });
+    const { updates } = await patrol([composeRow()]);
+    expect(agentMocks.agentOp).toHaveBeenCalledWith(
+      expect.anything(), 4, 'docker.start', { name: 'ndcmp-ghost-ghost-1' }, expect.any(Function), { tolerateExit: true },
+    );
+    expect(updates).toEqual([]);
+  });
+
+  it('never judges a stack on an unreachable node', async () => {
+    agentMocks.agentOp.mockRejectedValue(new Error('connect ECONNREFUSED 10.0.0.4:4600'));
+    const { updates } = await patrol([composeRow()]);
+    expect(updates).toEqual([]);
+    expect(auditMocks.audit).toHaveBeenCalledWith(
+      expect.anything(), null, 'alert.node_unreachable', 'node #4', expect.objectContaining({ serverId: 4 }),
+    );
+    expect(auditMocks.audit).not.toHaveBeenCalledWith(expect.anything(), null, 'alert.service_down', expect.anything(), expect.anything());
+  });
+
+  it('skips a service when the agent is too old for the op — neither the service nor the node is judged', async () => {
+    agentMocks.agentOp.mockRejectedValue(
+      new Error('agent docker.inspect failed (400): {"error":{"code":"unknown_op","message":"Unknown operation: docker.inspect"}}'),
+    );
+    const { updates } = await patrol([composeRow(), composeRow({ id: 62, name: 'blog', runtimeId: 'ndcmp-blog-blog-1' })]);
+    expect(updates).toEqual([]);
+    expect(auditMocks.audit).not.toHaveBeenCalled();
+    // A capability gap is per service, not a dead node: the batch carries on.
+    expect(agentMocks.agentOp.mock.calls.filter((c) => c[2] === 'docker.inspect')).toHaveLength(2);
   });
 });

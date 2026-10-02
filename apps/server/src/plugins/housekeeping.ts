@@ -157,6 +157,37 @@ export async function failInterruptedOperations(
   return result;
 }
 
+/** r594: what a `job_runs` row a stopped process left `running` records as its output. */
+export const INTERRUPTED_JOB_RUN_OUTPUT =
+  'Interrupted: the panel stopped (restart, crash or update) before this run finished — its outcome is unknown. Run the job again.';
+
+/**
+ * r594: mark scheduled-job runs that were left `running` by a process that is
+ * gone — r543's sweep for the `job_runs` table. An exec job inserts a
+ * `running` row and only writes its outcome when `docker exec` returns, so a
+ * crash or restart in between left the run "in progress" in the job history
+ * forever. The row becomes `failed` with the reason as its output (exit code
+ * unknown, so left null). Like r543, a row the hourly backstop marks early
+ * heals itself: the run's own finishing UPDATE by id writes its real outcome.
+ */
+export async function failInterruptedJobRuns(
+  db: import('@ninedeploy/db').DB,
+  startedBefore: Date,
+): Promise<number[]> {
+  const stuck = await db
+    .update(jobRuns)
+    .set({ status: 'failed', output: INTERRUPTED_JOB_RUN_OUTPUT, finishedAt: new Date() })
+    .where(and(eq(jobRuns.status, 'running'), lt(jobRuns.createdAt, startedBefore)))
+    .returning({ id: jobRuns.id });
+  const ids = stuck.map((r) => r.id);
+  if (ids.length > 0) {
+    void audit(db, null, 'job.interrupted', `${ids.length} job run(s) left running by a stopped process were marked failed`, {
+      jobRunIds: ids,
+    });
+  }
+  return ids;
+}
+
 /**
  * Delete finished deployment rows past the retention window, and the log file
  * of each one. Returns the number of rows removed.
@@ -316,8 +347,9 @@ function pruneExportLeftovers(maxAgeMs: number): void {
  * archived metric-history rows, and dangling Docker images so a long-running
  * instance doesn't slowly fill its disk. Live metric retention is handled by
  * the collector plugin (a 24h ring, matching the 1440-minute cap the
- * `/services/:id/metrics` query accepts). It also marks backups and drills a
- * stopped process left `running` as failed (r543) — once at boot, then hourly.
+ * `/services/:id/metrics` query accepts). It also marks backups, drills
+ * (r543) and scheduled-job runs (r594) a stopped process left `running` as
+ * failed — once at boot, then hourly.
  */
 export default fp(
   async (fastify) => {
@@ -350,6 +382,10 @@ export default fp(
         await step('retired-records', () => pruneRetiredRecords(fastify.db, now));
         await step('interrupted-backups', () =>
           failInterruptedOperations(fastify.db, new Date(now - INTERRUPTED_OPERATION_MAX_AGE_MS)),
+        );
+        // r594: the same 24h backstop for scheduled-job runs (a hung exec).
+        await step('interrupted-job-runs', () =>
+          failInterruptedJobRuns(fastify.db, new Date(now - INTERRUPTED_OPERATION_MAX_AGE_MS)),
         );
         await step('drill-leftovers', () => pruneDrillLeftovers([config.paths.backupsDir, tmpdir()], DRILL_LEFTOVER_MAX_AGE_MS));
         await step('export-leftovers', () => pruneExportLeftovers(EXPORT_LEFTOVER_MAX_AGE_MS));
@@ -391,6 +427,15 @@ export default fp(
       }
     } catch (err) {
       fastify.log.warn({ err }, 'interrupted backup sweep skipped at boot');
+    }
+    // r594: job runs too. Exec jobs only run inside the panel process, and the
+    // job scheduler registers after this plugin, so no run of THIS process
+    // exists yet.
+    try {
+      const runs = await failInterruptedJobRuns(fastify.db, new Date());
+      if (runs.length > 0) fastify.log.warn({ jobRunIds: runs }, 'interrupted job runs from the previous run marked failed');
+    } catch (err) {
+      fastify.log.warn({ err }, 'interrupted job-run sweep skipped at boot');
     }
 
     // Run once shortly after boot, then hourly.

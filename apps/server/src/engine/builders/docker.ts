@@ -8,7 +8,7 @@ import { buildEnv, capture, run, sleep } from '../../lib/exec.js';
 import { composeScalar, dotenvValue } from './compose.js';
 import { ensureDockerImage, pullDockerImage } from '../../lib/dockerPull.js';
 import { NETWORK } from '../proxy.js';
-import { MAX_REPLICAS, replicaNames } from '../dockerNames.js';
+import { MAX_REPLICAS, deploymentLabels, replicaNames } from '../dockerNames.js';
 import { ensureServiceBridge } from '../../lib/serviceBridge.js';
 import { buildWithBuildKit } from './buildkit.js';
 import { buildStaticSite } from './staticSite.js';
@@ -218,6 +218,8 @@ interface RuntimeComposeInput {
   dockerSocket: boolean;
   cmd: string[] | null;
   envFile: string | null;
+  /** r593: container labels (deployment / service ids) — see dockerNames.ts. */
+  labels?: Array<[string, string]>;
 }
 
 /**
@@ -260,6 +262,10 @@ export function renderRuntimeCompose(input: RuntimeComposeInput): string {
     for (const c of input.cmd) svc.push(`      - ${composeScalar(c)}`);
   }
   if (input.envFile) svc.push(`    env_file: ${JSON.stringify(input.envFile)}`);
+  if (input.labels?.length) {
+    svc.push('    labels:');
+    for (const [k, v] of input.labels) svc.push(`      ${JSON.stringify(k)}: ${composeScalar(v)}`);
+  }
 
   const out: string[] = ['services:', ...svc];
   out.push('networks:', '  default:', `    name: ${JSON.stringify(input.bridge)}`, '    external: true');
@@ -866,6 +872,11 @@ export const dockerBuilder: Builder = {
     // byte-identical to the docker run path.
     const multiLine = hasMultiLineEnv(env);
     const args = ['run', '-d', '--name', name, '--restart', safeRestartPolicy(buildConfig?.restartPolicy), '--network', bridge];
+    // r593: label the generation with its deployment (and service) id so a
+    // panel restart mid-deploy can find and remove exactly this candidate at
+    // boot. Replicas clone `args`, so they carry the same labels.
+    const labels = deploymentLabels(deploymentId, service.id);
+    for (const [k, v] of labels) args.push('--label', `${k}=${v}`);
     // NOTE: no `-p` host port is published at all. Public traffic enters
     // exclusively through Traefik, which reaches the container by name over the
     // shared network; healthchecks probe the container's network IP directly
@@ -918,6 +929,7 @@ export const dockerBuilder: Builder = {
             dockerSocket: service.dockerSocket === true,
             cmd: service.cmd?.length ? service.cmd : null,
             envFile: composeEnvFile.path,
+            labels,
           }),
         )
       : null;
@@ -1027,6 +1039,7 @@ export const dockerBuilder: Builder = {
                   dockerSocket: service.dockerSocket === true,
                   cmd: service.cmd?.length ? service.cmd : null,
                   envFile: replicaEnvFile.path,
+                  labels,
                 }),
               );
               await run(

@@ -47,3 +47,20 @@ export function replicaNames(runtimeId: string, replicas: number): string[] {
   for (let i = 2; i <= n; i++) names.push(`${runtimeId}-r${i}`);
   return names;
 }
+
+/**
+ * r593: labels every application container the docker builder starts carries,
+ * so boot recovery can find the containers an interrupted deployment had
+ * already started (a blue-green candidate the dead pipeline never retired)
+ * without guessing from names. Containers started before 0.10.38 carry none
+ * and are never touched by that cleanup.
+ */
+export const DEPLOYMENT_LABEL = 'ninedeploy.deployment';
+export const SERVICE_LABEL = 'ninedeploy.service';
+
+/** The `key=value` label pairs for one deployment's containers. */
+export function deploymentLabels(deploymentId: number, serviceId: number | undefined): Array<[string, string]> {
+  const out: Array<[string, string]> = [[DEPLOYMENT_LABEL, String(deploymentId)]];
+  if (typeof serviceId === 'number') out.push([SERVICE_LABEL, String(serviceId)]);
+  return out;
+}

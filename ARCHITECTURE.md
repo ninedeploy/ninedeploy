@@ -460,8 +460,8 @@ tree-kill (SIGTERM→SIGKILL) and a whitelisted env inheritance (never
     left empty, `env.required` gaps become warnings, and `runtime`/`phases` are
     rendered into a `nixpacks.toml`. Then builder dispatch: Docker (Dockerfile
     via buildx, or Nixpacks for Dockerfile-less repos) / PM2 (install + build
-    with the service env) / Compose (`docker compose up -d --build`, prefix
-    ndcmp-)
+    with the service env) / Compose (`config` + `pull` + `build` while the
+    previous stack serves, then `down` + `up -d`, prefix ndcmp-)
  9. BOOT — start the NEW runtime with env-file secrets (0600 temp file, deleted
     after start) + network + volume attachments + limits + restart policy.
     The previous Docker container keeps serving (blue-green)
@@ -505,8 +505,9 @@ tree-kill (SIGTERM→SIGKILL) and a whitelisted env inheritance (never
   (operator-gated, reserved ports refused). Blue-green switch + auto rollback
 - **pm2.ts** — Node runtime managed by PM2 on the host, stop-then-start (brief
   gap, auto-rollback on failure). Host-privileged — operator-only
-- **compose.ts** — `docker compose up -d --build` with the `ndcmp-` project
-  prefix; no blue-green (compose controls the lifecycle). Host-privileged —
+- **compose.ts** — `docker compose config/pull/build` while the previous
+  revision serves, then `down` + `up -d`, with the `ndcmp-` project prefix; no
+  blue-green (compose controls the lifecycle). Host-privileged —
   operator-only
 
 ### 7.3 Reverse proxy (`engine/proxy.ts`)

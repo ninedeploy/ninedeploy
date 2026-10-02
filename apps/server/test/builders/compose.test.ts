@@ -47,7 +47,11 @@ describe('composeBuilder.buildAndRun', () => {
     expect(downCall).toBeTruthy();
     expect((downCall![1] as string[])).toEqual(['compose', '-p', 'ndcmp-stack', '-f', 'compose.yaml', 'down', '--remove-orphans']);
     const upCall = h.run.mock.calls.find((c) => (c[1] as string[])[5] === 'up');
-    expect((upCall![1] as string[])).toEqual(['compose', '-p', 'ndcmp-stack', '-f', 'compose.yaml', 'up', '-d', '--build', '--remove-orphans']);
+    // r590: no `--build` on up — images were built before `down`.
+    expect((upCall![1] as string[])).toEqual(['compose', '-p', 'ndcmp-stack', '-f', 'compose.yaml', 'up', '-d', '--remove-orphans']);
+    const buildCall = h.run.mock.calls.find((c) => (c[1] as string[])[5] === 'build');
+    expect((buildCall![1] as string[])).toEqual(['compose', '-p', 'ndcmp-stack', '-f', 'compose.yaml', 'build']);
+    expect(buildCall![2]).toMatchObject({ cwd: tmp, env: { TOKEN: 'secret-value' } });
     expect(upCall![2]).toMatchObject({ cwd: tmp });
 
     // The .env was written and cleaned up afterwards.
@@ -310,6 +314,32 @@ describe('composeBuilder redeploy safety gates', () => {
     expect(calls.indexOf('pull')).toBeGreaterThan(calls.indexOf('config'));
     expect(calls.indexOf('down')).toBeGreaterThan(calls.indexOf('pull'));
     expect(calls.indexOf('up')).toBeGreaterThan(calls.indexOf('down'));
+  });
+
+  it('r590: builds images while the old stack still serves — config, pull, build, THEN down, up', async () => {
+    await composeBuilder.buildAndRun(makeCtx() as never);
+    const calls = h.run.mock.calls.map((c) => (c[1] as string[])[5]);
+    expect(calls.filter((c) => ['config', 'pull', 'build', 'down', 'up'].includes(c!))).toEqual([
+      'config',
+      'pull',
+      'build',
+      'down',
+      'up',
+    ]);
+    const upArgs = h.run.mock.calls.find((c) => (c[1] as string[])[5] === 'up')![1] as string[];
+    expect(upArgs).not.toContain('--build');
+  });
+
+  it('r590: a failed build fails the deploy and leaves the previous stack running (no down, no up)', async () => {
+    h.run.mockImplementation(async (_cmd: string, args: unknown[]) => {
+      if ((args as string[])[5] === 'build') throw new Error('failed to solve: Dockerfile:3 RUN npm ci');
+      return Promise.resolve();
+    });
+    await expect(composeBuilder.buildAndRun(makeCtx() as never)).rejects.toThrow('failed to solve');
+    expect(h.run.mock.calls.some((c) => (c[1] as string[])[5] === 'down')).toBe(false);
+    expect(h.run.mock.calls.some((c) => (c[1] as string[])[5] === 'up')).toBe(false);
+    // The secrets file is still cleaned up on the failure path.
+    expect(existsSync(path.join(tmp, '.env'))).toBe(false);
   });
 
   it('fails the deploy on a broken compose file without ever running down', async () => {

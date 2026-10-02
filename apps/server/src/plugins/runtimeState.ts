@@ -1,5 +1,5 @@
 import fp from 'fastify-plugin';
-import { and, eq, isNotNull, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { services } from '@ninedeploy/db';
 import { pm2Resurrect, pm2Start, pm2Status } from '../engine/builders/pm2.js';
 import { audit } from '../lib/audit.js';
@@ -38,7 +38,26 @@ const RECONCILE_INTERVAL_MS = 60_000;
  * `running` in the panel forever and `alert.service_down` never fired. An
  * UNREACHABLE node is never read as "service down": its services are skipped
  * for the round and the node itself is recorded as unreachable instead.
+ *
+ * r591: node-pinned COMPOSE services too. Their runtimeId is the stack's main
+ * container (the remote compose builder resolves the name the stack really
+ * runs), so the same `docker.inspect` / `docker.start` pair patrols it. An
+ * agent that answers `unknown_op` (a build older than the op) skips that
+ * service — never read as "down", never as an unreachable node.
  */
+
+/**
+ * r591: the node's agent refused the operation as unknown (an older agent
+ * build). agentOp surfaces the agent's 400 `unknown_op` as a thrown error —
+ * that is a capability gap, not an unreachable node and not a dead service.
+ */
+function isUnknownAgentOp(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /\(400\)/.test(msg) && /unknown_op|Unknown operation/.test(msg);
+}
+
+/** Service types patrolled on their node (r525 docker, r591 compose). */
+const NODE_PATROLLED_TYPES = ['docker', 'compose'] as const;
 
 /** The daemon cannot be reached at all — reconciliation must skip, not judge. */
 class DaemonUnavailableError extends Error {}
@@ -248,7 +267,10 @@ export default fp(
     const unreachableNodes = new Set<number>();
 
     /**
-     * Patrol one node's docker services through its agent. Batched per node:
+     * Patrol one node's docker and compose services through its agent
+     * (compose: the stack's main container — a stopped one is started on its
+     * own; its siblings keep the unless-stopped policy the deploy applied).
+     * Batched per node:
      * the first transport failure (agent down, auth, timeout) stops the batch
      * and marks the node unreachable — none of its services is judged. A
      * container is only declared gone when the node's docker SAYS so ("No
@@ -275,6 +297,12 @@ export default fp(
         try {
           live = await stateOf(svc.runtimeId);
         } catch (err) {
+          // r591: an agent that predates the op answered — it is reachable,
+          // so neither the node nor the service is judged; skip quietly.
+          if (isUnknownAgentOp(err)) {
+            fastify.log.debug({ serverId, serviceId: svc.id }, 'node agent lacks the patrol op — upgrade the agent; service skipped');
+            continue;
+          }
           if (!unreachableNodes.has(serverId)) {
             unreachableNodes.add(serverId);
             const reason = err instanceof Error ? err.message : String(err);
@@ -295,7 +323,9 @@ export default fp(
               fastify.log.warn({ serviceId: svc.id, name: svc.name, runtimeId: svc.runtimeId, serverId }, 'revived stopped container on its node');
               continue;
             }
-          } catch {
+          } catch (err) {
+            // r591: an older agent without the op — skip, never judge.
+            if (isUnknownAgentOp(err)) continue;
             // The node went away mid-revive — not the service's fault.
             return;
           }
@@ -400,14 +430,19 @@ export default fp(
       }
       // r525: node-pinned docker services, one batch per node. Isolated from
       // the local pass above: a node problem must never cost the panel host
-      // its reconcile, nor the other way round.
+      // its reconcile, nor the other way round. r591: compose services too.
       try {
         const remote = await fastify.db.query.services.findMany({
-          where: and(eq(services.status, 'running'), isNotNull(services.serverId), eq(services.type, 'docker')),
+          where: and(
+            eq(services.status, 'running'),
+            isNotNull(services.serverId),
+            inArray(services.type, [...NODE_PATROLLED_TYPES]),
+          ),
         });
         const byNode = new Map<number, Array<{ id: number; name: string; runtimeId: string }>>();
         for (const svc of remote) {
           if (svc.serverId == null || !svc.runtimeId) continue;
+          if (!(NODE_PATROLLED_TYPES as readonly string[]).includes(svc.type)) continue;
           const batch = byNode.get(svc.serverId) ?? [];
           batch.push({ id: svc.id, name: svc.name, runtimeId: svc.runtimeId });
           byNode.set(svc.serverId, batch);

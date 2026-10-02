@@ -2276,6 +2276,42 @@ describe('r353: source fan-out and Git credentials', () => {
     expect(nodeOps()).toContain('git.ensure');
     expect(nodeOps()).toContain('docker.build');
   });
+
+  // r592: the fan-out resolved its registry credential from the service IMAGE,
+  // so a repository-built service never had one and every node pulled the
+  // Dockerfile's private base image anonymously.
+  it("r592: logs each node in to the registry credential's single bound host before a source build", async () => {
+    const { db } = makeDb();
+    baseSetup(db, { sourceId: 7 });
+    db.query.sources.findFirst.mockResolvedValue({ id: 7, type: 'registry', name: 'ghcr-ci', registryUsername: 'ci', tokenEncrypted: 'tok-enc' });
+    db.query.settings.findFirst.mockResolvedValue({ key: 'registry_source_hosts', value: { '7': ['ghcr.io'] } });
+    withTarget(db);
+
+    await runDeployment(db as never, 1);
+
+    const login = h.agentOp.mock.calls.find((c) => c[2] === 'docker.login');
+    expect(login?.[1]).toBe(9);
+    expect(login?.[3]).toEqual({ username: 'ci', password: 'dec:tok-enc', server: 'ghcr.io' });
+    const ops = nodeOps();
+    expect(ops.indexOf('docker.login')).toBeLessThan(ops.indexOf('docker.build'));
+    // The panel-hosted primary is unchanged: no credential for a repo build.
+    const [ctx] = h.builder.buildAndRun.mock.calls[0] as [Record<string, unknown>];
+    expect(ctx.registryAuth).toBeUndefined();
+  });
+
+  it('r592: sends nothing when the credential is bound to several hosts (or none) — and says why', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { sourceId: 7 });
+    db.query.sources.findFirst.mockResolvedValue({ id: 7, type: 'registry', name: 'ghcr-ci', registryUsername: 'ci', tokenEncrypted: 'tok-enc' });
+    withTarget(db);
+    const lines = collectLogs(1);
+
+    await runDeployment(db as never, 1);
+
+    expect(nodeOps()).not.toContain('docker.login');
+    expect(nodeOps()).toContain('docker.build');
+    expect(lines.some((l) => l.includes('registry credential "ghcr-ci" is bound to') && l.includes('source build names no registry'))).toBe(true);
+  });
 });
 
 describe('r520: railpack on an install that cannot run it', () => {
