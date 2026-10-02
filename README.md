@@ -61,7 +61,8 @@ curl -fsSL https://raw.githubusercontent.com/NineDeploy/NineDeploy/main/install.
 ```
 
 Installs Node and Docker if missing, drops a checksum-verified Nixpacks binary in place, downloads
-the release tarball GitHub publishes for the resolved tag into `~/ninedeploy` (falling back to a
+the resolved release's source archive — checked against the release's signed `SHA256SUMS`, see
+[Verifying a release](#verifying-a-release) — into `~/ninedeploy` (falling back to a
 `git clone` only if the tarball is unreachable; `--channel main` always uses git), generates a 32-byte JWT secret and a master key into a `0600` `.env`,
 runs the SQLite migrations, and starts a hardened `systemd` unit (`ProtectSystem=full`,
 `NoNewPrivileges`, `PrivateTmp`, `Restart=always`) gated on `/health`.
@@ -119,6 +120,56 @@ docker run -d --name ninedeploy \
 > **Docker mode trade-off:** PM2 services (host processes) and UFW firewall management need the
 > bare-metal installer. Docker/Compose deploys, managed databases, Traefik ingress and encrypted S3
 > backups behave identically — the panel drives them as sibling containers through the mounted socket.
+
+### Verifying a release
+
+Since **0.10.43** every release is signed without a maintainer-held key: the release workflow signs
+with a short-lived [Sigstore](https://www.sigstore.dev/) certificate issued to
+`release-publish.yml` itself through GitHub's OIDC token (cosign *keyless*), and each signature is
+recorded in Sigstore's public transparency log. The same identity is used everywhere:
+
+```bash
+ID='^https://github\.com/(?i:ninedeploy/ninedeploy)/\.github/workflows/release-publish\.yml@refs/(tags/v[0-9]+\.[0-9]+\.[0-9]+|heads/main)$'
+```
+
+**The image** — the multi-arch digest behind `ghcr.io/ninedeploy/ninedeploy:vX.Y.Z` is signed and
+carries SLSA build provenance (`:latest` is a retag of that same digest):
+
+```bash
+cosign verify ghcr.io/ninedeploy/ninedeploy:v0.10.43 \
+  --certificate-identity-regexp '^https://github\.com/(?i:ninedeploy/ninedeploy)/\.github/workflows/release-publish\.yml@refs/(tags/v[0-9]+\.[0-9]+\.[0-9]+|heads/main)$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+gh attestation verify oci://ghcr.io/ninedeploy/ninedeploy:v0.10.43 --repo NineDeploy/NineDeploy
+```
+
+To run exactly what you verified, pin the digest `cosign verify` prints (`…/ninedeploy@sha256:…`).
+
+**The source** — each GitHub Release carries `ninedeploy-vX.Y.Z.tar.gz` (a `git archive` of the
+tag), `install.sh`, `SHA256SUMS` over both, and `SHA256SUMS.sigstore.json` (its signature):
+
+```bash
+cosign verify-blob --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity-regexp "$ID" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+sha256sum -c --ignore-missing SHA256SUMS
+```
+
+`install.sh` does this itself for releases that publish checksums: it installs the release archive
+only when its sha256 matches `SHA256SUMS` — a mismatch stops the installer before anything is
+replaced — and when `cosign` (v2.4+) is on the host it verifies the signature first, failing the same
+way (`NINEDEPLOY_SKIP_SIGNATURE_VERIFY=1` falls back to the checksum alone, e.g. on a host that cannot
+reach Sigstore). Without cosign it says so in one line and relies on the checksum. The panel's
+one-click update runs the target release's `install.sh` only when it matches that release's
+`SHA256SUMS` the same way. Releases before 0.10.43 publish none of this; installing one (`--version`)
+still uses GitHub's tag archive, verified by TLS only, with a warning.
+
+What it proves, and what it does not: the signer is this repository's release workflow, run for a
+`vX.Y.Z` tag or dispatched from `main`. The trust root is GitHub (the repository, Actions, its OIDC
+tokens) plus Sigstore (Fulcio, Rekor) — not a key a maintainer holds. Whoever can push a tag or edit
+that workflow can produce a validly signed release; what the signature rules out is substitution
+afterwards — an archive, installer or image modified anywhere between the workflow and your host. The
+`git` fallback paths (`--channel main`, a clone-based install, an unreachable asset host) are verified
+by TLS to github.com only.
 
 ### From source (development)
 

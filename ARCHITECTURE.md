@@ -750,7 +750,10 @@ and since 0.10.38 (r581) **the end-to-end smokes gate publication**:
 
 1. **publish-image** — provenance check (tag = `package.json` = `version.ts`),
    `pnpm release:check`, the integration suite, then a multi-arch build pushed
-   as `:vX.Y.Z` **only**, with both platform manifests verified.
+   as `:vX.Y.Z` **only**, with both platform manifests verified. Since 0.10.43
+   (r700) the pushed index **digest** is then signed with cosign keyless
+   (GitHub OIDC → Fulcio, logged in Rekor; no maintainer key) and given SLSA
+   build provenance (`actions/attest-build-provenance`, pushed to GHCR).
 2. **smoke-published-image** — on that pushed image, in a privileged DinD
    sidecar: `scripts/smoke-upgrade.mjs --from=<previous published release>
    --to=vX.Y.Z` (the previous release comes from the GitHub Releases API, not
@@ -759,6 +762,16 @@ and since 0.10.38 (r581) **the end-to-end smokes gate publication**:
 3. **promote-release** — only when both smokes pass: `:latest` is re-pointed
    at the already-pushed manifest (registry retag, no rebuild; only when the
    tag is the highest `vX.Y.Z`, per r573), then the GitHub Release is created.
+   Since 0.10.43 (r701) it first builds the release's integrity assets — a
+   `git archive` of the tag (`ninedeploy-vX.Y.Z.tar.gz`), its `install.sh`,
+   `SHA256SUMS` over both and `SHA256SUMS.sigstore.json` (keyless
+   `sign-blob`) — verifies them with install.sh's own helpers, attaches them
+   to a **draft** release, and publishes the draft last (marked Latest only
+   for the highest tag). `releases/latest` therefore never names a release
+   without its checksums. install.sh (r702) installs that archive only when
+   it matches `SHA256SUMS` (and, with cosign on the host, when the signature
+   verifies); the panel's self-update (r703) runs the target's `install.sh`
+   asset only under the same check. See README → "Verifying a release".
 
 Installed servers discover releases through the Releases API and docker
 installs follow `:latest`, so a red smoke means **no server is offered the
