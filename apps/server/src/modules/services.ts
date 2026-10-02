@@ -24,9 +24,10 @@ import { findCatalogTemplate } from '../templates/catalog.js';
 const setTargets = z.object({ serverIds: z.array(z.number().int().positive()).max(10) });
 import { capture } from '../lib/exec.js';
 import { replicaNames } from '../engine/dockerNames.js';
-import { teardownTargets } from '../engine/fanout.js';
+import { targetsForService, teardownTargets, type FanoutTarget } from '../engine/fanout.js';
 import { audit } from '../lib/audit.js';
 import { agentOp } from '../lib/agentClient.js';
+import { removeNodeWorkspace } from '../lib/agentCapabilities.js';
 import { config } from '../config.js';
 import { getStickyEnabledForService } from '../engine/proxy.js';
 import { setSettingString } from '../lib/settings.js';
@@ -723,10 +724,26 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // host) retires the runtime where it runs now; the next deploy creates it
     // on the new node. Otherwise the old container kept serving, unmanaged.
     const moving = patch.serverId !== undefined && (patch.serverId ?? null) !== (existing.serverId ?? null);
+    // r662: the slug-volume guard (r351/r466) ran only at CREATE, for the
+    // placement chosen then. Moving the service later mounted whatever
+    // `nd-svc-<slug>-data` the destination held — a deleted service's data on
+    // that node or host. Checked before anything is retired; the service's
+    // own volume from an earlier placement there is told apart by its age.
+    if (moving) {
+      await assertSlugVolumeNotRetained(existing.slug, patch.type ?? existing.type, {
+        db: app.db,
+        serverId: patch.serverId ?? null,
+        ownerCreatedAt: existing.createdAt ?? null,
+      });
+    }
     if (moving && existing.runtimeId) {
       await retireRuntime(existing, (msg) => req.log.warn({ serviceId: id }, msg));
       Object.assign(servicePatch, { runtimeId: null, status: 'idle' });
       void audit(app.db, req.user!.id, 'service.move', `${existing.name}: node ${existing.serverId ?? 'local'} → ${patch.serverId ?? 'local'}`);
+    }
+    // r662: the checkout it leaves behind on the old node goes too.
+    if (moving && existing.serverId != null) {
+      await removeNodeWorkspace(app.db, existing.serverId, existing.slug, (msg) => req.log.warn({ serviceId: id }, msg));
     }
     const [svc] = await app.db.update(services).set(servicePatch).where(eq(services.id, id)).returning();
     if (!svc) throw notFound('Service not found');
@@ -850,6 +867,9 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // configuration.
     // Best-effort: a failure reading them must not block the destructive
     // operation the caller actually asked for. The 30-day sweep is the backstop.
+    // r662: the fan-out targets, read while the row (and its FK-cascaded
+    // target rows) still exist — see teardownTargets.
+    const targetRows: FanoutTarget[] = await targetsForService(app.db, id).catch(() => []);
     let orphanLogs: Array<{ id: number }> = [];
     try {
       orphanLogs = await app.db.select({ id: deployments.id }).from(deployments).where(eq(deployments.serviceId, id));
@@ -876,9 +896,13 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     await retireRuntime(svc, (msg) => req.log.warn({ runtimeId: svc.runtimeId, serverId: svc.serverId }, msg));
     // Fan-out targets: tear down every extra node's container and drop the
     // rows — deleting the service deletes the whole fleet footprint.
-    await teardownTargets(app.db, svc.id, (line) => req.log.info({ fanout: line }, line)).catch((err: unknown) =>
+    await teardownTargets(app.db, svc.id, (line) => req.log.info({ fanout: line }, line), targetRows).catch((err: unknown) =>
       req.log.warn({ err }, 'fan-out teardown failed (rows remain recoverable on next deploy)'),
     );
+    // r662: and every node checkout of it — the primary's and each target's.
+    for (const serverId of new Set([...(svc.serverId != null ? [svc.serverId] : []), ...targetRows.map((t) => t.serverId)])) {
+      await removeNodeWorkspace(app.db, serverId, svc.slug, (line) => req.log.warn({ serverId }, line));
+    }
     // Model B: reap the service's private bridge. A no-op when a database is
     // still attached to it (so the DB keeps resolving the service's bridge
     // and the panel can still show the connection). Failures are logged, not
@@ -964,6 +988,10 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     for (const t of existing) {
       if (!requested.includes(t.serverId)) {
         await app.db.delete(serviceTargets).where(eq(serviceTargets.id, t.id));
+        // r662: a node that stops being a target keeps no checkout of it.
+        if (t.serverId !== svc.serverId) {
+          await removeNodeWorkspace(app.db, t.serverId, svc.slug, (line) => req.log.warn({ serverId: t.serverId }, line));
+        }
       }
     }
     void audit(app.db, req.user!.id, 'service.targets', `${svc.name}: ${requested.join(',') || 'cleared'}`);
@@ -1199,7 +1227,9 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       if (svc.serverId != null) {
         return { lines: await remoteDocker(svc.serverId, 'docker.logs', { name: svc.runtimeId }) };
       }
-      const out = await capture('docker', ['logs', '--tail', '300', '--timestamps', svc.runtimeId]);
+      // r667: 300 LINES is no byte bound — a container printing one endless
+      // line used to be buffered whole; past 8 MiB the read stops.
+      const out = await capture('docker', ['logs', '--tail', '300', '--timestamps', svc.runtimeId], { maxOutputBytes: 8 * 1024 * 1024 });
       return { lines: out };
     } catch {
       return { lines: '' };

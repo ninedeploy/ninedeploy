@@ -37,6 +37,8 @@ function fakeAgent(overrides: Record<string, { exitCode: number; lines: string[]
     // the builder's log plumbing covered rather than merely constructed.
     sink(`${op} ok`);
     if (overrides[op]) return overrides[op]!;
+    // r660: a current agent names its capabilities in the sealed ping.
+    if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.10.42","caps":["build-path-guard","workspace.remove"]}'] };
     if (op === 'file.writeEnv') return { exitCode: 0, lines: ['wrote .agent-env/web-7.env'] };
     if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|none|0|0'] };
     return { exitCode: 0, lines: [] };
@@ -196,7 +198,8 @@ describe('remote docker builder — repository services', () => {
       }),
     );
 
-    expect(ops().slice(1, 5)).toEqual(['git.ensure', 'git.fetch', 'git.checkout', 'git.reset']);
+    // r660: the agent is asked whether it can build safely BEFORE anything is cloned.
+    expect(ops().slice(1, 6)).toEqual(['agent.ping', 'git.ensure', 'git.fetch', 'git.checkout', 'git.reset']);
     // Every git op names the same per-service workspace: without one, a node
     // could hold exactly ONE checkout and two services would overwrite each
     // other's source tree.
@@ -493,5 +496,54 @@ describe('remote docker builder — health and teardown', () => {
     const plain = fakeAgent();
     await createRemoteDockerBuilder(plain.agent).stop('web-7');
     expect(plain.calls.find((c) => c.op === 'docker.stop')?.params).toEqual({ name: 'web-7' });
+  });
+});
+
+/**
+ * r660: an agent older than the node-side symlink walk would build whatever
+ * a repository symlink points at, as root, in the work root every tenant on
+ * the node shares — so the panel refuses SOURCE builds to it, naming the node
+ * and the version to update to. Image releases never take that path.
+ */
+describe('r660: source builds need an agent that guards build paths', () => {
+  const sourceCtx = () =>
+    ctx({
+      service: svc({ repoUrl: 'https://github.com/acme/app.git', branch: 'main' }),
+      commitSha: 'deadbeefcafe',
+      buildConfig: { buildPack: 'dockerfile', dockerfilePath: 'Dockerfile', baseDir: '/' } as never,
+    });
+
+  it('refuses a source build to an agent that predates the guard, before anything is cloned', async () => {
+    // Older agents answer agent.ping with no lines at all.
+    const { agent, ops } = fakeAgent({ 'agent.ping': { exitCode: 0, lines: [] } });
+    const err = await createRemoteDockerBuilder(agent, { nodeLabel: '"edge-1" (#4)' }).buildAndRun(sourceCtx()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain('"edge-1" (#4)');
+    expect((err as Error).message).toContain('v0.10.42');
+    expect((err as Error).message).toContain('Image deployments to this node keep working');
+    expect(ops()).not.toContain('git.ensure');
+    expect(ops()).not.toContain('docker.build');
+  });
+
+  it('names the version an agent reports when it lacks the capability', async () => {
+    const { agent } = fakeAgent({ 'agent.ping': { exitCode: 0, lines: ['ND-AGENT {"version":"0.10.99","caps":[]}'] } });
+    await expect(createRemoteDockerBuilder(agent, { nodeLabel: '#4' }).buildAndRun(sourceCtx())).rejects.toThrow(/version 0\.10\.99/);
+  });
+
+  it('refuses when the agent cannot even answer the ping (pre-ping agents answer unknown_op)', async () => {
+    const { agent, ops } = fakeAgent();
+    const failing: typeof agent = async (op, params, sink) => {
+      if (op === 'agent.ping') throw new Error('agent agent.ping failed (400): unknown_op');
+      return agent(op, params, sink);
+    };
+    await expect(createRemoteDockerBuilder(failing).buildAndRun(sourceCtx())).rejects.toThrow(/Could not confirm .* node #4/);
+    expect(ops()).not.toContain('git.ensure');
+  });
+
+  it('keeps deploying IMAGE releases to an old agent, without asking', async () => {
+    const { agent, ops } = fakeAgent({ 'agent.ping': { exitCode: 0, lines: [] } });
+    await createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1' }) }));
+    expect(ops()).not.toContain('agent.ping');
+    expect(ops()).toContain('docker.runEnv');
   });
 });

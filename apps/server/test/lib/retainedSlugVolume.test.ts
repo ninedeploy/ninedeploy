@@ -32,6 +32,8 @@ vi.mock('../../src/lib/inventory.js', () => ({
   listManagedVolumeNames: mocks.listManagedVolumeNames,
 }));
 vi.mock('../../src/lib/agentClient.js', () => ({ agentOp: mocks.agentOp }));
+const execMocks = vi.hoisted(() => ({ capture: vi.fn(async () => '') }));
+vi.mock('../../src/lib/exec.js', () => execMocks);
 
 import { assertSlugVolumeNotRetained } from '../../src/lib/retainedSlugVolume.js';
 
@@ -120,5 +122,40 @@ describe('assertSlugVolumeNotRetained — argument contract (r466)', () => {
   it('exports the volume-name convention it guards', async () => {
     const mod = await import('../../src/lib/retainedSlugVolume.js');
     expect(mod.primaryServiceVolumeName('web')).toBe('nd-svc-web-data');
+  });
+});
+
+/**
+ * r662: an EXISTING service moving between hosts may meet its own volume
+ * from an earlier placement there. Slugs are unique among live rows, so a
+ * volume Docker created after the row existed is the service's own; one
+ * created before it is a deleted service's.
+ */
+describe('r662: own-volume exemption for a moving service', () => {
+  const row = new Date('2026-06-01T00:00:00Z');
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.listManagedVolumeNames.mockResolvedValue(['nd-svc-web-data']);
+  });
+
+  it('local: a volume created after the service row is its own — allowed', async () => {
+    execMocks.capture.mockResolvedValueOnce('2026-07-01T10:00:00Z\n');
+    await expect(assertSlugVolumeNotRetained('web', 'docker', { ownerCreatedAt: row })).resolves.toBeUndefined();
+    expect(execMocks.capture).toHaveBeenCalledWith('docker', ['volume', 'inspect', '--format', '{{.CreatedAt}}', 'nd-svc-web-data']);
+  });
+
+  it('local: a volume older than the row is a deleted service — refused', async () => {
+    execMocks.capture.mockResolvedValueOnce('2025-01-01T10:00:00Z\n');
+    await expect(assertSlugVolumeNotRetained('web', 'docker', { ownerCreatedAt: row })).rejects.toMatchObject({ code: 'slug_volume_retained' });
+  });
+
+  it('local: an unreadable stamp stays refused (fail closed)', async () => {
+    execMocks.capture.mockRejectedValueOnce(new Error('docker down'));
+    await expect(assertSlugVolumeNotRetained('web', 'docker', { ownerCreatedAt: row })).rejects.toMatchObject({ code: 'slug_volume_retained' });
+  });
+
+  it('create (no owner yet) never consults the stamp', async () => {
+    await expect(assertSlugVolumeNotRetained('web', 'docker')).rejects.toMatchObject({ code: 'slug_volume_retained' });
+    expect(execMocks.capture).not.toHaveBeenCalled();
   });
 });

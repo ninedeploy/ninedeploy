@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { serviceTargets, servers, type DB } from '@ninedeploy/db';
 import { agentOp } from '../lib/agentClient.js';
+import { assertAgentGuardsBuildPaths, nodeLabel } from '../lib/agentCapabilities.js';
 import { acquireRegistryLock, registryLockKey } from '../lib/registryLock.js';
 import { assertCloneTargetAllowed } from '../lib/gitEgress.js';
 import { envForAgent } from './builders/remoteDocker.js';
@@ -165,6 +166,9 @@ export async function deployToTargets(
             // the clone runs from the target NODE's network position, and this
             // path used to skip it.
             await assertCloneTargetAllowed(repoUrl);
+            // r660: refuse the source build on a target whose agent cannot
+            // symlink-walk the build paths (an image release still fans out).
+            await assertAgentGuardsBuildPaths(agent, await nodeLabel(db, target.serverId));
             await agent('git.ensure', { workspace: ctx.service.slug, url: repoUrl, depth: '1' }, log);
             if (branch) {
               await agent('git.fetch', { workspace: ctx.service.slug }, log);
@@ -258,8 +262,16 @@ export async function pullableReleaseRef(image: string, digest: string | undefin
 }
 
 /** Tear every target container down (service delete / targets cleared). */
-export async function teardownTargets(db: DB, serviceId: number, log: (line: string) => void): Promise<void> {
-  const rows = await targetsForService(db, serviceId);
+export async function teardownTargets(
+  db: DB,
+  serviceId: number,
+  log: (line: string) => void,
+  // r662: the service delete reads its targets BEFORE deleting the row —
+  // the FK cascade removes them with it, and reading afterwards found none,
+  // so every target container outlived the service on its node.
+  knownRows?: FanoutTarget[],
+): Promise<void> {
+  const rows = knownRows ?? (await targetsForService(db, serviceId));
   for (const target of rows) {
     if (!target.runtimeId) continue;
     const agent: AgentCaller = (op, params, sink) => agentOp(db, target.serverId, op, params, sink);

@@ -4,6 +4,7 @@ import { RemoteDeployUnsupportedError } from './remoteDocker.js';
 import { composeScalar, parseComposePs } from './compose.js';
 import { INLINE_COMPOSE_FILE } from '../../lib/composeWorkspace.js';
 import { assertCloneTargetAllowed } from '../../lib/gitEgress.js';
+import { assertAgentGuardsBuildPaths } from '../../lib/agentCapabilities.js';
 
 /**
  * Remote Compose builder — brings a compose stack up on a registered node
@@ -84,7 +85,7 @@ function renderVolumeOverride(
   return `services:\n  ${composeService}:\n    volumes:\n${mounts}\nvolumes:\n${externals}`;
 }
 
-export function createRemoteComposeBuilder(agent: AgentCall): Builder {
+export function createRemoteComposeBuilder(agent: AgentCall, opts: { nodeLabel?: string } = {}): Builder {
   // Recorded at buildAndRun time: the project this builder MINTED for the
   // runtimeId it MINTED. The Builder interface only hands `stop()` the
   // runtimeId, so a string-surgery recovery from `<project>-<service>-1`
@@ -126,6 +127,9 @@ export function createRemoteComposeBuilder(agent: AgentCall): Builder {
       } else if (service.repoUrl) {
         // Egress gate before the node clones (r099) — see remoteDocker.ts.
         await assertCloneTargetAllowed(service.repoUrl);
+        // r660: a repository compose file (and the build contexts it names)
+        // is a repo path like a Dockerfile — same agent requirement.
+        await assertAgentGuardsBuildPaths(agent, opts.nodeLabel ?? `#${service.serverId ?? '?'}`);
         log(`Fetching ${service.repoUrl} into the node workspace "${workspace}" …`);
         await agent('git.ensure', { workspace, url: service.repoUrl, depth: '1' }, sink);
         if (service.branch) {

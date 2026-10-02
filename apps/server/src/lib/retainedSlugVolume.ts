@@ -2,6 +2,7 @@ import type { DB } from '@ninedeploy/db';
 import { HttpError } from './errors.js';
 import { listManagedVolumeNames } from './inventory.js';
 import { agentOp } from './agentClient.js';
+import { capture } from './exec.js';
 
 /**
  * r351: the primary data volume a docker service mounts at `volumeMount` —
@@ -39,16 +40,32 @@ export const primaryServiceVolumeName = (slug: string): string => `nd-svc-${slug
  * runs through the node's agent instead, with the same fail-closed rule: an
  * unreachable agent is decided as if the volume exists.
  */
+/**
+ * r662: slack for clock skew between the panel (which stamped the service
+ * row) and the docker host (which stamped the volume).
+ */
+const OWN_VOLUME_SKEW_MS = 5 * 60 * 1000;
+
+/** The `CreatedAt` of a `docker volume inspect` JSON answer, or null. */
+function volumeCreatedAt(text: string): Date | null {
+  const m = /"CreatedAt"\s*:\s*"([^"]+)"/.exec(text) ?? /^\s*(\d{4}-\d{2}-\d{2}T\S+)\s*$/m.exec(text);
+  if (!m?.[1]) return null;
+  const at = new Date(m[1]);
+  return Number.isNaN(at.getTime()) ? null : at;
+}
+
 export async function assertSlugVolumeNotRetained(
   slug: string,
   type: string,
-  opts: { db?: DB; serverId?: number | null } = {},
+  opts: { db?: DB; serverId?: number | null; ownerCreatedAt?: Date | null } = {},
 ): Promise<void> {
   const db = opts.db ?? null;
   const serverId = opts.serverId ?? null;
   const volume = primaryServiceVolumeName(slug);
   let retained: boolean;
   let unreachable: string | null = null;
+  /** Docker's own creation stamp of the existing volume, when it could be read. */
+  let createdAt: Date | null = null;
   if (serverId != null) {
     if (db === null) throw new Error('assertSlugVolumeNotRetained needs the db to reach a node agent');
     try {
@@ -59,6 +76,7 @@ export async function assertSlugVolumeNotRetained(
       // answered 409 "treated as retained").
       const res = await agentOp(db, serverId, 'docker.volumeInspect', { name: volume }, () => undefined, { tolerateExit: true });
       retained = res.exitCode === 0;
+      if (retained) createdAt = volumeCreatedAt(res.lines.join('\n'));
     } catch (err) {
       // The agent itself blinked (offline node, unknown op on an old agent) —
       // fail closed: treat the node volume as retained.
@@ -78,8 +96,19 @@ export async function assertSlugVolumeNotRetained(
       );
     }
     retained = names.includes(volume);
+    if (retained && opts.ownerCreatedAt) {
+      createdAt = volumeCreatedAt(
+        await capture('docker', ['volume', 'inspect', '--format', '{{.CreatedAt}}', volume]).catch(() => ''),
+      );
+    }
   }
   if (!retained) return;
+  // r662: an EXISTING service moving between hosts (`ownerCreatedAt` set)
+  // may meet its own volume from an earlier placement there. Slugs are unique
+  // among live rows, so a volume Docker created after this row existed can
+  // only be this service's own; one created before it is a deleted service's
+  // — the case the guard exists for. Unreadable stamps stay refused.
+  if (opts.ownerCreatedAt && createdAt && createdAt.getTime() >= opts.ownerCreatedAt.getTime() - OWN_VOLUME_SKEW_MS) return;
   if (type === 'pm2' && unreachable) return;
   throw new HttpError(
     409,
