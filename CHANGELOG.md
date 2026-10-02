@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.41] - 2026-10-02
+
+> **Security release — update now.** A second-pass audit found that a signed-in
+> user could make the panel read a file on the panel host through a symlink
+> committed to a repository and get its content back — any file the panel
+> process can read: its environment (`NINEDEPLOY_JWT_SECRET`), `master.key`,
+> the panel database, and on bare-metal installs (which run as root) system
+> files. Every release before 0.10.41 is affected.
+
+### What to do after updating
+
+1. Open **Doctor**. A critical finding **"Repository analysis stored data that is not a Node version"** means stored analyses captured host content: follow its rotation steps.
+2. **If people you do not fully trust have accounts on your panel, rotate secrets even when Doctor shows nothing** — the on-demand analysis route returned the content without storing it, so it leaves no trace in the database:
+   - set a new `NINEDEPLOY_JWT_SECRET` and restart (every session signs out);
+   - add a new master key to `NINEDEPLOY_MASTER_KEYS` and run `ninedeploy system rotate-keys`;
+   - rotate registry, git, S3, DNS and vault credentials stored in the panel, and the SSH keys of the panel host if it is a bare-metal install;
+   - have users change their passwords if the panel database may have been read.
+   The panel's request log (`journalctl -u ninedeploy`, or `docker logs` in docker mode) records each `POST /v1/insights` call with its client address, for as long as your log retention keeps it; reviewing those narrows this down.
+
+### Security
+
+- **Symlinked repository files were followed on the panel host (r620).** Repository analysis and the `.ninedeploy` loader now read only regular files inside the checkout (no symlinks, FIFOs or devices; `O_NOFOLLOW`; bounded reads). A detected Node version must look like one — anything else is dropped, and values stored by earlier releases are no longer returned by the API and are flagged by Doctor (`repo_insights_leak`).
+- **Workspace email overrides could send arbitrary mail through the instance (r621)** — a regression in 0.10.40, where they were first wired into sending. Overrides now apply only to workspaces an instance operator owns and must keep `{{acceptUrl}}`; elsewhere the built-in text is sent, exactly as before 0.10.40.
+- **Git never runs hooks from a checkout (r622)** — `core.hooksPath=/dev/null` on every clone, fetch and submodule update.
+
+### Upgrade notes
+
+- No migrations. Stored analyses are left in place (Doctor needs them to tell you what happened); re-run analysis or redeploy to rewrite them.
+- A `.ninedeploy` that is a symlink now fails with a message naming it instead of being followed — commit the file itself.
+- Custom invitation emails on workspaces not owned by an instance operator stop being sent (the built-in text goes out); saving one there answers 400 with the reason.
+
+
 ## [0.10.40] - 2026-10-02
 
 > The first published build of the 0.10.38 changes — read the 0.10.38

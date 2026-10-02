@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.40';
+export const VERSION = '0.10.41';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.41',
+    date: '2026-10-02',
+    title: 'Security Release — Update Now',
+    changes: [
+      'Security (critical): a signed-in user could make the panel read a file on the panel host through a symlink committed to a repository and get its content back — the panel environment (JWT secret), master.key, the panel database, and on bare-metal installs system files. Repository analysis and the .ninedeploy loader now read only regular files inside the checkout, never past a size cap, and a detected Node version must look like one (r620).',
+      'After updating, open Doctor: a critical "Repository analysis stored data that is not a Node version" finding means host content was captured — follow its rotation steps. If people you do not fully trust have accounts on this panel, rotate NINEDEPLOY_JWT_SECRET and the master key (NINEDEPLOY_MASTER_KEYS + ninedeploy system rotate-keys) and stored credentials even if Doctor shows nothing: the on-demand analysis route returned content without storing it. See the changelog for the full list.',
+      'Security: workspace email overrides only apply to workspaces an instance operator owns and must keep {{acceptUrl}} — since 0.10.40 any account could send its own text through the instance mail server (r621). Git never runs hooks from a checkout (r622).',
+    ],
+  },
+{
     version: '0.10.40',
     date: '2026-10-02',
     title: 'The Proven-Upgrade Release, Built for arm64 Too',
