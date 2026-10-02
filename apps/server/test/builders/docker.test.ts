@@ -1451,3 +1451,74 @@ describe('r465: compose bridge for multi-line env', () => {
     expect(plainRuns().some((a) => a.includes('--name web-3'))).toBe(true);
   });
 });
+
+/**
+ * r666: the existence check read the Dockerfile path relative to the base
+ * directory (the Settings convention) while `docker build -f` got it relative
+ * to the repository root — `baseDir: apps/web` with only `apps/web/Dockerfile`
+ * passed the check and then failed the build. Every layout that built before
+ * must build the SAME file now; only the one that could never build changes.
+ */
+describe('r666: which Dockerfile a local build uses with a base directory', () => {
+  /** Make exactly these repo-relative files exist under the work dir. */
+  const repoHas = (...files: string[]) =>
+    h2.exists.mockImplementation((p: unknown) => {
+      const n = String(p).split(path.sep).join('/');
+      return files.some((f) => n.endsWith(`/work/web/${f}`));
+    });
+  const buildArgv = () => (h.run.mock.calls.find((c) => (c[1] as string[])[0] === 'build')?.[1] as string[] | undefined) ?? null;
+
+  beforeEach(() => {
+    h.run.mockReset();
+    h.run.mockResolvedValue(undefined);
+    h.capture.mockReset();
+    h.capture.mockImplementation(async (_cmd: string, args: string[]) => {
+      if (args[0] === 'network' && args[1] === 'ls') return 'nd-svc-web';
+      if (args[0] === 'inspect' && args[1] === 'ninedeploy-traefik') return '{"nd-svc-web":{}}';
+      return 'running';
+    });
+    h2.reset();
+  });
+
+  it('baseDir + a Dockerfile only under it: builds that file (used to fail on the missing root one)', async () => {
+    repoHas('apps/web/Dockerfile');
+    await dockerBuilder.buildAndRun(makeCtx({ buildConfig: { buildPack: 'auto', baseDir: '/apps/web' } }) as never);
+    expect(buildArgv()).toEqual(['build', '-t', 'ninedeploy/web:abcdef1', '-f', 'apps/web/Dockerfile', 'apps/web']);
+  });
+
+  it('baseDir + root Dockerfile (pack dockerfile): unchanged — still the root file', async () => {
+    repoHas('Dockerfile');
+    await dockerBuilder.buildAndRun(makeCtx({ buildConfig: { buildPack: 'dockerfile', baseDir: '/apps/web' } }) as never);
+    expect(buildArgv()).toEqual(['build', '-t', 'ninedeploy/web:abcdef1', '-f', 'Dockerfile', 'apps/web']);
+  });
+
+  it('baseDir + both files: unchanged — the root file, with a note on how to switch', async () => {
+    repoHas('Dockerfile', 'apps/web/Dockerfile');
+    const ctx = makeCtx({ buildConfig: { buildPack: 'auto', baseDir: '/apps/web' } });
+    await dockerBuilder.buildAndRun(ctx as never);
+    expect(buildArgv()).toEqual(['build', '-t', 'ninedeploy/web:abcdef1', '-f', 'Dockerfile', 'apps/web']);
+    expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('Both Dockerfile and apps/web/Dockerfile exist'));
+  });
+
+  it('baseDir + a root-relative dockerfilePath (pack dockerfile): unchanged', async () => {
+    repoHas('apps/web/Dockerfile');
+    await dockerBuilder.buildAndRun(
+      makeCtx({ buildConfig: { buildPack: 'dockerfile', baseDir: '/apps/web', dockerfilePath: 'apps/web/Dockerfile' } }) as never,
+    );
+    expect(buildArgv()).toEqual(['build', '-t', 'ninedeploy/web:abcdef1', '-f', 'apps/web/Dockerfile', 'apps/web']);
+  });
+
+  it('baseDir + a baseDir-relative custom name: builds it (the existence check already looked there)', async () => {
+    repoHas('apps/web/Dockerfile.prod');
+    await dockerBuilder.buildAndRun(
+      makeCtx({ buildConfig: { buildPack: 'auto', baseDir: '/apps/web', dockerfilePath: 'Dockerfile.prod' } }) as never,
+    );
+    expect(buildArgv()).toEqual(['build', '-t', 'ninedeploy/web:abcdef1', '-f', 'apps/web/Dockerfile.prod', 'apps/web']);
+  });
+
+  it('no baseDir: both readings agree, nothing changes', async () => {
+    repoHas('Dockerfile');
+    await dockerBuilder.buildAndRun(makeCtx({ buildConfig: { buildPack: 'auto', baseDir: '/' } }) as never);
+    expect(buildArgv()).toEqual(['build', '-t', 'ninedeploy/web:abcdef1', '-f', 'Dockerfile', '.']);
+  });
+});
