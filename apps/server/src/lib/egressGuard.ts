@@ -251,10 +251,14 @@ type AgentCtor = new (opts: { connect: { lookup: LookupFunction } }) => PinnedDi
  * else — an operator's proxy agent (NODE_USE_ENV_PROXY), a test's mock
  * agent: those keep the unpinned behaviour rather than being bypassed.
  */
-const GLOBAL_DISPATCHER = Symbol.for('undici.globalDispatcher.1');
+// Newest first: undici 8 (Node 26) keeps its Agent in slot .2 and parks a
+// compatibility wrapper in .1; undici 6/7 (Node 22/24) only have .1. When a
+// newer slot exists it is authoritative — never fall back past it, or an
+// operator's proxy dispatcher there would be bypassed through the old slot.
+const GLOBAL_DISPATCHERS = [Symbol.for('undici.globalDispatcher.2'), Symbol.for('undici.globalDispatcher.1')];
 function bundledAgentClass(): AgentCtor | null {
   const slot = globalThis as unknown as Record<symbol, { constructor?: unknown } | undefined>;
-  if (slot[GLOBAL_DISPATCHER] === undefined) {
+  if (GLOBAL_DISPATCHERS.every((s) => slot[s] === undefined)) {
     try {
       // Node loads its bundled undici (which installs the default Agent) lazily.
       void new Response(null);
@@ -262,7 +266,8 @@ function bundledAgentClass(): AgentCtor | null {
       /* no WHATWG fetch at all */
     }
   }
-  const ctor = slot[GLOBAL_DISPATCHER]?.constructor;
+  const current = GLOBAL_DISPATCHERS.map((s) => slot[s]).find((d) => d !== undefined);
+  const ctor = current?.constructor;
   return typeof ctor === 'function' && ctor.name === 'Agent' ? (ctor as AgentCtor) : null;
 }
 
