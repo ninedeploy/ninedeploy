@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.41';
+export const VERSION = '0.10.42';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.42',
+    date: '2026-10-02',
+    title: 'The Second-Pass Audit Release — Ingress, Data, Previews and Nodes',
+    changes: [
+      'Update your node agents: agents older than 0.10.42 are refused for remote source builds (repository Dockerfile/compose, source fan-out) because they followed symlinked build paths in a workspace every tenant on the node shares. On each node run docker rm -f ninedeploy-agent, then the agent command shown on the Servers page. Image deploys keep working meanwhile (r660). SSH host keys are now pinned on first use (r661).',
+      'Fixed: routing froze for the whole instance when any service enabled sticky sessions or ran more than one replica (r631, r638). Managed Redis and Valkey never started since 0.2.2 — they do now; start databases left in error from their page (r644). Sticky sessions and basic auth actually work, and SSL domains redirect HTTP to HTTPS (r636, r637).',
+      'Security: a member could route every tenant\'s automatic domain to their own container through a hostname the checks and the proxy read differently (r630). PR previews no longer receive production credentials — project secrets, vault references, the parent\'s databases or a manifest database (r651). A manifest only attaches databases its owner administers (r650). Volume changes on privileged services need the same rights as deploying them (r640). New template databases never adopt another tenant\'s retained volume (r641).',
+      'Also: domain caps and rate limits for non-operators, pending domains expire, the www companion is claim-checked, PgBouncer status masks the password, remote restores require encrypted copies, manifest notification subscriptions are operator-only, webhook templates are JSON-escaped, and the release drill now proves a managed Postgres and Redis start. See the changelog for the full list and upgrade notes.',
+    ],
+  },
+{
     version: '0.10.41',
     date: '2026-10-02',
     title: 'Security Release — Update Now',

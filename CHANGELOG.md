@@ -9,6 +9,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.42] - 2026-10-02
+
+> The second-pass audit release (r630–r680): ingress, managed data, PR previews
+> and remote nodes. Two bugs could freeze routing for the whole instance, PR
+> previews still received production credentials, and managed Redis/Valkey
+> have never started since 0.2.2. All fixed, each with a regression test proven
+> to fail on 0.10.41, and every refusal says what to do.
+
+### Upgrade notes — read before updating
+
+- **Update your node agents (r660).** Agents older than 0.10.42 are refused for remote **source** builds (repository Dockerfile, repository compose, source fan-out) — the error names the node. Image deploys and inline compose stacks keep working. To update a node: on that node run `docker rm -f ninedeploy-agent`, then run the agent command shown for it on the Servers page (it carries the panel's version). Every older panel keeps working with the new agent.
+- **SSH host keys are now pinned (r661).** The first SSH test or bootstrap after updating trusts and records the node's host key (shown as a warning). A reinstalled host then fails until you enter its new fingerprint on the Servers page.
+- **Managed Redis/Valkey start now (r644).** Databases created before stayed in `error`; start them from the database page (or delete and recreate).
+- **PR previews lose production credentials (r651).** They no longer receive project-shared secrets, vault references, the parent's databases, or a manifest `database:` attachment; each preview's deploy log lists what was withheld. Give a preview what it needs explicitly: set env vars on the preview service, or attach a non-production database to it.
+- **Manifest restrictions (r650, r652).** A `.ninedeploy` `database:` section only attaches databases the service owner administers; `notifications:` only applies to operator-owned services (existing subscriptions on other services stop delivering).
+- **Volume changes on privileged services (r640).** Attaching, updating, detaching or repairing a volume on a compose, static-pack, lifecycle-hook or docker-socket service now needs the same rights as deploying it; members get a 403 naming why.
+- **Domains (r630–r637).**
+  - Hostnames are validated on input; stored rows the proxy would have rewritten are skipped (and audited) instead of routed.
+  - Sticky sessions and plaintext basic-auth entries now actually work (both were silently broken).
+  - SSL domains redirect plain HTTP to HTTPS.
+  - Pending domains older than 30 days are removed.
+  - Non-operators are capped at 50 own-zone domains per service and 30 additions per hour (configurable via `PUT /v1/settings/domain-policy`; operators exempt).
+- **Template databases (r641, r642).** A new dependency database never adopts a retained volume its owner cannot prove is theirs; it gets the next free name (`-db-2` …) with a deploy-log note.
+- **Remote backups (r645).** An off-site copy that should be encrypted but is not is refused on restore. Pre-0.10.3 plaintext volume snapshots keep restoring.
+- **Dockerfile with a base directory (r666).** When a Dockerfile exists both at the repository path and under the base directory, the same file as before is built and the deploy log says how to switch.
+- No migrations.
+
+### Security
+
+- **Hostname check vs render mismatch (r630).** A member could store a hostname the checks treated as one host and the proxy rendered as a catch-all — routing every tenant's automatic domain to their own container.
+- **PR previews inherited production credentials (r651)** through project secrets, vault references and manifest database attachments — reachable by anyone who can push a branch and open a PR.
+- **Manifest attached databases the owner could only view (r650)**, handing their password to the container.
+- **Volume routes queued redeploys without the deploy privilege check (r640)** — a member could get a privileged operator-owned stack redeployed from a repository they push to. One enqueue helper now serves every user-triggered deploy, pinned by a wiring test.
+- **Template databases could adopt a deleted tenant's retained volume (r641)**; dependency slugs could be squatted (r642).
+- **Node agents followed symlinked build paths (r660)** in a workspace shared by every tenant on the node — and wrote workspace files through a symlinked `.tmp` as root. Agents now resolve every build path component by component.
+- **SSH bootstrap did not verify host keys (r661)** while carrying the agent's sealing key.
+- Also: a viewer seat sufficed to stack routes on another service's host (r632); the `www` companion skipped claim checks (r633); pending rows squatted hostnames (r635); basic auth was stored and shown in plaintext (r636); PgBouncer status showed members the database password (r643); `--requirepass` leaked into logs (r644); remote restores accepted unencrypted objects (r645); manifests could subscribe operator channels (r652); webhook templates allowed JSON injection and Discord `@everyone` (r653); log search returned a reused slug's previous owner's logs (r654); sealed agent requests without a nonce, and replays across an agent restart (r668).
+
+### Fixed
+
+- **Routing froze for the whole instance** when any service enabled sticky sessions (Traefik has no `sticky` middleware) (r631) or ran more than one replica (mis-indented `healthCheck`) (r638). A golden test now validates every middleware the panel can emit.
+- **Managed Redis/Valkey never started (r644):** `--requirepass` was passed before the image. The user-journey smoke now creates a managed Postgres and Redis on every release (r680).
+- **Deleting a database left its off-site dumps (r646);** concurrent restores of one remote backup clobbered each other (r647); volume names could collide with another service's primary volume (r648); the volume list ran a helper container per attachment per request (r649).
+- Bundle import is transactional and claim-checked (r656); repository analysis clones are shallow and bounded (r657); webhook-out no longer follows redirects and `/ai/config` hides the base URL from non-operators (r658); Doctor flags a plaintext `http://` template source (r655).
+- Node checkouts are removed on delete/move (r662); fan-out targets are torn down on service delete (r662); IPv6-safe host normalisation (r663); ssh errors no longer echo the remote command (r664); terminal and container routes refuse node-pinned services with a clear message (r665); bounded command capture and log reads (r667).
+
 ## [0.10.41] - 2026-10-02
 
 > **Security release — update now.** A second-pass audit found that a signed-in
