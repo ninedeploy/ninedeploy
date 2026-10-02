@@ -1,7 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { ExternalLink, Puzzle } from 'lucide-react';
-import { api } from '../lib/api.js';
+import { menuTarget, usePluginMenus } from '../lib/pluginMenus.js';
 
 export interface PluginSlotProps {
   slot:
@@ -20,17 +19,9 @@ export interface PluginSlotProps {
 }
 
 export function PluginSlot({ slot, className = '' }: PluginSlotProps) {
-  const menusQuery = useQuery({
-    queryKey: ['menus', slot],
-    queryFn: async () => {
-      const res = await api.menus.list();
-      const list = Array.isArray(res) ? res : (res as any)?.items ?? [];
-      return list.filter((item: any) => item.slot === slot);
-    },
-    staleTime: 30000,
-  });
-
-  const items = menusQuery.data ?? [];
+  // r566: the shared, typed menus query — filtered here, not cached per slot.
+  const menusQuery = usePluginMenus();
+  const items = (menusQuery.data ?? []).filter((item) => item.slot === slot);
 
   if (items.length === 0) {
     return null;
@@ -38,8 +29,9 @@ export function PluginSlot({ slot, className = '' }: PluginSlotProps) {
 
   return (
     <div className={`plugin-slot plugin-slot-${slot.replace(/:/g, '-')} ${className}`}>
-      {items.map((item: any) => {
-        const isExternal = item.route?.startsWith('http://') || item.route?.startsWith('https://');
+      {items.map((item) => {
+        // r566: an unsafe route (javascript:, data:, //host, …) renders no link.
+        const target = menuTarget(item.route);
 
         return (
           <div
@@ -65,24 +57,23 @@ export function PluginSlot({ slot, className = '' }: PluginSlotProps) {
               </div>
             </div>
 
-            {item.route && (
-              isExternal ? (
-                <a
-                  href={item.route}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
-                >
-                  Open <ExternalLink size={12} />
-                </a>
-              ) : (
-                <Link
-                  to={item.route}
-                  className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
-                >
-                  View
-                </Link>
-              )
+            {target?.kind === 'external' && (
+              <a
+                href={target.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+              >
+                Open <ExternalLink size={12} />
+              </a>
+            )}
+            {target?.kind === 'internal' && (
+              <Link
+                to={target.to}
+                className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+              >
+                View
+              </Link>
             )}
           </div>
         );

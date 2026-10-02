@@ -8,6 +8,7 @@ import {
 import { useNavigate } from 'react-router';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
+import { menuTarget, usePluginMenus } from '../lib/pluginMenus.js';
 import { ICON_MAP } from './Layout.js';
 import { cn, useDialogFocus } from './ui.js';
 
@@ -72,13 +73,8 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       return res.plugins;
     },
   });
-  const menus = useQuery({
-    queryKey: ['menus'],
-    queryFn: async () => {
-      const res = await api.menus.list();
-      return res.items;
-    },
-  });
+  // r566: the shared menus query (one fetch for sidebar, palette and slots).
+  const menus = usePluginMenus();
 
   const results = useMemo<Cmd[]>(() => {
     const dynamic: Cmd[] = [
@@ -94,9 +90,15 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       ...(plugins.data ?? []).map((p) => ({
         type: 'Plugin', label: p.name, sub: `v${p.version} · ${p.status}`, to: '/settings', icon: Layers,
       })),
-      ...(menus.data ?? []).map((m) => ({
-        type: 'Extension', label: m.label, sub: m.route, to: m.route, icon: m.icon && ICON_MAP[m.icon.toLowerCase()] ? ICON_MAP[m.icon.toLowerCase()]! : Globe,
-      })),
+      // r566: the palette navigates in-app, so only same-origin plugin paths
+      // are offered (no javascript:, data:, //host).
+      ...(menus.data ?? []).flatMap((m) => {
+        const target = menuTarget(m.route);
+        if (target?.kind !== 'internal') return [];
+        return [{
+          type: 'Extension', label: m.label, sub: target.to, to: target.to, icon: m.icon && ICON_MAP[m.icon.toLowerCase()] ? ICON_MAP[m.icon.toLowerCase()]! : Globe,
+        }];
+      }),
     ];
 
     const all = [...NAV_COMMANDS.filter((c) => !c.operatorOnly || user?.isOperator === true), ...dynamic];

@@ -231,6 +231,21 @@ describe('CommandPalette', () => {
     expect(screen.getByRole('combobox')).not.toHaveAttribute('aria-activedescendant');
   });
 
+  it('r566: never offers a plugin menu entry whose route is not a same-origin path', async () => {
+    apiMock.api.menus.list.mockResolvedValue({
+      items: [
+        { id: 'ok', slot: 'command:palette', label: 'Plugin Good', route: '/plugins/good' },
+        { id: 'js', slot: 'command:palette', label: 'Plugin Script', route: 'javascript:alert(1)' },
+        { id: 'pr', slot: 'command:palette', label: 'Plugin Elsewhere', route: '//evil.example' },
+      ],
+    } as never);
+    renderPalette();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'Plugin' } });
+    expect(await screen.findByText('Plugin Good')).toBeInTheDocument();
+    expect(screen.queryByText('Plugin Script')).toBeNull();
+    expect(screen.queryByText('Plugin Elsewhere')).toBeNull();
+  });
+
   it('closes on Escape', async () => {
     const { onClose } = renderPalette();
     key('Escape');

@@ -1,5 +1,4 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import {
   Activity, Building2, ChevronLeft, ChevronRight, Clock, Cloud, Container, Database, FolderKanban, Globe, HardDrive,
   FileCode, Info, KeyRound, Layers, LayoutDashboard, LifeBuoy, ListOrdered, Moon, Network, Shield, Stethoscope, Tag, type LucideIcon,
@@ -7,7 +6,7 @@ import {
 } from 'lucide-react';
 import { Link, Outlet, useLocation } from 'react-router';
 import { useAuth } from '../lib/auth.js';
-import { api, eventsWsUrl, getToken } from '../lib/api.js';
+import { eventsWsUrl, getToken } from '../lib/api.js';
 import { useTheme } from '../lib/theme.js';
 import { Logo } from './Logo.js';
 import { cn, useDialogFocus } from './ui.js';
@@ -22,6 +21,7 @@ import { HelpProvider } from '../help/HelpContext.js';
 import { useExperienceMode } from '../lib/mode.js';
 import { installPanelAutofillGuard } from '../lib/autofill.js';
 import { useBranding } from '../lib/branding.js';
+import { menuTarget, usePluginMenus } from '../lib/pluginMenus.js';
 
 interface NavItem { to: string; label: string; icon: LucideIcon; advancedOnly?: boolean; operatorOnly?: boolean }
 
@@ -154,17 +154,8 @@ export function Layout() {
 
   useLayoutEffect(() => installPanelAutofillGuard(document), []);
 
-  const menus = useQuery({
-    queryKey: ['menus'],
-    queryFn: async () => {
-      try {
-        const res = await api.menus.list();
-        return res.items;
-      } catch {
-        return [];
-      }
-    },
-  });
+  // r566: the one shared menus query (PluginSlot and the palette read it too).
+  const menus = usePluginMenus();
 
   const navGroups = useMemo(() => {
     const visible = (item: NavItem) =>
@@ -182,13 +173,19 @@ export function Layout() {
     // `command:palette` entry would leak into the Extensions group
     // and bloat the sidebar with items the user cannot reach in the
     // rail anyway.
+    // r566: only same-origin paths — the rail renders router links, and a
+    // plugin route is third-party input (no javascript:, data:, //host).
     const extensionItems: NavItem[] = (menus.data ?? [])
       .filter((m) => m.slot === 'sidebar:secondary')
-      .map((m) => ({
-        to: m.route,
-        label: m.label,
-        icon: m.icon && ICON_MAP[m.icon.toLowerCase()] ? ICON_MAP[m.icon.toLowerCase()]! : Globe,
-      }));
+      .flatMap((m) => {
+        const target = menuTarget(m.route);
+        if (target?.kind !== 'internal') return [];
+        return [{
+          to: target.to,
+          label: m.label,
+          icon: m.icon && ICON_MAP[m.icon.toLowerCase()] ? ICON_MAP[m.icon.toLowerCase()]! : Globe,
+        }];
+      });
 
     if (extensionItems.length === 0) return rawGroups;
 
