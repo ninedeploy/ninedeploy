@@ -15,6 +15,12 @@ const auditMock = vi.hoisted(() => ({ audit: vi.fn(async () => undefined) }));
 vi.mock('../../src/lib/audit.js', () => auditMock);
 const logsMock = vi.hoisted(() => ({ logBus: { publish: vi.fn() } }));
 vi.mock('../../src/engine/logs.js', () => logsMock);
+// r593: the boot recovery's container cleanup talks to docker — never for real.
+const execMock = vi.hoisted(() => ({
+  capture: vi.fn(async (_cmd: string, _args: string[]) => ''),
+  run: vi.fn(async (_cmd: string, _args: string[], _opts?: unknown, _sink?: unknown) => undefined),
+}));
+vi.mock('../../src/lib/exec.js', () => execMock);
 
 const {
   default: workerPlugin,
@@ -711,5 +717,80 @@ describe('r524: deploys interrupted by a panel restart', () => {
     });
     expect(updates.find((u) => u.status === 'queued')).toBeUndefined();
     await app.close();
+  });
+
+  // r593: the interrupted deploy's blue-green candidate kept running
+  // untracked after r524 failed the row — no later deploy names it again.
+  describe('r593: removes the container the interrupted local deploy had started', () => {
+    beforeEach(() => {
+      execMock.capture.mockReset();
+      execMock.run.mockReset();
+    });
+    /** `docker ps` answers with `listed`; `docker inspect` of the current runtime succeeds unless `currentGone`. */
+    const dockerAnswers = (listed: string, currentGone = false) => {
+      execMock.capture.mockImplementation(async (_cmd: string, args: string[]) => {
+        if (args[0] === 'ps') return listed;
+        if (args[0] === 'inspect') {
+          if (currentGone) throw new Error('Error: No such object: web-old');
+          return 'running';
+        }
+        return '';
+      });
+    };
+    const rmCalls = () => execMock.run.mock.calls.filter((c) => (c[1] as string[])[0] === 'rm');
+
+    it('removes exactly the containers labelled for that deployment and service, never the live runtime', async () => {
+      dockerAnswers('web-31\nweb-31-r2\nweb-old\n');
+      const { db } = makeDb({ queued: [], building: [row({ id: 31, deploymentId: 31, serviceType: 'docker', startedAt: old() })] });
+      const app = await buildApp(db);
+      await app.close();
+
+      const ps = execMock.capture.mock.calls.find((c) => (c[1] as string[])[0] === 'ps')![1] as string[];
+      expect(ps).toEqual(['ps', '-a', '--filter', 'label=ninedeploy.deployment=31', '--filter', 'label=ninedeploy.service=5', '--format', '{{.Names}}']);
+      expect(rmCalls()).toHaveLength(1);
+      expect(rmCalls()[0]![1]).toEqual(['rm', '-f', 'web-31', 'web-31-r2']);
+      expect(logsMock.logBus.publish).toHaveBeenCalledWith(31, 'Removed the container(s) this deploy had started: web-31, web-31-r2');
+      expect(auditMock.audit).toHaveBeenCalledWith(expect.anything(), 7, 'deploy.failed', 'Web #31', {
+        reason: INTERRUPTED_LOCAL_REASON,
+        serviceId: 5,
+        removedContainers: ['web-31', 'web-31-r2'],
+      });
+    });
+
+    it('leaves the candidate alone when the previous runtime is gone — it may be all that serves', async () => {
+      dockerAnswers('web-32\n', true);
+      const { db } = makeDb({ queued: [], building: [row({ id: 32, deploymentId: 32, serviceType: 'docker', startedAt: old() })] });
+      const app = await buildApp(db);
+      await app.close();
+      expect(rmCalls()).toHaveLength(0);
+    });
+
+    it('removes the candidate of an interrupted FIRST deploy (no runtime to protect)', async () => {
+      dockerAnswers('web-33\n');
+      const { db } = makeDb({ queued: [], building: [row({ id: 33, deploymentId: 33, serviceType: 'docker', runtimeId: null, startedAt: old() })] });
+      const app = await buildApp(db);
+      await app.close();
+      expect(rmCalls()[0]![1]).toEqual(['rm', '-f', 'web-33']);
+    });
+
+    it('touches nothing for unlabelled (pre-0.10.38) containers, non-docker services or node rows', async () => {
+      dockerAnswers('');
+      const { db } = makeDb({ queued: [], building: [row({ id: 34, deploymentId: 34, serviceType: 'docker', startedAt: old() })] });
+      await (await buildApp(db)).close();
+      expect(rmCalls()).toHaveLength(0);
+
+      execMock.capture.mockClear();
+      const compose = makeDb({ queued: [], building: [row({ id: 35, deploymentId: 35, serviceType: 'compose', startedAt: old() })] });
+      await (await buildApp(compose.db)).close();
+      expect(execMock.capture).not.toHaveBeenCalled();
+    });
+
+    it('a docker daemon that is down at boot never blocks the recovery', async () => {
+      execMock.capture.mockRejectedValue(new Error('Cannot connect to the Docker daemon'));
+      const { db, updates } = makeDb({ queued: [], building: [row({ id: 36, deploymentId: 36, serviceType: 'docker', startedAt: old() })] });
+      await (await buildApp(db)).close();
+      expect(updates.find((u) => u.table === deployments && u.status === 'failed')).toBeDefined();
+      expect(rmCalls()).toHaveLength(0);
+    });
   });
 });

@@ -145,8 +145,20 @@ describe('dockerBuilder.buildAndRun', () => {
     const replicaArgs = h.run.mock.calls.filter(([, argv]) => (argv as unknown[])[0] === 'run' && (argv as unknown[])[3] === 'web-3-r2')[0]![1] as unknown[];
     expect(replicaArgs).toContain('--network');
     expect(replicaArgs).toContain('nginx:1.25');
+    // r593: replicas carry the generation's labels too, so boot recovery
+    // removes an interrupted deploy's whole generation.
+    expect(replicaArgs).toContain('ninedeploy.deployment=3');
     // The log announces each replica.
     expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('Replica web-3-r2 started (2/3)'));
+  });
+
+  it('r593: labels the container with its deployment and service ids', async () => {
+    const ctx = makeCtx({ deploymentId: 41, service: { id: 9, slug: 'web', image: 'nginx:1.25', port: 3000, cpuShares: 0, memLimitMb: 0, healthPath: '/' } });
+    await dockerBuilder.buildAndRun(ctx as never);
+    const runArgs = h.run.mock.calls.filter(([, argv]) => (argv as unknown[])[0] === 'run')[0]![1] as string[];
+    expect(runArgs.join(' ')).toContain('--label ninedeploy.deployment=41 --label ninedeploy.service=9');
+    // Labels are options: they sit before the image, never in its argv.
+    expect(runArgs.indexOf('--label')).toBeLessThan(runArgs.indexOf('nginx:1.25'));
   });
 
   it('keeps launching a single container when replicas is unset or 1', async () => {
@@ -175,6 +187,7 @@ describe('dockerBuilder.buildAndRun', () => {
     expect(runArgs).toEqual(
       [
         'run', '-d', '--name', 'web-3', '--restart', 'unless-stopped', '--network', 'nd-svc-web',
+        '--label', 'ninedeploy.deployment=3',
         '--cpu-shares', '512', '--cpus', '0.5',
         '--memory', '256m', '--memory-swap', '256m',
         '-v', 'nd-svc-web-data:/data',
@@ -301,7 +314,8 @@ describe('dockerBuilder.buildAndRun', () => {
 
     const runArgs = h.run.mock.calls.at(-1)![1] as unknown[];
     expect(runArgs).toEqual([
-      'run', '-d', '--name', 'x-3', '--restart', 'unless-stopped', '--network', 'nd-svc-x', 'ninedeploy/x:abc',
+      'run', '-d', '--name', 'x-3', '--restart', 'unless-stopped', '--network', 'nd-svc-x',
+      '--label', 'ninedeploy.deployment=3', 'ninedeploy/x:abc',
     ]);
   });
 
@@ -1311,6 +1325,17 @@ describe('r465: compose bridge for multi-line env', () => {
     expect(yaml).toContain('memswap_limit: "256m"');
     expect(yaml).toContain('"server"');
     expect(yaml).toContain('env_file: "/tmp/x/service.compose.env"');
+  });
+
+  it('r593: renderRuntimeCompose carries the deployment labels of the docker run line', async () => {
+    const mod = await import('../../src/engine/builders/docker.js');
+    const yaml = mod.renderRuntimeCompose({
+      name: 'web-3', image: 'nginx:1.27', restart: 'unless-stopped', bridge: 'nd-svc-web',
+      cpuShares: 0, cpuLimitMilli: 0, memLimitMb: 0, dataVolume: null, dataMount: null, attachments: [],
+      publishedPort: null, containerPort: null, dockerSocket: false, cmd: null, envFile: null,
+      labels: [['ninedeploy.deployment', '3'], ['ninedeploy.service', '9']],
+    });
+    expect(yaml).toContain('    labels:\n      "ninedeploy.deployment": "3"\n      "ninedeploy.service": "9"\n');
   });
 
   it('r470: escapes a literal $ in compose scalars — compose would otherwise interpolate it', async () => {

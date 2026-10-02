@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import { config } from '../config.js';
 import { runDeployment } from '../engine/pipeline.js';
 import { logBus } from '../engine/logs.js';
+import { removeInterruptedCandidates } from '../engine/interruptedRuntime.js';
 import { audit } from '../lib/audit.js';
 import { AGENT_LONG_OP_TIMEOUT_MS } from '../lib/agentClient.js';
 
@@ -66,6 +67,8 @@ interface InterruptedRow {
   serviceName: string;
   ownerUserId: number | null;
   runtimeId: string | null;
+  /** r593: local docker rows get their started candidate removed. */
+  serviceType?: string | null;
 }
 
 declare module 'fastify' {
@@ -157,6 +160,17 @@ export default fp(
       settledAtBoot.add(row.deploymentId);
       if (failed?.rowsAffected === 0) return; // finished or cancelled meanwhile
       logBus.publish(row.deploymentId, `✗ ${reason}`);
+      // r593: the container this deploy had already started (the blue-green
+      // candidate) was left running untracked — remove it, as the dead
+      // pipeline's failure path would have. Local docker only: a node's
+      // containers are the agent's, and other builders replace in place.
+      let removedContainers: string[] = [];
+      if (row.serverId == null && row.serviceType === 'docker') {
+        removedContainers = await removeInterruptedCandidates(row.deploymentId, row.serviceId, row.runtimeId);
+        if (removedContainers.length > 0) {
+          logBus.publish(row.deploymentId, `Removed the container(s) this deploy had started: ${removedContainers.join(', ')}`);
+        }
+      }
       // The service row still says `deploying`. The previous runtime (if any)
       // was never retired — the pipeline only does that after a successful
       // routing flip — so hand it back to the runtime-state reconcile as
@@ -169,6 +183,7 @@ export default fp(
       await audit(fastify.db, row.ownerUserId ?? null, 'deploy.failed', `${row.serviceName} #${row.deploymentId}`, {
         reason,
         serviceId: row.serviceId,
+        ...(removedContainers.length > 0 ? { removedContainers } : {}),
       });
       fastify.log.warn({ deploymentId: row.deploymentId, serviceId: row.serviceId }, reason);
     };
@@ -183,6 +198,7 @@ export default fp(
             serviceName: services.name,
             ownerUserId: services.ownerUserId,
             runtimeId: services.runtimeId,
+            serviceType: services.type,
           })
           .from(deployments)
           .innerJoin(services, eq(services.id, deployments.serviceId))
@@ -200,6 +216,7 @@ export default fp(
             serviceName: r.serviceName ?? `service ${r.serviceId}`,
             ownerUserId: r.ownerUserId ?? null,
             runtimeId: r.runtimeId ?? null,
+            serviceType: r.serviceType ?? null,
           };
           if (row.serverId != null) {
             interruptedRemote.set(row.deploymentId, row);
