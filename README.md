@@ -47,8 +47,8 @@ drive Docker on one host, and optionally on a handful of remote ones.
 | :--- | :--- |
 | **Host** | Linux. The installer handles Debian/Ubuntu end to end (signed APT repos for Node and Docker); other distributions work if Node and Docker are already present. |
 | **Runtime** | Node.js ≥ 22.13 (bare-metal mode only), Docker Engine + the Compose plugin. |
-| **Ports** | `80`/`443` free for Traefik. The panel binds `127.0.0.1:3000` by default — put it behind Traefik or a tunnel rather than exposing it directly. |
-| **Privileges** | `sudo` for the bare-metal installer (systemd unit, firewall, optional PM2). Docker mode only needs membership in the `docker` group. |
+| **Ports** | `80`/`443` free for Traefik. The panel listens on port `3000` over plain HTTP. **Bare metal binds `0.0.0.0` by default** (`NINEDEPLOY_HOST`); if you reach the panel through Traefik or a tunnel, set `NINEDEPLOY_HOST=127.0.0.1` in `.env` so it is not exposed directly. **Docker mode publishes it on `127.0.0.1` by default** (`NINEDEPLOY_BIND`). The panel's **Doctor** page (`GET /v1/doctor`) warns when the panel listens on a non-loopback address over plain HTTP. |
+| **Privileges** | `sudo` for the installer in **both** modes. Bare metal uses it for the systemd unit, firewall and optional PM2. Docker mode still uses it for base packages and Docker itself (`apt-get`, `systemctl enable docker`), swap, `ufw` rules for 22/80/443, stopping a stock `apache2`/`nginx` that holds 80/443 on a fresh host, and creating `/opt/ninedeploy-docker`. Membership in the `docker` group is enough only for running and upgrading the stack with `docker compose` afterwards. |
 
 ---
 
@@ -60,8 +60,9 @@ drive Docker on one host, and optionally on a handful of remote ones.
 curl -fsSL https://raw.githubusercontent.com/NineDeploy/NineDeploy/main/install.sh | bash
 ```
 
-Installs Node and Docker if missing, drops a checksum-verified Nixpacks binary in place, clones the
-repository to `~/ninedeploy`, generates a 32-byte JWT secret and a master key into a `0600` `.env`,
+Installs Node and Docker if missing, drops a checksum-verified Nixpacks binary in place, downloads
+the release tarball GitHub publishes for the resolved tag into `~/ninedeploy` (falling back to a
+`git clone` only if the tarball is unreachable; `--channel main` always uses git), generates a 32-byte JWT secret and a master key into a `0600` `.env`,
 runs the SQLite migrations, and starts a hardened `systemd` unit (`ProtectSystem=full`,
 `NoNewPrivileges`, `PrivateTmp`, `Restart=always`) gated on `/health`.
 
@@ -79,11 +80,18 @@ Re-running the same command is the upgrade path; it snapshots `.data` before tou
 
 ### Docker
 
-Same installer, container mode — no host Node.js, no systemd, no PM2:
+Same installer, container mode — no host Node.js, no panel systemd unit, no PM2:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NineDeploy/NineDeploy/main/install.sh | bash -s -- --docker
 ```
+
+The installer writes `/opt/ninedeploy-docker/docker-compose.yml` and a `0600` `.env` beside it, and
+pins the panel image to the release it installed (`NINEDEPLOY_IMAGE_TAG=vX.Y.Z` in that `.env`;
+`edge` on `--channel main`).
+Because of that pin, a bare `docker compose pull && docker compose up -d` does **not** move you to a
+newer release. To upgrade, re-run the same command (or `./install.sh --docker`); to move by hand,
+edit `NINEDEPLOY_IMAGE_TAG` in `.env`, then `docker compose pull && docker compose up -d`.
 
 Or bring your own compose file (it refuses to boot without a strong `NINEDEPLOY_JWT_SECRET`):
 
@@ -100,7 +108,7 @@ docker run -d --name ninedeploy \
   -v /var/run/docker.sock:/var/run/docker.sock \
   --group-add "$(getent group docker | cut -d: -f3)" \
   -v ninedeploy-data:/data \
-  -p 3000:3000 \
+  -p 127.0.0.1:3000:3000 \
   -e NINEDEPLOY_DATA_DIR=/data \
   -e NINEDEPLOY_DB_PATH=/data/ninedeploy.db \
   -e NINEDEPLOY_JWT_SECRET="$(openssl rand -hex 32)" \
@@ -151,7 +159,7 @@ Full matrix — environment variables, upgrade paths, systemd internals — in
       ╔═════════════════════════════════════════════════════════════════════╗
       ║  NineDeploy panel — Fastify 5 API + React 19 dashboard, one process ║
       ║ ─────────────────────────────────────────────────────────────────── ║
-      ║  67 route modules under /v1       deploy engine (queue + worker)    ║
+      ║  66 route modules (64 on /v1)     deploy engine (queue + worker)    ║
       ║  microkernel: events · hooks      builders: docker · pm2 · compose  ║
       ║  SQLite (52 tables, Drizzle)      AES-256-GCM vault + key ring      ║
       ╚═══╤═══════════════╤═══════════════════╤══════════════════╤══════════╝
@@ -159,9 +167,9 @@ Full matrix — environment variables, upgrade paths, systemd internals — in
           ▼               ▼                   ▼                  ▼
     app workloads    managed data        remote agents      off-site backups
     containers       Postgres · MySQL    (typed op calls;   R2 · AWS · MinIO ·
-    PM2 processes    MariaDB · Redis     networks today,    Wasabi — db dumps
-    Compose stacks   Valkey · Mongo      deploys not yet)   and volume tars
-   130 templates     ClickHouse ·
+    PM2 processes    MariaDB · Redis     docker + compose   Wasabi — db dumps
+    Compose stacks   Valkey · Mongo      deploys, Traefik   and volume tars
+   130 templates     ClickHouse ·        on each node)
                      Meilisearch ·
                      RabbitMQ
 
@@ -471,12 +479,12 @@ NineDeploy/                    pnpm 11 workspace + Turborepo
 │   ├── server/                Fastify 5 API, deploy engine, microkernel, agent mode
 │   │   ├── src/engine/        pipeline · builders (docker/pm2/compose) · database ·
 │   │   │                      proxy · tunnel · logs · autoPrune · repoInsights
-│   │   ├── src/modules/       67 route modules + one aggregator
+│   │   ├── src/modules/       66 route modules + one aggregator + a compose helper
 │   │   ├── src/lib/           crypto · jwt · sessions · totp · webauthn · oidc ·
 │   │   │                      resourceAccess (the authz choke point) · hostPrivilege ·
 │   │   │                      egressGuard · s3 · cloudflare · manifest apply
 │   │   ├── src/kernel/        event bus · hook pipeline · config center · menus
-│   │   └── src/templates/     89-entry template registry
+│   │   └── src/templates/     130-entry template registry
 │   ├── web/                   React 19 + Vite 8 + Tailwind v4 dashboard
 │   └── cli/                   `ninedeploy` (commander 15)
 ├── packages/
@@ -499,27 +507,29 @@ NineDeploy/                    pnpm 11 workspace + Turborepo
 ```bash
 pnpm test           # every package
 pnpm release:check  # typecheck → lint → build → test
-RUN_INTEGRATION=1 pnpm --filter @ninedeploy/server test   # testcontainers: real PG/MySQL/Redis/Mongo/ClickHouse
+pnpm build && RUN_INTEGRATION=1 pnpm --filter @ninedeploy/server exec vitest run --config vitest.integration.config.ts
+                    # testcontainers: real PG/MySQL/Redis/Mongo + deploy, compose, volume snapshot/restore
 ```
 
 | Package | Files | Tests | Coverage floor (stmts/branch/func/lines) |
 | :--- | ---: | ---: | :--- |
-| `apps/server` | 254 | 3,848 | 95 / 90 / 95 / 95 |
-| `apps/web` | 89 | 1,479 | 99 / 95 / 99 / 99 |
-| `apps/cli` | 33 | 612 | 100 |
+| `apps/server` | 254 | 3,848 | 93.25 / 87.3 / 91 / 95.1 |
+| `apps/web` | 89 | 1,479 | 97.5 / 91.5 / 97.5 / 97.5 |
+| `apps/cli` | 33 | 612 | 83 / 80 / 80 / 83 |
 | `packages/schemas` | 5 | 275 | 100 |
 | `packages/sdk` | 4 | 178 | 100 |
-| `packages/mcp` | 2 | 33 | 100 |
+| `packages/mcp` | 2 | 33 | 90 / 80 / 95 / 95 |
 | `packages/db` | 8 | 28 | 100 |
 | `packages/plugin-sdk` | 1 | 7 | 100 |
 | **Total** | **396** | **6,460** | |
 
-Unit and route suites only — the server's six testcontainers integration files (real Postgres, MySQL,
-Redis, MongoDB, Valkey, ClickHouse and a deploy end-to-end) are opt-in behind `RUN_INTEGRATION=1` and
-run as their own CI job.
+Unit and route suites only — the server's seven testcontainers integration files (real Postgres,
+MySQL, Redis and MongoDB backup/restore, a deploy end-to-end, a compose-stack deploy and a volume
+snapshot/restore) live in `apps/server/test/integration`, which the default config excludes. They run only
+through `vitest.integration.config.ts` with `RUN_INTEGRATION=1`, as their own CI job.
 
-The server and web floors were deliberately lowered from 100 with the reasoning recorded inline in
-their `vitest.config.ts` — an enforced gate beats an aspirational one that gets bypassed. CI runs
+The server, web, CLI and MCP floors sit below 100, with the reasoning recorded inline in each
+`vitest.config.ts` — an enforced gate beats an aspirational one that gets bypassed. CI runs
 typecheck → lint → build → test, a schema-drift check, a deprecated-dependency check, a Docker image
 build, and the integration job.
 
@@ -557,7 +567,10 @@ Stated plainly, because finding these out during an incident is worse than readi
 - **Remote deployments cover `docker` and `compose` services.** PM2 (a host process with no agent
   operation) and Nixpacks source builds (no nixpacks on the node) are refused with a reason rather
   than silently run on the panel host. Add a Dockerfile, or clear the target server, to deploy
-  those here.
+  those here. A node also refuses a `docker` service whose container needs a template command, the
+  Docker socket or attached volumes, a service whose repository the node would have to clone with a
+  Git credential (the node clones anonymously), and a service backed by a panel-managed database
+  (that hostname only resolves on the panel host).
 - **Remote health is container state, not an HTTP probe.** The panel sits outside the node's Docker
   network, and publishing a host port purely to be probed would expose every remote service on the
   node's public interface. A remote `docker` deploy is healthy when the container reaches — and

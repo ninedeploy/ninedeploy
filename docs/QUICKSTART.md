@@ -122,8 +122,21 @@ bash install.sh --force
 Before pulling updates or applying migrations, the installer automatically snapshots `.data/ninedeploy.db` and `.data/master.key` to `.data/upgrade-backups/pre-update-YYYYMMDD-HHMMSS.tar.gz`. Build output (`dist/`, the turbo cache) is always cleared before rebuilding, so an upgrade can never leave the previous release's panel bundle in place, and the installer fails if `apps/web/dist/index.html` is missing after the build.
 
 ### Docker Upgrade:
+Installer-managed Docker installs (`/opt/ninedeploy-docker`) pin the panel image
+to the release they installed: the installer writes `NINEDEPLOY_IMAGE_TAG=vX.Y.Z`
+into the `0600` `.env` beside `docker-compose.yml` (`edge` on `--channel main`). A bare
+`docker compose pull && docker compose up -d` therefore re-pulls the **same**
+release. To upgrade, re-run the installer:
 ```bash
-# Compose installs (docker-compose.prod.yml):
+curl -fsSL https://raw.githubusercontent.com/NineDeploy/NineDeploy/main/install.sh | bash -s -- --docker
+# or, from a checkout: ./install.sh --docker
+```
+To move by hand instead, edit `NINEDEPLOY_IMAGE_TAG` in that `.env`, then run
+`docker compose pull && docker compose up -d` in `/opt/ninedeploy-docker`.
+
+```bash
+# Bring-your-own compose installs (docker-compose.prod.yml; with no
+# NINEDEPLOY_IMAGE_TAG in .env the image tag is :latest):
 docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 
@@ -135,7 +148,7 @@ docker stop ninedeploy && docker rm ninedeploy
 Migrations apply automatically upon server boot.
 
 ### One-Click Self-Update (Bare-Metal Panels):
-On systemd bare-metal installations an operator can upgrade the panel from the dashboard itself — an amber banner appears under the header when a new release is available (and the same button lives on **About**). Confirming it runs this install's own installer for the pinned release tag: snapshot of `.data`, source swap, rebuild, migrations, service restart. The panel is briefly offline mid-run (~5–15 minutes) while deployed services keep running; progress survives the restart and reports success or failure with the installer output tail. Container-mode installs don't offer self-update — pull the new image instead.
+On systemd bare-metal installations an operator can upgrade the panel from the dashboard itself — an amber banner appears under the header when a new release is available (and the same button lives on **About**). Confirming it runs this install's own installer for the pinned release tag: snapshot of `.data`, source swap, rebuild, migrations, service restart. The panel is briefly offline mid-run (~5–15 minutes) while deployed services keep running; progress survives the restart and reports success or failure with the installer output tail. The update refuses to start while a deployment is building or rolling out (it would be interrupted by the restart) and lists them; wait for them, or send `"force": true` to `POST /v1/system/update-start` to update anyway. Container-mode installs don't offer self-update — re-run the installer with `--docker` (installer-managed) or pull the new image (see *Docker Upgrade* above).
 
 ---
 
