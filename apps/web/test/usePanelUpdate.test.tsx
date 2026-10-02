@@ -77,8 +77,12 @@ describe('usePanelUpdate', () => {
 
   it('resolves to idle for an up-to-date supported panel', async () => {
     const { result } = renderHookWith();
-    await waitFor(() => expect(result.current.ready).toBe(true));
-    expect(result.current.phase).toBe('idle');
+    // `ready` and `phase` settle in separate renders — under a loaded runner
+    // the assertion can land between them, so wait for both together.
+    await waitFor(() => {
+      expect(result.current.ready).toBe(true);
+      expect(result.current.phase).toBe('idle');
+    });
     expect(result.current.available).toBe(false);
     expect(result.current.supported).toBe(true);
   });

@@ -64,6 +64,8 @@ const NO_REDIRECTS = 'http.followRedirects=false';
  * can write one; with hooksPath pointed at nothing, git never looks there.
  */
 const NO_HOOKS = 'core.hooksPath=/dev/null';
+/** simple-git refuses a core.hooksPath override unless told it is intended. */
+const HOOKS_OPT_IN = { allowUnsafeHooksPath: true } as const;
 
 /**
  * r355: `-c http.curloptResolve=<host>:<port>:<ip>` for a vetted remote, so
@@ -121,13 +123,13 @@ async function initSubmodules(
   if (depth === 0) sink('Initialising git submodules …');
   // `-c` settings reach the child clones `submodule update` spawns (git keeps
   // GIT_CONFIG_PARAMETERS for submodule processes), so the pins apply there.
-  const updater = levelConfig.length === config.length ? git : simpleGit(repoDir, { config: levelConfig });
+  const updater = levelConfig.length === config.length ? git : simpleGit(repoDir, { config: levelConfig, unsafe: HOOKS_OPT_IN });
   await updater.submoduleUpdate(['--init']);
   for (const rel of paths) {
     const subDir = path.resolve(repoDir, rel);
     if (!subDir.startsWith(path.resolve(repoDir) + path.sep)) continue;
     if (!existsSync(path.join(subDir, '.gitmodules'))) continue;
-    await initSubmodules(simpleGit(subDir, { config: levelConfig }), subDir, sink, levelConfig, depth + 1);
+    await initSubmodules(simpleGit(subDir, { config: levelConfig, unsafe: HOOKS_OPT_IN }), subDir, sink, levelConfig, depth + 1);
   }
 }
 
@@ -173,7 +175,7 @@ export async function checkoutCommit(
   const gitConfig = [NO_REDIRECTS, NO_HOOKS, ...pinConfig(pin)];
   const gitOptions: Partial<SimpleGitOptions> = {
     config: gitConfig,
-    ...(useKey ? { unsafe: { allowUnsafeSshCommand: true } } : {}),
+    unsafe: { ...HOOKS_OPT_IN, ...(useKey ? { allowUnsafeSshCommand: true } : {}) },
   };
   const keyFile = path.join(path.dirname(dir), `${path.basename(dir)}.sshkey`);
 

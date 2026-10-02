@@ -22,7 +22,7 @@ const { checkoutCommit } = await import('../../src/lib/git.js');
 
 /** Every simple-git instance carries the redirect hardening (r099) and, for an
  *  https remote, the pin to the address the gate vetted (r355). */
-const HARDENED = { config: ['http.followRedirects=false', 'core.hooksPath=/dev/null', `http.curloptResolve=github.com:443:${VETTED_IP}`] };
+const HARDENED = { unsafe: { allowUnsafeHooksPath: true }, config: ['http.followRedirects=false', 'core.hooksPath=/dev/null', `http.curloptResolve=github.com:443:${VETTED_IP}`] };
 
 const tmpRoot = path.join(os.tmpdir(), `ninedeploy-git-${process.pid}-${Date.now()}`);
 
@@ -428,8 +428,8 @@ describe('checkoutCommit — r355 DNS-rebinding pin', () => {
 
     const pinned = 'http.curloptResolve=github.com:443:140.82.121.4,[2606:50c0:8000::153]';
     // The clone and the checkout instance both carry the pin…
-    expect(gitState.simpleGit.mock.calls[0]).toEqual([{ config: ['http.followRedirects=false', 'core.hooksPath=/dev/null', pinned] }]);
-    expect(gitState.simpleGit.mock.calls[1]).toEqual([dir, { config: ['http.followRedirects=false', 'core.hooksPath=/dev/null', pinned] }]);
+    expect(gitState.simpleGit.mock.calls[0]).toEqual([{ unsafe: { allowUnsafeHooksPath: true }, config: ['http.followRedirects=false', 'core.hooksPath=/dev/null', pinned] }]);
+    expect(gitState.simpleGit.mock.calls[1]).toEqual([dir, { unsafe: { allowUnsafeHooksPath: true }, config: ['http.followRedirects=false', 'core.hooksPath=/dev/null', pinned] }]);
     // …and the name was resolved exactly once — by the gate.
     expect(dns.lookup).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(gitState.simpleGit.mock.calls)).not.toContain('169.254.169.254');
@@ -441,6 +441,7 @@ describe('checkoutCommit — r355 DNS-rebinding pin', () => {
     gitState.simpleGit.mockImplementation(() => git);
     await checkoutCommit('https://git.example.com:8443/team/app.git', 'main', undefined, dir, vi.fn());
     expect(gitState.simpleGit).toHaveBeenCalledWith(dir, {
+      unsafe: { allowUnsafeHooksPath: true },
       config: ['http.followRedirects=false', 'core.hooksPath=/dev/null', `http.curloptResolve=git.example.com:8443:${VETTED_IP}`],
     });
     expect(git.fetch).toHaveBeenCalledWith(['--all']);
@@ -453,6 +454,7 @@ describe('checkoutCommit — r355 DNS-rebinding pin', () => {
     gitState.simpleGit.mockImplementation(() => git);
     await checkoutCommit('https://github.com/ada/repo.git', 'main', undefined, dir, vi.fn());
     expect(gitState.simpleGit).toHaveBeenCalledWith(dir, {
+      unsafe: { allowUnsafeHooksPath: true },
       config: [
         'http.followRedirects=false',
         'core.hooksPath=/dev/null',
@@ -465,9 +467,9 @@ describe('checkoutCommit — r355 DNS-rebinding pin', () => {
 
   it('adds no pin for an ssh remote (documented residual gap) or an IP-literal https remote', async () => {
     await checkoutCommit('git@github.com:org/repo.git', 'main', undefined, gitDir('pin-ssh'), vi.fn());
-    expect(gitState.simpleGit.mock.calls[0]).toEqual([{ config: ['http.followRedirects=false', 'core.hooksPath=/dev/null'] }]);
+    expect(gitState.simpleGit.mock.calls[0]).toEqual([{ unsafe: { allowUnsafeHooksPath: true }, config: ['http.followRedirects=false', 'core.hooksPath=/dev/null'] }]);
     gitState.simpleGit.mockClear();
     await checkoutCommit('https://140.82.121.4/org/repo.git', 'main', undefined, gitDir('pin-literal'), vi.fn());
-    expect(gitState.simpleGit.mock.calls[0]).toEqual([{ config: ['http.followRedirects=false', 'core.hooksPath=/dev/null'] }]);
+    expect(gitState.simpleGit.mock.calls[0]).toEqual([{ unsafe: { allowUnsafeHooksPath: true }, config: ['http.followRedirects=false', 'core.hooksPath=/dev/null'] }]);
   });
 });

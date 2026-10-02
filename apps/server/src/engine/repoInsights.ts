@@ -34,5 +34,6 @@ export function serializeInsights(row: typeof repoInsights.$inferSelect): RepoIn
   const data = row.data as unknown as RepoInsights;
   // r620: never hand back a stored nodeVersion that is not a version — rows
   // written before 0.10.41 may hold host file content from a symlinked .nvmrc.
-  return { ...data, nodeVersion: sanitizeNodeVersion(data.nodeVersion) };
+  if (data.nodeVersion == null || sanitizeNodeVersion(data.nodeVersion) === data.nodeVersion) return data;
+  return { ...data, nodeVersion: null };
 }
