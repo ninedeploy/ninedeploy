@@ -43,12 +43,15 @@ const state = vi.hoisted(() => ({
   deletes: [] as Array<Record<string, unknown>>,
   /** One row per (workspaceId, name) — mirrors the table's unique key. */
   overrides: [] as Array<{ workspaceId: number; name: string; subject: string; text: string }>,
+  /** r621: whether the fixture workspace's owner is an instance operator. */
+  ownerIsOperator: true,
 }));
 
 beforeEach(() => {
   state.inserts.length = 0;
   state.deletes.length = 0;
   state.overrides.length = 0;
+  state.ownerIsOperator = true;
 });
 
 const INVITE_VARS = { inviter: 'Eve', workspaceName: 'Acme', role: 'admin', acceptUrl: 'https://x/y', ttlDays: 7 };
@@ -100,6 +103,10 @@ function whereEquals(where: unknown): Record<string, unknown> {
 function makeDb() {
   const db = createFakeDb({
     findFirst: {
+      // r621: overrides apply only to operator-owned workspaces; the fixture
+      // workspace is owned by an operator unless a test says otherwise.
+      workspaces: () => ({ id: 1, ownerId: 1 }),
+      users: () => ({ id: 1, isInstanceOperator: state.ownerIsOperator }),
       // `findFirst(emailTemplateOverrides)` runs the predicate the helper
       // built. The fake evaluates it against the fixture rows the way SQL
       // would: workspace must match, and — when the predicate constrains it —
@@ -402,13 +409,13 @@ describe('setOverride / clearOverride', () => {
 
   it('setOverride then renderTemplate picks up the override', async () => {
     const db = makeDb();
-    await setOverride(db, 42, 'workspace-invitation', 'NEW subj', 'NEW text body');
+    await setOverride(db, 42, 'workspace-invitation', 'NEW subj', 'NEW text body {{acceptUrl}}');
     // Mirror what the upsert would have done in the real DB.
-    seedOverride(42, 'workspace-invitation', 'NEW subj', 'NEW text body');
+    seedOverride(42, 'workspace-invitation', 'NEW subj', 'NEW text body {{acceptUrl}}');
     const result = await renderTemplate(db, 'workspace-invitation', INVITE_VARS, { workspaceId: 42 });
     expect(result.overridden).toBe(true);
     expect(result.subject).toBe('NEW subj');
-    expect(result.text).toBe('NEW text body');
+    expect(result.text).toBe('NEW text body https://x/y');
   });
 
   it('accepts every name in ALL_TEMPLATE_NAMES', async () => {
@@ -483,7 +490,7 @@ describe('r610: delivery scope and injection', () => {
   });
 
   it('collapses CR/LF in a subject, whether from the override or a variable', async () => {
-    seedOverride(42, 'workspace-invitation', 'Join {{workspaceName}}\r\nBcc: victim@example.com', 'body');
+    seedOverride(42, 'workspace-invitation', 'Join {{workspaceName}}\r\nBcc: victim@example.com', 'body {{acceptUrl}}');
     const fromOverride = await renderTemplate(makeDb(), 'workspace-invitation', INVITE_VARS, { workspaceId: 42 });
     expect(fromOverride.subject).toBe('Join Acme Bcc: victim@example.com');
 
@@ -516,5 +523,29 @@ describe('r610: delivery scope and injection', () => {
     const result = await renderTemplate(db, 'workspace-invitation', INVITE_VARS, { workspaceId: 42 });
     expect(result.overridden).toBe(false);
     expect(result.subject).toBe("You're invited to join Acme on NineDeploy");
+  });
+});
+
+describe('r621: workspace overrides cannot turn the instance into a mail relay', () => {
+  it('sends the built-in invitation when the workspace owner is not an instance operator', async () => {
+    state.ownerIsOperator = false;
+    seedOverride(1, 'workspace-invitation', 'Security alert', 'Reset here: https://evil.example {{acceptUrl}}');
+    const r = await renderTemplate(makeDb(), 'workspace-invitation', INVITE_VARS, { workspaceId: 1 });
+    expect(r.overridden).toBe(false);
+    expect(r.subject).toBe("You're invited to join Acme on NineDeploy");
+  });
+
+  it('ignores an operator-owned override that drops the accept link', async () => {
+    seedOverride(1, 'workspace-invitation', 'Hello', 'No link here at all');
+    const r = await renderTemplate(makeDb(), 'workspace-invitation', INVITE_VARS, { workspaceId: 1 });
+    expect(r.overridden).toBe(false);
+    expect(r.text).toContain('https://x/y');
+  });
+
+  it('still sends an operator-owned override that keeps the link', async () => {
+    seedOverride(1, 'workspace-invitation', 'Join {{workspaceName}}', 'Accept: {{acceptUrl}}');
+    const r = await renderTemplate(makeDb(), 'workspace-invitation', INVITE_VARS, { workspaceId: 1 });
+    expect(r.overridden).toBe(true);
+    expect(r.text).toBe('Accept: https://x/y');
   });
 });

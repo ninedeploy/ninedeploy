@@ -33,7 +33,7 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { emailTemplateOverrides, type DB } from '@ninedeploy/db';
+import { emailTemplateOverrides, users, workspaces, type DB } from '@ninedeploy/db';
 
 export type EmailTemplateName =
   | 'password-reset'
@@ -145,6 +145,36 @@ export const TEMPLATE_DELIVERY: Record<EmailTemplateName, { scope: 'workspace' |
 // ── public surface ─────────────────────────────────────────────────────────
 
 /**
+ * r621: whether a workspace's overrides may go out at all. Overridden emails
+ * leave through the OPERATOR's mail channel and From address, to recipients
+ * the workspace admin chooses — and any account can create a workspace it
+ * owns. So since r610 wired overrides into sending, any user could mail
+ * free-form text from the instance to arbitrary addresses. Overrides now
+ * apply only to workspaces an instance operator owns; stored rows elsewhere
+ * are kept but ignored (the built-in text is sent, exactly as before r610).
+ */
+export async function workspaceOverridesAllowed(db: DB, workspaceId: number): Promise<boolean> {
+  // Never let this check break the email itself: any failure means "no override".
+  try {
+    const ws = await db.query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
+    if (!ws) return false;
+    const owner = await db.query.users.findFirst({ where: eq(users.id, ws.ownerId) });
+    return owner?.isInstanceOperator === true;
+  } catch {
+    return false;
+  }
+}
+
+
+/**
+ * r621: an override of a SENT email whose built-in text carries a link must keep
+ * that link — otherwise the "invitation" is just arbitrary text.
+ */
+export function overrideMissingRequiredLink(name: EmailTemplateName, text: string): boolean {
+  return TEMPLATE_DELIVERY[name].sent && DEFAULTS[name].text.includes('{{acceptUrl}}') && !text.includes('{{acceptUrl}}');
+}
+
+/**
  * Render a transactional email. The returned object is
  * plain text; callers feed `subject` + `text` to
  * `sendSystemEmail` (or to a custom transport).
@@ -160,7 +190,7 @@ export async function renderTemplate(
   // r610: an instance-scoped email never takes a workspace's override — the
   // preview route passes its workspace id too, and must show what is sent.
   const workspaceId = TEMPLATE_DELIVERY[name].scope === 'workspace' ? ctx.workspaceId : null;
-  if (workspaceId != null) {
+  if (workspaceId != null && (await workspaceOverridesAllowed(db, workspaceId))) {
     // The override key is (workspace_id, name): look up the row for THIS
     // template name only. Filtering by workspace alone let one template's
     // override render in place of every other template's (the first matching
@@ -178,9 +208,10 @@ export async function renderTemplate(
       .catch(() => undefined);
     // The override table is keyed by (workspace_id, name);
     // a single row per (workspace, name) pair.
-    const matched = override?.subject && override?.text
-      ? { subject: override.subject, text: override.text }
-      : null;
+    const matched =
+      override?.subject && override?.text && !overrideMissingRequiredLink(name, override.text)
+        ? { subject: override.subject, text: override.text }
+        : null;
     if (matched) {
       return {
         subject: oneLine(expand(matched.subject, vars)),

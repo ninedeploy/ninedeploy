@@ -63,9 +63,12 @@ vi.mock('../../src/lib/audit.js', () => ({
 interface WorkspaceRow {
   id: number;
   name: string;
+  ownerId?: number;
 }
 
-let workspaceRow: WorkspaceRow | null = { id: 1, name: 'MyWS' };
+let workspaceRow: WorkspaceRow | null = { id: 1, name: 'MyWS', ownerId: 1 };
+/** r621: whether the workspace owner (user 1) is an instance operator. */
+let ownerIsOperator = true;
 /** The caller's seat in workspace 1 (null: no seat at all). */
 let seatRole: string | null = 'owner';
 let overrides: Array<{ workspaceId: number; name: string; subject: string; text: string }> = [];
@@ -75,6 +78,7 @@ async function startApp() {
   const db = createFakeDb({
     findFirst: {
       workspaces: () => workspaceRow,
+      users: () => ({ id: 1, isInstanceOperator: ownerIsOperator }),
       // The helpers' default `findFirst` resolver returns `undefined`
       // for any table (only `findMany` has a `workspaceMembers`
       // fallback). For this test we explicitly hand an `owner` seat
@@ -98,7 +102,8 @@ beforeEach(() => {
   lib.setCalls.length = 0;
   lib.clearCalls.length = 0;
   lib.override = null;
-  workspaceRow = { id: 1, name: 'MyWS' };
+  workspaceRow = { id: 1, name: 'MyWS', ownerId: 1 };
+  ownerIsOperator = true;
   seatRole = 'owner';
   overrides = [];
 });
@@ -251,12 +256,12 @@ describe('PUT /:wid/email-templates/:name', () => {
     const res = await fetch(`http://127.0.0.1:${port}/1/email-templates/workspace-invitation`, {
       method: 'PUT',
       headers: { ...asUser(1), 'content-type': 'application/json' },
-      body: JSON.stringify({ subject: 'S', text: 'T' }),
+      body: JSON.stringify({ subject: 'S', text: 'T {{acceptUrl}}' }),
     });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({ ok: true, workspaceId: 1, name: 'workspace-invitation' });
-    expect(lib.setCalls).toEqual([{ workspaceId: 1, name: 'workspace-invitation', subject: 'S', text: 'T' }]);
+    expect(lib.setCalls).toEqual([{ workspaceId: 1, name: 'workspace-invitation', subject: 'S', text: 'T {{acceptUrl}}' }]);
     expect(audit).toHaveBeenCalledWith(
       app.db,
       1,
@@ -371,4 +376,31 @@ describe("r361: another tenant's workspace answers the same 404 as a missing one
       expect(lib.clearCalls).toEqual([]);
     });
   }
+});
+
+describe('r621: a workspace override cannot turn the instance into a mail relay', () => {
+  it('refuses an override on a workspace no instance operator owns, saying why', async () => {
+    ownerIsOperator = false;
+    const { port } = await startApp();
+    const res = await fetch(`http://127.0.0.1:${port}/1/email-templates/workspace-invitation`, {
+      method: 'PUT',
+      headers: { ...asUser(1), 'content-type': 'application/json' },
+      body: JSON.stringify({ subject: 'Security alert', text: 'Click {{acceptUrl}}' }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.message).toMatch(/instance operator owns/);
+    expect(lib.setCalls).toEqual([]);
+  });
+
+  it('refuses an invitation override that drops the accept link', async () => {
+    const { port } = await startApp();
+    const res = await fetch(`http://127.0.0.1:${port}/1/email-templates/workspace-invitation`, {
+      method: 'PUT',
+      headers: { ...asUser(1), 'content-type': 'application/json' },
+      body: JSON.stringify({ subject: 'Hi', text: 'Visit https://evil.example' }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.message).toMatch(/acceptUrl/);
+    expect(lib.setCalls).toEqual([]);
+  });
 });

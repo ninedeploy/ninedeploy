@@ -78,7 +78,9 @@ const WORKSPACE = {
   name: 'Acme Workspace',
   slug: 'acme-workspace',
   description: null,
-  ownerId: 2,
+  // r621: the owner is a separate operator account (id 9), so the owner-is-
+  // operator lookup never answers the inviter lookup (user 2, by id).
+  ownerId: 9,
   createdAt: new Date(0),
   updatedAt: new Date(0),
 };
@@ -103,7 +105,13 @@ function inviteDb(email: string, overrides: StoredOverride[]) {
     findFirst: {
       workspaces: WORKSPACE,
       workspace_members: { id: 1, workspaceId: 1, userId: 2, role: 'owner' },
-      users: undefined,
+      // r621: overrides apply only when the workspace owner (user 2) is an
+      // instance operator; every other users lookup (the invitee, by email)
+      // finds no account.
+      users: (args: unknown) =>
+        boundValues((args as { where?: unknown } | undefined)?.where).includes(WORKSPACE.ownerId)
+          ? userRow({ id: 9, email: 'owner@example.com', isInstanceOperator: true })
+          : undefined,
       workspace_invitations: undefined,
       emailTemplateOverrides: overrideLookup(overrides),
     },

@@ -20,6 +20,8 @@ import {
   renderTemplate,
   setOverride,
   clearOverride,
+  overrideMissingRequiredLink,
+  workspaceOverridesAllowed,
 } from '../lib/emailTemplates.js';
 import { assertWorkspaceRole, isWorkspaceMember, type AuthedUser } from '../lib/resourceAccess.js';
 
@@ -128,6 +130,16 @@ export const emailTemplateRoutes: FastifyPluginAsync = async (app) => {
       }
       const body = setBody.safeParse({ ...req.body, name });
       if (!body.success) throw unprocessable(body.error.issues[0]!.message);
+      // r621: overrides go out through the operator's mail server, so they
+      // apply only to operator-owned workspaces, and must keep their link.
+      if (!(await workspaceOverridesAllowed(app.db, wid))) {
+        throw badRequest(
+          "Custom emails are sent from this instance's own mail server, so they are only used for workspaces an instance operator owns. This workspace's invitations use the built-in text.",
+        );
+      }
+      if (overrideMissingRequiredLink(name, body.data.text)) {
+        throw badRequest('The email text must include {{acceptUrl}} — the link the recipient follows.');
+      }
       await setOverride(app.db, wid, body.data.name, body.data.subject, body.data.text);
       void audit(
         app.db,
