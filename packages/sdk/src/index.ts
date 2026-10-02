@@ -947,8 +947,11 @@ export interface NineDeployClient {
     updateCheck: (force?: boolean) => Promise<UpdateCheckResult>;
     /** State of a panel-initiated upgrade (idle/running/success/failed/unsupported). */
     updateStatus: () => Promise<SelfUpdateStatus>;
-    /** Start upgrading the panel itself to an exact release tag; the updater survives the restart it performs. */
-    updateStart: (version: string) => Promise<{ ok: boolean }>;
+    /**
+     * Start upgrading the panel itself to an exact release tag; the updater survives the restart it performs.
+     * Refused with 409 `deploys_in_flight` while deployments are executing unless `force` is set (r572).
+     */
+    updateStart: (version: string, opts?: { force?: boolean }) => Promise<{ ok: boolean }>;
     /** Recent docker daemon events (single-shot, for the Docker dashboard feed). */
     dockerEvents: (minutes?: number) => Promise<{ events: Array<{ time: string; type: string; action: string; name: string }> }>;
   };
@@ -1892,7 +1895,7 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       pruneImages: () => send<{ ok: boolean }>('POST', '/v1/system/prune-images'),
       updateCheck: (force) => get<UpdateCheckResult>(`/v1/system/update-check${force ? '?force=1' : ''}`),
       updateStatus: () => get<SelfUpdateStatus>('/v1/system/update-status'),
-      updateStart: (version) => send<{ ok: boolean }>('POST', '/v1/system/update-start', { version }),
+      updateStart: (version, opts) => send<{ ok: boolean }>('POST', '/v1/system/update-start', { version, ...opts }),
       exportUrl: () => '/v1/system/export',
       dockerEvents: (minutes) =>
         get<{ events: Array<{ time: string; type: string; action: string; name: string }> }>(

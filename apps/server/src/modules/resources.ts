@@ -1,7 +1,7 @@
 import { createReadStream, existsSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync, mkdirSync, rmSync, copyFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import { count, sql } from 'drizzle-orm';
+import { count, eq, inArray, sql } from 'drizzle-orm';
 import { databases, deployments, services, users } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import { capture, run } from '../lib/exec.js';
@@ -41,8 +41,20 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
         error: { code: 'bad_request', message: parsed.error.issues[0]?.message ?? 'invalid body' },
       });
     }
-    void audit(app.db, req.user?.id ?? null, 'system.update_start', parsed.data.version ?? 'latest');
-    return startSelfUpdate(parsed.data.version);
+    void audit(app.db, req.user?.id ?? null, 'system.update_start', `${parsed.data.version}${parsed.data.force ? ' (forced)' : ''}`);
+    // r572: the update restarts this process, and with it the deploy worker —
+    // refuse (409 deploys_in_flight) while a build or rollout is executing,
+    // unless the operator explicitly forces it. `queued` rows are not
+    // in-flight: they survive the restart and the next worker picks them up.
+    return startSelfUpdate(parsed.data.version, {
+      force: parsed.data.force === true,
+      inFlightDeployments: () =>
+        app.db
+          .select({ id: deployments.id, status: deployments.status, service: services.name })
+          .from(deployments)
+          .innerJoin(services, eq(services.id, deployments.serviceId))
+          .where(inArray(deployments.status, ['building', 'deploying'])),
+    });
   });
 
   app.get('/resources', async () => {

@@ -34,6 +34,8 @@ export type UpdateCheckResult = z.infer<typeof updateCheckResult>;
 /** Body of POST /v1/system/update-start: an exact release tag, e.g. "v0.3.4". */
 export const selfUpdateStart = z.object({
   version: z.string().regex(/^v\d+\.\d+\.\d+$/, 'version must be a release tag like v0.3.4'),
+  // r572: start even while deployments are executing (they are interrupted).
+  force: z.boolean().optional(),
 });
 export type SelfUpdateStart = z.infer<typeof selfUpdateStart>;
 

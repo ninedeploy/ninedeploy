@@ -554,6 +554,11 @@ describe('createClient', () => {
       await client.system.updateStart('v0.3.4');
       expect(last(calls)).toMatchObject({ url: '/v1/system/update-start', init: { method: 'POST' } });
       expect(String(last(calls).init?.body)).toContain('"version":"v0.3.4"');
+      expect(String(last(calls).init?.body)).not.toContain('force');
+
+      // r572: the in-flight-deploy override travels in the body.
+      await client.system.updateStart('v0.3.4', { force: true });
+      expect(String(last(calls).init?.body)).toContain('"force":true');
     });
 
     it('exportUrl returns the export path without fetching', () => {

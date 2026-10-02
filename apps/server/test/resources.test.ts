@@ -1,4 +1,4 @@
-﻿import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { gzipSync } from 'node:zlib';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -75,6 +75,9 @@ const spawnMock = vi.hoisted(() => ({
   // path now spawns tar twice (member listing, then extraction).
   forceNth: null as number | null,
   calls: 0,
+  // r572: the panel self-updater must never really launch from a test (it
+  // would fetch and run install.sh) — its spawns are recorded and faked.
+  updater: [] as Array<{ cmd: string; args: string[] }>,
   spawn: null as unknown as (...a: unknown[]) => unknown,
 }));
 vi.mock('node:child_process', async (importOriginal) => {
@@ -83,6 +86,12 @@ vi.mock('node:child_process', async (importOriginal) => {
   return {
     ...real,
     spawn: (cmd: string, args: string[], opts?: unknown) => {
+      if (cmd === 'systemd-run' || cmd === '/bin/bash') {
+        spawnMock.updater.push({ cmd, args });
+        const once: Record<string, (...a: unknown[]) => void> = {};
+        queueMicrotask(() => once['exit']?.(0));
+        return { once: (ev: string, cb: (...a: unknown[]) => void) => { once[ev] = cb; }, on: () => undefined, unref: () => undefined };
+      }
       spawnMock.calls += 1;
       const nth = spawnMock.forceNth === spawnMock.calls;
       if ((spawnMock.force.error && !spawnMock.forceNth) || (nth && spawnMock.force.error)) {
@@ -821,5 +830,97 @@ describe('import concurrency (r454)', () => {
       (spawnMock as unknown as { spawn: unknown }).spawn = realSpawn;
       await app.close();
     }
+  });
+});
+
+// ── r572: a self-update must not silently kill in-flight deployments ───
+describe('POST /update-start refuses while deployments are executing (r572)', () => {
+  const oldCwd = process.cwd();
+  beforeEach(() => {
+    newDataDir();
+    spawnMock.updater = [];
+    configMock.isProd = true;
+    // The support gate looks for install.sh + package.json in the cwd (the
+    // unit's WorkingDirectory in production).
+    const installDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nd-upd-inst-'));
+    createdDirs.push(installDir);
+    fs.writeFileSync(path.join(installDir, 'install.sh'), '#!/usr/bin/env bash\nexit 0\n');
+    fs.writeFileSync(path.join(installDir, 'package.json'), '{}');
+    process.chdir(installDir);
+  });
+  afterEach(() => {
+    process.chdir(oldCwd);
+    configMock.isProd = false;
+  });
+
+  const inFlight = [
+    { id: 41, service: 'api', status: 'building' },
+    { id: 42, service: 'web', status: 'deploying' },
+  ];
+  const appWithDeploys = (rows: unknown[]) => appWith({ select: { deployments: () => rows } });
+
+  it('409 deploys_in_flight names every executing deployment and launches nothing', async () => {
+    const app = await appWithDeploys(inFlight);
+    const res = await app.inject({ method: 'POST', url: '/update-start', headers: asUser(), payload: { version: 'v99.0.0' } });
+    expect(res.statusCode).toBe(409);
+    const err = res.json().error;
+    expect(err.code).toBe('deploys_in_flight');
+    expect(err.message).toContain('#41 api (building)');
+    expect(err.message).toContain('#42 web (deploying)');
+    expect(err.message).toContain('"force": true');
+    expect(spawnMock.updater).toHaveLength(0);
+    // No run was recorded either — the refusal happens before any state write.
+    expect(fs.existsSync(path.join(configMock.paths.dataDir, 'self-update', 'state.json'))).toBe(false);
+  });
+
+  it('asks the deployments table for building/deploying rows only (queued ones survive the restart)', async () => {
+    const asked: unknown[] = [];
+    const app = await appWith({
+      select: {
+        deployments: (_cols: unknown, where: unknown) => {
+          // Collect every bound parameter of the predicate the route built.
+          const walk = (n: unknown): void => {
+            if (!n || typeof n !== 'object') return;
+            if (Array.isArray(n)) {
+              for (const c of n) walk(c);
+              return;
+            }
+            const o = n as { queryChunks?: unknown[]; value?: unknown };
+            if (Array.isArray(o.queryChunks)) {
+              for (const c of o.queryChunks) walk(c);
+              return;
+            }
+            if ('encoder' in o) asked.push(o.value);
+          };
+          walk(where);
+          return [];
+        },
+      },
+    });
+    const res = await app.inject({ method: 'POST', url: '/update-start', headers: asUser(), payload: { version: 'v99.0.0' } });
+    expect(res.statusCode).toBe(200);
+    expect(asked.flat().sort()).toEqual(['building', 'deploying']);
+  });
+
+  it('starts the update when nothing is executing', async () => {
+    const app = await appWithDeploys([]);
+    const res = await app.inject({ method: 'POST', url: '/update-start', headers: asUser(), payload: { version: 'v99.0.0' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true });
+    expect(spawnMock.updater.map((c) => c.cmd)).toEqual(['systemd-run']);
+  });
+
+  it('force: true overrides the refusal (the deployments are interrupted on purpose)', async () => {
+    const app = await appWithDeploys(inFlight);
+    const res = await app.inject({ method: 'POST', url: '/update-start', headers: asUser(), payload: { version: 'v99.0.0', force: true } });
+    expect(res.statusCode).toBe(200);
+    expect(spawnMock.updater.map((c) => c.cmd)).toEqual(['systemd-run']);
+  });
+
+  it('rejects a non-boolean force', async () => {
+    const app = await appWithDeploys(inFlight);
+    const res = await app.inject({ method: 'POST', url: '/update-start', headers: asUser(), payload: { version: 'v99.0.0', force: 'yes' } });
+    expect(res.statusCode).toBe(400);
+    expect(spawnMock.updater).toHaveLength(0);
   });
 });
