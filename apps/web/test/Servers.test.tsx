@@ -256,9 +256,11 @@ describe('Servers', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Register server' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Copy command' }));
     // A rejected clipboard write silently keeps the idle label (useCopy).
+    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('button', { name: 'Copy command' }));
     const btn = await screen.findByRole('button', { name: 'Copy command' });
-    expect(btn.textContent).toContain('Copied!');
+    // The second write resolves asynchronously — wait for the label, don't race it.
+    await waitFor(() => expect(btn.textContent).toContain('Copied!'));
     // The copied indicator resets after the 1500ms timeout.
     await waitFor(() => expect(btn.textContent).not.toContain('Copied'), { timeout: 2500 });
   });

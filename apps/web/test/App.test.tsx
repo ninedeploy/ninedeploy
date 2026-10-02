@@ -173,8 +173,10 @@ describe('App', () => {
     } as any);
     mockOf(api.backups.list).mockResolvedValue([]);
     renderWithProviders(<App />, { route: '/databases/1' });
-    await screen.findByTestId('layout');
-    expect(await screen.findByText('pg-app')).toBeInTheDocument();
+    // The lazy DatabaseDetail chunk can take over the 1 s default to import
+    // when the whole suite runs in parallel — allow it, don't flake on it.
+    await screen.findByTestId('layout', {}, { timeout: 5000 });
+    expect(await screen.findByText('pg-app', {}, { timeout: 5000 })).toBeInTheDocument();
   });
 
   it('r358: mounts the domain-transfer accept link the server prints', async () => {
