@@ -178,7 +178,7 @@ const MONOREPO: NinedeployManifest = {
   watch: { paths: ['apps/web/**', 'packages/**'] },
   previews: {
     enabled: true,
-    pattern: 'pr-{n}.previews.example.com',
+    pattern: 'pr-{n}-{{slug}}.{{domain}}',
     maxActive: 5,
     autoDestroyOnClose: true,
   },

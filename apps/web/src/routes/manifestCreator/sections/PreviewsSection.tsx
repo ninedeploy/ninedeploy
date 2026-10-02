@@ -1,7 +1,9 @@
 import type { Previews } from '@ninedeploy/schemas';
 import { Field, Input, Switch } from '../../../components/ui.js';
 
-const DEFAULT_PATTERN = 'pr-{n}.previews.example.com';
+// r602: previews must render inside the panel's wildcard zone and name both
+// the PR and the service, or the panel skips the preview domain.
+const DEFAULT_PATTERN = 'pr-{n}-{{slug}}.{{domain}}';
 
 export function PreviewsSection({
   value,

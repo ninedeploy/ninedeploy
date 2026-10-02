@@ -211,7 +211,8 @@ export const previews = z
     enabled: z.boolean().default(false),
     /**
      * Hostname template. `{n}` is replaced by the PR number. Example:
-     * `pr-{n}.previews.example.com`. Must contain `{n}` when enabled.
+     * `pr-{n}-{{slug}}.{{domain}}` (the panel also requires `{{slug}}` and its own
+     * wildcard zone, r511). Must contain `{n}` when enabled.
      */
     pattern: z
       .string()
