@@ -1,79 +1,31 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Shield, ShieldCheck, ShieldX, RefreshCw, Globe, Server, Activity, FileText, Download, Clock, AlertCircle, Upload } from 'lucide-react';
 import { useState } from 'react';
-import { authedFetch } from '../lib/api.js';
+import type { TraefikCertificate, TraefikInfo, TraefikStatus } from '@ninedeploy/sdk';
+import { api, authedFetch } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
 import { useToast } from '../components/Toast.js';
 import { Button, Card, ErrorCard, PageHeader, Skeleton, StatusBadge, Tabs, cn } from '../components/ui.js';
-
-interface TraefikStatus {
-  running: boolean;
-  version: string | null;
-  versionLatest: string | null;
-  outdated: boolean;
-  uptime: string | null;
-  ports: { http: number; https: number };
-  configDir: string;
-}
-
-interface TraefikCertificate {
-  domain: string;
-  expiresAt: string | null;
-  daysUntilExpiry: number | null;
-  issuer: string | null;
-}
-
-interface TraefikRouter {
-  name: string;
-  rule: string;
-  service: string;
-  entryPoints: string[];
-  tls: boolean;
-  middleware: string[];
-}
-
-interface TraefikService {
-  name: string;
-  url: string;
-  loadBalancer: string;
-}
-
-interface TraefikInfo {
-  status: TraefikStatus;
-  certificates: TraefikCertificate[];
-  routers: TraefikRouter[];
-  services: TraefikService[];
-  middlewares: TraefikMiddleware[];
-}
-
-interface TraefikMiddleware {
-  name: string;
-  type: string;
-  config: Record<string, unknown>;
-}
 
 export function Traefik() {
   const { user: me } = useAuth();
   const isAdmin = me?.isOperator === true;
 
+  // r563: the SDK covers these — its types replace the page's re-declared copies.
   const info = useQuery({
     queryKey: ['traefik'],
-    queryFn: async () => {
-      const res = await authedFetch('/v1/traefik');
-      if (!res.ok) throw new Error('Failed to fetch traefik info');
-      return res.json() as Promise<TraefikInfo>;
-    },
+    queryFn: () => api.traefik.get(),
     refetchInterval: 30_000,
   });
 
+  // r562: /traefik/logs is operator-only. Querying it for every user turned
+  // the member's 403 into a silent "No logs available." — and polled a
+  // forbidden route every 15s. Members get an explicit message instead.
   const logs = useQuery({
     queryKey: ['traefik-logs'],
-    queryFn: async () => {
-      const res = await authedFetch('/v1/traefik/logs?lines=50');
-      if (!res.ok) throw new Error('Failed to fetch traefik logs');
-      return res.json() as Promise<{ logs: string[] }>;
-    },
+    queryFn: () => api.traefik.logs(50),
     refetchInterval: 15_000,
+    enabled: isAdmin,
   });
 
   const [activeTab, setActiveTab] = useState('overview');
@@ -111,7 +63,16 @@ export function Traefik() {
         {activeTab === 'overview' && <OverviewTab data={info.data} isLoading={info.isLoading} />}
         {activeTab === 'certificates' && info.data && <CertificatesTab certificates={info.data.certificates} />}
         {activeTab === 'routers' && info.data && <RoutersTab data={info.data} />}
-        {activeTab === 'logs' && <LogsTab logs={logs.data?.logs ?? []} isLoading={logs.isLoading} />}
+        {activeTab === 'logs' &&
+          (!isAdmin ? (
+            <Card className="p-10 text-center text-sm text-slate-500">
+              Traefik logs are available to instance operators only.
+            </Card>
+          ) : logs.isError && !logs.data ? (
+            <ErrorCard title="Couldn't load Traefik logs" error={logs.error} onRetry={() => void logs.refetch()} />
+          ) : (
+            <LogsTab logs={logs.data?.logs ?? []} isLoading={logs.isLoading} />
+          ))}
       </div>
     </div>
   );
@@ -122,11 +83,7 @@ function StatusBanner({ status, isAdmin }: { status: TraefikStatus; isAdmin: boo
   const qc = useQueryClient();
 
   const restart = useMutation({
-    mutationFn: async () => {
-      const res = await authedFetch('/v1/traefik/restart', { method: 'POST' });
-      if (!res.ok) throw new Error('Failed to restart Traefik');
-      return res.json();
-    },
+    mutationFn: () => api.traefik.restart(),
     onSuccess: () => {
       toast('Traefik restarted successfully', 'success');
       qc.invalidateQueries({ queryKey: ['traefik'] });
@@ -135,11 +92,7 @@ function StatusBanner({ status, isAdmin }: { status: TraefikStatus; isAdmin: boo
   });
 
   const backup = useMutation({
-    mutationFn: async () => {
-      const res = await authedFetch('/v1/traefik/backup-certs', { method: 'POST' });
-      if (!res.ok) throw new Error('Failed to backup certificates');
-      return res.json();
-    },
+    mutationFn: () => api.traefik.backupCerts(),
     onSuccess: () => {
       toast('Certificates backed up successfully', 'success');
     },
@@ -147,6 +100,7 @@ function StatusBanner({ status, isAdmin }: { status: TraefikStatus; isAdmin: boo
   });
 
   const update = useMutation({
+    // r563: the SDK has no traefik update method yet — raw call until it does.
     mutationFn: async () => {
       const res = await authedFetch('/v1/traefik/update', { method: 'POST' });
       if (!res.ok) throw new Error('Failed to update Traefik');
