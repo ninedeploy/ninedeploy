@@ -147,7 +147,7 @@ ninedeploy/                       pnpm 11 workspace + Turborepo
 │                                  PLUGINS_MICROKERNEL, TRAEFIK_INGRESS, …)
 ├── .github/workflows/             ci.yml (typecheck/lint/build/test/schema-drift/
 │                                  deprecated-deps/image build/integration),
-│                                  release.yml, website.yml
+│                                  release-publish.yml (gated on the smokes), website.yml
 ├── Dockerfile                     multi-stage; docker CLI + git + tini +
 │                                  checksum-pinned Nixpacks 1.41.0; non-root
 ├── docker-compose.yml             development environment
@@ -739,6 +739,38 @@ tool that fails for any other reason can no longer pass the gate silently.
 `packages/db/test/schema-drift.test.ts` remains the second line of defence:
 it applies every migration to a fresh in-memory database and compares both
 directions against the Drizzle schema.
+
+### 13.1 Release drill
+
+A release is a version bump (`pnpm version:bump X.Y.Z`, then a real
+`version.ts` entry and a `CHANGELOG.md` section), a commit, and a lightweight
+`vX.Y.Z` tag. Pushing the tag runs `.github/workflows/release-publish.yml`,
+and since 0.10.38 (r581) **the end-to-end smokes gate publication**:
+
+1. **publish-image** — provenance check (tag = `package.json` = `version.ts`),
+   `pnpm release:check`, the integration suite, then a multi-arch build pushed
+   as `:vX.Y.Z` **only**, with both platform manifests verified.
+2. **smoke-published-image** — on that pushed image, in a privileged DinD
+   sidecar: `scripts/smoke-upgrade.mjs --from=<previous published release>
+   --to=vX.Y.Z` (the previous release comes from the GitHub Releases API, not
+   from git tags; with none, the upgrade smoke is skipped with a notice), and
+   `scripts/smoke-user-journey.mjs --image=…:vX.Y.Z`.
+3. **promote-release** — only when both smokes pass: `:latest` is re-pointed
+   at the already-pushed manifest (registry retag, no rebuild; only when the
+   tag is the highest `vX.Y.Z`, per r573), then the GitHub Release is created.
+
+Installed servers discover releases through the Releases API and docker
+installs follow `:latest`, so a red smoke means **no server is offered the
+release**. It does leave a pushed `:vX.Y.Z` image and a git tag behind. The
+update check's last-resort source (`git ls-remote`, used only when the API and
+the release page are both unreachable) and `install.sh --version vX.Y.Z` can
+still see such a tag, so fix forward promptly: cut the next patch version, or
+delete the tag on the remote if the release is abandoned. Re-running the same
+tag (`gh workflow run release-publish.yml -f tag=vX.Y.Z`) repeats all three
+jobs. The smokes can be run by hand against any published pair:
+`pnpm smoke:upgrade --from=vA --to=vB` and `pnpm smoke:user-journey
+--image=ghcr.io/ninedeploy/ninedeploy:vB` (both need a local Docker daemon
+that may run privileged containers).
 
 ## 14. Installation, updates and supervision
 

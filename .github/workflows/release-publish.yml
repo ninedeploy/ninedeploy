@@ -18,6 +18,21 @@ name: Release
 # successfully and push an image that no install path can
 # ever resolve, so the workflow rejects it at the first
 # step rather than shipping a phantom release.
+#
+# r581: publication is gated on the end-to-end smokes. Installed servers
+# discover a release through the GitHub Releases API (updateCheck.ts, and
+# install.sh's latest_tag since r571) and docker installs follow `:latest`,
+# so neither may point at an image nobody has upgraded onto. Three jobs:
+#   1. publish-image — checks, then builds and pushes ONLY `:vX.Y.Z` and
+#      verifies its multi-arch manifest. Nothing discovers that tag yet.
+#   2. smoke-published-image — the upgrade smoke (previous published release
+#      → this tag, on one data volume) and the user-journey smoke, both on
+#      the pushed image.
+#   3. promote-release — only after both smokes pass: re-points `:latest`
+#      at the already-pushed manifest (when this tag is the highest; no
+#      rebuild) and creates the GitHub Release.
+# A failed smoke therefore leaves a pushed `:vX.Y.Z` and a git tag but no
+# Release and no `:latest` move — see ARCHITECTURE.md §13.1 "Release drill".
 
 on:
   push:
@@ -56,11 +71,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      # `contents: write` is needed for softprops/action-gh-release
-      # to create the GitHub Release; the workflow's contents: read
-      # default is too narrow and the action returns HTTP 403
-      # "Resource not accessible by integration" otherwise.
-      contents: write
+      # r581: this job only pushes `:vX.Y.Z`; creating the GitHub Release
+      # (contents: write) moved to promote-release, behind the smokes.
+      contents: read
       packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -99,28 +112,6 @@ jobs:
           if [ "$v" != "$pkg" ] || [ "$v" != "$ts" ]; then
             echo "::error::Provenance mismatch: tag=$v package.json=$pkg version.ts=$ts — tag the commit whose bump you mean."
             exit 1
-          fi
-
-      # r573: `:latest` is what fresh `install.sh --docker` runs on older
-      # installers and a manual `docker pull` resolve. Every run used to
-      # re-point it, so a workflow_dispatch re-run of an OLDER tag (or a slow
-      # older run finishing after a newer one) moved `:latest` backwards.
-      # Only the highest vX.Y.Z tag on the remote moves it now.
-      - name: Decide whether this tag moves :latest
-        id: latest
-        run: |
-          set -euo pipefail
-          highest="$(git ls-remote --tags --refs origin \
-            | awk -F/ '{print $NF}' \
-            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-            | awk -F'[v.]' '{ printf "%010d%010d%010d %s\n", $2, $3, $4, $0 }' \
-            | sort | tail -1 | awk '{print $2}')"
-          if [ "$highest" = "$RELEASE_TAG" ]; then
-            echo "move=true" >> "$GITHUB_OUTPUT"
-            echo "$RELEASE_TAG is the highest release tag — :latest will point at it."
-          else
-            echo "move=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::$RELEASE_TAG is not the highest release tag ($highest) — publishing :$RELEASE_TAG only, :latest stays where it is."
           fi
 
       - name: Setup pnpm
@@ -179,21 +170,24 @@ jobs:
           # has to suppress branch refs; no `branches:`
           # key is needed.
           tags: |
-            # Two slugs only — the canonical `:v0.4.0` and
-            # the unprefixed `:latest` that install.sh pulls
-            # by default. Major / major-minor roll-ups
+            # One slug only — the canonical `:v0.4.0`. r581:
+            # `:latest` is NOT pushed here; promote-release
+            # re-points it at this exact manifest once the
+            # smokes pass. Major / major-minor roll-ups
             # (`v0`, `v0.4`, `0`, `0.4`) are deliberately
             # omitted: this project does not ship patch-level
             # backports, so a `:v0.4` tag would mislead
             # anyone pinning to "the latest 0.4.x" into
-            # thinking a 0.4.1 release exists. Only
-            # `:v0.4.0` and `:latest` are produced.
+            # thinking a 0.4.1 release exists.
             # `type=raw` with the resolved RELEASE_TAG instead
             # of `type=semver`: metadata-action derives the
             # semver from the GIT REF, which on a manual run
             # is the dispatch branch, not the tag.
             type=raw,value=${{ env.RELEASE_TAG }}
-            type=raw,value=latest,enable=${{ steps.latest.outputs.move == 'true' }}
+          # metadata-action otherwise adds `:latest` on its own for a
+          # semver-shaped tag push (flavor latest=auto).
+          flavor: |
+            latest=false
 
       - name: Set up Docker Buildx
         # Multi-arch (amd64 + arm64) matches what the
@@ -251,6 +245,160 @@ jobs:
           echo "::error::ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG} is missing an amd64/arm64 manifest"
           exit 1
 
+
+  # r581: the end-to-end gate. Both smokes run against the image publish-image
+  # just pushed (`:vX.Y.Z` — nothing discovers it yet) inside a privileged
+  # docker:28-dind sidecar, so their Traefik/app containers never touch the
+  # runner's own daemon state. A failure here stops the release: no `:latest`
+  # move and no GitHub Release, so no installed server is offered it.
+  smoke-published-image:
+    needs: publish-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      # releases API read (previous release) + pulling the GHCR images.
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The smokes read the TO version's migration journal and version.ts.
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
+          cache: pnpm
+
+      # smoke-upgrade reads the migrated SQLite file with @libsql/client,
+      # resolved from packages/db; nothing else is needed (no build).
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The upgrade starts from what installed servers actually run: the
+      # highest PUBLISHED GitHub Release below this tag. Not `git tag` — a tag
+      # can exist without a release (a run that failed this very gate leaves
+      # exactly that), and no server was ever offered such a tag. Strictly
+      # below: a re-run of an older tag must not "upgrade" downwards.
+      - name: Find the previous published release
+        id: previous
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          released="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name')"
+          prev="$(printf '%s\n' "$released" \
+            | { grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true; } \
+            | awk -F'[v.]' -v cur="$RELEASE_TAG" '
+                BEGIN { split(cur, c, /[v.]/); key = sprintf("%010d%010d%010d", c[2], c[3], c[4]) }
+                { k = sprintf("%010d%010d%010d", $2, $3, $4); if ((k "") < (key "")) print k " " $0 }' \
+            | sort | tail -1 | awk '{print $2}')"
+          if [ -z "$prev" ]; then
+            echo "from=" >> "$GITHUB_OUTPUT"
+            echo "::notice::No published release below $RELEASE_TAG — skipping the upgrade smoke (nothing can upgrade onto it yet)."
+          else
+            echo "from=$prev" >> "$GITHUB_OUTPUT"
+            echo "Upgrade smoke will run $prev → $RELEASE_TAG."
+          fi
+
+      # The slow-deploy seed pulls python:3.12 inside DinD; the script only
+      # waits for it to reach `building`, but the whole run is bounded here.
+      - name: Upgrade smoke (previous release → this tag, same data volume)
+        if: steps.previous.outputs.from != ''
+        timeout-minutes: 30
+        env:
+          FROM_TAG: ${{ steps.previous.outputs.from }}
+        run: node scripts/smoke-upgrade.mjs --from="$FROM_TAG" --to="$RELEASE_TAG"
+
+      - name: User-journey smoke on the pushed image
+        timeout-minutes: 20
+        run: node scripts/smoke-user-journey.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
+
+  # r581: publication. Runs only when both smokes passed (needs: is
+  # all-success by default), and changes nothing that was built — `:latest`
+  # is re-pointed at the manifest the smokes exercised.
+  promote-release:
+    needs: [publish-image, smoke-published-image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      # `contents: write` is needed for softprops/action-gh-release
+      # to create the GitHub Release; the workflow's contents: read
+      # default is too narrow and the action returns HTTP 403
+      # "Resource not accessible by integration" otherwise.
+      contents: write
+      # Re-pointing `:latest` is a registry write.
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # CHANGELOG.md is attached to the Release from the TAG's tree.
+          ref: ${{ env.RELEASE_TAG }}
+
+      # r573: `:latest` is what fresh `install.sh --docker` runs on older
+      # installers and a manual `docker pull` resolve. Every run used to
+      # re-point it, so a workflow_dispatch re-run of an OLDER tag (or a slow
+      # older run finishing after a newer one) moved `:latest` backwards.
+      # Only the highest vX.Y.Z tag on the remote moves it now. r581: decided
+      # here, at promotion time, after the smokes — not before the build.
+      - name: Decide whether this tag moves :latest
+        id: latest
+        run: |
+          set -euo pipefail
+          highest="$(git ls-remote --tags --refs origin \
+            | awk -F/ '{print $NF}' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | awk -F'[v.]' '{ printf "%010d%010d%010d %s\n", $2, $3, $4, $0 }' \
+            | sort | tail -1 | awk '{print $2}')"
+          if [ "$highest" = "$RELEASE_TAG" ]; then
+            echo "move=true" >> "$GITHUB_OUTPUT"
+            echo "$RELEASE_TAG is the highest release tag — :latest will point at it."
+          else
+            echo "move=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$RELEASE_TAG is not the highest release tag ($highest) — publishing :$RELEASE_TAG only, :latest stays where it is."
+          fi
+
+      - name: Set up Docker Buildx
+        if: steps.latest.outputs.move == 'true'
+        uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db # v6.7.0
+
+      - name: Log in to GHCR
+        if: steps.latest.outputs.move == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # A registry-side retag: `imagetools create` writes a new tag for the
+      # EXISTING multi-arch index — no rebuild, so `:latest` is byte-for-byte
+      # the image the smokes ran. The digest comparison proves it.
+      - name: Move :latest to the smoked manifest (retag, no rebuild)
+        if: steps.latest.outputs.move == 'true'
+        run: |
+          set -euo pipefail
+          repo=ghcr.io/ninedeploy/ninedeploy
+          docker buildx imagetools create --tag "${repo}:latest" "${repo}:${RELEASE_TAG}"
+          want="$(docker buildx imagetools inspect "${repo}:${RELEASE_TAG}" --format '{{json .Manifest}}' | jq -r .digest)"
+          got="$(docker buildx imagetools inspect "${repo}:latest" --format '{{json .Manifest}}' | jq -r .digest)"
+          if [ -z "$want" ] || [ "$want" != "$got" ]; then
+            echo "::error::${repo}:latest is ${got:-unknown}, expected ${RELEASE_TAG}'s ${want:-unknown}"
+            exit 1
+          fi
+          echo ":latest → ${RELEASE_TAG} (${want})"
+
       # Create the GitHub Release for this tag. Without this
       # step the tag exists in git but the Releases page stays
       # empty — every `git describe`, GitHub download URL, or
@@ -258,9 +406,10 @@ jobs:
       # dead-end. We pull the body from CHANGELOG.md (the
       # `## [0.4.0] - …` section) and pin the `v0.4.0` image
       # as the canonical download, so the page mirrors what
-      # the project actually ships.
+      # the project actually ships. r581: this is the step that
+      # makes the release discoverable to installed servers, so
+      # it is the last one.
       - name: Publish GitHub Release
-        if: success()
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
