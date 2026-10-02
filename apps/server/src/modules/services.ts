@@ -57,6 +57,7 @@ import { analyseComposeContent, stackEnvSeeds, stackPublicUrl } from './composeS
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
 import { reconcileEnvironment } from './templates.js';
 import { resolveStackEnvironment } from '../engine/magicVars.js';
+import { bindRegistryHostForImage, boundRegistryHosts, registryHostOf } from '../lib/registryBinding.js';
 
 /** The three tag id lists a service row is serialized with. */
 interface TagIds {
@@ -400,6 +401,9 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         throw err;
       });
     if (!svc) throw notFound('Could not create service');
+    // r512: attaching a registry source is operator-only (above), so this is
+    // the operator binding the credential to the image's registry host.
+    if (svc.sourceId != null && svc.image) await bindRegistryHostForImage(app.db, svc.sourceId, svc.image);
     await app.db
       .insert(buildConfigs)
       .values({
@@ -571,6 +575,22 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       if (repoChanged || branchChanged) {
         throw forbidden('Only operators may change the repository of a service that uses a managed git source');
       }
+      // r512: the same for a registry credential — its `docker login` target
+      // is derived from the image, so a member pointing the image at another
+      // registry host would send the operator's credential there.
+      if (patch.image != null && patch.image !== existing.image) {
+        const src = await app.db.query.sources.findFirst({ where: eq(sources.id, existing.sourceId) });
+        const newHost = registryHostOf(patch.image);
+        if (
+          src?.type === 'registry' &&
+          newHost !== (existing.image ? registryHostOf(existing.image) : null) &&
+          !(await boundRegistryHosts(app.db, src.id)).includes(newHost)
+        ) {
+          throw forbidden(
+            `Only operators may point this service's image at another registry (${newHost}) — it uses the operator-managed registry credential "${src.name}"`,
+          );
+        }
+      }
     }
     // Same for remote-server placement (r097). Moving a service back to the
     // local host (`serverId: null`) stays open: it takes nothing from anyone.
@@ -660,6 +680,11 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     }
     const [svc] = await app.db.update(services).set(servicePatch).where(eq(services.id, id)).returning();
     if (!svc) throw notFound('Service not found');
+    // r512: an OPERATOR attaching a registry source or changing the image of
+    // a service that uses one binds the credential to that registry host.
+    if (req.user!.isOperator && (patch.image !== undefined || patch.sourceId !== undefined) && svc.sourceId != null && svc.image) {
+      await bindRegistryHostForImage(app.db, svc.sourceId, svc.image);
+    }
     if (build) {
       // Only overwrite the keys the client sent — a PATCH must not reset the
       // rest of the build config back to defaults.

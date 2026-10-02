@@ -134,8 +134,10 @@ describe('sources routes', () => {
   });
 
   it('patches a source with an empty body', async () => {
+    // An empty PATCH changes no column: the route re-reads the row rather
+    // than issuing an empty UPDATE (which drizzle rejects on a real db).
     const app = await buildTestApp({
-      db: createFakeDb({ update: { sources: [sourceRow({ id: 1 })] } }),
+      db: createFakeDb({ findFirst: { sources: sourceRow({ id: 1 }) } }),
     });
     await app.register(sourcesRoutes);
     const res = await app.inject({ method: 'PATCH', url: '/1', headers: asUser() });

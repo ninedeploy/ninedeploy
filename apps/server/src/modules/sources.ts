@@ -9,8 +9,9 @@ import { notFound, parseId } from '../lib/errors.js';
 // rest of the panel's webhooks/API clients — the hosts are hardcoded today,
 // the guard keeps that invariant from silently drifting.
 import { guardedFetch } from '../lib/egressGuard.js';
+import { ensureRegistryBindingsInitialised, setBoundRegistryHosts, type RegistryBindings } from '../lib/registryBinding.js';
 
-function serialize(s: Source) {
+function serialize(s: Source, bindings: RegistryBindings) {
   return {
     id: s.id,
     name: s.name,
@@ -18,6 +19,8 @@ function serialize(s: Source) {
     hasToken: !!s.tokenEncrypted,
     hasDeployKey: !!s.deployKeyEncrypted,
     registryUsername: s.registryUsername ?? null,
+    // r512: where a registry credential may be sent (additive field).
+    ...(s.type === 'registry' ? { registryHosts: bindings[String(s.id)] ?? [] } : {}),
     defaultBranch: s.defaultBranch,
     createdAt: s.createdAt.toISOString(),
     updatedAt: s.updatedAt.toISOString(),
@@ -32,7 +35,8 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/', async () => {
     const rows = await app.db.query.sources.findMany({ orderBy: (s, { desc }) => [desc(s.id)] });
-    return rows.map(serialize);
+    const bindings = await ensureRegistryBindingsInitialised(app.db);
+    return rows.map((s) => serialize(s, bindings));
   });
 
   app.post('/', async (req) => {
@@ -48,8 +52,11 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
         defaultBranch: input.defaultBranch ?? 'main',
       })
       .returning();
+    // r512: always (re)write the binding — an id SQLite reuses after a
+    // delete must not inherit a previous credential's hosts.
+    if (created!.type === 'registry') await setBoundRegistryHosts(app.db, created!.id, input.registryHosts ?? []);
     void audit(app.db, req.user!.id, 'source.create', input.name);
-    return serialize(created!);
+    return serialize(created!, await ensureRegistryBindingsInitialised(app.db));
   });
 
   app.patch('/:id', async (req) => {
@@ -61,12 +68,20 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
     if (input.token !== undefined) patch.tokenEncrypted = input.token ? encrypt(input.token) : null;
     if (input.deployKey !== undefined) patch.deployKeyEncrypted = input.deployKey ? encrypt(input.deployKey) : null;
     if (input.registryUsername !== undefined) patch.registryUsername = input.registryUsername || null;
-    const [updated] = await app.db.update(sources).set(patch).where(eq(sources.id, id)).returning();
+    // A hosts-only PATCH (r512) changes no column — read the row instead of
+    // issuing an empty UPDATE.
+    const [updated] =
+      Object.keys(patch).length > 0
+        ? await app.db.update(sources).set(patch).where(eq(sources.id, id)).returning()
+        : [await app.db.query.sources.findFirst({ where: eq(sources.id, id) })];
     if (!updated) throw notFound('Source not found');
+    if (input.registryHosts !== undefined && updated.type === 'registry') {
+      await setBoundRegistryHosts(app.db, id, input.registryHosts);
+    }
     // Which credential fields changed — never their values.
-    const changed = (['token', 'deployKey', 'registryUsername', 'name', 'defaultBranch'] as const).filter((k) => input[k] !== undefined);
+    const changed = (['token', 'deployKey', 'registryUsername', 'registryHosts', 'name', 'defaultBranch'] as const).filter((k) => input[k] !== undefined);
     void audit(app.db, req.user!.id, 'source.update', `${updated.name}: ${changed.join(',') || 'no-op'}`);
-    return serialize(updated);
+    return serialize(updated, await ensureRegistryBindingsInitialised(app.db));
   });
 
   app.get('/:id/repos', async (req, reply) => {
@@ -336,6 +351,7 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
   app.delete('/:id', async (req) => {
     const id = parseId((req.params as { id: string }).id);
     await app.db.delete(sources).where(eq(sources.id, id));
+    await setBoundRegistryHosts(app.db, id, []);
     void audit(app.db, req.user!.id, 'source.delete', String(id));
     return { ok: true };
   });

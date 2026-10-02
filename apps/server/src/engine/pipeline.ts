@@ -23,6 +23,7 @@ import { pm2Builder } from './builders/pm2.js';
 import { getAcmeEmail, writeDynamicConfig } from './proxy.js';
 import { run, sleep } from '../lib/exec.js';
 import { resolveVaultRefs } from '../lib/vault.js';
+import { registryCredentialFor } from '../lib/registryBinding.js';
 import { isOperator, roleAtLeast } from '../lib/resourceAccess.js';
 import { getBundledTemplates } from '../templates/registry.js';
 import type { BuildContext, Builder, DeployRuntime } from './types.js';
@@ -319,29 +320,16 @@ async function loadRuntimeEnv(db: DB, service: typeof services.$inferSelect): Pr
 /**
  * Resolve private-registry credentials for a service: when the service's
  * source is a registry-type source with a token, image pulls authenticate
- * with (registryUsername, token). The registry host defaults to the image's
- * own namespace (e.g. ghcr.io/...) or the Docker Hub default.
+ * with (registryUsername, token). r512: only toward a registry host the
+ * credential is bound to — see lib/registryBinding.ts; a mismatch is logged
+ * here and the pull runs anonymously.
  */
 async function loadRegistryAuth(
   db: DB,
   service: typeof services.$inferSelect,
+  log?: (line: string) => void,
 ): Promise<{ username: string; password: string; server?: string } | undefined> {
-  if (!service.sourceId || !service.image) return undefined;
-  const src = await db.query.sources.findFirst({ where: eq(sources.id, service.sourceId) });
-  if (src?.type !== 'registry') return undefined;
-  const username = src.registryUsername ?? '';
-  const password = src.tokenEncrypted ? decrypt(src.tokenEncrypted) : '';
-  if (!username || !password) return undefined;
-  // The first path segment of namespaced images (ghcr.io/org/app) is the
-  // registry host; bare names (nginx:latest) use the Docker Hub default.
-  const parts = service.image.split('/');
-  const first = parts.length > 1 ? parts[0]! : '';
-  // Docker's rule (lib/imageRef.ts): the first segment is a registry host when
-  // it contains '.' or ':', or is exactly `localhost` — `localhost/team/app`
-  // pulls from a local registry, not from a Docker Hub namespace.
-  const isHost = first.includes('.') || first.includes(':') || first === 'localhost';
-  const server = first !== '' && isHost ? first : undefined;
-  return { username, password, server };
+  return registryCredentialFor(db, service, log);
 }
 
 /**
@@ -836,7 +824,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       imageDigest: dep.imageDigest ?? undefined,
       env: runtimeEnvironment.values,
       // Registry-type sources provide private-image credentials.
-      registryAuth: await loadRegistryAuth(db, service),
+      registryAuth: await loadRegistryAuth(db, service, log),
       // No serverId / agentCall: a service pinned to a remote node never
       // reaches this point (the refusal above), and binding a caller no
       // builder reads is what made remote deploys look implemented in the
@@ -1257,7 +1245,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
           deploymentId,
           image: service.image ? await pullableReleaseRef(service.image, runtime!.imageDigest) : undefined,
           env: fanoutEnv,
-          registryAuth: await loadRegistryAuth(db, service),
+          registryAuth: await loadRegistryAuth(db, service, log),
           primaryServerId: service.serverId ?? null,
           source: buildableSource,
         },

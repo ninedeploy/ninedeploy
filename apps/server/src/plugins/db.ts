@@ -2,6 +2,7 @@ import { createDb, runMigrations, sql, type DB } from '@ninedeploy/db';
 import fp from 'fastify-plugin';
 import { config } from '../config.js';
 import { reconcileDeploymentHistory } from '../engine/pipeline.js';
+import { ensureRegistryBindingsInitialised } from '../lib/registryBinding.js';
 
 // Augment the Fastify instance so `fastify.db` is typed everywhere.
 declare module 'fastify' {
@@ -75,6 +76,16 @@ export default fp(
         if (demoted > 0) fastify.log.info({ demoted }, 'stale running deployments marked superseded');
       } catch (err) {
         fastify.log.warn({ err }, 'deployment history reconciliation skipped');
+      }
+
+      // r512 upgrade path: bind registry credentials to the hosts their
+      // services use today on the first boot of a release that enforces the
+      // binding, so working deploys keep working. Also initialised lazily at
+      // the use sites; a failure here only defers the seed, never startup.
+      try {
+        await ensureRegistryBindingsInitialised(db, (msg, detail) => fastify.log.warn(detail, msg));
+      } catch (err) {
+        fastify.log.warn({ err }, 'registry credential binding initialisation deferred');
       }
 
       fastify.decorate('db', db);

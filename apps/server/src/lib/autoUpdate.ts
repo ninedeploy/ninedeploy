@@ -1,9 +1,9 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { deployments, services, sources, type DB } from '@ninedeploy/db';
+import { deployments, services, type DB } from '@ninedeploy/db';
 import { audit } from './audit.js';
-import { decrypt } from './crypto.js';
 import { parseImageRef } from './imageRef.js';
 import { fetchImageDigest } from './imageWatch.js';
+import { registryCredentialFor } from './registryBinding.js';
 
 /**
  * Watchtower-style image auto-update sweep. For every RUNNING, image-based
@@ -40,27 +40,26 @@ export const IN_FLIGHT_STATUSES = ['queued', 'building', 'deploying'] as const;
 /**
  * Resolve the pull credentials attached to a service: a `registry`-type
  * source (username + decrypted token) — the same rows the deploy-time
- * docker login consumes. Returns null for services without one, meaning
- * the probe runs anonymously (public repos only).
+ * docker login consumes, through the same r512 host binding (a credential
+ * is never sent to a registry it is not bound to). Returns null for
+ * services without one, meaning the probe runs anonymously (public repos
+ * only).
  */
 async function registryCredential(
   db: DB,
   svc: typeof services.$inferSelect,
+  log: (msg: string) => void,
 ): Promise<{ username: string; password: string } | null> {
-  if (!svc.sourceId) return null;
-  const src = await db.query.sources.findFirst({ where: eq(sources.id, svc.sourceId) });
-  if (!src || src.type !== 'registry' || !src.tokenEncrypted) return null;
   try {
-    const password = decrypt(src.tokenEncrypted);
-    const username = src.registryUsername ?? '';
-    if (!username || !password) return null;
-    return { username, password };
+    const cred = await registryCredentialFor(db, svc, (line) => log(`auto-update: ${svc.name} — ${line}`));
+    return cred ? { username: cred.username, password: cred.password } : null;
   } catch {
     // Undecryptable envelope (rotated-away master key) — treat as no
     // credential; the anonymous probe will skip private repos cleanly.
     return null;
   }
 }
+
 
 export async function sweepAutoUpdates(
   db: DB,
@@ -82,7 +81,7 @@ export async function sweepAutoUpdates(
     // Private registries: a `registry`-type source attached to the service
     // supplies pull credentials for the probe (same rows the deploy-time
     // docker login uses).
-    const auth = await registryCredential(db, svc);
+    const auth = await registryCredential(db, svc, log);
     let digest: string;
     try {
       digest = await probe(ref.registry, ref.repository, ref.tag, auth ?? undefined);
