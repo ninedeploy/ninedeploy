@@ -22,7 +22,11 @@ import { createHmac, randomBytes } from 'node:crypto';
 // artifact (r479).
 const repoVersion = /export const VERSION = '([^']*)';/.exec(
   readFileSync(new URL('../apps/server/src/version.ts', import.meta.url), 'utf8'),
-)?.[1] ?? "0.0.0";
+)?.[1];
+if (!repoVersion) {
+  console.error('could not derive VERSION from apps/server/src/version.ts — the smoke refuses to run against an unknown image.');
+  process.exit(1);
+}
 const IMAGE = process.argv.find((a) => a.startsWith('--image='))?.slice('--image='.length)
   ?? `ghcr.io/ninedeploy/ninedeploy:v${repoVersion}`;
 const PANEL_PORT = 4640;

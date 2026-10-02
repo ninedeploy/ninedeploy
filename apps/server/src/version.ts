@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.35';
+export const VERSION = '0.10.36';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.36',
+    date: '2026-10-02',
+    title: 'The Bounded-Backstop Release',
+    changes: [
+      'Fixed (P2, found by auditing the backstop): the rejection map grew without bound — every distinct IP that ever produced one 400/401/403 left a permanent entry, and background internet scanning (or a single IPv6 /64, which can mint unlimited source IPs at one request each) grows it monotonically: ~5k distinct-IP requests/s for an hour is roughly 4-5 GB. Prune-on-write past a 10,000-key soft cap: entries whose newest rejection has aged out go first (currently-engaged IPs survive), then oldest-inserted keys as the hard backstop. Memory is now bounded to a few MB.',
+      'Fixed (P3): the backstop 429 answered in the Fastify-default body shape — the web client parses the app error envelope, so the flood moment rendered the generic "Request failed with status 429" instead of the real message with its retry countdown. The refusal now uses the same envelope as every other panel error.',
+      'Hardened (P3): the user-journey smoke refuses to run when it cannot derive the current version from version.ts (previously it silently targeted v0.0.0 and failed at image pull, misattributing the cause after the whole DinD bring-up).',
+      'Wording: the r479 note said guard-rejections; the backstop also counts handler-produced 400s (a request that passes the principal limiter and then fails validation in-handler). Same ceiling, same never-legitimate threshold — the changelog now says what the code does.',
+    ],
+  },
+{
     version: '0.10.35',
     date: '2026-10-02',
     title: 'The Backstop Release — the Throttle-Fix Audit',

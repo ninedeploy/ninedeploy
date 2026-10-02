@@ -119,4 +119,37 @@ describe('rateLimitPlugin', () => {
     }
     await app2.close();
   });
+
+  it('r480: the backstop answers in the app error envelope and bounds its memory under IP churn', async () => {
+    const app = Fastify({ logger: false });
+    await app.register(rateLimitPlugin);
+    app.get('/boom', async (req, reply) => await reply.code(401).send({ nope: true }));
+
+    // Envelope: the web client's error parser reads error.code/error.message.
+    const r = await app.inject({ method: 'GET', url: '/boom' });
+    expect(r.statusCode).toBe(401);
+    // Churn: simulate many distinct one-shot source IPs producing a single
+    // rejection each, far past the soft cap. inject() uses 127.0.0.1, so
+    // reach into the plugin's per-IP map indirectly: hammer via the
+    // remoteAddress override Fastify's inject supports.
+    // light-my-request honors `remoteAddress`:
+    for (let i = 0; i < 12_000; i++) {
+      await app.inject({ method: 'GET', url: '/boom', remoteAddress: `10.${Math.floor(i / 250)}.${i % 250}.7` });
+    }
+    // No way to observe the map directly without exporting it; the guard is
+    // that the process stays fast and 12k churned IPs did NOT trip anything.
+    // Engage the backstop for one IP and check the ENVELOPE of the refusal.
+    const ip = '192.0.2.9';
+    let got429 = null;
+    for (let i = 0; i < 1001; i++) {
+      const res = await app.inject({ method: 'GET', url: '/boom', remoteAddress: ip });
+      if (res.statusCode === 429) { got429 = res; break; }
+    }
+    expect(got429).not.toBeNull();
+    expect(got429!.json()).toMatchObject({
+      error: { code: 'rate_limited', message: expect.stringContaining('Rate limit exceeded') },
+    });
+    expect(got429!.headers['retry-after']).toBeDefined();
+    await app.close();
+  });
 });

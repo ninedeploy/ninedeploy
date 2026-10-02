@@ -46,6 +46,14 @@ export default fp(
     // (the principal limiter owns it), so the owner-throttle fix is intact.
     const REJECTION_WINDOW_MS = 60_000;
     const REJECTION_CAP = 1000;
+    // r480: the map is keyed by source IP and every distinct IP that ever
+    // produces one rejection leaves an entry — background scanning grows it
+    // monotonically (~250 B/entry; an IPv6 /64 can mint unlimited keys at one
+    // request each). Prune-on-write past this size: entries whose NEWEST
+    // stamp has aged out go first (insertion order), so currently-engaged
+    // IPs survive the sweep. Hard ceiling for the pathological case after
+    // the sweep: drop the oldest-inserted keys regardless of age.
+    const REJECTION_MAP_SOFT_CAP = 10_000;
     const PRE_HANDLER_DEATH = new Set([400, 401, 403]);
     const rejections = new Map<string, number[]>();
 
@@ -56,6 +64,16 @@ export default fp(
       const stamps = (rejections.get(key) ?? []).filter((t) => now - t < REJECTION_WINDOW_MS);
       stamps.push(now);
       rejections.set(key, stamps);
+      if (rejections.size <= REJECTION_MAP_SOFT_CAP) return;
+      for (const [k, v] of rejections) {
+        if (now - (v[v.length - 1] ?? 0) >= REJECTION_WINDOW_MS) rejections.delete(k);
+      }
+      let over = rejections.size - REJECTION_MAP_SOFT_CAP;
+      for (const k of rejections.keys()) {
+        if (over <= 0) break;
+        rejections.delete(k);
+        over--;
+      }
     });
 
     fastify.addHook('onRequest', async (req, reply) => {
@@ -66,10 +84,11 @@ export default fp(
       if (stamps.length < REJECTION_CAP) return;
       const retryAfter = Math.max(1, Math.ceil((REJECTION_WINDOW_MS - (now - stamps[0]!)) / 1000));
       reply.header('retry-after', String(retryAfter));
+      // The app error envelope ({ error: { code, message } }) — the web
+      // client's error parser reads exactly this shape, so the flood moment
+      // renders the real message instead of "Request failed with status 429".
       return await reply.code(429).send({
-        statusCode: 429,
-        error: 'Too Many Requests',
-        message: `Rate limit exceeded, retry in ${retryAfter} seconds`,
+        error: { code: 'rate_limited', message: `Rate limit exceeded, retry in ${retryAfter} seconds` },
       });
     });
   },
