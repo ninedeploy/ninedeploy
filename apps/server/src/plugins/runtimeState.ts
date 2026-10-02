@@ -1,5 +1,5 @@
 import fp from 'fastify-plugin';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 import { services } from '@ninedeploy/db';
 import { pm2Resurrect, pm2Start, pm2Status } from '../engine/builders/pm2.js';
 import { audit } from '../lib/audit.js';
@@ -28,9 +28,16 @@ const RECONCILE_INTERVAL_MS = 60_000;
  *   - runtime gone (deleted)       → only a redeploy can recreate it: mark
  *     `error` so the panel says so
  *
- * Never touches non-running rows (a deploy in progress) or services owned by
- * remote agents. Skips the round — without judging — when the Docker daemon
- * is unreachable.
+ * Never touches non-running rows (a deploy in progress). Skips the round —
+ * without judging — when the Docker daemon is unreachable.
+ *
+ * r525: node-pinned docker services are patrolled too, through their node's
+ * agent (`docker.inspect` / `docker.start`, both shipped with the remote
+ * builder, so every agent that can run such a service answers them). They
+ * used to be filtered out entirely, so a container that died on a node stayed
+ * `running` in the panel forever and `alert.service_down` never fired. An
+ * UNREACHABLE node is never read as "service down": its services are skipped
+ * for the round and the node itself is recorded as unreachable instead.
  */
 
 /** The daemon cannot be reached at all — reconciliation must skip, not judge. */
@@ -233,6 +240,70 @@ export default fp(
       void name;
     };
 
+    /**
+     * r525: nodes whose agent did not answer the last patrol, so the
+     * unreachable audit fires once per outage rather than every minute.
+     * In-memory like the OOM throttle — a restart re-alerting once is fine.
+     */
+    const unreachableNodes = new Set<number>();
+
+    /**
+     * Patrol one node's docker services through its agent. Batched per node:
+     * the first transport failure (agent down, auth, timeout) stops the batch
+     * and marks the node unreachable — none of its services is judged. A
+     * container is only declared gone when the node's docker SAYS so ("No
+     * such object"); any other inspect failure (the node's daemon restarting)
+     * skips the service for this round.
+     */
+    const patrolNode = async (
+      serverId: number,
+      rows: Array<{ id: number; name: string; runtimeId: string }>,
+    ): Promise<void> => {
+      const agent = (op: string, params: Record<string, unknown>) =>
+        agentOp(fastify.db, serverId, op, params, () => undefined, { tolerateExit: true });
+      const stateOf = async (runtimeId: string): Promise<'running' | 'stopped' | 'gone' | 'unknown'> => {
+        const res = await agent('docker.inspect', { name: runtimeId, format: 'state' });
+        if (res.exitCode !== 0) {
+          return res.lines.some((l) => /no such (object|container)/i.test(l)) ? 'gone' : 'unknown';
+        }
+        const state = res.lines.filter((l) => l.trim() !== '').at(-1)?.split('|')[0]?.trim();
+        if (state === undefined || state === '') return 'unknown';
+        return state === 'running' || state === 'restarting' ? 'running' : 'stopped';
+      };
+      for (const svc of rows) {
+        let live: Awaited<ReturnType<typeof stateOf>>;
+        try {
+          live = await stateOf(svc.runtimeId);
+        } catch (err) {
+          if (!unreachableNodes.has(serverId)) {
+            unreachableNodes.add(serverId);
+            const reason = err instanceof Error ? err.message : String(err);
+            fastify.log.warn({ serverId, err }, 'node agent unreachable — its services are not judged this round');
+            void audit(fastify.db, null, 'alert.node_unreachable', `node #${serverId}`, {
+              serverId,
+              reason: reason.slice(0, 500),
+            });
+          }
+          return;
+        }
+        unreachableNodes.delete(serverId);
+        if (live === 'running' || live === 'unknown') continue;
+        if (live === 'stopped') {
+          try {
+            const started = await agent('docker.start', { name: svc.runtimeId });
+            if (started.exitCode === 0 && (await stateOf(svc.runtimeId)) === 'running') {
+              fastify.log.warn({ serviceId: svc.id, name: svc.name, runtimeId: svc.runtimeId, serverId }, 'revived stopped container on its node');
+              continue;
+            }
+          } catch {
+            // The node went away mid-revive — not the service's fault.
+            return;
+          }
+        }
+        await setStatus(svc, 'error');
+      }
+    };
+
     /** Record an OOM kill in the activity trail + notification fan-out. */
     const alertOom = (serviceId: number, name: string, runtimeId: string, exitCode: number) => {
       const now = Date.now();
@@ -326,6 +397,24 @@ export default fp(
         }
       } catch (err) {
         fastify.log.warn({ err }, 'runtime state reconciliation failed');
+      }
+      // r525: node-pinned docker services, one batch per node. Isolated from
+      // the local pass above: a node problem must never cost the panel host
+      // its reconcile, nor the other way round.
+      try {
+        const remote = await fastify.db.query.services.findMany({
+          where: and(eq(services.status, 'running'), isNotNull(services.serverId), eq(services.type, 'docker')),
+        });
+        const byNode = new Map<number, Array<{ id: number; name: string; runtimeId: string }>>();
+        for (const svc of remote) {
+          if (svc.serverId == null || !svc.runtimeId) continue;
+          const batch = byNode.get(svc.serverId) ?? [];
+          batch.push({ id: svc.id, name: svc.name, runtimeId: svc.runtimeId });
+          byNode.set(svc.serverId, batch);
+        }
+        for (const [serverId, batch] of byNode) await patrolNode(serverId, batch);
+      } catch (err) {
+        fastify.log.warn({ err }, 'remote runtime state reconciliation failed');
       }
     };
 
