@@ -513,15 +513,15 @@ pnpm build && RUN_INTEGRATION=1 pnpm --filter @ninedeploy/server exec vitest run
 
 | Package | Files | Tests | Coverage floor (stmts/branch/func/lines) |
 | :--- | ---: | ---: | :--- |
-| `apps/server` | 254 | 3,848 | 93.25 / 87.3 / 91 / 95.1 |
-| `apps/web` | 89 | 1,479 | 97.5 / 91.5 / 97.5 / 97.5 |
-| `apps/cli` | 33 | 612 | 83 / 80 / 80 / 83 |
-| `packages/schemas` | 5 | 275 | 100 |
-| `packages/sdk` | 4 | 178 | 100 |
-| `packages/mcp` | 2 | 33 | 90 / 80 / 95 / 95 |
-| `packages/db` | 8 | 28 | 100 |
+| `apps/server` | 328 | 5,003 | 93.25 / 87.3 / 91 / 95.1 |
+| `apps/web` | 106 | 1,747 | 97.5 / 91.5 / 97.5 / 97.5 |
+| `apps/cli` | 35 | 663 | 83 / 80 / 80 / 83 |
+| `packages/schemas` | 6 | 279 | 100 |
+| `packages/sdk` | 5 | 198 | 100 |
+| `packages/mcp` | 2 | 39 | 90 / 80 / 95 / 95 |
+| `packages/db` | 13 | 55 | 100 |
 | `packages/plugin-sdk` | 1 | 7 | 100 |
-| **Total** | **396** | **6,460** | |
+| **Total** | **496** | **7,991** | |
 
 Unit and route suites only — the server's seven testcontainers integration files (real Postgres,
 MySQL, Redis and MongoDB backup/restore, a deploy end-to-end, a compose-stack deploy and a volume
