@@ -27,7 +27,8 @@ vi.mock('../src/lib/resourceAccess.js', async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  _internal.resetVolumeSizeCache();
+  // Optional call: keeps this file runnable against pre-r649 sources (regression proofs).
+  _internal.resetVolumeSizeCache?.();
   // listManagedVolumeNames hits docker — return the candidate name for the
   // "attach existing" test, an empty list otherwise.
   execMocks.capture.mockImplementation(async (_cmd: string, args: string[]) => {
