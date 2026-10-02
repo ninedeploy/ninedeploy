@@ -1631,6 +1631,22 @@ describe('runDeployment applies the .ninedeploy build sections', () => {
     // A warning must not stop the deploy.
     expect(lines).toContain('✓ Deployment successful');
   });
+
+  it('r602: an invalid previews.pattern is skipped with a deploy-log note; the rest applies and the deploy succeeds', async () => {
+    writeManifest(['version: "1"', 'previews:', '  enabled: true', '  pattern: "victim-{n}.{{domain}}"', '  maxActive: 4']);
+    const { db, updates } = makeDb();
+    baseSetup(db, repoService);
+    db.query.buildConfigs.findFirst.mockResolvedValue(BUILD_CONFIG);
+    const lines = collectLogs(1);
+
+    await runDeployment(db as never, 1);
+
+    const previewWrite = updates.find((u) => u.table === services && 'previewMaxActive' in u.values);
+    expect(previewWrite?.values).toMatchObject({ previewDeploymentsEnabled: true, previewMaxActive: 4 });
+    expect(previewWrite?.values).not.toHaveProperty('previewDomainPattern');
+    expect(lines.some((l) => l.includes('.ninedeploy note: previews.pattern') && l.includes('{{pr}} and {{slug}}'))).toBe(true);
+    expect(lines).toContain('✓ Deployment successful');
+  });
 });
 
 /**
