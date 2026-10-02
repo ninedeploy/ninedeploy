@@ -14,6 +14,7 @@ import { resolveUser } from '../lib/auth.js';
 import { authorizeWebsocketUser } from '../plugins/auth.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { assertMayDeployStoredService } from '../lib/hostPrivilege.js';
+import { enqueueUserDeploy } from '../lib/deployQueue.js';
 import { assertRemoteDatabaseReachable, assertRemoteDeploySupported, assertRemoteServiceSupported } from '../lib/remoteDeploy.js';
 import { assertServiceRole, visibleServiceIdSet } from '../lib/resourceAccess.js';
 import { badRequest, notFound, parseId as num } from '../lib/errors.js';
@@ -56,10 +57,9 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     // row once the in-flight one finishes, so a brand-new trigger
     // would just sit behind it). Queued rows, on the other hand, ARE
     // the queue: the operator expects to be able to stack more than
-    // one and have them run in enqueue order. The 50-row cap stops
-    // unbounded growth from a runaway client without needing to fail
-    // a legitimate second-click.
-    const MAX_QUEUED_PER_SERVICE = 50;
+    // one and have them run in enqueue order. The queued cap (shared
+    // enqueue helper) stops unbounded growth from a runaway client
+    // without needing to fail a legitimate second-click.
     const inflight = await app.db.query.deployments.findFirst({
       where: and(
         eq(deployments.serviceId, id),
@@ -68,21 +68,11 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
       orderBy: desc(deployments.id),
     });
     if (inflight) return { deploymentId: inflight.id, alreadyInProgress: true };
-    const queuedRows = await app.db.query.deployments.findMany({
-      where: and(eq(deployments.serviceId, id), eq(deployments.status, 'queued')),
-      columns: { id: true },
-    });
-    if (queuedRows.length >= MAX_QUEUED_PER_SERVICE) {
-      throw badRequest(
-        `Service already has ${queuedRows.length} queued deploys (max ${MAX_QUEUED_PER_SERVICE}). Cancel one first.`,
-      );
-    }
+    // r640: privilege re-check + queued cap + insert live in one helper that
+    // every user-triggered enqueue shares (the volume routes skipped both).
+    const deploymentId = await enqueueUserDeploy(app.db, req.user!, svc, { message: 'Manual deploy' });
     void audit(app.db, req.user!.id, 'deploy.trigger', svc.name);
-    const [dep] = await app.db
-      .insert(deployments)
-      .values({ serviceId: id, status: 'queued', trigger: 'user', message: 'Manual deploy' })
-      .returning();
-    return { deploymentId: dep!.id };
+    return { deploymentId };
   });
 
   // Promote: deploy ANOTHER service at this service's exact running commit —
@@ -113,26 +103,16 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     if (!latest?.commitSha) {
       throw badRequest('Source has no running deployment with a pinned commit — deploy it first');
     }
-    const MAX_QUEUED_PER_SERVICE = 50;
-    const queuedRows = await app.db.query.deployments.findMany({
-      where: and(eq(deployments.serviceId, target.id), eq(deployments.status, 'queued')),
-      columns: { id: true },
-    });
-    if (queuedRows.length >= MAX_QUEUED_PER_SERVICE) {
-      throw badRequest(`Target already has ${queuedRows.length} queued deploys (max ${MAX_QUEUED_PER_SERVICE}).`);
-    }
+    // r640: shared enqueue (privilege re-check + queued cap + insert).
+    const deploymentId = await enqueueUserDeploy(
+      app.db,
+      req.user!,
+      target,
+      { commitSha: latest.commitSha, message: `Promoted from ${source.name} @ ${latest.commitSha.slice(0, 7)}` },
+      { subject: 'Target' },
+    );
     void audit(app.db, req.user!.id, 'deploy.promote', `${source.name} → ${target.name} @ ${latest.commitSha.slice(0, 7)}`);
-    const [dep] = await app.db
-      .insert(deployments)
-      .values({
-        serviceId: target.id,
-        status: 'queued',
-        trigger: 'user',
-        commitSha: latest.commitSha,
-        message: `Promoted from ${source.name} @ ${latest.commitSha.slice(0, 7)}`,
-      })
-      .returning({ id: deployments.id });
-    return { ok: true, deploymentId: dep!.id, commitSha: latest.commitSha, promotedFrom: source.name };
+    return { ok: true, deploymentId, commitSha: latest.commitSha, promotedFrom: source.name };
   });
 
   // List deployments for a service.
@@ -278,19 +258,14 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
         'This service deploys an inline compose stack — there is no previous revision to roll back to. Edit the compose file and redeploy instead.',
       );
     }
+    // r640: shared enqueue — the rollback route had no queued cap at all.
+    const deploymentId = await enqueueUserDeploy(app.db, req.user!, svc, {
+      commitSha: old.commitSha,
+      imageDigest: old.imageDigest,
+      message: `Rollback to #${depId}`,
+    });
     void audit(app.db, req.user!.id, 'deploy.rollback', `#${depId} → ${old.commitSha?.slice(0, 7) ?? old.imageDigest?.slice(0, 15) ?? '—'}`);
-    const [dep] = await app.db
-      .insert(deployments)
-      .values({
-        serviceId: id,
-        status: 'queued',
-        trigger: 'user',
-        commitSha: old.commitSha,
-        imageDigest: old.imageDigest,
-        message: `Rollback to #${depId}`,
-      })
-      .returning();
-    return { deploymentId: dep!.id };
+    return { deploymentId };
   });
 
   // Cancel a deployment. `queued` rows flip atomically (the worker never claims

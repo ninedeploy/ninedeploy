@@ -1204,3 +1204,89 @@ describe('service volume attachments', () => {
   });
 });
 
+
+// r640: every volume route ends in a redeploy, and the redeploy is what
+// executes the stored definition on the host. The routes inserted their queued
+// row directly — skipping the privilege re-check and the queued cap
+// `POST /deploys` applies — so a member on an operator-authored compose service
+// got the redeploy the deploy route refuses them. They now share one enqueue
+// helper, and the refusal lands BEFORE the route's side effect.
+describe('volume redeploys go through the shared enqueue guards (r640)', () => {
+  const member = { id: 7, isOperator: false };
+  const composeSvc = svcRow({ id: 9, name: 'stack', slug: 'stack', ownerUserId: 7, type: 'compose' });
+  const attachment = {
+    id: 12, serviceId: 9, volumeName: 'nd-svc-stack-uploads', containerPath: '/uploads', readOnly: false, createdAt: NOW, updatedAt: NOW,
+  };
+
+  const appFor = async (over: Parameters<typeof createFakeDb>[0] = {}) => {
+    const inserted: string[] = [];
+    const deleted: string[] = [];
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { services: composeSvc, service_volume_attachments: attachment },
+        select: { services: [{ id: 9 }], serviceVolumeAttachments: [{ serviceId: 9 }] },
+        insert: {
+          service_volume_attachments: (v: Record<string, unknown>) => { inserted.push('attachment'); return [{ ...attachment, ...v }]; },
+          deployments: () => { inserted.push('deployment'); return [{ id: 77 }]; },
+        },
+        delete: { service_volume_attachments: () => { deleted.push('attachment'); return []; } },
+        ...over,
+      }),
+    });
+    await app.register(serviceVolumesRoutes);
+    return { app, inserted, deleted };
+  };
+
+  it('refuses a member attach on a compose service before anything is created', async () => {
+    const { app, inserted } = await appFor();
+    const res = await app.inject({
+      method: 'POST', url: '/9/volumes', headers: asUser(member),
+      payload: { create: { label: 'cache' }, containerPath: '/cache' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.message).toMatch(/Operator access required: Compose deploys/);
+    expect(inserted).toEqual([]);
+    expect(dbEngineMocks.createDockerVolume).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('refuses member update / detach / config-repair on a compose service with no side effect', async () => {
+    const { app, inserted, deleted } = await appFor();
+    const patch = await app.inject({ method: 'PATCH', url: '/9/volumes/12', headers: asUser(member), payload: { readOnly: true } });
+    expect(patch.statusCode).toBe(403);
+    const detach = await app.inject({ method: 'DELETE', url: '/9/volumes/12', headers: asUser(member) });
+    expect(detach.statusCode).toBe(403);
+    const repair = await app.inject({
+      method: 'POST', url: '/9/volumes/config-repair', headers: asUser(member),
+      payload: { attachmentId: 12, filePath: 'config.php' },
+    });
+    expect(repair.statusCode).toBe(403);
+    expect(inserted).toEqual([]);
+    expect(deleted).toEqual([]);
+    // config-repair never reached the `docker run … rm -f` helper.
+    expect(execMocks.capture).not.toHaveBeenCalledWith('docker', expect.arrayContaining(['rm']));
+    await app.close();
+  });
+
+  it('still lets an operator redeploy the same compose service through a volume change', async () => {
+    const { app, inserted } = await appFor();
+    const res = await app.inject({ method: 'PATCH', url: '/9/volumes/12', headers: asUser(), payload: { readOnly: true } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().deploymentId).toBe(77);
+    expect(inserted).toEqual(['deployment']);
+    await app.close();
+  });
+
+  it('applies the per-service queued cap to volume redeploys', async () => {
+    const plain = svcRow({ id: 9, slug: 'stack', ownerUserId: 7, type: 'docker' });
+    const { app, inserted } = await appFor({
+      findFirst: { services: plain, service_volume_attachments: attachment },
+      findMany: { deployments: Array.from({ length: 50 }, (_, i) => ({ id: i + 1 })) },
+    });
+    const res = await app.inject({ method: 'PATCH', url: '/9/volumes/12', headers: asUser(member), payload: { readOnly: true } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toMatch(/50 queued deploys \(max 50\)/);
+    expect(inserted).toEqual([]);
+    await app.close();
+  });
+});
