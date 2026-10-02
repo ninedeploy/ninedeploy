@@ -47,13 +47,23 @@ export const logSearchRoutes: FastifyPluginAsync = async (app) => {
     }
     // When the caller narrows to one service, it must be visible with at
     // least `member`. The shared helper covers workspace/operator rules.
+    let serviceCreatedAt: Date | null = null;
     if (body.data.serviceId !== undefined) {
       const svc = await loadServiceForUser(app.db, body.data.serviceId, req.user!);
       await assertServiceRole(app.db, svc, req.user!, 'member');
+      serviceCreatedAt = svc.createdAt instanceof Date ? svc.createdAt : null;
     }
-    const since = body.data.sinceMinutes !== undefined
+    let since = body.data.sinceMinutes !== undefined
       ? new Date(Date.now() - body.data.sinceMinutes * 60_000)
       : undefined;
+    // r654: shipped log lines are labelled by the service SLUG, and a slug is
+    // reused once its service is deleted — a 7-day window over a fresh service
+    // returned the previous owner's logs. A non-operator's window starts no
+    // earlier than the service they searched was created.
+    if (serviceCreatedAt && !req.user!.isOperator) {
+      const effective = since ?? new Date(Date.now() - 15 * 60_000);
+      if (effective < serviceCreatedAt) since = serviceCreatedAt;
+    }
     let result: Awaited<ReturnType<typeof searchLogs>>;
     try {
       result = await searchLogs(app.db, {

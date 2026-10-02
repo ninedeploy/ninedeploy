@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { type DB, notificationLog, serviceNotificationChannels, type NotificationChannel } from '@ninedeploy/db';
+import { type DB, notificationLog, serviceNotificationChannels, services, type NotificationChannel } from '@ninedeploy/db';
 import { webhookChannelConfig, type WebhookChannelConfig } from '@ninedeploy/schemas';
 import { createHmac } from 'node:crypto';
 import { decrypt } from './crypto.js';
@@ -7,6 +7,7 @@ import type { AppEvent } from './events.js';
 import { encrypt } from './crypto.js';
 import { guardedFetch } from './egressGuard.js';
 import { sendFcm } from './fcm.js';
+import { isOperator } from './resourceAccess.js';
 
 /** Check if an event matches a channel's filter (comma-separated prefixes). */
 function matchesFilter(eventAction: string, filter: string): boolean {
@@ -164,7 +165,13 @@ function renderWebhookBody(
     // The user wrote a JSON template. We expand placeholders
     // BEFORE JSON.parse so they don't conflict with the
     // string-delimiter escape rules.
-    const expanded = expand(cfg.template);
+    // r653: each substituted value is JSON-escaped first. The entity is a
+    // service name, which may carry a `"` — expanded raw, a name like
+    // `x","admin":true,"y":"` injected its own keys into the operator's
+    // payload (and a signed one: the HMAC covers the injected body).
+    const expanded = cfg.template.replace(/\$\{(event|entity|ts|message)\}/g, (_, k: string) =>
+      JSON.stringify(substitutions[k] ?? '').slice(1, -1),
+    );
     try {
       return JSON.stringify(JSON.parse(expanded));
     } catch {
@@ -211,7 +218,10 @@ export async function sendDiscord(
   message: string,
   options?: DiscordChannelConfig,
 ): Promise<void> {
-  const body: Record<string, unknown> = { content: message };
+  // r653: the message carries tenant-chosen text (service names), so Discord
+  // must not parse mentions out of it — `@everyone` in a service name pinged
+  // the whole operator server.
+  const body: Record<string, unknown> = { content: message, allowed_mentions: { parse: [] } };
   if (options?.username || options?.avatarUrl) {
     if (options.username) body.username = options.username;
     if (options.avatarUrl) body.avatar_url = options.avatarUrl;
@@ -465,6 +475,21 @@ export async function notifyEvent(db: DB, event: AppEvent): Promise<void> {
         .where(eq(serviceNotificationChannels.serviceId, serviceId));
     } catch {
       rules = []; // table might not exist yet (pre-migration)
+    }
+    // r652: a rule bypasses the channel's own event filter, and channels are
+    // operator configuration — so rules only count for a service an operator
+    // owns. The manifest stopped writing them for anyone else; this also
+    // silences rules an earlier release wrote, without waiting for a deploy.
+    if (rules.length > 0) {
+      try {
+        const svc = await db.query.services.findFirst({
+          where: eq(services.id, serviceId),
+          columns: { ownerUserId: true },
+        });
+        if (svc?.ownerUserId == null || !(await isOperator(db, { id: svc.ownerUserId }))) rules = [];
+      } catch {
+        rules = [];
+      }
     }
   }
 

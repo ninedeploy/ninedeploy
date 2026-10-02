@@ -2,7 +2,7 @@
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { insightsRoutes, serviceInsightsRoutes } from '../../src/modules/insights.js';
+import { INSPECTION_LIMITS, insightsRoutes, serviceInsightsRoutes } from '../../src/modules/insights.js';
 import { asUser, buildTestApp, createFakeDb } from '../helpers.js';
 
 const frameworkMocks = vi.hoisted(() => ({
@@ -231,5 +231,69 @@ describe('service insights routes', () => {
     expect(dir).toMatch(/_inspections/);
     expect(dir.split(/[\\/]/).at(-1)).not.toBe('1');
     await app.close();
+  });
+});
+
+// r657: the analysis clone ran on the request path for any signed-in user as a
+// full clone (all branches, history, submodules) with no time or size bound.
+describe('inspection clone limits (r657)', () => {
+  const saved = { ...INSPECTION_LIMITS };
+  afterAll(() => Object.assign(INSPECTION_LIMITS, saved));
+
+  async function analyze() {
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: baseService } }) });
+    await app.register(insightsRoutes);
+    const res = await app.inject({
+      method: 'POST', url: '/', headers: asUser({ id: 7, isOperator: false }),
+      payload: { repoUrl: 'https://example.com/big.git', branch: 'main' },
+    });
+    await app.close();
+    return res;
+  }
+
+  it('asks git for a shallow, abortable checkout on both routes', async () => {
+    expect((await analyze()).statusCode).toBe(200);
+    const limits = gitMocks.checkoutCommit.mock.calls[0]![6] as { shallow: boolean; signal: AbortSignal };
+    expect(limits.shallow).toBe(true);
+    expect(limits.signal).toBeInstanceOf(AbortSignal);
+
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: baseService } }) });
+    await app.register(serviceInsightsRoutes);
+    await app.inject({ method: 'POST', url: '/1/insights/refresh', headers: asUser() });
+    await app.close();
+    expect((gitMocks.checkoutCommit.mock.calls[1]![6] as { shallow: boolean }).shallow).toBe(true);
+  });
+
+  it('aborts a clone that outgrows the size cap and says what to do instead', async () => {
+    Object.assign(INSPECTION_LIMITS, { maxBytes: 1024, pollMs: 10, timeoutMs: 10_000 });
+    gitMocks.checkoutCommit.mockImplementationOnce((async (...args: unknown[]) => {
+      const dir = args[3] as string;
+      const signal = (args[6] as { signal: AbortSignal }).signal;
+      const { mkdirSync, writeFileSync: write } = await import('node:fs');
+      mkdirSync(dir, { recursive: true });
+      write(path.join(dir, 'blob.bin'), Buffer.alloc(4096));
+      // Behaves like git under simple-git's abort plugin.
+      await new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
+      return 'never';
+    }) as never);
+    const res = await analyze();
+    Object.assign(INSPECTION_LIMITS, saved);
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('inspection_limit');
+    expect(res.json().error.message).toMatch(/larger than/);
+    expect(frameworkMocks.analyzeRepo).not.toHaveBeenCalled();
+  });
+
+  it('aborts a clone that runs past the time limit', async () => {
+    Object.assign(INSPECTION_LIMITS, { timeoutMs: 20, pollMs: 1_000 });
+    gitMocks.checkoutCommit.mockImplementationOnce((async (...args: unknown[]) => {
+      const signal = (args[6] as { signal: AbortSignal }).signal;
+      await new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
+      return 'never';
+    }) as never);
+    const res = await analyze();
+    Object.assign(INSPECTION_LIMITS, saved);
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toMatch(/stopped after/);
   });
 });

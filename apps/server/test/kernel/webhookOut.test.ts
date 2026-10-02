@@ -194,6 +194,8 @@ describe('WebhookOutPlugin (kernel integration)', () => {
     const [calledUrl, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(calledUrl).toBe(ENDPOINT);
     expect(init.method).toBe('POST');
+    // r658: a redirect from the receiver is never followed.
+    expect(init.redirect).toBe('manual');
     const headers = init.headers as Record<string, string>;
     expect(headers['content-type']).toBe('application/json');
     expect(headers['x-ninedeploy-event']).toBe('deployment.status_changed');

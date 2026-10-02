@@ -138,12 +138,14 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
 
   // Config status — any authenticated user (the deploy tab needs it to decide
   // whether to offer the button). Carries no key material.
-  app.get('/config', async () => {
+  app.get('/config', async (req) => {
     const json = await getSettingJson<{ baseUrl?: string; model?: string }>(app.db, AI_CONFIG_KEY, null);
     const hasKey = (await getSettingString(app.db, AI_KEY_KEY, null)) !== null;
     const status: AiConfigStatusT = {
       configured: !!(json?.baseUrl && json.model && hasKey),
-      baseUrl: json?.baseUrl ?? null,
+      // r658: the provider endpoint is operator configuration — often an
+      // internal gateway's address. Only the operator's Settings page needs it.
+      baseUrl: req.user!.isOperator ? (json?.baseUrl ?? null) : null,
       model: json?.model ?? null,
       hasApiKey: hasKey,
     };

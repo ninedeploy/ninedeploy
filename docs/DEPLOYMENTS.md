@@ -35,6 +35,7 @@ When deploying a containerized service:
 - Automatically deploy isolated preview environments for Pull Requests / Merge Requests.
 - Each preview environment receives a unique dynamic subdomain (e.g. `pr-42.app.yourdomain.com`), constrained to the instance's own wildcard zone before routing goes active.
 - Previews inherit non-secret configuration from the parent service — secrets are withheld, and the webhook response reports how many were withheld.
+- Since 0.10.42 a preview also never receives the parent project's shared **secret** env vars, any vault reference (`${{provider:KEY}}`), or a database the production service is attached to (including the one a `.ninedeploy` `database:` section names). Each deploy log lists what was withheld, by name. To give a preview its own values, set env vars directly on the preview service, or attach a separate non-production database to it under Service → Databases (needs `admin` on that database). There is no preview-scoped env var set on the parent yet.
 - When the PR is closed or merged, NineDeploy automatically tears down the containers, removes Traefik routes, and purges ephemeral storage.
 
 ---

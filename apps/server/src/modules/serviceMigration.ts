@@ -1,17 +1,19 @@
 import { and, eq } from 'drizzle-orm';
 import {
-  buildConfigs, databaseAttachments, databases, type dbEngine, domains, envVars, services, webhooks,
+  buildConfigs, databaseAttachments, databases, type DB, type dbEngine, domains, envVars, services, webhooks,
 } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
-import { envVarName } from '@ninedeploy/schemas';
+import { createDomain, envVarName } from '@ninedeploy/schemas';
 import { decrypt, encrypt } from '../lib/crypto.js';
-import { badRequest, notFound, parseId as num } from '../lib/errors.js';
+import { badRequest, conflict, notFound, parseId as num } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
 import { slugifyWithSuffix } from '../lib/slug.js';
 import { assertSlugVolumeNotRetained } from '../lib/retainedSlugVolume.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
 import { assertMayUseHostPrivilege } from '../lib/hostPrivilege.js';
 import { assertMayWriteVaultRefs } from '../lib/vault.js';
+import { getSettingString } from '../lib/settings.js';
+import { hostsCollide, normalizeHost, ownZoneClaimRefusal } from '../lib/domainVerification.js';
 
 interface ServiceBundle {
   version: string;
@@ -161,115 +163,196 @@ export const serviceMigrationRoutes: FastifyPluginAsync = async (app) => {
       bundle.envVars.map((e) => (typeof e?.value === 'string' ? e.value : '')),
     );
 
+    // r656: everything the bundle carries is validated and claim-checked
+    // BEFORE the first write, and the writes run in one transaction. The
+    // import used to insert the service row first and then validate env keys,
+    // domains and webhooks one by one — any later failure (a bad key, a
+    // duplicate hostname's raw UNIQUE error, a non-string secret) left a
+    // half-built service behind and answered 500.
+    for (const e of bundle.envVars) {
+      if (typeof e?.key !== 'string' || !envVarName.safeParse(e.key).success) {
+        throw badRequest(`Invalid bundle: bad env var key ${JSON.stringify(e?.key)}`);
+      }
+      if (typeof e.value !== 'string') {
+        throw badRequest(`Invalid bundle: env var ${e.key} has no value`);
+      }
+    }
+    for (const w of bundle.webhooks) {
+      if (typeof w?.branch !== 'string' || typeof w.secret !== 'string' || !Array.isArray(w.events)) {
+        throw badRequest('Invalid bundle: each webhook needs a branch, an events list and a secret');
+      }
+    }
+    const domainRows = await claimBundleDomains(app.db, bundle.domains);
+
     // Unique slug to avoid conflicts
     const slug = slugifyWithSuffix(bundle.service.name, Date.now().toString(36).slice(-4));
     // r351: the suffix is time-derived, not a guarantee — an imported
     // `volumeMount` must not land on a deleted service's retained volume.
     await assertSlugVolumeNotRetained(slug, bundle.service.type);
 
-    const [svc] = await app.db.insert(services).values({
-      name: bundle.service.name,
-      slug,
-      // Narrowed by the runtime validation above.
-      type: bundle.service.type as 'docker' | 'pm2' | 'compose',
-      repoUrl: bundle.service.repoUrl,
-      branch: bundle.service.branch,
-      image: bundle.service.image,
-      port: bundle.service.port,
-      volumeMount: bundle.service.volumeMount,
-      composeService: bundle.service.composeService ?? null,
-      composeContent: bundle.service.composeContent ?? null,
-      healthPath: bundle.service.healthPath || '/',
-      cpuShares: bundle.service.cpuShares || 0,
-      cpuLimitMilli: bundle.service.cpuLimitMilli || 0,
-      memLimitMb: bundle.service.memLimitMb || 0,
-      status: 'idle',
-    }).returning();
-    if (!svc) throw badRequest('Could not create service');
-    void audit(app.db, req.user!.id, 'service.import', svc.name);
-    // An inline stack has no repository to clone, so its workspace has to be
-    // rebuilt from the bundle before the first deploy on this host.
-    if (svc.composeContent) materialiseComposeFile(svc.id, svc.composeContent);
+    const svc = await app.db.transaction(async (tx) => {
+      const [created] = await tx.insert(services).values({
+        // r656: the importing operator owns the service. Without an owner,
+        // every owner-scoped decision downstream (project-link trust, vault
+        // allowlist, manifest attachments) treated it as nobody's.
+        ownerUserId: req.user!.id,
+        name: bundle.service.name,
+        slug,
+        // Narrowed by the runtime validation above.
+        type: bundle.service.type as 'docker' | 'pm2' | 'compose',
+        repoUrl: bundle.service.repoUrl,
+        branch: bundle.service.branch,
+        image: bundle.service.image,
+        port: bundle.service.port,
+        volumeMount: bundle.service.volumeMount,
+        composeService: bundle.service.composeService ?? null,
+        composeContent: bundle.service.composeContent ?? null,
+        healthPath: bundle.service.healthPath || '/',
+        cpuShares: bundle.service.cpuShares || 0,
+        cpuLimitMilli: bundle.service.cpuLimitMilli || 0,
+        memLimitMb: bundle.service.memLimitMb || 0,
+        status: 'idle',
+      }).returning();
+      if (!created) throw badRequest('Could not create service');
 
-    // Build config
-    if (bundle.buildConfig) {
-      const bc = bundle.buildConfig;
-      await app.db.insert(buildConfigs).values({
-        serviceId: svc.id,
-        buildPack: bc.buildPack as 'auto' | 'nixpacks' | 'dockerfile' | 'railpack' | 'static',
-        baseDir: bc.baseDir || '/',
-        installCmd: bc.installCmd,
-        buildCmd: bc.buildCmd,
-        startCmd: bc.startCmd,
-        dockerfilePath: bc.dockerfilePath,
-      });
-    }
-
-    // Env vars (re-encrypt with this instance's master key). Keys are
-    // validated with the same charset the normal env API enforces — a key
-    // containing `=` or a newline would inject into the deploy env-file.
-    for (const e of bundle.envVars) {
-      if (typeof e.key !== 'string' || !envVarName.safeParse(e.key).success) {
-        throw badRequest(`Invalid bundle: bad env var key ${JSON.stringify(e.key)}`);
-      }
-      if (typeof e.value !== 'string') {
-        throw badRequest(`Invalid bundle: env var ${e.key} has no value`);
-      }
-      await app.db.insert(envVars).values({
-        serviceId: svc.id,
-        scope: 'service',
-        scopeKey: svc.id,
-        key: e.key,
-        valueEncrypted: encrypt(e.value),
-        isSecret: e.isSecret,
-      });
-    }
-
-    // Domains (only custom ones, skip wildcard auto-domains)
-    const domainRows = bundle.domains
-      .filter((d) => d.hostname.includes('.'))
-      .map((d) => ({
-        serviceId: svc.id,
-        hostname: d.hostname,
-        path: d.path,
-        ssl: d.ssl,
-        status: 'active' as const,
-      }));
-    if (domainRows.length > 0) {
-      await app.db.insert(domains).values(domainRows);
-    }
-
-    // Webhooks (re-encrypt secrets)
-    const webhookRows = bundle.webhooks.map((w) => ({
-      serviceId: svc.id,
-      branch: w.branch,
-      events: w.events,
-      secretEncrypted: encrypt(w.secret),
-      active: true,
-    }));
-    if (webhookRows.length > 0) {
-      await app.db.insert(webhooks).values(webhookRows);
-    }
-
-    // Attachments (best-effort: match the database by name AND engine — a
-    // same-named database of a different engine must not be attached, or the
-    // service would receive wrong-protocol credentials).
-    for (const a of bundle.attachments) {
-      const match = await app.db.query.databases.findFirst({
-        where: and(
-          eq(databases.name, a.databaseName),
-          eq(databases.engine, a.databaseEngine as (typeof dbEngine)[number]),
-        ),
-      });
-      if (match) {
-        await app.db.insert(databaseAttachments).values({
-          serviceId: svc.id,
-          databaseId: match.id,
-          envAlias: a.envAlias,
+      // Build config
+      if (bundle.buildConfig) {
+        const bc = bundle.buildConfig;
+        await tx.insert(buildConfigs).values({
+          serviceId: created.id,
+          buildPack: bc.buildPack as 'auto' | 'nixpacks' | 'dockerfile' | 'railpack' | 'static',
+          baseDir: bc.baseDir || '/',
+          installCmd: bc.installCmd,
+          buildCmd: bc.buildCmd,
+          startCmd: bc.startCmd,
+          dockerfilePath: bc.dockerfilePath,
         });
       }
-    }
+
+      // Env vars (re-encrypt with this instance's master key). Keys were
+      // validated above with the same charset the normal env API enforces —
+      // a key containing `=` or a newline would inject into the deploy env-file.
+      for (const e of bundle.envVars) {
+        await tx.insert(envVars).values({
+          serviceId: created.id,
+          scope: 'service',
+          scopeKey: created.id,
+          key: e.key,
+          valueEncrypted: encrypt(e.value),
+          isSecret: e.isSecret,
+        });
+      }
+
+      // Domains (only custom ones, skip wildcard auto-domains) — claimed above.
+      if (domainRows.length > 0) {
+        try {
+          await tx
+            .insert(domains)
+            .values(domainRows.map((d) => ({ ...d, serviceId: created.id, status: 'active' as const, verifiedAt: new Date() })));
+        } catch (err) {
+          // A route registered between the claim check and this insert.
+          if (err instanceof Error && /UNIQUE constraint/.test(err.message)) {
+            throw conflict('A domain in the bundle was registered by another service while importing — import again');
+          }
+          throw err;
+        }
+      }
+
+      // Webhooks (re-encrypt secrets)
+      const webhookRows = bundle.webhooks.map((w) => ({
+        serviceId: created.id,
+        branch: w.branch,
+        events: w.events,
+        secretEncrypted: encrypt(w.secret),
+        active: true,
+      }));
+      if (webhookRows.length > 0) {
+        await tx.insert(webhooks).values(webhookRows);
+      }
+
+      // Attachments (best-effort: match the database by name AND engine — a
+      // same-named database of a different engine must not be attached, or the
+      // service would receive wrong-protocol credentials).
+      for (const a of bundle.attachments) {
+        const match = await tx.query.databases.findFirst({
+          where: and(
+            eq(databases.name, a.databaseName),
+            eq(databases.engine, a.databaseEngine as (typeof dbEngine)[number]),
+          ),
+        });
+        if (match) {
+          await tx.insert(databaseAttachments).values({
+            serviceId: created.id,
+            databaseId: match.id,
+            envAlias: a.envAlias,
+          });
+        }
+      }
+      return created;
+    });
+
+    void audit(app.db, req.user!.id, 'service.import', svc.name, { serviceId: svc.id });
+    // An inline stack has no repository to clone, so its workspace has to be
+    // rebuilt from the bundle before the first deploy on this host — after
+    // the commit, so a rolled-back import leaves no workspace behind.
+    if (svc.composeContent) materialiseComposeFile(svc.id, svc.composeContent);
 
     return { ok: true, serviceId: svc.id, slug, message: `Service "${bundle.service.name}" imported. Deploy to activate.` };
   });
 };
+
+/**
+ * r656: the bundle's domains, normalised and checked against the same claim
+ * rules a new route meets — before anything is written. They used to be
+ * inserted `active` as-is: a bundle naming a host another service routes got
+ * either a raw UNIQUE error (500, half-built service) or, on a different
+ * path, a second router silently stacked on that service's hostname. A bundle
+ * is foreign JSON, so a collision refuses the import with a 409 that names
+ * the host, instead of taking the route over (an operator who means to move
+ * it removes it from the old service first, or adds it later in the panel).
+ * Names without a dot (internal-only) are skipped, as before.
+ */
+async function claimBundleDomains(
+  db: DB,
+  raw: ServiceBundle['domains'],
+): Promise<Array<{ hostname: string; path: string; ssl: boolean }>> {
+  const out: Array<{ hostname: string; path: string; ssl: boolean }> = [];
+  if (raw.length === 0) return out;
+  let panelDomain: string | null = process.env['NINEDEPLOY_DOMAIN'] ?? null;
+  try {
+    panelDomain = (await getSettingString(db, 'panel_domain', null)) ?? panelDomain;
+  } catch {
+    /* settings table unavailable — fall back to the env */
+  }
+  const existing = await db.query.domains.findMany();
+  const seen = new Set<string>();
+  for (const d of raw) {
+    const parsed = bundleDomain.safeParse(d);
+    if (!parsed.success) {
+      throw badRequest(`Invalid bundle: domain ${JSON.stringify((d as { hostname?: unknown } | null)?.hostname ?? null)} — ${parsed.error.issues[0]!.message}`);
+    }
+    const hostname = normalizeHost(parsed.data.hostname);
+    if (!hostname.includes('.')) continue;
+    const key = `${hostname}|${parsed.data.path}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const retry = 'remove it from the bundle\'s "domains" and import again, then add it under Service → Domains once it is free';
+    if (panelDomain && hostsCollide(hostname, panelDomain)) {
+      throw conflict(`Bundle domain ${hostname} is reserved for the NineDeploy panel — ${retry}`);
+    }
+    const holder = existing.find((r) => hostsCollide(r.hostname, hostname));
+    if (holder) {
+      throw conflict(`Bundle domain ${hostname} is already routed by service #${holder.serviceId} — ${retry}`);
+    }
+    // The importer is an operator, so an instance-zone wildcard is theirs to
+    // carry over; another service's automatic domain is not.
+    if (!hostname.startsWith('*.')) {
+      const refusal = await ownZoneClaimRefusal(db, 0, hostname);
+      if (refusal) throw conflict(`Bundle domain ${hostname} ${refusal} — ${retry}`);
+    }
+    out.push({ hostname, path: parsed.data.path, ssl: parsed.data.ssl });
+  }
+  return out;
+}
+
+const bundleDomain = createDomain.pick({ hostname: true, path: true, ssl: true });

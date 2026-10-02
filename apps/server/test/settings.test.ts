@@ -253,6 +253,12 @@ describe('settings routes (admin-only)', () => {
       payload: { source: 'ftp://nope.example.com/registry.json' },
     });
     expect(res.statusCode).toBe(400);
+    // r655: a plaintext registry is refused too (no TLS = no integrity).
+    const plain = await app.inject({
+      method: 'PUT', url: '/templates-source', headers: asUser(),
+      payload: { source: 'http://registry.example.com/registry.json' },
+    });
+    expect(plain.statusCode).toBe(400);
     await app.close();
   });
 

@@ -282,6 +282,8 @@ previews:
 
 `pattern` must contain `{n}` when `enabled: true`. The web panel still owns the per-PR environment lifecycle (create, list, destroy); the manifest only declares the routing pattern and retention policy.
 
+A preview deploys code from a pull-request branch, so the manifest's `database:` section is not applied to it, and its runtime env never carries project-shared secrets, vault references or the production service's databases; the deploy log names what was withheld (see docs/DEPLOYMENTS.md §4).
+
 ### 4.12 `volume` — Persistent Mount
 
 ```yaml
@@ -303,6 +305,8 @@ database:
 ```
 
 The DB itself is provisioned in the panel (or via the MCP/CLI). At deploy time the pipeline looks up the DB by `ref`, generates a connection URL, and writes it into the service's runtime env under the `env` key. If the DB does not exist, a warning is emitted and the deploy continues without the injection.
+
+The attach needs the same authority as attaching in the panel: the service's owner must be an operator, the database's owner, or an `admin` of the database's workspace (since 0.10.42 — a `viewer`/`member` seat used to be enough). Otherwise the attach is skipped with a deploy-log note; an attachment that already exists is left in place. A PR preview never gets a manifest-attached database (it would be production's) — see §4.11.
 
 ### 4.14 `network` — Publish & Aliases
 
@@ -459,7 +463,11 @@ never trusted until it renders inside the instance's own zone.)
 subscriptions — `onDeploy`, `onFailure` and `onAlert` each replace that
 scope's subscriptions at deploy time, and delivery is additive to each
 channel's own global event filter. A name that matches no channel is
-reported as a deploy warning; the other names still apply.)
+reported as a deploy warning; the other names still apply. Since 0.10.42
+(r652) the section applies only to services owned by an instance operator —
+channels are operator configuration — and for any other owner it is ignored
+with a deploy-log note, and subscriptions an earlier deploy created stop
+delivering.)
 
 (`volume.backups` is wired since r081: the declared cron becomes the
 service's manifest-owned `volume-backups (manifest)` scheduled job — never

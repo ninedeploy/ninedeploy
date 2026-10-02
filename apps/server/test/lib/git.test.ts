@@ -225,6 +225,40 @@ describe('checkoutCommit — fresh clone', () => {
   });
 });
 
+// r657: an inspection checkout (Deploy wizard analysis, insights refresh).
+describe('checkoutCommit — inspection limits', () => {
+  it('clones shallow and single-branch, passes the abort signal, and skips submodules', async () => {
+    const dir = gitDir('inspect-shallow');
+    gitState.lastDir = dir;
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, '.gitmodules'), ['[submodule "lib"]', '  path = lib', '  url = https://github.com/org/lib.git', ''].join('\n'));
+    const bare = makeGit();
+    const working = makeGit();
+    gitState.simpleGit.mockImplementationOnce(() => bare).mockImplementation(() => working);
+    const controller = new AbortController();
+    await checkoutCommit('https://github.com/ada/repo.git', 'main', undefined, dir, vi.fn(), undefined, {
+      shallow: true,
+      signal: controller.signal,
+    });
+    expect(bare.clone).toHaveBeenCalledWith(
+      'https://github.com/ada/repo.git',
+      dir,
+      ['--depth', '1', '--single-branch', '--no-tags', '--branch', 'main'],
+    );
+    expect(gitState.simpleGit.mock.calls[0]!.at(-1)).toMatchObject({ abort: controller.signal });
+    expect(working.submoduleUpdate).not.toHaveBeenCalled();
+  });
+
+  it('a deploy checkout stays a full clone without an abort signal', async () => {
+    const dir = gitDir('deploy-full');
+    const bare = makeGit();
+    gitState.simpleGit.mockImplementationOnce(() => bare).mockImplementation(() => makeGit());
+    await checkoutCommit('https://github.com/ada/repo.git', 'main', undefined, dir, vi.fn());
+    expect(bare.clone).toHaveBeenCalledWith('https://github.com/ada/repo.git', dir, []);
+    expect(gitState.simpleGit.mock.calls[0]!.at(-1)).not.toHaveProperty('abort');
+  });
+});
+
 describe('checkoutCommit — existing checkout', () => {
   it('fetches, moves to the remote tip, and reuses the working tree', async () => {
     const dir = existingCheckout('existing-public', 'https://github.com/ada/repo.git');

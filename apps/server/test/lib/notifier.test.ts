@@ -41,6 +41,8 @@ function makeDb(
   channels: unknown[],
   findManyImpl?: () => Promise<unknown>,
   rules: Array<{ channelId: number; scope: string }> = [],
+  // r652: rules only count for a service an operator owns.
+  ownerIsOperator = true,
 ): FakeDb {
   const insert = vi.fn(() => ({ values: vi.fn(async () => undefined) }));
   const lastValues = () => {
@@ -52,6 +54,8 @@ function makeDb(
       notificationChannels: {
         findMany: findManyImpl ?? (async () => channels),
       },
+      services: { findFirst: async () => ({ ownerUserId: 3 }) },
+      users: { findFirst: async () => ({ id: 3, isInstanceOperator: ownerIsOperator }) },
     },
     // Per-service subscription rules (manifest `notifications` wiring) —
     // only consulted when the event carries meta.serviceId.
@@ -241,7 +245,7 @@ describe('notifyEvent', () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       'https://discord.com/api/webhooks/x',
-      expect.objectContaining({ body: JSON.stringify({ content: '🚀 deploy completed: web' }) }),
+      expect.objectContaining({ body: JSON.stringify({ content: '🚀 deploy completed: web', allowed_mentions: { parse: [] } }) }),
     );
     expect(lastValues()).toHaveBeenCalledWith(expect.objectContaining({ status: 'sent' }));
   });
@@ -604,7 +608,7 @@ describe('sendDiscord', () => {
     await sendDiscord('https://discord.com/api/webhooks/x', 'hello');
     expect(fetchMock).toHaveBeenCalledWith(
       'https://discord.com/api/webhooks/x',
-      expect.objectContaining({ body: JSON.stringify({ content: 'hello' }) }),
+      expect.objectContaining({ body: JSON.stringify({ content: 'hello', allowed_mentions: { parse: [] } }) }),
     );
   });
 
@@ -666,7 +670,7 @@ describe('dispatchChannel Discord config_json', () => {
     await dispatchChannel('discord', 'https://discord.com/api/webhooks/x', appEvent, 'message', { configJson: null });
     const [, init] = fetchMock.mock.calls[0]!;
     const body = JSON.parse((init as RequestInit).body as string);
-    expect(body).toEqual({ content: 'message' });
+    expect(body).toEqual({ content: 'message', allowed_mentions: { parse: [] } });
   });
 
   it('ignores malformed configJson and sends a plain content body', async () => {
@@ -675,7 +679,7 @@ describe('dispatchChannel Discord config_json', () => {
     await dispatchChannel('discord', 'https://discord.com/api/webhooks/x', appEvent, 'message', { configJson: '{not-json' });
     const [, init] = fetchMock.mock.calls[0]!;
     const body = JSON.parse((init as RequestInit).body as string);
-    expect(body).toEqual({ content: 'message' });
+    expect(body).toEqual({ content: 'message', allowed_mentions: { parse: [] } });
   });
 
   it('propagates configJson title and color into the embed', async () => {
@@ -802,6 +806,23 @@ describe('notifyEvent — per-service subscription deliveries', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  // r652: a rule bypasses the channel's own filter, and channels are operator
+  // configuration — a rule on a service a non-operator owns (written by a
+  // manifest before r652) must not deliver.
+  it('r652: ignores rules on a service whose owner is not an operator', async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const { db } = makeDb([channel()], undefined, [rule], false);
+    await notifyEvent(db, { ...event, action: 'deploy.failed', meta: { serviceId: 5 } });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('r652: still delivers through the channel\u2019s own filter for that service', async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const { db } = makeDb([{ ...channel(), eventFilter: 'deploy.' }], undefined, [rule], false);
+    await notifyEvent(db, { ...event, action: 'deploy.failed', meta: { serviceId: 5 } });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('survives a failing per-service rules lookup and still delivers globally', async () => {
     fetchMock.mockResolvedValue(okResponse());
     const db = {
@@ -812,5 +833,42 @@ describe('notifyEvent — per-service subscription deliveries', () => {
     } as never;
     await notifyEvent(db, { ...event, action: 'deploy.failed', meta: { serviceId: 5 } });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// r653: tenant-chosen text (service names) reaches outbound payloads.
+/** A webhook-template placeholder, e.g. PH('entity') → the `entity` placeholder. */
+const PH = (name: string) => ['$', '{', name, '}'].join('');
+
+describe('outbound payload injection (r653)', () => {
+  beforeEach(() => {
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(okResponse());
+  });
+
+  const hostile = { id: 0, action: 'deploy.failed', entity: 'x","admin":true,"y":"', ts: '2026-01-01T00:00:00.000Z' };
+
+  it('JSON-escapes substitutions in a string webhook template, so a service name cannot add keys', async () => {
+    // PH() keeps the placeholders literal text, not template substitutions.
+    const configJson = JSON.stringify({ template: `{"text":"${PH('entity')} failed","kind":"${PH('event')}"}` });
+    await dispatchChannel('webhook', 'https://hooks.example.com/t', hostile, 'm', { configJson });
+    const [, init] = fetchMock.mock.calls[0]!;
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body).toEqual({ text: 'x","admin":true,"y":" failed', kind: 'deploy.failed' });
+    expect(body.admin).toBeUndefined();
+  });
+
+  it('a template whose values need no escaping renders exactly as before', async () => {
+    const configJson = JSON.stringify({ template: `{"text":"${PH('entity')} ${PH('event')}"}` });
+    await dispatchChannel('webhook', 'https://hooks.example.com/t', { ...hostile, entity: 'web' }, 'm', { configJson });
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect((init as RequestInit).body).toBe('{"text":"web deploy.failed"}');
+  });
+
+  it('Discord never parses mentions out of the message', async () => {
+    await sendDiscord('https://discord.com/api/webhooks/x', 'deploy failed: @everyone');
+    const [, init] = fetchMock.mock.calls[0]!;
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.allowed_mentions).toEqual({ parse: [] });
   });
 });

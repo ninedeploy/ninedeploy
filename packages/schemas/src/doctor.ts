@@ -71,6 +71,12 @@ export const doctorFindingKind = z.enum([
    * 0.10.41. Critical: the exposed secrets must be rotated.
    */
   'repo_insights_leak',
+  /**
+   * r655: the Hub's remote template registry is fetched over plain http, so
+   * anyone on the path can swap the catalog (images, env defaults). Advisory:
+   * the source keeps loading (upgrade-safe); new http sources are refused.
+   */
+  'templates_source_plaintext',
 ]);
 export type DoctorFindingKind = z.infer<typeof doctorFindingKind>;
 
