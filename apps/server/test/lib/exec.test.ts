@@ -559,6 +559,20 @@ describe('error labels redact credential argv (audit fix)', () => {
     await expect(promise).rejects.not.toThrow(/p4ssw0rd/);
   });
 
+  it('r644: masks the redis/valkey --requirepass password', async () => {
+    const child = makeChild();
+    mockSpawn.mockReturnValue(child);
+    const promise = run(
+      'docker',
+      ['run', '-d', '--name', 'nd-db-cache', '-v', 'nd-db-cache-data:/data', 'redis:8.8', '--requirepass', 'r3d1s-pw'],
+      {},
+      vi.fn(),
+    );
+    emitClose(child, 125);
+    await expect(promise).rejects.toThrow(/--requirepass \*\*\*/);
+    await expect(promise).rejects.not.toThrow(/r3d1s-pw/);
+  });
+
   it('leaves non-credential operands readable for debugging', async () => {
     const child = makeChild();
     mockSpawn.mockReturnValue(child);

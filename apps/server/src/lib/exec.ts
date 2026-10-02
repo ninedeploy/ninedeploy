@@ -198,8 +198,12 @@ export function armTimeout(child: ChildProcess, timeoutMs: number, onTimeout: ()
  * project-shared secrets, managed-database URLs with plaintext passwords)
  * keeps the key but masks the value: a failed build's error string reaches
  * the deploy log, which every workspace member with the service can read.
+ *
+ * r644: `--requirepass <pw>` — the managed redis/valkey password rides as the
+ * container command's argument (engine/database.ts), and a failed `docker run`
+ * put it in the deploy log, HTTP 400 bodies and the server log verbatim.
  */
-const REDACT_NEXT_FLAGS = new Set(['-p', '-a', '--password', '-e']);
+const REDACT_NEXT_FLAGS = new Set(['-p', '-a', '--password', '-e', '--requirepass']);
 function redactedLabel(cmd: string, args: string[]): string {
   const parts: string[] = [cmd];
   let maskNext = false;

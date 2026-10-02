@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, statSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
@@ -213,7 +214,8 @@ export const volumeBackupRoutes: FastifyPluginAsync = async (app) => {
     let isRemoteTemp = false;
     if (!existsSync(b.path)) {
       if (!b.remoteKey) throw notFound('Backup not found');
-      restorePath = `${b.path}.remote`;
+      // r647: unique per request — see modules/backups.ts.
+      restorePath = `${b.path}.${randomUUID()}.remote`;
       log(`Fetching remote object ${b.remoteKey}`);
       await fetchRemoteBackup(app.db, b, restorePath);
       isRemoteTemp = true;

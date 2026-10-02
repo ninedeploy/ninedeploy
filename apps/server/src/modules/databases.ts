@@ -20,6 +20,7 @@ import {
 } from '../engine/database.js';
 import { decrypt, encrypt, randomToken } from '../lib/crypto.js';
 import { disablePgbouncer } from '../lib/pgbouncer.js';
+import { deleteRemoteBackupForRetention } from '../lib/backupRemote.js';
 import {
   assertServiceRole,
   assertWorkspaceRole,
@@ -402,6 +403,21 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
         if (existsSync(b.path)) unlinkSync(b.path);
       } catch (err) {
         req.log.warn({ err, path: b.path }, 'failed to unlink backup file after database delete');
+      }
+      // r646: the off-site copy goes too. Only the local dump used to be
+      // removed, so every remote object of a deleted database stayed in the
+      // bucket forever with no row left to find (or prune) it by. Resolved
+      // against the destination the row RECORDS — never the active one, which
+      // may be another bucket. Best-effort: the rows are already gone.
+      if (b.remoteKey) {
+        try {
+          const outcome = await deleteRemoteBackupForRetention(app.db, b);
+          if (outcome === 'unknown-destination') {
+            req.log.warn({ remoteKey: b.remoteKey }, 'remote backup of a deleted database left in place: its destination is unknown');
+          }
+        } catch (err) {
+          req.log.warn({ err, remoteKey: b.remoteKey }, 'failed to delete remote backup after database delete');
+        }
       }
     }
     void audit(app.db, req.user!.id, 'database.delete', d.name);

@@ -339,8 +339,13 @@ describe('volume backup routes', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(remoteMocks.fetchRemoteBackup).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ remoteKey: 'r/10' }), `${missing}.remote`);
-    expect(engineMocks.restoreVolume).toHaveBeenCalledWith(VOLUME, `${missing}.remote`, expect.any(Function));
+    // r647: a unique temp name per request (concurrent restores of one backup
+    // shared `<file>.remote` before the operation lock).
+    const temp = String(remoteMocks.fetchRemoteBackup.mock.calls[0]?.[2]);
+    expect(temp.startsWith(`${missing}.`) && temp.endsWith('.remote')).toBe(true);
+    expect(temp).not.toBe(`${missing}.remote`);
+    expect(remoteMocks.fetchRemoteBackup).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ remoteKey: 'r/10' }), temp);
+    expect(engineMocks.restoreVolume).toHaveBeenCalledWith(VOLUME, temp, expect.any(Function));
   });
 
   it('404s a restore whose file is gone locally and remotely', async () => {

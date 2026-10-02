@@ -55,6 +55,14 @@ vi.mock('../src/lib/pgbouncer.js', async (importOriginal) => ({
   disablePgbouncer: pgbouncerMocks.disablePgbouncer,
 }));
 
+// r646: the off-site copies of a deleted database's backups are removed too —
+// the real lib/backupRemote runs, only the S3 transport is stubbed.
+const s3Mocks = vi.hoisted(() => ({ s3Delete: vi.fn(async () => undefined) }));
+vi.mock('../src/lib/s3.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/s3.js')>()),
+  s3Delete: s3Mocks.s3Delete,
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -460,6 +468,38 @@ describe('databases routes', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it('r646: deletes the remote copies from the destination each backup recorded', async () => {
+    const destination = {
+      id: 3, name: 'b2', endpoint: 'https://s3.example.com', region: 'eu', bucket: 'old-bucket', prefix: 'nd',
+      accessKeyId: 'ak', secretKeyEncrypted: encrypt('sk'), active: false, createdAt: new Date(), updatedAt: new Date(),
+    };
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { databases: dbRow({ id: 7 }) },
+        findMany: {
+          backups: [
+            backupRow({ id: 1, path: '/tmp/nd-gone-1.dump', remoteKey: 'nd/db-1.dump', destinationId: 3 }),
+            // Destination unknown (pre-0062 row): left alone rather than
+            // deleted from whatever bucket is active now.
+            backupRow({ id: 2, path: '/tmp/nd-gone-2.dump', remoteKey: 'nd/db-2.dump', destinationId: null }),
+            backupRow({ id: 3, path: '/tmp/nd-gone-3.dump', remoteKey: null }),
+          ],
+          backupDestinations: [destination, { ...destination, id: 4, bucket: 'active-bucket', active: true }],
+        },
+      }),
+    });
+    await app.register(databasesRoutes);
+    s3Mocks.s3Delete.mockRejectedValueOnce(new Error('transient 503'));
+    const failing = await app.inject({ method: 'DELETE', url: '/7', headers: asUser() });
+    // Best-effort after commit: a remote failure never fails the delete.
+    expect(failing.statusCode).toBe(200);
+    const res = await app.inject({ method: 'DELETE', url: '/7', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(s3Mocks.s3Delete).toHaveBeenCalledTimes(2);
+    expect(s3Mocks.s3Delete).toHaveBeenCalledWith(expect.objectContaining({ bucket: 'old-bucket' }), 'nd/db-1.dump');
+    expect(s3Mocks.s3Delete).not.toHaveBeenCalledWith(expect.anything(), 'nd/db-2.dump');
   });
 
   it('tolerates backup files that are missing or cannot be unlinked', async () => {

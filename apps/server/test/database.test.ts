@@ -312,8 +312,9 @@ describe('startDatabase', () => {
       'docker',
       // Redis has no env vars → no --env-file; the password rides as the
       // container command's --requirepass argument so the shared network
-      // cannot be reached without authenticating.
-      ['run', '-d', '--name', 'c', '--network', 'ninedeploy', '--restart', 'unless-stopped', '-v', 'v:/data', '--requirepass', 'pw:enc', 'redis:8'],
+      // cannot be reached without authenticating. r644: AFTER the image —
+      // ahead of it docker parses it as its own (unknown) flag.
+      ['run', '-d', '--name', 'c', '--network', 'ninedeploy', '--restart', 'unless-stopped', '-v', 'v:/data', 'redis:8', '--requirepass', 'pw:enc'],
       {},
       log,
     );

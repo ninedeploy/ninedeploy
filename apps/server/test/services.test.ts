@@ -204,6 +204,45 @@ describe('services routes', () => {
     expect(backHome.statusCode).not.toBe(403);
   });
 
+  it('r648: refuses turning on volumeMount when another service attaches nd-svc-<slug>-data', async () => {
+    // Service `shop` (slug + label `api-data`) could pre-create
+    // `nd-svc-shop-api-data` as an extra volume before `shop-api` enabled its
+    // primary mount — which then mounted the other tenant's volume.
+    const victim = svcRow({ id: 1, slug: 'shop-api', ownerUserId: 7, runtimeId: 'nd-svc-shop-api', volumeMount: null });
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { services: victim },
+        select: { service_volume_attachments: [{ serviceId: 44 }] },
+        update: { services: [{ ...victim, volumeMount: '/data' }] },
+      }),
+    });
+    await app.register(servicesRoutes);
+    const res = await app.inject({
+      method: 'PATCH', url: '/1', headers: asUser({ id: 7, isOperator: false }),
+      payload: { volumeMount: '/data' },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('slug_volume_attached');
+    expect(res.json().error.message).toContain("'nd-svc-shop-api-data' is already attached to another service");
+  });
+
+  it('r648: an already-enabled volumeMount (or its own attachment) is not a new collision', async () => {
+    const svc = svcRow({ id: 1, slug: 'shop-api', ownerUserId: 7, runtimeId: 'nd-svc-shop-api', volumeMount: '/data' });
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { services: svc },
+        select: { service_volume_attachments: [{ serviceId: 44 }] },
+        update: { services: [svc] },
+      }),
+    });
+    await app.register(servicesRoutes);
+    const resend = await app.inject({
+      method: 'PATCH', url: '/1', headers: asUser({ id: 7, isOperator: false }),
+      payload: { volumeMount: '/data' },
+    });
+    expect(resend.statusCode).toBe(200);
+  });
+
   it('refuses a member-supplied sourceId on patch (operator-managed credentials)', async () => {
     const app = await buildTestApp({
       db: createFakeDb({

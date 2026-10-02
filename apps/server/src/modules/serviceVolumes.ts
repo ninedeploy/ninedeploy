@@ -1,15 +1,17 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { deployments, serviceVolumeAttachments, type services } from '@ninedeploy/db';
+import { serviceVolumeAttachments, type services } from '@ninedeploy/db';
 import {
   createServiceVolumeAttachment,
   updateServiceVolumeAttachment,
 } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
+import { assertMayEnqueueDeploy, enqueueUserDeploy } from '../lib/deployQueue.js';
 import { createDockerVolume } from '../engine/database.js';
 import { capture } from '../lib/exec.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
+import { primaryVolumeOwner } from '../lib/retainedSlugVolume.js';
 import {
   assertDatabaseRole,
   assertServiceRole,
@@ -22,13 +24,37 @@ import { containerRunning, listManagedVolumeNames, HELPER_IMAGE } from '../lib/i
 import type { DB } from '@ninedeploy/db';
 
 /** Live on-disk size of a named Docker volume (bytes), via a throwaway alpine container. */
-async function volumeSize(name: string): Promise<number> {
+async function probeVolumeSize(name: string): Promise<number> {
   try {
     const out = await capture('docker', ['run', '--rm', '-v', `${name}:/v`, HELPER_IMAGE, 'sh', '-c', 'du -sb /v']);
     return Number(out.trim().split(/\s+/)[0]!) || 0;
   } catch {
     return 0;
   }
+}
+
+/**
+ * r649: the size column is cached per volume for a minute, and concurrent
+ * readers share one in-flight probe. `GET /:id/volumes` is readable by any
+ * workspace seat and used to start one `docker run … du -sb` container per
+ * attachment on EVERY request — a viewer refreshing (or scripting) the list
+ * walked whole volumes on the host in a loop. The panel shows the size as an
+ * indication, so a minute-old number is fine.
+ */
+const VOLUME_SIZE_TTL_MS = 60_000;
+const volumeSizeCache = new Map<string, { at: number; size: Promise<number> }>();
+
+function volumeSize(name: string): Promise<number> {
+  const now = Date.now();
+  const hit = volumeSizeCache.get(name);
+  if (hit && now - hit.at < VOLUME_SIZE_TTL_MS) return hit.size;
+  // Bounded by the number of managed volumes; stale entries are swept here.
+  for (const [key, entry] of volumeSizeCache) {
+    if (now - entry.at >= VOLUME_SIZE_TTL_MS) volumeSizeCache.delete(key);
+  }
+  const size = probeVolumeSize(name);
+  volumeSizeCache.set(name, { at: now, size });
+  return size;
 }
 
 interface InventoryEntry {
@@ -148,14 +174,17 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
   const resolveVolumeName = resolveVolumeNameImpl;
 
   /** Queue a background deployment so the runtime picks up the new mount.
-   * Returns the new deployment id; the worker claims and runs it. */
-  const queueRedeploy = async (serviceId: number, message: string): Promise<number> => {
-    const [dep] = await app.db
-      .insert(deployments)
-      .values({ serviceId, status: 'queued', trigger: 'user', message })
-      .returning();
-    return dep!.id;
-  };
+   * Returns the new deployment id; the worker claims and runs it.
+   *
+   * r640: through the shared enqueue helper — the privilege re-check and the
+   * queued cap `POST /deploys` applies. This used to insert the queued row
+   * directly, so a member editing a volume on an operator-authored compose
+   * service (or one with lifecycle hooks / the static pack / the docker
+   * socket) got the host-executing redeploy the deploy route refuses them.
+   * Each route also calls `assertMayEnqueueDeploy` BEFORE its side effect, so
+   * a refusal leaves no attachment row / deleted config file behind. */
+  const queueRedeploy = (user: AuthedUser, svc: typeof services.$inferSelect, message: string): Promise<number> =>
+    enqueueUserDeploy(app.db, user, svc, { message });
 
   // ── GET /:id/volumes — list a service's attachments ──────────────────
   app.get('/:id/volumes', async (req) => {
@@ -179,10 +208,11 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
       sharingByVolume.set(a.volumeName, (sharingByVolume.get(a.volumeName) ?? 0) + 1);
     }
 
+    // One container probe per request, not one per attachment (r649).
+    const inUse = await containerRunning(svc.runtimeId);
     const out: InventoryEntry[] = await Promise.all(
       rows.map(async (r) => {
         const size = await volumeSize(r.volumeName);
-        const inUse = await containerRunning(svc.runtimeId);
         return {
           id: r.id,
           serviceId: r.serviceId,
@@ -206,6 +236,9 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
     await assertServiceRole(app.db, svc, req.user!, 'member');
     ensureSupportsVolumes(svc);
     const input = createServiceVolumeAttachment.parse(req.body);
+    // r640: the attach ends in a redeploy — refuse up front, before any row or
+    // docker volume is created, when the caller may not redeploy this service.
+    await assertMayEnqueueDeploy(app.db, req.user!, svc);
 
     // Refuse to mount at the legacy primary path if that path is already
     // claimed by `service.volumeMount` (would silently shadow data).
@@ -214,6 +247,18 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const volumeName = resolveVolumeName(svc, input);
+    // r648: `create.label` must never mint another service's PRIMARY data
+    // volume name — with dashes in slugs, `shop` + `api-data` is `shop-api`'s
+    // `nd-svc-shop-api-data`. Refused for everyone: a create can never be a
+    // deliberate share (that is what `volumeName` + the ownership guard are for).
+    if (input.create) {
+      const owner = await primaryVolumeOwner(app.db, volumeName, svc.id);
+      if (owner) {
+        throw conflict(
+          `'${volumeName}' is the data volume name of service '${owner.name}' — pick a different label`,
+        );
+      }
+    }
     // Ownership decision BEFORE the docker existence probe: a member naming
     // another tenant's volume must get 403, not a 404 that confirms the
     // volume exists on the host.
@@ -284,7 +329,7 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
 
     // Auto-redeploy. The queued row is picked up by the existing worker
     // (same path as a manual `POST /services/:id/deploys`).
-    const deploymentId = await queueRedeploy(svc.id, `Volume attached: ${volumeName} → ${row.containerPath}`);
+    const deploymentId = await queueRedeploy(req.user!, svc, `Volume attached: ${volumeName} → ${row.containerPath}`);
 
     return { attachment: row, deploymentId };
   });
@@ -311,6 +356,8 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
     await assertServiceRole(app.db, svc, req.user!, 'member');
     ensureSupportsVolumes(svc);
     const input = repairConfig.parse(req.body ?? {});
+    // r640: decided before the file is deleted from the volume.
+    await assertMayEnqueueDeploy(app.db, req.user!, svc);
 
     let volumeName: string;
     if (input.attachmentId != null) {
@@ -341,7 +388,8 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
     void audit(app.db, req.user!.id, 'service.volume.config_repair', `${svc.name}:${volumeName}/${input.filePath}`);
 
     const deploymentId = await queueRedeploy(
-      svc.id,
+      req.user!,
+      svc,
       `Config repaired: ${volumeName}/${input.filePath} removed — regenerates from current env on boot`,
     );
     return { ok: true, deploymentId };
@@ -354,6 +402,8 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
     ensureSupportsVolumes(svc);
     const attId = num((req.params as { attId: string }).attId);
     const input = updateServiceVolumeAttachment.parse(req.body);
+    // r640: decided before the attachment row changes.
+    await assertMayEnqueueDeploy(app.db, req.user!, svc);
 
     const existing = await app.db.query.serviceVolumeAttachments.findFirst({
       where: and(eq(serviceVolumeAttachments.id, attId), eq(serviceVolumeAttachments.serviceId, svc.id)),
@@ -388,7 +438,7 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
     }
     if (!updated) throw notFound('Volume attachment not found');
     void audit(app.db, req.user!.id, 'service.volume.update', `${svc.name}:${updated.volumeName}`);
-    const deploymentId = await queueRedeploy(svc.id, `Volume attachment updated: ${updated.volumeName}`);
+    const deploymentId = await queueRedeploy(req.user!, svc, `Volume attachment updated: ${updated.volumeName}`);
     return { attachment: updated, deploymentId };
   });
 
@@ -403,6 +453,8 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
       where: and(eq(serviceVolumeAttachments.id, attId), eq(serviceVolumeAttachments.serviceId, svc.id)),
     });
     if (!existing) throw notFound('Volume attachment not found');
+    // r640: decided before the attachment row is removed.
+    await assertMayEnqueueDeploy(app.db, req.user!, svc);
 
     await app.db.delete(serviceVolumeAttachments).where(eq(serviceVolumeAttachments.id, attId));
     void audit(app.db, req.user!.id, 'service.volume.detach', `${svc.name}:${existing.volumeName}`);
@@ -413,7 +465,7 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
     // until the replacement is healthy, so detaching mid-run is safe; the DB
     // and the runtime only disagree for the seconds before the worker claims
     // the deployment.
-    await queueRedeploy(svc.id, `Volume detached: ${existing.volumeName}`);
+    await queueRedeploy(req.user!, svc, `Volume detached: ${existing.volumeName}`);
 
     // Detaching a volume from the LAST service leaves an orphan managed
     // volume on the host. Inventory (nd-svc-* prefix) still tracks it; the
@@ -438,4 +490,6 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
 export const _internal = {
   resolveVolumeName: (svc: { slug: string }, input: { volumeName?: string; create?: { label: string } }): string =>
     resolveVolumeNameImpl(svc, input),
+  /** r649: tests start from an empty size cache. */
+  resetVolumeSizeCache: (): void => volumeSizeCache.clear(),
 };

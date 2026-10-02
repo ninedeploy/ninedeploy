@@ -1,4 +1,5 @@
-import type { DB } from '@ninedeploy/db';
+import { and, eq, ne } from 'drizzle-orm';
+import { serviceVolumeAttachments, services, type DB } from '@ninedeploy/db';
 import { HttpError } from './errors.js';
 import { listManagedVolumeNames } from './inventory.js';
 import { agentOp } from './agentClient.js';
@@ -9,6 +10,57 @@ import { agentOp } from './agentClient.js';
  * it from the slug alone, with no owner stamp.
  */
 export const primaryServiceVolumeName = (slug: string): string => `nd-svc-${slug}-data`;
+
+/**
+ * r648: attachment volumes (`nd-svc-<slug>-<label>`) and primary volumes
+ * (`nd-svc-<slug>-data`) share one namespace, and slugs may contain dashes:
+ * service `shop` + label `api-data` spells service `shop-api`'s primary volume.
+ * The attach route only judged ownership when the name already existed on the
+ * host, so a member could pre-create the volume another service would later
+ * mount as its primary data directory — and keep reading it afterwards.
+ *
+ * The service whose PRIMARY volume `volumeName` is, other than `exceptServiceId`
+ * (null when the name is no service's primary volume).
+ */
+export async function primaryVolumeOwner(
+  db: DB,
+  volumeName: string,
+  exceptServiceId: number,
+): Promise<{ id: number; name: string } | null> {
+  if (!volumeName.startsWith('nd-svc-') || !volumeName.endsWith('-data')) return null;
+  const slug = volumeName.slice('nd-svc-'.length, -'-data'.length);
+  if (!slug) return null;
+  const owner = await db.query.services.findFirst({
+    where: and(eq(services.slug, slug), ne(services.id, exceptServiceId)),
+    columns: { id: true, name: true },
+  });
+  return owner && owner.id !== exceptServiceId ? owner : null;
+}
+
+/**
+ * r648: the other half — a service starting to use its primary volume (create
+ * with `volumeMount`, or a PATCH that turns it on) must not mount a volume
+ * another service already has attached under that name. Existing primary
+ * mounts are left alone; only a new collision is refused.
+ */
+export async function assertPrimaryVolumeNotAttachedElsewhere(
+  db: DB,
+  slug: string,
+  serviceId: number | null,
+): Promise<void> {
+  const volume = primaryServiceVolumeName(slug);
+  const rows = await db
+    .select({ serviceId: serviceVolumeAttachments.serviceId })
+    .from(serviceVolumeAttachments)
+    .where(eq(serviceVolumeAttachments.volumeName, volume));
+  if (rows.some((r) => r.serviceId !== serviceId)) {
+    throw new HttpError(
+      409,
+      'slug_volume_attached',
+      `The data volume '${volume}' is already attached to another service as an extra volume — enabling a volume mount here would share that service's data. Ask an operator to detach or rename that attachment first.`,
+    );
+  }
+}
 
 /**
  * r351: refuse to create a service row whose slug would silently re-mount a

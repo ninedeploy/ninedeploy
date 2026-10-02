@@ -239,6 +239,22 @@ describe('deploys routes', () => {
     expect(res.json()).toEqual({ deploymentId: 10 });
   });
 
+  it('r640: rollback shares the per-service queued cap (it had none)', async () => {
+    let inserted = false;
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { services: svcRow({ id: 1 }), deployments: depRow({ id: 9, serviceId: 1, commitSha: 'oldsha' }) },
+        findMany: { deployments: Array.from({ length: 50 }, (_, i) => ({ id: 100 + i })) },
+        insert: { deployments: () => { inserted = true; return [depRow({ id: 10, status: 'queued' })]; } },
+      }),
+    });
+    await app.register(deploysRoutes, { prefix: '/services' });
+    const res = await app.inject({ method: 'POST', url: '/services/1/deploys/9/rollback', headers: asUser() });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toMatch(/max 50/);
+    expect(inserted).toBe(false);
+  });
+
   it('rolls back to a deployment without a commit sha', async () => {
     const app = await buildTestApp({
       db: createFakeDb({
