@@ -1,9 +1,9 @@
-import { and, asc, eq, gte, inArray } from 'drizzle-orm';
-import { databases, metrics, services, serviceWorkspaces, workspaceMembers } from '@ninedeploy/db';
+import { and, asc, eq, gte } from 'drizzle-orm';
+import { databases, metrics, services } from '@ninedeploy/db';
 import { metricQuery } from '@ninedeploy/schemas';
 import type { FastifyPluginAsync } from 'fastify';
 import { parseId as num } from '../lib/errors.js';
-import { loadServiceForUser, visibleDatabaseIds } from '../lib/resourceAccess.js';
+import { loadServiceForUser, visibleDatabaseIds, visibleServiceIdSet } from '../lib/resourceAccess.js';
 
 const MB = 1024 * 1024;
 
@@ -14,41 +14,16 @@ export const statsRoutes: FastifyPluginAsync = async (app) => {
   app.get('/', async (req) => {
     const user = req.user!;
     const { containers, host } = app.stats.raw();
-    const [allServices, allDatabases, visibleDatabases, userWsMemberships] = await Promise.all([
+    const [allServices, allDatabases, visibleDatabases, visibleServices] = await Promise.all([
       app.db.select().from(services),
       app.db.select().from(databases),
       visibleDatabaseIds(app.db, user),
-      app.db
-        .select({ id: workspaceMembers.workspaceId })
-        .from(workspaceMembers)
-        .where(eq(workspaceMembers.userId, user.id)),
+      // r694: the one shared visibility answer (`null` = operator, all). This
+      // route kept its own copy that still let a creator see the live stats of
+      // a team service after losing their seat.
+      visibleServiceIdSet(app.db, user),
     ]);
-    const userWsIds = userWsMemberships.map((w) => w.id);
-    // Services the caller can see: owned, or tagged into a workspace they
-    // belong to, or everything (for operators).
-    const visibleServiceIds = user.isOperator
-      ? new Set(allServices.map((s) => s.id))
-      : await (async () => {
-          if (userWsIds.length === 0) {
-            const owned = await app.db
-              .select({ id: services.id })
-              .from(services)
-              .where(eq(services.ownerUserId, user.id));
-            return new Set(owned.map((s) => s.id));
-          }
-          const [owned, tagged] = await Promise.all([
-            app.db.select({ id: services.id }).from(services).where(eq(services.ownerUserId, user.id)),
-            app.db
-              .select({ id: serviceWorkspaces.serviceId })
-              .from(serviceWorkspaces)
-              .where(inArray(serviceWorkspaces.workspaceId, userWsIds)),
-          ]);
-          const set = new Set<number>();
-          for (const r of owned) set.add(r.id);
-          for (const r of tagged) set.add(r.id);
-          return set;
-        })();
-    const svcs = allServices.filter((s) => visibleServiceIds.has(s.id));
+    const svcs = visibleServices === null ? allServices : allServices.filter((s) => visibleServices.has(s.id));
     const dbs = visibleDatabases === null
       ? allDatabases
       : allDatabases.filter((database) => visibleDatabases.includes(database.id));
