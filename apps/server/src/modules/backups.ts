@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync, statSync, unlinkSync } from 'node:fs';
 import { audit } from '../lib/audit.js';
 import path from 'node:path';
@@ -125,7 +126,11 @@ export const databaseBackupRoutes: FastifyPluginAsync = async (app) => {
     const isRemoteTemp = !existsSync(b.path);
     if (isRemoteTemp) {
       if (!b.remoteKey) throw notFound('Backup not found');
-      restorePath = path.join(config.paths.backupsDir, `${path.basename(b.path)}.remote`);
+      // r647: a unique name per request. Two concurrent restores of the same
+      // backup shared `<file>.remote` BEFORE the operation lock: the second
+      // fetch truncated the file the first restore was reading, and the first
+      // restore's cleanup deleted the second's copy.
+      restorePath = path.join(config.paths.backupsDir, `${path.basename(b.path)}.${randomUUID()}.remote`);
       log(`Fetching remote object ${b.remoteKey}`);
       await fetchRemoteBackup(app.db, b, restorePath);
     }

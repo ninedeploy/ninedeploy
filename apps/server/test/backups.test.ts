@@ -187,6 +187,33 @@ describe('database backup routes', () => {
     expect(engineMocks.restoreDatabase).toHaveBeenCalled();
   });
 
+  it('r647: concurrent restores of one remote backup fetch to distinct temp files', async () => {
+    // Both requests used `<file>.remote` before the operation lock: the second
+    // fetch truncated the copy the first restore was reading, and the first
+    // restore's cleanup deleted the second's.
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: {
+          databases: dbRow({ id: 1 }),
+          backups: backupRow({ id: 4, path: '/tmp/gone.dump', remoteKey: 'nd/gone.dump' }),
+        },
+      }),
+    });
+    await app.register(databaseBackupRoutes);
+    fsMocks.exists = false;
+    const [a, b] = await Promise.all([
+      app.inject({ method: 'POST', url: '/1/backups/4/restore', headers: asUser() }),
+      app.inject({ method: 'POST', url: '/1/backups/4/restore', headers: asUser() }),
+    ]);
+    expect([a.statusCode, b.statusCode]).toEqual([200, 200]);
+    const temps = remoteMocks.fetchRemoteBackup.mock.calls.map((c) => c[2]);
+    expect(temps).toHaveLength(2);
+    expect(new Set(temps).size).toBe(2);
+    for (const t of temps) expect(t).toMatch(/gone\.dump\.[0-9a-f-]{36}\.remote$/);
+    // Each restore reads (and cleans up) its own copy.
+    expect(engineMocks.restoreDatabase.mock.calls.map((c) => c[1]).sort()).toEqual([...temps].sort());
+  });
+
   it('404s for a remote-less backup whose local file is gone', async () => {
     const app = await buildTestApp({
       db: createFakeDb({
