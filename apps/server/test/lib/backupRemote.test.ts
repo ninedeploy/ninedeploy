@@ -2,7 +2,13 @@
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
-import { activeDestination, deleteRemoteBackup, fetchRemoteBackup, uploadBackup } from '../../src/lib/backupRemote.js';
+import {
+  activeDestination,
+  deleteRemoteBackup,
+  deleteRemoteBackupForRetention,
+  fetchRemoteBackup,
+  uploadBackup,
+} from '../../src/lib/backupRemote.js';
 import { createFakeDb } from '../helpers.js';
 
 const s3Mocks = vi.hoisted(() => ({
@@ -165,6 +171,41 @@ describe('fetchRemoteBackup / deleteRemoteBackup', () => {
   it('skips the remote delete when no destination is configured', async () => {
     const db = createFakeDb({ findMany: { backupDestinations: [] } });
     await deleteRemoteBackup(db, { remoteKey: 'nd/k' });
+    expect(s3Mocks.s3Delete).not.toHaveBeenCalled();
+  });
+});
+
+describe('r542: deleteRemoteBackupForRetention', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('deletes through the RECORDED destination and reports it', async () => {
+    const old = { ...dest, id: 1, bucket: 'old-bucket', active: false };
+    const now = { ...dest, id: 2, bucket: 'new-bucket', active: true };
+    const db = createFakeDb({ findMany: { backupDestinations: [old, now] } });
+    await expect(deleteRemoteBackupForRetention(db, { remoteKey: 'nd/k', destinationId: 1 })).resolves.toBe('deleted');
+    expect(s3Mocks.s3Delete).toHaveBeenCalledWith(expect.objectContaining({ bucket: 'old-bucket' }), 'nd/k');
+  });
+
+  it('never falls back to the active destination (a delete there would "succeed" on the wrong bucket)', async () => {
+    const db = createFakeDb({ findMany: { backupDestinations: [{ ...dest, id: 2 }] } });
+    await expect(deleteRemoteBackupForRetention(db, { remoteKey: 'nd/k', destinationId: 1 })).resolves.toBe(
+      'unknown-destination',
+    );
+    await expect(deleteRemoteBackupForRetention(db, { remoteKey: 'nd/k', destinationId: null })).resolves.toBe(
+      'unknown-destination',
+    );
+    expect(s3Mocks.s3Delete).not.toHaveBeenCalled();
+  });
+
+  it('surfaces an S3 failure instead of swallowing it, so the row is kept', async () => {
+    const db = createFakeDb({ findMany: { backupDestinations: [dest] } });
+    s3Mocks.s3Delete.mockRejectedValueOnce(new Error('S3 delete failed (503)'));
+    await expect(deleteRemoteBackupForRetention(db, { remoteKey: 'nd/k', destinationId: 1 })).rejects.toThrow('503');
+  });
+
+  it('treats a row without a remote key as nothing to delete', async () => {
+    const db = createFakeDb({ findMany: { backupDestinations: [dest] } });
+    await expect(deleteRemoteBackupForRetention(db, { remoteKey: null })).resolves.toBe('deleted');
     expect(s3Mocks.s3Delete).not.toHaveBeenCalled();
   });
 });

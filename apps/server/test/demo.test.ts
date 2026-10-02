@@ -191,8 +191,9 @@ describe('demo routes', () => {
     expect(body.ok).toBe(true);
     // The NEW real demo is created regardless.
     expect(body.services[0]).toMatchObject({ id: 30, type: 'docker', status: 'idle' });
-    // The legacy fake rows were swept across all 8 child/parent tables.
-    expect(deleteCalls).toBe(8);
+    // The legacy fake rows were swept across all 8 child/parent tables, plus
+    // the legacy project's shared env vars (r541: no FK cascades them).
+    expect(deleteCalls).toBe(9);
     expect(auditMocks.audit).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),

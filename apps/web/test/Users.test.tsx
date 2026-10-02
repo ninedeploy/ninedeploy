@@ -140,6 +140,16 @@ describe('Users', () => {
     await waitFor(() => expect(api.users.remove).toHaveBeenCalledWith(2));
   });
 
+  it('r540: the delete confirmation names the workspaces that transfer to the operator', async () => {
+    mockOf(api.users.list).mockResolvedValue([
+      users[0],
+      { ...users[1], ownedWorkspaces: [{ id: 4, name: 'Acme Prod' }, { id: 5, name: 'Acme Lab' }] },
+    ] as never);
+    renderWithProviders(<Users />);
+    fireEvent.click((await screen.findAllByTitle('Delete user'))[0]!);
+    expect(await screen.findByText(/Ownership of Acme Prod, Acme Lab transfers to you/)).toBeInTheDocument();
+  });
+
   // The instance-operator flag is what actually gates the operator-only routes
   // and the host-privilege boundary. It used to be implied by owning any
   // workspace (self-grantable); it is now granted explicitly from this table.

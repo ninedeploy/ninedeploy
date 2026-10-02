@@ -163,7 +163,14 @@ export const sessions = sqliteTable(
     expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
     revokedAt: integer('revoked_at', { mode: 'timestamp' }),
   },
-  (t) => ({ userIdx: index('sessions_user_idx').on(t.userId) }),
+  (t) => ({
+    userIdx: index('sessions_user_idx').on(t.userId),
+    // r545: the hourly dead-session sweep deletes
+    // `WHERE expires_at < ? OR revoked_at < ?`; one index per OR term lets
+    // SQLite answer it from both indexes instead of scanning every login row.
+    expiresIdx: index('sessions_expires_idx').on(t.expiresAt),
+    revokedIdx: index('sessions_revoked_idx').on(t.revokedAt),
+  }),
 );
 
 // ─── workspaces & teams ───────────────────────────────────────────────────
@@ -590,6 +597,10 @@ export const deployments = sqliteTable(
     serviceCreatedIdx: index('deployments_service_created_idx').on(t.serviceId, t.createdAt),
     // The deploy worker polls WHERE status='queued' every 2s — index status.
     statusIdx: index('deployments_status_idx').on(t.status),
+    // r545: the hourly retention sweep filters `created_at < ?` (and a
+    // status NOT IN, which no index serves) — without a created_at-leading
+    // index it scanned the whole history every hour.
+    createdIdx: index('deployments_created_idx').on(t.createdAt),
   }),
 );
 
@@ -874,7 +885,12 @@ export const auditLog = sqliteTable(
     meta: text('meta', { mode: 'json' }).$type<Record<string, unknown>>(),
     ts: ts('ts'),
   },
-  (t) => ({ entityTsIdx: index('audit_log_entity_ts_idx').on(t.entity, t.ts) }),
+  (t) => ({
+    entityTsIdx: index('audit_log_entity_ts_idx').on(t.entity, t.ts),
+    // r545: retention deletes `WHERE ts < ?` hourly; the (entity, ts) index
+    // cannot serve a ts-only range, so the sweep full-scanned the table.
+    tsIdx: index('audit_log_ts_idx').on(t.ts),
+  }),
 );
 
 // ─── Build cache registry (G-01 PR-C) ─────────────────────────────────────
@@ -1206,7 +1222,11 @@ export const notificationLog = sqliteTable(
     error: text('error'),
     ts: ts('ts'),
   },
-  (t) => ({ channelTsIdx: index('notification_log_channel_ts_idx').on(t.channelId, t.ts) }),
+  (t) => ({
+    channelTsIdx: index('notification_log_channel_ts_idx').on(t.channelId, t.ts),
+    // r545: retention deletes `WHERE ts < ?` hourly (see audit_log_ts_idx).
+    tsIdx: index('notification_log_ts_idx').on(t.ts),
+  }),
 );
 
 // ─── alerting ──────────────────────────────────────────────────────────────
@@ -1286,7 +1306,12 @@ export const jobRuns = sqliteTable(
     finishedAt: integer('finished_at', { mode: 'timestamp' }),
     createdAt: ts('created_at'),
   },
-  (t) => ({ jobIdx: index('job_runs_job_idx').on(t.jobId) }),
+  (t) => ({
+    jobIdx: index('job_runs_job_idx').on(t.jobId),
+    // r545: retention deletes `WHERE created_at < ?` hourly, and rows carry up
+    // to 60 KB of output each — a full scan of this table is the expensive one.
+    createdIdx: index('job_runs_created_idx').on(t.createdAt),
+  }),
 );
 
 // ─── remote servers (agent-based multi-server) ────────────────────────────

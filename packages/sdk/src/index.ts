@@ -1054,8 +1054,10 @@ export interface NineDeployClient {
      * Operator-only: delete a user. The `users.role` column was removed when
      * authorization became workspace-only; the legacy `setRole` is gone with
      * it. Role changes go through `workspaces.updateMemberRole`.
+     * Workspaces the user owns are transferred, not deleted: to the caller,
+     * or to `opts.transferTo` (an existing, active user id).
      */
-    remove: (id: number) => Promise<void>;
+    remove: (id: number, opts?: { transferTo?: number }) => Promise<void>;
     /** Operator reset of another user's password (revokes their sessions). */
     resetPassword: (id: number, input: PasswordReset) => Promise<{ ok: boolean }>;
     /** Mint a one-time reset link for a user (returned exactly once). */
@@ -1988,8 +1990,10 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       resetLink: (id) => send<{ url: string; expiresAt: string }>('POST', `/v1/users/${id}/reset-link`),
       setOperator: (id, isOperator) =>
         send<{ ok: boolean; id: number; isOperator: boolean }>('PATCH', `/v1/users/${id}/operator`, { isOperator }),
-      remove: async (id) => {
-        await request(`/v1/users/${id}`, { method: 'DELETE' });
+      remove: async (id, opts) => {
+        // r540: owned workspaces go to the caller unless `transferTo` names another user.
+        const q = opts?.transferTo != null ? `?transferTo=${encodeURIComponent(String(opts.transferTo))}` : '';
+        await request(`/v1/users/${id}${q}`, { method: 'DELETE' });
       },
     },
     projects: {

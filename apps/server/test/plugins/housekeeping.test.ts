@@ -239,7 +239,20 @@ describe('housekeeping plugin', () => {
 
     await vi.advanceTimersByTimeAsync(60_000);
 
-    expect(errorSpy).toHaveBeenCalledWith({ err: expect.objectContaining({ message: 'db locked' }) }, 'housekeeping failed');
+    // r544: each failing step is logged under its own name…
+    expect(errorSpy).toHaveBeenCalledWith(
+      { err: expect.objectContaining({ message: 'db locked' }), step: 'audit-log' },
+      'housekeeping step failed: audit-log',
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      { err: expect.objectContaining({ message: 'db locked' }), step: 'job-runs' },
+      'housekeeping step failed: job-runs',
+    );
+    // …and the steps after it still run: the first failing delete used to
+    // skip the rest of the sweep, the disk auto-prune check included.
+    expect(drillMock.pruneDrillLeftovers).toHaveBeenCalled();
+    expect(execMock.run).toHaveBeenCalledWith('docker', ['image', 'prune', '-f'], {}, expect.any(Function));
+    expect(autoPruneMock.executeAutoPrune).toHaveBeenCalledTimes(1);
     // Still reschedules the next tick.
     await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
     expect(logsMock.pruneOldLogs).toHaveBeenCalledTimes(2);

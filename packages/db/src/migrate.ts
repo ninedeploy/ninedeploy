@@ -1,9 +1,10 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
+import type { Client, InStatement } from '@libsql/client';
 import type { DB } from './client.js';
 
 /**
@@ -53,8 +54,8 @@ function isAlreadyApplied(err: unknown): boolean {
 }
 
 /**
- * Re-apply the pending migrations one statement at a time, skipping the ones
- * whose object already exists, then record each migration in the journal.
+ * Re-apply the pending migrations, skipping the statements whose object
+ * already exists, then record each migration in the journal.
  *
  * Why this exists: releases up to 0.2.36 patched a handful of columns into an
  * existing database at boot (`ensureEssentialColumns` in the server's db
@@ -65,6 +66,13 @@ function isAlreadyApplied(err: unknown): boolean {
  *
  * Skipping is deliberately narrow: only "already exists" failures are ignored,
  * and every other error still aborts the upgrade.
+ *
+ * r546: each migration is applied ATOMICALLY — its statements and its journal
+ * row in one transaction (`applyMigrationAtomically`). This path used to run
+ * the statements one by one in autocommit, so an error that was not "already
+ * exists" halfway through a migration left the statements before it applied
+ * and the migration unrecorded: the next boot replayed it on top of its own
+ * leftovers. Now such an error rolls the whole migration back.
  */
 async function applyToleratingExistingObjects(db: DB, folder: string): Promise<void> {
   const migrations = readMigrationFiles({ migrationsFolder: folder });
@@ -83,19 +91,69 @@ async function applyToleratingExistingObjects(db: DB, folder: string): Promise<v
   // reads as up-to-date to Drizzle, which then never throws and never reaches
   // this function at all — so a hash-set resume here would change nothing.)
   const lastApplied = Number(rows[0]?.created_at ?? 0);
+  // `readMigrationFiles` returns one migration per journal entry, in journal
+  // order (it has just read this same file), so index i names migration i.
+  const tags = (
+    JSON.parse(readFileSync(path.join(folder, 'meta', '_journal.json'), 'utf8')) as { entries: Array<{ tag: string }> }
+  ).entries.map((e) => e.tag);
+  const client = (db as DB & { $client: Pick<Client, 'migrate'> }).$client;
 
-  for (const migration of migrations) {
+  for (const [i, migration] of migrations.entries()) {
     if (migration.folderMillis <= lastApplied) continue;
-    for (const statement of migration.sql) {
-      try {
-        await db.run(sql.raw(statement));
-      } catch (err) {
-        if (!isAlreadyApplied(err)) throw err;
+    await applyMigrationAtomically(client, migration, tags[i] as string);
+  }
+}
+
+/**
+ * r546: apply one migration and its journal row all-or-nothing, still skipping
+ * statements whose object already exists.
+ *
+ * Uses the libSQL client's `migrate()` — the call Drizzle's own migrator ends
+ * in — so this runs exactly like the normal path: one connection, foreign
+ * keys OFF, BEGIN … COMMIT, ROLLBACK on any error. Foreign keys must be off:
+ * table rebuilds (0064) DROP a parent table, which with them on cascades into
+ * every child row. That is why this cannot be `db.transaction()`, which
+ * BEGINs on a connection that has them on (a PRAGMA inside a transaction is a
+ * no-op).
+ *
+ * SQLite cannot skip a failed statement and keep going inside `migrate()`, so
+ * when statement i fails with "already exists" the whole transaction is rolled
+ * back, statement i is dropped, and the migration is re-run from the top.
+ * Statements 0..i-1 replay against the same state they saw before, so the
+ * outcome is the one the old one-by-one replay produced. Each retry removes a
+ * statement, so this ends. Any other error is rethrown with the migration
+ * named and nothing from it applied or journalled; the next boot retries it.
+ */
+async function applyMigrationAtomically(
+  client: Pick<Client, 'migrate'>,
+  migration: { sql: string[]; hash: string; folderMillis: number },
+  name: string,
+): Promise<void> {
+  const record: InStatement = {
+    sql: `INSERT INTO "${MIGRATIONS_TABLE}" ("hash", "created_at") VALUES (?, ?)`,
+    args: [migration.hash, migration.folderMillis],
+  };
+  const pending = [...migration.sql];
+  for (;;) {
+    try {
+      await client.migrate([...pending, record]);
+      return;
+    } catch (err) {
+      // LibsqlBatchError names the failing statement; `Object()` keeps a
+      // thrown primitive from turning this lookup into a TypeError.
+      const at = (Object(err) as { statementIndex?: unknown }).statementIndex;
+      const index = typeof at === 'number' && at < pending.length ? at : null;
+      if (index !== null && isAlreadyApplied(err)) {
+        pending.splice(index, 1);
+        continue;
       }
+      const where = index !== null ? ` at statement ${index + 1} (${pending[index]!.trim().slice(0, 120)})` : '';
+      const reason = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Database migration ${name} failed${where}: ${reason}. It was rolled back — nothing from it was applied or recorded — and will be retried on the next start.`,
+        { cause: err },
+      );
     }
-    await db.run(
-      sql`INSERT INTO ${sql.identifier(MIGRATIONS_TABLE)} ("hash", "created_at") VALUES(${migration.hash}, ${migration.folderMillis})`,
-    );
   }
 }
 
@@ -106,7 +164,8 @@ async function applyToleratingExistingObjects(db: DB, folder: string): Promise<v
  * for tests and embedders that already know the location.
  *
  * A batch that fails only because an object already exists is retried
- * statement by statement — see `applyToleratingExistingObjects`.
+ * migration by migration, skipping the statements whose object is already
+ * there — see `applyToleratingExistingObjects`.
  */
 export async function runMigrations(db: DB, folderOverride?: string): Promise<string> {
   const folder = folderOverride ?? resolveMigrationsFolder();

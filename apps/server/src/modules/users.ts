@@ -1,6 +1,6 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { audit } from '../lib/audit.js';
-import { users, workspaceMembers } from '@ninedeploy/db';
+import { type DB, users, workspaceMembers, workspaces } from '@ninedeploy/db';
 import { revokeAllSessions, revokeApiTokens } from '../lib/sessions.js';
 import type { FastifyPluginAsync } from 'fastify';
 import { operatorGrant, passwordReset, userCreate } from '@ninedeploy/schemas';
@@ -11,11 +11,58 @@ import { STUDIO_EPOCH_KEY } from './studioProxy.js';
 import { issueResetToken } from '../lib/passwordReset.js';
 import { config } from '../config.js';
 import { normalizeEmail } from '../lib/authHelpers.js';
+import { rehomeOwnedResources } from './workspaces.js';
 
 /** How many accounts currently carry the instance-operator flag. */
 async function operatorCount(db: import('@ninedeploy/db').DB): Promise<number> {
   const rows = await db.select({ id: users.id }).from(users).where(eq(users.isInstanceOperator, true));
   return rows.length;
+}
+
+/**
+ * r540: hand everything a user is about to take down with them to someone who
+ * stays. `workspaces.owner_id` is `ON DELETE CASCADE`, so deleting an owner
+ * used to delete each workspace they owned — and through it every project,
+ * environment, label, invitation, SCIM token and OTHER member's seat in it.
+ * Rebuilding the table to change the rule is not an option on a live
+ * database, so the route moves ownership first:
+ *   - each owned workspace goes to `toUserId`, who gets (or is promoted to)
+ *     an owner seat so the ownership row and the membership agree;
+ *   - services and databases the user owned inside ANY workspace they sat in
+ *     go to that workspace's (possibly new) owner — what removing the member
+ *     does (r097). Left alone they would be detached (`ON DELETE SET NULL`),
+ *     and an ownerless service skips the job/webhook deploy authorization.
+ * Returns the transferred workspaces so the caller can audit each one.
+ */
+export async function transferUserHoldings(
+  db: Pick<DB, 'select' | 'insert' | 'update' | 'query'>,
+  fromUserId: number,
+  toUserId: number,
+): Promise<Array<{ id: number; name: string }>> {
+  const owned = await db
+    .select({ id: workspaces.id, name: workspaces.name })
+    .from(workspaces)
+    .where(eq(workspaces.ownerId, fromUserId));
+  for (const ws of owned) {
+    const seat = await db.query.workspaceMembers.findFirst({
+      where: and(eq(workspaceMembers.workspaceId, ws.id), eq(workspaceMembers.userId, toUserId)),
+    });
+    if (seat) {
+      await db.update(workspaceMembers).set({ role: 'owner' }).where(eq(workspaceMembers.id, seat.id));
+    } else {
+      await db.insert(workspaceMembers).values({ workspaceId: ws.id, userId: toUserId, role: 'owner' });
+    }
+    await db.update(workspaces).set({ ownerId: toUserId }).where(eq(workspaces.id, ws.id));
+  }
+  const seats = await db
+    .select({ workspaceId: workspaceMembers.workspaceId, ownerId: workspaces.ownerId })
+    .from(workspaceMembers)
+    .innerJoin(workspaces, eq(workspaces.id, workspaceMembers.workspaceId))
+    .where(eq(workspaceMembers.userId, fromUserId));
+  for (const seat of seats) {
+    if (seat.ownerId !== fromUserId) await rehomeOwnedResources(db, seat.workspaceId, fromUserId, seat.ownerId);
+  }
+  return owned;
 }
 
 interface UserListEntry {
@@ -24,6 +71,7 @@ interface UserListEntry {
   name: string | null;
   isOperator: boolean;
   workspaceCount: number;
+  ownedWorkspaces: Array<{ id: number; name: string }>;
   createdAt: string;
 }
 
@@ -51,6 +99,15 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     const memberships = await app.db
       .select({ userId: workspaceMembers.userId, workspaceId: workspaceMembers.workspaceId, role: workspaceMembers.role })
       .from(workspaceMembers);
+    const ownedRows = await app.db
+      .select({ id: workspaces.id, name: workspaces.name, ownerId: workspaces.ownerId })
+      .from(workspaces);
+    const owned = new Map<number, Array<{ id: number; name: string }>>();
+    for (const w of ownedRows ?? []) {
+      const arr = owned.get(w.ownerId) ?? [];
+      arr.push({ id: w.id, name: w.name });
+      owned.set(w.ownerId, arr);
+    }
     const byUser = new Map<number, Array<{ role: string }>>();
     for (const m of memberships) {
       const arr = byUser.get(m.userId) ?? [];
@@ -70,6 +127,9 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
         // operator in the People view.
         isOperator: u.isInstanceOperator === true,
         workspaceCount: ms.length,
+        // r540: what a delete would hand over — the People view names these
+        // in its delete confirmation.
+        ownedWorkspaces: owned.get(u.id) ?? [],
         createdAt: u.createdAt instanceof Date ? u.createdAt.toISOString() : new Date(u.createdAt as unknown as number).toISOString(),
       };
     });
@@ -97,6 +157,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
       name: created.name,
       isOperator: false,
       workspaceCount: 0,
+      ownedWorkspaces: [],
       createdAt: created.createdAt instanceof Date
         ? created.createdAt.toISOString()
         : new Date(created.createdAt as unknown as number).toISOString(),
@@ -141,12 +202,43 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
       throw badRequest('Cannot delete the last instance operator');
     }
 
-    // Deleting a user cascade-clears their sessions, api tokens, workspace
-    // memberships, webauthn credentials, and detaches their owned resources.
-    const deleted = await app.db.delete(users).where(eq(users.id, id)).returning({ id: users.id });
-    if (deleted.length === 0) throw notFound('User not found');
+    // r540: workspaces the user owns are handed over, never deleted with
+    // them. The heir defaults to the acting operator; `transferTo` (query or
+    // JSON body) names another existing, active account.
+    const rawHeir =
+      (req.query as { transferTo?: string } | undefined)?.transferTo ??
+      (req.body && typeof req.body === 'object' ? (req.body as { transferTo?: unknown }).transferTo : undefined);
+    const heirId =
+      rawHeir === undefined || rawHeir === null || rawHeir === ''
+        ? req.user!.id
+        : parseId(String(rawHeir), 'transferTo must be a user id');
+    if (heirId === id) throw badRequest('transferTo cannot be the user being deleted');
+    if (heirId !== req.user!.id) {
+      const heir = await app.db.query.users.findFirst({ where: eq(users.id, heirId) });
+      if (!heir) throw badRequest('transferTo user not found');
+      if (heir.deactivatedAt) throw badRequest('transferTo user is deactivated');
+    }
+
+    // What the delete still cascade-clears is the user's own: sessions, API
+    // tokens, passkeys, linked SSO identities, reset tokens, their workspace
+    // seats, and invitations / domain transfers they started. Services and
+    // databases they owned outside any workspace are detached (owner NULL).
+    const result = await app.db.transaction(async (tx) => {
+      const transferred = await transferUserHoldings(tx, id, heirId);
+      const deleted = await tx.delete(users).where(eq(users.id, id)).returning({ id: users.id });
+      if (deleted.length === 0) throw notFound('User not found');
+      return transferred;
+    });
+    for (const ws of result) {
+      void audit(app.db, req.user!.id, 'workspace.owner_transfer', ws.name, {
+        workspaceId: ws.id,
+        fromUserId: id,
+        toUserId: heirId,
+        reason: 'user.delete',
+      });
+    }
     void audit(app.db, req.user!.id, 'user.delete', String(id));
-    return { ok: true };
+    return { ok: true, transferredWorkspaces: result.map((w) => w.id), transferredTo: heirId };
   });
 
   // Operator-initiated password reset: sets a new password and bumps
