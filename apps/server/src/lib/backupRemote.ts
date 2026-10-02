@@ -1,6 +1,9 @@
+import { unlinkSync } from 'node:fs';
+import { open } from 'node:fs/promises';
 import { basename } from 'node:path';
-import { eq } from 'drizzle-orm';
+import { asc, eq, isNotNull } from 'drizzle-orm';
 import { backups, type BackupDestination, type DB } from '@ninedeploy/db';
+import { readBackupHeader } from './backupCrypto.js';
 import { decrypt } from './crypto.js';
 import { s3Delete, s3GetToFile, s3PutFile, type S3Config } from './s3.js';
 
@@ -79,9 +82,16 @@ export async function uploadBackup(
 export interface RemoteBackupRef {
   remoteKey: string | null;
   destinationId?: number | null;
+  /** r645: provenance for the plaintext decision in {@link assertRemoteObjectSealed}.
+   *  Callers pass the backup row; a ref without them is treated as "must be sealed". */
+  scope?: string | null;
+  createdAt?: Date | null;
 }
 
-/** Fetch a remote-only backup to a local path (returns the path to use). */
+/** Fetch a remote-only backup to a local path (returns the path to use).
+ *  r645: the object must carry NineDeploy's backup encryption unless the row
+ *  is a legacy plaintext volume snapshot — see {@link assertRemoteObjectSealed}.
+ *  A refused object is removed from disk before the error propagates. */
 export async function fetchRemoteBackup(
   db: DB,
   backup: RemoteBackupRef,
@@ -93,7 +103,76 @@ export async function fetchRemoteBackup(
   const { prefix: _p, ...cfg } = dest;
   // Stream straight to disk — never buffer the whole dump in memory.
   await s3GetToFile(cfg, backup.remoteKey, localPath);
+  try {
+    await assertRemoteObjectSealed(db, backup, localPath);
+  } catch (err) {
+    try { unlinkSync(localPath); } catch { /* absent */ }
+    throw err;
+  }
   return localPath;
+}
+
+/** The single-line `v<n>:` at-rest envelope database dumps used before the
+ *  streaming `NDBK1:` format (0.3.0). Also AES-GCM under the master key. */
+const LEGACY_ENVELOPE_RE = /^v\d+:/;
+
+async function fileHead(file: string, bytes = 32): Promise<string> {
+  const handle = await open(file, 'r');
+  try {
+    const head = Buffer.alloc(bytes);
+    const { bytesRead } = await handle.read(head, 0, bytes, 0);
+    return head.subarray(0, bytesRead).toString('utf8');
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * r645: refuse a fetched remote object that is not sealed with the backup
+ * encryption, unless the row is one that may legitimately be plaintext.
+ *
+ * The restore path accepts plaintext as "legacy" and feeds it straight to
+ * `pg_restore` / `mysql` / `tar`. For a LOCAL file that is fine — writing the
+ * backups directory already means owning the host. A REMOTE object is
+ * different: anyone with write access to the bucket could swap in a crafted
+ * plaintext dump and have the panel run its SQL on the next restore. Both
+ * envelopes (`NDBK1:` streaming and the older `v<n>:`) are AES-GCM under the
+ * master key, so a forged sealed object fails authentication instead.
+ *
+ * Which rows may be plaintext — recognised from the row itself, since no
+ * schema column records "written encrypted":
+ *  • database dumps (scope `db` / `scheduled`): never. Dumps have been sealed
+ *    at rest since before the first tagged release, and off-site copies were
+ *    added after that and upload the on-disk file as-is;
+ *  • volume snapshots: sealed since 0.10.3, the same release whose migration
+ *    0062 started stamping `destinationId` on every upload. A row WITH a
+ *    destination was therefore written sealed. A row without one is either a
+ *    pre-0.10.3 upload or a newer one whose destination was deleted since; it
+ *    may be plaintext only if it predates the earliest destination-stamped
+ *    upload on this server — i.e. it was taken before this server ran 0.10.3,
+ *    however late it upgraded.
+ */
+export async function assertRemoteObjectSealed(db: DB, backup: RemoteBackupRef, file: string): Promise<void> {
+  if (await readBackupHeader(file)) return;
+  if (LEGACY_ENVELOPE_RE.test(await fileHead(file))) return;
+  if (await mayBeLegacyPlaintext(db, backup)) return;
+  throw new Error(
+    `Refusing to restore the remote object '${backup.remoteKey}': it is not encrypted, but NineDeploy uploads every database dump — and every volume snapshot since 0.10.3 — sealed with the instance master key. ` +
+      'A plaintext object under this key was not written by this server (someone with write access to the bucket may have replaced it). ' +
+      'Download and inspect it before restoring anything from it by hand.',
+  );
+}
+
+async function mayBeLegacyPlaintext(db: DB, backup: RemoteBackupRef): Promise<boolean> {
+  if (backup.scope !== 'volumes') return false;
+  if (backup.destinationId != null) return false;
+  if (!(backup.createdAt instanceof Date)) return false;
+  const firstStamped = await db.query.backups.findFirst({
+    where: isNotNull(backups.destinationId),
+    orderBy: asc(backups.createdAt),
+    columns: { createdAt: true },
+  });
+  return !firstStamped || backup.createdAt.getTime() < firstStamped.createdAt.getTime();
 }
 
 /** Delete the remote object for a backup row (missing objects are fine). */

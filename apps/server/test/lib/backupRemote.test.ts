@@ -102,11 +102,21 @@ describe('uploadBackup', () => {
 });
 
 describe('fetchRemoteBackup / deleteRemoteBackup', () => {
-  beforeEach(() => vi.clearAllMocks());
+  let fetchDir: string;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fetchDir = mkdtempSync(path.join(os.tmpdir(), 'nd-fetch-'));
+    // r645: the fetched object is checked for the backup envelope — model a
+    // sealed object landing on disk.
+    s3Mocks.s3GetToFile.mockImplementation(async (_cfg: unknown, _key: string, to: string) => {
+      writeFileSync(to, 'NDBK1:v1:AAAAAAAAAAAAAAAA\nciphertext');
+    });
+  });
+  afterEach(() => rmSync(fetchDir, { recursive: true, force: true }));
 
   it('streams the remote object straight to a local file', async () => {
     const db = createFakeDb({ findMany: { backupDestinations: [dest] } });
-    const target = path.join(os.tmpdir(), `fetch-${Date.now()}`);
+    const target = path.join(fetchDir, 'fetch');
     const p = await fetchRemoteBackup(db, { remoteKey: 'nd/k' }, target);
     expect(p).toBe(target);
     // The GET pipes to disk (s3GetToFile) — multi-GB restores never buffer.
@@ -115,8 +125,7 @@ describe('fetchRemoteBackup / deleteRemoteBackup', () => {
       'nd/k',
       target,
     );
-    expect(existsSync(target)).toBe(false); // the s3 mock wrote nothing
-    expect(statSync(target, { throwIfNoEntry: false })?.size ?? 0).toBe(0);
+    expect(existsSync(target)).toBe(true);
   });
 
   it('throws when no destination is configured for a fetch', async () => {
@@ -131,11 +140,12 @@ describe('fetchRemoteBackup / deleteRemoteBackup', () => {
     const old = { ...dest, id: 1, bucket: 'old-bucket', active: false };
     const now = { ...dest, id: 2, bucket: 'new-bucket', active: true };
     const db = createFakeDb({ findMany: { backupDestinations: [old, now] } });
-    await fetchRemoteBackup(db, { remoteKey: 'nd/k', destinationId: 1 }, '/tmp/x');
+    const x = path.join(fetchDir, 'x');
+    await fetchRemoteBackup(db, { remoteKey: 'nd/k', destinationId: 1 }, x);
     expect(s3Mocks.s3GetToFile).toHaveBeenCalledWith(
       expect.objectContaining({ bucket: 'old-bucket' }),
       'nd/k',
-      '/tmp/x',
+      x,
     );
     await deleteRemoteBackup(db, { remoteKey: 'nd/k', destinationId: 1 });
     expect(s3Mocks.s3Delete).toHaveBeenCalledWith(
@@ -148,10 +158,12 @@ describe('fetchRemoteBackup / deleteRemoteBackup', () => {
     const active = { ...dest, id: 2, bucket: 'new-bucket' };
     const db = createFakeDb({ findMany: { backupDestinations: [active] } });
     // destinationId 1 has no row anymore; a legacy row has no id at all.
-    await fetchRemoteBackup(db, { remoteKey: 'nd/k', destinationId: 1 }, '/tmp/x');
-    await fetchRemoteBackup(db, { remoteKey: 'nd/k' }, '/tmp/y');
-    expect(s3Mocks.s3GetToFile).toHaveBeenNthCalledWith(1, expect.objectContaining({ bucket: 'new-bucket' }), 'nd/k', '/tmp/x');
-    expect(s3Mocks.s3GetToFile).toHaveBeenNthCalledWith(2, expect.objectContaining({ bucket: 'new-bucket' }), 'nd/k', '/tmp/y');
+    const x = path.join(fetchDir, 'x');
+    const y = path.join(fetchDir, 'y');
+    await fetchRemoteBackup(db, { remoteKey: 'nd/k', destinationId: 1 }, x);
+    await fetchRemoteBackup(db, { remoteKey: 'nd/k' }, y);
+    expect(s3Mocks.s3GetToFile).toHaveBeenNthCalledWith(1, expect.objectContaining({ bucket: 'new-bucket' }), 'nd/k', x);
+    expect(s3Mocks.s3GetToFile).toHaveBeenNthCalledWith(2, expect.objectContaining({ bucket: 'new-bucket' }), 'nd/k', y);
   });
 
   it('deletes remote objects and swallows failures', async () => {
@@ -207,5 +219,81 @@ describe('r542: deleteRemoteBackupForRetention', () => {
     const db = createFakeDb({ findMany: { backupDestinations: [dest] } });
     await expect(deleteRemoteBackupForRetention(db, { remoteKey: null })).resolves.toBe('deleted');
     expect(s3Mocks.s3Delete).not.toHaveBeenCalled();
+  });
+});
+
+// r645: a remote object is fed to pg_restore / mysql / tar on restore. A
+// plaintext object in the bucket used to be restored as "legacy" — anyone with
+// bucket write access could have the panel run their SQL. Only rows that may
+// genuinely predate the envelope keep restoring plaintext.
+describe('fetchRemoteBackup refuses an unsealed object (r645)', () => {
+  let dir: string;
+  const at = (iso: string) => new Date(iso);
+  const writeObject = (body: string) =>
+    s3Mocks.s3GetToFile.mockImplementation(async (_cfg: unknown, _key: string, to: string) => { writeFileSync(to, body); });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dir = mkdtempSync(path.join(os.tmpdir(), 'nd-seal-'));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('refuses a plaintext database dump and removes it from disk', async () => {
+    writeObject('-- PostgreSQL database dump\nDROP TABLE users;');
+    const db = createFakeDb({ findMany: { backupDestinations: [dest] } });
+    const target = path.join(dir, 'gone.dump.remote');
+    await expect(
+      fetchRemoteBackup(db, { remoteKey: 'nd/gone.dump', destinationId: 1, scope: 'db', createdAt: at('2026-08-20T00:00:00Z') }, target),
+    ).rejects.toThrow(/Refusing to restore the remote object 'nd\/gone.dump': it is not encrypted/);
+    expect(existsSync(target)).toBe(false);
+  });
+
+  it('refuses a plaintext object for a volume snapshot that was uploaded sealed (destination stamped)', async () => {
+    writeObject('plain tar bytes');
+    const db = createFakeDb({ findMany: { backupDestinations: [dest] } });
+    await expect(
+      fetchRemoteBackup(db, { remoteKey: 'nd/v.tgz', destinationId: 1, scope: 'volumes', createdAt: at('2026-09-25T00:00:00Z') }, path.join(dir, 'v')),
+    ).rejects.toThrow(/not encrypted/);
+  });
+
+  it('accepts both envelopes for any row', async () => {
+    const db = createFakeDb({ findMany: { backupDestinations: [dest] } });
+    writeObject('NDBK1:v2:AAAAAAAAAAAAAAAA\nsealed');
+    await expect(fetchRemoteBackup(db, { remoteKey: 'k', scope: 'db' }, path.join(dir, 'a'))).resolves.toBeTruthy();
+    writeObject('v1:base64envelope');
+    await expect(fetchRemoteBackup(db, { remoteKey: 'k', scope: 'db' }, path.join(dir, 'b'))).resolves.toBeTruthy();
+  });
+
+  it('keeps restoring a legacy plaintext volume snapshot taken before this server stamped destinations', async () => {
+    writeObject('legacy plain tar');
+    const db = createFakeDb({
+      findMany: { backupDestinations: [dest] },
+      // The first destination-stamped upload on this server (it ran 0.10.3+ from then on).
+      findFirst: { backups: { createdAt: at('2026-09-30T00:00:00Z') } },
+    });
+    await expect(
+      fetchRemoteBackup(db, { remoteKey: 'nd/old.tgz', destinationId: null, scope: 'volumes', createdAt: at('2026-09-10T00:00:00Z') }, path.join(dir, 'old')),
+    ).resolves.toBe(path.join(dir, 'old'));
+    // No stamped row at all (the server never uploaded under 0.10.3+): still legacy.
+    const fresh = createFakeDb({ findMany: { backupDestinations: [dest] } });
+    await expect(
+      fetchRemoteBackup(fresh, { remoteKey: 'nd/old.tgz', scope: 'volumes', createdAt: at('2026-10-01T00:00:00Z') }, path.join(dir, 'old2')),
+    ).resolves.toBeTruthy();
+  });
+
+  it('refuses a plaintext volume object newer than the first stamped upload (its destination was deleted)', async () => {
+    writeObject('plain tar');
+    const db = createFakeDb({
+      findMany: { backupDestinations: [dest] },
+      findFirst: { backups: { createdAt: at('2026-09-20T00:00:00Z') } },
+    });
+    await expect(
+      fetchRemoteBackup(db, { remoteKey: 'nd/new.tgz', destinationId: null, scope: 'volumes', createdAt: at('2026-09-28T00:00:00Z') }, path.join(dir, 'new')),
+    ).rejects.toThrow(/not encrypted/);
+  });
+
+  it('fails closed for a ref that carries no provenance', async () => {
+    writeObject('plain');
+    const db = createFakeDb({ findMany: { backupDestinations: [dest] } });
+    await expect(fetchRemoteBackup(db, { remoteKey: 'k' }, path.join(dir, 'c'))).rejects.toThrow(/not encrypted/);
   });
 });
