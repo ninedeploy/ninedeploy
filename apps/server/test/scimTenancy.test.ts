@@ -12,9 +12,29 @@ import { and, eq } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createDb, scimTokens, users, workspaceMembers, workspaces, type DB } from '@ninedeploy/db';
+import {
+  createDb,
+  databases,
+  projects,
+  scimTokens,
+  serviceProjects,
+  serviceWorkspaces,
+  services,
+  users,
+  workspaceMembers,
+  workspaces,
+  type DB,
+} from '@ninedeploy/db';
 import { scimRoutes } from '../src/modules/scim.js';
 import { sha256 } from '../src/lib/crypto.js';
+import {
+  databaseRole,
+  loadDatabaseForUser,
+  loadServiceForUser,
+  serviceRole,
+  visibleDatabaseIds,
+  visibleServiceIdSet,
+} from '../src/lib/resourceAccess.js';
 import { buildTestApp } from './helpers.js';
 
 const MIGRATIONS = fileURLToPath(new URL('../../../packages/db/src/migrations', import.meta.url));
@@ -184,5 +204,73 @@ describe('r501: SCIM deactivation reaches only what the workspace owns', () => {
     const push = await app.inject({ method: 'POST', url: '/scim/v2/Users', headers: auth, payload: { userName: shared.email } });
     expect(push.statusCode).toBe(200);
     expect(await seat(shared.id, wsA)).toBeDefined();
+  });
+});
+
+describe('r694/r695: an IdP removal ends what the user created in the workspace', () => {
+  /** A service and a database the user created in workspace A (tagged into it, in its project). */
+  async function createdIn(userId: number) {
+    const [proj] = await db.insert(projects).values({ name: 'Team', slug: `team-${Math.random()}`, workspaceId: wsA }).returning();
+    const [svc] = await db
+      .insert(services)
+      .values({ name: 'api', slug: `api-${Math.random().toString(36).slice(2)}`, ownerUserId: userId })
+      .returning();
+    await db.insert(serviceWorkspaces).values({ serviceId: svc!.id, workspaceId: wsA });
+    await db.insert(serviceProjects).values({ serviceId: svc!.id, projectId: proj!.id });
+    const [database] = await db
+      .insert(databases)
+      .values({ name: 'pg', slug: `pg-${Math.random().toString(36).slice(2)}`, engine: 'postgres', projectId: proj!.id, ownerUserId: userId, passwordEncrypted: 'x' })
+      .returning();
+    return { svc: svc!, database: database! };
+  }
+  const asUser = (id: number) => ({ id, isOperator: false });
+
+  it('a suspended creator keeps no access, and the workspace owner now owns what they made', async () => {
+    const creator = await localUserIn([wsA, 'member'], [wsB, 'member']);
+    const { svc, database } = await createdIn(creator.id);
+    // Seated: the creator is the owner of their own service and database.
+    expect(await serviceRole(db, svc, asUser(creator.id))).toBe('owner');
+    expect(await databaseRole(db, database, asUser(creator.id))).toBe('owner');
+
+    expect((await deactivate(creator.id)).statusCode).toBe(200);
+    expect(await seat(creator.id, wsA)).toBeUndefined();
+    // r695: ownership moved to the workspace owner, like an API removal (r097).
+    const [after] = await db.select().from(services).where(eq(services.id, svc.id));
+    expect(after!.ownerUserId).toBe(ownerA);
+    const [dbAfter] = await db.select().from(databases).where(eq(databases.id, database.id));
+    expect(dbAfter!.ownerUserId).toBe(ownerA);
+    // r694: and even a creator row left behind (an older removal, a path that
+    // forgets to re-home) grants nothing without a seat.
+    await db.update(services).set({ ownerUserId: creator.id }).where(eq(services.id, svc.id));
+    await db.update(databases).set({ ownerUserId: creator.id }).where(eq(databases.id, database.id));
+    await expect(loadServiceForUser(db, svc.id, asUser(creator.id))).rejects.toThrow('Service not found');
+    expect(await serviceRole(db, { ...svc, ownerUserId: creator.id }, asUser(creator.id))).toBeNull();
+    await expect(loadDatabaseForUser(db, database.id, asUser(creator.id))).rejects.toThrow('Database not found');
+    expect(await databaseRole(db, { ...database, ownerUserId: creator.id }, asUser(creator.id))).toBeNull();
+    expect(await visibleServiceIdSet(db, asUser(creator.id))).not.toContain(svc.id);
+    expect(await visibleDatabaseIds(db, asUser(creator.id))).not.toContain(database.id);
+  });
+
+  it('SCIM DELETE (leave the workspace) re-homes too', async () => {
+    const creator = await localUserIn([wsA, 'member'], [wsB, 'member']);
+    const { svc } = await createdIn(creator.id);
+    const del = await app.inject({ method: 'DELETE', url: `/scim/v2/Users/${creator.id}`, headers: auth });
+    expect(del.statusCode).toBe(200);
+    const [after] = await db.select().from(services).where(eq(services.id, svc.id));
+    expect(after!.ownerUserId).toBe(ownerA);
+  });
+
+  it('a personal (untagged) service and a database outside every workspace stay their creator’s', async () => {
+    const creator = await localUserIn([wsB, 'member']);
+    const [svc] = await db.insert(services).values({ name: 'solo', slug: `solo-${Math.random().toString(36).slice(2)}`, ownerUserId: creator.id }).returning();
+    const [database] = await db
+      .insert(databases)
+      .values({ name: 'solo-db', slug: `solo-db-${Math.random().toString(36).slice(2)}`, engine: 'redis', ownerUserId: creator.id, passwordEncrypted: 'x' })
+      .returning();
+    expect((await loadServiceForUser(db, svc!.id, asUser(creator.id))).id).toBe(svc!.id);
+    expect(await serviceRole(db, svc!, asUser(creator.id))).toBe('owner');
+    expect((await loadDatabaseForUser(db, database!.id, asUser(creator.id))).id).toBe(database!.id);
+    expect(await visibleServiceIdSet(db, asUser(creator.id))).toContain(svc!.id);
+    expect(await visibleDatabaseIds(db, asUser(creator.id))).toContain(database!.id);
   });
 });
