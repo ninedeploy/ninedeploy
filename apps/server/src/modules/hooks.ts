@@ -534,7 +534,10 @@ export const webhookMgmtRoutes: FastifyPluginAsync = async (app) => {
       .delete(webhooks)
       .where(and(eq(webhooks.id, hookId), eq(webhooks.serviceId, id)))
       .returning({ id: webhooks.id });
-    if (gone.length > 0) void audit(app.db, req.user!.id, 'webhook.delete', `${hookSvc.name}#${hookId}`);
+    // r691: another service's webhook id answered 200 although nothing was
+    // revoked — an operator could believe a leaked hook secret was dead.
+    if (gone.length === 0) throw notFound('Webhook not found');
+    void audit(app.db, req.user!.id, 'webhook.delete', `${hookSvc.name}#${hookId}`);
     return { ok: true };
   });
 };
