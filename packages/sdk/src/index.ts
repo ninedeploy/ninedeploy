@@ -157,6 +157,26 @@ export interface HealthStatus {
 }
 
 /**
+ * Who may resolve `${{infisical|doppler:KEY}}` references (0.10.36): services
+ * owned by an instance operator always may; others only when one of their
+ * workspaces is listed — or, for legacy un-tagged services grandfathered at
+ * upgrade, their own id. `workspaces` / `allowedServices` carry display names.
+ */
+export interface VaultAllowlistView {
+  allowlist: { workspaceIds: number[]; serviceIds: number[] };
+  workspaces: Array<{ id: number; name: string }>;
+  allowedServices: Array<{ id: number; name: string }>;
+}
+
+/** `GET /v1/settings/vault`. The allowlist fields are additive (0.10.36). */
+export interface VaultSettings extends Partial<VaultAllowlistView> {
+  provider: string | null;
+  hasToken: boolean;
+  projectId: string | null;
+  environment: string | null;
+}
+
+/**
  * Result of `GET /v1/auth/token`. Tells the caller what
  * the current bearer credential is and what it can do.
  * `kind` is `'session'` for JWTs and `'api'` for opaque
@@ -993,9 +1013,11 @@ export interface NineDeployClient {
     setDns: (input: { provider: string; token?: string; wildcardApex: string }) => Promise<{ ok: boolean; dnsProvider: string | null; wildcardApex: string | null; applied: string }>;
     /** Vault provider (deploy-time secret resolution). */
     vault: {
-      get: () => Promise<{ provider: string | null; hasToken: boolean; projectId: string | null; environment: string | null }>;
+      get: () => Promise<VaultSettings>;
       set: (input: { provider: '' | 'infisical' | 'doppler'; token?: string; projectId?: string; environment?: string }) => Promise<{ ok: boolean; provider: string | null }>;
       test: () => Promise<{ ok: boolean; secrets: number }>;
+      /** Which workspaces (and legacy un-tagged services) may resolve vault references. */
+      setAllowlist: (input: { workspaceIds: number[]; serviceIds?: number[] }) => Promise<{ ok: boolean } & VaultAllowlistView>;
     };
     /** Cloudflare DNS-record auto-provisioning for added domains. */
     dnsRecords: {
@@ -1946,10 +1968,10 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       setDns: (input) =>
         send<{ ok: boolean; dnsProvider: string | null; wildcardApex: string | null; applied: string }>('PUT', '/v1/settings/dns', input),
       vault: {
-        get: () =>
-          get<{ provider: string | null; hasToken: boolean; projectId: string | null; environment: string | null }>('/v1/settings/vault'),
+        get: () => get<VaultSettings>('/v1/settings/vault'),
         set: (input) => send<{ ok: boolean; provider: string | null }>('PUT', '/v1/settings/vault', input),
         test: () => send<{ ok: boolean; secrets: number }>('POST', '/v1/settings/vault/test'),
+        setAllowlist: (input) => send<{ ok: boolean } & VaultAllowlistView>('PUT', '/v1/settings/vault/allowlist', input),
       },
       dnsRecords: {
         get: () => get<{ enabled: boolean; hasToken: boolean; content: string | null }>('/v1/settings/dns-records'),

@@ -47,6 +47,8 @@ const vaultMock = vi.hoisted(() => ({
   getVaultConfig: vi.fn(async () => ({ provider: null, token: null, projectId: null, environment: null })),
   setVaultConfig: vi.fn(async () => undefined),
   testVault: vi.fn(async () => 0),
+  ensureVaultAllowlistInitialised: vi.fn(async () => ({ workspaceIds: [], serviceIds: [] })),
+  setVaultAllowlist: vi.fn(async (_db: unknown, list: unknown) => list),
 }));
 vi.mock('../src/lib/vault.js', () => vaultMock);
 
@@ -717,6 +719,10 @@ describe('Vault provider (Infisical / Doppler)', () => {
       hasToken: true,
       projectId: 'workspace-1',
       environment: 'production',
+      // r510: the allowlist rides along (additive).
+      allowlist: { workspaceIds: [], serviceIds: [] },
+      workspaces: [],
+      allowedServices: [],
     });
     await app.close();
   });
@@ -736,6 +742,9 @@ describe('Vault provider (Infisical / Doppler)', () => {
       hasToken: false,
       projectId: 'proj-x',
       environment: 'dev',
+      allowlist: { workspaceIds: [], serviceIds: [] },
+      workspaces: [],
+      allowedServices: [],
     });
     await app.close();
   });

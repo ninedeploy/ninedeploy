@@ -13,6 +13,7 @@ import {
 } from '../lib/resourceAccess.js';
 import { badRequest, notFound, parseId as num } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
+import { assertMayWriteVaultRefs } from '../lib/vault.js';
 
 /**
  * Parse a .env-formatted string into key/value pairs. Handles `export`
@@ -70,6 +71,9 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
     const svc = await loadServiceForUser(app.db, id, req.user!);
     // Environment variables are service configuration — `member`+ to write.
     await assertServiceRole(app.db, svc, req.user!, 'member');
+    // r510: a vault reference resolves with the operator's instance-wide
+    // token, so only services the operator allowed may carry one.
+    await assertMayWriteVaultRefs(app.db, req.user!, { kind: 'service', service: svc }, [input.value]);
     if (input.overwriteExisting) {
       const existing = await app.db.query.envVars.findFirst({
         where: and(eq(envVars.serviceId, id), eq(envVars.key, input.key)),
@@ -116,6 +120,7 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
     const target = await loadServiceForUser(app.db, id, req.user!);
     await assertServiceRole(app.db, target, req.user!, 'member');
     const input = upsertEnvVar.parse(req.body);
+    await assertMayWriteVaultRefs(app.db, req.user!, { kind: 'service', service: target }, [input.value]);
     const existing = await app.db.query.envVars.findFirst({
       where: and(eq(envVars.id, varId), eq(envVars.serviceId, id)),
     });
@@ -157,6 +162,8 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
     await assertServiceRole(app.db, svc, req.user!, 'member');
 
     const pairs = parseDotEnv(input.content);
+    // r510: refuse the whole import up front rather than half-applying it.
+    await assertMayWriteVaultRefs(app.db, req.user!, { kind: 'service', service: svc }, pairs.map((p) => p.value));
     let imported = 0;
     const errors: Array<{ line: number; message: string }> = [];
 
@@ -240,6 +247,8 @@ export const projectEnvRoutes: FastifyPluginAsync = async (app) => {
       await assertWorkspaceRole(app.db, project.workspaceId, req.user!, 'member');
     }
     const input = upsertEnvVar.parse(req.body);
+    // r510: project env reaches every linked service's container.
+    await assertMayWriteVaultRefs(app.db, req.user!, { kind: 'project', project }, [input.value]);
     const [created] = await app.db
       .insert(envVars)
       .values({
@@ -268,6 +277,7 @@ export const projectEnvRoutes: FastifyPluginAsync = async (app) => {
       await assertWorkspaceRole(app.db, project.workspaceId, req.user!, 'member');
     }
     const input = upsertEnvVar.parse(req.body);
+    await assertMayWriteVaultRefs(app.db, req.user!, { kind: 'project', project }, [input.value]);
     const existing = await app.db.query.envVars.findFirst({
       where: and(eq(envVars.id, varId), eq(envVars.scope, 'project'), eq(envVars.scopeKey, id)),
     });

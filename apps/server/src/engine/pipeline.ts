@@ -308,9 +308,10 @@ async function loadRuntimeEnv(db: DB, service: typeof services.$inferSelect): Pr
     }
   }
 
-  // Vault references resolve last, from the fully-merged map.
+  // Vault references resolve last, from the fully-merged map — and only for
+  // a service the operator allowed (r510).
   return {
-    values: await resolveVaultRefs(db, env),
+    values: await resolveVaultRefs(db, env, { service, projectIds: projectLinks.map((p) => p.projectId) }),
     attachmentCount: attaches.length,
     readyAttachmentCount,
     managedDatabaseKeys: [...managedDatabaseKeys].sort(),

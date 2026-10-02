@@ -35,6 +35,33 @@ describe('IntegrationsSection', () => {
     expect(screen.getByRole('button', { name: 'Test token' })).toBeDisabled();
   });
 
+  it('r510: ticking a workspace saves the vault allowlist (grandfathered services can be revoked)', async () => {
+    mockOf(api.settings.vault.get).mockResolvedValue({
+      provider: 'infisical',
+      hasToken: true,
+      allowlist: { workspaceIds: [2], serviceIds: [9] },
+      workspaces: [
+        { id: 1, name: 'Team A' },
+        { id: 2, name: 'Team B' },
+      ],
+      allowedServices: [{ id: 9, name: 'legacy-api' }],
+    } as never);
+    mockOf(api.settings.vault.setAllowlist).mockResolvedValue({ ok: true } as never);
+    renderWithProviders(<IntegrationsSection />);
+
+    const teamA = await screen.findByRole('checkbox', { name: 'Team A' });
+    expect(teamA).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Team B' })).toBeChecked();
+    fireEvent.click(teamA);
+    await waitFor(() =>
+      expect(api.settings.vault.setAllowlist).toHaveBeenCalledWith({ workspaceIds: [2, 1], serviceIds: [9] }),
+    );
+    fireEvent.click(screen.getByRole('checkbox', { name: 'legacy-api' }));
+    await waitFor(() =>
+      expect(api.settings.vault.setAllowlist).toHaveBeenLastCalledWith({ workspaceIds: [2], serviceIds: [] }),
+    );
+  });
+
   it('saves vault settings with infisical defaults and tests the connection', async () => {
     const user = userEvent.setup();
     mockOf(api.settings.vault.get).mockResolvedValue({ provider: 'infisical', hasToken: true } as never);

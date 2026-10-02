@@ -1,3 +1,5 @@
+import { inArray } from 'drizzle-orm';
+import { services } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../lib/audit.js';
@@ -15,7 +17,13 @@ import {
 import { activeKeyVersion, knownKeyVersions } from '../lib/crypto.js';
 import { rotateSecretsWithReport } from '../lib/keyRotation.js';
 import { unprocessable } from '../lib/errors.js';
-import { getVaultConfig, setVaultConfig, testVault } from '../lib/vault.js';
+import {
+  ensureVaultAllowlistInitialised,
+  getVaultConfig,
+  setVaultAllowlist,
+  setVaultConfig,
+  testVault,
+} from '../lib/vault.js';
 import { clearEnrolmentToken, getEnrolmentToken, rotateEnrolmentToken } from '../lib/enrolment.js';
 import { getDnsRecordsConfig, setDnsRecordsConfig, testCloudflareToken } from '../lib/cloudflare.js';
 import { getNamecheapConfig, setNamecheapConfig } from '../lib/namecheap.js';
@@ -45,6 +53,12 @@ const vaultPatch = z.object({
   token: z.string().min(1).max(4096).optional(),
   projectId: z.union([z.string().max(255), z.literal('')]).optional(),
   environment: z.union([z.string().max(255), z.literal('')]).optional(),
+});
+// r510: which tenants may resolve vault references. Workspace ids, plus the
+// legacy un-tagged service ids the upgrade seed grandfathered (omitted = keep).
+const vaultAllowlistPatch = z.object({
+  workspaceIds: z.array(z.number().int().positive()).max(1000),
+  serviceIds: z.array(z.number().int().positive()).max(1000).optional(),
 });
 // Cloudflare DNS-record provisioning: toggle + optional token (omitted = keep)
 // + explicit record content (IPv4 → A, hostname → CNAME; empty = auto-detect).
@@ -159,6 +173,21 @@ export const settingsRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // ── Vault provider (deploy-time secret resolution) ───────────────────────
+  // r510: the allowlist rides along (additive fields) with the names the UI
+  // needs to render it — every workspace, and the grandfathered services.
+  const vaultAllowlistView = async () => {
+    const allowlist = await ensureVaultAllowlistInitialised(app.db);
+    const allWorkspaces = await app.db.query.workspaces.findMany({ orderBy: (w, { asc }) => [asc(w.name)] });
+    const legacy = allowlist.serviceIds.length
+      ? await app.db.query.services.findMany({ where: inArray(services.id, allowlist.serviceIds) })
+      : [];
+    return {
+      allowlist,
+      workspaces: allWorkspaces.map((w) => ({ id: w.id, name: w.name })),
+      allowedServices: legacy.map((s) => ({ id: s.id, name: s.name })),
+    };
+  };
+
   app.get('/vault', async () => {
     const cfg = await getVaultConfig(app.db);
     return {
@@ -166,7 +195,25 @@ export const settingsRoutes: FastifyPluginAsync = async (app) => {
       hasToken: !!cfg.token,
       projectId: cfg.projectId,
       environment: cfg.environment,
+      ...(await vaultAllowlistView()),
     };
+  });
+
+  app.put('/vault/allowlist', async (req) => {
+    const input = vaultAllowlistPatch.parse(req.body);
+    const current = await ensureVaultAllowlistInitialised(app.db);
+    const next = await setVaultAllowlist(app.db, {
+      workspaceIds: input.workspaceIds,
+      serviceIds: input.serviceIds ?? current.serviceIds,
+    });
+    void audit(
+      app.db,
+      req.user!.id,
+      'settings.vault_allowlist',
+      `workspaces [${next.workspaceIds.join(', ')}], services [${next.serviceIds.join(', ')}]`,
+      { ...next },
+    );
+    return { ok: true, ...(await vaultAllowlistView()) };
   });
 
   app.put('/vault', async (req) => {

@@ -135,8 +135,84 @@ function VaultCard() {
             </Button>
           </div>
         </div>
+        <VaultAllowlist />
       </CardBody>
     </Card>
+  );
+}
+
+/**
+ * r510: which tenants may resolve vault references. Services owned by an
+ * instance operator always may; everyone else only through a workspace
+ * ticked here (or, for legacy un-tagged services, a grandfathered entry the
+ * upgrade seeded). Each toggle saves immediately.
+ */
+function VaultAllowlist() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const vault = useQuery({ queryKey: ['settings-vault'], queryFn: () => api.settings.vault.get() });
+  const allowlist = vault.data?.allowlist;
+  const save = useMutation({
+    mutationFn: (next: { workspaceIds: number[]; serviceIds: number[] }) => api.settings.vault.setAllowlist(next),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['settings-vault'] }),
+    onError: (err) => toast(err instanceof Error ? err.message : 'Save failed', 'error'),
+  });
+  if (!allowlist) return null;
+  const toggle = (list: number[], id: number, on: boolean) => (on ? [...list, id] : list.filter((x) => x !== id));
+  return (
+    <div className="mt-5 max-w-md border-t border-slate-800 pt-4">
+      <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Allowed workspaces</h3>
+      <p className="mb-3 text-xs text-slate-500">
+        Vault references resolve with this instance-wide token, so only services owned by an operator — or tagged into a
+        workspace ticked here — may use them.
+      </p>
+      {(vault.data?.workspaces ?? []).length === 0 ? (
+        <p className="text-xs text-slate-500">No workspaces yet.</p>
+      ) : (
+        <ul className="grid gap-1.5">
+          {(vault.data?.workspaces ?? []).map((w) => (
+            <li key={w.id}>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={allowlist.workspaceIds.includes(w.id)}
+                  disabled={save.isPending}
+                  onChange={(e) =>
+                    save.mutate({ ...allowlist, workspaceIds: toggle(allowlist.workspaceIds, w.id, e.target.checked) })
+                  }
+                />
+                {w.name}
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+      {(vault.data?.allowedServices ?? []).length > 0 && (
+        <>
+          <h3 className="mb-1 mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Grandfathered services
+          </h3>
+          <p className="mb-2 text-xs text-slate-500">
+            Un-tagged services that used vault references before the upgrade. Untick to revoke.
+          </p>
+          <ul className="grid gap-1.5">
+            {(vault.data?.allowedServices ?? []).map((s) => (
+              <li key={s.id}>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked
+                    disabled={save.isPending}
+                    onChange={() => save.mutate({ ...allowlist, serviceIds: toggle(allowlist.serviceIds, s.id, false) })}
+                  />
+                  {s.name}
+                </label>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
   );
 }
 

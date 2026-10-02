@@ -3,6 +3,7 @@ import fp from 'fastify-plugin';
 import { config } from '../config.js';
 import { reconcileDeploymentHistory } from '../engine/pipeline.js';
 import { ensureRegistryBindingsInitialised } from '../lib/registryBinding.js';
+import { ensureVaultAllowlistInitialised } from '../lib/vault.js';
 
 // Augment the Fastify instance so `fastify.db` is typed everywhere.
 declare module 'fastify' {
@@ -78,10 +79,16 @@ export default fp(
         fastify.log.warn({ err }, 'deployment history reconciliation skipped');
       }
 
-      // r512 upgrade path: bind registry credentials to the hosts their
-      // services use today on the first boot of a release that enforces the
-      // binding, so working deploys keep working. Also initialised lazily at
-      // the use sites; a failure here only defers the seed, never startup.
+      // r510/r512 upgrade path: seed the vault allowlist and the registry
+      // credential host bindings from current usage on the first boot of a
+      // release that enforces them, so working deploys keep working. Both are
+      // also initialised lazily at their use sites; a failure here only
+      // defers the seed, it never blocks startup.
+      try {
+        await ensureVaultAllowlistInitialised(db, (msg, detail) => fastify.log.warn(detail, msg));
+      } catch (err) {
+        fastify.log.warn({ err }, 'vault allowlist initialisation deferred');
+      }
       try {
         await ensureRegistryBindingsInitialised(db, (msg, detail) => fastify.log.warn(detail, msg));
       } catch (err) {
