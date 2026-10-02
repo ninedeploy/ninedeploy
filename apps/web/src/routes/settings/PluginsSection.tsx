@@ -800,6 +800,15 @@ function PluginCard({
                     <AlertTriangle size={10} /> Errored
                   </span>
                 )}
+                {/* r600: sandbox plugin on a Node that cannot deny it the network. */}
+                {p.networkRestricted === false && (
+                  <span
+                    className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400 border border-amber-500/20"
+                    title="This Node.js has no network permission scope (needs Node 25+): the sandbox cannot stop this plugin from making network requests."
+                  >
+                    <AlertTriangle size={10} /> Unrestricted network
+                  </span>
+                )}
               </div>
 
               {p.description && (

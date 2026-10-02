@@ -61,6 +61,7 @@ const { hookReceiveRoutes } = await import('../src/modules/hooks.js');
 const { servicesRoutes } = await import('../src/modules/services.js');
 const { settingsRoutes } = await import('../src/modules/settings.js');
 const { sourcesRoutes } = await import('../src/modules/sources.js');
+const { templateRoutes } = await import('../src/modules/templates.js');
 const { sweepAutoUpdates } = await import('../src/lib/autoUpdate.js');
 const vault = await import('../src/lib/vault.js');
 const registry = await import('../src/lib/registryBinding.js');
@@ -247,6 +248,50 @@ describe('r510: vault references resolve only for allowed tenants', () => {
     // Members never reach it (settings are operator-only).
     const denied = await app.inject({ method: 'PUT', url: '/vault/allowlist', headers: asMember(w.mem.id), payload: { workspaceIds: [w.w1.id] } });
     expect(denied.statusCode).toBe(403);
+    await app.close();
+  });
+});
+
+// ── r601 ─────────────────────────────────────────────────────────────────
+describe('r601: the write-time vault gate also covers the template deploy env', () => {
+  it('a member cannot plant a reference through a template deploy outside the allowlist; nothing is created', async () => {
+    const w = await world();
+    // W1 is allowed — but the member is tagged into W1 by default, so take
+    // the member's W1 seat away to make the new service land in W2 only.
+    await vault.setVaultAllowlist(db, { workspaceIds: [w.w1.id], serviceIds: [] });
+    await db.delete(workspaceMembers).where(eq(workspaceMembers.workspaceId, w.w1.id));
+    const app = await buildTestApp({ db });
+    await app.register(templateRoutes);
+    const deploy = (user: ReturnType<typeof asUser>, payload: Record<string, unknown>) =>
+      app.inject({ method: 'POST', url: '/grafana/deploy', headers: user, payload });
+
+    const refused = await deploy(asMember(w.mem.id), {
+      name: 'graf-x',
+      env: [{ key: 'GF_SECRET', value: REF('PROD_DB_PASSWORD') }],
+    });
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json().error.message).toMatch(/Vault references .* are not enabled for service "graf-x".*allow its workspace/);
+    // Refused up front: no service row, no env, no deployment.
+    expect(await db.select().from(services)).toEqual([]);
+    expect(await db.select().from(deployments)).toEqual([]);
+
+    // With a seat in an allowed workspace (the new service is tagged into it,
+    // and the project there becomes visible) the same deploy goes through.
+    const [p1] = await db.insert(projects).values({ name: 'P1', slug: 'p1', workspaceId: w.w1.id }).returning();
+    await db.insert(workspaceMembers).values({ workspaceId: w.w1.id, userId: w.mem.id, role: 'member' });
+    const viaProject = await deploy(asMember(w.mem.id), {
+      name: 'graf-ok',
+      projectId: p1!.id,
+      env: [{ key: 'GF_SECRET', value: REF('PROD_DB_PASSWORD') }],
+    });
+    expect(viaProject.statusCode).toBe(200);
+
+    // Plain values and operators are unaffected.
+    await db.delete(workspaceMembers).where(eq(workspaceMembers.workspaceId, w.w1.id));
+    expect((await deploy(asMember(w.mem.id), { name: 'graf-plain', env: [{ key: 'A', value: 'b' }] })).statusCode).toBe(200);
+    expect(
+      (await deploy(asUser({ id: w.op.id, isOperator: true }), { name: 'graf-op', env: [{ key: 'A', value: REF('X') }] })).statusCode,
+    ).toBe(200);
     await app.close();
   });
 });

@@ -59,6 +59,12 @@ export const doctorFindingKind = z.enum([
    * operator's call (it cuts off whoever reaches the panel at http://ip:3000).
    */
   'panel_plaintext_exposure',
+  /**
+   * r600: enabled sandbox plugins on a Node whose permission model has no
+   * network scope (< 25) — their code can reach anything the host can.
+   * Advisory: they keep loading (upgrade-safe); upgrading Node closes it.
+   */
+  'sandbox_plugin_network',
 ]);
 export type DoctorFindingKind = z.infer<typeof doctorFindingKind>;
 

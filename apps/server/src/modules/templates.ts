@@ -22,6 +22,7 @@ import { badRequest, forbidden, notFound } from '../lib/errors.js';
 import { assertMayUseHostPrivilege } from '../lib/hostPrivilege.js';
 import type { AuthedUser } from '../lib/resourceAccess.js';
 import { assertMayPublishPort } from '../lib/hostPort.js';
+import { assertMayWriteVaultRefs, hasVaultRef } from '../lib/vault.js';
 import { slugify } from '../lib/slug.js';
 import { assertSlugVolumeNotRetained } from '../lib/retainedSlugVolume.js';
 import { visibleProjectIds } from './projects.js';
@@ -346,6 +347,28 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
       dockerSocket: t.dockerSocket ?? false,
     });
     assertMayPublishPort(req.user!, input.publishedPort);
+    // r601: the same write-time vault gate as the env routes (r510). The
+    // service does not exist yet, so it is judged by the tags it is about to
+    // get — a compose stack gets none, a container the caller's workspaces
+    // plus the (visible) project — and the whole deploy is refused up front.
+    const envValues = (input.env ?? []).map((e) => e.value);
+    if (!req.user!.isOperator && envValues.some(hasVaultRef)) {
+      const projectIds =
+        !t.composeContent && input.projectId != null
+          ? await visibleProjectIds(app.db, req.user!, [input.projectId], 'member')
+          : [];
+      await assertMayWriteVaultRefs(
+        app.db,
+        req.user!,
+        {
+          kind: 'newService',
+          name: input.name ?? t.name,
+          workspaceIds: t.composeContent ? [] : await defaultWorkspaceIdsForUser(app.db, req.user!),
+          projectIds,
+        },
+        envValues,
+      );
+    }
     const prepared = t.composeContent
       ? await (async () => {
           const stack = await prepareComposeStack(app, t, input, req.user!);

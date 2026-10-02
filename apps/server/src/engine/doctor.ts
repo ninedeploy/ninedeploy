@@ -3,6 +3,7 @@ import type { DB } from '@ninedeploy/db';
 import {
   databases,
   deployments,
+  installedPlugins,
   oidcProviders,
   projects,
   serviceVolumeAttachments,
@@ -28,6 +29,7 @@ import {
 } from '../lib/exec.js';
 import { conflict } from '../lib/errors.js';
 import { config } from '../config.js';
+import { SandboxPlugin } from '../kernel/sandbox/sandboxPlugin.js';
 import {
   containerRunning,
   listManagedVolumeNames,
@@ -182,6 +184,40 @@ export function panelExposureFinding(
       '(attach a domain to it via Traefik on :443, or a tunnel), then set NINEDEPLOY_HOST=127.0.0.1 in .env and restart ' +
       'the service (sudo systemctl restart ninedeploy). If the port must stay open, firewall it to a trusted network.',
     target: { type: 'host', name: where, id: null },
+    action: null,
+    sizeBytes: null,
+  };
+}
+
+/**
+ * r600: sandbox plugins installed before 0.10.38 keep loading on a Node
+ * without network permission support (refusing them would break working
+ * installs on upgrade) — but the operator must know the "sandbox" does not
+ * cover the network there. Only ENABLED sandbox rows count. Exported for its
+ * unit test; wired below.
+ */
+export function sandboxNetworkFinding(
+  rows: ReadonlyArray<{ id: string; enabled: boolean; manifest: unknown }>,
+  networkDenied: boolean,
+  nodeVersion: string = process.version,
+): DoctorFinding | null {
+  if (networkDenied) return null;
+  const ids = rows
+    .filter((r) => r.enabled && (r.manifest as Record<string, unknown> | null)?.['source'] === 'sandbox')
+    .map((r) => r.id);
+  if (ids.length === 0) return null;
+  return {
+    id: 'sandbox_plugin_network',
+    kind: 'sandbox_plugin_network',
+    severity: 'warn',
+    title: `${ids.length} sandbox plugin(s) have unrestricted network access on Node ${nodeVersion}`,
+    detail:
+      `The plugin sandbox denies filesystem, child-process and worker access, but Node ${nodeVersion} has no ` +
+      `network permission scope (it exists from Node 25), so ${ids.join(', ')} can open sockets and make HTTP ` +
+      'requests from this host — including to private addresses. Upgrade Node.js to 25 or newer (the Docker image ' +
+      'runs Node 26), or disable the plugins you do not fully trust in Settings → Plugins. New sandbox installs are ' +
+      'refused on this Node unless NINEDEPLOY_ALLOW_SANDBOX_NETWORK=1 is set.',
+    target: { type: 'host', name: ids.join(','), id: null },
     action: null,
     sizeBytes: null,
   };
@@ -420,6 +456,13 @@ export async function scanDoctor(db: DB): Promise<DoctorReport> {
   // r575: plaintext panel port on a non-loopback address.
   const exposure = panelExposureFinding(config.host, config.port, existsSync('/.dockerenv'));
   if (exposure) findings.push(exposure);
+
+  // r600: grandfathered sandbox plugins on a Node that cannot deny network.
+  const pluginRows = await db
+    .select({ id: installedPlugins.id, enabled: installedPlugins.enabled, manifest: installedPlugins.manifest })
+    .from(installedPlugins);
+  const sandboxNet = sandboxNetworkFinding(pluginRows, SandboxPlugin.networkDenied());
+  if (sandboxNet) findings.push(sandboxNet);
 
   // ── stored slugs that violate the canonical contract ────────────────────
   // r028/r029 fixed slugify() for NEW rows; this catches rows already written

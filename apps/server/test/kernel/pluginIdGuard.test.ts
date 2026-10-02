@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Sandbox installs spawn a Worker during init; the bootstrap only exists as
 // compiled .js. Same stand-in as pluginLoader.test.ts: READY on attach.
@@ -40,6 +40,7 @@ import { TelemetryStreamerPlugin } from '../../src/kernel/plugins/telemetry.js';
 import { TemplateBundlesPlugin } from '../../src/kernel/plugins/templateBundles.js';
 import { WebhookOutPlugin } from '../../src/kernel/plugins/webhookOut.js';
 import { pluginRoutes } from '../../src/modules/plugins.js';
+import { SandboxPlugin } from '../../src/kernel/sandbox/sandboxPlugin.js';
 import { asUser, buildTestApp, createFakeDb, trackStatusUpdates } from '../helpers.js';
 
 const BUILT_IN_CLASSES: Record<string, new () => { id: string }> = {
@@ -58,6 +59,12 @@ const BUILT_IN_CLASSES: Record<string, new () => { id: string }> = {
 };
 
 const mockConfig = { paths: { dataDir: '/tmp/test' } } as never;
+
+// r600: these cases are about ids, not the network gate — run them as on a
+// Node >= 25 (CI's node:26) regardless of the Node executing the suite.
+beforeEach(() => {
+  vi.spyOn(SandboxPlugin, 'networkDenied').mockReturnValue(true);
+});
 
 describe('r531 — reserved built-in plugin ids', () => {
   it('BUILT_IN_PLUGIN_IDS is exactly what plugins/kernel.ts registers', () => {

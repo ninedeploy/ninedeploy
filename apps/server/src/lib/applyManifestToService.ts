@@ -16,6 +16,7 @@ import { ensureAlertState } from './alerting.js';
 import { isOperator, visibleDatabaseIds } from './resourceAccess.js';
 import { hostsCollide, newChallengeToken, ownZoneClaimRefusal, requiresOwnershipProof } from './domainVerification.js';
 import { getSettingString } from './settings.js';
+import { previewPatternError } from './previewDomain.js';
 
 /**
  * Apply a `.ninedeploy` manifest's operational sections onto an existing
@@ -157,10 +158,20 @@ async function syncWatchPaths(
  * field is applied; a section the panel later edits stays until the next
  * deploy of a repo still carrying the section.
  *
- * No hostname validation happens here on purpose: the wildcard-zone
- * constraint is enforced where it matters, at ROUTING time in
- * `modules/hooks.ts` — a hostile pattern stored on the row can never claim
- * a host the instance does not own.
+ * r602: a CHANGED `pattern` is held to the same rule as the services
+ * create/PATCH routes (r511, `previewPatternError`) — it was stored
+ * unvalidated and only the webhook caught it, one PR later. An invalid
+ * pattern does not fail the deploy: that one field is skipped (the stored
+ * pattern stays), the rest of the section applies, and the reason lands in
+ * the deploy log. Re-applying an already-stored invalid pattern is a silent
+ * no-op (like re-sending it through PATCH), so a legacy pattern does not warn
+ * on every deploy; the webhook still refuses to provision from it.
+ *
+ * The manifest schema documents (and, when enabled, requires) `{n}` as the
+ * PR-number placeholder, while the renderer only knows `{{pr}}` — so a
+ * manifest pattern was stored in a dialect nothing substituted. `{n}` is
+ * normalised to `{{pr}}` here, which makes `pr-{n}-{{slug}}.{{domain}}` a
+ * pattern that satisfies both the schema and the r511 rule.
  */
 async function applyPreviewConfig(
   db: DB,
@@ -169,15 +180,27 @@ async function applyPreviewConfig(
   result: ApplyManifestResult,
 ): Promise<void> {
   if (!previews) return;
-  await db
-    .update(services)
-    .set({
-      previewDeploymentsEnabled: previews.enabled,
-      previewDomainPattern: previews.pattern ?? null,
-      previewMaxActive: previews.maxActive,
-      previewAutoDestroyOnClose: previews.autoDestroyOnClose,
-    })
-    .where(eq(services.id, serviceId));
+  const pattern = previews.pattern ? previews.pattern.replace(/\{n\}/g, '{{pr}}') : null;
+  const patch: Partial<typeof services.$inferInsert> = {
+    previewDeploymentsEnabled: previews.enabled,
+    previewDomainPattern: pattern,
+    previewMaxActive: previews.maxActive,
+    previewAutoDestroyOnClose: previews.autoDestroyOnClose,
+  };
+  if (pattern) {
+    const svc = await db.query.services.findFirst({ where: eq(services.id, serviceId) });
+    const error = svc ? previewPatternError(pattern, svc.slug) : null;
+    // Already stored (either dialect): left as it is, without a warning.
+    const unchanged = svc?.previewDomainPattern === pattern || svc?.previewDomainPattern === previews.pattern;
+    if (error) delete patch.previewDomainPattern;
+    if (error && !unchanged) {
+      result.warnings.push(
+        `previews.pattern ${JSON.stringify(previews.pattern)} not applied: ${error} (in .ninedeploy the PR number is ` +
+          `written {n}, e.g. pr-{n}-{{slug}}.{{domain}}). The stored pattern is unchanged.`,
+      );
+    }
+  }
+  await db.update(services).set(patch).where(eq(services.id, serviceId));
   result.previewsApplied = true;
 }
 

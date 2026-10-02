@@ -566,9 +566,9 @@ export function Workspaces() {
             <div className="space-y-4">
               <p className="text-sm text-slate-300">
                 A pending invitation has been created for{' '}
-                <strong className="text-white">{lastInvite.email}</strong>. The address
-                will be added to this workspace the next time the recipient signs in
-                to NineDeploy — or sooner if they open the accept link below.
+                <strong className="text-white">{lastInvite.email}</strong>. The recipient
+                joins this workspace by opening the accept link below while signed in
+                with that address — or after creating an account with it.
               </p>
               <Field label="Accept link">
                 <div className="flex items-stretch gap-2">
@@ -625,9 +625,10 @@ export function Workspaces() {
               </Field>
 
               <p className="text-[11px] text-slate-500">
-                If the email already belongs to a user, they are added immediately. If
-                not, a pending invitation is created and the address joins the
-                workspace the next time they sign in.
+                {/* r604: whether the address has an account is not revealed here. */}
+                {user?.isOperator
+                  ? 'If the email already belongs to a user, they are added immediately; otherwise a pending invitation is created.'
+                  : 'A pending invitation is created for the address — whether or not it already has an account — and the recipient accepts it from the link.'}
               </p>
 
               {error && <p className="text-xs text-rose-400">{error}</p>}

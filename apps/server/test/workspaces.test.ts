@@ -519,6 +519,78 @@ describe('workspaces routes', () => {
       expect(body.acceptUrl).toMatch(/^https?:\/\/.+\/invite\/.+$/);
     });
 
+    it('r604: a non-operator admin gets the SAME invitation answer for a registered and an unknown email', async () => {
+      const inviteRow = (email: string) => ({
+        id: 99,
+        workspaceId: 1,
+        email,
+        role: 'member',
+        token: 'a'.repeat(64),
+        invitedByUserId: 2,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        acceptedAt: null,
+        acceptedByUserId: null,
+        revokedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      const call = async (email: string, registered: boolean) => {
+        let memberLookups = 0;
+        const db = createFakeDb({
+          findFirst: {
+            workspaces: workspaceRow({ id: 1 }),
+            // 1st lookup: the caller's own seat (admin); 2nd: the target is not a member.
+            workspaceMembers: () => (++memberLookups === 1 ? memberRow({ userId: 2, role: 'admin' }) : undefined),
+            users: registered ? userRow({ id: 4, email }) : undefined,
+            workspaceInvitations: undefined,
+          },
+          insert: { workspace_invitations: [inviteRow(email)], workspace_members: [memberRow({ id: 10, userId: 4 })] },
+        });
+        const insert = vi.spyOn(db, 'insert');
+        const app = await buildTestApp({ db });
+        await app.register(workspaceRoutes, { prefix: '/workspaces' });
+        const res = await app.inject({
+          method: 'POST',
+          url: '/workspaces/1/members',
+          headers: { ...asUser({ id: 2, isOperator: false }), 'content-type': 'application/json' },
+          payload: { email, role: 'member' },
+        });
+        const { workspaceMembers } = await import('@ninedeploy/db');
+        return { res, addedDirectly: insert.mock.calls.some(([t]) => t === workspaceMembers) };
+      };
+
+      const registered = await call('bob@example.com', true);
+      const unknown = await call('nobody@example.com', false);
+      expect(registered.res.statusCode).toBe(200);
+      expect(unknown.res.statusCode).toBe(200);
+      expect(registered.res.json().kind).toBe('invitation');
+      expect(Object.keys(registered.res.json()).sort()).toEqual(Object.keys(unknown.res.json()).sort());
+      expect(registered.addedDirectly).toBe(false);
+    });
+
+    it('r604: an instance operator (who can list every account anyway) still adds a registered user directly', async () => {
+      const app = await buildTestApp({
+        db: createFakeDb({
+          findFirst: {
+            workspaces: workspaceRow({ id: 1 }),
+            workspaceMembers: undefined,
+            users: userRow({ id: 4, email: 'bob@example.com' }),
+          },
+          insert: { workspace_members: [memberRow({ id: 10, workspaceId: 1, userId: 4, role: 'member' })] },
+        }),
+      });
+      await app.register(workspaceRoutes, { prefix: '/workspaces' });
+      const res = await app.inject({
+        method: 'POST',
+        url: '/workspaces/1/members',
+        headers: { ...asUser({ id: 1, isOperator: true }), 'content-type': 'application/json' },
+        payload: { email: 'bob@example.com', role: 'member' },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().kind).toBeUndefined();
+      expect(res.json().email).toBe('bob@example.com');
+    });
+
     it('rejects adding an existing member with the same error as an unknown email (L-12)', async () => {
       let callCount = 0;
       const app = await buildTestApp({

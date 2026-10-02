@@ -506,7 +506,7 @@ describe('applyManifestToService — deferred sections emit warnings', () => {
     const result = await applyManifestToService(
       db,
       serviceId,
-      m({ previews: { enabled: true, pattern: 'pr-{n}.example.com', maxActive: 5, autoDestroyOnClose: true } }),
+      m({ previews: { enabled: true, pattern: 'pr-{{pr}}-{{slug}}.{{domain}}', maxActive: 5, autoDestroyOnClose: true } }),
     );
     expect(result.warnings.join('\n')).not.toMatch(/previews/);
     expect(result.previewsApplied).toBe(true);
@@ -538,7 +538,7 @@ describe('applyManifestToService — previews', () => {
       db,
       serviceId,
       m({
-        previews: { enabled: true, pattern: 'pr-{n}.previews.example.com', maxActive: 3, autoDestroyOnClose: true },
+        previews: { enabled: true, pattern: 'pr-{{pr}}-{{slug}}.{{domain}}', maxActive: 3, autoDestroyOnClose: true },
       }),
     );
     expect(result.previewsApplied).toBe(true);
@@ -546,7 +546,7 @@ describe('applyManifestToService — previews', () => {
     const [svc] = await db.select().from(services).where(eq(services.id, serviceId));
     expect(svc).toMatchObject({
       previewDeploymentsEnabled: true,
-      previewDomainPattern: 'pr-{n}.previews.example.com',
+      previewDomainPattern: 'pr-{{pr}}-{{slug}}.{{domain}}',
       previewMaxActive: 3,
       previewAutoDestroyOnClose: true,
     });
@@ -570,17 +570,72 @@ describe('applyManifestToService — previews', () => {
 
   it('is idempotent — re-running the same manifest rewrites the same values', async () => {
     const manifest = m({
-      previews: { enabled: true, pattern: 'pr-{n}.prev.example.com', maxActive: 7, autoDestroyOnClose: false },
+      previews: { enabled: true, pattern: 'preview-{{pr}}-{{slug}}.{{domain}}', maxActive: 7, autoDestroyOnClose: false },
     });
     await applyManifestToService(db, serviceId, manifest);
     await applyManifestToService(db, serviceId, manifest);
     const [svc] = await db.select().from(services).where(eq(services.id, serviceId));
     expect(svc).toMatchObject({
       previewDeploymentsEnabled: true,
-      previewDomainPattern: 'pr-{n}.prev.example.com',
+      previewDomainPattern: 'preview-{{pr}}-{{slug}}.{{domain}}',
       previewMaxActive: 7,
       previewAutoDestroyOnClose: false,
     });
+  });
+
+  // r602: the manifest path is held to the same rule as the services routes.
+  it('skips an invalid CHANGED pattern with a warning, keeps the stored one and applies the rest', async () => {
+    await db
+      .update(services)
+      .set({ previewDomainPattern: 'pr-{{pr}}-{{slug}}.{{domain}}', previewMaxActive: 1 })
+      .where(eq(services.id, serviceId));
+    for (const bad of ['victim-slug.{{domain}}', 'pr-{{pr}}-{{slug}}.evil.example.com', 'pr-{{pr}}_{{slug}}.{{domain}}']) {
+      const result = await applyManifestToService(
+        db,
+        serviceId,
+        m({ previews: { enabled: true, pattern: bad, maxActive: 6, autoDestroyOnClose: false } }),
+      );
+      expect(result.previewsApplied, bad).toBe(true);
+      expect(result.warnings.find((w) => w.startsWith('previews.pattern')), bad).toMatch(/not applied: previewDomainPattern .*stored pattern is unchanged/);
+      const [svc] = await db.select().from(services).where(eq(services.id, serviceId));
+      expect(svc, bad).toMatchObject({
+        previewDeploymentsEnabled: true,
+        previewDomainPattern: 'pr-{{pr}}-{{slug}}.{{domain}}',
+        previewMaxActive: 6,
+        previewAutoDestroyOnClose: false,
+      });
+    }
+  });
+
+  it('normalises the manifest {n} placeholder to {{pr}} so a schema-valid pattern can pass the r511 rule', async () => {
+    const ok = await applyManifestToService(
+      db,
+      serviceId,
+      m({ previews: { enabled: true, pattern: 'pr-{n}-{{slug}}.{{domain}}', maxActive: 2, autoDestroyOnClose: true } }),
+    );
+    expect(ok.warnings).toEqual([]);
+    const [svc] = await db.select().from(services).where(eq(services.id, serviceId));
+    expect(svc!.previewDomainPattern).toBe('pr-{{pr}}-{{slug}}.{{domain}}');
+
+    // The Manifest Creator's old example renders outside the zone and names no slug.
+    const bad = await applyManifestToService(
+      db,
+      serviceId,
+      m({ previews: { enabled: true, pattern: 'pr-{n}.previews.example.com', maxActive: 2, autoDestroyOnClose: true } }),
+    );
+    expect(bad.warnings.join('\n')).toMatch(/previews\.pattern "pr-\{n\}\.previews\.example\.com" not applied: .*pr-\{n\}-\{\{slug\}\}\.\{\{domain\}\}/);
+  });
+
+  it('re-applying an already-stored legacy pattern stays allowed (upgrade-safe, like PATCH)', async () => {
+    await db.update(services).set({ previewDomainPattern: 'legacy-{n}.x.example.com' }).where(eq(services.id, serviceId));
+    const result = await applyManifestToService(
+      db,
+      serviceId,
+      m({ previews: { enabled: true, pattern: 'legacy-{n}.x.example.com', maxActive: 2, autoDestroyOnClose: true } }),
+    );
+    expect(result.warnings).toEqual([]);
+    const [svc] = await db.select().from(services).where(eq(services.id, serviceId));
+    expect(svc).toMatchObject({ previewDomainPattern: 'legacy-{n}.x.example.com', previewMaxActive: 2 });
   });
 
   it('leaves panel-set preview config alone when the manifest declares no previews section', async () => {

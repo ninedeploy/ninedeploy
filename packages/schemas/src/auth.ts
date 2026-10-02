@@ -218,6 +218,16 @@ export const session = z.object({
 });
 export type Session = z.infer<typeof session>;
 
+/**
+ * r603: `POST /auth/password` — a session plus how many passkeys still sign in
+ * to the account (a change keeps them; a reset deletes them). Optional so a
+ * client talking to an older server keeps working.
+ */
+export const passwordChangeResult = session.extend({
+  passkeysRemaining: z.number().int().nonnegative().optional(),
+});
+export type PasswordChangeResult = z.infer<typeof passwordChangeResult>;
+
 // ── API tokens (for the CLI / CI) ─────────────────────────────────────────
 export const createApiToken = z.object({
   // Lenient on purpose: this endpoint historically accepted any string, sliced

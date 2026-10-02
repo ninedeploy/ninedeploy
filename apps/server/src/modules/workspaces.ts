@@ -344,15 +344,22 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
 
     const targetUser = await app.db.query.users.findFirst({ where: sql`lower(${users.email}) = ${input.email.toLowerCase()}` });
 
-    // Already a member: collapse the L-12 error the same way the unknown-user
-    // case does so an outsider cannot enumerate which addresses are
-    // registered on this instance.
+    // Already a member of THIS workspace: 404. That reveals nothing the
+    // caller cannot already read from the member list.
     if (targetUser) {
       const existingMember = await app.db.query.workspaceMembers.findFirst({
         where: and(eq(workspaceMembers.workspaceId, id), eq(workspaceMembers.userId, targetUser.id)),
       });
       if (existingMember) throw notFound('That email address cannot be added to this workspace');
+    }
 
+    // r604: answering "added" for a registered address and "invited" for an
+    // unknown one let any workspace admin probe which emails hold an account
+    // on the instance. Only an instance operator — who can list every account
+    // anyway — still gets the direct add; everyone else always goes through
+    // the invitation flow, whose response is the same whether or not an
+    // account exists (a registered recipient accepts it from their account).
+    if (targetUser && req.user!.isOperator) {
       const [created] = await app.db
         .insert(workspaceMembers)
         .values({
@@ -368,10 +375,9 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
       return serializeMember(created, targetUser);
     }
 
-    // Not a registered user — drop into the invitation flow so the address
-    // can onboard when they next sign in. The frontend uses one button for
-    // both outcomes; the response shape carries the invitation row so the
-    // UI can render the accept URL inline.
+    // Invitation flow. The frontend uses one button for both outcomes; the
+    // response shape carries the invitation row so the UI can render the
+    // accept URL inline.
     const { token, invitation } = await createOrRefreshInvitation(app.db, {
       workspaceId: id,
       email: input.email,

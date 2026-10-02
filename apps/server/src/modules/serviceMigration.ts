@@ -11,6 +11,7 @@ import { slugifyWithSuffix } from '../lib/slug.js';
 import { assertSlugVolumeNotRetained } from '../lib/retainedSlugVolume.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
 import { assertMayUseHostPrivilege } from '../lib/hostPrivilege.js';
+import { assertMayWriteVaultRefs } from '../lib/vault.js';
 
 interface ServiceBundle {
   version: string;
@@ -148,6 +149,17 @@ export const serviceMigrationRoutes: FastifyPluginAsync = async (app) => {
       attachments: Array.isArray(raw.attachments) ? raw.attachments : [],
       buildConfig: raw.buildConfig ?? null,
     };
+    // r601: the r510 write-time vault gate, applied to the bundle's env as a
+    // whole BEFORE the service row exists — an imported service gets no
+    // owner and no tags, so for a non-operator nothing allows a reference.
+    // (The route is operator-only today; this keeps the rule in one place if
+    // that ever widens.)
+    await assertMayWriteVaultRefs(
+      app.db,
+      req.user!,
+      { kind: 'newService', name: bundle.service.name, workspaceIds: [], projectIds: [] },
+      bundle.envVars.map((e) => (typeof e?.value === 'string' ? e.value : '')),
+    );
 
     // Unique slug to avoid conflicts
     const slug = slugifyWithSuffix(bundle.service.name, Date.now().toString(36).slice(-4));

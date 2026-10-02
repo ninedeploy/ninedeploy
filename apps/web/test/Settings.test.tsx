@@ -827,6 +827,45 @@ describe('Settings', () => {
     );
   });
 
+  it('r603: after a password change, says how many passkeys still sign in and links to the list', async () => {
+    const user = userEvent.setup();
+    mockOf(api.auth.changePassword).mockResolvedValue({
+      user: { id: 1 },
+      tokens: { accessToken: 'new-acc', refreshToken: 'new-ref', expiresIn: 900 },
+      passkeysRemaining: 2,
+    } as never);
+    renderWithProviders(<Settings />);
+    // The list shows when each passkey was added (last use is not tracked).
+    expect(await screen.findByText(/^Added /)).toBeInTheDocument();
+
+    await user.type(await screen.findByLabelText('Current password'), OLD_PASS);
+    await user.type(screen.getByLabelText('New password'), NEW_PASS);
+    await user.type(screen.getByLabelText('Confirm new password'), NEW_PASS);
+    await user.click(screen.getByRole('button', { name: 'Change password' }));
+
+    const notice = await screen.findByRole('status');
+    expect(notice).toHaveTextContent(/You still have 2 passkeys/);
+    expect(notice).toHaveTextContent(/remove any you don't recognise/i);
+    const link = screen.getByRole('link', { name: 'the passkey list' });
+    expect(link).toHaveAttribute('href', '#passkeys');
+    expect(document.getElementById('passkeys')).toHaveTextContent('MacBook Touch ID');
+  });
+
+  it('r603: no passkey notice when none remain (or an older server omits the count)', async () => {
+    const user = userEvent.setup();
+    mockOf(api.auth.changePassword).mockResolvedValue({
+      user: { id: 1 },
+      tokens: { accessToken: 'new-acc', refreshToken: 'new-ref', expiresIn: 900 },
+    } as never);
+    renderWithProviders(<Settings />);
+    await user.type(await screen.findByLabelText('Current password'), OLD_PASS);
+    await user.type(screen.getByLabelText('New password'), NEW_PASS);
+    await user.type(screen.getByLabelText('Confirm new password'), NEW_PASS);
+    await user.click(screen.getByRole('button', { name: 'Change password' }));
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith(expect.stringContaining('other sessions signed out'), 'success'));
+    expect(screen.queryByText(/You still have/)).not.toBeInTheDocument();
+  });
+
   it('rejects mismatched confirmation without calling the API', async () => {
     const user = userEvent.setup();
     renderWithProviders(<Settings />);

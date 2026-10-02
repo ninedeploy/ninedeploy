@@ -58,6 +58,7 @@ import type {
   DatabaseDetail,
   DatabaseCredentials,
   PasswordChange,
+  PasswordChangeResult,
   PasswordReset,
   MetricSeries,
   ProjectEntry,
@@ -570,8 +571,9 @@ export interface NineDeployClient {
     login: (input: Login) => Promise<Session>;
     refresh: (input: Refresh) => Promise<Session>;
     logout: () => Promise<{ ok: boolean }>;
-    /** Self-service password change; revokes other sessions, returns a fresh token pair. */
-    changePassword: (input: PasswordChange) => Promise<Session>;
+    /** Self-service password change; revokes other sessions, returns a fresh token pair
+     *  and (r603) how many passkeys still sign in to the account. */
+    changePassword: (input: PasswordChange) => Promise<PasswordChangeResult>;
     /** Request a reset link (always 200 — no user enumeration). */
     forgotPassword: (email: string) => Promise<{ ok: boolean }>;
     /** Complete a reset with a single-use token; revokes all sessions. */
@@ -634,9 +636,16 @@ export interface NineDeployClient {
     create: (input: WorkspaceCreateInput) => Promise<WorkspaceEntry>;
     update: (id: number, input: WorkspaceUpdateInput) => Promise<WorkspaceEntry>;
     delete: (id: number) => Promise<{ ok: boolean }>;
+    /**
+     * Add a member by email. r604: only an instance operator gets a direct
+     * add (a `WorkspaceMemberEntry`) for a registered address; for everyone
+     * else the answer is always an invitation (`kind: 'invitation'`), so the
+     * response does not reveal whether the address has an account.
+     */
     addMember: (id: number, input: WorkspaceMemberAddInput) => Promise<WorkspaceMemberEntry | WorkspaceMemberInviteEntry>;
     /**
-     * Create a pending invitation for an email address that isn't a user yet.
+     * Create a pending invitation for an email address that is not a member of
+     * the workspace yet (r604: registered or not).
      * r334: the response is the invitation row only — the server does NOT
      * return an `acceptUrl` here (the token travels in the `x-invitation-token`
      * response header and in the invite email). `addMember` returns the accept
@@ -1642,7 +1651,7 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       refresh: (input) => send<Session>('POST', '/v1/auth/refresh', input),
       /** Revoke this user's outstanding JWTs server-side (tokenVersion bump). */
       logout: () => send<{ ok: boolean }>('POST', '/v1/auth/logout', {}),
-      changePassword: (input) => send<Session>('POST', '/v1/auth/password', input),
+      changePassword: (input) => send<PasswordChangeResult>('POST', '/v1/auth/password', input),
       forgotPassword: (email) => send<{ ok: boolean }>('POST', '/v1/auth/forgot-password', { email }),
       resetPasswordWithToken: (input) => send<{ ok: boolean }>('POST', '/v1/auth/reset-password', input),
       twoFactor: {

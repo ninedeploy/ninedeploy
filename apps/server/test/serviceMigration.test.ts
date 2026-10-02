@@ -6,6 +6,13 @@ import { asUser, buildTestApp, captureAudits, createFakeDb, dbRow, svcRow } from
 // r351: the retained-volume probe asks Docker; stubbed here, asserted as wired below.
 const retainedMocks = vi.hoisted(() => ({ assertSlugVolumeNotRetained: vi.fn(async (_slug: string, _type: string) => undefined) }));
 vi.mock('../src/lib/retainedSlugVolume.js', () => retainedMocks);
+// r601: the vault write gate is asserted as wired below (the real gate is
+// exercised against a migrated db in tenancyIsolation.test.ts).
+const vaultMocks = vi.hoisted(() => ({ assertMayWriteVaultRefs: vi.fn(async (..._a: unknown[]) => undefined) }));
+vi.mock('../src/lib/vault.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/vault.js')>()),
+  assertMayWriteVaultRefs: vaultMocks.assertMayWriteVaultRefs,
+}));
 
 async function buildApp(db: ReturnType<typeof createFakeDb>) {
   const app = await buildTestApp({ db });
@@ -177,6 +184,21 @@ describe('service migration routes', () => {
       expect(slug).toMatch(/^[a-z0-9-]+$/);
       expect(type).toBe(bundle.service.type);
       expect(insert).not.toHaveBeenCalled();
+    });
+
+    it('r601: runs the vault write gate over the whole bundle env BEFORE inserting anything', async () => {
+      const { forbidden } = await import('../src/lib/errors.js');
+      vaultMocks.assertMayWriteVaultRefs.mockRejectedValueOnce(forbidden('Vault references are not enabled'));
+      const db = createFakeDb({ insert: { services: () => [svcRow({ id: 9 })] } });
+      const insert = vi.spyOn(db, 'insert');
+      const app = await buildApp(db);
+      const res = await app.inject({ method: 'POST', url: '/services/import', headers: asUser(), payload: bundle });
+      expect(res.statusCode).toBe(403);
+      expect(insert).not.toHaveBeenCalled();
+      const [, user, target, values] = vaultMocks.assertMayWriteVaultRefs.mock.calls.at(-1)!;
+      expect(user).toMatchObject({ id: 1 });
+      expect(target).toEqual({ kind: 'newService', name: bundle.service.name, workspaceIds: [], projectIds: [] });
+      expect(values).toEqual(bundle.envVars.map((e) => e.value));
     });
 
     it('imports a full bundle and recreates every entity', async () => {

@@ -46,6 +46,11 @@ export const pluginItemSchema = z.object({
   menuItems: z.array(z.record(z.string(), z.unknown())).optional(),
   dependencies: z.array(z.string()).optional(),
   error: z.string().optional(),
+  /**
+   * r600: sandbox plugins only — false when this Node's permission model has
+   * no network scope (Node < 25) and the plugin can open sockets / fetch.
+   */
+  networkRestricted: z.boolean().optional(),
   installedAt: z.string().optional(),
 });
 export type PluginItem = z.infer<typeof pluginItemSchema>;
@@ -160,6 +165,8 @@ export const pluginInspectSchema = z.object({
   menus: z.array(menuItemSchema),
   configSchema: z.array(z.record(z.string(), z.unknown())),
   error: z.string().nullable().optional(),
+  /** r600: see pluginItemSchema.networkRestricted. */
+  networkRestricted: z.boolean().optional(),
   installedAt: z.string().optional(),
   runtimeStats: z.object({
     /** null = not tracked per plugin by the kernel (r286: was a hard-coded 42). */
