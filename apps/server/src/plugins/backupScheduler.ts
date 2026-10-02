@@ -5,10 +5,16 @@ import { backups, databases } from '@ninedeploy/db';
 import fp from 'fastify-plugin';
 import { config } from '../config.js';
 import { backupDatabase } from '../engine/database.js';
-import { uploadBackup } from '../lib/backupRemote.js';
+import { deleteRemoteBackupForRetention, uploadBackup } from '../lib/backupRemote.js';
 import { audit } from '../lib/audit.js';
 
 const KEEP_PER_DB = 7;
+/** r542: at most this many remote (S3) deletes per tick — raised to two per
+ *  database so a steady state of one new remote backup per database per day
+ *  always converges. The first sweep after an upgrade meets every remote row
+ *  retention ever skipped; it works that backlog down over several ticks
+ *  instead of firing thousands of S3 requests at once. */
+const REMOTE_PRUNES_PER_TICK = 100;
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** A running database whose newest scheduled backup is older than this is in
  *  the "missed" state: the pipeline has silently stopped covering it (panel
@@ -72,6 +78,8 @@ export default fp(
     const tick = async () => {
       try {
         const dbs = (await fastify.db.select().from(databases)).filter((d) => d.status === 'running');
+        let remoteBudget = Math.max(REMOTE_PRUNES_PER_TICK, 2 * dbs.length);
+        let remoteDeferred = 0;
         // Missed-backup watchdog: fires BEFORE this tick's backups so it sees
         // the true age of the pipeline's last output. Covers the case the
         // per-run failure audit cannot — the scheduler not having run at all.
@@ -152,11 +160,39 @@ export default fp(
             } catch {
               /* file may be unreadable — still drop the row */
             }
-            // Keep remote recovery points discoverable after local retention.
-            // The row has no historical destination identity, so deleting via
-            // today's active destination could target a different bucket.
-            if (!stale.remoteKey) await fastify.db.delete(backups).where(eq(backups.id, stale.id));
+            // r542: remote-backed rows used to be skipped forever, so every
+            // scheduled dump uploaded to S3 stayed there (and in this table)
+            // for good. They now get the same keep-newest-N retention: the
+            // remote object goes first, through the destination the row
+            // records, and the row only once that delete succeeded (or the
+            // object was already gone). A failure keeps the row for the next
+            // sweep; a row whose destination is unknown is kept as before.
+            if (stale.remoteKey) {
+              if (remoteBudget <= 0) {
+                remoteDeferred++;
+                continue;
+              }
+              try {
+                const outcome = await deleteRemoteBackupForRetention(fastify.db, stale);
+                if (outcome === 'unknown-destination') continue;
+                remoteBudget--;
+              } catch (err) {
+                remoteBudget--;
+                fastify.log.warn(
+                  { err, backupId: stale.id, remoteKey: stale.remoteKey },
+                  'scheduled backup retention: remote delete failed — row kept, retried next sweep',
+                );
+                continue;
+              }
+            }
+            await fastify.db.delete(backups).where(eq(backups.id, stale.id));
           }
+        }
+        if (remoteDeferred > 0) {
+          fastify.log.info(
+            { deferred: remoteDeferred },
+            'scheduled backup retention: remote prune budget reached — the rest go on later ticks',
+          );
         }
       } catch (err) {
         fastify.log.error({ err }, 'backup scheduler tick failed');

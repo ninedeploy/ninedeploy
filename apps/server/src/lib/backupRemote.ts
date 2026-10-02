@@ -104,3 +104,35 @@ export async function deleteRemoteBackup(db: DB, backup: RemoteBackupRef): Promi
   const { prefix: _p, ...cfg } = dest;
   await s3Delete(cfg, backup.remoteKey).catch(() => undefined);
 }
+
+/**
+ * r542: delete a backup's remote object for RETENTION, reporting the outcome
+ * so the caller drops the row only once the object is really gone.
+ * `deleteRemoteBackup` above is best-effort because its callers delete the row
+ * regardless; a retention sweep that did the same would leak an object for
+ * every transient S3 failure and lose the only pointer to it.
+ *
+ *   'deleted'             the destination the row RECORDS confirmed the delete
+ *                         (S3 answers 404 for an object already gone — fine)
+ *   'unknown-destination' the row records no destination (pre-0062 rows), or
+ *                         that destination was since removed. There is no
+ *                         fallback to the active destination here: it may be a
+ *                         different bucket, and a delete there "succeeds"
+ *                         without touching the real object.
+ *
+ * Throws when the destination could not be read or refused the delete
+ * (network, auth, 5xx) — the caller keeps the row and retries next sweep.
+ */
+export async function deleteRemoteBackupForRetention(
+  db: DB,
+  backup: RemoteBackupRef,
+): Promise<'deleted' | 'unknown-destination'> {
+  if (!backup.remoteKey) return 'deleted';
+  if (backup.destinationId == null) return 'unknown-destination';
+  const rows = await db.query.backupDestinations.findMany();
+  const row = rows.find((d) => d.id === backup.destinationId);
+  if (!row) return 'unknown-destination';
+  const { prefix: _p, ...cfg } = toDestination(row);
+  await s3Delete(cfg, backup.remoteKey);
+  return 'deleted';
+}
