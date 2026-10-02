@@ -426,13 +426,6 @@ export const createDatabase = z.object({
 });
 export type CreateDatabaseInput = z.input<typeof createDatabase>;
 
-export const databasePatch = z.object({
-  name: z.string().min(1).max(100).optional(),
-  extensions: z.array(z.string()).optional(),
-  webGuiEnabled: z.boolean().optional(),
-});
-export type DatabasePatch = z.input<typeof databasePatch>;
-
 export const managedDatabase = z.object({
   id: z.number().int(),
   projectId: z.number().int().nullable(),

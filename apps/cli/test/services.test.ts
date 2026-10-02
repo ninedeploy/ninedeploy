@@ -32,7 +32,7 @@ const h = vi.hoisted(() => {
 
 vi.mock('@ninedeploy/sdk', () => ({ NineDeployError: h.NineDeployError }));
 vi.mock('../src/prompts.js', () => ({ prompt: h.prompt }));
-vi.mock('../src/config.js', () => ({ loadConfig: h.loadConfig }));
+vi.mock('../src/config.js', () => ({ loadConfig: h.loadConfig, saveConfig: vi.fn() }));
 vi.mock('node:fs', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:fs')>()),
   writeFileSync: h.writeFileSync,
@@ -461,9 +461,8 @@ describe('servicesExport', () => {
 
     await servicesExport(client, '7');
 
-    expect(fetchMock).toHaveBeenCalledWith('http://localhost:3000/v1/services/7/export', {
-      headers: { Authorization: 'Bearer ' },
-    });
+    expect(fetchMock.mock.calls[0]![0]).toBe('http://localhost:3000/v1/services/7/export');
+    expect((fetchMock.mock.calls[0]![1] as { headers: Headers }).headers.has('Authorization')).toBe(false);
     expect(h.writeFileSync).toHaveBeenCalledWith('api-export.json', '{"data":1}');
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Exported to api-export.json'));
   });
@@ -476,9 +475,32 @@ describe('servicesExport', () => {
 
     await servicesExport(client, '7');
 
-    expect(fetchMock).toHaveBeenCalledWith('http://srv:3000/v1/services/7/export', {
-      headers: { Authorization: 'Bearer tok' },
-    });
+    expect(fetchMock.mock.calls[0]![0]).toBe('http://srv:3000/v1/services/7/export');
+    expect((fetchMock.mock.calls[0]![1] as { headers: Headers }).headers.get('Authorization')).toBe('Bearer tok');
+  });
+
+  // r550: was a bare fetch with the saved bearer — no refresh on 401 and a
+  // sub-path base URL (`https://host/panel`) lost its prefix.
+  it('refreshes an expired token on 401 and retries the export once', async () => {
+    let cfg: Record<string, string> = { baseUrl: 'https://host.test/panel/', token: 'stale', refreshToken: 'rt' };
+    h.loadConfig.mockImplementation(() => cfg);
+    const { saveConfig } = await import('../src/config.js');
+    vi.mocked(saveConfig).mockImplementation((next) => { cfg = next as Record<string, string>; });
+    fetchMock
+      .mockResolvedValueOnce({ ok: false, status: 401 })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ tokens: { accessToken: 'fresh', refreshToken: 'rt2' } }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, text: vi.fn().mockResolvedValue('{"data":2}') });
+    const client = makeClient({ services: { get: vi.fn().mockResolvedValue({ slug: 'api' }) } });
+
+    await servicesExport(client, '7');
+
+    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual([
+      'https://host.test/panel/v1/services/7/export',
+      'https://host.test/panel/v1/auth/refresh',
+      'https://host.test/panel/v1/services/7/export',
+    ]);
+    expect((fetchMock.mock.calls[2]![1] as { headers: Headers }).headers.get('Authorization')).toBe('Bearer fresh');
+    expect(h.writeFileSync).toHaveBeenCalledWith('api-export.json', '{"data":2}');
   });
 
   it('reports an HTTP error instead of writing the error body as the export', async () => {

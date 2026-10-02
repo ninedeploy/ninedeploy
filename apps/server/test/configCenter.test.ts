@@ -366,3 +366,23 @@ describe('Config Center HTTP API', () => {
     await app.close();
   });
 });
+
+// r553: the route parses with the shared `setConfigSchema` (the SDK's
+// `SetConfigInput`) instead of a hand-kept local copy.
+describe('Config Center body validation (shared schema)', () => {
+  it('rejects bodies the shared setConfigSchema refuses', async () => {
+    const { setConfigSchema } = await import('@ninedeploy/schemas');
+    const bad = { description: 'x'.repeat(501), tags: ['ok'] };
+    expect(setConfigSchema.safeParse(bad).success).toBe(false);
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { configEntries: () => undefined } as never }) });
+    await app.register(configCenterRoutes);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/system.site_name',
+      headers: asUser({ isOperator: true }),
+      payload: bad,
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+});

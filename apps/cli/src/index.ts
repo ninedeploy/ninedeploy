@@ -61,7 +61,7 @@ import { demoSeed } from './commands/demo.js';
 import {
   workspacesList, workspacesGet, workspacesCreate, workspacesDelete,
 } from './commands/workspaces.js';
-import { housekeepingPrune, imagesList, imagesPrune } from './commands/housekeeping.js';
+import { housekeepingPrune, imagesList, imagesPrune, positiveIntOption } from './commands/housekeeping.js';
 import {
   serverStartAction, serverStopAction, serverStatusAction, serverLogsAction,
 } from './commands/server.js';
@@ -130,16 +130,36 @@ program
 
 program
   .command('logout')
-  .description('Clear stored credentials')
+  .description('Revoke this CLI session and clear stored credentials')
   .action(async () => {
     const cfg = loadConfig();
-    // Best-effort server-side revoke of the token before dropping it — a
-    // network failure must not block the local sign-out.
-    if (cfg.token) {
-      await getClient().auth.logout().catch(() => undefined);
+    // r551: revoke ONLY this CLI's session. `POST /auth/logout` bumps the
+    // user's tokenVersion and revokes every session — signing out of the CLI
+    // used to sign the user out of every browser too. It is also on the
+    // no-refresh list, so with an expired access token it failed silently and
+    // the long-lived refresh token stayed live server-side. The sessions list
+    // is refresh-aware and flags the caller's own row (`current`), which
+    // `DELETE /auth/sessions/:id` then revokes. Best-effort: local credentials
+    // are always cleared, and the outcome is printed either way.
+    let outcome = 'No stored credentials — nothing to revoke on the server.';
+    if (cfg.token || cfg.refreshToken) {
+      try {
+        const client = getClient();
+        const current = (await client.auth.sessions.list()).find((s) => s.current);
+        if (current) {
+          await client.auth.sessions.revoke(current.id);
+          outcome = `Revoked this CLI session (#${current.id}) on ${cfg.baseUrl}; other sessions stay signed in.`;
+        } else {
+          outcome = 'The stored credential is not a login session (API token?) — nothing was revoked server-side; delete the token from the dashboard if it should stop working.';
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        outcome = `Could not revoke the session on the server (${msg}). Revoke it from the dashboard or \`ninedeploy sessions revoke <id>\` after logging in again.`;
+      }
     }
     saveConfig({ baseUrl: cfg.baseUrl });
-    console.log('  ✓ Signed out.');
+    console.log('  ✓ Signed out (local credentials cleared).');
+    console.log(`  ${outcome}`);
   });
 
 program
@@ -612,8 +632,10 @@ images
 images
   .command('prune')
   .description('Prune images. Refuses to run with no filter; pass --dry-run first.')
-  .option('--keep-last <n>', 'Keep the newest N images per repo:tag (rest are candidates)', (v: string) => Number(v))
-  .option('--older-than <hours>', 'Only prune images older than N hours', (v: string) => Number(v))
+  // r554: validated whole numbers (the server's bounds) — `Number(v)` let
+  // `1.5` / `abc` through to an opaque 422.
+  .option('--keep-last <n>', 'Keep the newest N images per repo:tag (rest are candidates)', positiveIntOption(1000))
+  .option('--older-than <hours>', 'Only prune images older than N hours', positiveIntOption(8760))
   .option('--dangling', 'Only prune dangling images (repo/tag both <none>)')
   .option('--dry-run', 'Report what would be deleted without actually deleting')
   .action(

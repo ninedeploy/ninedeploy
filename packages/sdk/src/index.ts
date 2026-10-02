@@ -81,6 +81,9 @@ import type {
   CertificateInventoryEntry,
   CertificateInventoryReport,
   TraefikInfo,
+  TraefikMiddleware,
+  TraefikRouter,
+  TraefikService,
   TraefikStatus,
   TunnelEntry,
   UserCreate,
@@ -148,6 +151,50 @@ export type FetchLike = (input: string, init: {
     body?: string;
     credentials?: 'omit' | 'same-origin' | 'include';
   }) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>
+
+/** Scheduled-job kind (`scheduled_jobs.kind`). */
+export type JobKind = 'deploy' | 'exec' | 'backup';
+
+/** A scheduled (cron) job as serialized by `GET/POST/PATCH /v1/services/:id/jobs`. */
+export interface ScheduledJob {
+  id: number;
+  serviceId: number;
+  name: string;
+  cron: string;
+  kind: JobKind;
+  /** Empty for exec jobs when the caller is not an operator (r280). */
+  command: string;
+  enabled: boolean;
+  lastRunAt: string | null;
+  createdAt: string;
+}
+
+/** One run of a scheduled job (`GET /v1/services/:id/jobs/:jobId/runs`). */
+export interface JobRun {
+  id: number;
+  jobId: number;
+  status: string;
+  output: string;
+  exitCode: number | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+}
+
+/** `GET /v1/traefik/version` — running vs latest Traefik release. */
+export interface TraefikVersionInfo {
+  current: string | null;
+  latest: string | null;
+  outdated: boolean;
+  image: string;
+}
+
+/** `GET /v1/traefik/config` — the routing table the proxy is serving. */
+export interface TraefikRoutingConfig {
+  routers: TraefikRouter[];
+  services: TraefikService[];
+  middlewares: TraefikMiddleware[];
+}
 
 export interface HealthStatus {
   status: string;
@@ -967,6 +1014,11 @@ export interface NineDeployClient {
     remove: (name: string, serverId?: number) => Promise<{ ok: boolean }>;
     attach: (input: { network: string; container: string; serverId?: number | null }) => Promise<{ ok: boolean }>;
     detach: (input: { network: string; container: string; serverId?: number | null }) => Promise<{ ok: boolean }>;
+    /**
+     * r557: container names attached to one network (operator-only). The
+     * server answers `{ members: [] }` when docker cannot inspect it.
+     */
+    members: (name: string) => Promise<{ members: string[] }>;
   };
   tunnels: {
     list: () => Promise<TunnelEntry[]>;
@@ -1092,13 +1144,16 @@ export interface NineDeployClient {
     /**
      * r473: the provider config blob is encrypted at rest and WRITE-ONLY over
      * the API for everything but the secret-free Discord shape — `configJson`
-     * is null with `hasConfig: true` for webhook/FCM channels. Reading then
-     * PATCHing the null back would CLEAR the stored secret; send the full
-     * config or omit the field.
+     * is null with `hasConfig: true` for webhook/FCM channels. Never PATCH
+     * the read value back: send the full config, `''` to clear it, or omit
+     * the field.
+     *
+     * r552: the write side is `configJson?: string` — the server schema is
+     * `z.string().optional()`, so the `null` the type used to allow was a 400.
      */
     listChannels: () => Promise<Array<{ id: number; name: string; type: string; eventFilter: string; active: boolean; configJson: string | null; hasConfig: boolean; createdAt: string }>>;
-    createChannel: (input: { name: string; type: string; target: string; eventFilter?: string; configJson?: string | null }) => Promise<{ id: number; name: string; type: string }>;
-    updateChannel: (id: number, input: { name?: string; target?: string; eventFilter?: string; active?: boolean; configJson?: string | null }) => Promise<{ id: number; active: boolean }>;
+    createChannel: (input: { name: string; type: string; target: string; eventFilter?: string; configJson?: string }) => Promise<{ id: number; name: string; type: string }>;
+    updateChannel: (id: number, input: { name?: string; target?: string; eventFilter?: string; active?: boolean; configJson?: string }) => Promise<{ id: number; active: boolean }>;
     removeChannel: (id: number) => Promise<void>;
     testChannel: (id: number) => Promise<{ ok: boolean }>;
     log: () => Promise<Array<{ id: number; channelId: number | null; event: string; entity: string | null; status: string; error: string | null; ts: string }>>;
@@ -1260,13 +1315,18 @@ export interface NineDeployClient {
     remove: (id: number) => Promise<{ ok: boolean }>;
     test: (id: number) => Promise<{ ok: boolean }>;
   };
+  /**
+   * r552: aligned with apps/server/src/modules/jobs.ts — `kind` includes
+   * `'backup'`, and create/update return the full serialized job (the PATCH
+   * was typed `{ ok }`, a field the server never sent).
+   */
   jobs: {
-    list: (serviceId: number) => Promise<Array<{ id: number; name: string; cron: string; kind: 'deploy' | 'exec'; command: string; enabled: boolean; lastRunAt: string | null }>>;
-    create: (serviceId: number, input: { name: string; cron: string; kind: 'deploy' | 'exec'; command?: string; enabled?: boolean }) => Promise<{ id: number }>;
-    update: (serviceId: number, jobId: number, input: Partial<{ name: string; cron: string; kind: 'deploy' | 'exec'; command: string; enabled: boolean }>) => Promise<{ ok: boolean }>;
+    list: (serviceId: number) => Promise<ScheduledJob[]>;
+    create: (serviceId: number, input: { name: string; cron: string; kind: JobKind; command?: string; enabled?: boolean }) => Promise<ScheduledJob>;
+    update: (serviceId: number, jobId: number, input: Partial<{ name: string; cron: string; kind: JobKind; command: string; enabled: boolean }>) => Promise<ScheduledJob>;
     remove: (serviceId: number, jobId: number) => Promise<{ ok: boolean }>;
     run: (serviceId: number, jobId: number) => Promise<{ ok: boolean }>;
-    runs: (serviceId: number, jobId: number) => Promise<Array<{ id: number; status: string; output: string; exitCode: number | null; createdAt: string }>>;
+    runs: (serviceId: number, jobId: number) => Promise<JobRun[]>;
   };
   servers: {
     list: () => Promise<Array<{ id: number; name: string; host: string; port: number; status: string; lastSeenAt: string | null }>>;
@@ -1332,6 +1392,16 @@ export interface NineDeployClient {
     restart: () => Promise<{ ok: boolean; message?: string }>;
     /** r334: the server answers the host path of the copied acme.json. */
     backupCerts: () => Promise<{ ok: boolean; backupPath: string }>;
+    /** r557: routers / services / middlewares from the dynamic config (operator-only). */
+    config: () => Promise<TraefikRoutingConfig>;
+    /** r557: running vs latest Traefik version (operator-only). */
+    version: () => Promise<TraefikVersionInfo>;
+    /**
+     * r557: pull the pinned Traefik image and recreate the proxy container
+     * (operator-only). An image pull outlasts the default request budget, so
+     * this call allows up to 10 minutes unless the client disabled timeouts.
+     */
+    update: () => Promise<{ ok: boolean; newVersion: string | null }>;
   };
   config: {
     list: (query?: { category?: string; pluginId?: string; reveal?: boolean }) => Promise<ConfigListResponse>;
@@ -1470,7 +1540,7 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
   /** Default per-request budget when the caller does not configure one. */
   const DEFAULT_TIMEOUT_MS = 30_000;
 
-  async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  async function request<T>(path: string, init: RequestInit = {}, minTimeoutMs?: number): Promise<T> {
     const token = opts.getToken?.();
     const headers: Record<string, string> = { ...(init.headers ?? {}) };
     if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -1478,7 +1548,10 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       headers['Content-Type'] = 'application/json';
     }
     const body = init.body === undefined ? undefined : JSON.stringify(init.body);
-    const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const configured = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    // A long-running call (image pull) may widen the budget, never narrow it;
+    // `0` (timeouts disabled) stays disabled.
+    const timeoutMs = configured > 0 && minTimeoutMs !== undefined ? Math.max(configured, minTimeoutMs) : configured;
     // AbortSignal.timeout exists everywhere the SDK runs (Node 17.3+, all
     // modern browsers); it is resolved off globalThis and attached opaquely —
     // FetchLike's shape stays untouched (widening it with `signal: unknown`
@@ -1908,6 +1981,7 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
         send<{ ok: boolean }>('DELETE', `/v1/networks/${encodeURIComponent(name)}${serverId != null ? `?serverId=${serverId}` : ''}`),
       attach: (input) => send<{ ok: boolean }>('POST', '/v1/networks/attach', input),
       detach: (input) => send<{ ok: boolean }>('POST', '/v1/networks/detach', input),
+      members: (name) => get<{ members: string[] }>(`/v1/networks/${encodeURIComponent(name)}/members`),
     },
     tunnels: {
       list: () => get<TunnelEntry[]>('/v1/tunnels'),
@@ -2182,8 +2256,8 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
     },
     jobs: {
       list: (serviceId) => get(`/v1/services/${serviceId}/jobs`),
-      create: (serviceId, input) => send<{ id: number }>('POST', `/v1/services/${serviceId}/jobs`, input),
-      update: (serviceId, jobId, input) => send<{ ok: boolean }>('PATCH', `/v1/services/${serviceId}/jobs/${jobId}`, input),
+      create: (serviceId, input) => send<ScheduledJob>('POST', `/v1/services/${serviceId}/jobs`, input),
+      update: (serviceId, jobId, input) => send<ScheduledJob>('PATCH', `/v1/services/${serviceId}/jobs/${jobId}`, input),
       remove: (serviceId, jobId) => send<{ ok: boolean }>('DELETE', `/v1/services/${serviceId}/jobs/${jobId}`),
       run: (serviceId, jobId) => send<{ ok: boolean }>('POST', `/v1/services/${serviceId}/jobs/${jobId}/run`),
       runs: (serviceId, jobId) => get(`/v1/services/${serviceId}/jobs/${jobId}/runs`),
@@ -2224,6 +2298,9 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       logs: (lines = 50) => get<{ logs: string[] }>(`/v1/traefik/logs?lines=${lines}`),
       restart: () => send<{ ok: boolean; message: string }>('POST', '/v1/traefik/restart'),
       backupCerts: () => send<{ ok: boolean; backupPath: string }>('POST', '/v1/traefik/backup-certs'),
+      config: () => get<TraefikRoutingConfig>('/v1/traefik/config'),
+      version: () => get<TraefikVersionInfo>('/v1/traefik/version'),
+      update: () => request<{ ok: boolean; newVersion: string | null }>('/v1/traefik/update', { method: 'POST' }, 10 * 60_000),
     },
     config: {
       list: (query) => {
