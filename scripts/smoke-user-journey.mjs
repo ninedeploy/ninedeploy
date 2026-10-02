@@ -212,6 +212,23 @@ async function main() {
   if (composeStatus !== 'running') fail(`compose deploy ended as '${composeStatus}'`);
   step('compose deploy green');
 
+  // ── managed databases: they must actually START ───────────────────────
+  // r680: redis/valkey were passed `--requirepass` BEFORE the image, which
+  // `docker run` rejects as an unknown flag — managed redis never started,
+  // from 0.2.2 to 0.10.41, and nothing in the release drill created one.
+  for (const engine of ['postgres', 'redis']) {
+    const created = await api('/v1/databases', { method: 'POST', token, body: { name: `journey-${engine}`, engine } });
+    if (created.status !== 200 && created.status !== 201) fail(`${engine} database create failed: ${created.status} ${created.text.slice(0, 300)}`);
+    const db = created.json;
+    if (db?.status !== 'running') fail(`${engine} database reported '${db?.status}' (wanted running)`);
+    const running = docker(['exec', DIND, 'docker', '-H', `tcp://127.0.0.1:${DIND_PORT}`, 'ps', '--filter', 'status=running', '--format', '{{.Names}}']);
+    // The API names the container as `host` (the address apps dial).
+    if (!db.host || !running.split(/\r?\n/).includes(db.host)) fail(`${engine} container ${db?.host} is not running in the daemon`);
+    const del = await api(`/v1/databases/${db.id}`, { method: 'DELETE', token });
+    if (del.status !== 200 && del.status !== 204) fail(`${engine} database delete failed: ${del.status}`);
+    step(`managed ${engine} started, ran and was deleted`);
+  }
+
   // ── teardown ────────────────────────────────────────────────────────────
   const delCompose = await api(`/v1/services/${composeId}`, { method: 'DELETE', token });
   if (delCompose.status !== 200 && delCompose.status !== 204) fail(`compose delete failed: ${delCompose.status}`);
@@ -224,7 +241,7 @@ async function main() {
   }
   step('service deleted');
 
-  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → signed webhook redeploy → compose stack → teardown');
+  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → signed webhook redeploy → compose stack → managed postgres + redis → teardown');
 }
 
 main()
