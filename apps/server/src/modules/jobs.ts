@@ -8,7 +8,7 @@ import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { assertServiceRole } from '../lib/resourceAccess.js';
 import { assertMayUseHostPrivilege } from '../lib/hostPrivilege.js';
 import { badRequest, forbidden, notFound, parseId } from '../lib/errors.js';
-import { runJob } from '../lib/jobRunner.js';
+import { execJobUnsupportedReason, runJob } from '../lib/jobRunner.js';
 
 /** Validate a 5-field cron expression up front (croner is the runtime parser). */
 function assertCron(expr: string): void {
@@ -91,6 +91,11 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
     if (input.kind === 'deploy') {
       await assertMayScheduleDeploy(app.db, req.user!, svc);
     }
+    // r523: an exec job the runner can never execute is refused up front.
+    if (input.kind === 'exec') {
+      const unsupported = execJobUnsupportedReason(svc);
+      if (unsupported) throw badRequest(unsupported, 'exec_job_unsupported');
+    }
 
     const [row] = await app.db
       .insert(scheduledJobs)
@@ -143,6 +148,15 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
     // (creating a deploy job directly is gated the same way).
     if (values.kind === 'deploy') {
       await assertMayScheduleDeploy(app.db, req.user!, svc);
+    }
+    // r523: the resulting job must be one the runner can execute — unless the
+    // patch leaves it disabled, so an existing unrunnable exec job can still
+    // be switched off instead of only deleted.
+    const finalKind = values.kind ?? existingJob.kind;
+    const finalEnabled = values.enabled ?? existingJob.enabled;
+    if (finalKind === 'exec' && finalEnabled) {
+      const unsupported = execJobUnsupportedReason(svc);
+      if (unsupported) throw badRequest(unsupported, 'exec_job_unsupported');
     }
     const [row] = await app.db
       .update(scheduledJobs)
