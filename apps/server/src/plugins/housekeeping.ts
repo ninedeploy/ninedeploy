@@ -8,6 +8,7 @@ import {
   backups,
   cacheRegistryBlobs,
   deployments,
+  domains,
   domainTransfers,
   jobRuns,
   notificationLog,
@@ -22,6 +23,7 @@ import { deleteLog, pruneOldLogs } from '../engine/logs.js';
 import { pruneResetTokens } from '../lib/passwordReset.js';
 import { executeAutoPrune, getAutoPruneStatus } from '../engine/autoPrune.js';
 import { audit } from '../lib/audit.js';
+import { getDomainPolicy } from '../lib/domainPolicy.js';
 
 const swallow = () => {};
 const INTERVAL_MS = 60 * 60 * 1000; // hourly
@@ -301,6 +303,35 @@ async function pruneDeadSessions(db: import('@ninedeploy/db').DB, graceMs: numbe
 }
 
 /**
+ * r635: remove domain claims that were never verified within the policy's
+ * `pendingExpiryDays` (0 keeps them forever). A `pending` row routes nothing,
+ * but it held its hostname against every other claimant indefinitely — a
+ * squatter only had to add someone else's domain first. Each removal is
+ * audited so the claimant can see why the row went. Returns the rows removed.
+ */
+export async function pruneExpiredPendingDomains(
+  db: import('@ninedeploy/db').DB,
+  now: number = Date.now(),
+): Promise<number> {
+  const { pendingExpiryDays } = await getDomainPolicy(db);
+  if (pendingExpiryDays <= 0) return 0;
+  const cutoff = new Date(now - pendingExpiryDays * 24 * 60 * 60 * 1000);
+  const stale = await db
+    .select({ id: domains.id, serviceId: domains.serviceId, hostname: domains.hostname })
+    .from(domains)
+    .where(and(eq(domains.status, 'pending'), lt(domains.createdAt, cutoff)));
+  for (const row of stale) {
+    await db.delete(domains).where(and(eq(domains.id, row.id), eq(domains.status, 'pending')));
+    void audit(db, null, 'domain.pending_expired', row.hostname, {
+      domainId: row.id,
+      serviceId: row.serviceId,
+      pendingExpiryDays,
+    });
+  }
+  return stale.length;
+}
+
+/**
  * Remove dangling (untagged) Docker images — the orphaned layers left behind by
  * failed/interrupted builds. Tagged images (incl. `ninedeploy/<slug>:<sha>` used
  * for rollback) and images referenced by a running container are never dangling,
@@ -380,6 +411,7 @@ export default fp(
         await step('reset-tokens', () => pruneResetTokens(fastify.db));
         await step('sessions', () => pruneDeadSessions(fastify.db, DEAD_SESSION_GRACE_MS));
         await step('retired-records', () => pruneRetiredRecords(fastify.db, now));
+        await step('pending-domains', () => pruneExpiredPendingDomains(fastify.db, now));
         await step('interrupted-backups', () =>
           failInterruptedOperations(fastify.db, new Date(now - INTERRUPTED_OPERATION_MAX_AGE_MS)),
         );

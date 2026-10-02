@@ -1,5 +1,6 @@
 import { resolveTxt } from 'node:dns/promises';
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
+import { domainToASCII } from 'node:url';
 import { eq } from 'drizzle-orm';
 import { services, type DB } from '@ninedeploy/db';
 import { config } from '../config.js';
@@ -150,7 +151,45 @@ export function normalizeHost(raw: string): string {
   value = value.split(/[/?#]/)[0] ?? '';
   // Traefik's Host matcher never sees a port.
   value = value.replace(/:\d+$/, '');
-  return value.replace(/\.$/, '');
+  value = value.replace(/\.$/, '');
+  // r630: an internationalised name is routed (and certified) in its ASCII
+  // punycode form — Traefik matches the Host header, which browsers send
+  // punycoded. Only non-ASCII input is converted; anything else is left
+  // exactly as typed for `isRoutableHostname` to judge.
+  if ([...value].some((c) => c.charCodeAt(0) > 0x7f)) {
+    const wildcard = value.startsWith('*.');
+    const ascii = domainToASCII(wildcard ? value.slice(2) : value);
+    if (!ascii) return '';
+    value = wildcard ? `*.${ascii}` : ascii;
+  }
+  return value;
+}
+
+/** One DNS label: letters/digits, inner hyphens, at most 63 chars (IDN punycode `xn--…` included). */
+const DNS_LABEL = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?';
+const ROUTABLE_HOST_RE = new RegExp(`^(?:\\*\\.)?${DNS_LABEL}(?:\\.${DNS_LABEL})*$`);
+
+/**
+ * r630: the ONE hostname shape a domain row may be stored with: dot-separated
+ * DNS labels, lowercase (feed it `normalizeHost` output), with an optional
+ * leading `*.` for a wildcard. Nothing else.
+ *
+ * The claim checks (`hostsCollide`, `ownZoneClaimRefusal`, the panel
+ * reservation) compare the STORED string, while the proxy strips every
+ * character outside `[A-Za-z0-9.*-]` before it writes a rule. Any byte the two
+ * disagree on was a bypass: `*_.apps.example.com` is not a wildcard to the
+ * checks (so it went active as an ordinary own-zone name) and rendered as
+ * `*.apps.example.com` — a catch-all outranking every tenant's automatic
+ * domain. Holding the boundary to the shape the proxy renders verbatim closes
+ * the whole class; the proxy separately refuses rows stored before this.
+ */
+export function isRoutableHostname(host: string): boolean {
+  return host.length > 0 && host.length <= 253 && ROUTABLE_HOST_RE.test(host);
+}
+
+/** The message a refused hostname gets — what was wrong and what would pass. */
+export function unroutableHostnameMessage(host: string): string {
+  return `"${host}" is not a valid hostname: use letters, digits and hyphens in dot-separated labels (each at most 63 characters, not starting or ending with a hyphen), optionally with a leading "*." for a wildcard`;
 }
 
 /**
@@ -182,4 +221,33 @@ export function wwwCompanionHost(hostname: string): string | null {
   const stripped = host.replace(/^www\./, '');
   const apex = stripped.includes('.') ? stripped : host;
   return host === apex ? `www.${apex}` : apex;
+}
+
+/**
+ * r633: the companion a `redirectWww` domain would route that its own DNS
+ * proof does NOT cover, or null. Proving `_ninedeploy-challenge.example.com`
+ * shows control of the example.com zone, which `www.example.com` lives in;
+ * proving `_ninedeploy-challenge.www.example.com` says nothing about the apex
+ * (a delegated `www` sub-zone is enough to publish it). So only a www-stored
+ * host's companion — the apex — needs a record of its own.
+ */
+export function companionOutsideProof(hostname: string): string | null {
+  const companion = wwwCompanionHost(hostname);
+  if (!companion) return null;
+  return companion.startsWith('www.') ? null : companion;
+}
+
+/**
+ * r635: the challenge value that lets a claimant take over a hostname another
+ * service holds only as an UNVERIFIED (`pending`) row. A pending row proves
+ * nothing, yet it used to block the real owner forever. The value is bound to
+ * the claiming service and hostname — derived, not stored, so the takeover
+ * needs no schema — and publishing it requires control of the zone, which is
+ * exactly what the squatter lacks.
+ */
+export function pendingTakeoverToken(serviceId: number, hostname: string): string {
+  const digest = createHmac('sha256', config.jwt?.secret || 'ninedeploy-domain-takeover')
+    .update(`pending-takeover:${serviceId}:${hostname}`)
+    .digest('hex');
+  return `nd-verify-${digest.slice(0, 32)}`;
 }

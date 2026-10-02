@@ -14,7 +14,15 @@ import type { NinedeployManifest, Notifications, Previews, Route, Watch } from '
 import { Cron } from 'croner';
 import { ensureAlertState } from './alerting.js';
 import { isOperator, visibleDatabaseIds } from './resourceAccess.js';
-import { hostsCollide, newChallengeToken, ownZoneClaimRefusal, requiresOwnershipProof } from './domainVerification.js';
+import {
+  companionOutsideProof,
+  hostsCollide,
+  newChallengeToken,
+  ownZoneClaimRefusal,
+  requiresOwnershipProof,
+  wwwCompanionHost,
+} from './domainVerification.js';
+import { domainCapRefusal, getDomainPolicy } from './domainPolicy.js';
 import { getSettingString } from './settings.js';
 import { previewPatternError } from './previewDomain.js';
 
@@ -360,6 +368,24 @@ async function manifestRouteRefusal(db: DB, serviceId: number, hostname: string)
   return holder ? `is already routed by service #${holder.serviceId}` : null;
 }
 
+/**
+ * r633: why a manifest route may not turn its www redirect ON, or null. The
+ * redirect routes the companion host too, so the companion needs the same
+ * claim rules as the route's own host — and an apex outside the route's DNS
+ * proof can only be proved from the panel (verify / PATCH), never by a push.
+ */
+async function manifestCompanionRefusal(db: DB, serviceId: number, hostname: string): Promise<string | null> {
+  const companion = wwwCompanionHost(hostname);
+  if (!companion) return null;
+  const refusal = await manifestRouteRefusal(db, serviceId, companion);
+  if (refusal) return `its companion ${companion} ${refusal}`;
+  const outside = companionOutsideProof(hostname);
+  if (outside && requiresOwnershipProof(outside, false)) {
+    return `its companion ${outside} needs DNS proof — turn the redirect on from the panel, which verifies it`;
+  }
+  return null;
+}
+
 async function syncRoutes(
   db: DB,
   serviceId: number,
@@ -384,6 +410,7 @@ async function syncRoutes(
   // service. Without this, a manifest listing the same route twice
   // blind-INSERTs into that index and the deploy dies on a raw UNIQUE error.
   const created = new Map<string, { id: number }>();
+  const policy = await getDomainPolicy(db);
 
   for (const route of routes) {
     const hostname = route.host.toLowerCase();
@@ -395,12 +422,23 @@ async function syncRoutes(
 
     const key = `${hostname}|${path}`;
     const match = existing.find((d) => d.hostname === hostname && d.path === path) ?? created.get(key);
+    // r633: only the off→on transition is checked, so a redirect that already
+    // routes keeps working on every later push.
+    let redirectWww = route.redirectWww ?? false;
+    const wasRedirecting = match ? existing.find((d) => d.id === match.id)?.redirectWww === true : false;
+    if (redirectWww && !wasRedirecting) {
+      const companionRefusal = await manifestCompanionRefusal(db, serviceId, hostname);
+      if (companionRefusal) {
+        result.warnings.push(`routes: ${hostname}${path} redirectWww ignored — ${companionRefusal}.`);
+        redirectWww = false;
+      }
+    }
     if (match) {
       await db
         .update(domains)
         .set({
           ssl: route.ssl,
-          redirectWww: route.redirectWww ?? false,
+          redirectWww,
           headers,
           ipAllowlist,
           rateLimitAverage: rateAverage,
@@ -424,6 +462,13 @@ async function syncRoutes(
         result.warnings.push(`routes: ${hostname}${path} ${refusal}; manifest route skipped.`);
         continue;
       }
+      // r634: the same per-service own-zone cap as POST /domains — a manifest
+      // listing dozens of proof-free names is the same ACME drain.
+      const cap = await domainCapRefusal(db, policy, serviceId, hostname, null);
+      if (cap) {
+        result.warnings.push(`routes: ${hostname}${path} skipped — ${cap.message}`);
+        continue;
+      }
       // Newly declared route. Inside the instance's own zone it goes live at
       // once; anything else needs the DNS ownership proof, so it is `pending`
       // WITH a challenge token the owner can complete from the panel. r190:
@@ -438,7 +483,7 @@ async function syncRoutes(
           hostname,
           path,
           ssl: route.ssl,
-          redirectWww: route.redirectWww ?? false,
+          redirectWww,
           headers,
           ipAllowlist,
           rateLimitAverage: rateAverage,

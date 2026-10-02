@@ -990,8 +990,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
   // G-28: per-service sticky-session toggle. The setting lives in the
   // settings table at `sticky_session:<id>:enabled` (string `"true"` /
   // `"1"`); `engine/proxy.ts:writeDynamicConfig` reads it on every domain
-  // / deploy change and emits the Traefik `mw_sticky_<id>` middleware
-  // block. The endpoint is POST (not PATCH) because it is a command, not
+  // / deploy change and adds a sticky cookie to the service's load
+  // balancer (r631). The endpoint is POST (not PATCH) because it is a command, not
   // a description of the service's current state.
   app.post('/:id/sticky-session', async (req) => {
     const id = num((req.params as { id: string }).id);

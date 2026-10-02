@@ -10,7 +10,7 @@ import type { KernelContext, KernelPlugin } from '../types.js';
  * shows the activation. The actual Traefik config is written by
  * `engine/proxy.ts:writeDynamicConfig` — which already runs on every
  * `service.deployed` — and is the only place that can attach the
- * sticky-cookie middleware to the service's routers, so the plugin
+ * sticky cookie to the service's load balancer (r631), so the plugin
  * is intentionally passive for the I/O side and the heavy lifting
  * stays in the engine.
  *
@@ -30,7 +30,7 @@ export class StickySessionPlugin implements KernelPlugin {
   readonly name = 'Sticky Session';
   readonly version = '0.1.0';
   readonly description =
-    'Routes every request to a service through the same backend container when the operator toggles sticky-session on, using a Traefik sticky-cookie middleware. (G-28)';
+    'Routes every request to a service through the same backend container when the operator toggles sticky-session on, using a Traefik load-balancer sticky cookie. (G-28)';
   readonly author = 'NineDeploy Core';
   readonly icon = 'Anchor';
   readonly isOfficial = true;
