@@ -67,12 +67,34 @@ export interface TapHookOptions {
   priority?: number;
 }
 
+/**
+ * The only event names a plugin may emit: `plugin.<your plugin id>.<name>`,
+ * e.g. `ctx.emit(\`plugin.${ctx.pluginId}.synced\`, {...})`. The panel drops
+ * (and logs once) anything else — kernel events such as `audit.recorded` or
+ * `deployment.status_changed` cannot be emitted by a plugin, and another
+ * plugin's `plugin.<other id>.*` namespace is not yours either. The template
+ * type catches the wrong shape at build time; the id part is checked by the
+ * panel at runtime.
+ */
+export type PluginEventName = `plugin.${string}.${string}`;
+
 export interface PluginContext {
   pluginId: string;
   config: ScopedConfigAccessor;
   logger: PluginLogger;
-  emit(event: string, payload?: unknown): void;
+  /** Emit in your own namespace only — see {@link PluginEventName}. */
+  emit(event: PluginEventName, payload?: unknown): void;
+  /**
+   * Observe a panel event (or another plugin's `plugin.<id>.*` event).
+   * Payload fields that carry secrets (passwords, tokens, keys, credentials,
+   * env maps, compose files, URL userinfo) arrive as `"[redacted]"`.
+   */
   on(event: string, handler: (payload: unknown) => void | Promise<void>): () => void;
+  /**
+   * Tap a pipeline hook. The payload you receive has the same secret fields
+   * redacted as `on()`; returning it (or a copy) leaves the real values in
+   * place on the panel side — only fields you actually change take effect.
+   */
   tapHook(
     hookName: string,
     fn: (context: unknown) => unknown | Promise<unknown>,

@@ -25,6 +25,20 @@ is the one choke point each meaningful state change already passes through (see
 | `notification.queued` | Emitted by the built-in notifications plugin as an **extension point**. It is not the delivery path: `lib/notifier` owns channels, retries and the delivery log, so consuming this and sending would double every alert. |
 | `telemetry.recorded`, `tunnel.route_evaluated` | Built-in telemetry / Cloudflare-tunnel plugins |
 
+**Emitting (r530).** A sandboxed plugin may only emit events in its own
+namespace, `plugin.<pluginId>.<name>` (e.g. `plugin.acme-notifier.synced`).
+Any other name is dropped, logged once per name and audited once per load as
+`plugin.event_rejected` — a plugin cannot forge `audit.recorded`,
+`deployment.status_changed`, `alert.triggered`, `telemetry.recorded` or any
+other kernel event. Emissions are tagged host-side with
+`{ kind: 'plugin', pluginId }` (`EventOrigin` in `kernel/types.ts`); the bus
+never hands a plugin-origin emission to a typed `events.on(...)` listener, and
+an exact-name `events.onCustom(...)` listener receives one only when it opts in
+with `{ acceptPluginOrigin: true }`. Wildcard (`'*'`) listeners see everything
+and get the origin as their third argument — the telemetry streamer drops
+plugin-origin events there. Built-in plugins therefore only ever act on
+kernel/audit-bridge events.
+
 `DomainEvents` in `kernel/types.ts` declares more names than this
 (`service.created`, `database.created`, `server.announced`, `config.changed`, …).
 They are typed for forward compatibility but **nothing emits them yet** — use
@@ -56,6 +70,8 @@ export default definePlugin({
     // equivalent.
     ctx.on('deployment.status_changed', (payload) => {
       console.log(`Deployment ${payload.deploymentId} -> ${payload.status}`);
+      // Your own events live under plugin.<your id>.* — nothing else is accepted.
+      ctx.emit(`plugin.${ctx.pluginId}.deploy_seen`, { status: payload.status });
     });
     const untap = ctx.tapHook(
       'deploy:before',
@@ -83,9 +99,13 @@ NineDeploy executes third-party community extensions in a dedicated **child proc
 - **Deny-by-default capabilities**: the sandbox process runs with `--permission` and exactly two fs-read allowlist entries (its own bootstrap directory and the package manifest the ESM loader needs). Filesystem read/write outside that, spawning child processes, opening worker threads and loading native addons are all denied by the runtime itself — a plugin that tries gets `ERR_ACCESS_DENIED`, not a warning. The classic exfiltration paths (read `master.key`/`.env`/the SQLite db, fork a shell) are physically closed.
 - **Memory Limits**: the child runs with `--max-old-space-size=64` and `--max-semi-space-size=16` (the V8 generation-size equivalents of the old worker limits).
 - **Crash Isolation**: if an external plugin throws a fatal exception or crashes its process, the NineDeploy core API and database remain unaffected. The kernel flags the plugin state as `errored` and continues running; a wedged child that ignores SIGTERM is SIGKILLed after a 3 s grace.
-- **Scoped RPC Bridge**: sandboxed plugins interact through `PluginContext` APIs (`events.on`, `tapHook`, `scopedConfig.get/set`); the bridge namespaces config access per plugin id.
+- **Scoped RPC Bridge**: sandboxed plugins interact through `PluginContext` APIs (`events.on`, `tapHook`, `scopedConfig.get/set`); the bridge namespaces config access (`plugin:<id>:`) and event emission (`plugin.<id>.`, r530) per plugin id.
+- **Plugin ids (r531)**: a sandbox install must use an id matching `^[a-z0-9][a-z0-9_-]{0,63}$` (case-insensitive) that is neither a built-in plugin id (`notifications-dispatcher`, `domain-presets`, `webhook-out`, … — `BUILT_IN_PLUGIN_IDS` in `kernel/pluginLoader.ts`) nor a marketplace catalog id, and may not take over a row installed from a different source. A colliding install is refused with HTTP 409. A row that already collides from an older version is **skipped at boot** with the reason recorded on the row (status `errored`), the built-in keeps running, and enable/disable/reload answer 409 for it — uninstall removes just the stray row.
+- **Secret redaction (r533)**: hook payloads and relayed events are copied before they cross the IPC boundary, with secret-bearing fields replaced by `"[redacted]"` — matched by key name at any depth (password/passphrase, secret, token, API key, private key, credential, htpasswd, basicAuth, authorization, cookie, master key — e.g. `databases.passwordEncrypted`, `domains.basicAuth`/`verificationToken`, the `server:before_announce` token), `env`/`envVars`/`environment` objects, `services.composeContent`, and URL userinfo (`repoUrl`). Ids, names, image, branch, commit, ports, status and hostnames pass through. A hook result that still holds a placeholder gets the original value back, so echoing the payload never leaks `[redacted]` into the pipeline.
+- **Concurrent hook calls (r532)**: each invocation carries its own `callId` (echoed by the panel-shipped bootstrap), so two concurrent calls of one tap resolve independently.
+- **Network (r534)**: not part of the flag set the panel controls. On Node ≥ 25 (`--allow-net` exists; the Docker image and CI run Node 26) `--permission` denies outbound connections, DNS and listening by default and the panel never passes `--allow-net` — a sandbox plugin has **no network**. On Node 22/24 (bare-metal installs at the `>=22.13` floor) the permission model has no network scope: a sandbox plugin **can** open sockets and `fetch`. Plugin manifests declare no capabilities, so there is no per-plugin grant; `SandboxPlugin.networkDenied()` reports which case the running Node is in.
 - **Scrubbed environment (r414, carried over)**: `process.env` is not part of the permission model, so the child still gets only `PATH`/`LANG`/`TZ` — no `NINEDEPLOY_MASTER_KEY(S)`/JWT secret.
-- **Remaining trust decision**: the sandboxed plugin can still DO everything its ctx APIs allow — read/write its own namespaced config (including secrets you store there), react to every event, and participate in deploy hooks. Installing a third-party plugin remains an operator-level trust decision about what it may do through the panel, exactly like granting it a limited API key; the boundary is that it can no longer reach around the API. The install route is admin-gated accordingly.
+- **Remaining trust decision**: the sandboxed plugin can still DO everything its ctx APIs allow — read/write its own namespaced config (including secrets you store there), react to every event (redacted), and participate in deploy hooks. Installing a third-party plugin remains an operator-level trust decision about what it may do through the panel, exactly like granting it a limited API key; the boundary is that it can no longer reach around the API. The install route is admin-gated accordingly.
 
 ### 🗂️ 3. Dynamic UI Menus, Widgets & Driver Registries
 
