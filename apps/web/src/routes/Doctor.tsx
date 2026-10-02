@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Loader2, RefreshCw, Stethoscope, Wrench } from 'lucide-react';
 import type { DoctorFinding, DoctorReport } from '@ninedeploy/sdk';
 import { api } from '../lib/api.js';
-import { Badge, Button, Card, CardBody, ConfirmDialog, EmptyState, PageHeader, Skeleton } from '../components/ui.js';
+import { Badge, Button, Card, CardBody, ConfirmDialog, EmptyState, ErrorCard, PageHeader, Skeleton } from '../components/ui.js';
 import { useToast } from '../components/Toast.js';
 import { useAuth } from '../lib/auth.js';
 
@@ -83,6 +83,11 @@ export function Doctor() {
       />
 
       {scan.isLoading && <Skeleton className="h-40" />}
+
+      {/* r562: a failed scan rendered as a blank page under the header. */}
+      {scan.isError && !report && (
+        <ErrorCard title="The Doctor scan failed" error={scan.error} onRetry={() => void scan.refetch()} />
+      )}
 
       {report && (
         <Card>

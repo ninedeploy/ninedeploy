@@ -10,6 +10,7 @@ import {
   Card,
   CardBody,
   EmptyState,
+  ErrorCard,
   PageHeader,
   Skeleton,
 } from '../components/ui.js';
@@ -127,6 +128,9 @@ export function Deploys() {
 
       {queue.isLoading ? (
         <Skeleton className="h-32" />
+      ) : queue.isError && !data ? (
+        // r562: a failed load is not "nothing in flight".
+        <ErrorCard title="Could not load the deploy queue" error={queue.error} onRetry={() => void queue.refetch()} />
       ) : total === 0 ? (
         <EmptyState
           icon={<Rocket size={26} />}

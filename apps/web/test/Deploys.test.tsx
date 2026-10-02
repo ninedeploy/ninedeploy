@@ -88,6 +88,17 @@ describe('Deploys (queue page)', () => {
     });
   });
 
+  it('r562: a failed queue load shows an error with retry, not "Nothing in flight"', async () => {
+    mockOf(api.deploys.queue).mockRejectedValueOnce(new Error('HTTP 503'));
+    renderWithProviders(<Deploys />);
+    expect(await screen.findByText('Could not load the deploy queue')).toBeInTheDocument();
+    expect(screen.getByText('HTTP 503')).toBeInTheDocument();
+    expect(screen.queryByText('Nothing in flight')).toBeNull();
+    mockOf(api.deploys.queue).mockResolvedValue(queueResponse([]) as never);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('Nothing in flight')).toBeInTheDocument();
+  });
+
   it('shows the empty state when the queue is empty', async () => {
     mockOf(api.deploys.queue).mockResolvedValue(queueResponse([]) as never);
     renderWithProviders(<Deploys />);

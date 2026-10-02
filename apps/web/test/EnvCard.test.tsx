@@ -61,6 +61,23 @@ describe('EnvCard', () => {
     await waitFor(() => expect(screen.getByText('No environment variables.')).toBeInTheDocument());
   });
 
+  it('r562: a failed load shows an error with retry, not "no variables", and locks the raw editor', async () => {
+    apiMock.api.env.list.mockRejectedValueOnce(new Error('HTTP 500'));
+    renderCard();
+    expect(await screen.findByText('Could not load environment variables')).toBeInTheDocument();
+    expect(screen.queryByText('No environment variables.')).toBeNull();
+    // The raw editor diffs against the loaded list — over an unloaded one,
+    // Apply would delete every existing variable. It must be unreachable.
+    const rawToggle = screen.getByRole('button', { name: /Edit as \.env/ });
+    expect(rawToggle).toBeDisabled();
+    fireEvent.click(rawToggle);
+    expect(screen.queryByLabelText('Raw .env content')).toBeNull();
+    // Retry recovers.
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('PORT')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Edit as \.env/ })).not.toBeDisabled();
+  });
+
   it('renders the variable rows with secret markers', async () => {
     renderCard();
     await waitFor(() => expect(screen.getByText('PORT')).toBeInTheDocument());

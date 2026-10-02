@@ -81,6 +81,16 @@ describe('Doctor', () => {
     expect(document.querySelector('.animate-pulse')).toBeInTheDocument();
   });
 
+  it('r562: a failed scan shows an error with retry instead of a blank page', async () => {
+    mockOf(api.doctor.scan).mockRejectedValueOnce(new Error('docker unreachable'));
+    renderWithProviders(<Doctor />);
+    expect(await screen.findByText('The Doctor scan failed')).toBeInTheDocument();
+    expect(screen.getByText('docker unreachable')).toBeInTheDocument();
+    mockOf(api.doctor.scan).mockResolvedValue(report({}));
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('1 finding(s)', { exact: false })).toBeInTheDocument();
+  });
+
   it('renders the all-clear summary and empty state for a healthy host', async () => {
     mockOf(api.doctor.scan).mockResolvedValue(
       report({ healthy: true, totals: { findings: 0, critical: 0, warn: 0, info: 0, reclaimableBytes: 0 }, findings: [], host: { ...report({}).host, dockerBuildCacheBytes: 0 } }),
