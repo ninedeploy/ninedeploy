@@ -1,5 +1,5 @@
 import { lookup } from 'node:dns/promises';
-import { isIP } from 'node:net';
+import { isIP, type LookupFunction } from 'node:net';
 
 /**
  * L-11: refuse outbound requests aimed at the host's own network.
@@ -17,11 +17,13 @@ import { isIP } from 'node:net';
  * `http://127.0.0.1:<panel port>` reaches services that are unreachable from
  * the internet by design.
  *
- * What this does NOT solve: DNS rebinding. The name is resolved here and
- * resolved again by `fetch`, so a hostile resolver can answer differently the
- * second time. Closing that needs a connect-time hook on the HTTP agent, which
- * global `fetch` does not expose. Given these URLs are admin-entered, the
- * remaining exposure is an admin attacking their own instance.
+ * DNS rebinding (r605): the name used to be resolved here and resolved AGAIN
+ * by `fetch`, so a hostile resolver could answer public for the check and
+ * private for the connect. `guardedFetch` now pins the connection to the
+ * addresses it vetted — a per-request undici Agent whose connect-time `lookup`
+ * returns them (TLS SNI and the Host header keep the hostname); git egress is
+ * pinned the same way through curl (r355). A caller that only runs
+ * `assertPublicHttpUrl` and then dials by itself is NOT pinned.
  *
  * Escape hatch: many self-hosters legitimately point a webhook at a receiver
  * on the same LAN. `NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1` turns the check off.
@@ -163,6 +165,21 @@ export class EgressBlockedError extends Error {
  * private answer is rejected, since which one `fetch` picks is not ours.
  */
 export async function assertPublicHttpUrl(raw: string): Promise<URL> {
+  return (await vetPublicHttpUrl(raw)).url;
+}
+
+/** One vetted answer for a hostname, in `dns.lookup({ all: true })` shape. */
+export interface VettedAddress {
+  address: string;
+  family: number;
+}
+
+/**
+ * The check behind `assertPublicHttpUrl`, also handing back the hostname's
+ * vetted addresses — null when nothing was resolved (an IP literal, or
+ * private egress allowed), i.e. when there is nothing to pin.
+ */
+async function vetPublicHttpUrl(raw: string): Promise<{ url: URL; host: string; addresses: VettedAddress[] | null }> {
   let url: URL;
   try {
     url = new URL(raw);
@@ -172,17 +189,16 @@ export async function assertPublicHttpUrl(raw: string): Promise<URL> {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new EgressBlockedError(raw, `the ${url.protocol} scheme is not allowed`);
   }
-  if (privateEgressAllowed()) return url;
-
   // `new URL` keeps IPv6 literals in brackets.
   const host = url.hostname.replace(/^\[|\]$/g, '');
+  if (privateEgressAllowed()) return { url, host, addresses: null };
 
   if (isIP(host)) {
     if (isPrivateAddress(host)) throw new EgressBlockedError(raw, `${host} is a private or link-local address`);
-    return url;
+    return { url, host, addresses: null };
   }
 
-  let addresses: Array<{ address: string }>;
+  let addresses: VettedAddress[];
   try {
     addresses = await lookup(host, { all: true });
   } catch {
@@ -194,14 +210,76 @@ export async function assertPublicHttpUrl(raw: string): Promise<URL> {
       throw new EgressBlockedError(raw, `${host} resolves to the private address ${address}`);
     }
   }
-  return url;
+  return { url, host, addresses };
+}
+
+/**
+ * r605: a `net` lookup that never asks DNS — it answers `host` with the
+ * addresses vetted a moment earlier and refuses any other name. Handles both
+ * callback shapes (`all: true`, which undici's autoSelectFamily uses, and the
+ * single-address one). Exported for its unit test.
+ */
+export function pinnedLookup(host: string, addresses: readonly VettedAddress[]): LookupFunction {
+  const want = host.toLowerCase();
+  const fn = (hostname: string, options: unknown, callback?: unknown): void => {
+    const cb = (typeof options === 'function' ? options : callback) as (...args: unknown[]) => void;
+    const opts = (typeof options === 'object' && options !== null ? options : {}) as { all?: boolean; family?: unknown };
+    const family = opts.family === 4 || opts.family === 'IPv4' ? 4 : opts.family === 6 || opts.family === 'IPv6' ? 6 : 0;
+    const list = addresses.filter((a) => family === 0 || a.family === family);
+    if (hostname.toLowerCase() !== want || list.length === 0) {
+      const err = Object.assign(new Error(`${hostname} has no vetted address for this request`), { code: 'ENOTFOUND' });
+      process.nextTick(() => cb(err));
+      return;
+    }
+    const first = list[0]!;
+    process.nextTick(() => (opts.all ? cb(null, list.map((a) => ({ ...a }))) : cb(null, first.address, first.family)));
+  };
+  return fn as unknown as LookupFunction;
+}
+
+interface PinnedDispatcher {
+  close(): Promise<void>;
+}
+type AgentCtor = new (opts: { connect: { lookup: LookupFunction } }) => PinnedDispatcher;
+
+/**
+ * The Agent class of the undici bundled with THIS Node — the one global
+ * `fetch` runs on, so a dispatcher built from it is always compatible (a
+ * separately installed undici major is not guaranteed to be, and would need
+ * a newer Node than the engines floor). Reached through undici's
+ * cross-copy global-dispatcher slot. Null when that slot holds something
+ * else — an operator's proxy agent (NODE_USE_ENV_PROXY), a test's mock
+ * agent: those keep the unpinned behaviour rather than being bypassed.
+ */
+const GLOBAL_DISPATCHER = Symbol.for('undici.globalDispatcher.1');
+function bundledAgentClass(): AgentCtor | null {
+  const slot = globalThis as unknown as Record<symbol, { constructor?: unknown } | undefined>;
+  if (slot[GLOBAL_DISPATCHER] === undefined) {
+    try {
+      // Node loads its bundled undici (which installs the default Agent) lazily.
+      void new Response(null);
+    } catch {
+      /* no WHATWG fetch at all */
+    }
+  }
+  const ctor = slot[GLOBAL_DISPATCHER]?.constructor;
+  return typeof ctor === 'function' && ctor.name === 'Agent' ? (ctor as AgentCtor) : null;
 }
 
 /** `fetch`, refusing anything that points inside the host's own network. */
 export async function guardedFetch(raw: string, init?: RequestInit): Promise<Response> {
-  await assertPublicHttpUrl(raw);
+  const { host, addresses } = await vetPublicHttpUrl(raw);
   // Do not let fetch turn one validated public URL into an unchecked private
   // redirect target. Callers receive the redirect response and can make an
   // explicit, separately guarded follow-up request if their protocol needs it.
-  return fetch(raw, { ...init, redirect: 'manual' });
+  const Agent = addresses ? bundledAgentClass() : null;
+  if (!addresses || !Agent) return fetch(raw, { ...init, redirect: 'manual' });
+  // r605: connect to exactly what was vetted — fetch must not resolve again.
+  const dispatcher = new Agent({ connect: { lookup: pinnedLookup(host, addresses) } });
+  try {
+    return await fetch(raw, { ...init, redirect: 'manual', dispatcher } as RequestInit);
+  } finally {
+    // Graceful: waits until the response body is consumed, then frees the socket.
+    void dispatcher.close().catch(() => undefined);
+  }
 }
