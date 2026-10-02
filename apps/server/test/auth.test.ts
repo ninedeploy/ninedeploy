@@ -1,6 +1,6 @@
 ﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { authRoutes, createFirstAdmin, registerAccount } from '../src/modules/auth.js';
-import { asUser, buildTestApp, createFakeDb, sessionRow, tokenRow, userRow } from './helpers.js';
+import { asUser, buildTestApp, captureAudits, createFakeDb, sessionRow, tokenRow, userRow } from './helpers.js';
 
 const cryptoMocks = vi.hoisted(() => ({
   hashPassword: vi.fn(async () => 'hashed'),
@@ -419,6 +419,33 @@ describe('auth routes', () => {
     const body = res.json();
     expect(body.user.id).toBe(1);
     expect(body.tokens.accessToken).toBe('access-token');
+  });
+
+  it('r603: a password change keeps passkeys and reports how many remain', async () => {
+    cryptoMocks.verifyPassword.mockResolvedValueOnce(true);
+    const db = createFakeDb({
+      findFirst: { users: userRow({ id: 1, tokenVersion: 3 }) },
+      update: { users: [userRow({ id: 1, tokenVersion: 4 })] },
+      counts: { webauthn_credentials: [{ n: 2 }] },
+    });
+    const { webauthnCredentials } = await import('@ninedeploy/db');
+    const del = vi.spyOn(db, 'delete');
+    const audits = captureAudits(db);
+    const app = await buildTestApp({ db });
+    await app.register(authRoutes);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/password',
+      headers: asUser(),
+      payload: { currentPassword: F.currentPassword, newPassword: F.newPassword },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().passkeysRemaining).toBe(2);
+    expect(res.json().tokens.accessToken).toBe('access-token');
+    expect(del).not.toHaveBeenCalledWith(webauthnCredentials);
+    expect(audits).toContainEqual(
+      expect.objectContaining({ action: 'auth.password_changed', meta: expect.objectContaining({ passkeysRemaining: 2 }) }),
+    );
   });
 
   it('deletes the user API tokens on a password change and on a token reset (r094)', async () => {

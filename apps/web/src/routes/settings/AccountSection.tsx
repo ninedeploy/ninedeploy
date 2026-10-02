@@ -13,6 +13,8 @@ export function AccountSection() {
   const [pwCurrent, setPwCurrent] = useState('');
   const [pwNext, setPwNext] = useState('');
   const [pwConfirm, setPwConfirm] = useState('');
+  // r603: passkeys survive a password change — say so, and point at them.
+  const [passkeysLeft, setPasskeysLeft] = useState(0);
   const changePassword = useMutation({
     mutationFn: (input: { currentPassword: string; newPassword: string }) => api.auth.changePassword(input),
     onSuccess: (session) => {
@@ -22,6 +24,7 @@ export function AccountSection() {
       setPwCurrent('');
       setPwNext('');
       setPwConfirm('');
+      setPasskeysLeft(session.passkeysRemaining ?? 0);
       toast('Password changed — other sessions signed out', 'success');
     },
     onError: () => toast('Password change failed', 'error'),
@@ -85,6 +88,19 @@ export function AccountSection() {
                 {changePassword.isPending ? 'Changing…' : 'Change password'}
               </Button>
             </div>
+            {passkeysLeft > 0 && (
+              <p
+                role="status"
+                className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300"
+              >
+                You still have {passkeysLeft} {passkeysLeft === 1 ? 'passkey' : 'passkeys'} — a password change does not
+                remove them, and each one can still sign in. Remove any you don't recognise in{' '}
+                <a href="#passkeys" className="underline hover:text-amber-200">
+                  the passkey list
+                </a>
+                .
+              </p>
+            )}
           </div>
         </CardBody>
       </Card>
@@ -175,7 +191,7 @@ function PasskeyCard() {
   });
 
   return (
-    <Card className="mb-5">
+    <Card id="passkeys" className="mb-5 scroll-mt-4">
       <CardBody>
         <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
           <Fingerprint size={14} /> Passkeys
@@ -223,7 +239,8 @@ function PasskeyCard() {
               >
                 <span className="text-slate-300">{p.name}</span>
                 <span className="flex items-center gap-3">
-                  <span className="text-slate-500">{formatDateTime(p.createdAt)}</span>
+                  {/* r603: created-at only — last use is not recorded for passkeys. */}
+                  <span className="text-slate-500">Added {formatDateTime(p.createdAt)}</span>
                   <button type="button" onClick={() => remove.mutate(p.id)} className="text-rose-400 hover:text-rose-300">
                     Remove
                   </button>

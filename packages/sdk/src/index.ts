@@ -58,6 +58,7 @@ import type {
   DatabaseDetail,
   DatabaseCredentials,
   PasswordChange,
+  PasswordChangeResult,
   PasswordReset,
   MetricSeries,
   ProjectEntry,
@@ -570,8 +571,9 @@ export interface NineDeployClient {
     login: (input: Login) => Promise<Session>;
     refresh: (input: Refresh) => Promise<Session>;
     logout: () => Promise<{ ok: boolean }>;
-    /** Self-service password change; revokes other sessions, returns a fresh token pair. */
-    changePassword: (input: PasswordChange) => Promise<Session>;
+    /** Self-service password change; revokes other sessions, returns a fresh token pair
+     *  and (r603) how many passkeys still sign in to the account. */
+    changePassword: (input: PasswordChange) => Promise<PasswordChangeResult>;
     /** Request a reset link (always 200 — no user enumeration). */
     forgotPassword: (email: string) => Promise<{ ok: boolean }>;
     /** Complete a reset with a single-use token; revokes all sessions. */
@@ -1642,7 +1644,7 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       refresh: (input) => send<Session>('POST', '/v1/auth/refresh', input),
       /** Revoke this user's outstanding JWTs server-side (tokenVersion bump). */
       logout: () => send<{ ok: boolean }>('POST', '/v1/auth/logout', {}),
-      changePassword: (input) => send<Session>('POST', '/v1/auth/password', input),
+      changePassword: (input) => send<PasswordChangeResult>('POST', '/v1/auth/password', input),
       forgotPassword: (email) => send<{ ok: boolean }>('POST', '/v1/auth/forgot-password', { email }),
       resetPasswordWithToken: (input) => send<{ ok: boolean }>('POST', '/v1/auth/reset-password', input),
       twoFactor: {

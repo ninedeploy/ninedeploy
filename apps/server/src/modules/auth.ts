@@ -682,11 +682,24 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     } catch { /* a fixture without the settings table */ }
     await revokeAllSessions(app.db, user.id);
     await revokeApiTokens(app.db, user.id);
-    void audit(app.db, user.id, 'auth.password_changed', user.email, undefined, {
+    // r603: passkeys are an independent credential and deliberately survive a
+    // password CHANGE (a reset deletes them) — but someone changing a password
+    // they think leaked must see that the passkeys still sign in. The count
+    // rides along (additive) so the UI can point at the list.
+    const [pk] = await app.db
+      .select({ n: count() })
+      .from(webauthnCredentials)
+      .where(eq(webauthnCredentials.userId, user.id));
+    const passkeysRemaining = Number(pk?.n ?? 0);
+    void audit(app.db, user.id, 'auth.password_changed', user.email, { passkeysRemaining }, {
       ip: req.ip,
       userAgent: req.headers['user-agent'],
     });
-    return { user: toUser(updated, await isOperator(app.db, updated)), tokens: await issueSessionTokens(app.db, updated, { ip: req.ip, userAgent: req.headers['user-agent'] }) };
+    return {
+      user: toUser(updated, await isOperator(app.db, updated)),
+      tokens: await issueSessionTokens(app.db, updated, { ip: req.ip, userAgent: req.headers['user-agent'] }),
+      passkeysRemaining,
+    };
   });
 
   // ── API tokens (for the CLI / CI) ────────────────────────────────────────
