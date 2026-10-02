@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildTestApp, asUser, createFakeDb } from './helpers.js';
 import { doctorRoutes } from '../src/modules/doctor.js';
-import { fixDoctorFinding, panelExposureFinding, sandboxNetworkFinding, scanDoctor } from '../src/engine/doctor.js';
+import { fixDoctorFinding, panelExposureFinding, sandboxNetworkFinding, scanDoctor, templatesSourceFinding } from '../src/engine/doctor.js';
 import { SandboxPlugin } from '../src/kernel/sandbox/sandboxPlugin.js';
 
 const ex = vi.hoisted(() => ({ capture: vi.fn(), run: vi.fn() }));
@@ -399,5 +399,28 @@ describe('doctor: sandbox plugin network (r600)', () => {
     expect(sandboxNetworkFinding([sb('a'), sb('b')], false, 'v24.1.0')?.title).toBe(
       '2 sandbox plugin(s) have unrestricted network access on Node v24.1.0',
     );
+  });
+});
+
+// ── r655: plaintext remote template registry ──────────────────────────
+describe('doctor: plaintext template source (r655)', () => {
+  it('warns about a stored http:// template source (wired into the scan)', async () => {
+    const db = createFakeDb({
+      findFirst: { settings: () => ({ key: 'templates_source', value: 'http://registry.example.com/r.json' }) },
+    });
+    const report = await scanDoctor(db);
+    const f = report.findings.find((x) => x.kind === 'templates_source_plaintext');
+    expect(f).toMatchObject({ severity: 'warn', action: null, target: { type: 'host', name: 'templates_source' } });
+    expect(f?.detail).toContain('http://registry.example.com/r.json');
+    expect(f?.detail).toContain('https://');
+  });
+
+  it('is silent for https, local and unset sources', async () => {
+    expect(templatesSourceFinding(null)).toBeNull();
+    expect(templatesSourceFinding('https://registry.example.com/r.json')).toBeNull();
+    expect(templatesSourceFinding('/var/lib/ninedeploy/registry.json')).toBeNull();
+    expect(templatesSourceFinding('HTTP://registry.example.com/r.json')?.kind).toBe('templates_source_plaintext');
+    const clean = await scanDoctor(createFakeDb());
+    expect(clean.findings.filter((x) => x.kind === 'templates_source_plaintext')).toEqual([]);
   });
 });

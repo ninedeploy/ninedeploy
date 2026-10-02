@@ -29,6 +29,7 @@ import {
   run,
 } from '../lib/exec.js';
 import { conflict } from '../lib/errors.js';
+import { getSettingString } from '../lib/settings.js';
 import { config } from '../config.js';
 import { SandboxPlugin } from '../kernel/sandbox/sandboxPlugin.js';
 import { storedInsightsLeakSuspected } from './repoInsights.js';
@@ -247,6 +248,30 @@ export function insightsLeakFinding(serviceIds: readonly number[]): DoctorFindin
       '`ninedeploy system rotate-keys`, rotate any registry/git/S3 credentials stored in the panel, review ' +
       'who owns those services, then re-run repository analysis (or redeploy) so the stored rows are rewritten.',
     target: { type: 'host', name: serviceIds.join(','), id: null },
+    action: null,
+    sizeBytes: null,
+  };
+}
+
+/**
+ * r655: a remote template registry fetched over plain http. Settings has only
+ * accepted https for new values, but a value stored before that — or set via
+ * NINEDEPLOY_TEMPLATES_SOURCE — still loads, unauthenticated and without
+ * integrity. It keeps working (refusing it would empty the Hub on upgrade);
+ * the operator is told. Exported for its unit test; wired below.
+ */
+export function templatesSourceFinding(source: string | null): DoctorFinding | null {
+  if (!source || !/^http:\/\//i.test(source)) return null;
+  return {
+    id: 'templates_source_plaintext',
+    kind: 'templates_source_plaintext',
+    severity: 'warn',
+    title: 'The Hub template registry is fetched over plain HTTP',
+    detail:
+      `The template source ${source} is downloaded without TLS, so anyone on the network path can replace the ` +
+      'catalog the Hub deploys from (images, commands, environment defaults). Switch it to an https:// URL in ' +
+      'Settings → Hub (or NINEDEPLOY_TEMPLATES_SOURCE), or point it at a bundle file inside the data directory.',
+    target: { type: 'host', name: 'templates_source', id: null },
     action: null,
     sizeBytes: null,
   };
@@ -497,6 +522,12 @@ export async function scanDoctor(db: DB): Promise<DoctorReport> {
   const insightRows = await db.select().from(repoInsights);
   const leak = insightsLeakFinding(insightRows.filter(storedInsightsLeakSuspected).map((r) => r.serviceId));
   if (leak) findings.push(leak);
+
+  // r655: a plaintext remote template registry (stored before https-only, or env).
+  const templatesSource = (await getSettingString(db, 'templates_source', null).catch(() => null))
+    ?? config.templatesSource ?? null;
+  const plaintextTemplates = templatesSourceFinding(templatesSource);
+  if (plaintextTemplates) findings.push(plaintextTemplates);
 
   // ── stored slugs that violate the canonical contract ────────────────────
   // r028/r029 fixed slugify() for NEW rows; this catches rows already written

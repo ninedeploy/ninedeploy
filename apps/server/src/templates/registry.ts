@@ -153,6 +153,9 @@ export async function getTemplates(db: DB | null): Promise<Template[]> {
 
   let templates: Template[];
   try {
+    // r655: plain http still loads — Settings refuses it for new values, and
+    // a stored/env one is flagged by Doctor (templates_source_plaintext)
+    // instead of silently emptying the Hub on upgrade.
     if (/^https?:\/\//i.test(source)) {
       templates = (await freshCache(source)) ?? (await fetchRemote(source));
     } else {
