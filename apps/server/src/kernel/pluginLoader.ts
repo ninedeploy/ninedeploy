@@ -571,6 +571,74 @@ export class UnimplementedPluginError extends Error {
   }
 }
 
+/**
+ * r531: ids of the plugins compiled into the server and registered by
+ * `plugins/kernel.ts` at boot. Reserved: an installed plugin with one of
+ * these ids shares the built-in's `plugin:<id>:` config namespace (its
+ * secrets, domain-presets' DNS record ledger, …), and the install path used
+ * to UNREGISTER the built-in to make room for it. `test/kernel/pluginIdGuard`
+ * pins this list to the classes' own ids.
+ */
+export const BUILT_IN_PLUGIN_IDS: readonly string[] = Object.freeze([
+  'notifications-dispatcher',
+  'cloudflare-tunnels',
+  'telemetry-streamer',
+  'template-bundles',
+  'manifest-generator',
+  'webhook-out',
+  'domain-presets',
+  'config-presets',
+  'sticky-session',
+  'metric-history',
+  'build-cache',
+  'sticky-ip',
+]);
+
+export function isBuiltInPluginId(id: string): boolean {
+  return BUILT_IN_PLUGIN_IDS.includes(id);
+}
+
+/**
+ * r531: the id shape a NEW sandbox install must have. `:` would let an id
+ * reach into another plugin's config namespace (`plugin:domain-presets:record`
+ * IS `plugin:domain-presets:` + `record:…`) and `.` into its event namespace
+ * (`plugin.<id>.<name>`, r530), so neither separator is allowed.
+ */
+export const SANDBOX_PLUGIN_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
+
+/** Thrown when an install would collide with a built-in or another installed plugin. */
+export class PluginIdConflictError extends Error {
+  readonly statusCode = 409;
+  constructor(message: string) {
+    super(message);
+    this.name = 'PluginIdConflictError';
+  }
+}
+
+/**
+ * r531: why a stored row cannot be restored at boot (null when it can). Kept
+ * deliberately narrower than the install check: an id that was accepted
+ * before 0.10.36 keeps loading unless it is actually dangerous — it shadows a
+ * built-in, or carries the `:` that escapes into another config namespace.
+ */
+export function bootRestoreConflict(id: string): string | null {
+  if (isBuiltInPluginId(id)) {
+    return (
+      `Plugin "${id}" was not loaded: its id is reserved by the built-in "${id}" plugin, and loading it ` +
+      `would share that plugin's configuration and secrets. Uninstall it from Settings → Plugins and ` +
+      `reinstall it under a different id.`
+    );
+  }
+  if (id.includes(':')) {
+    return (
+      `Plugin "${id}" was not loaded: ":" in a plugin id reaches into another plugin's configuration ` +
+      `namespace. Uninstall it from Settings → Plugins and reinstall it under an id matching ` +
+      `${SANDBOX_PLUGIN_ID_PATTERN}.`
+    );
+  }
+  return null;
+}
+
 /** A catalog the loader can resolve entries against. Injectable for tests. */
 export type Catalog = ReadonlyArray<Omit<MarketplacePluginItem, 'isInstalled'>>;
 
@@ -673,6 +741,8 @@ export async function installPlugin(
     where: eq(installedPlugins.id, dynamicPlugin.id),
   });
 
+  assertInstallableId(dynamicPlugin.id, input, existing, kernel, catalog);
+
   if (existing && existing.enabled && kernel.getPlugin(dynamicPlugin.id)) {
     throw new Error(`Plugin "${dynamicPlugin.id}" is already installed and active`);
   }
@@ -745,6 +815,48 @@ export async function installPlugin(
   return { ok: true, id: dynamicPlugin.id, status: 'active' };
 }
 
+/**
+ * r531: refuse an install whose id would shadow a built-in or take over a
+ * different installed plugin's identity (and with it the `plugin:<id>:`
+ * config namespace — including the secrets stored there).
+ */
+function assertInstallableId(
+  id: string,
+  input: InstallPluginInput,
+  existing: typeof installedPlugins.$inferSelect | undefined | null,
+  kernel: KernelContext,
+  catalog: Catalog,
+): void {
+  if (isBuiltInPluginId(id) || (kernel.getPlugin(id) && !existing)) {
+    throw new PluginIdConflictError(
+      `Plugin id "${id}" is reserved by a built-in plugin. Installing it would replace that plugin and inherit ` +
+        `its configuration and secrets — choose a different id.`,
+    );
+  }
+  if (input.source === 'sandbox') {
+    if (!SANDBOX_PLUGIN_ID_PATTERN.test(id)) {
+      throw new PluginIdConflictError(
+        `Plugin id "${id}" is not allowed: use 1–64 letters, digits, "-" or "_" (no ":" or ".", which ` +
+          `separate plugin configuration and event namespaces).`,
+      );
+    }
+    if (catalog.some((m) => m.id === id)) {
+      throw new PluginIdConflictError(
+        `Plugin id "${id}" is reserved by the marketplace catalog entry of the same name — choose a different id.`,
+      );
+    }
+  }
+  // Reinstalling the SAME source over its own row is the supported upgrade
+  // path (r420); a different source taking an existing row's id is a takeover.
+  const existingSource = (existing?.manifest as Record<string, unknown> | null | undefined)?.['source'];
+  if (existing && typeof existingSource === 'string' && existingSource !== input.source) {
+    throw new PluginIdConflictError(
+      `Plugin id "${id}" is already used by an installed ${existingSource} plugin ("${existing.name}"). ` +
+        `Uninstall it first, or install under a different id.`,
+    );
+  }
+}
+
 export async function uninstallPlugin(
   db: DB,
   kernel: KernelContext,
@@ -758,8 +870,11 @@ export async function uninstallPlugin(
     throw new Error(`Plugin "${id}" is not installed`);
   }
 
-  // 1. Unregister and destroy runtime plugin if loaded
-  await kernel.unregisterPlugin(id);
+  // 1. Unregister and destroy runtime plugin if loaded. r531: a row that
+  // collides with a built-in id was never loaded (the boot restore refuses
+  // it) — the runtime plugin under that id IS the built-in, and removing the
+  // stray row must not tear it down.
+  if (!isBuiltInPluginId(id)) await kernel.unregisterPlugin(id);
 
   // 2. Remove DB record
   await db.delete(installedPlugins).where(eq(installedPlugins.id, id));
@@ -776,6 +891,9 @@ export async function restorePluginFromRow(
   row: typeof installedPlugins.$inferSelect,
   kernel: KernelContext,
 ): Promise<void> {
+  // r531: enable/reload restore through here too — never over a built-in.
+  const conflict = bootRestoreConflict(row.id);
+  if (conflict) throw new PluginIdConflictError(conflict);
   const manifest = (row.manifest || {}) as Record<string, any>;
   const source = (manifest.source as string) || (row.isOfficial ? 'marketplace' : 'local');
   if (!isLoadableSource(source)) {
@@ -811,6 +929,24 @@ export async function loadInstalledPlugins(db: DB, kernel: KernelContext): Promi
 
   let loaded = 0;
   for (const row of rows) {
+    // r531: a previously-installed plugin whose id collides with a built-in
+    // (or escapes its namespace) is skipped — loudly, and with the reason on
+    // its row so Settings → Plugins shows it — instead of either shadowing
+    // the built-in or (as before) being skipped silently while the row kept
+    // reporting `active`. Never fatal: boot continues with the rest.
+    const conflict = bootRestoreConflict(row.id);
+    if (conflict) {
+      console.error(`[PluginLoader] ${conflict}`);
+      try {
+        await db
+          .update(installedPlugins)
+          .set({ status: 'errored', error: conflict.slice(0, 500), updatedAt: new Date() })
+          .where(eq(installedPlugins.id, row.id));
+      } catch (err) {
+        console.error(`[PluginLoader] Could not record the conflict on plugin "${row.id}":`, err);
+      }
+      continue;
+    }
     if (!kernel.getPlugin(row.id)) {
       try {
         await restorePluginFromRow(row, kernel);

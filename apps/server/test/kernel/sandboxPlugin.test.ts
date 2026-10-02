@@ -35,22 +35,24 @@ describe('SandboxPlugin (Worker Threads)', () => {
             }
           });
           
-          // Emit a custom event after ready
+          // Emit a custom event after ready — r530: inside the plugin's own
+          // \`plugin.<id>.\` namespace, the only names a sandbox may emit.
           setTimeout(() => {
             parentPort.postMessage({
               type: 'EMIT_EVENT',
-              payload: { event: 'custom.system_event', data: { hello: 'from-sandbox' } }
+              payload: { event: 'plugin.test-sandbox.hello', data: { hello: 'from-sandbox' } }
             });
           }, 20);
         }
         
         if (msg.type === 'HOOK_CALL') {
-          const { hookId, initialPayload } = msg.payload;
-          // Modify payload
+          const { hookId, callId, initialPayload } = msg.payload;
+          // Modify payload (r532: the reply echoes the per-invocation callId)
           parentPort.postMessage({
             type: 'HOOK_RESPONSE',
             payload: {
               hookId,
+              callId,
               result: { ...initialPayload, targetCommit: 'sandbox-commit-sha' }
             }
           });
@@ -72,9 +74,13 @@ describe('SandboxPlugin (Worker Threads)', () => {
       });
 
       const eventPromise = new Promise<any>((resolve) => {
-        kernel.events.onCustom('custom.system_event', (payload) => {
-          resolve(payload);
-        });
+        kernel.events.onCustom(
+          'plugin.test-sandbox.hello',
+          (payload, _event, origin) => {
+            resolve({ payload, origin });
+          },
+          { acceptPluginOrigin: true },
+        );
       });
 
       await kernel.registerPlugin(sandboxPlugin);
@@ -86,7 +92,9 @@ describe('SandboxPlugin (Worker Threads)', () => {
 
       // Verify custom event received from sandbox
       const receivedEvent = await eventPromise;
-      expect(receivedEvent).toEqual({ hello: 'from-sandbox' });
+      expect(receivedEvent.payload).toEqual({ hello: 'from-sandbox' });
+      // r530: tagged host-side with the emitting plugin's origin.
+      expect(receivedEvent.origin).toEqual({ kind: 'plugin', pluginId: 'test-sandbox' });
 
       // Verify hook pipeline execution into worker
       const hookResult = await kernel.hooks.call('deploy:before', {
@@ -116,7 +124,7 @@ describe('SandboxPlugin (Worker Threads)', () => {
       parentPort.on('message', (msg) => {
         if (msg.type === 'INIT') parentPort.postMessage({ type: 'READY', payload: { configSchema: [], menuItems: [] } });
         if (msg.type === 'EVENT' && msg.payload.event === 'deployment.status_changed') {
-          parentPort.postMessage({ type: 'EMIT_EVENT', payload: { event: 'test.relayed', data: { name: msg.payload.event } } });
+          parentPort.postMessage({ type: 'EMIT_EVENT', payload: { event: 'plugin.evt-sandbox.relayed', data: { name: msg.payload.event } } });
         }
         if (msg.type === 'SHUTDOWN') process.exit(0);
       });
@@ -125,7 +133,9 @@ describe('SandboxPlugin (Worker Threads)', () => {
     );
     try {
       const relayed = new Promise<{ name: string }>((resolve) => {
-        kernel.events.onCustom('test.relayed', (payload) => resolve(payload as { name: string }));
+        kernel.events.onCustom('plugin.evt-sandbox.relayed', (payload) => resolve(payload as { name: string }), {
+          acceptPluginOrigin: true,
+        });
       });
       await kernel.registerPlugin(
         new SandboxPlugin({ id: 'evt-sandbox', name: 'Evt', version: '1.0.0', workerPath: workerScriptPath }),
@@ -281,7 +291,40 @@ describe('SandboxPlugin (process transport, r468)', () => {
     expect(argv).not.toContain('--allow-child-process');
     expect(argv).not.toContain('--allow-worker-threads');
     expect(argv).not.toContain('--allow-addons');
+    // r534: nor network — on Node >= 25 that is what keeps sockets denied.
+    expect(argv).not.toContain('--allow-net');
   });
+
+  it('r534: network is denied exactly when this Node has a net permission scope', async () => {
+    // Pins reality instead of a claim: on Node >= 25 (`--allow-net` exists,
+    // the Docker image and CI run 26) the sandbox flags deny a TCP connect;
+    // on Node 22/24 the permission model has no net scope and the connect is
+    // attempted (refused by the closed port, not by the runtime).
+    const probe = writeProcessScript(`
+      import net from 'node:net';
+      const s = net.connect(9, '127.0.0.1');
+      const report = (code) => { process.send({ type: 'PROBE', payload: { code } }); s.destroy(); };
+      s.on('error', (e) => report(e.code ?? String(e).slice(0, 60)));
+      s.on('connect', () => report('CONNECTED'));
+    `);
+    const result = await new Promise<{ code: string }>((resolve, reject) => {
+      const child = fork(probe, [], { execArgv: SB.sandboxExecArgv([probe]), silent: true, serialization: 'json' });
+      const timer = setTimeout(() => reject(new Error('probe timed out')), 15000);
+      child.on('message', (m: { type: string; payload: { code: string } }) => {
+        if (m.type === 'PROBE') {
+          clearTimeout(timer);
+          resolve(m.payload);
+          child.kill();
+        }
+      });
+      child.on('exit', (code) => {
+        clearTimeout(timer);
+        reject(new Error(`probe exited (${code}) before answering`));
+      });
+    });
+    if (SB.networkDenied()) expect(result.code).toBe('ERR_ACCESS_DENIED');
+    else expect(result.code).not.toBe('ERR_ACCESS_DENIED');
+  }, 20000);
 
   it('a sandboxed child CANNOT read the filesystem (the flags actually deny)', async () => {
     const secret = join(tmpdir(), `nd-sandbox-proof-${Date.now()}.txt`);
@@ -431,10 +474,12 @@ describe.skipIf(!existsSync(COMPILED_BOOTSTRAP))('processBootstrap — the compi
       expect(reg.payload?.hookName).toBe('deploy:before');
       child.send({
         type: 'HOOK_CALL',
-        payload: { hookId: reg.payload?.hookId, hookName: 'deploy:before', initialPayload: { targetCommit: 'orig' } },
+        payload: { hookId: reg.payload?.hookId, callId: 'call-1', hookName: 'deploy:before', initialPayload: { targetCommit: 'orig' } },
       });
       const resp = await waitFor((m) => m.type === 'HOOK_RESPONSE');
       expect(resp.payload?.result?.targetCommit).toBe('honesty-sha');
+      // r532: the shipped bootstrap echoes the per-invocation call id.
+      expect(resp.payload?.callId).toBe('call-1');
       expect(resp.payload?.error).toBeUndefined();
     } finally {
       await stop(child);

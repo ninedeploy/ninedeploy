@@ -3,9 +3,12 @@ import { fork, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { audit } from '../../lib/audit.js';
 import { makeLineSplitter } from '../../lib/exec.js';
-import type { KernelContext, KernelPlugin } from '../types.js';
+import type { EventOrigin, KernelContext, KernelPlugin } from '../types.js';
 import type { MainToWorkerMessage, WorkerToMainMessage } from './protocol.js';
+import { redactForSandbox } from './redact.js';
 
 /**
  * Matches the hook pipeline's default per-tap budget (5000ms): whichever
@@ -13,6 +16,30 @@ import type { MainToWorkerMessage, WorkerToMainMessage } from './protocol.js';
  * stale pendingHookCalls entry.
  */
 const HOOK_REPLY_TIMEOUT_MS = 5000;
+
+/** r530: longest event name a sandbox may emit — a bound, not a style rule. */
+const MAX_EVENT_NAME_LENGTH = 200;
+/** r530: distinct rejected names logged per plugin load before going quiet. */
+const MAX_LOGGED_REJECTIONS = 10;
+
+/**
+ * r530: the ONLY event names a sandbox plugin may emit:
+ * `plugin.<pluginId>.<name>`. Every kernel event (`audit.recorded`,
+ * `deployment.status_changed`, `alert.triggered`, `telemetry.recorded`,
+ * `plugin.status_changed`, …) lies outside every plugin's namespace, so a
+ * plugin can no longer forge one — before this, emitting `audit.recorded`
+ * with `action: 'domain.delete'` made the domain-presets plugin delete a real
+ * DNS record, and a fake `deployment.status_changed` paged the operator.
+ */
+export function sandboxEventNamespace(pluginId: string): string {
+  return `plugin.${pluginId}.`;
+}
+
+export function isSandboxEventAllowed(pluginId: string, event: unknown): event is string {
+  if (typeof event !== 'string' || event.length > MAX_EVENT_NAME_LENGTH) return false;
+  const prefix = sandboxEventNamespace(pluginId);
+  return event.startsWith(prefix) && event.length > prefix.length;
+}
 
 export interface SandboxPluginOptions {
   id: string;
@@ -53,7 +80,24 @@ export class SandboxPlugin implements KernelPlugin {
   private readonly manifest?: Record<string, unknown>;
   private readonly workerPath?: string;
   private readonly unsubs: Array<() => void> = [];
-  private readonly pendingHookCalls = new Map<string, { resolve: (val: any) => void; reject: (err: Error) => void }>();
+  /**
+   * r532: keyed by a per-INVOCATION call id, not the tap's hookId. One entry
+   * per hookId meant a second concurrent call of the same tap overwrote the
+   * first (whose caller then hung until the pipeline's timeout), and the
+   * first call's timer later deleted the SECOND call's entry.
+   */
+  private readonly pendingHookCalls = new Map<
+    string,
+    { hookId: string; resolve: (val: any) => void; reject: (err: Error) => void }
+  >();
+  /** r530: emissions refused for leaving the plugin's namespace (this load). */
+  private rejectedEmits = 0;
+  private readonly rejectedEventNames = new Set<string>();
+
+  /** r530: how many out-of-namespace emissions this load refused. */
+  get rejectedEmitCount(): number {
+    return this.rejectedEmits;
+  }
 
   constructor(opts: SandboxPluginOptions) {
     this.id = opts.id;
@@ -90,6 +134,20 @@ export class SandboxPlugin implements KernelPlugin {
       ctx,
       join(dirname(fileURLToPath(import.meta.url)), 'workerBootstrap.js'),
     );
+  }
+
+  /**
+   * r534: whether the running Node's permission model also covers NETWORK.
+   * `--allow-net` exists from Node 25 (the Docker image runs node:26): there
+   * `--permission` denies outbound connects, DNS and listening unless the
+   * flag is passed — and the sandbox never passes it. On Node 22/24 (the
+   * `engines` floor is 22.13) the permission model has no net scope at all,
+   * so a sandbox plugin can still open sockets / fetch. Feature-detected,
+   * not version-parsed; plugin manifests declare no capabilities, so there is
+   * nothing to grant per plugin.
+   */
+  static networkDenied(): boolean {
+    return process.allowedNodeEnvironmentFlags.has('--allow-net');
   }
 
   /**
@@ -207,7 +265,8 @@ export class SandboxPlugin implements KernelPlugin {
       // used to be dropped and every event relayed as `custom.system_event`,
       // so a sandbox `ctx.on('deployment.status_changed', …)` never fired.
       ctx.events.onCustom('*', (payload, event) => {
-        send({ type: 'EVENT', payload: { event: event ?? 'custom.system_event', data: payload } });
+        // r533: secrets in an event payload stay on the panel side.
+        send({ type: 'EVENT', payload: { event: event ?? 'custom.system_event', data: redactForSandbox(payload).value } });
       }),
     );
   }
@@ -274,8 +333,8 @@ export class SandboxPlugin implements KernelPlugin {
             ctx.events.emit('plugin.status_changed', { pluginId: this.id, status: 'disabled' });
           }
 
-          for (const [hookId, pending] of Array.from(this.pendingHookCalls.entries())) {
-            pending.reject(new Error(`Sandbox exited with code ${code} while executing hook "${hookId}"`));
+          for (const pending of Array.from(this.pendingHookCalls.values())) {
+            pending.reject(new Error(`Sandbox exited with code ${code} while executing hook "${pending.hookId}"`));
           }
           this.pendingHookCalls.clear();
         },
@@ -359,7 +418,15 @@ export class SandboxPlugin implements KernelPlugin {
 
       case 'EMIT_EVENT': {
         const { event, data } = msg.payload;
-        ctx.events.emitCustom(event, data);
+        // r530: only `plugin.<id>.<name>`, and tagged with a plugin origin
+        // the plugin cannot choose — the bus never hands a plugin-origin
+        // emission to a typed (kernel-trusting) listener.
+        if (!isSandboxEventAllowed(this.id, event)) {
+          this.rejectEmit(ctx, event);
+          break;
+        }
+        const origin: EventOrigin = { kind: 'plugin', pluginId: this.id };
+        ctx.events.emitCustom(event, data, origin);
         break;
       }
 
@@ -368,30 +435,34 @@ export class SandboxPlugin implements KernelPlugin {
         const unhook = ctx.hooks.tap(
           hookName as any,
           async (payload) => {
+            // r533: the plugin sees a copy with secrets replaced; whatever
+            // placeholder survives into its answer is swapped back so the
+            // pipeline never continues with `[redacted]` in a real field.
+            const redacted = redactForSandbox(payload);
+            const callId = randomUUID();
             return new Promise((res, rej) => {
               // Mirrors the pipeline's own 5s per-tap budget: when it
               // fires first the pipeline recovers, and this cleanup
               // makes sure a wedged sandbox cannot leave the entry in
-              // pendingHookCalls forever (entries are keyed by hookId,
-              // so a stale one would also poison the NEXT call). The
-              // protocol carries one id per registration, so
-              // truly CONCURRENT invocations of the same hook still
-              // serialize through this map — a protocol-level limit.
+              // pendingHookCalls forever. r532: entries are keyed by the
+              // per-invocation callId, so this timer can only ever drop
+              // its OWN call.
               const timer = setTimeout(() => {
-                this.pendingHookCalls.delete(hookId);
+                this.pendingHookCalls.delete(callId);
                 rej(new Error(`Sandbox plugin "${this.id}" did not answer hook "${hookName}" in time`));
               }, HOOK_REPLY_TIMEOUT_MS);
-              this.pendingHookCalls.set(hookId, {
+              this.pendingHookCalls.set(callId, {
+                hookId,
                 resolve: (value) => {
                   clearTimeout(timer);
-                  res(value);
+                  res(redacted.restore(value) as any);
                 },
                 reject: (err) => {
                   clearTimeout(timer);
                   rej(err);
                 },
               });
-              send({ type: 'HOOK_CALL', payload: { hookId, hookName, initialPayload: payload } });
+              send({ type: 'HOOK_CALL', payload: { hookId, callId, hookName, initialPayload: redacted.value } });
             });
           },
           { id: `sandbox:${this.id}:${hookId}`, priority },
@@ -401,10 +472,14 @@ export class SandboxPlugin implements KernelPlugin {
       }
 
       case 'HOOK_RESPONSE': {
-        const { hookId, result, error } = msg.payload;
-        const pending = this.pendingHookCalls.get(hookId);
-        if (pending) {
-          this.pendingHookCalls.delete(hookId);
+        // r532: answered by callId. A reply without one (a custom
+        // workerPath script speaking the pre-r532 protocol) matches nothing
+        // and its call falls to the reply timeout — the panel-shipped
+        // bootstraps always echo it.
+        const { hookId, callId, result, error } = msg.payload;
+        const pending = callId === undefined ? undefined : this.pendingHookCalls.get(callId);
+        if (pending && pending.hookId === hookId) {
+          this.pendingHookCalls.delete(callId!);
           if (error) pending.reject(new Error(error));
           else pending.resolve(result);
         }
@@ -449,6 +524,30 @@ export class SandboxPlugin implements KernelPlugin {
         ctx.events.emit('plugin.status_changed', { pluginId: this.id, status: 'errored' });
         break;
       }
+    }
+  }
+
+  /**
+   * r530: refuse an out-of-namespace emission. Counted every time, logged
+   * once per distinct name (capped), audited once per plugin load — a plugin
+   * emitting a forbidden name in a loop must not flood the log or the audit
+   * table.
+   */
+  private rejectEmit(ctx: KernelContext, event: unknown): void {
+    this.rejectedEmits++;
+    const name = typeof event === 'string' ? event.slice(0, MAX_EVENT_NAME_LENGTH) : `<${typeof event}>`;
+    if (!this.rejectedEventNames.has(name) && this.rejectedEventNames.size < MAX_LOGGED_REJECTIONS) {
+      this.rejectedEventNames.add(name);
+      console.warn(
+        `[Sandbox:${this.id}] refused to emit "${name}": sandbox plugins may only emit events named ` +
+          `"${sandboxEventNamespace(this.id)}<name>" — kernel events cannot be emitted by a plugin`,
+      );
+    }
+    if (this.rejectedEmits === 1 && ctx.db) {
+      void audit(ctx.db, null, 'plugin.event_rejected', this.id, {
+        event: name,
+        rule: `${sandboxEventNamespace(this.id)}<name>`,
+      }).catch(() => undefined);
     }
   }
 

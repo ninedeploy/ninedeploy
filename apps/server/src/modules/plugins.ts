@@ -5,7 +5,21 @@ import type { InstallPluginInput } from '@ninedeploy/schemas';
 import { installPluginSchema } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
 import { clearMarketplaceCache, loadMarketplaceCatalog } from '../lib/marketplaceCatalog.js';
-import { installPlugin, restorePluginFromRow, uninstallPlugin } from '../kernel/pluginLoader.js';
+import {
+  bootRestoreConflict,
+  installPlugin,
+  isBuiltInPluginId,
+  restorePluginFromRow,
+  uninstallPlugin,
+} from '../kernel/pluginLoader.js';
+
+/**
+ * r531: an installed row whose id collides with a built-in is never loaded;
+ * enable / disable / reload act on the RUNTIME plugin of that id — which is
+ * the built-in — so they are refused for it (uninstall removes just the row).
+ */
+const builtInCollision = (id: string): string =>
+  bootRestoreConflict(id) ?? `Plugin "${id}" is a built-in plugin and cannot be managed through an installed row.`;
 
 export const pluginRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', app.authenticate);
@@ -20,7 +34,11 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
 
     // 1. Process active kernel registered plugins
     for (const kp of kernelPlugins) {
-      const dbRow = dbMap.get(kp.id);
+      // r531: a stray installed row under a built-in id must not relabel the
+      // built-in (as errored/disabled) — report the built-in's real state and
+      // surface the collision as its error so the operator can uninstall it.
+      const strayRow = isBuiltInPluginId(kp.id) ? dbMap.get(kp.id) : undefined;
+      const dbRow = strayRow ? undefined : dbMap.get(kp.id);
       result.push({
         id: kp.id,
         name: kp.name,
@@ -35,6 +53,7 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
         configSchema: kp.configSchema ?? [],
         menuItems: kp.menuItems ?? [],
         dependencies: kp.dependencies ?? [],
+        ...(strayRow ? { error: strayRow.error ?? builtInCollision(kp.id) } : {}),
         installedAt: dbRow?.createdAt?.toISOString() ?? new Date().toISOString(),
       });
     }
@@ -124,7 +143,9 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
       });
       return result;
     } catch (err) {
-      return reply.code(400).send({ error: (err as Error).message });
+      // r531: an id collision answers 409; everything else stays a 400.
+      const status = (err as { statusCode?: number }).statusCode === 409 ? 409 : 400;
+      return reply.code(status).send({ error: (err as Error).message });
     }
   });
 
@@ -152,6 +173,7 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
     if (!existing) {
       return reply.code(404).send({ error: `Plugin "${id}" is not installed` });
     }
+    if (isBuiltInPluginId(id)) return reply.code(409).send({ error: builtInCollision(id) });
     await app.db.update(installedPlugins).set({ enabled: true, status: 'active', error: null, updatedAt: new Date() }).where(eq(installedPlugins.id, id));
 
     // r420: enable used to flip only the DB row — a plugin disabled before a
@@ -186,6 +208,7 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
     if (!existing) {
       return reply.code(404).send({ error: `Plugin "${id}" is not installed` });
     }
+    if (isBuiltInPluginId(id)) return reply.code(409).send({ error: builtInCollision(id) });
     await app.db.update(installedPlugins).set({ enabled: false, status: 'disabled', updatedAt: new Date() }).where(eq(installedPlugins.id, id));
 
     // r420: disable used to flip the row and purge the menus while the
@@ -266,6 +289,7 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
     if (!dbRow) {
       return reply.code(404).send({ error: `Plugin "${id}" is not installed` });
     }
+    if (isBuiltInPluginId(id)) return reply.code(409).send({ error: builtInCollision(id) });
 
     // r420: reload used to emit an event and return ok WITHOUT touching the
     // runtime. Actually swap the instance: tear the old one down (worker,
