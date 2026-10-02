@@ -245,8 +245,19 @@ export async function vaultRefsAllowed(
   if (service.previewParentServiceId != null && allow.serviceIds.includes(service.previewParentServiceId)) return true;
   if (allow.workspaceIds.length === 0) return false;
   const tags = await db.query.serviceWorkspaces.findMany({ where: eq(serviceWorkspaces.serviceId, service.id) });
-  if (tags.some((t) => allow.workspaceIds.includes(t.workspaceId))) return true;
-  for (const projectId of subject.projectIds) {
+  return workspacesAllowed(db, allow, tags.map((t) => t.workspaceId), subject.projectIds);
+}
+
+/** A tag workspace, or a linked project's workspace, is on the allowlist. */
+async function workspacesAllowed(
+  db: DB,
+  allow: VaultAllowlist,
+  workspaceIds: number[],
+  projectIds: number[],
+): Promise<boolean> {
+  if (allow.workspaceIds.length === 0) return false;
+  if (workspaceIds.some((w) => allow.workspaceIds.includes(w))) return true;
+  for (const projectId of projectIds) {
     const project = await db.query.projects.findFirst({ where: eq(projects.id, projectId) });
     if (project?.workspaceId != null && allow.workspaceIds.includes(project.workspaceId)) return true;
   }
@@ -275,10 +286,19 @@ export async function assertMayWriteVaultRefs(
         kind: 'service';
         service: Pick<Service, 'id' | 'ownerUserId' | 'name'> & { previewParentServiceId?: number | null };
       }
-    | { kind: 'project'; project: { id: number; name: string; workspaceId: number | null } },
+    | { kind: 'project'; project: { id: number; name: string; workspaceId: number | null } }
+    // r601: a service a request is ABOUT to create (template deploy, bundle
+    // import) — judged by the workspace tags and project links it will get,
+    // so the request is refused before any row is written.
+    | { kind: 'newService'; name: string; workspaceIds: number[]; projectIds: number[] },
   values: string[],
 ): Promise<void> {
   if (user.isOperator || !values.some(hasVaultRef)) return;
+  if (target.kind === 'newService') {
+    const allow = await ensureVaultAllowlistInitialised(db);
+    if (await workspacesAllowed(db, allow, target.workspaceIds, target.projectIds)) return;
+    throw forbidden(notAllowedMessage(`service "${target.name}"`));
+  }
   if (target.kind === 'project') {
     const allow = await ensureVaultAllowlistInitialised(db);
     const ws = target.project.workspaceId;
