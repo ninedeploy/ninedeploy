@@ -28,6 +28,12 @@
 #                       an upgrade left a stale panel bundle behind.
 #                       NINEDEPLOY_FORCE=1 works too.
 #
+# Release integrity (r702): a release since v0.10.43 is installed from its own
+# archive only when it matches the release's SHA256SUMS; with cosign on the
+# host, SHA256SUMS' Sigstore signature is verified first. Either failing stops
+# the installer. NINEDEPLOY_SKIP_SIGNATURE_VERIFY=1 skips the signature check
+# only (e.g. no route to Sigstore) — the checksum is always enforced.
+#
 set -euo pipefail
 
 BOLD='\033[1m'
@@ -350,6 +356,82 @@ resolve_data_dir() {
   mkdir -p "$DATA_DIR_SETTING" || return 1
   DATA_DIR=$(cd "$DATA_DIR_SETTING" && pwd -P) || return 1
   printf '%s' "$DATA_DIR"
+}
+
+# ── Release integrity (r702) ────────────────────────────────────────────────
+#
+# Since v0.10.43 every GitHub Release carries, besides CHANGELOG.md:
+#   ninedeploy-vX.Y.Z.tar.gz    `git archive` of the tag (one top-level dir)
+#   install.sh                  the tag's installer
+#   SHA256SUMS                  sha256 of both, `sha256sum` format
+#   SHA256SUMS.sigstore.json    Sigstore bundle: SHA256SUMS signed keyless by
+#                               release-publish.yml (GitHub OIDC → Fulcio cert,
+#                               logged in Rekor)
+# release-publish.yml builds them in promote-release, verifies the bundle with
+# verify_checksums_signature below (so these exact constants are proven against
+# the real certificate before anything is published) and attaches them to a
+# DRAFT release it only publishes once all four are present.
+CHECKSUMS_SINCE="v0.10.43"
+RELEASE_SIGNER_ISSUER="https://token.actions.githubusercontent.com"
+# The certificate SAN is the signing workflow's ref: a tag push, or a manual
+# re-run dispatched from main. Owner/name match case-insensitively (GitHub
+# names do); everything else is literal and the expression is anchored.
+RELEASE_SIGNER_IDENTITY_RE='^https://github\.com/(?i:ninedeploy/ninedeploy)/\.github/workflows/release-publish\.yml@refs/(tags/v[0-9]+\.[0-9]+\.[0-9]+|heads/main)$'
+
+# Zero-padded sort key of a vX.Y.Z tag (see highest_semver_tag).
+semver_key() {
+  printf '%s\n' "$1" | awk -F'[v.]' '{ printf "%010d%010d%010d", $2, $3, $4 }'
+}
+
+# 0 when release $1 is one that publishes SHA256SUMS (vX.Y.Z >= CHECKSUMS_SINCE).
+release_has_checksums() {
+  printf '%s' "$1" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || return 1
+  [ ! "$(semver_key "$1")" \< "$(semver_key "$CHECKSUMS_SINCE")" ]
+}
+
+# Asset name of the source archive release-publish.yml attaches for tag $1.
+release_archive_name() {
+  printf 'ninedeploy-%s.tar.gz' "$1"
+}
+
+# Download URL of release asset $2 of tag $1.
+release_asset_url() {
+  printf 'https://github.com/%s/releases/download/%s/%s' "$REPO_SLUG" "$1" "$2"
+}
+
+# The sha256 that a SHA256SUMS body on stdin lists for exactly the file name $1
+# (`<64 hex>  <name>` or `<64 hex> *<name>`). Non-zero — and nothing printed —
+# when the name is absent or listed with two different digests.
+sha256sums_lookup() {
+  local _digests
+  _digests=$(tr -d '\r' | awk -v n="$1" '
+    length($0) > 66 && substr($0, 1, 64) ~ /^[0-9a-f]+$/ && substr($0, 65, 1) == " " \
+      && (substr($0, 66, 1) == " " || substr($0, 66, 1) == "*") && substr($0, 67) == n {
+      print substr($0, 1, 64)
+    }' | sort -u)
+  [ -n "$_digests" ] || return 1
+  [ "$(printf '%s\n' "$_digests" | wc -l)" -eq 1 ] || return 1
+  printf '%s' "$_digests"
+}
+
+# Verify the Sigstore bundle $2 over SHA256SUMS $1 against the release
+# workflow's identity. Returns 0 verified, 1 verification FAILED (cosign's
+# output on stderr), 2 no cosign on this host, 3 a cosign too old to read
+# Sigstore bundles (they need v2.4+). Callers decide what each means.
+verify_checksums_signature() {
+  local _help _out
+  command -v cosign >/dev/null 2>&1 || return 2
+  _help=$(cosign verify-blob --help 2>&1 || true)
+  case "$_help" in *--new-bundle-format*) ;; *) return 3 ;; esac
+  if _out=$(cosign verify-blob --new-bundle-format \
+      --bundle "$2" \
+      --certificate-identity-regexp "$RELEASE_SIGNER_IDENTITY_RE" \
+      --certificate-oidc-issuer "$RELEASE_SIGNER_ISSUER" \
+      "$1" 2>&1); then
+    return 0
+  fi
+  printf '%s\n' "$_out" >&2
+  return 1
 }
 
 # r576: `NINEDEPLOY_INSTALL_SOURCE_ONLY=1 . ./install.sh` defines the helpers
@@ -925,21 +1007,82 @@ SOURCE_MODE=""
 # without needing a git history.
 RELEASE_STAMP_FILE=".ninedeploy-release"
 
-# Download and unpack the source tarball GitHub publishes for a tag.
+# Download and unpack the source archive of a release tag.
 #   $1  tag (vX.Y.Z)
-#   $2  directory to unpack into (created; the archive's top-level
-#       <repo>-<version>/ wrapper is stripped)
+#   $2  directory to unpack into (created; the archive's single top-level
+#       directory is stripped)
 # Returns non-zero — leaving no partial tree behind — when the release does
 # not exist, the download fails, or the archive does not look like NineDeploy.
+# r702: EXITS (fail) — never falls back to another source — when the release's
+# published checksums or their signature say the bytes are not the release's.
 fetch_release_tarball() {
-  local _ref="$1" _dest="$2" _stage _archive _url
-  _url="https://github.com/${REPO_SLUG}/archive/refs/tags/${_ref}.tar.gz"
+  local _ref="$1" _dest="$2" _stage _archive _url _code _asset _want _got _sig_rc
   _stage=$(mktemp -d) || return 1
   _archive="$_stage/ninedeploy-${_ref}.tar.gz"
 
-  if ! curl -fsSL --retry 3 --retry-delay 2 -m 600 "$_url" -o "$_archive"; then
+  # r702: prefer the release's own archive, checked against its SHA256SUMS.
+  # The HTTP status decides the path: 200 = this release publishes checksums,
+  # 404 = it does not (a tag older than CHECKSUMS_SINCE), anything else = the
+  # asset host could not be asked.
+  _code=$(curl -sSL --retry 3 --retry-delay 2 -m 60 -o "$_stage/SHA256SUMS" -w '%{http_code}' \
+    "$(release_asset_url "$_ref" SHA256SUMS)" 2>/dev/null || true)
+  if [ "$_code" = "200" ]; then
+    # The signature first: nothing SHA256SUMS says is used before it is
+    # checked (when this host can check it).
+    _sig_rc=0
+    if [ "${NINEDEPLOY_SKIP_SIGNATURE_VERIFY:-}" = "1" ]; then
+      _sig_rc=4
+    elif command -v cosign >/dev/null 2>&1; then
+      if ! curl -fsSL --retry 3 --retry-delay 2 -m 60 -o "$_stage/SHA256SUMS.sigstore.json" \
+          "$(release_asset_url "$_ref" SHA256SUMS.sigstore.json)"; then
+        rm -rf "$_stage"
+        fail "Could not download SHA256SUMS.sigstore.json for $_ref, so cosign cannot verify the release checksums — refusing. Retry later, or re-run with NINEDEPLOY_SKIP_SIGNATURE_VERIFY=1 to rely on the checksum alone."
+      fi
+      verify_checksums_signature "$_stage/SHA256SUMS" "$_stage/SHA256SUMS.sigstore.json" || _sig_rc=$?
+    else
+      _sig_rc=2
+    fi
+    case "$_sig_rc" in
+      0) ok "SHA256SUMS for $_ref is signed by NineDeploy's release workflow (cosign, Sigstore keyless)" ;;
+      2) info "cosign is not installed — the release signature is not checked (the archive checksum is)" ;;
+      3) warn "This host's cosign is too old to read Sigstore bundles (v2.4+ needed) — the release signature is not checked (the archive checksum is)" ;;
+      4) warn "NINEDEPLOY_SKIP_SIGNATURE_VERIFY=1 — the release signature is not checked (the archive checksum is)" ;;
+      *)
+        rm -rf "$_stage"
+        fail "The signature on $_ref's SHA256SUMS did NOT verify against NineDeploy's release workflow — refusing to install it (nothing was replaced). If this host cannot reach Sigstore, re-run with NINEDEPLOY_SKIP_SIGNATURE_VERIFY=1 to rely on the checksum alone."
+        ;;
+    esac
+
+    _asset=$(release_archive_name "$_ref")
+    if ! _want=$(sha256sums_lookup "$_asset" < "$_stage/SHA256SUMS"); then
+      rm -rf "$_stage"
+      fail "$_ref's SHA256SUMS does not list exactly one checksum for $_asset — refusing to install an archive it cannot verify (nothing was replaced)."
+    fi
+    _url=$(release_asset_url "$_ref" "$_asset")
+    if ! curl -fsSL --retry 3 --retry-delay 2 -m 600 "$_url" -o "$_archive"; then
+      warn "Could not download $_asset from the $_ref release"
+      rm -rf "$_stage"
+      return 1
+    fi
+    _got=$(sha256sum < "$_archive" | awk '{print $1}')
+    if [ "$_got" != "$_want" ]; then
+      rm -rf "$_stage"
+      fail "Checksum mismatch for $_asset: SHA256SUMS lists $_want, the download is $_got — refusing to install it (nothing was replaced)."
+    fi
+    ok "$_asset matches the release's SHA256SUMS ($_want)"
+  elif release_has_checksums "$_ref"; then
+    # A release that publishes checksums, but they could not be fetched: its
+    # unverified tag archive is never the substitute.
+    warn "Could not fetch SHA256SUMS for $_ref (HTTP ${_code:-000}) — not installing an unverified archive of a release that publishes checksums"
     rm -rf "$_stage"
     return 1
+  else
+    warn "$_ref predates published release checksums — installing GitHub's tag archive, verified by TLS only (as before)"
+    _url="https://github.com/${REPO_SLUG}/archive/refs/tags/${_ref}.tar.gz"
+    if ! curl -fsSL --retry 3 --retry-delay 2 -m 600 "$_url" -o "$_archive"; then
+      rm -rf "$_stage"
+      return 1
+    fi
   fi
   # A 404 page or an HTML error would still be a file; make tar prove it.
   if ! tar -tzf "$_archive" >/dev/null 2>&1; then
@@ -963,14 +1106,25 @@ fetch_release_tarball() {
     return 1
   fi
 
-  # ── Provenance: bind the extracted tree to the requested tag. ──────────
-  # TLS (to github.com) proves the transport. These checks add only what they
-  # can actually prove about the CONTENT: its package.json version matches
-  # the requested tag (a swapped or stale archive — another release's tarball
-  # — fails here), and it carries no symlinks and no setuid/setgid files.
-  # r574: they do NOT prove authenticity — an archive modified at the source
-  # with the version string left intact passes. That needs signed releases
-  # (a maintainer-held key), which this installer does not verify yet.
+  # ── Provenance: what is guaranteed about the extracted tree. ────────────
+  # r702, a release that publishes checksums (>= CHECKSUMS_SINCE):
+  #   * the archive is byte-for-byte the one SHA256SUMS lists (fail-closed);
+  #   * with cosign on the host, SHA256SUMS was signed by THIS repository's
+  #     release-publish.yml, run for a vX.Y.Z tag or from main (Fulcio cert
+  #     over GitHub's OIDC token, recorded in Rekor) — fail-closed;
+  #   * without cosign, SHA256SUMS is trusted as GitHub served it over TLS:
+  #     the checksum then proves only that the archive is the one published
+  #     beside it, not who published it.
+  #   The trust root is GitHub (account, Actions, OIDC) plus Sigstore — there
+  #   is no maintainer-held key, so a compromise of the repository's release
+  #   workflow still signs.
+  # An older tag (or the codeload fallback): TLS to github.com only.
+  # Either way the checks below add what they can prove about the CONTENT:
+  # its package.json version matches the requested tag (a swapped or stale
+  # archive — another release's tarball — fails here), and it carries no
+  # symlinks and no setuid/setgid files. r574: those checks alone do NOT prove
+  # authenticity — an archive modified at the source with the version string
+  # left intact passes them.
   _tar_version=$(sed -n 's/.*"version":[[:space:]]*"\([^"]*\)".*/\1/p' "$_dest/package.json" | head -1)
   if [ "v$_tar_version" != "$_ref" ]; then
     warn "Tarball for $_ref carries version '${_tar_version:-?}' — content does not match the tag, refusing"
@@ -1326,6 +1480,11 @@ fi
 # half-fetched object the way a shallow clone can. `git` stays available for
 # the edge channel and as the fallback when the archive endpoint is
 # unreachable or the tag has no tarball yet.
+# r702: for a release that publishes checksums the "tarball" is the release's
+# own checksummed archive (see fetch_release_tarball); a checksum or signature
+# mismatch stops the installer there — it is never answered with git. The git
+# fallback (an unreachable asset host, a clone-based install, --channel main)
+# is verified by TLS to github.com only, as before.
 
 # Replace the tracked source tree in $INSTALL_DIR with the release tarball for
 # $1, preserving .env and .data. Returns non-zero when the tarball could not

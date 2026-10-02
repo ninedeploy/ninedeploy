@@ -25,12 +25,16 @@ name: Release
 # so neither may point at an image nobody has upgraded onto. Three jobs:
 #   1. publish-image — checks, then builds and pushes ONLY `:vX.Y.Z` and
 #      verifies its multi-arch manifest. Nothing discovers that tag yet.
+#      r700: then signs the pushed DIGEST (cosign keyless) and attaches its
+#      build provenance.
 #   2. smoke-published-image — the upgrade smoke (previous published release
 #      → this tag, on one data volume) and the user-journey smoke, both on
 #      the pushed image.
 #   3. promote-release — only after both smokes pass: re-points `:latest`
 #      at the already-pushed manifest (when this tag is the highest; no
-#      rebuild) and creates the GitHub Release.
+#      rebuild) and creates the GitHub Release. r701: as a draft carrying
+#      the source archive, install.sh, SHA256SUMS and its Sigstore bundle,
+#      published only once all of them are attached.
 # A failed smoke therefore leaves a pushed `:vX.Y.Z` and a git tag but no
 # Release and no `:latest` move — see ARCHITECTURE.md §13.1 "Release drill".
 
@@ -75,6 +79,11 @@ jobs:
       # (contents: write) moved to promote-release, behind the smokes.
       contents: read
       packages: write
+      # r700: keyless signing — the job's GitHub OIDC token is exchanged for
+      # a short-lived Sigstore (Fulcio) certificate naming this workflow; no
+      # key exists to leak. attestations: write stores the build provenance.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -209,6 +218,7 @@ jobs:
       # Keep historical images: version-pinned installs and rollback depend on them.
       - name: Build and push
         if: success()
+        id: push
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
@@ -244,6 +254,47 @@ jobs:
           done
           echo "::error::ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG} is missing an amd64/arm64 manifest"
           exit 1
+
+      # r700: sign and attest what was pushed — the multi-arch index DIGEST,
+      # never a tag (a tag can be re-pointed after signing; a digest cannot).
+      # Operators verify with `cosign verify` / `gh attestation verify`
+      # (README, "Verifying a release"). The identity checked below is the
+      # one install.sh trusts for the release checksums (r702).
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign the pushed image digest (cosign keyless)
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          repo=ghcr.io/ninedeploy/ninedeploy
+          if ! printf '%s' "$DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "::error::build-push-action reported no image digest ('${DIGEST}') — refusing to sign a tag instead"
+            exit 1
+          fi
+          # The tag must still resolve to the digest being signed.
+          tagged="$(docker buildx imagetools inspect "${repo}:${RELEASE_TAG}" --format '{{json .Manifest}}' | jq -r .digest)"
+          if [ "$tagged" != "$DIGEST" ]; then
+            echo "::error::${repo}:${RELEASE_TAG} is ${tagged:-unknown}, but this build pushed ${DIGEST}"
+            exit 1
+          fi
+          cosign sign --yes "${repo}@${DIGEST}"
+          NINEDEPLOY_INSTALL_SOURCE_ONLY=1 . ./install.sh
+          cosign verify "${repo}@${DIGEST}" \
+            --certificate-identity-regexp "$RELEASE_SIGNER_IDENTITY_RE" \
+            --certificate-oidc-issuer "$RELEASE_SIGNER_ISSUER" >/dev/null
+          echo "Signed and verified ${repo}@${DIGEST}"
+
+      - name: Attest build provenance (pushed to the registry)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/ninedeploy/ninedeploy
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+          # Storage records need the artifact-metadata permission and add
+          # nothing `gh attestation verify` uses.
+          create-storage-record: false
 
 
   # r581: the end-to-end gate. Both smokes run against the image publish-image
@@ -329,18 +380,25 @@ jobs:
   # r581: publication. Runs only when both smokes passed (needs: is
   # all-success by default), and changes nothing that was built — `:latest`
   # is re-pointed at the manifest the smokes exercised.
+  # r701: it also builds the release's integrity assets (source archive,
+  # install.sh, SHA256SUMS + its Sigstore bundle) and attaches them to a DRAFT
+  # release, which is published — made visible to `releases/latest`, to
+  # install.sh and to every installed server's update check — only once all
+  # of them are present. A release can therefore never be discovered without
+  # its checksums. Order: assets → draft → :latest → publish (last).
   promote-release:
     needs: [publish-image, smoke-published-image]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      # `contents: write` is needed for softprops/action-gh-release
-      # to create the GitHub Release; the workflow's contents: read
-      # default is too narrow and the action returns HTTP 403
-      # "Resource not accessible by integration" otherwise.
+      # `contents: write` is needed to create the GitHub Release and upload
+      # its assets; the workflow's contents: read default is too narrow
+      # (HTTP 403 "Resource not accessible by integration").
       contents: write
       # Re-pointing `:latest` is a registry write.
       packages: write
+      # r701: keyless `cosign sign-blob` of SHA256SUMS (GitHub OIDC → Fulcio).
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -370,6 +428,98 @@ jobs:
             echo "::notice::$RELEASE_TAG is not the highest release tag ($highest) — publishing :$RELEASE_TAG only, :latest stays where it is."
           fi
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      # r701: the archive install.sh downloads instead of GitHub's
+      # auto-generated tag tarball (which GitHub may regenerate, so it cannot
+      # be checksummed once and for all). Built from the TAG object, not the
+      # working tree; the release's install.sh asset is extracted FROM the
+      # archive, so both are the same bytes. Then the release is proven to
+      # verify with install.sh's OWN helpers (sourced, r576) — the identity
+      # regexp, the bundle format and the SHA256SUMS parsing every installer
+      # will use — before anything is published.
+      - name: Build and sign the release assets (archive, install.sh, SHA256SUMS)
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "+refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          out=release-assets
+          rm -rf "$out" && mkdir "$out"
+          archive="ninedeploy-${RELEASE_TAG}.tar.gz"
+          top="ninedeploy-${RELEASE_TAG}"
+          git archive --format=tar.gz --prefix="${top}/" -o "${out}/${archive}" "refs/tags/${RELEASE_TAG}"
+          tar -xzf "${out}/${archive}" -O "${top}/install.sh" > "${out}/install.sh"
+          # The content checks install.sh applies after the checksum.
+          version="$(tar -xzf "${out}/${archive}" -O "${top}/package.json" | jq -r .version)"
+          if [ "v${version}" != "$RELEASE_TAG" ]; then
+            echo "::error::${archive} carries version '${version}', not ${RELEASE_TAG}"
+            exit 1
+          fi
+          # (No `grep -q` on a tar listing: it exits at the first match, tar
+          # dies of SIGPIPE, and pipefail turns a match into a failure.)
+          tar -tzf "${out}/${archive}" | grep -x "${top}/pnpm-workspace.yaml" >/dev/null
+          if [ "$(tar -tvzf "${out}/${archive}" | grep -c '^l' || true)" != "0" ]; then
+            echo "::error::${archive} contains symlinks — install.sh would refuse it"
+            exit 1
+          fi
+          (cd "$out" && sha256sum "$archive" install.sh > SHA256SUMS)
+          cat "${out}/SHA256SUMS"
+          cosign sign-blob --yes --bundle "${out}/SHA256SUMS.sigstore.json" "${out}/SHA256SUMS"
+
+          NINEDEPLOY_INSTALL_SOURCE_ONLY=1 . ./install.sh
+          test "$(release_archive_name "$RELEASE_TAG")" = "$archive"
+          verify_checksums_signature "${out}/SHA256SUMS" "${out}/SHA256SUMS.sigstore.json"
+          test "$(sha256sums_lookup "$archive" < "${out}/SHA256SUMS")" = "$(sha256sum "${out}/${archive}" | awk '{print $1}')"
+          test "$(sha256sums_lookup install.sh < "${out}/SHA256SUMS")" = "$(sha256sum "${out}/install.sh" | awk '{print $1}')"
+          echo "Release assets for ${RELEASE_TAG} built, signed and verified with install.sh's own checks."
+
+      # r701: a DRAFT is invisible to releases/latest and to every installer
+      # and update check. A re-run finds its own draft (replace the assets) or
+      # an already-published release: one that has SHA256SUMS keeps its assets
+      # untouched; one from before r701 gets them, SHA256SUMS uploaded LAST so
+      # an installer never sees checksums whose archive is not there yet.
+      - name: Attach the assets to a draft GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          a=release-assets
+          state="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq 'if .isDraft then "draft" else "published" end' 2>/dev/null || echo none)"
+          case "$state" in
+            none)
+              notes="$(mktemp)"
+              {
+                printf 'See [CHANGELOG.md](https://github.com/%s/blob/%s/CHANGELOG.md) for the full release notes.\n\n' "$GITHUB_REPOSITORY" "$RELEASE_TAG"
+                printf '**Pull the image:**\n```\ndocker pull ghcr.io/ninedeploy/ninedeploy:%s\ndocker pull ghcr.io/ninedeploy/ninedeploy:latest\n```\n\n' "$RELEASE_TAG"
+                printf '**Verify it:** the image is signed with cosign (keyless) and carries build provenance; `SHA256SUMS` covers the source archive and `install.sh`, and `SHA256SUMS.sigstore.json` is its signature. See [Verifying a release](https://github.com/%s/blob/%s/README.md#verifying-a-release).\n' "$GITHUB_REPOSITORY" "$RELEASE_TAG"
+              } > "$notes"
+              gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+                --title "$RELEASE_TAG" --notes-file "$notes" \
+                "$a/ninedeploy-${RELEASE_TAG}.tar.gz" "$a/install.sh" "$a/SHA256SUMS.sigstore.json" "$a/SHA256SUMS" CHANGELOG.md
+              ;;
+            draft)
+              gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+                "$a/ninedeploy-${RELEASE_TAG}.tar.gz" "$a/install.sh" "$a/SHA256SUMS.sigstore.json" "$a/SHA256SUMS" CHANGELOG.md
+              ;;
+            published)
+              if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -x SHA256SUMS >/dev/null; then
+                echo "::notice::$RELEASE_TAG is already published with its checksums — its assets are left as they are."
+              else
+                gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+                  "$a/ninedeploy-${RELEASE_TAG}.tar.gz" "$a/install.sh" "$a/SHA256SUMS.sigstore.json" CHANGELOG.md
+                gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber "$a/SHA256SUMS"
+              fi
+              ;;
+          esac
+          names="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          for want in "ninedeploy-${RELEASE_TAG}.tar.gz" install.sh SHA256SUMS SHA256SUMS.sigstore.json CHANGELOG.md; do
+            if ! printf '%s\n' "$names" | grep -x "$want" >/dev/null; then
+              echo "::error::The $RELEASE_TAG release is missing its $want asset — not publishing it"
+              exit 1
+            fi
+          done
+          echo "The $RELEASE_TAG release carries all of its assets."
+
       - name: Set up Docker Buildx
         if: steps.latest.outputs.move == 'true'
         uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db # v6.7.0
@@ -384,7 +534,8 @@ jobs:
 
       # A registry-side retag: `imagetools create` writes a new tag for the
       # EXISTING multi-arch index — no rebuild, so `:latest` is byte-for-byte
-      # the image the smokes ran. The digest comparison proves it.
+      # the image the smokes ran (and the digest publish-image signed, r700).
+      # The digest comparison proves it.
       - name: Move :latest to the smoked manifest (retag, no rebuild)
         if: steps.latest.outputs.move == 'true'
         run: |
@@ -399,32 +550,23 @@ jobs:
           fi
           echo ":latest → ${RELEASE_TAG} (${want})"
 
-      # Create the GitHub Release for this tag. Without this
-      # step the tag exists in git but the Releases page stays
-      # empty — every `git describe`, GitHub download URL, or
-      # Releases-page visitor lands on a "No release notes"
-      # dead-end. We pull the body from CHANGELOG.md (the
-      # `## [0.4.0] - …` section) and pin the `v0.4.0` image
-      # as the canonical download, so the page mirrors what
-      # the project actually ships. r581: this is the step that
-      # makes the release discoverable to installed servers, so
-      # it is the last one.
+      # Publish the GitHub Release. Without it the tag exists in git but the
+      # Releases page stays empty and no installed server is offered the
+      # version. r581: this is the step that makes the release discoverable,
+      # so it is the last one. r701: it publishes the draft built above, so
+      # the release appears WITH its checksums; it is marked "Latest" only
+      # when this tag is the highest (the r573 decision) — a re-run of an
+      # older tag must not move `releases/latest` backwards either.
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          name: ${{ env.RELEASE_TAG }}
-          body: |
-            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ env.RELEASE_TAG }}/CHANGELOG.md) for the full release notes.
-
-            **Pull the image:**
-            ```
-            docker pull ghcr.io/ninedeploy/ninedeploy:${{ env.RELEASE_TAG }}
-            docker pull ghcr.io/ninedeploy/ninedeploy:latest
-            ```
-          files: |
-            CHANGELOG.md
-          draft: false
-          prerelease: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MOVE_LATEST: ${{ steps.latest.outputs.move }}
+        run: |
+          set -euo pipefail
+          draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
+          if [ "$draft" = "true" ]; then
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest="$MOVE_LATEST"
+            echo "Published $RELEASE_TAG (latest=$MOVE_LATEST)."
+          else
+            echo "::notice::$RELEASE_TAG was already published — left as it is."
+          fi

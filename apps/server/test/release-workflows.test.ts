@@ -256,7 +256,8 @@ describe('r581: publication is gated on the end-to-end smokes', () => {
 
   it('the build job pushes ONLY :vX.Y.Z and verifies its manifest — no :latest, no Release', () => {
     const build = jobs()['publish-image']!;
-    expect(build.permissions).toEqual({ contents: 'read', packages: 'write' });
+    // r700: + the OIDC token for keyless signing and the attestation store.
+    expect(build.permissions).toEqual({ contents: 'read', packages: 'write', 'id-token': 'write', attestations: 'write' });
     const meta = build.steps.find((s) => uses(s, 'docker/metadata-action'))!;
     const tags = String(meta.with?.['tags']).split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
     expect(tags).toEqual(['type=raw,value=${{ env.RELEASE_TAG }}']);
@@ -265,7 +266,7 @@ describe('r581: publication is gated on the end-to-end smokes', () => {
     const manifest = build.steps.findIndex((s) => s.name?.includes('multi-arch manifest'));
     expect(push).toBeGreaterThan(-1);
     expect(manifest).toBeGreaterThan(push);
-    expect(build.steps.some((s) => uses(s, 'softprops/action-gh-release'))).toBe(false);
+    expect(build.steps.some((s) => s.run?.includes('gh release'))).toBe(false);
     expect(build.steps.some((s) => s.run?.includes('imagetools create'))).toBe(false);
   });
 
@@ -304,24 +305,25 @@ describe('r581: publication is gated on the end-to-end smokes', () => {
     const all = jobs();
     const promote = all['promote-release']!;
     expect(needsOf(promote)).toEqual(expect.arrayContaining(['publish-image', 'smoke-published-image']));
-    expect(promote.permissions).toEqual({ contents: 'write', packages: 'write' });
+    // r701: + the OIDC token for the keyless SHA256SUMS signature.
+    expect(promote.permissions).toEqual({ contents: 'write', packages: 'write', 'id-token': 'write' });
     const steps = promote.steps;
     // No rebuild on the way to :latest.
     expect(steps.some((s) => uses(s, 'docker/build-push-action'))).toBe(false);
     const retag = steps.findIndex((s) => s.run?.includes('imagetools create'));
     expect(steps[retag]!.run).toContain('imagetools create --tag "${repo}:latest" "${repo}:${RELEASE_TAG}"');
     expect(steps[retag]!.run).toContain('"$want" != "$got"');
-    // The Release is what servers discover — it is the last step.
-    const release = steps.findIndex((s) => uses(s, 'softprops/action-gh-release'));
+    // The Release is what servers discover — publishing it is the last step.
+    const release = steps.findIndex((s) => s.run?.includes('gh release edit "$RELEASE_TAG"'));
     expect(release).toBe(steps.length - 1);
     expect(release).toBeGreaterThan(retag);
-    expect(steps[release]!.with?.['tag_name']).toBe('${{ env.RELEASE_TAG }}');
+    expect(steps[release]!.run).toContain('--draft=false');
 
     // Nowhere else: only promote-release may write contents or create the Release.
     for (const [name, job] of Object.entries(all)) {
       if (name === 'promote-release') continue;
       expect(job.permissions?.['contents'], name).toBe('read');
-      expect(job.steps.some((s) => uses(s, 'softprops/action-gh-release')), name).toBe(false);
+      expect(job.steps.some((s) => s.run?.includes('gh release')), name).toBe(false);
       expect(job.steps.some((s) => s.run?.includes('imagetools create')), name).toBe(false);
     }
   });
@@ -346,5 +348,129 @@ describe('r581: publication is gated on the end-to-end smokes', () => {
     // applies only to older releases, the post-upgrade check to all.
     expect(script).toContain('if (olderThan(FROM, R541_FIXED_IN))');
     expect(script).toContain('post.orphanProjectEnv !== 0');
+  });
+});
+
+// ── r700/r701: release integrity without a maintainer-held key ──
+describe('r700/r701: the release is signed (Sigstore keyless) and published with its checksums', () => {
+  type Job = {
+    permissions?: Record<string, string>;
+    steps: Array<Step & { id?: string; if?: string }>;
+  };
+  const jobs = () => readWorkflow('release-publish.yml').jobs as unknown as Record<string, Job>;
+  const uses = (step: Step, action: string) => String(step.uses ?? '').startsWith(`${action}@`);
+  const installer = readFileSync(new URL('../../../install.sh', import.meta.url), 'utf8');
+
+  it('r700: publish-image signs and attests the pushed DIGEST, after the manifest check', () => {
+    const steps = jobs()['publish-image']!.steps;
+    const push = steps.findIndex((s) => s.with?.['push'] === true);
+    expect(steps[push]!.id).toBe('push');
+    const manifest = steps.findIndex((s) => s.name?.includes('multi-arch manifest'));
+    const installCosign = steps.findIndex((s) => uses(s, 'sigstore/cosign-installer'));
+    const sign = steps.findIndex((s) => s.run?.includes('cosign sign --yes'));
+    const attest = steps.findIndex((s) => uses(s, 'actions/attest-build-provenance'));
+    expect(installCosign).toBeGreaterThan(manifest);
+    expect(sign).toBeGreaterThan(installCosign);
+    expect(attest).toBeGreaterThan(sign);
+    // The digest build-push-action reported, never a tag — and the tag must
+    // still resolve to it.
+    expect(steps[sign]!.env?.['DIGEST']).toBe('${{ steps.push.outputs.digest }}');
+    expect(steps[sign]!.run).toContain('cosign sign --yes "${repo}@${DIGEST}"');
+    expect(steps[sign]!.run).toContain("grep -Eq '^sha256:[0-9a-f]{64}$'");
+    expect(steps[sign]!.run).toContain('"$tagged" != "$DIGEST"');
+    expect(steps[sign]!.run).not.toMatch(/cosign sign[^\n]*:\$\{RELEASE_TAG\}/);
+    // Proven verifiable with the identity install.sh trusts, right away.
+    expect(steps[sign]!.run).toContain('NINEDEPLOY_INSTALL_SOURCE_ONLY=1 . ./install.sh');
+    expect(steps[sign]!.run).toContain('--certificate-identity-regexp "$RELEASE_SIGNER_IDENTITY_RE"');
+    expect(steps[sign]!.run).toContain('--certificate-oidc-issuer "$RELEASE_SIGNER_ISSUER"');
+    expect(steps[attest]!.with).toMatchObject({
+      'subject-name': 'ghcr.io/ninedeploy/ninedeploy',
+      'subject-digest': '${{ steps.push.outputs.digest }}',
+      'push-to-registry': true,
+    });
+  });
+
+  it('r700/r701: only the two jobs that sign hold an OIDC token', () => {
+    const all = jobs();
+    expect(all['publish-image']!.permissions?.['id-token']).toBe('write');
+    expect(all['promote-release']!.permissions?.['id-token']).toBe('write');
+    expect(all['smoke-published-image']!.permissions?.['id-token']).toBeUndefined();
+    const raw = readFileSync(new URL('../../../.github/workflows/release-publish.yml', import.meta.url), 'utf8');
+    // Not at the workflow level.
+    const top = (load(raw) as { permissions?: Record<string, string> }).permissions;
+    expect(top).toEqual({ contents: 'read' });
+  });
+
+  it('r701: promote-release builds the archive from the TAG and signs SHA256SUMS before any release exists', () => {
+    const steps = jobs()['promote-release']!.steps;
+    const build = steps.findIndex((s) => s.run?.includes('git archive'));
+    const run = steps[build]!.run!;
+    expect(run).toContain('git archive --format=tar.gz --prefix="${top}/" -o "${out}/${archive}" "refs/tags/${RELEASE_TAG}"');
+    expect(run).toContain('archive="ninedeploy-${RELEASE_TAG}.tar.gz"');
+    // install.sh's asset IS the archive's install.sh (same bytes).
+    expect(run).toContain('tar -xzf "${out}/${archive}" -O "${top}/install.sh" > "${out}/install.sh"');
+    expect(run).toContain('sha256sum "$archive" install.sh > SHA256SUMS');
+    expect(run).toContain('cosign sign-blob --yes --bundle "${out}/SHA256SUMS.sigstore.json" "${out}/SHA256SUMS"');
+    // Verified with install.sh's OWN helpers before publication: if the
+    // identity, bundle format or parsing were wrong, no release goes out.
+    expect(run).toContain('NINEDEPLOY_INSTALL_SOURCE_ONLY=1 . ./install.sh');
+    expect(run).toContain('test "$(release_archive_name "$RELEASE_TAG")" = "$archive"');
+    expect(run).toContain('verify_checksums_signature "${out}/SHA256SUMS" "${out}/SHA256SUMS.sigstore.json"');
+    expect(run).toContain('sha256sums_lookup "$archive"');
+    expect(run).toContain('sha256sums_lookup install.sh');
+    // The archive passes the content checks install.sh will apply.
+    expect(run).toContain('"v${version}" != "$RELEASE_TAG"');
+    expect(run).not.toMatch(/grep -q[x]? /); // SIGPIPE + pipefail would turn a match into a failure
+    expect(steps.findIndex((s) => uses(s, 'sigstore/cosign-installer'))).toBeLessThan(build);
+    expect(build).toBeLessThan(steps.findIndex((s) => s.run?.includes('gh release create')));
+  });
+
+  it('r701: assets go onto a DRAFT, are checked, and only then is the release published (last step)', () => {
+    const steps = jobs()['promote-release']!.steps;
+    const draft = steps.findIndex((s) => s.run?.includes('gh release create'));
+    const retag = steps.findIndex((s) => s.run?.includes('imagetools create'));
+    const publish = steps.findIndex((s) => s.run?.includes('--draft=false'));
+    expect(draft).toBeGreaterThan(-1);
+    expect(retag).toBeGreaterThan(draft);
+    expect(publish).toBe(steps.length - 1);
+    const attach = steps[draft]!.run!;
+    expect(attach).toContain('gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag');
+    for (const asset of ['"$a/ninedeploy-${RELEASE_TAG}.tar.gz"', '"$a/install.sh"', '"$a/SHA256SUMS.sigstore.json"', '"$a/SHA256SUMS"', 'CHANGELOG.md']) {
+      expect(attach, asset).toContain(asset);
+    }
+    // Every asset present, or nothing is published.
+    expect(attach).toContain('for want in "ninedeploy-${RELEASE_TAG}.tar.gz" install.sh SHA256SUMS SHA256SUMS.sigstore.json CHANGELOG.md; do');
+    expect(attach).toContain('not publishing it');
+    // A published pre-r701 release gets SHA256SUMS LAST (never checksums
+    // whose archive is not there yet); one that has them is left alone.
+    const published = attach.slice(attach.indexOf('published)'));
+    expect(published.indexOf('"$a/SHA256SUMS"')).toBeGreaterThan(published.indexOf('"$a/ninedeploy-${RELEASE_TAG}.tar.gz"'));
+    expect(published).toContain('its assets are left as they are');
+    // Publication marks "Latest" only for the highest tag (the r573 decision).
+    const pub = steps[publish]!;
+    expect(pub.env?.['MOVE_LATEST']).toBe('${{ steps.latest.outputs.move }}');
+    expect(pub.run).toContain('gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest="$MOVE_LATEST"');
+    expect(pub.if).toBeUndefined();
+  });
+
+  it('r701: the archive name and layout are what install.sh downloads and unpacks', () => {
+    expect(installer).toContain("printf 'ninedeploy-%s.tar.gz' \"$1\"");
+    expect(installer).toContain("printf 'https://github.com/%s/releases/download/%s/%s' \"$REPO_SLUG\" \"$1\" \"$2\"");
+    // One top-level directory, stripped on extraction.
+    expect(installer).toContain('tar -xzf "$_archive" -C "$_dest" --strip-components=1');
+  });
+
+  it('r700: the README documents how to verify the image, its provenance and the release checksums', () => {
+    const readme = readFileSync(new URL('../../../README.md', import.meta.url), 'utf8');
+    expect(readme).toContain('### Verifying a release');
+    expect(readme).toContain('cosign verify ghcr.io/ninedeploy/ninedeploy:');
+    expect(readme).toContain('--certificate-oidc-issuer https://token.actions.githubusercontent.com');
+    expect(readme).toContain('gh attestation verify oci://ghcr.io/ninedeploy/ninedeploy:');
+    expect(readme).toContain('cosign verify-blob --bundle SHA256SUMS.sigstore.json');
+    expect(readme).toContain('sha256sum -c --ignore-missing SHA256SUMS');
+    // The documented identity is the one the installer enforces.
+    const re = /RELEASE_SIGNER_IDENTITY_RE='([^']+)'/.exec(installer)?.[1];
+    expect(re).toBeDefined();
+    expect(readme).toContain(`--certificate-identity-regexp '${re}'`);
   });
 });

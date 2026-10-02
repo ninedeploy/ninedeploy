@@ -164,71 +164,153 @@ describe('startSelfUpdate', () => {
     expect(script).toContain('install.sh');
   });
 
-  describe('r371: runs the target release installer', () => {
-    // Executes the generated wrapper for real (bash + a fake curl on PATH):
-    // the string checks above cannot tell a working fallback from a typo.
+  describe('r371/r703: runs the target release installer only when its checksum verifies', () => {
+    // Executes the generated wrapper for real (bash + a fake curl/cosign on
+    // PATH): the string checks above cannot tell a working fallback from a typo.
     const realCp = () => vi.importActual<typeof import('node:child_process')>('node:child_process');
-    const hasBash = async () => (await realCp()).spawnSync('bash', ['-c', 'exit 0']).status === 0;
+    const hasBash = async () => (await realCp()).spawnSync('bash', ['-c', 'command -v sha256sum >/dev/null']).status === 0;
+    const RELEASE = 'https://github.com/NineDeploy/NineDeploy/releases/download/v99.0.0';
 
-    async function runWrapper(curl: 'serve' | 'fail' | 'garbage') {
+    interface Release {
+      /** install.sh asset body; absent = 404. */
+      installer?: 'target' | 'garbage';
+      /** SHA256SUMS: listing the asset's real digest, a different one, or absent (404). */
+      sums?: 'match' | 'mismatch';
+      bundle?: boolean;
+      cosign?: 'ok' | 'bad';
+      env?: Record<string, string>;
+    }
+
+    async function runWrapper(release: Release) {
       configMock.isProd = true;
       const installDir = newInstallDir();
       const marker = path.join(installDir, 'ran.txt').replaceAll('\\', '/');
       fs.writeFileSync(path.join(installDir, 'install.sh'), `#!/usr/bin/env bash\necho "installed $*" > "${marker}"\n`);
       const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'nd-fakebin-'));
       createdDirs.push(bin);
-      const target = `#!/usr/bin/env bash\necho "target $* dir=$NINEDEPLOY_INSTALL_DIR" > "${marker}"\n`;
-      const body = curl === 'serve' ? target : curl === 'garbage' ? '<html>rate limited</html>\n' : '';
-      fs.writeFileSync(path.join(bin, 'body'), body);
+      const assets = path.join(bin, 'assets');
+      fs.mkdirSync(assets);
+      const fwd = (p: string) => p.replaceAll('\\', '/');
+      const body = release.installer === 'target'
+        ? `#!/usr/bin/env bash\necho "target $* dir=$NINEDEPLOY_INSTALL_DIR" > "${marker}"\n`
+        : '<html>rate limited</html>\n';
+      if (release.installer) fs.writeFileSync(path.join(assets, 'install.sh'), body);
+      if (release.sums) {
+        const { createHash } = await import('node:crypto');
+        const digest = release.sums === 'match' ? createHash('sha256').update(body).digest('hex') : '0'.repeat(64);
+        fs.writeFileSync(path.join(assets, 'SHA256SUMS'), `${'a'.repeat(64)}  ninedeploy-v99.0.0.tar.gz\n${digest}  install.sh\n`);
+      }
+      if (release.bundle) fs.writeFileSync(path.join(assets, 'SHA256SUMS.sigstore.json'), '{}');
       fs.writeFileSync(
         path.join(bin, 'curl'),
         [
           '#!/usr/bin/env bash',
-          `echo "$@" > "${path.join(bin, 'args').replaceAll('\\', '/')}"`,
-          curl === 'fail' ? 'exit 22' : '',
-          'out=""; while [ $# -gt 0 ]; do [ "$1" = "-o" ] && out="$2"; shift; done',
-          `cat "${path.join(bin, 'body').replaceAll('\\', '/')}" > "$out"`,
+          `echo "$@" >> "${fwd(path.join(bin, 'args'))}"`,
+          'out=""; url=""; while [ $# -gt 0 ]; do [ "$1" = "-o" ] && out="$2"; case "$1" in https://*) url="$1";; esac; shift; done',
+          `src="${fwd(assets)}/\${url##*/}"`,
+          '[ -f "$src" ] || exit 22',
+          'cat "$src" > "$out"',
         ].join('\n'),
         { mode: 0o755 },
       );
+      if (release.cosign) {
+        fs.writeFileSync(
+          path.join(bin, 'cosign'),
+          [
+            '#!/usr/bin/env bash',
+            '[ "$2" = "--help" ] && { echo "  --new-bundle-format"; exit 0; }',
+            `echo "$@" >> "${fwd(path.join(bin, 'cosign-args'))}"`,
+            release.cosign === 'ok' ? 'exit 0' : 'exit 1',
+          ].join('\n'),
+          { mode: 0o755 },
+        );
+      }
       const lib = await loadLib();
       await lib.startSelfUpdate('v99.0.0', { installDir });
       const cp = await realCp();
       const PATH = `${cp.spawnSync('bash', ['-c', `cygpath -u '${bin}' 2>/dev/null || echo '${bin}'`]).stdout.toString().trim()}:${process.env.PATH}`;
       const res = cp.spawnSync('bash', [path.join(stateDir(), 'run-update.sh')], {
-        env: { ...process.env, PATH, ND_SELF_UPDATE_TARGET: 'v99.0.0' },
+        env: { ...process.env, PATH, ND_SELF_UPDATE_TARGET: 'v99.0.0', ...(release.env ?? {}) },
       });
+      const read = (f: string) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim() : '');
       return {
         status: res.status,
-        ran: fs.readFileSync(path.join(installDir, 'ran.txt'), 'utf8').trim(),
-        curlArgs: fs.readFileSync(path.join(bin, 'args'), 'utf8'),
-        exitCode: fs.readFileSync(path.join(stateDir(), 'exit-code'), 'utf8').trim(),
+        ran: read(path.join(installDir, 'ran.txt')),
+        curlArgs: read(path.join(bin, 'args')),
+        cosignArgs: read(path.join(bin, 'cosign-args')),
+        exitCode: read(path.join(stateDir(), 'exit-code')),
+        log: read(path.join(stateDir(), 'update.log')),
         installDir,
       };
     }
 
-    it('fetches the pinned tag installer and runs it against the install dir', async () => {
+    it('runs the release installer asset whose sha256 SHA256SUMS lists, against the install dir', async () => {
       if (!(await hasBash())) return;
-      const r = await runWrapper('serve');
-      expect(r.curlArgs).toContain('https://raw.githubusercontent.com/NineDeploy/NineDeploy/v99.0.0/install.sh');
+      const r = await runWrapper({ installer: 'target', sums: 'match' });
+      expect(r.curlArgs).toContain(`${RELEASE}/SHA256SUMS`);
+      expect(r.curlArgs).toContain(`${RELEASE}/install.sh`);
+      // r703: the unverified raw.githubusercontent.com fetch is gone.
+      expect(r.curlArgs).not.toContain('raw.githubusercontent.com');
       expect(r.ran).toMatch(/^target --version v99\.0\.0 dir=/);
       expect(r.ran).toContain(path.basename(r.installDir));
       expect(r.exitCode).toBe('0');
+      expect(r.log).toContain('cosign is not installed');
+      expect(r.log).toContain('using the v99.0.0 installer (sha256');
     });
 
-    it('falls back to the installed installer when the fetch fails', async () => {
+    it('refuses the update when the installer does not match SHA256SUMS — nothing runs', async () => {
       if (!(await hasBash())) return;
-      const r = await runWrapper('fail');
-      expect(r.ran).toBe('installed --version v99.0.0');
-      expect(r.exitCode).toBe('0');
+      const r = await runWrapper({ installer: 'target', sums: 'mismatch' });
+      expect(r.ran).toBe('');
+      expect(r.exitCode).toBe('1');
+      expect(r.status).toBe(1);
+      expect(r.log).toContain('but SHA256SUMS lists 0000');
+      expect(r.log).toContain('refusing to update (nothing was changed)');
+      expect(fs.existsSync(path.join(stateDir(), 'install-target.sh'))).toBe(false);
+    });
+
+    it('with cosign present, a SHA256SUMS signature that does not verify refuses the update', async () => {
+      if (!(await hasBash())) return;
+      const bad = await runWrapper({ installer: 'target', sums: 'match', bundle: true, cosign: 'bad' });
+      expect(bad.ran).toBe('');
+      expect(bad.exitCode).toBe('1');
+      expect(bad.log).toContain('did NOT verify');
+      expect(bad.cosignArgs).toContain("--certificate-identity-regexp ^https://github\\.com/(?i:ninedeploy/ninedeploy)/");
+      expect(bad.cosignArgs).toContain('--certificate-oidc-issuer https://token.actions.githubusercontent.com');
+
+      const ok = await runWrapper({ installer: 'target', sums: 'match', bundle: true, cosign: 'ok' });
+      expect(ok.ran).toMatch(/^target --version v99\.0\.0/);
+      expect(ok.log).toContain('SHA256SUMS signature verified (cosign)');
+
+      const skipped = await runWrapper({ installer: 'target', sums: 'match', cosign: 'bad', env: { NINEDEPLOY_SKIP_SIGNATURE_VERIFY: '1' } });
+      expect(skipped.ran).toMatch(/^target --version v99\.0\.0/);
+      expect(skipped.cosignArgs).toBe('');
+    });
+
+    it('falls back to the installed installer when the release assets cannot be fetched', async () => {
+      if (!(await hasBash())) return;
+      const none = await runWrapper({});
+      expect(none.ran).toBe('installed --version v99.0.0');
+      expect(none.exitCode).toBe('0');
       expect(fs.existsSync(path.join(stateDir(), 'install-target.sh.part'))).toBe(false);
+      // An installer asset without SHA256SUMS is never run unverified.
+      const unlisted = await runWrapper({ installer: 'target' });
+      expect(unlisted.ran).toBe('installed --version v99.0.0');
+      expect(unlisted.curlArgs).not.toContain(`${RELEASE}/install.sh`);
     });
 
-    it('never executes a fetched body that is not a bash script', async () => {
+    it('never executes a verified body that is not a bash script', async () => {
       if (!(await hasBash())) return;
-      const r = await runWrapper('garbage');
+      const r = await runWrapper({ installer: 'garbage', sums: 'match' });
       expect(r.ran).toBe('installed --version v99.0.0');
       expect(fs.existsSync(path.join(stateDir(), 'install-target.sh'))).toBe(false);
+    });
+
+    it('trusts the same release signer as install.sh', async () => {
+      const lib = await loadLib();
+      const sh = fs.readFileSync(new URL('../../../../install.sh', import.meta.url), 'utf8');
+      expect(sh).toContain(`RELEASE_SIGNER_IDENTITY_RE='${lib.RELEASE_SIGNER_IDENTITY_RE}'`);
+      expect(sh).toContain(`RELEASE_SIGNER_ISSUER="${lib.RELEASE_SIGNER_ISSUER}"`);
     });
   });
 
