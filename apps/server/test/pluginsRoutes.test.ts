@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 import { pluginRoutes } from '../src/modules/plugins.js';
 import { asUser, buildTestApp, createFakeDb } from './helpers.js';
 
@@ -379,4 +379,39 @@ describe('Plugins HTTP API', () => {
 
     await app.close();
   });
+
+  // r527: disable → unregisterPlugin → purgePluginConfigs erased the plugin's
+  // saved settings and secrets; re-enabling started it from nothing. Only an
+  // uninstall erases config now — including for a plugin that is not loaded.
+  it('r527: disable keeps the saved config, uninstall purges it', async () => {
+    const row = {
+      id: 'keeper',
+      name: 'Keeper',
+      version: '1.0.0',
+      isOfficial: false,
+      enabled: true,
+      status: 'active',
+      manifest: { source: 'marketplace', target: 's3-backups' },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { installedPlugins: row }, update: { installed_plugins: [row] } }),
+    });
+    await app.register(pluginRoutes);
+    await app.kernel.registerPlugin({ id: 'keeper', name: 'Keeper', version: '1.0.0', init: () => {} });
+    const purge = vi.spyOn(app.kernel.configCenter, 'purgePluginConfigs').mockResolvedValue(0);
+
+    const disabled = await app.inject({ method: 'POST', url: '/keeper/disable', headers: asUser({ isOperator: true }) });
+    expect(disabled.statusCode).toBe(200);
+    expect(app.kernel.getPlugin('keeper')).toBeUndefined();
+    expect(purge).not.toHaveBeenCalled();
+
+    // Uninstalling the (now unloaded) plugin is what erases its config.
+    const uninstalled = await app.inject({ method: 'POST', url: '/keeper/uninstall', headers: asUser({ isOperator: true }) });
+    expect(uninstalled.statusCode).toBe(200);
+    expect(purge).toHaveBeenCalledWith('keeper');
+    await app.close();
+  });
 });
+

@@ -761,6 +761,10 @@ export async function uninstallPlugin(
   // 1. Unregister and destroy runtime plugin if loaded
   await kernel.unregisterPlugin(id);
 
+  // r527: uninstall is the ONE path that erases the plugin's saved config —
+  // explicitly, so a plugin that was disabled (not loaded) is purged too.
+  await kernel.configCenter.purgePluginConfigs(id);
+
   // 2. Remove DB record
   await db.delete(installedPlugins).where(eq(installedPlugins.id, id));
 

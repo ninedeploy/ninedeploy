@@ -167,6 +167,23 @@ describe('NineDeployKernel', () => {
     expect(kernel.getPlugin('flaky')).toBeDefined();
   });
 
+  it('r527: neither a failed init nor an unregister erases saved plugin config', async () => {
+    const kernel = new NineDeployKernel(createFakeDb(), mockConfig);
+    const purge = vi.spyOn(kernel.configCenter, 'purgePluginConfigs').mockResolvedValue(0);
+    const broken: KernelPlugin = {
+      id: 'needs-endpoint',
+      name: 'Needs endpoint',
+      version: '1.0.0',
+      init: () => {
+        throw new Error('endpoint unreachable at boot');
+      },
+    };
+    await expect(kernel.registerPlugin(broken)).rejects.toThrow(/endpoint unreachable/);
+    await kernel.registerPlugin({ id: 'fine', name: 'Fine', version: '1.0.0', init: () => {} });
+    await kernel.unregisterPlugin('fine');
+    expect(purge).not.toHaveBeenCalled();
+  });
+
   it('detects circular dependencies and missing dependencies', async () => {
     const kernel = new NineDeployKernel(createFakeDb(), mockConfig);
     const p1: KernelPlugin = { id: 'p1', name: 'P1', version: '1.0.0', dependencies: ['missing-dep'], init: () => {} };
