@@ -504,17 +504,21 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
     const existing = await app.db.query.domains.findFirst({
       where: and(eq(domains.id, domainId), eq(domains.serviceId, id)),
     });
+    // r691: another service's domain id (or none) answered 200, rewrote the
+    // proxy config and audited `domain.delete #<id>` — for a domain the caller
+    // never touched. A miss is a 404 now, before any side effect.
+    if (!existing) throw notFound('Domain not found');
     await app.db.delete(domains).where(and(eq(domains.id, domainId), eq(domains.serviceId, id)));
     // Remove the provider DNS record (best-effort — a stale record only points
     // at the server, it no longer routes anywhere once Traefik rewrites).
-    if (existing?.dnsRecordId) {
+    if (existing.dnsRecordId) {
       const dnsCfg = await getDnsRecordsConfig(app.db);
       if (dnsCfg.enabled && dnsCfg.token) {
         await deleteDnsRecord(dnsCfg.token, existing.hostname, existing.dnsRecordId).catch(() => undefined);
       }
     }
     await writeDynamicConfig(app.db);
-    void audit(app.db, req.user!.id, 'domain.delete', existing?.hostname ?? `#${domainId}`);
+    void audit(app.db, req.user!.id, 'domain.delete', existing.hostname);
     return { ok: true };
   });
 };

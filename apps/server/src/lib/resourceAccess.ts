@@ -1,4 +1,4 @@
-import { and, eq, inArray, or } from 'drizzle-orm';
+import { and, eq, inArray, isNull, notExists, or } from 'drizzle-orm';
 import {
   databases,
   projects,
@@ -41,15 +41,18 @@ import { forbidden, notFound, parseId } from './errors.js';
  * Workspace-only RBAC (post team-overhaul):
  *
  *   service    → caller must be a member of a workspace the service is tagged
- *                into (via `service_workspaces`), or be the service's
- *                `ownerUserId` (creator). Legacy `ownerUserId`-only access is
- *                preserved as a fallback when a service has no workspace tags.
+ *                into (via `service_workspaces`). The creator (`ownerUserId`)
+ *                is the service's `owner` — but only while they still hold a
+ *                seat where it lives (r694); a service with no workspace tag
+ *                at all stays its creator's personal service.
  *   project    → caller must be a member of the project's workspace; a
  *                project with NULL `workspaceId` is owner-of-any-workspace
  *                only.
- *   database   → `ownerUserId` match, OR membership of a workspace the
- *                database's project belongs to; NULL owner + NULL project is
- *                owner-of-any-workspace only.
+ *   database   → membership of the workspace the database's project belongs
+ *                to; its creator (`ownerUserId`) is `owner` while seated there
+ *                (r694). A database outside every workspace (no project, or a
+ *                project without one) is its creator's alone; with no creator
+ *                either, operator-only.
  *
  * Operator-level actions (manage OIDC, list all users, import/export the
  * instance, host-privileged deploys) are gated by `requireOperator`, which
@@ -221,10 +224,17 @@ export async function serviceWorkspaceIds(db: DbLike, serviceId: number): Promis
 export async function loadServiceForUser(db: DbLike, id: number, user: AuthedUser): Promise<Service> {
   const svc = await db.query.services.findFirst({ where: eq(services.id, id) });
   if (!svc) throw notFound('Service not found');
-  if (svc.ownerUserId === user.id) return svc;
   if (user.isOperator) return svc;
   const tagWsIds = await serviceWorkspaceIds(db, svc.id);
-  if (tagWsIds.length > 0) {
+  // r694: `ownerUserId` used to short-circuit BEFORE the seat check, so the
+  // creator of a team service kept full access after leaving the team — a
+  // SCIM "suspend"/deprovision drops the seat without re-homing ownership, so
+  // an offboarded engineer could still read the service's secrets and deploy
+  // it. The creator fallback now applies only to a service that lives in no
+  // workspace at all (a personal, pre-workspace service).
+  if (tagWsIds.length === 0) {
+    if (svc.ownerUserId === user.id) return svc;
+  } else {
     const hits = await db.query.workspaceMembers.findMany({
       where: and(
         eq(workspaceMembers.userId, user.id),
@@ -254,7 +264,17 @@ export async function loadServiceForUser(db: DbLike, id: number, user: AuthedUse
 export async function visibleServiceIdSet(db: DbLike, user: AuthedUser): Promise<Set<number> | null> {
   if (user.isOperator) return null;
   const set = new Set<number>();
-  const owned = await db.select({ id: services.id }).from(services).where(eq(services.ownerUserId, user.id));
+  // r694: only an UNTAGGED service is visible through `ownerUserId` alone
+  // (same rule as `loadServiceForUser`); a tagged one needs a seat below.
+  const owned = await db
+    .select({ id: services.id })
+    .from(services)
+    .where(
+      and(
+        eq(services.ownerUserId, user.id),
+        notExists(db.select({ one: serviceWorkspaces.serviceId }).from(serviceWorkspaces).where(eq(serviceWorkspaces.serviceId, services.id))),
+      ),
+    );
   for (const r of owned) set.add(r.id);
   const wsIds = await userWorkspaceIds(db, user.id);
   if (wsIds.length > 0) {
@@ -272,8 +292,9 @@ export async function visibleServiceIdSet(db: DbLike, user: AuthedUser): Promise
  * the workspaces the service is tagged into.
  *
  * Two fallbacks keep pre-workspace data working:
- *   • the service's `ownerUserId` always counts as `owner` (a personal service
- *     that was never tagged into a workspace stays fully manageable), and
+ *   • the service's `ownerUserId` counts as `owner` — on a personal service
+ *     that was never tagged into a workspace, and on a tagged one only while
+ *     the creator still holds a seat in one of its workspaces (r694), and
  *   • instance operators are `owner` everywhere.
  *
  * `null` means the caller has no relationship to the service at all — callers
@@ -285,13 +306,14 @@ export async function serviceRole(
   user: AuthedUser,
 ): Promise<WorkspaceRole | null> {
   if (user.isOperator) return 'owner';
-  if (service.ownerUserId === user.id) return 'owner';
   const tagWsIds = await serviceWorkspaceIds(db, service.id);
-  if (tagWsIds.length === 0) return null;
+  if (tagWsIds.length === 0) return service.ownerUserId === user.id ? 'owner' : null;
   const seats = await db.query.workspaceMembers.findMany({
     where: and(eq(workspaceMembers.userId, user.id), inArray(workspaceMembers.workspaceId, tagWsIds)),
   });
+  // r694: no seat where the service lives → no role, creator or not.
   if (seats.length === 0) return null;
+  if (service.ownerUserId === user.id) return 'owner';
   return maxRole(seats.map((m) => ({ workspaceId: m.workspaceId, role: m.role as WorkspaceRole })));
 }
 
@@ -387,12 +409,13 @@ export async function loadDatabaseForUser(db: DbLike, id: number, user: AuthedUs
   const row = await db.query.databases.findFirst({ where: eq(databases.id, id) });
   if (!row) throw notFound('Database not found');
   if (user.isOperator) return row;
-  if (row.ownerUserId === user.id) return row;
-  if (row.projectId != null) {
-    const project = await db.query.projects.findFirst({ where: eq(projects.id, row.projectId) });
-    if (project?.workspaceId != null && (await isWorkspaceMember(db, project.workspaceId, user))) {
-      return row;
-    }
+  // r694: the creator fallback applies only to a database outside every
+  // workspace; inside one, a seat decides (see `loadServiceForUser`).
+  const workspaceId = await databaseWorkspaceId(db, row);
+  if (workspaceId == null) {
+    if (row.ownerUserId === user.id) return row;
+  } else if (await isWorkspaceMember(db, workspaceId, user)) {
+    return row;
   }
   throw notFound('Database not found');
 }
@@ -402,8 +425,13 @@ export async function visibleDatabaseIds(db: DbLike, user: AuthedUser): Promise<
   if (user.isOperator) return null;
   const set = new Set<number>();
 
-  // Direct ownership: db.select (not db.query) — SQL-only, no row materialisation.
-  const owned = await db.select({ id: databases.id }).from(databases).where(eq(databases.ownerUserId, user.id));
+  // Direct ownership — only for a database outside every workspace (r694);
+  // one inside a workspace is visible through the seat path below.
+  const owned = await db
+    .select({ id: databases.id })
+    .from(databases)
+    .leftJoin(projects, eq(databases.projectId, projects.id))
+    .where(and(eq(databases.ownerUserId, user.id), isNull(projects.workspaceId)));
   for (const r of owned) set.add(r.id);
 
   // Workspace path — must agree with `loadDatabaseForUser`, which resolves a
@@ -430,7 +458,8 @@ export async function visibleDatabaseIds(db: DbLike, user: AuthedUser): Promise<
  * A database has no tag table of its own: its workspace is the one its PROJECT
  * belongs to. As with services, the row's `ownerUserId` and the instance
  * operator flag both count as `owner`, so a personal database created before
- * projects existed stays fully manageable by its creator.
+ * projects existed stays fully manageable by its creator. Inside a workspace
+ * the creator is `owner` only while seated there (r694).
  *
  * `null` = no relationship at all.
  */
@@ -440,17 +469,21 @@ export async function databaseRole(
   user: AuthedUser,
 ): Promise<WorkspaceRole | null> {
   if (user.isOperator) return 'owner';
-  if (row.ownerUserId === user.id) return 'owner';
+  const workspaceId = await databaseWorkspaceId(db, row);
+  if (workspaceId == null) return row.ownerUserId === user.id ? 'owner' : null;
+  const seat = await db.query.workspaceMembers.findFirst({
+    where: and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, user.id)),
+  });
+  // r694: no seat in the database's workspace → no role, creator or not.
+  if (!seat) return null;
+  return row.ownerUserId === user.id ? 'owner' : (seat.role as WorkspaceRole);
+}
+
+/** The workspace a database lives in: its project's, or null when it has none. */
+async function databaseWorkspaceId(db: DbLike, row: Pick<Database, 'projectId'>): Promise<number | null> {
   if (row.projectId == null) return null;
   const project = await db.query.projects.findFirst({ where: eq(projects.id, row.projectId) });
-  if (project?.workspaceId == null) return null;
-  const seat = await db.query.workspaceMembers.findFirst({
-    where: and(
-      eq(workspaceMembers.workspaceId, project.workspaceId),
-      eq(workspaceMembers.userId, user.id),
-    ),
-  });
-  return seat ? (seat.role as WorkspaceRole) : null;
+  return project?.workspaceId ?? null;
 }
 
 /**

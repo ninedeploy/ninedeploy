@@ -146,7 +146,10 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
       .delete(envVars)
       .where(and(eq(envVars.id, varId), eq(envVars.serviceId, id)))
       .returning({ key: envVars.key });
-    if (gone[0]) void audit(app.db, req.user!.id, 'env.delete', `${target.name}/${gone[0].key}`);
+    // r691: a variable id of ANOTHER service (or none) answered 200 — the
+    // delete was scoped, but the caller was told it succeeded.
+    if (!gone[0]) throw notFound('Environment variable not found');
+    void audit(app.db, req.user!.id, 'env.delete', `${target.name}/${gone[0].key}`);
     return { ok: true };
   });
 
@@ -305,7 +308,9 @@ export const projectEnvRoutes: FastifyPluginAsync = async (app) => {
       .delete(envVars)
       .where(and(eq(envVars.id, varId), eq(envVars.scope, 'project'), eq(envVars.scopeKey, id)))
       .returning({ key: envVars.key });
-    if (gone[0]) void audit(app.db, req.user!.id, 'env.delete', `project:${project.name}/${gone[0].key}`);
+    // r691: same as the service route — a miss is a 404, not a silent 200.
+    if (!gone[0]) throw notFound('Environment variable not found');
+    void audit(app.db, req.user!.id, 'env.delete', `project:${project.name}/${gone[0].key}`);
     return { ok: true };
   });
 };

@@ -393,7 +393,11 @@ describe('r636: Basic Auth is stored hashed and never shown as plaintext', () =>
     });
     const [ws] = await db.insert(workspaces).values({ name: 'team', slug: 'team', ownerId: BOB }).returning();
     await db.insert(serviceWorkspaces).values({ serviceId: bravo, workspaceId: ws!.id });
-    await db.insert(workspaceMembers).values({ workspaceId: ws!.id, userId: ALICE, role: 'viewer' });
+    // r694: the creator's owner role rides on a seat where the service lives.
+    await db.insert(workspaceMembers).values([
+      { workspaceId: ws!.id, userId: BOB, role: 'owner' },
+      { workspaceId: ws!.id, userId: ALICE, role: 'viewer' },
+    ]);
     const a = await app();
 
     const asOwner = await a.inject({ method: 'GET', url: `/${bravo}/domains`, headers: member(BOB) });

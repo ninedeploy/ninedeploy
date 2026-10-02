@@ -434,9 +434,14 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
   app.delete('/passkey/:id', { onRequest: [app.authenticate, app.requireInteractive] }, async (req) => {
     const id = parseId((req.params as { id: string }).id);
-    await app.db
+    // r691: someone else's (or no) passkey id answered 200 and audited a
+    // removal that never happened. The delete stays owner-scoped; a miss is
+    // now the same 404 for "not yours" and "does not exist".
+    const gone = await app.db
       .delete(webauthnCredentials)
-      .where(and(eq(webauthnCredentials.id, id), eq(webauthnCredentials.userId, req.user!.id)));
+      .where(and(eq(webauthnCredentials.id, id), eq(webauthnCredentials.userId, req.user!.id)))
+      .returning({ id: webauthnCredentials.id });
+    if (!gone[0]) throw notFound('Passkey not found');
     void audit(app.db, req.user!.id, 'auth.passkey_removed', undefined, { id });
     return { ok: true };
   });
@@ -508,10 +513,16 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
   app.delete('/sessions/:id', { onRequest: [app.authenticate] }, async (req) => {
     const id = parseId((req.params as { id: string }).id);
-    await app.db
+    // r691: owner-scoped as before, but a miss is a 404 — another user's
+    // session id used to answer 200 and leave an `auth.session_revoked` audit
+    // row for a revocation that never happened. Re-revoking one's own session
+    // still succeeds.
+    const hit = await app.db
       .update(sessionsTable)
       .set({ revokedAt: new Date() })
-      .where(and(eq(sessionsTable.id, id), eq(sessionsTable.userId, req.user!.id)));
+      .where(and(eq(sessionsTable.id, id), eq(sessionsTable.userId, req.user!.id)))
+      .returning({ id: sessionsTable.id });
+    if (!hit[0]) throw notFound('Session not found');
     void audit(app.db, req.user!.id, 'auth.session_revoked', undefined, { id });
     return { ok: true };
   });
@@ -772,7 +783,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       .delete(apiTokens)
       .where(and(eq(apiTokens.id, id), eq(apiTokens.userId, req.user!.id)))
       .returning({ name: apiTokens.name });
-    if (gone[0]) void audit(app.db, req.user!.id, 'auth.token_revoked', gone[0].name);
+    // r691: a token id outside the caller's own answered 200 ("revoked") while
+    // nothing was revoked — a script could not tell a typo from success.
+    if (!gone[0]) throw notFound('API token not found');
+    void audit(app.db, req.user!.id, 'auth.token_revoked', gone[0].name);
     return { ok: true };
   });
 

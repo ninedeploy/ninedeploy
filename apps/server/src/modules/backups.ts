@@ -174,6 +174,12 @@ export const databaseBackupRoutes: FastifyPluginAsync = async (app) => {
       if (!body.backupId || typeof body.backupId !== 'number') {
         throw badRequest('backupId is required');
       }
+      // r693: decide ownership here, with the restore route's 404. The drill
+      // runner's own check surfaced as a 400 "Backup <id> does not belong to
+      // database <id>" — an existence oracle for every other tenant's backup
+      // ids (a missing id read differently: "Backup <id> not found").
+      const backup = await app.db.query.backups.findFirst({ where: eq(backups.id, body.backupId) });
+      if (!backup || backup.databaseId !== d.id) throw notFound('Backup not found');
       let result: Awaited<ReturnType<typeof runBackupDrill>>;
       try {
         result = await runBackupDrill(app.db, d.id, body.backupId);

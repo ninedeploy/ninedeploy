@@ -287,7 +287,7 @@ describe('database backup routes (per-database)', () => {
   });
 
   it('POST /:id/backups/drill runs the engine and returns the drill result', async () => {
-    const db = createFakeDb({ findFirst: { databases: dbRow() } });
+    const db = createFakeDb({ findFirst: { databases: dbRow(), backups: backupRow({ id: 7 }) } });
     const app = await buildApp({ db });
     await app.register(databaseBackupRoutes);
     const res = await app.inject({
@@ -309,7 +309,7 @@ describe('database backup routes (per-database)', () => {
 
   it('POST /:id/backups/drill 400s when runBackupDrill throws', async () => {
     mocks.runBackupDrill.mockRejectedValueOnce(new Error('not a valid dump'));
-    const db = createFakeDb({ findFirst: { databases: dbRow() } });
+    const db = createFakeDb({ findFirst: { databases: dbRow(), backups: backupRow({ id: 7 }) } });
     const app = await buildApp({ db });
     await app.register(databaseBackupRoutes);
     const res = await app.inject({
@@ -324,6 +324,18 @@ describe('database backup routes (per-database)', () => {
     expect(res.json()).toMatchObject({
       error: { message: expect.stringMatching(/Drill failed.*not a valid dump/) },
     });
+  });
+
+  it("r693: POST /:id/backups/drill 404s for another database's backup, before the drill runs", async () => {
+    mocks.runBackupDrill.mockClear();
+    const db = createFakeDb({ findFirst: { databases: dbRow(), backups: backupRow({ id: 7, databaseId: 99 /* ≠ 1 */ }) } });
+    const app = await buildApp({ db });
+    await app.register(databaseBackupRoutes);
+    const res = await app.inject({ method: 'POST', url: '/1/backups/drill', headers: asUser(), payload: { backupId: 7 } });
+    expect(res.statusCode).toBe(404);
+    // The same answer a missing id gets — no "does not belong to database N" oracle.
+    expect(res.json().error.message).toBe('Backup not found');
+    expect(mocks.runBackupDrill).not.toHaveBeenCalled();
   });
 
   it('GET /:id/drills lists the most recent 25 runs', async () => {

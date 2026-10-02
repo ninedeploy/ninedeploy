@@ -7,6 +7,7 @@ import { randomToken, sha256 } from '../lib/crypto.js';
 import { unauthorized } from '../lib/errors.js';
 import { getSettingJson, setSettingJson, setSettingString } from '../lib/settings.js';
 import { STUDIO_EPOCH_KEY } from './studioProxy.js';
+import { rehomeOwnedResources } from './workspaces.js';
 
 /**
  * SCIM 2.0 user provisioning (RFC 7644) — the deprovisioning half of the
@@ -230,6 +231,11 @@ async function deprovisionFor(
   await db
     .delete(workspaceMembers)
     .where(and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.workspaceId, workspaceId)));
+  // r695: the API's member removal hands what the user created here to the
+  // workspace owner (r097); the IdP's removal paths never did, so a team
+  // service kept an absent owner — whose seat the deploy pipeline consults
+  // before injecting the project's shared env.
+  if (ws) await rehomeOwnedResources(db, workspaceId, user.id, ws.ownerId);
   void audit(db, null, 'scim.suspend', `${user.email} in workspace #${workspaceId}`);
   return null;
 }
@@ -264,6 +270,9 @@ async function deactivateUser(
     await db
       .delete(workspaceMembers)
       .where(and(eq(workspaceMembers.userId, userId), eq(workspaceMembers.workspaceId, byWorkspaceId)));
+    // r695: same hand-over as an API removal (see deprovisionFor).
+    const ws = await db.query.workspaces.findFirst({ where: eq(workspaces.id, byWorkspaceId) });
+    if (ws && ws.ownerId !== userId) await rehomeOwnedResources(db, byWorkspaceId, userId, ws.ownerId);
   }
   // r444: "every credential the account holds" includes the 8-hour studio
   // cookie — a pre-authenticated DB client that must not outlive the
@@ -490,6 +499,8 @@ export const scimRoutes: FastifyPluginAsync = async (app) => {
     await app.db
       .delete(workspaceMembers)
       .where(and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.workspaceId, workspaceId)));
+    // r695: same hand-over as an API removal (see deprovisionFor).
+    if (ws) await rehomeOwnedResources(app.db, workspaceId, user.id, ws.ownerId);
     if (found.suspended) await setSuspended(app.db, user.id, workspaceId, null);
     void audit(app.db, null, 'scim.deprovision', `${user.email} (left workspace #${workspaceId})`);
     return { schemas: [SCIM_USER_SCHEMA], id: String(user.id) };

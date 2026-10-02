@@ -361,12 +361,24 @@ describe('domains routes', () => {
   });
 
   it('deletes a domain and regenerates the proxy config', async () => {
-    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: svcRow() } }) });
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { services: svcRow(), domains: { id: 3, serviceId: 1, hostname: 'a.example.com', dnsRecordId: null } } }),
+    });
     await app.register(domainsRoutes);
     const res = await app.inject({ method: 'DELETE', url: '/1/domains/3', headers: asUser() });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ok: true });
     expect(proxyMocks.writeDynamicConfig).toHaveBeenCalled();
+  });
+
+  it("r691: a domain id outside the service is a 404 — no proxy rewrite, no audit", async () => {
+    proxyMocks.writeDynamicConfig.mockClear();
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: svcRow() } }) });
+    await app.register(domainsRoutes);
+    const res = await app.inject({ method: 'DELETE', url: '/1/domains/3', headers: asUser() });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.message).toBe('Domain not found');
+    expect(proxyMocks.writeDynamicConfig).not.toHaveBeenCalled();
   });
 
   it('rejects an invalid create payload', async () => {
