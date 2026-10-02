@@ -467,3 +467,45 @@ describe('updaterEnvironment', () => {
     expect(env['NINEDEPLOY_ADMIN_PASSWORD']).toBeUndefined();
   });
 });
+
+describe('r572: in-flight deployments block the update unless forced', () => {
+  it('refuses with 409 deploys_in_flight before writing any run state', async () => {
+    configMock.isProd = true;
+    const lib = await loadLib();
+    const err = await lib
+      .startSelfUpdate('v99.0.0', {
+        installDir: newInstallDir(),
+        inFlightDeployments: async () => [{ id: 3, service: 'api', status: 'building' }],
+      })
+      .catch((e: unknown) => e);
+    expect(err).toMatchObject({ statusCode: 409, code: 'deploys_in_flight' });
+    expect((err as Error).message).toContain('1 deployment is in progress: #3 api (building)');
+    expect(readState()).toBeNull();
+    expect(spawnMock.calls).toHaveLength(0);
+  });
+
+  it('force skips the check entirely (the provider is never asked)', async () => {
+    configMock.isProd = true;
+    const lib = await loadLib();
+    let asked = false;
+    const res = await lib.startSelfUpdate('v99.0.0', {
+      installDir: newInstallDir(),
+      force: true,
+      inFlightDeployments: async () => {
+        asked = true;
+        return [{ id: 3, service: 'api', status: 'building' }];
+      },
+    });
+    expect(res.ok).toBe(true);
+    expect(asked).toBe(false);
+  });
+
+  it('names the first ten and summarises the rest', async () => {
+    const lib = await loadLib();
+    const rows = Array.from({ length: 12 }, (_, i) => ({ id: i + 1, service: `s${i + 1}`, status: 'deploying' }));
+    const err = lib.deploysInFlightError(rows);
+    expect(err.message).toContain('12 deployments are in progress');
+    expect(err.message).toContain('#10 s10 (deploying) and 2 more');
+    expect(err.message).not.toContain('#11 ');
+  });
+});

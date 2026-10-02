@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { badRequest, conflict } from './errors.js';
+import { HttpError, badRequest, conflict } from './errors.js';
 import { isNewer } from './updateCheck.js';
 import { VERSION } from '../version.js';
 import { config } from '../config.js';
@@ -99,7 +99,10 @@ export function selfUpdateSupported(
   if (existsSync(dockerEnvMarker)) {
     return {
       supported: false,
-      reason: 'The panel runs as a container — upgrade with docker compose pull && docker compose up -d.',
+      // r571: the installer pins the image tag in the compose .env now, so a
+      // bare `compose pull` re-pulls the running release — name both paths.
+      reason:
+        'The panel runs as a container — upgrade by re-running the installer (install.sh --docker), or set NINEDEPLOY_IMAGE_TAG=vX.Y.Z in the compose .env and run docker compose pull && docker compose up -d.',
     };
   }
   // Production starts the service with WorkingDirectory=<install dir>.
@@ -358,12 +361,51 @@ function updaterScript(p: SelfUpdatePaths, installDir: string): string {
   ].join('\n');
 }
 
+/** A deployment the panel process is executing right now (see startSelfUpdate). */
+export interface InFlightDeployment {
+  id: number;
+  service: string;
+  status: string;
+}
+
+/** How many in-flight deployments the refusal names before summarising. */
+const IN_FLIGHT_LISTED = 10;
+
+/**
+ * r572: the refusal for an update that would interrupt deployments. The
+ * installer stops (and later restarts) the panel service, and the deploy
+ * worker runs inside it — every build/rollout in progress dies mid-step.
+ */
+export function deploysInFlightError(rows: InFlightDeployment[]): HttpError {
+  const listed = rows.slice(0, IN_FLIGHT_LISTED).map((d) => `#${d.id} ${d.service} (${d.status})`);
+  const more = rows.length > IN_FLIGHT_LISTED ? ` and ${rows.length - IN_FLIGHT_LISTED} more` : '';
+  return new HttpError(
+    409,
+    'deploys_in_flight',
+    `${rows.length} deployment${rows.length === 1 ? ' is' : 's are'} in progress: ${listed.join(', ')}${more}. ` +
+      'Updating restarts the panel and would interrupt them. Wait for them to finish (or cancel them) and start the update again, ' +
+      'or send "force": true to POST /v1/system/update-start to update anyway.',
+  );
+}
+
 /**
  * Launch the updater for `version` and return immediately. The work continues
  * in a process designed to survive the panel restart it triggers. Typed
  * HttpErrors surface through the route's error envelope.
+ *
+ * r572: `inFlightDeployments` (wired by the route to the deployments table)
+ * makes the start refuse with 409 `deploys_in_flight` while deployments are
+ * executing, unless `force` is set.
  */
-export async function startSelfUpdate(version: string, opts: { installDir?: string; stateDir?: string } = {}): Promise<{ ok: boolean }> {
+export async function startSelfUpdate(
+  version: string,
+  opts: {
+    installDir?: string;
+    stateDir?: string;
+    force?: boolean;
+    inFlightDeployments?: () => Promise<InFlightDeployment[]>;
+  } = {},
+): Promise<{ ok: boolean }> {
   const target = normalizeTag(version);
   if (!/^v\d+\.\d+\.\d+$/.test(target)) throw badRequest('version must be a release tag like v0.3.4');
 
@@ -376,6 +418,13 @@ export async function startSelfUpdate(version: string, opts: { installDir?: stri
 
   const existing = getSelfUpdateStatus({ installDir: opts.installDir, stateDir: opts.stateDir });
   if (existing.phase === 'running') throw conflict(`An update to ${existing.targetVersion} is already in progress`);
+
+  // r572: checked last among the refusals, so `force` only ever overrides
+  // this one — never the version or support gates above.
+  if (!opts.force && opts.inFlightDeployments) {
+    const inFlight = await opts.inFlightDeployments();
+    if (inFlight.length > 0) throw deploysInFlightError(inFlight);
+  }
 
   const p = paths(opts.stateDir);
   // 0700: this directory holds the generated updater script and the captured

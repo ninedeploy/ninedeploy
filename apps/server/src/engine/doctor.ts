@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import type { DB } from '@ninedeploy/db';
 import {
   databases,
@@ -26,6 +27,7 @@ import {
   run,
 } from '../lib/exec.js';
 import { conflict } from '../lib/errors.js';
+import { config } from '../config.js';
 import {
   containerRunning,
   listManagedVolumeNames,
@@ -144,6 +146,45 @@ function ageHours(value: Date | string | null | undefined): number {
   const t = new Date(value).getTime();
   if (!Number.isFinite(t)) return 0;
   return (Date.now() - t) / 3_600_000;
+}
+
+/** Addresses only this host can reach. */
+function isLoopbackHost(host: string): boolean {
+  const h = host.trim().toLowerCase().replace(/^\[|\]$/g, '');
+  return h === 'localhost' || h === '::1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h);
+}
+
+/**
+ * r575: the panel itself speaks plain HTTP on NINEDEPLOY_HOST:NINEDEPLOY_PORT
+ * (TLS is Traefik's job, on :443). The bare-metal default binds 0.0.0.0, so a
+ * fresh install answers http://<public-ip>:3000 and every login, refresh
+ * token and API token that crosses it travels in cleartext. The default is
+ * NOT changed (operators reach their panel that way today) — the Doctor says
+ * so instead. Inside a container the listen address says nothing about
+ * exposure (the compose file publishes the port on loopback by default), so
+ * the check is a bare-metal one. Exported for its unit test; wired below.
+ */
+export function panelExposureFinding(
+  host: string | undefined,
+  port: number | undefined,
+  inContainer: boolean,
+): DoctorFinding | null {
+  if (inContainer || !host || isLoopbackHost(host)) return null;
+  const where = `${host}:${port ?? 3000}`;
+  return {
+    id: 'panel_plaintext_exposure',
+    kind: 'panel_plaintext_exposure',
+    severity: 'warn',
+    title: `The panel listens on ${where} over plain HTTP`,
+    detail:
+      `NINEDEPLOY_HOST=${host} makes the panel's own port reachable from the network, and it speaks plain HTTP — ` +
+      'passwords, session and API tokens that cross it can be read in transit. Reach the panel through HTTPS instead ' +
+      '(attach a domain to it via Traefik on :443, or a tunnel), then set NINEDEPLOY_HOST=127.0.0.1 in .env and restart ' +
+      'the service (sudo systemctl restart ninedeploy). If the port must stay open, firewall it to a trusted network.',
+    target: { type: 'host', name: where, id: null },
+    action: null,
+    sizeBytes: null,
+  };
 }
 
 export async function scanDoctor(db: DB): Promise<DoctorReport> {
@@ -375,6 +416,10 @@ export async function scanDoctor(db: DB): Promise<DoctorReport> {
       action: 'run_autoprune',
     });
   }
+
+  // r575: plaintext panel port on a non-loopback address.
+  const exposure = panelExposureFinding(config.host, config.port, existsSync('/.dockerenv'));
+  if (exposure) findings.push(exposure);
 
   // ── stored slugs that violate the canonical contract ────────────────────
   // r028/r029 fixed slugify() for NEW rows; this catches rows already written

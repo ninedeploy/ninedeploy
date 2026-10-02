@@ -44,6 +44,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # r576: advisory only (continue-on-error) — a fresh upstream advisory
+      # must not block every unrelated commit, but it should be visible on the
+      # run that first sees it. Overrides in pnpm-workspace.yaml are the fix.
+      - name: Dependency audit (production, high+; non-blocking)
+        continue-on-error: true
+        run: pnpm audit --prod --audit-level high
+
       - name: Typecheck
         run: pnpm typecheck
 
@@ -121,20 +128,41 @@ jobs:
             echo "shellcheck not present on runner — syntax check only"
           fi
 
-      # Installer set -u smoke test: exercise the DATA_DIR resolution + the
-      # writable-homes mkdir EXACTLY as the script runs (set -euo pipefail,
-      # no inherited DATA_DIR) so a "used before defined" regression fails
-      # here instead of on an operator's upgrade at the systemd step.
-      - name: Installer set -u smoke test
+      # r576: the installer smoke test SOURCES the real install.sh (its
+      # NINEDEPLOY_INSTALL_SOURCE_ONLY mode returns right after the pure
+      # helpers, before anything touches the host) and runs those helpers
+      # under the script's own `set -euo pipefail` against fixtures. It used
+      # to re-type a few of the script's lines, which proved nothing about
+      # install.sh itself.
+      - name: Installer smoke test (real install.sh helpers)
         run: |
           set -euo pipefail
-          INSTALL_DIR="$PWD"
-          DATA_DIR_SETTING="${NINEDEPLOY_DATA_DIR:-$INSTALL_DIR/.data}"
-          mkdir -p "$DATA_DIR_SETTING"
-          DATA_DIR=$(cd "$DATA_DIR_SETTING" && pwd -P)
-          mkdir -p "$DATA_DIR/docker-config" "$DATA_DIR/pm2"
-          test -d "$DATA_DIR/docker-config" && test -d "$DATA_DIR/pm2"
-          echo "set -u smoke test passed: DATA_DIR=$DATA_DIR"
+          NINEDEPLOY_INSTALL_SOURCE_ONLY=1 . ./install.sh
+          # set -u: r087 was an unbound DATA_DIR at the systemd step.
+          scratch="$(mktemp -d)"
+          data_dir="$(NINEDEPLOY_DATA_DIR= resolve_data_dir "$scratch")"
+          test "$data_dir" = "$(cd "$scratch/.data" && pwd -P)"
+          # Release resolution: semver (not lexical) order, junk ignored.
+          test "$(printf 'v0.2.9\nv0.2.36\nv0.10.0\nv0.9.99\nv1.0.0-rc1\nnot-a-tag\n' | highest_semver_tag)" = "v0.10.0"
+          test "$(printf '{"url":"x","tag_name": "v0.10.35","name":"v0.10.35"}' | release_tag_from_json)" = "v0.10.35"
+          test -z "$(printf '{"message":"Not Found"}' | release_tag_from_json)"
+          test "$(printf '[{"name":"v0.9.99"},{"name":"v0.10.36"},{"name":"latest"}]' | highest_tag_from_tags_json)" = "v0.10.36"
+          # Docker image tag: pinned > edge (main) > resolved release > latest.
+          test "$(docker_image_tag v0.10.1 release v0.10.36)" = "v0.10.1"
+          test "$(docker_image_tag '' main main)" = "edge"
+          test "$(docker_image_tag '' release v0.10.36)" = "v0.10.36"
+          test "$(docker_image_tag '' release main)" = "latest"
+          # Nixpacks checksums are keyed by version: unknown versions get none.
+          test -n "$(nixpacks_sha256 1.41.0 x86_64)"
+          test -z "$(nixpacks_sha256 9.9.9 x86_64)"
+          # An EXECUTED run must ignore the source-only flag (only a sourced
+          # one returns early) — it reaches argument parsing and rejects this.
+          if NINEDEPLOY_INSTALL_SOURCE_ONLY=1 bash ./install.sh --not-an-installer-flag >/dev/null 2>&1; then
+            echo "::error::install.sh honoured NINEDEPLOY_INSTALL_SOURCE_ONLY in an executed run"
+            exit 1
+          fi
+          rm -rf "$scratch"
+          echo "installer helper smoke test passed"
 
   docker-image:
     name: Docker image build
@@ -149,9 +177,10 @@ jobs:
 
   # Publishes the panel image to GHCR on every push to main so an
   # `install.sh --docker` from the main channel never lands on a stale
-  # `:latest`. The release workflow (release.yml) does the same on tag
-  # push and re-tags `:latest`, so :latest on GHCR always points to the
-  # most recent published image regardless of channel.
+  # `:latest`. The release workflow (release-publish.yml) pushes `:vX.Y.Z`
+  # on every release tag and re-points `:latest` only when that tag is the
+  # highest release (r573), so `:latest` is the newest RELEASE — never a main
+  # build (that is `:edge`, pushed here).
   #
   # One-time setup: the GHCR package must be set to "Public" visibility
   # at https://github.com/orgs/NineDeploy/packages/container/ninedeploy/settings

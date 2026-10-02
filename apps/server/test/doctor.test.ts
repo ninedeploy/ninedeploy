@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildTestApp, asUser, createFakeDb } from './helpers.js';
 import { doctorRoutes } from '../src/modules/doctor.js';
-import { fixDoctorFinding, scanDoctor } from '../src/engine/doctor.js';
+import { fixDoctorFinding, panelExposureFinding, scanDoctor } from '../src/engine/doctor.js';
 
 const ex = vi.hoisted(() => ({ capture: vi.fn(), run: vi.fn() }));
 const ap = vi.hoisted(() => ({
@@ -20,7 +20,15 @@ vi.mock('../src/lib/dockerPull.js', () => ({
   pullDockerImage: vi.fn(async () => undefined),
   ensureDockerImage: vi.fn(async () => undefined),
 }));
-vi.mock('../src/config.js', () => ({ config: { paths: { dataDir: '/tmp/nd-doctor-test' } } }));
+// r575: host/port are mutable so the plaintext-exposure check can be driven;
+// the default (loopback) keeps every other scan free of that finding.
+const cfg = vi.hoisted(() => ({ paths: { dataDir: '/tmp/nd-doctor-test' }, host: '127.0.0.1', port: 3000 }));
+vi.mock('../src/config.js', () => ({ config: cfg }));
+const fsState = vi.hoisted(() => ({ dockerenv: false }));
+vi.mock('node:fs', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:fs')>();
+  return { ...real, existsSync: (p: Parameters<typeof real.existsSync>[0]) => (p === '/.dockerenv' ? fsState.dockerenv : real.existsSync(p)) };
+});
 
 /** The docker facade the scan reads. */
 const host = {
@@ -34,6 +42,8 @@ const host = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  cfg.host = '127.0.0.1';
+  fsState.dockerenv = false;
   host.containers = [];
   host.volumeLs = '';
   host.networks = 'ninedeploy\n';
@@ -319,5 +329,39 @@ describe('doctor routes', () => {
     await app.register(doctorRoutes);
     const res = await app.inject({ method: 'POST', url: '/fix', headers: asUser(), payload: {} });
     expect(res.statusCode).toBe(422);
+  });
+});
+
+// ── r575: plaintext panel port on a non-loopback address ──────────────
+describe('doctor: panel plaintext exposure (r575)', () => {
+  it('warns when the panel listens on 0.0.0.0 over plain HTTP (the bare-metal default)', async () => {
+    cfg.host = '0.0.0.0';
+    host.containers = [{ Names: 'ninedeploy-traefik', State: 'running', Image: 'traefik:3' }];
+    const report = await scanDoctor(createFakeDb());
+    const f = report.findings.find((x) => x.kind === 'panel_plaintext_exposure');
+    expect(f).toMatchObject({ id: 'panel_plaintext_exposure', severity: 'warn', action: null, target: { type: 'host', name: '0.0.0.0:3000' } });
+    expect(f?.detail).toContain('NINEDEPLOY_HOST=127.0.0.1');
+    expect(report.healthy).toBe(false);
+  });
+
+  it('is silent on loopback binds', async () => {
+    for (const h of ['127.0.0.1', 'localhost', '::1', '[::1]', '127.0.0.2']) {
+      cfg.host = h;
+      const report = await scanDoctor(createFakeDb());
+      expect(report.findings.filter((x) => x.kind === 'panel_plaintext_exposure'), h).toEqual([]);
+    }
+  });
+
+  it('is silent inside a container (the compose file decides the published bind)', async () => {
+    cfg.host = '0.0.0.0';
+    fsState.dockerenv = true;
+    const report = await scanDoctor(createFakeDb());
+    expect(report.findings.filter((x) => x.kind === 'panel_plaintext_exposure')).toEqual([]);
+  });
+
+  it('names a specific interface bind and tolerates an unset host/port', () => {
+    expect(panelExposureFinding('10.0.0.5', 8080, false)?.title).toBe('The panel listens on 10.0.0.5:8080 over plain HTTP');
+    expect(panelExposureFinding('10.0.0.5', undefined, false)?.target.name).toBe('10.0.0.5:3000');
+    expect(panelExposureFinding(undefined, 3000, false)).toBeNull();
   });
 });

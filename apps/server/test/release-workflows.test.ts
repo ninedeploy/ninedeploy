@@ -1,7 +1,10 @@
-import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, existsSync, statSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { load } from 'js-yaml';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 
 type Step = { name?: string; run?: string; uses?: string; with?: Record<string, unknown>; env?: Record<string, string> };
 type Workflow = { jobs: Record<string, { steps: Step[] }> };
@@ -127,5 +130,99 @@ describe('release delivery invariants', () => {
     const tag = readFileSync(new URL('../../../scripts/tag-release.js', import.meta.url), 'utf8');
     expect(bump).toContain("from './lib/package-list.mjs'");
     expect(tag).toContain("from './lib/package-list.mjs'");
+  });
+});
+
+// ── r573: release tooling must never leave a half-done release behind ──
+describe('r573: release publishing and version bumping', () => {
+  it('moves :latest only when the tag is the highest release, one run per tag at a time', () => {
+    const raw = readFileSync(new URL('../../../.github/workflows/release-publish.yml', import.meta.url), 'utf8');
+    const workflow = load(raw) as Workflow & { concurrency?: { group?: string; 'cancel-in-progress'?: boolean } };
+    // Serialized per tag (a push and a manual re-run of the same tag), never cancelled mid-push.
+    expect(workflow.concurrency?.group).toContain('inputs.tag || github.ref_name');
+    expect(workflow.concurrency?.['cancel-in-progress']).toBe(false);
+    const steps = workflow.jobs['publish-image']!.steps;
+    const decide = steps.findIndex((s) => s.name?.includes('moves :latest'));
+    expect(decide).toBeGreaterThan(-1);
+    const decideStep = steps[decide] as Step & { id?: string };
+    expect(decideStep.id).toBe('latest');
+    expect(decideStep.run).toContain('git ls-remote --tags --refs origin');
+    expect(decideStep.run).toContain('"$highest" = "$RELEASE_TAG"');
+    // The metadata step gates the :latest tag on that decision; the version tag is unconditional.
+    const meta = steps.find((s) => String(s.uses ?? '').startsWith('docker/metadata-action'))!;
+    const tags = String(meta.with?.['tags']);
+    expect(tags).toContain("type=raw,value=latest,enable=${{ steps.latest.outputs.move == 'true' }}");
+    expect(tags).not.toMatch(/type=raw,value=latest\s*$/m);
+    expect(tags).toContain('type=raw,value=${{ env.RELEASE_TAG }}');
+    // Decided before anything is pushed.
+    const push = steps.findIndex((s) => s.with?.['push'] === true);
+    expect(decide).toBeLessThan(push);
+    // The dispatch hint names the real workflow file.
+    expect(raw).not.toContain('gh workflow run release.yml');
+    expect(raw).toContain('gh workflow run release-publish.yml');
+  });
+
+  describe('bump-version.js validates every rewrite before writing any', () => {
+    const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+    const dirs: string[] = [];
+    afterAll(() => {
+      for (const d of dirs) rmSync(d, { recursive: true, force: true });
+    });
+
+    const PACKAGES = [
+      'package.json', 'apps/cli/package.json', 'apps/server/package.json', 'apps/web/package.json',
+      'packages/db/package.json', 'packages/mcp/package.json', 'packages/plugin-sdk/package.json',
+      'packages/schemas/package.json', 'packages/sdk/package.json', 'website/package.json',
+    ];
+
+    /** A miniature repo carrying every file the script rewrites, at 0.0.1. */
+    function fixtureRepo(opts: { versionLiteral: boolean }): string {
+      const root = mkdtempSync(join(tmpdir(), 'nd-bump-'));
+      dirs.push(root);
+      const put = (rel: string, body: string) => {
+        mkdirSync(dirname(join(root, rel)), { recursive: true });
+        writeFileSync(join(root, rel), body);
+      };
+      mkdirSync(join(root, 'scripts', 'lib'), { recursive: true });
+      copyFileSync(join(repoRoot, 'scripts', 'bump-version.js'), join(root, 'scripts', 'bump-version.js'));
+      copyFileSync(join(repoRoot, 'scripts', 'lib', 'package-list.mjs'), join(root, 'scripts', 'lib', 'package-list.mjs'));
+      for (const rel of PACKAGES) put(rel, `${JSON.stringify({ name: rel, version: '0.0.1' }, null, 2)}\n`);
+      put(
+        'apps/server/src/version.ts',
+        `${opts.versionLiteral ? "export const VERSION = '0.0.1';\n" : '// VERSION literal missing\n'}` +
+          "export const CHANGELOG = [\n  {\n    version: '0.0.1',\n    date: '2026-01-01',\n    title: 'x',\n    changes: [\n      'y',\n    ],\n  },\n];\n",
+      );
+      put('apps/web/src/routes/About.tsx', 'install.sh --version v0.0.1\n');
+      put('docs/QUICKSTART.md', 'install.sh --version v0.0.1\n');
+      put('website/src/pages/Home.tsx', '<span className="tag font-bold">v0.0.1</span>\n');
+      put('website/src/components/Layout.tsx', 'v0.0.1 GA\n');
+      put('README.md', 'Release-0.0.1-blue --version v0.0.1 newest release tag (**0.0.1**)\n');
+      return root;
+    }
+    const versions = (root: string) => PACKAGES.map((rel) => JSON.parse(readFileSync(join(root, rel), 'utf8')).version as string);
+    const bump = (root: string) =>
+      spawnSync(process.execPath, [join(root, 'scripts', 'bump-version.js'), '0.10.99'], { cwd: root, encoding: 'utf8' });
+
+    it('a critical pattern miss exits 1 and leaves EVERY file untouched (no half-bumped tree)', () => {
+      const root = fixtureRepo({ versionLiteral: false });
+      const res = bump(root);
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain('nothing was written');
+      expect(versions(root)).toEqual(PACKAGES.map(() => '0.0.1'));
+      expect(readFileSync(join(root, 'docs/QUICKSTART.md'), 'utf8')).toContain('--version v0.0.1');
+    });
+
+    it('a clean tree is bumped everywhere (including /g patterns checked twice)', () => {
+      const root = fixtureRepo({ versionLiteral: true });
+      const res = bump(root);
+      expect(res.status, res.stderr).toBe(0);
+      expect(versions(root)).toEqual(PACKAGES.map(() => '0.10.99'));
+      const ts = readFileSync(join(root, 'apps/server/src/version.ts'), 'utf8');
+      expect(ts).toContain("export const VERSION = '0.10.99';");
+      expect(ts.indexOf("version: '0.10.99'")).toBeLessThan(ts.indexOf("version: '0.0.1'"));
+      expect(readFileSync(join(root, 'apps/web/src/routes/About.tsx'), 'utf8')).toContain('--version v0.10.99');
+      expect(readFileSync(join(root, 'docs/QUICKSTART.md'), 'utf8')).toContain('--version v0.10.99');
+      expect(readFileSync(join(root, 'README.md'), 'utf8')).toBe('Release-0.10.99-blue --version v0.10.99 newest release tag (**0.10.99**)\n');
+    });
   });
 });
