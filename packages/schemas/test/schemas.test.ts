@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  oidcAllowedDomain,
   alertRuleCreate,
   alertRulePatch,
   apiToken,
@@ -1260,5 +1261,28 @@ describe('service', () => {
     it('serviceListFilter accepts an empty filter', () => {
       ok(serviceListFilter, {});
     });
+  });
+});
+
+describe('r507: SSO allowed email domains', () => {
+  it('normalises a domain: trims, lowercases and drops a leading @', () => {
+    expect(oidcAllowedDomain.parse('  @Corp.COM ')).toBe('corp.com');
+  });
+
+  it('rejects something that is not a domain', () => {
+    expect(oidcAllowedDomain.safeParse('not a domain').success).toBe(false);
+    expect(oidcAllowedDomain.safeParse('localhost').success).toBe(false);
+  });
+
+  it('accepts a normalised list on provider create and update', () => {
+    const created = oidcProviderCreate.parse({
+      name: 'Corp',
+      slug: 'corp',
+      clientId: 'id',
+      clientSecret: 'secret',
+      allowedDomains: ['@Corp.com', 'eu.corp.com'],
+    });
+    expect(created.allowedDomains).toEqual(['corp.com', 'eu.corp.com']);
+    expect(oidcProviderUpdate.parse({ allowedDomains: [] }).allowedDomains).toEqual([]);
   });
 });

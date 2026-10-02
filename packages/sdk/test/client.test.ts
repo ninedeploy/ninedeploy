@@ -849,6 +849,8 @@ describe('createClient', () => {
       expect(last(calls)).toMatchObject({ url: '/v1/settings/vault', init: { method: 'PUT' } });
       await client.settings.vault.test();
       expect(last(calls)).toMatchObject({ url: '/v1/settings/vault/test', init: { method: 'POST' } });
+      await client.settings.vault.setAllowlist({ workspaceIds: [3] });
+      expect(last(calls)).toMatchObject({ url: '/v1/settings/vault/allowlist', init: { method: 'PUT' } });
     });
 
     it('exercises dns-records get/set/test', async () => {
