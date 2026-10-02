@@ -21,7 +21,7 @@ vi.mock('node:dns/promises', async (importOriginal) => {
   return { ...actual, lookup: vetting.lookup, default: { ...actual, lookup: vetting.lookup } };
 });
 
-const { guardedFetch, pinnedLookup } = await import('../../src/lib/egressGuard.js');
+const { bundledAgentClass, guardedFetch, pinnedLookup } = await import('../../src/lib/egressGuard.js');
 
 let server: http.Server;
 let port: number;
@@ -68,10 +68,11 @@ describe('r605: guardedFetch connects only to the address it vetted', () => {
   });
 
   it('keeps the hostname for the Host header (and TLS SNI) while dialling the pinned address', async () => {
-    // Build the same dispatcher guardedFetch builds, pinned to the local server.
-    const slot = globalThis as unknown as Record<symbol, { constructor: new (o: unknown) => { close(): Promise<void> } }>;
-    if (!slot[Symbol.for('undici.globalDispatcher.1')]) void new Response(null);
-    const Agent = slot[Symbol.for('undici.globalDispatcher.1')]!.constructor;
+    // Build the same dispatcher guardedFetch builds, pinned to the local server
+    // — through guardedFetch's own Agent lookup, so this runs on every Node the
+    // panel supports (Node 26's undici 8 keeps its Agent in a different slot).
+    const Agent = bundledAgentClass();
+    if (!Agent) throw new Error(`no bundled undici Agent found on Node ${process.version} — pinning would be off`);
     const dispatcher = new Agent({ connect: { lookup: pinnedLookup('pinned.test', [{ address: '127.0.0.1', family: 4 }]) } });
     const res = await fetch(`http://pinned.test:${port}/`, { dispatcher } as RequestInit);
     expect(await res.text()).toBe('private service');

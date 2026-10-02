@@ -256,7 +256,7 @@ type AgentCtor = new (opts: { connect: { lookup: LookupFunction } }) => PinnedDi
 // newer slot exists it is authoritative — never fall back past it, or an
 // operator's proxy dispatcher there would be bypassed through the old slot.
 const GLOBAL_DISPATCHERS = [Symbol.for('undici.globalDispatcher.2'), Symbol.for('undici.globalDispatcher.1')];
-function bundledAgentClass(): AgentCtor | null {
+export function bundledAgentClass(): AgentCtor | null {
   const slot = globalThis as unknown as Record<symbol, { constructor?: unknown } | undefined>;
   if (GLOBAL_DISPATCHERS.every((s) => slot[s] === undefined)) {
     try {
