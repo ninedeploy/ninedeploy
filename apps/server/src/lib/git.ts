@@ -59,6 +59,13 @@ const MAX_SUBMODULE_DEPTH = 5;
 const NO_REDIRECTS = 'http.followRedirects=false';
 
 /**
+ * r622: never run a hook from a checkout. Clones do not copy hooks, but a
+ * crafted submodule path (the CVE-2025-48384 class on an unpatched host git)
+ * can write one; with hooksPath pointed at nothing, git never looks there.
+ */
+const NO_HOOKS = 'core.hooksPath=/dev/null';
+
+/**
  * r355: `-c http.curloptResolve=<host>:<port>:<ip>` for a vetted remote, so
  * libcurl connects to the address the egress gate approved instead of
  * resolving the name again (DNS rebinding). One entry per host; git accepts
@@ -163,7 +170,7 @@ export async function checkoutCommit(
   // addresses for this checkout's clone/fetch/submodule runs — git no longer
   // resolves the name itself, so a rebinding DNS answer between the gate and
   // git's connect cannot redirect it. TLS still validates the hostname.
-  const gitConfig = [NO_REDIRECTS, ...pinConfig(pin)];
+  const gitConfig = [NO_REDIRECTS, NO_HOOKS, ...pinConfig(pin)];
   const gitOptions: Partial<SimpleGitOptions> = {
     config: gitConfig,
     ...(useKey ? { unsafe: { allowUnsafeSshCommand: true } } : {}),
