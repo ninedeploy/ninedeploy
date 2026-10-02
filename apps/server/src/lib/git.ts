@@ -134,6 +134,18 @@ async function initSubmodules(
 }
 
 /**
+ * r657: bounds for a checkout made only to INSPECT a repository (the Deploy
+ * wizard's analysis, insights refresh). A deploy needs the full history and
+ * submodules; an inspection reads a handful of files at the branch tip.
+ */
+export interface CheckoutLimits {
+  /** Fresh clone at depth 1 of `branch` only, no tags, no submodules. */
+  shallow?: boolean;
+  /** Aborts every git process of this checkout (timeout / size watcher). */
+  signal?: AbortSignal;
+}
+
+/**
  * Ensure `dir` is a checkout of `repoUrl` at `branch` (optionally pinned to
  * `sha`). Supports private repos via an HTTPS PAT or an SSH deploy key.
  */
@@ -144,6 +156,7 @@ export async function checkoutCommit(
   dir: string,
   sink: (line: string) => void,
   creds?: CloneCreds,
+  limits?: CheckoutLimits,
 ): Promise<string> {
   if (sha !== undefined && !COMMIT_SHA_RE.test(sha)) {
     throw new Error(`Refusing to check out an invalid commit sha: ${sha.slice(0, 40)}`);
@@ -176,6 +189,7 @@ export async function checkoutCommit(
   const gitOptions: Partial<SimpleGitOptions> = {
     config: gitConfig,
     unsafe: { ...HOOKS_OPT_IN, ...(useKey ? { allowUnsafeSshCommand: true } : {}) },
+    ...(limits?.signal ? { abort: limits.signal } : {}),
   };
   const keyFile = path.join(path.dirname(dir), `${path.basename(dir)}.sshkey`);
 
@@ -223,7 +237,8 @@ export async function checkoutCommit(
       mkdirSync(dir, { recursive: true });
 
       let cloneUrl = repoUrl;
-      const opts: string[] = [];
+      // r657: `branch` is schema-validated (no leading dash) before it gets here.
+      const opts: string[] = limits?.shallow ? ['--depth', '1', '--single-branch', '--no-tags', '--branch', branch] : [];
       if (useKey) {
         writeKey();
         cloneUrl = toSshUrl(repoUrl);
@@ -264,7 +279,8 @@ export async function checkoutCommit(
 
     // Submodules: if the repo ships a `.gitmodules`, init + fetch them so
     // builds that reference submodule paths don't fail on empty directories.
-    await initSubmodules(git, dir, sink, gitConfig);
+    // r657: an inspection never recurses into submodules (each is another clone).
+    if (!limits?.shallow) await initSubmodules(git, dir, sink, gitConfig);
 
     const resolved = (await git.raw(['log', '-1', '--format=%H'])).trim() || sha || '';
     sink(`Checked out ${resolved.slice(0, 7)} on ${branch}`);

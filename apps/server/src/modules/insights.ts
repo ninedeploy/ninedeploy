@@ -1,4 +1,4 @@
-import { rmSync } from 'node:fs';
+import { type Dirent, lstatSync, readdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
@@ -9,7 +9,7 @@ import { analyzeRepo } from '../lib/frameworks.js';
 import { checkoutCommit, type CloneCreds } from '../lib/git.js';
 import { decrypt } from '../lib/crypto.js';
 import { config } from '../config.js';
-import { badRequest, forbidden, notFound, parseId } from '../lib/errors.js';
+import { HttpError, badRequest, forbidden, notFound, parseId } from '../lib/errors.js';
 import { assertServiceRole } from '../lib/resourceAccess.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { EgressBlockedError } from '../lib/egressGuard.js';
@@ -19,6 +19,96 @@ import { serializeInsights, upsertInsights } from '../engine/repoInsights.js';
 function toApiError(err: unknown): unknown {
   if (err instanceof EgressBlockedError) return badRequest(err.message, 'egress_blocked');
   return err;
+}
+
+/**
+ * r657: limits for an inspection clone. Both routes clone on the request path
+ * for any signed-in user (10/min each), and the clone used to be a full one —
+ * every branch, all history, every submodule, no time limit — so one request
+ * against a huge repository pinned panel disk, network and CPU. Mutable so a
+ * test can shrink them.
+ */
+export const INSPECTION_LIMITS = {
+  timeoutMs: 60_000,
+  maxBytes: 300 * 1024 * 1024,
+  pollMs: 1_000,
+};
+
+/** Bytes under `dir`, stopping as soon as `cap` is exceeded. Symlinks are not followed. */
+function sizeExceeds(dir: string, cap: number): boolean {
+  let total = 0;
+  const stack = [dir];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue; // not created yet, or removed mid-walk
+    }
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(full);
+        continue;
+      }
+      try {
+        total += lstatSync(full).size;
+      } catch {
+        /* vanished mid-walk */
+      }
+      if (total > cap) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Shallow, time- and size-bounded checkout for analysis. A watcher aborts the
+ * git process once the checkout outgrows the cap; either limit answers a 400
+ * that says what to do instead.
+ */
+async function inspectionCheckout(repoUrl: string, branch: string, dir: string, creds: CloneCreds | undefined): Promise<string> {
+  const controller = new AbortController();
+  // A holder, not a `let`: the callbacks below set it, which flow analysis cannot see.
+  const stop: { reason: 'timeout' | 'size' | null } = { reason: null };
+  const timer = setTimeout(() => {
+    stop.reason = 'timeout';
+    controller.abort();
+  }, INSPECTION_LIMITS.timeoutMs);
+  const watcher = setInterval(() => {
+    if (sizeExceeds(dir, INSPECTION_LIMITS.maxBytes)) {
+      stop.reason = 'size';
+      controller.abort();
+    }
+  }, INSPECTION_LIMITS.pollMs);
+  try {
+    const sha = await checkoutCommit(repoUrl, branch, undefined, dir, () => undefined, creds, {
+      shallow: true,
+      signal: controller.signal,
+    });
+    // A checkout that finished between two polls is still held to the cap.
+    if (stop.reason === null && sizeExceeds(dir, INSPECTION_LIMITS.maxBytes)) stop.reason = 'size';
+    if (stop.reason) throw new Error('inspection limit');
+    return sha;
+  } catch (err) {
+    if (stop.reason === 'timeout') {
+      throw badRequest(
+        `Repository analysis stopped after ${Math.round(INSPECTION_LIMITS.timeoutMs / 1000)}s — the repository is too slow to fetch for a preview analysis. Create the service; the deploy analyses it.`,
+        'inspection_limit',
+      );
+    }
+    if (stop.reason === 'size') {
+      throw badRequest(
+        `Repository analysis stopped: the checkout is larger than ${Math.round(INSPECTION_LIMITS.maxBytes / (1024 * 1024))} MB. Create the service; the deploy analyses it.`,
+        'inspection_limit',
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    clearInterval(watcher);
+  }
 }
 
 /** Resolve clone credentials for a source id — same contract as the pipeline. */
@@ -59,7 +149,7 @@ export const insightsRoutes: FastifyPluginAsync = async (app) => {
       const creds = await resolveCreds(app.db, input.sourceId);
       const dir = path.join(config.paths.reposDir, '_inspections', randomUUID());
       try {
-        await checkoutCommit(input.repoUrl, input.branch, undefined, dir, () => undefined, creds);
+        await inspectionCheckout(input.repoUrl, input.branch, dir, creds);
         return analyzeRepo(dir, input.baseDir);
       } catch (err) {
         throw toApiError(err);
@@ -107,9 +197,10 @@ export const serviceInsightsRoutes: FastifyPluginAsync = async (app) => {
     try {
       let sha: string;
       try {
-        sha = await checkoutCommit(svc.repoUrl, svc.branch, undefined, workDir, () => undefined, creds);
+        sha = await inspectionCheckout(svc.repoUrl, svc.branch, workDir, creds);
       } catch (err) {
         if (err instanceof EgressBlockedError) throw toApiError(err);
+        if (err instanceof HttpError) throw err; // r657: an inspection limit says so
         req.log.warn({ err, serviceId: id }, 'insights refresh could not fetch the repository');
         throw notFound('Repository is not reachable');
       }
