@@ -119,6 +119,7 @@ interface FakeDb {
     serviceProjects: { findMany: ReturnType<typeof vi.fn> };
     workspaceMembers: { findFirst: ReturnType<typeof vi.fn> };
     users: { findFirst: ReturnType<typeof vi.fn> };
+    settings: { findFirst: ReturnType<typeof vi.fn> };
   };
   select: ReturnType<typeof vi.fn>;
   update: ReturnType<typeof vi.fn>;
@@ -147,6 +148,14 @@ function makeDb(): { db: FakeDb; updates: { table: unknown; values: Record<strin
       projects: { findFirst: vi.fn().mockResolvedValue({ id: 4, workspaceId: 1 }) },
       workspaceMembers: { findFirst: vi.fn().mockResolvedValue({ id: 1, workspaceId: 1, userId: 7, role: 'member' }) },
       users: { findFirst: vi.fn().mockResolvedValue({ id: 7, isInstanceOperator: false }) },
+      // r512: registry credentials are bound to hosts (the only setting the
+      // pipeline reads here). Source #7 is bound to every host these tests use.
+      settings: {
+        findFirst: vi.fn().mockResolvedValue({
+          key: 'registry_source_hosts',
+          value: { '7': ['docker.io', 'ghcr.io', 'registry.local:5000'] },
+        }),
+      },
     },
     select: vi.fn(() => ({
       from: vi.fn(() => ({
@@ -1120,6 +1129,21 @@ describe('runDeployment', () => {
 
     const [ctx] = h.builder.buildAndRun.mock.calls[0] as [Record<string, unknown>];
     expect(ctx.registryAuth).toEqual({ username: 'ci', password: 'dec:tok-enc', server: 'ghcr.io' });
+  });
+
+  it('r512: withholds a registry credential from a host it is not bound to (fan-out shares the resolver)', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { image: 'attacker.example/x:1', sourceId: 7 });
+    db.query.sources.findFirst.mockResolvedValue({
+      id: 7, type: 'registry', name: 'ghcr-ci', registryUsername: 'ci', tokenEncrypted: 'tok-enc',
+    });
+    const lines = collectLogs(1);
+
+    await runDeployment(db as never, 1);
+
+    const [ctx] = h.builder.buildAndRun.mock.calls[0] as [Record<string, unknown>];
+    expect(ctx.registryAuth).toBeUndefined();
+    expect(lines.some((l) => l.includes('registry credential "ghcr-ci"') && l.includes('not sending it to attacker.example'))).toBe(true);
   });
 
   it('derives no server for bare image names and skips incomplete credentials', async () => {

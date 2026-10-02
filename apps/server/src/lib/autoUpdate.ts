@@ -1,9 +1,11 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { deployments, services, sources, type DB } from '@ninedeploy/db';
+import { deployments, services, type DB } from '@ninedeploy/db';
 import { audit } from './audit.js';
-import { decrypt } from './crypto.js';
+import { assertMayDeployStoredService } from './hostPrivilege.js';
 import { parseImageRef } from './imageRef.js';
-import { fetchImageDigest } from './imageWatch.js';
+import { fetchImageDigest, type ProbeOptions } from './imageWatch.js';
+import { registryCredentialFor } from './registryBinding.js';
+import { isOperator } from './resourceAccess.js';
 
 /**
  * Watchtower-style image auto-update sweep. For every RUNNING, image-based
@@ -40,21 +42,19 @@ export const IN_FLIGHT_STATUSES = ['queued', 'building', 'deploying'] as const;
 /**
  * Resolve the pull credentials attached to a service: a `registry`-type
  * source (username + decrypted token) — the same rows the deploy-time
- * docker login consumes. Returns null for services without one, meaning
- * the probe runs anonymously (public repos only).
+ * docker login consumes, through the same r512 host binding (a credential
+ * is never sent to a registry it is not bound to). Returns null for
+ * services without one, meaning the probe runs anonymously (public repos
+ * only).
  */
 async function registryCredential(
   db: DB,
   svc: typeof services.$inferSelect,
+  log: (msg: string) => void,
 ): Promise<{ username: string; password: string } | null> {
-  if (!svc.sourceId) return null;
-  const src = await db.query.sources.findFirst({ where: eq(sources.id, svc.sourceId) });
-  if (!src || src.type !== 'registry' || !src.tokenEncrypted) return null;
   try {
-    const password = decrypt(src.tokenEncrypted);
-    const username = src.registryUsername ?? '';
-    if (!username || !password) return null;
-    return { username, password };
+    const cred = await registryCredentialFor(db, svc, (line) => log(`auto-update: ${svc.name} — ${line}`));
+    return cred ? { username: cred.username, password: cred.password } : null;
   } catch {
     // Undecryptable envelope (rotated-away master key) — treat as no
     // credential; the anonymous probe will skip private repos cleanly.
@@ -62,9 +62,36 @@ async function registryCredential(
   }
 }
 
+/**
+ * r513: the sweep enqueues a deploy with no request behind it, so it must
+ * apply the same owner-privilege gate as the webhook receiver and the job
+ * runner — a member's service that drifted into a host-executing shape
+ * (docker socket, static build pack, lifecycle hooks) must not be redeployed
+ * by the panel on their behalf. Returns the refusal reason, or null.
+ */
+async function autoUpdateRefusal(db: DB, svc: typeof services.$inferSelect): Promise<string | null> {
+  const ownerId = svc.ownerUserId;
+  // Legacy rows without an owner predate members (same convention as
+  // assertWebhookMayDeploy / assertJobMayDeploy).
+  if (!ownerId) return null;
+  try {
+    const ownerIsOperator = await isOperator(db, { id: ownerId });
+    await assertMayDeployStoredService(db, { id: ownerId, isOperator: ownerIsOperator }, svc);
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
 export async function sweepAutoUpdates(
   db: DB,
-  probe: (registry: string, repository: string, tag: string, auth?: { username: string; password: string }) => Promise<string> = fetchImageDigest,
+  probe: (
+    registry: string,
+    repository: string,
+    tag: string,
+    auth?: { username: string; password: string },
+    opts?: ProbeOptions,
+  ) => Promise<string> = fetchImageDigest,
   log: (msg: string) => void = () => undefined,
 ): Promise<SweepResult> {
   const rows = await db.query.services.findMany();
@@ -82,10 +109,15 @@ export async function sweepAutoUpdates(
     // Private registries: a `registry`-type source attached to the service
     // supplies pull credentials for the probe (same rows the deploy-time
     // docker login uses).
-    const auth = await registryCredential(db, svc);
+    const auth = await registryCredential(db, svc, log);
     let digest: string;
     try {
-      digest = await probe(ref.registry, ref.repository, ref.tag, auth ?? undefined);
+      // r514: only an operator-controlled image ref may probe a private /
+      // LAN registry (operators run those today); a member-owned ref keeps
+      // the egress block. Ownerless legacy rows predate members (same
+      // convention as autoUpdateRefusal) and count as operator-controlled.
+      const allowPrivateEgress = !svc.ownerUserId || (await isOperator(db, { id: svc.ownerUserId }));
+      digest = await probe(ref.registry, ref.repository, ref.tag, auth ?? undefined, { allowPrivateEgress });
       result.probed++;
     } catch (err) {
       result.skipped++;
@@ -107,6 +139,17 @@ export async function sweepAutoUpdates(
     if (inflight) {
       // Do NOT store the digest — this sweep's change must survive until the
       // service settles and the next sweep can act on it.
+      result.skipped++;
+      continue;
+    }
+
+    const refusal = await autoUpdateRefusal(db, svc);
+    if (refusal) {
+      // Record the digest so the same move is refused (and audited) once,
+      // not on every 30-minute sweep; the next image change is re-checked.
+      await db.update(services).set({ autoUpdateDigest: digest }).where(eq(services.id, svc.id));
+      log(`auto-update: ${svc.name} skipped — ${refusal}`);
+      void audit(db, null, 'autoupdate.refused', `${svc.name}: ${refusal}`, { serviceId: svc.id });
       result.skipped++;
       continue;
     }

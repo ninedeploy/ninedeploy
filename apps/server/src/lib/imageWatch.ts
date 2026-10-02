@@ -7,6 +7,7 @@
  * credentials into the probe is a deliberate non-goal for v1.
  */
 
+import { EgressBlockedError, guardedFetch } from './egressGuard.js';
 import { isDockerHub } from './imageRef.js';
 
 /** Accept headers registries expect on manifest requests. */
@@ -45,6 +46,18 @@ export interface RegistryAuth {
   password: string;
 }
 
+/** Per-probe egress policy (r514). */
+export interface ProbeOptions {
+  /**
+   * True only when the image ref is operator-controlled (the service owner
+   * is an instance operator): operators legitimately run LAN registries, and
+   * blocking those would silently stop their auto-updates. Member-owned refs
+   * keep the private-address block (NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1 still
+   * overrides it). Redirects are never followed either way.
+   */
+  allowPrivateEgress?: boolean;
+}
+
 function basicAuth(auth: RegistryAuth): string {
   return ['Basic', Buffer.from(`${auth.username}:${auth.password}`).toString('base64')].join(' ');
 }
@@ -66,14 +79,15 @@ export async function fetchImageDigest(
   repository: string,
   tag: string,
   auth?: RegistryAuth,
+  opts: ProbeOptions = {},
 ): Promise<string> {
   const host = isDockerHub(registry) ? 'index.docker.io' : registry;
   const manifestUrl = ['https:/', host, 'v2', repository, 'manifests', tag].join('/');
 
-  let res = await probe(manifestUrl, auth ? { authorization: basicAuth(auth) } : {});
+  let res = await probe(manifestUrl, auth ? { authorization: basicAuth(auth) } : {}, opts);
   if (res.status === 401) {
     const token = await pullToken(host, repository, auth);
-    res = await probe(manifestUrl, { authorization: ['Bearer', token].join(' ') });
+    res = await probe(manifestUrl, { authorization: ['Bearer', token].join(' ') }, opts);
   }
   const digest = res.headers.get('docker-content-digest');
   if (!res.ok || !digest) {
@@ -82,14 +96,29 @@ export async function fetchImageDigest(
   return digest;
 }
 
-async function probe(url: string, extraHeaders: Record<string, string>): Promise<Awaited<ReturnType<typeof fetch>>> {
+/**
+ * r514: the registry host comes from a MEMBER-editable image ref, so for a
+ * member-owned service the probe is a member-steered outbound request from
+ * the panel. It goes through the egress guard (no private / link-local /
+ * metadata targets) unless the ref is operator-controlled
+ * (`allowPrivateEgress`), and NEVER follows redirects — a registry answering
+ * 30x to `http://169.254.169.254/…` is just a non-digest answer here, and the
+ * credential header can never ride a redirect to another host.
+ */
+async function probe(
+  url: string,
+  extraHeaders: Record<string, string>,
+  opts: ProbeOptions,
+): Promise<Awaited<ReturnType<typeof fetch>>> {
+  const init: RequestInit = {
+    method: 'GET',
+    headers: { Accept: MANIFEST_ACCEPTS, ...extraHeaders },
+    signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+  };
   try {
-    return await fetch(url, {
-      method: 'GET',
-      headers: { Accept: MANIFEST_ACCEPTS, ...extraHeaders },
-      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
-    });
+    return opts.allowPrivateEgress ? await fetch(url, { ...init, redirect: 'manual' }) : await guardedFetch(url, init);
   } catch (err) {
+    if (err instanceof EgressBlockedError) throw new Error(`registry probe refused — ${err.message}`);
     const reason = err instanceof Error && err.name === 'TimeoutError' ? 'timed out' : 'is unreachable';
     throw new Error(`registry ${reason}`);
   }
@@ -121,7 +150,9 @@ async function pullToken(registryHost: string, repository: string, auth?: Regist
   tokenUrl.search = params.toString();
   let res: Awaited<ReturnType<typeof fetch>>;
   try {
-    res = await fetch(tokenUrl.href, {
+    // Hardcoded token hosts today; guarded anyway (r514) so that invariant
+    // cannot silently drift, and never redirect-following with Basic auth.
+    res = await guardedFetch(tokenUrl.href, {
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
       ...(auth ? { headers: { authorization: basicAuth(auth) } } : {}),
     });

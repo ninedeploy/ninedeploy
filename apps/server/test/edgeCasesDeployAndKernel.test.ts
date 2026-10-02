@@ -335,7 +335,7 @@ describe('Edge Cases — Vault Secret Interpolation & Fallbacks', () => {
       NORMAL_VAR: 'hello-world',
     };
 
-    await expect(resolveVaultRefs(mockDb, env)).rejects.toThrow(/Vault provider "infisical" is referenced but not configured/);
+    await expect(resolveVaultRefs(mockDb, env, { service: { id: 1, ownerUserId: null }, projectIds: [] })).rejects.toThrow(/Vault provider "infisical" is referenced but not configured/);
     vi.unstubAllEnvs();
   });
 });

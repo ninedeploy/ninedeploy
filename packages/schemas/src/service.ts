@@ -250,6 +250,11 @@ export const service = z.object({
 export type Service = z.infer<typeof service>;
 
 // ── Sources (private repo credentials) ─────────────────────────────────────
+/** r512: a registry host a `registry` credential may be sent to (`ghcr.io`, `registry.local:5000`). */
+export const registryHost = z
+  .string()
+  .max(255)
+  .regex(/^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:\d{1,5})?$/, 'Expected a registry host such as ghcr.io or registry.local:5000');
 export const createSource = z.object({
   name: z.string().min(1).max(100),
   type: z.enum(['github', 'gitlab', 'gitea', 'bitbucket', 'custom', 'registry']),
@@ -257,6 +262,8 @@ export const createSource = z.object({
   deployKey: z.string().optional(),
   // Registry-type sources: username for `docker login` (token = password).
   registryUsername: z.string().max(255).optional(),
+  /** r512: registry hosts this credential may be sent to (Docker Hub = docker.io). */
+  registryHosts: z.array(registryHost).max(20).optional(),
   defaultBranch: z.string().optional(),
 });
 export type CreateSourceInput = z.input<typeof createSource>;
@@ -268,6 +275,8 @@ export const source = z.object({
   hasToken: z.boolean(),
   hasDeployKey: z.boolean(),
   registryUsername: z.string().nullable().optional(),
+  /** r512: hosts a registry credential is bound to (registry sources only). */
+  registryHosts: z.array(z.string()).optional(),
   defaultBranch: z.string().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime().optional(),

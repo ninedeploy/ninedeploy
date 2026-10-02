@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { gitBranch } from './common.js';
+import { registryHost } from './service.js';
 
 /**
  * Zod schemas for management/admin endpoints that previously used ad-hoc
@@ -82,6 +83,8 @@ export const sourcePatch = z.object({
   token: z.string().max(4096).optional(),
   deployKey: z.string().max(16384).optional(),
   registryUsername: z.string().max(255).optional(),
+  /** r512: replace the registry hosts this credential may be sent to. */
+  registryHosts: z.array(registryHost).max(20).optional(),
   defaultBranch: z.string().max(255).optional(),
 });
 export type SourcePatch = z.infer<typeof sourcePatch>;

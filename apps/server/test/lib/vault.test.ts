@@ -10,9 +10,14 @@ vi.mock('../../src/lib/crypto.js', () => cryptoMocks);
 
 const settingRow = (key: string, value: unknown) => ({ key, value });
 
+// r510: resolution is scoped to a service — these tests resolve for one
+// owned by an instance operator (user 1), which always may.
+const OPERATOR_SUBJECT = { service: { id: 1, ownerUserId: 1 }, projectIds: [] };
+
 function vaultDb(over: Record<string, unknown> = {}) {
   return createFakeDb({
     findFirst: {
+      users: { id: 1, isInstanceOperator: true },
       settings: (args: { where?: unknown } | undefined) => {
         void args;
         const key = lastRequestedKey;
@@ -106,6 +111,7 @@ describe('lib/vault', () => {
         vault_environment: 'default',
       }),
       { KEY: INFISICAL_REF, PLAIN: 'untouched' },
+      OPERATOR_SUBJECT,
     );
     expect(env).toEqual({ KEY: 'resolved', PLAIN: 'untouched' });
     const url = String(fetchMock.mock.calls[0]![0]);
@@ -123,6 +129,7 @@ describe('lib/vault', () => {
         vault_environment: 'prd',
       }),
       { KEY: DOPPLER_REF },
+      OPERATOR_SUBJECT,
     );
     expect(env.KEY).toBe('dop');
     const init = fetchMock.mock.calls[0]![1] as { headers: Record<string, string> };
@@ -131,7 +138,7 @@ describe('lib/vault', () => {
   });
 
   it('throws when the referenced provider is not configured', async () => {
-    await expect(resolveVaultRefs(vaultDb(), { KEY: INFISICAL_REF })).rejects.toThrow(/not configured/);
+    await expect(resolveVaultRefs(vaultDb(), { KEY: INFISICAL_REF }, OPERATOR_SUBJECT)).rejects.toThrow(/not configured/);
   });
 
   it('throws when the referenced secret is missing', async () => {
@@ -140,6 +147,7 @@ describe('lib/vault', () => {
       resolveVaultRefs(
         vaultDb({ vault_provider: 'infisical', vault_token_encrypted: 'enc:tok' }),
         { KEY: INFISICAL_REF },
+      OPERATOR_SUBJECT,
       ),
     ).rejects.toThrow(/not found/);
   });
@@ -149,6 +157,7 @@ describe('lib/vault', () => {
     const env = await resolveVaultRefs(
       vaultDb({ vault_provider: 'doppler', vault_token_encrypted: 'enc:tok' }),
       { KEY: DOPPLER_REF },
+      OPERATOR_SUBJECT,
     );
     expect(env.KEY).toBe('d');
     const url = String(fetchMock.mock.calls[0]![0]);
@@ -161,6 +170,7 @@ describe('lib/vault', () => {
       resolveVaultRefs(
         vaultDb({ vault_provider: 'infisical', vault_token_encrypted: 'enc:tok' }),
         { KEY: INFISICAL_REF },
+      OPERATOR_SUBJECT,
       ),
     ).rejects.toThrow(/not found/);
   });
@@ -173,6 +183,7 @@ describe('lib/vault', () => {
     await resolveVaultRefs(
       vaultDb({ vault_provider: 'infisical', vault_token_encrypted: 'enc:tok' }),
       { KEY: INFISICAL_REF },
+      OPERATOR_SUBJECT,
     );
     const url = String(fetchMock.mock.calls[0]![0]);
     expect(url).toContain('workspaceId=');
@@ -185,6 +196,7 @@ describe('lib/vault', () => {
       resolveVaultRefs(
         vaultDb({ vault_provider: 'infisical', vault_token_encrypted: 'enc:tok' }),
         { KEY: INFISICAL_REF },
+      OPERATOR_SUBJECT,
       ),
     ).rejects.toThrow(/Infisical API 401/);
   });
@@ -208,6 +220,7 @@ describe('lib/vault', () => {
       resolveVaultRefs(
         vaultDb({ vault_provider: 'doppler', vault_token_encrypted: 'enc:tok' }),
         { KEY: DOPPLER_REF },
+      OPERATOR_SUBJECT,
       ),
     ).rejects.toThrow(/Doppler API 403/);
   });
