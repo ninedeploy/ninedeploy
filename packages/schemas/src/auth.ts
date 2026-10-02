@@ -190,6 +190,11 @@ export const publicUser = z.object({
   isOperator: z.boolean(),
   /** Number of workspaces the user belongs to. Computed by the server. */
   workspaceCount: z.number().int().nonnegative(),
+  /**
+   * r540: workspaces this user owns — the ones deleting the account hands to
+   * the operator (or `transferTo`). Only `GET /v1/users` fills it.
+   */
+  ownedWorkspaces: z.array(z.object({ id: z.number().int(), name: z.string() })).optional(),
   createdAt: z.string().datetime(),
 });
 export type PublicUser = z.infer<typeof publicUser>;

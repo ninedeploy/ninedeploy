@@ -93,7 +93,11 @@ export function Users() {
 
   // ── One-time reset link (works without an email channel) ──────────────
   const [revealedLink, setRevealedLink] = useState<{ url: string; expiresAt: string } | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<{ id: number; email: string } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: number;
+    email: string;
+    ownedWorkspaces?: Array<{ id: number; name: string }>;
+  } | null>(null);
   // Instance-operator flag. This is NOT a workspace role: it gates the
   // operator-only routes and the host-privilege boundary (PM2/compose deploys,
   // lifecycle hooks, docker-socket templates). Creating a workspace used to
@@ -314,7 +318,7 @@ export function Users() {
                               </>
                             )}
                             <button type="button"
-                              onClick={() => setPendingDelete({ id: u.id, email: u.email })}
+                              onClick={() => setPendingDelete({ id: u.id, email: u.email, ownedWorkspaces: u.ownedWorkspaces })}
                               className="text-slate-600 transition hover:text-rose-400"
                               title="Delete user"
                             >
@@ -339,7 +343,12 @@ export function Users() {
       <ConfirmDialog
         open={pendingDelete != null}
         title="Delete user"
-        message={`Delete ${pendingDelete?.email}? Their sessions are revoked. Workspace memberships and ownership of deployed services are removed.`}
+        message={`Delete ${pendingDelete?.email}? Their sessions, API tokens and workspace memberships are removed.${
+          // r540: owned workspaces are handed to you, not deleted with the user.
+          pendingDelete?.ownedWorkspaces?.length
+            ? ` Ownership of ${pendingDelete.ownedWorkspaces.map((w) => w.name).join(', ')} transfers to you.`
+            : ''
+        } Services and databases they own inside a workspace go to its owner.`}
         confirmLabel="Delete"
         onConfirm={() => pendingDelete && remove.mutate(pendingDelete.id)}
         onClose={() => setPendingDelete(null)}

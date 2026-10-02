@@ -969,6 +969,9 @@ describe('createClient', () => {
 
       await client.users.remove(1);
       expect(last(calls)).toMatchObject({ url: '/v1/users/1', init: { method: 'DELETE' } });
+      // r540: owned workspaces go to `transferTo` instead of the caller.
+      await client.users.remove(1, { transferTo: 7 });
+      expect(last(calls)).toMatchObject({ url: '/v1/users/1?transferTo=7', init: { method: 'DELETE' } });
     });
   });
 
