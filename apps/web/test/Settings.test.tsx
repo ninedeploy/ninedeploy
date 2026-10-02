@@ -916,8 +916,25 @@ describe('Settings', () => {
 
     await user.type(screen.getByPlaceholderText('123456'), '123456');
     fireEvent.click(screen.getByRole('button', { name: 'Enable 2FA' }));
-    await waitFor(() => expect(api.auth.twoFactor.enable).toHaveBeenCalledWith('123456'));
+    // r502: the password confirmed at setup is the step-up proof for enable.
+    await waitFor(() => expect(api.auth.twoFactor.enable).toHaveBeenCalledWith('123456', PW));
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Two-factor authentication enabled', 'success'));
+  });
+
+  it('r502: surfaces a step-up refusal from enable instead of blaming the code', async () => {
+    const user = userEvent.setup();
+    mockOf(api.auth.twoFactor.setup).mockResolvedValue({ secret: 'S', otpauthUri: 'otpauth://totp/x' } as never);
+    mockOf(api.auth.twoFactor.enable).mockRejectedValue(
+      Object.assign(new Error('Confirm your current password to continue.'), { code: 'reauth_required' }) as never,
+    );
+    renderWithProviders(<Settings />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Set up 2FA' }));
+    fireEvent.change(await screen.findByPlaceholderText('Password'), { target: { value: PW } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await user.type(await screen.findByPlaceholderText('123456'), '123456');
+    fireEvent.click(screen.getByRole('button', { name: 'Enable 2FA' }));
+    await waitFor(() =>
+      expect(toastSpy.toast).toHaveBeenCalledWith('Confirm your current password to continue.', 'error'));
   });
 
   it('keeps the QR placeholder when QR rendering fails', async () => {
@@ -1174,9 +1191,12 @@ describe('Settings', () => {
     expect(await screen.findByText('MacBook Touch ID')).toBeInTheDocument();
     // Add a passkey with a custom label.
     await userEvent.type(screen.getByPlaceholderText('MacBook Touch ID'), 'YubiKey 5');
+    // r502: the current password is the step-up proof for both ceremony calls.
+    await userEvent.type(screen.getByPlaceholderText("Confirm it's you"), PW);
     fireEvent.click(screen.getByRole('button', { name: /Add passkey/ }));
     await waitFor(() =>
-      expect(api.auth.passkeys.registerVerify).toHaveBeenCalledWith({ name: 'YubiKey 5', response: { id: 'att-1' } }));
+      expect(api.auth.passkeys.registerVerify).toHaveBeenCalledWith({ name: 'YubiKey 5', response: { id: 'att-1' }, password: PW }));
+    expect(api.auth.passkeys.registerOptions).toHaveBeenCalledWith({ password: PW });
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Passkey added', 'success'));
 
     // Remove it.

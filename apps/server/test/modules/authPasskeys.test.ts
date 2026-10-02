@@ -1,4 +1,4 @@
-﻿import { describe, expect, it, vi } from 'vitest';
+﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { authRoutes } from '../../src/modules/auth.js';
 import { asUser, buildTestApp, createFakeDb, sessionRow, userRow } from '../helpers.js';
 
@@ -30,6 +30,10 @@ vi.mock('../../src/lib/jwt.js', async (importOriginal) => {
   return { ...actual, verifyJwt: jwtVerify.verifyJwt };
 });
 
+/** r502: registration needs step-up — these headers carry a bearer whose
+ *  (mocked) session row is FRESH, the passwordless proof. */
+const stepUpHeaders = () => ({ ...asUser(), authorization: 'Bearer fresh-session' });
+
 async function app(db = createFakeDb({ findFirst: { users: userRow() } })) {
   const a = await buildTestApp({ db });
   await a.register(authRoutes);
@@ -37,8 +41,13 @@ async function app(db = createFakeDb({ findFirst: { users: userRow() } })) {
 }
 
 describe('auth passkey routes', () => {
+  beforeEach(() => {
+    sessionsMocks.findLiveSession.mockReset();
+    sessionsMocks.findLiveSession.mockResolvedValue(sessionRow({ userId: 1, createdAt: new Date() }) as never);
+  });
+
   it('starts a registration ceremony', async () => {
-    const res = await (await app()).inject({ method: 'POST', url: '/passkey/register/options', headers: asUser() });
+    const res = await (await app()).inject({ method: 'POST', url: '/passkey/register/options', headers: stepUpHeaders() });
     expect(res.statusCode).toBe(200);
     expect(res.json().options).toBe('{"challenge":"r"}');
   });
@@ -51,7 +60,7 @@ describe('auth passkey routes', () => {
     const res = await (await app(db)).inject({
       method: 'POST',
       url: '/passkey/register/verify',
-      headers: asUser(),
+      headers: stepUpHeaders(),
       payload: { name: 'key', response: { id: 'x' } },
     });
     expect(res.statusCode).toBe(200);
@@ -63,7 +72,7 @@ describe('auth passkey routes', () => {
     const res = await (await app()).inject({
       method: 'POST',
       url: '/passkey/register/verify',
-      headers: asUser(),
+      headers: stepUpHeaders(),
       payload: { name: 'key', response: {} },
     });
     expect(res.statusCode).toBe(400);
@@ -94,7 +103,7 @@ describe('auth passkey routes', () => {
     const res = await (await app(db)).inject({
       method: 'POST',
       url: '/passkey/register/verify',
-      headers: asUser(),
+      headers: stepUpHeaders(),
       payload: { name: 'key', response: {} },
     });
     expect(res.statusCode).toBe(400);
@@ -106,7 +115,7 @@ describe('auth passkey routes', () => {
     const res = await (await app()).inject({
       method: 'POST',
       url: '/passkey/register/verify',
-      headers: asUser(),
+      headers: stepUpHeaders(),
       payload: { name: 'key', response: {} },
     });
     expect(res.statusCode).toBe(400);
@@ -295,5 +304,62 @@ describe('auth session routes', () => {
     const res = await (await app()).inject({ method: 'POST', url: '/logout', headers: asUser() });
     expect(res.json()).toEqual({ ok: true });
     expect(sessionsMocks.revokeAllSessions).toHaveBeenCalled();
+  });
+
+  // r502: a briefly stolen session could plant a passkey (a durable way back
+  // in that even survives a password change). Registration now needs the
+  // current password or a sign-in from the last 10 minutes.
+  describe('r502: step-up for passkey registration', () => {
+    it('refuses options and verify from a bare, non-fresh session', async () => {
+      sessionsMocks.findLiveSession.mockResolvedValue(
+        sessionRow({ userId: 1, createdAt: new Date(Date.now() - 60 * 60 * 1000) }) as never,
+      );
+      webauthnMocks.finishRegistration.mockClear();
+      const a = await app();
+      const options = await a.inject({ method: 'POST', url: '/passkey/register/options', headers: stepUpHeaders() });
+      expect(options.statusCode).toBe(403);
+      expect(options.json().error.code).toBe('reauth_required');
+      const verify = await a.inject({
+        method: 'POST',
+        url: '/passkey/register/verify',
+        headers: stepUpHeaders(),
+        payload: { name: 'planted', response: { id: 'x' } },
+      });
+      expect(verify.statusCode).toBe(403);
+      expect(webauthnMocks.finishRegistration).not.toHaveBeenCalled();
+    });
+
+    it('refuses a wrong password with invalid_password (403, not a session-ending 401)', async () => {
+      const res = await (await app()).inject({
+        method: 'POST',
+        url: '/passkey/register/verify',
+        headers: asUser(),
+        payload: { name: 'k', response: { id: 'x' }, password: 'wrong' },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error.code).toBe('invalid_password');
+    });
+
+    it("refuses a fresh session that belongs to someone else", async () => {
+      sessionsMocks.findLiveSession.mockResolvedValue(sessionRow({ userId: 99, createdAt: new Date() }) as never);
+      const res = await (await app()).inject({ method: 'POST', url: '/passkey/register/options', headers: stepUpHeaders() });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('accepts the current password as step-up', async () => {
+      const { hashPassword } = await import('../../src/lib/crypto.js');
+      const db = createFakeDb({
+        findFirst: { users: userRow({ passwordHash: await hashPassword('the-real-one') }) },
+        insert: { webauthn_credentials: [{ id: 5, name: 'k', createdAt: new Date('2026-01-01T00:00:00Z') }] },
+      });
+      sessionsMocks.findLiveSession.mockResolvedValue(null as never);
+      const res = await (await app(db)).inject({
+        method: 'POST',
+        url: '/passkey/register/verify',
+        headers: asUser(),
+        payload: { name: 'k', response: { id: 'x' }, password: 'the-real-one' },
+      });
+      expect(res.statusCode).toBe(200);
+    });
   });
 });

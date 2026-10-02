@@ -2,12 +2,12 @@ import { and, count, eq, sql } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
 import { apiTokens, type DB, oauthIdentities, oidcProviders, type OidcProvider, sessions as sessionsTable, users, webauthnCredentials, type User } from '@ninedeploy/db';
 import type { PublicUser, Register } from '@ninedeploy/schemas';
-import { createApiToken, forgotPassword, login, oidcProviderCreate, oidcProviderUpdate, type OidcProviderEntry, type OidcPublicProvider, passkeyLoginVerify, passkeyRegisterVerify, passwordChange, passwordResetWithToken, refresh, register, twoFactorCode, twoFactorDisable, twoFactorSetup } from '@ninedeploy/schemas';
+import { createApiToken, forgotPassword, login, oidcProviderCreate, oidcProviderUpdate, type OidcProviderEntry, type OidcPublicProvider, passkeyLoginVerify, passkeyRegisterVerify, passwordChange, passwordResetWithToken, refresh, register, stepUp, twoFactorDisable, twoFactorEnable, twoFactorSetup } from '@ninedeploy/schemas';
 import { config } from '../config.js';
 import { decrypt, encrypt, hashPassword, randomToken, secretEquals, sha256, verifyPassword } from '../lib/crypto.js';
 import { normalizeEmail } from '../lib/authHelpers.js';
 import { oauthProviderFingerprint, resolveOAuthIdentity } from '../lib/oauthIdentity.js';
-import { badRequest, conflict, forbidden, notFound, parseId, unauthorized } from '../lib/errors.js';
+import { badRequest, conflict, forbidden, HttpError, notFound, parseId, unauthorized } from '../lib/errors.js';
 import { verifyJwt, type AppJwtPayload } from '../lib/jwt.js';
 import { isLocked, recordFailure, recordSuccess } from '../lib/loginLockout.js';
 import { consumeResetToken, issueResetToken } from '../lib/passwordReset.js';
@@ -116,6 +116,42 @@ function verifyOidcStateCookie(req: { protocol?: string; headers: Record<string,
   if (!carried || !secretEquals(carried, expected)) {
     throw unauthorized('OAuth state cookie mismatch — restart the sign-in flow from this browser');
   }
+}
+
+// ── Step-up (r502) ─────────────────────────────────────────────────────────
+// Registering a passkey or turning TOTP on plants a DURABLE credential: one
+// that outlives the session that created it (and, for passkeys, a password
+// change). A briefly stolen access token used to be enough to do either, so
+// the thief kept a way back in after the victim logged out everywhere. These
+// routes now need proof that the account holder is present: the current
+// password, or — for an account that has no usable password (SSO-only) — a
+// sign-in fresh enough that it happened just now.
+const STEP_UP_FRESH_MS = 10 * 60 * 1000;
+const REAUTH_REQUIRED_MESSAGE =
+  'Confirm your current password to continue. Accounts that sign in only through SSO: sign in again, then retry within 10 minutes.';
+
+async function assertStepUp(
+  db: DB,
+  req: { headers: { authorization?: string } },
+  user: Pick<User, 'id' | 'passwordHash'>,
+  password: string | undefined,
+): Promise<void> {
+  if (password !== undefined) {
+    if (await verifyPassword(user.passwordHash, password)) return;
+    // 403 (not 401): the session itself is fine — a 401 would send the web
+    // client into a pointless refresh-and-retry.
+    throw new HttpError(403, 'invalid_password', 'Invalid password');
+  }
+  const header = req.headers.authorization ?? '';
+  const bearer = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  try {
+    const payload = await verifyJwt(bearer);
+    const session = payload.type === 'access' && payload.jti ? await findLiveSession(db, payload.jti) : null;
+    // `createdAt` is the sign-in time: refresh rotation keeps the row (and
+    // its createdAt), so a stolen refresh token cannot make itself "fresh".
+    if (session && session.userId === user.id && Date.now() - session.createdAt.getTime() <= STEP_UP_FRESH_MS) return;
+  } catch { /* not a verifiable session token — fall through */ }
+  throw new HttpError(403, 'reauth_required', REAUTH_REQUIRED_MESSAGE);
 }
 
 /** Count existing users (used to decide first-user-is-admin). */
@@ -333,6 +369,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   app.post('/passkey/register/options', { onRequest: [app.authenticate, app.requireInteractive], config: { rateLimit: AUTH_LIMIT } }, async (req) => {
     const user = await app.db.query.users.findFirst({ where: eq(users.id, req.user!.id) });
     if (!user) throw unauthorized();
+    // r502: fail before the browser prompt; verify re-checks (it stores).
+    await assertStepUp(app.db, req, user, stepUp.parse(req.body ?? {}).password);
     const existing = await app.db
       .select({ credentialId: webauthnCredentials.credentialId, transports: webauthnCredentials.transports })
       .from(webauthnCredentials)
@@ -344,6 +382,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     const input = passkeyRegisterVerify.parse(req.body);
     const user = await app.db.query.users.findFirst({ where: eq(users.id, req.user!.id) });
     if (!user) throw unauthorized();
+    // r502: a passkey is a durable credential — never from a bare session.
+    await assertStepUp(app.db, req, user, input.password);
     const existing = await app.db
       .select({ credentialId: webauthnCredentials.credentialId })
       .from(webauthnCredentials)
@@ -459,6 +499,9 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   // Setup generates (or regenerates) a pending secret + otpauth URI; enable
   // verifies a code from the user's authenticator and flips the flag; disable
   // requires the password AND a valid code, then bumps tokenVersion.
+  // r502: setup and enable also need step-up — an attacker holding only a
+  // session could otherwise enrol THEIR authenticator and lock the owner out
+  // of their own account (the owner has no code to sign in with).
   app.post('/2fa/setup', { onRequest: [app.authenticate, app.requireInteractive], config: { rateLimit: AUTH_LIMIT } }, async (req) => {
     const user = await app.db.query.users.findFirst({ where: eq(users.id, req.user!.id) });
     if (!user) throw unauthorized();
@@ -467,6 +510,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     if (user.totpEnabled) {
       const input = twoFactorSetup.parse(req.body ?? {});
       if (!(await verifyPassword(user.passwordHash, input.password))) throw unauthorized('Invalid password');
+    } else {
+      await assertStepUp(app.db, req, user, stepUp.parse(req.body ?? {}).password);
     }
     const secret = generateSecret();
     await app.db
@@ -478,9 +523,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post('/2fa/enable', { onRequest: [app.authenticate, app.requireInteractive], config: { rateLimit: AUTH_LIMIT } }, async (req) => {
-    const input = twoFactorCode.parse(req.body);
+    const input = twoFactorEnable.parse(req.body);
     const user = await app.db.query.users.findFirst({ where: eq(users.id, req.user!.id) });
     if (!user?.totpSecretEncrypted) throw badRequest('Start 2FA setup first');
+    await assertStepUp(app.db, req, user, input.password);
     if (!(await consumeTotpCode(app.db, user, input.code))) throw badRequest('Invalid two-factor code');
     await app.db.update(users).set({ totpEnabled: true }).where(eq(users.id, user.id));
     void audit(app.db, user.id, 'auth.2fa_enabled', user.email);

@@ -64,6 +64,39 @@ describe('auth hardening through the mounted app', () => {
     expect((await me(laptop.accessToken)).statusCode).toBe(200);
   });
 
+  // r502: planting a passkey / enrolling TOTP needs a password or a FRESH
+  // sign-in. Asserted on the mounted routes with real session rows.
+  it('r502: a session older than 10 minutes cannot start passkey or 2FA enrolment without the password', async () => {
+    const pair = await issueSessionTokens(app.db, { id: userId, tokenVersion: 0 });
+    const jti = (await verifyJwt(pair.accessToken)).jti!;
+    await app.db
+      .update(sessions)
+      .set({ createdAt: new Date(Date.now() - 60 * 60 * 1000) })
+      .where(eq(sessions.jti, jti));
+    const auth = { authorization: `Bearer ${pair.accessToken}` };
+    const passkey = await app.inject({ method: 'POST', url: '/v1/auth/passkey/register/options', headers: auth, payload: {} });
+    expect(passkey.statusCode).toBe(403);
+    expect(passkey.json().error.code).toBe('reauth_required');
+    const totp = await app.inject({ method: 'POST', url: '/v1/auth/2fa/setup', headers: auth, payload: {} });
+    expect(totp.statusCode).toBe(403);
+    expect(totp.json().error.code).toBe('reauth_required');
+    const wrong = await app.inject({ method: 'POST', url: '/v1/auth/2fa/setup', headers: auth, payload: { password: 'guess' } });
+    expect(wrong.statusCode).toBe(403);
+    expect(wrong.json().error.code).toBe('invalid_password');
+  });
+
+  it('r502: a sign-in from just now is accepted as step-up (SSO-only accounts have no password)', async () => {
+    const pair = await issueSessionTokens(app.db, { id: userId, tokenVersion: 0 });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/2fa/setup',
+      headers: { authorization: `Bearer ${pair.accessToken}` },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toHaveProperty('otpauthUri');
+  });
+
   it('r503: an access token whose session row was deleted is refused', async () => {
     const pair = await issueSessionTokens(app.db, { id: userId, tokenVersion: 0 });
     const jti = (await verifyJwt(pair.accessToken)).jti!;

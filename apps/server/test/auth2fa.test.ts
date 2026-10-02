@@ -94,7 +94,7 @@ describe('auth two-factor routes', () => {
       db: createFakeDb({ findFirst: { users: twoFactorUser({ totpEnabled: false, totpSecretEncrypted: null }) }, update: { users: [userRow({ id: 1 })] } }),
     });
     await app.register(authRoutes);
-    const res = await app.inject({ method: 'POST', url: '/2fa/setup', headers: asUser() });
+    const res = await app.inject({ method: 'POST', url: '/2fa/setup', headers: asUser(), payload: { password: GOOD } });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ secret: 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ', otpauthUri: 'otpauth://totp/x' });
     expect(cryptoMocks.encrypt).toHaveBeenCalledWith('GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ');
@@ -127,7 +127,7 @@ describe('auth two-factor routes', () => {
       }),
     });
     await app.register(authRoutes);
-    const res = await app.inject({ method: 'POST', url: '/2fa/enable', headers: asUser(), payload: { code: '123456' } });
+    const res = await app.inject({ method: 'POST', url: '/2fa/enable', headers: asUser(), payload: { code: '123456', password: GOOD } });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ok: true, totpEnabled: true });
   });
@@ -147,8 +147,42 @@ describe('auth two-factor routes', () => {
       db: createFakeDb({ findFirst: { users: twoFactorUser({ totpEnabled: false }) } }),
     });
     await app.register(authRoutes);
-    const res = await app.inject({ method: 'POST', url: '/2fa/enable', headers: asUser(), payload: { code: '000000' } });
+    const res = await app.inject({ method: 'POST', url: '/2fa/enable', headers: asUser(), payload: { code: '000000', password: GOOD } });
     expect(res.statusCode).toBe(400);
+  });
+
+  // r502: with only a session in hand, an attacker could enrol THEIR
+  // authenticator (setup → enable) and lock the owner out of the account.
+  it('r502: setup and enable refuse a bare session (no password, no fresh sign-in)', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { users: twoFactorUser({ totpEnabled: false }) },
+        update: { users: [twoFactorUser({ totpEnabled: true })] },
+      }),
+    });
+    await app.register(authRoutes);
+    const setup = await app.inject({ method: 'POST', url: '/2fa/setup', headers: asUser() });
+    expect(setup.statusCode).toBe(403);
+    expect(setup.json().error.code).toBe('reauth_required');
+    const enable = await app.inject({ method: 'POST', url: '/2fa/enable', headers: asUser(), payload: { code: '123456' } });
+    expect(enable.statusCode).toBe(403);
+    expect(enable.json().error.code).toBe('reauth_required');
+    expect(totpMocks.verifyTotpStep).not.toHaveBeenCalled();
+  });
+
+  it('r502: setup and enable refuse a wrong password', async () => {
+    cryptoMocks.verifyPassword.mockResolvedValue(false);
+    try {
+      const app = await buildTestApp({ db: createFakeDb({ findFirst: { users: twoFactorUser({ totpEnabled: false }) } }) });
+      await app.register(authRoutes);
+      const setup = await app.inject({ method: 'POST', url: '/2fa/setup', headers: asUser(), payload: { password: WRONG } });
+      expect(setup.statusCode).toBe(403);
+      expect(setup.json().error.code).toBe('invalid_password');
+      const enable = await app.inject({ method: 'POST', url: '/2fa/enable', headers: asUser(), payload: { code: '123456', password: WRONG } });
+      expect(enable.statusCode).toBe(403);
+    } finally {
+      cryptoMocks.verifyPassword.mockResolvedValue(true);
+    }
   });
 
   it('disable requires the password and a valid code, then clears the secret', async () => {
