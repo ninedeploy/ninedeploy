@@ -10,6 +10,8 @@ const engineMock = vi.hoisted(() => ({
 }));
 
 vi.mock('../../src/engine/database.js', () => engineMock);
+const auditMock = vi.hoisted(() => ({ audit: vi.fn(async () => undefined) }));
+vi.mock('../../src/lib/audit.js', () => auditMock);
 
 const tmp = path.join(os.tmpdir(), `ninedeploy-backups-${process.pid}-${Date.now()}`);
 mkdirSync(tmp, { recursive: true });
@@ -217,6 +219,31 @@ describe('backup scheduler plugin', () => {
       { err: expect.objectContaining({ message: 'pg_dump failed' }) },
       `scheduled backup failed for A`,
     );    await app.close();
+  });
+
+  // r528: audit() is the notification fan-out — a successful scheduled
+  // backup wrote none, so `backup.completed` never fired for daily backups.
+  it('r528: audits each successful scheduled backup like the manual route does', async () => {
+    vi.useFakeTimers();
+    auditMock.audit.mockClear();
+    const { db } = makeDb({
+      dbs: [
+        { id: 1, slug: 'a', name: 'A', status: 'running' },
+        { id: 2, slug: 'b', name: 'B', status: 'running' },
+      ],
+    });
+    engineMock.backupDatabase.mockRejectedValueOnce(new Error('pg_dump failed'));
+    const app = await buildApp(db);
+
+    await vi.advanceTimersByTimeAsync(DAY_MS);
+
+    // Same action + entity as POST /databases/:id/backups (the audit bridge
+    // maps it onto `backup.completed`); system-initiated, so no actor.
+    expect(auditMock.audit).toHaveBeenCalledWith(expect.anything(), null, 'backup.create', 'B', { scope: 'scheduled' });
+    // The failed database is reported as a failure, never as completed.
+    expect(auditMock.audit).not.toHaveBeenCalledWith(expect.anything(), null, 'backup.create', 'A', expect.anything());
+    expect(auditMock.audit).toHaveBeenCalledWith(expect.anything(), null, 'backup.schedule_failed', expect.stringContaining('A:'));
+    await app.close();
   });
 
   it('logs when the whole tick fails', async () => {

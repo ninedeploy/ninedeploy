@@ -110,6 +110,11 @@ export default fp(
             if (row) await uploadBackup(fastify.db, row.id, file, log);
             // Covered again — clear any outstanding missed-backup incident.
             missedNotified.delete(d.id);
+            // r528: audit() is the notification fan-out — without this a
+            // daily backup never produced `backup.completed` (the audit bridge
+            // maps `backup.create` onto it). Same action/entity as the manual
+            // route; system-initiated, so the actor is null.
+            void audit(fastify.db, null, 'backup.create', d.name, { scope: 'scheduled' });
           } catch (err) {
             fastify.log.error({ err }, `scheduled backup failed for ${d.name}`);
             // A scheduled failure must not be log-only: record the failed row
