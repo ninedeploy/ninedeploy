@@ -52,6 +52,13 @@ export const doctorFindingKind = z.enum([
    * without re-validating. Such a row is a record its own API rejects on PATCH.
    */
   'invalid_slug',
+  /**
+   * r575: the panel's own port listens on a non-loopback address over plain
+   * HTTP (bare-metal default 0.0.0.0:3000) — logins and API tokens crossing
+   * it are readable on the network. Advisory: changing the bind is the
+   * operator's call (it cuts off whoever reaches the panel at http://ip:3000).
+   */
+  'panel_plaintext_exposure',
 ]);
 export type DoctorFindingKind = z.infer<typeof doctorFindingKind>;
 
