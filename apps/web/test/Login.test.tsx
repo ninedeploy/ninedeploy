@@ -5,6 +5,7 @@ import { useLocation } from 'react-router';
 import { Login } from '../src/routes/Login.js';
 import { api } from '../src/lib/api.js';
 import { useAuth } from '../src/lib/auth.js';
+import { ssoNavigation } from '../src/lib/sso.js';
 import { renderWithProviders, mockOf } from './helpers.js';
 
 vi.mock('../src/lib/api.js', async () => {
@@ -275,10 +276,64 @@ describe('Login', () => {
     ] as never);
     mockOf(useAuth).mockReturnValue(authValue() as never);
 
-    renderWithProviders(<Login />);
-    expect(await screen.findByText('GitHub Enterprise')).toBeInTheDocument();
+    const go = vi.spyOn(ssoNavigation, 'go').mockImplementation(() => undefined);
+    try {
+      renderWithProviders(<Login />, { initialEntries: ['/login?returnTo=%2Fservices%2F4'] });
+      expect(await screen.findByText('GitHub Enterprise')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /GitHub Enterprise/ }));
-    expect(screen.getByText('GitHub Enterprise')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: /GitHub Enterprise/ }));
+      // r505: through apiUrl(), carrying the return path and this tab's nonce.
+      expect(go).toHaveBeenCalledTimes(1);
+      const url = new URL(go.mock.calls[0]![0], window.location.origin);
+      expect(url.pathname).toBe('/v1/auth/oidc/github/login');
+      expect(url.searchParams.get('returnTo')).toBe('/services/4');
+      expect(url.searchParams.get('nonce')).toBe(sessionStorage.getItem('ninedeploy.ssoNonce'));
+    } finally {
+      go.mockRestore();
+      sessionStorage.clear();
+    }
+  });
+
+  it('r505: an SSO start never carries a cross-origin returnTo', async () => {
+    const user = userEvent.setup();
+    mockOf(api.auth.status).mockResolvedValue({ initialized: true } as never);
+    mockOf(api.auth.oidc.publicProviders).mockResolvedValue([
+      { id: 1, name: 'GitHub Enterprise', slug: 'github', authUrl: '/v1/auth/oidc/github/login' },
+    ] as never);
+    mockOf(useAuth).mockReturnValue(authValue() as never);
+    const go = vi.spyOn(ssoNavigation, 'go').mockImplementation(() => undefined);
+    try {
+      renderWithProviders(<Login />, { initialEntries: ['/login?returnTo=%2F%2Fevil.example'] });
+      await user.click(await screen.findByRole('button', { name: /GitHub Enterprise/ }));
+      expect(new URL(go.mock.calls[0]![0], window.location.origin).searchParams.get('returnTo')).toBe('/');
+    } finally {
+      go.mockRestore();
+      sessionStorage.clear();
+    }
+  });
+
+  it('r505: a password sign-in ignores a protocol-relative returnTo', async () => {
+    const user = userEvent.setup();
+    const login = vi.fn().mockResolvedValue(undefined);
+    mockOf(api.auth.status).mockResolvedValue({ initialized: true } as never);
+    mockOf(useAuth).mockReturnValue(authValue({ login }) as never);
+    renderWithProviders(
+      <>
+        <Login />
+        <LocationProbe />
+      </>,
+      { initialEntries: ['/login?returnTo=%2F%2Fevil.example'] },
+    );
+    await user.type(await screen.findByPlaceholderText('you@example.com'), 'a@b.c');
+    await user.type(screen.getByPlaceholderText('••••••••'), 'secret');
+    await user.click(screen.getByRole('button', { name: /Sign in/ }));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/));
+  });
+
+  it('r505: explains a refused SSO hand-off', async () => {
+    mockOf(api.auth.status).mockResolvedValue({ initialized: true } as never);
+    mockOf(useAuth).mockReturnValue(authValue({ ssoError: 'Single sign-on could not be completed — please sign in again.' }) as never);
+    renderWithProviders(<Login />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/please sign in again/);
   });
 });

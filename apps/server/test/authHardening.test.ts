@@ -5,7 +5,7 @@ import { oauthIdentities, oidcProviders, sessions, users, workspaceMembers, work
 import { buildApp } from '../src/app.js';
 import { issueSessionTokens } from '../src/lib/sessions.js';
 import { verifyJwt } from '../src/lib/jwt.js';
-import { generateOAuthState } from '../src/lib/oauth.js';
+import { generateOAuthState, verifyOAuthState } from '../src/lib/oauth.js';
 import { sha256 } from '../src/lib/crypto.js';
 
 // The real traefik plugin recreates the HOST's `ninedeploy-traefik` container
@@ -203,6 +203,65 @@ describe('auth hardening through the mounted app', () => {
         payload: { allowedDomains: ['not a domain'] },
       });
       expect(res.statusCode).toBe(400);
+    });
+  });
+
+  // ── r505: SSO fragment tokens are bound to the tab that started the flow ──
+  // (runs after the r507 block, which leaves an unrestricted GitHub provider)
+  describe('r505: sign-in nonce round trip', () => {
+    const originalFetch = globalThis.fetch;
+    const NONCE = 'tab-nonce_0123456789abcdef';
+
+    const callback = async (state: string) => {
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: 'gho_505' }) } as never)
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 505, login: 'u505', name: 'N', email: 'nonce@corp.test' }) } as never);
+      try {
+        return await app.inject({
+          method: 'GET',
+          url: `/v1/auth/oidc/github/callback?code=c&state=${encodeURIComponent(state)}`,
+          headers: { cookie: `ninedeploy_oidc_github=${sha256(state)}` },
+        });
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    };
+
+    it('carries the web nonce from the start route into the signed state', async () => {
+      const res = await app.inject({ method: 'GET', url: `/v1/auth/oidc/github/login?returnTo=%2Fservices&nonce=${NONCE}` });
+      expect(res.statusCode).toBe(302);
+      const state = new URL(res.headers.location as string).searchParams.get('state')!;
+      expect(verifyOAuthState(state)).toMatchObject({ returnTo: '/services', clientNonce: NONCE });
+    });
+
+    it('refuses a malformed nonce at the start route', async () => {
+      const res = await app.inject({ method: 'GET', url: '/v1/auth/oidc/github/login?nonce=%3Cscript%3E' });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('lands a nonce flow on the dedicated SPA callback with the nonce and a safe return path', async () => {
+      const res = await callback(generateOAuthState('github', '/services', undefined, NONCE));
+      expect(res.statusCode).toBe(302);
+      const location = res.headers.location as string;
+      expect(location.startsWith('/auth/callback#')).toBe(true);
+      const fragment = new URLSearchParams(location.slice(location.indexOf('#') + 1));
+      expect(fragment.get('nonce')).toBe(NONCE);
+      expect(fragment.get('return_to')).toBe('/services');
+      expect(fragment.get('access_token')).toBeTruthy();
+      expect(fragment.get('refresh_token')).toBeTruthy();
+    });
+
+    it('a cross-origin returnTo still collapses to / inside the nonce redirect', async () => {
+      const res = await callback(generateOAuthState('github', '//evil.example.com', undefined, NONCE));
+      const location = res.headers.location as string;
+      expect(location.startsWith('/auth/callback#')).toBe(true);
+      expect(new URLSearchParams(location.slice(location.indexOf('#') + 1)).get('return_to')).toBe('/');
+    });
+
+    it('a flow started without a nonce (pre-upgrade page) keeps the legacy redirect', async () => {
+      const res = await callback(generateOAuthState('github', '/'));
+      expect((res.headers.location as string).startsWith('/#access_token=')).toBe(true);
     });
   });
 });

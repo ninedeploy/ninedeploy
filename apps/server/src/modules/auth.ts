@@ -20,7 +20,7 @@ import { audit } from '../lib/audit.js';
 import { getSetting } from '../lib/settings.js';
 import { findLiveSession, issueSessionTokens, refreshSessionTokens, revokeAllSessions, revokeApiTokens } from '../lib/sessions.js';
 import { beginAuthentication, beginRegistration, finishAuthentication, finishRegistration } from '../lib/webauthn.js';
-import { exchangeGitHubCode, exchangeOidcCode, fetchOidcConfiguration, fetchOidcUserInfo, generateOAuthState, verifyOAuthState } from '../lib/oauth.js';
+import { CLIENT_NONCE_PATTERN, exchangeGitHubCode, exchangeOidcCode, fetchOidcConfiguration, fetchOidcUserInfo, generateOAuthState, verifyOAuthState } from '../lib/oauth.js';
 import { ensureDefaultWorkspace, ensureDefaultWorkspaceWithRole } from './workspaces.js';
 import { acceptInvitationsForUser } from './invitations.js';
 import { iso } from '../lib/serialize.js';
@@ -857,9 +857,14 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   // ── OIDC & OAuth2 Login Initiation ─────────────────────────────────────────
   const startOidc = async (req: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply, linking = false) => {
     const { slug } = req.params as { slug: string };
-    const query = req.query as { returnTo?: string; json?: string };
+    const query = req.query as { returnTo?: string; json?: string; nonce?: string };
     const returnTo = query?.returnTo;
     const json = query?.json;
+    // r505: the web's per-tab sign-in nonce, echoed back with the tokens.
+    // Optional so a page loaded before the upgrade can still start a flow
+    // (its tokens are then refused by the new SPA — see handleOidcCallback).
+    const clientNonce = query?.nonce;
+    if (clientNonce !== undefined && !CLIENT_NONCE_PATTERN.test(clientNonce)) throw badRequest('Invalid sign-in nonce');
 
     const provider = await app.db.query.oidcProviders.findFirst({
       where: and(eq(oidcProviders.slug, slug), eq(oidcProviders.enabled, true)),
@@ -876,7 +881,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       }
       link = { userId: req.user!.id, sessionJti: session.jti, tokenVersion: payload.ver, providerFingerprint: oauthProviderFingerprint(provider) };
     }
-    const state = generateOAuthState(slug, returnTo, link);
+    const state = generateOAuthState(slug, returnTo, link, linking ? undefined : clientNonce);
     // Bind this flow to the browser that started it (see the cookie helpers).
     writeOidcStateCookie(req, reply, slug, state);
     const redirectUri = oidcRedirectUri(slug);
@@ -1016,6 +1021,20 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       }
     })();
     const returnTo = returnToSafe ? rawReturnTo : '/';
+    // r505: a flow the web started with a nonce lands on the SPA's dedicated
+    // callback route, which takes tokens from the fragment ONLY there and only
+    // when the nonce matches the one this tab stored. A flow without one (a
+    // page loaded before the upgrade) keeps the old redirect; the new SPA
+    // refuses those tokens and asks the user to sign in again.
+    if (stateData.clientNonce) {
+      const fragment = new URLSearchParams({
+        access_token: tokens.accessToken,
+        refresh_token: tokens.refreshToken,
+        nonce: stateData.clientNonce,
+        return_to: returnTo,
+      });
+      return reply.redirect(`/auth/callback#${fragment.toString()}`);
+    }
     return reply.redirect(`${returnTo}#access_token=${tokens.accessToken}&refresh_token=${tokens.refreshToken}`);
   };
 

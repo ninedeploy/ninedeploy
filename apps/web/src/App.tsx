@@ -56,6 +56,18 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * r505: the only route that accepts SSO tokens (lib/sso.ts took them during
+ * the auth provider's first render, nonce-checked). Once the session has
+ * loaded it forwards to the validated return path; a refused or empty
+ * hand-off goes to the login page, which explains why.
+ */
+function SsoCallback() {
+  const { user, ssoReturnTo } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  return <Navigate to={ssoReturnTo ?? '/'} replace />;
+}
+
 /** Wildcard fallback for unknown paths. */
 function NotFound() {
   return (
@@ -80,6 +92,7 @@ export default function App() {
     <Suspense fallback={<FullScreenSpinner />}>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/auth/callback" element={<SsoCallback />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         {/* Public invitation accept — shown to anonymous visitors and
