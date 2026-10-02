@@ -1,19 +1,15 @@
 import { configEntries } from '@ninedeploy/db';
+// r553: the body schema is the shared one the SDK types against — a local
+// copy (`setConfigBody`) had to be kept identical by hand.
+import { setConfigSchema } from '@ninedeploy/schemas';
 import { eq } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
-import { z } from 'zod';
 import { audit } from '../lib/audit.js';
 import { badRequest } from '../lib/errors.js';
 
 /** Placeholder returned for unrevealed secrets — can never be a real value. */
 const SECRET_MASK = '••••••••';
 
-const setConfigBody = z.object({
-  value: z.unknown().optional(),
-  isSecret: z.boolean().optional(),
-  description: z.string().max(500).optional(),
-  tags: z.array(z.string().max(50)).optional(),
-});
 
 export const configCenterRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', app.authenticate);
@@ -169,7 +165,7 @@ export const configCenterRoutes: FastifyPluginAsync = async (app) => {
   // Set config key (operator only)
   app.post<{ Params: { key: string } }>('/:key', { preHandler: app.requireOperator }, async (req) => {
     const { key } = req.params;
-    const body = setConfigBody.parse(req.body);
+    const body = setConfigSchema.parse(req.body);
     const def = req.kernel.configCenter.getDefinition(key);
     const row = await app.db.query.configEntries.findFirst({ where: eq(configEntries.key, key) });
     const isSecret = body.isSecret ?? def?.isSecret ?? row?.isSecret ?? false;
