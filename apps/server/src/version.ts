@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.37';
+export const VERSION = '0.10.38';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.38',
+    date: '2026-10-02',
+    title: 'The Proven-Upgrade Release — Smoke-Gated Publication',
+    changes: [
+      'Release process: a release is only offered to installed panels after the published image has been upgraded onto from the previous release (same data volume: sign-in, services, deploy history, running apps, interrupted-deploy recovery, migrations) and walked through the user journey. :latest and the GitHub Release — how panels and the installer discover updates — now come after those smokes (r580, r581).',
+      'Security: outbound requests through the egress guard connect only to the addresses they vetted, closing the DNS-rebinding window (r605). Adding a member or sending an invitation no longer reveals whether an email has an account — non-operators always invite (r604). New sandbox plugins are refused on Node < 25, where the sandbox cannot block network, unless NINEDEPLOY_ALLOW_SANDBOX_NETWORK=1; Doctor flags installed ones (r600). Vault references are checked at write time on template deploys and bundle imports (r601); preview patterns from .ninedeploy manifests are validated and their {n} placeholder finally works (r602); the Account page tells you how many passkeys remain after a password change (r603).',
+      'Fixed: workspace email templates were stored but never sent — invitation overrides are now used, and without one the email is unchanged; password-reset emails can no longer be rewritten by a workspace admin (r610). Compose redeploys build before taking the old stack down (r590). Node-pinned compose services are health-patrolled (r591). Fan-out source builds log into the bound registry (r592). Containers started by a deploy that a panel restart interrupted are removed at boot (r593); job runs left running by a crash are closed (r594).',
+      'Railpack ships in the container image; railpack builds need a BuildKit daemon via BUILDKIT_HOST and are refused up front, with the fix named, until one is set — they never worked before (r582).',
+    ],
+  },
+{
     version: '0.10.37',
     date: '2026-10-02',
     title: 'The Tenancy Release — the Deep-Audit Remediation',

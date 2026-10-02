@@ -9,6 +9,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.38] - 2026-10-02
+
+> The proven-upgrade release (r580–r610): releases are now only offered to
+> installed servers after the published image has been upgraded onto from the
+> previous release and walked through the user journey — and the follow-ups the
+> 0.10.37 audit deliberately left out.
+
+### Upgrade notes — read before updating
+
+- **Workspace invitations (r604).** For non-operators, adding an email that is not yet a member always sends an invitation, even when an account exists — the colleague accepts it from the link. Instance operators still add registered accounts instantly.
+- **Sandbox plugins on Node < 25 (r600).** Already-installed sandbox plugins keep loading; installing a new one (or reinstalling) is refused unless you upgrade Node to ≥ 25 or set `NINEDEPLOY_ALLOW_SANDBOX_NETWORK=1`. Doctor lists sandbox plugins that have open network on this Node.
+- **Email templates (r610).** Workspace invitation overrides you saved earlier are now actually sent. Without an override, emails are byte-for-byte what 0.10.37 sent. Password-reset overrides are refused (a workspace admin must not rewrite another user's reset email); stored ones are ignored and can be deleted.
+- **Railpack (r582).** Ships in the container image now. Railpack builds need a BuildKit daemon: set `BUILDKIT_HOST` (e.g. `docker-container://buildkit` next to a `moby/buildkit` container). Without it, saving or deploying a railpack service is refused with that fix named — such builds never worked before.
+- **Compose redeploys (r590)** build before taking the old stack down, so the previous stack keeps serving during the build and a failed build leaves it running.
+- No migrations, no breaking API changes; new response fields are additive.
+
+### Release process
+
+- **Publication is gated on end-to-end smokes (r581).** The release workflow pushes `:vX.Y.Z` only, then runs `smoke:upgrade` (previous published release → this tag, on one data volume) and `smoke:user-journey` against the pushed image; `:latest` and the GitHub Release — which is how panels and the installer discover updates — are created only after both pass.
+- `pnpm smoke:upgrade` (r580): boots the previous release on a data volume, seeds an operator, a deployed service with a domain, an orphaned project secret, and a deploy hard-killed mid-build; boots the new release on the same volume and proves sign-in, data, running apps, interrupted-deploy recovery, a fresh green deploy and the migration journal. Proven locally for 0.10.35 → 0.10.37 and 0.10.36 → 0.10.37.
+
+### Security
+
+- **DNS-rebinding window closed (r605).** `guardedFetch` connects only to the addresses it vetted (pinned lookup on Node's bundled undici Agent — verified on Node 22.13, 24 and 26), keeping SNI and the Host header.
+- **Email enumeration through member-add and invitations (r604)** — registered and unregistered emails now get the same response.
+- **Sandbox network on Node < 25 (r600)** — new installs refused unless knowingly allowed; plugin list shows `networkRestricted`.
+- **Vault references at write time (r601)** on template deploys and bundle import.
+- **Preview patterns from `.ninedeploy` manifests are validated (r602)** — and the manifest's documented `{n}` placeholder is finally understood (it was never substituted).
+- **Passkeys after a password change (r603)** — the response and Account page say how many passkeys remain, with a link to review them.
+- **Password-reset emails cannot be rewritten by a workspace admin (r610)**; subject lines cannot inject headers.
+
+### Fixed
+
+- **Workspace email templates were never sent (r610)** — invitations from both invite paths now render the workspace's override; a wiring guard pins every template to a sender.
+- **Compose deploys took the stack down before building (r590).**
+- **Node-pinned compose services are health-patrolled (r591).**
+- **Fan-out source builds pull private base images with the bound registry credential (r592).**
+- **A container started by a deploy interrupted by a panel restart is removed at boot (r593)** — containers now carry `ninedeploy.deployment` / `ninedeploy.service` labels.
+- **Job runs left `running` by a crash are closed (r594).**
+- **Railpack never worked (r582)**: it requires `BUILDKIT_HOST`, which nothing provided and the build env stripped; now passed through and checked up front.
+- Manifest Creator suggests a preview pattern the panel accepts (r602); README test counts corrected (r583).
+
 ## [0.10.37] - 2026-10-02
 
 > The tenancy release (r500–r576): a whole-repo deep audit found that several
