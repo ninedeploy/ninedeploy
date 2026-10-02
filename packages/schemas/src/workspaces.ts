@@ -124,6 +124,24 @@ export interface WorkspaceInvitationPublic {
 }
 
 // ─── OIDC & OAuth2 SSO Schemas ───────────────────────────────────────────────
+/**
+ * r507: one allowed email domain for an SSO provider (`corp.com`; a leading
+ * `@` is tolerated and dropped). Matching is exact — list subdomains you mean.
+ */
+export const oidcAllowedDomain = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .transform((v) => v.replace(/^@/, ''))
+  .pipe(
+    z
+      .string()
+      .min(3)
+      .max(253)
+      .regex(/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/, 'must be a domain like corp.com'),
+  );
+const oidcAllowedDomains = z.array(oidcAllowedDomain).max(50);
+
 export const oidcProviderCreate = z.object({
   name: z.string().trim().min(2).max(63),
   slug: slug,
@@ -134,6 +152,8 @@ export const oidcProviderCreate = z.object({
   enabled: z.boolean().default(true),
   autoEnroll: z.boolean().default(true),
   defaultRole: z.enum(['admin', 'member']).default('member'),
+  /** r507: empty (the default) = any verified email the IdP vouches for. */
+  allowedDomains: oidcAllowedDomains.optional(),
 });
 export type OidcProviderCreate = z.infer<typeof oidcProviderCreate>;
 export type OidcProviderCreateInput = OidcProviderCreate;
@@ -148,6 +168,7 @@ export const oidcProviderUpdate = z
     enabled: z.boolean().optional(),
     autoEnroll: z.boolean().optional(),
     defaultRole: z.enum(['admin', 'member']).optional(),
+    allowedDomains: oidcAllowedDomains.optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'nothing to update' });
 export type OidcProviderUpdate = z.infer<typeof oidcProviderUpdate>;
@@ -163,6 +184,8 @@ export interface OidcProviderEntry {
   enabled: boolean;
   autoEnroll: boolean;
   defaultRole: 'admin' | 'member';
+  /** r507: email domains allowed to sign in / enroll; empty = unrestricted. */
+  allowedDomains: string[];
   createdAt: string;
   updatedAt: string;
 }

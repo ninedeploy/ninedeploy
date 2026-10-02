@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { eq } from 'drizzle-orm';
-import { sessions, users, workspaceMembers, workspaces } from '@ninedeploy/db';
+import { oauthIdentities, oidcProviders, sessions, users, workspaceMembers, workspaces } from '@ninedeploy/db';
 import { buildApp } from '../src/app.js';
 import { issueSessionTokens } from '../src/lib/sessions.js';
 import { verifyJwt } from '../src/lib/jwt.js';
+import { generateOAuthState } from '../src/lib/oauth.js';
+import { sha256 } from '../src/lib/crypto.js';
 
 // The real traefik plugin recreates the HOST's `ninedeploy-traefik` container
 // on ready; the worker/collector/backup schedulers would start real timers and
@@ -25,6 +27,8 @@ describe('auth hardening through the mounted app', () => {
 
   beforeAll(async () => {
     app = await buildApp();
+    await app.db.delete(oauthIdentities);
+    await app.db.delete(oidcProviders);
     await app.db.delete(workspaceMembers);
     await app.db.delete(workspaces);
     await app.db.delete(users);
@@ -102,5 +106,103 @@ describe('auth hardening through the mounted app', () => {
     const jti = (await verifyJwt(pair.accessToken)).jti!;
     await app.db.delete(sessions).where(eq(sessions.jti, jti));
     expect((await me(pair.accessToken)).statusCode).toBe(401);
+  });
+
+  // ── r507: allowed email domains per SSO provider ──────────────────────────
+  describe('r507: SSO email-domain restriction', () => {
+    const originalFetch = globalThis.fetch;
+    let operatorToken: string;
+
+    /** Drive a GitHub callback whose profile carries `email` (no network: GitHub uses plain fetch). */
+    const githubCallback = async (email: string, id: number) => {
+      const state = generateOAuthState('github', '/');
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: ['gho', String(id)].join('_') }) } as never)
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ id, login: `u${id}`, name: 'Dev', email }) } as never);
+      try {
+        return await app.inject({
+          method: 'POST',
+          url: '/v1/auth/oidc/github/callback',
+          headers: { cookie: `ninedeploy_oidc_github=${sha256(state)}` },
+          payload: { code: 'c', state },
+        });
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    };
+
+    beforeAll(async () => {
+      operatorToken = (await issueSessionTokens(app.db, { id: userId, tokenVersion: 0 })).accessToken;
+    });
+
+    it('stores a normalised domain list on create and lists it', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/auth/oidc/providers',
+        headers: { authorization: `Bearer ${operatorToken}` },
+        payload: {
+          name: 'GitHub',
+          slug: 'github',
+          clientId: 'gh-client',
+          clientSecret: ['gh', 'secret'].join('-'),
+          scopes: 'read:user user:email',
+          autoEnroll: true,
+          allowedDomains: ['@Corp.test'],
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().allowedDomains).toEqual(['corp.test']);
+      const list = await app.inject({ method: 'GET', url: '/v1/auth/oidc/providers', headers: { authorization: `Bearer ${operatorToken}` } });
+      expect(list.json().find((p: { slug: string }) => p.slug === 'github').allowedDomains).toEqual(['corp.test']);
+    });
+
+    it('refuses to auto-enroll an email outside the allowed domains — no account is created', async () => {
+      const res = await githubCallback('outsider@gmail.test', 501);
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error.code).toBe('sso_domain_not_allowed');
+      expect(res.json().error.message).toContain('corp.test');
+      expect(await app.db.query.users.findFirst({ where: eq(users.email, 'outsider@gmail.test') })).toBeUndefined();
+    });
+
+    it('enrolls an email inside the allowed domains', async () => {
+      const res = await githubCallback('dev@corp.test', 502);
+      expect(res.statusCode).toBe(200);
+      expect(res.json().user.email).toBe('dev@corp.test');
+    });
+
+    it('an enrolled user whose domain is later removed cannot sign in again', async () => {
+      const patch = await app.inject({
+        method: 'PATCH',
+        url: `/v1/auth/oidc/providers/${(await app.db.query.oidcProviders.findFirst())!.id}`,
+        headers: { authorization: `Bearer ${operatorToken}` },
+        payload: { allowedDomains: ['other.test'] },
+      });
+      expect(patch.json().allowedDomains).toEqual(['other.test']);
+      expect((await githubCallback('dev@corp.test', 502)).statusCode).toBe(403);
+    });
+
+    it('an empty list (the upgrade default) restores the old unrestricted behaviour', async () => {
+      const providerId = (await app.db.query.oidcProviders.findFirst())!.id;
+      const patch = await app.inject({
+        method: 'PATCH',
+        url: `/v1/auth/oidc/providers/${providerId}`,
+        headers: { authorization: `Bearer ${operatorToken}` },
+        payload: { allowedDomains: [] },
+      });
+      expect(patch.json().allowedDomains).toEqual([]);
+      expect((await githubCallback('outsider@gmail.test', 501)).statusCode).toBe(200);
+    });
+
+    it('rejects a malformed domain', async () => {
+      const providerId = (await app.db.query.oidcProviders.findFirst())!.id;
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/v1/auth/oidc/providers/${providerId}`,
+        headers: { authorization: `Bearer ${operatorToken}` },
+        payload: { allowedDomains: ['not a domain'] },
+      });
+      expect(res.statusCode).toBe(400);
+    });
   });
 });

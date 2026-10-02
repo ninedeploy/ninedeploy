@@ -1,6 +1,6 @@
 import { and, count, eq, sql } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
-import { apiTokens, type DB, oauthIdentities, oidcProviders, type OidcProvider, sessions as sessionsTable, users, webauthnCredentials, type User } from '@ninedeploy/db';
+import { apiTokens, type DB, oauthIdentities, oidcProviders, type OidcProvider, sessions as sessionsTable, settings, users, webauthnCredentials, type User } from '@ninedeploy/db';
 import type { PublicUser, Register } from '@ninedeploy/schemas';
 import { createApiToken, forgotPassword, login, oidcProviderCreate, oidcProviderUpdate, type OidcProviderEntry, type OidcPublicProvider, passkeyLoginVerify, passkeyRegisterVerify, passwordChange, passwordResetWithToken, refresh, register, stepUp, twoFactorDisable, twoFactorEnable, twoFactorSetup } from '@ninedeploy/schemas';
 import { config } from '../config.js';
@@ -12,7 +12,7 @@ import { verifyJwt, type AppJwtPayload } from '../lib/jwt.js';
 import { isLocked, recordFailure, recordSuccess } from '../lib/loginLockout.js';
 import { consumeResetToken, issueResetToken } from '../lib/passwordReset.js';
 import { sendSystemEmail } from '../lib/notifier.js';
-import { setSettingString } from '../lib/settings.js';
+import { getSettingJson, setSettingJson, setSettingString } from '../lib/settings.js';
 import { STUDIO_EPOCH_KEY } from './studioProxy.js';
 import { generateSecret, otpauthUri } from '../lib/totp.js';
 import { consumeTotpCode } from '../lib/totpReplay.js';
@@ -40,7 +40,26 @@ const toUser = (u: User, isOp: boolean): PublicUser => ({
     : new Date(u.createdAt as unknown as number).toISOString(),
 });
 
-function serializeOidc(p: OidcProvider): OidcProviderEntry {
+// ── Allowed email domains per provider (r507) ──────────────────────────────
+// docs/SECURITY_SSO.md promised domain restriction; nothing implemented it, so
+// with auto-enroll on, ANY account at the IdP (a public Google or GitHub one
+// included) could create itself a NineDeploy account. Stored in the settings
+// table (no migration); an absent or empty list keeps the old behaviour.
+const allowedDomainsKey = (providerId: number) => `oidc.allowed_domains.${providerId}`;
+
+async function loadAllowedDomains(db: DB, providerId: number): Promise<string[]> {
+  const value = await getSettingJson<unknown>(db, allowedDomainsKey(providerId), []);
+  return Array.isArray(value) ? value.filter((d): d is string => typeof d === 'string') : [];
+}
+
+/** The IdP-attested email is acceptable for this provider (exact domain match). */
+function emailDomainAllowed(email: string, allowed: string[]): boolean {
+  if (allowed.length === 0) return true;
+  const domain = normalizeEmail(email).split('@').pop() ?? '';
+  return allowed.includes(domain);
+}
+
+function serializeOidc(p: OidcProvider, allowedDomains: string[] = []): OidcProviderEntry {
   return {
     id: p.id,
     name: p.name,
@@ -53,6 +72,7 @@ function serializeOidc(p: OidcProvider): OidcProviderEntry {
     // defaultRole is now a workspace role (owner/admin/member/viewer); coerce
     // to the legacy 'admin' | 'member' surface the public SDK still expects.
     defaultRole: (p.defaultRole === 'owner' || p.defaultRole === 'admin' ? 'admin' : 'member'),
+    allowedDomains,
     createdAt: iso(p.createdAt) as string,
     updatedAt: iso(p.updatedAt) as string,
   };
@@ -753,7 +773,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/oidc/providers', { onRequest: [app.authenticate, app.requireAdmin] }, async (): Promise<OidcProviderEntry[]> => {
     const rows = await app.db.query.oidcProviders.findMany();
-    return rows.map(serializeOidc);
+    return Promise.all(rows.map(async (p) => serializeOidc(p, await loadAllowedDomains(app.db, p.id))));
   });
 
   app.post('/oidc/providers', { onRequest: [app.authenticate, app.requireAdmin] }, async (req) => {
@@ -777,8 +797,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       })
       .returning();
 
-    void audit(app.db, req.user!.id, 'oidc_provider.create', created!.name);
-    return serializeOidc(created!);
+    const domains = [...new Set(input.allowedDomains ?? [])];
+    if (domains.length > 0) await setSettingJson(app.db, allowedDomainsKey(created!.id), domains);
+    void audit(app.db, req.user!.id, 'oidc_provider.create', created!.name, domains.length > 0 ? { allowedDomains: domains } : undefined);
+    return serializeOidc(created!, domains);
   });
 
   app.patch('/oidc/providers/:id', { onRequest: [app.authenticate, app.requireAdmin] }, async (req) => {
@@ -805,12 +827,19 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         ...(input.enabled !== undefined && { enabled: input.enabled }),
         ...(input.autoEnroll !== undefined && { autoEnroll: input.autoEnroll }),
         ...(input.defaultRole !== undefined && { defaultRole: input.defaultRole }),
+        // r507: a domain-list-only PATCH changes no column — keep the SET
+        // non-empty (and the provider's updatedAt honest).
+        updatedAt: new Date(),
       })
       .where(eq(oidcProviders.id, id))
       .returning();
 
-    void audit(app.db, req.user!.id, 'oidc_provider.update', updated!.name);
-    return serializeOidc(updated!);
+    if (input.allowedDomains !== undefined) {
+      await setSettingJson(app.db, allowedDomainsKey(id), [...new Set(input.allowedDomains)]);
+    }
+    const domains = await loadAllowedDomains(app.db, id);
+    void audit(app.db, req.user!.id, 'oidc_provider.update', updated!.name, input.allowedDomains !== undefined ? { allowedDomains: domains } : undefined);
+    return serializeOidc(updated!, domains);
   });
 
   app.delete('/oidc/providers/:id', { onRequest: [app.authenticate, app.requireAdmin] }, async (req) => {
@@ -819,6 +848,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     if (!existing) throw notFound('OIDC provider not found');
 
     await app.db.delete(oidcProviders).where(eq(oidcProviders.id, id));
+    // The id is never reused, but a stale list must not outlive its provider.
+    await app.db.delete(settings).where(eq(settings.key, allowedDomainsKey(id)));
     void audit(app.db, req.user!.id, 'oidc_provider.delete', existing.name);
     return { ok: true };
   });
@@ -922,6 +953,19 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       userInfo = await fetchOidcUserInfo(userinfoEndpoint, tokens.access_token);
     }
 
+    // r507: refuse before resolveOAuthIdentity can create (auto-enroll) or
+    // sign in anyone. Applies to every flow through this provider — a domain
+    // list that only gated enrollment would still let an already-enrolled
+    // outsider back in after the operator tightened it.
+    const allowedDomains = await loadAllowedDomains(app.db, provider.id);
+    if (!emailDomainAllowed(userInfo.email, allowedDomains)) {
+      void audit(app.db, null, 'auth.sso_domain_refused', `${provider.name} (${userInfo.email})`);
+      throw new HttpError(
+        403,
+        'sso_domain_not_allowed',
+        `This sign-in provider only accepts accounts from: ${allowedDomains.join(', ')}`,
+      );
+    }
     const resolved = await resolveOAuthIdentity(app.db, provider, userInfo, stateData.link);
     const user = resolved.user;
     if (stateData.link) {
