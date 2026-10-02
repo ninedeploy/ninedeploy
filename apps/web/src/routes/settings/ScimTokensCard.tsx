@@ -47,7 +47,8 @@ export function ScimTokensCard() {
         <p className="text-xs text-slate-500">
           Point your identity provider at <code className="font-mono text-slate-400">{'{panel}'}/scim/v2</code> with a bearer
           token below. Provisioned users join the token's workspace as members; deactivating or deleting them at the IdP
-          revokes their access here automatically.
+          revokes their access here automatically. An existing account is linked only if it is already a member of that
+          workspace — invite it first. Accounts that also belong to other workspaces lose only their seat in this one.
         </p>
 
         <div className="space-y-2">

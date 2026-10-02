@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyPluginAsync } from 'fastify';
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { apiTokens, scimTokens, users, workspaces, workspaceMembers, type DB } from '@ninedeploy/db';
+import { apiTokens, scimTokens, users, workspaces, workspaceMembers, workspaceRole, type DB } from '@ninedeploy/db';
 import { audit } from '../lib/audit.js';
 import { randomToken, sha256 } from '../lib/crypto.js';
 import { unauthorized } from '../lib/errors.js';
-import { setSettingString } from '../lib/settings.js';
+import { getSettingJson, setSettingJson, setSettingString } from '../lib/settings.js';
 import { STUDIO_EPOCH_KEY } from './studioProxy.js';
 
 /**
@@ -31,6 +31,15 @@ import { STUDIO_EPOCH_KEY } from './studioProxy.js';
  * members by numeric id. The SCIM `externalId` and the email are the join keys — a
  * provisioning push for an existing local account adopts it instead of
  * duplicating it (IdPs retry on timeout; duplicates would lock people out).
+ *
+ * r501: two more cross-tenant levers closed. (1) Adoption by email used to pull
+ * ANY account on the instance into the token's workspace — after which that
+ * workspace's IdP could deactivate it instance-wide. A push may now adopt only
+ * an account that is already this workspace's member (or one this workspace
+ * itself deprovisioned or suspended); anything else is a SCIM 409. (2)
+ * Deactivation is instance-wide only for an account SCIM created that holds no
+ * seat in another tenant's workspace; for everyone else a workspace's IdP
+ * suspends the seat in ITS workspace and nothing more.
  */
 
 const SCIM_USER_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:User';
@@ -62,6 +71,8 @@ function payloadEmail(body: ScimUserPayload): string | null {
 function scimUserBody(
   u: { id: number; email: string; name: string | null; scimExternalId: string | null; deactivatedAt: Date | null },
   workspaceId: number,
+  /** r501: the seat in THIS workspace is suspended — the IdP sees the user inactive. */
+  suspended = false,
 ): Record<string, unknown> {
   const member = { value: String(workspaceId), display: String(workspaceId), type: 'direct' };
   return {
@@ -71,19 +82,75 @@ function scimUserBody(
     userName: u.email,
     name: u.name ? { formatted: u.name } : undefined,
     displayName: u.name ?? u.email,
-    active: u.deactivatedAt === null,
+    active: u.deactivatedAt === null && !suspended,
     emails: [{ value: u.email, primary: true }],
     groups: [member],
     meta: { resourceType: 'User', location: `/scim/v2/Users/${u.id}` },
   };
 }
 
-function scimError(status: number, detail: string): {
+function scimError(status: number, detail: string, scimType?: string): {
   statusCode: number;
   payload: Record<string, unknown>;
 } {
-  return { statusCode: status, payload: { schemas: [SCIM_ERROR_SCHEMA], status: String(status), detail } };
+  return { statusCode: status, payload: { schemas: [SCIM_ERROR_SCHEMA], status: String(status), ...(scimType && { scimType }), detail } };
 }
+
+// ── r501: per-workspace suspension ─────────────────────────────────────────
+// A workspace's IdP deactivating someone who is not "its" account removes the
+// seat in that workspace only. The seat's role is parked in the settings table
+// (no migration) so the same IdP still sees the user — inactive — and can
+// reactivate it later with the role it had.
+type WorkspaceRole = (typeof workspaceRole)[number];
+const suspendedKey = (workspaceId: number) => `scim.suspended.ws${workspaceId}`;
+
+async function suspendedSeats(db: DB, workspaceId: number): Promise<Record<string, WorkspaceRole>> {
+  return (await getSettingJson<Record<string, WorkspaceRole>>(db, suspendedKey(workspaceId), {})) ?? {};
+}
+
+async function suspendedRole(db: DB, userId: number, workspaceId: number): Promise<WorkspaceRole | null> {
+  const role = (await suspendedSeats(db, workspaceId))[String(userId)];
+  return role && (workspaceRole as readonly string[]).includes(role) ? role : null;
+}
+
+async function setSuspended(db: DB, userId: number, workspaceId: number, role: WorkspaceRole | null): Promise<void> {
+  const seats = await suspendedSeats(db, workspaceId);
+  if (role) seats[String(userId)] = role;
+  else delete seats[String(userId)];
+  await setSettingJson(db, suspendedKey(workspaceId), seats);
+}
+
+/**
+ * r501: whether `workspaceId`'s IdP may deactivate this account INSTANCE-wide.
+ * Only an account SCIM itself created — its password is SCIM's unusable random
+ * value, never an argon2 hash (adoption never touched it, and a local or SSO
+ * signup always has one) — and that holds no seat in another tenant's
+ * workspace. A workspace the user owns and is alone in is their personal
+ * space, not another tenant. Anything else is somebody else's user too: the
+ * IdP gets the seat in its own workspace, not the account.
+ */
+async function deactivatesInstanceWide(
+  db: DB,
+  user: { id: number; passwordHash: string },
+  workspaceId: number,
+): Promise<boolean> {
+  if (user.passwordHash.startsWith('$argon2')) return false;
+  const seats = await db.query.workspaceMembers.findMany({ where: eq(workspaceMembers.userId, user.id) });
+  for (const seat of seats) {
+    if (seat.workspaceId === workspaceId) continue;
+    const ws = await db.query.workspaces.findFirst({ where: eq(workspaces.id, seat.workspaceId) });
+    if (!ws) continue;
+    if (ws.ownerId !== user.id) return false;
+    const roster = await db.query.workspaceMembers.findMany({ where: eq(workspaceMembers.workspaceId, ws.id) });
+    if (roster.some((m) => m.userId !== user.id)) return false;
+  }
+  return true;
+}
+
+const OWNER_REFUSED = 'The workspace owner cannot be deprovisioned through the SCIM token of that same workspace';
+const ADOPT_REFUSED =
+  'An account with this email already exists on this instance but is not a member of this workspace. ' +
+  'Add it to the workspace first (invite it from the workspace settings), then retry the provisioning push.';
 
 async function resolveUser(db: DB, idRaw: string) {
   const id = Number(idRaw);
@@ -122,11 +189,58 @@ async function mayReactivate(
 
 const REACTIVATE_REFUSED = 'This account was deprovisioned by another workspace';
 
-/** A user this workspace's token may act on: an existing member of it. */
+/**
+ * A user this workspace's token may act on: an existing member of it, or one
+ * whose seat in it this IdP suspended (r501) — `suspended` then carries the
+ * parked role.
+ */
 async function resolveMember(db: DB, idRaw: string, workspaceId: number) {
   const user = await resolveUser(db, idRaw);
-  if (!user || !(await isMemberOf(db, user.id, workspaceId))) return null;
-  return user;
+  if (!user) return null;
+  if (await isMemberOf(db, user.id, workspaceId)) return { user, suspended: null };
+  const parked = await suspendedRole(db, user.id, workspaceId);
+  return parked ? { user, suspended: parked } : null;
+}
+
+/**
+ * The single deprovision path for PATCH/PUT active=false (r501): instance-wide
+ * when this workspace's IdP owns the account (see deactivatesInstanceWide),
+ * otherwise only the seat in this workspace is suspended. Returns the SCIM
+ * error to send, or null.
+ */
+async function deprovisionFor(
+  db: DB,
+  user: { id: number; email: string; passwordHash: string; isInstanceOperator: boolean | null },
+  workspaceId: number,
+  alreadySuspended: boolean,
+): Promise<{ statusCode: number; payload: Record<string, unknown> } | null> {
+  if (user.isInstanceOperator) return scimError(403, OPERATOR_REFUSED);
+  if (alreadySuspended) return null;
+  if (await deactivatesInstanceWide(db, user, workspaceId)) {
+    await deactivateUser(db, user.id, workspaceId, { leaveWorkspace: false });
+    void audit(db, null, 'scim.deactivate', user.email);
+    return null;
+  }
+  const ws = await db.query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
+  if (ws?.ownerId === user.id) return scimError(403, OWNER_REFUSED);
+  const seat = await db.query.workspaceMembers.findFirst({
+    where: and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.workspaceId, workspaceId)),
+  });
+  await setSuspended(db, user.id, workspaceId, (seat?.role as WorkspaceRole | undefined) ?? 'member');
+  await db
+    .delete(workspaceMembers)
+    .where(and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.workspaceId, workspaceId)));
+  void audit(db, null, 'scim.suspend', `${user.email} in workspace #${workspaceId}`);
+  return null;
+}
+
+/** Give a suspended seat back (r501) — the IdP re-enabled the user. */
+async function reinstateSeat(db: DB, userId: number, email: string, workspaceId: number, role: WorkspaceRole): Promise<void> {
+  if (!(await isMemberOf(db, userId, workspaceId))) {
+    await db.insert(workspaceMembers).values({ workspaceId, userId, role });
+  }
+  await setSuspended(db, userId, workspaceId, null);
+  void audit(db, null, 'scim.reinstate', `${email} in workspace #${workspaceId}`);
 }
 
 /**
@@ -213,9 +327,17 @@ export const scimRoutes: FastifyPluginAsync = async (app) => {
       // and reactivate if a previous deprovision left it disabled.
       const externalId = str(req.body.externalId);
       const name = str(req.body.displayName) ?? str(req.body.name?.givenName);
+      const alreadyMember = await isMemberOf(app.db, existing.id, workspaceId);
+      const parked = alreadyMember ? null : await suspendedRole(app.db, existing.id, workspaceId);
+      // r501: only this workspace's own people — a member, a seat this IdP
+      // suspended, or an account this workspace deprovisioned. Adopting any
+      // other account by email handed it to this IdP's deactivation switch.
+      if (!alreadyMember && !parked && existing.deactivatedByWorkspaceId !== workspaceId) {
+        void audit(app.db, null, 'scim.adopt_refused', `${email} -> workspace #${workspaceId}`);
+        return scimReply(reply, scimError(409, ADOPT_REFUSED, 'uniqueness'));
+      }
       // A push from workspace A must not undo a deprovision another tenant
       // performed (r153) — see mayReactivate.
-      const alreadyMember = await isMemberOf(app.db, existing.id, workspaceId);
       const reactivate = existing.deactivatedAt !== null && (await mayReactivate(app.db, existing, workspaceId));
       await app.db
         .update(users)
@@ -225,7 +347,9 @@ export const scimRoutes: FastifyPluginAsync = async (app) => {
           ...(reactivate ? REACTIVATED : {}),
         })
         .where(eq(users.id, existing.id));
-      if (!alreadyMember) {
+      if (parked) {
+        await reinstateSeat(app.db, existing.id, existing.email, workspaceId, parked);
+      } else if (!alreadyMember) {
         await app.db.insert(workspaceMembers).values({ workspaceId, userId: existing.id, role: 'member' });
       }
       const fresh = (await resolveUser(app.db, String(existing.id)))!;
@@ -253,9 +377,9 @@ export const scimRoutes: FastifyPluginAsync = async (app) => {
   // ── Read one / list (with the `userName eq "…"` filter IdPs send) ────────
   app.get<{ Params: { id: string } }>('/Users/:id', async (req, reply) => {
     const workspaceId = await bearer(req);
-    const user = await resolveMember(app.db, (req.params as { id: string }).id, workspaceId);
-    if (!user) return scimReply(reply, scimError(404, 'User not found'));
-    return scimUserBody(user, workspaceId);
+    const found = await resolveMember(app.db, (req.params as { id: string }).id, workspaceId);
+    if (!found) return scimReply(reply, scimError(404, 'User not found'));
+    return scimUserBody(found.user, workspaceId, found.suspended !== null);
   });
 
   app.get<{ Querystring: { filter?: string; startIndex?: string; count?: string } }>('/Users', async (req) => {
@@ -265,7 +389,9 @@ export const scimRoutes: FastifyPluginAsync = async (app) => {
     const rows = await app.db.query.users.findMany();
     const memberships = await app.db.query.workspaceMembers.findMany({ where: eq(workspaceMembers.workspaceId, workspaceId) });
     const memberIds = new Set(memberships.map((m) => m.userId));
-    const inWorkspace = rows.filter((u) => memberIds.has(u.id));
+    // r501: suspended seats stay visible to their IdP (as inactive users).
+    const suspended = new Set(Object.keys(await suspendedSeats(app.db, workspaceId)).map(Number));
+    const inWorkspace = rows.filter((u) => memberIds.has(u.id) || suspended.has(u.id));
     const matched = eqMatch ? inWorkspace.filter((u) => u.email.toLowerCase() === eqMatch[1]!.toLowerCase()) : inWorkspace;
     const start = Math.max(1, Number((req.query as { startIndex?: string }).startIndex ?? 1) || 1);
     const count = Math.min(200, Math.max(0, Number((req.query as { count?: string }).count ?? 100) || 100));
@@ -275,7 +401,7 @@ export const scimRoutes: FastifyPluginAsync = async (app) => {
       totalResults: matched.length,
       startIndex: start,
       itemsPerPage: page.length,
-      Resources: page.map((u) => scimUserBody(u, workspaceId)),
+      Resources: page.map((u) => scimUserBody(u, workspaceId, !memberIds.has(u.id))),
     };
   });
 
@@ -284,54 +410,85 @@ export const scimRoutes: FastifyPluginAsync = async (app) => {
     '/Users/:id',
     async (req, reply) => {
       const workspaceId = await bearer(req);
-      const user = await resolveMember(app.db, (req.params as { id: string }).id, workspaceId);
-      if (!user) return scimReply(reply, scimError(404, 'User not found'));
+      const found = await resolveMember(app.db, (req.params as { id: string }).id, workspaceId);
+      if (!found) return scimReply(reply, scimError(404, 'User not found'));
+      const { user } = found;
+      let suspended = found.suspended;
       for (const op of req.body.Operations ?? []) {
         const path = str(op.path)?.toLowerCase();
         const active = op.value;
         if ((str(op.op)?.toLowerCase() === 'replace' || str(op.op)?.toLowerCase() === 'remove') && (path === 'active' || !path)) {
           if (active === false || active === 'False' || active === 'false') {
-            if (user.isInstanceOperator) return scimReply(reply, scimError(403, OPERATOR_REFUSED));
-            await deactivateUser(app.db, user.id, workspaceId, { leaveWorkspace: false });
-            void audit(app.db, null, 'scim.deactivate', user.email);
+            const refused = await deprovisionFor(app.db, user, workspaceId, suspended !== null);
+            if (refused) return scimReply(reply, refused);
+            suspended = await suspendedRole(app.db, user.id, workspaceId);
           } else if (active === true || active === 'True' || active === 'true') {
-            if (!(await mayReactivate(app.db, user, workspaceId))) return scimReply(reply, scimError(403, REACTIVATE_REFUSED));
+            if (user.deactivatedAt && !(await mayReactivate(app.db, user, workspaceId))) {
+              return scimReply(reply, scimError(403, REACTIVATE_REFUSED));
+            }
+            if (suspended) {
+              await reinstateSeat(app.db, user.id, user.email, workspaceId, suspended);
+              suspended = null;
+            }
             await app.db.update(users).set(REACTIVATED).where(eq(users.id, user.id));
             void audit(app.db, null, 'scim.reactivate', user.email);
           }
         }
       }
       const fresh = (await resolveUser(app.db, String(user.id)))!;
-      return scimUserBody(fresh, workspaceId);
+      return scimUserBody(fresh, workspaceId, suspended !== null);
     },
   );
 
   // ── Replace (PUT) — IdPs that don't use PATCH rewrite the whole record ───
   app.put<{ Params: { id: string }; Body: ScimUserPayload }>('/Users/:id', async (req, reply) => {
     const workspaceId = await bearer(req);
-    const user = await resolveMember(app.db, (req.params as { id: string }).id, workspaceId);
-    if (!user) return scimReply(reply, scimError(404, 'User not found'));
+    const found = await resolveMember(app.db, (req.params as { id: string }).id, workspaceId);
+    if (!found) return scimReply(reply, scimError(404, 'User not found'));
+    const { user } = found;
+    let suspended = found.suspended;
     const name = str(req.body.displayName) ?? str(req.body.name?.givenName);
     const active = req.body.active;
-    if (active === false && user.isInstanceOperator) return scimReply(reply, scimError(403, OPERATOR_REFUSED));
     if (active === true && !(await mayReactivate(app.db, user, workspaceId))) {
       return scimReply(reply, scimError(403, REACTIVATE_REFUSED));
     }
-    if (active === false) await deactivateUser(app.db, user.id, workspaceId, { leaveWorkspace: false });
-    else if (active === true && user.deactivatedAt) await app.db.update(users).set(REACTIVATED).where(eq(users.id, user.id));
+    if (active === false) {
+      const refused = await deprovisionFor(app.db, user, workspaceId, suspended !== null);
+      if (refused) return scimReply(reply, refused);
+      suspended = await suspendedRole(app.db, user.id, workspaceId);
+    } else if (active === true) {
+      if (suspended) {
+        await reinstateSeat(app.db, user.id, user.email, workspaceId, suspended);
+        suspended = null;
+      }
+      if (user.deactivatedAt) await app.db.update(users).set(REACTIVATED).where(eq(users.id, user.id));
+    }
     await app.db.update(users).set({ name: name ?? user.name, scimExternalId: str(req.body.externalId) ?? user.scimExternalId }).where(eq(users.id, user.id));
     const fresh = (await resolveUser(app.db, String(user.id)))!;
-    return scimUserBody(fresh, workspaceId);
+    return scimUserBody(fresh, workspaceId, suspended !== null);
   });
 
   // ── Delete — deprovision: deactivate + leave this workspace ──────────────
   app.delete<{ Params: { id: string } }>('/Users/:id', async (req, reply) => {
     const workspaceId = await bearer(req);
-    const user = await resolveMember(app.db, (req.params as { id: string }).id, workspaceId);
-    if (!user) return scimReply(reply, scimError(404, 'User not found'));
+    const found = await resolveMember(app.db, (req.params as { id: string }).id, workspaceId);
+    if (!found) return scimReply(reply, scimError(404, 'User not found'));
+    const { user } = found;
     if (user.isInstanceOperator) return scimReply(reply, scimError(403, OPERATOR_REFUSED));
-    await deactivateUser(app.db, user.id, workspaceId, { leaveWorkspace: true });
-    void audit(app.db, null, 'scim.deprovision', user.email);
+    if (await deactivatesInstanceWide(app.db, user, workspaceId)) {
+      await deactivateUser(app.db, user.id, workspaceId, { leaveWorkspace: true });
+      if (found.suspended) await setSuspended(app.db, user.id, workspaceId, null);
+      void audit(app.db, null, 'scim.deprovision', user.email);
+      return { schemas: [SCIM_USER_SCHEMA], id: String(user.id) };
+    }
+    // r501: someone else's user too — leave THIS workspace, keep the account.
+    const ws = await app.db.query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
+    if (ws?.ownerId === user.id) return scimReply(reply, scimError(403, OWNER_REFUSED));
+    await app.db
+      .delete(workspaceMembers)
+      .where(and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.workspaceId, workspaceId)));
+    if (found.suspended) await setSuspended(app.db, user.id, workspaceId, null);
+    void audit(app.db, null, 'scim.deprovision', `${user.email} (left workspace #${workspaceId})`);
     return { schemas: [SCIM_USER_SCHEMA], id: String(user.id) };
   });
 };
