@@ -483,4 +483,15 @@ describe('remote docker builder — health and teardown', () => {
     // A teardown must not fail because the container had already exited.
     expect(ops()).toContain('docker.rm');
   });
+
+  // r526: the service's stop grace used to be dropped (`void opts`), so a
+  // node container always got the agent's pinned 5 s before SIGKILL.
+  it('r526: passes the stop grace to the node (old agents ignore the operand)', async () => {
+    const { agent, calls } = fakeAgent();
+    await createRemoteDockerBuilder(agent).stop('web-7', { graceSeconds: 45 });
+    expect(calls.find((c) => c.op === 'docker.stop')?.params).toEqual({ name: 'web-7', graceSeconds: '45' });
+    const plain = fakeAgent();
+    await createRemoteDockerBuilder(plain.agent).stop('web-7');
+    expect(plain.calls.find((c) => c.op === 'docker.stop')?.params).toEqual({ name: 'web-7' });
+  });
 });

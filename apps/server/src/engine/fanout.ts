@@ -120,46 +120,51 @@ export async function deployToTargets(
     const agent: AgentCaller = (op, params, sink) => agentOp(db, target.serverId, op, params, sink);
     try {
       let release: string;
-      if (ctx.image) {
-        release = ctx.image;
-      } else if (ctx.source) {
-        // Each target builds the pinned commit ITSELF — the image never
-        // travels between nodes (that would need a registry).
-        const { repoUrl, branch, commitSha, dockerfilePath, baseDir } = ctx.source;
-        log(`target node #${target.serverId}: building from ${repoUrl} @ ${commitSha.slice(0, 7)} …`);
-        // r353: same egress gate as the primary's remote checkout (r099) —
-        // the clone runs from the target NODE's network position, and this
-        // path used to skip it.
-        await assertCloneTargetAllowed(repoUrl);
-        await agent('git.ensure', { workspace: ctx.service.slug, url: repoUrl, depth: '1' }, log);
-        if (branch) {
-          await agent('git.fetch', { workspace: ctx.service.slug }, log);
-          await agent('git.checkout', { workspace: ctx.service.slug, ref: branch }, log);
-        }
-        if (commitSha) await agent('git.reset', { workspace: ctx.service.slug, sha: commitSha }, log);
-        release = `ninedeploy/${ctx.service.slug}:t${target.serverId}-${commitSha.slice(0, 7) || 'latest'}`;
-        await agent('docker.build', { workspace: ctx.service.slug, tag: release, dockerfile: dockerfilePath, context: baseDir }, log);
-      } else {
+      if (!ctx.image && !ctx.source) {
         throw new Error('fan-out context has neither an image nor a buildable source');
       }
+      // r526: one registry session around BOTH ways a target obtains the
+      // release. The login used to happen after the source build, so a
+      // Dockerfile whose base image lives in a private registry was pulled
+      // anonymously during `docker build` and failed on every target.
       const releaseRegistry = ctx.registryAuth
         ? await acquireRegistryLock(registryLockKey(target.serverId, ctx.registryAuth.server))
         : null;
       try {
-      if (ctx.registryAuth) {
-        await agent(
-          'docker.login',
-          { username: ctx.registryAuth.username, password: ctx.registryAuth.password, ...(ctx.registryAuth.server ? { server: ctx.registryAuth.server } : {}) },
-          log,
-        );
-      }
-      try {
-        if (ctx.image) await agent('docker.pull', { image: release }, log);
-      } finally {
         if (ctx.registryAuth) {
-          await agent('docker.logout', ctx.registryAuth.server ? { server: ctx.registryAuth.server } : {}, log).catch(() => undefined);
+          await agent(
+            'docker.login',
+            { username: ctx.registryAuth.username, password: ctx.registryAuth.password, ...(ctx.registryAuth.server ? { server: ctx.registryAuth.server } : {}) },
+            log,
+          );
         }
-      }
+        try {
+          if (ctx.image) {
+            release = ctx.image;
+            await agent('docker.pull', { image: release }, log);
+          } else {
+            // Each target builds the pinned commit ITSELF — the image never
+            // travels between nodes (that would need a registry).
+            const { repoUrl, branch, commitSha, dockerfilePath, baseDir } = ctx.source!;
+            log(`target node #${target.serverId}: building from ${repoUrl} @ ${commitSha.slice(0, 7)} …`);
+            // r353: same egress gate as the primary's remote checkout (r099) —
+            // the clone runs from the target NODE's network position, and this
+            // path used to skip it.
+            await assertCloneTargetAllowed(repoUrl);
+            await agent('git.ensure', { workspace: ctx.service.slug, url: repoUrl, depth: '1' }, log);
+            if (branch) {
+              await agent('git.fetch', { workspace: ctx.service.slug }, log);
+              await agent('git.checkout', { workspace: ctx.service.slug, ref: branch }, log);
+            }
+            if (commitSha) await agent('git.reset', { workspace: ctx.service.slug, sha: commitSha }, log);
+            release = `ninedeploy/${ctx.service.slug}:t${target.serverId}-${commitSha.slice(0, 7) || 'latest'}`;
+            await agent('docker.build', { workspace: ctx.service.slug, tag: release, dockerfile: dockerfilePath, context: baseDir }, log);
+          }
+        } finally {
+          if (ctx.registryAuth) {
+            await agent('docker.logout', ctx.registryAuth.server ? { server: ctx.registryAuth.server } : {}, log).catch(() => undefined);
+          }
+        }
       } finally {
         releaseRegistry?.();
       }

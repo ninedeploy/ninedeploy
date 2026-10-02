@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join as joinPath } from 'node:path';
 import { buildAgentApp } from './agentApp.js';
-import { tokenMatches } from './lib/agentClient.js';
+import { agentChildTimeoutMs, tokenMatches } from './lib/agentClient.js';
 import { MAX_SKEW_MS, open as openSealed, seal as sealResponse } from './lib/agentSeal.js';
 import { spawnValidated } from './lib/spawnValidated.js';
 
@@ -165,7 +165,16 @@ const OPS: Record<string, { exe: 'docker' | 'git'; build: Op }> = {
       return argv;
     },
   },
-  'docker.stop': { exe: 'docker', build: (p) => ['stop', '-t', '5', validated(str(p, 'name'), RE_NAME, 'name')] },
+  // r526: the panel passes the service's stop grace (0-300 s, the schema's
+  // range); anything else — or a panel that predates it — keeps the 5 s default.
+  'docker.stop': {
+    exe: 'docker',
+    build: (p) => {
+      const grace = str(p, 'graceSeconds');
+      const t = grace !== undefined && /^\d{1,3}$/.test(grace) && Number(grace) <= 300 ? String(Number(grace)) : '5';
+      return ['stop', '-t', t, validated(str(p, 'name'), RE_NAME, 'name')];
+    },
+  },
   'docker.start': { exe: 'docker', build: (p) => ['start', validated(str(p, 'name'), RE_NAME, 'name')] },
   'docker.rm': { exe: 'docker', build: (p) => ['rm', '-f', validated(str(p, 'name'), RE_NAME, 'name')] },
   'docker.inspect': {
@@ -719,7 +728,13 @@ export async function runOp(op: string, params: Params, onLine: (l: string) => v
   // every host-level op (networks, prune, inspect) wants.
   const workspace = str(params, 'workspace');
   const cwd = workspace === undefined ? undefined : await resolveWorkspace(workspace);
-  return spawnValidated(def.exe, argv, onLine, cwd === undefined ? {} : { cwd });
+  // r526: build/bring-up ops get the panel host's build budget instead of the
+  // 595 s default (the panel waits as long for them — see LONG_AGENT_OPS).
+  const timeoutMs = agentChildTimeoutMs(op);
+  return spawnValidated(def.exe, argv, onLine, {
+    ...(cwd === undefined ? {} : { cwd }),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+  });
 }
 
 export async function announceToMaster(
