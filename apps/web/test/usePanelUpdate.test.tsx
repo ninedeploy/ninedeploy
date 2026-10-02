@@ -108,21 +108,25 @@ describe('usePanelUpdate', () => {
   it('marks unsupported installations with their reason and stays manual', async () => {
     mockOf(api.system.updateStatus).mockResolvedValue(status({ supported: false, reason: 'Container mode' }));
     const { result } = renderHookWith();
-    await waitFor(() => expect(result.current.ready).toBe(true));
+    // A dismissed strip renders as idle; there is nothing to restart from here.
+    await waitFor(() => {
+      expect(result.current.ready).toBe(true);
+      expect(result.current.phase).toBe('idle');
+    });
     expect(result.current.supported).toBe(false);
     expect(result.current.supportReason).toBe('Container mode');
-    // A dismissed strip renders as idle; there is nothing to restart from here.
-    expect(result.current.phase).toBe('idle');
   });
 
   it('keeps showing updating while the run was started on this tab but never confirmed', async () => {
     mockOf(api.system.updateStatus).mockResolvedValue(status({ supported: false, reason: 'Container mode' }));
     window.localStorage.setItem('ninedeploy.updateTarget', 'v0.3.4');
     const { result } = renderHookWith();
-    await waitFor(() => expect(result.current.ready).toBe(true));
     // The localStorage marker survives the panel restart mid-run.
+    await waitFor(() => {
+      expect(result.current.ready).toBe(true);
+      expect(result.current.phase).toBe('updating');
+    });
     expect(result.current.targetVersion).toBe('v0.3.4');
-    expect(result.current.phase).toBe('updating');
   });
 
   it('startUpdating persists the target and flips to updating immediately', async () => {
@@ -180,8 +184,10 @@ describe('usePanelUpdate', () => {
   it('lands idle when the server reports success without any known target', async () => {
     mockOf(api.system.updateStatus).mockResolvedValue(status({ phase: 'success', targetVersion: null }));
     const { result } = renderHookWith();
-    await waitFor(() => expect(result.current.ready).toBe(true));
-    expect(result.current.phase).toBe('idle');
+    await waitFor(() => {
+      expect(result.current.ready).toBe(true);
+      expect(result.current.phase).toBe('idle');
+    });
   });
 
   it('reports failure once with the installer output tail', async () => {
