@@ -25,7 +25,11 @@ import { assertCloneTargetAllowed } from '../../lib/gitEgress.js';
  *      previous revision is still serving. A broken `${VAR}` reference or a bad
  *      tag therefore fails the deployment WITHOUT ever having torn the live
  *      stack down;
- *   4. `compose up -d --build --remove-orphans`;
+ *   4. `compose up -d --build --remove-orphans` — with NO `down` before it
+ *      (r590): compose's `up --build` builds every image before it recreates
+ *      a single container, so build time is not downtime and a failed build
+ *      leaves the previous revision serving. (The local builder had a `down`
+ *      ahead of `up --build`; it now builds first, then downs.);
  *   5. apply the platform restart policy, because a compose file with no
  *      `restart:` leaves every container dead after a host reboot and nobody
  *      is watching a remote node;

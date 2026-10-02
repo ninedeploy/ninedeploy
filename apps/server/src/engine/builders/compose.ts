@@ -45,9 +45,10 @@ export function composeScalar(value: string): string {
 }
 
 /**
- * Docker Compose builder: `docker compose up -d --build` for multi-container
- * apps. Unlike the docker builder there is NO blue-green — compose replaces
- * the project in place (brief gap, like PM2). Rollback re-checks out the old
+ * Docker Compose builder for multi-container apps: `config`, `pull` and
+ * `build` while the previous revision serves, then `down` + `up -d` (r590).
+ * Unlike the docker builder there is NO blue-green — compose replaces the
+ * project in place (brief gap, like PM2). Rollback re-checks out the old
  * commit and re-ups. The compose file is `dockerfilePath` from the build
  * config (default docker-compose.yml) — except for an inline stack
  * (`service.composeContent`), which always runs the file the pipeline wrote.
@@ -254,9 +255,25 @@ export const composeBuilder: Builder = {
         await run('docker', [...stackArgs, 'pull', '--quiet'], { ...gateOpts, timeoutMs: 900_000, heartbeatLabel: `Pulling images for ${project} (can take minutes on slow links)` }, log);
       }
 
-      // Stop the previous project revision first — no blue-green for compose.
-      // Always pass -f: with a non-default compose file, plain `down` would look
-      // at docker-compose.yml and miss the real project.
+      // r590: BUILD while the previous revision is still serving. `up --build`
+      // after `down` made the whole image build downtime, and a failed build
+      // (a broken Dockerfile, a dead base-image registry) left the stack DOWN
+      // with the deploy failing — no previous revision to fall back to. Now a
+      // build failure throws here, before `down`, and the live stack keeps
+      // serving. Services without a `build:` section are a no-op for compose.
+      await run(
+        'docker',
+        [...stackArgs, 'build'],
+        { ...gateOpts, timeoutMs: 1_200_000, heartbeatLabel: `Building images for ${project} (the previous revision keeps serving)` },
+        log,
+      );
+
+      // Stop the previous project revision — no blue-green for compose. Kept
+      // as it always was (only its position moved): existing stacks get the
+      // same teardown — containers, orphans and the project network — so `up`
+      // starts from a clean project. Always pass -f: with a non-default
+      // compose file, plain `down` would look at docker-compose.yml and miss
+      // the real project.
       const downArgs = [...stackArgs, 'down', '--remove-orphans'];
       await run(
         'docker',
@@ -265,7 +282,9 @@ export const composeBuilder: Builder = {
         log,
       ).catch(() => undefined);
 
-      const upArgs = [...stackArgs, 'up', '-d', '--build', '--remove-orphans'];
+      // r590: no `--build` — every image was built above, so the gap between
+      // `down` and a serving stack is container start time only.
+      const upArgs = [...stackArgs, 'up', '-d', '--remove-orphans'];
       await run(
         'docker',
         upArgs,
