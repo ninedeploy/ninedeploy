@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   Activity, Building2, Cloud, Container, Database, FileCode, FolderKanban, Globe, HardDrive, HelpCircle, KeyRound,
   Layers, LayoutDashboard, type LucideIcon, Network, Rocket, Search, Server,
@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
 import { ICON_MAP } from './Layout.js';
-import { cn } from './ui.js';
+import { cn, useDialogFocus } from './ui.js';
 
 interface Cmd {
   type: string;
@@ -53,6 +53,14 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(0);
   const { user } = useAuth();
+  // r564: a real modal — role=dialog + aria-modal, focus trapped inside and
+  // returned to the opener, Escape closes (useDialogFocus) — and a combobox
+  // whose active option screen readers can follow.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useDialogFocus(panelRef, true, onClose, inputRef);
+  const listboxId = useId();
+  const optionId = (i: number) => `${listboxId}-opt-${i}`;
 
   const services = useQuery({ queryKey: ['services'], queryFn: () => api.services.list() });
   const databases = useQuery({ queryKey: ['databases'], queryFn: () => api.databases.list() });
@@ -128,7 +136,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setSelected((s) => Math.min(s + 1, results.length - 1)); }
       else if (e.key === 'ArrowUp') { e.preventDefault(); setSelected((s) => Math.max(s - 1, 0)); }
       else if (e.key === 'Enter') { e.preventDefault(); const r = results[selected]; if (r) { navigate(r.to); onClose(); } }
-      else if (e.key === 'Escape') { onClose(); }
+      // Escape is handled by useDialogFocus (it also restores focus).
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -140,14 +148,25 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh]">
       <button type="button" aria-label="Close palette" tabIndex={-1} aria-hidden="true" onClick={onClose} className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
         className="nd-fade relative w-full max-w-xl overflow-hidden rounded-2xl border border-white/10 bg-slate-950 shadow-2xl"
       >
         {/* Search input */}
         <div className="flex items-center gap-3 border-b border-white/5 px-4 py-3">
           <Search size={18} className="shrink-0 text-slate-500" />
           <input
+            ref={inputRef}
             // biome-ignore lint/a11y/noAutofocus: command-palette search should grab focus on open (the palette is modal; the user just pressed ⌘K).
             autoFocus
+            role="combobox"
+            aria-label="Search commands"
+            aria-autocomplete="list"
+            aria-expanded={results.length > 0}
+            aria-controls={listboxId}
+            aria-activedescendant={results.length > 0 ? optionId(selected) : undefined}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search services, databases, templates, or jump to…"
@@ -157,7 +176,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Results */}
-        <div className="max-h-[50vh] overflow-auto p-2">
+        <div id={listboxId} role="listbox" aria-label="Results" className="max-h-[50vh] overflow-auto p-2">
           {results.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-600">No results for "{query}"</p>
           ) : (
@@ -167,6 +186,12 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
                 <button
                   type="button"
                   key={`${cmd.type}-${cmd.label}-${i}`}
+                  id={optionId(i)}
+                  role="option"
+                  aria-selected={i === selected}
+                  // Options are reached with the arrow keys from the input,
+                  // not as separate Tab stops.
+                  tabIndex={-1}
                   onClick={() => activate(cmd)}
                   onMouseEnter={() => setSelected(i)}
                   className={cn(

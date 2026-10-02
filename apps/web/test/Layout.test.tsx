@@ -486,6 +486,25 @@ describe('Layout', () => {
     expect(screen.getAllByText('database create')).toHaveLength(1);
   });
 
+  it('r564: the events drawer is a modal dialog — focus moves in, is trapped, Escape closes and returns it', async () => {
+    const user = userEvent.setup();
+    renderLayout();
+    const opener = screen.getByTitle('Activity');
+    await user.click(opener);
+    const dialog = screen.getByRole('dialog', { name: /Events/ });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    const close = screen.getByRole('button', { name: 'Close events' });
+    expect(close).toHaveFocus();
+    // Shift+Tab from the first control wraps to the last one inside.
+    await user.tab({ shift: true });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    await user.tab();
+    expect(close).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: /Events/ })).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+  });
+
   it('closes the drawer via the X button and the backdrop', async () => {
     const user = userEvent.setup();
     const { container } = renderLayout();

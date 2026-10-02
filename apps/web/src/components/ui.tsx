@@ -383,6 +383,98 @@ export function useEscapeToClose(onClose: () => void, enabled = true): void {
 }
 
 /**
+ * Focus management for anything modal: scroll lock, initial focus on the
+ * first focusable element (or `initialFocusRef`), a Tab/Shift+Tab trap,
+ * Escape-to-close, and focus handed back to the opener on close. r564:
+ * extracted from Modal so the hand-rolled overlays (command palette, events
+ * drawer) get the same guarantees instead of leaking focus to the page
+ * behind them.
+ */
+export function useDialogFocus(
+  panelRef: React.RefObject<HTMLElement | null>,
+  isOpen: boolean,
+  onClose: () => void,
+  initialFocusRef?: React.RefObject<HTMLElement | null>,
+): void {
+  // The scroll lock, key trap and initial focus must depend on whether the
+  // dialog IS open — not on whether the caller re-created its callbacks this
+  // render. Every page passes `onClose` as a fresh inline arrow, so keying
+  // this effect on it used to reinstall everything on every keystroke in a
+  // controlled input, and the "focus first element" step yanked the caret
+  // out of whatever field the user was typing in. Read callbacks through
+  // refs so the listener always sees the latest closure while the effect
+  // itself only runs on open/close transitions.
+  const onCloseRef = useRef(onClose);
+  const initialFocusRefSnapshot = useRef(initialFocusRef);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    initialFocusRefSnapshot.current = initialFocusRef;
+  });
+
+  // r293: remember what had focus when the dialog opened so closing it hands
+  // focus back (keyboard users were dropped at the top of the page). Read at
+  // render time on the closed→open transition: by the time any effect runs,
+  // an autoFocus field inside the dialog has already taken focus.
+  const returnFocusRef = useRef<Element | null>(null);
+  const wasOpenRef = useRef(false);
+  if (isOpen && !wasOpenRef.current) returnFocusRef.current = document.activeElement;
+  wasOpenRef.current = isOpen;
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the open transition only — callbacks are read through refs (see above) and the panel ref is stable.
+  useEffect(() => {
+    // The panel only mounts when isOpen; skip side-effects when closed.
+    if (!isOpen) return;
+    const returnFocus = returnFocusRef.current;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    // The panel ref is always attached before this effect runs (refs bind
+    // during commit, effects after), so the element is safe to assert.
+    const panel = panelRef.current!;
+    // r564: `tabindex="-1"` elements (listbox options, the backdrop) are not
+    // Tab stops — counting them as the trap's first/last let Tab escape.
+    const focusables = () =>
+      Array.from(panel.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]')).filter(
+        (el) => !(el as HTMLButtonElement).disabled && el.getAttribute('tabindex') !== '-1',
+      );
+
+    const target = initialFocusRefSnapshot.current?.current ?? focusables()[0];
+    target?.focus();
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onCloseRef.current();
+      } else if (e.key === 'Tab') {
+        // Every caller renders at least one tabbable control (a close button
+        // or the search input), so the list is never empty.
+        const els = focusables();
+        const first = els[0]!;
+        const last = els[els.length - 1]!;
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKey);
+      // Skip an opener that has since left the DOM (a row deleted by the
+      // dialog's own action) — focusing a detached node is a no-op at best.
+      if (returnFocus instanceof HTMLElement && returnFocus.isConnected && returnFocus !== document.body) {
+        returnFocus.focus();
+      }
+    };
+  }, [isOpen]);
+}
+
+/**
  * Shared modal chrome: backdrop click + Escape close, scroll lock, focus
  * trap and initial focus on the first focusable element (or `initialFocusRef`).
  * Extracted from the DeployWizard's hand-rolled implementation so every
@@ -411,79 +503,7 @@ export function Modal({
   // check at the JSX level further down).
   const panelRef = useRef<HTMLDivElement>(null);
   const isOpen = open !== false;
-
-  // The scroll lock, key trap and initial focus must depend on whether the
-  // dialog IS open — not on whether the caller re-created its callbacks this
-  // render. Every page passes `onClose` as a fresh inline arrow, so keying
-  // this effect on it used to reinstall everything on every keystroke in a
-  // controlled input, and the "focus first element" step yanked the caret
-  // out of whatever field the user was typing in. Read callbacks through
-  // refs so the listener always sees the latest closure while the effect
-  // itself only runs on open/close transitions.
-  const onCloseRef = useRef(onClose);
-  const initialFocusRefSnapshot = useRef(initialFocusRef);
-
-  useEffect(() => {
-    onCloseRef.current = onClose;
-    initialFocusRefSnapshot.current = initialFocusRef;
-  });
-
-  // r293: remember what had focus when the dialog opened so closing it hands
-  // focus back (keyboard users were dropped at the top of the page). Read at
-  // render time on the closed→open transition: by the time any effect runs,
-  // an autoFocus field inside the dialog has already taken focus.
-  const returnFocusRef = useRef<Element | null>(null);
-  const wasOpenRef = useRef(false);
-  if (isOpen && !wasOpenRef.current) returnFocusRef.current = document.activeElement;
-  wasOpenRef.current = isOpen;
-
-  useEffect(() => {
-    // The portal only mounts when isOpen; skip side-effects when closed.
-    if (!isOpen) return;
-    const returnFocus = returnFocusRef.current;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-
-    // The panel ref is always attached before this effect runs (refs bind
-    // during commit, effects after), so the element is safe to assert.
-    const panel = panelRef.current!;
-    const focusables = () =>
-      Array.from(panel.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')).filter(
-        (el) => !(el as HTMLButtonElement).disabled,
-      );
-
-    const target = initialFocusRefSnapshot.current?.current ?? focusables()[0];
-    target?.focus();
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onCloseRef.current();
-      } else if (e.key === 'Tab') {
-        // The header close button is always focusable, so the list is never empty.
-        const els = focusables();
-        const first = els[0]!;
-        const last = els[els.length - 1]!;
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => {
-      document.body.style.overflow = prevOverflow;
-      window.removeEventListener('keydown', onKey);
-      // Skip an opener that has since left the DOM (a row deleted by the
-      // dialog's own action) — focusing a detached node is a no-op at best.
-      if (returnFocus instanceof HTMLElement && returnFocus.isConnected && returnFocus !== document.body) {
-        returnFocus.focus();
-      }
-    };
-  }, [isOpen]);
+  useDialogFocus(panelRef, isOpen, onClose, initialFocusRef);
 
   const modalContent = (
     <div className="fixed inset-0 z-[9999] flex items-end justify-center sm:items-center p-4 sm:p-6">
