@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { databaseAttachments, type DB, serviceVolumeAttachments, sources } from '@ninedeploy/db';
+import { buildConfigs, databaseAttachments, type DB, serviceVolumeAttachments, sources } from '@ninedeploy/db';
 import { badRequest } from './errors.js';
 
 /**
@@ -21,6 +21,7 @@ import { badRequest } from './errors.js';
  *     extra volume attachments (r266, {@link remoteServiceRefusal}).
  *   - A repository cloned with a Git credential: the node clones anonymously
  *     (r268, same function).
+ *   - Deploy hooks: they run on the panel host (r522, {@link remoteHookRefusal}).
  *
  * Compose stacks DO run on a node now (`engine/builders/remoteCompose.ts`):
  * the panel ships an inline stack's YAML, or the node checks the repository
@@ -141,13 +142,55 @@ export async function remoteServiceRefusal(
   return `Deployments to a remote server are not available for this service: the node agent cannot give the container ${missing.join(', ')}, so it would start without ${missing.length > 1 ? 'them' : 'it'}. Clear the target server to deploy it on the panel host.`;
 }
 
-/** Queue-time 400 for {@link remoteServiceRefusal}. */
+/** The three lifecycle hooks a build config can carry. */
+type HookFields = {
+  preDeployCmd?: string | null;
+  postDeployCmd?: string | null;
+  preStopCmd?: string | null;
+};
+
+/**
+ * r522: why a node-pinned service's deploy hooks cannot run, or null.
+ *
+ * `runHook` executes pre-deploy / post-deploy / pre-stop commands with the
+ * panel's own `run()` — on the PANEL host, in the panel's checkout — and the
+ * agent has no operation for an arbitrary command. A node-pinned service with
+ * a hook set therefore ran it on the wrong machine (a migration against the
+ * panel host's network, a cache flush of nothing) while the deploy reported
+ * success. Refused like every other shape the node cannot honour. Services
+ * that already carry such a hook get the fix in the message: clear the hook,
+ * or clear the target server.
+ */
+export function remoteHookRefusal(build: HookFields | null | undefined): string | null {
+  if (!build) return null;
+  const set = (
+    [
+      ['pre-deploy', build.preDeployCmd],
+      ['post-deploy', build.postDeployCmd],
+      ['pre-stop', build.preStopCmd],
+    ] as const
+  )
+    .filter(([, cmd]) => typeof cmd === 'string' && cmd.trim() !== '')
+    .map(([name]) => name);
+  if (set.length === 0) return null;
+  return `Deployments to a remote server are not available for this service: its ${set.join(', ')} hook${set.length > 1 ? 's run' : ' runs'} on the panel host, not on the node, and the node agent has no operation for an arbitrary command. Clear the hook${set.length > 1 ? 's' : ''} in Service → Settings → Build, or clear the target server to deploy it on the panel host.`;
+}
+
+/**
+ * Queue-time 400 for {@link remoteServiceRefusal} — and, r522, for deploy
+ * hooks on a node-pinned service (the pipeline refuses both again at its
+ * choke point).
+ */
 export async function assertRemoteServiceSupported(
   db: DB,
   service: Parameters<typeof remoteServiceRefusal>[1],
 ): Promise<void> {
   const reason = await remoteServiceRefusal(db, service);
   if (reason) throw badRequest(reason, 'remote_deploy_unsupported');
+  if (service.serverId == null) return;
+  const build = await db.query.buildConfigs.findFirst({ where: eq(buildConfigs.serviceId, service.id) });
+  const hookReason = remoteHookRefusal(build);
+  if (hookReason) throw badRequest(hookReason, 'remote_deploy_unsupported');
 }
 
 /** Queue-time 400 for {@link remoteDatabaseRefusal}. */

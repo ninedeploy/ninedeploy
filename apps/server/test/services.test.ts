@@ -1597,3 +1597,64 @@ describe('inline compose stacks', () => {
     expect(res.statusCode).toBe(403);
   });
 });
+
+// r522: deploy hooks run on the PANEL host (pipeline runHook), so a
+// node-pinned service carrying one ran it on the wrong machine. Saving that
+// combination is refused where it is introduced; an existing pinned service
+// with a hook stays editable (its deploy is refused with the fix named).
+describe('r522: deploy hooks on a node-pinned service', () => {
+  const operator = asUser({ id: 1, isOperator: true });
+  const pinned = svcRow({ id: 1, ownerUserId: 1, serverId: 3, runtimeId: 'web-9' });
+
+  it('refuses setting a hook on a pinned service, and pinning a hook-carrying one', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { services: pinned, buildConfigs: { serviceId: 1, buildPack: 'auto' } }, update: { services: [pinned] } }),
+    });
+    await app.register(servicesRoutes);
+    const setHook = await app.inject({
+      method: 'PATCH', url: '/1', headers: operator, payload: { build: { preDeployCmd: 'npm run migrate' } },
+    });
+    expect(setHook.statusCode).toBe(400);
+    expect(setHook.json().error.code).toBe('remote_deploy_unsupported');
+    expect(setHook.json().error.message).toMatch(/pre-deploy hook runs on the panel host/);
+
+    const local = svcRow({ id: 1, ownerUserId: 1, serverId: null, runtimeId: 'web-9' });
+    const pinApp = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { services: local, buildConfigs: { serviceId: 1, buildPack: 'auto', preStopCmd: 'npm run drain' } },
+        update: { services: [local] },
+      }),
+    });
+    await pinApp.register(servicesRoutes);
+    const pin = await pinApp.inject({ method: 'PATCH', url: '/1', headers: operator, payload: { serverId: 3 } });
+    expect(pin.statusCode).toBe(400);
+    expect(pin.json().error.message).toMatch(/pre-stop hook/);
+  });
+
+  it('keeps an existing pinned service with a hook editable, and lets the hook be cleared', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { services: pinned, buildConfigs: { serviceId: 1, buildPack: 'auto', preDeployCmd: 'npm run migrate' } },
+        update: { services: [pinned], buildConfigs: [{ serviceId: 1 }] },
+      }),
+    });
+    await app.register(servicesRoutes);
+    const rename = await app.inject({ method: 'PATCH', url: '/1', headers: operator, payload: { name: 'renamed' } });
+    expect(rename.statusCode).toBe(200);
+    const clear = await app.inject({ method: 'PATCH', url: '/1', headers: operator, payload: { build: { preDeployCmd: '' } } });
+    expect(clear.statusCode).toBe(200);
+  });
+
+  it('refuses creating a pinned service with a hook', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({ insert: { services: [svcRow({ id: 4, name: 'My App', slug: 'my-app' })] } }),
+    });
+    await app.register(servicesRoutes);
+    const res = await app.inject({
+      method: 'POST', url: '/', headers: operator,
+      payload: { ...validCreate, serverId: 3, build: { buildPack: 'auto', baseDir: '/', postDeployCmd: 'curl -fsS http://x' } },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toMatch(/post-deploy hook runs on the panel host/);
+  });
+});

@@ -5,6 +5,7 @@ import {
   remoteDatabaseRefusal,
   remoteDeploySupported,
   remoteDeployUnsupportedReason,
+  remoteHookRefusal,
   remoteServiceRefusal,
 } from '../../src/lib/remoteDeploy.js';
 
@@ -169,5 +170,33 @@ describe('remoteServiceRefusal (r266)', () => {
     await expect(
       assertRemoteServiceSupported(attachmentsDb(), { id: 1, serverId: 4, dockerSocket: true }),
     ).rejects.toMatchObject({ statusCode: 400, code: 'remote_deploy_unsupported' });
+  });
+});
+
+describe('remoteHookRefusal (r522)', () => {
+  it('names every hook set and how to get unstuck; blank hooks do not count', () => {
+    expect(remoteHookRefusal(null)).toBeNull();
+    expect(remoteHookRefusal({ preDeployCmd: '  ', postDeployCmd: null, preStopCmd: '' })).toBeNull();
+    const one = remoteHookRefusal({ preDeployCmd: 'npm run migrate' });
+    expect(one).toMatch(/its pre-deploy hook runs on the panel host/);
+    expect(one).toMatch(/Clear the hook in Service → Settings → Build, or clear the target server/);
+    expect(remoteHookRefusal({ postDeployCmd: 'a', preStopCmd: 'b' })).toMatch(/post-deploy, pre-stop hooks run/);
+  });
+
+  it('is part of the queue-time 400 for a pinned service only', async () => {
+    const withBuild = (build: Record<string, unknown> | undefined) =>
+      ({
+        select: () => ({ from: () => ({ where: async () => [] }) }),
+        query: { buildConfigs: { findFirst: async () => build } },
+      }) as never;
+    await expect(
+      assertRemoteServiceSupported(withBuild({ preStopCmd: 'drain' }), { id: 1, serverId: 4, type: 'docker' }),
+    ).rejects.toMatchObject({ statusCode: 400, code: 'remote_deploy_unsupported' });
+    await expect(
+      assertRemoteServiceSupported(withBuild({ preStopCmd: 'drain' }), { id: 1, serverId: null, type: 'docker' }),
+    ).resolves.toBeUndefined();
+    await expect(
+      assertRemoteServiceSupported(withBuild(undefined), { id: 1, serverId: 4, type: 'docker' }),
+    ).resolves.toBeUndefined();
   });
 });
