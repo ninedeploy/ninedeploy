@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchImageDigest } from '../../src/lib/imageWatch.js';
 
+// r514: the probe runs through the egress guard, which resolves the registry
+// host. Resolve every name to a public address by default; the SSRF tests
+// below override it with private answers.
+const dns = vi.hoisted(() => ({
+  lookup: vi.fn(async (_host: string, _opts?: unknown) => [{ address: '93.184.216.34', family: 4 }]),
+}));
+vi.mock('node:dns/promises', () => ({ ...dns, default: dns }));
+
 /**
  * Registry digest probing for the auto-update sweep. fetch is stubbed —
  * the mock answers from a queue so each test scripts the exact round-trips
@@ -193,6 +201,23 @@ describe('fetchImageDigest', () => {
     await expect(fetchImageDigest('index.docker.io', 'library/nginx', 'latest')).rejects.toThrow(
       'the registry token endpoint is unreachable',
     );
+  });
+
+  it('r514: refuses a registry host that resolves to a private / metadata address, before any request', async () => {
+    const { fetchMock } = makeFetch([res(200, { 'docker-content-digest': 'sha256:x' })]);
+    dns.lookup.mockResolvedValueOnce([{ address: '169.254.169.254', family: 4 }]);
+    await expect(fetchImageDigest('metadata.attacker.example', 'a/b', 'latest')).rejects.toThrow(/registry probe refused/);
+    await expect(fetchImageDigest('10.0.0.5:5000', 'a/b', 'latest')).rejects.toThrow(/private or link-local/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('r514: never follows a registry redirect (and never with the credential header)', async () => {
+    const { calls, fetchMock } = makeFetch([res(302, { location: 'http://169.254.169.254/latest/meta-data/' })]);
+    await expect(
+      fetchImageDigest('registry.acme.io', 'team/app', 'latest', { username: 'robot', password: 'secret' }),
+    ).rejects.toThrow('registry answered HTTP 302 without a digest');
+    expect(calls).toHaveLength(1);
+    expect((fetchMock.mock.calls[0]![1] as RequestInit).redirect).toBe('manual');
   });
 
   it('rejects a token response that carries no token', async () => {
