@@ -6,6 +6,8 @@ const vaultMocks = vi.hoisted(() => ({
   getVaultConfig: vi.fn(async () => ({ provider: 'infisical', token: 'tok', projectId: 'ws', environment: 'default' })),
   setVaultConfig: vi.fn(async () => undefined),
   testVault: vi.fn(async () => 7),
+  ensureVaultAllowlistInitialised: vi.fn(async () => ({ workspaceIds: [], serviceIds: [] })),
+  setVaultAllowlist: vi.fn(async (_db: unknown, list: unknown) => list),
 }));
 vi.mock('../../src/lib/vault.js', () => vaultMocks);
 
@@ -26,7 +28,16 @@ describe('settings integrations (vault + dns records)', () => {
   it('returns the vault config (token presence, not value)', async () => {
     const res = await (await app()).inject({ method: 'GET', url: '/vault', headers: asUser() });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ provider: 'infisical', hasToken: true, projectId: 'ws', environment: 'default' });
+    expect(res.json()).toEqual({
+      provider: 'infisical',
+      hasToken: true,
+      projectId: 'ws',
+      environment: 'default',
+      // r510: the allowlist rides along (additive).
+      allowlist: { workspaceIds: [], serviceIds: [] },
+      workspaces: [],
+      allowedServices: [],
+    });
   });
 
   it('saves vault settings, keeping the stored token when omitted', async () => {
