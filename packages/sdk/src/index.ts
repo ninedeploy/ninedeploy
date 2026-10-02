@@ -636,9 +636,16 @@ export interface NineDeployClient {
     create: (input: WorkspaceCreateInput) => Promise<WorkspaceEntry>;
     update: (id: number, input: WorkspaceUpdateInput) => Promise<WorkspaceEntry>;
     delete: (id: number) => Promise<{ ok: boolean }>;
+    /**
+     * Add a member by email. r604: only an instance operator gets a direct
+     * add (a `WorkspaceMemberEntry`) for a registered address; for everyone
+     * else the answer is always an invitation (`kind: 'invitation'`), so the
+     * response does not reveal whether the address has an account.
+     */
     addMember: (id: number, input: WorkspaceMemberAddInput) => Promise<WorkspaceMemberEntry | WorkspaceMemberInviteEntry>;
     /**
-     * Create a pending invitation for an email address that isn't a user yet.
+     * Create a pending invitation for an email address that is not a member of
+     * the workspace yet (r604: registered or not).
      * r334: the response is the invitation row only — the server does NOT
      * return an `acceptUrl` here (the token travels in the `x-invitation-token`
      * response header and in the invite email). `addMember` returns the accept

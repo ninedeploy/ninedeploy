@@ -37,8 +37,10 @@ export interface CreateInvitationResult {
 
 /**
  * Create or refresh a pending invitation for the given (workspace, email).
- * The caller MUST have already verified the user doesn't yet exist and is
- * authorized to invite; this helper is the lower-level write path. The
+ * The caller MUST have already verified the address is not a member of the
+ * workspace yet and that it is authorized to invite (r604: whether an account
+ * exists for the address does not matter); this helper is the lower-level
+ * write path. The
  * returned `token` is the cleartext value (used in the accept URL); only the
  * hash lives in storage.
  */
@@ -302,12 +304,18 @@ export const invitationRoutes: FastifyPluginAsync = async (app) => {
       const authority = await resolveInviteAuthority(app.db, workspaceId, req.user!.id, req.user!.isOperator);
       if (!authority) throw forbidden('Admin or Owner role required to invite workspace members');
 
-      // If the address is already a registered user, signal that the caller
-      // should use the direct add-member endpoint instead. We return the same
-      // 404 shape the member-add route does so the L-12 enumeration channel
-      // stays closed.
+      // r604: a registered address used to 404 here ("use add-member") while
+      // an unknown one got an invitation — an account-existence oracle for any
+      // workspace admin. Now only an address that is already a member of THIS
+      // workspace (visible in its member list anyway) is refused; everyone
+      // else gets the same invitation, accepted from their account.
       const existingUser = await app.db.query.users.findFirst({ where: sql`lower(${users.email}) = ${input.email.toLowerCase()}` });
-      if (existingUser) throw notFound('That email address cannot be invited to this workspace');
+      if (existingUser) {
+        const alreadyMember = await app.db.query.workspaceMembers.findFirst({
+          where: and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, existingUser.id)),
+        });
+        if (alreadyMember) throw notFound('That email address cannot be invited to this workspace');
+      }
 
       const { token, invitation: created } = await createOrRefreshInvitation(app.db, {
         workspaceId,

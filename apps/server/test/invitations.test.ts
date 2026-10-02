@@ -368,7 +368,32 @@ describe('invitationRoutes', () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it('refuses to invite an already-registered email (404 — L-12)', async () => {
+  it('r604: invites a registered email that is not a member yet — no account-existence oracle', async () => {
+    let memberLookups = 0;
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: {
+          workspaces: workspaceRow({ id: 1 }),
+          // the caller's seat, the authority check, then: target is not a member
+          workspace_members: () => (++memberLookups <= 2 ? memberRow({ role: 'owner' }) : undefined),
+          users: userRow({ id: 4, email: 'existing@example.com' }),
+        },
+        insert: { workspace_invitations: [invitationRow({ id: 51, email: 'existing@example.com' })] },
+      }),
+    });
+    await app.register(invitationRoutes, { prefix: '/workspaces' });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/workspaces/1/invitations',
+      headers: { ...asUser({ id: 2, isOperator: false }), 'content-type': 'application/json' },
+      payload: { email: 'existing@example.com' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().email).toBe('existing@example.com');
+  });
+
+  it('refuses to invite an address that is already a member of this workspace (404)', async () => {
     const app = await buildTestApp({
       db: createFakeDb({
         findFirst: {
