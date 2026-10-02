@@ -8,11 +8,91 @@ import {
   type Service,
 } from '@ninedeploy/db';
 import { eq } from 'drizzle-orm';
+import { isOperator } from '../lib/resourceAccess.js';
 import { encrypt, randomToken } from '../lib/crypto.js';
 import { findCatalogTemplate } from '../templates/catalog.js';
-import { adoptRetainedVolume, attachDatabaseToServiceBridges, defaultPort, ENGINES, needsVolumeAdoption, startDatabase } from './database.js';
+import {
+  adoptRetainedVolume,
+  attachDatabaseToServiceBridges,
+  defaultPort,
+  ENGINES,
+  needsVolumeAdoption,
+  startDatabase,
+  volumeExists,
+  volumeLabels,
+} from './database.js';
 
 export type TemplateDependencyResult = { database: Database; alreadyAttached: boolean } | null;
+
+/** How many `<slug>-db`, `<slug>-db-2`, … names a dependency may try. */
+const MAX_DEPENDENCY_SLUG_CANDIDATES = 10;
+
+/**
+ * Pick the database row a template's managed dependency lives in, for a
+ * service that has no attached one yet.
+ *
+ * The name used to be fixed at `<service slug>-db`, and two things went wrong
+ * with a fixed name:
+ *
+ *  • r642: database slugs are global, so anyone who created a database called
+ *    `<victim slug>-db` first made every deploy of the victim's template
+ *    service fail ("belongs to another resource") — slug squatting.
+ *  • r641: a fresh row named `nd-db-<slug>-db-data` as its volume, and when a
+ *    DELETED tenant's volume was retained under that name, the adoption step
+ *    re-keyed (postgres) or mounted as-is (redis/valkey) the old data under
+ *    the new owner. `POST /databases` refuses that for non-operators (r096);
+ *    this worker-side path did not.
+ *
+ * Names are now tried in a fixed order — deterministic, so a retry after a
+ * failed first start finds its own row again — and a candidate is skipped
+ * when its row belongs to someone else or, for a non-operator owner, when a
+ * volume already exists under its name that the volume's `ninedeploy.owner`
+ * label does not tie to this owner. A reinstall by the same owner still
+ * adopts its own retained data; operator-owned (and legacy owner-less)
+ * services keep the previous adopt-anything behaviour. Rows that already
+ * exist are untouched: the attachment path above finds them first.
+ */
+async function resolveDependencySlug(
+  db: DB,
+  service: Service,
+  serviceProjectId: number | null,
+  engine: string,
+  log: (line: string) => void,
+): Promise<{ kind: 'existing'; database: Database } | { kind: 'fresh'; slug: string }> {
+  const base = `${service.slug}-db`;
+  let ownerMayAdopt: boolean | undefined;
+  for (let i = 0; i < MAX_DEPENDENCY_SLUG_CANDIDATES; i++) {
+    const slug = i === 0 ? base : `${base}-${i + 1}`;
+    const row = await db.query.databases.findFirst({ where: eq(databases.slug, slug) });
+    if (row) {
+      if (row.ownerUserId === service.ownerUserId && row.projectId === serviceProjectId && row.engine === engine) {
+        return { kind: 'existing', database: row };
+      }
+      // r642: someone else's database holds this name — never fail the deploy
+      // over it, and never touch it; move on to the next name.
+      log(`note: database name '${slug}' is taken by another resource — trying the next name`);
+      continue;
+    }
+    // r641: a volume under this name outlived a deleted database. Only adopt
+    // it when it is provably this owner's.
+    ownerMayAdopt ??= service.ownerUserId == null || await isOperator(db, { id: service.ownerUserId });
+    const volumeName = `nd-db-${slug}-data`;
+    if (!ownerMayAdopt && await volumeExists(volumeName)) {
+      const owner = (await volumeLabels(volumeName))['ninedeploy.owner'];
+      if (owner !== String(service.ownerUserId)) {
+        log(
+          `note: a retained volume '${volumeName}' from a deleted database is not this service owner's — `
+          + 'leaving it untouched and provisioning the dependency under the next name (an operator can adopt or delete it from the Volumes page)',
+        );
+        continue;
+      }
+    }
+    return { kind: 'fresh', slug };
+  }
+  throw new Error(
+    `No free name for the managed database: '${base}' through '${base}-${MAX_DEPENDENCY_SLUG_CANDIDATES}' are all taken by other databases or retained volumes — ask an operator to clean them up, or install the template under a different service name`,
+  );
+}
 
 /**
  * Idempotently reconcile the durable Hub contract attached to a service.
@@ -68,39 +148,30 @@ export async function reconcileTemplateDependencies(
     }
   }
 
-  const dbSlug = `${service.slug}-db`;
   if (!database) {
-    const retained = await db.query.databases.findFirst({ where: eq(databases.slug, dbSlug) });
-    if (retained) {
-      if (
-        retained.ownerUserId !== service.ownerUserId
-        || retained.projectId !== serviceProjectId
-        || retained.engine !== template.dbEngine
-      ) {
-        throw new Error(`Database slug '${dbSlug}' belongs to another resource`);
-      }
-      database = retained;
+    const resolved = await resolveDependencySlug(db, service, serviceProjectId, template.dbEngine, log);
+    if (resolved.kind === 'existing') {
+      database = resolved.database;
+    } else {
+      const dbSlug = resolved.slug;
+      const [created] = await db.insert(databases).values({
+        projectId: serviceProjectId,
+        ownerUserId: service.ownerUserId,
+        name: `${service.name} DB`,
+        slug: dbSlug,
+        engine: template.dbEngine,
+        status: 'creating',
+        containerName: `nd-db-${dbSlug}`,
+        volumeName: `nd-db-${dbSlug}-data`,
+        username: cfg.username() ?? null,
+        passwordEncrypted: encrypt(randomToken(18)),
+        dbName: cfg.dbName() ?? null,
+        extensions: [],
+        webGuiEnabled: false,
+      }).returning();
+      if (!created) throw new Error('Could not create template database');
+      database = created;
     }
-  }
-
-  if (!database) {
-    const [created] = await db.insert(databases).values({
-      projectId: serviceProjectId,
-      ownerUserId: service.ownerUserId,
-      name: `${service.name} DB`,
-      slug: dbSlug,
-      engine: template.dbEngine,
-      status: 'creating',
-      containerName: `nd-db-${dbSlug}`,
-      volumeName: `nd-db-${dbSlug}-data`,
-      username: cfg.username() ?? null,
-      passwordEncrypted: encrypt(randomToken(18)),
-      dbName: cfg.dbName() ?? null,
-      extensions: [],
-      webGuiEnabled: false,
-    }).returning();
-    if (!created) throw new Error('Could not create template database');
-    database = created;
   }
 
   log(`Ensuring ${template.dbEngine} dependency ${database.slug} is running …`);

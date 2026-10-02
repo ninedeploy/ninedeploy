@@ -6,6 +6,9 @@ const mocks = vi.hoisted(() => ({
   community: [] as Array<Record<string, unknown>>,
   startDatabase: vi.fn(async () => undefined),
   adoptRetainedVolume: vi.fn(async () => ({ action: 'fresh' as const })),
+  // r641: the fresh-insert path probes for a retained volume under the name.
+  volumeExists: vi.fn(async (_name: string) => false),
+  volumeLabels: vi.fn(async (_name: string): Promise<Record<string, string>> => ({})),
 }));
 
 vi.mock('../src/templates/registry.js', () => ({
@@ -27,6 +30,8 @@ vi.mock('../src/engine/database.js', async (importOriginal) => {
     ...actual,
     startDatabase: mocks.startDatabase,
     adoptRetainedVolume: mocks.adoptRetainedVolume,
+    volumeExists: mocks.volumeExists,
+    volumeLabels: mocks.volumeLabels,
     attachDatabaseToServiceBridges: vi.fn(async () => undefined),
     defaultPort: vi.fn((engine: string) => engine === 'redis' ? 6379 : 3306),
     ENGINES: {
@@ -84,6 +89,8 @@ describe('vanished template resilience', () => {
 describe('template dependency recovery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.volumeExists.mockReset().mockResolvedValue(false);
+    mocks.volumeLabels.mockReset().mockResolvedValue({});
     mocks.templates = [mysqlTemplate];
     mocks.community = [];
   });
@@ -206,11 +213,86 @@ describe('template dependency recovery', () => {
     expect(mocks.adoptRetainedVolume).toHaveBeenCalledWith(retained, expect.any(Function));
   });
 
-  it('rejects a retained slug owned by another resource', async () => {
+  it('r642: a database squatting the dependency name is skipped, not fatal and not touched', async () => {
+    // Before r642 this threw "Database slug 'wordpress-db' belongs to another
+    // resource": anyone creating a database with that slug first broke every
+    // deploy of the victim's template service.
+    let lookups = 0;
+    let insertedDb: Record<string, unknown> | undefined;
     const db = createFakeDb({
-      findFirst: { databases: dbRow({ slug: 'wordpress-db', ownerUserId: 1, projectId: 2, engine: 'redis' }) },
+      findFirst: {
+        databases: () => (++lookups === 1 ? dbRow({ id: 50, slug: 'wordpress-db', ownerUserId: 99, projectId: 2, engine: 'mysql' }) : undefined),
+      },
+      findMany: linkedToProject2,
+      insert: {
+        databases: (value) => { insertedDb = value as Record<string, unknown>; return [dbRow({ ...(value as Record<string, unknown>), id: 51 })]; },
+        database_attachments: (value) => [value as Record<string, unknown>],
+      },
     });
-    await expect(reconcileTemplateDependencies(db, service(), vi.fn())).rejects.toThrow("Database slug 'wordpress-db'");
+    await expect(reconcileTemplateDependencies(db, service(), vi.fn())).resolves.toMatchObject({ database: { id: 51 } });
+    expect(insertedDb).toMatchObject({ slug: 'wordpress-db-2', volumeName: 'nd-db-wordpress-db-2-data', ownerUserId: 1 });
+    expect(mocks.startDatabase).not.toHaveBeenCalledWith(expect.objectContaining({ id: 50 }), expect.anything(), expect.anything());
+  });
+
+  it('r642: gives up with an actionable error once every candidate name is taken', async () => {
+    const db = createFakeDb({
+      findFirst: { databases: dbRow({ slug: 'wordpress-db', ownerUserId: 99, projectId: 2, engine: 'redis' }) },
+    });
+    await expect(reconcileTemplateDependencies(db, service(), vi.fn())).rejects.toThrow(/No free name for the managed database: 'wordpress-db' through 'wordpress-db-10'/);
+  });
+
+  it("r641: a non-operator owner never adopts another owner's retained volume", async () => {
+    // A deleted tenant's `nd-db-wordpress-db-data` outlived its row. The fresh
+    // row used to take that name and adoption re-keyed the old data to the
+    // new owner's password.
+    mocks.volumeExists.mockImplementation(async (name: string) => name === 'nd-db-wordpress-db-data');
+    mocks.volumeLabels.mockResolvedValue({ 'ninedeploy.managed': 'database', 'ninedeploy.owner': '99' });
+    let insertedDb: Record<string, unknown> | undefined;
+    const db = createFakeDb({
+      findFirst: { users: { id: 1, isInstanceOperator: false } },
+      findMany: linkedToProject2,
+      insert: {
+        databases: (value) => { insertedDb = value as Record<string, unknown>; return [dbRow({ ...(value as Record<string, unknown>), id: 60 })]; },
+        database_attachments: (value) => [value as Record<string, unknown>],
+      },
+    });
+    const log = vi.fn();
+    await reconcileTemplateDependencies(db, service(), log);
+    expect(insertedDb).toMatchObject({ slug: 'wordpress-db-2', volumeName: 'nd-db-wordpress-db-2-data' });
+    expect(mocks.adoptRetainedVolume).not.toHaveBeenCalledWith(expect.objectContaining({ volumeName: 'nd-db-wordpress-db-data' }), expect.anything());
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("retained volume 'nd-db-wordpress-db-data'"));
+  });
+
+  it('r641: the same owner reinstalling still adopts its own retained volume', async () => {
+    mocks.volumeExists.mockResolvedValue(true);
+    mocks.volumeLabels.mockResolvedValue({ 'ninedeploy.managed': 'database', 'ninedeploy.owner': '1' });
+    let insertedDb: Record<string, unknown> | undefined;
+    const db = createFakeDb({
+      findFirst: { users: { id: 1, isInstanceOperator: false } },
+      insert: {
+        databases: (value) => { insertedDb = value as Record<string, unknown>; return [dbRow({ ...(value as Record<string, unknown>), id: 61, status: 'creating', initializedAt: null })]; },
+        database_attachments: (value) => [value as Record<string, unknown>],
+      },
+    });
+    await reconcileTemplateDependencies(db, service(), vi.fn());
+    expect(insertedDb).toMatchObject({ slug: 'wordpress-db', volumeName: 'nd-db-wordpress-db-data' });
+    expect(mocks.adoptRetainedVolume).toHaveBeenCalledWith(expect.objectContaining({ id: 61 }), expect.any(Function));
+  });
+
+  it('r641: an operator-owned service keeps the previous adopt behaviour', async () => {
+    mocks.volumeExists.mockResolvedValue(true);
+    mocks.volumeLabels.mockResolvedValue({ 'ninedeploy.owner': '99' });
+    let insertedDb: Record<string, unknown> | undefined;
+    const db = createFakeDb({
+      findFirst: { users: { id: 1, isInstanceOperator: true } },
+      insert: {
+        databases: (value) => { insertedDb = value as Record<string, unknown>; return [dbRow({ ...(value as Record<string, unknown>), id: 62 })]; },
+        database_attachments: (value) => [value as Record<string, unknown>],
+      },
+    });
+    await reconcileTemplateDependencies(db, service(), vi.fn());
+    expect(insertedDb).toMatchObject({ slug: 'wordpress-db' });
+    expect(mocks.volumeExists).not.toHaveBeenCalled();
   });
 
   it('fails cleanly when the database row cannot be created', async () => {
