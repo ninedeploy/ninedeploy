@@ -13,12 +13,17 @@ import { eq } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import Fastify from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { auditLog, backupDrills, backups, createDb, databases, type DB } from '@ninedeploy/db';
+import { auditLog, backupDrills, backups, createDb, databases, jobRuns, scheduledJobs, services, type DB } from '@ninedeploy/db';
 
 // The tick's docker prune must never reach a real daemon.
 vi.mock('../../src/lib/exec.js', () => ({ run: vi.fn(async () => undefined) }));
 
-const { default: housekeepingPlugin, failInterruptedOperations } = await import('../../src/plugins/housekeeping.js');
+const {
+  default: housekeepingPlugin,
+  failInterruptedOperations,
+  failInterruptedJobRuns,
+  INTERRUPTED_JOB_RUN_OUTPUT,
+} = await import('../../src/plugins/housekeeping.js');
 
 const MIGRATIONS = fileURLToPath(new URL('../../../../packages/db/src/migrations', import.meta.url));
 const HOUR = 60 * 60 * 1000;
@@ -106,6 +111,60 @@ describe('r543: interrupted backups and drills', () => {
       expect((await db.query.backupDrills.findFirst({ where: eq(backupDrills.id, rows.drill.id) }))?.status).toBe(
         'unverifiable',
       );
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+// r594: r543 closed backups and drills only. An exec job inserts a `running`
+// job_runs row and writes its outcome when `docker exec` returns, so a crash
+// in between left the run "in progress" in the job history forever.
+describe('r594: interrupted scheduled-job runs', () => {
+  async function seedRuns() {
+    const ago = (ms: number) => new Date(Date.now() - ms);
+    const [svc] = await db.insert(services).values({ name: 's', slug: 's' }).returning();
+    const [job] = await db.insert(scheduledJobs).values({ serviceId: svc!.id, name: 'nightly', cron: '0 3 * * *', kind: 'exec', command: 'true' }).returning();
+    const insert = async (status: 'running' | 'completed', createdAt: Date) =>
+      (await db.insert(jobRuns).values({ jobId: job!.id, status, startedAt: createdAt, createdAt }).returning())[0]!;
+    return {
+      recent: await insert('running', ago(2 * HOUR)),
+      stale: await insert('running', ago(30 * HOUR)),
+      done: await insert('completed', ago(40 * HOUR)),
+    };
+  }
+  const runOf = async (id: number) => db.query.jobRuns.findFirst({ where: eq(jobRuns.id, id) });
+
+  it('the hourly backstop fails runs older than the cutoff with a clear output and leaves the rest alone', async () => {
+    const rows = await seedRuns();
+    expect(await failInterruptedJobRuns(db, new Date(Date.now() - 24 * HOUR))).toEqual([rows.stale.id]);
+
+    const stale = await runOf(rows.stale.id);
+    expect(stale).toMatchObject({ status: 'failed', output: INTERRUPTED_JOB_RUN_OUTPUT, exitCode: null });
+    expect(stale?.finishedAt).toBeInstanceOf(Date);
+    expect((await runOf(rows.recent.id))?.status).toBe('running'); // 2h old: could still be executing
+    expect((await runOf(rows.done.id))?.status).toBe('completed');
+
+    const trail = await db.select().from(auditLog).where(eq(auditLog.action, 'job.interrupted'));
+    expect(trail).toHaveLength(1);
+    expect(trail[0]!.meta).toEqual({ jobRunIds: [rows.stale.id] });
+  });
+
+  it('is a no-op (and audits nothing) when nothing is stuck', async () => {
+    expect(await failInterruptedJobRuns(db, new Date())).toEqual([]);
+    expect(await db.select().from(auditLog)).toHaveLength(0);
+  });
+
+  it('the housekeeping plugin closes every run left running by the previous process at boot', async () => {
+    const rows = await seedRuns();
+    const app = Fastify({ logger: false });
+    app.decorate('db', db);
+    await app.register(housekeepingPlugin);
+    await app.ready();
+    try {
+      expect((await runOf(rows.recent.id))?.status).toBe('failed');
+      expect((await runOf(rows.stale.id))?.status).toBe('failed');
+      expect((await runOf(rows.done.id))?.status).toBe('completed');
     } finally {
       await app.close();
     }
