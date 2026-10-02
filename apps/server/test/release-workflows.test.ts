@@ -102,7 +102,7 @@ describe('release delivery invariants', () => {
     expect(version && amd64 && arm64).toBeTruthy();
     expect(dockerfile).toContain(`ARG RAILPACK_VERSION=${version}`);
     expect(dockerfile).toContain(`amd64) RAILPACK_TARGET="x86_64-unknown-linux-musl"; RAILPACK_SHA256="${amd64}"`);
-    expect(dockerfile).toContain(`arm64) RAILPACK_TARGET="aarch64-unknown-linux-musl"; RAILPACK_SHA256="${arm64}"`);
+    expect(dockerfile).toContain(`arm64) RAILPACK_TARGET="arm64-unknown-linux-musl"; RAILPACK_SHA256="${arm64}"`);
     // Verified before it is unpacked, and proven runnable at build time.
     expect(dockerfile).toMatch(/RAILPACK_SHA256\} {2}\/tmp\/\$\{RAILPACK_ASSET\}" \| sha256sum -c -[\s\S]*tar -xzf "\/tmp\/\$\{RAILPACK_ASSET\}" -C \/usr\/local\/bin railpack/);
     expect(dockerfile).toContain('&& railpack --version');

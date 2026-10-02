@@ -122,7 +122,7 @@ RUN case "$TARGETARCH" in \
 ARG RAILPACK_VERSION=0.39.0
 RUN case "$TARGETARCH" in \
        amd64) RAILPACK_TARGET="x86_64-unknown-linux-musl"; RAILPACK_SHA256="728407f5cdb9e9bc1cdd07f568419344a20e71b0a5a9fd90a9cfbaca0a6c94f7" ;; \
-       arm64) RAILPACK_TARGET="aarch64-unknown-linux-musl"; RAILPACK_SHA256="42eb3fa68e38f44be3610a7d74f714ec0d808d70c105fbe35e053b6e6cfb20be" ;; \
+       arm64) RAILPACK_TARGET="arm64-unknown-linux-musl"; RAILPACK_SHA256="42eb3fa68e38f44be3610a7d74f714ec0d808d70c105fbe35e053b6e6cfb20be" ;; \
        *) echo "Unsupported Railpack architecture: $TARGETARCH" >&2; exit 1 ;; \
      esac \
   && RAILPACK_ASSET="railpack-v${RAILPACK_VERSION}-${RAILPACK_TARGET}.tar.gz" \

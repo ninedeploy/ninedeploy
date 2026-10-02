@@ -637,7 +637,7 @@ install_railpack() {
       RAILPACK_SHA256="$RAILPACK_SHA_AMD64_x86_64"
       ;;
     aarch64|arm64)
-      RAILPACK_TARGET="aarch64-unknown-linux-musl"
+      RAILPACK_TARGET="arm64-unknown-linux-musl"  # r584: railpack names it arm64 (Nixpacks says aarch64)
       RAILPACK_SHA256="$RAILPACK_SHA_ARM64_aarch64"
       ;;
     *) return 1 ;;
