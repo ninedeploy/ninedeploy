@@ -65,6 +65,12 @@ export const doctorFindingKind = z.enum([
    * Advisory: they keep loading (upgrade-safe); upgrading Node closes it.
    */
   'sandbox_plugin_network',
+  /**
+   * r620: a stored repository analysis holds a nodeVersion that is not a
+   * version — host file content captured through a symlinked .nvmrc before
+   * 0.10.41. Critical: the exposed secrets must be rotated.
+   */
+  'repo_insights_leak',
 ]);
 export type DoctorFindingKind = z.infer<typeof doctorFindingKind>;
 

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { closeSync, constants as fsConstants, fstatSync, lstatSync, openSync, readSync } from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
 import {
@@ -41,6 +41,19 @@ export interface LoadedManifest {
 }
 
 /** Thrown when the manifest file exists but is larger than the size cap. */
+/**
+ * r620: the manifest path exists but is not a regular file (a symlink, FIFO,
+ * device or directory). The repo is member-controlled; following such a path
+ * read host files into the deploy log (YAML errors quote the source) or hung
+ * the panel on `/dev/zero`.
+ */
+export class ManifestNotRegularFileError extends Error {
+  constructor(public readonly filePath: string) {
+    super(`.ninedeploy at ${filePath} must be a regular file in the repository (symlinks are not followed)`);
+    this.name = 'ManifestNotRegularFileError';
+  }
+}
+
 export class ManifestTooLargeError extends Error {
   constructor(
     public readonly filePath: string,
@@ -105,7 +118,14 @@ export class ManifestValidationError extends Error {
 export function findManifestPath(workDir: string): string | null {
   for (const filename of NINEDEPLOY_MANIFEST_FILENAMES) {
     const candidate = path.join(workDir, filename);
-    if (existsSync(candidate)) return candidate;
+    // r620: lstat, not exists — a dangling or hostile symlink is still "the
+    // manifest the repo declared", and the loader refuses it by name.
+    try {
+      lstatSync(candidate);
+      return candidate;
+    } catch {
+      /* absent */
+    }
   }
   return null;
 }
@@ -155,21 +175,29 @@ export function loadNinedeployManifest(workDir: string): LoadedManifest | null {
   const filePath = findManifestPath(workDir);
   if (!filePath) return null;
 
-  // readFileSync (not async): the file is small (16 KB cap) and we want a
-  // synchronous read so the rest of the function stays linear and testable.
-  // Treat ENOENT as "no manifest" — there is a TOCTOU window between
-  // `existsSync` (used by `findManifestPath`) and the open syscall here, and
-  // a deleted/renamed manifest in that gap is a no-op for the build, not a
-  // failure. Any other read error propagates so a real I/O issue surfaces.
+  // Synchronous on purpose (16 KB cap) so the rest of the function stays
+  // linear and testable. r620: only a regular file is read — lstat first,
+  // then O_NOFOLLOW so a swap to a symlink between the two is refused too —
+  // and the size is checked BEFORE reading, which never goes past the cap.
+  // ENOENT (deleted in the gap since findManifestPath) is "no manifest".
   let buf: Buffer;
+  let fd: number | null = null;
   try {
-    buf = readFileSync(filePath);
+    if (!lstatSync(filePath).isFile()) throw new ManifestNotRegularFileError(filePath);
+    fd = openSync(filePath, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
+    const st = fstatSync(fd);
+    if (!st.isFile()) throw new ManifestNotRegularFileError(filePath);
+    if (st.size > NINEDEPLOY_MANIFEST_MAX_BYTES) throw new ManifestTooLargeError(filePath, st.size);
+    const chunk = Buffer.alloc(NINEDEPLOY_MANIFEST_MAX_BYTES + 1);
+    const n = readSync(fd, chunk, 0, chunk.length, 0);
+    if (n > NINEDEPLOY_MANIFEST_MAX_BYTES) throw new ManifestTooLargeError(filePath, n);
+    buf = chunk.subarray(0, n);
   } catch (err) {
     if (isENOENT(err)) return null;
+    if ((err as NodeJS.ErrnoException).code === 'ELOOP') throw new ManifestNotRegularFileError(filePath);
     throw err;
-  }
-  if (buf.byteLength > NINEDEPLOY_MANIFEST_MAX_BYTES) {
-    throw new ManifestTooLargeError(filePath, buf.byteLength);
+  } finally {
+    if (fd !== null) closeSync(fd);
   }
   const text = buf.toString('utf8');
 

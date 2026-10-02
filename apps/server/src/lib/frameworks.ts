@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { closeSync, existsSync, constants as fsConstants, fstatSync, lstatSync, openSync, readdirSync, readSync } from 'node:fs';
 import path from 'node:path';
 import type { FrameworkPreset, PackageManagerId, RepoInsights } from '@ninedeploy/schemas';
 import { matchesAny } from './glob.js';
@@ -59,14 +59,49 @@ const START_CMD: Record<PackageManagerId, string> = {
   bun: 'bun start',
 };
 
+/**
+ * Read a marker file from a checkout the panel does not trust.
+ *
+ * r620: only a REGULAR file is read, never what a symlink points at. The repo
+ * is member-controlled: `.nvmrc -> /proc/self/environ` used to be followed
+ * (stat/readFile both follow links, and procfs reports size 0, so the size cap
+ * passed) and its content came back to the caller as `nodeVersion` — the
+ * panel's own environment, JWT secret included. The open uses O_NOFOLLOW
+ * where the platform has it, so swapping the file for a link between the
+ * lstat and the open is refused too, and the read never goes past the cap
+ * (a FIFO or device would otherwise block or grow without bound).
+ */
 function readText(file: string): string | null {
+  let fd: number | null = null;
   try {
-    if (!existsSync(file) || !statSync(file).isFile()) return null;
-    if (statSync(file).size > MAX_MARKER_BYTES) return null;
-    return readFileSync(file, 'utf8');
+    if (!lstatSync(file).isFile()) return null;
+    fd = openSync(file, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
+    const st = fstatSync(fd);
+    if (!st.isFile() || st.size > MAX_MARKER_BYTES) return null;
+    const buf = Buffer.alloc(Math.min(st.size, MAX_MARKER_BYTES) + 1);
+    const n = readSync(fd, buf, 0, buf.length, 0);
+    if (n > MAX_MARKER_BYTES) return null;
+    return buf.subarray(0, n).toString('utf8');
   } catch {
     return null;
+  } finally {
+    if (fd !== null) closeSync(fd);
   }
+}
+
+/**
+ * r620: what a Node version marker may contain — `.nvmrc` forms (`20`,
+ * `v20.11.1`, `lts/iron`, `node`) or a package.json `engines.node` range
+ * (`>=18 <21`, `^20.x`). Anything else is not a version, it is data that must
+ * not be stored, logged or returned (it is how host files leaked before).
+ */
+const NODE_VERSION_RE = /^(?:v?\d+(?:\.(?:\d+|x|\*)){0,2}|lts\/[a-z*-]+|node|stable|latest)$/i;
+const NODE_RANGE_RE = /^[0-9vVxX*.^~<>=| -]{1,64}$/;
+export function sanitizeNodeVersion(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const v = raw.trim();
+  if (!v || v.length > 64) return null;
+  return NODE_VERSION_RE.test(v) || NODE_RANGE_RE.test(v) ? v : null;
 }
 
 function readJson(file: string): unknown | null {
@@ -529,9 +564,17 @@ function enumerateWorkspacePackages(
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith('.') || SKIP_DIRS.has(entry.name)) continue;
       const relDir = rel === '' ? entry.name : `${rel}/${entry.name}`;
-      if (!seen.has(relDir) && matchesAny(relDir, globs) && existsSync(resolveInRepo(dir, relDir, 'package.json'))) {
+      // r620: resolveInRepo throws on a symlinked component — skip that one
+      // package instead of aborting the whole analysis.
+      let subPkgPath: string | null = null;
+      try {
+        subPkgPath = resolveInRepo(dir, relDir, 'package.json');
+      } catch {
+        subPkgPath = null;
+      }
+      if (subPkgPath && !seen.has(relDir) && matchesAny(relDir, globs) && existsSync(subPkgPath)) {
         seen.add(relDir);
-        const subPkg = readJson(resolveInRepo(dir, relDir, 'package.json')) as ParsedPackageJson | null;
+        const subPkg = readJson(subPkgPath) as ParsedPackageJson | null;
         if (subPkg) {
           const { preset, frameworkVersion } = detectNodeFramework(subPkg, pm, false);
           results.push({
@@ -600,7 +643,8 @@ export function analyzeRepo(workDir: string, baseDir?: string, commitSha?: strin
 
     const nvmrc = readText(path.join(dir, '.nvmrc'));
     if (nvmrc !== null) detectedFiles.push('.nvmrc');
-    const nodeVersion = (nvmrc?.trim() || pkgRaw.engines?.node || null) as string | null;
+    // r620: only a value shaped like a Node version survives — see sanitizeNodeVersion.
+    const nodeVersion = sanitizeNodeVersion(nvmrc) ?? sanitizeNodeVersion(pkgRaw.engines?.node);
 
     const workspaceGlobs = parseWorkspaceGlobs(pkgRaw, dir);
     const isRootAnalysis = !baseDir || baseDir === '' || baseDir === '/';

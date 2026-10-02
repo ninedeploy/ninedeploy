@@ -6,6 +6,7 @@ import {
   installedPlugins,
   oidcProviders,
   projects,
+  repoInsights,
   serviceVolumeAttachments,
   services,
   tunnels,
@@ -30,6 +31,7 @@ import {
 import { conflict } from '../lib/errors.js';
 import { config } from '../config.js';
 import { SandboxPlugin } from '../kernel/sandbox/sandboxPlugin.js';
+import { storedInsightsLeakSuspected } from './repoInsights.js';
 import {
   containerRunning,
   listManagedVolumeNames,
@@ -218,6 +220,33 @@ export function sandboxNetworkFinding(
       'runs Node 26), or disable the plugins you do not fully trust in Settings → Plugins. New sandbox installs are ' +
       'refused on this Node unless NINEDEPLOY_ALLOW_SANDBOX_NETWORK=1 is set.',
     target: { type: 'host', name: ids.join(','), id: null },
+    action: null,
+    sizeBytes: null,
+  };
+}
+
+/**
+ * r620: stored repository analyses whose `nodeVersion` is not a Node version.
+ * Before 0.10.41 a symlinked `.nvmrc` in a repo could make the panel store
+ * (and show) host file content there — its own environment included. The
+ * API no longer returns such values, but if one exists the secrets it may
+ * have exposed must be treated as compromised. Exported for its unit test.
+ */
+export function insightsLeakFinding(serviceIds: readonly number[]): DoctorFinding | null {
+  if (serviceIds.length === 0) return null;
+  return {
+    id: 'repo_insights_leak',
+    kind: 'repo_insights_leak',
+    severity: 'critical',
+    title: `Repository analysis stored data that is not a Node version (${serviceIds.length} service(s))`,
+    detail:
+      'Before 0.10.41, a repository could make the panel read a host file through a symlinked .nvmrc and show its ' +
+      "content as the Node version — including the panel's own environment (JWT secret, master key when set via env). " +
+      `Stored analyses for service id(s) ${serviceIds.join(', ')} hold such content. Treat these secrets as exposed: ` +
+      'set a new NINEDEPLOY_JWT_SECRET (signs every session out), add a new master key to NINEDEPLOY_MASTER_KEYS and run ' +
+      '`ninedeploy system rotate-keys`, rotate any registry/git/S3 credentials stored in the panel, review ' +
+      'who owns those services, then re-run repository analysis (or redeploy) so the stored rows are rewritten.',
+    target: { type: 'host', name: serviceIds.join(','), id: null },
     action: null,
     sizeBytes: null,
   };
@@ -463,6 +492,11 @@ export async function scanDoctor(db: DB): Promise<DoctorReport> {
     .from(installedPlugins);
   const sandboxNet = sandboxNetworkFinding(pluginRows, SandboxPlugin.networkDenied());
   if (sandboxNet) findings.push(sandboxNet);
+
+  // r620: stored analyses that captured host file content through a symlink.
+  const insightRows = await db.select().from(repoInsights);
+  const leak = insightsLeakFinding(insightRows.filter(storedInsightsLeakSuspected).map((r) => r.serviceId));
+  if (leak) findings.push(leak);
 
   // ── stored slugs that violate the canonical contract ────────────────────
   // r028/r029 fixed slugify() for NEW rows; this catches rows already written
