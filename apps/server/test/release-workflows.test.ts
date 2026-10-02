@@ -90,6 +90,26 @@ describe('release delivery invariants', () => {
     expect(installer).toContain(`PNPM_VERSION="${expected}"`);
   });
 
+  it('r582: the Dockerfile ships the same checksum-verified Railpack as install.sh', () => {
+    // The image used to ship no Railpack CLI, so a container install could only
+    // refuse the railpack build pack (r520). The two pins must not drift: an
+    // install-mode-dependent railpack version is a support trap.
+    const dockerfile = readFileSync(new URL('../../../Dockerfile', import.meta.url), 'utf8');
+    const installer = readFileSync(new URL('../../../install.sh', import.meta.url), 'utf8');
+    const version = /RAILPACK_VERSION="\$\{NINEDEPLOY_RAILPACK_VERSION:-([\d.]+)\}"/.exec(installer)?.[1];
+    const amd64 = /RAILPACK_SHA_AMD64_x86_64="([0-9a-f]{64})"/.exec(installer)?.[1];
+    const arm64 = /RAILPACK_SHA_ARM64_aarch64="([0-9a-f]{64})"/.exec(installer)?.[1];
+    expect(version && amd64 && arm64).toBeTruthy();
+    expect(dockerfile).toContain(`ARG RAILPACK_VERSION=${version}`);
+    expect(dockerfile).toContain(`amd64) RAILPACK_TARGET="x86_64-unknown-linux-musl"; RAILPACK_SHA256="${amd64}"`);
+    expect(dockerfile).toContain(`arm64) RAILPACK_TARGET="aarch64-unknown-linux-musl"; RAILPACK_SHA256="${arm64}"`);
+    // Verified before it is unpacked, and proven runnable at build time.
+    expect(dockerfile).toMatch(/RAILPACK_SHA256\} {2}\/tmp\/\$\{RAILPACK_ASSET\}" \| sha256sum -c -[\s\S]*tar -xzf "\/tmp\/\$\{RAILPACK_ASSET\}" -C \/usr\/local\/bin railpack/);
+    expect(dockerfile).toContain('&& railpack --version');
+    // In the runtime stage (after the second FROM), not the build stage.
+    expect(dockerfile.indexOf('ARG RAILPACK_VERSION')).toBeGreaterThan(dockerfile.indexOf('AS runtime'));
+  });
+
   it('r476: no documented createClient example uses the nonexistent token option', () => {
     // The r472 audit found AI_MCP_CLI.md teaching an unauthenticated client;
     // r476 found the SAME bug family copied in README.md and website docs.

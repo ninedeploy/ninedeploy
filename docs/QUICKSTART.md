@@ -163,6 +163,7 @@ On systemd bare-metal installations an operator can upgrade the panel from the d
 | `NINEDEPLOY_JWT_SECRET` | *(required)* | 32-byte hex key for signing user auth tokens |
 | `NINEDEPLOY_MASTER_KEYS` | *(optional)* | Key ring for AES-256-GCM secret rotation (e.g. `0:hex,1:hex`) |
 | `NINEDEPLOY_PUBLIC_URL` | `http://localhost:3000` | Public root URL for webhooks and OAuth redirects |
+| `BUILDKIT_HOST` | *(unset)* | BuildKit daemon for the optional `railpack` build pack (e.g. `docker-container://buildkit`); the pack is refused while unset — see [Private repositories §6](./PRIVATE_REPO_GUIDE.md#6-how-the-build-pack-is-chosen) |
 
 ---
 

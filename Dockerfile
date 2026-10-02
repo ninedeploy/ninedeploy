@@ -112,6 +112,27 @@ RUN case "$TARGETARCH" in \
   && docker compose version \
   && docker buildx version
 
+# r582: Railpack CLI, the optional `railpack` build pack. Same version and
+# SHA-256 pins as install.sh (bare metal) — keep the two in sync. Without it
+# a container install could only refuse the build pack (r520). Railpack builds
+# through its own BuildKit client, so it also needs BUILDKIT_HOST pointing at a
+# BuildKit daemon (e.g. `-e BUILDKIT_HOST=docker-container://buildkit` next to
+# a `moby/buildkit` container); the panel refuses the pack with that fix named
+# until it is set.
+ARG RAILPACK_VERSION=0.39.0
+RUN case "$TARGETARCH" in \
+       amd64) RAILPACK_TARGET="x86_64-unknown-linux-musl"; RAILPACK_SHA256="728407f5cdb9e9bc1cdd07f568419344a20e71b0a5a9fd90a9cfbaca0a6c94f7" ;; \
+       arm64) RAILPACK_TARGET="aarch64-unknown-linux-musl"; RAILPACK_SHA256="42eb3fa68e38f44be3610a7d74f714ec0d808d70c105fbe35e053b6e6cfb20be" ;; \
+       *) echo "Unsupported Railpack architecture: $TARGETARCH" >&2; exit 1 ;; \
+     esac \
+  && RAILPACK_ASSET="railpack-v${RAILPACK_VERSION}-${RAILPACK_TARGET}.tar.gz" \
+  && curl -fsSL "https://github.com/railwayapp/railpack/releases/download/v${RAILPACK_VERSION}/${RAILPACK_ASSET}" -o "/tmp/${RAILPACK_ASSET}" \
+  && echo "${RAILPACK_SHA256}  /tmp/${RAILPACK_ASSET}" | sha256sum -c - \
+  && tar -xzf "/tmp/${RAILPACK_ASSET}" -C /usr/local/bin railpack \
+  && chmod 0755 /usr/local/bin/railpack \
+  && railpack --version \
+  && rm -f "/tmp/${RAILPACK_ASSET}"
+
 # Node ≥ 26 images no longer bundle corepack — see stage 1. Keep in sync with
 # "packageManager" in package.json.
 ARG PNPM_VERSION=11.23.0

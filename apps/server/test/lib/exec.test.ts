@@ -30,7 +30,7 @@ function emitClose(child: FakeChild, code: number) {
 
 describe('buildEnv', () => {
   const snapshot: Record<string, string | undefined> = {};
-  const keys = ['PATH', 'NINEDEPLOY_MASTER_KEY', 'NINEDEPLOY_JWT_SECRET', 'LC_MESSAGES'];
+  const keys = ['PATH', 'NINEDEPLOY_MASTER_KEY', 'NINEDEPLOY_JWT_SECRET', 'LC_MESSAGES', 'BUILDKIT_HOST'];
 
   beforeEach(() => {
     for (const k of keys) snapshot[k] = process.env[k];
@@ -81,6 +81,19 @@ describe('buildEnv', () => {
     expect(env['COMPOSE_FILE']).toBeUndefined();
     // Non-transport user keys still flow through (builds need them).
     expect(env['NODE_ENV']).toBe('production');
+  });
+
+  it('r582: BUILDKIT_HOST reaches subprocesses from the host only, never from user env', () => {
+    // railpack reads BUILDKIT_HOST itself; buildEnv() used to drop it, so
+    // every railpack build died "BUILDKIT_HOST environment variable is not
+    // set" no matter what the operator configured.
+    process.env['BUILDKIT_HOST'] = 'docker-container://buildkit';
+    expect(buildEnv()['BUILDKIT_HOST']).toBe('docker-container://buildkit');
+    // A user env row cannot point the build (context + secrets) elsewhere…
+    expect(buildEnv({ BUILDKIT_HOST: 'tcp://attacker:1234' })['BUILDKIT_HOST']).toBe('docker-container://buildkit');
+    // …not even where the host sets none.
+    delete process.env['BUILDKIT_HOST'];
+    expect(buildEnv({ BUILDKIT_HOST: 'tcp://attacker:1234' })['BUILDKIT_HOST']).toBeUndefined();
   });
 
   it('works with no caller env', () => {

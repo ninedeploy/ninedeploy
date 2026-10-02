@@ -149,7 +149,7 @@ ninedeploy/                       pnpm 11 workspace + Turborepo
 │                                  deprecated-deps/image build/integration),
 │                                  release-publish.yml (gated on the smokes), website.yml
 ├── Dockerfile                     multi-stage; docker CLI + git + tini +
-│                                  checksum-pinned Nixpacks 1.41.0; non-root
+│                                  checksum-pinned Nixpacks 1.41.0 + Railpack 0.39.0; non-root
 ├── docker-compose.yml             development environment
 ├── docker-compose.prod.yml        standalone container install (DOCKER_GID)
 ├── systemd/                       ninedeploy.service unit

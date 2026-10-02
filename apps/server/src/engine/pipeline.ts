@@ -621,9 +621,10 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     // Cancel checkpoint: the route may have flipped the row between claim and here.
     if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled();
 
-    // r520: a railpack build that cannot run here (the container image ships
-    // no Railpack CLI) is refused before the checkout, not after it — and on
-    // the panel host only: a node builds through its agent, never railpack.
+    // r520/r582: a railpack build that cannot run here (no Railpack CLI, or
+    // no BuildKit daemon via BUILDKIT_HOST) is refused before the checkout,
+    // not after it — and on the panel host only: a node builds through its
+    // agent, never railpack.
     if (service.serverId == null && service.type === 'docker' && !service.image && buildConfig?.buildPack === 'railpack') {
       const railpackRefusal = await railpackUnavailableReason();
       if (railpackRefusal) throw new Error(railpackRefusal);

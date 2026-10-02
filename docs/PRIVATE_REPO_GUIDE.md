@@ -276,6 +276,14 @@ If you ever need to override:
 
 - `buildPack: "dockerfile"` — force `docker build`, fail if no Dockerfile exists.
 - `buildPack: "nixpacks"` — force buildpack-only, ignore any Dockerfile.
+- `buildPack: "railpack"` — build with [Railpack](https://railpack.com) (Railway's successor to
+  Nixpacks). Both install modes ship the pinned, checksum-verified Railpack CLI (the container image
+  since 0.10.38), but Railpack builds through its own BuildKit client, so the panel also needs a
+  BuildKit daemon: start one (`docker run -d --name buildkit --restart unless-stopped --privileged
+  moby/buildkit`) and set `BUILDKIT_HOST=docker-container://buildkit` in the panel's environment
+  (the install directory's `.env` on bare metal, `-e`/compose `environment:` for the container),
+  then restart the panel. Until then the panel refuses the build pack with that fix named. Railpack
+  is not available on remote nodes (they build the repository Dockerfile instead).
 
 The CLI's `deploy create-from-github` shows the analysis result and lets you override the choice interactively; the wizard does the same.
 
