@@ -44,7 +44,8 @@ describe('sweepAutoUpdates', () => {
     const probe = probeOf('sha256:new');
     const result = await sweepAutoUpdates(db, probe);
     expect(result).toEqual({ probed: 1, enqueued: 1, skipped: 0 });
-    expect(probe).toHaveBeenCalledWith('ghcr.io', 'acme/web', 'latest', undefined);
+    // Ownerless legacy row: operator-controlled ref, LAN registries allowed (r514).
+    expect(probe).toHaveBeenCalledWith('ghcr.io', 'acme/web', 'latest', undefined, { allowPrivateEgress: true });
     expect(inserts[0]).toMatchObject({ serviceId: 5, status: 'queued', trigger: 'schedule' });
     expect(String(inserts[0]!.message)).toContain('Auto-update:');
     expect(updates.at(-1)).toMatchObject({ autoUpdateDigest: 'sha256:new' });

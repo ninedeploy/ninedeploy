@@ -3,7 +3,7 @@ import { deployments, services, type DB } from '@ninedeploy/db';
 import { audit } from './audit.js';
 import { assertMayDeployStoredService } from './hostPrivilege.js';
 import { parseImageRef } from './imageRef.js';
-import { fetchImageDigest } from './imageWatch.js';
+import { fetchImageDigest, type ProbeOptions } from './imageWatch.js';
 import { registryCredentialFor } from './registryBinding.js';
 import { isOperator } from './resourceAccess.js';
 
@@ -85,7 +85,13 @@ async function autoUpdateRefusal(db: DB, svc: typeof services.$inferSelect): Pro
 
 export async function sweepAutoUpdates(
   db: DB,
-  probe: (registry: string, repository: string, tag: string, auth?: { username: string; password: string }) => Promise<string> = fetchImageDigest,
+  probe: (
+    registry: string,
+    repository: string,
+    tag: string,
+    auth?: { username: string; password: string },
+    opts?: ProbeOptions,
+  ) => Promise<string> = fetchImageDigest,
   log: (msg: string) => void = () => undefined,
 ): Promise<SweepResult> {
   const rows = await db.query.services.findMany();
@@ -106,7 +112,12 @@ export async function sweepAutoUpdates(
     const auth = await registryCredential(db, svc, log);
     let digest: string;
     try {
-      digest = await probe(ref.registry, ref.repository, ref.tag, auth ?? undefined);
+      // r514: only an operator-controlled image ref may probe a private /
+      // LAN registry (operators run those today); a member-owned ref keeps
+      // the egress block. Ownerless legacy rows predate members (same
+      // convention as autoUpdateRefusal) and count as operator-controlled.
+      const allowPrivateEgress = !svc.ownerUserId || (await isOperator(db, { id: svc.ownerUserId }));
+      digest = await probe(ref.registry, ref.repository, ref.tag, auth ?? undefined, { allowPrivateEgress });
       result.probed++;
     } catch (err) {
       result.skipped++;

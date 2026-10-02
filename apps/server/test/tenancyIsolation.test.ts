@@ -46,6 +46,13 @@ vi.mock('../src/lib/exec.js', () => ({
   sleep: vi.fn(async () => undefined),
 }));
 vi.mock('pm2', () => ({ default: { connect: vi.fn(), disconnect: vi.fn() } }));
+// r514: every name resolves to a LAN address, so the egress guard's decision
+// (not the network) is what the probe tests observe.
+const dns = vi.hoisted(() => ({ lookup: vi.fn(async (_h: string, _o?: unknown) => [{ address: '10.0.0.5', family: 4 }]) }));
+vi.mock('node:dns/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:dns/promises')>();
+  return { ...actual, ...dns, default: { ...actual, ...dns } };
+});
 
 const { encrypt } = await import('../src/lib/crypto.js');
 const { resetReplayWindowForTests } = await import('../src/lib/webhooks.js');
@@ -438,6 +445,29 @@ describe('r513: the auto-update sweep applies the owner-privilege gate', () => {
     expect(after!.autoUpdateDigest).toBe('sha256:new');
   });
 
+  it('r514: an operator-owned image may probe a LAN registry; a member-owned one is skipped with the reason', async () => {
+    const w = await world();
+    const base = { type: 'docker' as const, status: 'running' as const, autoUpdate: true, autoUpdateDigest: 'sha256:old' };
+    await w.svc('op-lan', w.op.id, w.w1.id, { ...base, image: 'registry.lan:5000/team/app:1' });
+    await w.svc('mem-lan', w.mem.id, w.w1.id, { ...base, image: 'registry.lan:5000/team/other:1' });
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
+      ok: true,
+      status: 200,
+      headers: { get: (k: string) => (k === 'docker-content-digest' ? 'sha256:new' : null) },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const logs: string[] = [];
+
+    const result = await sweepAutoUpdates(db, undefined, (m) => logs.push(m));
+
+    // Only the operator's probe went out — still without following redirects.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]![0])).toBe('https://registry.lan:5000/v2/team/app/manifests/1');
+    expect(fetchMock.mock.calls[0]![1]!.redirect).toBe('manual');
+    expect(result).toMatchObject({ enqueued: 1, skipped: 1 });
+    expect(logs.some((l) => l.includes('mem-lan skipped') && l.includes('registry probe refused') && l.includes('10.0.0.5'))).toBe(true);
+  });
+
   it('r512: the registry probe never receives a credential for an unbound host', async () => {
     const w = await world();
     const [src] = await db
@@ -455,7 +485,7 @@ describe('r513: the auto-update sweep applies the owner-privilege gate', () => {
     });
     const probe = vi.fn(async () => 'sha256:old');
     await sweepAutoUpdates(db, probe);
-    expect(probe).toHaveBeenCalledWith('attacker.example', 'x', '1', undefined);
+    expect(probe).toHaveBeenCalledWith('attacker.example', 'x', '1', undefined, { allowPrivateEgress: false });
   });
 });
 
