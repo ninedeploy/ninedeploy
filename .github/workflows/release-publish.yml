@@ -7,9 +7,9 @@ name: Release
 # with 0 jobs, twice), so we now only fire on tags.
 # A workflow_dispatch trigger is kept so an operator
 # can re-run the same job graph manually with
-# `gh workflow run release.yml --ref v0.4.0` from the
+# `gh workflow run release-publish.yml -f tag=v0.4.0` from the
 # local checkout or the Actions "Run workflow" dropdown
-# on a chosen ref.
+# (the `tag` input decides what is built, not the ref).
 #
 # Tag format: STRICT semver (`vX.Y.Z`). The v0.4.1 release
 # dropped the old `-hotfixN` suffix because install.sh and
@@ -37,6 +37,14 @@ on:
 # the input tag). Every step now reads this single resolved value.
 env:
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+# r573: one run per release tag at a time — a tag push and a manual re-run of
+# the same tag must not push and re-point images concurrently. Different tags
+# may run in parallel: which of them moves `:latest` is decided by semver
+# (the "Decide whether this tag moves :latest" step), not by finishing order.
+concurrency:
+  group: release-publish-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 
 # L-14: least privilege at the workflow level; `packages: write` is granted
 # only to the job that actually pushes the image.
@@ -91,6 +99,28 @@ jobs:
           if [ "$v" != "$pkg" ] || [ "$v" != "$ts" ]; then
             echo "::error::Provenance mismatch: tag=$v package.json=$pkg version.ts=$ts — tag the commit whose bump you mean."
             exit 1
+          fi
+
+      # r573: `:latest` is what fresh `install.sh --docker` runs on older
+      # installers and a manual `docker pull` resolve. Every run used to
+      # re-point it, so a workflow_dispatch re-run of an OLDER tag (or a slow
+      # older run finishing after a newer one) moved `:latest` backwards.
+      # Only the highest vX.Y.Z tag on the remote moves it now.
+      - name: Decide whether this tag moves :latest
+        id: latest
+        run: |
+          set -euo pipefail
+          highest="$(git ls-remote --tags --refs origin \
+            | awk -F/ '{print $NF}' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | awk -F'[v.]' '{ printf "%010d%010d%010d %s\n", $2, $3, $4, $0 }' \
+            | sort | tail -1 | awk '{print $2}')"
+          if [ "$highest" = "$RELEASE_TAG" ]; then
+            echo "move=true" >> "$GITHUB_OUTPUT"
+            echo "$RELEASE_TAG is the highest release tag — :latest will point at it."
+          else
+            echo "move=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$RELEASE_TAG is not the highest release tag ($highest) — publishing :$RELEASE_TAG only, :latest stays where it is."
           fi
 
       - name: Setup pnpm
@@ -163,7 +193,7 @@ jobs:
             # semver from the GIT REF, which on a manual run
             # is the dispatch branch, not the tag.
             type=raw,value=${{ env.RELEASE_TAG }}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ steps.latest.outputs.move == 'true' }}
 
       - name: Set up Docker Buildx
         # Multi-arch (amd64 + arm64) matches what the

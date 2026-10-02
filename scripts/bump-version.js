@@ -34,34 +34,53 @@ function resolveInRoot(rel) {
 // package cannot ship at a stale version with every gate green.
 import { PACKAGE_JSONS as packageJsons } from './lib/package-list.mjs';
 
-for (const rel of packageJsons) {
+// r573: two phases. Every rewrite below is PLANNED in memory first and only
+// written once all of them are known to apply. The package.json files used to
+// be rewritten before the critical-pattern checks ran, so a miss (r475/r476
+// exit 1) left a half-bumped tree behind: ten manifests on the new version,
+// version.ts and the install docs on the old one.
+/** abs path → { rel, content, notes[] } — the staged result of every rewrite. */
+const staged = new Map();
+const failures = [];
+
+function current(rel) {
   const file = resolveInRoot(rel);
-  const json = JSON.parse(readFileSync(file, 'utf8'));
+  return staged.has(file) ? staged.get(file).content : readFileSync(file, 'utf8');
+}
+
+function stage(rel, content, note) {
+  const file = resolveInRoot(rel);
+  const entry = staged.get(file) ?? { rel, content, notes: [] };
+  entry.content = content;
+  entry.notes.push(note);
+  staged.set(file, entry);
+}
+
+for (const rel of packageJsons) {
+  const json = JSON.parse(current(rel));
   json.version = newVersion;
-  writeFileSync(file, `${JSON.stringify(json, null, 2)}\n`);
-  console.log(`✓ Updated ${rel} → ${newVersion}`);
+  stage(rel, `${JSON.stringify(json, null, 2)}\n`, `✓ Updated ${rel} → ${newVersion}`);
 }
 
 // 2. Code files with hardcoded version strings
 function replaceInFile(rel, regex, replacement, critical = false) {
-  const file = resolveInRoot(rel);
-  const content = readFileSync(file, 'utf8');
+  const content = current(rel);
   // Report the truth instead of a green tick: a pattern that matches nothing
   // silently rots the file while this script claims it was synchronized.
   // `critical` files are load-bearing for the release (version.ts feeds the
   // panel's self-reported VERSION): a silent miss would desync the 10
   // package.jsons from the panel and ship a mislabeled image — r475 made
-  // that exit 1 instead of a warning.
-  if (!regex.test(content)) {
+  // that exit 1 instead of a warning (r573: before anything is written).
+  // `search`, not `test`: a /g regex's `test` is stateful (lastIndex).
+  if (content.search(regex) === -1) {
     if (critical) {
-      console.error(`✗ ${rel}: pattern did not match — the panel's VERSION would stay stale. Refusing.`);
-      process.exit(1);
+      failures.push(`✗ ${rel}: pattern ${regex} did not match — the release would ship it stale.`);
+      return;
     }
     console.warn(`⚠ ${rel}: pattern did not match anything — file left untouched`);
     return;
   }
-  writeFileSync(file, content.replace(regex, replacement));
-  console.log(`✓ Synchronized ${rel}`);
+  stage(rel, content.replace(regex, replacement), `✓ Synchronized ${rel}`);
 }
 
 replaceInFile('apps/server/src/version.ts', /export const VERSION = '.*?';/, `export const VERSION = '${newVersion}';`, true);
@@ -69,8 +88,8 @@ replaceInFile('apps/server/src/version.ts', /export const VERSION = '.*?';/, `ex
 // 3. Prepend a new ChangelogEntry stub so CHANGELOG[0].version === VERSION
 //    (guarded by test/version.test.ts: "ABOUT links to the changelog")
 function prependChangelogEntry() {
-  const file = resolveInRoot('apps/server/src/version.ts');
-  const content = readFileSync(file, 'utf8');
+  const rel = 'apps/server/src/version.ts';
+  const content = current(rel);
   // Idempotent: re-running the bump for the same version must not stack a
   // second stub (v0.10.0 shipped with two "Placeholder" entries on the About
   // page because the script ran more than once).
@@ -103,10 +122,10 @@ function prependChangelogEntry() {
     return;
   }
   const newContent = content.slice(0, entryStart) + stub + content.slice(entryStart);
-  writeFileSync(file, newContent);
-  console.log(`✓ Prepended ChangelogEntry stub for v${newVersion} to version.ts`);
+  stage(rel, newContent, `✓ Prepended ChangelogEntry stub for v${newVersion} to version.ts`);
 }
-prependChangelogEntry();
+// Only meaningful once the VERSION literal itself was found.
+if (failures.length === 0) prependChangelogEntry();
 
 // NOTE: do NOT add a `/version: '.*?',/` rule for version.ts here — that shape
 // is the ChangelogEntry literal inside the file, and rewriting its FIRST
@@ -126,9 +145,21 @@ replaceInFile('README.md', /Release-\d+\.\d+\.\d+-blue/, `Release-${newVersion}-
 replaceInFile('README.md', /--version v\d+\.\d+\.\d+/, `--version v${newVersion}`, true);
 replaceInFile('README.md', /newest release tag \(\*\*\d+\.\d+\.\d+\*\*\)/, `newest release tag (**${newVersion}**)`);
 
+if (failures.length > 0) {
+  for (const f of failures) console.error(f);
+  console.error('Refusing: nothing was written — fix the pattern(s) above and re-run.');
+  process.exit(1);
+}
+
+// Write phase: every rewrite above applied in memory.
+for (const { rel, content, notes } of staged.values()) {
+  writeFileSync(resolveInRoot(rel), content);
+  for (const note of notes) console.log(note);
+}
+
 // r475 closing assertion: the banner must not print over a desync. Every
 // package.json AND the panel's VERSION literal now have to say the same
-// thing — a partial bump (a pattern miss above, a concurrent edit) exits 1.
+// thing — a partial bump (a concurrent edit, a failed write) exits 1.
 const finalTs = readFileSync(resolveInRoot('apps/server/src/version.ts'), 'utf8');
 const tsMatch = finalTs.match(/export const VERSION = '([^']*)';/);
 if (!tsMatch || tsMatch[1] !== newVersion) {
