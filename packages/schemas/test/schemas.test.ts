@@ -1066,6 +1066,15 @@ describe('service', () => {
       bad(serverSshBootstrap, { name: 'W', host: 'h', agentPort: 80000 });
     });
 
+    it('r661: the expected host-key fingerprint is optional, OpenSSH-shaped, and normalised', () => {
+      const fp = `SHA256:${'A'.repeat(43)}`;
+      expect(ok(serverSshBootstrap, { name: 'W', host: 'h', hostKeyFingerprint: `${fp}=` })?.hostKeyFingerprint).toBe(fp);
+      expect(ok(serverSshBootstrap, { name: 'W', host: 'h', hostKeyFingerprint: fp })?.hostKeyFingerprint).toBe(fp);
+      expect(ok(serverSshBootstrap, { name: 'W', host: 'h', hostKeyFingerprint: '' })?.hostKeyFingerprint).toBeUndefined();
+      expect(ok(serverSshBootstrap, { name: 'W', host: 'h' })?.hostKeyFingerprint).toBeUndefined();
+      bad(serverSshBootstrap, { name: 'W', host: 'h', hostKeyFingerprint: 'MD5:aa:bb' });
+    });
+
     it('jobCreate applies defaults and normalizes command/enabled', () => {
       const data = ok(jobCreate, { name: 'nightly', cron: '0 3 * * *' });
       expect(data).toMatchObject({ kind: 'deploy', command: '', enabled: true });
