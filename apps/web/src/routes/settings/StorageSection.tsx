@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { HardDrive, Sparkles } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
-import { Button, Card, CardBody, Input, cn } from '../../components/ui.js';
+import { Button, Card, CardBody, ErrorCard, Input, cn } from '../../components/ui.js';
 import type { AutoPruneConfigUpdateInput } from '@ninedeploy/sdk';
 
 function formatBytes(bytes: number): string {
@@ -86,14 +86,30 @@ export function StorageSection() {
   const gaugeColor =
     usedPercent > 85 ? 'bg-rose-500' : usedPercent > 70 ? 'bg-amber-500' : 'bg-emerald-500';
 
+  const header = (
+    <div>
+      <h2 className="text-lg font-medium text-slate-100">Storage &amp; Auto-Pruning</h2>
+      <p className="text-xs text-slate-400">
+        Monitor host disk utilization and configure automated background cleanup of dangling Docker images, builder layers, containers, and volumes.
+      </p>
+    </div>
+  );
+
+  // r562: the form starts from DEFAULT_CONFIG and only takes the server's
+  // values once they load. On a failed load it showed a 0 GB gauge and a
+  // working Save that wrote those defaults over the real configuration.
+  if (pruneStatus.isError && !data) {
+    return (
+      <div className="space-y-6">
+        {header}
+        <ErrorCard title="Could not load the storage settings" error={pruneStatus.error} onRetry={() => void pruneStatus.refetch()} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-medium text-slate-100">Storage &amp; Auto-Pruning</h2>
-        <p className="text-xs text-slate-400">
-          Monitor host disk utilization and configure automated background cleanup of dangling Docker images, builder layers, containers, and volumes.
-        </p>
-      </div>
+      {header}
 
       {/* Disk Usage Overview */}
       <Card>
@@ -251,7 +267,8 @@ export function StorageSection() {
 
             <div className="flex justify-end pt-3">
               <Button
-                disabled={updateConfig.isPending}
+                // r562: never before the real config has loaded (see above).
+                disabled={updateConfig.isPending || !data}
                 onClick={() => updateConfig.mutate(form)}
               >
                 Save Auto-Prune Settings

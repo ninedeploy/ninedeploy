@@ -6,7 +6,7 @@ import { api } from '../../lib/api.js';
 import { useAuth } from '../../lib/auth.js';
 import { toInt } from '../../lib/format.js';
 import { useToast } from '../../components/Toast.js';
-import { Button, Card, CardBody, cn, Field, Input, Select, Skeleton, Switch } from '../../components/ui.js';
+import { Button, Card, CardBody, cn, ErrorCard, Field, Input, Select, Skeleton, Switch } from '../../components/ui.js';
 import { ServiceTagsCard } from './ServiceTagsCard.js';
 
 /** Service fields, build configuration, lifecycle hooks, PR previews, and resource limits. */
@@ -28,14 +28,15 @@ export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: Servic
  * by the top-bar filter chips, just anchored to a single service. Read-only
  * for non-operators (members can see which tags apply, but not change them).
  */
-function TagsCard({ serviceId }: { serviceId: number; svc: Service }) {
+export function TagsCard({ serviceId }: { serviceId: number; svc: Service }) {
   // Fetch the resolved tag rows from the dedicated tags endpoint so the
   // editor sees the same names / slugs / colors the rest of the UI uses.
   // The service detail response is a leaner subset.
-  const { data: tags } = useQuery({
+  const tagsQuery = useQuery({
     queryKey: ['service-tags', serviceId],
     queryFn: () => api.serviceTags.get(serviceId),
   });
+  const tags = tagsQuery.data;
   const initial = {
     projects: (tags?.projects ?? []).map((p) => ({
       id: p.id,
@@ -82,7 +83,17 @@ function TagsCard({ serviceId }: { serviceId: number; svc: Service }) {
             Where this service appears in the workspace, which project groups it, and the labels that classify it.
           </span>
         </div>
-        <ServiceTagsCard serviceId={serviceId} initial={initial} />
+        {/* r562: the editor PUTs the WHOLE tag set on every change. Mounted
+            before the tags loaded, its seeded (empty) initial data made the
+            service look untagged — and one toggle or "Create & add" then
+            replaced every real project / workspace / label tag. */}
+        {tags ? (
+          <ServiceTagsCard serviceId={serviceId} initial={initial} />
+        ) : tagsQuery.isError ? (
+          <ErrorCard title="Could not load the service tags" error={tagsQuery.error} onRetry={() => void tagsQuery.refetch()} />
+        ) : (
+          <Skeleton className="h-24 w-full" />
+        )}
       </CardBody>
     </Card>
   );
@@ -608,7 +619,12 @@ export function FanoutTargetsCard({ svc }: { svc: Service }) {
   const [selected, setSelected] = useState<number[] | null>(null);
 
   const save = useMutation({
-    mutationFn: () => api.fanout.set(svc.id, selected ?? targets.data?.map((t) => t.serverId) ?? []),
+    // r562: `set` REPLACES the target list — never send one built on top of a
+    // list that failed to load (it would drop every existing target).
+    mutationFn: () => {
+      if (!targets.data) throw new Error('The current fan-out targets could not be loaded');
+      return api.fanout.set(svc.id, selected ?? targets.data.map((t) => t.serverId));
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['fanout-targets', svc.id] });
       toast('Fan-out targets saved — applied on the next deploy', 'success');
@@ -642,6 +658,10 @@ export function FanoutTargetsCard({ svc }: { svc: Service }) {
       </p>
       {targets.isLoading || servers.isLoading ? (
         <p className="text-xs text-slate-600">Loading nodes…</p>
+      ) : targets.isError && !targets.data ? (
+        // r562: unloaded targets used to render as "all unchecked"; ticking one
+        // node and saving then replaced every real target with just that one.
+        <ErrorCard title="Could not load the fan-out targets" error={targets.error} onRetry={() => void targets.refetch()} />
       ) : (
         <div className="space-y-1.5">
           {candidates.map((node) => {

@@ -45,6 +45,17 @@ describe('FanoutTargetsCard', () => {
     view.unmount();
   });
 
+  it('r562: unloaded targets are an error, not "none selected" that a save would overwrite', async () => {
+    mockOf(api.fanout.get).mockRejectedValueOnce(new Error('HTTP 502'));
+    renderWithProviders(<FanoutTargetsCard svc={svc} />);
+    expect(await screen.findByText('Could not load the fan-out targets')).toBeInTheDocument();
+    // No checkbox to tick, so no replace-everything save can be built.
+    expect(screen.queryByLabelText('Fan out to edge-2')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('running')).toBeInTheDocument();
+    expect(api.fanout.set).not.toHaveBeenCalled();
+  });
+
   it('saves a new target set after ticking a node', async () => {
     mockOf(api.fanout.set).mockResolvedValue({ targets: [] } as never);
     renderWithProviders(<FanoutTargetsCard svc={svc} />);

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { screen, waitFor, fireEvent } from '@testing-library/react';
 import { ServiceTagsCard } from '../src/routes/service/ServiceTagsCard.js';
+import { TagsCard } from '../src/routes/service/SettingsTab.js';
 import { api } from '../src/lib/api.js';
 import { useAuth } from '../src/lib/auth.js';
 import { renderWithProviders, mockOf } from './helpers.js';
@@ -40,6 +41,20 @@ describe('ServiceTagsCard', () => {
     mockOf(api.labels.list).mockResolvedValue([label] as never);
     mockOf(api.serviceTags.get).mockResolvedValue({ serviceId: 4, ...initial } as never);
     mockOf(api.serviceTags.set).mockResolvedValue({ serviceId: 4, ...initial } as never);
+  });
+
+  it('r562: the tags editor never mounts on unloaded tags (its writes replace the whole set)', async () => {
+    let fail: (e: Error) => void = () => {};
+    mockOf(api.serviceTags.get).mockReturnValueOnce(new Promise((_, reject) => { fail = reject; }) as never);
+    renderWithProviders(<TagsCard serviceId={4} svc={{} as never} />);
+    // Loading: no editor (it used to render "untagged" and accept toggles).
+    expect(screen.queryByText('Projects')).toBeNull();
+    fail(new Error('HTTP 500'));
+    expect(await screen.findByText('Could not load the service tags')).toBeInTheDocument();
+    expect(screen.queryByText('Projects')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByTitle('Click to remove (production)')).toBeInTheDocument();
+    expect(api.serviceTags.set).not.toHaveBeenCalled();
   });
 
   it('renders the current tags with per-group counts', async () => {

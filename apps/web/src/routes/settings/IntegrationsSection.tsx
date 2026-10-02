@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Cloud, KeyRound, Server } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
-import { Button, Card, CardBody } from '../../components/ui.js';
+import { Button, Card, CardBody, ErrorCard } from '../../components/ui.js';
 
 // Vault reference examples (escaped so linters don't read them as template placeholders).
 const REF_INFISICAL = '\u0024\u007B\u007Binfisical:KEY\u007D\u007D';
@@ -126,8 +126,14 @@ function VaultCard() {
               />
             </label>
           </div>
+          {/* r562: the r206 prefill only runs once the stored config loads.
+              Saved without it (a failed load), a token rotation wrote
+              provider=infisical with a blank project over a Doppler setup. */}
+          {vault.isError && !vault.data && (
+            <ErrorCard title="Could not load the vault settings" error={vault.error} onRetry={() => void vault.refetch()} />
+          )}
           <div className="flex gap-2">
-            <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || (!vault.data?.hasToken && !token)}>
+            <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || !vault.data || (!vault.data.hasToken && !token)}>
               {save.isPending ? 'Saving…' : 'Save'}
             </Button>
             <Button size="sm" variant="secondary" onClick={() => test.mutate()} disabled={test.isPending || !initialized}>
@@ -224,8 +230,13 @@ function CloudflareCard() {
               className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 font-mono text-xs outline-none focus:border-indigo-500"
             />
           </label>
+          {/* r562: unloaded, the switch reads "off" and the content blank — one
+              Save turned automatic records off and cleared a custom value. */}
+          {dns.isError && !dns.data && (
+            <ErrorCard title="Could not load the DNS record settings" error={dns.error} onRetry={() => void dns.refetch()} />
+          )}
           <div className="flex gap-2">
-            <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || (isOn && !dns.data?.hasToken && !token)}>
+            <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || !dns.data || (isOn && !dns.data.hasToken && !token)}>
               {save.isPending ? 'Saving…' : 'Save'}
             </Button>
             <Button size="sm" variant="secondary" onClick={() => test.mutate()} disabled={test.isPending || !(dns.data?.hasToken || token)}>
