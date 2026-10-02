@@ -497,12 +497,15 @@ export async function startDatabase(
     ? writeSecretFile('nd-db', 'database.env', `${Object.entries(vars).map(([k, v]) => `${k}=${v}`).join('\n')}\n`)
     : null;
   if (envFile) args.push('--env-file', envFile.path);
+  args.push(image);
   // redis/valkey have no password env var — the password is passed as the
   // container command's `--requirepass` argument (visible via docker inspect,
   // but the container refuses unauthenticated connections on the shared
-  // network, closing the "any container can FLUSHALL" gap).
+  // network, closing the "any container can FLUSHALL" gap). r644: it must
+  // FOLLOW the image — before it, `docker run` parses it as one of its own
+  // flags and refuses to start ("unknown flag: --requirepass"). The images'
+  // entrypoints prepend redis-server / valkey-server to a leading `--` arg.
   if (cfg.authViaArg) args.push('--requirepass', password);
-  args.push(image);
 
   log(`Starting ${d.engine} database ${d.name} (${d.containerName}) …`);
   let startFailed = false;
