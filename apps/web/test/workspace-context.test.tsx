@@ -78,6 +78,16 @@ describe('WorkspaceContext and WorkspaceProvider', () => {
     });
   });
 
+  it('r562: a failed list load does not forget the saved workspace choice', async () => {
+    localStorage.setItem('nd_current_workspace_id', '2');
+    mockOf(api.workspaces.list).mockRejectedValueOnce(new Error('HTTP 503'));
+    renderHook(() => useWorkspace(), { wrapper: createWrapper() });
+    await waitFor(() => expect(api.workspaces.list).toHaveBeenCalled());
+    // Let the failed query settle and the effect run.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(localStorage.getItem('nd_current_workspace_id')).toBe('2');
+  });
+
   it('treats a null list response as an empty workspace set', async () => {
     mockOf(api.workspaces.list).mockResolvedValueOnce(null as never);
     const { result } = renderHook(() => useWorkspace(), { wrapper: createWrapper() });

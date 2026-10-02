@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
-import { Button, Card, CardBody, cn } from '../../components/ui.js';
+import { Button, Card, CardBody, ErrorCard, cn } from '../../components/ui.js';
 
 /** Security: open registration, ACME, template source, DNS-01 and wildcard domain. */
 export function SecuritySection() {
@@ -12,6 +12,11 @@ export function SecuritySection() {
   const instanceSettings = useQuery({ queryKey: ['instance-settings'], queryFn: () => api.settings.get() });
   // Hoisted so the loading fallback is computed once.
   const allowRegistration = instanceSettings.data?.allowRegistration ?? true;
+  // r562: every field below falls back to ''/null until the settings load. A
+  // Save before that (or after a failed load) cleared the stored value — a
+  // DNS token typed alone sent provider '' + apex '', switching the wildcard
+  // DNS-01 challenge off. Nothing writes until the real values are known.
+  const loaded = instanceSettings.data !== undefined;
   const setAllowRegistration = useMutation({
     mutationFn: (enabled: boolean) => api.settings.setAllowRegistration(enabled),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['instance-settings'] }),
@@ -74,6 +79,11 @@ export function SecuritySection() {
 
   return (
     <>
+      {instanceSettings.isError && !loaded && (
+        <div className="mb-5">
+          <ErrorCard title="Could not load the security settings" error={instanceSettings.error} onRetry={() => void instanceSettings.refetch()} />
+        </div>
+      )}
       <Card className="mb-5">
         <CardBody>
           <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
@@ -87,7 +97,7 @@ export function SecuritySection() {
             <button type="button"
               role="switch"
               aria-checked={allowRegistration}
-              disabled={instanceSettings.isLoading || setAllowRegistration.isPending}
+              disabled={!loaded || setAllowRegistration.isPending}
               onClick={() => setAllowRegistration.mutate(!allowRegistration)}
               className={cn(
                 'relative h-6 w-11 rounded-full transition',
@@ -120,7 +130,7 @@ export function SecuritySection() {
             <Button
               size="sm"
               onClick={() => setAcmeEmail.mutate((acmeInput ?? acmeEmail ?? '').trim())}
-              disabled={setAcmeEmail.isPending}
+              disabled={!loaded || setAcmeEmail.isPending}
             >
               {setAcmeEmail.isPending ? 'Saving…' : 'Save'}
             </Button>
@@ -159,7 +169,7 @@ export function SecuritySection() {
               // Both the click value chain and the pending label render in
               // the panel-domain tests; the instrumenter cannot see them.
               onClick={/* v8 ignore start */ () => setPanelDomain.mutate((panelDomainInput ?? panelDomain ?? '').trim()) /* v8 ignore stop */}
-              disabled={setPanelDomain.isPending}
+              disabled={!loaded || setPanelDomain.isPending}
             >
               {/* v8 ignore start */}
               {setPanelDomain.isPending ? 'Saving…' : 'Save'}
@@ -186,7 +196,7 @@ export function SecuritySection() {
             <Button
               size="sm"
               onClick={() => setTemplatesSource.mutate((tplInput ?? templatesSource ?? '').trim())}
-              disabled={setTemplatesSource.isPending}
+              disabled={!loaded || setTemplatesSource.isPending}
             >
               {setTemplatesSource.isPending ? 'Saving…' : 'Save'}
             </Button>
@@ -237,7 +247,7 @@ export function SecuritySection() {
                     wildcardApex: (dnsApexInput ?? wildcardApex).trim(),
                   })
                 }
-                disabled={setDns.isPending}
+                disabled={!loaded || setDns.isPending}
               >
                 {setDns.isPending ? 'Saving…' : 'Save'}
               </Button>

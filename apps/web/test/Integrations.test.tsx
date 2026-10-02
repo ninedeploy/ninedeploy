@@ -24,6 +24,24 @@ describe('IntegrationsSection', () => {
     mockOf(api.settings.dnsRecords.get).mockResolvedValue({ enabled: false, hasToken: false } as never);
   });
 
+  it('r562: a failed load shows an error and keeps the vault and DNS saves shut', async () => {
+    const user = userEvent.setup();
+    mockOf(api.settings.vault.get).mockRejectedValue(new Error('vault down'));
+    mockOf(api.settings.dnsRecords.get).mockRejectedValue(new Error('dns down'));
+    renderWithProviders(<IntegrationsSection />);
+    expect(await screen.findByText('Could not load the vault settings')).toBeInTheDocument();
+    expect(await screen.findByText('Could not load the DNS record settings')).toBeInTheDocument();
+    // Typing a token (a rotation) must not make the unloaded form saveable —
+    // it would write provider=infisical / blank project over the real config.
+    await user.type(screen.getByPlaceholderText('Universal Auth / service token'), 'tok');
+    const [vaultSave, dnsSave] = screen.getAllByRole('button', { name: 'Save' });
+    expect(vaultSave).toBeDisabled();
+    // The DNS card reads "off" + blank content while unloaded — no Save.
+    expect(dnsSave).toBeDisabled();
+    expect(api.settings.vault.set).not.toHaveBeenCalled();
+    expect(api.settings.dnsRecords.set).not.toHaveBeenCalled();
+  });
+
   it('renders both cards and keeps actions disabled without credentials', async () => {
     renderWithProviders(<IntegrationsSection />);
     expect(await screen.findByText('Vault provider')).toBeInTheDocument();
@@ -216,7 +234,10 @@ describe('IntegrationsSection', () => {
     mockOf(api.settings.dnsRecords.set).mockRejectedValueOnce(new Error('zone denied') as never);
     mockOf(api.settings.dnsRecords.test).mockRejectedValueOnce(new Error('bad token') as never);
     const first = renderWithProviders(<IntegrationsSection />);
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Save' }))[1]!);
+    // r562: Save waits for the stored settings (it used to fire blank values).
+    const dnsSave = (await screen.findAllByRole('button', { name: 'Save' }))[1]!;
+    await waitFor(() => expect(dnsSave).toBeEnabled());
+    fireEvent.click(dnsSave);
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('zone denied', 'error'));
     fireEvent.click(screen.getByRole('button', { name: 'Test token' }));
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('bad token', 'error'));
@@ -225,7 +246,9 @@ describe('IntegrationsSection', () => {
     mockOf(api.settings.dnsRecords.set).mockRejectedValueOnce('boom' as never);
     mockOf(api.settings.dnsRecords.test).mockRejectedValueOnce('boom' as never);
     renderWithProviders(<IntegrationsSection />);
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Save' }))[1]!);
+    const dnsSave2 = (await screen.findAllByRole('button', { name: 'Save' }))[1]!;
+    await waitFor(() => expect(dnsSave2).toBeEnabled());
+    fireEvent.click(dnsSave2);
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Save failed', 'error'));
     fireEvent.click(screen.getByRole('button', { name: 'Test token' }));
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Connection failed', 'error'));

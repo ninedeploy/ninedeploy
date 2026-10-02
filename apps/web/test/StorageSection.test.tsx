@@ -45,6 +45,23 @@ describe('StorageSection', () => {
     } as never);
   });
 
+  it('r562: a failed load shows an error and offers no Save that would write the defaults', async () => {
+    mockOf(api.housekeeping.getAutoPrune).mockRejectedValueOnce(new Error('HTTP 500'));
+    renderWithProviders(<StorageSection />);
+    expect(await screen.findByText('Could not load the storage settings')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Save Auto-Prune Settings/ })).toBeNull();
+    expect(api.housekeeping.updateAutoPrune).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('65%')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Save Auto-Prune Settings/ })).not.toBeDisabled();
+  });
+
+  it('r562: Save stays disabled until the real configuration has loaded', () => {
+    mockOf(api.housekeeping.getAutoPrune).mockReturnValue(new Promise(() => {}) as never);
+    renderWithProviders(<StorageSection />);
+    expect(screen.getByRole('button', { name: /Save Auto-Prune Settings/ })).toBeDisabled();
+  });
+
   it('renders disk usage gauge, threshold, and cleanup targets', async () => {
     renderWithProviders(<StorageSection />);
 

@@ -1,5 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity, Building2, ChevronLeft, ChevronRight, Clock, Cloud, Container, Database, FolderKanban, Globe, HardDrive,
   FileCode, Info, KeyRound, Layers, LayoutDashboard, LifeBuoy, ListOrdered, Moon, Network, Shield, Stethoscope, Tag, type LucideIcon,
@@ -7,10 +6,10 @@ import {
 } from 'lucide-react';
 import { Link, Outlet, useLocation } from 'react-router';
 import { useAuth } from '../lib/auth.js';
-import { api, eventsWsUrl, getToken } from '../lib/api.js';
+import { eventsWsUrl, getToken } from '../lib/api.js';
 import { useTheme } from '../lib/theme.js';
 import { Logo } from './Logo.js';
-import { cn } from './ui.js';
+import { cn, useDialogFocus } from './ui.js';
 import { CommandPalette } from './CommandPalette.js';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher.js';
 import { TopBarFilters } from './TopBarFilters.js';
@@ -22,6 +21,7 @@ import { HelpProvider } from '../help/HelpContext.js';
 import { useExperienceMode } from '../lib/mode.js';
 import { installPanelAutofillGuard } from '../lib/autofill.js';
 import { useBranding } from '../lib/branding.js';
+import { menuTarget, usePluginMenus } from '../lib/pluginMenus.js';
 
 interface NavItem { to: string; label: string; icon: LucideIcon; advancedOnly?: boolean; operatorOnly?: boolean }
 
@@ -154,17 +154,8 @@ export function Layout() {
 
   useLayoutEffect(() => installPanelAutofillGuard(document), []);
 
-  const menus = useQuery({
-    queryKey: ['menus'],
-    queryFn: async () => {
-      try {
-        const res = await api.menus.list();
-        return res.items;
-      } catch {
-        return [];
-      }
-    },
-  });
+  // r566: the one shared menus query (PluginSlot and the palette read it too).
+  const menus = usePluginMenus();
 
   const navGroups = useMemo(() => {
     const visible = (item: NavItem) =>
@@ -182,13 +173,19 @@ export function Layout() {
     // `command:palette` entry would leak into the Extensions group
     // and bloat the sidebar with items the user cannot reach in the
     // rail anyway.
+    // r566: only same-origin paths — the rail renders router links, and a
+    // plugin route is third-party input (no javascript:, data:, //host).
     const extensionItems: NavItem[] = (menus.data ?? [])
       .filter((m) => m.slot === 'sidebar:secondary')
-      .map((m) => ({
-        to: m.route,
-        label: m.label,
-        icon: m.icon && ICON_MAP[m.icon.toLowerCase()] ? ICON_MAP[m.icon.toLowerCase()]! : Globe,
-      }));
+      .flatMap((m) => {
+        const target = menuTarget(m.route);
+        if (target?.kind !== 'internal') return [];
+        return [{
+          to: target.to,
+          label: m.label,
+          icon: m.icon && ICON_MAP[m.icon.toLowerCase()] ? ICON_MAP[m.icon.toLowerCase()]! : Globe,
+        }];
+      });
 
     if (extensionItems.length === 0) return rawGroups;
 
@@ -431,6 +428,11 @@ interface AppEvent { id: number; action: string; entity: string | null; ts: stri
 
 function ActivityDrawer({ onClose }: { onClose: () => void }) {
   const { user } = useAuth();
+  // r564: a modal drawer — focus moves in, is trapped, Escape closes, and
+  // focus returns to the Events button (it used to stay behind the backdrop).
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  useDialogFocus(panelRef, true, onClose);
   const [events, setEvents] = useState<AppEvent[]>([]);
   const [filter, setFilter] = useState('all');
   // Socket state drives the "live" badge: a dead socket must never advertise
@@ -525,9 +527,15 @@ function ActivityDrawer({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <button type="button" aria-label="Close events drawer" tabIndex={-1} aria-hidden="true" onClick={onClose} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-      <div className="nd-fade relative flex h-full w-80 flex-col border-l border-white/10 bg-slate-950 shadow-2xl">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="nd-fade relative flex h-full w-80 flex-col border-l border-white/10 bg-slate-950 shadow-2xl"
+      >
         <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
-          <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <h2 id={titleId} className="flex items-center gap-2 text-sm font-semibold">
             <Activity size={15} className="text-indigo-400" /> Events
             {connected ? (
               <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-medium text-emerald-300">● live</span>
@@ -535,7 +543,7 @@ function ActivityDrawer({ onClose }: { onClose: () => void }) {
               <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-medium text-amber-300">● reconnecting</span>
             )}
           </h2>
-          <button type="button" onClick={onClose} className="rounded-lg p-1 text-slate-500 hover:bg-white/5 hover:text-slate-300">
+          <button type="button" onClick={onClose} aria-label="Close events" className="rounded-lg p-1 text-slate-500 hover:bg-white/5 hover:text-slate-300">
             <X size={16} />
           </button>
         </div>

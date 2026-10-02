@@ -191,6 +191,61 @@ describe('CommandPalette', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('r564: is a labelled modal dialog with combobox/listbox semantics and a focus trap', async () => {
+    const opener = document.createElement('button');
+    opener.textContent = 'opener';
+    document.body.appendChild(opener);
+    opener.focus();
+    const { onClose, unmount } = renderPalette();
+    const dialog = screen.getByRole('dialog', { name: 'Command palette' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    const input = screen.getByRole('combobox', { name: 'Search commands' });
+    expect(input).toHaveFocus();
+    const listbox = screen.getByRole('listbox', { name: 'Results' });
+    expect(input).toHaveAttribute('aria-controls', listbox.id);
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(8));
+    const options = screen.getAllByRole('option');
+    expect(options[0]).toHaveAttribute('aria-selected', 'true');
+    expect(input).toHaveAttribute('aria-activedescendant', options[0]!.id);
+    key('ArrowDown');
+    expect(input).toHaveAttribute('aria-activedescendant', options[1]!.id);
+    expect(options[1]).toHaveAttribute('aria-selected', 'true');
+    // Tab cannot leave the dialog: the options are arrow-key targets, the
+    // input is the only Tab stop, so focus wraps back to it.
+    key('Tab');
+    expect(input).toHaveFocus();
+    key('Tab', { shiftKey: true });
+    expect(input).toHaveFocus();
+    key('Escape');
+    expect(onClose).toHaveBeenCalledTimes(1);
+    unmount();
+    // Focus goes back to whatever opened the palette.
+    expect(opener).toHaveFocus();
+    opener.remove();
+  });
+
+  it('r564: an empty search collapses the combobox', async () => {
+    renderPalette();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'zzz-nothing' } });
+    expect(screen.getByRole('combobox')).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('combobox')).not.toHaveAttribute('aria-activedescendant');
+  });
+
+  it('r566: never offers a plugin menu entry whose route is not a same-origin path', async () => {
+    apiMock.api.menus.list.mockResolvedValue({
+      items: [
+        { id: 'ok', slot: 'command:palette', label: 'Plugin Good', route: '/plugins/good' },
+        { id: 'js', slot: 'command:palette', label: 'Plugin Script', route: 'javascript:alert(1)' },
+        { id: 'pr', slot: 'command:palette', label: 'Plugin Elsewhere', route: '//evil.example' },
+      ],
+    } as never);
+    renderPalette();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'Plugin' } });
+    expect(await screen.findByText('Plugin Good')).toBeInTheDocument();
+    expect(screen.queryByText('Plugin Script')).toBeNull();
+    expect(screen.queryByText('Plugin Elsewhere')).toBeNull();
+  });
+
   it('closes on Escape', async () => {
     const { onClose } = renderPalette();
     key('Escape');

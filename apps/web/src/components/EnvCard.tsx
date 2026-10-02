@@ -4,7 +4,7 @@ import { FileCode, KeyRound, Lock, Plus, Rows3, Save, Trash2 } from 'lucide-reac
 import { api } from '../lib/api.js';
 import { downloadBlob } from '../lib/format.js';
 import { useToast } from './Toast.js';
-import { Button, Card, CardBody, Input, Skeleton, Textarea, cn } from './ui.js';
+import { Button, Card, CardBody, ErrorCard, Input, Skeleton, Textarea, cn } from './ui.js';
 
 // Vault reference examples (escaped so linters don't read them as template placeholders).
 const REF_INFISICAL = '\u0024\u007B\u007Binfisical:KEY\u007D\u007D';
@@ -69,8 +69,13 @@ export function EnvCard({ serviceId, literalNewlines = false }: { serviceId: num
 
   const env = useQuery({ queryKey: ['env', serviceId], queryFn: () => api.env.list(serviceId) });
   const invalidate = () => qc.invalidateQueries({ queryKey: ['env', serviceId] });
+  // r562: the raw editor DIFFS against the loaded list — every key it does not
+  // see is deleted on Apply. A failed load used to read as "no variables", so
+  // applying a pasted .env over it would have wiped every existing one.
+  const envLoaded = env.data !== undefined;
 
   const enterRaw = () => {
+    if (!envLoaded) return;
     setRawText((env.data ?? []).map((v) => `${v.key}=${v.value}`).join('\n'));
     setDrafts({});
     setFilter('');
@@ -107,7 +112,9 @@ export function EnvCard({ serviceId, literalNewlines = false }: { serviceId: num
   });
   const saveRaw = useMutation({
     mutationFn: async () => {
-      const current: EnvEntry[] = env.data ?? [];
+      // r562: never diff against a list we do not have (see envLoaded).
+      if (env.data === undefined) throw new Error('The current variables could not be loaded');
+      const current: EnvEntry[] = env.data;
       const wanted = new Map(parsed.entries.map((e) => [e.key, e.value]));
       const creates = [...wanted]
         .filter(([k]) => !current.some((v) => v.key === k))
@@ -182,8 +189,15 @@ export function EnvCard({ serviceId, literalNewlines = false }: { serviceId: num
             <button
               type="button"
               onClick={() => (rawMode ? setRawMode(false) : enterRaw())}
-              className="flex items-center gap-1.5 rounded-lg bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400 ring-1 ring-inset ring-white/10 transition hover:bg-white/[0.08] hover:text-slate-200"
-              title={rawMode ? 'Back to the variable table' : 'Paste or edit the whole .env file as text'}
+              disabled={!rawMode && !envLoaded}
+              className="flex items-center gap-1.5 rounded-lg bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400 ring-1 ring-inset ring-white/10 transition hover:bg-white/[0.08] hover:text-slate-200 disabled:opacity-30"
+              title={
+                rawMode
+                  ? 'Back to the variable table'
+                  : envLoaded
+                    ? 'Paste or edit the whole .env file as text'
+                    : 'Unavailable until the current variables load'
+              }
             >
               {rawMode ? <Rows3 size={12} /> : <FileCode size={12} />}
               {rawMode ? 'Table view' : 'Edit as .env'}
@@ -265,6 +279,9 @@ export function EnvCard({ serviceId, literalNewlines = false }: { serviceId: num
             <div className="mt-3 space-y-1.5">
               {env.isLoading ? (
                 <Skeleton className="h-8 w-full" />
+              ) : env.isError && !env.data ? (
+                // r562: a failed load is not an empty list.
+                <ErrorCard title="Could not load environment variables" error={env.error} onRetry={() => void env.refetch()} />
               ) : !env.data || env.data.length === 0 ? (
                 <p className="py-2 text-xs text-slate-600">No environment variables.</p>
               ) : (

@@ -1,10 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 
-const apiMock = vi.hoisted(() => ({ authedFetch: vi.fn() }));
+const apiMock = vi.hoisted(() => ({
+  authedFetch: vi.fn(),
+  enrolment: { get: vi.fn(), rotate: vi.fn(), disable: vi.fn() },
+}));
 vi.mock('../src/lib/api.js', async () => {
   const { createFakeApiModule } = await import('./apiMock.js');
-  return { ...createFakeApiModule(), authedFetch: apiMock.authedFetch };
+  const mod = createFakeApiModule();
+  // r563: the card reads through the SDK's settings.enrolment.* now.
+  return {
+    ...mod,
+    api: { ...mod.api, settings: { ...mod.api.settings, enrolment: apiMock.enrolment } },
+    authedFetch: apiMock.authedFetch,
+  };
 });
 
 const toastSpy = vi.hoisted(() => ({ toast: vi.fn() }));
@@ -16,15 +25,18 @@ vi.mock('../src/components/Toast.js', () => ({
 import { EnrolmentTokenCard } from '../src/components/EnrolmentTokenCard.js';
 import { renderWithProviders } from './helpers.js';
 
-type Reply = { status?: number; body: unknown };
+type Reply = { error?: string; body?: unknown };
 
-/** Script the card's raw requests per HTTP method. */
+/** Script the card's SDK calls (GET = get, POST = rotate, DELETE = disable). */
 function replies(map: Partial<Record<'GET' | 'POST' | 'DELETE', Reply>>) {
-  apiMock.authedFetch.mockImplementation(async (_url: string, init?: RequestInit) => {
-    const r = map[(init?.method ?? 'GET') as 'GET'] as Reply;
-    const text = typeof r.body === 'string' ? r.body : JSON.stringify(r.body);
-    return new Response(text, { status: r.status ?? 200 });
-  });
+  const wire = (fn: ReturnType<typeof vi.fn>, r: Reply | undefined) =>
+    fn.mockImplementation(async () => {
+      if (r?.error) throw new Error(r.error);
+      return r?.body;
+    });
+  wire(apiMock.enrolment.get, map.GET);
+  wire(apiMock.enrolment.rotate, map.POST);
+  wire(apiMock.enrolment.disable, map.DELETE);
 }
 
 describe('EnrolmentTokenCard (r359)', () => {
@@ -58,7 +70,8 @@ describe('EnrolmentTokenCard (r359)', () => {
     renderWithProviders(<EnrolmentTokenCard />);
     fireEvent.click(await screen.findByRole('button', { name: /Rotate/ }));
     expect(await screen.findByText('enrol-secret-2')).toBeInTheDocument();
-    expect(apiMock.authedFetch).toHaveBeenCalledWith('/v1/settings/enrolment/rotate', { method: 'POST' });
+    expect(apiMock.enrolment.rotate).toHaveBeenCalled();
+    expect(apiMock.authedFetch).not.toHaveBeenCalled();
     expect(toastSpy.toast).toHaveBeenCalledWith(expect.stringContaining('New enrolment token'), 'success');
   });
 
@@ -76,29 +89,29 @@ describe('EnrolmentTokenCard (r359)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Disable' }));
     fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Disable' }));
     expect(await screen.findByText(/Enrolment is off/)).toBeInTheDocument();
-    expect(apiMock.authedFetch).toHaveBeenCalledWith('/v1/settings/enrolment', { method: 'DELETE' });
+    expect(apiMock.enrolment.disable).toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Generate token' }));
     expect(await screen.findByText('enrol-secret-3')).toBeInTheDocument();
   });
 
   it('reports a failed load with the server message', async () => {
-    replies({ GET: { status: 403, body: { error: { code: 'forbidden', message: 'Admin access required' } } } });
+    replies({ GET: { error: 'Admin access required' } });
     renderWithProviders(<EnrolmentTokenCard />);
     expect(await screen.findByText(/Admin access required/)).toBeInTheDocument();
   });
 
-  it('toasts a failed rotate or disable, falling back to the status when the body is not JSON', async () => {
+  it('toasts a failed rotate or disable with the SDK error message', async () => {
     replies({
       GET: { body: { enabled: true, token: 'enrol-secret-1' } },
-      POST: { status: 500, body: 'oops' },
-      DELETE: { status: 502, body: 'bad gateway' },
+      POST: { error: 'HTTP 500' },
+      DELETE: { error: 'HTTP 502' },
     });
     renderWithProviders(<EnrolmentTokenCard />);
     fireEvent.click(await screen.findByRole('button', { name: /Rotate/ }));
-    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Request failed with status 500', 'error'));
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('HTTP 500', 'error'));
     fireEvent.click(screen.getByRole('button', { name: 'Disable' }));
     fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Disable' }));
-    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Request failed with status 502', 'error'));
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('HTTP 502', 'error'));
   });
 });

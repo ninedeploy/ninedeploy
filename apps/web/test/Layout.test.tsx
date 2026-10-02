@@ -253,6 +253,20 @@ describe('Layout', () => {
     expect(screen.queryByRole('link', { name: /^Settings$/ })).not.toBeInTheDocument();
   });
 
+  it('r566: the Extensions rail drops plugin routes that are not same-origin paths', async () => {
+    apiMock.api.menus.list.mockResolvedValue({
+      items: [
+        { id: 'ok', slot: 'sidebar:secondary', label: 'Plugin Good', route: '/settings/extensions/good', icon: 'globe' },
+        { id: 'js', slot: 'sidebar:secondary', label: 'Plugin Script', route: 'javascript:alert(1)' },
+        { id: 'ext', slot: 'sidebar:secondary', label: 'Plugin Elsewhere', route: 'https://evil.example/' },
+      ],
+    } as never);
+    renderLayout('/settings/extensions/good');
+    expect(await screen.findByRole('link', { name: /Plugin Good/ })).toBeInTheDocument();
+    expect(screen.queryByText('Plugin Script')).toBeNull();
+    expect(screen.queryByText('Plugin Elsewhere')).toBeNull();
+  });
+
   it('does not leak command:palette items into the Extensions sidebar group', async () => {
     // A plugin that ships only `command:palette` entries (the dominant
     // shape for built-in plugins like Build Cache, Webhook Out, …)
@@ -484,6 +498,25 @@ describe('Layout', () => {
     actSocket(ws, backlog); // the replay a reconnect delivers
     expect(screen.getAllByText('deploy start')).toHaveLength(1);
     expect(screen.getAllByText('database create')).toHaveLength(1);
+  });
+
+  it('r564: the events drawer is a modal dialog — focus moves in, is trapped, Escape closes and returns it', async () => {
+    const user = userEvent.setup();
+    renderLayout();
+    const opener = screen.getByTitle('Activity');
+    await user.click(opener);
+    const dialog = screen.getByRole('dialog', { name: /Events/ });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    const close = screen.getByRole('button', { name: 'Close events' });
+    expect(close).toHaveFocus();
+    // Shift+Tab from the first control wraps to the last one inside.
+    await user.tab({ shift: true });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    await user.tab();
+    expect(close).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: /Events/ })).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
   });
 
   it('closes the drawer via the X button and the backdrop', async () => {

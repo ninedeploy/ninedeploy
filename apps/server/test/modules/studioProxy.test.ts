@@ -2,17 +2,19 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
-import { STUDIO_EPOCH_KEY, studioCookieSetHeader, studioCookieValid, studioCookieValue, studioProxyRoutes } from '../../src/modules/studioProxy.js';
+import { STUDIO_EPOCH_KEY, parseStudioCookie, studioCookieSetHeader, studioCookieValid, studioCookieValue, studioProxyRoutes } from '../../src/modules/studioProxy.js';
 
 let upstream: http.Server;
 let upstreamPort: number;
 const seen: Array<{ method: string; url: string; headers: http.IncomingHttpHeaders; body: string }> = [];
 
 const dbRow = { id: 3, webGuiEnabled: true, webGuiPort: -1 }; // port patched per-test
-const cookieValue = () => studioCookieValue(3).value;
+// r560: the operator the cookie is bound to.
+const operator = { id: 7, tokenVersion: 4, isInstanceOperator: true, deactivatedAt: null as Date | null };
+const cookieValue = () => studioCookieValue(3, operator).value;
 const cookieHeader = () => `nd-studio-3=${cookieValue()}`;
 
-async function makeApp(row: unknown = dbRow, settingsRow: { value: string } | null = null) {
+async function makeApp(row: unknown = dbRow, settingsRow: { value: string } | null = null, userRow: unknown = operator) {
   const app = Fastify();
   app.decorate(
     'db',
@@ -20,6 +22,7 @@ async function makeApp(row: unknown = dbRow, settingsRow: { value: string } | nu
       query: {
         databases: { findFirst: vi.fn(async () => row) },
         settings: { findFirst: vi.fn(async () => settingsRow) },
+        users: { findFirst: vi.fn(async () => userRow) },
       },
     } as never,
   );
@@ -63,8 +66,8 @@ describe('studio proxy', () => {
     // here. Compare structurally, not byte-for-byte against a freshly minted
     // cookie — the route stamps its own expiry second, and this assertion
     // crossing a 1s boundary would flake on the timestamp+HMAC pair.
-    expect(seen[0].headers.cookie).toMatch(/^nd-studio-3=\d+\.[0-9a-f]{64}$/);
-    expect(studioCookieValid(3, seen[0].headers.cookie)).toBe(true);
+    expect(seen[0].headers.cookie).toMatch(/^nd-studio-3=\d+\.7\.[0-9a-f]{64}$/);
+    expect(studioCookieValid(3, seen[0].headers.cookie, operator)).toBe(true);
     await app.close();
   });
 
@@ -83,7 +86,7 @@ describe('studio proxy', () => {
     const preParsing = vi.fn(async () => undefined);
     const app = Fastify();
     app.addHook('preParsing', preParsing);
-    app.decorate('db', { query: { databases: { findFirst: vi.fn(async () => dbRow) } } } as never);
+    app.decorate('db', { query: { databases: { findFirst: vi.fn(async () => dbRow) }, users: { findFirst: vi.fn(async () => operator) } } } as never);
     await app.register(studioProxyRoutes, { prefix: '/databases' });
     await app.ready();
 
@@ -115,7 +118,7 @@ describe('studio proxy', () => {
     // mint — the expiry is stamped per second, so every run rolls the dice)
     // and the proxy rightly answered 200. Swap in a tail pair this mint's
     // real signature cannot have.
-    const real = studioCookieValue(3).value;
+    const real = studioCookieValue(3, operator).value;
     const tail = real.slice(-2);
     const forgedTail = tail === 'ff' ? '00' : 'ff';
     const forged = `nd-studio-3=${real.slice(0, -2)}${forgedTail}`;
@@ -176,8 +179,8 @@ describe('studio proxy', () => {
   });
 
   it('mints a path-scoped HttpOnly cookie from the start route header helper', () => {
-    const header = studioCookieSetHeader(9, false);
-    expect(header).toMatch(/^nd-studio-9=\d+\.[a-f0-9]{64}/);
+    const header = studioCookieSetHeader(9, operator, false);
+    expect(header).toMatch(/^nd-studio-9=\d+\.7\.[a-f0-9]{64}/);
     expect(header).toContain('Path=/v1/databases/9/studio-proxy/');
     expect(header).toContain('HttpOnly');
     expect(header).toContain('SameSite=Strict');
@@ -190,7 +193,7 @@ describe('studio cookie epoch (r441)', () => {
   it('the settings row decides the live epoch; a bumped epoch invalidates older cookies', async () => {
     const app = await makeApp(dbRow, { value: 'epoch-2' });
     // Minted under the LIVE epoch → passes.
-    const fresh = `nd-studio-3=${studioCookieValue(3, 8 * 60 * 60, 'epoch-2').value}`;
+    const fresh = `nd-studio-3=${studioCookieValue(3, operator, 8 * 60 * 60, 'epoch-2').value}`;
     const ok = await app.inject({ method: 'GET', url: '/databases/3/studio-proxy/', headers: { cookie: fresh } });
     expect(ok.statusCode).toBe(200);
     // Minted under the PREVIOUS (default) epoch — what a password-reset bump
@@ -202,16 +205,103 @@ describe('studio cookie epoch (r441)', () => {
   });
 
   it('studioCookieValid is epoch-sensitive at the unit level', () => {
-    const header = `nd-studio-3=${studioCookieValue(3, 60, 'epoch-9').value}`;
-    expect(studioCookieValid(3, header, Date.now(), 'epoch-9')).toBe(true);
-    expect(studioCookieValid(3, header, Date.now(), 'epoch-10')).toBe(false);
+    const header = `nd-studio-3=${studioCookieValue(3, operator, 60, 'epoch-9').value}`;
+    expect(studioCookieValid(3, header, operator, Date.now(), 'epoch-9')).toBe(true);
+    expect(studioCookieValid(3, header, operator, Date.now(), 'epoch-10')).toBe(false);
     // Default-epoch cookies still verify when no epoch was ever bumped.
-    const legacy = `nd-studio-3=${studioCookieValue(3, 60).value}`;
-    expect(studioCookieValid(3, legacy)).toBe(true);
+    const legacy = `nd-studio-3=${studioCookieValue(3, operator, 60).value}`;
+    expect(studioCookieValid(3, legacy, operator)).toBe(true);
   });
 
   it('exports the settings key the password-reset route bumps', () => {
     expect(STUDIO_EPOCH_KEY).toBe('studio.cookie_epoch');
-    expect(studioCookieSetHeader(3, false, 60, 'e1')).toContain('Max-Age=60');
+    expect(studioCookieSetHeader(3, operator, false, 60, 'e1')).toContain('Max-Age=60');
+  });
+});
+
+// ── r560: user-bound studio cookies + framing isolation ──────────────
+describe('studio session is bound to the operator who opened it (r560)', () => {
+  const get = (app: Awaited<ReturnType<typeof makeApp>>, cookie = cookieHeader()) =>
+    app.inject({ method: 'GET', url: '/databases/3/studio-proxy/', headers: { cookie } });
+
+  it('a logout (tokenVersion bump) ends the studio session', async () => {
+    const cookie = cookieHeader();
+    const app = await makeApp(dbRow, null, { ...operator, tokenVersion: operator.tokenVersion + 1 });
+    const res = await get(app, cookie);
+    expect(res.statusCode).toBe(401);
+    expect(res.json().message).toMatch(/open the studio again/);
+    expect(seen).toHaveLength(0);
+    await app.close();
+  });
+
+  it('operator demotion, deactivation and deletion end the studio session', async () => {
+    for (const row of [
+      { ...operator, isInstanceOperator: false },
+      { ...operator, deactivatedAt: new Date() },
+      null, // deleted user
+    ]) {
+      const app = await makeApp(dbRow, null, row);
+      expect((await get(app)).statusCode).toBe(401);
+      await app.close();
+    }
+    expect(seen).toHaveLength(0);
+  });
+
+  it('a cookie cannot be re-pointed at another user', async () => {
+    const [exp, , sig] = cookieValue().split('.');
+    const app = await makeApp(dbRow, null, { ...operator, id: 8 });
+    expect((await get(app, `nd-studio-3=${exp}.8.${sig}`)).statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('refuses the pre-0.10.36 unbound cookie shape', async () => {
+    const [exp, , sig] = cookieValue().split('.');
+    const app = await makeApp();
+    expect((await get(app, `nd-studio-3=${exp}.${sig}`)).statusCode).toBe(401);
+    expect(parseStudioCookie(3, `nd-studio-3=${exp}.${sig}`)).toBeNull();
+    expect(parseStudioCookie(3, `nd-studio-3=${exp}.0.${sig}`)).toBeNull();
+    expect(parseStudioCookie(3, `nd-studio-3=1.7.${sig}`)).toBeNull();
+    expect(studioCookieValid(3, `nd-studio-3=${exp}.7.${sig}`, { id: 8, tokenVersion: 4 })).toBe(false);
+    await app.close();
+  });
+});
+
+describe('studio responses can never be framed (r560)', () => {
+  it('adds frame-ancestors none + X-Frame-Options DENY, keeps the upstream CSP, strips panel-wide headers', async () => {
+    upstream.removeAllListeners('request');
+    upstream.on('request', (_req, res) => {
+      res.setHeader('content-security-policy', "script-src 'self' 'nonce-abc'; frame-ancestors *");
+      res.setHeader('x-frame-options', 'ALLOWALL');
+      res.setHeader('clear-site-data', '"storage"');
+      res.setHeader('service-worker-allowed', '/');
+      res.setHeader('strict-transport-security', 'max-age=1');
+      res.setHeader('set-cookie', ['adminer_sid=1; Domain=example.test; Path=/']);
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end('<html></html>');
+    });
+    const app = await makeApp();
+    const res = await app.inject({ method: 'GET', url: '/databases/3/studio-proxy/', headers: { cookie: cookieHeader() } });
+    expect(res.statusCode).toBe(200);
+    const csp = ([] as string[]).concat(res.headers['content-security-policy'] as string | string[]);
+    // Upstream policy preserved (the studio keeps its own script rules)…
+    expect(csp).toContain("script-src 'self' 'nonce-abc'; frame-ancestors *");
+    // …plus an additional, independently enforced no-framing policy.
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(res.headers['x-frame-options']).toBe('DENY');
+    expect(res.headers['clear-site-data']).toBeUndefined();
+    expect(res.headers['service-worker-allowed']).toBeUndefined();
+    expect(res.headers['strict-transport-security']).toBeUndefined();
+    const cookie = ([] as string[]).concat(res.headers['set-cookie'] ?? []).join(';');
+    expect(cookie).not.toMatch(/domain=/i);
+    expect(cookie).toContain('Path=/v1/databases/3/studio-proxy');
+    await app.close();
+  });
+
+  it('sets the no-framing headers even when the upstream sends no CSP', async () => {
+    const app = await makeApp();
+    const res = await app.inject({ method: 'GET', url: '/databases/3/studio-proxy/', headers: { cookie: cookieHeader() } });
+    expect(res.headers['content-security-policy']).toBe("frame-ancestors 'none'");
+    expect(res.headers['x-frame-options']).toBe('DENY');
+    await app.close();
   });
 });

@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, Globe, Plus, Radio, Shield, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { api, authedFetch } from '../../lib/api.js';
+import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, ConfirmDialog, Input, Skeleton, cn } from '../../components/ui.js';
 
-import type { Service } from '@ninedeploy/sdk';
+import type { DomainVerificationChallenge, Service } from '@ninedeploy/sdk';
 
 /** Custom domains and direct host port publishing for a service. */
 export function NetworkTab({ serviceId, svc }: { serviceId: number; svc?: Service | null }) {
@@ -225,21 +225,7 @@ function cleanDomainInput(raw: string): string {
 }
 
 /** The TXT record a `pending` domain must publish to prove ownership. */
-type DomainChallenge = { recordName: string; recordType: 'TXT'; recordValue: string };
-
-/**
- * Prove ownership of a pending domain (`POST …/domains/:domainId/verify`).
- * Raw request: the SDK has no method for this route yet.
- */
-async function verifyDomain(
-  serviceId: number,
-  domainId: number,
-): Promise<{ verified: boolean; error?: string; verification: DomainChallenge | null }> {
-  const res = await authedFetch(`/v1/services/${serviceId}/domains/${domainId}/verify`, { method: 'POST' });
-  const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-  if (!res.ok) throw new Error(body?.error?.message ?? 'Could not verify the domain');
-  return body as { verified: boolean; error?: string; verification: DomainChallenge | null };
-}
+type DomainChallenge = DomainVerificationChallenge;
 
 function DomainsCard({ serviceId }: { serviceId: number }) {
   const qc = useQueryClient();
@@ -335,7 +321,9 @@ function DomainItemRow({
   const pending = d.status === 'pending';
 
   const verify = useMutation({
-    mutationFn: () => verifyDomain(serviceId, d.id),
+    // r563: the SDK has had `domains.verify` all along — the raw fetch and its
+    // "no SDK method" comment were stale.
+    mutationFn: () => api.domains.verify(serviceId, d.id),
     onSuccess: (res) => {
       if (res.verified) {
         toast(`${d.hostname} verified — it is routed now`, 'success');

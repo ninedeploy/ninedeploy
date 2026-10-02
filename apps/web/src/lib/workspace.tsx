@@ -34,7 +34,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     return saved ? Number(saved) : null;
   });
 
-  const { data: workspaces = [], isLoading, refetch } = useQuery({
+  const { data: workspaces = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['workspaces'],
     queryFn: async () => (await api.workspaces.list()) ?? [],
     enabled: Boolean(user),
@@ -54,14 +54,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           localStorage.setItem(STORAGE_KEY, String(first.id));
         }
       }
-    } else if (user && !isLoading) {
+    } else if (user && !isLoading && !isError) {
       // Only clear a saved selection once we KNOW the signed-in user has no
       // workspaces — clearing during the initial empty/loading render would
-      // wipe the persisted choice before the list ever arrives.
+      // wipe the persisted choice before the list ever arrives. r562: nor on a
+      // FAILED load — an error is not an empty list, and a transient 5xx used
+      // to forget the user's workspace choice for good.
       setSelectedId(null);
       localStorage.removeItem(STORAGE_KEY);
     }
-  }, [workspaces, selectedId, user, isLoading]);
+  }, [workspaces, selectedId, user, isLoading, isError]);
 
   const createMutation = useMutation({
     mutationFn: (input: WorkspaceCreateInput) => api.workspaces.create(input),

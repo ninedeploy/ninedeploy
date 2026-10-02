@@ -15,8 +15,24 @@ vi.mock('../src/lib/auth.js', () => ({
 }));
 
 const authedFetchMock = vi.fn();
+// r563: the page reads through the SDK now (`api.traefik.*`); the fake routes
+// those calls through the same URL-keyed fetch mock the cases below program,
+// so each case still states its fixture per endpoint.
+const viaFetch = async (url: string, init?: { method: string }) => {
+  const res = await (init ? authedFetchMock(url, init) : authedFetchMock(url));
+  if (!res.ok) throw new Error(`HTTP ${res.status ?? 500} for ${url}`);
+  return res.json();
+};
 vi.mock('../src/lib/api.js', () => ({
   authedFetch: (...args: unknown[]) => authedFetchMock(...args),
+  api: {
+    traefik: {
+      get: () => viaFetch('/v1/traefik'),
+      logs: (lines = 50) => viaFetch(`/v1/traefik/logs?lines=${lines}`),
+      restart: () => viaFetch('/v1/traefik/restart', { method: 'POST' }),
+      backupCerts: () => viaFetch('/v1/traefik/backup-certs', { method: 'POST' }),
+    },
+  },
 }));
 
 const mockInfo = {
@@ -278,16 +294,28 @@ describe('Traefik route', () => {
     await screen.findByText('Backup Certs');
   });
 
-  it('handles logs query error gracefully', async () => {
+  it('r562: a logs query error shows an error card with retry, not an empty log', async () => {
     authedFetchMock.mockImplementation((url: string) => {
-      if (url.includes('/v1/traefik/logs')) return Promise.resolve({ ok: false });
+      if (url.includes('/v1/traefik/logs')) return Promise.resolve({ ok: false, status: 500 });
       if (url === '/v1/traefik') return Promise.resolve({ ok: true, json: () => Promise.resolve(mockInfo) });
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) });
     });
     renderWithProviders(<Traefik />);
     await screen.findByText('Traefik Running');
     fireEvent.click(screen.getByRole('tab', { name: 'Logs' }));
-    expect(await screen.findByText('No logs available.')).toBeInTheDocument();
+    expect(await screen.findByText("Couldn't load Traefik logs")).toBeInTheDocument();
+    expect(screen.queryByText('No logs available.')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Try again/i }));
+  });
+
+  it('r562: members never query the operator-only logs route and are told why', async () => {
+    userState.user = { id: 2, email: 'user@nine.local', isOperator: false };
+    renderWithProviders(<Traefik />);
+    await screen.findByText('Traefik Running');
+    fireEvent.click(screen.getByRole('tab', { name: 'Logs' }));
+    expect(await screen.findByText('Traefik logs are available to instance operators only.')).toBeInTheDocument();
+    expect(screen.queryByText('No logs available.')).toBeNull();
+    expect(authedFetchMock.mock.calls.some(([url]) => String(url).includes('/v1/traefik/logs'))).toBe(false);
   });
 
   it('renders error card when info query fails and allows retry', async () => {
