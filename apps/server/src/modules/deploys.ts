@@ -544,6 +544,17 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
       socket.close(1008, 'container is not running');
       return;
     }
+    // r665: the shell below is the PANEL host's `docker exec`. A service
+    // pinned to a node runs there, so the terminal opened onto "No such
+    // container" — say why instead (the agent has no interactive op).
+    if (svc.serverId != null) {
+      socket.send(
+        `\x1b[33m✕ "${svc.name}" runs on remote node #${svc.serverId} — the web terminal only reaches containers on the panel host. ` +
+          `Open a shell on the node itself (docker exec -it ${svc.runtimeId} sh).\x1b[0m\r\n`,
+      );
+      socket.close(1008, 'service runs on a remote node');
+      return;
+    }
     const targetContainer = svc.runtimeId;
     void audit(app.db, user.id, 'service.exec', svc.name);
 

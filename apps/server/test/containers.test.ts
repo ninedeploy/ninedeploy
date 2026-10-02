@@ -271,3 +271,49 @@ describe('containerRoutes', () => {
     expect(res.json().yaml).toContain('services:');
   });
 });
+
+/**
+ * r665: these routes run the PANEL host's docker CLI. A container of a
+ * service pinned to a remote node lives on that node, so it answered "No such
+ * container" — or could reach a same-named local one. Refused up front.
+ */
+describe('r665: containers of node-pinned services', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('refuses inspect, compose and file access with the node named', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { services: { id: 1, runtimeId: 'web-1-17', serverId: 4 } } }),
+    });
+    await app.register(containerRoutes);
+    for (const url of ['/web-1-17/inspect', '/web-1-17/compose', '/web-1-17/files?path=/', '/web-1-17-r2/files/content?path=/a']) {
+      const res = await app.inject({ method: 'GET', url, headers: asUser() });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatchObject({ code: 'remote_container' });
+      expect(res.json().error.message).toContain('remote node #4');
+    }
+    expect(engineMocks.inspectContainer).not.toHaveBeenCalled();
+    expect(engineMocks.getContainerComposeManifest).not.toHaveBeenCalled();
+    expect(engineMocks.listContainerDir).not.toHaveBeenCalled();
+    expect(engineMocks.readContainerFile).not.toHaveBeenCalled();
+  });
+
+  it('refuses a fan-out target generation too', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { serviceTargets: { serverId: 6, runtimeId: 'web-t6-17' } } }),
+    });
+    await app.register(containerRoutes);
+    const res = await app.inject({ method: 'DELETE', url: '/web-t6-17/files?path=/tmp/x', headers: asUser() });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toContain('remote node #6');
+    expect(engineMocks.deleteContainerPath).not.toHaveBeenCalled();
+  });
+
+  it('keeps serving containers on the panel host', async () => {
+    engineMocks.inspectContainer.mockResolvedValueOnce({ id: 'x' });
+    const app = await buildTestApp({ db: createFakeDb() });
+    await app.register(containerRoutes);
+    const res = await app.inject({ method: 'GET', url: '/web-1-17/inspect', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(engineMocks.inspectContainer).toHaveBeenCalledWith('web-1-17');
+  });
+});
