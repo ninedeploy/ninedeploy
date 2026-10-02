@@ -20,7 +20,7 @@ import {
   pgbouncerStatusFor,
   pooledConnectionString,
 } from '../lib/pgbouncer.js';
-import { loadDatabaseForUser, assertDatabaseRole } from '../lib/resourceAccess.js';
+import { loadDatabaseForUser, assertDatabaseRole, databaseRole, roleAtLeast } from '../lib/resourceAccess.js';
 
 /**
  * r331: `enablePgbouncer` / `disablePgbouncer` stamp the DATABASE ROW, not the
@@ -46,7 +46,12 @@ export const pgbouncerRoutes: FastifyPluginAsync = async (app) => {
     const id = num((req.params as { id: string }).id);
     const d = await loadDatabaseForUser(app.db, id, req.user!);
     await assertDatabaseRole(app.db, d, req.user!, 'member');
-    const status = await pgbouncerStatusFor(d);
+    // r643: the pooled URL embeds the decrypted password. Reading it is the
+    // `admin` tier (same as GET /:id/credentials); a member gets the URL with
+    // the password masked, like `directConnectionString` below.
+    const role = await databaseRole(app.db, d, req.user!);
+    const revealPassword = role !== null && roleAtLeast(role, 'admin');
+    const status = await pgbouncerStatusFor(d, { maskPassword: !revealPassword });
     return {
       databaseId: d.id,
       ...status,

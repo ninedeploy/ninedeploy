@@ -60,16 +60,17 @@ export function pgbouncerContainerName(d: Database): string {
  *  `connectionString()` URL. Callers that want a stable
  *  URL regardless of sidecar state should call
  *  `connectionString()` directly. */
-export function pooledConnectionString(d: Database): string {
+export function pooledConnectionString(d: Database, opts: { maskPassword?: boolean } = {}): string {
+  // r643: the status route is member-readable, while the password is an
+  // `admin` secret (GET /databases/:id/credentials). Masked callers get the
+  // same `*` placeholder the route's `directConnectionString` uses.
+  const password = opts.maskPassword ? '*' : decrypt(d.passwordEncrypted);
+  const user = d.username ?? 'nine';
   if (!d.pgbouncerEnabled || !d.pgbouncerContainerName) {
     // Direct connection — keep the existing connection
     // string shape.
-    const password = decrypt(d.passwordEncrypted);
-    const user = d.username ?? 'nine';
     return `postgres://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${d.internalHost ?? d.containerName ?? 'localhost'}:${d.internalPort ?? 5432}/${d.dbName ?? 'app'}`;
   }
-  const password = decrypt(d.passwordEncrypted);
-  const user = d.username ?? 'nine';
   return `postgres://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${d.pgbouncerContainerName}:${d.pgbouncerPort ?? DEFAULT_PORT}/${d.dbName ?? 'app'}`;
 }
 
@@ -185,7 +186,10 @@ export async function disablePgbouncer(db: DB, d: Database, log: (line: string) 
  *  real `docker inspect` query; `poolMode` is parsed
  *  from the rendered ini (the only authoritative source
  *  the operator can read). */
-export async function pgbouncerStatusFor(d: Database): Promise<PgbouncerStatus> {
+export async function pgbouncerStatusFor(
+  d: Database,
+  opts: { maskPassword?: boolean } = {},
+): Promise<PgbouncerStatus> {
   const containerName = d.pgbouncerContainerName;
   if (!d.pgbouncerEnabled || !containerName) {
     return {
@@ -219,7 +223,7 @@ export async function pgbouncerStatusFor(d: Database): Promise<PgbouncerStatus> 
     port: d.pgbouncerPort ?? DEFAULT_PORT,
     running,
     poolMode,
-    pooledConnectionString: running ? pooledConnectionString(d) : null,
+    pooledConnectionString: running ? pooledConnectionString(d, opts) : null,
   };
 }
 
