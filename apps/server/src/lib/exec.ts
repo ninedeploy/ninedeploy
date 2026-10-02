@@ -15,6 +15,31 @@ export interface ExecOptions {
   /** Progress sink for {@link capture} heartbeats (and nothing else — captured
    *  stdout/stderr stay out of it and are returned/resolved as before). */
   onProgress?: (line: string) => void;
+  /** r667: {@link capture} only — stdout bytes kept before the child is
+   *  stopped and the call rejects. Default {@link DEFAULT_CAPTURE_MAX_BYTES}. */
+  maxOutputBytes?: number;
+}
+
+/**
+ * r667: memory ceilings for child output. `capture` used to buffer stdout and
+ * stderr without limit and the line splitter kept a newline-less tail without
+ * limit — a member's container printing one endless line made
+ * `docker logs --tail 300` (lines, not bytes) hold all of it in the panel.
+ * The caps sit far above every legitimate output the panel parses (inspect
+ * JSON, listings, 300 log lines); stderr only ever feeds an error message, so
+ * its newest characters are kept instead of failing.
+ */
+export const DEFAULT_CAPTURE_MAX_BYTES = 32 * 1024 * 1024;
+const CAPTURE_STDERR_KEEP_CHARS = 64 * 1024;
+/** A line longer than this is emitted in pieces of this size. */
+export const MAX_LINE_CHARS = 1024 * 1024;
+
+/** Thrown by {@link capture} when stdout passes its byte ceiling. */
+export class ExecOutputTooLargeError extends Error {
+  constructor(public readonly cmd: string, maxBytes: number) {
+    super(`\`${cmd}\` produced more than ${maxBytes} bytes of output — stopped`);
+    this.name = 'ExecOutputTooLargeError';
+  }
 }
 
 /**
@@ -150,7 +175,14 @@ export function makeLineSplitter() {
       const parts = pending.split(/\r?\n/);
       // split() always yields a non-empty array, so pop() is always a string.
       pending = parts.pop() as string;
-      return parts.filter((line) => line.length > 0);
+      const lines = parts.filter((line) => line.length > 0);
+      // r667: a newline that never comes must not grow the buffer forever —
+      // an over-long line is passed on in MAX_LINE_CHARS pieces.
+      while (pending.length > MAX_LINE_CHARS) {
+        lines.push(pending.slice(0, MAX_LINE_CHARS));
+        pending = pending.slice(MAX_LINE_CHARS);
+      }
+      return lines;
     },
     flush(): string {
       // Terminal bytes can no longer be completed by a later chunk; end()
@@ -203,7 +235,11 @@ const REDACT_NEXT_FLAGS = new Set(['-p', '-a', '--password', '-e']);
 function redactedLabel(cmd: string, args: string[]): string {
   const parts: string[] = [cmd];
   let maskNext = false;
-  for (const arg of args) {
+  // r664: ssh's last argv element is the REMOTE command line. The node
+  // bootstrap's carries the agent token hash — the node's sealing key — and a
+  // failed bootstrap put it into the operator's 400 and the server log.
+  const shown = cmd === 'ssh' && args.length > 0 ? [...args.slice(0, -1), '<remote command>'] : args;
+  for (const arg of shown) {
     if (maskNext) {
       parts.push('***');
       maskNext = false;
@@ -333,6 +369,8 @@ export function capture(cmd: string, args: string[], opts: ExecOptions = {}, inp
 
     let out = '';
     let errOut = '';
+    let outBytes = 0;
+    const maxOutputBytes = opts.maxOutputBytes ?? DEFAULT_CAPTURE_MAX_BYTES;
     let settled = false;
     const startedAt = Date.now();
     let lastActivityAt = startedAt;
@@ -351,13 +389,27 @@ export function capture(cmd: string, args: string[], opts: ExecOptions = {}, inp
       reject(new ExecTimeoutError(label, timeoutMs));
     });
 
-    child.stdout?.on('data', (d) => {
+    child.stdout?.on('data', (d: Buffer) => {
+      if (settled) return;
       lastActivityAt = Date.now();
+      outBytes += d.length;
+      if (outBytes > maxOutputBytes) {
+        // r667: stop the child and drop what was buffered.
+        settled = true;
+        cancelHeartbeat();
+        cancelTimeout();
+        killTree(child, 'SIGKILL');
+        out = '';
+        reject(new ExecOutputTooLargeError(label, maxOutputBytes));
+        return;
+      }
       out += outDecoder.write(d);
     });
-    child.stderr?.on('data', (d) => {
+    child.stderr?.on('data', (d: Buffer) => {
       lastActivityAt = Date.now();
       errOut += errDecoder.write(d);
+      // r667: only the newest stderr ever reaches an error message.
+      if (errOut.length > 2 * CAPTURE_STDERR_KEEP_CHARS) errOut = errOut.slice(-CAPTURE_STDERR_KEEP_CHARS);
     });
     child.on('error', (err) => {
       if (settled) return;

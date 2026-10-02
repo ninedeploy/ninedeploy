@@ -1,7 +1,10 @@
 import { EventEmitter } from 'node:events';
-import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { appendFileSync, closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { config } from '../config.js';
+
+/** r667: how much of a deploy log one read loads (see LogBus.read). */
+export const MAX_LOG_READ_BYTES = 8 * 1024 * 1024;
 
 /**
  * Per-deployment log bus: appends every line to disk and emits it to live
@@ -23,9 +26,30 @@ class LogBus extends EventEmitter {
     this.emit(String(deploymentId), line);
   }
 
-  read(deploymentId: number): string {
+  /**
+   * The log's text — at most its last `maxBytes` (r667). Every WebSocket
+   * subscriber, the failure-hint scan and AI diagnosis used to read the WHOLE
+   * file into memory, however large a runaway build had made it. A capped
+   * read starts at the first full line inside the window and says how much
+   * was left out; the download route still streams the complete file.
+   */
+  read(deploymentId: number, maxBytes = MAX_LOG_READ_BYTES): string {
     const file = path.join(config.paths.logsDir, `${deploymentId}.log`);
-    return existsSync(file) ? readFileSync(file, 'utf8') : '';
+    if (!existsSync(file)) return '';
+    const size = statSync(file).size;
+    if (size <= maxBytes) return readFileSync(file, 'utf8');
+    const buf = Buffer.alloc(maxBytes);
+    const fd = openSync(file, 'r');
+    let read: number;
+    try {
+      read = readSync(fd, buf, 0, maxBytes, size - maxBytes);
+    } finally {
+      closeSync(fd);
+    }
+    const tail = buf.subarray(0, read);
+    const firstLine = tail.indexOf(10);
+    const text = (firstLine === -1 ? tail : tail.subarray(firstLine + 1)).toString('utf8');
+    return `… ${size - (read - (firstLine + 1))} earlier bytes of this log omitted — download the full log to see them\n${text}`;
   }
 
   subscribe(deploymentId: number, onLine: (line: string) => void): () => void {

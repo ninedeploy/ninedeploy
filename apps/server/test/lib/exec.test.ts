@@ -589,3 +589,84 @@ describe('error labels redact credential argv (audit fix)', () => {
     await expect(joined).rejects.not.toThrow(/hunter2/);
   });
 });
+
+/**
+ * r667: output ceilings. `capture` buffered stdout/stderr without limit and
+ * the line splitter kept a newline-less tail without limit — one container
+ * printing an endless line made `docker logs --tail 300` (lines, not bytes)
+ * hold all of it in the panel.
+ */
+describe('r667: bounded child output', () => {
+  beforeEach(() => mockSpawn.mockReset());
+  afterEach(() => vi.restoreAllMocks());
+
+  it('passes an endless line on in bounded pieces instead of buffering it whole', async () => {
+    const { MAX_LINE_CHARS } = await import('../../src/lib/exec.js');
+    const child = makeChild();
+    mockSpawn.mockReturnValue(child);
+    const sink = vi.fn();
+    const promise = run('docker', ['logs', 'x'], {}, sink);
+    const chunk = Buffer.alloc(MAX_LINE_CHARS, 'a');
+    for (let i = 0; i < 3; i++) child.stdout.emit('data', chunk);
+    // Emitted while the line is still open — nothing waits for a newline.
+    expect(sink.mock.calls.length).toBeGreaterThanOrEqual(2);
+    for (const [line] of sink.mock.calls) expect((line as string).length).toBeLessThanOrEqual(MAX_LINE_CHARS);
+    emitClose(child, 0);
+    await promise;
+    expect(sink.mock.calls.reduce((n, [l]) => n + (l as string).length, 0)).toBe(3 * MAX_LINE_CHARS);
+  });
+
+  it('capture stops a child whose stdout passes the ceiling, and rejects', async () => {
+    const { ExecOutputTooLargeError } = await import('../../src/lib/exec.js');
+    const child = makeChild({ pid: 4242 });
+    mockSpawn.mockReturnValue(child);
+    const kill = vi.spyOn(process, 'kill').mockImplementation(() => true);
+    const promise = capture('docker', ['logs', '--tail', '300', 'x'], { maxOutputBytes: 1024 });
+    child.stdout.emit('data', Buffer.alloc(800, 'a'));
+    child.stdout.emit('data', Buffer.alloc(800, 'b'));
+    await expect(promise).rejects.toBeInstanceOf(ExecOutputTooLargeError);
+    expect(kill).toHaveBeenCalledWith(-4242, 'SIGKILL');
+    // Late data and the close are ignored.
+    child.stdout.emit('data', Buffer.alloc(800, 'c'));
+    emitClose(child, 0);
+  });
+
+  it('capture keeps a bounded stderr tail for its error message', async () => {
+    const child = makeChild();
+    mockSpawn.mockReturnValue(child);
+    const promise = capture('docker', ['pull', 'x']);
+    child.stderr.emit('data', Buffer.alloc(300 * 1024, 'e'));
+    child.stderr.emit('data', Buffer.from('the real error'));
+    emitClose(child, 1);
+    const err = (await promise.catch((e: unknown) => e)) as Error;
+    expect(err.message).toContain('the real error');
+    expect(err.message.length).toBeLessThan(200 * 1024);
+  });
+});
+
+/**
+ * r664: ssh's last argv element is the remote command line. The node
+ * bootstrap's carries the agent token hash (the node's sealing key), and a
+ * failed bootstrap put it into the operator's 400 and the server log.
+ */
+describe('r664: the ssh remote command never reaches an error label', () => {
+  beforeEach(() => mockSpawn.mockReset());
+
+  it('masks the remote command of a failed ssh call', async () => {
+    const child = makeChild();
+    mockSpawn.mockReturnValue(child);
+    const promise = run('ssh', ['-o', 'BatchMode=yes', 'root@10.0.0.5', 'docker run -e NINEDEPLOY_AGENT_TOKEN=deadbeefcafe agent'], {}, () => {});
+    emitClose(child, 255);
+    const err = (await promise.catch((e: unknown) => e)) as Error;
+    expect(err.message).toContain('root@10.0.0.5 <remote command>');
+    expect(err.message).not.toContain('deadbeefcafe');
+  });
+
+  it('labels other commands exactly as before', async () => {
+    const child = makeChild();
+    mockSpawn.mockReturnValue(child);
+    const promise = run('docker', ['build', '-t', 'x', '.'], {}, () => {});
+    emitClose(child, 1);
+    await expect(promise).rejects.toThrow('`docker build -t x .` exited with code 1');
+  });
+});
