@@ -132,11 +132,25 @@ export async function deployToTargets(
         : null;
       try {
         if (ctx.registryAuth) {
-          await agent(
+          const login = agent(
             'docker.login',
             { username: ctx.registryAuth.username, password: ctx.registryAuth.password, ...(ctx.registryAuth.server ? { server: ctx.registryAuth.server } : {}) },
             log,
           );
+          if (ctx.image) {
+            await login;
+          } else {
+            // r592: a source build only gained this login in 0.10.38; before,
+            // it built anonymously and public base images worked. A stale or
+            // rejected credential must not turn those working targets into
+            // failures — warn and build anonymously, as before.
+            await login.catch((err: unknown) => {
+              log(
+                `target node #${target.serverId}: registry login to ${ctx.registryAuth!.server || 'docker.io'} failed ` +
+                  `(${err instanceof Error ? err.message : String(err)}) — building without it; private base images will not pull`,
+              );
+            });
+          }
         }
         try {
           if (ctx.image) {

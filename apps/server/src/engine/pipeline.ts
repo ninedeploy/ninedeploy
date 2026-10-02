@@ -23,7 +23,7 @@ import { pm2Builder } from './builders/pm2.js';
 import { getAcmeEmail, writeDynamicConfig } from './proxy.js';
 import { run, sleep } from '../lib/exec.js';
 import { resolveVaultRefs } from '../lib/vault.js';
-import { registryCredentialFor } from '../lib/registryBinding.js';
+import { registryCredentialFor, registryCredentialForSourceBuild } from '../lib/registryBinding.js';
 import { isOperator, roleAtLeast } from '../lib/resourceAccess.js';
 import { getBundledTemplates } from '../templates/registry.js';
 import type { BuildContext, Builder, DeployRuntime } from './types.js';
@@ -1277,7 +1277,11 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
           deploymentId,
           image: service.image ? await pullableReleaseRef(service.image, runtime!.imageDigest) : undefined,
           env: fanoutEnv,
-          registryAuth: await loadRegistryAuth(db, service, log),
+          // r592: a source build logs each node in too — to the credential's
+          // single bound host (r512) — so private base images pull there.
+          registryAuth: service.image
+            ? await loadRegistryAuth(db, service, log)
+            : await registryCredentialForSourceBuild(db, service, log),
           primaryServerId: service.serverId ?? null,
           source: buildableSource,
         },

@@ -293,5 +293,44 @@ describe('multi-server fan-out (phase 1)', () => {
     // A source build never pulls the release.
     expect(ops).not.toContain('docker.pull');
   });
+
+  it('r592: a rejected login on a SOURCE build warns and builds anonymously instead of failing the target', async () => {
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string) => {
+      if (op === 'docker.login') throw new Error('agent docker.login exited with 1');
+      return op === 'docker.inspect' ? { exitCode: 0, lines: ['running|10.0.0.9'] } : { exitCode: 0, lines: [] };
+    });
+    const db = dbWithTargets([{ serverId: 5, runtimeId: null }]);
+    const log = vi.fn();
+    const results = await deployToTargets(
+      db as never,
+      {
+        service: { ...svc, image: null },
+        deploymentId: 9,
+        env: {},
+        registryAuth: { username: 'u', password: 'p', server: 'ghcr.io' },
+        primaryServerId: null,
+        source: { repoUrl: 'https://github.com/acme/app.git', branch: null, commitSha: 'abcdef123', dockerfilePath: 'Dockerfile', baseDir: '.' },
+      },
+      log,
+    );
+    expect(results[0]).toMatchObject({ serverId: 5, ok: true });
+    expect(agentMocks.agentOp.mock.calls.map((c) => c[2])).toContain('docker.build');
+    expect(log.mock.calls.some((c) => String(c[0]).includes('registry login to ghcr.io failed'))).toBe(true);
+  });
+
+  it('r592: a rejected login on an IMAGE release still fails that target (unchanged)', async () => {
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string) => {
+      if (op === 'docker.login') throw new Error('agent docker.login exited with 1');
+      return { exitCode: 0, lines: [] };
+    });
+    const db = dbWithTargets([{ serverId: 5, runtimeId: null }]);
+    const results = await deployToTargets(
+      db as never,
+      { service: svc, deploymentId: 9, image: 'ghcr.io/acme/app:1', env: {}, registryAuth: { username: 'u', password: 'p', server: 'ghcr.io' }, primaryServerId: null },
+      vi.fn(),
+    );
+    expect(results[0]).toMatchObject({ serverId: 5, ok: false });
+    expect(agentMocks.agentOp.mock.calls.map((c) => c[2])).not.toContain('docker.pull');
+  });
 });
 

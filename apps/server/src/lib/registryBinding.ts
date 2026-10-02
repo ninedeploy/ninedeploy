@@ -209,3 +209,42 @@ export async function registryCredentialFor(
   const isHost = first.includes('.') || first.includes(':') || first === 'localhost';
   return { username, password, server: first !== '' && isHost ? first : undefined };
 }
+
+/**
+ * r592: the registry credential for a SOURCE build fanned out to nodes.
+ *
+ * `registryCredentialFor` derives the login host from the service's image, so
+ * a repository-built service (no image) never got one: every target node
+ * built its Dockerfile anonymously and a private base image failed there,
+ * even with a registry credential attached to the service.
+ *
+ * A source build names no registry of its own, so the host comes from the
+ * credential's r512 binding — the only hosts an operator ever allowed it to
+ * reach. Deliberately conservative: exactly ONE bound host is used; with none
+ * or several, nothing is sent (several hosts would mean guessing which one
+ * the Dockerfile's base images live on) and the reason is logged.
+ */
+export async function registryCredentialForSourceBuild(
+  db: DB,
+  service: { sourceId: number | null; image: string | null },
+  log?: (line: string) => void,
+): Promise<RegistryCredential | undefined> {
+  if (!service.sourceId || service.image) return undefined;
+  const src = await db.query.sources.findFirst({ where: eq(sources.id, service.sourceId) });
+  if (src?.type !== 'registry') return undefined;
+  const username = src.registryUsername ?? '';
+  const password = src.tokenEncrypted ? decrypt(src.tokenEncrypted) : '';
+  if (!username || !password) return undefined;
+  const bound = await boundRegistryHosts(db, src.id);
+  if (bound.length !== 1) {
+    log?.(
+      `registry credential "${src.name}" is bound to ${bound.length ? bound.join(', ') : 'no registry host'} — ` +
+        'a source build names no registry, so target nodes build without logging in. Bind exactly one host to ' +
+        'the credential (Settings → Sources) for private base images.',
+    );
+    return undefined;
+  }
+  const host = bound[0]!;
+  // Docker Hub logs in with no server operand, as for an image deploy.
+  return { username, password, server: host === DOCKER_HUB ? undefined : host };
+}
