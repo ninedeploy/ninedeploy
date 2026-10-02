@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.36] - 2026-10-02
+
+> The bounded-backstop release (r480): the audit of the rejection backstop
+> found its own memory hole and two polish items. The security surface is now
+> bounded, honest in shape, and self-documenting.
+
+### Fixed
+
+- **The rejection map grew without bound (P2).** Every distinct source IP that ever produced one 400/401/403 left a permanent entry — freed only when that exact IP returned after its window drained. Ordinary background internet scanning adds entries monotonically on any public panel, and a single IPv6 /64 can mint unlimited source IPs at one request each: ~5k distinct-IP requests/s for an hour ≈ 18M entries ≈ 4–5 GB. **Prune-on-write** past a 10,000-key soft cap: entries whose newest rejection has aged out go first (currently-engaged IPs survive the sweep), then oldest-inserted keys as the hard ceiling. Bounded to a few MB. Churn regression test included (12,000 one-shot IPs through the production path).
+
+- **The backstop 429 used the Fastify-default body shape (P3).** The web client parses the app error envelope (`{ error: { code, message } }`) — with the default shape it rendered the generic "Request failed with status 429" at exactly the flood moment this release targets. The refusal now carries the envelope (code `rate_limited`, the real retry countdown in the message) plus the same `retry-after` header as before.
+
+### Hardened
+
+- The user-journey smoke **fails fast** when it cannot derive the current version from `version.ts` (it previously fell back to `v0.0.0`, burned the whole DinD bring-up, and died at image pull with a misleading error).
+
+- Changelog wording corrected: the backstop counts **all** pre-limiter and in-handler 400/401/403 deaths, not only guard rejections — same ceiling, same never-legitimate threshold, now stated as the code behaves.
+
+
 ## [0.10.35] - 2026-10-02
 
 > The backstop release (r479): the fresh-eyes audit of the owner-throttle fix
