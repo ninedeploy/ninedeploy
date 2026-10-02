@@ -27,6 +27,19 @@ export type TwoFactorCode = z.infer<typeof twoFactorCode>;
 export const twoFactorSetup = z.object({ password: z.string().min(1) });
 export type TwoFactorSetup = z.infer<typeof twoFactorSetup>;
 
+/**
+ * Step-up proof for credential-planting actions (r502): the current password.
+ * Optional on the wire — an account without a usable password (SSO-only) may
+ * instead prove a FRESH sign-in (session younger than 10 minutes); the server
+ * decides which applies.
+ */
+export const stepUp = z.object({ password: z.string().min(1).max(1024).optional() });
+export type StepUp = z.infer<typeof stepUp>;
+
+/** Turning 2FA on: the code from the authenticator + the step-up proof (r502). */
+export const twoFactorEnable = twoFactorCode.extend({ password: z.string().min(1).max(1024).optional() });
+export type TwoFactorEnable = z.infer<typeof twoFactorEnable>;
+
 export const twoFactorDisable = z.object({
   password: z.string().min(1),
   code: z.string().regex(/^\d{6}$/),
@@ -267,6 +280,8 @@ export type CreatedApiToken = z.infer<typeof createdApiToken>;
 export const passkeyRegisterVerify = z.object({
   name: z.string().min(1).max(100),
   response: z.record(z.string(), z.unknown()),
+  /** r502: step-up proof — see `stepUp`. */
+  password: z.string().min(1).max(1024).optional(),
 });
 export type PasskeyRegisterVerify = z.infer<typeof passkeyRegisterVerify>;
 

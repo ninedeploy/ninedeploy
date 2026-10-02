@@ -217,6 +217,9 @@ describe('createClient', () => {
       await client.auth.twoFactor.enable('123456');
       expect(last(calls).url).toBe('/v1/auth/2fa/enable');
       expect(JSON.parse(last(calls).init.body ?? '{}')).toEqual({ code: '123456' });
+      // r502: the step-up password rides along when given (additive).
+      await client.auth.twoFactor.enable('123456', 'pw');
+      expect(JSON.parse(last(calls).init.body ?? '{}')).toEqual({ code: '123456', password: 'pw' });
       await client.auth.twoFactor.disable({ password: 'p', code: '123456' });
       expect(last(calls).url).toBe('/v1/auth/2fa/disable');
 
@@ -608,6 +611,9 @@ describe('createClient', () => {
       const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
       await client.auth.passkeys.registerOptions();
       expect(last(calls)).toMatchObject({ url: '/v1/auth/passkey/register/options', init: { method: 'POST' } });
+      // r502: optional step-up password.
+      await client.auth.passkeys.registerOptions({ password: 'pw' });
+      expect(JSON.parse(last(calls).init.body ?? '{}')).toEqual({ password: 'pw' });
       await client.auth.passkeys.loginOptions();
       expect(last(calls)).toMatchObject({ url: '/v1/auth/passkey/login/options', init: { method: 'POST' } });
     });
@@ -617,6 +623,9 @@ describe('createClient', () => {
       const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
       await client.auth.passkeys.registerVerify({ name: 'yubi', response: { id: 'x' } });
       expect(last(calls)).toMatchObject({ url: '/v1/auth/passkey/register/verify', init: { method: 'POST' } });
+      expect(JSON.parse(last(calls).init.body ?? '{}')).toEqual({ name: 'yubi', response: { id: 'x' } });
+      await client.auth.passkeys.registerVerify({ name: 'yubi', response: { id: 'x' }, password: 'pw' });
+      expect(JSON.parse(last(calls).init.body ?? '{}')).toEqual({ name: 'yubi', response: { id: 'x' }, password: 'pw' });
       await client.auth.passkeys.list();
       expect(last(calls)).toMatchObject({ url: '/v1/auth/passkey', init: { method: 'GET' } });
       await client.auth.passkeys.loginVerify({ id: 'x' });

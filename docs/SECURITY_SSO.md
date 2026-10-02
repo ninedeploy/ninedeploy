@@ -19,7 +19,8 @@ For 0.10.2 upgrades, read [SSO account linking](SSO_ACCOUNT_LINKING.md): existin
 Integrate enterprise identity providers for unified authentication — configured per provider from **Settings → SSO** by an operator (no `.env` values involved):
 - **Supported Providers**: Google Workspace, GitHub OAuth/Enterprise, Okta, Keycloak, Authentik, Microsoft Entra ID, and any generic OIDC issuer.
 - **Automated User Provisioning**: Auto-create user accounts based on verified OIDC claims (`email`, `email_verified`, `name`), with auto-enrollment toggles per provider.
-- **Domain Restriction**: Enforce organizational domain matching (e.g. only allow `@company.com`).
+- **Browser-bound hand-off**: the provider's callback is bound to the browser that started the flow twice over — an HttpOnly state cookie on the server side, and a per-tab one-time nonce on the web side. The panel tab that clicks an SSO button stores a random nonce, the server signs it into the OAuth state and echoes it back with the session tokens, and the panel accepts tokens only on its `/auth/callback` route and only when that nonce matches. Tokens pasted into any other link (`/#access_token=…`) are discarded, so nobody can sign your tab into *their* account. The post-login `returnTo` must be a same-origin path. A sign-in started from a page loaded before an update (no nonce) is refused with "please sign in again"; clicking the provider button once more completes it.
+- **Domain Restriction**: Each provider takes an optional list of allowed email domains (Settings → SSO → *Allowed email domains*, e.g. `company.com, company.io`). When set, every sign-in, auto-enrollment and account link through that provider must present an IdP-verified email in one of those domains (exact match — list subdomains explicitly); anything else is refused with `sso_domain_not_allowed` before an account is created or a session issued, and logged as `auth.sso_domain_refused`. An empty list (the default, and what every provider has after upgrading) accepts any verified email. With auto-enroll on and no domain list, the settings page warns: for a public provider such as GitHub or Google that means *anyone* can create an account.
 
 ---
 
@@ -33,7 +34,9 @@ Integrate enterprise identity providers for unified authentication — configure
 
 ## 🛡️ 4. Brute-Force Lockout & Rate Limiting
 
-- **Per-Account Lockout**: 5 consecutive failed login attempts lock an account for 15 minutes.
+- **Per-Source Lockout**: 5 failed sign-ins (wrong password or wrong 2FA code) for one account from one source lock *that source* out of that account for 15 minutes. A source is one IPv4 address or one IPv6 /64. The real user, signing in from anywhere else, is unaffected — a stranger who knows an email cannot hold its owner locked out.
+- **Per-Account Lockout**: 25 failures for one account inside a sliding 15-minute window, from more than one source, lock the account for 15 minutes from every source (logged as `auth.lockout`). Failures from sources that already locked themselves keep counting, so spreading 5 guesses each over many addresses still trips it. A successful sign-in clears only that source's own failures; it never lifts a lock early.
+- **Responses do not leak state**: a locked account, a wrong password and an unknown email all answer `Invalid email or password`, and an unknown email pays the same password-hash verification as a real one.
 - **IP Rate Limiting**: Tiered token bucket rate limits on public endpoints to prevent credential stuffing and DoS attacks.
 
 ## 🕳️ 5. Egress Controls

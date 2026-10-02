@@ -2,6 +2,7 @@ import { type ReactNode, createContext, useContext, useEffect, useRef, useState 
 import type { PublicUser } from '@ninedeploy/sdk';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, clearTokens, getToken, setSessionTokens } from './api.js';
+import { clearSsoFragmentResult, takeSsoFragment, type SsoFragmentResult } from './sso.js';
 
 interface AuthContextValue {
   user: PublicUser | null;
@@ -11,6 +12,10 @@ interface AuthContextValue {
   /** Passwordless sign-in with a registered passkey (WebAuthn). */
   loginWithPasskey: () => Promise<void>;
   logout: () => void;
+  /** r505: why SSO tokens in the URL were refused (shown on the login page). */
+  ssoError: string | null;
+  /** r505: where an accepted SSO sign-in should land (the callback route reads it). */
+  ssoReturnTo: string | null;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -20,21 +25,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const sessionRevision = useRef(0);
   const [user, setUser] = useState<PublicUser | null>(null);
   const [loading, setLoading] = useState(true);
+  // r505: SSO tokens arrive in the URL fragment. They are taken during the
+  // FIRST render — before any child route can navigate and drop the hash —
+  // and only on the callback route with this tab's nonce (see lib/sso.ts).
+  // Any other `#access_token=` (a link built by someone else, or a flow a
+  // pre-update page started) is stripped and refused.
+  const [sso] = useState<SsoFragmentResult>(takeSsoFragment);
 
   useEffect(() => {
     const revision = sessionRevision.current;
     let active = true;
-    // Check if OAuth / OIDC SSO returned session tokens in the URL hash fragment
-    if (typeof window !== 'undefined' && window.location.hash.includes('access_token=')) {
-      const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-      const at = params.get('access_token');
-      const rt = params.get('refresh_token');
-      if (at) {
-        queryClient.clear();
-        setSessionTokens(at, rt ?? undefined);
-        window.history.replaceState(null, '', window.location.pathname + window.location.search);
-      }
-    }
+    if (sso.kind === 'accepted') queryClient.clear();
+    clearSsoFragmentResult();
 
     const token = getToken();
     if (!token) {
@@ -56,7 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [queryClient]);
+  }, [queryClient, sso]);
 
   useEffect(() => {
     // The API layer fires this when a token refresh is rejected (revoked or
@@ -74,6 +76,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value: AuthContextValue = {
     user,
     loading,
+    ssoError: sso.kind === 'refused' ? sso.message : null,
+    ssoReturnTo: sso.kind === 'accepted' ? sso.returnTo : null,
     login: async (email, password, totpCode) => {
       const session = await api.auth.login(totpCode ? { email, password, totpCode } : { email, password });
       sessionRevision.current++;

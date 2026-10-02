@@ -1,18 +1,18 @@
 import { and, count, eq, sql } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
-import { apiTokens, type DB, oauthIdentities, oidcProviders, type OidcProvider, sessions as sessionsTable, users, webauthnCredentials, type User } from '@ninedeploy/db';
+import { apiTokens, type DB, oauthIdentities, oidcProviders, type OidcProvider, sessions as sessionsTable, settings, users, webauthnCredentials, type User } from '@ninedeploy/db';
 import type { PublicUser, Register } from '@ninedeploy/schemas';
-import { createApiToken, forgotPassword, login, oidcProviderCreate, oidcProviderUpdate, type OidcProviderEntry, type OidcPublicProvider, passkeyLoginVerify, passkeyRegisterVerify, passwordChange, passwordResetWithToken, refresh, register, twoFactorCode, twoFactorDisable, twoFactorSetup } from '@ninedeploy/schemas';
+import { createApiToken, forgotPassword, login, oidcProviderCreate, oidcProviderUpdate, type OidcProviderEntry, type OidcPublicProvider, passkeyLoginVerify, passkeyRegisterVerify, passwordChange, passwordResetWithToken, refresh, register, stepUp, twoFactorDisable, twoFactorEnable, twoFactorSetup } from '@ninedeploy/schemas';
 import { config } from '../config.js';
 import { decrypt, encrypt, hashPassword, randomToken, secretEquals, sha256, verifyPassword } from '../lib/crypto.js';
 import { normalizeEmail } from '../lib/authHelpers.js';
 import { oauthProviderFingerprint, resolveOAuthIdentity } from '../lib/oauthIdentity.js';
-import { badRequest, conflict, forbidden, notFound, parseId, unauthorized } from '../lib/errors.js';
+import { badRequest, conflict, forbidden, HttpError, notFound, parseId, unauthorized } from '../lib/errors.js';
 import { verifyJwt, type AppJwtPayload } from '../lib/jwt.js';
 import { isLocked, recordFailure, recordSuccess } from '../lib/loginLockout.js';
 import { consumeResetToken, issueResetToken } from '../lib/passwordReset.js';
 import { sendSystemEmail } from '../lib/notifier.js';
-import { setSettingString } from '../lib/settings.js';
+import { getSettingJson, setSettingJson, setSettingString } from '../lib/settings.js';
 import { STUDIO_EPOCH_KEY } from './studioProxy.js';
 import { generateSecret, otpauthUri } from '../lib/totp.js';
 import { consumeTotpCode } from '../lib/totpReplay.js';
@@ -20,7 +20,7 @@ import { audit } from '../lib/audit.js';
 import { getSetting } from '../lib/settings.js';
 import { findLiveSession, issueSessionTokens, refreshSessionTokens, revokeAllSessions, revokeApiTokens } from '../lib/sessions.js';
 import { beginAuthentication, beginRegistration, finishAuthentication, finishRegistration } from '../lib/webauthn.js';
-import { exchangeGitHubCode, exchangeOidcCode, fetchOidcConfiguration, fetchOidcUserInfo, generateOAuthState, verifyOAuthState } from '../lib/oauth.js';
+import { CLIENT_NONCE_PATTERN, exchangeGitHubCode, exchangeOidcCode, fetchOidcConfiguration, fetchOidcUserInfo, generateOAuthState, verifyOAuthState } from '../lib/oauth.js';
 import { ensureDefaultWorkspace, ensureDefaultWorkspaceWithRole } from './workspaces.js';
 import { acceptInvitationsForUser } from './invitations.js';
 import { iso } from '../lib/serialize.js';
@@ -40,7 +40,26 @@ const toUser = (u: User, isOp: boolean): PublicUser => ({
     : new Date(u.createdAt as unknown as number).toISOString(),
 });
 
-function serializeOidc(p: OidcProvider): OidcProviderEntry {
+// ── Allowed email domains per provider (r507) ──────────────────────────────
+// docs/SECURITY_SSO.md promised domain restriction; nothing implemented it, so
+// with auto-enroll on, ANY account at the IdP (a public Google or GitHub one
+// included) could create itself a NineDeploy account. Stored in the settings
+// table (no migration); an absent or empty list keeps the old behaviour.
+const allowedDomainsKey = (providerId: number) => `oidc.allowed_domains.${providerId}`;
+
+async function loadAllowedDomains(db: DB, providerId: number): Promise<string[]> {
+  const value = await getSettingJson<unknown>(db, allowedDomainsKey(providerId), []);
+  return Array.isArray(value) ? value.filter((d): d is string => typeof d === 'string') : [];
+}
+
+/** The IdP-attested email is acceptable for this provider (exact domain match). */
+function emailDomainAllowed(email: string, allowed: string[]): boolean {
+  if (allowed.length === 0) return true;
+  const domain = normalizeEmail(email).split('@').pop() ?? '';
+  return allowed.includes(domain);
+}
+
+function serializeOidc(p: OidcProvider, allowedDomains: string[] = []): OidcProviderEntry {
   return {
     id: p.id,
     name: p.name,
@@ -53,6 +72,7 @@ function serializeOidc(p: OidcProvider): OidcProviderEntry {
     // defaultRole is now a workspace role (owner/admin/member/viewer); coerce
     // to the legacy 'admin' | 'member' surface the public SDK still expects.
     defaultRole: (p.defaultRole === 'owner' || p.defaultRole === 'admin' ? 'admin' : 'member'),
+    allowedDomains,
     createdAt: iso(p.createdAt) as string,
     updatedAt: iso(p.updatedAt) as string,
   };
@@ -116,6 +136,42 @@ function verifyOidcStateCookie(req: { protocol?: string; headers: Record<string,
   if (!carried || !secretEquals(carried, expected)) {
     throw unauthorized('OAuth state cookie mismatch — restart the sign-in flow from this browser');
   }
+}
+
+// ── Step-up (r502) ─────────────────────────────────────────────────────────
+// Registering a passkey or turning TOTP on plants a DURABLE credential: one
+// that outlives the session that created it (and, for passkeys, a password
+// change). A briefly stolen access token used to be enough to do either, so
+// the thief kept a way back in after the victim logged out everywhere. These
+// routes now need proof that the account holder is present: the current
+// password, or — for an account that has no usable password (SSO-only) — a
+// sign-in fresh enough that it happened just now.
+const STEP_UP_FRESH_MS = 10 * 60 * 1000;
+const REAUTH_REQUIRED_MESSAGE =
+  'Confirm your current password to continue. Accounts that sign in only through SSO: sign in again, then retry within 10 minutes.';
+
+async function assertStepUp(
+  db: DB,
+  req: { headers: { authorization?: string } },
+  user: Pick<User, 'id' | 'passwordHash'>,
+  password: string | undefined,
+): Promise<void> {
+  if (password !== undefined) {
+    if (await verifyPassword(user.passwordHash, password)) return;
+    // 403 (not 401): the session itself is fine — a 401 would send the web
+    // client into a pointless refresh-and-retry.
+    throw new HttpError(403, 'invalid_password', 'Invalid password');
+  }
+  const header = req.headers.authorization ?? '';
+  const bearer = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  try {
+    const payload = await verifyJwt(bearer);
+    const session = payload.type === 'access' && payload.jti ? await findLiveSession(db, payload.jti) : null;
+    // `createdAt` is the sign-in time: refresh rotation keeps the row (and
+    // its createdAt), so a stolen refresh token cannot make itself "fresh".
+    if (session && session.userId === user.id && Date.now() - session.createdAt.getTime() <= STEP_UP_FRESH_MS) return;
+  } catch { /* not a verifiable session token — fall through */ }
+  throw new HttpError(403, 'reauth_required', REAUTH_REQUIRED_MESSAGE);
 }
 
 /** Count existing users (used to decide first-user-is-admin). */
@@ -291,7 +347,11 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     const user = await app.db.query.users.findFirst({
       where: sql`lower(${users.email}) = lower(${input.email})`,
     });
-    if (!user || !(await verifyPassword(user.passwordHash, input.password))) {
+    // r504: an unknown email still pays one full argon2 verify (against a
+    // dummy hash — see verifyPassword), so response timing does not reveal
+    // which addresses have an account.
+    const passwordOk = await verifyPassword(user?.passwordHash ?? '', input.password);
+    if (!user || !passwordOk) {
       const locked = recordFailure(input.email, req.ip);
       if (locked) void audit(app.db, null, 'auth.lockout', input.email);
       throw unauthorized('Invalid email or password');
@@ -329,6 +389,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   app.post('/passkey/register/options', { onRequest: [app.authenticate, app.requireInteractive], config: { rateLimit: AUTH_LIMIT } }, async (req) => {
     const user = await app.db.query.users.findFirst({ where: eq(users.id, req.user!.id) });
     if (!user) throw unauthorized();
+    // r502: fail before the browser prompt; verify re-checks (it stores).
+    await assertStepUp(app.db, req, user, stepUp.parse(req.body ?? {}).password);
     const existing = await app.db
       .select({ credentialId: webauthnCredentials.credentialId, transports: webauthnCredentials.transports })
       .from(webauthnCredentials)
@@ -340,6 +402,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     const input = passkeyRegisterVerify.parse(req.body);
     const user = await app.db.query.users.findFirst({ where: eq(users.id, req.user!.id) });
     if (!user) throw unauthorized();
+    // r502: a passkey is a durable credential — never from a bare session.
+    await assertStepUp(app.db, req, user, input.password);
     const existing = await app.db
       .select({ credentialId: webauthnCredentials.credentialId })
       .from(webauthnCredentials)
@@ -455,6 +519,9 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   // Setup generates (or regenerates) a pending secret + otpauth URI; enable
   // verifies a code from the user's authenticator and flips the flag; disable
   // requires the password AND a valid code, then bumps tokenVersion.
+  // r502: setup and enable also need step-up — an attacker holding only a
+  // session could otherwise enrol THEIR authenticator and lock the owner out
+  // of their own account (the owner has no code to sign in with).
   app.post('/2fa/setup', { onRequest: [app.authenticate, app.requireInteractive], config: { rateLimit: AUTH_LIMIT } }, async (req) => {
     const user = await app.db.query.users.findFirst({ where: eq(users.id, req.user!.id) });
     if (!user) throw unauthorized();
@@ -463,6 +530,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     if (user.totpEnabled) {
       const input = twoFactorSetup.parse(req.body ?? {});
       if (!(await verifyPassword(user.passwordHash, input.password))) throw unauthorized('Invalid password');
+    } else {
+      await assertStepUp(app.db, req, user, stepUp.parse(req.body ?? {}).password);
     }
     const secret = generateSecret();
     await app.db
@@ -474,9 +543,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post('/2fa/enable', { onRequest: [app.authenticate, app.requireInteractive], config: { rateLimit: AUTH_LIMIT } }, async (req) => {
-    const input = twoFactorCode.parse(req.body);
+    const input = twoFactorEnable.parse(req.body);
     const user = await app.db.query.users.findFirst({ where: eq(users.id, req.user!.id) });
     if (!user?.totpSecretEncrypted) throw badRequest('Start 2FA setup first');
+    await assertStepUp(app.db, req, user, input.password);
     if (!(await consumeTotpCode(app.db, user, input.code))) throw badRequest('Invalid two-factor code');
     await app.db.update(users).set({ totpEnabled: true }).where(eq(users.id, user.id));
     void audit(app.db, user.id, 'auth.2fa_enabled', user.email);
@@ -703,7 +773,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/oidc/providers', { onRequest: [app.authenticate, app.requireAdmin] }, async (): Promise<OidcProviderEntry[]> => {
     const rows = await app.db.query.oidcProviders.findMany();
-    return rows.map(serializeOidc);
+    return Promise.all(rows.map(async (p) => serializeOidc(p, await loadAllowedDomains(app.db, p.id))));
   });
 
   app.post('/oidc/providers', { onRequest: [app.authenticate, app.requireAdmin] }, async (req) => {
@@ -727,8 +797,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       })
       .returning();
 
-    void audit(app.db, req.user!.id, 'oidc_provider.create', created!.name);
-    return serializeOidc(created!);
+    const domains = [...new Set(input.allowedDomains ?? [])];
+    if (domains.length > 0) await setSettingJson(app.db, allowedDomainsKey(created!.id), domains);
+    void audit(app.db, req.user!.id, 'oidc_provider.create', created!.name, domains.length > 0 ? { allowedDomains: domains } : undefined);
+    return serializeOidc(created!, domains);
   });
 
   app.patch('/oidc/providers/:id', { onRequest: [app.authenticate, app.requireAdmin] }, async (req) => {
@@ -755,12 +827,19 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         ...(input.enabled !== undefined && { enabled: input.enabled }),
         ...(input.autoEnroll !== undefined && { autoEnroll: input.autoEnroll }),
         ...(input.defaultRole !== undefined && { defaultRole: input.defaultRole }),
+        // r507: a domain-list-only PATCH changes no column — keep the SET
+        // non-empty (and the provider's updatedAt honest).
+        updatedAt: new Date(),
       })
       .where(eq(oidcProviders.id, id))
       .returning();
 
-    void audit(app.db, req.user!.id, 'oidc_provider.update', updated!.name);
-    return serializeOidc(updated!);
+    if (input.allowedDomains !== undefined) {
+      await setSettingJson(app.db, allowedDomainsKey(id), [...new Set(input.allowedDomains)]);
+    }
+    const domains = await loadAllowedDomains(app.db, id);
+    void audit(app.db, req.user!.id, 'oidc_provider.update', updated!.name, input.allowedDomains !== undefined ? { allowedDomains: domains } : undefined);
+    return serializeOidc(updated!, domains);
   });
 
   app.delete('/oidc/providers/:id', { onRequest: [app.authenticate, app.requireAdmin] }, async (req) => {
@@ -769,6 +848,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     if (!existing) throw notFound('OIDC provider not found');
 
     await app.db.delete(oidcProviders).where(eq(oidcProviders.id, id));
+    // The id is never reused, but a stale list must not outlive its provider.
+    await app.db.delete(settings).where(eq(settings.key, allowedDomainsKey(id)));
     void audit(app.db, req.user!.id, 'oidc_provider.delete', existing.name);
     return { ok: true };
   });
@@ -776,9 +857,14 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   // ── OIDC & OAuth2 Login Initiation ─────────────────────────────────────────
   const startOidc = async (req: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply, linking = false) => {
     const { slug } = req.params as { slug: string };
-    const query = req.query as { returnTo?: string; json?: string };
+    const query = req.query as { returnTo?: string; json?: string; nonce?: string };
     const returnTo = query?.returnTo;
     const json = query?.json;
+    // r505: the web's per-tab sign-in nonce, echoed back with the tokens.
+    // Optional so a page loaded before the upgrade can still start a flow
+    // (its tokens are then refused by the new SPA — see handleOidcCallback).
+    const clientNonce = query?.nonce;
+    if (clientNonce !== undefined && !CLIENT_NONCE_PATTERN.test(clientNonce)) throw badRequest('Invalid sign-in nonce');
 
     const provider = await app.db.query.oidcProviders.findFirst({
       where: and(eq(oidcProviders.slug, slug), eq(oidcProviders.enabled, true)),
@@ -795,7 +881,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       }
       link = { userId: req.user!.id, sessionJti: session.jti, tokenVersion: payload.ver, providerFingerprint: oauthProviderFingerprint(provider) };
     }
-    const state = generateOAuthState(slug, returnTo, link);
+    const state = generateOAuthState(slug, returnTo, link, linking ? undefined : clientNonce);
     // Bind this flow to the browser that started it (see the cookie helpers).
     writeOidcStateCookie(req, reply, slug, state);
     const redirectUri = oidcRedirectUri(slug);
@@ -872,6 +958,19 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       userInfo = await fetchOidcUserInfo(userinfoEndpoint, tokens.access_token);
     }
 
+    // r507: refuse before resolveOAuthIdentity can create (auto-enroll) or
+    // sign in anyone. Applies to every flow through this provider — a domain
+    // list that only gated enrollment would still let an already-enrolled
+    // outsider back in after the operator tightened it.
+    const allowedDomains = await loadAllowedDomains(app.db, provider.id);
+    if (!emailDomainAllowed(userInfo.email, allowedDomains)) {
+      void audit(app.db, null, 'auth.sso_domain_refused', `${provider.name} (${userInfo.email})`);
+      throw new HttpError(
+        403,
+        'sso_domain_not_allowed',
+        `This sign-in provider only accepts accounts from: ${allowedDomains.join(', ')}`,
+      );
+    }
     const resolved = await resolveOAuthIdentity(app.db, provider, userInfo, stateData.link);
     const user = resolved.user;
     if (stateData.link) {
@@ -922,6 +1021,20 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       }
     })();
     const returnTo = returnToSafe ? rawReturnTo : '/';
+    // r505: a flow the web started with a nonce lands on the SPA's dedicated
+    // callback route, which takes tokens from the fragment ONLY there and only
+    // when the nonce matches the one this tab stored. A flow without one (a
+    // page loaded before the upgrade) keeps the old redirect; the new SPA
+    // refuses those tokens and asks the user to sign in again.
+    if (stateData.clientNonce) {
+      const fragment = new URLSearchParams({
+        access_token: tokens.accessToken,
+        refresh_token: tokens.refreshToken,
+        nonce: stateData.clientNonce,
+        return_to: returnTo,
+      });
+      return reply.redirect(`/auth/callback#${fragment.toString()}`);
+    }
     return reply.redirect(`${returnTo}#access_token=${tokens.accessToken}&refresh_token=${tokens.refreshToken}`);
   };
 

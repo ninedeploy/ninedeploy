@@ -25,15 +25,30 @@ export interface OAuthLinkContext {
   providerFingerprint: string;
 }
 
-export function generateOAuthState(providerSlug: string, returnTo?: string, link?: OAuthLinkContext): string {
+/**
+ * r505: the browser's own one-time value for this sign-in. The web keeps it
+ * in sessionStorage when it starts the flow; the callback echoes it in the
+ * token fragment, and the web accepts tokens only when it matches — so a
+ * link carrying someone else's tokens cannot sign a victim's tab in.
+ */
+export const CLIENT_NONCE_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
+
+export function generateOAuthState(providerSlug: string, returnTo?: string, link?: OAuthLinkContext, clientNonce?: string): string {
   const nonce = randomBytes(16).toString('hex');
-  const payload = JSON.stringify({ slug: providerSlug, returnTo: returnTo ?? '/', nonce, ts: Date.now(), ...(link && { link }) });
+  const payload = JSON.stringify({
+    slug: providerSlug,
+    returnTo: returnTo ?? '/',
+    nonce,
+    ts: Date.now(),
+    ...(link && { link }),
+    ...(clientNonce && { cn: clientNonce }),
+  });
   const signature = createHmac('sha256', config.jwt.secret).update(payload).digest('base64url');
   return `${Buffer.from(payload).toString('base64url')}.${signature}`;
 }
 
 /** Verify a signed state parameter (constant-time signature compare) */
-export function verifyOAuthState(state: string): { slug: string; returnTo: string; link?: OAuthLinkContext } | null {
+export function verifyOAuthState(state: string): { slug: string; returnTo: string; link?: OAuthLinkContext; clientNonce?: string } | null {
   try {
     const [payloadB64, signature] = state.split('.');
     if (!payloadB64 || !signature) return null;
@@ -51,7 +66,8 @@ export function verifyOAuthState(state: string): { slug: string; returnTo: strin
       !Number.isSafeInteger(data.link.tokenVersion) ||
       typeof data.link.providerFingerprint !== 'string' || !data.link.providerFingerprint
     )) return null;
-    return { slug: data.slug, returnTo: data.returnTo, ...(data.link && { link: data.link }) };
+    const clientNonce = typeof data.cn === 'string' && CLIENT_NONCE_PATTERN.test(data.cn) ? data.cn : undefined;
+    return { slug: data.slug, returnTo: data.returnTo, ...(data.link && { link: data.link }), ...(clientNonce && { clientNonce }) };
   } catch {
     return null;
   }

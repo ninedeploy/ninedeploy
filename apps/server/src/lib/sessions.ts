@@ -11,8 +11,9 @@ import { signAccessToken, signRefreshToken, ttlSeconds } from './jwt.js';
  * reference a live `sessions` row — revoking the row (or deleting it) kills the
  * session's refresh capability even without a tokenVersion bump.
  *
- * Access tokens are not per-session-checked on every request (they live
- * minutes); revocation takes full effect when the access token expires.
+ * r503: access tokens carry the same jti, and request authentication
+ * (`lib/auth.ts:resolveUser`) refuses one whose row is revoked or missing —
+ * revoking a session ends its access token immediately, not at expiry.
  */
 export async function issueSessionTokens(
   db: Pick<DB, 'insert' | 'update'>,
@@ -34,8 +35,9 @@ export async function issueSessionTokens(
     signAccessToken(user.id, user.tokenVersion, jti),
     signRefreshToken(user.id, user.tokenVersion, jti, expiresAt.getTime()),
   ]);
-  // Best-effort row write: even if it failed, the token pair stays valid (a
-  // missing row simply means no session-list entry / no per-session revoke).
+  // Best-effort row write. If it fails the pair is dead on arrival — the
+  // refresh needs a live row, and since r503 so does every access-token
+  // request — so the caller simply has to sign in again.
   try {
     await db.insert(sessions).values({
       userId: user.id,

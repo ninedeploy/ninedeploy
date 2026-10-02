@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { deployments } from '@ninedeploy/db';
+import { deployments, users, workspaces } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import { aiConfigUpdate, ninedeployManifest, type AiConfigStatus as AiConfigStatusT } from '@ninedeploy/schemas';
 import { z } from 'zod';
@@ -8,7 +8,7 @@ import { HttpError, badRequest, forbidden, notFound, parseId as num } from '../l
 import { audit } from '../lib/audit.js';
 import { getSettingJson, getSettingString, setSettingJson, setSettingString } from '../lib/settings.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
-import { assertServiceRole, roleAtLeast, userWorkspaceMemberships } from '../lib/resourceAccess.js';
+import { assertServiceRole, roleAtLeast, serviceWorkspaceIds, userWorkspaceMemberships } from '../lib/resourceAccess.js';
 import { logBus } from '../engine/logs.js';
 import {
   buildDiagnosisMessages,
@@ -21,8 +21,9 @@ import {
 
 /**
  * AI failure diagnosis (BYO-key). The operator configures an
- * OpenAI-compatible endpoint + model + API key once for the instance; any
- * member may then ask for a failed build log to be diagnosed. The key is
+ * OpenAI-compatible endpoint + model + API key once for the instance;
+ * operators and the members of an operator's workspaces (r508) may then ask
+ * for a failed build log to be diagnosed. The key is
  * stored encrypted at rest (settings table, `encrypt()` envelope) and never
  * returned by any route.
  *
@@ -43,6 +44,39 @@ const SUGGEST_MAX_TOKENS = 900;
 const suggestManifest = z.object({
   description: z.string().min(10).max(4000),
 });
+
+/**
+ * r508: who may spend the operator's AI budget.
+ *
+ * r161 meant "a viewer or a seatless account must not loop this and run up
+ * the operator's provider bill" — but it accepted a member seat in ANY
+ * workspace, and any account can create a workspace it owns (POST
+ * /v1/workspaces), so the gate held nobody back. A seat now counts only in a
+ * workspace an instance OPERATOR owns — the operator's own team, which no one
+ * can mint for themselves. Operators keep unconditional access (the default
+ * every install has after upgrading); a member of an operator's team keeps
+ * the access they had. For a diagnosis the seat must be in a workspace the
+ * service belongs to, so the spend is the team's, not a side project's.
+ */
+const AI_ACCESS_REFUSED =
+  'AI features are limited to instance operators and to members of a workspace an operator owns — ask an operator to add you to their team workspace';
+
+async function assertMayUseAi(
+  db: Parameters<typeof userWorkspaceMemberships>[0],
+  user: { id: number; isOperator: boolean },
+  withinWorkspaceIds: number[] | null,
+): Promise<void> {
+  if (user.isOperator) return;
+  for (const seat of await userWorkspaceMemberships(db, user.id)) {
+    if (!roleAtLeast(seat.role, 'member')) continue;
+    if (withinWorkspaceIds && !withinWorkspaceIds.includes(seat.workspaceId)) continue;
+    const ws = await db.query.workspaces.findFirst({ where: eq(workspaces.id, seat.workspaceId) });
+    if (!ws) continue;
+    const owner = await db.query.users.findFirst({ where: eq(users.id, ws.ownerId) });
+    if (owner?.isInstanceOperator === true && !owner.deactivatedAt) return;
+  }
+  throw forbidden(AI_ACCESS_REFUSED);
+}
 
 async function loadAiConfig(
   db: Parameters<typeof getSettingJson>[0],
@@ -133,6 +167,9 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
     const depId = num((req.params as { depId: string }).depId);
     const svc = await loadServiceForUser(app.db, id, req.user!);
     await assertServiceRole(app.db, svc, req.user!, 'member');
+    // r508: a member role on the service is not enough on its own — a service
+    // in a workspace the caller created for themselves would pass it.
+    await assertMayUseAi(app.db, req.user!, await serviceWorkspaceIds(app.db, svc.id));
 
     // The deployment must belong to the service in the URL — same binding
     // rule as the log stream, for the same tenant-isolation reason.
@@ -158,14 +195,9 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
   // unvalidated shapes into the creator form.
   // r161: same spend rule as diagnose — a viewer (or a seatless account) must
   // not be able to loop this and run up the operator's provider bill.
+  // r508: …and a seat in a self-created workspace does not count either.
   app.post('/suggest-manifest', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
-    const user = req.user!;
-    if (!user.isOperator) {
-      const seats = await userWorkspaceMemberships(app.db, user.id);
-      if (!seats.some((m) => roleAtLeast(m.role, 'member'))) {
-        throw forbidden('AI assist needs at least a member seat in a workspace');
-      }
-    }
+    await assertMayUseAi(app.db, req.user!, null);
     const input = suggestManifest.parse(req.body ?? {});
     const cfg = await loadAiConfig(app.db);
     if (!cfg) throw badRequest('AI assist is not configured — ask the operator to set it up in Settings');

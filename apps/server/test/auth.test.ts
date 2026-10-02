@@ -248,6 +248,23 @@ describe('auth routes', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  // r504: the unknown-email branch skipped argon2 — a timing oracle for
+  // account existence. It must pay the same verify a wrong password does.
+  it('runs the password verify even when the email has no account', async () => {
+    cryptoMocks.verifyPassword.mockClear();
+    const app = await buildTestApp({ db: createFakeDb() });
+    await app.register(authRoutes);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/login',
+      payload: { email: 'ghost2@example.com', password: 'whatever' },
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error.message).toBe('Invalid email or password');
+    expect(cryptoMocks.verifyPassword).toHaveBeenCalledTimes(1);
+    expect(cryptoMocks.verifyPassword).toHaveBeenCalledWith('', 'whatever');
+  });
+
   it('refreshes tokens with a valid refresh token', async () => {
     jwtMocks.verifyJwt.mockResolvedValueOnce({ type: 'refresh', sub: '1', jti: 'jti-1', ver: 0 });
     const app = await buildTestApp({
@@ -780,5 +797,34 @@ describe('auth routes', () => {
     });
     expect(locked.statusCode).toBe(401);
     cryptoMocks.verifyPassword.mockResolvedValue(true);
+  });
+
+  // r500: through the real route — 5 guesses from each of 5 addresses used to
+  // leave the account tier at zero (every pair lock reset its counter).
+  it('locks the whole account against a distributed 5-per-IP guess run', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { users: userRow({ id: 1 }) } }),
+    });
+    await app.register(authRoutes);
+    cryptoMocks.verifyPassword.mockResolvedValue(false);
+    for (let ip = 0; ip < 5; ip++) {
+      for (let i = 0; i < 5; i++) {
+        await app.inject({
+          method: 'POST',
+          url: '/login',
+          remoteAddress: `203.0.113.${ip + 1}`,
+          payload: { email: 'spread@example.com', password: 'wrong' },
+        });
+      }
+    }
+    // The owner, from an address that never failed, with the right password.
+    cryptoMocks.verifyPassword.mockResolvedValue(true);
+    const owner = await app.inject({
+      method: 'POST',
+      url: '/login',
+      remoteAddress: '198.51.100.7',
+      payload: { email: 'spread@example.com', password: 'password123' },
+    });
+    expect(owner.statusCode).toBe(401);
   });
 });

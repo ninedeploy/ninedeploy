@@ -20,9 +20,12 @@ function mockDb(opts: {
   user?: { id: number; isInstanceOperator?: boolean; tokenVersion?: number; deactivatedAt?: Date | null };
   /** Workspace seats backing the derived `isOperator` flag. */
   memberships?: Array<{ workspaceId: number; role: string }>;
+  /** The session row an access token's jti resolves to (r503). */
+  session?: { userId: number; revokedAt: Date | null; expiresAt: Date };
 } = {}) {
   return {
     query: {
+      sessions: { findFirst: vi.fn(async () => opts.session) },
       apiTokens: { findFirst: vi.fn(async () => opts.token) },
       users: { findFirst: vi.fn(async () => (opts.user ? { tokenVersion: 0, ...opts.user } : undefined)) },
       // Operator status comes only from `users.is_instance_operator`; the
@@ -33,6 +36,44 @@ function mockDb(opts: {
 }
 
 describe('resolveUser', () => {
+  // r503: revoking one session (DELETE /auth/sessions/:id) left its access
+  // token working until expiry, because request auth never read the row.
+  describe('r503: per-session revocation of access tokens', () => {
+    const live = { userId: 42, revokedAt: null, expiresAt: new Date(Date.now() + 3_600_000) };
+
+    it('accepts an access token whose session row is live', async () => {
+      const db = mockDb({ user: { id: 42, isInstanceOperator: false }, session: live });
+      await expect(resolveUser(db as never, await signAccessToken(42, 0, 'jti-live'))).resolves.toMatchObject({ id: 42 });
+      expect(db.query.sessions.findFirst).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses an access token whose session was revoked', async () => {
+      const db = mockDb({ user: { id: 42 }, session: { ...live, revokedAt: new Date() } });
+      await expect(resolveUser(db as never, await signAccessToken(42, 0, 'jti-revoked'))).resolves.toBeNull();
+    });
+
+    it('refuses an access token whose session row is gone', async () => {
+      const db = mockDb({ user: { id: 42 }, session: undefined });
+      await expect(resolveUser(db as never, await signAccessToken(42, 0, 'jti-missing'))).resolves.toBeNull();
+    });
+
+    it('refuses an access token whose session expired', async () => {
+      const db = mockDb({ user: { id: 42 }, session: { ...live, expiresAt: new Date(Date.now() - 1000) } });
+      await expect(resolveUser(db as never, await signAccessToken(42, 0, 'jti-old'))).resolves.toBeNull();
+    });
+
+    it("refuses an access token pointing at another user's session", async () => {
+      const db = mockDb({ user: { id: 42 }, session: { ...live, userId: 7 } });
+      await expect(resolveUser(db as never, await signAccessToken(42, 0, 'jti-other'))).resolves.toBeNull();
+    });
+
+    it('still accepts a legacy access token without a jti (expires within minutes)', async () => {
+      const db = mockDb({ user: { id: 42 } });
+      await expect(resolveUser(db as never, await signAccessToken(42, 0))).resolves.toMatchObject({ id: 42 });
+      expect(db.query.sessions.findFirst).not.toHaveBeenCalled();
+    });
+  });
+
   it('resolves a valid JWT access token to id + role (fresh from DB)', async () => {
     const token = await signAccessToken(42, 0);
     const db = mockDb({ user: { id: 42, isInstanceOperator: true } });

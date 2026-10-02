@@ -139,6 +139,9 @@ function SsoLinkCard() {
 function PasskeyCard() {
   const { toast } = useToast();
   const [name, setName] = useState('');
+  // r502: registering a passkey needs step-up — the current password, or a
+  // sign-in from the last 10 minutes (SSO-only accounts have no password).
+  const [stepPassword, setStepPassword] = useState('');
   const queryClient = useQueryClient();
 
   const passkeys = useQuery({ queryKey: ['passkeys'], queryFn: () => api.auth.passkeys.list() });
@@ -146,12 +149,16 @@ function PasskeyCard() {
   const register = useMutation({
     mutationFn: async () => {
       const { startRegistration } = await import('@simplewebauthn/browser');
-      const { options } = await api.auth.passkeys.registerOptions();
+      const { options } = await api.auth.passkeys.registerOptions(stepPassword ? { password: stepPassword } : undefined);
       const attestation = await startRegistration(JSON.parse(options) as Parameters<typeof startRegistration>[0]);
-      return api.auth.passkeys.registerVerify({ name: name || 'Passkey', response: attestation });
+      const label = name || 'Passkey';
+      return api.auth.passkeys.registerVerify(
+        stepPassword ? { name: label, response: attestation, password: stepPassword } : { name: label, response: attestation },
+      );
     },
     onSuccess: () => {
       setName('');
+      setStepPassword('');
       void queryClient.invalidateQueries({ queryKey: ['passkeys'] });
       toast('Passkey added', 'success');
     },
@@ -175,7 +182,8 @@ function PasskeyCard() {
         </h2>
         <p className="mb-4 text-xs text-slate-500">
           Sign in with biometrics or a security key — no password needed. The relying party is bound to this
-          instance's hostname, so passkeys only work on the URL they were registered on.
+          instance's hostname, so passkeys only work on the URL they were registered on. Adding one asks for your
+          current password; if your account signs in only through SSO, sign in again and add it within 10 minutes.
         </p>
         <div className="mb-4 flex max-w-md items-end gap-2">
           <label className="flex-1">
@@ -184,6 +192,17 @@ function PasskeyCard() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="MacBook Touch ID"
+              className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+            />
+          </label>
+          <label className="flex-1">
+            <span className="mb-1 block text-xs text-slate-500">Your password</span>
+            <input
+              type="password"
+              value={stepPassword}
+              onChange={(e) => setStepPassword(e.target.value)}
+              placeholder="Confirm it's you"
+              autoComplete="current-password"
               className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm outline-none focus:border-indigo-500"
             />
           </label>
@@ -243,8 +262,8 @@ function SessionsCard() {
           <MonitorSmartphone size={14} /> Active sessions
         </h2>
         <p className="mb-4 text-xs text-slate-500">
-          Devices holding a valid refresh token for your account. Revoking signs that device out when its
-          access token expires (within minutes).
+          Devices holding a valid refresh token for your account. Revoking signs that device out on its
+          next request.
         </p>
         {sessions.isLoading ? (
           <Skeleton className="h-10 w-full" />
@@ -289,6 +308,9 @@ function TwoFactorCard() {
   const [setup, setSetup] = useState<{ secret: string; otpauthUri: string } | null>(null);
   const [code, setCode] = useState('');
   const [setupPassword, setSetupPassword] = useState('');
+  // r502: the password confirmed at setup is also the step-up proof enable
+  // needs; held only until enable succeeds or the setup is abandoned.
+  const [stepPassword, setStepPassword] = useState('');
   const [showSetupPassword, setShowSetupPassword] = useState(false);
   const [disablePassword, setDisablePassword] = useState('');
   const [disableCode, setDisableCode] = useState('');
@@ -301,19 +323,28 @@ function TwoFactorCard() {
     onSuccess: (res) => {
       setSetup(res);
       setCode('');
+      setStepPassword(setupPassword);
       setSetupPassword('');
       setShowSetupPassword(false);
     },
     onError: () => toast(showSetupPassword ? 'Could not start 2FA setup — check your password' : 'Could not start 2FA setup', 'error'),
   });
   const enable = useMutation({
-    mutationFn: () => api.auth.twoFactor.enable(code),
+    mutationFn: () => api.auth.twoFactor.enable(code, stepPassword || undefined),
     onSuccess: () => {
       setSetup(null);
       setCode('');
+      setStepPassword('');
       toast('Two-factor authentication enabled', 'success');
     },
-    onError: () => toast('Invalid or expired code', 'error'),
+    onError: (err) => {
+      const errCode = (err as { code?: string } | null)?.code;
+      if (errCode === 'invalid_password' || errCode === 'reauth_required') {
+        toast(err instanceof Error && err.message ? err.message : 'Confirm your password and try again', 'error');
+      } else {
+        toast('Invalid or expired code', 'error');
+      }
+    },
   });
   const disable = useMutation({
     mutationFn: () => api.auth.twoFactor.disable({ password: disablePassword, code: disableCode }),
@@ -365,7 +396,7 @@ function TwoFactorCard() {
             className="flex max-w-md items-end gap-2 rounded-lg border border-slate-700 bg-white/[0.02] p-4"
           >
             <label className="flex-1">
-              <span className="mb-1 block text-xs text-slate-400">Confirm your password (required when 2FA is already enabled)</span>
+              <span className="mb-1 block text-xs text-slate-400">Confirm your current password</span>
               <input
                 type="password"
                 value={setupPassword}
@@ -442,7 +473,10 @@ function TwoFactorCard() {
               <div>
                 <button
                   type="button"
-                  onClick={() => setSetup(null)}
+                  onClick={() => {
+                    setSetup(null);
+                    setStepPassword('');
+                  }}
                   className="text-xs text-slate-400 hover:text-slate-200 hover:underline"
                 >
                   Cancel setup

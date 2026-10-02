@@ -4,6 +4,7 @@ import { Navigate, Link, useLocation, useNavigate, useSearchParams } from 'react
 import { Fingerprint, Globe } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
+import { beginSso, safeReturnTo, ssoNavigation } from '../lib/sso.js';
 import { BrandMark, Button, Card, Field, Input } from '../components/ui.js';
 
 /** Bullets only, built at runtime: the login form's own masked input must
@@ -18,7 +19,7 @@ const AUTOCOMPLETE_SIGNED_IN = ['current', 'password'].join('-');
 const AUTOCOMPLETE_SIGNING_UP = ['new', 'password'].join('-');
 
 export function Login() {
-  const { user, login, setup, loginWithPasskey } = useAuth();
+  const { user, login, setup, loginWithPasskey, ssoError } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
@@ -28,8 +29,10 @@ export function Login() {
   //   2. A page like /invite/:token linked here with ?returnTo=… .
   // Prefer the explicit `returnTo` query when present so the deep link survives
   // a refresh (state is lost on a hard refresh; query strings are not).
+  // r505: a same-origin path only — `?returnTo=//evil.example` (or any URL)
+  // must not turn the post-login navigation into an open redirect.
   const queryReturnTo = params.get('returnTo');
-  const from = queryReturnTo ?? (location.state as { from?: string } | null)?.from ?? '/';
+  const from = safeReturnTo(queryReturnTo ?? (location.state as { from?: string } | null)?.from);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -108,6 +111,11 @@ export function Login() {
           </p>
 
           <form onSubmit={onSubmit} className="mt-5 space-y-4">
+            {ssoError && (
+              <p role="alert" className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
+                {ssoError}
+              </p>
+            )}
             {passwordReset && (
               <p className="rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
                 Password updated — sign in with your new password.
@@ -174,7 +182,9 @@ export function Login() {
                       variant="secondary"
                       className="w-full justify-center"
                       onClick={() => {
-                        window.location.href = p.authUrl;
+                        // r505: through the API origin, with the return path
+                        // and this tab's one-time nonce.
+                        ssoNavigation.go(beginSso(p.authUrl, from));
                       }}
                     >
                       <Globe size={14} className="text-indigo-400" />

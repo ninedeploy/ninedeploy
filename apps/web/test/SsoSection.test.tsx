@@ -1,6 +1,6 @@
 ﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
-import { SsoSection } from '../src/routes/settings/SsoSection.js';
+import { parseAllowedDomains, SsoSection } from '../src/routes/settings/SsoSection.js';
 import { api } from '../src/lib/api.js';
 import { renderWithProviders, mockOf } from './helpers.js';
 
@@ -326,5 +326,55 @@ describe('SsoSection', () => {
     fireEvent.click(screen.getAllByLabelText('Close dialog')[0]!);
     await waitFor(() =>
       expect(screen.queryByText('Configure SSO / OIDC Provider')).not.toBeInTheDocument());
+  });
+
+  // ── r507: allowed email domains ──────────────────────────────────────────
+  describe('r507: allowed email domains', () => {
+    it('warns about open enrollment when auto-enroll has no domain list', async () => {
+      renderWithProviders(<SsoSection />);
+      expect(await screen.findByText('Any domain')).toBeInTheDocument();
+      expect(screen.getByText(/Auto-enroll is on with no domain restriction/)).toBeInTheDocument();
+    });
+
+    it('lists the domains and drops the warning once a provider is restricted', async () => {
+      mockOf(api.auth.oidc.list).mockResolvedValue([{ ...mockProviders[0], allowedDomains: ['corp.com', 'corp.io'] }] as never);
+      renderWithProviders(<SsoSection />);
+      expect(await screen.findByText(/domains: corp.com, corp.io/)).toBeInTheDocument();
+      expect(screen.queryByText('Any domain')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Auto-enroll is on with no domain restriction/)).not.toBeInTheDocument();
+    });
+
+    it('sends the normalised list on create, and the form warning follows the field', async () => {
+      mockOf(api.auth.oidc.list).mockResolvedValue([] as never);
+      mockOf(api.auth.oidc.create).mockResolvedValueOnce({ ...mockProviders[0], id: 3 } as never);
+      renderWithProviders(<SsoSection />);
+      fireEvent.click(await screen.findByText('GitHub OAuth'));
+      // Auto-enroll defaults on with an empty list → the form warns.
+      expect(screen.getByText(/Auto-enroll is on with no domain restriction/)).toBeInTheDocument();
+      fireEvent.change(screen.getByPlaceholderText('corp.com, corp.io'), { target: { value: '@Corp.com, corp.io corp.com' } });
+      expect(screen.queryByText(/Auto-enroll is on with no domain restriction/)).not.toBeInTheDocument();
+      fireEvent.change(screen.getByPlaceholderText('OAuth Client ID'), { target: { value: 'gh-cid' } });
+      fireEvent.change(screen.getByPlaceholderText('••••••••••••'), { target: { value: 'gh-csec' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Create Provider' }));
+      await waitFor(() =>
+        expect(api.auth.oidc.create).toHaveBeenCalledWith(expect.objectContaining({ allowedDomains: ['corp.com', 'corp.io'] })));
+    });
+
+    it('prefills the list when editing and sends it back on save', async () => {
+      mockOf(api.auth.oidc.list).mockResolvedValue([{ ...mockProviders[0], allowedDomains: ['corp.com'] }] as never);
+      mockOf(api.auth.oidc.update).mockResolvedValueOnce(mockProviders[0] as never);
+      renderWithProviders(<SsoSection />);
+      fireEvent.click(await screen.findByText('Edit'));
+      const field = screen.getByPlaceholderText('corp.com, corp.io') as HTMLInputElement;
+      expect(field.value).toBe('corp.com');
+      fireEvent.change(field, { target: { value: '' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+      await waitFor(() => expect(api.auth.oidc.update).toHaveBeenCalledWith(1, expect.objectContaining({ allowedDomains: [] })));
+    });
+
+    it('parseAllowedDomains splits, lower-cases, strips @ and de-duplicates', () => {
+      expect(parseAllowedDomains(' @A.com,b.io;  a.com   c.dev ')).toEqual(['a.com', 'b.io', 'c.dev']);
+      expect(parseAllowedDomains('')).toEqual([]);
+    });
   });
 });

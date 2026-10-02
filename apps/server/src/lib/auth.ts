@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type { DB } from '@ninedeploy/db';
-import { apiTokens, users } from '@ninedeploy/db';
+import { apiTokens, sessions, users } from '@ninedeploy/db';
 import type { AuthUser } from '../plugins/auth.js';
 import { sha256 } from './crypto.js';
 import { verifyJwt, type AppJwtPayload } from './jwt.js';
@@ -39,6 +39,10 @@ export function narrowScopes(user: { isOperator: boolean; tokenScopes?: string[]
  *   • the token was issued before the user's `tokenVersion` was bumped
  *     (logout / password change → all outstanding JWTs for that user are
  *     invalidated)
+ *   • r503: the access token names a session (`jti`) whose row is revoked,
+ *     expired, missing or someone else's — revoking ONE session from the
+ *     account page now ends its access token on the next request instead of
+ *     up to 15 minutes later
  *
  * Shared by the HTTP `authenticate` pre-handler and the WebSocket log stream
  * (which cannot easily set Authorization headers).
@@ -53,8 +57,16 @@ export async function resolveUser(db: DB, token: string): Promise<AuthUser | nul
       return null;
     }
     if (payload.type !== 'access') return null;
-    const baseUser = await loadBaseUser(db, Number(payload.sub));
-    if (!baseUser) return null;
+    const userId = Number(payload.sub);
+    // r503: the session lookup is one unique-index read (sessions.jti) run
+    // alongside the user load, so a request pays no extra round trip. Access
+    // tokens minted before every token carried a jti have none; they are
+    // accepted on the tokenVersion check alone and expire within minutes.
+    const [baseUser, sessionLive] = await Promise.all([
+      loadBaseUser(db, userId),
+      payload.jti ? sessionIsLive(db, payload.jti, userId) : Promise.resolve(true),
+    ]);
+    if (!baseUser || !sessionLive) return null;
     // Reject tokens minted before the current tokenVersion (revoked sessions).
     // ver is mandatory: a token without it skips revocation entirely.
     if (payload.ver === undefined || payload.ver !== baseUser.tokenVersion) return null;
@@ -98,6 +110,13 @@ interface LoadedUser {
    * close. Removed.
    */
   isInstanceOperator: boolean;
+}
+
+/** The session row behind an access token's `jti` is present, unrevoked, unexpired and the caller's. */
+async function sessionIsLive(db: DB, jti: string, userId: number): Promise<boolean> {
+  const row = await db.query.sessions.findFirst({ where: eq(sessions.jti, jti) });
+  if (!row || row.revokedAt || row.userId !== userId) return false;
+  return row.expiresAt.getTime() > Date.now();
 }
 
 async function loadBaseUser(db: DB, userId: number): Promise<LoadedUser | null> {

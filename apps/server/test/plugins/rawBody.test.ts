@@ -33,9 +33,9 @@ describe('rawBody plugin', () => {
       headers: { 'content-type': 'application/json' },
       payload: '{"a":',
     });
-    // The custom parser passes the SyntaxError through; without a custom error
-    // handler a bare Fastify instance answers 500.
-    expect(res.statusCode).toBe(500);
+    // r506: Fastify's own parser answers a malformed body with a 400
+    // (FST_ERR_CTP_INVALID_JSON_BODY), not the bare SyntaxError's 500.
+    expect(res.statusCode).toBe(400);
     expect(res.body).toContain('JSON');
     await app.close();
   });
@@ -74,6 +74,61 @@ describe('rawBody plugin', () => {
       payload: 'hello',
     });
     expect(res.json().body).toBe('hello');
+    await app.close();
+  });
+
+  // r506: the plugin replaced Fastify's secure parser with JSON.parse, so a
+  // `__proto__` / `constructor.prototype` key reached handlers that merge the
+  // body into other objects. Both are refused now, like stock Fastify does.
+  it('refuses __proto__ poisoning instead of handing it to the handler', async () => {
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/echo-json',
+      headers: { 'content-type': 'application/json' },
+      payload: '{"a":1,"__proto__":{"isOperator":true}}',
+    });
+    expect(res.statusCode).toBe(400);
+    expect(({} as Record<string, unknown>)['isOperator']).toBeUndefined();
+    await app.close();
+  });
+
+  it('refuses constructor.prototype poisoning', async () => {
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/echo-json',
+      headers: { 'content-type': 'application/json' },
+      payload: '{"constructor":{"prototype":{"polluted":true}}}',
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('still captures the raw bytes of a body that parses cleanly (webhook HMAC)', async () => {
+    const app = await buildApp();
+    const payload = '{"ref":"refs/heads/main", "constructor":"plain-string-is-fine"}';
+    const res = await app.inject({
+      method: 'POST',
+      url: '/echo-json',
+      headers: { 'content-type': 'application/json' },
+      payload,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().raw).toBe(payload);
+    await app.close();
+  });
+
+  it('keeps answering an empty JSON body as {} (r477)', async () => {
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/echo-json',
+      headers: { 'content-type': 'application/json' },
+      payload: '',
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().body).toEqual({});
     await app.close();
   });
 });

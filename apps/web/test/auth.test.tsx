@@ -1,6 +1,7 @@
+import { StrictMode } from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './web-utils.js';
 import type { PublicUser } from '@ninedeploy/sdk';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -39,10 +40,12 @@ const SESSION = {
 };
 
 function Probe() {
-  const { user, loading, login, setup, logout, loginWithPasskey } = useAuth();
+  const { user, loading, login, setup, logout, loginWithPasskey, ssoError, ssoReturnTo } = useAuth();
   return (
     <div>
       <span data-testid="loading">{String(loading)}</span>
+      <span data-testid="sso-error">{ssoError ?? 'none'}</span>
+      <span data-testid="sso-return">{ssoReturnTo ?? 'none'}</span>
       <span data-testid="email">{user?.email ?? 'none'}</span>
       <button type="button" onClick={() => void login('a@b.c', 'pw')}>login</button>
       <button type="button" onClick={() => void login('a@b.c', 'pw', '123456')}>login-2fa</button>
@@ -120,51 +123,69 @@ describe('AuthProvider', () => {
     expect(apiMock.clearTokens).toHaveBeenCalledTimes(cleared);
   });
 
-  it('captures OAuth/OIDC session tokens from the URL hash and clears it', async () => {
-    window.location.hash = '#access_token=hash-at&refresh_token=hash-rt';
-    try {
+  // r505: tokens in the URL fragment are taken only on the dedicated callback
+  // route, and only with the nonce this tab stored when it started the flow.
+  describe('r505: SSO fragment hand-off', () => {
+    const land = (path: string, fragment: Record<string, string>) =>
+      window.history.replaceState(null, '', `${path}#${new URLSearchParams(fragment).toString()}`);
+    afterEach(() => {
+      sessionStorage.clear();
+      window.history.replaceState(null, '', '/');
+    });
+
+    it('accepts a nonce-matched hand-off on /auth/callback and exposes the return path', async () => {
+      sessionStorage.setItem('ninedeploy.ssoNonce', 'tab-nonce');
+      land('/auth/callback', { access_token: 'hash-at', refresh_token: 'hash-rt', nonce: 'tab-nonce', return_to: '/services' });
       renderAuth();
-      await waitFor(() =>
-        expect(apiMock.setSessionTokens).toHaveBeenCalledWith('hash-at', 'hash-rt'));
+      await waitFor(() => expect(apiMock.setSessionTokens).toHaveBeenCalledWith('hash-at', 'hash-rt'));
+      expect(screen.getByTestId('sso-return')).toHaveTextContent('/services');
+      expect(screen.getByTestId('sso-error')).toHaveTextContent('none');
       // The credentials must not linger in the visible URL.
       expect(window.location.hash).toBe('');
-    } finally {
-      window.location.hash = '';
-    }
-  });
+    });
 
-  it('ignores a hash whose access_token param is present but empty', async () => {
-    window.location.hash = '#access_token=';
-    try {
+    it('takes the hand-off once under StrictMode double rendering', async () => {
+      sessionStorage.setItem('ninedeploy.ssoNonce', 'tab-nonce');
+      land('/auth/callback', { access_token: 'strict-at', nonce: 'tab-nonce' });
+      render(
+        <StrictMode>
+          <QueryClientProvider client={new QueryClient()}>
+            <AuthProvider>
+              <Probe />
+            </AuthProvider>
+          </QueryClientProvider>
+        </StrictMode>,
+      );
+      await waitFor(() => expect(apiMock.setSessionTokens).toHaveBeenCalledWith('strict-at', undefined));
+      expect(apiMock.setSessionTokens).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('sso-error')).toHaveTextContent('none');
+    });
+
+    it("refuses someone else's tokens dropped on any page (session swap) and says why", async () => {
+      land('/', { access_token: 'attacker-at', refresh_token: 'attacker-rt' });
       renderAuth();
       await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'));
       expect(apiMock.setSessionTokens).not.toHaveBeenCalled();
-    } finally {
-      window.location.hash = '';
-    }
-  });
-
-  it('accepts a hash that carries only an access token', async () => {
-    window.location.hash = '#access_token=solo-at';
-    try {
-      renderAuth();
-      await waitFor(() =>
-        expect(apiMock.setSessionTokens).toHaveBeenCalledWith('solo-at', undefined));
+      expect(screen.getByTestId('sso-error')).toHaveTextContent(/sign in again/);
       expect(window.location.hash).toBe('');
-    } finally {
-      window.location.hash = '';
-    }
-  });
+    });
 
-  it('ignores a hash without an access token', async () => {
-    window.location.hash = '#section';
-    try {
+    it('refuses a hand-off whose nonce does not match this tab', async () => {
+      sessionStorage.setItem('ninedeploy.ssoNonce', 'mine');
+      land('/auth/callback', { access_token: 'x-at', nonce: 'theirs' });
       renderAuth();
       await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'));
       expect(apiMock.setSessionTokens).not.toHaveBeenCalled();
-    } finally {
-      window.location.hash = '';
-    }
+      expect(screen.getByTestId('sso-error')).toHaveTextContent(/sign in again/);
+    });
+
+    it('ignores a hash without an access token', async () => {
+      window.history.replaceState(null, '', '/#section');
+      renderAuth();
+      await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'));
+      expect(apiMock.setSessionTokens).not.toHaveBeenCalled();
+      expect(screen.getByTestId('sso-error')).toHaveTextContent('none');
+    });
   });
 
   it('finishes loading without calling me() when no token exists', () => {

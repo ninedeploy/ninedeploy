@@ -113,14 +113,17 @@ describe('SCIM 2.0 provisioning', () => {
     await app.close();
   });
 
-  it('adopts an existing local account instead of duplicating it', async () => {
-    let call = 0;
+  // r501: adoption by email pulled ANY account into the token's workspace,
+  // after which that workspace's IdP could deactivate it instance-wide.
+  it("r501: refuses to adopt an existing account that is not the workspace's member (SCIM 409)", async () => {
+    const updates: unknown[] = [];
+    const memberInserts: unknown[] = [];
     const db = createFakeDb({
       select: { scimTokens: [TOKEN_ROW] },
-      findFirst: { users: () => (call++ === 0 ? userRow({ scimExternalId: null }) : userRow()) },
+      findFirst: { users: () => userRow({ scimExternalId: null }), workspaceMembers: () => undefined },
       findMany: { workspaceMembers: () => [memberRow({ workspaceId: 9 })] },
-      update: { users: [userRow()] },
-      insert: { workspaceMembers: (v: Record<string, unknown>) => [memberRow(v)] },
+      update: { users: (v: unknown) => { updates.push(v); return [userRow()]; } },
+      insert: { workspaceMembers: (v: Record<string, unknown>) => { memberInserts.push(v); return [memberRow(v)]; } },
     });
     const app = await scimApp(db);
     const res = await app.inject({
@@ -129,9 +132,11 @@ describe('SCIM 2.0 provisioning', () => {
       headers: auth,
       payload: { userName: 'new.user@example.com', externalId: 'idp-777' },
     });
-    // Adoption returns 200, not a duplicate 201.
-    expect(res.statusCode).toBe(200);
-    expect(res.json().id).toBe('11');
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ scimType: 'uniqueness', status: '409' });
+    expect(res.json().detail).toContain('not a member of this workspace');
+    expect(updates).toEqual([]);
+    expect(memberInserts).toEqual([]);
     await app.close();
   });
 
@@ -300,7 +305,7 @@ describe('SCIM 2.0 provisioning', () => {
     await app.close();
   });
 
-  it('re-provisioning a deprovisioned account reactivates and re-enrolls it', async () => {
+  it('re-provisioning an account THIS workspace deprovisioned reactivates and re-enrolls it', async () => {
     const memberInserts: Array<Record<string, unknown>> = [];
     let call = 0;
     const db = createFakeDb({
@@ -308,7 +313,7 @@ describe('SCIM 2.0 provisioning', () => {
       findFirst: {
         users: () => {
           call++;
-          return userRow({ deactivatedAt: call === 1 ? new Date() : null });
+          return userRow({ deactivatedAt: call === 1 ? new Date() : null, deactivatedByWorkspaceId: call === 1 ? 7 : null });
         },
       },
       findMany: { workspaceMembers: () => (call === 1 ? [] : [memberRow()]) },
@@ -456,8 +461,9 @@ describe('SCIM 2.0 provisioning', () => {
     });
     const app = await scimApp(db);
     const res = await app.inject({ method: 'POST', url: '/scim/v2/Users', headers: auth, payload: { userName: 'new.user@example.com' } });
-    expect(res.statusCode).toBe(200);
-    expect(updates[0]).not.toHaveProperty('deactivatedAt');
+    // r501: not this workspace's account at all — refused before any write.
+    expect(res.statusCode).toBe(409);
+    expect(updates).toEqual([]);
     await app.close();
   });
 

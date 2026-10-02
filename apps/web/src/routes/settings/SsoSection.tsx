@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
+  AlertTriangle,
   Plus,
   Shield,
   Trash2,
@@ -19,6 +20,25 @@ import {
 import type { OidcProviderCreateInput, OidcProviderEntry } from '@ninedeploy/sdk';
 import { ScimTokensCard } from './ScimTokensCard.js';
 
+/** r507: the comma/space-separated domain field → the list the API stores. */
+export function parseAllowedDomains(raw: string): string[] {
+  return [...new Set(raw.split(/[\s,;]+/).map((d) => d.trim().toLowerCase().replace(/^@/, '')).filter(Boolean))];
+}
+
+/** r507: auto-enroll with no domain list lets ANY account at the IdP sign up. */
+function OpenEnrollmentWarning() {
+  return (
+    <p className="flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+      <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+      <span>
+        Auto-enroll is on with no domain restriction: anyone who can sign in to this identity provider (for a public
+        provider like GitHub or Google, anyone at all) can create an account here. Add your organisation's email
+        domains, or turn auto-enroll off.
+      </span>
+    </p>
+  );
+}
+
 export function SsoSection() {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
@@ -34,6 +54,7 @@ export function SsoSection() {
   const [enabled, setEnabled] = useState(true);
   const [autoEnroll, setAutoEnroll] = useState(true);
   const [defaultRole, setDefaultRole] = useState<'admin' | 'member'>('member');
+  const [allowedDomains, setAllowedDomains] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -87,6 +108,7 @@ export function SsoSection() {
     setEnabled(true);
     setAutoEnroll(true);
     setDefaultRole('member');
+    setAllowedDomains('');
     setError(null);
   };
 
@@ -122,6 +144,7 @@ export function SsoSection() {
     setEnabled(p.enabled);
     setAutoEnroll(p.autoEnroll);
     setDefaultRole(p.defaultRole);
+    setAllowedDomains((p.allowedDomains ?? []).join(', '));
     setError(null);
   };
 
@@ -144,6 +167,7 @@ export function SsoSection() {
             enabled,
             autoEnroll,
             defaultRole,
+            allowedDomains: parseAllowedDomains(allowedDomains),
           },
         });
       } else {
@@ -162,6 +186,7 @@ export function SsoSection() {
           enabled,
           autoEnroll,
           defaultRole,
+          allowedDomains: parseAllowedDomains(allowedDomains),
         });
       }
     } catch (err) {
@@ -244,12 +269,19 @@ export function SsoSection() {
                         Auto-Enroll
                       </Badge>
                     )}
+                    {p.autoEnroll && (p.allowedDomains ?? []).length === 0 && (
+                      <Badge tone="amber" className="text-[10px]">
+                        Any domain
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 font-mono">
                     <span>slug: {p.slug}</span>
                     {p.issuerUrl && <span>issuer: {p.issuerUrl}</span>}
                     <span>role: {p.defaultRole}</span>
+                    {(p.allowedDomains ?? []).length > 0 && <span>domains: {(p.allowedDomains ?? []).join(', ')}</span>}
                   </div>
+                  {p.autoEnroll && (p.allowedDomains ?? []).length === 0 && <OpenEnrollmentWarning />}
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -347,6 +379,14 @@ export function SsoSection() {
               />
             </Field>
 
+            <Field label="Allowed email domains (comma-separated; empty = any)">
+              <Input
+                value={allowedDomains}
+                onChange={(e) => setAllowedDomains(e.target.value)}
+                placeholder="corp.com, corp.io"
+              />
+            </Field>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-white/5">
               <Field label="Default User Role">
                 <Select
@@ -379,6 +419,8 @@ export function SsoSection() {
                 </label>
               </div>
             </div>
+
+            {autoEnroll && parseAllowedDomains(allowedDomains).length === 0 && <OpenEnrollmentWarning />}
 
             {error && <p className="text-xs text-rose-400">{error}</p>}
 

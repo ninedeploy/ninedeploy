@@ -9,10 +9,38 @@ export async function hashPassword(password: string): Promise<string> {
   return argonHash(password);
 }
 
-/** Verify a plaintext password against an argon2 hash. Never throws on mismatch. */
+/**
+ * A real argon2 hash of a random secret nobody knows, computed once per
+ * process. r504: verifying against it costs exactly what a real verify costs,
+ * so a login for an unknown account (or one whose stored value is not an
+ * argon2 hash at all — SCIM's unusable random secret) takes as long as a
+ * wrong password for a real one, and the response time stops answering
+ * "does this email have an account here?".
+ */
+let dummyHash: Promise<string> | null = null;
+function dummyPasswordHash(): Promise<string> {
+  if (!dummyHash) {
+    dummyHash = argonHash(randomBytes(32).toString('base64url'));
+    // A failed hash must not poison every later login with a rejected promise.
+    dummyHash.catch(() => {
+      dummyHash = null;
+    });
+  }
+  return dummyHash;
+}
+
+/**
+ * Verify a plaintext password against an argon2 hash. Never throws on mismatch.
+ *
+ * r504: anything that is not an argon2 hash — including the empty string the
+ * login route passes for an unknown email — is checked against the dummy hash
+ * instead and always answers false, so every miss pays one full argon2 verify.
+ */
 export async function verifyPassword(hashed: string, password: string): Promise<boolean> {
+  const real = hashed.startsWith('$argon2');
   try {
-    return await argonVerify(hashed, password);
+    const ok = await argonVerify(real ? hashed : await dummyPasswordHash(), password);
+    return real && ok;
   } catch {
     return false;
   }

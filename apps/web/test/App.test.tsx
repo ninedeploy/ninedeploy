@@ -71,6 +71,32 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/login'));
   });
 
+  // r505: the dedicated SSO callback route forwards an accepted hand-off to
+  // its validated return path, and anything else to the login page.
+  it('forwards /auth/callback to the SSO return path once signed in', async () => {
+    mockOf(useAuth).mockReturnValue({ user: { id: 1, email: 'a@b.c' }, loading: false, ssoReturnTo: '/settings', logout: vi.fn() } as never);
+    renderWithProviders(
+      <>
+        <App />
+        <LocationProbe />
+      </>,
+      { route: '/auth/callback' },
+    );
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/settings'));
+  });
+
+  it('sends a refused or empty /auth/callback to the login page', async () => {
+    authState(null);
+    renderWithProviders(
+      <>
+        <App />
+        <LocationProbe />
+      </>,
+      { route: '/auth/callback' },
+    );
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/login'));
+  });
+
   it('renders the 404 page for unknown paths', async () => {
     authState({ id: 1, email: 'a@b.c' });
     renderWithProviders(<App />, { route: '/does-not-exist' });

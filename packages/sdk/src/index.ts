@@ -577,9 +577,14 @@ export interface NineDeployClient {
     /** Complete a reset with a single-use token; revokes all sessions. */
     resetPasswordWithToken: (input: { token: string; newPassword: string }) => Promise<{ ok: boolean }>;
     twoFactor: {
-      /** Generate a pending secret + otpauth URI (auth required). */
+      /**
+       * Generate a pending secret + otpauth URI (auth required). Since 0.10.36
+       * (r502) the server wants step-up proof: the current password, or a
+       * sign-in from the last 10 minutes (else 403 `reauth_required`).
+       */
       setup: (input?: { password: string }) => Promise<{ secret: string; otpauthUri: string }>;
-      enable: (code: string) => Promise<{ ok: boolean; totpEnabled: boolean }>;
+      /** Turn 2FA on. `password` is the r502 step-up proof (see `setup`). */
+      enable: (code: string, password?: string) => Promise<{ ok: boolean; totpEnabled: boolean }>;
       disable: (input: { password: string; code: string }) => Promise<{ ok: boolean; totpEnabled: boolean }>;
     };
     me: () => Promise<PublicUser>;
@@ -589,10 +594,15 @@ export interface NineDeployClient {
       remove: (id: number) => Promise<void>;
     };
     passkeys: {
-      /** Start a registration ceremony (returns JSON options for the browser API). */
-      registerOptions: () => Promise<{ options: string }>;
+      /**
+       * Start a registration ceremony (returns JSON options for the browser
+       * API). Since 0.10.36 (r502) registration needs step-up proof: the
+       * current password, or a sign-in from the last 10 minutes (else 403
+       * `reauth_required`).
+       */
+      registerOptions: (input?: { password?: string }) => Promise<{ options: string }>;
       /** Complete registration: verify the browser response, store the credential. */
-      registerVerify: (input: { name: string; response: unknown }) => Promise<PasskeyCredential>;
+      registerVerify: (input: { name: string; response: unknown; password?: string }) => Promise<PasskeyCredential>;
       list: () => Promise<PasskeyCredential[]>;
       remove: (id: number) => Promise<void>;
       /** Start a passwordless login ceremony (discoverable credentials). */
@@ -1637,7 +1647,8 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       resetPasswordWithToken: (input) => send<{ ok: boolean }>('POST', '/v1/auth/reset-password', input),
       twoFactor: {
         setup: (input?: { password: string }) => send<{ secret: string; otpauthUri: string }>('POST', '/v1/auth/2fa/setup', input ?? {}),
-        enable: (code) => send<{ ok: boolean; totpEnabled: boolean }>('POST', '/v1/auth/2fa/enable', { code }),
+        enable: (code, password) =>
+          send<{ ok: boolean; totpEnabled: boolean }>('POST', '/v1/auth/2fa/enable', password ? { code, password } : { code }),
         disable: (input) => send<{ ok: boolean; totpEnabled: boolean }>('POST', '/v1/auth/2fa/disable', input),
       },
       me: () => get<PublicUser>('/v1/auth/me'),
@@ -1649,11 +1660,13 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
         },
       },
       passkeys: {
-        registerOptions: () => send<{ options: string }>('POST', '/v1/auth/passkey/register/options'),
+        registerOptions: (input) =>
+          send<{ options: string }>('POST', '/v1/auth/passkey/register/options', input?.password ? { password: input.password } : undefined),
         registerVerify: (input) =>
           send<PasskeyCredential>('POST', '/v1/auth/passkey/register/verify', {
             name: input.name,
             response: input.response as Record<string, unknown>,
+            ...(input.password ? { password: input.password } : {}),
           }),
         list: () => get<PasskeyCredential[]>('/v1/auth/passkey'),
         remove: async (id) => {
