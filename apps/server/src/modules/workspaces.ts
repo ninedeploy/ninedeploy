@@ -27,7 +27,7 @@ import { audit } from '../lib/audit.js';
 import { badRequest, conflict, forbidden, notFound, parseId } from '../lib/errors.js';
 import { iso } from '../lib/serialize.js';
 import { slugify, slugifyWithSuffix } from '../lib/slug.js';
-import { createOrRefreshInvitation, buildAcceptUrl, buildInviteEmail } from './invitations.js';
+import { createOrRefreshInvitation, buildAcceptUrl, renderInviteEmail } from './invitations.js';
 import { sendSystemEmail } from '../lib/notifier.js';
 import { purgeProjectEnvVars } from './projects.js';
 
@@ -388,7 +388,8 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
     void audit(app.db, userId, 'workspace.invitation.create', `${input.email} (${input.role}) to ${ws.name}`);
 
     const acceptUrl = buildAcceptUrl(token);
-    const emailBody = buildInviteEmail(ws.name, input.role, inviter?.name ?? null, acceptUrl);
+    // r610: rendered through the template engine — the workspace's override applies.
+    const emailBody = await renderInviteEmail(app.db, id, ws.name, input.role, inviter?.name ?? null, acceptUrl);
     void sendSystemEmail(app.db, input.email, emailBody.subject, emailBody.text).catch(() => undefined);
 
     reply.header('x-invitation-token', token);

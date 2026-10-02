@@ -386,6 +386,14 @@ export type EmailTemplateName =
 /** One row from `GET /v1/workspaces/:wid/email-templates`. */
 export interface EmailTemplateEntry {
   name: EmailTemplateName;
+  /**
+   * 'workspace': the workspace's override is what gets sent. 'instance': the
+   * email is about the account (password reset), always sent with the built-in
+   * text — a workspace override is refused. Absent from servers before 0.10.38.
+   */
+  scope?: 'workspace' | 'instance';
+  /** False when nothing sends this email yet (override is stored, not used). */
+  sent?: boolean;
   /** True when the workspace has an override for this name. */
   overridden: boolean;
   /** Override subject; null when the built-in default applies. */

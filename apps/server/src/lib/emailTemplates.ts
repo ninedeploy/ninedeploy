@@ -21,6 +21,15 @@
  * caller hands the result to `sendSystemEmail` (which
  * already does the SMTP round-trip) or to the inline
  * auth.ts call site.
+ *
+ * r610: the senders now actually call it (they used to send
+ * hardcoded text, so a stored override was never seen by anyone).
+ * Bodies are sent as PLAIN TEXT only (`text:` on the SMTP message,
+ * never `html:`), so interpolated values need no HTML escaping. A
+ * future HTML renderer MUST escape `vars` — they carry
+ * user-controlled strings (workspace and inviter names). Subjects
+ * are collapsed onto one line after interpolation (no CR/LF reaches
+ * a header), whatever the template or a variable carries.
  */
 
 import { and, eq } from 'drizzle-orm';
@@ -58,7 +67,10 @@ export interface RenderResult {
 
 const DEFAULTS: Record<EmailTemplateName, EmailTemplate> = {
   'password-reset': {
-    subject: 'Reset your NineDeploy password',
+    // r610: the subject the forgot-password route has always sent. The
+    // default here used to read differently, so wiring the route through
+    // the renderer must not change the email an upgraded instance sends.
+    subject: 'NineDeploy password reset',
     text: [
       'A password reset was requested for {{email}}.',
       '',
@@ -106,6 +118,30 @@ const DEFAULTS: Record<EmailTemplateName, EmailTemplate> = {
 
 export const ALL_TEMPLATE_NAMES = Object.keys(DEFAULTS) as EmailTemplateName[];
 
+/**
+ * r610: how each template is delivered — the truth the list route reports
+ * and `test/emailTemplateWiring.test.ts` holds the source to.
+ *
+ *  - `scope: 'workspace'` — the email belongs to one workspace (an
+ *    invitation is sent on behalf of the inviting workspace), so that
+ *    workspace's override applies.
+ *  - `scope: 'instance'` — the email is about the ACCOUNT, which is not
+ *    bound to one workspace. A password reset carries the link that takes
+ *    over the account; letting the admin of any workspace the user sits in
+ *    rewrite that email would hand them a phishing channel into another
+ *    tenant's member. Workspace overrides are never applied to it.
+ *  - `sent: false` — declared, previewable, overridable, but nothing sends
+ *    it yet: a domain transfer hands its accept link to the caller, and a
+ *    failed drill reaches operators through the notification channels
+ *    (`backup.drill` audit), not a templated system email.
+ */
+export const TEMPLATE_DELIVERY: Record<EmailTemplateName, { scope: 'workspace' | 'instance'; sent: boolean }> = {
+  'password-reset': { scope: 'instance', sent: true },
+  'workspace-invitation': { scope: 'workspace', sent: true },
+  'domain-transfer': { scope: 'workspace', sent: false },
+  'backup-drill-failed': { scope: 'workspace', sent: false },
+};
+
 // ── public surface ─────────────────────────────────────────────────────────
 
 /**
@@ -121,18 +157,25 @@ export async function renderTemplate(
 ): Promise<RenderResult> {
   const base = DEFAULTS[name];
   if (!base) throw new Error(`Unknown email template: ${name}`);
-  if (ctx.workspaceId != null) {
+  // r610: an instance-scoped email never takes a workspace's override — the
+  // preview route passes its workspace id too, and must show what is sent.
+  const workspaceId = TEMPLATE_DELIVERY[name].scope === 'workspace' ? ctx.workspaceId : null;
+  if (workspaceId != null) {
     // The override key is (workspace_id, name): look up the row for THIS
     // template name only. Filtering by workspace alone let one template's
     // override render in place of every other template's (the first matching
     // row won), and a workspace overriding a second template silently
     // replaced the built-in default for all the others.
-    const override = await db.query.emailTemplateOverrides.findFirst({
-      where: and(
-        eq(emailTemplateOverrides.workspaceId, ctx.workspaceId),
-        eq(emailTemplateOverrides.name, name),
-      ),
-    });
+    // r610: a failed lookup falls back to the default — the email (a reset
+    // link, an invitation) matters more than its customisation.
+    const override = await db.query.emailTemplateOverrides
+      .findFirst({
+        where: and(
+          eq(emailTemplateOverrides.workspaceId, workspaceId),
+          eq(emailTemplateOverrides.name, name),
+        ),
+      })
+      .catch(() => undefined);
     // The override table is keyed by (workspace_id, name);
     // a single row per (workspace, name) pair.
     const matched = override?.subject && override?.text
@@ -140,14 +183,14 @@ export async function renderTemplate(
       : null;
     if (matched) {
       return {
-        subject: expand(matched.subject, vars),
+        subject: oneLine(expand(matched.subject, vars)),
         text: expand(matched.text, vars),
         overridden: true,
       };
     }
   }
   return {
-    subject: expand(base.subject, vars),
+    subject: oneLine(expand(base.subject, vars)),
     text: expand(base.text, vars),
     overridden: false,
   };
@@ -193,6 +236,15 @@ export async function clearOverride(db: DB, workspaceId: number, name: EmailTemp
 }
 
 // ── interpolation ─────────────────────────────────────────────────────────
+
+/**
+ * r610: a subject is a mail header. An override's subject, or a variable
+ * interpolated into one (a workspace or inviter name), carrying CR/LF must
+ * not start a new header line; each line break run becomes one space.
+ */
+function oneLine(subject: string): string {
+  return subject.replace(/[\r\n]+/g, ' ');
+}
 
 /**
  * `{{var}}` interpolation. Unknown vars render as the

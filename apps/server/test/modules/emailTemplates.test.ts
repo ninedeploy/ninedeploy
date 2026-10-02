@@ -196,7 +196,7 @@ describe('PUT /:wid/email-templates/:name', () => {
   it('rejects callers with only a member seat with 403', async () => {
     seatRole = 'member';
     const { port } = await startApp();
-    const res = await fetch(`http://127.0.0.1:${port}/1/email-templates/password-reset`, {
+    const res = await fetch(`http://127.0.0.1:${port}/1/email-templates/workspace-invitation`, {
       method: 'PUT',
       headers: { ...asUser({ id: 1, role: 'member' }), 'content-type': 'application/json' },
       body: JSON.stringify({ subject: 'S', text: 'T' }),
@@ -216,7 +216,7 @@ describe('PUT /:wid/email-templates/:name', () => {
 
   it('rejects an empty subject with 422', async () => {
     const { port } = await startApp();
-    const res = await fetch(`http://127.0.0.1:${port}/1/email-templates/password-reset`, {
+    const res = await fetch(`http://127.0.0.1:${port}/1/email-templates/workspace-invitation`, {
       method: 'PUT',
       headers: { ...asUser(1), 'content-type': 'application/json' },
       body: JSON.stringify({ subject: '', text: 'T' }),
@@ -226,7 +226,7 @@ describe('PUT /:wid/email-templates/:name', () => {
 
   it('rejects an over-long text with 422', async () => {
     const { port } = await startApp();
-    const res = await fetch(`http://127.0.0.1:${port}/1/email-templates/password-reset`, {
+    const res = await fetch(`http://127.0.0.1:${port}/1/email-templates/workspace-invitation`, {
       method: 'PUT',
       headers: { ...asUser(1), 'content-type': 'application/json' },
       body: JSON.stringify({ subject: 'S', text: 'x'.repeat(10_001) }),
@@ -237,7 +237,7 @@ describe('PUT /:wid/email-templates/:name', () => {
   it('returns 404 when the workspace does not exist', async () => {
     workspaceRow = null;
     const { port } = await startApp();
-    const res = await fetch(`http://127.0.0.1:${port}/1/email-templates/password-reset`, {
+    const res = await fetch(`http://127.0.0.1:${port}/1/email-templates/workspace-invitation`, {
       method: 'PUT',
       headers: { ...asUser(1), 'content-type': 'application/json' },
       body: JSON.stringify({ subject: 'S', text: 'T' }),
@@ -248,21 +248,47 @@ describe('PUT /:wid/email-templates/:name', () => {
   it('writes the override, audits, and returns ok', async () => {
     const { port, app } = await startApp();
     const audit = (await import('../../src/lib/audit.js')).audit as unknown as ReturnType<typeof vi.fn>;
-    const res = await fetch(`http://127.0.0.1:${port}/1/email-templates/password-reset`, {
+    const res = await fetch(`http://127.0.0.1:${port}/1/email-templates/workspace-invitation`, {
       method: 'PUT',
       headers: { ...asUser(1), 'content-type': 'application/json' },
       body: JSON.stringify({ subject: 'S', text: 'T' }),
     });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ ok: true, workspaceId: 1, name: 'password-reset' });
-    expect(lib.setCalls).toEqual([{ workspaceId: 1, name: 'password-reset', subject: 'S', text: 'T' }]);
+    expect(body).toEqual({ ok: true, workspaceId: 1, name: 'workspace-invitation' });
+    expect(lib.setCalls).toEqual([{ workspaceId: 1, name: 'workspace-invitation', subject: 'S', text: 'T' }]);
     expect(audit).toHaveBeenCalledWith(
       app.db,
       1,
       'email_template.override',
-      expect.stringMatching(/MyWS\/password-reset/),
+      expect.stringMatching(/MyWS\/workspace-invitation/),
     );
+  });
+});
+
+describe('r610: the list and the write side tell the truth about delivery', () => {
+  it('refuses a workspace override of the instance-scoped password reset, saying why', async () => {
+    const { port } = await startApp();
+    const res = await fetch(`http://127.0.0.1:${port}/1/email-templates/password-reset`, {
+      method: 'PUT',
+      headers: { ...asUser(1), 'content-type': 'application/json' },
+      body: JSON.stringify({ subject: 'S', text: 'T' }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.message).toMatch(/always sent with the built-in text/);
+    expect(lib.setCalls).toEqual([]);
+  });
+
+  it('reports each template scope and whether anything sends it', async () => {
+    const { port } = await startApp();
+    const res = await fetch(`http://127.0.0.1:${port}/1/email-templates`, { headers: asUser(1) });
+    const body = (await res.json()) as { templates: Array<{ name: string; scope: string; sent: boolean }> };
+    expect(body.templates.map(({ name, scope, sent }) => ({ name, scope, sent }))).toEqual([
+      { name: 'password-reset', scope: 'instance', sent: true },
+      { name: 'workspace-invitation', scope: 'workspace', sent: true },
+      { name: 'domain-transfer', scope: 'workspace', sent: false },
+      { name: 'backup-drill-failed', scope: 'workspace', sent: false },
+    ]);
   });
 });
 

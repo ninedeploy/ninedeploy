@@ -34,6 +34,7 @@ import {
   clearOverride,
   renderTemplate,
   setOverride,
+  TEMPLATE_DELIVERY,
 } from '../../src/lib/emailTemplates.js';
 import { createFakeDb, tableName } from '../helpers.js';
 
@@ -49,6 +50,8 @@ beforeEach(() => {
   state.deletes.length = 0;
   state.overrides.length = 0;
 });
+
+const INVITE_VARS = { inviter: 'Eve', workspaceName: 'Acme', role: 'admin', acceptUrl: 'https://x/y', ttlDays: 7 };
 
 /** Convenience: seed one override row. */
 function seedOverride(workspaceId: number, name: EmailTemplateName, subject: string, text: string): void {
@@ -184,50 +187,35 @@ describe('renderTemplate', () => {
       { email: 'a@b.com', ttlMinutes: 15, resetUrl: 'https://x/y' },
     );
     expect(result.overridden).toBe(false);
-    expect(result.subject).toBe('Reset your NineDeploy password');
+    expect(result.subject).toBe('NineDeploy password reset');
     expect(result.text).toContain('A password reset was requested for a@b.com.');
     expect(result.text).toContain('Open this link within 15 minutes');
     expect(result.text).toContain('https://x/y');
   });
 
   it('returns the tenant override when one exists', async () => {
-    seedOverride(42, 'password-reset', 'Custom subject for {{email}}', 'Hi {{email}}, your reset link is {{resetUrl}}');
+    seedOverride(42, 'workspace-invitation', 'Custom subject for {{workspaceName}}', 'Hi, {{inviter}} sent {{acceptUrl}}');
     const db = makeDb();
-    const result = await renderTemplate(
-      db,
-      'password-reset',
-      { email: 'a@b.com', ttlMinutes: 15, resetUrl: 'https://x/y' },
-      { workspaceId: 42 },
-    );
+    const result = await renderTemplate(db, 'workspace-invitation', INVITE_VARS, { workspaceId: 42 });
     expect(result.overridden).toBe(true);
-    expect(result.subject).toBe('Custom subject for a@b.com');
-    expect(result.text).toBe('Hi a@b.com, your reset link is https://x/y');
+    expect(result.subject).toBe('Custom subject for Acme');
+    expect(result.text).toBe('Hi, Eve sent https://x/y');
   });
 
   it('falls back to the default when the override row has no text', async () => {
-    seedOverride(42, 'password-reset', 'only-subj', '');
+    seedOverride(42, 'workspace-invitation', 'only-subj', '');
     const db = makeDb();
-    const result = await renderTemplate(
-      db,
-      'password-reset',
-      { email: 'a@b.com', ttlMinutes: 15, resetUrl: 'https://x/y' },
-      { workspaceId: 42 },
-    );
+    const result = await renderTemplate(db, 'workspace-invitation', INVITE_VARS, { workspaceId: 42 });
     expect(result.overridden).toBe(false);
-    expect(result.subject).toBe('Reset your NineDeploy password');
+    expect(result.subject).toBe("You're invited to join Acme on NineDeploy");
   });
 
   it('skips the override lookup entirely when ctx.workspaceId is null', async () => {
-    seedOverride(42, 'password-reset', 'X', 'Y');
+    seedOverride(42, 'workspace-invitation', 'X', 'Y');
     const db = makeDb();
-    const result = await renderTemplate(
-      db,
-      'password-reset',
-      { email: 'a@b.com', ttlMinutes: 15, resetUrl: 'https://x/y' },
-      { workspaceId: null },
-    );
+    const result = await renderTemplate(db, 'workspace-invitation', INVITE_VARS, { workspaceId: null });
     expect(result.overridden).toBe(false);
-    expect(result.subject).toBe('Reset your NineDeploy password');
+    expect(result.subject).toBe("You're invited to join Acme on NineDeploy");
   });
 
   it('skips the override lookup when ctx is omitted', async () => {
@@ -281,21 +269,21 @@ describe('renderTemplate', () => {
 
 describe('renderTemplate — (workspace_id, name) override key', () => {
   it('renders each template with ITS OWN override row when a workspace overrides several', async () => {
-    // Invitation seeded FIRST (it would win any name-blind lookup),
-    // password-reset second — the exact shape that used to contaminate.
+    // Invitation seeded FIRST (it would win any name-blind lookup), a second
+    // template's row after it — the exact shape that used to contaminate.
     seedOverride(42, 'workspace-invitation', 'INVITE-SUBJ {{workspaceName}}', 'INVITE-TEXT {{acceptUrl}}');
-    seedOverride(42, 'password-reset', 'RESET-SUBJ {{email}}', 'RESET-TEXT {{resetUrl}}');
+    seedOverride(42, 'domain-transfer', 'XFER-SUBJ {{hostname}}', 'XFER-TEXT {{acceptUrl}}');
     const db = makeDb();
 
-    const reset = await renderTemplate(
+    const xfer = await renderTemplate(
       db,
-      'password-reset',
-      { email: 'a@b.com', ttlMinutes: 15, resetUrl: 'https://reset.example' },
+      'domain-transfer',
+      { sourceName: 'Alice', hostname: 'example.com', ttlDays: 5, acceptUrl: 'https://xfer.example' },
       { workspaceId: 42 },
     );
-    expect(reset.overridden).toBe(true);
-    expect(reset.subject).toBe('RESET-SUBJ a@b.com');
-    expect(reset.text).toBe('RESET-TEXT https://reset.example');
+    expect(xfer.overridden).toBe(true);
+    expect(xfer.subject).toBe('XFER-SUBJ example.com');
+    expect(xfer.text).toBe('XFER-TEXT https://xfer.example');
 
     const invite = await renderTemplate(
       db,
@@ -313,12 +301,12 @@ describe('renderTemplate — (workspace_id, name) override key', () => {
     const db = makeDb();
     const result = await renderTemplate(
       db,
-      'password-reset',
-      { email: 'a@b.com', ttlMinutes: 15, resetUrl: 'https://x/y' },
+      'domain-transfer',
+      { sourceName: 'Alice', hostname: 'example.com', ttlDays: 5, acceptUrl: 'https://x/y' },
       { workspaceId: 43 },
     );
     expect(result.overridden).toBe(false);
-    expect(result.subject).toBe('Reset your NineDeploy password');
+    expect(result.subject).toBe('Domain transfer for example.com');
   });
 });
 
@@ -370,15 +358,15 @@ describe('renderTemplate — interpolation', () => {
   });
 
   it('accepts whitespace inside the {{ }} delimiters', async () => {
-    seedOverride(42, 'password-reset', '{{   email   }}', 'x');
+    seedOverride(42, 'domain-transfer', '{{   hostname   }}', 'x');
     const db = makeDb();
     const result = await renderTemplate(
       db,
-      'password-reset',
-      { email: 'a@b.com' },
+      'domain-transfer',
+      { hostname: 'example.com' },
       { workspaceId: 42 },
     );
-    expect(result.subject).toBe('a@b.com');
+    expect(result.subject).toBe('example.com');
   });
 });
 
@@ -414,15 +402,10 @@ describe('setOverride / clearOverride', () => {
 
   it('setOverride then renderTemplate picks up the override', async () => {
     const db = makeDb();
-    await setOverride(db, 42, 'password-reset', 'NEW subj', 'NEW text body');
+    await setOverride(db, 42, 'workspace-invitation', 'NEW subj', 'NEW text body');
     // Mirror what the upsert would have done in the real DB.
-    seedOverride(42, 'password-reset', 'NEW subj', 'NEW text body');
-    const result = await renderTemplate(
-      db,
-      'password-reset',
-      { email: 'a@b.com', ttlMinutes: 15, resetUrl: 'https://x/y' },
-      { workspaceId: 42 },
-    );
+    seedOverride(42, 'workspace-invitation', 'NEW subj', 'NEW text body');
+    const result = await renderTemplate(db, 'workspace-invitation', INVITE_VARS, { workspaceId: 42 });
     expect(result.overridden).toBe(true);
     expect(result.subject).toBe('NEW subj');
     expect(result.text).toBe('NEW text body');
@@ -434,5 +417,104 @@ describe('setOverride / clearOverride', () => {
       await setOverride(db, 42, name as EmailTemplateName, 'S', 'T');
     }
     expect(state.inserts).toHaveLength(ALL_TEMPLATE_NAMES.length);
+  });
+});
+
+/**
+ * r610: the senders now render through this engine, so the built-in defaults
+ * ARE the emails an upgraded instance sends. These literals are the text the
+ * hardcoded senders produced in 0.10.37 (auth.ts forgot-password and
+ * invitations.ts buildInviteEmail), copied verbatim.
+ */
+describe('r610: defaults reproduce the pre-template emails byte for byte', () => {
+  it('password reset', async () => {
+    const link = 'https://panel.example/reset-password?token=abc';
+    const result = await renderTemplate(makeDb(), 'password-reset', {
+      email: 'Admin@Example.com',
+      ttlMinutes: 30,
+      resetUrl: link,
+    });
+    expect(result.subject).toBe('NineDeploy password reset');
+    expect(result.text).toBe(
+      `A password reset was requested for Admin@Example.com.\n\nOpen this link within 30 minutes to set a new password:\n${link}\n\nIf you did not request this, you can ignore this email.`,
+    );
+  });
+
+  it('workspace invitation', async () => {
+    const acceptUrl = 'https://panel.example/invite/tok';
+    const result = await renderTemplate(
+      makeDb(),
+      'workspace-invitation',
+      { inviter: 'A workspace owner', workspaceName: 'Acme', role: 'member', acceptUrl, ttlDays: 7 },
+      { workspaceId: 1 },
+    );
+    expect(result.subject).toBe("You're invited to join Acme on NineDeploy");
+    expect(result.text).toBe(
+      [
+        'A workspace owner invited you to join the "Acme" workspace on NineDeploy as member.',
+        '',
+        'Click the link below to accept:',
+        acceptUrl,
+        '',
+        'This invitation expires in 7 days.',
+        '',
+        "If you don't have an account yet, you'll be asked to create one before accepting.",
+      ].join('\n'),
+    );
+  });
+});
+
+describe('r610: delivery scope and injection', () => {
+  it('declares a delivery for every template name', () => {
+    expect(Object.keys(TEMPLATE_DELIVERY).sort()).toEqual([...ALL_TEMPLATE_NAMES].sort());
+  });
+
+  it('never applies a workspace override to the instance-scoped password reset', async () => {
+    seedOverride(42, 'password-reset', 'PHISH', 'Click https://evil.example');
+    const result = await renderTemplate(
+      makeDb(),
+      'password-reset',
+      { email: 'a@b.com', ttlMinutes: 30, resetUrl: 'https://x/y' },
+      { workspaceId: 42 },
+    );
+    expect(result.overridden).toBe(false);
+    expect(result.subject).toBe('NineDeploy password reset');
+    expect(result.text).not.toContain('evil');
+  });
+
+  it('collapses CR/LF in a subject, whether from the override or a variable', async () => {
+    seedOverride(42, 'workspace-invitation', 'Join {{workspaceName}}\r\nBcc: victim@example.com', 'body');
+    const fromOverride = await renderTemplate(makeDb(), 'workspace-invitation', INVITE_VARS, { workspaceId: 42 });
+    expect(fromOverride.subject).toBe('Join Acme Bcc: victim@example.com');
+
+    const fromVar = await renderTemplate(makeDb(), 'workspace-invitation', {
+      ...INVITE_VARS,
+      workspaceName: 'Acme\nBcc: victim@example.com',
+    });
+    expect(fromVar.subject).not.toMatch(/[\r\n]/);
+    expect(fromVar.subject).toBe("You're invited to join Acme Bcc: victim@example.com on NineDeploy");
+    // The plain-text body keeps the value as-is (no header there to inject).
+    expect(fromVar.text).toContain('"Acme\nBcc: victim@example.com"');
+  });
+
+  it('does not re-expand placeholders carried inside a variable value', async () => {
+    const result = await renderTemplate(makeDb(), 'workspace-invitation', {
+      ...INVITE_VARS,
+      workspaceName: '{{acceptUrl}}',
+    });
+    expect(result.subject).toBe("You're invited to join {{acceptUrl}} on NineDeploy");
+  });
+
+  it('falls back to the default when the override lookup fails', async () => {
+    const db = createFakeDb({
+      findFirst: {
+        emailTemplateOverrides: () => {
+          throw new Error('no such table: email_template_overrides');
+        },
+      },
+    });
+    const result = await renderTemplate(db, 'workspace-invitation', INVITE_VARS, { workspaceId: 42 });
+    expect(result.overridden).toBe(false);
+    expect(result.subject).toBe("You're invited to join Acme on NineDeploy");
   });
 });
