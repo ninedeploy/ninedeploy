@@ -310,6 +310,54 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     if (input.serverId != null && !req.user!.isOperator) {
       throw forbidden('Only operators may place a service on a remote server');
     }
+    // r692: every reference the new row will carry is decided BEFORE the row
+    // exists. The tag and lane checks used to run after the insert, so a
+    // refused request (another tenant's project, workspace, label or
+    // environment) answered 403 but left a half-created, untagged service —
+    // and its slug — behind.
+    const explicitTags = Boolean(input.tagProjectIds || input.tagWorkspaceIds || input.tagLabelIds);
+    if (explicitTags && !req.user!.isOperator) {
+      // Same rule as PUT /:id/tags: a member may only tag with projects,
+      // workspaces and labels they can see. Without this check a member could
+      // tag their service with ANOTHER tenant's project id, and the deploy
+      // pipeline (engine/pipeline.ts loadRuntimeEnv) would decrypt that
+      // project's shared env values straight into the member's container.
+      const projectIds = input.tagProjectIds ?? [];
+      const allowedProjects = await visibleProjectIds(app.db, req.user!, projectIds, 'member');
+      if (allowedProjects.length !== projectIds.length) {
+        throw forbidden('One or more target projects are not visible to you');
+      }
+      const workspaceIds = input.tagWorkspaceIds ?? [];
+      const allowedWorkspaces = await visibleWorkspaceIds(app.db, req.user!, workspaceIds);
+      if (allowedWorkspaces.length !== workspaceIds.length) {
+        throw forbidden('One or more target workspaces are not visible to you');
+      }
+      const labelIds = input.tagLabelIds ?? [];
+      const allowedLabels = await visibleLabelIds(app.db, req.user!, labelIds);
+      if (allowedLabels.length !== labelIds.length) {
+        throw forbidden('One or more target labels are not visible to you');
+      }
+    }
+    // Deployment lane at create time: the environment must belong to a
+    // workspace the caller holds a seat in (same rule as PATCH). Operators
+    // skip the seat check.
+    let environmentId: number | null = null;
+    if (input.environmentId !== undefined) {
+      const envRow = await app.db.query.environments.findFirst({
+        where: eq(environments.id, input.environmentId),
+      });
+      if (!envRow) throw badRequest('Environment not found');
+      if (!req.user!.isOperator) {
+        const seat = await app.db.query.workspaceMembers.findFirst({
+          where: and(
+            eq(workspaceMembers.workspaceId, envRow.workspaceId),
+            eq(workspaceMembers.userId, req.user!.id),
+          ),
+        });
+        if (!seat) throw forbidden('You do not have access to this environment');
+      }
+      environmentId = envRow.id;
+    }
     const slug = input.slug ?? slugify(input.name);
     // r511: a preview pattern must name this service's own PR hosts.
     if (input.previewDomainPattern) {
@@ -408,6 +456,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         previewAutoDestroyOnClose: input.previewAutoDestroyOnClose ?? true,
         previewDomainPattern: input.previewDomainPattern ?? null,
         previewMaxActive: input.previewMaxActive ?? 5,
+        environmentId,
       })
       .returning()
       // The duplicate check above is check-then-insert: two concurrent
@@ -455,31 +504,9 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       if (stackEnv.length > 0) await reconcileEnvironment(app, svc.id, { env: stackEnv }, []);
     }
     // Tagging is a separate concern from the row itself: an explicit tag set
-    // wins, otherwise the service lands in every workspace the caller belongs
-    // to so it is visible to their team by default.
-    if (input.tagProjectIds || input.tagWorkspaceIds || input.tagLabelIds) {
-      // Same rule as PUT /:id/tags: a member may only tag with projects,
-      // workspaces and labels they can see. Without this check a member could
-      // tag their service with ANOTHER tenant's project id, and the deploy
-      // pipeline (engine/pipeline.ts loadRuntimeEnv) would decrypt that
-      // project's shared env values straight into the member's container.
-      if (!req.user!.isOperator) {
-        const projectIds = input.tagProjectIds ?? [];
-        const allowedProjects = await visibleProjectIds(app.db, req.user!, projectIds, 'member');
-        if (allowedProjects.length !== projectIds.length) {
-          throw forbidden('One or more target projects are not visible to you');
-        }
-        const workspaceIds = input.tagWorkspaceIds ?? [];
-        const allowedWorkspaces = await visibleWorkspaceIds(app.db, req.user!, workspaceIds);
-        if (allowedWorkspaces.length !== workspaceIds.length) {
-          throw forbidden('One or more target workspaces are not visible to you');
-        }
-        const labelIds = input.tagLabelIds ?? [];
-        const allowedLabels = await visibleLabelIds(app.db, req.user!, labelIds);
-        if (allowedLabels.length !== labelIds.length) {
-          throw forbidden('One or more target labels are not visible to you');
-        }
-      }
+    // (validated above) wins, otherwise the service lands in every workspace
+    // the caller belongs to so it is visible to their team by default.
+    if (explicitTags) {
       await replaceServiceTags(
         app.db,
         svc!.id,
@@ -489,28 +516,6 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       );
     } else {
       await applyDefaultTags(app.db, req.user!, svc!.id);
-    }
-    // Deployment lane at create time: the environment must belong to a
-    // workspace the caller holds a seat in (same rule as PATCH). Operators
-    // skip the seat check.
-    if (input.environmentId !== undefined) {
-      const envRow = await app.db.query.environments.findFirst({
-        where: eq(environments.id, input.environmentId),
-      });
-      if (!envRow) throw badRequest('Environment not found');
-      if (!req.user!.isOperator) {
-        const seat = await app.db.query.workspaceMembers.findFirst({
-          where: and(
-            eq(workspaceMembers.workspaceId, envRow.workspaceId),
-            eq(workspaceMembers.userId, req.user!.id),
-          ),
-        });
-        if (!seat) throw forbidden('You do not have access to this environment');
-      }
-      await app.db
-        .update(services)
-        .set({ environmentId: envRow.id })
-        .where(eq(services.id, svc!.id));
     }
     void audit(app.db, req.user!.id, 'service.create', input.name);
     app.kernel?.events.emit('service.created', {
