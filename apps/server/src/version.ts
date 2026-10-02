@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.38';
+export const VERSION = '0.10.39';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.39',
+    date: '2026-10-02',
+    title: 'The Proven-Upgrade Release, Published',
+    changes: [
+      'This is the first published build of the 0.10.38 changes below. The 0.10.38 tag never reached any panel: its release checks failed on a test that only broke on Node 26, so the new smoke-gated pipeline pushed no image, moved no :latest and created no GitHub Release — the gate doing exactly its job on its first run.',
+      'Fixed: the r605 pinned-dispatcher test built its Agent from the Node 22/24 undici slot; it now goes through the same lookup guardedFetch uses (Node 26 keeps the Agent elsewhere). The production code was already correct and was verified on Node 22.13, 24 and 26.',
+    ],
+  },
+{
     version: '0.10.38',
     date: '2026-10-02',
     title: 'The Proven-Upgrade Release — Smoke-Gated Publication',

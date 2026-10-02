@@ -9,7 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.10.38] - 2026-10-02
+## [0.10.39] - 2026-10-02
+
+> The first published build of the 0.10.38 changes. The 0.10.38 tag never
+> reached a panel: its release checks failed on a test that only broke on
+> Node 26, and the smoke-gated pipeline (r581) pushed no image, moved no
+> `:latest` and created no GitHub Release. Read the 0.10.38 section below —
+> including its upgrade notes — for everything this release contains.
+
+### Fixed
+
+- The r605 pinned-dispatcher test built its Agent from the Node 22/24 undici slot and failed on Node 26 (CI's Node). It now uses the same `bundledAgentClass()` lookup `guardedFetch` uses. The production code was already correct, verified on Node 22.13, 24 and 26.
+
+## [0.10.38] - 2026-10-02 — not published, superseded by 0.10.39
 
 > The proven-upgrade release (r580–r610): releases are now only offered to
 > installed servers after the published image has been upgraded onto from the
