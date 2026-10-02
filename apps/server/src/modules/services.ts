@@ -45,7 +45,7 @@ import { visibleLabelIds } from './labels.js';
 import { assertMayUseHostPrivilege } from '../lib/hostPrivilege.js';
 import { assertMayPublishPort } from '../lib/hostPort.js';
 import { slugify, slugifyWithSuffix } from '../lib/slug.js';
-import { assertSlugVolumeNotRetained } from '../lib/retainedSlugVolume.js';
+import { assertPrimaryVolumeNotAttachedElsewhere, assertSlugVolumeNotRetained } from '../lib/retainedSlugVolume.js';
 import { composeBuilder } from '../engine/builders/compose.js';
 import { dockerBuilder, railpackRefusedForInstall } from '../engine/builders/docker.js';
 import { remoteHookRefusal } from '../lib/remoteDeploy.js';
@@ -376,6 +376,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // r351/r466: a remote service mounts its data volume ON THE NODE — the
     // guard probes the node's agent for those, the local daemon otherwise.
     await assertSlugVolumeNotRetained(slug, input.type, { db: app.db, serverId: input.serverId ?? null });
+    // r648: nor one another service already attaches as an extra volume.
+    if (input.volumeMount) await assertPrimaryVolumeNotAttachedElsewhere(app.db, slug, null);
     const [svc] = await app.db
       .insert(services)
       .values({
@@ -665,6 +667,13 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         preStopCmd: merged('preStopCmd'),
       },
     });
+    // r648: turning the primary volume ON mounts `nd-svc-<slug>-data` — refuse
+    // it when another service already attaches a volume under that name (it
+    // could have been pre-created by that service's owner). Re-sends of an
+    // already-enabled mount stay allowed.
+    if (patch.volumeMount && !existing.volumeMount) {
+      await assertPrimaryVolumeNotAttachedElsewhere(app.db, existing.slug, existing.id);
+    }
     // Same merged-result reasoning for the host port.
     assertMayPublishPort(req.user!, patch.publishedPort === undefined ? existing.publishedPort : patch.publishedPort);
     // r522: only a PATCH that introduces the conflict is refused — pinning a

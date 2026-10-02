@@ -1290,3 +1290,29 @@ describe('volume redeploys go through the shared enqueue guards (r640)', () => {
     await app.close();
   });
 });
+
+// r648: attachment names and primary data-volume names share one namespace.
+describe('create.label cannot mint another service primary data volume (r648)', () => {
+  it('refuses `shop` + `api-data` when service `shop-api` exists, before anything is created', async () => {
+    const shop = svcRow({ id: 9, name: 'shop', slug: 'shop', ownerUserId: 7, type: 'docker' });
+    const shopApi = { id: 20, name: 'shop-api' };
+    let inserted = false;
+    const app = await buildTestApp({
+      db: createFakeDb({
+        // The primary-volume lookup asks for { id, name } of the slug's owner.
+        findFirst: { services: (args?: { columns?: Record<string, boolean> }) => (args?.columns?.name ? shopApi : shop) },
+        insert: { service_volume_attachments: () => { inserted = true; return []; }, deployments: [{ id: 1 }] },
+      }),
+    });
+    await app.register(serviceVolumesRoutes);
+    const res = await app.inject({
+      method: 'POST', url: '/9/volumes', headers: asUser({ id: 7, isOperator: false }),
+      payload: { create: { label: 'api-data' }, containerPath: '/stash' },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.message).toContain("'nd-svc-shop-api-data' is the data volume name of service 'shop-api'");
+    expect(inserted).toBe(false);
+    expect(dbEngineMocks.createDockerVolume).not.toHaveBeenCalled();
+    await app.close();
+  });
+});

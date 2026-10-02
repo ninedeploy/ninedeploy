@@ -11,6 +11,7 @@ import { assertMayEnqueueDeploy, enqueueUserDeploy } from '../lib/deployQueue.js
 import { createDockerVolume } from '../engine/database.js';
 import { capture } from '../lib/exec.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
+import { primaryVolumeOwner } from '../lib/retainedSlugVolume.js';
 import {
   assertDatabaseRole,
   assertServiceRole,
@@ -221,6 +222,18 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const volumeName = resolveVolumeName(svc, input);
+    // r648: `create.label` must never mint another service's PRIMARY data
+    // volume name — with dashes in slugs, `shop` + `api-data` is `shop-api`'s
+    // `nd-svc-shop-api-data`. Refused for everyone: a create can never be a
+    // deliberate share (that is what `volumeName` + the ownership guard are for).
+    if (input.create) {
+      const owner = await primaryVolumeOwner(app.db, volumeName, svc.id);
+      if (owner) {
+        throw conflict(
+          `'${volumeName}' is the data volume name of service '${owner.name}' — pick a different label`,
+        );
+      }
+    }
     // Ownership decision BEFORE the docker existence probe: a member naming
     // another tenant's volume must get 403, not a 404 that confirms the
     // volume exists on the host.
