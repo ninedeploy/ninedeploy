@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join as joinPath } from 'node:path';
+import { appendFileSync, existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs';
+import { join as joinPath, relative as relativePath, resolve as resolvePath, sep as pathSep } from 'node:path';
 import { buildAgentApp } from './agentApp.js';
 import { agentChildTimeoutMs, tokenMatches } from './lib/agentClient.js';
 import { MAX_SKEW_MS, open as openSealed, seal as sealResponse } from './lib/agentSeal.js';
@@ -77,6 +77,95 @@ export async function resolveWorkspace(name: string): Promise<string> {
   }
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   return dir;
+}
+
+/**
+ * r660: what this agent can do beyond the original op table, reported inside
+ * the SEALED `agent.ping` answer (authenticated, unlike `GET /agent/ping`).
+ * An older agent answers `agent.ping` with no lines at all, so the panel reads
+ * a missing capability as "too old" and refuses what depends on it with a
+ * message naming the node — see lib/agentClient.ts `agentCapabilities`.
+ */
+export const AGENT_CAPABILITIES = ['build-path-guard', 'workspace.remove'] as const;
+
+/**
+ * r660: the agent-side twin of the panel's `resolveInRepo` (lib/repoPath.ts).
+ *
+ * `dockerfile`, `context`, a compose `file`/`override` and a clone `dir` are
+ * repository paths, and the repository is whatever the service's owner pushed:
+ * `ln -s / ctx` (or `ln -s ../other-service ctx`) plus `baseDir: ctx` made
+ * `docker build` — run as root, in a work root every tenant on the node
+ * shares — send the node's filesystem or another service's checkout (its
+ * `.env` included) to the builder, and a symlinked Dockerfile turned
+ * `/etc/shadow` into a parse error echoed into the deploy log. RE_PATH only
+ * ever checked the TEXT. Every component from `base` down is lstat-checked,
+ * the last one included; a symlink — dangling or not — is refused, as is an
+ * absolute path (the panel always sends repo-relative ones). A missing
+ * component has nothing to follow; the docker command then fails on it.
+ */
+export function assertPathInWorkspace(base: string, value: string, what: string): string {
+  if (value.startsWith('/') || value.includes('\\')) throw new Error(`Invalid ${what}: must be a path inside the service workspace`);
+  const root = resolvePath(base);
+  const resolved = resolvePath(root, value);
+  if (resolved !== root && !resolved.startsWith(root + pathSep)) {
+    throw new Error(`Invalid ${what}: must be a path inside the service workspace`);
+  }
+  let current = root;
+  for (const part of relativePath(root, resolved).split(pathSep).filter((p) => p !== '')) {
+    current = joinPath(current, part);
+    let isLink: boolean;
+    try {
+      isLink = lstatSync(current).isSymbolicLink();
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException | null)?.code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') break;
+      throw err;
+    }
+    if (isLink) throw new Error(`Refusing ${what} "${value}": the path goes through a symlink in the repository`);
+  }
+  return value;
+}
+
+/**
+ * r660/r666: the Dockerfile a node builds. The panel sends `dockerfile`
+ * repo-relative and the context separately, while its Settings field reads
+ * the path relative to the base directory — so `baseDir: apps/web` with the
+ * default `Dockerfile` built the ROOT Dockerfile, or failed when the repo had
+ * none. A repo-relative file that exists keeps winning (every build that
+ * worked keeps building the same file); otherwise one under the context is
+ * used. Both candidates pass the symlink walk.
+ */
+function nodeDockerfile(base: string, dockerfile: string, context: string): string {
+  assertPathInWorkspace(base, dockerfile, 'dockerfile');
+  assertPathInWorkspace(base, context, 'context');
+  if (context === '.' || existsSync(joinPath(base, dockerfile))) return dockerfile;
+  const underContext = `${context.replace(/\/+$/, '')}/${dockerfile}`;
+  if (!RE_PATH(underContext)) return dockerfile;
+  assertPathInWorkspace(base, underContext, 'dockerfile');
+  return existsSync(joinPath(base, underContext)) ? underContext : dockerfile;
+}
+
+/**
+ * r660: run the symlink walk over every repository path an op names, and
+ * resolve the Dockerfile a build uses. Returns the params the argv is built
+ * from. Ops without such operands pass through untouched.
+ */
+function guardWorkspacePaths(op: string, params: Params, base: string): Params {
+  if (op === 'docker.build') {
+    const dockerfile = validated(str(params, 'dockerfile'), RE_PATH, 'dockerfile');
+    const context = validated(str(params, 'context'), RE_PATH, 'context');
+    return { ...params, dockerfile: nodeDockerfile(base, dockerfile, context) };
+  }
+  if (op === 'git.clone' && str(params, 'dir') !== undefined) {
+    assertPathInWorkspace(base, validated(str(params, 'dir'), RE_PATH, 'target dir'), 'target dir');
+  }
+  if (op.startsWith('docker.compose') && op !== 'docker.composeDown') {
+    if (str(params, 'file') !== undefined) assertPathInWorkspace(base, validated(str(params, 'file'), RE_PATH, 'compose file'), 'compose file');
+    if (str(params, 'override') !== undefined) {
+      assertPathInWorkspace(base, validated(str(params, 'override'), RE_PATH, 'compose override file'), 'compose override file');
+    }
+  }
+  return params;
 }
 
 /** `host:container` publish operand, numeric on both sides. */
@@ -440,7 +529,7 @@ const WORKSPACE_FILES: Record<string, string> = {
 const MAX_WORKSPACE_FILE_BYTES = 1024 * 1024;
 
 async function writeWorkspaceFileOp(params: Params): Promise<{ path: string }> {
-  const { writeFileSync, renameSync } = await import('node:fs');
+  const { writeFileSync, renameSync, rmSync } = await import('node:fs');
   const pathmod = await import('node:path');
   const kind = str(params, 'kind');
   const name = kind === undefined ? undefined : WORKSPACE_FILES[kind];
@@ -453,8 +542,13 @@ async function writeWorkspaceFileOp(params: Params): Promise<{ path: string }> {
   const target = pathmod.join(dir, name);
   // Atomic replace: compose may be reading the previous revision's file while
   // the next deploy writes this one.
+  // r660: the workspace is also the repository checkout, so `<name>.tmp` can
+  // be a symlink the repo committed — and a plain write FOLLOWED it, putting
+  // the service's resolved secrets into any file on the node, as root. The
+  // link itself is removed first, and `wx` (O_CREAT|O_EXCL) never follows one.
   const tmp = `${target}.tmp`;
-  writeFileSync(tmp, content, { mode: 0o600 });
+  rmSync(tmp, { force: true });
+  writeFileSync(tmp, content, { mode: 0o600, flag: 'wx' });
   renameSync(tmp, target);
   return { path: pathmod.relative(process.cwd(), target) };
 }
@@ -485,6 +579,7 @@ async function deleteWorkspaceFileOp(params: Params): Promise<void> {
  */
 async function composeRestartPolicyOp(params: Params, onLine: (l: string) => void): Promise<number> {
   const dir = await resolveWorkspace(validated(str(params, 'workspace'), RE_NAME, 'workspace name'));
+  guardWorkspacePaths('docker.composePs', params, dir); // r660
   const ids: string[] = [];
   const psCode = await spawnValidated(
     'docker',
@@ -601,6 +696,7 @@ async function agentStatsOp(onLine: (l: string) => void): Promise<number> {
  */
 const HANDLED_OPS = new Set([
   'agent.ping',
+  'workspace.remove',
   'agent.stats',
   'file.writeEnv',
   'file.deleteEnv',
@@ -615,7 +711,28 @@ const HANDLED_OPS = new Set([
 
 /** Run one typed operation (exported for tests). */
 export async function runOp(op: string, params: Params, onLine: (l: string) => void): Promise<number> {
-  if (op === 'agent.ping') return 0;
+  if (op === 'agent.ping') {
+    // r660: version + capabilities ride inside the sealed answer, so the panel
+    // can refuse what an older agent would do unsafely (see AGENT_CAPABILITIES).
+    const { VERSION } = await import('./version.js');
+    onLine(`ND-AGENT ${JSON.stringify({ version: VERSION, caps: AGENT_CAPABILITIES })}`);
+    return 0;
+  }
+  if (op === 'workspace.remove') {
+    // r662: a deleted (or moved-away) service's checkout used to stay on the
+    // node forever, source and build context included. The name is validated
+    // like every workspace operand; `rm -r` removes a symlink inside the tree
+    // as a link, never what it points at.
+    const { rmSync } = await import('node:fs');
+    const pathmod = await import('node:path');
+    const safe = validated(str(params, 'workspace'), RE_NAME, 'workspace name');
+    const root = pathmod.resolve(process.cwd(), WORK_DIR);
+    const dir = pathmod.resolve(root, safe);
+    if (!dir.startsWith(root + pathmod.sep)) throw new Error('Invalid workspace name');
+    rmSync(dir, { recursive: true, force: true });
+    onLine(`workspace ${safe} removed`);
+    return 0;
+  }
   if (op === 'agent.stats') return agentStatsOp(onLine);
   if (op === 'file.writeEnv') {
     const { path } = await writeEnvFileOp(params);
@@ -708,7 +825,16 @@ export async function runOp(op: string, params: Params, onLine: (l: string) => v
   }
   const def = OPS[op];
   if (!def) return -1;
-  const argv = def.build(params);
+  // A `workspace` operand runs the op inside that service's own directory.
+  // Git needs it (fetch/checkout/reset act on the cwd, so without it one host
+  // could hold a single checkout); `docker build` uses it so two services'
+  // build contexts cannot collide. Absent = the agent's own cwd, which is what
+  // every host-level op (networks, prune, inspect) wants.
+  const workspace = str(params, 'workspace');
+  const cwd = workspace === undefined ? undefined : await resolveWorkspace(workspace);
+  // r660: repository paths are symlink-walked under the directory the op
+  // runs in before any argv exists.
+  const argv = def.build(guardWorkspacePaths(op, params, cwd ?? process.cwd()));
 
   // `docker login` is built with `--password-stdin` so the credential never
   // appears in argv (and therefore never in `ps` or the process table). The
@@ -721,13 +847,6 @@ export async function runOp(op: string, params: Params, onLine: (l: string) => v
     return spawnValidated(def.exe, argv, onLine, { stdin: `${password}
 ` });
   }
-  // A `workspace` operand runs the op inside that service's own directory.
-  // Git needs it (fetch/checkout/reset act on the cwd, so without it one host
-  // could hold a single checkout); `docker build` uses it so two services'
-  // build contexts cannot collide. Absent = the agent's own cwd, which is what
-  // every host-level op (networks, prune, inspect) wants.
-  const workspace = str(params, 'workspace');
-  const cwd = workspace === undefined ? undefined : await resolveWorkspace(workspace);
   // r526: build/bring-up ops get the panel host's build budget instead of the
   // 595 s default (the panel waits as long for them — see LONG_AGENT_OPS).
   const timeoutMs = agentChildTimeoutMs(op);
@@ -807,7 +926,7 @@ async function main(): Promise<void> {
   const port = Number(process.env['NINEDEPLOY_AGENT_PORT'] ?? 4600);
 
   const app = await buildAgentApp();
-  await app.register(agentRoutes, { tokenHash });
+  await app.register(agentRoutes, { tokenHash, nonceFile: joinPath(process.cwd(), AGENT_NONCE_FILE) });
 
   await app.listen({ host: '0.0.0.0', port });
   // eslint-disable-next-line no-console
@@ -849,14 +968,72 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
 }
 
+/** r667: output characters one op answer carries (see the exec route). */
+const MAX_OP_OUTPUT_CHARS = 16 * 1024 * 1024;
+
+/** r668: the panel's nonce is 32 hex chars; anything bounded and token-shaped is accepted. */
+const RE_NONCE = /^[A-Za-z0-9_-]{1,128}$/;
+/** r668: hard ceiling on remembered nonces (the rate limit keeps it far below). */
+const MAX_SEEN_NONCES = 20_000;
+
+/** File (relative to the agent's working directory) persisting seen nonces across restarts. */
+export const AGENT_NONCE_FILE = '.agent-nonces';
+
+/**
+ * r668: reload the unexpired nonces persisted by {@link recordSeenNonce} and
+ * rewrite the file with just those. A missing or unreadable file starts empty
+ * — the in-memory protection still applies from the first request on.
+ */
+export function loadSeenNonces(file: string, into: Map<string, number>): void {
+  const now = Date.now();
+  try {
+    if (existsSync(file)) {
+      for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+        const [nonce, exp] = line.trim().split(' ');
+        const expiry = Number(exp);
+        if (nonce && RE_NONCE.test(nonce) && Number.isFinite(expiry) && expiry > now && into.size < MAX_SEEN_NONCES) {
+          into.set(nonce, expiry);
+        }
+      }
+    }
+    persistSeenNonces(file, into);
+  } catch (err) {
+    console.warn(`[NineDeploy Agent] Could not restore the replay cache from ${file}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/** r668: rewrite the file with exactly the live entries (compaction). */
+function persistSeenNonces(file: string, seen: Map<string, number>): void {
+  writeFileSync(file, [...seen].map(([n, e]) => `${n} ${e}\n`).join(''), { mode: 0o600 });
+}
+
+/** r668: appends between two compactions, so the file stays near the live set's size. */
+const NONCE_COMPACT_EVERY = 5_000;
+
+/** r668: append one seen nonce (best effort — the in-memory map is authoritative while running). */
+function recordSeenNonce(file: string, nonce: string, expiry: number): void {
+  try {
+    appendFileSync(file, `${nonce} ${expiry}\n`, { mode: 0o600 });
+  } catch {
+    /* disk full / read-only — protection holds until the next restart */
+  }
+}
+
 /**
  * The agent's HTTP surface, as a registerable plugin (used by main() and by
  * route tests). `tokenHash` is the sha256 of the shared agent token.
  */
-export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: { tokenHash?: string }) => {
+export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: { tokenHash?: string; nonceFile?: string }) => {
   /** Sealed-request nonces seen within the replay window → expiry (r174). */
   const seenNonces = new Map<string, number>();
   const tokenHash = opts.tokenHash ?? process.env['NINEDEPLOY_AGENT_TOKEN'] ?? '';
+  // r668: the cache used to live only in memory, so restarting the agent (a
+  // crash, an update, a reboot) reopened the replay window for every envelope
+  // captured in the five minutes before. Seen nonces are appended to a file
+  // and reloaded at start; the file is compacted to the live entries then.
+  const nonceFile = opts.nonceFile;
+  if (nonceFile !== undefined) loadSeenNonces(nonceFile, seenNonces);
+  let appendedSinceCompact = 0;
 
   app.post('/agent/exec', { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (req, reply) => {
     const raw = (req.body ?? {}) as { sealed?: unknown; op?: unknown; params?: unknown };
@@ -891,14 +1068,41 @@ export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: 
     // RESPONSE: a captured sealed `docker.rm` / `git.reset` envelope could be
     // re-posted for the whole ±5-minute seal window and it ran again. Every
     // nonce is remembered for twice that window (covering clock skew in both
-    // directions). Pre-nonce cores send none — legacy, still accepted.
-    if (sealedRequest && typeof input.nonce === 'string') {
+    // directions).
+    // r668: a sealed request WITHOUT a nonce is refused. Every panel since
+    // 0.7.3 seals a fresh nonce into each request (agentOp and the sealed
+    // ping), so the "pre-nonce core" this used to wave through cannot drive a
+    // supported agent — while a nonce-less envelope was replayable for the
+    // whole window, which is all an attacker needed to strip.
+    if (sealedRequest) {
+      if (typeof input.nonce !== 'string' || !RE_NONCE.test(input.nonce)) {
+        return reply.code(401).send({
+          error: { code: 'nonce_required', message: 'Sealed agent requests must carry a nonce — upgrade the NineDeploy panel' },
+        });
+      }
       const now = Date.now();
       for (const [n, exp] of seenNonces) if (exp <= now) seenNonces.delete(n);
       if (seenNonces.has(input.nonce)) {
         return reply.code(401).send({ error: { code: 'replayed', message: 'Replayed agent request' } });
       }
-      seenNonces.set(input.nonce, now + 2 * MAX_SKEW_MS);
+      // A bounded table: the route's rate limit already caps it near 1200.
+      if (seenNonces.size >= MAX_SEEN_NONCES) {
+        return reply.code(429).send({ error: { code: 'busy', message: 'Too many agent requests in the replay window' } });
+      }
+      const expiry = now + 2 * MAX_SKEW_MS;
+      seenNonces.set(input.nonce, expiry);
+      if (nonceFile !== undefined) {
+        if (++appendedSinceCompact >= NONCE_COMPACT_EVERY) {
+          appendedSinceCompact = 0;
+          try {
+            persistSeenNonces(nonceFile, seenNonces);
+          } catch {
+            /* best effort, like the append */
+          }
+        } else {
+          recordSeenNonce(nonceFile, input.nonce, expiry);
+        }
+      }
     }
     const op = typeof input.op === 'string' ? input.op : '';
     const params: Params = typeof input.params === 'object' && input.params ? (input.params as Params) : {};
@@ -906,11 +1110,34 @@ export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: 
       return reply.code(400).send({ error: { code: 'unknown_op', message: `Unknown operation: ${op}` } });
     }
     const lines: string[] = [];
+    // r667: the answer carries every output line, and 300 log LINES (or a
+    // chatty build) is no byte bound. Past MAX_OP_OUTPUT_CHARS the oldest
+    // lines are dropped — the end of an output is where its error is.
+    let keptChars = 0;
+    let dropped = 0; // lines[0..dropped) are discarded (compacted in batches, never shifted one by one)
+    let droppedEarlier = 0;
+    const collect = (l: string) => {
+      lines.push(l);
+      keptChars += l.length;
+      while (keptChars > MAX_OP_OUTPUT_CHARS && lines.length - dropped > 1) {
+        keptChars -= (lines[dropped] as string).length;
+        lines[dropped] = '';
+        dropped += 1;
+      }
+      if (dropped >= 65_536) {
+        lines.splice(0, dropped);
+        droppedEarlier += dropped;
+        dropped = 0;
+      }
+    };
     let exitCode: number;
     // For file.writeEnv, surface the remote env-file path for docker.runEnv.
     let envFile: string | null = null;
     try {
-      exitCode = await runOp(op, params, (l) => lines.push(l));
+      exitCode = await runOp(op, params, collect);
+      if (dropped + droppedEarlier > 0) {
+        lines.splice(0, dropped, `… ${dropped + droppedEarlier} earlier output line(s) omitted by the agent`);
+      }
       envFile = lines.find((l) => l.startsWith('wrote '))?.slice('wrote '.length) ?? null;
     } catch (err) {
       return reply.code(400).send({ error: { code: 'bad_params', message: err instanceof Error ? err.message : 'Invalid params' } });

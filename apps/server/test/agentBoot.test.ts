@@ -107,7 +107,11 @@ describe('agent bootstrap', () => {
     state.buildApp.mockResolvedValue(app);
     const mod = await importAgent();
     await vi.waitFor(() => expect(app.listen).toHaveBeenCalledWith({ host: '0.0.0.0', port: 4699 }));
-    expect(app.register).toHaveBeenCalledWith(expect.anything(), { tokenHash: 'a'.repeat(64) });
+    // r668: the replay cache persists next to the agent's other state.
+    expect(app.register).toHaveBeenCalledWith(expect.anything(), {
+      tokenHash: 'a'.repeat(64),
+      nonceFile: expect.stringMatching(/\.agent-nonces$/),
+    });
     expect(mod.agentMode.OPS).toBeDefined();
 
     // SIGTERM & SIGINT → graceful close.
