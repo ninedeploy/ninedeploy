@@ -183,6 +183,11 @@ export class WebhookOutPlugin implements KernelPlugin {
         },
         body,
         signal: AbortSignal.timeout(timeoutMs),
+        // r658: the endpoint is the operator's own (private receivers stay
+        // allowed, see lib/egressGuard.ts), but a redirect it answers with is
+        // not: following it re-posted the signed event to wherever the 3xx
+        // pointed — the metadata service included. A 3xx is a failed delivery.
+        redirect: 'manual',
       });
       status = res.status;
     } catch (err) {

@@ -40,6 +40,26 @@ describe('AI diagnosis routes', () => {
     await app.close();
   });
 
+  it('r658: hides the provider endpoint from non-operators, shows it to the operator', async () => {
+    // Read twice per request (config JSON, then key) — cycle through both.
+    let n = 0;
+    const db = createFakeDb({
+      findFirst: {
+        settings: () =>
+          n++ % 2 === 0
+            ? { key: 'ai_diagnosis_config', value: { baseUrl: 'http://10.0.0.5:8080/v1', model: 'gpt-test' } }
+            : { key: 'ai_diagnosis_key_encrypted', value: encrypt(TEST_KEY) },
+      },
+    });
+    const app = await buildTestApp({ db });
+    await app.register(aiRoutes, { prefix: '/ai' });
+    const member = await app.inject({ method: 'GET', url: '/ai/config', headers: asUser({ isOperator: false }) });
+    expect(member.json()).toMatchObject({ configured: true, baseUrl: null, model: 'gpt-test' });
+    const op = await app.inject({ method: 'GET', url: '/ai/config', headers: asUser() });
+    expect(op.json().baseUrl).toBe('http://10.0.0.5:8080/v1');
+    await app.close();
+  });
+
   it('refuses config writes from non-operators', async () => {
     const app = await buildTestApp({ db: createFakeDb() });
     await app.register(aiRoutes, { prefix: '/ai' });
@@ -118,7 +138,8 @@ describe('AI diagnosis routes', () => {
       }),
     });
     await app.register(aiRoutes, { prefix: '/ai' });
-    const res = await app.inject({ method: 'GET', url: '/ai/config', headers: asUser({ isOperator: false }) });
+    // Operator view (r658: a non-operator gets baseUrl: null).
+    const res = await app.inject({ method: 'GET', url: '/ai/config', headers: asUser() });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ configured: false, baseUrl: 'https://ai.example.com/v1', model: 'gpt-test', hasApiKey: false });
     await app.close();

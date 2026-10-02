@@ -48,7 +48,7 @@ import { isIP, type LookupFunction } from 'node:net';
  *   - the Vault address (`lib/vault.ts`), the log-search backend
  *     (`lib/logSearch.ts`), the telemetry `export_endpoint` and the
  *     `webhook-out` endpoint — Loki, Prometheus and Vault are internal by
- *     design.
+ *     design. (`webhook-out` does not follow redirects, r658.)
  * An earlier version of this comment claimed the OIDC issuer and the S3
  * endpoint were covered. They never were, and a security note that overstates
  * its coverage is worse than no note: it stops the next reader from checking.
