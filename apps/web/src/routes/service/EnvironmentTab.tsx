@@ -194,7 +194,8 @@ interface JobEntry {
   id: number;
   name: string;
   cron: string;
-  kind: 'deploy' | 'exec';
+  // r552: the SDK now types the server's full kind set (backup jobs list too).
+  kind: 'deploy' | 'exec' | 'backup';
   command: string;
   enabled: boolean;
   lastRunAt: string | null;

@@ -1,5 +1,5 @@
-import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
-import { NineDeployError, createClient } from '../src/index.js';
+import { afterAll, afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
+import { NineDeployError, createClient, type ScheduledJob } from '../src/index.js';
 
 interface RecordedInit {
   method?: string;
@@ -397,6 +397,21 @@ describe('createClient', () => {
       await client.jobs.runs(1, 2);
       expect(last(calls)).toMatchObject({ url: '/v1/services/1/jobs/2/runs', init: { method: 'GET' } });
     });
+
+    // r552: the PATCH was typed `{ ok }` though the server returns the full
+    // job, and `kind` lacked 'backup' (a valid server kind since jobs shipped).
+    it('create/update resolve to the serialized job, backup kind included', async () => {
+      const job = { id: 2, serviceId: 1, name: 'n', cron: '0 3 * * *', kind: 'backup', command: '', enabled: true, lastRunAt: null, createdAt: '2026-01-01T00:00:00.000Z' };
+      const { fetchMock, calls } = makeFetch(() => ok(job));
+      const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+      const created = await client.jobs.create(1, { name: 'n', cron: '0 3 * * *', kind: 'backup' });
+      expect(JSON.parse(String(last(calls).init.body))).toMatchObject({ kind: 'backup' });
+      const updated = await client.jobs.update(1, 2, { enabled: true });
+      expectTypeOf(updated).toEqualTypeOf<ScheduledJob>();
+      expectTypeOf(created.kind).toEqualTypeOf<'deploy' | 'exec' | 'backup'>();
+      expect(updated).toEqual(job);
+      expect(created.kind).toBe('backup');
+    });
   });
 
   describe('servers', () => {
@@ -783,6 +798,14 @@ describe('createClient', () => {
       expect(last(calls)).toMatchObject({ url: '/v1/networks/attach', init: { method: 'POST' } });
       await client.networks.detach({ network: 'net-a', container: 'c-1' });
       expect(last(calls)).toMatchObject({ url: '/v1/networks/detach', init: { method: 'POST' } });
+    });
+
+    // r557: the web called this raw because the SDK had no method.
+    it('lists a network\'s members (name URL-encoded)', async () => {
+      const { fetchMock, calls } = makeFetch(() => ok({ members: ['nd-svc-a-1'] }));
+      const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+      await expect(client.networks.members('net a')).resolves.toEqual({ members: ['nd-svc-a-1'] });
+      expect(last(calls)).toMatchObject({ url: '/v1/networks/net%20a/members', init: { method: 'GET' } });
     });
   });
 
@@ -1404,6 +1427,38 @@ describe('createClient', () => {
 
       await client.traefik.backupCerts();
       expect(last(calls)).toMatchObject({ url: '/v1/traefik/backup-certs', init: { method: 'POST' } });
+    });
+
+    // r557: config / version / update had no SDK methods (the web called them raw).
+    it('exercises config, version and update', async () => {
+      const { fetchMock, calls } = makeFetch((url) =>
+        ok(url.endsWith('/version')
+          ? { current: '3.1.0', latest: '3.2.0', outdated: true, image: 'traefik:v3' }
+          : url.endsWith('/update') ? { ok: true, newVersion: '3.2.0' } : { routers: [], services: [], middlewares: [] }),
+      );
+      const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+
+      await expect(client.traefik.config()).resolves.toEqual({ routers: [], services: [], middlewares: [] });
+      expect(last(calls)).toMatchObject({ url: '/v1/traefik/config', init: { method: 'GET' } });
+
+      await expect(client.traefik.version()).resolves.toMatchObject({ outdated: true, latest: '3.2.0' });
+      expect(last(calls)).toMatchObject({ url: '/v1/traefik/version', init: { method: 'GET' } });
+
+      await expect(client.traefik.update()).resolves.toEqual({ ok: true, newVersion: '3.2.0' });
+      expect(last(calls)).toMatchObject({ url: '/v1/traefik/update', init: { method: 'POST' } });
+    });
+
+    it('update widens the request budget to 10 minutes but never re-enables a disabled timeout', async () => {
+      const timeout = vi.spyOn(AbortSignal, 'timeout');
+      const { fetchMock } = makeFetch(() => ok({ ok: true, newVersion: null }));
+      await createClient({ baseUrl: 'http://api.test', fetch: fetchMock }).traefik.update();
+      expect(timeout).toHaveBeenLastCalledWith(600_000);
+      await createClient({ baseUrl: 'http://api.test', timeoutMs: 900_000, fetch: fetchMock }).traefik.update();
+      expect(timeout).toHaveBeenLastCalledWith(900_000);
+      timeout.mockClear();
+      await createClient({ baseUrl: 'http://api.test', timeoutMs: 0, fetch: fetchMock }).traefik.update();
+      expect(timeout).not.toHaveBeenCalled();
+      timeout.mockRestore();
     });
   });
 
