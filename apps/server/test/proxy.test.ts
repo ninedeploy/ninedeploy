@@ -5,6 +5,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { domains, serviceTargets, services } from '@ninedeploy/db';
 import { encryptDnsToken, ensureNetwork, ensureTraefik, getAcmeEmail, getDnsConfig, NETWORK, parseBasicAuth, parseCertExpiry, parseIpAllowlist, readCertificates, renderDynamicConfig, renderStaticConfig, traefikConfigFingerprint, writeDynamicConfig } from '../src/engine/proxy.js';
 import { load } from 'js-yaml';
+import { hashBasicAuthEntry } from '../src/lib/htpasswd.js';
 
 const h = vi.hoisted(() => {
   const capture = vi.fn(async () => '');
@@ -360,9 +361,9 @@ describe('writeDynamicConfig', () => {
     }
   });
 
-  it('sanitizes hostile characters out of the hostname and path (rule/YAML injection)', async () => {
+  it('sanitizes hostile characters out of the path (rule/YAML injection)', async () => {
     const db = makeDb(
-      [{ id: 1, serviceId: 1, hostname: 'evil`.example.com)inject', path: '/api`)breakout', ssl: false, status: 'active' }],
+      [{ id: 1, serviceId: 1, hostname: 'evil.example.com', path: '/api`)breakout', ssl: false, status: 'active' }],
       [{ id: 1, slug: 'web', port: 3000, runtimeId: 'web-1' }],
     );
 
@@ -370,8 +371,27 @@ describe('writeDynamicConfig', () => {
 
     const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
     // Backticks, ')' and other unsafe chars are stripped; the safe remainder is kept.
-    expect(yaml).toContain('Host(`evil.example.cominject`) && PathPrefix(`/apibreakout`)');
+    expect(yaml).toContain('Host(`evil.example.com`) && PathPrefix(`/apibreakout`)');
     expect(yaml).not.toMatch(/\)$/); // no unescaped ')' terminating a rule
+  });
+
+  // r630: a stored hostname the sanitiser has to CHANGE is not the host that
+  // was claimed — routing the stripped remainder routed someone else's name.
+  it('r630: refuses (skips) a stored hostname the sanitiser would have to change', async () => {
+    const db = makeDb(
+      [
+        { id: 1, serviceId: 1, hostname: 'evil`.example.com)inject', path: '/', ssl: false, status: 'active' },
+        { id: 2, serviceId: 1, hostname: '*_.apps.example.com', path: '/', ssl: false, status: 'active' },
+        { id: 3, serviceId: 1, hostname: 'good.example.com', path: '/', ssl: false, status: 'active' },
+      ],
+      [{ id: 1, slug: 'web', port: 3000, runtimeId: 'web-1' }],
+    );
+
+    const yaml = await renderDynamicConfig(db as never, { serverId: null });
+    expect(yaml).not.toContain('inject');
+    expect(yaml).not.toContain('apps.example.com');
+    expect(yaml).toContain('Host(`good.example.com`)');
+    expect(() => load(yaml)).not.toThrow();
   });
 
   it('skips a domain whose hostname is null or sanitizes to nothing', async () => {
@@ -1120,7 +1140,9 @@ describe('DNS-01 challenge (wildcard SSL)', () => {
     expect(yaml).toContain('mw_web_1_auth:');
     expect(yaml).toContain('basicAuth:');
     expect(yaml).toContain('- "admin:$apr1$xyz"');
-    expect(yaml).toContain('- "user:pass"');
+    // r636: a plaintext entry is rendered hashed — Traefik refuses plaintext.
+    expect(yaml).not.toContain('user:pass');
+    expect(yaml).toMatch(/- "user:\$apr1\$[./0-9A-Za-z]{1,8}\$[./0-9A-Za-z]{22}"/);
 
     expect(yaml).toContain('mw_web_1_ip:');
     expect(yaml).toContain('ipAllowList:');
@@ -1282,118 +1304,120 @@ describe('renderDynamicConfig scoping', () => {
   });
 });
 
-/**
- * r034 regression — the sticky middleware block is keyed by SERVICE
- * (`mw_sticky_<id>`) but used to be emitted once PER DOMAIN. A service with
- * two domains produced duplicate YAML mapping keys, and Traefik's file
- * provider (go-yaml v3) refuses the whole dynamic config over a duplicate
- * key — silently freezing that proxy's route table. js-yaml v4 enforces the
- * same duplicate-key rule and stands in as the validator here.
- */
-describe('sticky session middleware (r034 regression)', () => {
-  /** Extract the settings key from a drizzle eq(settings.key, key) predicate. */
-  const keyFromWhere = (where: unknown): string | undefined => {
-    let found: string | undefined;
-    const visited = new Set<object>();
-    const walk = (node: unknown): void => {
-      if (node == null || found !== undefined || typeof node !== 'object') return;
-      if (visited.has(node)) return;
-      visited.add(node);
-      if (Array.isArray(node)) {
-        for (const child of node) walk(child);
-        return;
-      }
-      const rec = node as { encoder?: unknown; value?: unknown; queryChunks?: unknown };
-      // Param chunks carry .value + .encoder; StringChunk also has .value.
-      if ('encoder' in rec && 'value' in rec) {
-        found ??= String(rec.value);
-        return;
-      }
-      if (rec.queryChunks) walk(rec.queryChunks);
-    };
-    try {
-      walk((where as { queryChunks?: unknown } | undefined)?.queryChunks ?? where);
-    } catch {
-      /* predicate shape not understood — answer "absent" */
+// ── Sticky sessions ────────────────────────────────────────────────────────
+/** Extract the settings key from a drizzle eq(settings.key, key) predicate. */
+const keyFromWhere = (where: unknown): string | undefined => {
+  let found: string | undefined;
+  const visited = new Set<object>();
+  const walk = (node: unknown): void => {
+    if (node == null || found !== undefined || typeof node !== 'object') return;
+    if (visited.has(node)) return;
+    visited.add(node);
+    if (Array.isArray(node)) {
+      for (const child of node) walk(child);
+      return;
     }
-    return found;
+    const rec = node as { encoder?: unknown; value?: unknown; queryChunks?: unknown };
+    // Param chunks carry .value + .encoder; StringChunk also has .value.
+    if ('encoder' in rec && 'value' in rec) {
+      found ??= String(rec.value);
+      return;
+    }
+    if (rec.queryChunks) walk(rec.queryChunks);
   };
+  try {
+    walk((where as { queryChunks?: unknown } | undefined)?.queryChunks ?? where);
+  } catch {
+    /* predicate shape not understood — answer "absent" */
+  }
+  return found;
+};
 
-  const stickyDb = (domainRows: unknown[], serviceRows: unknown[], enabled: Record<number, boolean>) => ({
-    ...makeDb(domainRows, serviceRows),
-    query: {
-      settings: {
-        findFirst: async (args?: { where?: unknown }) => {
-          const match = /^sticky_session:(\d+):enabled$/.exec(keyFromWhere(args?.where) ?? '');
-          if (match && enabled[Number(match[1])]) return { value: 'true' };
-          return undefined;
-        },
+/** A render db whose settings table answers the sticky toggles (+ any extra keys). */
+const stickyDb = (
+  domainRows: unknown[],
+  serviceRows: unknown[],
+  enabled: Record<number, boolean>,
+  extra: Record<string, unknown> = {},
+) => ({
+  ...makeDb(domainRows, serviceRows),
+  query: {
+    settings: {
+      findFirst: async (args?: { where?: unknown }) => {
+        const key = keyFromWhere(args?.where) ?? '';
+        const match = /^sticky_session:(\d+):enabled$/.exec(key);
+        if (match && enabled[Number(match[1])]) return { value: 'true' };
+        return key in extra ? { value: extra[key] } : undefined;
       },
     },
-  });
+  },
+});
 
-  const svc = (id: number, slug: string) => ({
-    id,
-    slug,
-    port: 3000,
-    runtimeId: `nd-svc-${slug}`,
-    type: 'docker',
-    serverId: null,
-  });
-  const dom = (id: number, serviceId: number, hostname: string) => ({
-    id,
-    serviceId,
-    hostname,
-    path: null,
-    ssl: true,
-    status: 'active',
-  });
+const svc = (id: number, slug: string) => ({
+  id,
+  slug,
+  port: 3000,
+  runtimeId: `nd-svc-${slug}`,
+  type: 'docker',
+  serverId: null,
+});
+const dom = (id: number, serviceId: number, hostname: string) => ({
+  id,
+  serviceId,
+  hostname,
+  path: null,
+  ssl: true,
+  status: 'active',
+});
 
-  const countStickyBlocks = (yaml: string, id: number) => (yaml.match(new RegExp(`^    mw_sticky_${id}:$`, 'gm')) ?? []).length;
-  const countStickyRefs = (yaml: string, id: number) => (yaml.match(new RegExp(`^        - mw_sticky_${id}$`, 'gm')) ?? []).length;
+/**
+ * r631 — Traefik v3 has NO `sticky` middleware: stickiness lives on the
+ * service's load balancer (`services.<x>.loadBalancer.sticky.cookie`). The
+ * toggle used to emit `middlewares.mw_sticky_<id>.sticky`, and the file
+ * provider refuses the whole dynamic config over an unknown middleware type —
+ * one service admin's toggle froze routing for the entire instance.
+ * (r034, still guarded: whatever is emitted must not duplicate a YAML key —
+ * js-yaml v4 enforces the same duplicate-key rule as Traefik's go-yaml v3.)
+ */
+describe('sticky session (r631: load-balancer cookie, never a middleware)', () => {
+  type LbDoc = {
+    http: {
+      middlewares?: Record<string, unknown>;
+      routers: Record<string, { middlewares?: string[] }>;
+      services: Record<string, { loadBalancer: { sticky?: { cookie?: { name?: string; httpOnly?: boolean } } } }>;
+    };
+  };
 
-  it('emits one middleware block for a multi-domain sticky service — no duplicate YAML keys', async () => {
+  it('puts the cookie on the load balancer of every domain of a sticky service', async () => {
     const db = stickyDb(
       [dom(1, 1, 'a.example.com'), dom(2, 1, 'b.example.com')],
       [svc(1, 'web')],
       { 1: true },
     );
     const yaml = await renderDynamicConfig(db as never, { serverId: null });
-    expect(countStickyBlocks(yaml, 1)).toBe(1);
-    // Every router still references the shared middleware.
-    expect(countStickyRefs(yaml, 1)).toBe(2);
-    // js-yaml (same duplicate-key rule as Traefik v3's go-yaml) must accept it.
-    const doc = load(yaml) as { http: { middlewares: Record<string, unknown> } };
-    expect(Object.keys(doc.http.middlewares ?? {})).toContain('mw_sticky_1');
+    const doc = load(yaml) as LbDoc;
+    expect(doc.http.services['svc_web_1']?.loadBalancer.sticky?.cookie).toEqual({ name: 'ninedeploy_sticky', httpOnly: true });
+    expect(doc.http.services['svc_web_2']?.loadBalancer.sticky?.cookie?.name).toBe('ninedeploy_sticky');
+    // No middleware of that name (or type) exists any more, and no router points at one.
+    expect(yaml).not.toContain('mw_sticky');
+    expect(Object.values(doc.http.middlewares ?? {}).some((m) => 'sticky' in (m as object))).toBe(false);
   });
 
-  it('keeps a single-domain sticky service unchanged', async () => {
-    const db = stickyDb([dom(1, 1, 'a.example.com')], [svc(1, 'web')], { 1: true });
-    const yaml = await renderDynamicConfig(db as never, { serverId: null });
-    expect(countStickyBlocks(yaml, 1)).toBe(1);
-    expect(countStickyRefs(yaml, 1)).toBe(1);
-  });
-
-  it('emits one block per sticky service when several services are sticky', async () => {
+  it('scopes stickiness to the services that enabled it', async () => {
     const db = stickyDb(
       [dom(1, 1, 'a.example.com'), dom(2, 2, 'b.example.com')],
       [svc(1, 'web'), svc(2, 'api')],
-      { 1: true, 2: true },
+      { 1: true, 2: false },
     );
-    const yaml = await renderDynamicConfig(db as never, { serverId: null });
-    expect(countStickyBlocks(yaml, 1)).toBe(1);
-    expect(countStickyBlocks(yaml, 2)).toBe(1);
+    const doc = load(await renderDynamicConfig(db as never, { serverId: null })) as LbDoc;
+    expect(doc.http.services['svc_web_1']?.loadBalancer.sticky).toBeDefined();
+    expect(doc.http.services['svc_api_2']?.loadBalancer.sticky).toBeUndefined();
   });
 
-  it('emits no sticky block when the flag is off', async () => {
-    const db = stickyDb(
-      [dom(1, 1, 'a.example.com'), dom(2, 1, 'b.example.com')],
-      [svc(1, 'web')],
-      { 1: false },
-    );
+  it('emits no sticky cookie when the flag is off', async () => {
+    const db = stickyDb([dom(1, 1, 'a.example.com')], [svc(1, 'web')], { 1: false });
     const yaml = await renderDynamicConfig(db as never, { serverId: null });
-    expect(countStickyBlocks(yaml, 1)).toBe(0);
-    expect(countStickyRefs(yaml, 1)).toBe(0);
+    expect(yaml).not.toContain('sticky');
   });
 });
 
@@ -1479,7 +1503,8 @@ describe('domain headers middleware is Traefik-parseable (r036 regression)', () 
     const doc = load(yaml) as {
       http: { middlewares: Record<string, { basicAuth?: { users?: string[] } }> };
     };
-    expect(doc.http.middlewares['mw_web_1_auth']?.basicAuth?.users).toContain('alice:pwhash');
+    // r636: the control byte is stripped BEFORE the plaintext is hashed.
+    expect(doc.http.middlewares['mw_web_1_auth']?.basicAuth?.users).toEqual([hashBasicAuthEntry('alice:pwhash', true)]);
   });
 });
 
@@ -1504,5 +1529,227 @@ describe('wildcard HostRegexp escaping (r040 regression)', () => {
     // correctly escaped rule carries `foo\\*bar` in the raw file text.
     expect(yaml).toContain('foo\\\\*bar');
     expect(yaml).not.toContain('foo*bar');
+  });
+});
+
+// ── r633: a www companion is never claimed over another service's row ─────
+describe('www companion vs other services (r633)', () => {
+  it('does not route the companion while another service holds it, even pending or not deployed', async () => {
+    for (const other of [
+      { status: 'pending', runtimeId: 'api-1' },
+      { status: 'active', runtimeId: null },
+    ]) {
+      const db = makeDb(
+        [
+          { id: 1, serviceId: 1, hostname: 'example.com', path: '/', ssl: false, redirectWww: true, status: 'active' },
+          { id: 2, serviceId: 2, hostname: 'www.example.com', path: '/', ssl: false, status: other.status },
+        ],
+        [
+          { id: 1, slug: 'web', port: 3000, runtimeId: 'web-1' },
+          { id: 2, slug: 'api', port: 4000, runtimeId: other.runtimeId },
+        ],
+      );
+      const yaml = await renderDynamicConfig(db as never, { serverId: null });
+      expect(yaml).toContain('rule: "Host(`example.com`)"');
+      expect(yaml).not.toContain('Host(`www.example.com`)');
+    }
+  });
+});
+
+// ── r637: plain HTTP reaches HTTPS instead of a 404 ─────────────────────────
+describe('http→https redirect (r637)', () => {
+  type Doc = {
+    http: {
+      routers: Record<string, { rule: string; entryPoints: string[]; middlewares?: string[]; tls?: unknown; priority?: number }>;
+      middlewares?: Record<string, { redirectScheme?: { scheme: string; permanent: boolean } }>;
+    };
+  };
+
+  it('gives an SSL domain a plain-HTTP twin that redirects; a non-SSL domain keeps serving HTTP', async () => {
+    const db = makeDb(
+      [
+        { id: 1, serviceId: 1, hostname: 'secure.example.com', path: '/app', ssl: true, status: 'active' },
+        { id: 2, serviceId: 1, hostname: 'plain.example.com', path: '/', ssl: false, status: 'active' },
+      ],
+      [{ id: 1, slug: 'web', port: 3000, runtimeId: 'web-1' }],
+    );
+    const doc = load(await renderDynamicConfig(db as never, { serverId: null })) as Doc;
+    const twin = doc.http.routers['web_1_http'];
+    expect(twin?.entryPoints).toEqual(['web']);
+    expect(twin?.rule).toBe(doc.http.routers['web_1']?.rule);
+    expect(twin?.tls).toBeUndefined();
+    expect(twin?.middlewares).toEqual(['mw_https_redirect']);
+    expect(doc.http.middlewares?.['mw_https_redirect']).toEqual({ redirectScheme: { scheme: 'https', permanent: false } });
+    expect(doc.http.routers['web_1']?.entryPoints).toEqual(['websecure']);
+    expect(doc.http.routers['web_2_http']).toBeUndefined();
+    expect(doc.http.routers['web_2']?.entryPoints).toEqual(['web']);
+  });
+
+  it('emits no redirect middleware when nothing uses it', async () => {
+    const db = makeDb(
+      [{ id: 2, serviceId: 1, hostname: 'plain.example.com', path: '/', ssl: false, status: 'active' }],
+      [{ id: 1, slug: 'web', port: 3000, runtimeId: 'web-1' }],
+    );
+    expect(await renderDynamicConfig(db as never, { serverId: null })).not.toContain('mw_https_redirect');
+  });
+
+  it('redirects the panel to HTTPS only when it has a real certificate', async () => {
+    process.env['NINEDEPLOY_DOMAIN'] = 'panel.example.com';
+    try {
+      // No ACME: the panel router is left exactly as before.
+      const before = load(await renderDynamicConfig(makeDb([], []) as never, { serverId: null })) as Doc;
+      expect(before.http.routers['ninedeploy_panel']?.entryPoints).toEqual(['websecure', 'web']);
+      expect(before.http.routers['ninedeploy_panel_http']).toBeUndefined();
+
+      h.config.acmeEmail = 'ops@example.com';
+      const after = load(await renderDynamicConfig(makeDb([], []) as never, { serverId: null })) as Doc;
+      expect(after.http.routers['ninedeploy_panel']?.entryPoints).toEqual(['websecure']);
+      const http = after.http.routers['ninedeploy_panel_http'];
+      expect(http?.entryPoints).toEqual(['web']);
+      expect(http?.middlewares).toEqual(['mw_https_redirect']);
+      // Same precedence as the TLS router: no service rule can out-rank it.
+      expect(http?.priority).toBe(after.http.routers['ninedeploy_panel']?.priority);
+    } finally {
+      h.config.acmeEmail = null;
+      delete process.env['NINEDEPLOY_DOMAIN'];
+    }
+  });
+});
+
+// ── r638 golden: the rendered dynamic config only uses what Traefik v3 has ──
+// A middleware TYPE Traefik does not know (r631's `sticky`), an unknown field
+// or a mis-indented key (the replica `healthCheck`) makes the file provider
+// refuse the WHOLE dynamic config — every route on the proxy freezes. This
+// renders a config that exercises every middleware type, router shape and
+// load-balancer option the renderer can emit and validates it structurally.
+describe('golden dynamic config is valid Traefik v3 (r638)', () => {
+  /** Traefik v3 HTTP middleware types (docs: routing/middlewares/http). */
+  const TRAEFIK_V3_MIDDLEWARES = new Set([
+    'addPrefix', 'basicAuth', 'buffering', 'chain', 'circuitBreaker', 'compress', 'contentType', 'digestAuth',
+    'errors', 'forwardAuth', 'grpcWeb', 'headers', 'ipAllowList', 'inFlightReq', 'passTLSClientCert', 'plugin',
+    'rateLimit', 'redirectRegex', 'redirectScheme', 'replacePath', 'replacePathRegex', 'retry', 'stripPrefix',
+    'stripPrefixRegex',
+  ]);
+  const ROUTER_KEYS = new Set(['rule', 'ruleSyntax', 'service', 'middlewares', 'entryPoints', 'tls', 'priority', 'observability']);
+  const TLS_KEYS = new Set(['certResolver', 'domains', 'options']);
+  const LB_KEYS = new Set(['servers', 'sticky', 'healthCheck', 'passHostHeader', 'responseForwarding', 'serversTransport']);
+  const COOKIE_KEYS = new Set(['name', 'secure', 'httpOnly', 'sameSite', 'maxAge', 'path', 'domain']);
+  const HEALTH_KEYS = new Set([
+    'scheme', 'mode', 'path', 'method', 'status', 'port', 'interval', 'unhealthyInterval', 'timeout', 'hostname',
+    'followRedirects', 'headers',
+  ]);
+
+  /** Every middleware type the renderer source can emit: `middlewares.push(` … `      <type>:\n`. */
+  function middlewareTypesInSource(): Set<string> {
+    const src = readFileSync(path.join(__dirname, '../src/engine/proxy.ts'), 'utf8');
+    // The source spells the newline as the two characters `\` `n`.
+    const typeLine = / {6}([A-Za-z]+):\\n/;
+    const out = new Set<string>();
+    let at = src.indexOf('middlewares.push(');
+    while (at !== -1) {
+      const m = typeLine.exec(src.slice(at, src.indexOf(');', at)));
+      if (m?.[1]) out.add(m[1]);
+      at = src.indexOf('middlewares.push(', at + 1);
+    }
+    return out;
+  }
+
+  const keysOf = (o: unknown): string[] => Object.keys((o ?? {}) as object);
+
+  it('uses only real middleware types, fields and references', async () => {
+    h.config.acmeEmail = 'ops@example.com';
+    Object.assign(h.config, { dnsProvider: 'cloudflare', dnsToken: 'tok', wildcardDomain: 'example.com' });
+    try {
+      const db = stickyDb(
+        [
+          {
+            id: 1, serviceId: 1, hostname: 'example.com', path: '/', ssl: true, redirectWww: true, status: 'active',
+            headers: JSON.stringify([{ name: 'X-Frame-Options', value: 'DENY' }]),
+            basicAuth: JSON.stringify(['admin:$apr1$abcdefgh$h9FWgUz3n9YxylKLlR5SQ/', 'legacy:plaintext']),
+            ipAllowlist: '10.0.0.0/8, 1.2.3.4/32',
+            rateLimitAverage: 10,
+            rateLimitBurst: 20,
+          },
+          { id: 2, serviceId: 1, hostname: '*.example.com', path: '/', ssl: true, status: 'active' },
+          { id: 3, serviceId: 2, hostname: 'api.example.com', path: '/v1', ssl: false, status: 'active' },
+          { id: 4, serviceId: 2, hostname: 'awaiting.example.org', path: '/', ssl: true, status: 'pending' },
+        ],
+        [
+          { ...svc(1, 'web'), replicas: 3, runtimeReplicas: 3, healthPath: '/healthz' },
+          { ...svc(2, 'api'), type: 'pm2' },
+        ],
+        { 1: true },
+        { panel_domain: 'panel.example.com' },
+      );
+      const yaml = await renderDynamicConfig(db as never, { serverId: null });
+      const doc = load(yaml) as {
+        http: {
+          routers: Record<string, Record<string, unknown>>;
+          middlewares: Record<string, Record<string, unknown>>;
+          services: Record<string, { loadBalancer: Record<string, unknown> }>;
+        };
+        tls?: unknown;
+      };
+
+      expect(keysOf(doc).every((k) => k === 'http' || k === 'tls')).toBe(true);
+      expect(keysOf(doc.http).sort()).toEqual(['middlewares', 'routers', 'services']);
+
+      // Middlewares: exactly one type each, every type a real one, and every
+      // type the source can emit is exercised by this fixture.
+      const rendered = new Set<string>();
+      for (const [name, mw] of Object.entries(doc.http.middlewares)) {
+        const types = keysOf(mw);
+        expect(types, name).toHaveLength(1);
+        expect(TRAEFIK_V3_MIDDLEWARES.has(types[0]!), `${name}: ${types[0]}`).toBe(true);
+        rendered.add(types[0]!);
+      }
+      const inSource = middlewareTypesInSource();
+      expect(inSource.size).toBeGreaterThanOrEqual(6);
+      for (const t of inSource) {
+        expect(TRAEFIK_V3_MIDDLEWARES.has(t), `source emits unknown middleware type "${t}"`).toBe(true);
+        expect(rendered.has(t), `golden fixture does not exercise "${t}"`).toBe(true);
+      }
+
+      // Routers: known keys, and every reference resolves.
+      for (const [name, r] of Object.entries(doc.http.routers)) {
+        for (const k of keysOf(r)) expect(ROUTER_KEYS.has(k), `${name}.${k}`).toBe(true);
+        expect(doc.http.services[r['service'] as string], `${name} → ${String(r['service'])}`).toBeDefined();
+        for (const m of (r['middlewares'] as string[] | undefined) ?? []) {
+          expect(doc.http.middlewares[m], `${name} → ${m}`).toBeDefined();
+        }
+        if (r['tls'] && typeof r['tls'] === 'object') {
+          for (const k of keysOf(r['tls'])) expect(TLS_KEYS.has(k), `${name}.tls.${k}`).toBe(true);
+        }
+      }
+
+      // Services: known load-balancer options, sticky as a cookie, a
+      // correctly nested health check for the replicated service.
+      for (const [name, s] of Object.entries(doc.http.services)) {
+        expect(keysOf(s), name).toEqual(['loadBalancer']);
+        for (const k of keysOf(s.loadBalancer)) expect(LB_KEYS.has(k), `${name}.loadBalancer.${k}`).toBe(true);
+        expect(Array.isArray(s.loadBalancer['servers']), `${name}.servers`).toBe(true);
+        const sticky = s.loadBalancer['sticky'] as { cookie?: unknown } | undefined;
+        if (sticky) {
+          expect(keysOf(sticky)).toEqual(['cookie']);
+          for (const k of keysOf(sticky.cookie)) expect(COOKIE_KEYS.has(k), `${name}.sticky.cookie.${k}`).toBe(true);
+        }
+        for (const k of keysOf(s.loadBalancer['healthCheck'])) {
+          expect(HEALTH_KEYS.has(k), `${name}.healthCheck.${k}`).toBe(true);
+        }
+      }
+      expect(doc.http.services['svc_web_1']?.loadBalancer['sticky']).toBeDefined();
+      expect(doc.http.services['svc_web_1']?.loadBalancer['healthCheck']).toMatchObject({ path: '/healthz' });
+
+      // Basic Auth is hashed, never plaintext; the pending domain is absent.
+      const users = (doc.http.middlewares['mw_web_1_auth']?.['basicAuth'] as { users?: string[] } | undefined)?.users ?? [];
+      expect(users).toHaveLength(2);
+      expect(users.every((u) => /^[^:]+:\$apr1\$/.test(u))).toBe(true);
+      expect(yaml).not.toContain('plaintext');
+      expect(yaml).not.toContain('awaiting.example.org');
+      expect(doc.tls).toBeDefined();
+    } finally {
+      h.config.acmeEmail = null;
+      Object.assign(h.config, { dnsProvider: null, dnsToken: null, wildcardDomain: '' });
+    }
   });
 });

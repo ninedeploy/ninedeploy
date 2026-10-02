@@ -11,6 +11,7 @@ import { decrypt, encrypt } from '../lib/crypto.js';
 import { audit } from '../lib/audit.js';
 import { ensureDockerImage } from '../lib/dockerPull.js';
 import { hostsCollide, wwwCompanionHost } from '../lib/domainVerification.js';
+import { hashBasicAuthEntry, parseBasicAuth } from '../lib/htpasswd.js';
 import { reapTraefikNetworks } from '../lib/serviceBridge.js';
 import { MAX_REPLICAS, NETWORK, replicaNames, TRAEFIK_CONTAINER, TRAEFIK_IMAGE } from './dockerNames.js';
 
@@ -18,6 +19,8 @@ import { MAX_REPLICAS, NETWORK, replicaNames, TRAEFIK_CONTAINER, TRAEFIK_IMAGE }
 // import each other, and a constant declared in one of them is in its temporal
 // dead zone for the other. See engine/dockerNames.ts.
 export { NETWORK, TRAEFIK_CONTAINER, TRAEFIK_IMAGE } from './dockerNames.js';
+// r636: the parser moved next to the hashing it now feeds; kept exported here.
+export { parseBasicAuth } from '../lib/htpasswd.js';
 
 /**
  * Whitelists for Traefik rule operands. Hostnames may contain DNS chars plus a
@@ -38,6 +41,31 @@ const PATH_RE = /[^A-Za-z0-9.\-/_]/g;
  * of this), so the control plane always keeps its own domain.
  */
 const PANEL_ROUTER_PRIORITY = 100_000;
+
+/**
+ * r637: the one middleware every plain-HTTP twin of an SSL router uses. Not
+ * permanent: a 301/308 is cached by browsers for good, and turning a
+ * domain's SSL toggle off must take effect.
+ */
+const HTTPS_REDIRECT_MW = 'mw_https_redirect';
+
+/**
+ * r630: rows the proxy refuses to render, keyed `<id>:<hostname>`. The render
+ * runs on every deploy and routing change, so each refusal is audited once
+ * per process rather than once per write.
+ */
+const renderRefusalsAudited = new Set<string>();
+
+function auditRenderRefusal(db: DB, d: { id: number; serviceId: number; hostname: string | null }, reason: string): void {
+  const key = `${d.id}:${d.hostname ?? ''}`;
+  if (renderRefusalsAudited.has(key)) return;
+  renderRefusalsAudited.add(key);
+  void audit(db, null, 'domain.render_skipped', String(d.hostname ?? `#${d.id}`).slice(0, 253), {
+    domainId: d.id,
+    serviceId: d.serviceId,
+    reason,
+  });
+}
 
 /** Atomically replace `file`'s contents: write to a sibling temp file then rename. */
 function writeAtomic(file: string, content: string): void {
@@ -635,9 +663,9 @@ export async function renderDynamicConfig(
   const svcBlocks: string[] = [];
   const middlewares: string[] = [];
   const seen = new Set<string>();
-  // Sticky middleware blocks are keyed by SERVICE, not domain — track what has
-  // been emitted so a multi-domain service cannot produce a duplicate key.
-  const stickyEmitted = new Set<number>();
+  // r637: emitted once, only when some router uses it — an unreferenced
+  // middleware is harmless, but an empty `middlewares:` section is not.
+  let httpsRedirectUsed = false;
 
   for (const d of all) {
     // H-2 layer 2: a domain awaiting DNS ownership proof must not route. This
@@ -648,8 +676,20 @@ export async function renderDynamicConfig(
     if (!svc?.port || !svc.runtimeId) continue; // need a running container to route to
     const key = `${svc.slug}_${d.id}`;
     // Sanitize operands against rule/YAML injection (see HOST_RE/PATH_RE).
-    const host = String(d.hostname ?? '').replace(HOST_RE, '');
+    const stored = String(d.hostname ?? '').trim();
+    const host = stored.replace(HOST_RE, '');
     if (!host) continue; // every char was stripped → the hostname is unusable/unsafe
+    // r630: a host that only became valid BY the stripping is not the host
+    // that was claimed. Every ownership check compared the stored string, so
+    // `*_.apps.example.com` passed as an ordinary name and rendered as the
+    // `*.apps.example.com` catch-all; `vic_tim.…` rendered as `victim.…`.
+    // New rows can no longer be stored like that (`isRoutableHostname`), but
+    // rows written before are refused here — skipped and audited, never
+    // allowed to break the file.
+    if (host !== stored) {
+      auditRenderRefusal(db, d, 'hostname contains characters a Traefik rule cannot carry; it was never routable as stored');
+      continue;
+    }
     const cleanPath = String(d.path ?? '').replace(PATH_RE, '');
     const entry = d.ssl ? 'websecure' : 'web';
     // Per-domain middlewares: www→apex redirect + custom response headers + basicAuth + ipAllowlist + rateLimit.
@@ -662,13 +702,18 @@ export async function renderDynamicConfig(
     // The rule is only extended when no other active row already routes the
     // companion host — Traefik ranks routers by rule length, so the extended
     // rule would silently steal that row's traffic.
+    // r633: and never over ANOTHER service's row on it, whatever its state:
+    // a pending or not-yet-deployed claim is still someone else's claim, and
+    // rows saved before the companion was claim-checked are guarded here.
     const companion = d.redirectWww && !host.startsWith('*.') ? wwwCompanionHost(host) : null;
     const companionTaken =
       companion != null &&
       all.some((o) => {
-        if (o.id === d.id || o.status !== 'active') return false;
+        if (o.id === d.id || !hostsCollide(String(o.hostname ?? ''), companion)) return false;
+        if (o.serviceId !== d.serviceId) return true;
+        if (o.status !== 'active') return false;
         const osvc = servicesById.get(o.serviceId);
-        return !!osvc?.port && !!osvc.runtimeId && hostsCollide(o.hostname, companion);
+        return !!osvc?.port && !!osvc.runtimeId;
       });
     const wwwPair = companion != null && !companionTaken;
     // The apex form of the pair — `www.` stripped when that left a real host.
@@ -715,7 +760,10 @@ export async function renderDynamicConfig(
         .join('\n');
       middlewares.push(`    ${mw}:\n      headers:\n        customResponseHeaders:\n${lines}\n`);
     }
-    const authUsers = parseBasicAuth(d.basicAuth);
+    // r636: Traefik compares only hashed htpasswd secrets — a plaintext entry
+    // (every row saved before hashing on write) refused every login. Hashed
+    // here with a salt derived from the entry, so re-renders are byte-stable.
+    const authUsers = parseBasicAuth(d.basicAuth).map((e) => hashBasicAuthEntry(e, true));
     if (authUsers.length > 0) {
       const mw = `mw_${key}_auth`;
       mwList.push(mw);
@@ -736,27 +784,6 @@ export async function renderDynamicConfig(
       const burst = d.rateLimitBurst && d.rateLimitBurst > 0 ? d.rateLimitBurst : avg;
       middlewares.push(`    ${mw}:\n      rateLimit:\n        average: ${avg}\n        burst: ${burst}\n`);
     }
-    // G-28 sticky session — one middleware per service so every domain the
-    // service owns shares the same cookie. Every router references
-    // `mw_sticky_<id>`, but the block itself is emitted AT MOST ONCE per
-    // render: YAML forbids duplicate mapping keys, and Traefik's file
-    // provider (go-yaml v3) refuses the whole dynamic config over one, which
-    // would silently freeze that proxy's route table.
-    if (await getStickyEnabledForService(db, svc.id)) {
-      const stickyKey = `mw_sticky_${svc.id}`;
-      mwList.push(stickyKey);
-      if (!stickyEmitted.has(svc.id)) {
-        stickyEmitted.add(svc.id);
-        middlewares.push(
-          `    ${stickyKey}:\n` +
-            '      sticky:\n' +
-            '        cookie:\n' +
-            '          name: "ninedeploy_sticky"\n' +
-            '          maxAge: 86400\n',
-        );
-      }
-    }
-
     // Traefik v3's rule grammar forbids mixing `&&` and `||` without
     // parentheses — a pair rule joined to a PathPrefix must be wrapped.
     const needParens = hostMatcher.includes('||') && cleanPath && cleanPath !== '/';
@@ -772,6 +799,22 @@ export async function renderDynamicConfig(
         `      entryPoints:\n        - ${entry}` +
         tlsBlock,
     );
+    // r637: an SSL domain's router listens on `websecure` only, so plain
+    // http://host answered 404 — nothing ever sent a visitor to HTTPS. Its
+    // twin on `web` (same rule, so the same precedence against neighbouring
+    // routers) redirects instead. ACME's HTTP-01 challenge is answered by
+    // Traefik's internal router ahead of any of these, so issuance is
+    // unaffected. Domains with SSL off keep serving plain HTTP.
+    if (d.ssl) {
+      httpsRedirectUsed = true;
+      routers.push(
+        `    ${key}_http:\n` +
+          `      rule: "${yamlDoubleQuoted(fullRule)}"\n` +
+          `      service: svc_${key}\n` +
+          `      middlewares:\n        - ${HTTPS_REDIRECT_MW}\n` +
+          '      entryPoints:\n        - web',
+      );
+    }
     if (!seen.has(`svc_${key}`)) {
       seen.add(`svc_${key}`);
       // PM2 processes run on the HOST: their runtimeId is a PM2 process name,
@@ -796,13 +839,29 @@ export async function renderDynamicConfig(
       const servers = replicaNames(upstreamHost, replicaCount)
         .map((n) => `          - url: "http://${n}:${svc.port}"`)
         .join('\n');
+      // r638: `healthCheck` is a key of `loadBalancer` (8 spaces). It was
+      // indented like a `servers` list item (10), which is not valid YAML —
+      // Traefik refused the whole file the moment any service ran replicas.
       const healthCheck =
         replicaCount > 1
-          ? `\n          healthCheck:\n            path: "${yamlDoubleQuoted(healthPath)}"\n            interval: "10s"\n            timeout: "5s"`
+          ? `\n        healthCheck:\n          path: "${yamlDoubleQuoted(healthPath)}"\n          interval: "10s"\n          timeout: "5s"`
           : '';
+      // G-28 sticky session. r631: Traefik v3 has NO `sticky` middleware —
+      // stickiness is a property of the service's load balancer. The block
+      // used to be emitted as `middlewares.mw_sticky_<id>.sticky`, and the
+      // file provider refuses the WHOLE dynamic config over an unknown
+      // middleware type: one service admin flipping the toggle froze routing
+      // for the entire instance. Same setting key, no migration; stored
+      // toggles start working (and stop breaking the file) on upgrade.
+      // Only `name` + `httpOnly` — both present since Traefik v2 — so an
+      // older pinned `traefik:3` image cannot reject an option it predates.
+      const sticky = (await getStickyEnabledForService(db, svc.id))
+        ? '        sticky:\n          cookie:\n            name: "ninedeploy_sticky"\n            httpOnly: true\n'
+        : '';
       svcBlocks.push(
         `    svc_${key}:\n` +
           `      loadBalancer:\n` +
+          sticky +
           `        servers:\n` +
           servers +
           healthCheck,
@@ -829,6 +888,13 @@ export async function renderDynamicConfig(
       const tlsBlock = acmeEmail
         ? '\n      tls:\n        certResolver: letsencrypt'
         : '\n      tls: {}';
+      // r637: a router with a `tls` section serves HTTPS only — Traefik
+      // ignores it for plain-HTTP requests, so listing `web` here never made
+      // http://panel work; it answered 404. With a real certificate (ACME
+      // configured) plain HTTP now redirects to the TLS router. Without one
+      // the config is left exactly as it was: redirecting an operator onto a
+      // self-signed certificate is not a fix to make for them.
+      const redirectPanel = !!acmeEmail;
 
       routers.push(
         '    ninedeploy_panel:\n' +
@@ -843,10 +909,21 @@ export async function renderDynamicConfig(
           // that check (and on rows that predate it).
           `      priority: ${PANEL_ROUTER_PRIORITY}\n` +
           '      entryPoints:\n' +
-          '        - websecure\n' +
-          '        - web' +
+          '        - websecure' +
+          (redirectPanel ? '' : '\n        - web') +
           tlsBlock,
       );
+      if (redirectPanel) {
+        httpsRedirectUsed = true;
+        routers.push(
+          '    ninedeploy_panel_http:\n' +
+            `      rule: "${yamlDoubleQuoted(hostMatcher)}"\n` +
+            '      service: svc_ninedeploy_panel\n' +
+            `      middlewares:\n        - ${HTTPS_REDIRECT_MW}\n` +
+            `      priority: ${PANEL_ROUTER_PRIORITY}\n` +
+            '      entryPoints:\n        - web',
+        );
+      }
 
       svcBlocks.push(
         '    svc_ninedeploy_panel:\n' +
@@ -870,6 +947,10 @@ export async function renderDynamicConfig(
       '      domains:\n' +
       `        - main: "*.${apex}"\n` +
       `          sans:\n            - "${apex}"\n`;
+  }
+
+  if (httpsRedirectUsed) {
+    middlewares.push(`    ${HTTPS_REDIRECT_MW}:\n      redirectScheme:\n        scheme: https\n        permanent: false\n`);
   }
 
   // Traefik v3's file provider rejects empty sections (`middlewares: {}`
@@ -912,33 +993,6 @@ export function parseHeaders(raw: string | null | undefined): Array<{ name: stri
     // every control character (\p{Cc} = C0, C1 and DEL) — go-yaml v3 rejects
     // the whole stream over a raw control byte, even inside a quoted scalar.
     out.push({ name, value: h.value.replace(/["\\\p{Cc}]/gu, '') });
-  }
-  return out;
-}
-
-/** Parse the domain `basicAuth` column into sanitized user:hash entries. */
-export function parseBasicAuth(raw: string | null | undefined): string[] {
-  if (!raw) return [];
-  let entries: string[] = [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) {
-      entries = parsed.map(String);
-    } else {
-      entries = String(parsed).split(/[\n,]+/);
-    }
-  } catch {
-    entries = raw.split(/[\n,]+/);
-  }
-  const out: string[] = [];
-  for (const item of entries) {
-    // Controls must go: go-yaml v3 refuses the whole dynamic config over a
-    // raw control byte, quoted or not. \p{Cc} covers C0, C1 and DEL
-    // (superset of the old \r\n\0 strip).
-    const trimmed = item.trim().replace(/\p{Cc}/gu, '');
-    if (trimmed.includes(':')) {
-      out.push(trimmed);
-    }
   }
   return out;
 }
