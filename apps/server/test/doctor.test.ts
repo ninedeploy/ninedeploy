@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildTestApp, asUser, createFakeDb } from './helpers.js';
 import { doctorRoutes } from '../src/modules/doctor.js';
-import { fixDoctorFinding, panelExposureFinding, scanDoctor } from '../src/engine/doctor.js';
+import { fixDoctorFinding, panelExposureFinding, sandboxNetworkFinding, scanDoctor } from '../src/engine/doctor.js';
+import { SandboxPlugin } from '../src/kernel/sandbox/sandboxPlugin.js';
 
 const ex = vi.hoisted(() => ({ capture: vi.fn(), run: vi.fn() }));
 const ap = vi.hoisted(() => ({
@@ -363,5 +364,40 @@ describe('doctor: panel plaintext exposure (r575)', () => {
     expect(panelExposureFinding('10.0.0.5', 8080, false)?.title).toBe('The panel listens on 10.0.0.5:8080 over plain HTTP');
     expect(panelExposureFinding('10.0.0.5', undefined, false)?.target.name).toBe('10.0.0.5:3000');
     expect(panelExposureFinding(undefined, 3000, false)).toBeNull();
+  });
+});
+
+// ── r600: grandfathered sandbox plugins with unrestricted network ─────
+describe('doctor: sandbox plugin network (r600)', () => {
+  const sb = (id: string, enabled = true) => ({ id, enabled, manifest: { source: 'sandbox', target: id, code: 'x' } });
+
+  it('warns about ENABLED sandbox plugins when this Node cannot deny network (wired into the scan)', async () => {
+    const spy = vi.spyOn(SandboxPlugin, 'networkDenied').mockReturnValue(false);
+    try {
+      const db = createFakeDb({
+        select: { installed_plugins: [sb('acme'), sb('off', false), { id: 'mk', enabled: true, manifest: { source: 'marketplace' } }] },
+      });
+      const report = await scanDoctor(db);
+      const f = report.findings.find((x) => x.kind === 'sandbox_plugin_network');
+      expect(f).toMatchObject({ id: 'sandbox_plugin_network', severity: 'warn', action: null, target: { type: 'host', name: 'acme' } });
+      expect(f?.detail).toContain(process.version);
+      expect(f?.detail).toContain('Node.js to 25 or newer');
+      expect(f?.detail).not.toContain('off');
+      expect(report.healthy).toBe(false);
+
+      spy.mockReturnValue(true);
+      const clean = await scanDoctor(db);
+      expect(clean.findings.filter((x) => x.kind === 'sandbox_plugin_network')).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('is silent with no enabled sandbox plugins', () => {
+    expect(sandboxNetworkFinding([], false)).toBeNull();
+    expect(sandboxNetworkFinding([sb('off', false)], false)).toBeNull();
+    expect(sandboxNetworkFinding([sb('a'), sb('b')], false, 'v24.1.0')?.title).toBe(
+      '2 sandbox plugin(s) have unrestricted network access on Node v24.1.0',
+    );
   });
 });

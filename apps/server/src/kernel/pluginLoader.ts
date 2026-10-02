@@ -639,6 +639,36 @@ export function bootRestoreConflict(id: string): string | null {
   return null;
 }
 
+/**
+ * r600: the operator's explicit acceptance that sandbox plugins run with
+ * UNRESTRICTED network on a Node whose permission model has no net scope
+ * (Node < 25 — see `SandboxPlugin.networkDenied()`, r534). Read per call so
+ * changing .env + restart is the whole switch.
+ */
+export function sandboxNetworkOptIn(): boolean {
+  return process.env['NINEDEPLOY_ALLOW_SANDBOX_NETWORK'] === '1';
+}
+
+/**
+ * r600: thrown when a NEW sandbox install would get network access the
+ * sandbox cannot take away on this Node. Already-installed plugins keep
+ * loading (boot restore / enable / reload do not pass through here) — the
+ * Doctor reports them instead (`sandbox_plugin_network`).
+ */
+export class SandboxNetworkUnrestrictedError extends Error {
+  readonly statusCode = 409;
+  constructor() {
+    super(
+      `Sandbox plugins cannot be installed on Node ${process.version}: its permission model has no network ` +
+        `scope, so the plugin's code could open sockets and make HTTP requests from the panel host. ` +
+        `Either upgrade Node.js to 25 or newer (the Docker image already runs Node 26), or — if you accept ` +
+        `that sandbox plugins have unrestricted network — set NINEDEPLOY_ALLOW_SANDBOX_NETWORK=1 in .env ` +
+        `and restart NineDeploy.`,
+    );
+    this.name = 'SandboxNetworkUnrestrictedError';
+  }
+}
+
 /** A catalog the loader can resolve entries against. Injectable for tests. */
 export type Catalog = ReadonlyArray<Omit<MarketplacePluginItem, 'isInstalled'>>;
 
@@ -733,6 +763,11 @@ export async function installPlugin(
   const catalogEntry = catalog.find((m) => m.id === input.target);
   if (input.source === 'marketplace' && catalogEntry && catalogEntry.implemented !== true) {
     throw new UnimplementedPluginError(catalogEntry);
+  }
+  // r600: a sandbox is only a sandbox if it also cuts the network. Refuse a
+  // new install where it cannot, unless the operator opted in knowingly.
+  if (input.source === 'sandbox' && !SandboxPlugin.networkDenied() && !sandboxNetworkOptIn()) {
+    throw new SandboxNetworkUnrestrictedError();
   }
   const dynamicPlugin = createDynamicPlugin(input, catalog);
 

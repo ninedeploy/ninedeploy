@@ -12,6 +12,7 @@ import {
   restorePluginFromRow,
   uninstallPlugin,
 } from '../kernel/pluginLoader.js';
+import { SandboxPlugin } from '../kernel/sandbox/sandboxPlugin.js';
 
 /**
  * r531: an installed row whose id collides with a built-in is never loaded;
@@ -20,6 +21,16 @@ import {
  */
 const builtInCollision = (id: string): string =>
   bootRestoreConflict(id) ?? `Plugin "${id}" is a built-in plugin and cannot be managed through an installed row.`;
+
+/**
+ * r600: sandbox plugins carry `networkRestricted` — false on a Node whose
+ * permission model cannot deny the network (< 25), where the plugin's code
+ * can reach anything the panel host can. Additive: other plugins omit it.
+ */
+const sandboxNetworkField = (isSandbox: boolean): { networkRestricted?: boolean } =>
+  isSandbox ? { networkRestricted: SandboxPlugin.networkDenied() } : {};
+const rowIsSandbox = (row: { manifest: unknown } | undefined): boolean =>
+  (row?.manifest as Record<string, unknown> | null | undefined)?.['source'] === 'sandbox';
 
 export const pluginRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', app.authenticate);
@@ -54,6 +65,7 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
         menuItems: kp.menuItems ?? [],
         dependencies: kp.dependencies ?? [],
         ...(strayRow ? { error: strayRow.error ?? builtInCollision(kp.id) } : {}),
+        ...sandboxNetworkField(kp instanceof SandboxPlugin || rowIsSandbox(dbRow)),
         installedAt: dbRow?.createdAt?.toISOString() ?? new Date().toISOString(),
       });
     }
@@ -73,6 +85,7 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
         menuItems: [],
         dependencies: [],
         error: row.error ?? undefined,
+        ...sandboxNetworkField(rowIsSandbox(row)),
         installedAt: row.createdAt.toISOString(),
       });
     }
@@ -144,6 +157,7 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
       return result;
     } catch (err) {
       // r531: an id collision answers 409; everything else stays a 400.
+      // r600: so does a sandbox install refused for unrestricted network.
       const status = (err as { statusCode?: number }).statusCode === 409 ? 409 : 400;
       return reply.code(status).send({ error: (err as Error).message });
     }
@@ -270,6 +284,7 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
       menus,
       configSchema,
       error: dbRow?.error ?? null,
+      ...sandboxNetworkField(kernelPlugin instanceof SandboxPlugin || rowIsSandbox(dbRow ?? undefined)),
       installedAt,
       runtimeStats: {
         eventsHandled: null,
