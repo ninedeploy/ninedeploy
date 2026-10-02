@@ -143,10 +143,14 @@ describe('syncAllNodeProxies', () => {
       return { exitCode: 0, lines: [] };
     });
 
-    await syncAllNodeProxies(db, [1, 2, 3, 1]);
+    const results = await syncAllNodeProxies(db, [1, 2, 3, 1]);
 
     const visited = new Set(h.agentOp.mock.calls.map((c) => (c as unknown[])[1] as number));
     expect([...visited].sort()).toEqual([1, 2, 3]);
+    // r521: the per-node outcome reaches the caller (writeDynamicConfig fails
+    // a deploy whose own node is the one that failed).
+    expect(results.map((r) => [r.serverId, r.ok])).toEqual([[1, true], [2, false], [3, true]]);
+    expect(results[1]!.reason).toMatch(/node 2 is down/);
   });
 
   it('ignores ids that are not real server rows', async () => {

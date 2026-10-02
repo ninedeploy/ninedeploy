@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { dirname } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { containerExposedTcpPorts, dockerBuilder, nixpacksEnvArgs, sanitiseRuntimeLogs, writeEnvFile } from '../../src/engine/builders/docker.js';
+import { containerExposedTcpPorts, dockerBuilder, nixpacksEnvArgs, RAILPACK_CONTAINER_REASON, railpackRefusedForInstall, railpackUnavailableReason, sanitiseRuntimeLogs, writeEnvFile } from '../../src/engine/builders/docker.js';
 
 const h = vi.hoisted(() => {
   const run = vi.fn(async (_cmd: string, _args: unknown[], _opts: unknown, sink?: (line: string) => void) => {
@@ -1217,6 +1217,44 @@ describe('dockerBuilder.buildAndRun — static build pack', () => {
     expect(rpArgs).toContain('build');
     expect(rpArgs).toContain('--name');
     expect(rpArgs).toContain('ninedeploy/web:abcdef1');
+  });
+
+  // r520: the railpack branch did not mark the image as built, so it fell into
+  // the Dockerfile/Nixpacks dispatch and ran a second build — `docker build`
+  // against the Dockerfile-less repo railpack exists for (a failed deploy), or
+  // over the railpack image when the repo shipped a Dockerfile.
+  it('r520: a railpack build is the ONLY build — no docker build or nixpacks follows it', async () => {
+    h.run.mockResolvedValue(undefined);
+    const ctx = makeCtx({
+      service: { slug: 'web', image: null, port: 3000, repoUrl: 'https://github.com/acme/web', healthPath: '/', cpuShares: 0, memLimitMb: 0 },
+      workDir: '/work/web',
+      buildConfig: { buildPack: 'railpack', baseDir: '/' },
+    });
+
+    await dockerBuilder.buildAndRun(ctx as never);
+
+    expect(h.run.mock.calls.filter((c) => c[0] === 'railpack')).toHaveLength(1);
+    const builds = h.run.mock.calls.filter(
+      (c) => c[0] === 'nixpacks' || (c[0] === 'docker' && ['build', 'buildx'].includes((c[1] as string[])[0] ?? '')),
+    );
+    expect(builds).toEqual([]);
+    // The container still starts from the railpack image.
+    const runCall = h.run.mock.calls.find((c) => c[0] === 'docker' && (c[1] as string[])[0] === 'run');
+    expect(runCall?.[1]).toContain('ninedeploy/web:abcdef1');
+  });
+
+  it('r520: a container install refuses railpack with the fix named; bare metal probes the CLI', async () => {
+    expect(railpackRefusedForInstall(true)).toBe(RAILPACK_CONTAINER_REASON);
+    expect(railpackRefusedForInstall(false)).toBeNull();
+    expect(RAILPACK_CONTAINER_REASON).toMatch(/container image does not ship the Railpack CLI/);
+    expect(RAILPACK_CONTAINER_REASON).toMatch(/Switch the build pack/);
+
+    h.capture.mockRejectedValueOnce(new Error('spawn railpack ENOENT'));
+    expect(await railpackUnavailableReason(true)).toBe(RAILPACK_CONTAINER_REASON);
+    h.capture.mockRejectedValueOnce(new Error('spawn railpack ENOENT'));
+    expect(await railpackUnavailableReason(false)).toMatch(/Re-run the NineDeploy installer/);
+    h.capture.mockResolvedValueOnce('railpack 0.39.0');
+    expect(await railpackUnavailableReason(true)).toBeNull();
   });
 });
 

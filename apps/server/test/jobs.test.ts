@@ -491,3 +491,68 @@ describe('runJob', () => {
     void userRow;
   });
 });
+
+// r523: exec jobs ran the PANEL host's `docker exec` on runtimeId whatever the
+// service was — a PM2 process name or a container living on a node — and every
+// run failed with a bare docker error.
+describe('r523: exec jobs only where the panel can exec', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('refuses creating an exec job for a node-pinned or PM2 service, with the reason', async () => {
+    for (const svc of [svcRow({ serverId: 4, runtimeId: 'web-9' }), svcRow({ type: 'pm2', runtimeId: 'nd-web' })]) {
+      const app = await appWith({ findFirst: { services: svc } });
+      const res = await app.inject({
+        method: 'POST', url: '/services/1/jobs', headers: asUser(),
+        payload: { name: 'cleanup', cron: '0 * * * *', kind: 'exec', command: 'rm -rf /tmp/x' },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.code).toBe('exec_job_unsupported');
+      expect(res.json().error.message).toMatch(/Delete or disable this job/);
+    }
+  });
+
+  it('still accepts exec jobs for local docker and compose services', async () => {
+    for (const type of ['docker', 'compose']) {
+      const app = await appWith({
+        findFirst: { services: svcRow({ type }) },
+        insert: { scheduled_jobs: [jobRow({ id: 8, kind: 'exec', command: 'true' })] },
+      });
+      const res = await app.inject({
+        method: 'POST', url: '/services/1/jobs', headers: asUser(),
+        payload: { name: 'x', cron: '0 * * * *', kind: 'exec', command: 'true' },
+      });
+      expect(res.statusCode).toBe(200);
+    }
+  });
+
+  it('refuses keeping an unrunnable exec job enabled on patch, but lets it be disabled', async () => {
+    const fixtures = {
+      findFirst: { services: svcRow({ serverId: 4 }), scheduledJobs: jobRow({ id: 3, kind: 'exec', command: 'true', enabled: true }) },
+      update: { scheduled_jobs: [jobRow({ id: 3, kind: 'exec', enabled: false })] },
+    };
+    const app = await appWith(fixtures);
+    const edit = await app.inject({ method: 'PATCH', url: '/services/1/jobs/3', headers: asUser(), payload: { command: 'echo' } });
+    expect(edit.statusCode).toBe(400);
+    expect(edit.json().error.code).toBe('exec_job_unsupported');
+    const off = await app.inject({ method: 'PATCH', url: '/services/1/jobs/3', headers: asUser(), payload: { enabled: false } });
+    expect(off.statusCode).toBe(200);
+  });
+
+  it('fails the run with the reason instead of a docker error (existing jobs)', async () => {
+    const runs: Array<Record<string, unknown>> = [];
+    const db = createFakeDb({
+      findFirst: {
+        scheduledJobs: jobRow({ id: 4, kind: 'exec', command: 'echo hi' }),
+        services: svcRow({ serverId: 4, runtimeId: 'web-9' }),
+      },
+      insert: { jobRuns: (v: Record<string, unknown>) => { runs.push(v); return [{ id: 11, ...v }]; } },
+      update: { scheduledJobs: [{}], jobRuns: [{}] },
+    } as never);
+    await runJob(db, 4);
+    expect(execMocks.run).not.toHaveBeenCalled();
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ status: 'failed', exitCode: 1 });
+    expect(String(runs[0]!['output'])).toMatch(/remote server/);
+    expect(auditMocks.audit).toHaveBeenCalledWith(expect.anything(), null, 'job.exec_failed', expect.stringContaining('remote server'));
+  });
+});

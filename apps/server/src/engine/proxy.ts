@@ -8,6 +8,7 @@ import { config } from '../config.js';
 import { capture, run, sleep } from '../lib/exec.js';
 import { getSettingString } from '../lib/settings.js';
 import { decrypt, encrypt } from '../lib/crypto.js';
+import { audit } from '../lib/audit.js';
 import { ensureDockerImage } from '../lib/dockerPull.js';
 import { hostsCollide, wwwCompanionHost } from '../lib/domainVerification.js';
 import { reapTraefikNetworks } from '../lib/serviceBridge.js';
@@ -492,16 +493,33 @@ export function traefikConfigFingerprint(acmeEmail: string | null, dns: DnsConfi
  */
 let dynamicConfigTail: Promise<void> = Promise.resolve();
 
-export function writeDynamicConfig(db: DB): Promise<void> {
-  const run = dynamicConfigTail.then(() => writeDynamicConfigUnlocked(db));
+/** Options for {@link writeDynamicConfig}. */
+export interface DynamicConfigOptions {
+  /**
+   * r521: the node whose proxy MUST take this write. A deploy of a
+   * node-pinned service passes its node: the write then throws when that
+   * node's proxy could not be updated, so the pipeline's PROXY_SWAP fails and
+   * the previous runtime is kept (the r398 guarantee the panel host already
+   * had). Every other node's refresh stays best-effort.
+   */
+  requireNode?: number;
+}
+
+export function writeDynamicConfig(db: DB, opts: DynamicConfigOptions = {}): Promise<void> {
+  const run = dynamicConfigTail.then(() => writeDynamicConfigUnlocked(db, opts));
   dynamicConfigTail = run.then(() => undefined, () => undefined);
   return run;
 }
 
-async function writeDynamicConfigUnlocked(db: DB): Promise<void> {
+async function writeDynamicConfigUnlocked(db: DB, opts: DynamicConfigOptions): Promise<void> {
   writeAtomic(dynamicPath(), await renderDynamicConfig(db, { serverId: null }));
-  await refreshNodeProxies(db);
+  await refreshNodeProxies(db, opts.requireNode);
 }
+
+/** Per-node cooldown for the best-effort refresh audit — a dead node must not
+ *  write an audit row on every domain edit. In-memory on purpose (r521). */
+const NODE_SYNC_AUDIT_COOLDOWN_MS = 10 * 60_000;
+const lastNodeSyncAuditAt = new Map<number, number>();
 
 /**
  * Push the refreshed routing to every node that runs at least one service.
@@ -519,20 +537,55 @@ async function writeDynamicConfigUnlocked(db: DB): Promise<void> {
  * are fully evaluated, so there is no temporal-dead-zone hazard of the kind
  * `test/importCycles.test.ts` exists to catch.
  *
- * Never throws: a node that cannot be reached keeps serving its previous
- * config, and the panel's own routing must not fail because a worker is down.
+ * Best-effort for every node but `requireNode`: a node that cannot be reached
+ * keeps serving its previous config, and the panel's own routing must not
+ * fail because a worker is down — such a failure is audited instead (r521:
+ * it used to vanish entirely). The REQUIRED node is different: it is the one
+ * a deploy just started a new container on, and swallowing its failure made
+ * `routingFlipped` true and the pipeline stop the still-routed previous
+ * container on the node — an outage reported as a successful deploy.
  */
-async function refreshNodeProxies(db: DB): Promise<void> {
+async function refreshNodeProxies(db: DB, requireNode?: number): Promise<void> {
+  let results: Array<{ serverId: number; ok: boolean; reason?: string }> = [];
   try {
     // Ask which NODES exist, not which services are pinned: a node whose last
     // service was just deleted still needs its route table cleared, and a
     // single-host install pays one trivial select over an empty table.
     const nodes = await db.select({ id: servers.id }).from(servers);
+    if (requireNode != null && !nodes.some((n) => n.id === requireNode)) {
+      throw new Error(`node #${requireNode} is not registered`);
+    }
     if (nodes.length === 0) return;
     const { syncAllNodeProxies } = await import('../lib/nodeProxy.js');
-    await syncAllNodeProxies(db, nodes.map((n) => n.id));
-  } catch {
+    results = await syncAllNodeProxies(db, nodes.map((n) => n.id));
+  } catch (err) {
+    if (requireNode != null) {
+      throw new Error(`the proxy on node #${requireNode} could not be updated: ${err instanceof Error ? err.message : String(err)}`);
+    }
     /* a fleet refresh must never fail the panel's own routing write */
+    return;
+  }
+  let requiredFailure: string | undefined;
+  for (const r of results) {
+    if (r.ok) {
+      lastNodeSyncAuditAt.delete(r.serverId);
+      continue;
+    }
+    const reason = r.reason ?? 'unknown error';
+    if (r.serverId === requireNode) {
+      requiredFailure = reason;
+      continue;
+    }
+    const now = Date.now();
+    if (now - (lastNodeSyncAuditAt.get(r.serverId) ?? 0) < NODE_SYNC_AUDIT_COOLDOWN_MS) continue;
+    lastNodeSyncAuditAt.set(r.serverId, now);
+    void audit(db, null, 'server.proxy_sync_failed', `node #${r.serverId}`, {
+      serverId: r.serverId,
+      reason: reason.slice(0, 500),
+    });
+  }
+  if (requiredFailure !== undefined) {
+    throw new Error(`the proxy on node #${requireNode} could not be updated: ${requiredFailure}`);
   }
 }
 

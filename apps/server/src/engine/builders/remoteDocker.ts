@@ -206,6 +206,11 @@ export function createRemoteDockerBuilder(agent: AgentCall, opts: { pollMs?: num
         }
 
         target = `ninedeploy/${service.slug}:${commitSha.slice(0, 7) || 'latest'}`;
+        if (pack === 'railpack') {
+          // r520: say so instead of pretending — a node has no Railpack, and
+          // the build below is the repository's own Dockerfile.
+          log('Railpack is not available on a remote node — building the repository Dockerfile instead.');
+        }
         const dockerfile = (buildConfig?.dockerfilePath || 'Dockerfile').replace(/^\/+/, '') || 'Dockerfile';
         const baseDir = (buildConfig?.baseDir || '.').replace(/^\/+/, '') || '.';
         log(
@@ -370,11 +375,13 @@ export function createRemoteDockerBuilder(agent: AgentCall, opts: { pollMs?: num
     },
 
     async stop(runtimeId: string, opts?: { graceSeconds?: number }): Promise<void> {
-      // The agent's stop op pins `-t 5`; a per-service grace is a local-only
-      // refinement today. Both calls are best-effort: a container that is
-      // already gone must not fail the teardown.
-      void opts;
-      await agent('docker.stop', { name: runtimeId }, () => undefined).catch(() => undefined);
+      // r526: the service's stop grace reaches the node too (it used to be
+      // dropped and the agent pinned `-t 5`). An agent that predates the
+      // operand ignores it and keeps 5 s. Both calls are best-effort: a
+      // container that is already gone must not fail the teardown.
+      const params: Record<string, unknown> = { name: runtimeId };
+      if (opts?.graceSeconds !== undefined) params['graceSeconds'] = String(opts.graceSeconds);
+      await agent('docker.stop', params, () => undefined).catch(() => undefined);
       await agent('docker.rm', { name: runtimeId }, () => undefined).catch(() => undefined);
     },
   };

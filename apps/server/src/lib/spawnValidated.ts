@@ -6,7 +6,9 @@ import { armTimeout, makeLineSplitter } from './exec.js';
  * 600s (lib/agentClient AbortSignal.timeout) — without a child-side timeout a
  * stalled op keeps running orphaned, and an orphaned `git fetch` still holds
  * the workspace's .git locks so the NEXT op fails on "cannot lock ref".
- * 595s sits just under that request window.
+ * 595s sits just under that request window. r526: build/bring-up ops
+ * (agentClient LONG_AGENT_OPS) pass a longer `timeoutMs`, and the panel waits
+ * correspondingly longer for them.
  */
 const OP_TIMEOUT_MS = 595_000;
 /** Exit code reported when the child is killed by the timeout (GNU timeout convention). */

@@ -22,11 +22,12 @@ import { getAcmeEmail, getDnsConfig, renderDynamicConfig, renderStaticConfig } f
  * network, so a config that named another machine's containers would answer
  * 502 for every one of them.
  *
- * Every function here is best-effort and never throws into a deploy. A node
- * whose proxy could not be refreshed keeps serving its previous config; the
- * failure is logged where the operator is already looking (the deploy log) and
- * the deployment itself is not failed for it, because the container IS running
- * and the next deploy or domain change retries the sync.
+ * Every function here is best-effort and never throws: a node whose proxy
+ * could not be refreshed keeps serving its previous config, and the result
+ * says so. r521: the CALLER decides what a failure means — a deploy to that
+ * very node fails its PROXY_SWAP and keeps the previous runtime (the new
+ * container is unrouted there), while a refresh of any other node is audited
+ * and retried by the next routing write.
  */
 
 /** Result of one sync attempt, for the caller's log line. */
@@ -126,12 +127,16 @@ export async function syncAllNodeProxies(
   db: DB,
   serverIds: number[],
   log: (line: string) => void = () => undefined,
-): Promise<void> {
+): Promise<Array<NodeProxySyncResult & { serverId: number }>> {
   const unique = [...new Set(serverIds.filter((id) => Number.isInteger(id) && id > 0))];
+  // r521: per-node outcomes go back to the caller — writeDynamicConfig fails
+  // a deploy whose OWN node could not be updated, and audits the rest.
+  const results: Array<NodeProxySyncResult & { serverId: number }> = [];
   for (const id of unique) {
     // Sequential on purpose: a fleet refresh is not latency-critical and a
     // burst of parallel agent calls is a good way to trip an agent's rate
     // limit (120/min) during a mass domain change.
-    await syncNodeProxy(db, id, log);
+    results.push({ serverId: id, ...(await syncNodeProxy(db, id, log)) });
   }
+  return results;
 }

@@ -29,7 +29,8 @@ const h = vi.hoisted(() => {
   };
   const agentOp = vi.fn<(...args: any[]) => Promise<{ exitCode: number; lines: string[] }>>(async () => ({ exitCode: 0, lines: [] }));
   const reconcileTemplateDependencies = vi.fn(async () => null as null | { database: { slug: string }; alreadyAttached: boolean });
-  return { builder, checkoutCommit, decrypt, connectionString, ENGINES, writeDynamicConfig, getAcmeEmail, config, agentOp, reconcileTemplateDependencies };
+  const railpackUnavailableReason = vi.fn(async () => null as string | null);
+  return { builder, checkoutCommit, decrypt, connectionString, ENGINES, writeDynamicConfig, getAcmeEmail, config, agentOp, reconcileTemplateDependencies, railpackUnavailableReason };
 });
 
 vi.mock('../src/config.js', () => ({ config: h.config }));
@@ -44,7 +45,7 @@ vi.mock('../src/lib/crypto.js', () => ({ decrypt: h.decrypt }));
 vi.mock('../src/lib/git.js', () => ({ checkoutCommit: h.checkoutCommit }));
 vi.mock('../src/lib/agentClient.js', () => ({ agentOp: h.agentOp }));
 vi.mock('../src/engine/database.js', () => ({ connectionString: h.connectionString, ENGINES: h.ENGINES }));
-vi.mock('../src/engine/builders/docker.js', () => ({ dockerBuilder: h.builder }));
+vi.mock('../src/engine/builders/docker.js', () => ({ dockerBuilder: h.builder, railpackUnavailableReason: h.railpackUnavailableReason }));
 vi.mock('../src/engine/builders/pm2.js', () => ({ pm2Builder: h.builder }));
 vi.mock('../src/engine/builders/compose.js', () => ({ composeBuilder: h.builder }));
 vi.mock('../src/engine/proxy.js', () => ({
@@ -1955,6 +1956,74 @@ describe('runDeployment on a remote-server target', () => {
     expect(ops).toContain('file.writeWorkspace');
   });
 
+  // r521: the node's proxy refresh was swallowed inside writeDynamicConfig,
+  // so `routingFlipped` was always true for a node-pinned service and CLEANUP
+  // stopped the previous container on the node while the node still routed
+  // to it — an outage reported as a successful deploy.
+  it('r521: a node proxy that could not take the new route fails the deploy and keeps the previous runtime', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { image: 'nginx:latest', serverId: 4, runtimeId: 'web-old', commitSha: 'oldsha1' });
+    const lines = collectLogs(1);
+    agentAnswersRunning();
+    h.writeDynamicConfig.mockRejectedValue(new Error('the proxy on node #4 could not be updated: agent unreachable'));
+
+    await runDeployment(db as never, 1);
+
+    // The routing write is told which node MUST take it (and retried once).
+    expect(h.writeDynamicConfig).toHaveBeenCalledWith(db, { requireNode: 4 });
+    expect(h.writeDynamicConfig.mock.calls.filter((c) => (c as unknown[])[1] !== undefined)).toHaveLength(2);
+    expect(updates.some((u) => u.table === deployments && u.values.status === 'failed')).toBe(true);
+    const revert = updates.find((u) => u.table === services && u.values.runtimeId === 'web-old');
+    expect(revert?.values).toMatchObject({ status: 'running', commitSha: 'oldsha1' });
+    // The still-routed previous container is NOT stopped on the node; the
+    // unrouted new one is.
+    const stops = h.agentOp.mock.calls
+      .filter((c) => (c as unknown[])[2] === 'docker.stop')
+      .map((c) => ((c as unknown[])[3] as { name: string }).name);
+    expect(stops).not.toContain('web-old');
+    expect(stops).toContain('web-1');
+    expect(lines).not.toContain('✓ Deployment successful');
+    h.writeDynamicConfig.mockImplementation(async () => undefined);
+  });
+
+  it('r521: a node proxy that took the route retires the previous runtime as before', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { image: 'nginx:latest', serverId: 4, runtimeId: 'web-old' });
+    const lines = collectLogs(1);
+    agentAnswersRunning();
+
+    await runDeployment(db as never, 1);
+
+    expect(h.writeDynamicConfig).toHaveBeenCalledWith(db, { requireNode: 4 });
+    expect(lines).toContain('✓ Deployment successful');
+    const stops = h.agentOp.mock.calls
+      .filter((c) => (c as unknown[])[2] === 'docker.stop')
+      .map((c) => ((c as unknown[])[3] as { name: string }).name);
+    expect(stops).toContain('web-old');
+  });
+
+  // r522: runHook runs on the PANEL host; a node-pinned service's hooks ran
+  // on the wrong machine while the deploy reported success.
+  it('r522: refuses deploy hooks on a node-pinned service before anything runs, naming the fix', async () => {
+    const { db, inserts } = makeDb();
+    baseSetup(db, { ownerUserId: 42, image: 'nginx:latest', serverId: 4 });
+    db.query.buildConfigs.findFirst.mockResolvedValue({ buildPack: 'auto', preDeployCmd: 'npm run migrate', postDeployCmd: null, preStopCmd: '' });
+    const lines = collectLogs(1);
+    h.agentOp.mockClear();
+    execMock.run.mockClear();
+
+    await runDeployment(db as never, 1);
+
+    expect(h.agentOp).not.toHaveBeenCalled();
+    // The hook never ran on the panel host either.
+    expect(execMock.run).not.toHaveBeenCalled();
+    const text = lines.join(' ');
+    expect(text).toMatch(/pre-deploy hook runs on the panel host/);
+    expect(text).toMatch(/Clear the hook in Service → Settings → Build, or clear the target server/);
+    const audits = inserts.filter((i) => i.table === auditLog).map((i) => i.values);
+    expect(audits[0]).toMatchObject({ action: 'deploy.failed' });
+  });
+
   it('still deploys a service with no server assigned', async () => {
     const { db } = makeDb();
     baseSetup(db, { image: 'nginx:latest', serverId: null });
@@ -2206,5 +2275,45 @@ describe('r353: source fan-out and Git credentials', () => {
     expect(lines.some((l) => l.startsWith('Fan-out skipped'))).toBe(false);
     expect(nodeOps()).toContain('git.ensure');
     expect(nodeOps()).toContain('docker.build');
+  });
+});
+
+describe('r520: railpack on an install that cannot run it', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    logBus.removeAllListeners();
+    h.builder.buildAndRun.mockImplementation(async () => ({ runtimeId: 'c-1', port: 3000, healthPath: '/' }));
+    h.builder.isHealthy.mockImplementation(async () => true);
+    h.checkoutCommit.mockImplementation(async () => 'sha-1234567');
+    h.writeDynamicConfig.mockImplementation(async () => undefined);
+  });
+
+  it('fails before the checkout with the reason, keeping the previous runtime', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { runtimeId: 'old-c' });
+    db.query.buildConfigs.findFirst.mockResolvedValue({ buildPack: 'railpack', baseDir: '/' });
+    h.railpackUnavailableReason.mockResolvedValueOnce('The railpack build pack is not available on this installation');
+    const lines = collectLogs(1);
+
+    await runDeployment(db as never, 1);
+
+    expect(h.checkoutCommit).not.toHaveBeenCalled();
+    expect(h.builder.buildAndRun).not.toHaveBeenCalled();
+    expect(lines.join(' ')).toMatch(/railpack build pack is not available/);
+    expect(updates.some((u) => u.table === deployments && u.values.status === 'failed')).toBe(true);
+  });
+
+  it('builds as usual when the CLI is there (and never probes for other packs)', async () => {
+    const { db } = makeDb();
+    baseSetup(db);
+    db.query.buildConfigs.findFirst.mockResolvedValue({ buildPack: 'railpack', baseDir: '/' });
+    await runDeployment(db as never, 1);
+    expect(h.builder.buildAndRun).toHaveBeenCalled();
+
+    h.railpackUnavailableReason.mockClear();
+    const other = makeDb();
+    baseSetup(other.db);
+    await runDeployment(other.db as never, 1);
+    expect(h.railpackUnavailableReason).not.toHaveBeenCalled();
   });
 });

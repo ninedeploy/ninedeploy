@@ -47,7 +47,8 @@ import { assertMayPublishPort } from '../lib/hostPort.js';
 import { slugify, slugifyWithSuffix } from '../lib/slug.js';
 import { assertSlugVolumeNotRetained } from '../lib/retainedSlugVolume.js';
 import { composeBuilder } from '../engine/builders/compose.js';
-import { dockerBuilder } from '../engine/builders/docker.js';
+import { dockerBuilder, railpackRefusedForInstall } from '../engine/builders/docker.js';
+import { remoteHookRefusal } from '../lib/remoteDeploy.js';
 import { pm2Builder, pm2Logs, pm2Restart, pm2Start, pm2Stop } from '../engine/builders/pm2.js';
 import { deleteLog } from '../engine/logs.js';
 import { writeDynamicConfig } from '../engine/proxy.js';
@@ -270,6 +271,16 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       build: input.build,
     });
     assertMayPublishPort(req.user!, input.publishedPort);
+    // r522: deploy hooks run on the panel host, so a node-pinned service
+    // cannot carry one; r520: a container install has no Railpack CLI.
+    if (input.serverId != null) {
+      const hookRefusal = remoteHookRefusal(input.build);
+      if (hookRefusal) throw badRequest(hookRefusal, 'remote_deploy_unsupported');
+    }
+    if (input.build.buildPack === 'railpack') {
+      const railpackRefusal = railpackRefusedForInstall();
+      if (railpackRefusal) throw badRequest(railpackRefusal, 'railpack_unavailable');
+    }
     // Inline compose stack: validate the pasted YAML with the SAME analysis
     // the wizard previewed, and settle the routed service now — the builder
     // falls back to the slug, which is almost never a service name in a file
@@ -655,6 +666,26 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     });
     // Same merged-result reasoning for the host port.
     assertMayPublishPort(req.user!, patch.publishedPort === undefined ? existing.publishedPort : patch.publishedPort);
+    // r522: only a PATCH that introduces the conflict is refused — pinning a
+    // hook-carrying service to a node, or setting a hook on a pinned one — so
+    // an existing pinned service with a hook can still be edited (its deploy
+    // is refused with the same fix named).
+    const mergedServerId = patch.serverId !== undefined ? patch.serverId : existing.serverId;
+    const placing = patch.serverId != null && patch.serverId !== existing.serverId;
+    const settingHook = (['preDeployCmd', 'postDeployCmd', 'preStopCmd'] as const).some((k) => !!build?.[k]?.trim());
+    if (mergedServerId != null && (placing || settingHook)) {
+      const hookRefusal = remoteHookRefusal({
+        preDeployCmd: merged('preDeployCmd'),
+        postDeployCmd: merged('postDeployCmd'),
+        preStopCmd: merged('preStopCmd'),
+      });
+      if (hookRefusal) throw badRequest(hookRefusal, 'remote_deploy_unsupported');
+    }
+    // r520: switching TO railpack on an install that cannot run it.
+    if (build?.buildPack === 'railpack' && currentBuild?.buildPack !== 'railpack') {
+      const railpackRefusal = railpackRefusedForInstall();
+      if (railpackRefusal) throw badRequest(railpackRefusal, 'railpack_unavailable');
+    }
     // Editing an inline stack's YAML. Only a service that already stores one
     // may receive it: `type` alone cannot distinguish an inline stack from a
     // git-repo compose service, whose file lives in the repository and would

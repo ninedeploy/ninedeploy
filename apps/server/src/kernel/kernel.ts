@@ -89,7 +89,10 @@ export class NineDeployKernel implements KernelContext {
         await Promise.resolve(plugin.destroy(this)).catch(() => undefined);
       }
       this.menuRegistry.purgePluginMenus(plugin.id);
-      await this.configCenter.purgePluginConfigs(plugin.id).catch(() => undefined);
+      // r527: the operator's saved config (secrets included) survives a failed
+      // init — the usual cause is a transient one (an unreachable endpoint at
+      // boot), and purging here made the next restart start the plugin from
+      // empty settings. Only an uninstall erases config (pluginLoader).
       this.plugins.delete(plugin.id);
       const idx = this.bootOrder.indexOf(plugin.id);
       if (idx >= 0) this.bootOrder.splice(idx, 1);
@@ -113,7 +116,10 @@ export class NineDeployKernel implements KernelContext {
     }
 
     this.menuRegistry.purgePluginMenus(id);
-    await this.configCenter.purgePluginConfigs(id);
+    // r527: unregistering is a RUNTIME teardown — disable, reload and a
+    // reinstall over a loaded instance all go through here — so it no longer
+    // purges the plugin's stored config. Disabling a plugin used to erase its
+    // saved settings and secrets; `uninstallPlugin` purges explicitly.
 
     this.plugins.delete(id);
     const idx = this.bootOrder.indexOf(id);

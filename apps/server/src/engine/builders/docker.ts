@@ -391,6 +391,38 @@ export async function containerExposedTcpPorts(name: string): Promise<number[]> 
  * exist at runtime and never reach `next build`.
  */
 /**
+ * r520: why the `railpack` build pack cannot run on THIS installation, or null.
+ *
+ * install.sh provisions the Railpack CLI on a bare-metal host, but the panel's
+ * container image (Dockerfile) ships Nixpacks only — a container install
+ * accepted `buildPack: railpack`, cloned the repository and then failed
+ * mid-build on a missing binary. The container case is known without probing,
+ * so it is also refused where the build pack is SAVED
+ * ({@link railpackRefusedForInstall}); the probe covers a bare-metal host whose
+ * install predates Railpack.
+ */
+export const RAILPACK_CONTAINER_REASON =
+  'The railpack build pack is not available on this installation: the NineDeploy container image does not ship the Railpack CLI. ' +
+  'Switch the build pack to auto, nixpacks or dockerfile (Service → Settings → Build) and redeploy.';
+const RAILPACK_MISSING_REASON =
+  'Railpack CLI is unavailable. Re-run the NineDeploy installer to provision it, or switch the build pack.';
+
+/** Save-time half of r520: the container install can never run railpack. */
+export function railpackRefusedForInstall(inContainer = existsSync('/.dockerenv')): string | null {
+  return inContainer ? RAILPACK_CONTAINER_REASON : null;
+}
+
+/** Deploy-time half of r520: probe the CLI before anything is cloned or built. */
+export async function railpackUnavailableReason(inContainer = existsSync('/.dockerenv')): Promise<string | null> {
+  try {
+    await capture('railpack', ['--version']);
+    return null;
+  } catch {
+    return inContainer ? RAILPACK_CONTAINER_REASON : RAILPACK_MISSING_REASON;
+  }
+}
+
+/**
  * Railpack source build (buildPack: 'railpack'). Railpack auto-detects the
  * stack and builds via its own BuildKit connection — NineDeploy passes the
  * image name and the runtime env; custom install/build commands are NOT
@@ -404,18 +436,8 @@ async function buildWithRailpack(
   env: Record<string, string>,
   log: (line: string) => void,
 ): Promise<void> {
-  let hasCli = false;
-  try {
-    await capture('railpack', ['--version']);
-    hasCli = true;
-  } catch {
-    hasCli = false;
-  }
-  if (!hasCli) {
-    throw new Error(
-      'Railpack CLI is unavailable. Re-run the NineDeploy installer to provision it, or switch the build pack.',
-    );
-  }
+  const unavailable = await railpackUnavailableReason();
+  if (unavailable) throw new Error(unavailable);
 
   const envArgs: string[] = [];
   for (const [key, value] of Object.entries(env)) {
@@ -608,6 +630,12 @@ export const dockerBuilder: Builder = {
     let target: string;
     let builtWithNixpacks = false;
     let builtStatic = false;
+    // r520: set by every build pack that produces the image ITSELF (static,
+    // railpack). The Dockerfile / Nixpacks dispatch below runs only when no
+    // pack did — railpack used to fall through to a plain `docker build` that
+    // failed on the Dockerfile-less repo railpack exists for, or silently
+    // replaced the railpack image when the repo happened to ship one.
+    let builtByPack = false;
     let resolvedPort: number | null = service.port ?? validPort(env.PORT);
     try {
     if (service.image) {
@@ -667,11 +695,13 @@ export const dockerBuilder: Builder = {
           target,
         );
         builtStatic = true;
+        builtByPack = true;
       } else if (pack === 'railpack') {
         // Railpack auto-detects the stack and builds via its own BuildKit
         // connection — no host install/build commands run for it, so the
         // dispatch order places it before the nixpacks/Dockerfile checks.
         await buildWithRailpack(target, baseDir, workDir, env, log);
+        builtByPack = true;
       } else if (pack === 'auto' && !hasDockerfile && !explicitDockerfilePath) {
         // Only auto-discover when the user did not already pin a path. A
         // pinned `dockerfilePath` is a deliberate choice and overrides.
@@ -682,9 +712,9 @@ export const dockerBuilder: Builder = {
           useNixpacks = false;
         }
       }
-      // The static pack already built its own image above — the Dockerfile /
-      // Nixpacks strategies below apply to everything else.
-      if (!builtStatic) {
+      // The static and railpack packs already built their own image above —
+      // the Dockerfile / Nixpacks strategies below apply to everything else.
+      if (!builtByPack) {
         log(`Building image ${target} …`);
         if (useNixpacks) {
           builtWithNixpacks = true;

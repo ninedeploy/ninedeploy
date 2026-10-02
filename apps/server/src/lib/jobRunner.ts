@@ -29,6 +29,28 @@ async function assertJobMayDeploy(
 }
 
 /**
+ * r523: why an `exec` job cannot run against this service, or null.
+ *
+ * The runner shells out to the PANEL host's `docker exec` on `runtimeId`.
+ * That is right for a local docker or compose service (a compose runtimeId is
+ * its main container's name) and wrong for everything else: a PM2 runtime is
+ * a process name, not a container, and a node-pinned service's container
+ * lives on the node — the agent has no exec operation. Both used to fail every
+ * run with a bare docker "No such container" error.
+ */
+export function execJobUnsupportedReason(svc: { type?: string | null; serverId?: number | null }): string | null {
+  if (svc.serverId != null) {
+    return "Exec jobs are not available for a service on a remote server: the command would run through the panel host's Docker, and the node agent has no exec operation. Delete or disable this job, or clear the service's target server.";
+  }
+  // A missing type is a docker service (the column's default), as in lib/remoteDeploy.
+  const type = svc.type ?? 'docker';
+  if (type !== 'docker' && type !== 'compose') {
+    return `Exec jobs run inside a container, and a ${type} service has none. Delete or disable this job.`;
+  }
+  return null;
+}
+
+/**
  * One execution at a time per job, process-wide. Both the cron scheduler and
  * the run-now route funnel through `runJob`, so this covers every entry: a
  * cron tick landing while the previous run is still going (long backup, slow
@@ -114,6 +136,17 @@ async function runJobInner(db: DB, jobId: number, opts: RunJobOptions): Promise<
   }
 
   // exec: run inside the runtime container — output + exit code recorded.
+  // r523: a service the panel cannot exec into records a FAILED run that says
+  // why, instead of a docker error (or nothing at all).
+  const unsupported = execJobUnsupportedReason(svc);
+  if (unsupported && job.command) {
+    const now = new Date();
+    await db
+      .insert(jobRuns)
+      .values({ jobId: job.id, status: 'failed', exitCode: 1, output: unsupported, startedAt: now, finishedAt: now });
+    void audit(db, null, 'job.exec_failed', `${job.name}: ${unsupported}`);
+    return;
+  }
   if (!svc.runtimeId || !job.command) return;
   const [runRow] = await db
     .insert(jobRuns)

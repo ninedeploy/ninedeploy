@@ -276,3 +276,86 @@ describe('runtime state reconciliation', () => {
     expect(updates).toContainEqual({ status: 'error' });
   });
 });
+
+// r525: node-pinned services were filtered out of the patrol entirely, so a
+// container that died on a node stayed `running` in the panel forever and
+// `alert.service_down` never fired.
+describe('r525: node-pinned docker services are patrolled through their agent', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // The local pass sees every fixture row too (the fake does not evaluate
+    // isNull); keep it answering "running" so only the node patrol acts.
+    mockDocker({ state: [] });
+  });
+
+  /** Agent replies keyed by op; `inspect` is a queue of replies. */
+  const agentReplies = (inspect: Array<{ exitCode: number; lines: string[] } | Error>) => {
+    let n = 0;
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string) => {
+      if (op === 'docker.inspect') {
+        const next = inspect[n++] ?? { exitCode: 0, lines: ['running|10.0.0.2'] };
+        if (next instanceof Error) throw next;
+        return next;
+      }
+      return { exitCode: 0, lines: [] };
+    });
+  };
+  const remoteRow = (over: Record<string, unknown> = {}) =>
+    svcRow({ id: 51, name: 'edge-api', status: 'running', runtimeId: 'edge-api-9', serverId: 4, type: 'docker', ...over });
+
+  it('leaves a running node container alone', async () => {
+    agentReplies([{ exitCode: 0, lines: ['running|10.0.0.2'] }]);
+    const { updates } = await reconcileOnce(remoteRow());
+    expect(agentMocks.agentOp).toHaveBeenCalledWith(
+      expect.anything(), 4, 'docker.inspect', { name: 'edge-api-9', format: 'state' }, expect.any(Function), { tolerateExit: true },
+    );
+    expect(updates).toEqual([]);
+    expect(auditMocks.audit).not.toHaveBeenCalled();
+  });
+
+  it('marks a container the node says is GONE errored and fires alert.service_down', async () => {
+    agentReplies([{ exitCode: 1, lines: ['Error: No such object: edge-api-9'] }]);
+    const { updates } = await reconcileOnce(remoteRow());
+    expect(updates).toContainEqual({ status: 'error' });
+    expect(auditMocks.audit).toHaveBeenCalledWith(
+      expect.anything(), null, 'alert.service_down', 'edge-api #51', expect.objectContaining({ status: 'error' }),
+    );
+  });
+
+  it('revives a stopped node container instead of judging it', async () => {
+    agentReplies([{ exitCode: 0, lines: ['exited|'] }, { exitCode: 0, lines: ['running|10.0.0.2'] }]);
+    const { updates } = await reconcileOnce(remoteRow());
+    expect(agentMocks.agentOp).toHaveBeenCalledWith(
+      expect.anything(), 4, 'docker.start', { name: 'edge-api-9' }, expect.any(Function), { tolerateExit: true },
+    );
+    expect(updates).toEqual([]);
+  });
+
+  it('never judges a service on an unreachable node — records the node instead, once per outage', async () => {
+    agentMocks.agentOp.mockRejectedValue(new Error('connect ECONNREFUSED 10.0.0.4:4600'));
+    const db = createFakeDb({
+      findMany: { services: [remoteRow(), remoteRow({ id: 52, name: 'edge-web', runtimeId: 'edge-web-3' })] },
+    });
+    const { updates } = trackStatusUpdates(db);
+    const app = await buildTestApp({ db });
+    await app.register(runtimeStatePlugin);
+    await app.ready();
+    await app.close();
+
+    expect(updates).toEqual([]);
+    // Batched per node: the first transport failure stops that node's batch.
+    expect(agentMocks.agentOp.mock.calls.filter((c) => c[2] === 'docker.inspect')).toHaveLength(1);
+    expect(auditMocks.audit).toHaveBeenCalledTimes(1);
+    expect(auditMocks.audit).toHaveBeenCalledWith(
+      expect.anything(), null, 'alert.node_unreachable', 'node #4', expect.objectContaining({ serverId: 4 }),
+    );
+    expect(auditMocks.audit).not.toHaveBeenCalledWith(expect.anything(), null, 'alert.service_down', expect.anything(), expect.anything());
+  });
+
+  it("skips (does not judge) an inspect failure that is not the node saying the container is gone", async () => {
+    agentReplies([{ exitCode: 1, lines: ['Cannot connect to the Docker daemon at unix:///var/run/docker.sock'] }]);
+    const { updates } = await reconcileOnce(remoteRow());
+    expect(updates).toEqual([]);
+    expect(auditMocks.audit).not.toHaveBeenCalled();
+  });
+});

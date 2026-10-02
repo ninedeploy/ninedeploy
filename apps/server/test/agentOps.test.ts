@@ -109,6 +109,24 @@ describe('agent typed-op argv templates', () => {
     expect(argv).toContain('.agent-env/w.env');
   });
 
+  it('r526: docker.stop honours the panel-sent grace, clamped to the schema range', async () => {
+    expect(await argvOf('docker.stop', { name: 'c1', graceSeconds: '45' })).toEqual(['stop', '-t', '45', 'c1']);
+    expect(await argvOf('docker.stop', { name: 'c1', graceSeconds: '0' })).toEqual(['stop', '-t', '0', 'c1']);
+    // Off-range or off-format operands degrade to the old pinned 5 s, never to argv.
+    for (const bad of ['301', '-1', '5; rm -rf /', '1e3', 45]) {
+      expect(await argvOf('docker.stop', { name: 'c1', graceSeconds: bad })).toEqual(['stop', '-t', '5', 'c1']);
+    }
+  });
+
+  it('r526: build/bring-up ops get the long child timeout, everything else the default', async () => {
+    await runOp('docker.build', { tag: 'app:1', dockerfile: 'Dockerfile', context: '.' }, () => {});
+    expect(spawnMock.mock.calls.at(-1)?.[3]).toEqual({ timeoutMs: 30 * 60 * 1000 });
+    await runOp('docker.composeUp', { project: 'p', file: 'docker-compose.yml' }, () => {});
+    expect(spawnMock.mock.calls.at(-1)?.[3]).toEqual({ timeoutMs: 30 * 60 * 1000 });
+    await runOp('docker.stop', { name: 'c1' }, () => {});
+    expect(spawnMock.mock.calls.at(-1)?.[3]).toEqual({});
+  });
+
   it('docker.stop / rm / logs / inspect', async () => {
     expect(await argvOf('docker.stop', { name: 'c1' })).toEqual(['stop', '-t', '5', 'c1']);
     expect(await argvOf('docker.rm', { name: 'c1' })).toEqual(['rm', '-f', 'c1']);

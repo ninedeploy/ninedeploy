@@ -1,5 +1,5 @@
 ﻿import Fastify from 'fastify';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { deployments } from '@ninedeploy/db';
 
 const pipelineMock = vi.hoisted(() => ({
@@ -11,7 +11,18 @@ vi.mock('../../src/engine/pipeline.js', () => pipelineMock);
 const configMock = vi.hoisted(() => ({ config: { deployConcurrency: 1 } }));
 vi.mock('../../src/config.js', () => configMock);
 
-const { default: workerPlugin, STALE_SWEEP_EVERY_MS } = await import('../../src/plugins/worker.js');
+const auditMock = vi.hoisted(() => ({ audit: vi.fn(async () => undefined) }));
+vi.mock('../../src/lib/audit.js', () => auditMock);
+const logsMock = vi.hoisted(() => ({ logBus: { publish: vi.fn() } }));
+vi.mock('../../src/engine/logs.js', () => logsMock);
+
+const {
+  default: workerPlugin,
+  STALE_SWEEP_EVERY_MS,
+  REMOTE_INTERRUPT_GRACE_MS,
+  INTERRUPTED_LOCAL_REASON,
+  INTERRUPTED_REMOTE_REASON,
+} = await import('../../src/plugins/worker.js');
 
 const POLL_MS = 2000;
 
@@ -34,6 +45,7 @@ interface RecordedUpdate {
 
 function makeDb(opts: {
   queued: Array<{ id: number }>;
+  building?: Array<Record<string, unknown>>;
   selectImpl?: () => Promise<unknown>;
   /** rowsAffected returned by the queued→building claim update (default 1 = won the claim). */
   claimRowsAffected?: number;
@@ -625,5 +637,79 @@ describe('worker plugin', () => {
     await vi.advanceTimersByTimeAsync(POLL_MS * 10);
     expect(outerSelect).toHaveBeenCalledTimes(1); // no further polls scheduled
     expect(pipelineMock.runDeployment).not.toHaveBeenCalled();
+  });
+});
+
+// r524: a restart mid-deploy left the row `building`; nothing could finish it
+// and the 45-min sweep was the only recovery, so the local partition's slot
+// stayed taken — every local deploy queued for up to 45 minutes.
+describe('r524: deploys interrupted by a panel restart', () => {
+  const old = () => new Date(Date.now() - 60 * 60 * 1000);
+  const row = (over: Record<string, unknown>) => ({
+    serviceId: 5,
+    serverId: null,
+    serviceName: 'Web',
+    ownerUserId: 7,
+    runtimeId: 'web-old',
+    message: null,
+    ...over,
+  });
+
+  beforeEach(() => {
+    auditMock.audit.mockClear();
+    logsMock.logBus.publish.mockClear();
+  });
+
+  it('fails a local row at boot, audits it, hands the service back to the reconcile, never requeues it', async () => {
+    const { db, updates } = makeDb({
+      queued: [],
+      building: [row({ id: 21, deploymentId: 21, startedAt: old() })],
+    });
+    const app = await buildApp(db);
+    await app.close();
+
+    const failed = updates.find((u) => u.table === deployments && u.status === 'failed');
+    expect(failed).toBeDefined();
+    // The previous runtime was never retired — the reconcile verifies it.
+    expect(updates.find((u) => u.table !== deployments && u.status === 'running')).toBeDefined();
+    expect(auditMock.audit).toHaveBeenCalledWith(expect.anything(), 7, 'deploy.failed', 'Web #21', {
+      reason: INTERRUPTED_LOCAL_REASON,
+      serviceId: 5,
+    });
+    expect(logsMock.logBus.publish).toHaveBeenCalledWith(21, `✗ ${INTERRUPTED_LOCAL_REASON}`);
+    // Old enough for the 45-min sweep, but owned by the boot recovery.
+    expect(updates.find((u) => u.status === 'queued')).toBeUndefined();
+  });
+
+  it('a first deploy that was interrupted leaves the service errored, not running', async () => {
+    const { db, updates } = makeDb({
+      queued: [],
+      building: [row({ id: 23, deploymentId: 23, runtimeId: null, startedAt: new Date() })],
+    });
+    const app = await buildApp(db);
+    await app.close();
+    expect(updates.find((u) => u.table !== deployments && u.status === 'error')).toBeDefined();
+  });
+
+  it('holds a node row through the agent-op grace window, then fails it', async () => {
+    vi.useFakeTimers();
+    const { db, updates } = makeDb({
+      queued: [],
+      building: [row({ id: 22, deploymentId: 22, serverId: 3, startedAt: old() })],
+    });
+    const app = await buildApp(db);
+    // Inside the window: neither failed nor resumed — the node may still be
+    // running the dead pipeline's last operation.
+    expect(updates.find((u) => u.status === 'failed')).toBeUndefined();
+    expect(updates.find((u) => u.status === 'queued')).toBeUndefined();
+
+    await vi.advanceTimersByTimeAsync(REMOTE_INTERRUPT_GRACE_MS);
+    expect(updates.find((u) => u.table === deployments && u.status === 'failed')).toBeDefined();
+    expect(auditMock.audit).toHaveBeenCalledWith(expect.anything(), 7, 'deploy.failed', 'Web #22', {
+      reason: INTERRUPTED_REMOTE_REASON,
+      serviceId: 5,
+    });
+    expect(updates.find((u) => u.status === 'queued')).toBeUndefined();
+    await app.close();
   });
 });

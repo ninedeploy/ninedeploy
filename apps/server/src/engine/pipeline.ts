@@ -8,7 +8,7 @@ import { decrypt } from '../lib/crypto.js';
 import { checkoutCommit, type CloneCreds } from '../lib/git.js';
 import { detectDeployHints } from '../lib/deployHints.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
-import { remoteDatabaseRefusal, remoteDeploySupported, remoteDeployUnsupportedReason, remoteServiceRefusal, sourceHasGitCredential } from '../lib/remoteDeploy.js';
+import { remoteDatabaseRefusal, remoteDeploySupported, remoteDeployUnsupportedReason, remoteHookRefusal, remoteServiceRefusal, sourceHasGitCredential } from '../lib/remoteDeploy.js';
 import { agentOp } from '../lib/agentClient.js';
 import { createRemoteDockerBuilder } from './builders/remoteDocker.js';
 import { deployToTargets, pullableReleaseRef, recordFanoutResults, targetsForService } from './fanout.js';
@@ -16,7 +16,7 @@ import { createRemoteComposeBuilder } from './builders/remoteCompose.js';
 import { analyzeRepo, summarizeInsights } from '../lib/frameworks.js';
 import { upsertInsights } from './repoInsights.js';
 import { connectionString, ENGINES } from './database.js';
-import { dockerBuilder } from './builders/docker.js';
+import { dockerBuilder, railpackUnavailableReason } from './builders/docker.js';
 import { composeBuilder } from './builders/compose.js';
 import { logBus } from './logs.js';
 import { pm2Builder } from './builders/pm2.js';
@@ -557,6 +557,16 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       await auditOutcome(db, service, deploymentId, 'failed', reason);
       return;
     }
+    // r522: deploy hooks run through the panel's own `run()` — on the panel
+    // host, never on the node. Refused before anything is built, so a hook
+    // that used to "work" on the wrong machine now fails with the fix named.
+    const hookRefusal = remoteHookRefusal(buildConfig);
+    if (hookRefusal) {
+      log(`✗ ${hookRefusal}`);
+      await safeFail(db, deploymentId, service.id, service.runtimeId);
+      await auditOutcome(db, service, deploymentId, 'failed', hookRefusal);
+      return;
+    }
     const dbRefusal = await remoteDatabaseRefusal(db, service);
     if (dbRefusal) {
       log(`✗ ${dbRefusal}`);
@@ -610,6 +620,14 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   try {
     // Cancel checkpoint: the route may have flipped the row between claim and here.
     if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled();
+
+    // r520: a railpack build that cannot run here (the container image ships
+    // no Railpack CLI) is refused before the checkout, not after it — and on
+    // the panel host only: a node builds through its agent, never railpack.
+    if (service.serverId == null && service.type === 'docker' && !service.image && buildConfig?.buildPack === 'railpack') {
+      const railpackRefusal = await railpackUnavailableReason();
+      if (railpackRefusal) throw new Error(railpackRefusal);
+    }
 
     log('##[stage:PREPARE:running] Resolving repository, sources and workspace');
     // Image-based deploys and inline compose stacks skip git entirely;
@@ -1089,16 +1107,23 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   // previous generation — the service row pointed at an unrouted container,
   // and only a single warning line in the build log hinted at it.
   let routingFlipped = false;
+  // r521: a node-pinned service's routing lives in the NODE's proxy. Its
+  // refresh used to be swallowed inside writeDynamicConfig, so the flip below
+  // always "succeeded" and CLEANUP stopped the previous container on the node
+  // while the node still routed to it. Requiring the node makes that failure
+  // take the same honest revert path as a panel-host write failure.
+  const flipRouting = (): Promise<void> =>
+    service.serverId != null ? writeDynamicConfig(db, { requireNode: service.serverId }) : writeDynamicConfig(db);
   log('##[stage:PROXY_SWAP:running] Updating Traefik dynamic router & shifting live traffic');
   try {
-    await writeDynamicConfig(db);
+    await flipRouting();
     routingFlipped = true;
     log('##[stage:PROXY_SWAP:success]');
   } catch (firstErr) {
     log(`proxy warning: ${msg(firstErr)} — retrying once in 2s`);
     await sleep(2000);
     try {
-      await writeDynamicConfig(db);
+      await flipRouting();
       routingFlipped = true;
       log('##[stage:PROXY_SWAP:success] (second attempt)');
     } catch (err) {
@@ -1131,6 +1156,12 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
           })
           .where(eq(services.id, service.id));
         await builder.stop(newRuntimeId).catch((stopErr) => log(`revert warning (new container stop): ${msg(stopErr)}`));
+        if (service.serverId != null) {
+          // r521: a partial node sync may have pushed a route at the container
+          // just stopped — re-render from the reverted row, best-effort (the
+          // next routing write retries it anyway).
+          await writeDynamicConfig(db).catch(() => undefined);
+        }
       } else {
         // First-ever deploy: nothing is serving, and the unrouted new
         // container must not leak.

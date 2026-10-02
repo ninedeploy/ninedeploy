@@ -266,4 +266,32 @@ describe('multi-server fan-out (phase 1)', () => {
     expect(ops).toContainEqual(['docker.stop', { name: 'web-t5-8' }]);
     expect(ops).toContainEqual(['docker.rm', { name: 'web-t5-8' }]);
   });
+
+  // r526: the login ran AFTER the source build, so `docker build` pulled a
+  // private base image anonymously and every target failed.
+  it('r526: logs into the registry BEFORE a target builds from source, and out after', async () => {
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string) =>
+      op === 'docker.inspect' ? { exitCode: 0, lines: ['running|10.0.0.9'] } : { exitCode: 0, lines: [] },
+    );
+    const db = dbWithTargets([{ serverId: 5, runtimeId: null }]);
+    await deployToTargets(
+      db as never,
+      {
+        service: { ...svc, image: null },
+        deploymentId: 9,
+        env: {},
+        registryAuth: { username: 'u', password: 'p', server: 'ghcr.io' },
+        primaryServerId: null,
+        source: { repoUrl: 'https://github.com/acme/app.git', branch: null, commitSha: 'abcdef123', dockerfilePath: 'Dockerfile', baseDir: '.' },
+      },
+      vi.fn(),
+    );
+    const ops = agentMocks.agentOp.mock.calls.map((c) => c[2] as string);
+    expect(ops.indexOf('docker.login')).toBeGreaterThanOrEqual(0);
+    expect(ops.indexOf('docker.login')).toBeLessThan(ops.indexOf('docker.build'));
+    expect(ops.indexOf('docker.logout')).toBeGreaterThan(ops.indexOf('docker.build'));
+    // A source build never pulls the release.
+    expect(ops).not.toContain('docker.pull');
+  });
 });
+

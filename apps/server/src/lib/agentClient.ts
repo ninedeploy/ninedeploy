@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
+import { request as httpRequest } from 'node:http';
 import { servers, type DB } from '@ninedeploy/db';
 import { decrypt, randomToken } from './crypto.js';
 import { open as openSealed, seal } from './agentSeal.js';
@@ -17,6 +18,102 @@ import { timingSafeEqual } from 'node:crypto';
 export interface AgentOpResult {
   exitCode: number;
   lines: string[];
+}
+
+/**
+ * r526: the operations that build or bring up a release. Every agent op used
+ * to share one budget — 595 s on the node (lib/spawnValidated), 600 s on the
+ * panel — while the same build on the panel host gets the 30-minute exec
+ * timeout, so a remote build the panel host would have finished was killed
+ * halfway. These ops get the local budget on both sides: the agent arms its
+ * child with {@link AGENT_LONG_OP_TIMEOUT_MS}, the panel waits that long plus
+ * a margin. An agent older than this release keeps its own 595 s cap and
+ * ignores the panel's longer wait; the timeout error says which side gave up.
+ *
+ * `docker.pull` stays short on purpose (r417: a node pull fails fast).
+ */
+export const LONG_AGENT_OPS: ReadonlySet<string> = new Set(['docker.build', 'docker.composeUp', 'docker.composePull']);
+/** Node-side child timeout for {@link LONG_AGENT_OPS} — the panel host's exec default. */
+export const AGENT_LONG_OP_TIMEOUT_MS = 30 * 60 * 1000;
+/** Panel-side request budget for every other op (just above the agent's 595 s child cap). */
+const SHORT_OP_REQUEST_MS = 600_000;
+/** Exit code the agent reports for a child it killed on its timeout (GNU `timeout`). */
+const AGENT_TIMEOUT_EXIT = 124;
+
+/** The agent-side child timeout for `op`, or undefined for the agent's default. */
+export function agentChildTimeoutMs(op: string): number | undefined {
+  return LONG_AGENT_OPS.has(op) ? AGENT_LONG_OP_TIMEOUT_MS : undefined;
+}
+
+/** How long the panel waits for `op`'s answer. */
+export function agentRequestTimeoutMs(op: string): number {
+  return LONG_AGENT_OPS.has(op) ? AGENT_LONG_OP_TIMEOUT_MS + 30_000 : SHORT_OP_REQUEST_MS;
+}
+
+/** Minimal response shape both transports below produce. */
+interface ExecResponse {
+  ok: boolean;
+  status: number;
+  text(): Promise<string>;
+  json(): Promise<unknown>;
+}
+
+/** Thrown when the panel gave up waiting for an agent's answer. */
+class AgentRequestTimeout extends Error {}
+
+/**
+ * r526: POST for a long op. Node's built-in fetch cannot wait for one: its
+ * dispatcher aborts any response whose HEADERS take longer than 300 s, and the
+ * agent answers only once the op has finished — so every remote build longer
+ * than five minutes died panel-side as a bare "fetch failed" while it kept
+ * running on the node. node:http has no such cap; the hard timer below is the
+ * budget. Redirects are never followed (a 3xx is simply not ok), matching the
+ * `redirect: 'error'` the fetch path uses.
+ */
+function postWithoutHeadersTimeout(
+  url: string,
+  headers: Record<string, string>,
+  body: string,
+  timeoutMs: number,
+): Promise<ExecResponse> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(
+      url,
+      { method: 'POST', headers: { ...headers, 'content-length': String(Buffer.byteLength(body)) } },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('error', reject);
+        res.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf8');
+          const status = res.statusCode ?? 0;
+          resolve({
+            ok: status >= 200 && status < 300,
+            status,
+            text: async () => text,
+            json: async () => JSON.parse(text) as unknown,
+          });
+        });
+      },
+    );
+    const timer = setTimeout(() => req.destroy(new AgentRequestTimeout()), timeoutMs);
+    timer.unref?.();
+    req.on('close', () => clearTimeout(timer));
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+
+/** True for every way a request can die of a timeout (fetch's signal, undici's header cap, ours). */
+function isTimeoutError(err: unknown): boolean {
+  if (err instanceof AgentRequestTimeout) return true;
+  const e = err as { name?: string; cause?: { code?: string; name?: string } } | null;
+  return (
+    e?.name === 'TimeoutError' ||
+    e?.cause?.code === 'UND_ERR_HEADERS_TIMEOUT' ||
+    e?.cause?.code === 'UND_ERR_BODY_TIMEOUT' ||
+    e?.cause?.name === 'HeadersTimeoutError'
+  );
 }
 
 /** Generate a fresh agent token (raw value stored encrypted, shown once). */
@@ -133,14 +230,34 @@ export async function agentOp(
   // "successful" answer to a different operation.
   const nonce = randomBytes(16).toString('hex');
 
-  const res = await fetch(`http://${row.host}:${row.port}/agent/exec`, {
-    method: 'POST',
-    headers: sealedOk
-      ? { 'content-type': 'application/json' }
-      : { 'content-type': 'application/json', 'x-agent-token': token },
-    body: JSON.stringify(sealedOk ? { sealed: seal(shared, { op, params, nonce }) } : { op, params }),
-    signal: AbortSignal.timeout(600_000),
-  });
+  const url = `http://${row.host}:${row.port}/agent/exec`;
+  const headers: Record<string, string> = sealedOk
+    ? { 'content-type': 'application/json' }
+    : { 'content-type': 'application/json', 'x-agent-token': token };
+  const requestBody = JSON.stringify(sealedOk ? { sealed: seal(shared, { op, params, nonce }) } : { op, params });
+  const budgetMs = agentRequestTimeoutMs(op);
+  let res: ExecResponse;
+  try {
+    res = LONG_AGENT_OPS.has(op)
+      ? await postWithoutHeadersTimeout(url, headers, requestBody, budgetMs)
+      : await fetch(url, {
+          method: 'POST',
+          // r526: an agent endpoint never redirects; following one would
+          // re-send a sealed op (or, on the opt-in cleartext path, the agent
+          // token) to wherever the redirect points.
+          redirect: 'error',
+          headers,
+          body: requestBody,
+          signal: AbortSignal.timeout(budgetMs),
+        });
+  } catch (err) {
+    if (isTimeoutError(err)) {
+      throw new Error(
+        `agent ${op} on ${row.host}:${row.port}: no answer within the panel's timeout for this operation — the node may still be running it`,
+      );
+    }
+    throw err;
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`agent ${op} failed (${res.status}): ${text.slice(0, 200)}`);
@@ -174,7 +291,18 @@ export async function agentOp(
     throw new Error(`agent ${op}: invalid exit code in response`);
   }
   const exitCode = body.exitCode;
-  if (exitCode !== 0 && !opts?.tolerateExit) throw new Error(`agent ${op} exited with ${exitCode}`);
+  if (exitCode !== 0 && !opts?.tolerateExit) {
+    // r526: the agent kills a child on its per-operation timeout and answers
+    // 124 with a marker line — say that it was the NODE's limit, not the
+    // command failing.
+    if (exitCode === AGENT_TIMEOUT_EXIT && lines.some((l) => l.startsWith('Operation timed out after'))) {
+      throw new Error(
+        `agent ${op} was stopped by the node agent's per-operation timeout (exit 124). ` +
+          `Agents older than 0.10.36 cap every operation at 595 s; upgrade the node agent to give builds ${AGENT_LONG_OP_TIMEOUT_MS / 60_000} minutes.`,
+      );
+    }
+    throw new Error(`agent ${op} exited with ${exitCode}`);
+  }
   return { exitCode, lines };
 }
 
