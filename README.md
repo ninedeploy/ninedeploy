@@ -144,6 +144,10 @@ gh attestation verify oci://ghcr.io/ninedeploy/ninedeploy:v0.10.43 --repo NineDe
 
 To run exactly what you verified, pin the digest `cosign verify` prints (`…/ninedeploy@sha256:…`).
 
+Signatures are stored in the Sigstore bundle format, which **cosign v3** reads by default. With
+cosign v2, add `--new-bundle-format` to both `cosign verify` (v2.6+) and `cosign verify-blob`
+(v2.4+); cosign v2.5 and older report `no signatures found` for the image even though it is signed.
+
 **The source** — each GitHub Release carries `ninedeploy-vX.Y.Z.tar.gz` (a `git archive` of the
 tag), `install.sh`, `SHA256SUMS` over both, and `SHA256SUMS.sigstore.json` (its signature):
 
