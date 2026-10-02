@@ -4,6 +4,9 @@ import fp from 'fastify-plugin';
 import type { FastifyInstance } from 'fastify';
 import { config } from '../config.js';
 import { runDeployment } from '../engine/pipeline.js';
+import { logBus } from '../engine/logs.js';
+import { audit } from '../lib/audit.js';
+import { AGENT_LONG_OP_TIMEOUT_MS } from '../lib/agentClient.js';
 
 /**
  * The `IBuildCache` the deploy pipeline should use, per the operator's
@@ -41,6 +44,29 @@ export const STALE_SWEEP_EVERY_MS = 5 * 60 * 1000;
  *  exec layer already tree-kills hung subprocesses on their own timeouts, so
  *  this is a backstop, not the primary guard against stuck deploys. */
 const STOP_GRACE_MS = 60_000;
+/**
+ * r524: how long a NODE deploy interrupted by a panel restart stays `building`
+ * after this process started. The dead pipeline's last agent operation may
+ * still be running on the node (a build is allowed AGENT_LONG_OP_TIMEOUT_MS
+ * there); a redeploy claimed before it ends would race it in the same node
+ * workspace. Past this window nothing the old pipeline started can be alive.
+ */
+export const REMOTE_INTERRUPT_GRACE_MS = AGENT_LONG_OP_TIMEOUT_MS + 60_000;
+/** Deploy-log line + audit reason for a row a restart orphaned (r524). */
+export const INTERRUPTED_LOCAL_REASON =
+  'Interrupted by a panel restart — the deploy cannot resume in a new process. Redeploy to retry.';
+export const INTERRUPTED_REMOTE_REASON =
+  'Interrupted by a panel restart — the node may have finished its last operation, but no pipeline was driving the deploy any more. Redeploy to retry.';
+
+/** A deployment row a previous process claimed and never finished (r524). */
+interface InterruptedRow {
+  deploymentId: number;
+  serviceId: number;
+  serverId: number | null;
+  serviceName: string;
+  ownerUserId: number | null;
+  runtimeId: string | null;
+}
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -98,13 +124,117 @@ export default fp(
       timers.add(t);
     };
 
-    // Crash recovery: a deploy interrupted by a restart is left stranded in
-    // `building`. Requeue rows that can no longer be genuinely running —
-    // a second process sharing this DB may have live in-flight deploys, and
-    // failing those out from under it would break the multi-process story.
+    /**
+     * r524: crash recovery at boot. A deploy interrupted by a restart (a crash,
+     * a service restart, a self-update) is left `building`, and nothing could
+     * ever finish it: the pipeline lived in the process that died. The 45-min
+     * sweep below used to be the only recovery, so after every restart the
+     * stranded row held its partition's slot — at the default concurrency of
+     * 1, every LOCAL deploy queued for up to 45 minutes.
+     *
+     * The panel is a single process (the same assumption lib/registryLock.ts
+     * makes), and this runs before the first claim, so every row that is
+     * `building`/`deploying` now was claimed by a previous process:
+     *   - local partition: failed at once, audited (`deploy.failed`, the
+     *     notification fan-out), the reason appended to its deploy log;
+     *   - a node's partition: held for REMOTE_INTERRUPT_GRACE_MS after this
+     *     process started, then failed the same way. The dead pipeline's last
+     *     agent operation may still be running on the node, and a redeploy
+     *     must not race it in the node workspace.
+     * Legacy provisioning-marker rows keep their immediate requeue below.
+     */
+    const processStartedAt = Date.now();
+    const interruptedRemote = new Map<number, InterruptedRow>();
+    /** Ids this process already failed — the stale sweep must not requeue them. */
+    const settledAtBoot = new Set<number>();
+    const failInterrupted = async (row: InterruptedRow, reason: string): Promise<void> => {
+      const failed = (await fastify.db
+        .update(deployments)
+        .set({ status: 'failed', finishedAt: new Date() })
+        .where(and(eq(deployments.id, row.deploymentId), inArray(deployments.status, ['building', 'deploying'])))) as
+        | { rowsAffected?: number }
+        | undefined;
+      settledAtBoot.add(row.deploymentId);
+      if (failed?.rowsAffected === 0) return; // finished or cancelled meanwhile
+      logBus.publish(row.deploymentId, `✗ ${reason}`);
+      // The service row still says `deploying`. The previous runtime (if any)
+      // was never retired — the pipeline only does that after a successful
+      // routing flip — so hand it back to the runtime-state reconcile as
+      // `running`; it verifies the container and reports drift honestly.
+      await fastify.db
+        .update(services)
+        .set({ status: row.runtimeId ? 'running' : 'error' })
+        .where(and(eq(services.id, row.serviceId), eq(services.status, 'deploying')));
+      // Same action/entity/meta shape as the pipeline's own auditOutcome.
+      await audit(fastify.db, row.ownerUserId ?? null, 'deploy.failed', `${row.serviceName} #${row.deploymentId}`, {
+        reason,
+        serviceId: row.serviceId,
+      });
+      fastify.log.warn({ deploymentId: row.deploymentId, serviceId: row.serviceId }, reason);
+    };
+    const recoverInterrupted = async (): Promise<void> => {
+      try {
+        const rows = (await fastify.db
+          .select({
+            deploymentId: deployments.id,
+            serviceId: deployments.serviceId,
+            message: deployments.message,
+            serverId: services.serverId,
+            serviceName: services.name,
+            ownerUserId: services.ownerUserId,
+            runtimeId: services.runtimeId,
+          })
+          .from(deployments)
+          .innerJoin(services, eq(services.id, deployments.serviceId))
+          .where(inArray(deployments.status, ['building', 'deploying']))) as Array<
+          Partial<InterruptedRow> & { message?: string | null }
+        >;
+        for (const r of rows) {
+          if (typeof r.deploymentId !== 'number' || typeof r.serviceId !== 'number') continue;
+          // The stale sweep migrates these immediately — no worker ever ran them.
+          if (r.message?.startsWith('Provisioning template dependencies:')) continue;
+          const row: InterruptedRow = {
+            deploymentId: r.deploymentId,
+            serviceId: r.serviceId,
+            serverId: r.serverId ?? null,
+            serviceName: r.serviceName ?? `service ${r.serviceId}`,
+            ownerUserId: r.ownerUserId ?? null,
+            runtimeId: r.runtimeId ?? null,
+          };
+          if (row.serverId != null) {
+            interruptedRemote.set(row.deploymentId, row);
+            continue;
+          }
+          try {
+            await failInterrupted(row, INTERRUPTED_LOCAL_REASON);
+          } catch (err) {
+            fastify.log.warn({ err, deploymentId: row.deploymentId }, 'could not fail an interrupted deployment');
+          }
+        }
+      } catch (err) {
+        fastify.log.warn({ err }, 'could not recover deployments interrupted by the restart');
+      }
+    };
+    /** Fail the node deploys whose grace window has passed (r524). */
+    const settleInterruptedRemote = async (): Promise<void> => {
+      if (interruptedRemote.size === 0 || Date.now() - processStartedAt < REMOTE_INTERRUPT_GRACE_MS) return;
+      for (const [id, row] of [...interruptedRemote]) {
+        interruptedRemote.delete(id);
+        try {
+          await failInterrupted(row, INTERRUPTED_REMOTE_REASON);
+        } catch (err) {
+          fastify.log.warn({ err, deploymentId: id }, 'could not fail an interrupted node deployment');
+        }
+      }
+    };
+
+    // Defensive sweep for a `building` row that is neither in flight here nor
+    // owned by the boot recovery — e.g. a claim whose pipeline never started.
+    // Such rows are requeued once they can no longer be genuinely running.
     // 45 min comfortably covers the 30-min exec timeout + 5-min healthcheck.
     const STALE_BUILDING_MS = 45 * 60 * 1000;
     const sweepStaleBuilding = async (): Promise<void> => {
+      await settleInterruptedRemote();
       const staleCutoff = new Date(Date.now() - STALE_BUILDING_MS);
       try {
         const buildingRows = (await fastify.db.select().from(deployments).where(eq(deployments.status, 'building'))) as Array<{
@@ -120,6 +250,9 @@ export default fp(
             // running such a row, so migrate it immediately regardless of age.
             if (r.message?.startsWith('Provisioning template dependencies:')) return true;
             if (inFlight.has(r.id)) return false;
+            // r524: owned by the boot recovery (failed, or a node row inside
+            // its grace window) — never resumed behind the operator's back.
+            if (settledAtBoot.has(r.id) || interruptedRemote.has(r.id)) return false;
             const ts = r.startedAt ?? r.createdAt;
             return !!ts && ts.getTime() < staleCutoff.getTime();
           })
@@ -134,7 +267,13 @@ export default fp(
         fastify.log.warn({ err }, 'could not sweep stale building deployments');
       }
     };
+    await recoverInterrupted();
     await sweepStaleBuilding();
+    // r524: settle interrupted node deploys right when their grace ends, not
+    // up to a sweep interval later.
+    const remoteGraceTimer =
+      interruptedRemote.size > 0 ? setTimeout(() => void sweepStaleBuilding(), REMOTE_INTERRUPT_GRACE_MS) : undefined;
+    remoteGraceTimer?.unref?.();
     // r169: the sweep used to run ONCE, at boot. A restart 5 minutes into a
     // build left that row `building` forever — its service could never be
     // claimed again (nextClaimable skips services with a build in flight) and,
@@ -290,6 +429,7 @@ export default fp(
       stop: async () => {
         running = false;
         clearInterval(sweepTimer);
+        clearTimeout(remoteGraceTimer);
         for (const t of timers) clearTimeout(t);
         timers.clear();
         // Wait for in-flight deploys, but only up to a bounded grace period.
