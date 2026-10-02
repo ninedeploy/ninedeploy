@@ -28,7 +28,8 @@
     "version:bump": "node scripts/bump-version.js",
     "release": "pnpm release:check && pnpm -r --filter \"./packages/*\" --filter \"./apps/cli\" publish --access public",
     "packages:publish": "pnpm -r --filter \"./packages/*\" --filter \"./apps/cli\" publish --access public",
-    "smoke:user-journey": "node scripts/smoke-user-journey.mjs"
+    "smoke:user-journey": "node scripts/smoke-user-journey.mjs",
+    "smoke:upgrade": "node scripts/smoke-upgrade.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
