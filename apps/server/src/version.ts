@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.42';
+export const VERSION = '0.10.43';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.43',
+    date: '2026-10-02',
+    title: 'The Verified-Release Release — Signed, Checksummed, Matrix-Checked',
+    changes: [
+      'Security: a service or database creator kept owner-level access after losing their seat in the workspace (for example when removed by SCIM) — secret env, database credentials, backups, deploy and delete. Owner access now needs a seat where the resource lives; SCIM removal hands what they created to the workspace owner (r694, r695).',
+      'Every API route (361) is now checked by an authorization matrix on a real database: no cross-tenant access, role floors hold, refusals write nothing. A new route without a classification fails the build. It also fixed half-created services on refused create, a backup-id existence leak and misleading 200s on foreign deletes (r690–r693).',
+      'Releases are signed: images with Sigstore keyless signing plus build provenance, and each release ships its own source archive, install.sh, SHA256SUMS and a signature bundle. The installer verifies the archive against the checksums (and the signature when cosign is installed) and stops on a mismatch; from the next update on, self-update verifies the installer too. See README → Verifying a release (r700–r703).',
+    ],
+  },
+{
     version: '0.10.42',
     date: '2026-10-02',
     title: 'The Second-Pass Audit Release — Ingress, Data, Previews and Nodes',

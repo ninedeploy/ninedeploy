@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.43] - 2026-10-02
+
+> The verified-release release (r690–r703): releases are signed and their
+> assets checksummed, installs verify what they download, and every API route
+> is now held to an authorization matrix that fails the build when a new route
+> is not classified.
+
+### Upgrade notes
+
+- **Creators who lost their seat lose access (r694).** A service or database creator counts as its owner only while they hold a seat in a workspace it belongs to. Someone removed from the workspace (for example by SCIM) now gets "not found"; re-seating them restores access. Personal resources outside any workspace stay their creator's. Workspace owners always hold a seat, so they are unaffected.
+- **SCIM removal hands ownership over (r695).** Suspending or deprovisioning a user through SCIM transfers what they created to the workspace owner, as the panel's own member-removal already did. Reinstating the user restores the seat, not the ownership.
+- **Installs verify downloads (r702).** From this release on, the installer downloads the release's own source archive and checks it against the signed `SHA256SUMS`; when `cosign` (v2.4+) is installed it also verifies the signature. A mismatch stops the install and the previous service keeps running. Hosts that cannot reach Sigstore can set `NINEDEPLOY_SKIP_SIGNATURE_VERIFY=1` (the checksum is still enforced). Older tags install as before, with a warning.
+- **Self-update verifies the installer (r703).** Takes effect from the first update a 0.10.43 panel starts.
+- Revoking something that is already gone, or that is not yours, now answers 404 instead of 200 (r691).
+- No migrations.
+
+### Security
+
+- **Seatless creators kept owner access (r694, high).** Whoever created a team service or database kept full access after losing their seat — secret env export, database credentials, backup downloads, deploy and delete (82 routes).
+- **Cross-tenant ids on service create left half-created services (r692);** the backup-drill route revealed whether another tenant's backup id exists (r693); owner-scoped deletes answered 200 for ids outside the caller's scope (r691).
+- **Authorization matrix (r690).** A test boots the real API on a real database, enumerates every route (361), and checks each against two tenants and every role: no cross-tenant access, no write or outside call on refusal, the role floor holds, no secret in a viewer's response. A new route without a classification fails the build.
+
+### Release integrity
+
+- **Signed images (r700).** Every published image is signed with Sigstore keyless signing (GitHub OIDC, no stored key) and carries build provenance. The exact `cosign verify`, `cosign verify-blob` and `gh attestation verify` commands are in README → Verifying a release.
+- **Checksummed, signed release assets (r701).** Each release carries `ninedeploy-vX.Y.Z.tar.gz`, `install.sh`, `SHA256SUMS` and its signature bundle. The release is created as a draft, its assets are verified the way installers check them, and only then published — `releases/latest` never points at a release without checksums.
+- What this guarantees: the archive, installer and image are byte-for-byte what this repository's release workflow produced. What it does not: the trust root is still GitHub and Sigstore.
+
 ## [0.10.42] - 2026-10-02
 
 > The second-pass audit release (r630–r680): ingress, managed data, PR previews
