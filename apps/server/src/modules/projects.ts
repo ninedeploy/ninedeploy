@@ -1,5 +1,14 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
-import { databases, projects, serviceProjects, type Project, workspaces, type Workspace } from '@ninedeploy/db';
+import {
+  databases,
+  type DB,
+  envVars,
+  projects,
+  serviceProjects,
+  type Project,
+  workspaces,
+  type Workspace,
+} from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import { createProject, projectPatch, type WorkspaceRole } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
@@ -144,11 +153,26 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
     if (!req.user!.isOperator && row.workspaceId != null) {
       await assertWorkspaceRole(app.db, row.workspaceId, req.user!, 'admin');
     }
-    await app.db.delete(projects).where(eq(projects.id, id));
+    await app.db.transaction(async (tx) => {
+      await purgeProjectEnvVars(tx, [id]);
+      await tx.delete(projects).where(eq(projects.id, id));
+    });
     void audit(app.db, req.user!.id, 'project.delete', row.name);
     return { ok: true };
   });
 };
+
+/**
+ * r541: delete the shared env vars (secrets included) of projects that are
+ * about to go. `env_vars` rows with scope='project' name their project only
+ * through `scope_key` — there is no foreign key to cascade them — so every
+ * path that deletes a project (directly, or through its workspace's cascade)
+ * must call this first, or the encrypted values outlive the project forever.
+ */
+export async function purgeProjectEnvVars(db: Pick<DB, 'delete'>, projectIds: number[]): Promise<void> {
+  if (projectIds.length === 0) return;
+  await db.delete(envVars).where(and(eq(envVars.scope, 'project'), inArray(envVars.scopeKey, projectIds)));
+}
 
 /**
  * Return the subset of `ids` the caller holds at least `minRole` on (via the

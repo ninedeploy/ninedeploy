@@ -13,6 +13,7 @@ import {
 } from '@ninedeploy/db';
 import { audit } from '../lib/audit.js';
 import { decrypt } from '../lib/crypto.js';
+import { purgeProjectEnvVars } from './projects.js';
 
 /**
  * The single demo payload: one real, deployable service built from a pinned
@@ -97,7 +98,11 @@ async function reapLegacyFakeStack(db: DB, userId: number): Promise<void> {
     const members = await db.query.serviceProjects.findMany({ where: eq(serviceProjects.projectId, legacyProject.id) });
     const dbs = await db.query.databases.findMany({ where: eq(databases.projectId, legacyProject.id) });
     const occupied = members.some((m) => !svcIdSet.has(m.serviceId)) || dbs.some((d) => d.id !== legacyDb?.id);
-    if (!occupied) await db.delete(projects).where(eq(projects.id, legacyProject.id));
+    if (!occupied) {
+      // r541: project-scoped env vars have no FK to cascade them.
+      await purgeProjectEnvVars(db, [legacyProject.id]);
+      await db.delete(projects).where(eq(projects.id, legacyProject.id));
+    }
   }
   void audit(db, userId, 'demo.legacy_reaped', [...LEGACY.serviceSlugs, LEGACY.dbSlug].join(','));
 }

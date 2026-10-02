@@ -29,6 +29,7 @@ import { iso } from '../lib/serialize.js';
 import { slugify, slugifyWithSuffix } from '../lib/slug.js';
 import { createOrRefreshInvitation, buildAcceptUrl, buildInviteEmail } from './invitations.js';
 import { sendSystemEmail } from '../lib/notifier.js';
+import { purgeProjectEnvVars } from './projects.js';
 
 function serializeMember(m: WorkspaceMember, u: Pick<User, 'email' | 'name'>): WorkspaceMemberEntry {
   return {
@@ -310,7 +311,13 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
     const isOwner = ws.ownerId === userId || req.user!.isOperator;
     if (!isOwner) throw forbidden('Only the workspace owner or system admin can delete a workspace');
 
-    await app.db.delete(workspaces).where(eq(workspaces.id, id));
+    // r541: the workspace's projects go with it (FK cascade); their shared
+    // env vars have no FK and must be deleted explicitly.
+    await app.db.transaction(async (tx) => {
+      const owned = await tx.select({ id: projects.id }).from(projects).where(eq(projects.workspaceId, id));
+      await purgeProjectEnvVars(tx, owned.map((p) => p.id));
+      await tx.delete(workspaces).where(eq(workspaces.id, id));
+    });
     void audit(app.db, req.user!.id, 'workspace.delete', ws.name);
     return { ok: true };
   });
@@ -495,7 +502,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
  * change hands; resources the user owns elsewhere are untouched.
  */
 export async function rehomeOwnedResources(
-  db: DB,
+  db: Pick<DB, 'select' | 'update'>,
   workspaceId: number,
   removedUserId: number,
   newOwnerId: number,
