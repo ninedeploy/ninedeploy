@@ -400,26 +400,45 @@ export async function containerExposedTcpPorts(name: string): Promise<number[]> 
  * so it is also refused where the build pack is SAVED
  * ({@link railpackRefusedForInstall}); the probe covers a bare-metal host whose
  * install predates Railpack.
+ *
+ * r582: the image now ships the same pinned CLI as install.sh, so a container
+ * is no longer a reason on its own (only an image WITHOUT the CLI is). What
+ * neither install provided is the BuildKit daemon `railpack build` connects
+ * to: it reads BUILDKIT_HOST and exits "BUILDKIT_HOST environment variable is
+ * not set" without it — and buildEnv() never passed it on, so every railpack
+ * build failed after the checkout on every install. The operator points
+ * BUILDKIT_HOST at a BuildKit daemon in the panel's environment; until then
+ * the pack is refused with that fix named, at save and at deploy time.
  */
 export const RAILPACK_CONTAINER_REASON =
-  'The railpack build pack is not available on this installation: the NineDeploy container image does not ship the Railpack CLI. ' +
-  'Switch the build pack to auto, nixpacks or dockerfile (Service → Settings → Build) and redeploy.';
+  'The railpack build pack is not available on this installation: this NineDeploy container image has no Railpack CLI (the official image bundles it since 0.10.38). ' +
+  'Run the official image, or switch the build pack to auto, nixpacks or dockerfile (Service → Settings → Build) and redeploy.';
 const RAILPACK_MISSING_REASON =
   'Railpack CLI is unavailable. Re-run the NineDeploy installer to provision it, or switch the build pack.';
+export const RAILPACK_BUILDKIT_REASON =
+  'The railpack build pack needs a BuildKit daemon, and BUILDKIT_HOST is not set for the panel. ' +
+  'Start one (docker run -d --name buildkit --restart unless-stopped --privileged moby/buildkit), set BUILDKIT_HOST=docker-container://buildkit ' +
+  "in the panel's environment (the install directory's .env on bare metal, the container's environment for a docker install) and restart the panel — " +
+  'or switch the build pack to auto, nixpacks or dockerfile (Service → Settings → Build).';
 
-/** Save-time half of r520: the container install can never run railpack. */
-export function railpackRefusedForInstall(inContainer = existsSync('/.dockerenv')): string | null {
-  return inContainer ? RAILPACK_CONTAINER_REASON : null;
+const buildkitHostSet = (value: string | undefined) => !!value?.trim();
+
+/** Save-time half of r520/r582: refuse railpack where it cannot build. */
+export function railpackRefusedForInstall(buildkitHost: string | undefined = process.env['BUILDKIT_HOST']): string | null {
+  return buildkitHostSet(buildkitHost) ? null : RAILPACK_BUILDKIT_REASON;
 }
 
-/** Deploy-time half of r520: probe the CLI before anything is cloned or built. */
-export async function railpackUnavailableReason(inContainer = existsSync('/.dockerenv')): Promise<string | null> {
+/** Deploy-time half of r520/r582: probe the CLI (and BuildKit address) before anything is cloned or built. */
+export async function railpackUnavailableReason(
+  inContainer = existsSync('/.dockerenv'),
+  buildkitHost: string | undefined = process.env['BUILDKIT_HOST'],
+): Promise<string | null> {
   try {
     await capture('railpack', ['--version']);
-    return null;
   } catch {
     return inContainer ? RAILPACK_CONTAINER_REASON : RAILPACK_MISSING_REASON;
   }
+  return buildkitHostSet(buildkitHost) ? null : RAILPACK_BUILDKIT_REASON;
 }
 
 /**

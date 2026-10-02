@@ -90,6 +90,26 @@ describe('release delivery invariants', () => {
     expect(installer).toContain(`PNPM_VERSION="${expected}"`);
   });
 
+  it('r582: the Dockerfile ships the same checksum-verified Railpack as install.sh', () => {
+    // The image used to ship no Railpack CLI, so a container install could only
+    // refuse the railpack build pack (r520). The two pins must not drift: an
+    // install-mode-dependent railpack version is a support trap.
+    const dockerfile = readFileSync(new URL('../../../Dockerfile', import.meta.url), 'utf8');
+    const installer = readFileSync(new URL('../../../install.sh', import.meta.url), 'utf8');
+    const version = /RAILPACK_VERSION="\$\{NINEDEPLOY_RAILPACK_VERSION:-([\d.]+)\}"/.exec(installer)?.[1];
+    const amd64 = /RAILPACK_SHA_AMD64_x86_64="([0-9a-f]{64})"/.exec(installer)?.[1];
+    const arm64 = /RAILPACK_SHA_ARM64_aarch64="([0-9a-f]{64})"/.exec(installer)?.[1];
+    expect(version && amd64 && arm64).toBeTruthy();
+    expect(dockerfile).toContain(`ARG RAILPACK_VERSION=${version}`);
+    expect(dockerfile).toContain(`amd64) RAILPACK_TARGET="x86_64-unknown-linux-musl"; RAILPACK_SHA256="${amd64}"`);
+    expect(dockerfile).toContain(`arm64) RAILPACK_TARGET="aarch64-unknown-linux-musl"; RAILPACK_SHA256="${arm64}"`);
+    // Verified before it is unpacked, and proven runnable at build time.
+    expect(dockerfile).toMatch(/RAILPACK_SHA256\} {2}\/tmp\/\$\{RAILPACK_ASSET\}" \| sha256sum -c -[\s\S]*tar -xzf "\/tmp\/\$\{RAILPACK_ASSET\}" -C \/usr\/local\/bin railpack/);
+    expect(dockerfile).toContain('&& railpack --version');
+    // In the runtime stage (after the second FROM), not the build stage.
+    expect(dockerfile.indexOf('ARG RAILPACK_VERSION')).toBeGreaterThan(dockerfile.indexOf('AS runtime'));
+  });
+
   it('r476: no documented createClient example uses the nonexistent token option', () => {
     // The r472 audit found AI_MCP_CLI.md teaching an unauthenticated client;
     // r476 found the SAME bug family copied in README.md and website docs.
@@ -141,22 +161,18 @@ describe('r573: release publishing and version bumping', () => {
     // Serialized per tag (a push and a manual re-run of the same tag), never cancelled mid-push.
     expect(workflow.concurrency?.group).toContain('inputs.tag || github.ref_name');
     expect(workflow.concurrency?.['cancel-in-progress']).toBe(false);
-    const steps = workflow.jobs['publish-image']!.steps;
+    // r581: the decision lives in the promotion job, made after the smokes.
+    const steps = workflow.jobs['promote-release']!.steps;
     const decide = steps.findIndex((s) => s.name?.includes('moves :latest'));
     expect(decide).toBeGreaterThan(-1);
     const decideStep = steps[decide] as Step & { id?: string };
     expect(decideStep.id).toBe('latest');
     expect(decideStep.run).toContain('git ls-remote --tags --refs origin');
     expect(decideStep.run).toContain('"$highest" = "$RELEASE_TAG"');
-    // The metadata step gates the :latest tag on that decision; the version tag is unconditional.
-    const meta = steps.find((s) => String(s.uses ?? '').startsWith('docker/metadata-action'))!;
-    const tags = String(meta.with?.['tags']);
-    expect(tags).toContain("type=raw,value=latest,enable=${{ steps.latest.outputs.move == 'true' }}");
-    expect(tags).not.toMatch(/type=raw,value=latest\s*$/m);
-    expect(tags).toContain('type=raw,value=${{ env.RELEASE_TAG }}');
-    // Decided before anything is pushed.
-    const push = steps.findIndex((s) => s.with?.['push'] === true);
-    expect(decide).toBeLessThan(push);
+    // The retag is gated on that decision and comes after it.
+    const retag = steps.findIndex((s) => s.run?.includes('imagetools create'));
+    expect(retag).toBeGreaterThan(decide);
+    expect((steps[retag] as Step & { if?: string }).if).toBe("steps.latest.outputs.move == 'true'");
     // The dispatch hint names the real workflow file.
     expect(raw).not.toContain('gh workflow run release.yml');
     expect(raw).toContain('gh workflow run release-publish.yml');
@@ -224,5 +240,111 @@ describe('r573: release publishing and version bumping', () => {
       expect(readFileSync(join(root, 'docs/QUICKSTART.md'), 'utf8')).toContain('--version v0.10.99');
       expect(readFileSync(join(root, 'README.md'), 'utf8')).toBe('Release-0.10.99-blue --version v0.10.99 newest release tag (**0.10.99**)\n');
     });
+  });
+});
+
+// ── r581: installed servers are only offered a release that upgraded green ──
+describe('r581: publication is gated on the end-to-end smokes', () => {
+  type Job = {
+    needs?: string | string[];
+    permissions?: Record<string, string>;
+    steps: Array<Step & { id?: string; if?: string; 'timeout-minutes'?: number }>;
+  };
+  const jobs = () => readWorkflow('release-publish.yml').jobs as unknown as Record<string, Job>;
+  const needsOf = (job: Job) => [job.needs ?? []].flat();
+  const uses = (step: Step, action: string) => String(step.uses ?? '').startsWith(`${action}@`);
+
+  it('the build job pushes ONLY :vX.Y.Z and verifies its manifest — no :latest, no Release', () => {
+    const build = jobs()['publish-image']!;
+    expect(build.permissions).toEqual({ contents: 'read', packages: 'write' });
+    const meta = build.steps.find((s) => uses(s, 'docker/metadata-action'))!;
+    const tags = String(meta.with?.['tags']).split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+    expect(tags).toEqual(['type=raw,value=${{ env.RELEASE_TAG }}']);
+    expect(String(meta.with?.['flavor'])).toContain('latest=false');
+    const push = build.steps.findIndex((s) => s.with?.['push'] === true);
+    const manifest = build.steps.findIndex((s) => s.name?.includes('multi-arch manifest'));
+    expect(push).toBeGreaterThan(-1);
+    expect(manifest).toBeGreaterThan(push);
+    expect(build.steps.some((s) => uses(s, 'softprops/action-gh-release'))).toBe(false);
+    expect(build.steps.some((s) => s.run?.includes('imagetools create'))).toBe(false);
+  });
+
+  it('the smoke job needs the build and runs both smokes on the pushed tag', () => {
+    const smoke = jobs()['smoke-published-image']!;
+    expect(needsOf(smoke)).toEqual(['publish-image']);
+    expect(smoke.permissions).toEqual({ contents: 'read', packages: 'read' });
+    const steps = smoke.steps;
+    expect(steps.find((s) => uses(s, 'actions/checkout'))?.with?.['ref']).toBe('${{ env.RELEASE_TAG }}');
+    // smoke-upgrade loads @libsql/client from packages/db.
+    const install = steps.findIndex((s) => s.run === 'pnpm install --frozen-lockfile');
+    expect(install).toBeGreaterThan(-1);
+
+    // The FROM side is the previous PUBLISHED release (releases API), never a bare tag.
+    const previous = steps.findIndex((s) => s.id === 'previous');
+    expect(steps[previous]!.run).toContain('/releases');
+    expect(steps[previous]!.run).toContain('select(.draft == false and .prerelease == false)');
+    expect(steps[previous]!.run).not.toContain('ls-remote');
+    expect(steps[previous]!.run).toContain('skipping the upgrade smoke');
+
+    const upgrade = steps.findIndex((s) => s.run?.includes('scripts/smoke-upgrade.mjs'));
+    expect(upgrade).toBeGreaterThan(Math.max(install, previous));
+    expect(steps[upgrade]!.run).toBe('node scripts/smoke-upgrade.mjs --from="$FROM_TAG" --to="$RELEASE_TAG"');
+    expect(steps[upgrade]!.env?.['FROM_TAG']).toBe('${{ steps.previous.outputs.from }}');
+    expect(steps[upgrade]!.if).toBe("steps.previous.outputs.from != ''");
+    expect(steps[upgrade]!['timeout-minutes']).toBeGreaterThan(0);
+
+    const journey = steps.findIndex((s) => s.run?.includes('scripts/smoke-user-journey.mjs'));
+    expect(journey).toBeGreaterThan(install);
+    expect(steps[journey]!.run).toBe('node scripts/smoke-user-journey.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"');
+    expect(steps[journey]!.if).toBeUndefined();
+    expect(steps[journey]!['timeout-minutes']).toBeGreaterThan(0);
+  });
+
+  it(':latest and the GitHub Release come only after the smokes, as a retag of the smoked manifest', () => {
+    const all = jobs();
+    const promote = all['promote-release']!;
+    expect(needsOf(promote)).toEqual(expect.arrayContaining(['publish-image', 'smoke-published-image']));
+    expect(promote.permissions).toEqual({ contents: 'write', packages: 'write' });
+    const steps = promote.steps;
+    // No rebuild on the way to :latest.
+    expect(steps.some((s) => uses(s, 'docker/build-push-action'))).toBe(false);
+    const retag = steps.findIndex((s) => s.run?.includes('imagetools create'));
+    expect(steps[retag]!.run).toContain('imagetools create --tag "${repo}:latest" "${repo}:${RELEASE_TAG}"');
+    expect(steps[retag]!.run).toContain('"$want" != "$got"');
+    // The Release is what servers discover — it is the last step.
+    const release = steps.findIndex((s) => uses(s, 'softprops/action-gh-release'));
+    expect(release).toBe(steps.length - 1);
+    expect(release).toBeGreaterThan(retag);
+    expect(steps[release]!.with?.['tag_name']).toBe('${{ env.RELEASE_TAG }}');
+
+    // Nowhere else: only promote-release may write contents or create the Release.
+    for (const [name, job] of Object.entries(all)) {
+      if (name === 'promote-release') continue;
+      expect(job.permissions?.['contents'], name).toBe('read');
+      expect(job.steps.some((s) => uses(s, 'softprops/action-gh-release')), name).toBe(false);
+      expect(job.steps.some((s) => s.run?.includes('imagetools create')), name).toBe(false);
+    }
+  });
+
+  it('every action stays pinned to a full commit SHA', () => {
+    for (const job of Object.values(jobs())) {
+      for (const step of job.steps) {
+        if (step.uses) expect(step.uses).toMatch(/@[0-9a-f]{40}$/);
+      }
+    }
+  });
+
+  it('the upgrade smoke pulls both images up front and fails loudly on a missing FROM release', () => {
+    const script = readFileSync(new URL('../../../scripts/smoke-upgrade.mjs', import.meta.url), 'utf8');
+    const pulls = script.indexOf("pullOrFail(FROM, 'from')");
+    expect(pulls).toBeGreaterThan(-1);
+    expect(script.indexOf("pullOrFail(TO, 'to')")).toBeGreaterThan(pulls);
+    // Before anything is created.
+    expect(pulls).toBeLessThan(script.indexOf("docker(['network', 'create', NET])"));
+    expect(script).toContain('is a published release, so installed servers pin this image');
+    // A FROM that already carries r541 cannot orphan a secret; the precondition
+    // applies only to older releases, the post-upgrade check to all.
+    expect(script).toContain('if (olderThan(FROM, R541_FIXED_IN))');
+    expect(script).toContain('post.orphanProjectEnv !== 0');
   });
 });

@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { dirname } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { containerExposedTcpPorts, dockerBuilder, nixpacksEnvArgs, RAILPACK_CONTAINER_REASON, railpackRefusedForInstall, railpackUnavailableReason, sanitiseRuntimeLogs, writeEnvFile } from '../../src/engine/builders/docker.js';
+import { containerExposedTcpPorts, dockerBuilder, nixpacksEnvArgs, RAILPACK_BUILDKIT_REASON, RAILPACK_CONTAINER_REASON, railpackRefusedForInstall, railpackUnavailableReason, sanitiseRuntimeLogs, writeEnvFile } from '../../src/engine/builders/docker.js';
 
 const h = vi.hoisted(() => {
   const run = vi.fn(async (_cmd: string, _args: unknown[], _opts: unknown, sink?: (line: string) => void) => {
@@ -1129,7 +1129,15 @@ describe('dockerBuilder registry auth', () => {
 });
 
 describe('dockerBuilder.buildAndRun — static build pack', () => {
+  // r582: railpack builds need a BuildKit address; the railpack cases below
+  // run as an install that configured one (one test removes it).
+  const savedBuildkitHost = process.env['BUILDKIT_HOST'];
+  afterEach(() => {
+    if (savedBuildkitHost === undefined) delete process.env['BUILDKIT_HOST'];
+    else process.env['BUILDKIT_HOST'] = savedBuildkitHost;
+  });
   beforeEach(() => {
+    process.env['BUILDKIT_HOST'] = 'docker-container://buildkit';
     h.run.mockReset();
     h.run.mockResolvedValue(undefined);
     h.capture.mockReset();
@@ -1243,18 +1251,59 @@ describe('dockerBuilder.buildAndRun — static build pack', () => {
     expect(runCall?.[1]).toContain('ninedeploy/web:abcdef1');
   });
 
-  it('r520: a container install refuses railpack with the fix named; bare metal probes the CLI', async () => {
-    expect(railpackRefusedForInstall(true)).toBe(RAILPACK_CONTAINER_REASON);
-    expect(railpackRefusedForInstall(false)).toBeNull();
-    expect(RAILPACK_CONTAINER_REASON).toMatch(/container image does not ship the Railpack CLI/);
-    expect(RAILPACK_CONTAINER_REASON).toMatch(/Switch the build pack/);
+  it('r582: without BUILDKIT_HOST the builder refuses before running railpack build', async () => {
+    delete process.env['BUILDKIT_HOST'];
+    const ctx = makeCtx({
+      service: { slug: 'web', image: null, port: 3000, repoUrl: 'https://github.com/acme/web', healthPath: '/', cpuShares: 0, memLimitMb: 0 },
+      workDir: '/work/web',
+      buildConfig: { buildPack: 'railpack', baseDir: '/' },
+    });
+    await expect(dockerBuilder.buildAndRun(ctx as never)).rejects.toThrow(RAILPACK_BUILDKIT_REASON);
+    expect(h.run.mock.calls.filter((c) => c[0] === 'railpack')).toEqual([]);
+  });
 
+  it('r520/r582: railpack is refused where it cannot build, with the fix named', async () => {
+    const BK = 'docker-container://buildkit';
+    // Save time: the container image ships the CLI now (r582), so only a
+    // missing BuildKit address refuses — on any install.
+    expect(railpackRefusedForInstall(BK)).toBeNull();
+    expect(railpackRefusedForInstall('')).toBe(RAILPACK_BUILDKIT_REASON);
+    expect(railpackRefusedForInstall('  ')).toBe(RAILPACK_BUILDKIT_REASON);
+    expect(RAILPACK_BUILDKIT_REASON).toMatch(/BUILDKIT_HOST/);
+    expect(RAILPACK_BUILDKIT_REASON).toMatch(/moby\/buildkit/);
+    expect(RAILPACK_BUILDKIT_REASON).toMatch(/switch the build pack/);
+
+    // Deploy time: the CLI first (an image without it, or a bare-metal host
+    // whose install predates Railpack)…
     h.capture.mockRejectedValueOnce(new Error('spawn railpack ENOENT'));
-    expect(await railpackUnavailableReason(true)).toBe(RAILPACK_CONTAINER_REASON);
+    expect(await railpackUnavailableReason(true, BK)).toBe(RAILPACK_CONTAINER_REASON);
+    expect(RAILPACK_CONTAINER_REASON).toMatch(/switch the build pack/);
     h.capture.mockRejectedValueOnce(new Error('spawn railpack ENOENT'));
-    expect(await railpackUnavailableReason(false)).toMatch(/Re-run the NineDeploy installer/);
+    expect(await railpackUnavailableReason(false, BK)).toMatch(/Re-run the NineDeploy installer/);
+    // …then the BuildKit address railpack itself requires.
     h.capture.mockResolvedValueOnce('railpack 0.39.0');
-    expect(await railpackUnavailableReason(true)).toBeNull();
+    expect(await railpackUnavailableReason(true, '')).toBe(RAILPACK_BUILDKIT_REASON);
+    h.capture.mockResolvedValueOnce('railpack 0.39.0');
+    expect(await railpackUnavailableReason(false, '')).toBe(RAILPACK_BUILDKIT_REASON);
+    h.capture.mockResolvedValueOnce('railpack 0.39.0');
+    expect(await railpackUnavailableReason(true, BK)).toBeNull();
+  });
+
+  it('r582: both checks read the panel environment by default', async () => {
+    const saved = process.env['BUILDKIT_HOST'];
+    try {
+      delete process.env['BUILDKIT_HOST'];
+      expect(railpackRefusedForInstall()).toBe(RAILPACK_BUILDKIT_REASON);
+      h.capture.mockResolvedValueOnce('railpack 0.39.0');
+      expect(await railpackUnavailableReason()).toBe(RAILPACK_BUILDKIT_REASON);
+      process.env['BUILDKIT_HOST'] = 'tcp://buildkit:1234';
+      expect(railpackRefusedForInstall()).toBeNull();
+      h.capture.mockResolvedValueOnce('railpack 0.39.0');
+      expect(await railpackUnavailableReason()).toBeNull();
+    } finally {
+      if (saved === undefined) delete process.env['BUILDKIT_HOST'];
+      else process.env['BUILDKIT_HOST'] = saved;
+    }
   });
 });
 

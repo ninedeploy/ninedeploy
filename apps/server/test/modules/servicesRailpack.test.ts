@@ -5,7 +5,9 @@ import { asUser, buildTestApp, createFakeDb, svcRow } from '../helpers.js';
  * r520: the panel's container image ships no Railpack CLI, so a container
  * install accepted `buildPack: railpack` and failed every deploy mid-build.
  * The save routes now refuse it up front there (the install check itself is
- * unit-tested in test/builders/docker.test.ts; this pins the wiring).
+ * unit-tested in test/builders/docker.test.ts; this pins the wiring). r582:
+ * the image ships the CLI now; the refusal is "no BuildKit daemon configured
+ * (BUILDKIT_HOST)", through the same seam.
  */
 
 const h = vi.hoisted(() => ({ refused: null as string | null }));

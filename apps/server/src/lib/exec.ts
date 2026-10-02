@@ -43,6 +43,10 @@ const SAFE_INHERITED_ENV = new Set([
   // builder touches its activity log. The unit points DOCKER_CONFIG at a
   // writable path under the data dir.
   'DOCKER_CONFIG',
+  // r582: the BuildKit daemon the railpack build pack connects to (railpack
+  // reads it itself and refuses to build without it). Operator-set only —
+  // like the docker transport keys it is never taken from user env below.
+  'BUILDKIT_HOST',
 ]);
 
 /**
@@ -55,7 +59,7 @@ const SAFE_INHERITED_ENV = new Set([
  * pipeline to a daemon they control, handing over the build context and every
  * injected secret. Non-transport user keys pass through unchanged.
  */
-const UNOVERRIDABLE_ENV = new Set(['DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_CONFIG', 'COMPOSE_FILE', 'DOCKER_BUILDKIT']);
+const UNOVERRIDABLE_ENV = new Set(['DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_CONFIG', 'COMPOSE_FILE', 'DOCKER_BUILDKIT', 'BUILDKIT_HOST']);
 export function buildEnv(extra?: Record<string, string>): Record<string, string> {
   const env: Record<string, string> = {};
   for (const key of SAFE_INHERITED_ENV) {

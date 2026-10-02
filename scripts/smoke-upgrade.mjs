@@ -22,6 +22,11 @@
 //
 // Usage: node scripts/smoke-upgrade.mjs [--from=v0.10.35] [--to=v0.10.37]
 //        (--to defaults to the repo's current VERSION)
+//
+// r581: release-publish.yml runs this between pushing `:vX.Y.Z` and
+// publishing it (GitHub Release + `:latest`), with --from set to the highest
+// published release below the new tag. Both images are pulled up front so a
+// missing one fails with its name instead of as a `docker run` error.
 
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -50,6 +55,14 @@ const PANEL = `nd-upgrade-panel-${suffix}`;
 const VOLUME = `nd-upgrade-data-${suffix}`;
 const JWT = randomBytes(32).toString('hex');
 const MASTER = randomBytes(32).toString('hex');
+
+/** r541 shipped in 0.10.37: from there on a project delete no longer orphans its secrets. */
+const R541_FIXED_IN = [0, 10, 37];
+const semver = (tag) => (/^v?(\d+)\.(\d+)\.(\d+)$/.exec(tag) ?? []).slice(1).map(Number);
+const olderThan = (tag, [a, b, c]) => {
+  const [x = 0, y = 0, z = 0] = semver(tag);
+  return x !== a ? x < a : y !== b ? y < b : z < c;
+};
 
 const docker = (args, opts = {}) => {
   const r = spawnSync('docker', args, { encoding: 'utf8', timeout: opts.timeout ?? 300_000, maxBuffer: 8 << 20 });
@@ -144,10 +157,29 @@ async function inspectDb(label) {
   }
 }
 
+/**
+ * r581: pull both panel images before anything is created. A missing FROM
+ * image means a PUBLISHED release has no image behind it — every server
+ * pinned to it is broken, which is louder news than this upgrade. A missing
+ * TO image means the publish job did not push what it claims to have pushed.
+ */
+function pullOrFail(tag, role) {
+  const r = spawnSync('docker', ['pull', image(tag)], { encoding: 'utf8', timeout: 900_000, maxBuffer: 8 << 20 });
+  if (r.status === 0) return;
+  const why = (r.stderr || r.error?.message || '').trim().split(/\r?\n/).slice(-3).join(' | ');
+  fail(role === 'from'
+    ? `the FROM release image ${image(tag)} cannot be pulled (${why}). ${tag} is a published release, so installed servers pin this image — investigate the registry before releasing anything else.`
+    : `the TO image ${image(tag)} cannot be pulled (${why}) — it was not pushed, or not under this tag.`);
+}
+
 async function main() {
   console.log(`Upgrade smoke: ${image(FROM)} → ${image(TO)}`);
   step(`topology: network ${NET}, dind ${DIND}, panel ${PANEL} (:${PANEL_PORT}), volume ${VOLUME}`);
   const journal = JSON.parse(readFileSync(new URL('../packages/db/src/migrations/meta/_journal.json', import.meta.url), 'utf8'));
+
+  pullOrFail(FROM, 'from');
+  pullOrFail(TO, 'to');
+  step(`pulled ${image(FROM)} and ${image(TO)}`);
 
   // ── bring up DinD ───────────────────────────────────────────────────────
   docker(['network', 'create', NET]);
@@ -207,7 +239,14 @@ async function main() {
 
   const before = await inspectDb(FROM);
   step(`${FROM} db: ${before.migrations} migrations recorded, ${before.orphanProjectEnv} orphaned project secret(s)`);
-  if (before.orphanProjectEnv < 1) fail(`${FROM}: expected the project delete to orphan its secret (got ${before.orphanProjectEnv}) — the seed did not exercise r541`);
+  // r581: only a FROM older than the r541 fix can orphan the secret — the CI
+  // gate starts from the newest published release, which already cleans up.
+  // The post-upgrade "no orphans" assertion below holds either way.
+  if (olderThan(FROM, R541_FIXED_IN)) {
+    if (before.orphanProjectEnv < 1) fail(`${FROM}: expected the project delete to orphan its secret (got ${before.orphanProjectEnv}) — the seed did not exercise r541`);
+  } else {
+    step(`${FROM} already includes r541 — the project delete left ${before.orphanProjectEnv} orphaned secret(s)`);
+  }
   const appContainers = dind(['ps', '--filter', 'status=running', '--format', '{{.Names}}']);
 
   // ── TO: same volume, same secrets ───────────────────────────────────────

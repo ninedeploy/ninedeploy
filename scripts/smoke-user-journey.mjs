@@ -67,6 +67,14 @@ async function main() {
   step(`topology: network ${NET}, dind ${DIND}, panel ${PANEL} (:${PANEL_PORT})`);
 
   // ── bring up DinD + panel ───────────────────────────────────────────────
+  // r581: pull the image under test on its own, with a pull-sized timeout —
+  // folded into `docker run` it shared the 2-minute run budget, and on a
+  // fresh CI runner (release-publish.yml's smoke job) the multi-arch pull is
+  // the slow part. A tag that cannot be pulled is named as such.
+  const pulled = spawnSync('docker', ['pull', IMAGE], { encoding: 'utf8', timeout: 900_000, maxBuffer: 8 << 20 });
+  if (pulled.status !== 0) {
+    fail(`cannot pull ${IMAGE}: ${(pulled.stderr || pulled.error?.message || '').trim().split(/\r?\n/).slice(-3).join(' | ')}`);
+  }
   try {
     docker(['network', 'create', NET], { quiet: true });
     docker(['rm', '-f', DIND], { quiet: true });
@@ -92,8 +100,10 @@ async function main() {
   }
 
   // ── panel boots ─────────────────────────────────────────────────────────
+  // r581: 120 s like the upgrade smoke — a cold CI runner runs every
+  // migration on an empty database and 40 s left no margin for it.
   let health = null;
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 120; i++) {
     try {
       const r = await api('/health');
       if (r.status === 200 && r.json?.status === 'ok') { health = r.json; break; }

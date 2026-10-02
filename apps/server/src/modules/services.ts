@@ -272,7 +272,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     });
     assertMayPublishPort(req.user!, input.publishedPort);
     // r522: deploy hooks run on the panel host, so a node-pinned service
-    // cannot carry one; r520: a container install has no Railpack CLI.
+    // cannot carry one; r520/r582: railpack is refused where it cannot build
+    // (no BuildKit daemon configured via BUILDKIT_HOST).
     if (input.serverId != null) {
       const hookRefusal = remoteHookRefusal(input.build);
       if (hookRefusal) throw badRequest(hookRefusal, 'remote_deploy_unsupported');
@@ -681,7 +682,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       });
       if (hookRefusal) throw badRequest(hookRefusal, 'remote_deploy_unsupported');
     }
-    // r520: switching TO railpack on an install that cannot run it.
+    // r520/r582: switching TO railpack on an install that cannot run it.
     if (build?.buildPack === 'railpack' && currentBuild?.buildPack !== 'railpack') {
       const railpackRefusal = railpackRefusedForInstall();
       if (railpackRefusal) throw badRequest(railpackRefusal, 'railpack_unavailable');
