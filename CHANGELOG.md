@@ -9,7 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.10.39] - 2026-10-02
+## [0.10.40] - 2026-10-02
+
+> The first published build of the 0.10.38 changes — read the 0.10.38
+> section below, including its upgrade notes. Neither the 0.10.38 nor the
+> 0.10.39 tag reached a panel: the smoke-gated release pipeline (r581)
+> stopped each one before any image was pushed, `:latest` moved or a GitHub
+> Release was created.
+
+### Fixed
+
+- **Railpack on arm64 (r584).** Railpack names its arm64 Linux binary `arm64-unknown-linux-musl`, not `aarch64-…` (Nixpacks' spelling). The arm64 image build 404'd, and `install.sh` on arm64 bare-metal hosts has silently never installed railpack since it was introduced. Both archives re-verified against Railpack's published checksums.
+
+## [0.10.39] - 2026-10-02 — not published, superseded by 0.10.40
 
 > The first published build of the 0.10.38 changes. The 0.10.38 tag never
 > reached a panel: its release checks failed on a test that only broke on

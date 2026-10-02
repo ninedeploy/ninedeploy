@@ -1,6 +1,6 @@
 {
   "name": "@ninedeploy/db",
-  "version": "0.10.39",
+  "version": "0.10.40",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
