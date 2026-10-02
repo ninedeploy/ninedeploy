@@ -155,6 +155,30 @@ jobs:
           # Nixpacks checksums are keyed by version: unknown versions get none.
           test -n "$(nixpacks_sha256 1.41.0 x86_64)"
           test -z "$(nixpacks_sha256 9.9.9 x86_64)"
+          # r702: release integrity — SHA256SUMS parsing (text and binary
+          # mode, exact names only, ambiguity refused), the checksum era, and
+          # the asset names release-publish.yml attaches.
+          # (`! cmd` never trips set -e, so refusals are asserted with `if`.)
+          da="$(printf '%064d' 0 | tr 0 a)"; db="$(printf '%064d' 0 | tr 0 b)"
+          sums="$(printf '%s  ninedeploy-v0.10.43.tar.gz\n%s *install.sh\n' "$da" "$db")"
+          test "$(printf '%s\n' "$sums" | sha256sums_lookup ninedeploy-v0.10.43.tar.gz)" = "$da"
+          test "$(printf '%s\n' "$sums" | sha256sums_lookup install.sh)" = "$db"
+          if printf '%s\n' "$sums" | sha256sums_lookup ninedeploy-v0.10.4 >/dev/null; then exit 1; fi
+          if printf '%s  x\n%s  x\n' "$da" "$db" | sha256sums_lookup x >/dev/null; then exit 1; fi
+          if printf 'zz%s  x\n' "$da" | sha256sums_lookup x >/dev/null; then exit 1; fi
+          printf 'release' > "$scratch/a.tar.gz"
+          (cd "$scratch" && sha256sum a.tar.gz > SHA256SUMS)
+          test "$(sha256sums_lookup a.tar.gz < "$scratch/SHA256SUMS")" = "$(sha256sum < "$scratch/a.tar.gz" | awk '{print $1}')"
+          release_has_checksums v0.10.43
+          release_has_checksums v0.11.0
+          if release_has_checksums v0.10.42 || release_has_checksums v0.9.99 || release_has_checksums main; then exit 1; fi
+          test "$(release_archive_name v0.10.43)" = "ninedeploy-v0.10.43.tar.gz"
+          test "$(release_asset_url v0.10.43 SHA256SUMS)" = "https://github.com/NineDeploy/NineDeploy/releases/download/v0.10.43/SHA256SUMS"
+          # Without cosign the verifier reports "absent" (2) — never success.
+          if ! command -v cosign >/dev/null 2>&1; then
+            rc=0; verify_checksums_signature "$scratch/SHA256SUMS" "$scratch/none.json" || rc=$?
+            test "$rc" = 2
+          fi
           # An EXECUTED run must ignore the source-only flag (only a sourced
           # one returns early) — it reaches argument parsing and rejects this.
           if NINEDEPLOY_INSTALL_SOURCE_ONLY=1 bash ./install.sh --not-an-installer-flag >/dev/null 2>&1; then

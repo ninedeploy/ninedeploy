@@ -382,7 +382,11 @@ describe('install/upgrade path (r570–r576)', () => {
   it('r574: the tarball check claims only what it verifies', () => {
     const sh = installer();
     expect(sh).not.toContain('tampered archive fails here');
-    expect(sh).toContain('they do NOT prove authenticity');
+    expect(sh).toContain('those checks alone do NOT prove\n  # authenticity');
+    // r702: the authenticity those checks lack now comes from SHA256SUMS
+    // (and its signature) — the old "not verified yet" claim is gone.
+    expect(sh).not.toContain('which this installer does not verify yet');
+    expect(sh).toContain('the archive is byte-for-byte the one SHA256SUMS lists (fail-closed)');
   });
 
   it('r576: a source-only mode exposes the pure helpers to CI, and only when sourced', () => {
@@ -390,7 +394,11 @@ describe('install/upgrade path (r570–r576)', () => {
     const guard = at(sh, 'if [ "${NINEDEPLOY_INSTALL_SOURCE_ONLY:-}" = "1" ] && (return 0 2>/dev/null); then');
     // Every helper CI exercises is defined before the guard; nothing that
     // touches the host (banner, flock, apt, docker) runs before it.
-    for (const fn of ['highest_semver_tag', 'release_tag_from_json', 'highest_tag_from_tags_json', 'latest_tag', 'docker_image_tag', 'nixpacks_sha256', 'resolve_data_dir']) {
+    for (const fn of [
+      'highest_semver_tag', 'release_tag_from_json', 'highest_tag_from_tags_json', 'latest_tag', 'docker_image_tag', 'nixpacks_sha256', 'resolve_data_dir',
+      // r702: the release-integrity helpers CI and release-publish.yml source.
+      'semver_key', 'release_has_checksums', 'release_archive_name', 'release_asset_url', 'sha256sums_lookup', 'verify_checksums_signature',
+    ]) {
       expect(at(sh, `\n${fn}() {`), fn).toBeLessThan(guard);
     }
     for (const effect of ['NineDeploy Installer', 'flock -w', 'Installing base system packages', 'docker_cmd network create']) {
@@ -400,6 +408,12 @@ describe('install/upgrade path (r570–r576)', () => {
     const ci = rootFile('.github/workflows/ci.yml');
     expect(ci).toContain('NINEDEPLOY_INSTALL_SOURCE_ONLY=1 . ./install.sh');
     expect(ci).toContain('resolve_data_dir "$scratch"');
+    // r702: the smoke exercises the checksum parsing and the checksum era
+    // with fixtures — including a real `sha256sum` round trip.
+    expect(ci).toContain('sha256sums_lookup ninedeploy-v0.10.43.tar.gz');
+    expect(ci).toContain('sha256sums_lookup a.tar.gz < "$scratch/SHA256SUMS"');
+    expect(ci).toContain('if release_has_checksums v0.10.42 || release_has_checksums v0.9.99 || release_has_checksums main; then exit 1; fi');
+    expect(ci).toContain('verify_checksums_signature "$scratch/SHA256SUMS" "$scratch/none.json"');
     expect(ci).not.toContain('DATA_DIR_SETTING="${NINEDEPLOY_DATA_DIR:-$INSTALL_DIR/.data}"');
     // The systemd step uses the same helper the smoke test runs.
     expect(sh).toContain('DATA_DIR=$(resolve_data_dir "$INSTALL_DIR")');
