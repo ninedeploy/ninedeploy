@@ -24,13 +24,37 @@ import { containerRunning, listManagedVolumeNames, HELPER_IMAGE } from '../lib/i
 import type { DB } from '@ninedeploy/db';
 
 /** Live on-disk size of a named Docker volume (bytes), via a throwaway alpine container. */
-async function volumeSize(name: string): Promise<number> {
+async function probeVolumeSize(name: string): Promise<number> {
   try {
     const out = await capture('docker', ['run', '--rm', '-v', `${name}:/v`, HELPER_IMAGE, 'sh', '-c', 'du -sb /v']);
     return Number(out.trim().split(/\s+/)[0]!) || 0;
   } catch {
     return 0;
   }
+}
+
+/**
+ * r649: the size column is cached per volume for a minute, and concurrent
+ * readers share one in-flight probe. `GET /:id/volumes` is readable by any
+ * workspace seat and used to start one `docker run … du -sb` container per
+ * attachment on EVERY request — a viewer refreshing (or scripting) the list
+ * walked whole volumes on the host in a loop. The panel shows the size as an
+ * indication, so a minute-old number is fine.
+ */
+const VOLUME_SIZE_TTL_MS = 60_000;
+const volumeSizeCache = new Map<string, { at: number; size: Promise<number> }>();
+
+function volumeSize(name: string): Promise<number> {
+  const now = Date.now();
+  const hit = volumeSizeCache.get(name);
+  if (hit && now - hit.at < VOLUME_SIZE_TTL_MS) return hit.size;
+  // Bounded by the number of managed volumes; stale entries are swept here.
+  for (const [key, entry] of volumeSizeCache) {
+    if (now - entry.at >= VOLUME_SIZE_TTL_MS) volumeSizeCache.delete(key);
+  }
+  const size = probeVolumeSize(name);
+  volumeSizeCache.set(name, { at: now, size });
+  return size;
 }
 
 interface InventoryEntry {
@@ -184,10 +208,11 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
       sharingByVolume.set(a.volumeName, (sharingByVolume.get(a.volumeName) ?? 0) + 1);
     }
 
+    // One container probe per request, not one per attachment (r649).
+    const inUse = await containerRunning(svc.runtimeId);
     const out: InventoryEntry[] = await Promise.all(
       rows.map(async (r) => {
         const size = await volumeSize(r.volumeName);
-        const inUse = await containerRunning(svc.runtimeId);
         return {
           id: r.id,
           serviceId: r.serviceId,
@@ -465,4 +490,6 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
 export const _internal = {
   resolveVolumeName: (svc: { slug: string }, input: { volumeName?: string; create?: { label: string } }): string =>
     resolveVolumeNameImpl(svc, input),
+  /** r649: tests start from an empty size cache. */
+  resetVolumeSizeCache: (): void => volumeSizeCache.clear(),
 };

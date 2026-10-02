@@ -27,6 +27,7 @@ vi.mock('../src/lib/resourceAccess.js', async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  _internal.resetVolumeSizeCache();
   // listManagedVolumeNames hits docker — return the candidate name for the
   // "attach existing" test, an empty list otherwise.
   execMocks.capture.mockImplementation(async (_cmd: string, args: string[]) => {
@@ -105,6 +106,31 @@ describe('service volume attachments', () => {
       expect(body[0]?.sizeBytes).toBe(0);
       // Only this service has the row → no other sharer.
       expect(body[0]?.sharedWith).toBe(0);
+    });
+
+    it('r649: caches volume sizes, so repeated listings do not start a du container per attachment each time', async () => {
+      const app = await buildTestApp({
+        db: createFakeDb({
+          findFirst: { services: svcRow({ id: 1, slug: 'web' }) },
+          select: {
+            services: [svcRow({ id: 1, slug: 'web' })],
+            databases: [],
+            service_volume_attachments: [
+              { id: 1, serviceId: 1, volumeName: 'nd-svc-web-uploads', containerPath: '/uploads', readOnly: false, createdAt: NOW, updatedAt: NOW },
+              { id: 2, serviceId: 1, volumeName: 'nd-svc-web-cache', containerPath: '/cache', readOnly: false, createdAt: NOW, updatedAt: NOW },
+            ],
+          },
+        }),
+      });
+      await app.register(serviceVolumesRoutes);
+      for (let i = 0; i < 5; i++) {
+        const res = await app.inject({ method: 'GET', url: '/1/volumes', headers: asUser() });
+        expect(res.statusCode).toBe(200);
+      }
+      const duRuns = execMocks.capture.mock.calls.filter(([, args]) => (args as string[])[0] === 'run');
+      // One probe per volume across all five requests (was 5 × 2).
+      expect(duRuns).toHaveLength(2);
+      await app.close();
     });
 
     it('falls back to `?? 1` when the sharing map query returns empty (no cross-service rows)', async () => {
