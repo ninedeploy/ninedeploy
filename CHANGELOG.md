@@ -9,6 +9,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.37] - 2026-10-02
+
+> The tenancy release (r500–r576): a whole-repo deep audit found that several
+> per-instance resources (the vault, registry credentials, preview hosts, SCIM,
+> the plugin event bus) were reachable across tenants. All fixed, each with a
+> regression test proven to fail on 0.10.35, and every behaviour change ships
+> with an upgrade path so a 0.10.35 panel updates in place.
+
+### Upgrade notes — read before updating
+
+- **Vault allowlist (r510).** On first boot the allowlist is seeded from current use (workspaces of non-operator services/projects that already reference the vault), audited as `settings.vault_allowlist_seeded` and logged. Working deploys keep working; review the list in Settings → Integrations → Vault.
+- **Registry credentials (r512).** Each registry source is bound to the hosts its services pull from today (audited as `source.registry_hosts_seeded`). A credential is no longer sent to any other host.
+- **Preview patterns (r511).** Stored patterns without both `{{pr}}` and `{{slug}}` keep deploying previews but provision no domain (`previewDomainSkipped: pattern_requires_pr_and_slug`).
+- **Passkeys / TOTP (r502)** ask for your password (or a sign-in from the last 10 minutes) when enrolling.
+- **SSO (r505).** A tab loaded before the update will be asked to sign in again once.
+- **SCIM (r501).** Pushing an account that is not already a member of the token's workspace now answers 409 — invite it first.
+- **AI (r508).** Non-operators only get AI through a seat in an operator-owned workspace.
+- **Studios (r560)** open in a new tab; a studio tab open during the update asks you to reopen it once.
+- **Node-pinned services (r522, r523).** Services with pre/post-deploy or pre-stop hooks, and exec jobs on PM2/node services, are refused with the fix named (clear the hook, or unpin the service) — they used to run on the panel host.
+- **Railpack on container installs (r520)** is refused up front; it used to fail mid-build.
+- **Sandbox plugins (r530, r531)** that emit events outside `plugin.<id>.*` keep running but those emits are dropped; a previously installed plugin whose id equals a built-in is shown as errored.
+- **Daily backups (r528)** now notify channels subscribed to backup events.
+- **Migration 0066** deletes orphaned project secrets and builds six indexes once at start.
+- **Docker installs (r571).** The image is pinned to the installed tag via `NINEDEPLOY_IMAGE_TAG` in `.env`; upgrade by re-running the installer (a bare `compose pull` re-pulls the same release).
+- **Doctor (r575)** warns on bare-metal installs that listen on `0.0.0.0` over plain HTTP. The default bind is unchanged; set `NINEDEPLOY_HOST=127.0.0.1` once the panel is behind HTTPS.
+
+### Security
+
+- **Instance vault readable by any member (r510).** `${{infisical|doppler:KEY}}` resolved with the operator's vault token for every service. Now only operator-owned services and allowlisted workspaces resolve references; non-operators writing a reference elsewhere get a 403.
+- **Preview-domain takeover (r511).** A member-editable preview pattern could render another tenant's host and steal its traffic. Patterns must contain `{{pr}}` and `{{slug}}`, and the rendered host goes through the own-zone claim check.
+- **Registry credential exfiltration (r512).** Changing `image` pointed `docker login` and the auto-update probe at any host. Credentials are now bound to registry hosts, and members cannot repoint such a service to another registry.
+- **Auto-update skipped the owner-privilege check (r513)**; its registry probe was a blind SSRF for member-owned services (r514).
+- **Login lockout never tripped (r500).** Per-IP locks zeroed the counters the account tier sums. Rewritten with a per-account window; IPv6 bucketed by /64.
+- **SCIM cross-tenant deactivation (r501).** A workspace SCIM token could adopt any account by email and deactivate it instance-wide.
+- **Step-up for durable credentials (r502)**, **immediate session revocation (r503)**, **constant-time unknown-email login (r504)**.
+- **Login-CSRF via URL fragment (r505).** Fragment tokens are only accepted on `/auth/callback` with a per-tab nonce; `returnTo` is restricted to same-origin paths; the SSO button honours a split API origin.
+- **Prototype poisoning (r506)**: the raw-body JSON parser now uses Fastify's protected parser (malformed JSON is a 400, not a 500).
+- **OIDC email-domain restriction (r507)** implemented as documented. **AI spend gate (r508)** can no longer be passed by creating your own workspace.
+- **Plugin sandbox (r530–r534).** Forged kernel events (e.g. `audit.recorded` → real DNS record deletion) are blocked: plugins emit only `plugin.<id>.*` and the bus tags plugin origin. Built-in id collisions refused; per-call hook ids; secrets redacted at the IPC boundary. On Node ≥ 25 sandboxes have no network; on Node 22/24 they still do (documented).
+- **Studio isolation (r560).** Studios opened in a same-origin iframe could read the panel's session tokens through `parent`. They now open in a `noopener` tab with `frame-ancestors 'none'`, and the studio cookie is bound to the user and their token version.
+
+### Fixed
+
+- **Railpack double build (r520)**; railpack refused on container installs, which ship no railpack CLI.
+- **Node deploys reported success while the node's proxy kept pointing at the removed container (r521).**
+- **Deploy hooks and exec jobs on node-pinned services ran on the panel host (r522, r523).**
+- **A restart mid-deploy blocked local deploys for up to 45 minutes (r524)**; interrupted deploys are failed at boot.
+- **Node-pinned services were never health-patrolled (r525)**; an unreachable node raises `alert.node_unreachable` instead of "service down".
+- **Remote builds over 5 minutes died as `fetch failed` (r526)** — long agent ops now use `node:http`; stop grace periods reach the node; fan-out logs into the registry before building.
+- **Disabling or reloading a plugin erased its saved configuration (r527).**
+- **Scheduled backups never fired `backup.completed` (r528).**
+- **Deleting a user deleted every workspace they owned (r540)**; ownership now transfers to the acting operator (or `transferTo`).
+- **Project-scoped secrets survived project deletion (r541)**; migration 0066 removes existing orphans.
+- **Remote copies of scheduled backups were never pruned (r542)**; **backups left `running` by a crash (r543)**; **one failing housekeeping step skipped the rest (r544)**; **hourly full-table scans (r545)**; **a failing migration could stay half-applied (r546)**.
+- **Web:** env/settings forms no longer save over data that failed to load (r562); full deploy-log download (r561); SDK-backed calls replace raw fetches (r563); accessible palette and events drawer (r564); robust log reconnect de-dup (r565); one shared, typed plugin-menu query (r566).
+- **CLI/SDK:** token refresh and base-URL sub-paths for raw calls (r550); logout revokes only its own session (r551); SDK types match the server (r552); dead schema removed (r553); prune flags validated (r554); unused MCP dependency dropped (r555); published source maps resolve (r556); new `networks.members`, `traefik.config/version/update` (r557).
+
+### Installer, release and docs
+
+- `latest_tag` prefers the published release over a freshly pushed tag, and its warnings no longer leak into the captured tag (r571). Docker installs pin the image tag, keep the previous compose/`.env` for a real rollback, and wait up to `NINEDEPLOY_HEALTH_TIMEOUT` (300 s) for migrations; the bare-metal health gate probes `NINEDEPLOY_HOST` (r570).
+- Self-update answers 409 `deploys_in_flight` while a deploy is building, unless `force: true` (r572).
+- `bump-version.js` validates before writing; `:latest` only moves forward; per-tag release concurrency (r573).
+- apache2/nginx are only stopped on fresh installs that need :80/:443; Nixpacks checksums keyed by version; provenance comment no longer overclaims (r574).
+- Doctor finding `panel_plaintext_exposure`; README/ARCHITECTURE counts corrected (r575). CI exercises the real `install.sh` helpers and runs a non-blocking `pnpm audit` (r576).
+
 ## [0.10.36] - 2026-10-02
 
 > The bounded-backstop release (r480): the audit of the rejection backstop

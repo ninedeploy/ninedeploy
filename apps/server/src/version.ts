@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.36';
+export const VERSION = '0.10.37';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,23 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.37',
+    date: '2026-10-02',
+    title: 'The Tenancy Release — the Deep-Audit Remediation',
+    changes: [
+      'Security (tenancy): vault references (infisical:KEY or doppler:KEY in env values) now resolve only for operator-owned services or workspaces on an operator-managed allowlist; members can no longer read the instance vault through their own env. Upgrade: the allowlist is seeded on first boot from current usage, so working deploys keep working — review it under Settings → Integrations → Vault (r510).',
+      'Security (tenancy): PR preview hosts must render from a pattern containing both {{pr}} and {{slug}} and may not claim another service\'s host — a member could previously take over another tenant\'s auto-domain (r511). Registry credentials are only ever sent to the hosts they are bound to, and members cannot repoint an image to another registry on a service with an operator-attached credential (r512). Auto-update now runs the same owner-privilege check as webhooks and jobs (r513), and its registry probe goes through the egress guard for member-owned services (r514).',
+      'Security (auth): the account-wide login lockout actually trips now (per-IP locks used to erase the failures it counts; IPv6 is bucketed by /64) (r500). A workspace SCIM token can no longer adopt or deactivate accounts outside its own workspace — deprovisioning suspends the seat instead (r501). Registering a passkey or enabling/disabling TOTP requires the current password or a sign-in from the last 10 minutes (r502). Revoking a session kills its access token immediately (r503). Unknown emails take the same argon2 time as real ones (r504).',
+      'Security (auth): SSO tokens in the URL fragment are only accepted on /auth/callback with a per-tab nonce — a crafted link can no longer swap your session for an attacker\'s (r505). JSON bodies are parsed with prototype-poisoning protection again (r506). OIDC/GitHub providers take an optional allowed-email-domains list; the SSO page warns when auto-enroll is open to any domain (r507). AI features count a seat only in an operator-owned workspace (r508).',
+      'Security (plugins): sandboxed plugins may only emit plugin.<id>.* events and the kernel never trusts plugin emissions — a plugin could previously forge audit events that deleted real DNS records (r530). Plugin ids cannot collide with built-ins (r531); concurrent hook calls no longer clobber each other (r532); secrets are redacted from hook and event payloads crossing into the sandbox (r533).',
+      'Security (web): database studios open in their own tab instead of a same-origin iframe, cannot be framed, and their cookie is bound to the user so logout/demotion ends it (r560). Plugin menu links are restricted to http(s) and same-origin paths (r566).',
+      'Fixed (engine): the railpack build pack no longer runs a second Dockerfile build after railpack; container installs (no railpack CLI) refuse it up front (r520). A node deploy whose proxy refresh failed now fails honestly and keeps the previous runtime (r521). Deploy hooks and exec jobs on node-pinned services are refused instead of running on the panel host (r522, r523). Deploys interrupted by a panel restart are failed at boot instead of blocking the queue for 45 minutes (r524). Node-pinned services are now health-patrolled (r525). Remote builds longer than 5 minutes no longer die as "fetch failed" (r526).',
+      'Fixed: disabling a plugin no longer erases its saved configuration (r527); scheduled backups now notify like manual ones (r528). Deleting a user transfers their workspaces to the acting operator instead of deleting them (r540); deleting a project removes its shared secrets, and migration 0066 removes ones already orphaned (r541). Remote copies of scheduled backups are pruned (r542); backups left running by a crash are closed at boot (r543); one failing housekeeping step no longer skips the rest (r544); new indexes stop hourly full-table scans (r545); a failing migration is rolled back whole (r546).',
+      'Fixed (web): a failed env load no longer opens a raw editor that could save an empty list over your variables, and several other forms keep writes disabled until their data loads (r562); deploy-log download fetches the full log (r561); dialogs are accessible (r564). CLI: export/import and deploys watch refresh expired tokens and keep base-URL sub-paths (r550); logout revokes only the CLI\'s own session (r551).',
+      'Upgrade path: the installer now picks the newest PUBLISHED release, pins the docker image to that tag, keeps the previous compose/.env for a real rollback, and waits up to 300 s for migrations (r570, r571). Self-update refuses while a deploy is building unless forced (r572). Doctor warns when the panel listens on a network address over plain HTTP — the default bind is unchanged (r575).',
+    ],
+  },
+{
     version: '0.10.36',
     date: '2026-10-02',
     title: 'The Bounded-Backstop Release',
