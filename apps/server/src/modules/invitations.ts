@@ -26,6 +26,7 @@ import { sha256 } from '../lib/crypto.js';
 import { config } from '../config.js';
 import { iso } from '../lib/serialize.js';
 import { sendSystemEmail } from '../lib/notifier.js';
+import { renderTemplate } from '../lib/emailTemplates.js';
 
 const INVITATION_TTL_DAYS = 7;
 
@@ -157,29 +158,36 @@ function buildAcceptUrl(token: string): string {
 
 export { buildAcceptUrl };
 
-function buildInviteEmail(
+/**
+ * r610: the invitation email goes through the template engine, so the
+ * inviting workspace's `workspace-invitation` override is what the invitee
+ * receives. This used to be a hardcoded builder — an override was stored,
+ * listed and previewed, and never sent. With no override the built-in
+ * default renders the exact text the builder produced.
+ */
+async function renderInviteEmail(
+  db: DB,
+  workspaceId: number,
   workspaceName: string,
   role: WorkspaceRole,
   invitedByName: string | null,
   acceptUrl: string,
-): { subject: string; text: string } {
-  const inviter = invitedByName ?? 'A workspace owner';
-  return {
-    subject: `You're invited to join ${workspaceName} on NineDeploy`,
-    text: [
-      `${inviter} invited you to join the "${workspaceName}" workspace on NineDeploy as ${role}.`,
-      '',
-      'Click the link below to accept:',
+): Promise<{ subject: string; text: string }> {
+  return renderTemplate(
+    db,
+    'workspace-invitation',
+    {
+      inviter: invitedByName ?? 'A workspace owner',
+      workspaceName,
+      role,
       acceptUrl,
-      '',
-      `This invitation expires in ${INVITATION_TTL_DAYS} days.`,
-      '',
-      "If you don't have an account yet, you'll be asked to create one before accepting.",
-    ].join('\n'),
-  };
+      ttlDays: INVITATION_TTL_DAYS,
+    },
+    { workspaceId },
+  );
 }
 
-export { buildInviteEmail };
+export { renderInviteEmail };
 
 /**
  * Look up a pending invitation by token. A pending invitation is one that
@@ -329,7 +337,14 @@ export const invitationRoutes: FastifyPluginAsync = async (app) => {
       // owner can copy it manually when no email channel is configured.
       const inviter = await app.db.query.users.findFirst({ where: eq(users.id, req.user!.id) });
       const acceptUrl = buildAcceptUrl(token);
-      const emailBody = buildInviteEmail(ws.name, created.role as WorkspaceRole, inviter?.name ?? null, acceptUrl);
+      const emailBody = await renderInviteEmail(
+        app.db,
+        workspaceId,
+        ws.name,
+        created.role as WorkspaceRole,
+        inviter?.name ?? null,
+        acceptUrl,
+      );
       void sendSystemEmail(app.db, created.email, emailBody.subject, emailBody.text).catch(() => undefined);
 
       reply.header('x-invitation-token', token);

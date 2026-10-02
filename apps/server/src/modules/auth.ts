@@ -10,8 +10,9 @@ import { oauthProviderFingerprint, resolveOAuthIdentity } from '../lib/oauthIden
 import { badRequest, conflict, forbidden, HttpError, notFound, parseId, unauthorized } from '../lib/errors.js';
 import { verifyJwt, type AppJwtPayload } from '../lib/jwt.js';
 import { isLocked, recordFailure, recordSuccess } from '../lib/loginLockout.js';
-import { consumeResetToken, issueResetToken } from '../lib/passwordReset.js';
+import { consumeResetToken, issueResetToken, RESET_TTL_MS } from '../lib/passwordReset.js';
 import { sendSystemEmail } from '../lib/notifier.js';
+import { renderTemplate } from '../lib/emailTemplates.js';
 import { getSettingJson, setSettingJson, setSettingString } from '../lib/settings.js';
 import { STUDIO_EPOCH_KEY } from './studioProxy.js';
 import { generateSecret, otpauthUri } from '../lib/totp.js';
@@ -586,12 +587,16 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       const { token } = await issueResetToken(app.db, user, req.ip);
       const link = `${config.publicUrl}/reset-password?token=${encodeURIComponent(token)}`;
       // Best-effort delivery — failures never change the response.
-      await sendSystemEmail(
-        app.db,
-        user.email,
-        'NineDeploy password reset',
-        `A password reset was requested for ${input.email}.\n\nOpen this link within 30 minutes to set a new password:\n${link}\n\nIf you did not request this, you can ignore this email.`,
-      ).catch(() => false);
+      // r610: rendered by the template engine (the preview route shows this
+      // exact text). The reset email is instance-scoped: no workspace's
+      // override ever applies to the email that carries an account's reset link.
+      await renderTemplate(app.db, 'password-reset', {
+        email: input.email,
+        ttlMinutes: RESET_TTL_MS / 60_000,
+        resetUrl: link,
+      })
+        .then((mail) => sendSystemEmail(app.db, user.email, mail.subject, mail.text))
+        .catch(() => false);
       void audit(app.db, user.id, 'auth.forgot_password', user.email);
     }
     return { ok: true };

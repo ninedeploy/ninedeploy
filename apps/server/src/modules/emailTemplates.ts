@@ -16,6 +16,7 @@ import { badRequest, notFound, parseId as num, unprocessable } from '../lib/erro
 import {
   ALL_TEMPLATE_NAMES,
   type EmailTemplateName,
+  TEMPLATE_DELIVERY,
   renderTemplate,
   setOverride,
   clearOverride,
@@ -66,6 +67,10 @@ export const emailTemplateRoutes: FastifyPluginAsync = async (app) => {
         const ov = overrides.find((o) => o.name === name);
         return {
           name,
+          // r610: additive — where the email's override comes from
+          // ('instance': never a workspace's) and whether anything sends it.
+          scope: TEMPLATE_DELIVERY[name].scope,
+          sent: TEMPLATE_DELIVERY[name].sent,
           overridden: !!ov,
           subject: ov?.subject ?? null,
           text: ov?.text ?? null,
@@ -114,6 +119,13 @@ export const emailTemplateRoutes: FastifyPluginAsync = async (app) => {
       }
       const ws = await loadWorkspaceRow(app.db, wid, req.user!);
       await assertWorkspaceRole(app.db, wid, req.user!, 'admin');
+      // r610: an override the sender never applies used to be stored and
+      // listed as active. Refuse it and say why (DELETE still clears old rows).
+      if (TEMPLATE_DELIVERY[name].scope === 'instance') {
+        throw badRequest(
+          `The "${name}" email is about the user's account, not one workspace, so it is always sent with the built-in text; a workspace override would never be used.`,
+        );
+      }
       const body = setBody.safeParse({ ...req.body, name });
       if (!body.success) throw unprocessable(body.error.issues[0]!.message);
       await setOverride(app.db, wid, body.data.name, body.data.subject, body.data.text);
