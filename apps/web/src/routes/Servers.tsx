@@ -59,6 +59,8 @@ export function Servers() {
   const [sshPassword, setSshPassword] = useState('');
   const [installDocker, setInstallDocker] = useState(true);
   const [agentPort, setAgentPort] = useState('4600');
+  // r661: optional expected SSH host key; empty = trust on first use.
+  const [hostKeyFingerprint, setHostKeyFingerprint] = useState('');
 
   // SSH Test Probe Feedback State
   const [probeResult, setProbeResult] = useState<ServerSshTestResult | null>(null);
@@ -99,6 +101,7 @@ export function Servers() {
         authType,
         sshKey: authType === 'key' ? sshKey : undefined,
         sshPassword: authType === 'password' ? sshPassword : undefined,
+        hostKeyFingerprint: hostKeyFingerprint.trim() || undefined,
       }),
     onSuccess: (res) => {
       setProbeResult(res);
@@ -127,6 +130,7 @@ export function Servers() {
         sshPassword: authType === 'password' ? sshPassword : undefined,
         installDocker,
         agentPort: Number(agentPort) || 4600,
+        hostKeyFingerprint: hostKeyFingerprint.trim() || undefined,
       }),
     onMutate: () => {
       setBootstrapRunning(true);
@@ -231,6 +235,7 @@ export function Servers() {
     setAuthType('key');
     setSshKey('');
     setSshPassword('');
+    setHostKeyFingerprint('');
     setProbeResult(null);
     setOpen(false);
   };
@@ -587,6 +592,18 @@ export function Servers() {
                 </div>
               </div>
 
+              <Field
+                label="Expected host key fingerprint (optional)"
+                hint="SHA256:… from ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub on the host. Empty: the first key is trusted and recorded."
+              >
+                <Input
+                  value={hostKeyFingerprint}
+                  onChange={(e) => setHostKeyFingerprint(e.target.value)}
+                  placeholder="SHA256:…"
+                  className="h-9 font-mono text-xs"
+                />
+              </Field>
+
               {/* Probe Result Banner */}
               {probeResult && (
                 <div
@@ -606,8 +623,12 @@ export function Servers() {
                       <span>OS: <strong className="text-slate-200">{probeResult.os}</strong></span>
                       <span>Docker: <strong className="text-slate-200">{probeResult.dockerInstalled ? probeResult.dockerVersion : 'Not Installed'}</strong></span>
                       <span>Latency: <strong className="text-slate-200">{probeResult.latencyMs}ms</strong></span>
+                      {probeResult.hostKeyFingerprint && (
+                        <span>Host key: <strong className="font-mono text-slate-200">{probeResult.hostKeyFingerprint}</strong>{probeResult.hostKeyTrust ? ` (${probeResult.hostKeyTrust})` : ''}</span>
+                      )}
                     </div>
                   )}
+                  {probeResult.ok && probeResult.warning && <p className="mt-1.5 text-[11px] text-amber-300">{probeResult.warning}</p>}
                 </div>
               )}
 
@@ -754,6 +775,15 @@ export function Servers() {
             <p className="text-xs text-slate-400">
               Automated provisioning pipeline for node <strong className="text-slate-200">{sshName}</strong> ({sshHost}):
             </p>
+
+            {bootstrapResult?.hostKeyFingerprint && (
+              <p className="text-xs text-slate-400">
+                SSH host key: <strong className="font-mono text-slate-200">{bootstrapResult.hostKeyFingerprint}</strong>
+              </p>
+            )}
+            {bootstrapResult?.warnings?.map((w) => (
+              <p key={w} className="text-xs text-amber-300">{w}</p>
+            ))}
 
             {/* Stepper Progress */}
             {bootstrapResult?.steps && (

@@ -14,6 +14,7 @@ import { run } from '../lib/exec.js';
 import { encrypt } from '../lib/crypto.js';
 import { agentPing, generateAgentToken } from '../lib/agentClient.js';
 import { VERSION } from '../version.js';
+import { getSettingJson, setSettingJson } from '../lib/settings.js';
 import { agentDockerRunCommand } from '@ninedeploy/schemas';
 
 // In-memory log cache for recently run bootstraps (keyed by serverId or host).
@@ -51,6 +52,58 @@ interface SshExecOptions {
   sshKey?: string;
   sshPassword?: string;
   timeoutMs?: number;
+  /**
+   * r661: the host keys this host must present (`<type> <base64>` each). Given
+   * → `StrictHostKeyChecking=yes` against exactly these; absent → the first
+   * key the host presents is accepted and returned in `hostKeys`.
+   */
+  hostKeys?: string[];
+}
+
+/**
+ * r663: one endpoint spelling per row — a pasted `host:port` loses its port.
+ * The old pattern (`/:d+$/`) lacked its backslash and never matched, and a
+ * bare IPv6 address ends in a GROUP, not a port, so it is left whole.
+ */
+export function normalizeNodeHost(raw: string): string {
+  const host = raw.trim();
+  return host.split(':').length === 2 ? host.replace(/:\d+$/, '') : host;
+}
+
+/**
+ * r661: every ssh invocation pins host keys through this alias, so the
+ * known_hosts lines do not depend on how the host or port were spelled.
+ */
+const HOST_KEY_ALIAS = 'ninedeploy-node';
+
+/** r661: where the key a host presented on first contact is recorded. */
+const hostKeySettingKey = (host: string, port: number) => `ssh.hostKeys:${host}:${port}`;
+
+interface RecordedHostKeys {
+  keys: string[];
+  fingerprints: string[];
+  recordedAt: string;
+}
+
+/** OpenSSH's `SHA256:<base64, unpadded>` fingerprint of a `<type> <base64>` key. */
+export function sshKeyFingerprint(key: string): string | null {
+  const blob = key.trim().split(/\s+/)[1];
+  if (!blob || !/^[A-Za-z0-9+/]+={0,2}$/.test(blob)) return null;
+  return `SHA256:${createHash('sha256').update(Buffer.from(blob, 'base64')).digest('base64').replace(/=+$/, '')}`;
+}
+
+/** The `ssh_host_<type>_key.pub` file name part for a `<type> <base64>` key. */
+function hostKeyFileType(key: string | undefined): string {
+  const type = key?.split(' ')[0] ?? '';
+  return type.startsWith('ecdsa-') ? 'ecdsa' : type === 'ssh-rsa' ? 'rsa' : 'ed25519';
+}
+
+/** Thrown when a host presents a key other than the pinned one. */
+export class SshHostKeyMismatchError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SshHostKeyMismatchError';
+  }
 }
 
 /**
@@ -66,7 +119,7 @@ export async function runSshCommand(
   opts: SshExecOptions,
   command: string,
   onLine?: (line: string) => void,
-): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+): Promise<{ exitCode: number; stdout: string; stderr: string; hostKeys: string[] }> {
   if (opts.authType === 'password') {
     throw new Error(
       'Password authentication is not supported for zero-touch bootstrap: install an SSH public key on the target host and use key auth (the stored sshPassword field is never transmitted).',
@@ -78,15 +131,33 @@ export async function runSshCommand(
     lines.push(l);
     if (onLine) onLine(l);
   };
+  // r661: host keys used to be ignored outright (StrictHostKeyChecking=no,
+  // UserKnownHostsFile=/dev/null), and the bootstrap's remote command carries
+  // the agent token hash — the node's sealing key — so anyone able to answer
+  // for the host on the network got it. Each call now gets a private
+  // known_hosts: the pinned keys (strict), or empty with accept-new so the
+  // key the host presents is captured for the caller to verify and record.
+  const knownHostsDir = await fs.mkdtemp(join(tmpdir(), 'nd_ssh_kh_'));
+  const knownHosts = join(knownHostsDir, 'known_hosts');
+  const pinned = opts.hostKeys;
+  await fs.writeFile(knownHosts, (pinned ?? []).map((k) => `${HOST_KEY_ALIAS} ${k}\n`).join(''), { mode: 0o600 });
 
   try {
     const args: string[] = [
       '-p',
       String(opts.sshPort || 22),
       '-o',
-      'StrictHostKeyChecking=no',
+      `StrictHostKeyChecking=${pinned ? 'yes' : 'accept-new'}`,
       '-o',
-      'UserKnownHostsFile=/dev/null',
+      `UserKnownHostsFile=${knownHosts}`,
+      '-o',
+      'GlobalKnownHostsFile=/dev/null',
+      '-o',
+      `HostKeyAlias=${HOST_KEY_ALIAS}`,
+      '-o',
+      'HashKnownHosts=no',
+      '-o',
+      'UpdateHostKeys=no',
       '-o',
       'LogLevel=ERROR',
       '-o',
@@ -105,15 +176,33 @@ export async function runSshCommand(
     const target = `${opts.sshUser || 'root'}@${opts.host}`;
     args.push(target, command);
 
-    await run('ssh', args, {
-      timeoutMs: opts.timeoutMs ?? 60000,
-    }, lineSink);
+    try {
+      await run('ssh', args, {
+        timeoutMs: opts.timeoutMs ?? 60000,
+      }, lineSink);
+    } catch (err) {
+      if (pinned && lines.some((l) => /Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED/i.test(l))) {
+        throw new SshHostKeyMismatchError(
+          `${opts.host}:${opts.sshPort || 22} presented an SSH host key that does not match the one recorded for it — ` +
+            'this can be a machine-in-the-middle. If the host was reinstalled, read its new fingerprint ON the host ' +
+            '(ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub) and enter it as the expected host key fingerprint to replace the record.',
+        );
+      }
+      throw err;
+    }
 
     const output = lines.join('\n');
+    // The keys ssh wrote (accept-new) or was pinned to, as `<type> <base64>`.
+    const hostKeys = (await fs.readFile(knownHosts, 'utf8').catch(() => ''))
+      .split('\n')
+      .map((l) => l.trim().split(/\s+/))
+      .filter((parts) => parts.length >= 3 && parts[0] === HOST_KEY_ALIAS)
+      .map((parts) => `${parts[1]} ${parts[2]}`);
     return {
       exitCode: 0,
       stdout: output,
       stderr: '',
+      hostKeys,
     };
   } finally {
     if (keyPath) {
@@ -123,30 +212,107 @@ export async function runSshCommand(
         // ignore unlink error on temp key
       }
     }
+    await fs.rm(knownHostsDir, { recursive: true, force: true }).catch(() => undefined);
   }
+}
+
+/**
+ * r661: decide which host keys an SSH session to `host:port` must accept,
+ * run the harmless probe with that policy, and return what was verified.
+ *
+ *   expected fingerprint given → accept what the host presents, then refuse
+ *     unless it matches (the operator's out-of-band value is the authority,
+ *     and replaces an older record — that is how a reinstalled host rotates);
+ *   a key recorded earlier     → strict: only that key is accepted;
+ *   neither                    → trust on first use: record the key, and say
+ *     so in the response so the operator can compare it.
+ *
+ * The probe sends nothing secret, so verifying after it is safe; everything
+ * that does (the bootstrap's agent token) runs pinned to the verified key.
+ */
+async function probeWithHostKeyPolicy(
+  input: ServerSshTest,
+  db: DB | undefined,
+  probeScript: string,
+): Promise<{
+  stdout: string;
+  hostKeys: string[];
+  fingerprint: string | undefined;
+  trust: 'verified' | 'pinned' | 'first-use';
+  warning?: string;
+}> {
+  const host = normalizeNodeHost(input.host);
+  const port = input.sshPort || 22;
+  const expected = input.hostKeyFingerprint;
+  const recorded = !expected && db ? await getSettingJson<RecordedHostKeys>(db, hostKeySettingKey(host, port)) : null;
+  const pinnedKeys = recorded?.keys?.length ? recorded.keys : undefined;
+  const res = await runSshCommand(
+    {
+      host,
+      sshPort: input.sshPort,
+      sshUser: input.sshUser,
+      authType: input.authType,
+      sshKey: input.sshKey,
+      sshPassword: input.sshPassword,
+      timeoutMs: 10000,
+      ...(pinnedKeys ? { hostKeys: pinnedKeys } : {}),
+    },
+    probeScript,
+  );
+  if (pinnedKeys) {
+    return { stdout: res.stdout, hostKeys: pinnedKeys, fingerprint: recorded?.fingerprints[0], trust: 'pinned' };
+  }
+  const fingerprints = res.hostKeys.map(sshKeyFingerprint).filter((f): f is string => f !== null);
+  if (fingerprints.length === 0) {
+    throw new Error(`Could not read the SSH host key ${host}:${port} presented — refusing to continue without one.`);
+  }
+  if (expected && !fingerprints.includes(expected)) {
+    throw new SshHostKeyMismatchError(
+      `${host}:${port} presented the SSH host key ${fingerprints.join(', ')} (${res.hostKeys.map((k) => k.split(' ')[0]).join(', ')}), ` +
+        `not the expected ${expected}. If the expected value is the fingerprint of a different key type, enter the ` +
+        'fingerprint of this one (ssh-keygen -lf /etc/ssh/ssh_host_<type>_key.pub on the host); otherwise this can be a machine-in-the-middle.',
+    );
+  }
+  if (db) {
+    await setSettingJson<RecordedHostKeys>(db, hostKeySettingKey(host, port), {
+      keys: res.hostKeys,
+      fingerprints,
+      recordedAt: new Date().toISOString(),
+    });
+  }
+  return {
+    stdout: res.stdout,
+    hostKeys: res.hostKeys,
+    fingerprint: fingerprints[0],
+    trust: expected ? 'verified' : 'first-use',
+    ...(expected
+      ? {}
+      : {
+          warning:
+            `First contact with ${host}:${port}: its SSH host key ${fingerprints[0]} was trusted on first use and recorded — ` +
+            `compare it with "ssh-keygen -lf /etc/ssh/ssh_host_${hostKeyFileType(res.hostKeys[0])}_key.pub" on the host. Later connections must present the same key.`,
+        }),
+  };
 }
 
 /**
  * Probe an SSH host to verify connectivity, detect operating system,
  * and check whether Docker is already installed.
  */
-export async function testSshConnection(input: ServerSshTest): Promise<ServerSshTestResult> {
+export async function testSshConnection(input: ServerSshTest, db?: DB): Promise<ServerSshTestResult> {
+  return (await sshPreflight(input, db)).result;
+}
+
+/** The probe behind {@link testSshConnection}, plus the host keys it verified (r661). */
+async function sshPreflight(
+  input: ServerSshTest,
+  db?: DB,
+): Promise<{ result: ServerSshTestResult; hostKeys?: string[] }> {
   const start = Date.now();
   const probeScript = 'uname -s -m && (cat /etc/os-release 2>/dev/null || true) && (docker --version 2>/dev/null || true)';
 
   try {
-    const res = await runSshCommand(
-      {
-        host: input.host.replace(/:d+$/, ''), // r421: one endpoint spelling per row
-        sshPort: input.sshPort,
-        sshUser: input.sshUser,
-        authType: input.authType,
-        sshKey: input.sshKey,
-        sshPassword: input.sshPassword,
-        timeoutMs: 10000,
-      },
-      probeScript,
-    );
+    const res = await probeWithHostKeyPolicy(input, db, probeScript);
 
     const latencyMs = Date.now() - start;
     const stdout = res.stdout;
@@ -166,18 +332,26 @@ export async function testSshConnection(input: ServerSshTest): Promise<ServerSsh
     const dockerVersion = dockerMatch ? dockerMatch[1] : undefined;
 
     return {
-      ok: true,
-      message: `Connected successfully to ${input.sshUser}@${input.host}:${input.sshPort}`,
-      os,
-      dockerInstalled,
-      dockerVersion,
-      latencyMs,
+      result: {
+        ok: true,
+        message: `Connected successfully to ${input.sshUser}@${input.host}:${input.sshPort}`,
+        os,
+        dockerInstalled,
+        dockerVersion,
+        latencyMs,
+        hostKeyFingerprint: res.fingerprint,
+        hostKeyTrust: res.trust,
+        ...(res.warning ? { warning: res.warning } : {}),
+      },
+      hostKeys: res.hostKeys,
     };
   } catch (err: unknown) {
     return {
-      ok: false,
-      message: err instanceof Error ? err.message : 'SSH Connection probe failed',
-      latencyMs: Date.now() - start,
+      result: {
+        ok: false,
+        message: err instanceof Error ? err.message : 'SSH Connection probe failed',
+        latencyMs: Date.now() - start,
+      },
     };
   }
 }
@@ -217,8 +391,10 @@ export async function bootstrapServer(
     if (onStep) onStep(s);
   };
 
+  // r663: the row, the SSH session and the agent ping all use one spelling.
+  const host = normalizeNodeHost(input.host);
   const sshOpts: SshExecOptions = {
-    host: input.host,
+    host,
     sshPort: input.sshPort,
     sshUser: input.sshUser,
     authType: input.authType,
@@ -229,12 +405,17 @@ export async function bootstrapServer(
   try {
     // ── Step 1: Connecting ──────────────────────────────────────────────────
     emitStep('connecting', 'running', `Connecting to ${input.sshUser}@${input.host}:${input.sshPort} via SSH...`);
-    const connCheck = await testSshConnection(input);
-    if (!connCheck.ok) {
+    const preflight = await sshPreflight(input, db);
+    const connCheck = preflight.result;
+    if (!connCheck.ok || !preflight.hostKeys) {
       emitStep('connecting', 'failed', connCheck.message);
       return { ok: false, steps, logs, error: connCheck.message };
     }
-    emitStep('connecting', 'success', `Connected (${connCheck.latencyMs}ms latency)`);
+    // r661: every later session (Docker install, the agent start carrying the
+    // token hash) accepts only the key the probe verified.
+    sshOpts.hostKeys = preflight.hostKeys;
+    emitStep('connecting', 'success', `Connected (${connCheck.latencyMs}ms latency) — host key ${connCheck.hostKeyFingerprint ?? 'unknown'}`);
+    if (connCheck.warning) emitLog(`⚠ ${connCheck.warning}`);
 
     // ── Step 2: OS Detection ────────────────────────────────────────────────
     emitStep('os_detect', 'running', 'Detecting remote OS and architecture...');
@@ -279,11 +460,11 @@ export async function bootstrapServer(
     // ── Step 5: Verify & Database Registration ──────────────────────────────
     emitStep('verify', 'running', 'Performing agent authentication handshake...');
     try {
-      await agentPing(input.host, input.agentPort, agentToken);
+      await agentPing(host, input.agentPort, agentToken);
     } catch {
       emitLog('Initial ping timed out. Waiting 2s for container startup and retrying...');
       await new Promise((r) => setTimeout(r, 2000));
-      await agentPing(input.host, input.agentPort, agentToken);
+      await agentPing(host, input.agentPort, agentToken);
     }
 
     // r399: (host, port) is the endpoint's identity — re-bootstrapping an
@@ -296,7 +477,7 @@ export async function bootstrapServer(
       .insert(servers)
       .values({
         name: input.name,
-        host: input.host,
+        host,
         port: input.agentPort,
         tokenEncrypted,
         status: 'online',
@@ -330,6 +511,8 @@ export async function bootstrapServer(
       serverName: input.name,
       steps,
       logs,
+      hostKeyFingerprint: connCheck.hostKeyFingerprint,
+      ...(connCheck.warning ? { warnings: [connCheck.warning] } : {}),
     };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Unexpected bootstrap error';
