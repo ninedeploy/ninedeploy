@@ -57,6 +57,7 @@ import { analyseComposeContent, stackEnvSeeds, stackPublicUrl } from './composeS
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
 import { reconcileEnvironment } from './templates.js';
 import { resolveStackEnvironment } from '../engine/magicVars.js';
+import { previewPatternError } from '../lib/previewDomain.js';
 import { bindRegistryHostForImage, boundRegistryHosts, registryHostOf } from '../lib/registryBinding.js';
 
 /** The three tag id lists a service row is serialized with. */
@@ -297,6 +298,11 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       throw forbidden('Only operators may place a service on a remote server');
     }
     const slug = input.slug ?? slugify(input.name);
+    // r511: a preview pattern must name this service's own PR hosts.
+    if (input.previewDomainPattern) {
+      const patternError = previewPatternError(input.previewDomainPattern, slug);
+      if (patternError) throw badRequest(patternError, 'invalid_preview_domain_pattern');
+    }
     // Explicit duplicate-slug check → a clean 409 instead of an uncaught
     // unique-index error (500). Covers the NULL-project case too, where
     // SQLite's unique index treats NULLs as distinct.
@@ -591,6 +597,18 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
           );
         }
       }
+    }
+    // r511: a CHANGED preview pattern must name this service's own PR hosts.
+    // Re-sending the stored value (the web form sends it on every save) stays
+    // allowed so legacy patterns do not block unrelated edits; the webhook
+    // skips their domain provisioning instead.
+    if (
+      patch.previewDomainPattern != null &&
+      patch.previewDomainPattern !== '' &&
+      patch.previewDomainPattern !== existing.previewDomainPattern
+    ) {
+      const patternError = previewPatternError(patch.previewDomainPattern, existing.slug);
+      if (patternError) throw badRequest(patternError, 'invalid_preview_domain_pattern');
     }
     // Same for remote-server placement (r097). Moving a service back to the
     // local host (`serverId: null`) stays open: it takes nothing from anyone.

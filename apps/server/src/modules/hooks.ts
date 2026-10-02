@@ -23,6 +23,8 @@ import { removeServiceBridgeIfEmpty } from '../lib/serviceBridge.js';
 import { writeDynamicConfig, getAcmeEmail } from '../engine/proxy.js';
 import { getSettingString } from '../lib/settings.js';
 import { getServiceTags, replaceServiceTags } from './serviceTags.js';
+import { DEFAULT_PREVIEW_DOMAIN_PATTERN, previewHostSkipReason, renderPreviewHost } from '../lib/previewDomain.js';
+import { ownZoneClaimRefusal } from '../lib/domainVerification.js';
 
 async function stopRuntimeFor(service: { runtimeId: string | null; type: string }) {
   if (!service.runtimeId) return;
@@ -306,18 +308,16 @@ export const hookReceiveRoutes: FastifyPluginAsync = async (app) => {
           // verified ownership of (routers match by rendered host/regexp).
           // Rejecting skips ONLY routing; the preview still deploys and serves
           // on its internal port, so a typo'd pattern degrades gracefully.
-          const baseDomain = config.wildcardDomain || 'localhost';
-          const pattern = parent.previewDomainPattern || 'pr-{{pr}}-{{slug}}.{{domain}}';
-          const rendered = pattern
-            .replace(/\{\{pr\}\}/g, String(pr.prNumber))
-            .replace(/\{\{slug\}\}/g, parent.slug)
-            .replace(/\{\{domain\}\}/g, baseDomain);
-          const lowerHost = rendered.trim().toLowerCase();
-          const zone = `.${baseDomain.toLowerCase()}`;
-          let skipReason: string | null = null;
-          if (!lowerHost.endsWith(zone)) skipReason = 'pattern_outside_wildcard_zone';
-          else if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(lowerHost))
-            skipReason = 'invalid_hostname_shape';
+          // r511: the pattern must also carry {{pr}} and {{slug}} (stored
+          // legacy patterns without them skip with
+          // `pattern_requires_pr_and_slug`), and the rendered host must not
+          // claim another service's automatic domain (r223 own-zone check).
+          const pattern = parent.previewDomainPattern || DEFAULT_PREVIEW_DOMAIN_PATTERN;
+          const lowerHost = renderPreviewHost(pattern, pr.prNumber, parent.slug);
+          let skipReason: string | null = previewHostSkipReason(pattern, lowerHost);
+          if (!skipReason && (await ownZoneClaimRefusal(app.db, targetService.id, lowerHost))) {
+            skipReason = 'domain_claims_another_service';
+          }
 
           if (skipReason) {
             previewDomainSkipped = skipReason;

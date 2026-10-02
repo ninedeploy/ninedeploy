@@ -701,7 +701,7 @@ describe('services routes', () => {
       payload: {
         name: 'renamed',
         previewDeploymentsEnabled: true,
-        previewDomainPattern: 'pr-{{pr}}.local',
+        previewDomainPattern: 'pr-{{pr}}-{{slug}}.{{domain}}',
         build: {
           buildPack: 'nixpacks',
           preDeployCmd: 'npm run db:migrate',
