@@ -6,20 +6,29 @@ import { createDomain, domainPatch } from '@ninedeploy/schemas';
 import { parseHeaders, writeDynamicConfig } from '../engine/proxy.js';
 import { createDnsRecord, deleteDnsRecord, detectPublicIp, getDnsRecordsConfig, listDnsRecordsByName } from '../lib/cloudflare.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
-import { assertServiceRole } from '../lib/resourceAccess.js';
-import { badRequest, conflict, notFound, parseId as num } from '../lib/errors.js';
+import { assertServiceRole, roleAtLeast, serviceRole } from '../lib/resourceAccess.js';
+import { badRequest, conflict, HttpError, notFound, parseId as num } from '../lib/errors.js';
 import { getSettingString } from '../lib/settings.js';
 import { classifyResolution, resolveHostAddresses } from '../lib/dnsStatus.js';
 import {
   challengeRecordName,
   checkOwnershipRecord,
+  companionOutsideProof,
   hostsCollide,
+  isRoutableHostname,
   newChallengeToken,
   normalizeHost,
+  pendingTakeoverToken,
   requiresOwnershipProof,
   ownZoneClaimRefusal,
+  unroutableHostnameMessage,
   wwwCompanionHost,
 } from '../lib/domainVerification.js';
+import { domainCapRefusal, getDomainPolicy } from '../lib/domainPolicy.js';
+import { basicAuthForDisplay, basicAuthForStorage } from '../lib/htpasswd.js';
+
+type AppInstance = Parameters<FastifyPluginAsync>[0];
+type RequestUser = NonNullable<FastifyRequest['user']>;
 
 /**
  * Refuse a hostname the caller has no claim to.
@@ -34,14 +43,21 @@ import {
  * This is deliberately NOT "one hostname, one service": sharing a host across
  * services on different paths is a legitimate routing pattern. The rule is
  * that every service already routing that host must be one the caller can
- * manage.
+ * manage — and "manage" means a `member` seat on it (r632): a viewer seat
+ * only lets you read a service, and used to be enough to stack a longer-rule
+ * router on its hostname.
+ *
+ * r635: a foreign row that is only `pending` (never proved) is not a holder.
+ * It is returned instead of refused, so the caller can take the hostname over
+ * by proving the zone — a first-come unverified claim used to block the real
+ * owner forever.
  */
 async function assertHostnameClaimable(
-  app: Parameters<FastifyPluginAsync>[0],
+  app: AppInstance,
   hostname: string,
   serviceId: number,
-  user: NonNullable<FastifyRequest['user']>,
-): Promise<void> {
+  user: RequestUser,
+): Promise<Domain[]> {
   // The panel's own hostname is never a service route: claiming it would put
   // an attacker-controlled container in front of the control plane's login.
   let panelDomain: string | null = null;
@@ -55,21 +71,85 @@ async function assertHostnameClaimable(
   }
 
   const rows = await app.db.query.domains.findMany();
+  const unverified: Domain[] = [];
   for (const row of rows) {
     if (row.serviceId === serviceId) continue;
     if (!hostsCollide(row.hostname, hostname)) continue;
+    let manageable = false;
     try {
-      // Admins pass; a member passes only for their own service.
-      await loadServiceForUser(app.db, row.serviceId, user);
+      // Admins pass; a member passes only for a service they can WRITE to.
+      const holder = await loadServiceForUser(app.db, row.serviceId, user);
+      await assertServiceRole(app.db, holder, user, 'member');
+      manageable = true;
     } catch {
-      // Same 409 whether the holder exists-but-is-foreign or the row is
-      // orphaned — the caller learns only that the host is taken.
-      throw conflict('That hostname is already routed by another service');
+      /* foreign, viewer-only, or orphaned — decided below */
     }
+    if (manageable) continue;
+    if (row.status === 'pending') {
+      unverified.push(row);
+      continue;
+    }
+    // Same 409 whether the holder exists-but-is-foreign or the row is
+    // orphaned — the caller learns only that the host is taken.
+    throw conflict('That hostname is already routed by another service');
+  }
+  return unverified;
+}
+
+/**
+ * r633: a `redirectWww` domain routes — and orders a certificate for — its
+ * companion host as well (`www.` form of an apex, apex of a `www.` host), so
+ * the companion has to pass the same claim rules as the hostname itself. It
+ * used to ride along unchecked: another tenant's host, a reserved automatic
+ * domain or the panel's own name could be pulled in through the toggle.
+ * Unlike the hostname, an unverified foreign claim on the companion is not
+ * taken over here — the redirect waits for it to be removed or expire.
+ */
+async function assertCompanionClaimable(
+  app: AppInstance,
+  hostname: string,
+  serviceId: number,
+  user: RequestUser,
+): Promise<void> {
+  const companion = wwwCompanionHost(hostname);
+  if (!companion) return;
+  const refuse = (why: string) =>
+    conflict(`The www redirect also routes ${companion}, and ${why}. Turn the www redirect off for this domain.`);
+  let unverified: Domain[];
+  try {
+    unverified = await assertHostnameClaimable(app, companion, serviceId, user);
+  } catch (err) {
+    throw refuse(err instanceof Error ? err.message.replace(/^That hostname/, 'that hostname') : 'it is taken');
+  }
+  if (unverified.length > 0) throw refuse('another service has a claim on it awaiting verification');
+  if (!user.isOperator) {
+    const zoneRefusal = await ownZoneClaimRefusal(app.db, serviceId, companion);
+    if (zoneRefusal) throw refuse(`it ${zoneRefusal}`);
   }
 }
 
-function serialize(d: Domain) {
+/**
+ * r633: the companion a www-stored domain's own TXT proof does not cover must
+ * be proved with the SAME challenge value at its own record name. Null when
+ * proved (or nothing needs proving), else what to tell the caller.
+ */
+async function companionProofError(
+  hostname: string,
+  token: string,
+  isOperator: boolean,
+): Promise<{ error: string; found: string[] } | null> {
+  const outside = companionOutsideProof(hostname);
+  if (!outside || !requiresOwnershipProof(outside, isOperator)) return null;
+  const result = await checkOwnershipRecord(outside, token);
+  if (result.ok) return null;
+  return {
+    error: `The www redirect also routes ${outside}, which the record for ${hostname} does not prove you control: publish the same TXT value at ${challengeRecordName(outside)} too, or turn the www redirect off.`,
+    found: result.found,
+  };
+}
+
+/** `showAuth` false hides Basic Auth from a viewer seat; it is never shown as plaintext (r636). */
+function serialize(d: Domain, showAuth = true) {
   return {
     id: d.id,
     serviceId: d.serviceId,
@@ -78,7 +158,7 @@ function serialize(d: Domain) {
     ssl: d.ssl,
     redirectWww: d.redirectWww,
     headers: d.headers ?? '[]',
-    basicAuth: d.basicAuth ?? null,
+    basicAuth: showAuth ? basicAuthForDisplay(d.basicAuth) : null,
     ipAllowlist: d.ipAllowlist ?? null,
     rateLimitAverage: d.rateLimitAverage ?? null,
     rateLimitBurst: d.rateLimitBurst ?? null,
@@ -116,9 +196,13 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/:id/domains', async (req) => {
     const id = num((req.params as { id: string }).id);
-    await loadServiceForUser(app.db, id, req.user!);
+    const svc = await loadServiceForUser(app.db, id, req.user!);
+    // r636: Basic Auth credentials are for the people who can change them —
+    // a viewer seat reads the routing, not the password hashes.
+    const role = await serviceRole(app.db, svc, req.user!);
+    const showAuth = role !== null && roleAtLeast(role, 'member');
     const rows = await app.db.query.domains.findMany({ where: eq(domains.serviceId, id) });
-    return rows.map(serialize);
+    return rows.map((d) => serialize(d, showAuth));
   });
 
   app.post('/:id/domains', async (req) => {
@@ -131,18 +215,59 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
     // be two different rows to the unique index and to the check below.
     const hostname = normalizeHost(input.hostname);
     if (!hostname) throw badRequest('Enter a valid hostname');
-    await assertHostnameClaimable(app, hostname, id, req.user!);
-    if (!req.user!.isOperator) {
+    // r630: only the exact shape the proxy renders verbatim may be stored —
+    // every check below compares this string, and Traefik must route it.
+    if (!isRoutableHostname(hostname)) throw badRequest(unroutableHostnameMessage(hostname));
+    const user = req.user!;
+    const policy = await getDomainPolicy(app.db);
+    if (!user.isOperator) {
+      // r634: own-zone names cost no proof, so they are capped per service,
+      // and every add (deleted ones included) counts against an hourly rate.
+      const cap = await domainCapRefusal(app.db, policy, id, hostname, user.id);
+      if (cap) throw new HttpError(cap.status, cap.status === 429 ? 'rate_limited' : 'conflict', cap.message);
+    }
+    const unverified = await assertHostnameClaimable(app, hostname, id, user);
+    if (!user.isOperator) {
       const refusal = await ownZoneClaimRefusal(app.db, id, hostname);
       if (refusal) throw conflict(`${hostname} ${refusal}`);
     }
+    if (input.redirectWww) await assertCompanionClaimable(app, hostname, id, user);
 
     // H-2 layer 2: a hostname outside this instance's own zone is not routed
     // until its owner proves control of the DNS zone. Until then the row is
     // `pending`, and `writeDynamicConfig` skips it — so a first-come claim on
     // someone else's domain never receives their traffic.
-    const needsProof = requiresOwnershipProof(hostname, req.user!.isOperator);
-    const verificationToken = needsProof ? newChallengeToken() : null;
+    let needsProof = requiresOwnershipProof(hostname, user.isOperator);
+    let verificationToken = needsProof ? newChallengeToken() : null;
+
+    // r635: the hostname is held only by other services' UNVERIFIED rows. A
+    // claimant who proves the zone (a TXT value bound to this service and
+    // host) replaces them and goes live at once; anyone else is told how.
+    if (unverified.length > 0) {
+      const token = pendingTakeoverToken(id, hostname);
+      const proof = await checkOwnershipRecord(hostname, token);
+      if (!proof.ok) {
+        const expiry =
+          policy.pendingExpiryDays > 0 ? ` Unverified claims are removed after ${policy.pendingExpiryDays} days.` : '';
+        throw conflict(
+          `That hostname is claimed by another service but not verified yet. A verified claim replaces an unverified one: if you control ${hostname}, publish a TXT record at ${challengeRecordName(hostname)} with the value "${token}" and add the domain again.${expiry}`,
+        );
+      }
+      if (input.redirectWww) {
+        const companion = await companionProofError(hostname, token, user.isOperator);
+        if (companion) throw conflict(companion.error);
+      }
+      for (const row of unverified) {
+        await app.db.delete(domains).where(eq(domains.id, row.id));
+        void audit(app.db, user.id, 'domain.pending_evicted', row.hostname, {
+          domainId: row.id,
+          serviceId: row.serviceId,
+          claimantServiceId: id,
+        });
+      }
+      needsProof = false;
+      verificationToken = token;
+    }
 
     const [d] = await app.db
       .insert(domains)
@@ -153,7 +278,8 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
         ssl: input.ssl,
         redirectWww: input.redirectWww ?? false,
         headers: input.headers ?? null,
-        basicAuth: input.basicAuth ?? null,
+        // r636: Traefik only accepts hashed htpasswd secrets.
+        basicAuth: basicAuthForStorage(input.basicAuth),
         ipAllowlist: input.ipAllowlist ?? null,
         rateLimitAverage: input.rateLimitAverage ?? null,
         rateLimitBurst: input.rateLimitBurst ?? null,
@@ -188,7 +314,7 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
     await writeDynamicConfig(app.db);
     void audit(
       app.db,
-      req.user!.id,
+      user.id,
       'domain.add',
       hostname,
       dnsRecordId ? { dnsRecordId } : dnsWarning ? { dnsWarning } : undefined,
@@ -226,6 +352,12 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
         found: result.found,
         verification: challengeFor(d),
       };
+    }
+    // r633: going live also routes the www companion — an apex the host's own
+    // record does not prove needs the same value at its own name.
+    if (d.redirectWww) {
+      const companion = await companionProofError(d.hostname, d.verificationToken, req.user!.isOperator);
+      if (companion) return { ...serialize(d), verified: false, ...companion, verification: challengeFor(d) };
     }
 
     const [updated] = await app.db
@@ -298,6 +430,31 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
     const svc = await loadServiceForUser(app.db, id, req.user!);
     await assertServiceRole(app.db, svc, req.user!, 'member');
     const input = domainPatch.parse(req.body ?? {});
+    const current = await app.db.query.domains.findFirst({
+      where: and(eq(domains.id, domainId), eq(domains.serviceId, id)),
+    });
+    if (!current) throw notFound('Domain not found');
+    // r633: switching the www redirect ON adds the companion host to routing
+    // and ACME — it must pass the claim rules, and an apex outside the
+    // domain's proof must be proved with the same challenge value. Only the
+    // off→on transition is checked: a redirect that already routes keeps
+    // working across re-saves.
+    if (input.redirectWww === true && !current.redirectWww) {
+      await assertCompanionClaimable(app, current.hostname, id, req.user!);
+      const outside = current.status === 'active' ? companionOutsideProof(current.hostname) : null;
+      if (outside && requiresOwnershipProof(outside, req.user!.isOperator)) {
+        if (!current.verificationToken) {
+          throw conflict(
+            `The www redirect also routes ${outside}, and there is no proof you control it. Add ${outside} as a domain of its own and verify it, or ask an operator to turn the redirect on.`,
+          );
+        }
+        if (await companionProofError(current.hostname, current.verificationToken, req.user!.isOperator)) {
+          throw conflict(
+            `The www redirect also routes ${outside}: publish a TXT record at ${challengeRecordName(outside)} with the value "${current.verificationToken}" (the value that verified ${current.hostname}), then turn the redirect on again.`,
+          );
+        }
+      }
+    }
     // Validate early so a malformed headers array never reaches Traefik.
     const values: Partial<typeof domains.$inferInsert> = {};
     if (input.ssl !== undefined) values.ssl = input.ssl;
@@ -306,7 +463,8 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
       const parsed = parseHeaders(input.headers);
       values.headers = JSON.stringify(parsed);
     }
-    if (input.basicAuth !== undefined) values.basicAuth = input.basicAuth;
+    // r636: hash on write; already-hashed entries (what GET shows) are kept.
+    if (input.basicAuth !== undefined) values.basicAuth = basicAuthForStorage(input.basicAuth);
     if (input.ipAllowlist !== undefined) values.ipAllowlist = input.ipAllowlist;
     if (input.rateLimitAverage !== undefined) values.rateLimitAverage = input.rateLimitAverage;
     if (input.rateLimitBurst !== undefined) values.rateLimitBurst = input.rateLimitBurst;

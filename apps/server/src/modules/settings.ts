@@ -3,7 +3,8 @@ import { services } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../lib/audit.js';
-import { getSetting, getSettingString, setSetting, setSettingString } from '../lib/settings.js';
+import { getSetting, getSettingString, setSetting, setSettingJson, setSettingString } from '../lib/settings.js';
+import { DOMAIN_POLICY_DEFAULTS, DOMAIN_POLICY_KEY, getDomainPolicy } from '../lib/domainPolicy.js';
 import { invalidateTemplateCache } from '../templates/registry.js';
 import {
   DNS_PROVIDERS,
@@ -67,6 +68,16 @@ const dnsRecordsPatch = z.object({
   token: z.string().min(10).max(4096).optional(),
   content: z.union([z.string().max(255), z.literal('')]).optional(),
 });
+// r634: domain-claim limits (see lib/domainPolicy.ts). Each field is
+// optional — omitted keeps the current value; 0 disables that limit.
+const policyInt = z.number().int().min(0).max(1_000_000);
+const domainPolicyPatch = z
+  .object({
+    maxOwnZoneDomainsPerService: policyInt.optional(),
+    maxDomainCreatesPerHour: policyInt.optional(),
+    pendingExpiryDays: z.number().int().min(0).max(3650).optional(),
+  })
+  .strict();
 // Namecheap DNS-record provisioning: `apiUser` + `apiKey` (encrypted at rest)
 // + `clientIp` (the server's public IP, which the operator must have
 // whitelisted on the Namecheap account panel). All three are required
@@ -135,6 +146,21 @@ export const settingsRoutes: FastifyPluginAsync = async (app) => {
     await writeDynamicConfig(app.db).catch(() => undefined);
     void audit(app.db, req.user!.id, 'settings.panel_domain', domain || 'cleared');
     return { ok: true, panelDomain: domain || null };
+  });
+
+  // r634: operator-tunable domain-claim limits. GET answers the effective
+  // values plus the defaults, so a UI or the CLI can show what "reset" means.
+  app.get('/domain-policy', async () => ({
+    policy: await getDomainPolicy(app.db),
+    defaults: DOMAIN_POLICY_DEFAULTS,
+  }));
+
+  app.put('/domain-policy', async (req) => {
+    const input = domainPolicyPatch.parse(req.body ?? {});
+    const next = { ...(await getDomainPolicy(app.db)), ...input };
+    await setSettingJson(app.db, DOMAIN_POLICY_KEY, next);
+    void audit(app.db, req.user!.id, 'settings.domain_policy', JSON.stringify(next));
+    return { ok: true, policy: next };
   });
 
   app.put('/allow-registration', async (req) => {

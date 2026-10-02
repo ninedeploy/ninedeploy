@@ -99,7 +99,8 @@ describe('domains routes (Cloudflare integration)', () => {
   it('ensures the companion www record when the redirect is toggled on', async () => {
     cfMocks.getDnsRecordsConfig.mockResolvedValueOnce({ enabled: true, token: 'tok', content: null });
     const db = createFakeDb({
-      findFirst: { services: svcRow() },
+      // r633: the PATCH reads the row first (the off→on www transition is checked).
+      findFirst: { services: svcRow(), domains: domainRow({ id: 3 }) },
       update: { domains: [domainRow({ id: 3, redirectWww: true })] },
     });
     const app = await buildTestApp({ db });
@@ -385,7 +386,7 @@ describe('domains routes', () => {
   it('patches ssl, redirectWww and headers together', async () => {
     const app = await buildTestApp({
       db: createFakeDb({
-        findFirst: { services: svcRow() },
+        findFirst: { services: svcRow(), domains: domainRow({ id: 3 }) },
         update: {
           domains: [domainRow({ id: 3, ssl: true, redirectWww: true, headers: '[{"name":"X-Frame-Options","value":"DENY"}]' })],
         },
@@ -407,7 +408,7 @@ describe('domains routes', () => {
   it('patches basicAuth, ipAllowlist, and rateLimit', async () => {
     const app = await buildTestApp({
       db: createFakeDb({
-        findFirst: { services: svcRow() },
+        findFirst: { services: svcRow(), domains: domainRow({ id: 4 }) },
         update: {
           domains: [
             domainRow({
@@ -434,7 +435,9 @@ describe('domains routes', () => {
       },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().basicAuth).toBe('["admin:secret"]');
+    // r636: never echoed as plaintext — Traefik only accepts hashed secrets.
+    expect(res.json().basicAuth).not.toContain('secret');
+    expect(JSON.parse(res.json().basicAuth)).toEqual([expect.stringMatching(/^admin:\$apr1\$/)]);
     expect(res.json().ipAllowlist).toBe('10.0.0.0/8');
     expect(res.json().rateLimitAverage).toBe(100);
     expect(res.json().rateLimitBurst).toBe(200);
@@ -473,7 +476,7 @@ describe('domains routes', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().hostname).toBe('auth.example.com');
-    expect(res.json().basicAuth).toBe('["user:pass"]');
+    expect(JSON.parse(res.json().basicAuth)).toEqual([expect.stringMatching(/^user:\$apr1\$/)]);
     expect(res.json().ipAllowlist).toBe('127.0.0.1/32');
     expect(res.json().rateLimitAverage).toBe(10);
     expect(res.json().rateLimitBurst).toBe(20);
@@ -483,7 +486,7 @@ describe('domains routes', () => {
   it('sanitizes a hostile headers payload on patch', async () => {
     const app = await buildTestApp({
       db: createFakeDb({
-        findFirst: { services: svcRow() },
+        findFirst: { services: svcRow(), domains: domainRow({ id: 3 }) },
         update: { domains: [domainRow({ id: 3, headers: '[{"name":"BadName","value":"ok"}]' })] },
       }),
     });
@@ -511,7 +514,7 @@ describe('domains routes', () => {
   });
 
   it('accepts an empty patch body', async () => {
-    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: svcRow() }, update: { domains: [domainRow({ id: 3 })] } }) });
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: svcRow(), domains: domainRow({ id: 3 }) }, update: { domains: [domainRow({ id: 3 })] } }) });
     await app.register(domainsRoutes);
     const res = await app.inject({ method: 'PATCH', url: '/1/domains/3', headers: asUser() });
     expect(res.statusCode).toBe(200);
