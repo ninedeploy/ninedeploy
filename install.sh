@@ -230,6 +230,137 @@ REPO_SLUG="NineDeploy/NineDeploy"
 IMAGE_REPO="$(printf '%s' "$REPO_SLUG" | tr '[:upper:]' '[:lower:]')"
 NEEDS_CLONE=false
 
+# ── Pure helpers (no side effects; exercised by CI via the source-only mode) ─
+
+# Highest vX.Y.Z from a newline-separated tag list on stdin.
+#
+# `sort -V` is GNU-only; busybox and BSD coreutils either lack it or sort
+# lexically, which ranks v0.2.9 above v0.2.36 and would pin an upgrade to a
+# stale release forever. Normalise each component to a zero-padded fixed
+# width first so a plain lexical `sort` is correct everywhere.
+highest_semver_tag() {
+  (grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true) \
+    | awk -F'[v.]' '{ printf "%010d%010d%010d %s\n", $2, $3, $4, $0 }' \
+    | sort \
+    | tail -1 \
+    | awk '{print $2}'
+}
+
+# vX.Y.Z of a GitHub `releases/latest` JSON body on stdin (empty when none).
+release_tag_from_json() {
+  (grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' || true) \
+    | head -1 | sed 's/.*"\([^"]*\)"$/\1/' | highest_semver_tag
+}
+
+# Highest vX.Y.Z of a GitHub `tags` JSON body on stdin (empty when none).
+highest_tag_from_tags_json() {
+  (grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' || true) \
+    | sed 's/.*"\([^"]*\)"$/\1/' | highest_semver_tag
+}
+
+# Newest vX.Y.Z release tag, asked of GitHub directly. Three independent
+# sources, because a single one is not reliable enough to decide what an
+# operator's `--channel release` upgrade actually installs:
+#
+#   1. The releases API — authoritative: release-publish.yml creates the
+#      GitHub Release only AFTER every gate passed and the multi-arch image
+#      was pushed, so a published release is a tag whose pipeline is green.
+#   2. The tags API — fallback when releases/latest is unreachable or 404s
+#      (no published release yet) but tags exist.
+#   3. `git ls-remote` — last resort: works behind a git-only proxy, no API
+#      rate limit, but it also lists tags whose release pipeline failed.
+#
+# r571: git ls-remote used to be asked FIRST, so a tag pushed a minute ago —
+# release pipeline still running, or failed — was installed (and, in Docker
+# mode, its compose file fetched) by every `--channel release` run. Its
+# fallback warnings also went to STDOUT, which `REF=$(latest_tag)` captured:
+# whenever the first source came back empty, REF became "⚠ …\nvX.Y.Z" and the
+# tarball URL, the compose fetch and the git checkout all failed on it.
+#
+# The first source that yields a well-formed tag wins.
+latest_tag() {
+  local _tag=""
+
+  _tag=$(
+    (curl -fsSL -m 15 --retry 3 --retry-delay 2 -H 'Accept: application/vnd.github+json' \
+      "https://api.github.com/repos/${REPO_SLUG}/releases/latest" 2>/dev/null || true) \
+      | release_tag_from_json
+  )
+  if [ -n "$_tag" ]; then printf '%s' "$_tag"; return 0; fi
+
+  warn "The GitHub releases API returned no published release — falling back to the tags API" >&2
+  _tag=$(
+    (curl -fsSL -m 15 --retry 3 --retry-delay 2 -H 'Accept: application/vnd.github+json' \
+      "https://api.github.com/repos/${REPO_SLUG}/tags?per_page=100" 2>/dev/null || true) \
+      | highest_tag_from_tags_json
+  )
+  if [ -n "$_tag" ]; then printf '%s' "$_tag"; return 0; fi
+
+  warn "The GitHub API is unreachable — falling back to git ls-remote (may include a tag whose release is not published yet)" >&2
+  _tag=$(
+    (git ls-remote --tags --refs "$REPO_URL" 2>/dev/null || true) \
+      | awk -F/ '{print $NF}' | highest_semver_tag
+  )
+  printf '%s' "$_tag"
+}
+
+# Docker mode: the panel image tag for the resolved ref. A pinned
+# `--version vX.Y.Z` pulls `:vX.Y.Z` (r263); the main channel pulls `:edge`
+# (set by ci.yml on every push to main). r571: a release-channel run pulls
+# the tag it RESOLVED, not `:latest` — the compose file is fetched at that
+# tag, and `:latest` is whatever was pushed last (a different release, or one
+# whose GitHub Release never published). `:latest` remains only for the
+# no-tags fallback (REF=main on the release channel).
+#   $1 pinned version (may be empty)  $2 channel  $3 resolved ref
+docker_image_tag() {
+  if [ -n "$1" ]; then
+    printf '%s' "$1"
+  elif [ "$2" = "main" ]; then
+    printf 'edge'
+  elif printf '%s' "$3" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+    printf '%s' "$3"
+  else
+    printf 'latest'
+  fi
+}
+
+# Nixpacks → SHA-256, keyed by <version>:<arch>. r574: the table used to be
+# keyed by architecture only, so an overridden NINEDEPLOY_NIXPACKS_VERSION
+# looked up the 1.41.0 digest and died on a generic checksum mismatch — the
+# "not in the verified-checksum table" refusal below was unreachable.
+# Source: https://github.com/railwayapp/nixpacks/releases — every entry was
+# cross-checked against the GitHub-published `sha256sum -c *.sha256`.
+nixpacks_sha256() { # <version> <x86_64|aarch64>
+  case "$1:$2" in
+    1.41.0:x86_64)  printf '%s' 0f55de7874507b9cf7502113120bd96f2ab6979f78d10eaf2eb2ade9207b3af6 ;;
+    1.41.0:aarch64) printf '%s' 912bd02dd2bb6f9c3a9ed965fe8a68b4aa318dc7a2546e2eca6f2806a894ba39 ;;
+    *) printf '' ;;
+  esac
+}
+
+# The absolute data directory the systemd unit is rendered with (created).
+# Environment files commonly use NINEDEPLOY_DATA_DIR=./.data. systemd
+# requires every ReadWritePaths= operand to be absolute, so resolve the
+# configured directory against the current directory (section 5 runs from
+# the install dir) before rendering the unit.
+#   $1 install dir
+resolve_data_dir() {
+  local DATA_DIR_SETTING DATA_DIR
+  DATA_DIR_SETTING="${NINEDEPLOY_DATA_DIR:-$1/.data}"
+  mkdir -p "$DATA_DIR_SETTING" || return 1
+  DATA_DIR=$(cd "$DATA_DIR_SETTING" && pwd -P) || return 1
+  printf '%s' "$DATA_DIR"
+}
+
+# r576: `NINEDEPLOY_INSTALL_SOURCE_ONLY=1 . ./install.sh` defines the helpers
+# above and returns before anything touches the host — CI exercises the real
+# functions under the script's own `set -euo pipefail` instead of re-typing
+# them. Only honoured when SOURCED (`(return 0)` fails in an executed script),
+# so a stray variable can never turn a real `curl … | bash` run into a no-op.
+if [ "${NINEDEPLOY_INSTALL_SOURCE_ONLY:-}" = "1" ] && (return 0 2>/dev/null); then
+  return 0
+fi
+
 echo ""
 echo -e "${BOLD}╔══════════════════════════════════════════╗${NC}"
 echo -e "${BOLD}║       NineDeploy Installer               ║${NC}"
@@ -421,6 +552,12 @@ else
   ok "Node.js $(node -v) installed"
 fi
 
+# r570: when packageManager pins a pnpm the host does not have yet, a
+# corepack-managed pnpm downloads it on first use — behind an interactive
+# "Do you want to continue? [Y/n]" prompt that the panel's self-update (no
+# terminal, stdin /dev/null) can never answer. Accept the pinned download.
+export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+
 # pnpm
 if ! command -v pnpm &>/dev/null; then
   warn "pnpm not found. Installing pnpm…"
@@ -437,33 +574,29 @@ ok "pnpm $(pnpm -v 2>/dev/null || echo 'installed')"
 # so install the pinned upstream binary and verify it before exposing it.
 #
 # Override at install time with: NINEDEPLOY_NIXPACKS_VERSION=1.40.0 ./install.sh
-# The table below only carries checksums for versions we know about; an unknown
-# version is rejected rather than silently fetched (defence-in-depth against
-# tampered release artefacts). To add a new release, drop its checksums in
-# here from the official GitHub release page.
+# The version-keyed table (nixpacks_sha256, near the top of this script) only
+# carries checksums for versions we know about; an unknown version is rejected
+# rather than silently fetched (defence-in-depth against tampered release
+# artefacts). To add a new release, drop its checksums in there from the
+# official GitHub release page.
 NIXPACKS_VERSION="${NINEDEPLOY_NIXPACKS_VERSION:-1.41.0}"
-
-# Nixpacks → SHA-256 (per arch: <version>:<arch>:<sha256>).
-# Source: https://github.com/railwayapp/nixpacks/releases — every entry below
-# was cross-checked against the GitHub-published `sha256sum -c *.sha256`.
-NIXPACKS_SHA_AMD64_x86_64="0f55de7874507b9cf7502113120bd96f2ab6979f78d10eaf2eb2ade9207b3af6"
-NIXPACKS_SHA_ARM64_aarch64="912bd02dd2bb6f9c3a9ed965fe8a68b4aa318dc7a2546e2eca6f2806a894ba39"
 
 install_nixpacks() {
   case "$(uname -m)" in
     x86_64|amd64)
       NIXPACKS_TARGET="x86_64-unknown-linux-musl"
-      NIXPACKS_SHA256="$NIXPACKS_SHA_AMD64_x86_64"
+      NIXPACKS_SHA256="$(nixpacks_sha256 "$NIXPACKS_VERSION" x86_64)"
       ;;
     aarch64|arm64)
       NIXPACKS_TARGET="aarch64-unknown-linux-musl"
-      NIXPACKS_SHA256="$NIXPACKS_SHA_ARM64_aarch64"
+      NIXPACKS_SHA256="$(nixpacks_sha256 "$NIXPACKS_VERSION" aarch64)"
       ;;
     *) fail "Nixpacks ${NIXPACKS_VERSION} has no verified binary for architecture $(uname -m)" ;;
   esac
 
   if [ -z "$NIXPACKS_SHA256" ]; then
-    fail "Nixpacks ${NIXPACKS_VERSION} is not in the installer's verified-checksum table. Set NIXPACKS_VERSION to a known release, or update the SHA table in install.sh after auditing the GitHub release."
+    # r574: reachable now that the table is keyed by version (fail-closed).
+    fail "Nixpacks ${NIXPACKS_VERSION} is not in the installer's verified-checksum table. Unset NINEDEPLOY_NIXPACKS_VERSION (default 1.41.0) or set it to a known release, or add its checksums to nixpacks_sha256 in install.sh after auditing the GitHub release."
   fi
 
   NIXPACKS_ASSET="nixpacks-v${NIXPACKS_VERSION}-${NIXPACKS_TARGET}.tar.gz"
@@ -727,18 +860,42 @@ else
   fi
 fi
 
-# Free ports 80/443 if default apache2/nginx are occupying them on Linux
+# Ports 80/443 belong to the Traefik ingress. r574: a stock apache2/nginx
+# that holds them is stopped and disabled ONLY on a fresh install, and only
+# when it actually listens there — every run used to stop and disable both
+# whenever they were merely active, including upgrades and the panel's
+# self-update, silently killing a web server an operator had deliberately
+# re-enabled on other ports.
+#   web_ports_holder <process>: 0 = it listens on :80/:443, 1 = it does not,
+#   2 = unknown (no `ss` to ask).
+web_ports_holder() {
+  local _listen
+  command -v ss >/dev/null 2>&1 || return 2
+  _listen=$(sudo ss -H -ltnp 2>/dev/null || ss -H -ltnp 2>/dev/null || true)
+  printf '%s\n' "$_listen" | grep -E '[:.](80|443)[[:space:]]' | grep -q "\"$1\"" && return 0
+  return 1
+}
 if [ "$(uname -s)" = "Linux" ] && command -v systemctl &>/dev/null; then
-  if systemctl is-active --quiet apache2 2>/dev/null; then
-    warn "Stopping conflicting apache2 service on port 80/443…"
-    sudo systemctl stop apache2 2>/dev/null || true
-    sudo systemctl disable apache2 2>/dev/null || true
-  fi
-  if systemctl is-active --quiet nginx 2>/dev/null; then
-    warn "Stopping conflicting nginx service on port 80/443…"
-    sudo systemctl stop nginx 2>/dev/null || true
-    sudo systemctl disable nginx 2>/dev/null || true
-  fi
+  _fresh_host=true
+  if bare_metal_present || docker_install_present; then _fresh_host=false; fi
+  for _web_svc in apache2 nginx; do
+    systemctl is-active --quiet "$_web_svc" 2>/dev/null || continue
+    _holder_rc=0
+    web_ports_holder "$_web_svc" || _holder_rc=$?
+    if [ "$_holder_rc" -eq 1 ]; then
+      continue # active, but not on :80/:443 — no conflict
+    fi
+    if [ "$_fresh_host" = true ] && [ "$_holder_rc" -eq 0 ]; then
+      warn "$_web_svc is listening on port 80/443, which the Traefik ingress needs — stopping and disabling the $_web_svc service."
+      warn "To keep $_web_svc, move it to other ports and re-enable it: sudo systemctl enable --now $_web_svc"
+      sudo systemctl stop "$_web_svc" 2>/dev/null || true
+      sudo systemctl disable "$_web_svc" 2>/dev/null || true
+    elif [ "$_holder_rc" -eq 0 ]; then
+      warn "$_web_svc is listening on port 80/443 — Traefik cannot serve domains until it moves (this upgrade leaves it running; to free the ports: sudo systemctl disable --now $_web_svc)."
+    else
+      warn "$_web_svc is running and its ports could not be checked (no 'ss'). If it holds port 80/443, Traefik cannot serve domains: sudo systemctl disable --now $_web_svc"
+    fi
+  done
 fi
 
 # Host Firewall (UFW on Linux)
@@ -760,59 +917,6 @@ ok "Docker network & ingress ready"
 #   release (default) — latest vX.Y.Z git tag (stable)
 #   main              — track the main branch (edge; previous behaviour)
 # A specific tag can be pinned with --version vX.Y.Z / NINEDEPLOY_VERSION.
-
-# Highest vX.Y.Z from a newline-separated tag list on stdin.
-#
-# `sort -V` is GNU-only; busybox and BSD coreutils either lack it or sort
-# lexically, which ranks v0.2.9 above v0.2.36 and would pin an upgrade to a
-# stale release forever. Normalise each component to a zero-padded fixed
-# width first so a plain lexical `sort` is correct everywhere.
-highest_semver_tag() {
-  (grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true) \
-    | awk -F'[v.]' '{ printf "%010d%010d%010d %s\n", $2, $3, $4, $0 }' \
-    | sort \
-    | tail -1 \
-    | awk '{print $2}'
-}
-
-# Newest vX.Y.Z release tag, asked of GitHub directly. Three independent
-# sources, because a single one is not reliable enough to decide what an
-# operator's `--channel release` upgrade actually installs:
-#
-#   1. `git ls-remote` — works behind a git-only proxy, no API rate limit.
-#   2. The releases API — authoritative for what is *published*, and the only
-#      source that skips a tag pushed without a release.
-#   3. The tags API — fallback when releases/latest 404s (no published
-#      release yet) but tags exist.
-#
-# The first source that yields a well-formed tag wins.
-latest_tag() {
-  local _tag=""
-
-  _tag=$(
-    (git ls-remote --tags --refs "$REPO_URL" 2>/dev/null || true) \
-      | awk -F/ '{print $NF}' | highest_semver_tag
-  )
-  if [ -n "$_tag" ]; then printf '%s' "$_tag"; return 0; fi
-
-  warn "git ls-remote returned no tags — asking the GitHub releases API"
-  _tag=$(
-    (curl -fsSL -m 15 --retry 3 --retry-delay 2 -H 'Accept: application/vnd.github+json' \
-      "https://api.github.com/repos/${REPO_SLUG}/releases/latest" 2>/dev/null || true) \
-      | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' \
-      | head -1 | sed 's/.*"\([^"]*\)"$/\1/' | highest_semver_tag
-  )
-  if [ -n "$_tag" ]; then printf '%s' "$_tag"; return 0; fi
-
-  warn "No published release — falling back to the GitHub tags API"
-  _tag=$(
-    (curl -fsSL -m 15 --retry 3 --retry-delay 2 -H 'Accept: application/vnd.github+json' \
-      "https://api.github.com/repos/${REPO_SLUG}/tags?per_page=100" 2>/dev/null || true) \
-      | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' \
-      | sed 's/.*"\([^"]*\)"$/\1/' | highest_semver_tag
-  )
-  printf '%s' "$_tag"
-}
 
 # Source of the tree the installer is about to build. `release` means the
 # published tarball for a tag; `git` means a clone/checkout. Set in section 3.
@@ -860,9 +964,13 @@ fetch_release_tarball() {
   fi
 
   # ── Provenance: bind the extracted tree to the requested tag. ──────────
-  # TLS proves the transport; these checks prove the CONTENT is the release
-  # the operator asked for (a swapped, stale or tampered archive fails here
-  # instead of becoming a root-built service).
+  # TLS (to github.com) proves the transport. These checks add only what they
+  # can actually prove about the CONTENT: its package.json version matches
+  # the requested tag (a swapped or stale archive — another release's tarball
+  # — fails here), and it carries no symlinks and no setuid/setgid files.
+  # r574: they do NOT prove authenticity — an archive modified at the source
+  # with the version string left intact passes. That needs signed releases
+  # (a maintainer-held key), which this installer does not verify yet.
   _tar_version=$(sed -n 's/.*"version":[[:space:]]*"\([^"]*\)".*/\1/p' "$_dest/package.json" | head -1)
   if [ "v$_tar_version" != "$_ref" ]; then
     warn "Tarball for $_ref carries version '${_tar_version:-?}' — content does not match the tag, refusing"
@@ -881,7 +989,7 @@ fetch_release_tarball() {
     rm -rf "${_dest:?}"
     return 1
   fi
-  info "Tarball provenance verified: $_ref, version $_tar_version, no symlinks, no setuid bits"
+  info "Tarball checks passed: $_ref, version $_tar_version, no symlinks, no setuid bits"
   return 0
 }
 
@@ -963,28 +1071,48 @@ install_docker_mode() {
     fail "The fetched compose file is not a valid compose project — refusing to deploy it"
   fi
   rm -f "$_prov_env"
+
+  # r570: keep the RUNNING release's compose file and .env before either is
+  # replaced, so a failed pull/recreate below can put them back (see
+  # docker_rollback_panel). 0700: the .env copy holds the secrets.
+  DOCKER_ROLLBACK_DIR="$DOCKER_INSTALL_DIR/.upgrade-rollback"
+  rm -rf "${DOCKER_ROLLBACK_DIR:?}"
+  (umask 077 && mkdir -p "$DOCKER_ROLLBACK_DIR") || fail "Could not create $DOCKER_ROLLBACK_DIR"
+  if [ -f "$DOCKER_INSTALL_DIR/docker-compose.yml" ]; then
+    cp -p "$DOCKER_INSTALL_DIR/docker-compose.yml" "$DOCKER_ROLLBACK_DIR/docker-compose.yml" \
+      || fail "Could not keep the previous compose file for rollback"
+  fi
+  if [ -f "$DOCKER_INSTALL_DIR/.env" ]; then
+    cp -p "$DOCKER_INSTALL_DIR/.env" "$DOCKER_ROLLBACK_DIR/.env" \
+      || fail "Could not keep the previous .env for rollback"
+  fi
+
   mv "$DOCKER_INSTALL_DIR/docker-compose.yml.new" "$DOCKER_INSTALL_DIR/docker-compose.yml"
 
-  # Substitute the image tag the release workflow tagged for this ref.
-  # `:latest` for the release channel (re-pointed by release-publish.yml on
-  # every tag push) and `:edge` for the main channel (set by ci.yml on every
-  # push to main).
-  # r263: a pinned `--version vX.Y.Z` pulls `:vX.Y.Z` — release-publish.yml
-  # pushes exactly that tag and keeps it. It used to pull `:latest` too,
-  # i.e. whatever was released last rather than the version asked for.
+  # The image tag the release workflow tagged for this ref (docker_image_tag):
+  # the pinned `--version` (r263), `:edge` for the main channel, and — r571 —
+  # the RESOLVED release tag for the release channel instead of `:latest`.
+  # This release's compose file reads it from .env as
+  # ${NINEDEPLOY_IMAGE_TAG:-latest} (written below). Upgrade-safe: an .env
+  # without the variable keeps `:latest` until the installer writes it.
   IMAGE_TAG="latest"
   if [ -n "$PINNED_VERSION" ]; then
     IMAGE_TAG="$PINNED_VERSION"
-  elif [ "$CHANNEL" = "main" ]; then
-    IMAGE_TAG="edge"
+  else
+    IMAGE_TAG="$(docker_image_tag "" "$CHANNEL" "$REF")"
   fi
+  # Compose lets the shell environment override .env; the value this run
+  # resolved must be the one that is pulled and started.
+  unset NINEDEPLOY_IMAGE_TAG
+  # A compose file from an older release (a pinned downgrade) hardcodes
+  # `:latest` — substitute it in place as before.
   if grep -q 'ghcr.io/.*:latest' "$DOCKER_INSTALL_DIR/docker-compose.yml"; then
     sed -i.bak "s|ghcr.io/${IMAGE_REPO}:latest|ghcr.io/${IMAGE_REPO}:${IMAGE_TAG}|" \
       "$DOCKER_INSTALL_DIR/docker-compose.yml" \
       && rm -f "$DOCKER_INSTALL_DIR/docker-compose.yml.bak" \
       || fail "Could not substitute the image tag in docker-compose.yml"
-    info "Compose file pinned to ghcr.io/${IMAGE_REPO}:${IMAGE_TAG}"
   fi
+  info "Compose file pinned to ghcr.io/${IMAGE_REPO}:${IMAGE_TAG}"
 
   cd "$DOCKER_INSTALL_DIR"
 
@@ -1030,6 +1158,10 @@ install_docker_mode() {
   [ -n "${NINEDEPLOY_PORT:-}" ] && panel_port="$NINEDEPLOY_PORT"
   [ -z "$panel_port" ] && panel_port="3000"
   upsert_env NINEDEPLOY_PORT "$panel_port"
+  # r571: the image tag this run resolved (read by the compose file as
+  # ${NINEDEPLOY_IMAGE_TAG:-latest}). Rewritten on every run: re-running the
+  # installer is choosing the version.
+  upsert_env NINEDEPLOY_IMAGE_TAG "$IMAGE_TAG"
   # r451: persist an explicit bind address too — the compose file defaults the
   # panel to loopback, and an operator's NINEDEPLOY_BIND=0.0.0.0 install would
   # silently rebind on the next manual `docker compose up -d` without this.
@@ -1062,24 +1194,75 @@ install_docker_mode() {
   # — docs/QUICKSTART.md walks the first deploy. Failing
   # fast here is friendlier than the generic "image pull failed" the
   # compose call would otherwise surface ten seconds later.
+  # r570: put the previous compose file + .env back (kept in
+  # $DOCKER_ROLLBACK_DIR above). Used when this run fails BEFORE the panel was
+  # replaced, so a later manual `docker compose up -d` (or the operator's
+  # re-run) starts from the release that is actually running, not from a
+  # half-applied upgrade. Fresh installs have nothing to put back.
+  docker_restore_previous_files() {
+    [ -f "$DOCKER_ROLLBACK_DIR/docker-compose.yml" ] || return 1
+    cp -p "$DOCKER_ROLLBACK_DIR/docker-compose.yml" "$DOCKER_INSTALL_DIR/docker-compose.yml" || return 1
+    if [ -f "$DOCKER_ROLLBACK_DIR/.env" ]; then
+      # cat >, not cp: keeps the live file's inode and 0600 mode.
+      cat "$DOCKER_ROLLBACK_DIR/.env" > "$DOCKER_INSTALL_DIR/.env" || return 1
+    fi
+    return 0
+  }
   if ! docker_cmd manifest inspect "ghcr.io/${IMAGE_REPO}:${IMAGE_TAG}" >/dev/null 2>&1; then
+    docker_restore_previous_files || true
     fail "ghcr.io/${IMAGE_REPO}:${IMAGE_TAG} is not publicly pullable. Make the GHCR package 'Public' at https://github.com/orgs/NineDeploy/packages/container/ninedeploy/settings (one-time setup), or use the bare-metal installer (./install.sh without --docker) which builds from source."
   fi
-  docker_cmd compose pull \
-    || fail "Image pull failed — check registry connectivity and re-run the installer."
+  if ! docker_cmd compose pull; then
+    docker_restore_previous_files || true
+    fail "Image pull failed — check registry connectivity and re-run the installer. The running panel was not touched."
+  fi
   # r447: docker-mode upgrades never had the bare-metal r087 treatment — a
-  # failed `compose up -d` (recreate) leaves the OLD container stopped and the
-  # panel dark. compose v2 has no auto-rollback: capture the running container
-  # id and bring it back ourselves when the recreate does not land.
-  local _old_cid
+  # failed `compose up -d` (recreate) leaves the panel dark. compose v2 has no
+  # auto-rollback.
+  # r570: and r447's fallback (`docker start <old id>`) could not work for the
+  # common failure: compose v2 recreates by CREATING the new container under a
+  # temporary name, then STOPPING and REMOVING the old one, then renaming and
+  # starting the new one — a failure at the start step (port conflict, runtime
+  # error) finds the old container already deleted. So remember the image the
+  # old container RAN (its immutable image id — the pull above may already have
+  # re-pointed its tag) and, when the old container is gone, recreate it from
+  # the previous compose file + .env with that image re-tagged under the
+  # reference the previous compose file names. A failed `up` never ran the new
+  # release's code, so no migration touched the data volume: the previous
+  # release starts on the database it left.
+  local _old_cid _old_image
   _old_cid="$(docker_cmd compose ps -q ninedeploy 2>/dev/null || true)"
+  _old_image=""
+  [ -n "$_old_cid" ] && _old_image="$(docker_cmd inspect --format '{{.Image}}' "$_old_cid" 2>/dev/null || true)"
+  docker_rollback_panel() {
+    local _prev_ref
+    [ -n "$_old_cid" ] || return 1
+    if docker_cmd ps -q --no-trunc | grep -q "$_old_cid"; then
+      # Failed before the old container was touched (create step) — it still serves.
+      docker_restore_previous_files || true
+      info "compose up failed before the previous panel container was replaced — it is still running."
+      return 0
+    fi
+    if docker_cmd start "$_old_cid" >/dev/null 2>&1; then
+      docker_restore_previous_files || true
+      info "compose up failed — the previous panel container was restarted."
+      return 0
+    fi
+    [ -n "$_old_image" ] || return 1
+    docker_restore_previous_files || return 1
+    _prev_ref="$(docker_cmd compose config --images 2>/dev/null | head -1)"
+    [ -n "$_prev_ref" ] || return 1
+    info "compose up failed and the previous panel container is gone — recreating it from ${_prev_ref} (image ${_old_image})…"
+    docker_cmd tag "$_old_image" "$_prev_ref" || return 1
+    docker_cmd compose up -d || return 1
+    return 0
+  }
   if ! docker_cmd compose up -d; then
     docker_cmd compose logs --tail 50 2>/dev/null || true
-    if [ -n "$_old_cid" ] && ! docker_cmd ps -q --no-trunc | grep -q "$_old_cid"; then
-      info "compose up failed — restarting the previous panel container as a fallback…"
-      docker_cmd start "$_old_cid" 2>/dev/null || true
+    if docker_rollback_panel; then
+      fail "docker compose up failed — the previous panel release is running again. Fix the cause above and re-run the installer."
     fi
-    fail "docker compose up failed"
+    fail "docker compose up failed and the previous panel could not be restored automatically. The previous compose file and .env are in $DOCKER_ROLLBACK_DIR."
   fi
 
   HEALTH_PORT="$(sed -n 's/^NINEDEPLOY_PORT=//p' .env | tail -1)"
@@ -1089,17 +1272,26 @@ install_docker_mode() {
   # whole install) false-fail. 0.0.0.0 and empty both mean loopback works.
   HEALTH_HOST="$(sed -n 's/^NINEDEPLOY_BIND=//p' .env | tail -1)"
   case "$HEALTH_HOST" in ""|0.0.0.0|127.0.0.1|localhost) HEALTH_HOST="127.0.0.1" ;; esac
-  info "Waiting for the panel to become healthy (up to 120s)…"
+  # r570: the container runs the database migrations at boot, BEFORE /health
+  # answers — on a large database that alone can outlast the old fixed 120 s,
+  # and the run then reported a healthy upgrade as failed. Same knob as the
+  # bare-metal gate; a longer default here because migrations sit inside it.
+  DOCKER_HEALTH_TIMEOUT="${NINEDEPLOY_HEALTH_TIMEOUT:-300}"
+  info "Waiting for the panel to become healthy (up to ${DOCKER_HEALTH_TIMEOUT}s; first boot after an upgrade runs migrations)…"
   _healthy=false
-  for _i in $(seq 1 120); do
+  for _i in $(seq 1 "$DOCKER_HEALTH_TIMEOUT"); do
     if curl -fsS -m 2 "http://${HEALTH_HOST}:${HEALTH_PORT}/health" >/dev/null 2>&1; then _healthy=true; break; fi
     sleep 1
   done
   if [ "$_healthy" != "true" ]; then
     docker_cmd compose logs --tail 50 2>/dev/null || true
-    fail "Panel did not become healthy in 120s — inspect: cd $DOCKER_INSTALL_DIR && docker compose logs -f"
+    # r570: no automatic rollback here — the new container ran, so its boot
+    # migrations may already have moved the data volume's schema forward.
+    fail "Panel did not become healthy in ${DOCKER_HEALTH_TIMEOUT}s (raise with NINEDEPLOY_HEALTH_TIMEOUT=<seconds>) — inspect: cd $DOCKER_INSTALL_DIR && docker compose logs -f (the previous compose file and .env are kept in $DOCKER_ROLLBACK_DIR)"
   fi
   ok "NineDeploy panel is healthy (docker compose project 'ninedeploy')"
+  # r570: the new release is up — the previous compose file/.env copy is done.
+  rm -rf "${DOCKER_ROLLBACK_DIR:?}"
 
   PUBLIC_URL="$(sed -n 's/^NINEDEPLOY_PUBLIC_URL=//p' .env | tail -1)"
   echo ""
@@ -1115,8 +1307,10 @@ install_docker_mode() {
   echo -e "    cd $DOCKER_INSTALL_DIR && docker compose logs -f"
   echo -e "    docker compose restart"
   echo -e "    docker compose down        # data volume survives"
-  echo -e "  ${YELLOW}Upgrade:${NC} re-run this installer (it auto-detects the Docker install), or"
-  echo -e "    cd $DOCKER_INSTALL_DIR && docker compose pull && docker compose up -d"
+  # r571: the image is pinned to a release tag in .env now — a bare
+  # `compose pull` re-pulls the SAME release, so say how to move it.
+  echo -e "  ${YELLOW}Upgrade:${NC} re-run this installer (it auto-detects the Docker install), or set"
+  echo -e "    NINEDEPLOY_IMAGE_TAG=vX.Y.Z in $DOCKER_INSTALL_DIR/.env, then: docker compose pull && docker compose up -d"
   echo ""
 }
 
@@ -1862,13 +2056,9 @@ if [ "$(uname -s)" = "Linux" ] && command -v systemctl &>/dev/null; then
   if [ ! -f "$UNIT_TEMPLATE" ]; then
     fail "systemd/ninedeploy.service not found in the repo — re-run ./install.sh"
   fi
-  DATA_DIR_SETTING="${NINEDEPLOY_DATA_DIR:-$INSTALL_DIR/.data}"
-  mkdir -p "$DATA_DIR_SETTING"
-  # Environment files commonly use NINEDEPLOY_DATA_DIR=./.data. systemd
-  # requires every ReadWritePaths= operand to be absolute, so resolve the
-  # configured directory from the installer's current INSTALL_DIR before
-  # rendering the unit.
-  DATA_DIR=$(cd "$DATA_DIR_SETTING" && pwd -P)
+  # Absolute data dir (resolve_data_dir, near the top — CI runs it under the
+  # script's own set -u; r087 was an unbound DATA_DIR right here).
+  DATA_DIR=$(resolve_data_dir "$INSTALL_DIR")
   # Writable homes for the toolchains the panel spawns: DOCKER_CONFIG (buildx
   # builder-activity writes) and PM2_HOME (dump.pm2 persistence). Both default
   # to /root/... which the hardened unit's ProtectHome=read-only makes
@@ -1983,13 +2173,23 @@ if [ "$(uname -s)" = "Linux" ] && command -v systemctl &>/dev/null; then
   # migrations, but a process that is *not running* is never going to answer,
   # so a crash-loop is called immediately rather than after the full timeout.
   HEALTH_PORT="${NINEDEPLOY_PORT:-3000}"
+  # r570: probe the address the panel actually binds (the bare-metal twin of
+  # r458). An operator who bound NINEDEPLOY_HOST to one specific interface
+  # (a private IP) had every upgrade fail this gate on 127.0.0.1 — AFTER the
+  # new release was already running, so the self-update reported a healthy
+  # upgrade as failed. Wildcard and loopback binds still probe 127.0.0.1.
+  PANEL_PROBE_HOST="${NINEDEPLOY_HOST:-0.0.0.0}"
+  case "$PANEL_PROBE_HOST" in
+    ""|0.0.0.0|::|"[::]"|127.0.0.1|localhost) PANEL_PROBE_HOST="127.0.0.1" ;;
+    *:*) PANEL_PROBE_HOST="[${PANEL_PROBE_HOST#[}"; PANEL_PROBE_HOST="${PANEL_PROBE_HOST%]}]" ;;
+  esac
   HEALTH_TIMEOUT="${NINEDEPLOY_HEALTH_TIMEOUT:-120}"
   info "Waiting for the API to come up (up to ${HEALTH_TIMEOUT}s)…"
   if command -v curl &>/dev/null; then
     _health_ok=false
     _crash_strikes=0
     for i in $(seq 1 "$HEALTH_TIMEOUT"); do
-      if curl -fsS -m 2 "http://127.0.0.1:${HEALTH_PORT}/health" >/dev/null 2>&1; then
+      if curl -fsS -m 2 "http://${PANEL_PROBE_HOST}:${HEALTH_PORT}/health" >/dev/null 2>&1; then
         _health_ok=true
         break
       fi

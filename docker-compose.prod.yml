@@ -30,7 +30,12 @@ name: ninedeploy
 
 services:
   ninedeploy:
-    image: ghcr.io/ninedeploy/ninedeploy:latest
+    # r571: the installer pins the release it resolved in .env
+    # (NINEDEPLOY_IMAGE_TAG=vX.Y.Z); without it this tracks :latest, the
+    # newest release. To upgrade by hand: set NINEDEPLOY_IMAGE_TAG to the new
+    # tag in .env, then docker compose pull && docker compose up -d — or just
+    # re-run the installer, which resolves and writes it for you.
+    image: ghcr.io/ninedeploy/ninedeploy:${NINEDEPLOY_IMAGE_TAG:-latest}
     # Or build locally: docker compose -f docker-compose.prod.yml build --no-cache
     # build:
     #   context: .

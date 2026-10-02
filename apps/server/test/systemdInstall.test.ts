@@ -79,6 +79,21 @@ describe('bare-metal systemd installation policy', () => {
     // in its verified-checksum table — it has to fail with a clear message
     // so the operator knows to update the table after auditing GitHub.
     expect(installer).toContain('is not in the installer');
+    // r574: that refusal is only reachable when the table is keyed by
+    // VERSION — an arch-only table handed an overridden version the 1.41.0
+    // digest, and the run died on a generic checksum mismatch instead.
+    const start = installer.indexOf('nixpacks_sha256() {');
+    const table = installer.slice(start, installer.indexOf('\n}\n', start));
+    expect(table).toContain('case "$1:$2" in');
+    expect(table).toMatch(/^\s*1\.41\.0:x86_64\)/m);
+    expect(table).toMatch(/^\s*1\.41\.0:aarch64\)/m);
+    expect(table).toMatch(/^\s*\*\) printf '' ;;/m);
+    expect(installer).toContain('NIXPACKS_SHA256="$(nixpacks_sha256 "$NIXPACKS_VERSION" x86_64)"');
+    expect(installer).toContain('NIXPACKS_SHA256="$(nixpacks_sha256 "$NIXPACKS_VERSION" aarch64)"');
+    expect(installer).not.toContain('NIXPACKS_SHA_AMD64_x86_64');
+    // The empty-digest refusal precedes the download.
+    const install = installer.slice(installer.indexOf('install_nixpacks() {'));
+    expect(install.indexOf('if [ -z "$NIXPACKS_SHA256" ]; then')).toBeLessThan(install.indexOf('curl -fsSL'));
   });
 
   it('r261: only prompts on a terminal it can actually open (self-update has none)', () => {
@@ -162,7 +177,8 @@ describe('bare-metal systemd installation policy', () => {
   it('r263: --docker targets the lowercase GHCR image and pulls the pinned version tag', () => {
     const installer = rootFile('install.sh');
     const compose = rootFile('docker-compose.prod.yml');
-    expect(compose).toMatch(/image:\s*ghcr\.io\/ninedeploy\/ninedeploy:latest/);
+    // r571: the tag is a variable the installer pins in .env; `:latest` only as the fallback.
+    expect(compose).toMatch(/image:\s*ghcr\.io\/ninedeploy\/ninedeploy:\$\{NINEDEPLOY_IMAGE_TAG:-latest\}/);
     expect(installer).toContain(`IMAGE_REPO="$(printf '%s' "$REPO_SLUG" | tr '[:upper:]' '[:lower:]')"`);
     // No image reference may be built from the mixed-case GitHub slug.
     expect(installer).not.toMatch(/ghcr\\?\.io\/\$\{REPO_SLUG/);
@@ -179,7 +195,7 @@ describe('docker-mode upgrade safety (r447–r452)', () => {
     // The old container id is captured BEFORE the recreate…
     expect(sh).toContain('_old_cid="$(docker_cmd compose ps -q ninedeploy 2>/dev/null || true)"');
     // …and started again only when the new one is not running.
-    expect(sh).toContain('docker_cmd start "$_old_cid" 2>/dev/null || true');
+    expect(sh).toContain('if docker_cmd start "$_old_cid" >/dev/null 2>&1; then');
     // The old unconditional one-liner is gone.
     expect(sh).not.toContain('docker_cmd compose up -d \\n    || { docker_cmd compose logs --tail 50 2>/dev/null || true; fail "docker compose up failed"; }');
   });
@@ -263,5 +279,129 @@ describe('installer P3 sweep (r457–r460)', () => {
     const retryApi = sh.match(/curl -fsSL -m 15 --retry 3 --retry-delay 2 -H 'Accept: application\/vnd\.github\+json'/g) ?? [];
     expect(retryApi).toHaveLength(2);
     expect(sh).toContain('--retry 3 --retry-delay 2 "https://raw.githubusercontent.com/NineDeploy/NineDeploy/${REF}/docker-compose.prod.yml"');
+  });
+});
+
+// ── r570–r576: 0.10.36 install/upgrade path ────────────────────────────
+describe('install/upgrade path (r570–r576)', () => {
+  const installer = () => rootFile('install.sh');
+  const at = (sh: string, needle: string, from = 0) => {
+    const i = sh.indexOf(needle, from);
+    expect(i, needle).toBeGreaterThanOrEqual(0);
+    return i;
+  };
+  const body = (sh: string, name: string) => {
+    const start = at(sh, `\n${name}() {`);
+    return sh.slice(start, at(sh, '\n}\n', start));
+  };
+
+  it('r571: the release channel asks the releases API first and git ls-remote last', () => {
+    const fn = body(installer(), 'latest_tag');
+    const releases = at(fn, '/releases/latest');
+    const tags = at(fn, '/tags?per_page=100');
+    const lsRemote = at(fn, 'git ls-remote --tags --refs');
+    expect(releases).toBeLessThan(tags);
+    expect(tags).toBeLessThan(lsRemote);
+    // Diagnostics go to stderr: `REF=$(latest_tag)` captures stdout, and a
+    // warning there used to become part of the resolved ref.
+    for (const line of fn.split('\n').filter((l) => l.includes('warn '))) expect(line).toMatch(/>&2\s*$/);
+  });
+
+  it('r571: docker mode pins the image to the resolved tag in the 0600 .env, keeping the one-image check', () => {
+    const sh = installer();
+    const fn = body(sh, 'docker_image_tag');
+    // pinned > edge (main channel) > resolved release tag > latest
+    expect(at(fn, 'if [ -n "$1" ]; then')).toBeLessThan(at(fn, '[ "$2" = "main" ]'));
+    expect(at(fn, '[ "$2" = "main" ]')).toBeLessThan(at(fn, "grep -Eq '^v[0-9]+\\.[0-9]+\\.[0-9]+$'"));
+    expect(fn).toContain("printf 'latest'");
+    expect(sh).toContain('IMAGE_TAG="$(docker_image_tag "" "$CHANNEL" "$REF")"');
+    expect(sh).toContain('upsert_env NINEDEPLOY_IMAGE_TAG "$IMAGE_TAG"');
+    // The shell env must not override the .env value compose reads.
+    expect(at(sh, 'unset NINEDEPLOY_IMAGE_TAG')).toBeLessThan(at(sh, 'docker_cmd compose pull'));
+    // The compose file still names exactly one image, ours, so the installer's
+    // provenance check (one `image:` line, ghcr.io/<repo>:) keeps passing.
+    const compose = rootFile('docker-compose.prod.yml');
+    expect(compose.match(/^\s*image:\s*/gm)).toHaveLength(1);
+    expect(compose).toMatch(/image:\s*ghcr\.io\/ninedeploy\/ninedeploy:/);
+    // Legacy compose files (a pinned older release) are still rewritten in place.
+    expect(sh).toContain('sed -i.bak "s|ghcr.io/${IMAGE_REPO}:latest|ghcr.io/${IMAGE_REPO}:${IMAGE_TAG}|"');
+  });
+
+  it('r570: a failed docker recreate restores the previous release even after compose removed its container', () => {
+    const sh = installer();
+    // The previous compose file + .env are kept (0700) before either is replaced…
+    const keep = at(sh, 'cp -p "$DOCKER_INSTALL_DIR/docker-compose.yml" "$DOCKER_ROLLBACK_DIR/docker-compose.yml"');
+    expect(keep).toBeLessThan(at(sh, 'mv "$DOCKER_INSTALL_DIR/docker-compose.yml.new" "$DOCKER_INSTALL_DIR/docker-compose.yml"'));
+    expect(sh).toContain('(umask 077 && mkdir -p "$DOCKER_ROLLBACK_DIR")');
+    // …the old container's immutable image id is captured before the recreate…
+    expect(at(sh, `_old_image="$(docker_cmd inspect --format '{{.Image}}' "$_old_cid"`)).toBeLessThan(at(sh, 'if ! docker_cmd compose up -d; then'));
+    // …and when the container is gone, the previous files come back and the
+    // old image is re-tagged under the reference they name, then recreated.
+    const rbStart = at(sh, '\n  docker_rollback_panel() {');
+    const rb = sh.slice(rbStart, at(sh, '\n  }\n', rbStart));
+    expect(at(rb, 'docker_cmd start "$_old_cid"')).toBeLessThan(at(rb, 'docker_restore_previous_files || return 1'));
+    expect(at(rb, 'docker_restore_previous_files || return 1')).toBeLessThan(at(rb, 'compose config --images'));
+    expect(at(rb, 'docker_cmd tag "$_old_image" "$_prev_ref"')).toBeLessThan(at(rb, 'docker_cmd compose up -d'));
+    // A failed pull/manifest check also puts the previous files back.
+    expect(sh).toMatch(/if ! docker_cmd compose pull; then\n\s*docker_restore_previous_files \|\| true/);
+    // Healthy: the copy (it holds the secrets) is removed.
+    expect(at(sh, 'rm -rf "${DOCKER_ROLLBACK_DIR:?}"', at(sh, 'NineDeploy panel is healthy'))).toBeGreaterThan(0);
+  });
+
+  it('r570: the health gates wait for boot migrations (docker) and probe the bound address (bare metal)', () => {
+    const sh = installer();
+    expect(sh).toContain('DOCKER_HEALTH_TIMEOUT="${NINEDEPLOY_HEALTH_TIMEOUT:-300}"');
+    expect(sh).toContain('for _i in $(seq 1 "$DOCKER_HEALTH_TIMEOUT"); do');
+    expect(sh).toContain('PANEL_PROBE_HOST="${NINEDEPLOY_HOST:-0.0.0.0}"');
+    expect(sh).toContain('""|0.0.0.0|::|"[::]"|127.0.0.1|localhost) PANEL_PROBE_HOST="127.0.0.1" ;;');
+    expect(sh).toContain('curl -fsS -m 2 "http://${PANEL_PROBE_HOST}:${HEALTH_PORT}/health"');
+    expect(sh).not.toContain('curl -fsS -m 2 "http://127.0.0.1:${HEALTH_PORT}/health"');
+  });
+
+  it('r570: a corepack-managed pnpm never blocks the self-update on a download prompt', () => {
+    const sh = installer();
+    expect(at(sh, 'export COREPACK_ENABLE_DOWNLOAD_PROMPT=0')).toBeLessThan(at(sh, 'run_quiet_step "pnpm install" pnpm install --frozen-lockfile'));
+  });
+
+  it('r574: apache2/nginx are stopped only on a fresh install, and only when they hold :80/:443', () => {
+    const sh = installer();
+    const block = sh.slice(at(sh, 'web_ports_holder() {'), at(sh, '# Host Firewall (UFW on Linux)'));
+    expect(block).toContain('_fresh_host=true');
+    expect(block).toContain('if bare_metal_present || docker_install_present; then _fresh_host=false; fi');
+    // The stop is guarded by BOTH conditions…
+    const stop = at(block, 'sudo systemctl stop "$_web_svc"');
+    const guard = block.lastIndexOf('if [ "$_fresh_host" = true ] && [ "$_holder_rc" -eq 0 ]; then', stop);
+    expect(guard).toBeGreaterThan(-1);
+    expect(block.slice(guard, stop)).not.toMatch(/\n\s*(elif|else|fi)\b/);
+    // …and names the service it stops; no unconditional stop is left.
+    expect(block).toContain('warn "$_web_svc is listening on port 80/443, which the Traefik ingress needs');
+    expect(sh).not.toContain('sudo systemctl stop apache2');
+    expect(sh).not.toContain('sudo systemctl stop nginx');
+  });
+
+  it('r574: the tarball check claims only what it verifies', () => {
+    const sh = installer();
+    expect(sh).not.toContain('tampered archive fails here');
+    expect(sh).toContain('they do NOT prove authenticity');
+  });
+
+  it('r576: a source-only mode exposes the pure helpers to CI, and only when sourced', () => {
+    const sh = installer();
+    const guard = at(sh, 'if [ "${NINEDEPLOY_INSTALL_SOURCE_ONLY:-}" = "1" ] && (return 0 2>/dev/null); then');
+    // Every helper CI exercises is defined before the guard; nothing that
+    // touches the host (banner, flock, apt, docker) runs before it.
+    for (const fn of ['highest_semver_tag', 'release_tag_from_json', 'highest_tag_from_tags_json', 'latest_tag', 'docker_image_tag', 'nixpacks_sha256', 'resolve_data_dir']) {
+      expect(at(sh, `\n${fn}() {`), fn).toBeLessThan(guard);
+    }
+    for (const effect of ['NineDeploy Installer', 'flock -w', 'Installing base system packages', 'docker_cmd network create']) {
+      expect(at(sh, effect), effect).toBeGreaterThan(guard);
+    }
+    // CI sources the real script instead of re-typing its lines.
+    const ci = rootFile('.github/workflows/ci.yml');
+    expect(ci).toContain('NINEDEPLOY_INSTALL_SOURCE_ONLY=1 . ./install.sh');
+    expect(ci).toContain('resolve_data_dir "$scratch"');
+    expect(ci).not.toContain('DATA_DIR_SETTING="${NINEDEPLOY_DATA_DIR:-$INSTALL_DIR/.data}"');
+    // The systemd step uses the same helper the smoke test runs.
+    expect(sh).toContain('DATA_DIR=$(resolve_data_dir "$INSTALL_DIR")');
   });
 });
