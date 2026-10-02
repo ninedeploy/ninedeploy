@@ -1,9 +1,11 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { deployments, services, type DB } from '@ninedeploy/db';
 import { audit } from './audit.js';
+import { assertMayDeployStoredService } from './hostPrivilege.js';
 import { parseImageRef } from './imageRef.js';
 import { fetchImageDigest } from './imageWatch.js';
 import { registryCredentialFor } from './registryBinding.js';
+import { isOperator } from './resourceAccess.js';
 
 /**
  * Watchtower-style image auto-update sweep. For every RUNNING, image-based
@@ -60,6 +62,26 @@ async function registryCredential(
   }
 }
 
+/**
+ * r513: the sweep enqueues a deploy with no request behind it, so it must
+ * apply the same owner-privilege gate as the webhook receiver and the job
+ * runner — a member's service that drifted into a host-executing shape
+ * (docker socket, static build pack, lifecycle hooks) must not be redeployed
+ * by the panel on their behalf. Returns the refusal reason, or null.
+ */
+async function autoUpdateRefusal(db: DB, svc: typeof services.$inferSelect): Promise<string | null> {
+  const ownerId = svc.ownerUserId;
+  // Legacy rows without an owner predate members (same convention as
+  // assertWebhookMayDeploy / assertJobMayDeploy).
+  if (!ownerId) return null;
+  try {
+    const ownerIsOperator = await isOperator(db, { id: ownerId });
+    await assertMayDeployStoredService(db, { id: ownerId, isOperator: ownerIsOperator }, svc);
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
 
 export async function sweepAutoUpdates(
   db: DB,
@@ -106,6 +128,17 @@ export async function sweepAutoUpdates(
     if (inflight) {
       // Do NOT store the digest — this sweep's change must survive until the
       // service settles and the next sweep can act on it.
+      result.skipped++;
+      continue;
+    }
+
+    const refusal = await autoUpdateRefusal(db, svc);
+    if (refusal) {
+      // Record the digest so the same move is refused (and audited) once,
+      // not on every 30-minute sweep; the next image change is re-checked.
+      await db.update(services).set({ autoUpdateDigest: digest }).where(eq(services.id, svc.id));
+      log(`auto-update: ${svc.name} skipped — ${refusal}`);
+      void audit(db, null, 'autoupdate.refused', `${svc.name}: ${refusal}`, { serviceId: svc.id });
       result.skipped++;
       continue;
     }
