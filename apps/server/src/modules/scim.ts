@@ -461,7 +461,10 @@ export const scimRoutes: FastifyPluginAsync = async (app) => {
         await reinstateSeat(app.db, user.id, user.email, workspaceId, suspended);
         suspended = null;
       }
-      if (user.deactivatedAt) await app.db.update(users).set(REACTIVATED).where(eq(users.id, user.id));
+      if (user.deactivatedAt) {
+        await app.db.update(users).set(REACTIVATED).where(eq(users.id, user.id));
+        void audit(app.db, null, 'scim.reactivate', user.email);
+      }
     }
     await app.db.update(users).set({ name: name ?? user.name, scimExternalId: str(req.body.externalId) ?? user.scimExternalId }).where(eq(users.id, user.id));
     const fresh = (await resolveUser(app.db, String(user.id)))!;
