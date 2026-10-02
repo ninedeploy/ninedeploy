@@ -10,6 +10,7 @@ import { detectDeployHints } from '../lib/deployHints.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
 import { remoteDatabaseRefusal, remoteDeploySupported, remoteDeployUnsupportedReason, remoteHookRefusal, remoteServiceRefusal, sourceHasGitCredential } from '../lib/remoteDeploy.js';
 import { agentOp } from '../lib/agentClient.js';
+import { nodeLabel } from '../lib/agentCapabilities.js';
 import { createRemoteDockerBuilder } from './builders/remoteDocker.js';
 import { deployToTargets, pullableReleaseRef, recordFanoutResults, targetsForService } from './fanout.js';
 import { createRemoteComposeBuilder } from './builders/remoteCompose.js';
@@ -653,7 +654,11 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     }
     const call =(op: string, params: Record<string, unknown>, sink: (line: string) => void) =>
       agentOp(db, serverId, op, params, sink);
-    builder = service.type === 'compose' ? createRemoteComposeBuilder(call) : createRemoteDockerBuilder(call);
+    // r660: the node's name goes into the "update this agent" refusal.
+    const label = await nodeLabel(db, serverId);
+    builder = service.type === 'compose'
+      ? createRemoteComposeBuilder(call, { nodeLabel: label })
+      : createRemoteDockerBuilder(call, { nodeLabel: label });
   }
   if (!builder) {
     log(`✗ Unknown service type: ${service.type}`);

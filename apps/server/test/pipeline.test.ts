@@ -2303,7 +2303,11 @@ describe('r353: source fan-out and Git credentials', () => {
     h.writeDynamicConfig.mockImplementation(async () => undefined);
     // The node answers every op; the new container is reported running.
     h.agentOp.mockImplementation(async (...args: unknown[]) =>
-      args[2] === 'docker.inspect' ? { exitCode: 0, lines: ['running|10.0.0.9'] } : { exitCode: 0, lines: [] },
+      args[2] === 'docker.inspect'
+        ? { exitCode: 0, lines: ['running|10.0.0.9'] }
+        : args[2] === 'agent.ping'
+          ? { exitCode: 0, lines: ['ND-AGENT {"version":"0.10.42","caps":["build-path-guard","workspace.remove"]}'] }
+          : { exitCode: 0, lines: [] },
     );
     // No DNS in unit tests: the clone egress gate is bypassed for the control
     // case (the refusal itself is covered in fanout.test.ts).

@@ -1,6 +1,7 @@
 import type { Builder, BuildContext, DeployRuntime } from '../types.js';
 import { assertCloneTargetAllowed } from '../../lib/gitEgress.js';
 import { acquireRegistryLock, registryLockKey } from '../../lib/registryLock.js';
+import { assertAgentGuardsBuildPaths } from '../../lib/agentCapabilities.js';
 
 /**
  * Remote Docker builder — deploys a service onto a registered node through the
@@ -97,7 +98,7 @@ export function envForAgent(env: Record<string, string>): Record<string, string>
   return Object.fromEntries(Object.entries(env).map(([k, v]) => [k, v.replace(/\r\n?|\n/g, '\\n')]));
 }
 
-export function createRemoteDockerBuilder(agent: AgentCall, opts: { pollMs?: number } = {}): Builder {
+export function createRemoteDockerBuilder(agent: AgentCall, opts: { pollMs?: number; nodeLabel?: string } = {}): Builder {
   const pollMs = opts.pollMs ?? 2000;
   /** Parse the `health` inspect format: `<status>|<health>|<failingStreak>|<restartCount>`. */
   const parseHealth = (
@@ -195,6 +196,9 @@ export function createRemoteDockerBuilder(agent: AgentCall, opts: { pollMs?: num
         // the NODE's network position — a cloud VM with its own metadata
         // service, or a LAN — and used to skip the check entirely.
         await assertCloneTargetAllowed(service.repoUrl);
+        // r660: only an agent that symlink-walks the build paths may build
+        // the repository — asked before anything is cloned onto the node.
+        await assertAgentGuardsBuildPaths(agent, opts.nodeLabel ?? `#${service.serverId ?? '?'}`);
         log(`Fetching ${service.repoUrl} into the node workspace "${workspace}" …`);
         await agent('git.ensure', { workspace, url: service.repoUrl, depth: '1' }, sink);
         if (service.branch) {

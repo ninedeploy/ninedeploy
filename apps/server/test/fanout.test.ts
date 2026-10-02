@@ -4,6 +4,9 @@ import { createFakeDb } from './helpers.js';
 
 const agentMocks = vi.hoisted(() => ({ agentOp: vi.fn() }));
 vi.mock('../src/lib/agentClient.js', () => ({ agentOp: agentMocks.agentOp }));
+
+/** r660: what a current agent answers to the sealed agent.ping. */
+const PING_CURRENT = { exitCode: 0, lines: ['ND-AGENT {"version":"0.10.42","caps":["build-path-guard","workspace.remove"]}'] };
 const execMocks = vi.hoisted(() => ({ capture: vi.fn() }));
 vi.mock('../src/lib/exec.js', () => execMocks);
 // The egress gate resolves DNS; tests never touch the network (r099, r353).
@@ -125,6 +128,7 @@ describe('multi-server fan-out (phase 1)', () => {
 
   it('builds the pinned commit on each target node for source releases', async () => {
     agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string, params: Record<string, unknown>) => {
+      if (op === 'agent.ping') return PING_CURRENT;
       if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|10.0.0.9'] };
       if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${params.name}.env`] };
       return { exitCode: 0, lines: [] };
@@ -271,7 +275,7 @@ describe('multi-server fan-out (phase 1)', () => {
   // private base image anonymously and every target failed.
   it('r526: logs into the registry BEFORE a target builds from source, and out after', async () => {
     agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string) =>
-      op === 'docker.inspect' ? { exitCode: 0, lines: ['running|10.0.0.9'] } : { exitCode: 0, lines: [] },
+      op === 'agent.ping' ? PING_CURRENT : op === 'docker.inspect' ? { exitCode: 0, lines: ['running|10.0.0.9'] } : { exitCode: 0, lines: [] },
     );
     const db = dbWithTargets([{ serverId: 5, runtimeId: null }]);
     await deployToTargets(
@@ -297,6 +301,7 @@ describe('multi-server fan-out (phase 1)', () => {
   it('r592: a rejected login on a SOURCE build warns and builds anonymously instead of failing the target', async () => {
     agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string) => {
       if (op === 'docker.login') throw new Error('agent docker.login exited with 1');
+      if (op === 'agent.ping') return PING_CURRENT;
       return op === 'docker.inspect' ? { exitCode: 0, lines: ['running|10.0.0.9'] } : { exitCode: 0, lines: [] };
     });
     const db = dbWithTargets([{ serverId: 5, runtimeId: null }]);

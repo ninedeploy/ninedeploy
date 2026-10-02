@@ -158,3 +158,31 @@ describe('deleteLog', () => {
     expect(deleteLog(5)).toBe(false);
   });
 });
+
+/**
+ * r667: every WebSocket subscriber, the failure-hint scan and AI diagnosis
+ * read the WHOLE deploy log into memory, however large a runaway build made
+ * it. A read now loads at most the tail, starting at a full line.
+ */
+describe('r667: bounded deploy-log reads', () => {
+  beforeEach(() => {
+    h.config.paths.logsDir = logsDir;
+  });
+
+  it('returns only the tail of an over-long log, from a line boundary, saying what was left out', () => {
+    const lines = Array.from({ length: 50 }, (_, i) => `line-${String(i).padStart(2, '0')}`);
+    writeFileSync(path.join(logsDir, '777.log'), `${lines.join('\n')}\n`);
+    const out = logBus.read(777, 64);
+    const [marker, ...rest] = out.split('\n');
+    expect(marker).toMatch(/^… \d+ earlier bytes of this log omitted/);
+    expect(rest.at(-1)).toBe('');
+    expect(rest.slice(0, -1).every((l) => /^line-\d\d$/.test(l))).toBe(true);
+    expect(rest).toContain('line-49');
+    expect(out).not.toContain('line-00');
+  });
+
+  it('returns a log under the cap unchanged', () => {
+    writeFileSync(path.join(logsDir, '778.log'), 'a\nb\n');
+    expect(logBus.read(778)).toBe('a\nb\n');
+  });
+});

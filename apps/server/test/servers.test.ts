@@ -555,9 +555,29 @@ describe('servers routes', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ ok: true, message: 'Connected', os: 'Ubuntu' });
+    // r661: the route hands the db over so the host key is recorded / checked.
     expect(provisionerMocks.testSshConnection).toHaveBeenCalledWith(
       expect.objectContaining({ host: '192.168.1.50', sshPort: 22 }),
+      expect.objectContaining({ query: expect.anything() }),
     );
+
+    // r661: the optional expected fingerprint is validated and passed through.
+    const fp = `SHA256:${'A'.repeat(43)}`;
+    const withFp = await app.inject({
+      method: 'POST',
+      url: '/servers/ssh-test',
+      headers: asUser(),
+      payload: { host: '192.168.1.50', sshPort: 22, authType: 'key', hostKeyFingerprint: fp },
+    });
+    expect(withFp.statusCode).toBe(200);
+    expect(provisionerMocks.testSshConnection).toHaveBeenLastCalledWith(expect.objectContaining({ hostKeyFingerprint: fp }), expect.anything());
+    const badFp = await app.inject({
+      method: 'POST',
+      url: '/servers/ssh-test',
+      headers: asUser(),
+      payload: { host: '192.168.1.50', sshPort: 22, authType: 'key', hostKeyFingerprint: 'MD5:aa:bb' },
+    });
+    expect(badFp.statusCode).toBe(400);
   });
 
   it('runs SSH automated bootstrap and audits success', async () => {

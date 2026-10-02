@@ -78,6 +78,46 @@ function findDockerfileInRepo(
   return { dockerfilePath: found.rel, baseDir: baseDir || '.' };
 }
 
+/**
+ * r666: the `docker build -f` operand for a Dockerfile build.
+ *
+ * The Settings field reads the Dockerfile path relative to the base
+ * directory, and the existence check (`hasDockerfile`) always looked there —
+ * but the build passed `-f` relative to the repository ROOT (docker resolves
+ * `-f` against its cwd, the checkout). With `baseDir: apps/web` and the
+ * default `Dockerfile` the check found `apps/web/Dockerfile` and the build
+ * then failed on a repo without a root Dockerfile (or built the root one).
+ *
+ * Upgrade-safe resolution: a repo-root-relative file that exists keeps
+ * winning, so every service that built before builds the SAME file now
+ * (`baseDir` + a root Dockerfile, `baseDir` + a root-relative
+ * `apps/web/Dockerfile`, and `baseDir` unset, where both readings agree);
+ * only when it does not exist is the base-directory one used — the case that
+ * could never build. Both candidates go through the symlink-refusing
+ * `resolveInRepo`.
+ */
+export function resolveBuildDockerfile(
+  workDir: string,
+  baseDir: string | undefined,
+  dockerfilePath: string,
+  log: (line: string) => void = () => undefined,
+): string {
+  const rootRelative = repoRelative(workDir, dockerfilePath);
+  const underBase = resolveInRepo(workDir, baseDir, dockerfilePath);
+  const baseRelative = path.relative(path.resolve(workDir), underBase).split(path.sep).join('/') || '.';
+  if (baseRelative === rootRelative) return rootRelative;
+  if (existsSync(resolveInRepo(workDir, dockerfilePath))) {
+    if (existsSync(underBase)) {
+      log(
+        `Both ${rootRelative} and ${baseRelative} exist — building ${rootRelative} (the path from the repository root), as earlier releases did. ` +
+          `To build ${baseRelative} instead, set the build pack to "dockerfile" and the Dockerfile path to "${baseRelative}".`,
+      );
+    }
+    return rootRelative;
+  }
+  return existsSync(underBase) ? baseRelative : rootRelative;
+}
+
 const swallow = () => {};
 const msg = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const PROBE_IMAGE = 'busybox:1.36';
@@ -707,7 +747,7 @@ export const dockerBuilder: Builder = {
       // a subdir. Auto-discover a Dockerfile up to 2 levels deep so private
       // monorepos "just work" without forcing the user to learn the fields.
       let baseDir = repoRelative(workDir, buildConfig?.baseDir);
-      let dockerfile = repoRelative(workDir, buildConfig?.dockerfilePath || 'Dockerfile');
+      let dockerfile = resolveBuildDockerfile(workDir, buildConfig?.baseDir, buildConfig?.dockerfilePath || 'Dockerfile', log); // r666
       const explicitDockerfilePath = !!buildConfig?.dockerfilePath?.trim();
       const hasDockerfile = existsSync(resolveInRepo(workDir, buildConfig?.baseDir, buildConfig?.dockerfilePath || 'Dockerfile'));
       let useNixpacks = pack === 'nixpacks' || (pack === 'auto' && !hasDockerfile);

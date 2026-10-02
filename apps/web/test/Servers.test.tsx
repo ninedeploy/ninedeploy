@@ -386,6 +386,29 @@ describe('Servers', () => {
     await waitFor(() => expect(api.servers.reject).toHaveBeenCalledTimes(2));
   });
 
+  it('r661: sends the expected host key fingerprint and shows the one the probe pinned', async () => {
+    mockOf(api.servers.list).mockResolvedValue([] as never);
+    mockOf(api.servers.sshTest).mockResolvedValue({
+      ok: true,
+      message: 'Connected',
+      os: 'Debian',
+      dockerInstalled: true,
+      dockerVersion: '27.1.1',
+      latencyMs: 9,
+      hostKeyFingerprint: 'SHA256:abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ',
+      hostKeyTrust: 'first-use',
+      warning: 'First contact with 10.0.0.9:22: its SSH host key was trusted on first use and recorded',
+    } as never);
+    renderWithProviders(<Servers />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Add server' }));
+    fireEvent.change(screen.getByPlaceholderText('195.201.45.10'), { target: { value: '10.0.0.9' } });
+    fireEvent.change(screen.getByPlaceholderText('SHA256:…'), { target: { value: ' SHA256:xyz ' } });
+    fireEvent.click(screen.getByRole('button', { name: /Test SSH Connection/i }));
+    await waitFor(() => expect(api.servers.sshTest).toHaveBeenCalledWith(expect.objectContaining({ hostKeyFingerprint: 'SHA256:xyz' })));
+    expect(await screen.findByText('SHA256:abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ')).toBeInTheDocument();
+    expect(screen.getByText(/trusted on first use and recorded/)).toBeInTheDocument();
+  });
+
   it('handles SSH Zero-Touch Connection probe success and failure', async () => {
     mockOf(api.servers.list).mockResolvedValue([] as never);
     mockOf(api.servers.sshTest).mockResolvedValue({

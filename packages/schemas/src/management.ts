@@ -283,6 +283,17 @@ const sshHost = z
   .max(255)
   .regex(/^[A-Za-z0-9][A-Za-z0-9.:_-]*$/, 'invalid SSH host');
 
+/**
+ * r661: the host key the operator expects, as OpenSSH prints it
+ * (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` → `SHA256:…`).
+ * Optional and additive: without it the first key a host presents is
+ * recorded (trust on first use) and every later session must match it.
+ */
+const sshHostKeyFingerprint = z
+  .union([z.literal(''), z.string().trim().regex(/^SHA256:[A-Za-z0-9+/]{43}=?$/, 'expected an OpenSSH SHA256 fingerprint (SHA256:…)')])
+  .optional()
+  .transform((v) => (v ? v.replace(/=$/, '') : undefined));
+
 export const serverSshTest = z.object({
   host: sshHost,
   sshPort: z
@@ -294,6 +305,7 @@ export const serverSshTest = z.object({
   authType: sshAuthType.default('key'),
   sshKey: z.string().optional(),
   sshPassword: z.string().optional(),
+  hostKeyFingerprint: sshHostKeyFingerprint,
 });
 export type ServerSshTest = z.infer<typeof serverSshTest>;
 
@@ -309,6 +321,7 @@ export const serverSshBootstrap = z.object({
   authType: sshAuthType.default('key'),
   sshKey: z.string().optional(),
   sshPassword: z.string().optional(),
+  hostKeyFingerprint: sshHostKeyFingerprint,
   installDocker: z.boolean().default(true),
   agentPort: z
     .unknown()
@@ -325,6 +338,12 @@ export interface ServerSshTestResult {
   dockerInstalled?: boolean;
   dockerVersion?: string;
   latencyMs?: number;
+  /** r661: the SSH host key the session was pinned to (`SHA256:…`). */
+  hostKeyFingerprint?: string;
+  /** r661: how that key was trusted — matched the operator's value, a key recorded earlier, or first use. */
+  hostKeyTrust?: 'verified' | 'pinned' | 'first-use';
+  /** r661: set on first use — the operator should compare the fingerprint out of band. */
+  warning?: string;
 }
 
 export interface ServerBootstrapStep {
@@ -341,6 +360,10 @@ export interface ServerBootstrapResult {
   steps: ServerBootstrapStep[];
   logs: string[];
   error?: string;
+  /** r661: the SSH host key the bootstrap was pinned to. */
+  hostKeyFingerprint?: string;
+  /** r661: e.g. the trust-on-first-use notice. */
+  warnings?: string[];
 }
 
 // ── Scheduled jobs ─────────────────────────────────────────────────────────

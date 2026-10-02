@@ -315,7 +315,8 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
     // Zero-Touch SSH Connection Pre-Flight Test
     authed.post('/ssh-test', async (req) => {
       const input = serverSshTest.parse(req.body ?? {});
-      return testSshConnection(input);
+      // r661: records / checks the host key against the settings table.
+      return testSshConnection(input, authed.db);
     });
 
     // Zero-Touch SSH Automated Server Bootstrap

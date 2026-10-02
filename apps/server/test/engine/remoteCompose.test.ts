@@ -33,6 +33,8 @@ function fakeAgent(overrides: Record<string, { exitCode: number; lines: string[]
     calls.push({ op, params });
     sink(`${op} ok`);
     if (overrides[op]) return overrides[op]!;
+    // r660: a current agent names its capabilities in the sealed ping.
+    if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.10.42","caps":["build-path-guard","workspace.remove"]}'] };
     if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|healthy|0|0'] };
     return { exitCode: 0, lines: [] };
   };
@@ -283,7 +285,8 @@ describe('remote compose builder — repository stacks', () => {
         buildConfig: { dockerfilePath: '/deploy/compose.yml' } as never,
       }),
     );
-    expect(ops().slice(1, 5)).toEqual(['git.ensure', 'git.fetch', 'git.checkout', 'git.reset']);
+    // r660: the agent is asked whether it can build safely BEFORE anything is cloned.
+    expect(ops().slice(1, 6)).toEqual(['agent.ping', 'git.ensure', 'git.fetch', 'git.checkout', 'git.reset']);
     // A leading slash means "repo root" in the panel's field; on the node it
     // would be the filesystem root.
     expect(calls.find((c) => c.op === 'docker.composeUp')!.params).toMatchObject({
@@ -487,5 +490,24 @@ describe('remote compose builder — main container resolution (r464)', () => {
     const order = ops();
     expect(order.indexOf('docker.composePs')).toBeGreaterThan(order.indexOf('docker.composeUp'));
     expect(order.indexOf('file.deleteWorkspace')).toBeGreaterThan(order.indexOf('docker.composePs'));
+  });
+});
+
+/** r660: a repository compose stack is a repo path like a Dockerfile — same agent requirement. */
+describe('r660: repository compose stacks need an agent that guards build paths', () => {
+  it('refuses the repo stack on an old agent but still ships an inline stack', async () => {
+    const old = fakeAgent({ 'agent.ping': { exitCode: 0, lines: [] } });
+    await expect(
+      createRemoteComposeBuilder(old.agent, { nodeLabel: '"edge-1" (#4)' }).buildAndRun(
+        ctx({ service: svc({ repoUrl: 'https://github.com/acme/stack.git', composeContent: null }) }),
+      ),
+    ).rejects.toThrow(/"edge-1" \(#4\).*v0\.10\.42/s);
+    expect(old.ops()).not.toContain('git.ensure');
+    expect(old.ops()).not.toContain('docker.composeUp');
+
+    const inline = fakeAgent({ 'agent.ping': { exitCode: 0, lines: [] } });
+    await createRemoteComposeBuilder(inline.agent).buildAndRun(ctx());
+    expect(inline.ops()).not.toContain('agent.ping');
+    expect(inline.ops()).toContain('docker.composeUp');
   });
 });

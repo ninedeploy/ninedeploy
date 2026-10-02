@@ -643,6 +643,26 @@ describe('deploys routes', () => {
     await app.close();
   });
 
+  it('r665: refuses the terminal for a node-pinned service instead of a local "No such container"', async () => {
+    execMocks.capture.mockRejectedValue(new Error('no python3'));
+    const app = await buildTestApp({
+      websocket: true,
+      db: createFakeDb({ findFirst: { services: svcRow({ id: 1, runtimeId: 'web-1-17', serverId: 4 }) } }),
+    });
+    await app.register(deploysRoutes, { prefix: '/services' });
+    const port = await listen(app);
+    const ws = await openWs(wsUrl(port, '/services/1/exec'), 'ninedeploy.bearer.valid');
+    sockets.push(ws);
+    const messages = collectMessages(ws);
+    const closed = new Promise<{ code: number; reason: string }>((resolve) =>
+      ws.addEventListener('close', (ev) => resolve({ code: ev.code, reason: ev.reason })),
+    );
+    expect(await closed).toEqual({ code: 1008, reason: 'service runs on a remote node' });
+    expect(messages.join('')).toContain('runs on remote node #4');
+    expect(childProc.spawn).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it('wraps exec in a python pty when available (real TTY mode)', async () => {
     execMocks.capture.mockResolvedValue(''); // python3 -c 'import pty' succeeds
     const app = await buildTestApp({

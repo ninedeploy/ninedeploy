@@ -14,12 +14,27 @@ const execMocks = vi.hoisted(() => ({
 }));
 vi.mock('../src/lib/exec.js', () => execMocks);
 
-const agent = vi.hoisted(() => ({
-  agentOp: vi.fn(async (_db: unknown, _serverId: number, _op: string, _params: unknown, sink: (l: string) => void) => {
-    sink('ok');
-    return { exitCode: 0, lines: ['ok'] };
-  }),
-}));
+/**
+ * The real agentOp contract: output reaches the sink, a non-zero exit THROWS
+ * unless the caller tolerates it. `docker.volumeInspect` answers 1 (no such
+ * volume) unless a test says otherwise.
+ */
+const nodeVolume = vi.hoisted(() => ({ exists: false, createdAt: '2020-01-01T00:00:00Z' }));
+const agentImpl = vi.hoisted(
+  () =>
+    async (_db: unknown, _serverId: number, op: string, _params: unknown, sink: (l: string) => void, opts?: { tolerateExit?: boolean }) => {
+      if (op === 'docker.volumeInspect') {
+        const lines = nodeVolume.exists ? ['[{', `"CreatedAt": "${nodeVolume.createdAt}",`, '"Name": "nd-svc-web-data"}]'] : ['Error: No such volume'];
+        for (const l of lines) sink(l);
+        const exitCode = nodeVolume.exists ? 0 : 1;
+        if (exitCode !== 0 && !opts?.tolerateExit) throw new Error(`agent ${op} exited with ${exitCode}`);
+        return { exitCode, lines };
+      }
+      sink('ok');
+      return { exitCode: 0, lines: ['ok'] };
+    },
+);
+const agent = vi.hoisted(() => ({ agentOp: vi.fn(agentImpl) }));
 vi.mock('../src/lib/agentClient.js', () => agent);
 
 vi.mock('../src/engine/proxy.js', () => ({
@@ -47,6 +62,8 @@ const ops = () => agent.agentOp.mock.calls.map((c) => `${c[1]} ${c[2]} ${JSON.st
 
 beforeEach(() => {
   vi.clearAllMocks();
+  agent.agentOp.mockImplementation(agentImpl);
+  nodeVolume.exists = false;
 });
 
 describe('remote-node service lifecycle (r225)', () => {
@@ -88,13 +105,18 @@ describe('remote-node service lifecycle (r225)', () => {
     const app = await appFor(remote());
     const res = await app.inject({ method: 'DELETE', url: '/1', headers: asUser() });
     expect([200, 204]).toContain(res.statusCode);
-    expect(ops()).toEqual(['4 docker.rm {"name":"web-1-17"}', '4 docker.rm {"name":"web-1-17-r2"}']);
+    // r662: …and the service's checkout on the node goes with them.
+    expect(ops()).toEqual([
+      '4 docker.rm {"name":"web-1-17"}',
+      '4 docker.rm {"name":"web-1-17-r2"}',
+      '4 workspace.remove {"workspace":"web"}',
+    ]);
   });
 
   it('takes a remote compose stack down by its project on delete', async () => {
     const app = await appFor(remote({ type: 'compose', slug: 'shop', replicas: 1 }));
     await app.inject({ method: 'DELETE', url: '/1', headers: asUser() });
-    expect(ops()).toEqual(['4 docker.composeDown {"project":"ndcmp-shop"}']);
+    expect(ops()).toEqual(['4 docker.composeDown {"project":"ndcmp-shop"}', '4 workspace.remove {"workspace":"shop"}']);
   });
 
   it('retires the runtime where it runs when an operator moves the service to another node', async () => {
@@ -107,6 +129,113 @@ describe('remote-node service lifecycle (r225)', () => {
     await app.register(servicesRoutes);
     const res = await app.inject({ method: 'PATCH', url: '/1', headers: asUser({ isOperator: true }), payload: { serverId: 5 } });
     expect(res.statusCode).toBe(200);
-    expect(ops()).toEqual(['4 docker.rm {"name":"web-1-17"}']);
+    // r662: the destination is asked about a retained volume first, and the
+    // old node's checkout is removed after the runtime.
+    expect(ops()).toEqual([
+      '5 docker.volumeInspect {"name":"nd-svc-web-data"}',
+      '4 docker.rm {"name":"web-1-17"}',
+      '4 workspace.remove {"workspace":"web"}',
+    ]);
+  });
+});
+
+/**
+ * r662: the slug-volume guard (r351/r466) only ran at CREATE. Moving a
+ * service later mounted whatever `nd-svc-<slug>-data` the destination held —
+ * a deleted service's data on that node — and every node kept the checkout
+ * of every service ever built there.
+ */
+describe('r662: moving and deleting remote services', () => {
+  const movingApp = async (svc = remote({ replicas: 1 })) => {
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { services: svc, servers: { id: 5 } },
+        update: { services: [remote({ serverId: 5, runtimeId: null, status: 'idle' })] },
+      }),
+    });
+    await app.register(servicesRoutes);
+    return app;
+  };
+
+  it("refuses a move onto a node that holds a DELETED service's volume of the same slug, before retiring anything", async () => {
+    nodeVolume.exists = true;
+    nodeVolume.createdAt = '2020-01-01T00:00:00Z'; // older than the service row
+    const app = await movingApp();
+    const res = await app.inject({ method: 'PATCH', url: '/1', headers: asUser({ isOperator: true }), payload: { serverId: 5 } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('slug_volume_retained');
+    expect(ops()).toEqual(['5 docker.volumeInspect {"name":"nd-svc-web-data"}']);
+  });
+
+  it("allows a move back onto the node that holds the service's OWN volume (created after the row)", async () => {
+    nodeVolume.exists = true;
+    nodeVolume.createdAt = new Date(Date.now() + 60_000).toISOString();
+    const app = await movingApp(remote({ replicas: 1, createdAt: new Date() }));
+    const res = await app.inject({ method: 'PATCH', url: '/1', headers: asUser({ isOperator: true }), payload: { serverId: 5 } });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('a node agent too old for workspace.remove does not fail the delete', async () => {
+    agent.agentOp.mockImplementation(async (_d, _s, op, params, sink, opts) => {
+      if (op === 'workspace.remove') throw new Error('agent workspace.remove failed (400): {"error":{"code":"unknown_op"}}');
+      return agentImpl(_d, _s, op, params, sink, opts);
+    });
+    const app = await appFor(remote());
+    const res = await app.inject({ method: 'DELETE', url: '/1', headers: asUser() });
+    expect(res.statusCode).toBe(204);
+  });
+
+  it('removes the checkout from a node that stops being a fan-out target', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { services: remote({ replicas: 1, image: 'nginx:1' }), servers: { id: 5 } },
+        select: { serviceTargets: [{ id: 1, serverId: 5, runtimeId: null }, { id: 2, serverId: 6, runtimeId: null }] },
+      }),
+    });
+    await app.register(servicesRoutes);
+    const res = await app.inject({ method: 'PATCH', url: '/1/targets', headers: asUser({ isOperator: true }), payload: { serverIds: [5] } });
+    expect(res.statusCode).toBe(200);
+    expect(ops()).toContain('6 workspace.remove {"workspace":"web"}');
+    expect(ops()).not.toContain('5 workspace.remove {"workspace":"web"}');
+  });
+
+  it("tears down fan-out targets read BEFORE the row's cascade removed them", async () => {
+    // Model the FK cascade: once the service row is deleted, its target rows are gone.
+    let cascaded = false;
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { services: remote({ replicas: 1 }) },
+        select: { serviceTargets: () => (cascaded ? [] : [{ serverId: 6, runtimeId: 'web-t6-17' }]) },
+        delete: {
+          services: () => {
+            cascaded = true;
+            return [];
+          },
+        },
+      }),
+    });
+    await app.register(servicesRoutes);
+    await app.inject({ method: 'DELETE', url: '/1', headers: asUser() });
+    expect(ops()).toEqual(
+      expect.arrayContaining([
+        '6 docker.stop {"name":"web-t6-17"}',
+        '6 docker.rm {"name":"web-t6-17"}',
+        '6 workspace.remove {"workspace":"web"}',
+        '4 workspace.remove {"workspace":"web"}',
+      ]),
+    );
+  });
+});
+
+/** r667: `--tail 300` bounds lines, not bytes — the local logs read is byte-capped too. */
+describe('r667: local container logs are byte-bounded', () => {
+  it('passes an output ceiling to the docker logs capture', async () => {
+    const app = await appFor(remote({ serverId: null }));
+    await app.inject({ method: 'GET', url: '/1/logs', headers: asUser() });
+    expect(execMocks.capture).toHaveBeenCalledWith(
+      'docker',
+      ['logs', '--tail', '300', '--timestamps', 'web-1-17'],
+      { maxOutputBytes: 8 * 1024 * 1024 },
+    );
   });
 });

@@ -1,9 +1,9 @@
 ﻿import { createHash } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { agentRoutes, runOp } from '../src/agent.js';
+import { agentRoutes, loadSeenNonces, runOp } from '../src/agent.js';
 import { MAX_SKEW_MS, open as openSealed, seal } from '../src/lib/agentSeal.js';
 import { buildTestApp } from './helpers.js';
 
@@ -226,8 +226,11 @@ describe('agent /agent/exec sealed transport', () => {
       payload: { sealed: seal(TOKEN_HASH, { op: 'agent.ping', params: {}, nonce: 'probe-123' }) },
     });
     expect(res.statusCode).toBe(200);
-    expect(openSealed(TOKEN_HASH, res.json().sealed)).toEqual({
-      lines: [], exitCode: 0, envFile: null, nonce: 'probe-123',
+    // r660: the answer names the agent's version and capabilities.
+    const body = openSealed<{ lines: string[] }>(TOKEN_HASH, res.json().sealed);
+    expect(body).toEqual({
+      lines: [expect.stringMatching(/^ND-AGENT \{"version":"[^"]+","caps":\["build-path-guard","workspace\.remove"\]\}$/)],
+      exitCode: 0, envFile: null, nonce: 'probe-123',
     });
     expect(spawnMock).not.toHaveBeenCalled();
     expect(dockerPullMock).not.toHaveBeenCalled();
@@ -241,7 +244,7 @@ describe('agent /agent/exec sealed transport', () => {
     const app = await appWith();
     const res = await app.inject({
       method: 'POST', url: '/agent/exec',
-      payload: { sealed: seal(TOKEN_HASH, { op: 'docker.stop', params: { name: 'web-3' } }) },
+      payload: { sealed: seal(TOKEN_HASH, { op: 'docker.stop', params: { name: 'web-3' }, nonce: 'n-sealed-1' }) },
     });
     expect(res.statusCode).toBe(200);
     // The reply is sealed too — command output routinely echoes configuration.
@@ -251,6 +254,7 @@ describe('agent /agent/exec sealed transport', () => {
       lines: ['stopping web-3'],
       exitCode: 0,
       envFile: null,
+      nonce: 'n-sealed-1',
     });
     expect(spawnMock).toHaveBeenCalled();
   });
@@ -319,7 +323,7 @@ describe('agent /agent/exec sealed transport', () => {
     const app = await appWith();
     const res = await app.inject({
       method: 'POST', url: '/agent/exec',
-      payload: { sealed: seal(TOKEN_HASH, { op: 'bash.exec', params: {} }) },
+      payload: { sealed: seal(TOKEN_HASH, { op: 'bash.exec', params: {}, nonce: 'n-unknown-op' }) },
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().error.code).toBe('unknown_op');
@@ -329,11 +333,52 @@ describe('agent /agent/exec sealed transport', () => {
     const app = await appWith();
     const res = await app.inject({
       method: 'POST', url: '/agent/exec',
-      payload: { sealed: seal(TOKEN_HASH, { op: 'docker.pull', params: { image: 'nginx; touch /pwn' } }) },
+      payload: { sealed: seal(TOKEN_HASH, { op: 'docker.pull', params: { image: 'nginx; touch /pwn' }, nonce: 'n-hostile' }) },
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().error.code).toBe('bad_params');
     expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('r668: refuses a sealed request that carries no nonce — it would be replayable for the whole window', async () => {
+    const app = await appWith();
+    const envelope = seal(TOKEN_HASH, { op: 'docker.rm', params: { name: 'web-3' } });
+    const res = await app.inject({ method: 'POST', url: '/agent/exec', payload: { sealed: envelope } });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error.code).toBe('nonce_required');
+    for (const nonce of ['', 'a'.repeat(129), 'x y', 42]) {
+      const bad = seal(TOKEN_HASH, { op: 'docker.rm', params: { name: 'web-3' }, nonce });
+      expect((await app.inject({ method: 'POST', url: '/agent/exec', payload: { sealed: bad } })).statusCode).toBe(401);
+    }
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('r668: a restarted agent still refuses an envelope it ran before the restart', async () => {
+    const nonceFile = path.join(tmp, 'r668-nonces');
+    const first = await buildTestApp();
+    await first.register(agentRoutes, { tokenHash: TOKEN_HASH, nonceFile });
+    const envelope = seal(TOKEN_HASH, { op: 'docker.rm', params: { name: 'web-3' }, nonce: 'c0ffee00c0ffee00' });
+    expect((await first.inject({ method: 'POST', url: '/agent/exec', payload: { sealed: envelope } })).statusCode).toBe(200);
+    await first.close();
+    // A new process: the in-memory cache is gone, the file is not.
+    const second = await buildTestApp();
+    await second.register(agentRoutes, { tokenHash: TOKEN_HASH, nonceFile });
+    const replay = await second.inject({ method: 'POST', url: '/agent/exec', payload: { sealed: envelope } });
+    expect(replay.statusCode).toBe(401);
+    expect(replay.json().error.code).toBe('replayed');
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    // Fresh requests keep working after the restart.
+    const fresh = seal(TOKEN_HASH, { op: 'docker.rm', params: { name: 'web-3' }, nonce: 'c0ffee00c0ffee01' });
+    expect((await second.inject({ method: 'POST', url: '/agent/exec', payload: { sealed: fresh } })).statusCode).toBe(200);
+  });
+
+  it('r668: expired entries are dropped when the replay file is reloaded', async () => {
+    const nonceFile = path.join(tmp, 'r668-expired');
+    writeFileSync(nonceFile, [`old-nonce ${Date.now() - 1000}`, `live-nonce ${Date.now() + 60_000}`, 'garbage line', ''].join('\n'));
+    const seen = new Map<string, number>();
+    loadSeenNonces(nonceFile, seen);
+    expect([...seen.keys()]).toEqual(['live-nonce']);
+    expect(readFileSync(nonceFile, 'utf8')).not.toContain('old-nonce');
   });
 
   it('leaves the legacy plaintext reply unsealed for an un-upgraded core', async () => {
@@ -388,5 +433,29 @@ describe('r176: auto-join token persistence', () => {
     const second = loadOrCreateAgentToken(() => 'b'.repeat(64), dir);
     expect(first).toBe('a'.repeat(64));
     expect(second).toBe(first);
+  });
+});
+
+/** r667: one op answer carries at most MAX_OP_OUTPUT_CHARS of output — the newest. */
+describe('r667: bounded agent answers', () => {
+  it('drops the OLDEST lines past the ceiling and says how many', async () => {
+    const MiB = 1024 * 1024;
+    spawnMock.mockImplementation(async (_exe, _argv, onLine) => {
+      for (let i = 0; i < 20; i++) onLine?.(`${String(i).padStart(2, '0')}${'x'.repeat(MiB - 2)}`);
+      onLine?.('the error at the end');
+      return 1;
+    });
+    const app = await appWith();
+    const res = await app.inject({
+      method: 'POST', url: '/agent/exec',
+      headers: { 'x-agent-token': TOKEN },
+      payload: { op: 'docker.logs', params: { name: 'web-3' } },
+    });
+    const body = res.json() as { lines: string[]; exitCode: number };
+    expect(body.exitCode).toBe(1);
+    expect(body.lines[0]).toMatch(/^… \d+ earlier output line\(s\) omitted by the agent$/);
+    expect(body.lines.at(-1)).toBe('the error at the end');
+    expect(body.lines.slice(1).reduce((n, l) => n + l.length, 0)).toBeLessThanOrEqual(16 * MiB);
+    expect(body.lines.some((l) => l.startsWith('00'))).toBe(false);
   });
 });

@@ -1,8 +1,10 @@
-﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
+﻿import { createHash } from 'node:crypto';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import {
   bootstrapServer,
   clearBootstrapLogs,
   getBootstrapLogs,
+  normalizeNodeHost,
   runSshCommand,
   setBootstrapLogs,
   testSshConnection,
@@ -15,7 +17,31 @@ const execMocks = vi.hoisted(() => ({
     sink?.('Docker version 27.1.1, build 6312585');
   }),
 }));
-vi.mock('../../src/lib/exec.js', () => execMocks);
+/**
+ * r661: what a real `ssh` does with the per-call known_hosts: in accept-new
+ * mode the key the host presents is written to it; in strict mode a host
+ * presenting a key that is not in it fails before the command runs.
+ */
+const hostKey = vi.hoisted(() => ({
+  presented: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl',
+}));
+vi.mock('../../src/lib/exec.js', async () => {
+  const { appendFile, readFile } = await import('node:fs/promises');
+  return {
+    run: async (cmd: string, args: string[], opts?: Record<string, unknown>, sink?: (l: string) => void) => {
+      const file = args.find((a) => a.startsWith('UserKnownHostsFile='))?.slice('UserKnownHostsFile='.length);
+      if (file && args.includes('StrictHostKeyChecking=accept-new')) {
+        await appendFile(file, `ninedeploy-node ${hostKey.presented}\n`);
+      } else if (file && args.includes('StrictHostKeyChecking=yes')) {
+        if (!(await readFile(file, 'utf8')).includes(hostKey.presented)) {
+          sink?.('Host key verification failed.');
+          throw new Error('`ssh -p 22 <remote command>` exited with code 255');
+        }
+      }
+      return execMocks.run(cmd, args, opts, sink);
+    },
+  };
+});
 
 const agentMocks = vi.hoisted(() => ({
   agentPing: vi.fn(async () => undefined),
@@ -419,5 +445,125 @@ describe('serverProvisioner engine', () => {
 
     expect(res.ok).toBe(false);
     expect(res.message).toBe('SSH Connection probe failed');
+  });
+});
+
+/**
+ * r661: SSH sessions to a node used to run with StrictHostKeyChecking=no and
+ * UserKnownHostsFile=/dev/null, while the bootstrap's remote command carries
+ * the agent token hash (the node's sealing key). Host keys are now verified
+ * against the operator's fingerprint, or pinned on first contact.
+ */
+describe('r661: SSH host key verification', () => {
+  const fingerprintOf = (key: string) =>
+    `SHA256:${createHash('sha256').update(Buffer.from(key.split(' ')[1] as string, 'base64')).digest('base64').replace(/=+$/, '')}`;
+  const REAL = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl';
+  const IMPOSTOR = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBhRmxj7m2xs0Hn3o8wq2bV5d5Zl0wq0Kp3tfcN0aVnR';
+  const sshArgs = () => execMocks.run.mock.calls.map((c) => c[1] as string[]);
+  const input = { host: '192.168.1.120', sshPort: 22, sshUser: 'root', authType: 'key' as const, installDocker: true, agentPort: 4600 };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    hostKey.presented = REAL;
+  });
+
+  it('never disables host key checking any more', async () => {
+    await testSshConnection(input);
+    for (const args of sshArgs()) {
+      expect(args).not.toContain('StrictHostKeyChecking=no');
+      expect(args).not.toContain('UserKnownHostsFile=/dev/null');
+    }
+  });
+
+  it('trusts the first key on first use, records it and says so', async () => {
+    const recorded: Array<Record<string, unknown>> = [];
+    const db = createFakeDb({
+      insert: {
+        settings: (v: Record<string, unknown>) => {
+          recorded.push(v);
+          return [v];
+        },
+      },
+    });
+    const res = await testSshConnection(input, db as never);
+    expect(res.ok).toBe(true);
+    expect(res.hostKeyTrust).toBe('first-use');
+    expect(res.hostKeyFingerprint).toBe(fingerprintOf(REAL));
+    expect(res.warning).toContain(fingerprintOf(REAL));
+    expect(recorded[0]).toMatchObject({ key: 'ssh.hostKeys:192.168.1.120:22', value: { keys: [REAL], fingerprints: [fingerprintOf(REAL)] } });
+  });
+
+  it('pins later sessions to the recorded key and refuses a different one', async () => {
+    const db = createFakeDb({
+      findFirst: { settings: { key: 'ssh.hostKeys:192.168.1.120:22', value: { keys: [REAL], fingerprints: [fingerprintOf(REAL)], recordedAt: '' } } },
+    });
+    const ok = await testSshConnection(input, db as never);
+    expect(ok).toMatchObject({ ok: true, hostKeyTrust: 'pinned', hostKeyFingerprint: fingerprintOf(REAL) });
+    expect(sshArgs()[0]).toContain('StrictHostKeyChecking=yes');
+
+    hostKey.presented = IMPOSTOR;
+    const refused = await testSshConnection(input, db as never);
+    expect(refused.ok).toBe(false);
+    expect(refused.message).toMatch(/does not match the one recorded/);
+  });
+
+  it('verifies the operator-supplied fingerprint before anything secret is sent', async () => {
+    hostKey.presented = IMPOSTOR;
+    const db = createFakeDb({ insert: { servers: [{ id: 9, name: 'n', host: input.host, port: 4600 }] } });
+    const res = await bootstrapServer(db as never, { ...input, name: 'n', hostKeyFingerprint: fingerprintOf(REAL) });
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/not the expected/);
+    // Only the harmless probe ran — the agent start (token hash) never did.
+    expect(execMocks.run).toHaveBeenCalledTimes(1);
+    expect(agentMocks.agentPing).not.toHaveBeenCalled();
+  });
+
+  it('a matching operator fingerprint is reported as verified', async () => {
+    const res = await testSshConnection({ ...input, hostKeyFingerprint: fingerprintOf(REAL) });
+    expect(res).toMatchObject({ ok: true, hostKeyTrust: 'verified', hostKeyFingerprint: fingerprintOf(REAL) });
+    expect(res.warning).toBeUndefined();
+  });
+
+  it('runs every bootstrap session after the probe pinned to the probed key', async () => {
+    const db = createFakeDb({ insert: { servers: [{ id: 9, name: 'n', host: input.host, port: 4600 }] } });
+    const res = await bootstrapServer(db as never, { ...input, name: 'n' });
+    expect(res.ok).toBe(true);
+    expect(res.hostKeyFingerprint).toBe(fingerprintOf(REAL));
+    expect(res.warnings?.[0]).toContain('trusted on first use');
+    const [probe, ...rest] = sshArgs();
+    expect(probe).toContain('StrictHostKeyChecking=accept-new');
+    expect(rest.length).toBeGreaterThan(0);
+    for (const args of rest) expect(args).toContain('StrictHostKeyChecking=yes');
+  });
+});
+
+/** r663: one spelling of the node's host everywhere. */
+describe('r663: host normalisation', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('strips a pasted :port from a hostname or IPv4, never from a bare IPv6 address', () => {
+    expect(normalizeNodeHost('node.example.com:22')).toBe('node.example.com');
+    expect(normalizeNodeHost('10.0.0.5:2222')).toBe('10.0.0.5');
+    expect(normalizeNodeHost(' 10.0.0.5 ')).toBe('10.0.0.5');
+    expect(normalizeNodeHost('2001:db8::1')).toBe('2001:db8::1');
+  });
+
+  it('bootstraps, pings and records the normalised host', async () => {
+    const inserted: Array<Record<string, unknown>> = [];
+    const db = createFakeDb({
+      insert: {
+        servers: (v: Record<string, unknown>) => {
+          inserted.push(v);
+          return [{ id: 3, ...v }];
+        },
+      },
+    });
+    const res = await bootstrapServer(db as never, {
+      name: 'n', host: 'node.example.com:22', sshPort: 22, sshUser: 'root', authType: 'key', installDocker: true, agentPort: 4600,
+    });
+    expect(res.ok).toBe(true);
+    expect(inserted[0]).toMatchObject({ host: 'node.example.com' });
+    expect(agentMocks.agentPing).toHaveBeenCalledWith('node.example.com', 4600, expect.any(String));
+    for (const c of execMocks.run.mock.calls) expect(c[1] as string[]).toContain('root@node.example.com');
   });
 });
