@@ -71,7 +71,9 @@ async function main() {
   // folded into `docker run` it shared the 2-minute run budget, and on a
   // fresh CI runner (release-publish.yml's smoke job) the multi-arch pull is
   // the slow part. A tag that cannot be pulled is named as such.
-  const pulled = spawnSync('docker', ['pull', IMAGE], { encoding: 'utf8', timeout: 900_000, maxBuffer: 8 << 20 });
+  // A locally built candidate (no registry behind it) is used as it is.
+  const local = spawnSync('docker', ['image', 'inspect', IMAGE], { encoding: 'utf8', timeout: 30_000 }).status === 0;
+  const pulled = local ? { status: 0 } : spawnSync('docker', ['pull', IMAGE], { encoding: 'utf8', timeout: 900_000, maxBuffer: 8 << 20 });
   if (pulled.status !== 0) {
     fail(`cannot pull ${IMAGE}: ${(pulled.stderr || pulled.error?.message || '').trim().split(/\r?\n/).slice(-3).join(' | ')}`);
   }

@@ -20,7 +20,7 @@
 // DOCKER_HOST=tcp://<dind>:2375, so its Traefik/runtime work lands inside the
 // sidecar, never on the host daemon.
 //
-// Usage: node scripts/smoke-upgrade.mjs [--from=v0.10.35] [--to=v0.10.37]
+// Usage: node scripts/smoke-upgrade.mjs [--from=v0.10.35] [--to=v0.10.37] [--to-image=<local image ref>]
 //        (--to defaults to the repo's current VERSION)
 //
 // r581: release-publish.yml runs this between pushing `:vX.Y.Z` and
@@ -45,7 +45,10 @@ if (!TO) {
   console.error('could not derive VERSION from apps/server/src/version.ts — pass --to=vX.Y.Z');
   process.exit(1);
 }
-const image = (tag) => `ghcr.io/ninedeploy/ninedeploy:${tag}`;
+// --to-image=<ref> runs the TO side from a locally built image (a release
+// candidate) instead of the registry; --to then names the version it reports.
+const TO_IMAGE = arg('to-image');
+const image = (tag) => (TO_IMAGE && tag === TO ? TO_IMAGE : `ghcr.io/ninedeploy/ninedeploy:${tag}`);
 
 const PANEL_PORT = 4641;
 const suffix = randomBytes(4).toString('hex');
@@ -164,6 +167,7 @@ async function inspectDb(label) {
  * TO image means the publish job did not push what it claims to have pushed.
  */
 function pullOrFail(tag, role) {
+  if (role === 'to' && TO_IMAGE) return; // a local candidate is not pulled
   const r = spawnSync('docker', ['pull', image(tag)], { encoding: 'utf8', timeout: 900_000, maxBuffer: 8 << 20 });
   if (r.status === 0) return;
   const why = (r.stderr || r.error?.message || '').trim().split(/\r?\n/).slice(-3).join(' | ');
