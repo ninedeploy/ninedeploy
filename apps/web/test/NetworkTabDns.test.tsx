@@ -18,6 +18,7 @@ const apiMock = vi.hoisted(() => ({
       setSsl: vi.fn(),
       update: vi.fn(),
       dnsCheck: vi.fn(),
+      verify: vi.fn(),
     },
     ports: { list: vi.fn() },
   },
@@ -105,16 +106,15 @@ describe('NetworkTab domain ownership (r345)', () => {
     expect(screen.getByText('pending')).toBeInTheDocument();
   });
 
-  it('verifies a pending domain through the raw verify route', async () => {
+  it('verifies a pending domain through the SDK verify method (r563)', async () => {
     apiMock.api.domains.list.mockResolvedValue([pendingRow]);
-    apiMock.authedFetch
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ verified: false, error: 'TXT record not found', verification: challenge }) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ verified: true, verification: null }) });
+    apiMock.api.domains.verify
+      .mockResolvedValueOnce({ verified: false, error: 'TXT record not found', verification: challenge })
+      .mockResolvedValueOnce({ verified: true, verification: null });
     renderTab();
     fireEvent.click(await screen.findByRole('button', { name: 'Verify' }));
-    await waitFor(() =>
-      expect(apiMock.authedFetch).toHaveBeenCalledWith('/v1/services/1/domains/5/verify', { method: 'POST' }),
-    );
+    await waitFor(() => expect(apiMock.api.domains.verify).toHaveBeenCalledWith(1, 5));
+    expect(apiMock.authedFetch).not.toHaveBeenCalled();
     // A failed check still hands back the record to publish.
     expect(await screen.findByText(challenge.recordValue)).toBeInTheDocument();
     apiMock.api.domains.list.mockResolvedValue([{ ...pendingRow, status: 'active' }]);
@@ -124,7 +124,7 @@ describe('NetworkTab domain ownership (r345)', () => {
 
   it('surfaces a refused verification', async () => {
     apiMock.api.domains.list.mockResolvedValue([pendingRow]);
-    apiMock.authedFetch.mockResolvedValueOnce({ ok: false, json: async () => ({ error: { code: 'forbidden', message: 'nope' } }) });
+    apiMock.api.domains.verify.mockRejectedValueOnce(new Error('nope'));
     renderTab();
     fireEvent.click(await screen.findByRole('button', { name: 'Verify' }));
     expect(await screen.findByText('nope')).toBeInTheDocument();

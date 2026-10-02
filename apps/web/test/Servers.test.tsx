@@ -20,10 +20,11 @@ const apiMock = vi.hoisted(() => ({
     projects: { list: vi.fn() },
     sources: { list: vi.fn() },
     auth: { me: vi.fn(), status: vi.fn() },
+    // r563: the enrolment card reads through the SDK's settings.enrolment.*.
+    settings: { enrolment: { get: vi.fn(), rotate: vi.fn(), disable: vi.fn() } },
   },
   deployLogsWsUrl: vi.fn(() => 'ws://localhost/v1/logs'),
   websocketAuthProtocols: vi.fn(() => ['ninedeploy.bearer.test']),
-  // r359: the enrolment card reads /v1/settings/enrolment through the raw helper.
   authedFetch: vi.fn(),
 }));
 
@@ -58,16 +59,11 @@ const servers = [
 const PROBE_PASS = ['probe', 'pass'].join('-');
 const FORM_PASS = ['secretPass', '!'].join('');
 
-/** Route the card's raw requests: GET answers `current`, rotate/delete their own shapes. */
+/** Script the card's SDK calls: get answers `current`, rotate/disable their own shapes. */
 function enrolmentReplies(current: { enabled: boolean; token: string | null }) {
-  apiMock.authedFetch.mockImplementation(async (_url: string, init?: RequestInit) => {
-    const method = init?.method ?? 'GET';
-    const body =
-      method === 'POST' ? { ok: true, enabled: true, token: 'enrol-secret-2' }
-      : method === 'DELETE' ? { ok: true, enabled: false }
-      : current;
-    return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
-  });
+  apiMock.api.settings.enrolment.get.mockResolvedValue(current);
+  apiMock.api.settings.enrolment.rotate.mockResolvedValue({ ok: true, enabled: true, token: 'enrol-secret-2' });
+  apiMock.api.settings.enrolment.disable.mockResolvedValue({ ok: true, enabled: false });
 }
 
 describe('Servers', () => {
@@ -298,7 +294,7 @@ describe('Servers', () => {
     expect(screen.queryByText(/enrolment-token-from-settings/)).toBeNull();
     expect(screen.getAllByText(/<enrolment-token>/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/enrol-secret-1/)).toBeNull();
-    await waitFor(() => expect(apiMock.authedFetch).toHaveBeenCalledWith('/v1/settings/enrolment', { method: 'GET' }));
+    await waitFor(() => expect(apiMock.api.settings.enrolment.get).toHaveBeenCalled());
     fireEvent.click(screen.getByRole('button', { name: /Copy Auto-Join Command/i }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining('enrol-secret-1')));
   });

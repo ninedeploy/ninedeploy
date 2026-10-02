@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, Eye, EyeOff, KeyRound, RefreshCw } from 'lucide-react';
-import { authedFetch } from '../lib/api.js';
+import { api } from '../lib/api.js';
 import { useCopy } from '../lib/format.js';
 import { useToast } from './Toast.js';
 import { Button, ConfirmDialog } from './ui.js';
@@ -14,24 +14,18 @@ export interface EnrolmentState {
 
 export const ENROLMENT_QUERY_KEY = ['enrolment-token'] as const;
 
-/**
- * Raw requests: the SDK has no methods for `/v1/settings/enrolment` (M-6).
- * `authedFetch` resolves against VITE_API_URL and refreshes on a 401.
- */
-async function enrolmentRequest(method: 'GET' | 'POST' | 'DELETE', path = ''): Promise<EnrolmentState> {
-  const res = await authedFetch(`/v1/settings/enrolment${path}`, { method });
-  const body = (await res.json().catch(() => null)) as
-    | { enabled?: boolean; token?: string | null; error?: { message?: string } }
-    | null;
-  if (!res.ok) throw new Error(body?.error?.message ?? `Request failed with status ${res.status}`);
-  return { enabled: body?.enabled === true, token: body?.token ?? null };
-}
+/** r563: through the SDK's `settings.enrolment.*` (it has had them since
+ *  r463 — the raw-fetch helper and its "SDK has no methods" note were stale). */
+const toState = (body: { enabled?: boolean; token?: string | null }): EnrolmentState => ({
+  enabled: body.enabled === true,
+  token: body.token ?? null,
+});
 
 /** The current enrolment secret; shared by the card and the auto-join command. */
 export function useEnrolmentToken(enabled: boolean) {
   return useQuery({
     queryKey: ENROLMENT_QUERY_KEY,
-    queryFn: () => enrolmentRequest('GET'),
+    queryFn: async () => toState(await api.settings.enrolment.get()),
     enabled,
   });
 }
@@ -52,7 +46,7 @@ export function EnrolmentTokenCard() {
   const state = useEnrolmentToken(true);
 
   const rotate = useMutation({
-    mutationFn: () => enrolmentRequest('POST', '/rotate'),
+    mutationFn: async () => toState(await api.settings.enrolment.rotate()),
     onSuccess: (next) => {
       qc.setQueryData(ENROLMENT_QUERY_KEY, next);
       setRevealed(true);
@@ -61,7 +55,7 @@ export function EnrolmentTokenCard() {
     onError: (err) => toast(err.message, 'error'),
   });
   const disable = useMutation({
-    mutationFn: () => enrolmentRequest('DELETE'),
+    mutationFn: async () => toState(await api.settings.enrolment.disable()),
     onSuccess: () => {
       qc.setQueryData(ENROLMENT_QUERY_KEY, { enabled: false, token: null });
       setConfirmDisable(false);
