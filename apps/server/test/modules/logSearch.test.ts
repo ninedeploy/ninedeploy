@@ -174,6 +174,41 @@ describe('POST /search', () => {
     expect(lib.calls[1]?.['restrictToServiceId']).toBeUndefined();
   });
 
+  // r654: Loki lines are labelled by slug, and a deleted service's slug can be
+  // reused — a member's 7-day search over a new service read its predecessor's.
+  it('r654: a non-operator window never starts before the service was created; an operator is not clamped', async () => {
+    const createdAt = new Date(Date.now() - 60 * 60_000);
+    serviceRow = { id: 1, projectId: 1, workspaceId: 1, ownerUserId: 1, createdAt } as typeof serviceRow;
+    const { port } = await startApp();
+    const asMember = await fetch(`http://127.0.0.1:${port}/search`, {
+      method: 'POST',
+      headers: { ...asUser({ id: 1, isOperator: false }), 'content-type': 'application/json' },
+      body: JSON.stringify({ query: 'error', serviceId: 1, sinceMinutes: 7 * 24 * 60 }),
+    });
+    expect(asMember.status).toBe(200);
+    expect((lib.calls[0]!['since'] as Date).getTime()).toBe(createdAt.getTime());
+
+    const asOperator = await fetch(`http://127.0.0.1:${port}/search`, {
+      method: 'POST',
+      headers: { ...asUser(1), 'content-type': 'application/json' },
+      body: JSON.stringify({ query: 'error', serviceId: 1, sinceMinutes: 7 * 24 * 60 }),
+    });
+    expect(asOperator.status).toBe(200);
+    expect((lib.calls[1]!['since'] as Date).getTime()).toBeLessThan(createdAt.getTime());
+  });
+
+  it('r654: a window that already starts after creation is left alone', async () => {
+    serviceRow = { id: 1, projectId: 1, workspaceId: 1, ownerUserId: 1, createdAt: new Date(Date.now() - 24 * 60 * 60_000) } as typeof serviceRow;
+    const { port } = await startApp();
+    await fetch(`http://127.0.0.1:${port}/search`, {
+      method: 'POST',
+      headers: { ...asUser({ id: 1, isOperator: false }), 'content-type': 'application/json' },
+      body: JSON.stringify({ query: 'error', serviceId: 1, sinceMinutes: 60 }),
+    });
+    const since = lib.calls[0]!['since'] as Date;
+    expect(Math.abs(since.getTime() - (Date.now() - 60 * 60_000))).toBeLessThan(5_000);
+  });
+
   it('translates "No enabled Loki drain" into a 404', async () => {
     lib.throw = new Error('No enabled Loki drain configured for this cluster');
     const { port } = await startApp();
