@@ -71,5 +71,16 @@ describe('L-15: the installer never pipes remote code into a root shell', () => 
     // The pre-existing good pattern must not have regressed.
     expect(installer).toContain('Nixpacks checksum verification failed');
     expect(installer).toContain('Traefik release checksum verification failed');
+    // r702: and NineDeploy's own release archive, against its SHA256SUMS.
+    expect(installer).toContain('fail "Checksum mismatch for $_asset');
+  });
+
+  it('r703: the panel never runs an installer it could not checksum', () => {
+    // The self-update used to run raw.githubusercontent.com's install.sh as
+    // root after a shebang + `bash -n` check only.
+    const selfUpdate = rootFile('apps/server/src/lib/selfUpdate.ts');
+    expect(selfUpdate).not.toContain('https://raw.githubusercontent.com');
+    expect(selfUpdate).toContain('releases/download/$ND_SELF_UPDATE_TARGET');
+    expect(selfUpdate).toContain('[ "$got" = "$want" ] ||');
   });
 });
