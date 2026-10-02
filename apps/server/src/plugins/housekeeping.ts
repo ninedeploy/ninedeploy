@@ -1,10 +1,11 @@
 import { tmpdir } from 'node:os';
 import { readdirSync, statSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
-import { and, inArray, lt, notInArray, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, lt, notInArray, or, sql } from 'drizzle-orm';
 import {
   auditLog,
   backupDrills,
+  backups,
   cacheRegistryBlobs,
   deployments,
   domainTransfers,
@@ -20,6 +21,7 @@ import { run } from '../lib/exec.js';
 import { deleteLog, pruneOldLogs } from '../engine/logs.js';
 import { pruneResetTokens } from '../lib/passwordReset.js';
 import { executeAutoPrune, getAutoPruneStatus } from '../engine/autoPrune.js';
+import { audit } from '../lib/audit.js';
 
 const swallow = () => {};
 const INTERVAL_MS = 60 * 60 * 1000; // hourly
@@ -105,6 +107,55 @@ const DRILL_LEFTOVER_MAX_AGE_MS = 6 * 60 * 60 * 1000;
  *     deploy's config diff is taken against.
  */
 const UNSWEEPABLE_STATUSES = ['queued', 'building', 'deploying', 'running'] as const;
+/**
+ * r543: a backup or drill still `running` this long after it started is
+ * treated as interrupted by the hourly sweep. Far beyond any real dump (the
+ * boot sweep below catches crashes immediately); this backstop covers a
+ * process that hung. A row marked early heals itself: every backup and drill
+ * path finishes with an UPDATE by id that writes its real outcome.
+ */
+const INTERRUPTED_OPERATION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const INTERRUPTED_DRILL_ERROR =
+  'Drill interrupted: the panel stopped (restart, crash or update) before it finished — no verdict on the backup. Run it again.';
+
+/**
+ * r543: mark backups and backup drills that were left `running` by a process
+ * that is gone. A manual database backup, a volume backup and a drill each
+ * insert a `running` row and flip it when they finish; a crash or restart in
+ * between left that row `running` forever — the backups list showed a backup
+ * "in progress" for good, and nothing ever said it had failed.
+ *
+ * Backups become `failed` (the table has no message column; the audit entry
+ * carries the explanation and fans out to the notification channels). Drills
+ * become `unverifiable` with an error: the check never ran to a verdict, so
+ * `failed` would wrongly blame the backup (r356).
+ */
+export async function failInterruptedOperations(
+  db: import('@ninedeploy/db').DB,
+  startedBefore: Date,
+): Promise<{ backups: number[]; drills: number[] }> {
+  const stuckBackups = await db
+    .update(backups)
+    .set({ status: 'failed' })
+    .where(and(eq(backups.status, 'running'), lt(backups.createdAt, startedBefore)))
+    .returning({ id: backups.id });
+  const stuckDrills = await db
+    .update(backupDrills)
+    .set({ status: 'unverifiable', error: INTERRUPTED_DRILL_ERROR, completedAt: Math.floor(Date.now() / 1000) })
+    .where(and(eq(backupDrills.status, 'running'), lt(backupDrills.startedAt, startedBefore)))
+    .returning({ id: backupDrills.id });
+  const result = { backups: stuckBackups.map((r) => r.id), drills: stuckDrills.map((r) => r.id) };
+  if (result.backups.length > 0 || result.drills.length > 0) {
+    void audit(
+      db,
+      null,
+      'backup.interrupted',
+      `${result.backups.length} backup(s) and ${result.drills.length} drill(s) left running by a stopped process were marked failed`,
+      { backupIds: result.backups, drillIds: result.drills },
+    );
+  }
+  return result;
+}
 
 /**
  * Delete finished deployment rows past the retention window, and the log file
@@ -265,7 +316,8 @@ function pruneExportLeftovers(maxAgeMs: number): void {
  * archived metric-history rows, and dangling Docker images so a long-running
  * instance doesn't slowly fill its disk. Live metric retention is handled by
  * the collector plugin (a 24h ring, matching the 1440-minute cap the
- * `/services/:id/metrics` query accepts).
+ * `/services/:id/metrics` query accepts). It also marks backups and drills a
+ * stopped process left `running` as failed (r543) — once at boot, then hourly.
  */
 export default fp(
   async (fastify) => {
@@ -273,32 +325,47 @@ export default fp(
     let timer: NodeJS.Timeout | undefined;
 
     const tick = async () => {
-      try {
-        pruneOldLogs(LOG_MAX_AGE_MS, await unsweepableDeploymentIds(fastify.db));
-        const now = Date.now();
-        await fastify.db.delete(auditLog).where(lt(auditLog.ts, new Date(now - AUDIT_MAX_AGE_MS)));
-        await fastify.db.delete(notificationLog).where(lt(notificationLog.ts, new Date(now - NOTIF_MAX_AGE_MS)));
-        await pruneOldDeployments(fastify.db, DEPLOY_MAX_AGE_MS);
-        await fastify.db.delete(jobRuns).where(lt(jobRuns.createdAt, new Date(now - JOB_RUN_MAX_AGE_MS)));
-        await pruneResetTokens(fastify.db);
-        await pruneDeadSessions(fastify.db, DEAD_SESSION_GRACE_MS);
-        await pruneRetiredRecords(fastify.db, now);
-        await pruneDrillLeftovers([config.paths.backupsDir, tmpdir()], DRILL_LEFTOVER_MAX_AGE_MS);
-        pruneExportLeftovers(EXPORT_LEFTOVER_MAX_AGE_MS);
-        await pruneMetricHistory(fastify);
-        pruneDanglingImages();
-
-        // Disk Auto-Prune check
-        const pruneStatus = await getAutoPruneStatus(fastify.db);
-        if (pruneStatus.enabled && pruneStatus.diskUsedPercent >= pruneStatus.thresholdPercent) {
-          fastify.log.warn(
-            { diskUsedPercent: pruneStatus.diskUsedPercent, thresholdPercent: pruneStatus.thresholdPercent },
-            'Disk threshold reached — triggering auto-prune',
-          );
-          await executeAutoPrune(fastify.db);
+      // r544: every step is isolated. The sweep used to be one try/catch, so
+      // the first failing delete (a locked table, one bad row) skipped every
+      // step after it — including the disk auto-prune check — every hour
+      // until the cause went away.
+      const step = async (name: string, fn: () => unknown): Promise<void> => {
+        try {
+          await fn();
+        } catch (err) {
+          fastify.log.error({ err, step: name }, `housekeeping step failed: ${name}`);
         }
-      } catch (err) {
-        fastify.log.error({ err }, 'housekeeping failed');
+      };
+      try {
+        const now = Date.now();
+        await step('deploy-logs', async () => pruneOldLogs(LOG_MAX_AGE_MS, await unsweepableDeploymentIds(fastify.db)));
+        await step('audit-log', () => fastify.db.delete(auditLog).where(lt(auditLog.ts, new Date(now - AUDIT_MAX_AGE_MS))));
+        await step('notification-log', () =>
+          fastify.db.delete(notificationLog).where(lt(notificationLog.ts, new Date(now - NOTIF_MAX_AGE_MS))),
+        );
+        await step('deployments', () => pruneOldDeployments(fastify.db, DEPLOY_MAX_AGE_MS));
+        await step('job-runs', () => fastify.db.delete(jobRuns).where(lt(jobRuns.createdAt, new Date(now - JOB_RUN_MAX_AGE_MS))));
+        await step('reset-tokens', () => pruneResetTokens(fastify.db));
+        await step('sessions', () => pruneDeadSessions(fastify.db, DEAD_SESSION_GRACE_MS));
+        await step('retired-records', () => pruneRetiredRecords(fastify.db, now));
+        await step('interrupted-backups', () =>
+          failInterruptedOperations(fastify.db, new Date(now - INTERRUPTED_OPERATION_MAX_AGE_MS)),
+        );
+        await step('drill-leftovers', () => pruneDrillLeftovers([config.paths.backupsDir, tmpdir()], DRILL_LEFTOVER_MAX_AGE_MS));
+        await step('export-leftovers', () => pruneExportLeftovers(EXPORT_LEFTOVER_MAX_AGE_MS));
+        await step('metric-history', () => pruneMetricHistory(fastify));
+        await step('dangling-images', () => pruneDanglingImages());
+
+        await step('disk-auto-prune', async () => {
+          const pruneStatus = await getAutoPruneStatus(fastify.db);
+          if (pruneStatus.enabled && pruneStatus.diskUsedPercent >= pruneStatus.thresholdPercent) {
+            fastify.log.warn(
+              { diskUsedPercent: pruneStatus.diskUsedPercent, thresholdPercent: pruneStatus.thresholdPercent },
+              'Disk threshold reached — triggering auto-prune',
+            );
+            await executeAutoPrune(fastify.db);
+          }
+        });
       } finally {
         if (running) {
           timer = setTimeout(() => void tick(), INTERVAL_MS);
@@ -311,6 +378,20 @@ export default fp(
       running = false;
       clearTimeout(timer);
     });
+
+    // r543: at boot nothing this process started can be running yet, so every
+    // `running` backup or drill row is the leftover of the process before it.
+    // Backups and drills only ever run inside the panel process; a second
+    // panel process sharing this database is not a supported topology. Must
+    // never block startup.
+    try {
+      const healed = await failInterruptedOperations(fastify.db, new Date());
+      if (healed.backups.length > 0 || healed.drills.length > 0) {
+        fastify.log.warn(healed, 'interrupted backups/drills from the previous run marked failed');
+      }
+    } catch (err) {
+      fastify.log.warn({ err }, 'interrupted backup sweep skipped at boot');
+    }
 
     // Run once shortly after boot, then hourly.
     timer = setTimeout(() => void tick(), 60_000);
