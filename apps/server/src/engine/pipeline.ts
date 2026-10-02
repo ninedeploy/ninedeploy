@@ -22,9 +22,9 @@ import { logBus } from './logs.js';
 import { pm2Builder } from './builders/pm2.js';
 import { getAcmeEmail, writeDynamicConfig } from './proxy.js';
 import { run, sleep } from '../lib/exec.js';
-import { resolveVaultRefs } from '../lib/vault.js';
+import { hasVaultRef, resolveVaultRefs } from '../lib/vault.js';
 import { registryCredentialFor, registryCredentialForSourceBuild } from '../lib/registryBinding.js';
-import { isOperator, roleAtLeast } from '../lib/resourceAccess.js';
+import { databaseRole, isOperator, roleAtLeast } from '../lib/resourceAccess.js';
 import { getBundledTemplates } from '../templates/registry.js';
 import type { BuildContext, Builder, DeployRuntime } from './types.js';
 import { reconcileTemplateDependencies } from './templateDependencies.js';
@@ -194,7 +194,38 @@ type RuntimeEnvironment = {
   attachmentCount: number;
   readyAttachmentCount: number;
   managedDatabaseKeys: string[];
+  /** r651: what a PR preview was NOT given (names only, never values). */
+  withheldFromPreview: string[];
 };
+
+/**
+ * r651: may a PR preview receive this database attachment? A preview runs
+ * code from a PR branch, so it never gets the database its production parent
+ * uses (earlier releases re-attached it from the manifest on every preview
+ * deploy), nor one its owner could not attach through the API (`admin` on the
+ * database). A separate database attached to the preview on purpose passes.
+ */
+async function previewMayUseAttachment(
+  db: DB,
+  service: typeof services.$inferSelect,
+  database: typeof databases.$inferSelect,
+): Promise<boolean> {
+  if (service.previewParentServiceId != null) {
+    const onParent = await db.query.databaseAttachments.findFirst({
+      where: and(
+        eq(databaseAttachments.serviceId, service.previewParentServiceId),
+        eq(databaseAttachments.databaseId, database.id),
+      ),
+    });
+    if (onParent) return false;
+  }
+  if (service.ownerUserId == null) return false;
+  const role = await databaseRole(db, database, {
+    id: service.ownerUserId,
+    isOperator: await isOperator(db, { id: service.ownerUserId }),
+  });
+  return role !== null && roleAtLeast(role, 'admin');
+}
 
 /**
  * Defence-in-depth behind the tag routes: a `service_projects` link only
@@ -238,6 +269,11 @@ export async function filterTrustworthyProjectLinks(
 async function loadRuntimeEnv(db: DB, service: typeof services.$inferSelect): Promise<RuntimeEnvironment> {
   const env: Record<string, string> = {};
   const managedDatabaseKeys = new Set<string>();
+  // r651: a PR preview is built from a branch anyone with push access wrote.
+  // The webhook already declines to copy the parent's secret service env;
+  // these are the other routes production credentials reached it by.
+  const preview = service.isEphemeralPreview === true;
+  const withheldFromPreview: string[] = [];
 
   // Project-scope shared env (lowest precedence). Services now carry N-N
   // project links via `service_projects`; the env lookup is the union of every
@@ -256,14 +292,33 @@ async function loadRuntimeEnv(db: DB, service: typeof services.$inferSelect): Pr
         inArray(envVars.scopeKey, projectLinks.map((p) => p.projectId)),
       ),
     });
-    for (const r of shared) env[r.key] = decrypt(r.valueEncrypted);
+    for (const r of shared) {
+      // r651: the preview keeps the parent's project tags (visibility), and
+      // with them the project's shared env — secrets included.
+      if (preview && r.isSecret) {
+        withheldFromPreview.push(`project secret ${r.key}`);
+        continue;
+      }
+      env[r.key] = decrypt(r.valueEncrypted);
+    }
   }
 
   // Service-scope env overrides shared values.
   const rows = await db.query.envVars.findMany({ where: eq(envVars.serviceId, service.id) });
   for (const r of rows) env[r.key] = decrypt(r.valueEncrypted);
 
-  const attaches = await db.query.databaseAttachments.findMany({ where: eq(databaseAttachments.serviceId, service.id) });
+  const allAttaches = await db.query.databaseAttachments.findMany({ where: eq(databaseAttachments.serviceId, service.id) });
+  const attaches: typeof allAttaches = [];
+  for (const a of allAttaches) {
+    if (preview) {
+      const d = await db.query.databases.findFirst({ where: eq(databases.id, a.databaseId) });
+      if (d && !(await previewMayUseAttachment(db, service, d))) {
+        withheldFromPreview.push(`database ${d.name} (${a.envAlias})`);
+        continue;
+      }
+    }
+    attaches.push(a);
+  }
   let readyAttachmentCount = 0;
   for (const a of attaches) {
     const d = await db.query.databases.findFirst({ where: eq(databases.id, a.databaseId) });
@@ -308,6 +363,17 @@ async function loadRuntimeEnv(db: DB, service: typeof services.$inferSelect): Pr
     }
   }
 
+  // r651: vault references copied from the parent's (non-secret) env would
+  // resolve to the parent's secrets — a preview resolves none. The key is
+  // dropped rather than left raw so the app sees "unset", not a reference.
+  if (preview) {
+    for (const [key, value] of Object.entries(env)) {
+      if (!hasVaultRef(value)) continue;
+      delete env[key];
+      withheldFromPreview.push(`vault reference ${key}`);
+    }
+  }
+
   // Vault references resolve last, from the fully-merged map — and only for
   // a service the operator allowed (r510).
   return {
@@ -315,6 +381,7 @@ async function loadRuntimeEnv(db: DB, service: typeof services.$inferSelect): Pr
     attachmentCount: attaches.length,
     readyAttachmentCount,
     managedDatabaseKeys: [...managedDatabaseKeys].sort(),
+    withheldFromPreview,
   };
 }
 
@@ -739,6 +806,11 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
 
     const runtimeEnvironment = await loadRuntimeEnv(db, service);
     fanoutEnv = runtimeEnvironment.values;
+    if (runtimeEnvironment.withheldFromPreview.length > 0) {
+      log(
+        `🔒 PR preview: withheld from this preview's environment — ${runtimeEnvironment.withheldFromPreview.join(', ')}. A preview runs code from a pull-request branch, so it never receives project-shared secrets, vault references or the production service's databases. To give it its own values, set them on the preview service (Service → Environment) or attach a separate, non-production database to it (Service → Databases).`,
+      );
+    }
     if (runtimeEnvironment.readyAttachmentCount !== runtimeEnvironment.attachmentCount) {
       throw new Error(
         `Managed database dependency is not ready (${runtimeEnvironment.readyAttachmentCount}/${runtimeEnvironment.attachmentCount} attachments running)`,

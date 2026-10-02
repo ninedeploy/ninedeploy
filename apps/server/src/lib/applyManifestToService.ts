@@ -13,7 +13,7 @@ import {
 import type { NinedeployManifest, Notifications, Previews, Route, Watch } from '@ninedeploy/schemas';
 import { Cron } from 'croner';
 import { ensureAlertState } from './alerting.js';
-import { isOperator, visibleDatabaseIds } from './resourceAccess.js';
+import { databaseRole, isOperator, roleAtLeast } from './resourceAccess.js';
 import { hostsCollide, newChallengeToken, ownZoneClaimRefusal, requiresOwnershipProof } from './domainVerification.js';
 import { getSettingString } from './settings.js';
 import { previewPatternError } from './previewDomain.js';
@@ -46,8 +46,8 @@ export interface ApplyManifestResult {
   routesRemoved: number;
   databaseAttached: boolean;
   databaseNotFound: string | null;
-  /** Set when a `database.ref` was found but is outside the deploying
-   * service-owner's visibility — the cross-tenant attach is refused. */
+  /** Set when a `database.ref` was found but the deploying service's owner
+   * may not attach it (r650: `admin` on the database, as in the panel). */
   databaseAccessDenied: string | null;
   alertsUpserted: number;
   /** True when a `previews` section was applied onto the service row. */
@@ -81,12 +81,30 @@ export async function applyManifestToService(
     warnings: [],
   };
 
+  // Read here rather than taken from the caller so no call site can forget
+  // it: a PR preview runs code from a branch anyone with push access wrote.
+  const target = await db.query.services.findFirst({
+    where: eq(services.id, serviceId),
+    columns: { isEphemeralPreview: true },
+  });
+  const ownerIsOperator = ownerUserId ? await isOperator(db, { id: ownerUserId }) : false;
+
   await syncRoutes(db, serviceId, manifest.routes, result);
-  await attachManagedDatabase(db, serviceId, ownerUserId ?? null, manifest.database, result);
+  if (manifest.database && target?.isEphemeralPreview) {
+    // r651: the manifest a PR preview deploys comes from the PR's branch, and
+    // its `database:` section names production's database — re-attaching it
+    // handed every preview the production connection string and password.
+    // Previews never get a manifest-driven attachment.
+    result.warnings.push(
+      `database.ref="${manifest.database.ref}": not applied to a PR preview — a preview never receives a manifest-attached database, because that is production's. Attach a separate (non-production) database to the preview under Service → Databases if it needs one.`,
+    );
+  } else {
+    await attachManagedDatabase(db, serviceId, ownerUserId ?? null, ownerIsOperator, manifest.database, result);
+  }
   await syncAlertRules(db, serviceId, manifest.alerts, result);
   await applyPreviewConfig(db, serviceId, manifest.previews, result);
   if (manifest.notifications) {
-    await syncNotificationSubscriptions(db, serviceId, manifest.notifications, result);
+    await syncNotificationSubscriptions(db, serviceId, ownerIsOperator, manifest.notifications, result);
   }
   if (manifest.watch) {
     await syncWatchPaths(db, serviceId, manifest.watch, result);
@@ -222,13 +240,33 @@ const SCOPE_OF = { onDeploy: 'deploy', onFailure: 'failure', onAlert: 'alert' } 
  *
  * Delivery stays ADDITIVE to the channel's own global eventFilter — rules
  * only ever ADD this service's events to a channel, never remove anything.
+ *
+ * r652: honoured only when the service's owner is an instance operator.
+ * Channels are operator-only configuration (modules/notifications.ts), and a
+ * rule bypasses the channel's own eventFilter — so a member's repository could
+ * route its service's events into the operator's pager, and the "not found"
+ * warning let it probe which channel names exist. For any other owner the
+ * section is ignored WITHOUT resolving a single name, and subscriptions an
+ * earlier manifest run wrote for the service are removed (nothing but the
+ * manifest ever writes them). `notifyEvent` applies the same rule at delivery.
  */
 async function syncNotificationSubscriptions(
   db: DB,
   serviceId: number,
+  ownerIsOperator: boolean,
   notifications: Notifications,
   result: ApplyManifestResult,
 ): Promise<void> {
+  if (!ownerIsOperator) {
+    const removed = await db
+      .delete(serviceNotificationChannels)
+      .where(eq(serviceNotificationChannels.serviceId, serviceId))
+      .returning({ id: serviceNotificationChannels.id });
+    result.warnings.push(
+      `notifications: ignored — manifest notification subscriptions apply only to services owned by an instance operator, because notification channels are operator configuration${removed.length > 0 ? ` (${removed.length} subscription(s) an earlier deploy created were removed)` : ''}. Ask an operator to include this service's events in a channel's event filter (Settings → Notifications).`,
+    );
+    return;
+  }
   const allChannels = await db.query.notificationChannels.findMany();
   const byName = new Map(allChannels.map((c) => [c.name, c]));
 
@@ -466,6 +504,7 @@ async function attachManagedDatabase(
   db: DB,
   serviceId: number,
   ownerUserId: number | null,
+  ownerIsOperator: boolean,
   ref: NinedeployManifest['database'],
   result: ApplyManifestResult,
 ): Promise<void> {
@@ -495,17 +534,11 @@ async function attachManagedDatabase(
     );
     return;
   }
-  const ownerIsOperator = await isOperator(db, { id: ownerUserId });
-  const visibleIds = await visibleDatabaseIds(db, { id: ownerUserId, isOperator: ownerIsOperator });
-  if (visibleIds !== null && !visibleIds.includes(dbRow.id)) {
-    result.databaseAccessDenied = ref.ref;
-    result.warnings.push(
-      `database.ref="${ref.ref}" points at a managed database outside this service's access; attach skipped.`,
-    );
-    return;
-  }
-  // INSERT OR IGNORE — the unique (serviceId, databaseId) index already
-  // covers dedup; we only need to set envAlias on first insert.
+  // r650: visibility is not enough. An attachment decrypts the database's
+  // password into the container env, so the API attach route demands `admin`
+  // on the database (modules/databases.ts) — the manifest held the owner only
+  // to "can see it", which a viewer seat satisfies.
+  const role = await databaseRole(db, dbRow, { id: ownerUserId, isOperator: ownerIsOperator });
   const existing = await db
     .select()
     .from(databaseAttachments)
@@ -515,6 +548,23 @@ async function attachManagedDatabase(
         eq(databaseAttachments.databaseId, dbRow.id),
       ),
     );
+  if (role === null || !roleAtLeast(role, 'admin')) {
+    result.databaseAccessDenied = ref.ref;
+    // An existing row is left alone: it carries no marker of who made it, and
+    // a database admin may have attached it in the panel on purpose. The
+    // manifest only stops (re)creating attachments its owner may not make.
+    const kept = existing.length > 0
+      ? ' An attachment that already exists is left in place (it may have been made in the panel by a database admin) — detach it under Service → Databases if it should not be there.'
+      : '';
+    result.warnings.push(
+      role === null
+        ? `database.ref="${ref.ref}" points at a managed database outside this service's access; attach skipped.${kept}`
+        : `database.ref="${ref.ref}": the service owner holds the "${role}" role on this database, and attaching hands its password to the container, which needs "admin" (the same rule as attaching in the panel); attach skipped.${kept}`,
+    );
+    return;
+  }
+  // INSERT OR IGNORE — the unique (serviceId, databaseId) index already
+  // covers dedup; we only need to set envAlias on first insert.
   if (existing.length === 0) {
     await db.insert(databaseAttachments).values({
       serviceId,

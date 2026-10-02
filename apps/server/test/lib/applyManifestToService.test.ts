@@ -15,6 +15,7 @@ import {
   databaseAttachments,
   domains,
   notificationChannels,
+  projects,
   scheduledJobs,
   serviceNotificationChannels,
   webhooks,
@@ -342,6 +343,78 @@ describe('applyManifestToService — database', () => {
     expect(result.databaseAttached).toBe(false);
     expect(result.databaseNotFound).toBeNull();
   });
+
+  // r650: visibility used to be the whole test, so a viewer (or member) seat on
+  // the database's workspace let a repository attach it — and the deploy then
+  // decrypted its password into the container. The API attach route demands
+  // `admin` on the database; the manifest now demands the same.
+  describe('owner role on the database (r650)', () => {
+    async function seatOwner8(role: 'viewer' | 'member' | 'admin') {
+      const [ws] = await db.insert(workspaces).values({ name: 'team', slug: 'team', ownerId: 7 }).returning();
+      await db.delete(projects);
+      const [proj] = await db.insert(projects).values({ name: 'p', slug: 'p', workspaceId: ws!.id }).returning();
+      await db.update(databases).set({ projectId: proj!.id }).where(eq(databases.slug, 'app-db'));
+      await db.insert(workspaceMembers).values({ workspaceId: ws!.id, userId: 8, role });
+    }
+
+    for (const role of ['viewer', 'member'] as const) {
+      it(`refuses when the owner holds only "${role}" on the database's workspace`, async () => {
+        await seatOwner8(role);
+        const result = await applyManifestToService(
+          db,
+          serviceId,
+          m({ database: { ref: 'app-db', env: 'DATABASE_URL' } }),
+          8,
+        );
+        expect(result.databaseAttached).toBe(false);
+        expect(result.databaseAccessDenied).toBe('app-db');
+        expect(result.warnings.join('\n')).toContain(`holds the "${role}" role on this database`);
+        expect(await db.select().from(databaseAttachments)).toHaveLength(0);
+      });
+    }
+
+    it('attaches when the owner is an admin of the database workspace', async () => {
+      await seatOwner8('admin');
+      const result = await applyManifestToService(
+        db,
+        serviceId,
+        m({ database: { ref: 'app-db', env: 'DATABASE_URL' } }),
+        8,
+      );
+      expect(result.databaseAttached).toBe(true);
+      expect(await db.select().from(databaseAttachments)).toHaveLength(1);
+    });
+
+    it('leaves an existing attachment in place but reports it, instead of re-asserting it', async () => {
+      await seatOwner8('viewer');
+      const [dbRow] = await db.select().from(databases).where(eq(databases.slug, 'app-db'));
+      await db.insert(databaseAttachments).values({ serviceId, databaseId: dbRow!.id, envAlias: 'DATABASE_URL' });
+      const result = await applyManifestToService(
+        db,
+        serviceId,
+        m({ database: { ref: 'app-db', env: 'DATABASE_URL' } }),
+        8,
+      );
+      expect(result.databaseAttached).toBe(false);
+      expect(result.warnings.join('\n')).toMatch(/left in place.*detach it under Service → Databases/);
+      expect(await db.select().from(databaseAttachments)).toHaveLength(1);
+    });
+  });
+
+  // r651: a preview's manifest comes from the PR branch and names production's
+  // database; re-attaching it gave every preview the production password.
+  it('r651: never attaches the manifest database to a PR preview, even for an operator owner', async () => {
+    await db.update(services).set({ isEphemeralPreview: true }).where(eq(services.id, serviceId));
+    const result = await applyManifestToService(
+      db,
+      serviceId,
+      m({ database: { ref: 'app-db', env: 'DATABASE_URL' } }),
+      7,
+    );
+    expect(result.databaseAttached).toBe(false);
+    expect(result.warnings.join('\n')).toContain('not applied to a PR preview');
+    expect(await db.select().from(databaseAttachments)).toHaveLength(0);
+  });
 });
 
 describe('applyManifestToService — alerts', () => {
@@ -663,6 +736,15 @@ describe('applyManifestToService — notifications', () => {
       { name: 'ops-slack', type: 'slack', targetEncrypted: 'enc-1' },
       { name: 'pager', type: 'webhook', targetEncrypted: 'enc-2' },
     ]);
+    // r652: subscriptions are honoured for operator-owned services only —
+    // user 7 is the operator owner these tests deploy as, 8 a plain member.
+    await db
+      .insert(users)
+      .values([
+        { id: 7, email: 'owner@example.com', passwordHash: 'h', isInstanceOperator: true },
+        { id: 8, email: 'other@example.com', passwordHash: 'h' },
+      ])
+      .onConflictDoNothing();
   });
 
   const ruleRows = async () =>
@@ -676,6 +758,7 @@ describe('applyManifestToService — notifications', () => {
       db,
       serviceId,
       m({ notifications: { onDeploy: ['ops-slack'], onFailure: ['pager'], onAlert: [] } }),
+      7,
     );
     expect(result.notificationsSynced).toBe(2);
     const rules = await ruleRows();
@@ -689,6 +772,7 @@ describe('applyManifestToService — notifications', () => {
       db,
       serviceId,
       m({ notifications: { onDeploy: ['ops-slack', 'ghost-channel'] } }),
+      7,
     );
     expect(result.notificationsSynced).toBe(1);
     expect(result.warnings.join('\n')).toContain('ghost-channel');
@@ -697,8 +781,8 @@ describe('applyManifestToService — notifications', () => {
   });
 
   it('replaces a scope\u2019s subscriptions when the manifest changes', async () => {
-    await applyManifestToService(db, serviceId, m({ notifications: { onDeploy: ['ops-slack'] } }));
-    await applyManifestToService(db, serviceId, m({ notifications: { onDeploy: ['pager'] } }));
+    await applyManifestToService(db, serviceId, m({ notifications: { onDeploy: ['ops-slack'] } }), 7);
+    await applyManifestToService(db, serviceId, m({ notifications: { onDeploy: ['pager'] } }), 7);
     const rules = await ruleRows();
     expect(rules).toHaveLength(1);
     const [pager] = await db.select().from(notificationChannels).where(eq(notificationChannels.name, 'pager'));
@@ -706,10 +790,36 @@ describe('applyManifestToService — notifications', () => {
   });
 
   it('leaves scopes the manifest does not mention untouched', async () => {
-    await applyManifestToService(db, serviceId, m({ notifications: { onFailure: ['pager'] } }));
-    await applyManifestToService(db, serviceId, m({ notifications: { onDeploy: ['ops-slack'] } }));
+    await applyManifestToService(db, serviceId, m({ notifications: { onFailure: ['pager'] } }), 7);
+    await applyManifestToService(db, serviceId, m({ notifications: { onDeploy: ['ops-slack'] } }), 7);
     const rules = await ruleRows();
     expect(rules.map((r) => r.scope).sort()).toEqual(['deploy', 'failure']);
+  });
+
+  // r652: channels are operator configuration and a rule bypasses the
+  // channel's own event filter, so a member's repository could subscribe the
+  // operator's pager to its service — and probe channel names via the warning.
+  it('r652: ignores the section for a non-operator owner without naming any channel', async () => {
+    const result = await applyManifestToService(
+      db,
+      serviceId,
+      m({ notifications: { onDeploy: ['ops-slack', 'ghost-channel'], onFailure: ['pager'] } }),
+      8,
+    );
+    expect(result.notificationsSynced).toBe(0);
+    expect(await ruleRows()).toHaveLength(0);
+    const text = result.warnings.join('\n');
+    expect(text).toMatch(/only to services owned by an instance operator/);
+    expect(text).not.toContain('ghost-channel');
+    expect(text).not.toContain('ops-slack');
+  });
+
+  it('r652: removes subscriptions an earlier deploy wrote for a non-operator owner', async () => {
+    const [pager] = await db.select().from(notificationChannels).where(eq(notificationChannels.name, 'pager'));
+    await db.insert(serviceNotificationChannels).values({ serviceId, channelId: pager!.id, scope: 'failure' });
+    const result = await applyManifestToService(db, serviceId, m({ notifications: { onFailure: ['pager'] } }), 8);
+    expect(await ruleRows()).toHaveLength(0);
+    expect(result.warnings.join('\n')).toContain('1 subscription(s) an earlier deploy created were removed');
   });
 });
 

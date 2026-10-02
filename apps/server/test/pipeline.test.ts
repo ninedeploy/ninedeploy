@@ -243,6 +243,76 @@ describe('runDeployment env merging', () => {
   });
 });
 
+// r651: a PR preview is built from a branch anyone with push access wrote.
+// Before the fix it decrypted the parent's project-shared secrets (it keeps the
+// parent's project tags), resolved vault references copied from the parent's
+// env, and received production's database through the attachment the manifest
+// re-created on every preview deploy.
+describe('runDeployment — PR preview credentials (r651)', () => {
+  function previewDb(serviceOver: Record<string, unknown>) {
+    const { db } = makeDb();
+    baseSetup(db, { image: 'nginx:latest', ...serviceOver });
+    db.query.serviceProjects.findMany.mockResolvedValue([{ serviceId: 5, projectId: 4 }]);
+    let n = 0;
+    db.query.envVars.findMany.mockImplementation(async () => {
+      n++;
+      if (n === 2) {
+        return [
+          { key: 'PROD_DB_PASSWORD', valueEncrypted: 'enc:pw', isSecret: true, scope: 'project' },
+          { key: 'PUBLIC_FLAG', valueEncrypted: 'enc:flag', isSecret: false, scope: 'project' },
+        ];
+      }
+      return [{ key: 'OWN', valueEncrypted: 'enc:o', isSecret: true, scope: 'service' }];
+    });
+    db.query.databaseAttachments.findMany.mockResolvedValue([{ id: 1, serviceId: 5, databaseId: 9, envAlias: 'DATABASE_URL' }]);
+    db.query.databases.findFirst.mockResolvedValue({
+      id: 9, name: 'prod-db', engine: 'postgres', status: 'running', ownerUserId: 7, projectId: null,
+    });
+    // The parent (#3) holds the same database — production's.
+    (db.query.databaseAttachments as Record<string, unknown>).findFirst = vi.fn(async () => ({ id: 2, serviceId: 3, databaseId: 9 }));
+    return db;
+  }
+
+  it('withholds project secrets, vault refs and the parent database from a preview, and says so in the deploy log', async () => {
+    const db = previewDb({ isEphemeralPreview: true, previewParentServiceId: 3 });
+    // A vault reference copied from the parent's non-secret service env.
+    h.decrypt.mockImplementation((v: string) => (v === 'enc:o' ? ['$', '{{doppler:STRIPE_KEY}}'].join('') : `dec:${v}`));
+    const logs = collectLogs(1);
+    try {
+      await runDeployment(db as never, 1);
+    } finally {
+      h.decrypt.mockImplementation((v: string) => `dec:${v}`);
+    }
+    const ctx = h.builder.buildAndRun.mock.calls.at(-1)![0] as { env: Record<string, string> };
+    expect(ctx.env).toEqual({ PUBLIC_FLAG: 'dec:enc:flag' });
+    const line = logs.find((l) => l.includes('PR preview: withheld'));
+    expect(line).toContain('project secret PROD_DB_PASSWORD');
+    expect(line).toContain('vault reference OWN');
+    expect(line).toContain('database prod-db (DATABASE_URL)');
+    // Names only — never a value.
+    expect(line).not.toContain('dec:enc:pw');
+  });
+
+  it('a production service still receives all of it', async () => {
+    const db = previewDb({});
+    db.query.users.findFirst.mockResolvedValue({ id: 7, isInstanceOperator: true });
+    const logs = collectLogs(1);
+    await runDeployment(db as never, 1);
+    const ctx = h.builder.buildAndRun.mock.calls.at(-1)![0] as { env: Record<string, string> };
+    expect(ctx.env).toMatchObject({ PROD_DB_PASSWORD: 'dec:enc:pw', PUBLIC_FLAG: 'dec:enc:flag', DATABASE_URL: 'postgres://db/app' });
+    expect(logs.some((l) => l.includes('PR preview: withheld'))).toBe(false);
+  });
+
+  it('keeps a separate database an admin attached to the preview on purpose', async () => {
+    const db = previewDb({ isEphemeralPreview: true, previewParentServiceId: 3 });
+    // Not on the parent, and the preview's owner owns it (owner ⇒ admin).
+    (db.query.databaseAttachments as Record<string, unknown>).findFirst = vi.fn(async () => undefined);
+    await runDeployment(db as never, 1);
+    const ctx = h.builder.buildAndRun.mock.calls.at(-1)![0] as { env: Record<string, string> };
+    expect(ctx.env.DATABASE_URL).toBe('postgres://db/app');
+  });
+});
+
 describe('runDeployment', () => {
   beforeEach(() => {
     vi.clearAllMocks();
