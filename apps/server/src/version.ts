@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.43';
+export const VERSION = '0.10.44';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.44',
+    date: '2026-10-03',
+    title: 'Ownership Follow-Up — Shared Env Restored After SCIM Removals',
+    changes: [
+      'Fixed: team services whose creator was removed by SCIM before 0.10.43 deployed without their project\'s shared environment. On first boot this release hands such services and databases to the workspace owner, as 0.10.43 does for new removals; personal, operator-owned and multi-owner resources are left alone and every change is in the audit log (r710).',
+      'Security: repository analysis in the Deploy Wizard now needs a member seat, like creating a service — seatless and viewer-only accounts get 403 (r711).',
+      'Docs: verifying image signatures needs cosign v3, or v2.6+ with --new-bundle-format.',
+    ],
+  },
+{
     version: '0.10.43',
     date: '2026-10-02',
     title: 'The Verified-Release Release — Signed, Checksummed, Matrix-Checked',

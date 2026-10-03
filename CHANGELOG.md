@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.44] - 2026-10-03
+
+> Ownership follow-up to 0.10.43 (r710–r711): team services whose creator was
+> removed by SCIM before 0.10.43 deployed without their project's shared
+> environment; the first boot of this release hands them to the workspace
+> owner. Repository analysis now needs the same seat as creating a service.
+
+### Upgrade notes
+
+- **One-time ownership hand-over on first boot (r710).** Services and managed databases in a workspace whose creator no longer holds a seat there (SCIM suspend or deprovision before 0.10.43) now belong to the workspace owner — what 0.10.43 does for every new removal. The change is recorded in the audit log (`ownership.backfill`) and the panel log. Untouched: personal (untagged) resources, operator-owned resources, creators still seated in any workspace the resource lives in, and services shared across workspaces with different owners (logged; reassign them by hand). It runs once; reinstating a user later restores the seat, not the ownership.
+- **Repository analysis needs a member seat (r711).** `POST /v1/insights` (the Deploy Wizard's analysis step) answers 403 for accounts with no seat or only viewer seats, the same rule as creating a service. Operators and members are unaffected.
+- No migrations.
+
+### Fixed
+
+- **Team services lost their project's shared env after a SCIM removal (r710).** The deploy pipeline injects a project's shared env only when the service owner is seated in the project's workspace; a creator removed by SCIM before 0.10.43 stayed the owner without a seat, so redeploys came up without those variables and without an error.
+
+### Security
+
+- **Repository analysis was open to any signed-in account (r711).** A seatless or viewer-only account could have the panel clone arbitrary public repositories (bounded and rate-limited, but outside the role model every other write follows).
+
+### Docs
+
+- README → Verifying a release: image signatures need cosign v3, or v2.6+ with `--new-bundle-format`; older cosign reports "no signatures found".
+
 ## [0.10.43] - 2026-10-02
 
 > The verified-release release (r690–r703): releases are signed and their
