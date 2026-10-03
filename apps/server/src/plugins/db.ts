@@ -2,6 +2,7 @@ import { createDb, runMigrations, sql, type DB } from '@ninedeploy/db';
 import fp from 'fastify-plugin';
 import { config } from '../config.js';
 import { reconcileDeploymentHistory } from '../engine/pipeline.js';
+import { ensureOwnershipBackfilled } from '../lib/ownershipBackfill.js';
 import { ensureRegistryBindingsInitialised } from '../lib/registryBinding.js';
 import { ensureVaultAllowlistInitialised } from '../lib/vault.js';
 
@@ -93,6 +94,13 @@ export default fp(
         await ensureRegistryBindingsInitialised(db, (msg, detail) => fastify.log.warn(detail, msg));
       } catch (err) {
         fastify.log.warn({ err }, 'registry credential binding initialisation deferred');
+      }
+      // r710: hand resources of creators who lost their seat before r695
+      // (SCIM removals up to 0.10.42) to the workspace owner, once.
+      try {
+        await ensureOwnershipBackfilled(db, (msg, detail) => fastify.log.warn(detail, msg));
+      } catch (err) {
+        fastify.log.warn({ err }, 'ownership backfill deferred');
       }
 
       fastify.decorate('db', db);

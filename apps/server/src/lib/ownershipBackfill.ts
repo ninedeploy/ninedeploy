@@ -1,0 +1,127 @@
+import { and, eq, isNotNull } from 'drizzle-orm';
+import { databases, projects, serviceWorkspaces, services, workspaceMembers, workspaces, type DB } from '@ninedeploy/db';
+import { audit } from './audit.js';
+import { isOperator } from './resourceAccess.js';
+import { getSettingString, setSettingString } from './settings.js';
+
+/**
+ * r710: one-shot upgrade backfill for r695.
+ *
+ * Before 0.10.43 a SCIM suspend/deprovision removed the seat but left the
+ * user as owner of the team services and databases they created (the API's
+ * own member removal has re-homed them since r097). Since r694 such a creator
+ * has no access, and the deploy pipeline consults the owner's seat before it
+ * injects the project's shared env (filterTrustworthyProjectLinks), so those
+ * services silently deployed without it. This hands each such resource to
+ * its workspace owner — the hand-over r695 performs for new removals — once,
+ * on the first boot of the release that ships it.
+ *
+ * Conservative by construction: operator-owned and personal (untagged)
+ * resources are never touched, a creator still seated in any workspace the
+ * resource lives in keeps it, and a service tagged into workspaces with
+ * different owners is left alone (logged) rather than given to one of them.
+ */
+export const OWNERSHIP_BACKFILL_KEY = 'ownership_backfill_r710';
+
+export interface OwnershipBackfillResult {
+  services: number[];
+  databases: number[];
+  /** Services whose workspaces have different owners — left as they are. */
+  ambiguous: number[];
+}
+
+async function seated(db: DB, userId: number, workspaceId: number): Promise<boolean> {
+  const row = await db.query.workspaceMembers.findFirst({
+    where: and(eq(workspaceMembers.userId, userId), eq(workspaceMembers.workspaceId, workspaceId)),
+  });
+  return row != null;
+}
+
+/** Run the backfill now, regardless of the done-marker. Exported for tests. */
+export async function rehomeSeatlessOwners(db: DB): Promise<OwnershipBackfillResult> {
+  const result: OwnershipBackfillResult = { services: [], databases: [], ambiguous: [] };
+  const operatorCache = new Map<number, boolean>();
+  const ownerIsOperator = async (id: number) => {
+    let v = operatorCache.get(id);
+    if (v === undefined) {
+      v = await isOperator(db, { id });
+      operatorCache.set(id, v);
+    }
+    return v;
+  };
+  const wsOwner = new Map<number, number>();
+  for (const ws of await db.select({ id: workspaces.id, ownerId: workspaces.ownerId }).from(workspaces)) {
+    wsOwner.set(ws.id, ws.ownerId);
+  }
+
+  const owned = await db
+    .select({ id: services.id, ownerUserId: services.ownerUserId })
+    .from(services)
+    .where(isNotNull(services.ownerUserId));
+  for (const svc of owned) {
+    const ownerId = svc.ownerUserId!;
+    if (await ownerIsOperator(ownerId)) continue;
+    const tags = await db.query.serviceWorkspaces.findMany({ where: eq(serviceWorkspaces.serviceId, svc.id) });
+    const wsIds = tags.map((t) => t.workspaceId).filter((id) => wsOwner.has(id));
+    if (wsIds.length === 0) continue; // personal service: stays its creator's
+    let stillSeated = false;
+    for (const wsId of wsIds) {
+      if (await seated(db, ownerId, wsId)) {
+        stillSeated = true;
+        break;
+      }
+    }
+    if (stillSeated) continue;
+    const heirs = new Set(wsIds.map((id) => wsOwner.get(id)!));
+    if (heirs.size !== 1) {
+      result.ambiguous.push(svc.id);
+      continue;
+    }
+    const heir = [...heirs][0]!;
+    if (heir === ownerId) continue;
+    await db.update(services).set({ ownerUserId: heir }).where(and(eq(services.id, svc.id), eq(services.ownerUserId, ownerId)));
+    result.services.push(svc.id);
+  }
+
+  const ownedDbs = await db
+    .select({ id: databases.id, ownerUserId: databases.ownerUserId, workspaceId: projects.workspaceId })
+    .from(databases)
+    .innerJoin(projects, eq(projects.id, databases.projectId))
+    .where(isNotNull(databases.ownerUserId));
+  for (const row of ownedDbs) {
+    const ownerId = row.ownerUserId!;
+    if (row.workspaceId == null) continue;
+    const heir = wsOwner.get(row.workspaceId);
+    if (heir === undefined || heir === ownerId) continue;
+    if (await ownerIsOperator(ownerId)) continue;
+    if (await seated(db, ownerId, row.workspaceId)) continue;
+    await db.update(databases).set({ ownerUserId: heir }).where(and(eq(databases.id, row.id), eq(databases.ownerUserId, ownerId)));
+    result.databases.push(row.id);
+  }
+  return result;
+}
+
+/**
+ * Boot hook: run the backfill once per install. The marker is written only
+ * after a complete pass, so a failure retries on the next boot; re-running
+ * is harmless (every rule above is idempotent).
+ */
+export async function ensureOwnershipBackfilled(
+  db: DB,
+  log?: (msg: string, detail: Record<string, unknown>) => void,
+): Promise<OwnershipBackfillResult | null> {
+  if ((await getSettingString(db, OWNERSHIP_BACKFILL_KEY, null)) !== null) return null;
+  const result = await rehomeSeatlessOwners(db);
+  if (result.services.length > 0 || result.databases.length > 0) {
+    const summary = `re-homed to their workspace owner: services [${result.services.join(', ')}], databases [${result.databases.join(', ')}]`;
+    await audit(db, null, 'ownership.backfill', summary, { ...result });
+    log?.('resources created by users who no longer hold a seat were handed to the workspace owner (r710)', { ...result });
+  }
+  if (result.ambiguous.length > 0) {
+    log?.('services whose creator holds no seat span workspaces with different owners — left unchanged; reassign them by hand (r710)', {
+      services: result.ambiguous,
+    });
+  }
+  await setSettingString(db, OWNERSHIP_BACKFILL_KEY, new Date().toISOString());
+  return result;
+}

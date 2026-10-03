@@ -612,7 +612,7 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/traefik': R('authed', { note: 'non-operators get container status only; routers/certs are operator-only' }),
   'POST /v1/insights': R('authed', {
     body: () => ({ repoUrl: 'https://github.com/example/app.git' }),
-    note: 'any signed-in user, even one with no seat, can have the panel clone a public repo (rate-limited 10/min)',
+    note: 'r711: a "member" seat somewhere (or operator), as for POST /v1/services — the outsider gets 403 (rate-limited 10/min)',
   }),
   'GET /v1/sso/:name/login': R('authed', { note: 'documented in sso.ts: login/callback stay authentication-only' }),
   'GET /v1/sso/:name/callback': R('authed', { note: 'documented in sso.ts: login/callback stay authentication-only' }),
