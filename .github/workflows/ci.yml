@@ -44,6 +44,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # r712: the repository stores LF. A Windows commit with autocrlf off once
+      # re-staged 1206 files with CRLF; fail the push that does it, not the tag.
+      - name: Line endings (no CRLF stored)
+        run: |
+          bad="$(git ls-files --eol | awk '$1 == "i/crlf" || $1 == "i/mixed"' | cut -f2-)"
+          if [ -n "$bad" ]; then
+            echo "::error::$(printf '%s\n' "$bad" | wc -l) tracked file(s) stored with CRLF:"
+            printf '%s\n' "$bad" | head -20
+            exit 1
+          fi
+
       # r576: advisory only (continue-on-error) — a fresh upstream advisory
       # must not block every unrelated commit, but it should be visible on the
       # run that first sees it. Overrides in pnpm-workspace.yaml are the fix.
