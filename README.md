@@ -10,7 +10,7 @@ the databases, certificates, secrets, backups and access rules around it — fro
 terminal CLI, a typed SDK, or an AI agent over MCP.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Release](https://img.shields.io/badge/Release-0.10.43-blue.svg)](./CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Release-0.10.44-blue.svg)](./CHANGELOG.md)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522.13-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7-blue.svg)](https://www.typescriptlang.org)
 [![Docker](https://img.shields.io/badge/Docker-required-blue.svg)](https://docker.com)
@@ -70,12 +70,12 @@ runs the SQLite migrations, and starts a hardened `systemd` unit (`ProtectSystem
 Re-running the same command is the upgrade path; it snapshots `.data` before touching anything.
 
 ```bash
-./install.sh --version v0.10.43     # pin an exact tag
+./install.sh --version v0.10.44     # pin an exact tag
 ./install.sh --channel main       # track edge
 ./install.sh --force              # discard local edits + stale build artifacts, then rebuild
 ```
 
-> **Where `main` stands:** the default channel installs the newest release tag (**0.10.43**).
+> **Where `main` stands:** the default channel installs the newest release tag (**0.10.44**).
 > The newest work (doctor mode, retained-volume re-keying) lands on `main` before it is tagged —
 > see [`CHANGELOG.md`](./CHANGELOG.md) under *Unreleased*, or run `--channel main` to get it today.
 
@@ -143,6 +143,10 @@ gh attestation verify oci://ghcr.io/ninedeploy/ninedeploy:v0.10.43 --repo NineDe
 ```
 
 To run exactly what you verified, pin the digest `cosign verify` prints (`…/ninedeploy@sha256:…`).
+
+Signatures are stored in the Sigstore bundle format, which **cosign v3** reads by default. With
+cosign v2, add `--new-bundle-format` to both `cosign verify` (v2.6+) and `cosign verify-blob`
+(v2.4+); cosign v2.5 and older report `no signatures found` for the image even though it is signed.
 
 **The source** — each GitHub Release carries `ninedeploy-vX.Y.Z.tar.gz` (a `git archive` of the
 tag), `install.sh`, `SHA256SUMS` over both, and `SHA256SUMS.sigstore.json` (its signature):

@@ -10,7 +10,7 @@ import { checkoutCommit, type CloneCreds } from '../lib/git.js';
 import { decrypt } from '../lib/crypto.js';
 import { config } from '../config.js';
 import { HttpError, badRequest, forbidden, notFound, parseId } from '../lib/errors.js';
-import { assertServiceRole } from '../lib/resourceAccess.js';
+import { assertServiceRole, maxRole, roleAtLeast, userWorkspaceMemberships } from '../lib/resourceAccess.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { EgressBlockedError } from '../lib/egressGuard.js';
 import { serializeInsights, upsertInsights } from '../engine/repoInsights.js';
@@ -129,6 +129,11 @@ async function resolveCreds(db: DB, sourceId: number | null | undefined): Promis
  * detection. Trust model matches a deploy: any authenticated user can already
  * create a repo-backed service and have the pipeline clone it, so this adds
  * no new outbound capability — it is rate-limited to deter scanning.
+ *
+ * r711: "any authenticated user" was wider than that premise — creating a
+ * service needs the `member` role somewhere (services.ts), but this route let
+ * a seatless or viewer-only account have the panel clone arbitrary
+ * repositories. It now asks for the same floor.
  */
 export const insightsRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', app.authenticate);
@@ -138,6 +143,12 @@ export const insightsRoutes: FastifyPluginAsync = async (app) => {
     { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
     async (req) => {
       const input = analyzeRepoInput.parse(req.body);
+      if (!req.user!.isOperator) {
+        const best = maxRole(await userWorkspaceMemberships(app.db, req.user!.id));
+        if (best === null || !roleAtLeast(best, 'member')) {
+          throw forbidden('Analyzing a repository requires the "member" role in a workspace');
+        }
+      }
       // Sources are system-wide operator credentials (sourcesRoutes is
       // requireAdmin). A member attaching a guessed sourceId here would get
       // the operator's decrypted token attached to a clone of ANY repoUrl —

@@ -49,6 +49,8 @@ beforeEach(() => {
   cryptoMocks.decrypt.mockImplementation((v: string) => (v.startsWith('v0:') ? v.slice(3) : `dec:${v}`));
 });
 
+const memberSeat = { workspaceId: 1, userId: 7, role: 'member' };
+
 const baseService = {
   id: 1,
   name: 'svc',
@@ -163,6 +165,40 @@ describe('insights routes', () => {
   });
 });
 
+// r711: creating a service needs a `member` seat somewhere; the analysis
+// clone was open to any signed-in account, seatless or viewer-only.
+describe('analysis seat floor (r711)', () => {
+  async function analyzeAs(seats: Array<{ workspaceId: number; userId: number; role: string }>) {
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { services: baseService }, findMany: { workspaceMembers: seats } }),
+    });
+    await app.register(insightsRoutes);
+    const res = await app.inject({
+      method: 'POST', url: '/', headers: asUser({ id: 7, isOperator: false }),
+      payload: { repoUrl: 'https://github.com/octocat/Hello-World.git', branch: 'main' },
+    });
+    await app.close();
+    return res;
+  }
+
+  it('refuses an account with no seat and never clones', async () => {
+    const res = await analyzeAs([]);
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toMatch(/\\"member\\" role/);
+    expect(gitMocks.checkoutCommit).not.toHaveBeenCalled();
+  });
+
+  it('refuses a viewer-only account', async () => {
+    expect((await analyzeAs([{ workspaceId: 1, userId: 7, role: 'viewer' }])).statusCode).toBe(403);
+    expect(gitMocks.checkoutCommit).not.toHaveBeenCalled();
+  });
+
+  it('allows a member seat in any workspace', async () => {
+    expect((await analyzeAs([memberSeat])).statusCode).toBe(200);
+    expect(gitMocks.checkoutCommit).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('service insights routes', () => {
   it('returns null when no insights row exists for the service', async () => {
     const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: baseService } }) });
@@ -241,7 +277,9 @@ describe('inspection clone limits (r657)', () => {
   afterAll(() => Object.assign(INSPECTION_LIMITS, saved));
 
   async function analyze() {
-    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: baseService } }) });
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { services: baseService }, findMany: { workspaceMembers: [memberSeat] } }),
+    });
     await app.register(insightsRoutes);
     const res = await app.inject({
       method: 'POST', url: '/', headers: asUser({ id: 7, isOperator: false }),

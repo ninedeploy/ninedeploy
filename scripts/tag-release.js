@@ -65,6 +65,18 @@ if (tagExists === tag) {
   die(`tag ${tag} already exists — delete it explicitly first (git tag -d ${tag} && git push origin :refs/tags/${tag}).`);
 }
 
+// r712: line endings. A commit made on Windows with core.autocrlf=false and
+// `commit -a` once re-staged 1206 files with CRLF (d106f1b7); the version
+// literal then read "0.10.44\r" on Linux and publish-image refused the tag.
+// The repository stores LF; refuse while anything in the index does not.
+const crlfFiles = sh('git', ['ls-files', '--eol'])
+  .split('\n')
+  .filter((line) => /^i\/(crlf|mixed)\s/.test(line))
+  .map((line) => line.split('\t').pop());
+if (crlfFiles.length > 0) {
+  die(`${crlfFiles.length} tracked file(s) are stored with CRLF line endings (${crlfFiles.slice(0, 5).join(', ')}${crlfFiles.length > 5 ? ', …' : ''}) — re-stage them with LF before tagging.`);
+}
+
 // 3. Provenance: what the commit actually contains (== HEAD, per check 1).
 const show = (file) => {
   try {

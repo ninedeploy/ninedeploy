@@ -23,9 +23,10 @@ afterAll(() => {
 
 // MUST run first: it pre-populates the database file a 0.10.35 install would
 // have, and the first plugin registration is the "first boot after upgrade".
-describe('db plugin — r510/r512 upgrade seeding on first boot', () => {
+describe('db plugin — r510/r512/r710 upgrade seeding on first boot', () => {
   it('seeds the vault allowlist and the registry host bindings from current usage', async () => {
-    const { createDb, runMigrations, envVars, services, sources, users } = await import('@ninedeploy/db');
+    const { createDb, runMigrations, envVars, serviceWorkspaces, services, sources, users, workspaceMembers, workspaces } =
+      await import('@ninedeploy/db');
     const { config } = await import('../../src/config.js');
     const { encrypt } = await import('../../src/lib/crypto.js');
     const pre = createDb({ url: config.dbUrl });
@@ -47,6 +48,12 @@ describe('db plugin — r510/r512 upgrade seeding on first boot', () => {
       key: 'DB_PASSWORD',
       valueEncrypted: encrypt(['$', '{{doppler:DB_PASSWORD}}'].join('')),
     });
+    // r710: a team service whose creator lost the seat to a pre-r695 SCIM removal.
+    const [teamOwner] = await pre.db.insert(users).values({ email: 'o@x', passwordHash: 'h' }).returning();
+    const [ws] = await pre.db.insert(workspaces).values({ name: 'Team', slug: 'team', ownerId: teamOwner!.id }).returning();
+    await pre.db.insert(workspaceMembers).values({ workspaceId: ws!.id, userId: teamOwner!.id, role: 'owner' });
+    const [orphan] = await pre.db.insert(services).values({ name: 'orphan', slug: 'orphan', ownerUserId: member!.id }).returning();
+    await pre.db.insert(serviceWorkspaces).values({ serviceId: orphan!.id, workspaceId: ws!.id });
     pre.client?.close();
 
     const app = Fastify();
@@ -57,6 +64,11 @@ describe('db plugin — r510/r512 upgrade seeding on first boot', () => {
     // the registry source is bound to the host its service pulls from.
     expect(await getVaultAllowlist(app.db)).toEqual({ workspaceIds: [], serviceIds: [svc!.id] });
     expect(await getRegistryBindings(app.db)).toEqual({ [String(src!.id)]: ['ghcr.io'] });
+    const { eq } = await import('drizzle-orm');
+    const rehomed = await app.db.query.services.findFirst({ where: eq(services.id, orphan!.id) });
+    expect(rehomed!.ownerUserId).toBe(teamOwner!.id);
+    // The un-tagged legacy service is personal and stays its creator's.
+    expect((await app.db.query.services.findFirst({ where: eq(services.id, svc!.id) }))!.ownerUserId).toBe(member!.id);
     await app.close();
   });
 });
