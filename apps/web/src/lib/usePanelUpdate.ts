@@ -186,7 +186,9 @@ export function usePanelUpdate() {
             .then((fresh) => queryClient.setQueryData(['update-check'], fresh))
             .catch(() => undefined);
         }
-        window.setTimeout(() => setPhase((p) => (p === 'done' ? 'idle' : p)), 12_000);
+        window.setTimeout(() => {
+          if (settledTargetRef.current === run) setPhase((p) => (p === 'done' ? 'idle' : p));
+        }, 12_000);
         break;
       }
       case 'failed': {

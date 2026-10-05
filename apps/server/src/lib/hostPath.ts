@@ -46,7 +46,10 @@ export function resetHostPathCache(): void {
 export async function hostPathFor(p: string, deps: HostPathDeps = defaultDeps): Promise<string> {
   if (!deps.inContainer()) return p;
   if (!cached) {
-    const pending = deps.inspectMounts(deps.selfId()).catch(() => [] as Mount[]);
+    const pending = deps.inspectMounts(deps.selfId()).catch(() => {
+      if (cached === pending) cached = null;
+      return [] as Mount[];
+    });
     cached = pending;
   }
   const mounts = await cached;

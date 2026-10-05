@@ -43,7 +43,8 @@ const STATUS_COLORS: Record<string, (s: string) => string> = {
 };
 
 export function statusColor(status: string): string {
-  return (STATUS_COLORS[status] ?? ((s: string) => s))(status);
+  const color = Object.hasOwn(STATUS_COLORS, status) ? STATUS_COLORS[status] : undefined;
+  return color ? color(status) : status;
 }
 
 export function banner(): void {

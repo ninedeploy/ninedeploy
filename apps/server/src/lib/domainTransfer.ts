@@ -265,10 +265,12 @@ export async function cancelTransfer(
     throw new Error(`Transfer is ${status}, not pending`);
   }
   const now = Math.floor(Date.now() / 1000);
-  await db
+  const cancelled = await db
     .update(domainTransfers)
     .set({ status: 'cancelled', cancelledAt: now })
-    .where(eq(domainTransfers.id, row.id));
+    .where(and(eq(domainTransfers.id, row.id), eq(domainTransfers.status, 'pending')))
+    .returning({ id: domainTransfers.id });
+  if (cancelled.length === 0) throw new Error('Transfer is no longer pending');
   return { transferId: row.id, status: 'cancelled' };
 }
 

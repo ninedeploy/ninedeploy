@@ -82,9 +82,8 @@ export async function reconcileDeploymentHistory(db: DB): Promise<number> {
   const liveServices = new Set(svcRows.filter((s) => s.status === 'running').map((s) => s.id));
 
   const supersededIds: number[] = [];
-  for (const [serviceId, keepId] of newestByService) {
-    const live = liveServices.has(serviceId);
-    for (const r of running.filter((x) => x.serviceId === serviceId && (!live || x.id !== keepId))) {
+  for (const r of running) {
+    if (!liveServices.has(r.serviceId) || r.id !== newestByService.get(r.serviceId)) {
       supersededIds.push(r.id);
     }
   }

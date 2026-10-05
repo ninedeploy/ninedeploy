@@ -73,7 +73,7 @@ export async function getAutoPruneStatus(db: DB): Promise<AutoPruneStatus> {
     ...cfg,
     ...disk,
     lastPrunedAt: lastPrunedAt || null,
-    lastFreedBytes: lastFreedBytes || null,
+    lastFreedBytes: Number.isFinite(lastFreedBytes) ? lastFreedBytes : null,
   };
 }
 

@@ -51,6 +51,7 @@ export async function syncNodeProxy(
   log: (line: string) => void = () => undefined,
   opts: { ensureContainer?: boolean } = {},
 ): Promise<NodeProxySyncResult> {
+  let ensureStarted = false;
   try {
     const [acmeEmail, dns] = await Promise.all([getAcmeEmail(db), getDnsConfig(db)]);
     const staticConfig = renderStaticConfig(acmeEmail, dns);
@@ -78,6 +79,7 @@ export async function syncNodeProxy(
           ? '  node proxy: static configuration changed — recreating the proxy to apply it'
           : '  node proxy: not running on the node — starting it',
       );
+      ensureStarted = true;
       await agentOp(db, serverId, 'proxy.ensure', {}, sink);
     }
     return { ok: true };
@@ -88,9 +90,8 @@ export async function syncNodeProxy(
     // proxy is down and every domain on the node is dark until the next
     // successful sync (the old "keeps serving its previous routing" message
     // was a lie in exactly this case).
-    const ensureFailed = reason.includes('proxy.ensure');
     log(
-      ensureFailed
+      ensureStarted
         ? `⚠ node proxy sync failed: ${reason}. THE NODE'S PROXY IS DOWN — every domain on this node answers nothing until the next successful sync. Retry from Settings or re-run a deploy.`
         : `⚠ node proxy sync failed: ${reason}. The config write failed before the proxy was touched; the node keeps serving its previous routing.`,
     );

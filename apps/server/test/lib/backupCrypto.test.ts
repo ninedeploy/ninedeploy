@@ -26,6 +26,31 @@ const samplePlaintext = Buffer.from(
 );
 
 describe('lib/backupCrypto', () => {
+  it.each([0, 1, 65537])('round-trips a %i-byte backup across ciphertext boundaries', async (size) => {
+    const file = join(tmpDir, 'boundary.dump');
+    const out = join(tmpDir, 'boundary.dump.dec');
+    const plain = Buffer.alloc(size, 0x61);
+    writeFileSync(file, plain);
+
+    await encryptBackupFile(file);
+    await decryptBackupFile(file, out);
+    expect(readFileSync(out)).toEqual(plain);
+  });
+
+  it('authenticates an empty backup and removes output when its tag is corrupt', async () => {
+    const file = join(tmpDir, 'empty-corrupt.dump');
+    const out = join(tmpDir, 'empty-corrupt.dump.dec');
+    writeFileSync(file, '');
+    await encryptBackupFile(file);
+    const bytes = readFileSync(file);
+    bytes[bytes.length - 1] = bytes[bytes.length - 1]! ^ 1;
+    writeFileSync(file, bytes);
+
+    await expect(decryptBackupFile(file, out)).rejects.toThrow();
+    expect(existsSync(out)).toBe(false);
+    expect(readFileSync(file)).toEqual(bytes);
+  });
+
   it('isEncryptedBackupFile returns false for a plaintext file', async () => {
     const file = join(tmpDir, 'plain.dump');
     writeFileSync(file, samplePlaintext);

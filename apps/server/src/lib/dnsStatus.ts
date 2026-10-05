@@ -1,4 +1,5 @@
 import { resolve4, resolve6 } from 'node:dns/promises';
+import { isIPv6 } from 'node:net';
 
 /**
  * DNS resolution status for a service's custom domain. Answers the
@@ -44,7 +45,18 @@ async function safeResolve(fn: () => Promise<string[]>): Promise<string[]> {
  * resolves only on the other family is still ok.
  */
 export function classifyResolution(resolution: DnsResolution, expected: string[]): ResolutionKind {
-  const all = [...resolution.a, ...resolution.aaaa];
+  const all = [...resolution.a, ...resolution.aaaa].map(canonicalAddress);
   if (all.length === 0) return 'unresolved';
-  return expected.some((ip) => all.includes(ip)) ? 'ok' : 'mismatch';
+  return expected.some((ip) => all.includes(canonicalAddress(ip))) ? 'ok' : 'mismatch';
+}
+
+function canonicalAddress(ip: string): string {
+  if (isIPv6(ip)) {
+    try {
+      return new URL(`http://[${ip}]`).hostname;
+    } catch {
+      /* Preserve unsupported scoped-address spellings for exact comparison. */
+    }
+  }
+  return ip;
 }

@@ -11,7 +11,7 @@ export function iso(date: Date | null | undefined): string | null {
 
 /** Date-only ISO prefix (`YYYY-MM-DD`) for expiry columns. */
 export function isoDate(date: Date | null | undefined): string | null {
-  return date ? date.toISOString().slice(0, 10) : null;
+  return date ? date.toISOString().split('T')[0]! : null;
 }
 
 /**

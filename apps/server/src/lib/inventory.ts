@@ -41,11 +41,11 @@ export function resolveVolumeOwner(
   attachments: VolumeAttachmentRow[] = [],
 ): VolumeOwnerRef | null {
   // 1) explicit attachment link (any service may own the volume).
-  const att = attachments.find((a) => a.volumeName === name);
-  if (att) {
+  for (const att of attachments) {
+    if (att.volumeName !== name) continue;
     const s = svcs.find((x) => x.id === att.serviceId);
     if (s) return { kind: 'service', refId: s.id, name: s.name, containerName: s.runtimeId };
-    // Orphan attachment: row exists but service was deleted. Fall through.
+    // The service may be absent from this inventory; try other links first.
   }
   if (name.startsWith('nd-svc-')) {
     const slug = name.replace('nd-svc-', '').replace(/-data$/, '');

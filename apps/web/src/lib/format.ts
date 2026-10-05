@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * The single source of truth for human-readable formatting in the web UI.
@@ -113,12 +113,20 @@ export async function copyText(text: string): Promise<boolean> {
 
 export function useCopy(timeoutMs = 1500): { copied: boolean; copy: (text: string) => Promise<boolean> } {
   const [copied, setCopied] = useState(false);
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => {
+    if (resetTimer.current !== undefined) clearTimeout(resetTimer.current);
+  }, []);
   const copy = useCallback(
     async (text: string) => {
       const ok = await copyText(text);
       if (ok) {
+        if (resetTimer.current !== undefined) clearTimeout(resetTimer.current);
         setCopied(true);
-        setTimeout(() => setCopied(false), timeoutMs);
+        resetTimer.current = setTimeout(() => {
+          setCopied(false);
+          resetTimer.current = undefined;
+        }, timeoutMs);
       }
       return ok;
     },

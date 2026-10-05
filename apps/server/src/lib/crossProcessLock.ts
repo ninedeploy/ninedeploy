@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   closeSync,
+  futimesSync,
   linkSync,
   mkdirSync,
   openSync,
@@ -8,7 +9,6 @@ import {
   renameSync,
   statSync,
   unlinkSync,
-  utimesSync,
   writeSync,
 } from 'node:fs';
 import path from 'node:path';
@@ -68,13 +68,15 @@ export async function acquireCrossProcessLock(lockPath: string, opts: LockOption
       const fd = openSync(lockPath, 'wx', 0o600);
       try {
         writeSync(fd, token);
-      } finally {
+      } catch (error) {
         closeSync(fd);
+        throw error;
       }
       const heartbeat = setInterval(() => {
         try {
           const now = new Date();
-          utimesSync(lockPath, now, now);
+          // Keep heartbeating our inode if another holder replaced the path.
+          futimesSync(fd, now, now);
         } catch {
           /* stolen or removed — release() clears the timer */
         }
@@ -91,6 +93,7 @@ export async function acquireCrossProcessLock(lockPath: string, opts: LockOption
           // lock, the file at this path is THEIRS — unlinking it would hand
           // the lock to a third process while they still hold it.
           try {
+            closeSync(fd);
             if (readFileSync(lockPath, 'utf8') === token) unlinkSync(lockPath);
           } catch {
             /* already gone — nothing to release */
@@ -105,7 +108,8 @@ export async function acquireCrossProcessLock(lockPath: string, opts: LockOption
       try {
         const { mtimeMs } = statSync(lockPath);
         if (Date.now() - mtimeMs > staleMs) takeOverStaleLock(lockPath, staleMs);
-      } catch {
+      } catch (probeError) {
+        if ((probeError as NodeJS.ErrnoException).code !== 'ENOENT') throw probeError;
         /* vanished between EEXIST and stat — retry */
       }
       if (Date.now() > deadline) throw new LockUnavailableError(lockPath);

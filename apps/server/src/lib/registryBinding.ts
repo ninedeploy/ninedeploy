@@ -1,5 +1,5 @@
-import { and, eq, inArray, isNotNull } from 'drizzle-orm';
-import { services, sources, type DB } from '@ninedeploy/db';
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { services, settings, sources, type DB } from '@ninedeploy/db';
 import { audit } from './audit.js';
 import { decrypt } from './crypto.js';
 import { getSettingJson, setSettingJson } from './settings.js';
@@ -141,10 +141,16 @@ export async function boundRegistryHosts(db: DB, sourceId: number): Promise<stri
 
 /** Replace a source's bound hosts (operator action: the sources API). */
 export async function setBoundRegistryHosts(db: DB, sourceId: number, hosts: string[]): Promise<string[]> {
-  const bindings = { ...(await ensureRegistryBindingsInitialised(db)) };
-  bindings[String(sourceId)] = hosts.map(canonicalRegistryHost);
-  await writeBindings(db, bindings);
-  return normalise(bindings)[String(sourceId)] ?? [];
+  const key = String(sourceId);
+  const clean = normalise({ [key]: hosts })[key];
+  if (!clean) return [];
+  await ensureRegistryBindingsInitialised(db);
+  // Update one source atomically so an unrelated edit cannot restore a revoked binding.
+  await db.update(settings).set({
+    value: sql`json_set(CASE WHEN json_type(${settings.value}) = 'object' THEN ${settings.value} ELSE '{}' END, ${`$."${key}"`}, json(${JSON.stringify(clean)}))`,
+    updatedAt: new Date(),
+  }).where(eq(settings.key, REGISTRY_BINDINGS_KEY));
+  return clean;
 }
 
 /**

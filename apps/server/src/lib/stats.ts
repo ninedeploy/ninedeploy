@@ -104,7 +104,7 @@ export async function collectContainerStats(): Promise<Map<string, ContainerStat
 async function diskFor(dir: string): Promise<{ total: number; used: number }> {
   try {
     const out = await capture('df', ['-k', dir]);
-    const line = out.trim().split('\n')[1];
+    const line = out.trim().split('\n').slice(1).join(' ').trim();
     const parts = line?.split(/\s+/);
     if (parts && parts.length >= 3) return { total: Number(parts[1]) * 1024, used: Number(parts[2]) * 1024 };
   } catch {

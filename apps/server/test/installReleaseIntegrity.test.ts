@@ -1,8 +1,10 @@
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import { fixtureBash, fixtureBashPath } from './bashFixture.js';
 
 /**
  * r702: install.sh's release download, executed for real. The REAL
@@ -14,11 +16,10 @@ import { afterAll, describe, expect, it } from 'vitest';
  */
 const installerPath = new URL('../../../install.sh', import.meta.url);
 const installer = readFileSync(installerPath, 'utf8');
-const bashOk = spawnSync('bash', ['-c', 'command -v tar >/dev/null && command -v sha256sum >/dev/null'], { encoding: 'utf8' }).status === 0;
-const toBash = (p: string) => {
-  const res = spawnSync('bash', ['-c', `cygpath -u '${p}' 2>/dev/null || printf '%s' '${p}'`], { encoding: 'utf8' });
-  return res.stdout.trim();
-};
+const bash = fixtureBash(spawnSync);
+const bashOk = spawnSync(bash, ['-c', 'command -v tar >/dev/null && command -v sha256sum >/dev/null'], { encoding: 'utf8' }).status === 0;
+const toBash = (p: string) => fixtureBashPath(spawnSync, p, bash);
+const installerInBash = bashOk ? toBash(fileURLToPath(installerPath)) : '';
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -101,10 +102,16 @@ function run(s: Scenario) {
   }
   writeFileSync(join(root, 'fn.sh'), fetchFunction());
   const version = s.tag.slice(1);
-  const B = (p: string) => toBash(p);
+  // Convert the scenario root once; every asset below it uses the same mount.
+  const rootInBash = toBash(root);
+  const B = (p: string) => {
+    const child = relative(root, p);
+    if (isAbsolute(child) || child === '..' || child.startsWith(`..${sep}`)) return toBash(p);
+    return child ? `${rootInBash}/${child.split(sep).join('/')}` : rootInBash;
+  };
   const script = [
     'set -euo pipefail',
-    `NINEDEPLOY_INSTALL_SOURCE_ONLY=1 . "${B(installerPath.pathname.replace(/^\/([A-Za-z]:)/, '$1'))}"`,
+    `NINEDEPLOY_INSTALL_SOURCE_ONLY=1 . "${installerInBash}"`,
     `. "${B(join(root, 'fn.sh'))}"`,
     // Fixture: a NineDeploy-shaped tree under one top-level directory.
     `mkdir -p "${B(root)}/src/ninedeploy-${s.tag}"`,
@@ -123,6 +130,7 @@ function run(s: Scenario) {
     }[s.sums ?? 'none'],
     s.bundle ? `echo '{}' > "${B(assets)}/SHA256SUMS.sigstore.json"` : ':',
     `export PATH="${B(bin)}:$PATH" FAKE_ASSETS="${B(assets)}" FAKE_LOG="${B(root)}/curl.log" FAKE_COSIGN_LOG="${B(root)}/cosign.log"`,
+    `[ "$(command -v curl)" = "${B(bin)}/curl" ] || exit 90`,
     `: > "${B(root)}/curl.log"`,
     `if fetch_release_tarball "${s.tag}" "${B(root)}/dest"; then echo "RESULT=ok"; else echo "RESULT=unavailable"; fi`,
   ].join('\n');
@@ -130,7 +138,9 @@ function run(s: Scenario) {
   if (s.networkDown) env['FAKE_NETWORK_DOWN'] = '1';
   if (s.cosign === 'bad') env['FAKE_COSIGN_RC'] = '1';
   if (s.cosign === 'old') env['FAKE_COSIGN_OLD'] = '1';
-  const res = spawnSync('bash', ['-c', script], { encoding: 'utf8', env });
+  const res = spawnSync(bash, ['-c', script], { encoding: 'utf8', env, timeout: 30000 });
+  expect(res.error).toBeUndefined();
+  expect(res.status, res.stderr).not.toBe(90);
   const output = `${res.stdout}${res.stderr}`;
   const log = (f: string) => (existsSync(join(root, f)) ? readFileSync(join(root, f), 'utf8') : '');
   return {

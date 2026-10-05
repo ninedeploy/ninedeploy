@@ -98,6 +98,28 @@ describe('manifest init', () => {
     expect(text).toBe('version: "1"\n');
   });
 
+  it('preserves an existing custom filename', async () => {
+    const file = path.join(workDir, 'custom.yml');
+    writeFileSync(file, 'keep existing content\n');
+    h.prompt.mockReset();
+    h.prompt.mockResolvedValueOnce('').mockResolvedValueOnce('custom.yml');
+    await manifestInit(workDir);
+    expect(require('node:fs').readFileSync(file, 'utf8')).toBe('keep existing content\n');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('preserves a target created while the filename prompt was pending', async () => {
+    const file = path.join(workDir, '.ninedeploy');
+    h.prompt.mockReset();
+    h.prompt.mockResolvedValueOnce('').mockImplementationOnce(async () => {
+      writeFileSync(file, 'created by another writer\n');
+      return '.ninedeploy';
+    });
+    await manifestInit(workDir);
+    expect(require('node:fs').readFileSync(file, 'utf8')).toBe('created by another writer\n');
+    expect(process.exitCode).toBe(1);
+  });
+
   it('falls back to .ninedeploy when the filename prompt is left empty', async () => {
     h.prompt.mockReset();
     h.prompt.mockResolvedValueOnce('');   // keep detected kind

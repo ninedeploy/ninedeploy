@@ -76,7 +76,13 @@ export async function manifestInit(cwd: string): Promise<void> {
   const filename = (await prompt('Filename (.ninedeploy, .ninedeploy.yml, …)', '.ninedeploy'))
     .trim() || '.ninedeploy';
   const out = resolve(cwd, filename);
-  writeFileSync(out, yaml, 'utf8');
+  try {
+    writeFileSync(out, yaml, { encoding: 'utf8', flag: 'wx' });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+    error(`A file already exists at ${out}. Refusing to overwrite.`);
+    return;
+  }
 
   success(`Wrote ${filename}`);
   console.log();

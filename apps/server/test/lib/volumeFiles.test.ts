@@ -35,6 +35,13 @@ describe('volume file helpers (pure)', () => {
 });
 
 describe('volume file operations (docker sidecar)', () => {
+  it.each([' config ', ' ', 'a|b'])('preserves the exact filesystem name %j', async (name) => {
+    execMocks.capture.mockResolvedValue(`regular file|1|1786886400|./${name}\n`);
+    const entries = await listVolumeDir('nd-svc-web-data', '');
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.name).toBe(name);
+  });
+
   it('lists a directory via busybox stat (alpine has no find -printf)', async () => {
     execMocks.capture.mockResolvedValue(
       'directory|4096|1786886400|./configs\nregular file|128|1786886401|./app.env\n',

@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { VERSION } from '../../src/version.js';
+import { fixtureBash, runFixtureWrapper } from '../bashFixture.js';
 
 // Mutable config so tests control isProd and every test gets an isolated
 // data dir — mirroring the pattern in resources.test.ts.
@@ -168,7 +169,10 @@ describe('startSelfUpdate', () => {
     // Executes the generated wrapper for real (bash + a fake curl/cosign on
     // PATH): the string checks above cannot tell a working fallback from a typo.
     const realCp = () => vi.importActual<typeof import('node:child_process')>('node:child_process');
-    const hasBash = async () => (await realCp()).spawnSync('bash', ['-c', 'command -v sha256sum >/dev/null']).status === 0;
+    const hasBash = async () => {
+      const cp = await realCp();
+      return cp.spawnSync(fixtureBash(cp.spawnSync), ['-c', 'command -v sha256sum >/dev/null']).status === 0;
+    };
     const RELEASE = 'https://github.com/NineDeploy/NineDeploy/releases/download/v99.0.0';
 
     interface Release {
@@ -228,10 +232,11 @@ describe('startSelfUpdate', () => {
       const lib = await loadLib();
       await lib.startSelfUpdate('v99.0.0', { installDir });
       const cp = await realCp();
-      const PATH = `${cp.spawnSync('bash', ['-c', `cygpath -u '${bin}' 2>/dev/null || echo '${bin}'`]).stdout.toString().trim()}:${process.env.PATH}`;
-      const res = cp.spawnSync('bash', [path.join(stateDir(), 'run-update.sh')], {
-        env: { ...process.env, PATH, ND_SELF_UPDATE_TARGET: 'v99.0.0', ...(release.env ?? {}) },
+      const res = runFixtureWrapper(cp.spawnSync, bin, path.join(stateDir(), 'run-update.sh'), {
+        ...process.env, ND_SELF_UPDATE_TARGET: 'v99.0.0', ...(release.env ?? {}),
       });
+      expect(res.error).toBeUndefined();
+      expect(res.status, res.stderr).not.toBe(90);
       const read = (f: string) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim() : '');
       return {
         status: res.status,

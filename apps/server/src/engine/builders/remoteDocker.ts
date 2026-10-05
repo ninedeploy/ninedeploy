@@ -370,6 +370,7 @@ export function createRemoteDockerBuilder(agent: AgentCall, opts: { pollMs?: num
           // Inspect fails while the container is still being created, and also
           // when the node is briefly unreachable. Both are worth retrying
           // inside the deadline; the last failure is reported on timeout.
+          stable = 0;
           log(`waiting for ${runtime.runtimeId}: ${err instanceof Error ? err.message : String(err)}`);
         }
         await new Promise((resolve) => setTimeout(resolve, pollMs));

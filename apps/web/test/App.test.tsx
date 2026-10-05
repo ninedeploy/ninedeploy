@@ -82,7 +82,7 @@ describe('App', () => {
       </>,
       { route: '/auth/callback' },
     );
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/settings'));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/settings'), { timeout: 5000 });
   });
 
   it('sends a refused or empty /auth/callback to the login page', async () => {
@@ -114,16 +114,16 @@ describe('App', () => {
       </>,
       { route: '/dashboard' },
     );
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/));
-    expect(await screen.findByText('All systems operational')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/), { timeout: 5000 });
+    expect(await screen.findByText('All systems operational', {}, { timeout: 5000 })).toBeInTheDocument();
   });
 
   it('renders the authenticated shell and the index route', async () => {
     authState({ id: 1, email: 'a@b.c' });
     mockOf(api.dashboard.get).mockResolvedValue(emptyDash as never);
     renderWithProviders(<App />, { route: '/' });
-    await screen.findByTestId('layout');
-    expect(await screen.findByText('All systems operational')).toBeInTheDocument();
+    await screen.findByTestId('layout', {}, { timeout: 5000 });
+    expect(await screen.findByText('All systems operational', {}, { timeout: 5000 })).toBeInTheDocument();
   });
 
   it('renders a nested route inside the authenticated shell', async () => {

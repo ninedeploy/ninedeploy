@@ -8,9 +8,9 @@
  * Two predicates:
  *   - `isManagedNetwork(name)` — names NineDeploy creates and re-attaches every
  *     service to. Deletion would break the shared mesh and the panel's DNS.
- *   - `isManagedContainer(name)` — prefixes NineDeploy uses for app/database
- *     containers, plus the panel's own containers. Detaching these from a
- *     network can break routing or the service's own DB link.
+ *   - `isManagedContainer(name)` — reserved legacy prefixes and panel names.
+ *     Current app runtimes also need a placement-record ownership check in
+ *     the caller; their slug-deploymentId names are not a reserved namespace.
  *
  * Use the typed error `ManagedNamespaceError` for 409s so the audit log and
  * the UI message line up.
@@ -48,7 +48,7 @@ export function isManagedNetwork(name: string): boolean {
   return false;
 }
 
-/** True when the given Docker container name is owned by NineDeploy. */
+/** Reserved managed name; current runtime ownership also needs placement context. */
 export function isManagedContainer(name: string): boolean {
   if (MANAGED_CONTAINER_LITERALS.has(name)) return true;
   return MANAGED_CONTAINER_PREFIXES.some((re) => re.test(name));

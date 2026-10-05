@@ -1,5 +1,5 @@
 ﻿import Fastify from 'fastify';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 
 const runnerMock = vi.hoisted(() => ({ runJob: vi.fn(async () => undefined) }));
 vi.mock('../../src/lib/jobRunner.js', () => runnerMock);
@@ -26,6 +26,7 @@ function makeDb(jobs: Array<Record<string, unknown>>) {
 }
 
 describe('job scheduler plugin', () => {
+  afterEach(() => vi.useRealTimers());
   beforeEach(() => {
     vi.clearAllMocks();
     CronMock.instances.length = 0;
@@ -108,15 +109,17 @@ describe('job scheduler plugin', () => {
     await vi.advanceTimersByTimeAsync(5 * 60 * 1000); // reload starts, gated
     expect(releaseGate).toBeTruthy();
     await app.close(); // stopped = true while the reload query pends
+    runnerMock.runJob.mockClear();
     releaseGate!(); // armJobs settles → scheduleReload sees stopped → returns
     await vi.advanceTimersByTimeAsync(0); // flush the gated reload
 
-    // The in-flight reload may finish arming (2nd Cron), but nothing further:
-    const armed = CronMock.Cron.mock.calls.length;
+    // The pending query must not install a new cron or run a job after close.
+    expect(CronMock.Cron).toHaveBeenCalledTimes(1);
+    expect(runnerMock.runJob).not.toHaveBeenCalled();
     const queried = calls;
     await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
-    expect(CronMock.Cron.mock.calls.length).toBe(armed);
+    expect(CronMock.Cron).toHaveBeenCalledTimes(1);
+    expect(runnerMock.runJob).not.toHaveBeenCalled();
     expect(calls).toBe(queried);
-    vi.useRealTimers();
   });
 });

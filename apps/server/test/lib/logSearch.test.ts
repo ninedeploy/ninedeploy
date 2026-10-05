@@ -440,6 +440,7 @@ describe('lib/logSearch', () => {
     });
 
     it('accepts an enabled drain that is global or bound to the queried service', async () => {
+      state.services.set(1, { id: 1, slug: 'web' });
       for (const serviceId of [null, 1]) {
         state.drains.clear();
         state.captured = [];
@@ -453,6 +454,7 @@ describe('lib/logSearch', () => {
 
     it("skips another service's drain when picking the default", async () => {
       const db = buildDb();
+      state.services.set(1, { id: 1, slug: 'web' });
       state.drains.set(1, { id: 1, name: 'tenant-b', type: 'loki', enabled: true, url: 'https://loki-b.example.com', apiKeyEncrypted: 'kb', serviceId: 99 });
       state.drains.set(2, { id: 2, name: 'global', type: 'loki', enabled: true, url: 'https://loki-g.example.com', apiKeyEncrypted: null, serviceId: null });
       const result = await searchLogs(db, { query: 'x', serviceId: 1, restrictToServiceId: 1 });

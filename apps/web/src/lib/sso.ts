@@ -124,9 +124,8 @@ let pending: SsoFragmentResult | null = null;
 export function takeSsoFragment(): SsoFragmentResult {
   if (typeof window === 'undefined') return NONE;
   const { hash, pathname, search } = window.location;
-  if (!hash.includes('access_token=')) return pending ?? NONE;
-
   const params = new URLSearchParams(hash.replace(/^#/, ''));
+  if (!params.has('access_token')) return pending ?? NONE;
   // Never leave tokens in the URL — accepted or not.
   window.history.replaceState(null, '', pathname + search);
   const expected = takeStoredNonce();

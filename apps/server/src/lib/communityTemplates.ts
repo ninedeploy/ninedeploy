@@ -154,7 +154,15 @@ export async function importCommunityTemplate(
   }
   // Pretty-print so the file is diffable when the
   // operator reviews the community contribution.
-  await writeFile(path, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8');
+  // Concurrent imports can both pass the absence check; only one may create.
+  await writeFile(path, `${JSON.stringify(parsed, null, 2)}\n`, {
+    encoding: 'utf8', flag: opts.replace ? 'w' : 'wx',
+  }).catch((err: unknown) => {
+    if (!opts.replace && (err as NodeJS.ErrnoException).code === 'EEXIST') {
+      throw new Error(`Template "${t.id}" already exists; pass replace: true to overwrite`);
+    }
+    throw err;
+  });
   return { id: t.id, file, bytes: rawJson.length };
 }
 

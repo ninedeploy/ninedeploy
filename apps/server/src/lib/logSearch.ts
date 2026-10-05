@@ -21,6 +21,7 @@
 import { eq } from 'drizzle-orm';
 import { logDrains, services, type DB, type LogDrain } from '@ninedeploy/db';
 import { decrypt } from './crypto.js';
+import { notFound } from './errors.js';
 
 export interface LogSearchOptions {
   /** Free-text search (case-insensitive substring). */
@@ -80,6 +81,7 @@ export async function searchLogs(
   const until = new Date();
   const limit = Math.min(Math.max(opts.limit ?? 200, 1), 1000);
   const serviceLabel = await resolveServiceLabel(db, opts.serviceId);
+  if (opts.restrictToServiceId !== undefined && !serviceLabel) throw notFound('Service not found');
   const lokiQuery = serviceLabel
     ? `{service="${serviceLabel}"} |= "${escapeLoki(opts.query)}"`
     : `{job="ninedeploy"} |= "${escapeLoki(opts.query)}"`;

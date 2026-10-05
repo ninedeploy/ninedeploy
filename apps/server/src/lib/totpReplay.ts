@@ -35,6 +35,7 @@ export async function consumeTotpCode(
     .where(
       and(
         eq(users.id, user.id),
+        eq(users.totpSecretEncrypted, user.totpSecretEncrypted),
         // strictly newer than whatever was last spent; NULL = nothing spent yet
         or(isNull(users.totpLastStep), lt(users.totpLastStep, sql`${step}`)),
       ),

@@ -29,6 +29,16 @@ function lokiLabels(entry: LogPayloadEntry): Record<string, string> {
   };
 }
 
+function lokiTimestamp(timestamp: string): string {
+  const parsed = Date.parse(timestamp);
+  const ms = Number.isFinite(parsed) ? parsed : Date.now();
+  const fraction = Number.isFinite(parsed)
+    ? /\.(\d+)(?:Z|[+-]\d{2}:?\d{2})$/i.exec(timestamp)?.[1] ?? ''
+    : '';
+  const remainder = fraction.padEnd(9, '0').slice(3, 9);
+  return String(BigInt(ms) * 1_000_000n + BigInt(remainder));
+}
+
 /** Several entries as ONE request body (the shipper's unit of delivery). */
 export function formatLogBatch(
   type: LogDrainType,
@@ -40,7 +50,7 @@ export function formatLogBatch(
     for (const e of entries) {
       const labels = lokiLabels(e);
       const key = JSON.stringify(labels);
-      const nano = String(Date.parse(e.timestamp) * 1_000_000 || Date.now() * 1_000_000);
+      const nano = lokiTimestamp(e.timestamp);
       const s = streams.get(key) ?? { stream: labels, values: [] };
       s.values.push([nano, e.line]);
       streams.set(key, s);
@@ -68,7 +78,7 @@ export function formatLogPayload(
   entry: LogPayloadEntry,
 ): { body: string; contentType: string } {
   if (type === 'loki') {
-    const nano = String(Date.parse(entry.timestamp) * 1_000_000 || Date.now() * 1_000_000);
+    const nano = lokiTimestamp(entry.timestamp);
     const body = JSON.stringify({
       streams: [
         {
@@ -81,6 +91,7 @@ export function formatLogPayload(
   }
 
   if (type === 'datadog') {
+    const parsed = Date.parse(entry.timestamp);
     const body = JSON.stringify([
       {
         ddsource: 'ninedeploy',
@@ -88,7 +99,7 @@ export function formatLogPayload(
         hostname: entry.container,
         message: entry.line,
         status: entry.stream === 'stderr' ? 'warn' : 'info',
-        date: Date.parse(entry.timestamp) || Date.now(),
+        date: Number.isFinite(parsed) ? parsed : Date.now(),
       },
     ]);
     return { body, contentType: 'application/json' };

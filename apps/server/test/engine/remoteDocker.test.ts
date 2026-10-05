@@ -358,6 +358,22 @@ describe('remote docker builder — runtime shape', () => {
 describe('remote docker builder — health and teardown', () => {
   const runtime = { runtimeId: 'web-7', port: 3000, healthPath: '/' };
 
+  it.each([
+    { samples: ['running|none|0|0', null, 'running|none|0|0', null, 'running|none|0|0', 'exited|none|0|0'], healthy: false, inspects: 6 },
+    { samples: ['running|none|0|0', null, 'running|none|0|0', 'running|none|0|0', 'running|none|0|0'], healthy: true, inspects: 5 },
+  ])('requires consecutive healthy samples after an inspect failure ($healthy)', async ({ samples, healthy, inspects }) => {
+    let index = 0;
+    const agent: AgentCall = async (op) => {
+      if (op !== 'docker.inspect') return { exitCode: 0, lines: [] };
+      const sample = samples[Math.min(index++, samples.length - 1)];
+      if (sample == null) throw new Error('node offline');
+      return { exitCode: 0, lines: [sample] };
+    };
+
+    await expect(createRemoteDockerBuilder(agent, { pollMs: 1 }).isHealthy(runtime, 5000)).resolves.toBe(healthy);
+    expect(index).toBe(inspects);
+  });
+
   it('reports healthy once the node says the container is running', async () => {
     const { agent } = fakeAgent();
     await expect(createRemoteDockerBuilder(agent, { pollMs: 1 }).isHealthy(runtime, 5000)).resolves.toBe(true);

@@ -19,8 +19,8 @@ export class NineDeployError extends Error {
     const err = (body as ApiErrorBody | null)?.error;
     return new NineDeployError(
       status,
-      err?.code ?? 'unknown_error',
-      err?.message ?? `Request failed with status ${status}`,
+      typeof err?.code === 'string' ? err.code : 'unknown_error',
+      typeof err?.message === 'string' ? err.message : `Request failed with status ${status}`,
       err?.details,
     );
   }

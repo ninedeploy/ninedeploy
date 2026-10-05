@@ -47,5 +47,6 @@ export function parseImageRef(image: string): ImageRef | null {
   }
   if (!rest || !tag) return null;
   if (!/^[a-z0-9._/-]+$/.test(rest) || !/^[A-Za-z0-9_.-]+$/.test(tag)) return null;
+  if (isDockerHub(registry) && !rest.includes('/')) rest = `library/${rest}`;
   return { registry, repository: rest, tag };
 }

@@ -148,13 +148,15 @@ export async function pruneImages(opts: PruneOptions = {}): Promise<PruneResult>
 
   // 1. Dangling-only path.
   if (danglingOnly) {
+    // Docker has no dry-run: simulate with the same explicit candidate filters.
     // When keepLast is set, docker image prune -f cannot honour the keep window —
     // it has no --keep-last equivalent. Filter dangling candidates client-side
     // and delete only the unprotected ones via docker image rm.
-    if (keepLast > 0) {
-      const dangling = images.filter(img => img.repository === '<none>');
+    if (dryRun || keepLast > 0) {
+      const dangling = images.filter(img => img.dangling);
       dangling.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      const toDelete = keepLast < dangling.length ? dangling.slice(keepLast) : [];
+      const toDelete = (keepLast < dangling.length ? dangling.slice(keepLast) : [])
+        .filter(img => !img.inUse && (olderThanHours <= 0 || img.ageHours >= olderThanHours));
       const freedBytes = toDelete.reduce((sum, img) => sum + parseHumanBytes(img.size), 0);
       const removed: string[] = [];
       if (!dryRun && toDelete.length > 0) {
@@ -165,7 +167,13 @@ export async function pruneImages(opts: PruneOptions = {}): Promise<PruneResult>
           throw new Error(`docker image rm failed: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
-      return { freedBytes, removed, removedLabels: [], dryRun, output: '' };
+      return {
+        freedBytes,
+        removed: dryRun ? toDelete.map(img => img.id) : removed,
+        removedLabels: dryRun ? toDelete.map(img => `${img.repository}:${img.tag}`) : [],
+        dryRun,
+        output: dryRun ? `dryRun: would remove ${toDelete.length} images (${formatBytes(freedBytes)})` : '',
+      };
     }
 
     // keepLast === 0: the simple prune path is correct.

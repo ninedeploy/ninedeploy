@@ -95,21 +95,21 @@ export function TagScopeProvider({ children }: { children: ReactNode }) {
   // Drop a chip whose target was deleted. We resolve the live sets lazily:
   // workspaces, projects, labels. Each is queried only when the dimension
   // has at least one selection.
-  const { data: workspaces = [] } = useQuery({
+  const { data: workspaces } = useQuery({
     queryKey: ['workspaces'],
     queryFn: async () => (await api.workspaces.list()) ?? [],
   });
-  const { data: projects = [] } = useQuery({
+  const { data: projects } = useQuery({
     queryKey: ['projects'],
     queryFn: async () => (await api.projects.list()) ?? [],
   });
-  const { data: labels = [] } = useQuery({
+  const { data: labels } = useQuery({
     queryKey: ['labels'],
     queryFn: async () => (await api.labels.list()) ?? [],
   });
 
   useEffect(() => {
-    if (workspaceIds.length > 0 && workspaces.length > 0) {
+    if (workspaceIds.length > 0 && workspaces != null) {
       const live = new Set(workspaces.map((w: Workspace) => w.id));
       if (workspaceIds.some((id) => !live.has(id))) {
         setWorkspaceIdsRaw(workspaceIds.filter((id) => live.has(id)));
@@ -117,7 +117,7 @@ export function TagScopeProvider({ children }: { children: ReactNode }) {
     }
   }, [workspaces, workspaceIds]);
   useEffect(() => {
-    if (projectIds.length > 0 && projects.length > 0) {
+    if (projectIds.length > 0 && projects != null) {
       const live = new Set(projects.map((p: ProjectEntry) => p.id));
       if (projectIds.some((id) => !live.has(id))) {
         setProjectIdsRaw(projectIds.filter((id) => live.has(id)));
@@ -125,7 +125,7 @@ export function TagScopeProvider({ children }: { children: ReactNode }) {
     }
   }, [projects, projectIds]);
   useEffect(() => {
-    if (labelIds.length > 0 && labels.length > 0) {
+    if (labelIds.length > 0 && labels != null) {
       const live = new Set(labels.map((l: Label) => l.id));
       if (labelIds.some((id) => !live.has(id))) {
         setLabelIdsRaw(labelIds.filter((id) => live.has(id)));

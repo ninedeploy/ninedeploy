@@ -143,5 +143,6 @@ function appendText(stack: XmlElement[], text: string): void {
   if (!text) return;
   const top = stack[stack.length - 1];
   if (!top) return;
+  if (text.includes('<')) throw new Error('XML parse error: malformed tag');
   top.text += decodeXmlEntities(text);
 }

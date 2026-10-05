@@ -37,11 +37,12 @@ export function installPanelAutofillGuard(root: ParentNode): () => void {
   hardenTree(root);
   const observer = new MutationObserver((records) => {
     for (const record of records) {
+      if (record.type === 'attributes' && record.target instanceof Element) hardenTree(record.target);
       for (const node of record.addedNodes) {
         if (node instanceof Element) hardenTree(node);
       }
     }
   });
-  observer.observe(root, { childList: true, subtree: true });
+  observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['type'] });
   return () => observer.disconnect();
 }

@@ -28,19 +28,18 @@ const MULTIPART_THRESHOLD = 64 * 1024 * 1024;
 const sha256Hex = (data: Buffer | string): string => createHash('sha256').update(data).digest('hex');
 const hmac = (key: Buffer | string, data: string): Buffer => createHmac('sha256', key).update(data).digest();
 
-function uriEncode(s: string): string {
-  // Keep `/` literal (path separators in the object key); percent-encode
-  // everything else that is not URL-safe, including the reserved !'()* set.
-  return encodeURIComponent(s)
-    .replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
-    .replace(/%2F/g, '/');
+function uriEncode(s: string, encodeSlash = false): string {
+  // Only object keys keep `/` literal; query names and values encode it.
+  const encoded = encodeURIComponent(s)
+    .replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  return encodeSlash ? encoded : encoded.replace(/%2F/g, '/');
 }
 
 /** Canonical (sorted, URI-encoded) query string for SigV4; '' when empty. */
 function canonicalQueryString(query?: URLSearchParams): string {
   if (!query || [...query.keys()].length === 0) return '';
   return [...query.entries()]
-    .map(([k, v]) => [uriEncode(k), uriEncode(v)] as const)
+    .map(([k, v]) => [uriEncode(k, true), uriEncode(v, true)] as const)
     .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
     .map(([k, v]) => `${k}=${v}`)
     .join('&');

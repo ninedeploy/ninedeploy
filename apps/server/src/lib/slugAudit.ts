@@ -134,7 +134,7 @@ export function auditSlugRows(table: SlugTable, rows: readonly SlugRow[]): SlugV
   const out: SlugViolation[] = [];
   for (const row of rows) {
     if (isCanonicalSlug(row.slug)) continue;
-    const others = new Set(rows.filter((r) => r.id !== row.id && r.slug).map((r) => r.slug as string));
+    const others = dockerBound ? null : new Set(rows.filter((r) => r.id !== row.id && r.slug).map((r) => r.slug as string));
     out.push({
       table,
       id: row.id,
@@ -143,7 +143,7 @@ export function auditSlugRows(table: SlugTable, rows: readonly SlugRow[]): SlugV
       // A Docker-bound slug cannot be repaired by moving the row alone: the
       // bridge, container and volume still carry the old name. Report it, never
       // silently half-rename it.
-      recommended: dockerBound ? null : proposeRepair(row, others),
+      recommended: others ? proposeRepair(row, others) : null,
       dockerBound,
     });
   }

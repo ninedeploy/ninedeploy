@@ -24,12 +24,12 @@ export function useDeployLogs(serviceId: number | null, deploymentId: number | n
   const linesRef = useRef('');
 
   useEffect(() => {
-    if (serviceId == null || deploymentId == null) return;
-    activeId.current = deploymentId;
     chunksRef.current = [];
     linesRef.current = '';
     setLines('');
     setOpen(false);
+    if (serviceId == null || deploymentId == null) return;
+    activeId.current = deploymentId;
 
     let ws: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;

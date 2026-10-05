@@ -1,5 +1,8 @@
 import { z } from 'zod';
+import { and, eq, isNull } from 'drizzle-orm';
+import { services, serviceTargets, type DB } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
+import { replicaNames } from '../engine/dockerNames.js';
 import { run } from '../lib/exec.js';
 import { agentOp } from '../lib/agentClient.js';
 import { listUserNetworks, networkMembers } from '../lib/inventory.js';
@@ -53,6 +56,29 @@ function guardManaged(network: string, container?: string): void {
       'container',
       container,
       `Container '${container}' is managed by NineDeploy and cannot be attached/detached from user networks.`,
+    );
+  }
+}
+
+/** Current runtime names are placement records, not a reserved-name prefix. */
+async function guardManagedRuntime(db: DB, input: z.infer<typeof attachBody>): Promise<void> {
+  const serverId = input.serverId ?? null;
+  const rows = await db.query.services.findMany({
+    columns: { runtimeId: true, runtimeReplicas: true },
+    where: and(eq(services.type, 'docker'), serverId === null ? isNull(services.serverId) : eq(services.serverId, serverId)),
+  });
+  const primary = rows.some((row) => row.runtimeId && replicaNames(row.runtimeId, row.runtimeReplicas).includes(input.container));
+  const target = !primary && serverId !== null
+    ? await db.query.serviceTargets.findFirst({
+      columns: { id: true },
+      where: and(eq(serviceTargets.serverId, serverId), eq(serviceTargets.runtimeId, input.container)),
+    })
+    : undefined;
+  if (primary || target) {
+    throw new ManagedNamespaceError(
+      'container',
+      input.container,
+      `Container '${input.container}' is managed by NineDeploy and cannot be attached/detached from user networks.`,
     );
   }
 }
@@ -159,6 +185,7 @@ export const networkRoutes: FastifyPluginAsync = async (app) => {
     const input = attachBody.parse(req.body);
     try {
       guardManaged(input.network, input.container);
+      await guardManagedRuntime(app.db, input);
       if (input.serverId != null) {
         await agentOr400(agentOp(app.db, input.serverId, 'docker.networkConnect', {
           network: input.network,
@@ -185,6 +212,7 @@ export const networkRoutes: FastifyPluginAsync = async (app) => {
     const input = attachBody.parse(req.body);
     try {
       guardManaged(input.network, input.container);
+      await guardManagedRuntime(app.db, input);
       if (input.serverId != null) {
         await agentOr400(agentOp(app.db, input.serverId, 'docker.networkDisconnect', {
           network: input.network,

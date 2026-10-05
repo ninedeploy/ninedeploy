@@ -41,13 +41,16 @@ class LogBus extends EventEmitter {
     const buf = Buffer.alloc(maxBytes);
     const fd = openSync(file, 'r');
     let read: number;
+    let startsAtLineBoundary: boolean;
     try {
+      const previous = Buffer.alloc(1);
+      startsAtLineBoundary = readSync(fd, previous, 0, 1, size - maxBytes - 1) === 1 && previous[0] === 10;
       read = readSync(fd, buf, 0, maxBytes, size - maxBytes);
     } finally {
       closeSync(fd);
     }
     const tail = buf.subarray(0, read);
-    const firstLine = tail.indexOf(10);
+    const firstLine = startsAtLineBoundary ? -1 : tail.indexOf(10);
     const text = (firstLine === -1 ? tail : tail.subarray(firstLine + 1)).toString('utf8');
     return `… ${size - (read - (firstLine + 1))} earlier bytes of this log omitted — download the full log to see them\n${text}`;
   }

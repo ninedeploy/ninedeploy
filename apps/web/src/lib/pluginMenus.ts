@@ -29,7 +29,8 @@ export function usePluginMenus() {
         const res: unknown = await api.menus.list();
         // Tolerates a bare array (pre-kernel servers answered with one).
         if (Array.isArray(res)) return res as PluginMenuItem[];
-        return (res as { items?: PluginMenuItem[] } | null)?.items ?? [];
+        const items = (res as { items?: unknown } | null)?.items;
+        return Array.isArray(items) ? items as PluginMenuItem[] : [];
       } catch {
         return [];
       }

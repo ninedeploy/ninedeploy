@@ -153,7 +153,8 @@ export function isReplayedDelivery(
   // pins the other (a fresh id on an old body must not become reusable).
   let replayed = false;
   for (const key of keys) {
-    if (seenDeliveries.has(key)) replayed = true;
+    const seenAt = seenDeliveries.get(key);
+    if (seenAt !== undefined && now - seenAt <= REPLAY_WINDOW_MS) replayed = true;
     seenDeliveries.set(key, now);
   }
   return replayed;

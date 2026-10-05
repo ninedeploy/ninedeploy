@@ -15,9 +15,10 @@ interface CfResponse<T> {
   success: boolean;
   errors: Array<{ message: string }>;
   result: T;
+  result_info?: { total_pages?: number };
 }
 
-async function cf<T>(path: string, token: string, init?: RequestInit): Promise<T> {
+async function cfEnvelope<T>(path: string, token: string, init?: RequestInit): Promise<CfResponse<T>> {
   const res = await fetch(`${API}${path}`, {
     ...init,
     headers: {
@@ -31,7 +32,11 @@ async function cf<T>(path: string, token: string, init?: RequestInit): Promise<T
   if (!res.ok || !body.success) {
     throw new Error(`Cloudflare API error: ${body.errors?.map((e) => e.message).join('; ') || res.status}`);
   }
-  return body.result;
+  return body;
+}
+
+async function cf<T>(path: string, token: string, init?: RequestInit): Promise<T> {
+  return (await cfEnvelope<T>(path, token, init)).result;
 }
 
 /**
@@ -86,14 +91,20 @@ export async function testCloudflareToken(token: string): Promise<string> {
  * set without re-implementing the request shape.
  */
 export async function listCloudflareZones(token: string): Promise<DomainZone[]> {
-  return cf<DomainZone[]>('/zones?per_page=50', token);
+  const first = await cfEnvelope<DomainZone[]>('/zones?per_page=50', token);
+  const zones = [...first.result];
+  for (let page = 2; page <= (first.result_info?.total_pages ?? 1); page++) {
+    const next = await cfEnvelope<DomainZone[]>(`/zones?per_page=50&page=${page}`, token);
+    zones.push(...next.result);
+  }
+  return zones;
 }
 
 /** Resolve a hostname's zone: prefer exact match, then the longest suffix match
  *  (with nested zones like example.com + dev.example.com, the most specific
  *  zone must win or records land in the wrong one). */
 export async function findZoneId(token: string, hostname: string): Promise<string | null> {
-  const zones = await cf<Array<{ id: string; name: string }>>('/zones?per_page=50', token);
+  const zones = await listCloudflareZones(token);
   const exact = zones.find((z) => hostname === z.name);
   if (exact) return exact.id;
   const matches = zones

@@ -1,6 +1,6 @@
 import { createReadStream, createWriteStream, renameSync, unlinkSync } from 'node:fs';
 import { open } from 'node:fs/promises';
-import { Transform } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createBackupCipher, createBackupDecipher, reencrypt as reencryptSecret } from './crypto.js';
 
@@ -151,7 +151,9 @@ export async function decryptBackupFile(file: string, outputPath: string): Promi
   const decipher = createBackupDecipher(header, authTag);
   const output = createWriteStream(outputPath, { mode: 0o600 });
   try {
-    await pipeline(createReadStream(file, { start: dataStart, end: dataEnd }), decipher, output);
+    // Empty plaintext has only a header and tag; still authenticate the tag.
+    const input = dataEnd === dataStart - 1 ? Readable.from([]) : createReadStream(file, { start: dataStart, end: dataEnd });
+    await pipeline(input, decipher, output);
   } catch (error) {
     // Authentication is checked at the end of the stream; discard any
     // plaintext emitted before a corrupt tag or write failure was detected.

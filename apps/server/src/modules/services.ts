@@ -446,6 +446,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         cpuLimitMilli: input.cpuLimitMilli ?? 0,
         memLimitMb: input.memLimitMb ?? 0,
         replicas: input.replicas ?? 1,
+        healthPath: input.healthPath ?? '/',
         port: input.port ?? null,
         publishedPort: input.publishedPort ?? null,
         cmd: template?.cmd ?? null,

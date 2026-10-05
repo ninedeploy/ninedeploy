@@ -311,7 +311,7 @@ export async function getContainerComposeManifest(container: string): Promise<{
   if (inspect.mounts.length > 0) {
     lines.push(`    volumes:`);
     for (const m of inspect.mounts) {
-      lines.push(`      - ${m.source}:${m.destination}${m.rw ? '' : ':ro'}`);
+      lines.push(`      - ${JSON.stringify(`${m.source}:${m.destination}${m.rw ? '' : ':ro'}`)}`);
     }
   }
 

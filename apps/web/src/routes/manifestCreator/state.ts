@@ -153,8 +153,12 @@ export function useManifestForm() {
  */
 export function loadActiveSection(valid: ReadonlyArray<string>): string | null {
   if (typeof window === 'undefined') return null;
-  const id = window.localStorage.getItem(SECTION_KEY);
-  return id != null && valid.includes(id) ? id : null;
+  try {
+    const id = window.localStorage.getItem(SECTION_KEY);
+    return id != null && valid.includes(id) ? id : null;
+  } catch {
+    return null;
+  }
 }
 
 export function saveActiveSection(id: string): void {

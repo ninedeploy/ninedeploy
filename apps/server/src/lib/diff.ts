@@ -14,6 +14,9 @@ export function diffLines(a: readonly string[], b: readonly string[]): DiffOp[] 
   if (n > 2000 || m > 2000) {
     return [...a.map((line) => ({ kind: 'del' as const, line })), ...b.map((line) => ({ kind: 'add' as const, line }))];
   }
+  if (n === m && a.every((line, i) => line === b[i])) {
+    return a.map((line) => ({ kind: 'same' as const, line }));
+  }
   const table: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {

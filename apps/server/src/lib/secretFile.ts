@@ -38,7 +38,16 @@ export interface SecretFile {
 export function writeSecretFile(prefix: string, name: string, contents: string, mode = 0o600): SecretFile {
   const dir = mkdtempSync(path.join(tmpdir(), `${prefix}-`));
   const file = path.join(dir, name);
-  writeFileSync(file, contents, { mode });
+  try {
+    writeFileSync(file, contents, { mode });
+  } catch (error) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* preserve the original write error */
+    }
+    throw error;
+  }
   return {
     path: file,
     cleanup: () => {

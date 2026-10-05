@@ -24,6 +24,7 @@ export default fp(
       } catch {
         return; // table might not exist yet (pre-migration)
       }
+      if (stopped) return; // close() may have run while the query was pending.
       for (const job of jobs) {
         try {
           const cron = new Cron(job.cron, { name: `job-${job.id}`, unref: true }, () => {

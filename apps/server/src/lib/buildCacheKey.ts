@@ -32,7 +32,7 @@ export function buildCacheKey(inputs: BuildCacheKeyInputs): string {
     `commit:${inputs.commitSha ?? 'no-commit'}`,
     `last:${inputs.lastBuildDigest ?? 'no-prev'}`,
   ];
-  const fingerprint = createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 24);
+  const fingerprint = createHash('sha256').update(JSON.stringify(parts)).digest('hex').slice(0, 24);
   return `ndbuild:${fingerprint}`;
 }
 

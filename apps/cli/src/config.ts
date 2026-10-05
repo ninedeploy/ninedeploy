@@ -1,5 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 const CONFIG_DIR = path.join(homedir(), '.ninedeploy');
@@ -33,7 +34,7 @@ export function saveConfig(config: CliConfig): void {
   // Temp-file + rename: a crash mid-write must never leave a half-written
   // config behind (the previous direct write could, logging the user out on
   // the next command with no explanation).
-  const tmp = `${CONFIG_FILE}.tmp`;
+  const tmp = `${CONFIG_FILE}.${randomUUID()}.tmp`;
   writeFileSync(tmp, JSON.stringify(config, null, 2), { mode: 0o600 });
   try {
     renameSync(tmp, CONFIG_FILE);

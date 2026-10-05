@@ -85,7 +85,7 @@ export async function listVolumeDir(
     if (!line.trim()) continue;
     const [type, size, mtime, ...nameParts] = line.split('|');
     // split('/').pop() is undefined only for an empty array — join output is never empty here.
-    const name = nameParts.join('|').split('/').pop()!.trim();
+    const name = nameParts.join('|').split('/').pop()!;
     if (!name) continue;
     if (type === 'directory') entries.push({ name, type: 'dir', sizeBytes: Number(size) || 0, modifiedAt: toIso(mtime) });
     else if (type === 'regular file') entries.push({ name, type: 'file', sizeBytes: Number(size) || 0, modifiedAt: toIso(mtime) });

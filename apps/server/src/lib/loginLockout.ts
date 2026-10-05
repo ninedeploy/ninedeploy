@@ -64,7 +64,10 @@ export function lockoutSource(ip: string): string {
   const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(ip);
   if (mapped) return mapped[1]!;
   if (!isIPv6(ip)) return ip;
-  const addr = ip.split('%')[0]!.toLowerCase();
+  let addr = ip.split('%')[0]!.toLowerCase();
+  // A dotted IPv4 tail occupies two IPv6 groups, including expanded mapped forms.
+  addr = addr.replace(/(\d+)\.(\d+)\.(\d+)\.(\d+)$/, (_match, a, b, c, d) =>
+    `${((Number(a) << 8) | Number(b)).toString(16)}:${((Number(c) << 8) | Number(d)).toString(16)}`);
   const doubleColon = addr.indexOf('::');
   let groups: string[];
   if (doubleColon === -1) {
@@ -72,9 +75,12 @@ export function lockoutSource(ip: string): string {
   } else {
     const head = addr.slice(0, doubleColon).split(':').filter(Boolean);
     const tail = addr.slice(doubleColon + 2).split(':').filter(Boolean);
-    // A dotted-quad tail occupies two groups; it never reaches the /64 prefix
-    // except as zero padding, so counting it as one only shifts zeros.
     groups = [...head, ...Array(Math.max(0, 8 - head.length - tail.length)).fill('0'), ...tail];
+  }
+  if (groups.length === 8 && groups.slice(0, 5).every((g) => parseInt(g, 16) === 0) && parseInt(groups[5]!, 16) === 0xffff) {
+    const high = parseInt(groups[6]!, 16);
+    const low = parseInt(groups[7]!, 16);
+    return [high >> 8, high & 255, low >> 8, low & 255].join('.');
   }
   return `${groups.slice(0, 4).map((g) => parseInt(g, 16).toString(16)).join(':')}::/64`;
 }

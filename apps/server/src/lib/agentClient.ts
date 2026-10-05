@@ -139,7 +139,7 @@ export function tokenMatches(rawToken: string, storedSha256: string): boolean {
  * broken probe from poisoning every later decision. Exported for tests, which
  * need to reset it between cases.
  */
-const sealedSupport = new Map<number, boolean>();
+const sealedSupport = new Map<number, { host: string; port: number }>();
 export const _resetSealedSupportCache = (): void => void sealedSupport.clear();
 
 /**
@@ -160,7 +160,7 @@ const cleartextFallbackAllowed = (): boolean =>
 /** Ask an agent whether it speaks the sealed protocol (cached per server). */
 async function supportsSealed(serverId: number, host: string, port: number): Promise<boolean> {
   const cached = sealedSupport.get(serverId);
-  if (cached !== undefined) return cached;
+  if (cached?.host === host && cached.port === port) return true;
   try {
     const res = await fetch(`http://${host}:${port}/agent/ping`, { signal: AbortSignal.timeout(5000) });
     if (!res.ok) return false;
@@ -170,7 +170,7 @@ async function supportsSealed(serverId: number, host: string, port: number): Pro
     // probe) must not pin this server to anything for the rest of the
     // process's life — with the fallback off by default, a forged `false`
     // just fails this one operation closed and the next call re-probes.
-    if (supported) sealedSupport.set(serverId, true);
+    if (supported) sealedSupport.set(serverId, { host, port });
     return supported;
   } catch {
     // Unreachable right now just means "cannot confirm"; the operation itself

@@ -1,5 +1,5 @@
 ﻿import { describe, expect, it, vi } from 'vitest';
-import { dispatchLogToDrain, formatLogPayload, testLogDrainConnection } from '../../src/engine/logDrainManager.js';
+import { dispatchLogToDrain, formatLogBatch, formatLogPayload, testLogDrainConnection } from '../../src/engine/logDrainManager.js';
 
 /** Fake drain API keys, assembled at runtime so secret scanners cannot misread
  * TEST-ONLY values as leaked ones. */
@@ -17,6 +17,17 @@ describe('logDrainManager engine', () => {
     line: 'GET /api/v1/health 200 OK 4ms',
     stream: 'stdout' as const,
   };
+
+  it.each([0, 1, -1])('preserves timestamp %i in single and batch payloads', (ms) => {
+    const entry = { ...sampleEntry, timestamp: new Date(ms).toISOString() };
+    const expected = String(BigInt(ms) * 1_000_000n);
+    const single = JSON.parse(formatLogPayload('loki', 'json', entry).body);
+    const batch = JSON.parse(formatLogBatch('loki', 'json', [entry]).body);
+    expect(single.streams[0].values[0][0]).toBe(expected);
+    expect(batch.streams[0].values[0][0]).toBe(expected);
+    expect(JSON.parse(formatLogPayload('datadog', 'json', entry).body)[0].date).toBe(ms);
+    expect(JSON.parse(formatLogBatch('datadog', 'json', [entry]).body)[0].date).toBe(ms);
+  });
 
   it('formats loki payloads correctly', () => {
     const { body, contentType } = formatLogPayload('loki', 'json', sampleEntry);

@@ -11,9 +11,11 @@
  * @ninedeploy/schemas), but rows written before that validation existed are
  * still in the database, so the sink defends itself too.
  */
+import { isIPv6 } from 'node:net';
+
 export function buildProbeUrl(host: string, port: number | string, path: string): string {
   const url = new URL('http://placeholder.invalid');
-  url.hostname = host;
+  url.hostname = isIPv6(host) ? `[${host}]` : host;
   url.port = String(port);
   const raw = path && path.startsWith('/') ? path : `/${path ?? ''}`;
   const [pathname, search] = splitQuery(raw);

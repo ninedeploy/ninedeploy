@@ -211,7 +211,11 @@ export function resolveStackEnvironment(composeContent: string, options: Resolve
   }
 
   const openPlaceholders = scanRequiredPlaceholders(composeContent);
-  for (const name of openPlaceholders) values[name] ??= '';
+  for (const name of openPlaceholders) {
+    if (!Object.hasOwn(values, name)) {
+      Object.defineProperty(values, name, { value: '', enumerable: true, writable: true, configurable: true });
+    }
+  }
 
   return { values, parsed, openPlaceholders };
 }

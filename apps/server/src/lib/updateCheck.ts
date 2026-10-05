@@ -53,9 +53,10 @@ let lastGood: LastGood | null | undefined; // undefined = not loaded from disk y
 
 /** Compare two semver strings ("v" prefix optional). Returns true when a > b. */
 export function isNewer(a: string, b: string): boolean {
-  const parse = (v: string) => v.replace(/^v/, '').split('.').map((n) => Number.parseInt(n, 10) || 0);
-  const [aMaj = 0, aMin = 0, aPatch = 0] = parse(a);
-  const [bMaj = 0, bMin = 0, bPatch = 0] = parse(b);
+  // Preserve leading-decimal parsing without rounding large release components.
+  const parse = (v: string) => v.replace(/^v/, '').split('.').map((n) => BigInt(n.trimStart().match(/^[+-]?\d+/)?.[0] ?? '0'));
+  const [aMaj = 0n, aMin = 0n, aPatch = 0n] = parse(a);
+  const [bMaj = 0n, bMin = 0n, bPatch = 0n] = parse(b);
   if (aMaj !== bMaj) return aMaj > bMaj;
   if (aMin !== bMin) return aMin > bMin;
   return aPatch > bPatch;

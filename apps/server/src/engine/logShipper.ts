@@ -57,6 +57,11 @@ export function parseDockerLogLine(raw: string): { ts: string; line: string } | 
   return m ? { ts: m[1]!, line: m[2]! } : null;
 }
 
+/** ISO cursors use milliseconds; Docker timestamps can carry nanoseconds. */
+function timestampKey(ts: string): string {
+  return ts.replace(/(?:\.(\d+))?Z$/, (_match, fraction: string | undefined) => `.${(fraction ?? '').padEnd(9, '0')}Z`);
+}
+
 /** One pass: forward every new line to the drains that cover its service. */
 export async function shipLogsOnce(
   db: DB,
@@ -96,10 +101,11 @@ export async function shipLogsOnce(
       }
       const entries: LogPayloadEntry[] = [];
       let last = since;
+      const sinceKey = timestampKey(since);
       for (const r of raw) {
         const parsed = parseDockerLogLine(r);
         // `--since` is inclusive: drop what the previous tick already sent.
-        if (!parsed || parsed.ts <= since) continue;
+        if (!parsed || timestampKey(parsed.ts) <= sinceKey) continue;
         entries.push({ timestamp: parsed.ts, service: svc.slug, container, line: parsed.line });
         last = parsed.ts;
         if (entries.length >= MAX_LINES_PER_RUNTIME) break;

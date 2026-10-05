@@ -121,14 +121,15 @@ export async function enablePgbouncer(db: DB, d: Database, log: (line: string) =
   });
   const userlist = renderUserlist({ user, password });
   const iniFile = await writeTempFile('pgbouncer.ini', ini);
-  const userlistFile = await writeTempFile('userlist.txt', userlist);
-
-  // Remove any stale (stopped) container of the same
-  // name so the create below does not fail with a name
-  // conflict; pgbouncer has no retained state.
-  await run('docker', ['rm', '-f', containerName], {}, swallow).catch(swallow);
+  let userlistFile: SecretFile | undefined;
 
   try {
+    userlistFile = await writeTempFile('userlist.txt', userlist);
+    // Remove any stale (stopped) container of the same
+    // name so the create below does not fail with a name
+    // conflict; pgbouncer has no retained state.
+    await run('docker', ['rm', '-f', containerName], {}, swallow).catch(swallow);
+
     // Create → docker cp → start: the config files are copied INTO the
     // container instead of bind-mounted, so the host-side copies (which
     // carry the DB password) can be deleted as soon as this sequence ends.
@@ -164,7 +165,7 @@ export async function enablePgbouncer(db: DB, d: Database, log: (line: string) =
     // The container has its own copy; the host-side secret files are no
     // longer needed and must never outlive this call — even on failure.
     iniFile.cleanup();
-    userlistFile.cleanup();
+    userlistFile?.cleanup();
   }
 }
 

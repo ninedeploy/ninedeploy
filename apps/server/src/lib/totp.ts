@@ -82,7 +82,7 @@ export function totpAt(secret: string, timestampMs: number): string {
  * rest of its ±1-step (90 s) validity window. See `consumeTotpCode` in
  * `lib/totpReplay.ts`.
  *
- * Constant-time-ish: always compares all three candidates and never
+ * Constant-time-ish: compares every valid candidate and never
  * short-circuits on the first match.
  */
 export function verifyTotpStep(secret: string, code: string, timestampMs = Date.now()): number | null {
@@ -92,6 +92,7 @@ export function verifyTotpStep(secret: string, code: string, timestampMs = Date.
   let matched: number | null = null;
   for (const drift of [-1, 0, 1]) {
     const step = counter + drift;
+    if (step < 0) continue; // HOTP has no counter before the epoch.
     const expected = hotp(base32Decode(secret), step);
     // XOR-fold both strings so every candidate is always fully compared.
     let diff = normalized.length ^ expected.length;

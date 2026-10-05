@@ -4,7 +4,7 @@
  * lint, the persisted active-section helper, and the preset library's
  * integrity (every preset must parse against the deploy schema).
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   ninedeployManifest,
   type NinedeployManifest,
@@ -167,6 +167,28 @@ describe('lintManifest', () => {
 });
 
 describe('active-section persistence', () => {
+  it('falls back when accessing localStorage itself is forbidden', () => {
+    const spy = vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
+      throw new DOMException('Storage access denied', 'SecurityError');
+    });
+    try {
+      expect(loadActiveSection(['runtime'])).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('falls back when reading the saved section throws', () => {
+    const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('Storage read denied');
+    });
+    try {
+      expect(loadActiveSection(['runtime'])).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('returns null when nothing was saved', () => {
     window.localStorage.clear();
     expect(loadActiveSection(SECTIONS.map((s) => s.id))).toBeNull();

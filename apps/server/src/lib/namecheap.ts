@@ -166,17 +166,29 @@ async function namecheapRequest(_creds: NamecheapCredentials, params: URLSearchP
 
 /** List every domain in the account (`namecheap.domains.getList`). */
 export async function listNamecheapDomains(creds: NamecheapCredentials): Promise<DomainZone[]> {
-  const root = await namecheapRequest(creds, authParams(creds, 'namecheap.domains.getList'));
-  const result = findChild(root, 'CommandResponse');
-  if (!result) return [];
-  // The `<Domain>` children live under `<DomainGetListResult>`; fall
-  // through to a direct child scan for resilience against a wrapping
-  // element the schema might add in a future API revision.
-  const container = findChild(result, 'DomainGetListResult') ?? result;
-  return findChildren(container, 'Domain')
-    .map((d) => d.attrs['Name'])
-    .filter((n): n is string => typeof n === 'string' && n.length > 0)
-    .map((name) => ({ id: name, name }));
+  const zones: DomainZone[] = [];
+  let totalPages = 1;
+  for (let page = 1; page <= totalPages; page++) {
+    const params = authParams(creds, 'namecheap.domains.getList');
+    if (page > 1) params.set('Page', String(page));
+    const root = await namecheapRequest(creds, params);
+    const result = findChild(root, 'CommandResponse');
+    if (!result) break;
+    const container = findChild(result, 'DomainGetListResult') ?? result;
+    zones.push(...findChildren(container, 'Domain')
+      .map((d) => d.attrs['Name'])
+      .filter((n): n is string => typeof n === 'string' && n.length > 0)
+      .map((name) => ({ id: name, name })));
+    if (page === 1) {
+      const paging = findChild(result, 'Paging');
+      const total = paging ? Number(findChild(paging, 'TotalItems')?.text) : NaN;
+      const size = paging ? Number(findChild(paging, 'PageSize')?.text) : NaN;
+      if (Number.isSafeInteger(total) && total >= 0 && Number.isSafeInteger(size) && size > 0) {
+        totalPages = Math.max(1, Math.ceil(total / size));
+      }
+    }
+  }
+  return zones;
 }
 
 /** Fetch the current host list for `domain` (`namecheap.domains.dns.getHosts`). */

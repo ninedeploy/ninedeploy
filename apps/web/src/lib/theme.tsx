@@ -32,10 +32,13 @@ export const ACCENTS: Array<{ id: Accent; label: string; color: string }> = [
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
-    try { return (localStorage.getItem(THEME_KEY) as Theme) ?? 'dark'; } catch { return 'dark'; }
+    try { return localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark'; } catch { return 'dark'; }
   });
   const [accent, setAccentState] = useState<Accent>(() => {
-    try { return (localStorage.getItem(ACCENT_KEY) as Accent) ?? 'phosphor'; } catch { return 'phosphor'; }
+    try {
+      const stored = localStorage.getItem(ACCENT_KEY);
+      return ACCENTS.find((a) => a.id === stored)?.id ?? 'phosphor';
+    } catch { return 'phosphor'; }
   });
 
   useEffect(() => {

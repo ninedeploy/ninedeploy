@@ -15,9 +15,9 @@ export function globToRegExp(pattern: string): RegExp {
       if (src[i + 1] === '*') {
         // `**` — match across path separators. Consume a following slash so
         // `a/**/b` also matches `a/b`.
-        re += '(?:.*)';
-        i += 2;
-        if (src[i] === '/') i += 1;
+        const directory = src[i + 2] === '/';
+        re += directory ? '(?:.*/)?' : '(?:.*)';
+        i += directory ? 3 : 2;
       } else {
         re += '[^/]*';
         i += 1;
@@ -55,7 +55,7 @@ export function isSafeWatchPath(pattern: string): boolean {
 // globMatches() evaluates the same token language over a rolling boolean DP in
 // O(tokens × path length) — flat where the regex was exponential.
 
-type GlobToken = { kind: 'lit'; ch: string } | { kind: 'any1' } | { kind: 'star1' } | { kind: 'star2' };
+type GlobToken = { kind: 'lit'; ch: string } | { kind: 'any1' } | { kind: 'star1' } | { kind: 'star2' } | { kind: 'starDir' };
 
 // Tokenize with the exact folding rules globToRegExp applies (kept in lockstep:
 // `**` consumes one following slash so `a/**/b` also matches `a/b`;
@@ -67,9 +67,9 @@ function tokenizeGlob(src: string): GlobToken[] {
     const ch = src[i]!;
     if (ch === '*') {
       if (src[i + 1] === '*') {
-        tokens.push({ kind: 'star2' });
-        i += 2;
-        if (src[i] === '/') i += 1;
+        const directory = src[i + 2] === '/';
+        tokens.push({ kind: directory ? 'starDir' : 'star2' });
+        i += directory ? 3 : 2;
       } else {
         tokens.push({ kind: 'star1' });
         i += 1;
@@ -100,7 +100,13 @@ function globMatches(pattern: string, text: string): boolean {
   for (let k = tokens.length - 1; k >= 0; k--) {
     const tok = tokens[k]!;
     const cur = new Array<boolean>(n + 1).fill(false);
-    if (tok.kind === 'star2' || tok.kind === 'star1') {
+    if (tok.kind === 'starDir') {
+      let afterSlash = false;
+      for (let j = n; j >= 0; j--) {
+        if (j < n && text[j] === '/' && next[j + 1]) afterSlash = true;
+        cur[j] = next[j]! || afterSlash;
+      }
+    } else if (tok.kind === 'star2' || tok.kind === 'star1') {
       for (let j = n; j >= 0; j--) {
         cur[j] =
           next[j]! || (j < n && (tok.kind === 'star2' || text[j] !== '/') && cur[j + 1]!);

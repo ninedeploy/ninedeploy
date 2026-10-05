@@ -123,7 +123,8 @@ export function findManifestPath(workDir: string): string | null {
     try {
       lstatSync(candidate);
       return candidate;
-    } catch {
+    } catch (err) {
+      if (!isENOENT(err)) throw err;
       /* absent */
     }
   }

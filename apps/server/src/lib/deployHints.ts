@@ -21,7 +21,7 @@ interface Pattern {
 const PATTERNS: Pattern[] = [
   {
     label: 'lockfile-mismatch',
-    test: /EUSAGE|npm ERR.*lockfile|frozen-lockfile|--frozen-lockfile|pnpm.*ERR.*lockfile/i,
+    test: /EUSAGE|npm ERR.*lockfile|ERR_PNPM_[A-Z_]*LOCKFILE[A-Z_]*|cannot install with ["']?frozen-lockfile|pnpm.*ERR.*lockfile/i,
     hint: 'Lockfile mismatch — run the install command locally to update the lockfile, commit it, and push again.',
   },
   {

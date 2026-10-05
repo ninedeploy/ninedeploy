@@ -86,10 +86,12 @@ export async function fetchImageDigest(
 
   let res = await probe(manifestUrl, auth ? { authorization: basicAuth(auth) } : {}, opts);
   if (res.status === 401) {
+    await res.body?.cancel().catch(() => undefined);
     const token = await pullToken(host, repository, auth);
     res = await probe(manifestUrl, { authorization: ['Bearer', token].join(' ') }, opts);
   }
   const digest = res.headers.get('docker-content-digest');
+  await res.body?.cancel().catch(() => undefined);
   if (!res.ok || !digest) {
     throw new Error(`registry answered HTTP ${res.status} without a digest`);
   }
@@ -160,6 +162,7 @@ async function pullToken(registryHost: string, repository: string, auth?: Regist
     throw new Error('the registry token endpoint is unreachable');
   }
   if (!res.ok) {
+    await res.body?.cancel().catch(() => undefined);
     throw new Error(
       res.status === 401
         ? 'the stored registry credential was rejected (HTTP 401) — check the attached registry credential'

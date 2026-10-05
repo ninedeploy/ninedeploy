@@ -90,7 +90,7 @@ export const labelRoutes: FastifyPluginAsync = async (app) => {
     //   • workspace labels → only in workspaces the user belongs to
     //   • unscoped labels   → operator-only
     // Optionally narrow by a specific workspace.
-    const requestedWs = query.workspaceId ? parseInt(query.workspaceId, 10) : null;
+    const requestedWs = query.workspaceId ? Number(query.workspaceId) : null;
 
     const rows = await app.db.query.labels.findMany();
     let visibleRows = rows;

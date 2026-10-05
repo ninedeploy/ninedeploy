@@ -73,5 +73,5 @@ export function findMissingRequiredEnv(
   env: Record<string, string>,
 ): string[] {
   const required = manifest.env?.required ?? [];
-  return required.filter((key) => !(key in env));
+  return required.filter((key) => !Object.hasOwn(env, key));
 }

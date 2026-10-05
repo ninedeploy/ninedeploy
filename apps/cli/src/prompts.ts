@@ -28,7 +28,7 @@ interface LineWaiter {
 
 const lineWaiters: LineWaiter[] = [];
 /** At most one hidden prompt at a time; it consumes live keystrokes. */
-let hiddenWaiter: ((chunk: string) => void) | null = null;
+let hiddenWaiter: ((chunk: string) => boolean | void) | null = null;
 /** EOF handler while a hidden prompt is active (resolves what was typed). */
 let hiddenOnEnd: (() => void) | null = null;
 
@@ -84,8 +84,13 @@ function attach(): void {
   hiddenWaiter = null;
   hiddenOnEnd = null;
   stdin.setEncoding('utf8');
+  let skipLeadingLf = false;
   wiredData = (chunk: string) => {
-    if (hiddenWaiter) hiddenWaiter(chunk);
+    if (skipLeadingLf && chunk.length > 0) {
+      skipLeadingLf = false;
+      if (chunk.startsWith('\n')) chunk = chunk.slice(1);
+    }
+    if (hiddenWaiter) skipLeadingLf = hiddenWaiter(chunk) === true;
     else handleData(chunk);
   };
   wiredEnd = () => {
@@ -191,7 +196,8 @@ export function promptHidden(message: string): Promise<string> {
           process.stdout.write('\n');
           resolve(data);
           if (rest !== '') handleData(rest);
-          return;
+          // Carry a split CRLF across chunks without queuing an empty answer.
+          return code === 13 && i === chunk.length - 1;
         } else if (code === 3) {
           // Ctrl-C: standard "interrupted" exit code (130 = 128 + SIGINT);
           // cleanup first so raw mode is restored before exiting.

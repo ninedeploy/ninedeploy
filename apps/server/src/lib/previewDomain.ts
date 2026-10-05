@@ -16,7 +16,7 @@ import { config } from '../config.js';
 
 export const DEFAULT_PREVIEW_DOMAIN_PATTERN = 'pr-{{pr}}-{{slug}}.{{domain}}';
 
-const HOST_SHAPE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
+const HOST_SHAPE = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
 
 export type PreviewDomainSkipReason =
   | 'pattern_outside_wildcard_zone'
@@ -45,7 +45,7 @@ export function previewHostSkipReason(
   baseDomain = previewBaseDomain(),
 ): PreviewDomainSkipReason | null {
   if (!host.endsWith(`.${baseDomain.toLowerCase()}`)) return 'pattern_outside_wildcard_zone';
-  if (!HOST_SHAPE.test(host)) return 'invalid_hostname_shape';
+  if (host.length > 253 || !HOST_SHAPE.test(host)) return 'invalid_hostname_shape';
   if (!pattern.includes('{{pr}}') || !pattern.includes('{{slug}}')) return 'pattern_requires_pr_and_slug';
   return null;
 }

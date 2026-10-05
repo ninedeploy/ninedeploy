@@ -125,6 +125,14 @@ export async function sweepAutoUpdates(
       continue;
     }
 
+    // A probe may finish after opt-out or a changed image; discard its snapshot.
+    const current = (await db.query.services.findMany({ where: eq(services.id, svc.id) })).find((s) => s.id === svc.id);
+    if (!current || !current.autoUpdate || current.status !== 'running' || current.type !== 'docker' ||
+      current.image !== svc.image || current.autoUpdateDigest !== svc.autoUpdateDigest) {
+      result.skipped++;
+      continue;
+    }
+
     if (!svc.autoUpdateDigest) {
       // First observation after enabling — record the baseline, act never.
       await db.update(services).set({ autoUpdateDigest: digest }).where(eq(services.id, svc.id));

@@ -291,7 +291,7 @@ function oneLine(subject: string): string {
 function expand(template: string, vars: Record<string, string | number | null | undefined>): string {
   return template.replace(/\\?\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g, (m, name) => {
     if (m.startsWith('\\')) return m.slice(1);
-    const v = vars[name];
+    const v = Object.hasOwn(vars, name) ? vars[name] : undefined;
     return v == null ? '' : String(v);
   });
 }

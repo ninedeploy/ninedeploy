@@ -93,7 +93,7 @@ export const SECRET_PATTERNS: ReadonlyArray<SecretPattern> = [
   {
     id: 'private-key',
     description: 'PEM private key block',
-    regex: /-----BEGIN [A-Z ]+PRIVATE KEY-----/,
+    regex: /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
   },
   {
     id: 'jwt-bearer',

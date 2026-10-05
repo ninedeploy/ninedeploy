@@ -68,11 +68,7 @@ class EventBus extends EventEmitter {
     // contract (lib/audit.ts), and its `void audit(...)` call sites would turn
     // a rejection into an unhandledRejection — so a broken listener stays
     // isolated instead of escaping the publish.
-    try {
-      this.emit('event', event);
-    } catch (err) {
-      console.error(`[events] listener for "event" threw:`, err);
-    }
+    this.dispatch('event', event);
   }
 
   /**
@@ -86,10 +82,19 @@ class EventBus extends EventEmitter {
   emitCustom(name: string, payload: unknown): void {
     // Same listener isolation as publish(): a throwing subscriber must not
     // break the emitting call site.
-    try {
-      this.emit(name, payload);
-    } catch (err) {
-      console.error(`[events] listener for "${name}" threw:`, err);
+    this.dispatch(name, payload);
+  }
+
+  private dispatch(name: string, payload: unknown): void {
+    if (name === 'error') {
+      try { this.emit(name, payload); }
+      catch (err) { console.error(`[events] listener for "${name}" threw:`, err); }
+      return;
+    }
+    // Preserve once wrappers and a snapshot even when callbacks alter listeners.
+    for (const listener of this.rawListeners(name)) {
+      try { listener.call(this, payload); }
+      catch (err) { console.error(`[events] listener for "${name}" threw:`, err); }
     }
   }
 

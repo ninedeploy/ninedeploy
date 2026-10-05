@@ -62,11 +62,11 @@ export function formatDockerError(err: unknown): string {
   if (/permission denied/i.test(msg) || /EACCES/i.test(msg)) {
     return 'Docker socket permission denied. On Linux, run: `sudo usermod -aG docker $USER` and log back in, or run with sudo.';
   }
-  if (/already in use/i.test(msg) || /Conflict/i.test(msg)) {
-    return "Container conflict: A 'ninedeploy' container already exists. Run `ninedeploy server stop` or `docker rm -f ninedeploy`.";
-  }
   if (/port is already allocated|address already in use/i.test(msg)) {
     return 'Port conflict: The host port is already allocated. Use `--port <number>` to select another port.';
+  }
+  if (/already in use/i.test(msg) || /Conflict/i.test(msg)) {
+    return "Container conflict: A 'ninedeploy' container already exists. Run `ninedeploy server stop` or `docker rm -f ninedeploy`.";
   }
   return msg;
 }

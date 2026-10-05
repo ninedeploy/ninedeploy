@@ -18,7 +18,8 @@ function parseField(field: string, min: number, max: number): Set<number> | null
     // Each comma-separated piece: "*", "n", "a-b", optionally "/step".
     const match = part.match(/^(?:(\*)|(\d+)(?:-(\d+))?)(?:\/(\d+))?$/);
     if (!match) return null;
-    const step = match[4] ? Math.max(1, Number(match[4])) : 1;
+    const step = match[4] ? Number(match[4]) : 1;
+    if (step < 1) return null;
     let start = min;
     let end = max;
     if (!match[1]) {

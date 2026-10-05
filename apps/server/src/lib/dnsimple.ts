@@ -59,7 +59,7 @@ export interface DnsimpleRecordPayload {
   priority?: number | null;
 }
 
-async function dnsimpleRequest<T>(path: string, token: string, init?: RequestInit): Promise<T> {
+async function dnsimpleEnvelope<T>(path: string, token: string, init?: RequestInit): Promise<DnsimpleEnvelope<T>> {
   const res = await fetch(`${API}${path}`, {
     ...init,
     headers: {
@@ -89,9 +89,13 @@ async function dnsimpleRequest<T>(path: string, token: string, init?: RequestIni
     throw new Error(`DNSimple API error: ${res.status} ${detail}`);
   }
   // DELETE returns 204 No Content — there is nothing to unwrap.
-  if (res.status === 204) return undefined as T;
+  if (res.status === 204) return { data: undefined as T };
   const body = (await res.json()) as DnsimpleEnvelope<T>;
-  return body.data;
+  return body;
+}
+
+async function dnsimpleRequest<T>(path: string, token: string, init?: RequestInit): Promise<T> {
+  return (await dnsimpleEnvelope<T>(path, token, init)).data;
 }
 
 /**
@@ -99,7 +103,12 @@ async function dnsimpleRequest<T>(path: string, token: string, init?: RequestIni
  * for the `IDomainProvider` driver and for any future UI selector.
  */
 export async function listDnsimpleZones(token: string, accountId: string): Promise<DomainZone[]> {
-  const rows = await dnsimpleRequest<DnsimpleZonePayload[]>(`/${accountId}/zones`, token);
+  const first = await dnsimpleEnvelope<DnsimpleZonePayload[]>(`/${accountId}/zones`, token);
+  const rows = [...first.data];
+  for (let page = 2; page <= (first.pagination?.total_pages ?? 1); page++) {
+    const next = await dnsimpleEnvelope<DnsimpleZonePayload[]>(`/${accountId}/zones?page=${page}`, token);
+    rows.push(...next.data);
+  }
   return rows.map((z) => ({ id: z.name, name: z.name }));
 }
 

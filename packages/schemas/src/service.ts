@@ -884,7 +884,10 @@ export const volumeFileWrite = z.object({
   /** Relative path inside the volume. */
   path: z.string().min(1).max(1024),
   /** Base64-encoded file content (schemas validate; argv never sees it). */
-  contentBase64: z.string().max(8 * 1024 * 1024),
+  contentBase64: z.string().max(8 * 1024 * 1024).refine((value) => {
+    const compact = value.replace(/\s/g, '');
+    return compact.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(compact);
+  }, { message: 'must be valid base64 content' }),
 });
 export type VolumeFileWriteInput = z.input<typeof volumeFileWrite>;
 

@@ -174,7 +174,7 @@ export const api: NineDeployClient = createClient({
   timeoutMs: 0,
 });
 
-function getWsBase(): { proto: string; host: string } {
+function getWsBase(): { proto: string; host: string; pathPrefix: string } {
   const apiUrl = import.meta.env['VITE_API_URL'];
   if (apiUrl) {
     try {
@@ -182,6 +182,7 @@ function getWsBase(): { proto: string; host: string } {
       return {
         proto: parsed.protocol === 'https:' ? 'wss' : 'ws',
         host: parsed.host,
+        pathPrefix: parsed.pathname.replace(/\/+$/, ''),
       };
     } catch {
       /* fallback */
@@ -190,6 +191,7 @@ function getWsBase(): { proto: string; host: string } {
   return {
     proto: window.location.protocol === 'https:' ? 'wss' : 'ws',
     host: window.location.host,
+    pathPrefix: '',
   };
 }
 
@@ -201,18 +203,18 @@ export function websocketAuthProtocols(): string[] {
 
 /** Build a WebSocket URL for streaming a deployment's logs. */
 export function deployLogsWsUrl(serviceId: number, deploymentId: number): string {
-  const { proto, host } = getWsBase();
-  return `${proto}://${host}/v1/services/${serviceId}/deploys/${deploymentId}/logs`;
+  const { proto, host, pathPrefix } = getWsBase();
+  return `${proto}://${host}${pathPrefix}/v1/services/${serviceId}/deploys/${deploymentId}/logs`;
 }
 
 /** Build a WebSocket URL for the live activity feed. */
 export function eventsWsUrl(): string {
-  const { proto, host } = getWsBase();
-  return `${proto}://${host}/v1/events`;
+  const { proto, host, pathPrefix } = getWsBase();
+  return `${proto}://${host}${pathPrefix}/v1/events`;
 }
 
 /** Build a WebSocket URL for container interactive exec terminal. */
 export function execWsUrl(serviceId: number): string {
-  const { proto, host } = getWsBase();
-  return `${proto}://${host}/v1/services/${serviceId}/exec`;
+  const { proto, host, pathPrefix } = getWsBase();
+  return `${proto}://${host}${pathPrefix}/v1/services/${serviceId}/exec`;
 }

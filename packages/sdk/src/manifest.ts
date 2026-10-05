@@ -80,7 +80,7 @@ export function formatManifestYaml(manifest: NinedeployManifest): string {
   }
 
   if (manifest.build) {
-    lines.push('build:');
+    lines.push(manifest.build.install || manifest.build.build || manifest.build.start || manifest.build.baseDir || manifest.build.dockerfile ? 'build:' : 'build: {}');
     if (manifest.build.install) lines.push(`  install: ${quote(manifest.build.install)}`);
     if (manifest.build.build) lines.push(`  build: ${quote(manifest.build.build)}`);
     if (manifest.build.start) lines.push(`  start: ${quote(manifest.build.start)}`);
@@ -89,7 +89,7 @@ export function formatManifestYaml(manifest: NinedeployManifest): string {
   }
 
   if (manifest.run) {
-    lines.push('run:');
+    lines.push(manifest.run.port != null || manifest.run.healthcheck || manifest.run.restart ? 'run:' : 'run: {}');
     if (manifest.run.port != null) lines.push(`  port: ${manifest.run.port}`);
     if (manifest.run.healthcheck) lines.push(`  healthcheck: ${quote(manifest.run.healthcheck)}`);
     if (manifest.run.restart) lines.push(`  restart: ${quote(manifest.run.restart)}`);
@@ -102,13 +102,13 @@ export function formatManifestYaml(manifest: NinedeployManifest): string {
   }
 
   if (manifest.env) {
-    lines.push('env:');
+    lines.push(manifest.env.required.length > 0 || manifest.env.aliases ? 'env:' : 'env: {}');
     if (manifest.env.required.length > 0) {
       lines.push('  required:');
       for (const k of manifest.env.required) lines.push(`    - ${quote(k)}`);
     }
     if (manifest.env.aliases) {
-      lines.push('  aliases:');
+      lines.push(Object.keys(manifest.env.aliases).length > 0 ? '  aliases:' : '  aliases: {}');
       for (const [from, to] of Object.entries(manifest.env.aliases)) {
         lines.push(`    ${quote(from)}: ${quote(to)}`);
       }
@@ -116,27 +116,29 @@ export function formatManifestYaml(manifest: NinedeployManifest): string {
   }
 
   if (manifest.phases) {
-    lines.push('phases:');
-    if (manifest.phases.setup?.pkgs?.length) {
+    lines.push(manifest.phases.setup || manifest.phases.build ? 'phases:' : 'phases: {}');
+    if (manifest.phases.setup) {
       lines.push('  setup:');
-      lines.push('    pkgs:');
-      for (const p of manifest.phases.setup.pkgs) lines.push(`      - ${p}`);
+      lines.push(manifest.phases.setup.pkgs.length > 0 ? '    pkgs:' : '    pkgs: []');
+      for (const p of manifest.phases.setup.pkgs) lines.push(`      - ${quote(p)}`);
     }
-    if (manifest.phases.build?.cmds?.length) {
+    if (manifest.phases.build) {
       lines.push('  build:');
-      lines.push('    cmds:');
+      lines.push(manifest.phases.build.cmds.length > 0 ? '    cmds:' : '    cmds: []');
       for (const c of manifest.phases.build.cmds) lines.push(`      - ${quote(c)}`);
     }
   }
 
   if (manifest.resources) {
-    lines.push('resources:');
+    lines.push(manifest.resources.cpuShares != null || manifest.resources.cpuLimitMilli != null || manifest.resources.memMb != null || manifest.resources.replicas != null ? 'resources:' : 'resources: {}');
     if (manifest.resources.cpuShares != null) lines.push(`  cpuShares: ${manifest.resources.cpuShares}`);
+    if (manifest.resources.cpuLimitMilli != null) lines.push(`  cpuLimitMilli: ${manifest.resources.cpuLimitMilli}`);
     if (manifest.resources.memMb != null) lines.push(`  memMb: ${manifest.resources.memMb}`);
+    if (manifest.resources.replicas != null) lines.push(`  replicas: ${manifest.resources.replicas}`);
   }
 
   if (manifest.hooks) {
-    lines.push('hooks:');
+    lines.push(manifest.hooks.preBuild || manifest.hooks.postBuild || manifest.hooks.preStop ? 'hooks:' : 'hooks: {}');
     if (manifest.hooks.preBuild) lines.push(`  preBuild: ${quote(manifest.hooks.preBuild)}`);
     if (manifest.hooks.postBuild) lines.push(`  postBuild: ${quote(manifest.hooks.postBuild)}`);
     if (manifest.hooks.preStop) lines.push(`  preStop: ${quote(manifest.hooks.preStop)}`);
@@ -144,23 +146,23 @@ export function formatManifestYaml(manifest: NinedeployManifest): string {
 
   if (manifest.watch) {
     lines.push('watch:');
-    lines.push('  paths:');
+    lines.push(manifest.watch.paths.length > 0 ? '  paths:' : '  paths: []');
     for (const p of manifest.watch.paths) lines.push(`    - ${quote(p)}`);
   }
 
   if (manifest.routes) {
-    lines.push('routes:');
+    lines.push(manifest.routes.length > 0 ? 'routes:' : 'routes: []');
     for (const r of manifest.routes) {
       lines.push(`  - host: ${quote(r.host)}`);
       lines.push(`    path: ${quote(r.path)}`);
       lines.push(`    ssl: ${r.ssl}`);
-      if (r.redirectWww) lines.push(`    redirectWww: ${r.redirectWww}`);
+      if (r.redirectWww !== undefined) lines.push(`    redirectWww: ${r.redirectWww}`);
       if (r.headers) {
-        lines.push('    headers:');
+        lines.push(Object.keys(r.headers).length > 0 ? '    headers:' : '    headers: {}');
         for (const [k, v] of Object.entries(r.headers)) lines.push(`      ${quote(k)}: ${quote(v)}`);
       }
       if (r.ipAllowlist) {
-        lines.push('    ipAllowlist:');
+        lines.push(r.ipAllowlist.length > 0 ? '    ipAllowlist:' : '    ipAllowlist: []');
         for (const cidr of r.ipAllowlist) lines.push(`      - ${quote(cidr)}`);
       }
       if (r.rateLimit) {
@@ -180,7 +182,7 @@ export function formatManifestYaml(manifest: NinedeployManifest): string {
   }
 
   if (manifest.volume) {
-    lines.push('volume:');
+    lines.push(manifest.volume.mount != null || manifest.volume.backups ? 'volume:' : 'volume: {}');
     if (manifest.volume.mount != null) lines.push(`  mount: ${quote(manifest.volume.mount)}`);
     if (manifest.volume.backups) {
       lines.push('  backups:');
@@ -196,7 +198,7 @@ export function formatManifestYaml(manifest: NinedeployManifest): string {
   }
 
   if (manifest.network) {
-    lines.push('network:');
+    lines.push(manifest.network.publishPort != null || manifest.network.aliases.length > 0 ? 'network:' : 'network: {}');
     if (manifest.network.publishPort != null) lines.push(`  publishPort: ${manifest.network.publishPort}`);
     if (manifest.network.aliases.length > 0) {
       lines.push('  aliases:');
@@ -205,7 +207,7 @@ export function formatManifestYaml(manifest: NinedeployManifest): string {
   }
 
   if (manifest.notifications) {
-    lines.push('notifications:');
+    lines.push(manifest.notifications.onDeploy.length > 0 || manifest.notifications.onFailure.length > 0 || manifest.notifications.onAlert.length > 0 ? 'notifications:' : 'notifications: {}');
     if (manifest.notifications.onDeploy.length > 0) {
       lines.push('  onDeploy:');
       for (const c of manifest.notifications.onDeploy) lines.push(`    - ${quote(c)}`);
@@ -221,7 +223,7 @@ export function formatManifestYaml(manifest: NinedeployManifest): string {
   }
 
   if (manifest.alerts) {
-    lines.push('alerts:');
+    lines.push(manifest.alerts.length > 0 ? 'alerts:' : 'alerts: []');
     for (const a of manifest.alerts) {
       lines.push(`  - when: ${a.when}`);
       lines.push(`    channel: ${quote(a.channel)}`);

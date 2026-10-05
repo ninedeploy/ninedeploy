@@ -25,7 +25,8 @@ export async function issueSessionTokens(
   if (user.deactivatedAt) throw unauthorized('This account has been deactivated', 'account_deactivated');
   const jti = crypto.randomUUID();
   const refreshTtl = ttlSeconds(config.jwt.refreshTtl);
-  const expiresAt = new Date(Date.now() + refreshTtl * 1000);
+  // SQLite timestamp columns persist whole seconds; gen must match that value.
+  const expiresAt = new Date(Math.floor(Date.now() / 1000) * 1000 + refreshTtl * 1000);
   // Both token types carry the jti so the sessions list can flag the current
   // one from a plain access-token request. The refresh token is bound to the
   // row's expiry from the very first issue (r091): without `gen`, the login
@@ -76,12 +77,14 @@ export async function refreshSessionTokens(
   tokenGen?: number,
 ): Promise<TokenPair> {
   if (user.deactivatedAt) throw unauthorized('This account has been deactivated', 'account_deactivated');
-  if (tokenGen !== undefined) {
+  // Also accept generations minted before issuance aligned to SQLite seconds.
+  const generation = tokenGen === undefined ? undefined : Math.floor(tokenGen / 1000) * 1000;
+  if (generation !== undefined) {
     // Generation check FIRST: a stale refresh token must not even slide the
     // session's expiry (that would hand whoever holds the old token a
     // session-extension oracle).
     const row = await db.query.sessions.findFirst({ where: eq(sessions.jti, jti) });
-    if (!row || row.revokedAt || row.expiresAt.getTime() !== tokenGen) {
+    if (!row || row.revokedAt || row.expiresAt.getTime() !== generation) {
       throw new Error('session_revoked');
     }
   }
@@ -89,11 +92,19 @@ export async function refreshSessionTokens(
   // revoke (logout / session delete) lands between the caller's check and
   // here, no token pair is issued for the revoked session.
   const refreshTtl = ttlSeconds(config.jwt.refreshTtl);
-  const expiresAt = new Date(Date.now() + refreshTtl * 1000);
+  // Same-second refreshes (or clock rollback) must still retire the old gen.
+  const expiresAt = new Date(Math.max(
+    Math.floor(Date.now() / 1000) * 1000 + refreshTtl * 1000,
+    generation === undefined ? 0 : generation + 1000,
+  ));
   const rotated = await db
     .update(sessions)
     .set({ lastUsedAt: new Date(), expiresAt })
-    .where(and(eq(sessions.jti, jti), isNull(sessions.revokedAt)))
+    .where(and(
+      eq(sessions.jti, jti),
+      isNull(sessions.revokedAt),
+      generation === undefined ? undefined : eq(sessions.expiresAt, new Date(generation)),
+    ))
     .returning();
   if (!rotated.length) throw new Error('session_revoked');
   const nextGen = expiresAt.getTime();
@@ -109,7 +120,7 @@ export async function findLiveSession(db: Pick<DB, 'query'>, jti: string) {
   const row = await db.query.sessions.findFirst({ where: eq(sessions.jti, jti) });
   if (!row) return null;
   if (row.revokedAt) return null;
-  if (row.expiresAt.getTime() < Date.now()) return null;
+  if (row.expiresAt.getTime() <= Date.now()) return null;
   return row;
 }
 

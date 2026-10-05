@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, DrizzleQueryError, eq, sql } from 'drizzle-orm';
 import { deployments, type DB } from '@ninedeploy/db';
 import { badRequest } from './errors.js';
 import { assertMayDeployStoredService } from './hostPrivilege.js';
@@ -71,12 +71,21 @@ export async function enqueueUserDeploy(
     .values({
       serviceId: service.id,
       status: 'queued',
-      trigger: 'user',
+      // Recheck inside the insert: a concurrent enqueue may fill the last slot.
+      // NULL makes the existing trigger constraint abort that losing insert.
+      trigger: sql`(select case when count(*) < ${MAX_QUEUED_PER_SERVICE} then 'user' else null end
+        from ${deployments} where ${deployments.serviceId} = ${service.id} and ${deployments.status} = 'queued')`,
       message: values.message,
       ...(values.commitSha !== undefined ? { commitSha: values.commitSha } : {}),
       ...(values.imageDigest !== undefined ? { imageDigest: values.imageDigest } : {}),
     })
-    .returning({ id: deployments.id });
+    .returning({ id: deployments.id })
+    .catch((err: unknown) => {
+      if (err instanceof DrizzleQueryError && err.cause?.message.endsWith('NOT NULL constraint failed: deployments.trigger')) {
+        throw badRequest(`${opts.subject ?? 'Service'} reached the queued deploy limit (max ${MAX_QUEUED_PER_SERVICE}). Cancel one first.`);
+      }
+      throw err;
+    });
   if (!dep) throw new Error('Could not queue the deployment');
   return dep.id;
 }

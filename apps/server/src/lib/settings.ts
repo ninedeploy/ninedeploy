@@ -36,7 +36,7 @@ export async function setSettingString(db: DB, key: string, value: string): Prom
 /** Read a settings-table JSON value with a fallback. */
 export async function getSettingJson<T>(db: DB, key: string, fallback: T | null = null): Promise<T | null> {
   const row = await db.query.settings.findFirst({ where: eq(settings.key, key) });
-  if (!row?.value) return fallback;
+  if (row?.value == null) return fallback;
   if (typeof row.value === 'object') return row.value as T;
   try {
     return JSON.parse(String(row.value)) as T;

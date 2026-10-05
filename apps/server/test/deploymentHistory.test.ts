@@ -43,6 +43,24 @@ function makeDb(runningRows: Array<{ id: number; serviceId: number }>, serviceSt
 }
 
 describe('reconcileDeploymentHistory', () => {
+  it('bounds history scans linearly when every live row belongs to a different service', async () => {
+    const size = 512;
+    let serviceReads = 0;
+    const rows = Array.from({ length: size }, (_, index) => ({
+      id: index + 1,
+      get serviceId() {
+        serviceReads++;
+        return index + 1;
+      },
+    }));
+    const { db, updates } = makeDb(rows, rows.map((r) => ({ id: r.id, status: 'running' })));
+
+    expect(await reconcileDeploymentHistory(db)).toBe(0);
+    expect(updates).toHaveLength(0);
+    // Allow several passes; a scan of every row for each service exceeds this.
+    expect(serviceReads).toBeLessThanOrEqual(size * 8);
+  });
+
   it('keeps the newest running row of a live service and demotes older ones', async () => {
     const { db } = makeDb(
       [ { id: 10, serviceId: 1 }, { id: 7, serviceId: 1 }, { id: 3, serviceId: 1 } ],
