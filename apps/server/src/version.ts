@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.44';
+export const VERSION = '0.10.45';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.10.45',
+    date: '2026-10-05',
+    title: 'Deployment Reliability — Evidence-Led Audit Fixes',
+    changes: [
+      'Deployment reliability: stale auto-update work is discarded, template creation cannot overwrite a concurrent install, agent connections follow the current host and port, and filesystem failures are distinguished from missing files.',
+      'Data and integration fixes: log timestamps retain nanosecond precision, manifests preserve explicit false values and health paths, volume inventory finds later valid attachments, and S3 query parameters encode slash characters correctly.',
+      'Dashboard fixes: switching deploy logs clears the previous selection, empty tag catalogs remove deleted filters, invalid saved theme preferences use defaults, and an earlier update timer cannot hide a later success banner. Node proxy failures report the operation stage accurately.',
+      'Includes the preceding audit repairs across DNS providers, sessions, backup handling, deployment queues, CLI configuration and shared SDK contracts, with permanent lifecycle and concurrency regressions. No database migrations.',
+    ],
+  },
+{
     version: '0.10.44',
     date: '2026-10-03',
     title: 'Ownership Follow-Up — Shared Env Restored After SCIM Removals',

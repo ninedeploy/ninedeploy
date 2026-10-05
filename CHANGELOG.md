@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.45] - 2026-10-05
+
+> Deployment reliability and shared-contract fixes from the evidence-led audit.
+
+### Upgrade notes
+
+- No database migrations or new configuration fields.
+- Existing source builds on remote nodes retain the agent requirements introduced in earlier releases.
+
+### Fixed
+
+- Deployment queues, filesystem locks and lifecycle cleanup handle failure paths consistently. Stale auto-update probes no longer update a service whose deployment settings changed while the probe was running.
+- Community template creation uses exclusive writes, preserving an existing template when concurrent installs select the same name. Explicit replacement remains available.
+- Agent connection caching follows the current node host and port. Node proxy sync errors identify the failed operation stage even when a transport error omits its name.
+- Log timestamps preserve fractional nanoseconds. Log search, runtime log selection, deployment history and scheduled-job fixtures include the preceding audit repairs.
+- Manifest import/export preserves explicit `redirectWww: false`; service creation retains `healthPath`. SDK manifests and errors, CLI configuration and terminal formatting include the audited contract fixes.
+- Volume inventory continues past an attachment whose service is absent to find a later valid link. S3 canonical query names and values encode `/`, while object-key separators remain literal.
+- Label workspace filters no longer truncate fractional or partial values into another workspace ID.
+- Dashboard deploy-log selection resets old buffers, and WebSocket URLs retain configured API path prefixes. SSO fragment parsing recognizes the exact token key.
+- Deleted workspace/project/label chips are removed even when the authoritative catalog becomes empty. Unsupported saved theme and accent values fall back to supported defaults.
+- A completed update timer can dismiss only its own success banner. A later successful update retains its full display window.
+- Includes the earlier local audit fixes for DNS provider responses, session expiry and rotation, backup parsing, image references and shared utility boundaries.
+
+### Tests
+
+- Permanent regressions cover concurrent template creation, stale auto-update completion, session rotation, deploy-log selection and successive panel-update timers.
+- Shell-based installer and update fixtures use the native Git Bash installation on Windows rather than a WSL launcher.
+
 ## [0.10.44] - 2026-10-03
 
 > Ownership follow-up to 0.10.43 (r710–r711): team services whose creator was
@@ -5242,4 +5270,3 @@ _Installer changes take effect immediately — `install.sh` is fetched from `mai
 - **Managed Databases & Backups**: Automated daily encrypted snapshots with S3-compatible offsite sync.
 - **Traefik Ingress**: Automatic Let's Encrypt TLS (HTTP-01 & DNS-01) and Cloudflare Tunnels.
 - **Hardened Service Model**: `systemd` watchdog supervision (`sd_notify`) and rootless container execution.
-

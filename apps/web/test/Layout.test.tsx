@@ -574,8 +574,10 @@ describe('Layout', () => {
     // is persisted under `ninedeploy.tagScope`, not the legacy `projectId` key.
     localStorage.removeItem('ninedeploy.tagScope');
     const switchWorkspace = vi.fn();
+    const workspaces = [{ id: 7, name: 'Acme', slug: 'acme', role: 'owner' }];
+    apiMock.api.workspaces.list.mockResolvedValue(workspaces);
     workspaceMock.useWorkspace.mockReturnValue({
-      workspaces: [{ id: 7, name: 'Acme', slug: 'acme', role: 'owner' }],
+      workspaces,
       currentWorkspace: null,
       isLoading: false,
       switchWorkspace,
