@@ -888,6 +888,44 @@ describe('deploys watch', () => {
     expect(closed).toBe(true);
   });
 
+  // F997 (D8): the hard cap is not a finished deploy — `deploys watch &&
+  // next-step` must stop, and the operator is told where to look. The 1000
+  // close and Ctrl-C stay exit 0 (F956 tests above).
+  describe('F997: hard cap', () => {
+    const tick = () => new Promise((r) => setImmediate(r)); // not faked
+    afterEach(() => { vi.useRealTimers(); });
+
+    async function capped(timeoutMs: number | undefined, fireAt: number) {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+      const handlers = fakeSocket();
+      let done = false;
+      const pending = timeoutMs === undefined ? deploysWatch('1', '2') : deploysWatch('1', '2', timeoutMs);
+      void pending.then(() => { done = true; });
+      for (let i = 0; i < 1000 && !handlers['close']; i++) await tick();
+      expect(handlers['close']).toBeDefined();
+      await vi.advanceTimersByTimeAsync(fireAt - 1);
+      expect(done).toBe(false);
+      expect(errorSpy).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      await pending;
+    }
+
+    it('F997: the default 30-minute cap fails the watch with a message (exit 1)', async () => {
+      await capped(undefined, 30 * 60_000);
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Stopped waiting after 30 min — the deploy may still be running.'));
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('`ninedeploy deploys list 1`'));
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('`ninedeploy deploys watch 1 2`'));
+    });
+
+    it('F997: a custom wait fails the same way when it fires', async () => {
+      await capped(90_000, 90_000);
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Stopped waiting after 90 s'));
+    });
+  });
+
   it('exits cleanly on SIGINT', async () => {
     const _handlers = fakeSocket();
     const pending = deploysWatch('1', '2', 60_000);

@@ -646,6 +646,13 @@ export async function deploysWatch(serviceIdStr: string, deployIdStr: string, ti
   if (!closed) {
     closed = true; // F956/F980: our own close is not a server rejection
     ws?.close();
+    // F997 (D8): the cap is not a finished deploy — exit 1 like every other
+    // unfinished end (F956/F980), or `deploys watch && next-step` carries on.
+    const waited = timeoutMs % 60_000 === 0 ? `${timeoutMs / 60_000} min` : `${Math.ceil(timeoutMs / 1000)} s`;
+    error(
+      `Stopped waiting after ${waited} — the deploy may still be running. ` +
+        `Check \`ninedeploy deploys list ${serviceId}\` or re-attach with \`ninedeploy deploys watch ${serviceId} ${deployId}\`.`,
+    );
   }
 }
 
