@@ -2,7 +2,7 @@ import { type Dirent, lstatSync, readdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyBaseLogger, FastifyPluginAsync } from 'fastify';
 import { buildConfigs, repoInsights, sources, type DB } from '@ninedeploy/db';
 import { analyzeRepoInput } from '@ninedeploy/schemas';
 import { analyzeRepo } from '../lib/frameworks.js';
@@ -19,6 +19,79 @@ import { serializeInsights, upsertInsights } from '../engine/repoInsights.js';
 function toApiError(err: unknown): unknown {
   if (err instanceof EgressBlockedError) return badRequest(err.message, 'egress_blocked');
   return err;
+}
+
+/** A repository URL safe to repeat to the client: userinfo removed. */
+function displayRepoUrl(repoUrl: string): string {
+  try {
+    const url = new URL(repoUrl);
+    url.username = '';
+    url.password = '';
+    return url.toString().slice(0, 200);
+  } catch {
+    return repoUrl.replace(/\/\/[^/@]+@/, '//').slice(0, 200);
+  }
+}
+
+/** git's stderr for the log, with any credential this checkout used removed. */
+function redactGitOutput(text: string, creds: CloneCreds | undefined): string {
+  let out = text.replace(/\/\/[^/@\s'"]+@/g, '//***@');
+  const token = creds?.token;
+  if (token) {
+    for (const piece of [encodeURIComponent(token), token]) out = out.split(piece).join('[redacted]');
+  }
+  return out.slice(0, 2000);
+}
+
+/**
+ * F1006: a failed inspection clone (private repository without a credential,
+ * a credential with no access, a missing branch, an unreachable host) used to
+ * escape as a bare 500 from POST /insights and a generic 404 from refresh —
+ * the wizard could not tell "your token cannot see this repository" from a
+ * crash. Classify git's own stderr (simple-git puts it in the error message)
+ * into a 400 that says what to do. The message is built from the URL without
+ * its userinfo and never repeats git's output. Anything unrecognised is
+ * returned as null and keeps its previous handling.
+ */
+function cloneFailure(err: unknown, repoUrl: string, branch: string, creds: CloneCreds | undefined): HttpError | null {
+  if (!(err instanceof Error) || err instanceof HttpError || err instanceof EgressBlockedError) return null;
+  const text = err.message;
+  const url = displayRepoUrl(repoUrl);
+  if (/Remote branch .+ not found in upstream|Could not find remote branch/i.test(text)) {
+    return badRequest(`Could not clone ${url}: branch "${branch}" does not exist in the repository. Pick an existing branch.`, 'branch_not_found');
+  }
+  if (/returned error: 30[1278]\b/i.test(text)) {
+    return badRequest(
+      `Could not clone ${url}: the Git host answered with a redirect, which NineDeploy does not follow. If the repository was renamed or moved, use its current URL.`,
+      'repo_unreachable',
+    );
+  }
+  if (
+    /repository '[^']*' not found|Repository not found|Authentication failed|could not read (Username|Password)|terminal prompts disabled|Invalid username or (password|token)|HTTP Basic: Access denied|returned error: 40[134]\b|Permission denied \(publickey|Could not read from remote repository|could not be found or you don't have permission/i.test(
+      text,
+    )
+  ) {
+    if (!creds?.token && !creds?.deployKey) {
+      return badRequest(
+        `Could not clone ${url}: the repository was not found, or it is private — select a Git credential that has access to it.`,
+        'repo_unreachable',
+      );
+    }
+    const github = !!creds.token && (creds.type === 'github' || /^https?:\/\/(www\.)?github\.com\//i.test(url));
+    return badRequest(
+      `Could not clone ${url}: the repository was not found or the selected credential has no access to it.${
+        github
+          ? " For a fine-grained GitHub token, add this repository to the token's repository access (organization repositories may also need the token approved or SSO-authorized)."
+          : ''
+      }`,
+      'repo_unreachable',
+    );
+  }
+  // Not a bare "unable to access": git also says that for an HTTP 5xx, where the host WAS reached.
+  if (/Could not resolve host|Failed to connect|Could not connect to server|Connection (timed out|refused|reset)|SSL certificate problem|certificate verif|\bSSL\b.*(connect|handshake)|schannel|Host key verification failed|Could not resolve hostname|Network is unreachable/i.test(text)) {
+    return badRequest(`Could not clone ${url}: the Git host could not be reached from the panel (DNS, network or TLS failure).`, 'repo_unreachable');
+  }
+  return null;
 }
 
 /**
@@ -68,7 +141,13 @@ function sizeExceeds(dir: string, cap: number): boolean {
  * git process once the checkout outgrows the cap; either limit answers a 400
  * that says what to do instead.
  */
-async function inspectionCheckout(repoUrl: string, branch: string, dir: string, creds: CloneCreds | undefined): Promise<string> {
+async function inspectionCheckout(
+  repoUrl: string,
+  branch: string,
+  dir: string,
+  creds: CloneCreds | undefined,
+  log: FastifyBaseLogger,
+): Promise<string> {
   const controller = new AbortController();
   // A holder, not a `let`: the callbacks below set it, which flow analysis cannot see.
   const stop: { reason: 'timeout' | 'size' | null } = { reason: null };
@@ -103,6 +182,13 @@ async function inspectionCheckout(repoUrl: string, branch: string, dir: string, 
         `Repository analysis stopped: the checkout is larger than ${Math.round(INSPECTION_LIMITS.maxBytes / (1024 * 1024))} MB. Create the service; the deploy analyses it.`,
         'inspection_limit',
       );
+    }
+    // F1006: a recognised clone failure answers a 400 that says what to do;
+    // git's own (redacted) output stays in the server log.
+    const mapped = cloneFailure(err, repoUrl, branch, creds);
+    if (mapped) {
+      log.warn({ git: redactGitOutput((err as Error).message, creds), code: mapped.code }, 'inspection clone failed');
+      throw mapped;
     }
     throw err;
   } finally {
@@ -160,7 +246,7 @@ export const insightsRoutes: FastifyPluginAsync = async (app) => {
       const creds = await resolveCreds(app.db, input.sourceId);
       const dir = path.join(config.paths.reposDir, '_inspections', randomUUID());
       try {
-        await inspectionCheckout(input.repoUrl, input.branch, dir, creds);
+        await inspectionCheckout(input.repoUrl, input.branch, dir, creds, req.log);
         return analyzeRepo(dir, input.baseDir);
       } catch (err) {
         throw toApiError(err);
@@ -208,10 +294,10 @@ export const serviceInsightsRoutes: FastifyPluginAsync = async (app) => {
     try {
       let sha: string;
       try {
-        sha = await inspectionCheckout(svc.repoUrl, svc.branch, workDir, creds);
+        sha = await inspectionCheckout(svc.repoUrl, svc.branch, workDir, creds, req.log);
       } catch (err) {
         if (err instanceof EgressBlockedError) throw toApiError(err);
-        if (err instanceof HttpError) throw err; // r657: an inspection limit says so
+        if (err instanceof HttpError) throw err; // r657 / F1006: an inspection limit or a classified clone failure says so
         req.log.warn({ err, serviceId: id }, 'insights refresh could not fetch the repository');
         throw notFound('Repository is not reachable');
       }

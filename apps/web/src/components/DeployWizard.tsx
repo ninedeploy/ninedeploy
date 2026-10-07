@@ -639,6 +639,16 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
                     )}
                   </div>
 
+                  {/* The provider decides which repositories a token can list —
+                      a fine-grained GitHub token sees only the ones selected for
+                      it, so a "missing" repo is a token setting, not a bug. */}
+                  {remoteRepos.isSuccess && sources.data?.find((s) => String(s.id) === sourceId)?.type === 'github' && (
+                    <p className="-mt-1 text-[11px] leading-relaxed text-slate-500" data-testid="repo-list-hint">
+                      Missing a repository? Fine-grained tokens only list the repositories selected for them; organization
+                      repositories may need the token approved or SSO-authorized. You can also paste the URL below.
+                    </p>
+                  )}
+
                   {/* Which credential private-repo cloning will use — say so
                       before the deploy, not as a failed clone later. */}
                   <div

@@ -335,3 +335,65 @@ describe('inspection clone limits (r657)', () => {
     expect(res.json().error.message).toMatch(/stopped after/);
   });
 });
+
+// F1006: a failed inspection clone escaped as a bare 500 (analysis) or a
+// generic 404 (refresh), so the wizard could not tell "the credential cannot
+// see this repository" from a crash. git's stderr (real git 2.55 wording) is
+// classified into a 400 that says what to do and never repeats a credential.
+describe('clone failures answer a classified 400 (F1006)', () => {
+  const REPO = 'https://github.com/acme/private.git';
+  const notFound = `Cloning into '/x'...\nremote: Repository not found.\nfatal: repository '${REPO}/' not found\n`;
+
+  async function analyzeWith(stderr: string, payload: Record<string, unknown> = {}) {
+    gitMocks.checkoutCommit.mockRejectedValueOnce(new Error(stderr));
+    fakeState.sourcesById[7] = { type: 'github', tokenEncrypted: 'v0:github_pat_SECRET' };
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: baseService, sources: fakeState.sourcesById[7] } }) });
+    await app.register(insightsRoutes);
+    const res = await app.inject({
+      method: 'POST', url: '/', headers: asUser(),
+      payload: { repoUrl: REPO, branch: 'main', sourceId: 7, ...payload },
+    });
+    await app.close();
+    return res;
+  }
+
+  it('a credential without access to the repository → 400 repo_unreachable with the fine-grained hint', async () => {
+    const res = await analyzeWith(notFound);
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('repo_unreachable');
+    expect(res.json().error.message).toMatch(/^Could not clone https:\/\/github\.com\/acme\/private\.git: .*no access/);
+    expect(res.json().error.message).toMatch(/fine-grained GitHub token/);
+  });
+
+  it('a missing branch → 400 branch_not_found', async () => {
+    const res = await analyzeWith('fatal: Remote branch nope not found in upstream origin\n', { branch: 'nope' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('branch_not_found');
+    expect(res.json().error.message).toContain('branch "nope" does not exist');
+  });
+
+  it('never repeats userinfo or the token', async () => {
+    const res = await analyzeWith("fatal: Authentication failed for 'https://x-access-token:github_pat_SECRET@github.com/acme/private.git/'\n", {
+      repoUrl: 'https://alice:pw123@github.com/acme/private.git',
+    });
+    expect(res.json().error.code).toBe('repo_unreachable');
+    expect(res.body).not.toMatch(/github_pat_SECRET|pw123|alice/);
+  });
+
+  it('an unrecognised failure stays a 500', async () => {
+    const res = await analyzeWith('index-pack died of signal 9');
+    expect(res.statusCode).toBe(500);
+  });
+
+  it('the refresh route maps the same failure', async () => {
+    gitMocks.checkoutCommit.mockRejectedValueOnce(new Error(notFound));
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: baseService } }) });
+    await app.register(serviceInsightsRoutes);
+    const res = await app.inject({ method: 'POST', url: '/1/insights/refresh', headers: asUser() });
+    await app.close();
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('repo_unreachable');
+    // No credential on this service: the advice is to select one.
+    expect(res.json().error.message).toMatch(/select a Git credential/);
+  });
+});

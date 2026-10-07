@@ -777,3 +777,62 @@ describe('sources egress wiring', () => {
     }
   });
 });
+
+// F1007: the repository list read only the provider's first page (100 rows);
+// an account with more repositories silently lost the rest in the wizard.
+describe('repo list pagination (F1007)', () => {
+  const repos = (n: number, from = 0) =>
+    Array.from({ length: n }, (_, i) => ({ name: `r${from + i}`, full_name: `acme/r${from + i}`, clone_url: `https://github.com/acme/r${from + i}.git`, default_branch: 'main', private: true }));
+  const page = (u: string) => Number(new URL(u).searchParams.get('page') ?? '1');
+
+  async function listWith(impl: (url: string) => Response) {
+    const urls: string[] = [];
+    h.guardedFetch.mockImplementation(async (input: string | URL) => {
+      urls.push(String(input));
+      return impl(String(input));
+    });
+    try {
+      const app = await buildTestApp({
+        db: createFakeDb({ findFirst: { sources: sourceRow({ id: 1, type: 'github', tokenEncrypted: encrypt('ghp_test') }) } }),
+      });
+      await app.register(sourcesRoutes);
+      const res = await app.inject({ method: 'GET', url: '/1/repos', headers: asUser() });
+      return { res, urls };
+    } finally {
+      h.guardedFetch.mockImplementation(async (url: string | URL, init?: RequestInit) => globalThis.fetch(url, init));
+    }
+  }
+
+  it('follows GitHub Link rel="next" pages, building page URLs on the API host only', async () => {
+    const { res, urls } = await listWith((u) =>
+      page(u) === 1
+        ? Response.json(repos(100), { headers: { link: '<https://elsewhere.example/x?page=2>; rel="next"' } })
+        : Response.json(repos(30, 100)),
+    );
+    expect(res.json()).toHaveLength(130);
+    expect(res.headers['x-nd-source-error']).toBeUndefined();
+    expect(urls).toEqual([
+      'https://api.github.com/user/repos?per_page=100&sort=updated',
+      'https://api.github.com/user/repos?per_page=100&sort=updated&page=2',
+    ]);
+  });
+
+  it('stops at the page cap and says the list is truncated', async () => {
+    const { res, urls } = await listWith((u) =>
+      Response.json(repos(100, (page(u) - 1) * 100), { headers: { link: `<https://api.github.com/user/repos?page=${page(u) + 1}>; rel="next"` } }),
+    );
+    expect(res.json()).toHaveLength(1000);
+    expect(urls).toHaveLength(10);
+    expect(res.headers['x-nd-source-error']).toMatch(/showing the first 1000 repositories/);
+  });
+
+  it('keeps the pages already read when a later page fails', async () => {
+    const { res } = await listWith((u) =>
+      page(u) === 1
+        ? Response.json(repos(100), { headers: { link: '<https://api.github.com/user/repos?page=2>; rel="next"' } })
+        : new Response('', { status: 502 }),
+    );
+    expect(res.json()).toHaveLength(100);
+    expect(res.headers['x-nd-source-error']).toBe('GitHub API 502 on page 2; showing the first 100 repositories');
+  });
+});

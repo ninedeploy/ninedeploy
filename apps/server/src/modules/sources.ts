@@ -41,6 +41,63 @@ function providerErrorText(err: unknown, token: string): string {
   return text;
 }
 
+/**
+ * F1007: the repository list read only the provider's first page (100 rows),
+ * so an account with more repositories silently lost the rest in the Deploy
+ * Wizard. Pages are now followed while the provider announces another one,
+ * up to this cap (1000 repositories); a truncated or partly failed list says
+ * so in `x-nd-source-error`. Page URLs are built here from the fixed API
+ * endpoint (`&page=N`), never taken from the provider's response, so the
+ * token is only ever sent to the hardcoded host.
+ */
+export const REPO_LIST_MAX_PAGES = 10;
+
+interface RepoRow {
+  name: string;
+  fullName: string;
+  url: string;
+  defaultBranch: string;
+  isPrivate: boolean;
+}
+
+/** A response header, tolerant of minimal Response stand-ins. */
+function headerOf(res: Response, name: string): string | null {
+  return typeof res.headers?.get === 'function' ? res.headers.get(name) : null;
+}
+
+/** RFC 8288 `Link` header announcing a next page (GitHub, GitLab). */
+function linkHasNext(res: Response): boolean {
+  return /<[^>]*>\s*;[^,]*\brel="?next"?/i.test(headerOf(res, 'link') ?? '');
+}
+
+async function listRepoPages(
+  label: string,
+  pageUrl: (page: number) => string,
+  init: RequestInit,
+  token: string,
+  readPage: (res: Response) => Promise<{ rows: RepoRow[]; hasNext: boolean }>,
+): Promise<{ rows: RepoRow[]; diag?: string }> {
+  const rows: RepoRow[] = [];
+  const partial = (page: number) => (page > 1 ? ` on page ${page}; showing the first ${rows.length} repositories` : '');
+  for (let page = 1; page <= REPO_LIST_MAX_PAGES; page++) {
+    try {
+      const res = await guardedFetch(pageUrl(page), init);
+      // Surface the real failure to admins — "empty list" silently looked
+      // like "no repos" and a stale PAT was the most common operator trap.
+      if (!res.ok) return { rows, diag: `${label} API ${res.status}${partial(page)}` };
+      const { rows: got, hasNext } = await readPage(res);
+      rows.push(...got);
+      if (!hasNext || got.length === 0) return { rows };
+    } catch (err) {
+      return { rows, diag: `${label} API unreachable: ${providerErrorText(err, token)}${partial(page)}` };
+    }
+  }
+  return {
+    rows,
+    diag: `${label}: showing the first ${rows.length} repositories (list capped at ${REPO_LIST_MAX_PAGES} pages); paste the URL of any other repository`,
+  };
+}
+
 /** Source (private-repo credential) management. Mounted under /sources. Admin-only. */
 export const sourcesRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', app.authenticate);
@@ -113,102 +170,104 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
     if (!src.tokenEncrypted) return [];
 
     const token = decrypt(src.tokenEncrypted);
+    // F1007: page 1 keeps the exact URL it always used; later pages add `&page=N`.
+    const paged = (base: string) => (page: number) => (page === 1 ? base : `${base}&page=${page}`);
+    let listed: { rows: RepoRow[]; diag?: string } | null = null;
     if (src.type === 'github') {
-      try {
-        const res = await guardedFetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
+      listed = await listRepoPages(
+        'GitHub',
+        paged('https://api.github.com/user/repos?per_page=100&sort=updated'),
+        {
           headers: {
             Authorization: `Bearer ${token}`,
             Accept: 'application/vnd.github+json',
             'User-Agent': 'NineDeploy',
           },
-        });
-        if (!res.ok) {
-          // Surface the real failure to admins — "empty list" silently looked
-          // like "no repos" and a stale PAT was the most common operator trap.
-          reply.header('x-nd-source-error', `GitHub API ${res.status}`);
-          return [];
-        }
-        const data = (await res.json()) as Array<{
-          name: string;
-          full_name: string;
-          clone_url: string;
-          default_branch: string;
-          private: boolean;
-        }>;
-        return data.map((r) => ({
-          name: r.name,
-          fullName: r.full_name,
-          url: r.clone_url,
-          defaultBranch: r.default_branch || 'main',
-          isPrivate: r.private,
-        }));
-      } catch (err) {
-        reply.header('x-nd-source-error', `GitHub API unreachable: ${providerErrorText(err, token)}`);
-        return [];
-      }
+        },
+        token,
+        async (res) => {
+          const data = (await res.json()) as Array<{
+            name: string;
+            full_name: string;
+            clone_url: string;
+            default_branch: string;
+            private: boolean;
+          }>;
+          const rows = data.map((r) => ({
+            name: r.name,
+            fullName: r.full_name,
+            url: r.clone_url,
+            defaultBranch: r.default_branch || 'main',
+            isPrivate: r.private,
+          }));
+          return { rows, hasNext: linkHasNext(res) };
+        },
+      );
     }
 
     if (src.type === 'gitlab') {
-      try {
-        const res = await guardedFetch('https://gitlab.com/api/v4/projects?membership=true&per_page=100&order_by=updated_at', {
-          headers: { 'PRIVATE-TOKEN': token },
-        });
-        if (!res.ok) {
-          reply.header('x-nd-source-error', `GitLab API ${res.status}`);
-          return [];
-        }
-        const data = (await res.json()) as Array<{
-          name: string;
-          path_with_namespace: string;
-          http_url_to_repo: string;
-          default_branch: string;
-          visibility: string;
-        }>;
-        return data.map((r) => ({
-          name: r.name,
-          fullName: r.path_with_namespace,
-          url: r.http_url_to_repo,
-          defaultBranch: r.default_branch || 'main',
-          isPrivate: r.visibility !== 'public',
-        }));
-      } catch (err) {
-        reply.header('x-nd-source-error', `GitLab API unreachable: ${providerErrorText(err, token)}`);
-        return [];
-      }
+      listed = await listRepoPages(
+        'GitLab',
+        paged('https://gitlab.com/api/v4/projects?membership=true&per_page=100&order_by=updated_at'),
+        { headers: { 'PRIVATE-TOKEN': token } },
+        token,
+        async (res) => {
+          const data = (await res.json()) as Array<{
+            name: string;
+            path_with_namespace: string;
+            http_url_to_repo: string;
+            default_branch: string;
+            visibility: string;
+          }>;
+          const rows = data.map((r) => ({
+            name: r.name,
+            fullName: r.path_with_namespace,
+            url: r.http_url_to_repo,
+            defaultBranch: r.default_branch || 'main',
+            isPrivate: r.visibility !== 'public',
+          }));
+          return { rows, hasNext: !!headerOf(res, 'x-next-page')?.trim() || linkHasNext(res) };
+        },
+      );
     }
 
     if (src.type === 'bitbucket') {
-      try {
-        const res = await guardedFetch('https://api.bitbucket.org/2.0/repositories?role=contributor&pagelen=100&sort=-updated_on', {
+      listed = await listRepoPages(
+        'Bitbucket',
+        paged('https://api.bitbucket.org/2.0/repositories?role=contributor&pagelen=100&sort=-updated_on'),
+        {
           headers: {
             Authorization: `Bearer ${token}`,
             'User-Agent': 'NineDeploy',
           },
-        });
-        if (!res.ok) {
-          reply.header('x-nd-source-error', `Bitbucket API ${res.status}`);
-          return [];
-        }
-        const data = (await res.json()) as {
-          values?: Array<{
-            name: string;
-            full_name: string;
-            is_private: boolean;
-            mainbranch?: { name?: string };
-            links?: { html?: { href?: string } };
-          }>;
-        };
-        return (data.values ?? []).map((r) => ({
-          name: r.name,
-          fullName: r.full_name,
-          url: `https://bitbucket.org/${r.full_name}.git`,
-          defaultBranch: r.mainbranch?.name || 'master',
-          isPrivate: r.is_private,
-        }));
-      } catch (err) {
-        reply.header('x-nd-source-error', `Bitbucket API unreachable: ${providerErrorText(err, token)}`);
-        return [];
-      }
+        },
+        token,
+        async (res) => {
+          const data = (await res.json()) as {
+            next?: string;
+            values?: Array<{
+              name: string;
+              full_name: string;
+              is_private: boolean;
+              mainbranch?: { name?: string };
+              links?: { html?: { href?: string } };
+            }>;
+          };
+          const rows = (data.values ?? []).map((r) => ({
+            name: r.name,
+            fullName: r.full_name,
+            url: `https://bitbucket.org/${r.full_name}.git`,
+            defaultBranch: r.mainbranch?.name || 'master',
+            isPrivate: r.is_private,
+          }));
+          return { rows, hasNext: !!data.next };
+        },
+      );
+    }
+
+    if (listed) {
+      if (listed.diag) reply.header('x-nd-source-error', listed.diag);
+      return listed.rows;
     }
 
     return [];

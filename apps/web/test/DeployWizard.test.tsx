@@ -719,6 +719,38 @@ describe('DeployWizard — repository analysis & Git credential guidance', () =>
     expect(screen.getByText(/Private repositories need a Git credential/)).toBeInTheDocument();
   });
 
+  // F1006/F1007 follow-up: a fine-grained GitHub token lists only the
+  // repositories selected for it, and a clone it cannot make now answers a
+  // 400 whose message the wizard must show verbatim.
+  it('explains a short GitHub repo list and shows the server clone-failure message', async () => {
+    const user = userEvent.setup();
+    const message =
+      "Could not clone https://github.com/x/y: the repository was not found or the selected credential has no access to it. For a fine-grained GitHub token, add this repository to the token's repository access.";
+    apiMock.api.sources.list.mockResolvedValue([
+      { id: 3, name: 'github-app', type: 'github' },
+      { id: 4, name: 'gitlab-app', type: 'gitlab' },
+    ]);
+    apiMock.api.sources.repos.mockResolvedValue([
+      { name: 'a', fullName: 'x/a', url: 'https://github.com/x/a', defaultBranch: 'main', isPrivate: true },
+    ]);
+    apiMock.api.sources.branches.mockResolvedValue([]);
+    apiMock.api.insights.analyze.mockRejectedValue(new Error(message) as never);
+    renderWizard();
+
+    expect(screen.queryByTestId('repo-list-hint')).not.toBeInTheDocument();
+    await screen.findByRole('option', { name: 'gitlab-app (gitlab)' });
+    const sourceSelect = screen.getAllByRole('combobox')[1]!;
+    await user.selectOptions(sourceSelect, '4');
+    await screen.findByRole('option', { name: /Choose a repo/ });
+    expect(screen.queryByTestId('repo-list-hint')).not.toBeInTheDocument(); // GitLab: no GitHub token advice
+
+    await user.selectOptions(sourceSelect, '3');
+    expect(await screen.findByTestId('repo-list-hint')).toHaveTextContent(/Fine-grained tokens only list the repositories selected for them/);
+
+    await fillRepo(user);
+    expect(await screen.findByText(message, {}, { timeout: 4000 })).toBeInTheDocument();
+  });
+
   it('applies framework suggestions to the form', async () => {
     const user = userEvent.setup();
     apiMock.api.insights.analyze.mockResolvedValue(analysis);
