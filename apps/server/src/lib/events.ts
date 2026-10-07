@@ -53,7 +53,13 @@ class EventBus extends EventEmitter {
     this.setMaxListeners(0); // 0 = unlimited
   }
 
-  publish(action: string, entity?: string | null, actorUserId: number | null = null): void {
+  /**
+   * D4/F337: `meta` is handed to subscribers as a SECOND argument and is never
+   * stored on the event — the backlog and the `/v1/events` socket serialise
+   * the event object as-is, and audit meta carries IPs, user agents, emails
+   * and error text. Only the kernel audit bridge reads it (and allow-lists it).
+   */
+  publish(action: string, entity?: string | null, actorUserId: number | null = null, meta?: Record<string, unknown>): void {
     const event: AppEvent = {
       id: ++this.seq,
       action,
@@ -68,7 +74,7 @@ class EventBus extends EventEmitter {
     // contract (lib/audit.ts), and its `void audit(...)` call sites would turn
     // a rejection into an unhandledRejection — so a broken listener stays
     // isolated instead of escaping the publish.
-    this.dispatch('event', event);
+    this.dispatch('event', event, meta);
   }
 
   /**
@@ -85,7 +91,7 @@ class EventBus extends EventEmitter {
     this.dispatch(name, payload);
   }
 
-  private dispatch(name: string, payload: unknown): void {
+  private dispatch(name: string, payload: unknown, meta?: Record<string, unknown>): void {
     if (name === 'error') {
       try { this.emit(name, payload); }
       catch (err) { console.error(`[events] listener for "${name}" threw:`, err); }
@@ -93,7 +99,10 @@ class EventBus extends EventEmitter {
     }
     // Preserve once wrappers and a snapshot even when callbacks alter listeners.
     for (const listener of this.rawListeners(name)) {
-      try { listener.call(this, payload); }
+      try {
+        if (meta === undefined) listener.call(this, payload);
+        else listener.call(this, payload, meta);
+      }
       catch (err) { console.error(`[events] listener for "${name}" threw:`, err); }
     }
   }
@@ -102,7 +111,8 @@ class EventBus extends EventEmitter {
     return [...this.recent];
   }
 
-  subscribe(cb: (event: AppEvent) => void): () => void {
+  /** `meta` (D4) is the publisher's audit meta, out of band — see publish(). */
+  subscribe(cb: (event: AppEvent, meta?: Record<string, unknown>) => void): () => void {
     this.on('event', cb);
     return () => this.off('event', cb);
   }

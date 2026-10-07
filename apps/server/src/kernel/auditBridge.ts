@@ -1,5 +1,5 @@
 import type { AppEvent } from '../lib/events.js';
-import type { DomainEvents, IEventBus } from './types.js';
+import type { AuditPluginMeta, DomainEvents, IEventBus } from './types.js';
 
 /**
  * Bridge the real application event stream into the kernel's event bus.
@@ -141,6 +141,37 @@ export function mapAuditToDomainEvent(event: AppEvent): MappedEvent | null {
 }
 
 /**
+ * D4/F337: the audit-meta keys plugins may see on `audit.recorded`.
+ *
+ * An allow-list rather than `sandbox/redact.ts`: redaction is a by-key-name
+ * DENY list for secrets (password/token/…), and audit meta mostly carries
+ * personal data it does not match — `ip`, `ua`, `email`, `lookupEmail`, error
+ * `message`s, host names, file paths. The firehose also reaches consumers that
+ * never pass through redaction: the telemetry plugin re-exports every kernel
+ * event to an external collector. So nothing reaches the bus unless a plugin
+ * contract needs it. Add a key here only with that consumer in hand.
+ */
+export const AUDIT_PLUGIN_META_KEYS = ['templateId'] as const;
+
+/** Longest allow-listed meta value forwarded; ids are short. */
+const MAX_META_VALUE = 200;
+
+/**
+ * The allow-listed subset of an audit entry's meta, or undefined when it has
+ * none — so an event without one keeps the exact pre-D4 payload shape. Only
+ * non-empty strings are forwarded: the allow-listed keys are identifiers.
+ */
+export function pluginAuditMeta(meta: Record<string, unknown> | undefined): AuditPluginMeta | undefined {
+  if (!meta || typeof meta !== 'object') return undefined;
+  const picked: Record<string, string> = {};
+  for (const key of AUDIT_PLUGIN_META_KEYS) {
+    const value = meta[key];
+    if (typeof value === 'string' && value.length > 0 && value.length <= MAX_META_VALUE) picked[key] = value;
+  }
+  return Object.keys(picked).length > 0 ? (picked as AuditPluginMeta) : undefined;
+}
+
+/**
  * Subscribe the kernel bus to the audit stream. Returns the unsubscribe
  * function so `plugins/kernel.ts` can detach on shutdown.
  *
@@ -148,17 +179,21 @@ export function mapAuditToDomainEvent(event: AppEvent): MappedEvent | null {
  * against a stub instead of the process-wide singleton.
  */
 export function bridgeAuditEvents(
-  subscribe: (cb: (event: AppEvent) => void) => () => void,
+  subscribe: (cb: (event: AppEvent, meta?: Record<string, unknown>) => void) => () => void,
   events: IEventBus,
 ): () => void {
-  return subscribe((event) => {
+  return subscribe((event, meta) => {
     // The raw firehose. A plugin that wants "everything" subscribes here
     // instead of asking for a new mapping.
+    // D4/F337: lib/events hands audit meta over out of band (second argument);
+    // only its allow-listed subset rides along.
+    const forwarded = pluginAuditMeta(meta ?? event.meta);
     events.emit('audit.recorded', {
       action: event.action,
       entity: event.entity,
       actorUserId: event.actorUserId,
       ts: event.ts,
+      ...(forwarded ? { meta: forwarded } : {}),
     });
     const mapped = mapAuditToDomainEvent(event);
     // The bus already isolates listener errors, so a badly-behaved plugin

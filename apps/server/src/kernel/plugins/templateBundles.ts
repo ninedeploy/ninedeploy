@@ -87,6 +87,7 @@ export class TemplateBundlesPlugin implements KernelPlugin {
         entity?: string | null;
         actorUserId?: number | null;
         ts?: string;
+        meta?: { templateId?: unknown };
       };
 
       // F372: the template deploy route audits `template.deploy`; nothing ever
@@ -94,6 +95,11 @@ export class TemplateBundlesPlugin implements KernelPlugin {
       if (record.action !== 'template.deploy' && record.action !== 'template.install') {
         return;
       }
+
+      // D4/F337: the deploy route names the template in audit meta (the
+      // entity is `<name> → <service>`); pass the id on so the manifest
+      // generator can find it. Only the id — nothing else from meta.
+      const templateId = typeof record.meta?.templateId === 'string' ? record.meta.templateId : undefined;
 
       // Read the enabled toggle from the config center. We do not await it: the
       // observer is a firehose consumer, so it must not block the audit path.
@@ -111,6 +117,7 @@ export class TemplateBundlesPlugin implements KernelPlugin {
             entity: record.entity,
             actorUserId: record.actorUserId ?? null,
             ts: record.ts ?? new Date().toISOString(),
+            ...(templateId === undefined ? {} : { meta: { templateId } }),
           });
           // `override_count` describes itself in the panel as "updated by the
           // observer when an override is matched" — and nothing ever wrote it,

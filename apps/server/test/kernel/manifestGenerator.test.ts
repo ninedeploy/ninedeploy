@@ -1,7 +1,18 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { buildManifestFromTemplate } from '@ninedeploy/sdk';
 import { NineDeployKernel } from '../../src/kernel/kernel.js';
 import { loadTemplateEntry, ManifestGeneratorPlugin } from '../../src/kernel/plugins/manifestGenerator.js';
+import { TemplateBundlesPlugin } from '../../src/kernel/plugins/templateBundles.js';
+import { bridgeAuditEvents } from '../../src/kernel/auditBridge.js';
+import { audit } from '../../src/lib/audit.js';
+import { eventBus } from '../../src/lib/events.js';
+
+// D4/F337: the end-to-end test below drives the real audit(); its notifier
+// fan-out is not under test here.
+vi.mock('../../src/lib/notifier.js', () => ({ notifyEvent: async () => undefined }));
 
 /**
  * Sprint 1, Gap G-04, PR #2.
@@ -203,3 +214,62 @@ describe('ManifestGeneratorPlugin', () => {
   });
 });
 
+/**
+ * D4/F337: the template deploy route audits `template.deploy` with entity
+ * `<name> → <service>` and the template id in META. audit() published no meta
+ * and the bridge forwarded none, so the generator (which only parsed
+ * `template:<id>` entities) never fired for a real deploy. This drives the
+ * real chain: audit() -> lib/events -> auditBridge -> template-bundles ->
+ * manifest-generator, and checks meta reaches plugins only allow-listed.
+ */
+describe('template deploy audit -> manifest.generated (D4/F337)', () => {
+  const makeDb = () => ({
+    query: { configEntries: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(undefined) } },
+    insert: vi.fn().mockReturnValue({ values: vi.fn().mockReturnValue({ onConflictDoUpdate: vi.fn().mockResolvedValue([]) }) }),
+  });
+  const auditDb = { insert: () => ({ values: async () => undefined }) };
+  const cfg = { port: 3000, host: '0.0.0.0', jwtSecret: 'test-secret-at-least-32-chars-long-12345', dataDir: '/tmp/ninedeploy-test' };
+
+  it('generates a manifest from meta.templateId, forwards no other meta, and leaves meta-less events as they were', async () => {
+    // The producer this depends on.
+    const routeSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../src/modules/templates.ts'), 'utf8');
+    expect(routeSrc).toMatch(/'template\.deploy', `\$\{t\.name\} → \$\{prepared\.service\.name\}`, \{ templateId: t\.id \}/);
+
+    const kernel = new NineDeployKernel(makeDb() as never, cfg);
+    await kernel.registerPlugin(new TemplateBundlesPlugin());
+    await kernel.registerPlugin(new ManifestGeneratorPlugin());
+    const recorded: Array<Record<string, unknown>> = [];
+    kernel.events.on('audit.recorded', (p) => void recorded.push(p as never));
+    const generated = new Promise<{ templateId: string }>((resolve, reject) => {
+      kernel.events.onCustom('manifest.generated', (p) => resolve(p as never));
+      kernel.events.onCustom('manifest.generator_error', (p) => reject(new Error(JSON.stringify(p))));
+    });
+    const detach = bridgeAuditEvents((cb) => eventBus.subscribe(cb), kernel.events);
+    try {
+      await audit(auditDb as never, 1, 'template.deploy', 'n8n → my-n8n', {
+        templateId: 'n8n',
+        email: 'alice@example.test',
+        token: 'tok-123',
+      }, { ip: '203.0.113.9', userAgent: 'ua-secret' });
+      await audit(auditDb as never, 1, 'auth.login', 'alice@example.test');
+
+      // audit() publishes synchronously: the firehose entry is already here.
+      expect(recorded[0]).toEqual({
+        action: 'template.deploy',
+        entity: 'n8n → my-n8n',
+        actorUserId: 1,
+        ts: recorded[0]!.ts,
+        meta: { templateId: 'n8n' },
+      });
+      expect((await generated).templateId).toBe('n8n');
+      // No meta key at all on an event that carried none.
+      expect(Object.keys(recorded[1]!).sort()).toEqual(['action', 'actorUserId', 'entity', 'ts']);
+      // The /v1/events stream (backlog + live) serialises the event object: no meta on it.
+      const backlog = JSON.stringify(eventBus.backlog().slice(-2));
+      expect(backlog).not.toContain('templateId');
+      expect(backlog).not.toContain('203.0.113.9');
+    } finally {
+      detach();
+    }
+  });
+});

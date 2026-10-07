@@ -54,6 +54,9 @@ export async function readBundledRegistry(): Promise<{ templates: TemplateRegist
   return JSON.parse(raw) as { templates: TemplateRegistryEntry[] };
 }
 
+/** A template id as the bundled registry spells them (all 130 match). */
+const TEMPLATE_ID = /^[a-z0-9-_]+$/;
+
 /**
  * Manifest Generator plugin — Sprint 1, Gap G-04 (PR #2).
  *
@@ -68,8 +71,10 @@ export async function readBundledRegistry(): Promise<{ templates: TemplateRegist
  *   - `enabled` (default `true`) gates the subscription side-effect. The
  *     plugin is still registered when off (so the schema shows up in
  *     Settings → Plugins), but no manifests are produced.
- *   - The entity format from the observer is `template:<id>`. Anything else
- *     is ignored, so the plugin is robust to future entity shapes.
+ *   - The template id comes from the observer's `meta.templateId` (the
+ *     template deploy route's audit meta, D4/F337); without one, the legacy
+ *     entity format `template:<id>` is parsed. Anything else is ignored, so
+ *     the plugin is robust to future entity shapes.
  *   - The manifest mapper is the pure `buildManifestFromTemplate` helper
  *     above — tests pin that contract independently of the plugin.
  *   - All failure paths land on `manifest.generator_error`; the audit
@@ -124,14 +129,20 @@ export class ManifestGeneratorPlugin implements KernelPlugin {
 
   init(ctx: KernelContext): void {
     const unsub = ctx.events.onCustom('template.bundle.observed', (payload) => {
-      const observed = payload as { entity?: string | null; ts?: string };
-      const entity = observed.entity ?? '';
-      const match = /^template:([a-z0-9-_]+)$/.exec(entity);
-      if (!match) {
+      const observed = payload as { entity?: string | null; meta?: { templateId?: unknown }; ts?: string };
+      // D4/F337: the real deploy route's entity is `<name> → <service>`, so
+      // the id arrives in meta; the entity parse stays for legacy producers.
+      const fromMeta = observed.meta?.templateId;
+      const templateId =
+        typeof fromMeta === 'string'
+          ? TEMPLATE_ID.test(fromMeta)
+            ? fromMeta
+            : undefined
+          : /^template:([a-z0-9-_]+)$/.exec(observed.entity ?? '')?.[1];
+      if (!templateId) {
         // Not a template entity. Stay quiet; other plugins may be listening.
         return;
       }
-      const templateId = match[1]!;
 
       void Promise.all([
         ctx.configCenter.get<boolean>('plugin:manifest-generator:enabled', true),

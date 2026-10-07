@@ -33,7 +33,9 @@ export async function audit(
     ...(enriched ? { meta: enriched } : {}),
   };
   // The actor rides along so the /v1/events socket can decide who may see it.
-  eventBus.publish(action, entity, userId);
+  // D4/F337: meta travels out of band for the kernel audit bridge, which
+  // forwards only an allow-listed subset to plugins (kernel/auditBridge.ts).
+  eventBus.publish(action, entity, userId, enriched);
   // Fire-and-forget notification dispatch
   void notifyEvent(db, event).catch(() => undefined);
 }

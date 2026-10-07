@@ -5,6 +5,16 @@ export type AppConfig = typeof config;
 
 export type KernelState = 'INIT' | 'BOOTSTRAP' | 'READY' | 'DRAINING' | 'TERMINATED';
 
+/**
+ * D4/F337: the part of an audit entry's meta that plugins may see on
+ * `audit.recorded`. An allow-list, not the raw meta: audit meta carries IPs,
+ * user agents, emails and error text, and the firehose reaches sandboxed
+ * plugins and the telemetry exporter.
+ */
+export interface AuditPluginMeta {
+  templateId?: string;
+}
+
 // ─── Domain Events (Asynchronous Pub/Sub) ──────────────────────────────────
 export interface DomainEvents {
   // Service lifecycle
@@ -51,7 +61,16 @@ export interface DomainEvents {
   // The raw audit firehose, bridged from `lib/events.ts` (see
   // `kernel/auditBridge.ts`). Every `audit()` call reaches plugins here, so a
   // plugin can observe anything without the bridge needing a mapping for it.
-  'audit.recorded': { action: string; entity: string | null; actorUserId: number | null; ts: string };
+  // D4/F337: `meta` is present only when the audit entry carried an
+  // allow-listed key (AUDIT_PLUGIN_META_KEYS in auditBridge.ts); events
+  // without one keep the four-field shape.
+  'audit.recorded': {
+    action: string;
+    entity: string | null;
+    actorUserId: number | null;
+    ts: string;
+    meta?: AuditPluginMeta;
+  };
 
   // Plugin Ecosystem Events
   'deployment.status_changed': { deploymentId?: number; status?: string; serviceName?: string };
