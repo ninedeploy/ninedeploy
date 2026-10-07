@@ -31,6 +31,11 @@ const magicVarsMock = vi.hoisted(() => ({
     parsed: { SERVICE_USER_POSTGRES: { raw: 'SERVICE_USER_POSTGRES', kind: 'user' } },
     openPlaceholders: ['PUBLIC_URL'],
   })),
+  // F261: the reuse path lists the new YAML's services via analyseComposeContent.
+  scanMagicTokens: vi.fn(() => [] as string[]),
+  scanRequiredPlaceholders: vi.fn(() => [] as string[]),
+  parseMagicToken: vi.fn(() => null),
+  composeServiceKey: vi.fn((name: string) => name),
 }));
 vi.mock('../../src/engine/magicVars.js', () => magicVarsMock);
 
@@ -224,7 +229,7 @@ describe('prepareComposeStack', () => {
     await expect(
       prepareComposeStack(app as never, TEMPLATE as never, { name: 'Shop' }, { id: 7, isOperator: true }),
     ).rejects.toMatchObject({ statusCode: 409, code: 'slug_volume_retained' });
-    expect(retainedMocks.assertSlugVolumeNotRetained).toHaveBeenCalledWith('shop', 'compose');
+    expect(retainedMocks.assertSlugVolumeNotRetained).toHaveBeenCalledWith('shop', 'compose', expect.objectContaining({ serverId: null }));
     expect(insert).not.toHaveBeenCalled();
     expect(fsMock.writeFileSync).not.toHaveBeenCalled();
   });
@@ -415,5 +420,54 @@ describe('prepareComposeStack', () => {
     const apiToken = result.stackEnv.find((e) => e.key === 'API_TOKEN');
     expect(logLevel?.secret).toBe(false);
     expect(apiToken?.secret).toBe(true);
+  });
+
+  it("F260: honours an operator's node placement (stored + node-probed) and refuses it for members", async () => {
+    const app = makeFakeApp();
+    const inserted: Array<Record<string, unknown>> = [];
+    app.db.insert = () => ({
+      values: (v: unknown) => {
+        inserted.push(v as Record<string, unknown>);
+        return { returning: async () => [{ id: 99, slug: 'stats', name: 'Stats', type: 'compose' as const }] };
+      },
+    });
+    await prepareComposeStack(app as never, TEMPLATE as never, { name: 'Stats', serverId: 4 }, { id: 7, isOperator: true });
+    expect(inserted[0]).toMatchObject({ slug: 'stats', type: 'compose', serverId: 4 });
+    expect(retainedMocks.assertSlugVolumeNotRetained).toHaveBeenCalledWith('stats', 'compose', expect.objectContaining({ serverId: 4 }));
+
+    const memberApp = makeFakeApp();
+    const insert = vi.spyOn(memberApp.db, 'insert');
+    await expect(
+      prepareComposeStack(memberApp as never, TEMPLATE as never, { name: 'Stats', serverId: 4 }, { id: 8, isOperator: false }),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it('F260: a reuse naming a different placement is slug_taken, not a silent keep', async () => {
+    const existing = { id: 50, slug: 'stats', name: 'Stats', type: 'compose' as const, ownerUserId: 7, status: 'running', templateId: 'pg-stack', serverId: 4 };
+    await expect(
+      prepareComposeStack(makeFakeApp({ existingService: existing }) as never, TEMPLATE as never, { name: 'Stats', serverId: null }, { id: 7, isOperator: true }),
+    ).rejects.toMatchObject({ statusCode: 400, code: 'slug_taken' });
+    const same = await prepareComposeStack(makeFakeApp({ existingService: existing }) as never, TEMPLATE as never, { name: 'Stats', serverId: 4 }, { id: 7, isOperator: true });
+    expect(same.service.id).toBe(50);
+  });
+
+  it("F261: a reused stack whose routed service the new YAML no longer declares takes the template's", async () => {
+    const base = { id: 50, slug: 'pg-stack', name: 'Old', type: 'compose' as const, ownerUserId: 7, status: 'idle', templateId: 'pg-stack', port: 1234 };
+    const stale = await prepareComposeStack(
+      makeFakeApp({ existingService: { ...base, composeService: 'app-old' } }) as never,
+      TEMPLATE as never,
+      {},
+      { id: 7, isOperator: false },
+    );
+    expect(stale.service).toMatchObject({ composeContent: COMPOSE_CONTENT, composeService: 'postgresql', port: 5432 });
+    // A choice the new YAML still declares is the user's to keep.
+    const kept = await prepareComposeStack(
+      makeFakeApp({ existingService: { ...base, composeService: 'postgresql' } }) as never,
+      TEMPLATE as never,
+      {},
+      { id: 7, isOperator: false },
+    );
+    expect(kept.service).toMatchObject({ composeService: 'postgresql', port: 1234 });
   });
 });

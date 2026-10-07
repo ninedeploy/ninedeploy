@@ -3,7 +3,7 @@ import yaml from 'js-yaml';
 import { buildConfigs, services, type Service } from '@ninedeploy/db';
 import { eq } from 'drizzle-orm';
 import type { ComposePreviewResponse } from '@ninedeploy/schemas';
-import { badRequest } from '../lib/errors.js';
+import { badRequest, forbidden } from '../lib/errors.js';
 import { randomToken } from '../lib/crypto.js';
 import { slugify, slugifyWithSuffix } from '../lib/slug.js';
 import { assertSlugVolumeNotRetained } from '../lib/retainedSlugVolume.js';
@@ -146,9 +146,15 @@ export interface PreparedStack {
 export async function prepareComposeStack(
   app: FastifyInstance,
   template: Template,
-  input: { name?: string; reuseExisting?: boolean },
+  input: { name?: string; reuseExisting?: boolean; serverId?: number | null },
   user: { id: number; isOperator: boolean },
 ): Promise<PreparedStack> {
+  // F260: compose stacks run on nodes too, so the Hub's placement is honoured
+  // here — operator-only, the same rule POST /services and container
+  // templates apply (r097). It used to be dropped: the stack ran on the panel.
+  if (input.serverId != null && !user.isOperator) {
+    throw forbidden('Only operators may place a service on a remote server');
+  }
   const pre = preflightCompose(template.composeContent!);
   if (!pre.ok) throw badRequest(`Template compose definition cannot run here: ${pre.reasons.join('; ')}`);
 
@@ -173,20 +179,31 @@ export async function prepareComposeStack(
       service.ownerUserId === user.id
       && service.type === 'compose'
       && service.templateId === template.id
-      && ['idle', 'error', 'stopped', 'running'].includes(service.status);
+      && ['idle', 'error', 'stopped', 'running'].includes(service.status)
+      // F260: a retry naming another placement is not a retry of this stack.
+      && (input.serverId === undefined || (input.serverId ?? null) === (service.serverId ?? null));
     if (!(input.reuseExisting ?? true) || !sameStack) {
       throw badRequest(`A service with slug '${slug}' already exists`, 'slug_taken');
     }
     // The registry is authoritative for the stack definition: a reused row
     // takes the template's CURRENT YAML, so a fixed template repairs an
     // existing install on retry instead of redeploying the broken original.
-    const patch = { name, composeContent: template.composeContent! };
+    // F261: the routed service must be declared by that YAML — keep the row's
+    // choice when it still is, else take the template's (with its port).
+    const routedStillDeclared =
+      service.composeService != null && analyseComposeContent(template.composeContent!).services.includes(service.composeService);
+    const patch = {
+      name,
+      composeContent: template.composeContent!,
+      ...(routedStillDeclared ? {} : { composeService: template.composeService ?? null, port: template.port }),
+    };
     await app.db.update(services).set(patch).where(eq(services.id, service.id));
     service = { ...service, ...patch };
   } else {
     // r351: same retained-volume gate as POST /services — a stack's `type`
     // can later be PATCHed to docker, which mounts `nd-svc-<slug>-data`.
-    await assertSlugVolumeNotRetained(slug, 'compose');
+    // F260: a node placement probes THE NODE (r466).
+    await assertSlugVolumeNotRetained(slug, 'compose', { db: app.db, serverId: input.serverId ?? null });
     const [created] = await app.db.insert(services).values({
       ownerUserId: user.id,
       name,
@@ -199,6 +216,7 @@ export async function prepareComposeStack(
       publishedPort: null,
       healthPath: '/',
       repoUrl: null,
+      serverId: input.serverId ?? null,
       cpuShares: 0,
       memLimitMb: 0,
       dockerSocket: false,

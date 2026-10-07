@@ -272,6 +272,69 @@ describe('Config Presets routes (G-23 PR-A)', () => {
     expect(res.statusCode).toBe(404);
   });
 
+  it('F276: apply refuses the masked placeholder for a secret key (409, never written)', async () => {
+    const { app, store } = await newApp(
+      createFakeDb({
+        findFirst: {
+          configEntries: { key: 'custom:api:token', value: 'enc', isSecret: true, category: 'ops', tags: [] },
+        },
+      }),
+    );
+    await app.inject({
+      method: 'POST',
+      url: '/',
+      headers: asUser(),
+      payload: { id: 'from-listing', values: { 'custom:api:token': '••••••••' } },
+    });
+    store.setCalls = [];
+    const res = await app.inject({ method: 'PUT', url: '/from-listing/apply', headers: asUser(), payload: {} });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().failures[0]).toMatchObject({ key: 'custom:api:token', status: 'failed' });
+    expect(store.setCalls.map((c) => c.key)).not.toContain('custom:api:token');
+  });
+
+  it('F277: the value bundle is stored as a secret and still reads back as an object', async () => {
+    const { app, store } = await newApp();
+    await app.inject({
+      method: 'POST',
+      url: '/',
+      headers: asUser(),
+      payload: { id: 'rotate', values: { 'custom:api:token': 'tok_live_x' } },
+    });
+    const write = store.setCalls.find((c) => c.key === 'plugin:config-presets:preset.rotate.values');
+    expect(write?.opts?.isSecret).toBe(true);
+    expect(typeof write?.value).toBe('string');
+    const res = await app.inject({ method: 'GET', url: '/rotate', headers: asUser() });
+    expect(res.json().values).toEqual({ 'custom:api:token': 'tok_live_x' });
+  });
+
+  it('F278: concurrent registrations both stay in the directory (gated, no sleeps)', async () => {
+    const { app } = await newApp();
+    // Hold the first two directory reads until both requests resolved the
+    // namespace (each handler does so before touching the directory).
+    const cc = (app as unknown as { kernel: { configCenter: ReturnType<typeof makeConfigCenter> } }).kernel.configCenter;
+    const realGet = cc.get.bind(cc);
+    let nsReads = 0;
+    let held = 0;
+    let open!: () => void;
+    const bothInFlight = new Promise<void>((r) => {
+      open = r;
+    });
+    cc.get = (async (key: string, def: unknown) => {
+      if (key === 'plugin:config-presets:preset.namespace' && ++nsReads >= 2) open();
+      if (key === 'plugin:config-presets:preset.list' && held < 2) {
+        held++;
+        await bothInFlight;
+      }
+      return realGet(key, def);
+    }) as typeof cc.get;
+    const post = (id: string) => app.inject({ method: 'POST', url: '/', headers: asUser(), payload: { id, values: { k: id } } });
+    const [a, b] = await Promise.all([post('alpha'), post('beta')]);
+    expect([a.statusCode, b.statusCode]).toEqual([200, 200]);
+    const res = await app.inject({ method: 'GET', url: '/', headers: asUser() });
+    expect((res.json().presets as string[]).sort()).toEqual(['alpha', 'beta']);
+  });
+
   it('all routes require authentication', async () => {
     const { app } = await newApp();
     const get = await app.inject({ method: 'GET', url: '/' });

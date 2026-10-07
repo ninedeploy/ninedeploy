@@ -27,7 +27,11 @@ export default fp(
       if (stopped) return; // close() may have run while the query was pending.
       for (const job of jobs) {
         try {
-          const cron = new Cron(job.cron, { name: `job-${job.id}`, unref: true }, () => {
+          // F102: 5-part only, like the API's assertCron (F240). croner's
+          // default 'auto' mode armed a 6-field row saved before F240
+          // (`* * * * * *`) with a seconds field -- it fired every second. Such
+          // a row now throws here and is skipped with the warning below.
+          const cron = new Cron(job.cron, { name: `job-${job.id}`, unref: true, mode: '5-part' }, () => {
             // r303: `scheduled` makes runJob re-check `enabled` on the live row.
             void runJob(db, job.id, { scheduled: true }).catch((err) =>
               fastify.log.error({ err, jobId: job.id }, 'scheduled job failed'),

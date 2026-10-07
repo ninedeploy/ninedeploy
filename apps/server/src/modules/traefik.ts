@@ -260,7 +260,14 @@ async function getTraefikConfig(): Promise<{ routers: TraefikRouter[]; services:
           };
         } else if (currentRouter) {
           if (trimmed.startsWith('rule:')) {
-            currentRouter.rule = trimmed.slice(5).trim().replace(/^["']|["']$/g, '');
+            // F169: renderDynamicConfig writes rules as double-quoted YAML
+            // (yamlDoubleQuoted escapes `\` and `"`); decode those escapes so
+            // the reported rule is the one Traefik loads.
+            const rawRule = trimmed.slice(5).trim();
+            currentRouter.rule =
+              rawRule.length >= 2 && rawRule.startsWith('"') && rawRule.endsWith('"')
+                ? rawRule.slice(1, -1).replace(/\\(["\\])/g, '$1')
+                : rawRule.replace(/^["']|["']$/g, '');
           } else if (trimmed.startsWith('service:')) {
             currentRouter.service = trimmed.slice(8).trim();
           } else if (trimmed.startsWith('- web') || trimmed.startsWith('- http')) {
@@ -378,8 +385,11 @@ export const traefikRoutes: FastifyPluginAsync = async (app) => {
 
   // Loglar
   app.get('/traefik/logs', { preHandler: [app.authenticate, app.requireAdmin] }, async (req) => {
-    const lines = Number((req.query as { lines?: string })?.lines) || 100;
-    const logs = await getTraefikLogs(Math.min(lines, 500));
+    // F168: a negative count is truthy, so `|| 100` let `lines=-1` through as
+    // `docker logs --tail -1` (= every line) and `.slice(1)`. Clamp to 1..500.
+    const requested = Math.trunc(Number((req.query as { lines?: string })?.lines));
+    const lines = requested > 0 ? Math.min(requested, 500) : 100;
+    const logs = await getTraefikLogs(lines);
     return { logs };
   });
 
@@ -389,7 +399,9 @@ export const traefikRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // Traefik'i yeniden başlat (admin only)
-  app.post('/traefik/restart', { preHandler: [app.authenticate, app.requireAdmin] }, async (req) => {
+  // F612: POST routes authenticate at onRequest (before the body is read and
+  // parsed, the r098 rule); a preHandler ran only after parsing.
+  app.post('/traefik/restart', { onRequest: [app.authenticate], preHandler: [app.requireAdmin] }, async (req) => {
     try {
       await capture('docker', ['restart', TRAEFIK_CONTAINER]);
       void audit(app.db, req.user!.id, 'traefik.restart');
@@ -400,7 +412,7 @@ export const traefikRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // ACME dosyasını yedekle
-  app.post('/traefik/backup-certs', { preHandler: [app.authenticate, app.requireAdmin] }, async (req) => {
+  app.post('/traefik/backup-certs', { onRequest: [app.authenticate], preHandler: [app.requireAdmin] }, async (req) => {
     // Resolve through config (which anchors relative data dirs to the repo
     // root) — reading the env var directly followed the process cwd, so a
     // restart from a different directory silently backed up the WRONG
@@ -431,7 +443,7 @@ export const traefikRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // Traefik'i güncelle (pull new image + restart)
-  app.post('/traefik/update', { preHandler: [app.authenticate, app.requireAdmin] }, async (req) => {
+  app.post('/traefik/update', { onRequest: [app.authenticate], preHandler: [app.requireAdmin] }, async (req) => {
     const log = (line: string) => app.log.info({ component: 'traefik-update' }, line);
     
     log('Starting Traefik update...');

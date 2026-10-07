@@ -123,3 +123,48 @@ describe('job scheduler plugin', () => {
     expect(calls).toBe(queried);
   });
 });
+
+// F102: the API takes 5-field crons only since F240, but rows saved before it
+// were armed in croner's default 'auto' mode — a stored `* * * * * *` carried
+// a seconds field and ran its job every second. Real croner, fake clock.
+describe('job scheduler — stored seconds-field crons (F102)', () => {
+  afterEach(() => vi.useRealTimers());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    CronMock.instances.length = 0;
+  });
+
+  it('skips a legacy 6-field cron instead of firing it every second', async () => {
+    const { Cron: RealCron } = await vi.importActual<typeof import('croner')>('croner');
+    const real: Array<{ stop(): void }> = [];
+    // biome-ignore lint/complexity/useArrowFunction: constructed with `new`.
+    CronMock.Cron.mockImplementation(function (expr: string, opts: unknown, fn: () => void) {
+      const c = new RealCron(expr, opts as never, fn);
+      real.push(c);
+      return c as never;
+    });
+    vi.useFakeTimers({ now: new Date('2026-01-01T00:00:30.000Z') });
+    const app = Fastify({ logger: false });
+    const warn = vi.spyOn(app.log, 'warn');
+    app.decorate(
+      'db',
+      makeDb([
+        { id: 1, cron: '* * * * *', enabled: true },
+        { id: 2, cron: '* * * * * *', enabled: true },
+      ]),
+    );
+    try {
+      await app.register(jobSchedulerPlugin);
+      await vi.advanceTimersByTimeAsync(60_000);
+    } finally {
+      await app.close();
+      for (const c of real) c.stop();
+      CronMock.Cron.mockReset();
+    }
+
+    const runsOf = (id: number) => runnerMock.runJob.mock.calls.filter((c) => (c as unknown[])[1] === id).length;
+    expect(runsOf(1)).toBe(1);
+    expect(runsOf(2)).toBe(0);
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ jobId: 2 }), expect.stringContaining('invalid cron'));
+  });
+});

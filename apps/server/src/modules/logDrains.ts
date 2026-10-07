@@ -7,9 +7,33 @@ import { decrypt, encrypt } from '../lib/crypto.js';
 import { notFound, unprocessable } from '../lib/errors.js';
 import { testLogDrainConnection } from '../engine/logDrainManager.js';
 
+/**
+ * F601: the only transport (`guardedFetch`) speaks http(s) and refuses every
+ * other scheme, so a `syslog://` or scheme-less URL would be stored, shown as
+ * enabled and then fail on every shipper tick. Refuse it at save time.
+ */
+function assertDeliverableUrl(raw: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw unprocessable('Drain URL must be an absolute http:// or https:// URL');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw unprocessable(`Drain URL must use http:// or https:// (logs are delivered over HTTP), not ${parsed.protocol}//`);
+  }
+}
+
 export const logDrainRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('onRequest', app.authenticate);
   app.addHook('preHandler', app.requireAdmin);
+
+  // F600: a dangling serviceId used to reach the INSERT/UPDATE and surface the
+  // raw foreign-key failure as a 500.
+  const assertServiceExists = async (serviceId: number): Promise<void> => {
+    const [svc] = await app.db.select({ id: services.id }).from(services).where(eq(services.id, serviceId));
+    if (!svc) throw notFound('Service not found');
+  };
 
   // List log drains (optionally filtered by serviceId)
   app.get('/', async (req) => {
@@ -101,6 +125,8 @@ export const logDrainRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     }
 
     const { name, type, url, apiKey, serviceId, enabled = true, format = 'json', headers } = parsed.data;
+    assertDeliverableUrl(url);
+    if (serviceId != null) await assertServiceExists(serviceId);
 
     let apiKeyEncrypted: string | null = null;
     if (apiKey) {
@@ -150,6 +176,8 @@ export const logDrainRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
 
     const [existing] = await app.db.select().from(logDrains).where(eq(logDrains.id, numId));
     if (!existing) throw notFound('Log drain not found');
+    if (parsed.data.url !== undefined) assertDeliverableUrl(parsed.data.url);
+    if (parsed.data.serviceId != null) await assertServiceExists(parsed.data.serviceId);
 
     const patch: Partial<typeof logDrains.$inferInsert> = {};
     if (parsed.data.name !== undefined) patch.name = parsed.data.name;

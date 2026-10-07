@@ -12,8 +12,12 @@ const databaseMocks = vi.hoisted(() => ({
 }));
 vi.mock('../src/engine/database.js', () => databaseMocks);
 // r351: the retained-volume probe asks Docker; stubbed here, asserted as wired below.
-const retainedMocks = vi.hoisted(() => ({ assertSlugVolumeNotRetained: vi.fn(async (_slug: string, _type: string) => undefined) }));
-vi.mock('../src/lib/retainedSlugVolume.js', () => retainedMocks);
+const retainedMocks = vi.hoisted(() => ({ assertSlugVolumeNotRetained: vi.fn(async (_slug: string, _type: string, _opts?: unknown) => undefined) }));
+// F552: the r648 attached-volume guard stays REAL (it only reads the db).
+vi.mock('../src/lib/retainedSlugVolume.js', async (orig) => ({
+  ...(await orig<typeof import('../src/lib/retainedSlugVolume.js')>()),
+  ...retainedMocks,
+}));
 
 describe('template routes', () => {
   beforeEach(() => {
@@ -162,8 +166,37 @@ describe('template routes', () => {
     const res = await app.inject({ method: 'POST', url: '/n8n/deploy', headers: asUser(), payload: { name: 'blog' } });
     expect(res.statusCode).toBe(409);
     expect(res.json().error.code).toBe('slug_volume_retained');
-    expect(retainedMocks.assertSlugVolumeNotRetained).toHaveBeenCalledWith('blog', 'docker');
+    expect(retainedMocks.assertSlugVolumeNotRetained).toHaveBeenCalledWith('blog', 'docker', expect.objectContaining({ serverId: null }));
     expect(insert).not.toHaveBeenCalled();
+  });
+
+  it('F553: a node-pinned template deploy probes the NODE for a retained volume (r466)', async () => {
+    const db = createFakeDb({ insert: { services: [svcRow({ id: 7, slug: 'blog' })], deployments: [depRow({ id: 8 })] } });
+    const app = await buildTestApp({ db });
+    await app.register(templateRoutes);
+    const res = await app.inject({ method: 'POST', url: '/n8n/deploy', headers: asUser(), payload: { name: 'blog', serverId: 3 } });
+    expect(res.statusCode).toBe(200);
+    expect(retainedMocks.assertSlugVolumeNotRetained).toHaveBeenCalledWith('blog', 'docker', { db, serverId: 3 });
+  });
+
+  it("F552: refuses a template whose primary volume another service already attaches (r648)", async () => {
+    // `shop` + create-label `api-data` = `nd-svc-shop-api-data`: an attachment
+    // row exists before any docker volume does, so only the db check sees it.
+    const db = createFakeDb({
+      select: { service_volume_attachments: [{ serviceId: 99 }] },
+      insert: { services: [svcRow({ id: 7, slug: 'shop-api' })], deployments: [depRow({ id: 8 })] },
+    });
+    const insert = vi.spyOn(db, 'insert');
+    const app = await buildTestApp({ db });
+    await app.register(templateRoutes);
+    const headers = asUser({ id: 7, isOperator: false });
+    const res = await app.inject({ method: 'POST', url: '/n8n/deploy', headers, payload: { name: 'Shop API' } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('slug_volume_attached');
+    expect(insert).not.toHaveBeenCalled();
+    // A template without a primary volume mounts nothing, so it is unaffected.
+    const noVolume = await app.inject({ method: 'POST', url: '/excalidraw/deploy', headers, payload: { name: 'Shop API' } });
+    expect(noVolume.statusCode).toBe(200);
   });
 
   it('deploys a template without a volume mount', async () => {
@@ -731,6 +764,34 @@ describe('template routes', () => {
     });
 
     expect(res.statusCode).toBe(200);
+  });
+
+  it('F904: refuses port and resource settings a compose template would silently drop', async () => {
+    // The compose builder runs the stack's own YAML: it publishes no host port
+    // and applies no docker resource flags, so a 200 here dropped the values.
+    const inserts: unknown[] = [];
+    const app = await buildTestApp({
+      db: createFakeDb({
+        insert: {
+          services: (v: unknown) => {
+            inserts.push(v);
+            return [svcRow({ id: 79 })];
+          },
+        },
+      }),
+    });
+    await app.register(templateRoutes);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/umami-stack/deploy',
+      headers: asUser(),
+      payload: { name: 'Umami', publishedPort: 18080, memLimitMb: 256 },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toMatch(/publishedPort, memLimitMb/);
+    expect(inserts).toEqual([]);
   });
 
   it('returns 404 when deploying an unknown template', async () => {

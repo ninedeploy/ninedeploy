@@ -1,5 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { eq, sql } from 'drizzle-orm';
+import { migrate } from 'drizzle-orm/libsql/migrator';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { buildConfigs, createDb, deployments, serviceWorkspaces, services, users, type DB } from '@ninedeploy/db';
 import { demoRoutes } from '../src/modules/demo.js';
+import { ensureDefaultWorkspace } from '../src/modules/workspaces.js';
+import { serviceRole } from '../src/lib/resourceAccess.js';
 import { asUser, buildTestApp, createFakeDb } from './helpers.js';
 import { encrypt } from '../src/lib/crypto.js';
 
@@ -236,5 +245,82 @@ describe('demo routes', () => {
     expect(res.statusCode).toBe(200);
     expect(deleteCalls).toBe(0);
     expect(auditMocks.audit).not.toHaveBeenCalledWith(expect.anything(), expect.anything(), 'demo.legacy_reaped', expect.anything());
+  });
+});
+
+// Real migrated SQLite (temp file: libsql transactions need a file, not
+// :memory:) — the tag and atomicity contracts live in real tables/triggers.
+describe('demo seed against a migrated database', () => {
+  const MIGRATIONS = fileURLToPath(new URL('../../../packages/db/src/migrations', import.meta.url));
+  const OP = 1;
+  const TENANT = 2;
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    for (const c of cleanups.splice(0)) c();
+  });
+
+  async function freshDb(): Promise<DB> {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'nd-demo-'));
+    const created = createDb({ url: `file:${path.join(dir, 'test.db').split(path.sep).join('/')}` });
+    cleanups.push(() => {
+      created.client?.close();
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        /* Windows file lock */
+      }
+    });
+    await migrate(created.db, { migrationsFolder: MIGRATIONS });
+    await created.db.insert(users).values([
+      { id: OP, email: 'op@example.com', passwordHash: 'x', name: 'Op', isInstanceOperator: true },
+      { id: TENANT, email: 'tenant@example.com', passwordHash: 'x', name: 'Tenant' },
+    ]);
+    return created.db;
+  }
+
+  async function seed(db: DB) {
+    const app = await buildTestApp({ db });
+    await app.register(demoRoutes, { prefix: '/demo' });
+    return app.inject({ method: 'POST', url: '/demo/seed', headers: asUser({ id: OP, isOperator: true }) });
+  }
+
+  const demoService = (db: DB) => db.query.services.findFirst({ where: eq(services.slug, 'nextjs-demo') });
+
+  it("F300: tags the demo service into the operator's own seats only, never a tenant workspace", async () => {
+    // Workspaces minted by ensureDefaultWorkspace are slugged from the name
+    // (`op-s-workspace`), so the old `personal-<id>` lookup missed and the
+    // seed tagged EVERY workspace — giving each tenant owner `owner` on it.
+    const db = await freshDb();
+    const opWs = await ensureDefaultWorkspace(db, { id: OP, name: 'Op' });
+    await ensureDefaultWorkspace(db, { id: TENANT, name: 'Tenant' });
+    expect((await seed(db)).statusCode).toBe(200);
+    const svc = (await demoService(db))!;
+    const tags = await db.select().from(serviceWorkspaces).where(eq(serviceWorkspaces.serviceId, svc.id));
+    expect(tags.map((t) => t.workspaceId)).toEqual([opWs.id]);
+    expect(await serviceRole(db, svc, { id: TENANT, role: 'member', isOperator: false })).toBeNull();
+  });
+
+  it('F301: a seed that fails part-way persists nothing, so the retry builds a complete demo', async () => {
+    const db = await freshDb();
+    await ensureDefaultWorkspace(db, { id: OP, name: 'Op' });
+    await db.run(sql.raw('CREATE TABLE f301_fail (n INTEGER)'));
+    await db.run(sql.raw('INSERT INTO f301_fail VALUES (1)'));
+    await db.run(
+      sql.raw(
+        "CREATE TRIGGER f301_inject BEFORE INSERT ON deployments WHEN (SELECT n FROM f301_fail) = 1 BEGIN SELECT RAISE(ABORT, 'injected'); END",
+      ),
+    );
+    expect((await seed(db)).statusCode).toBe(500);
+    // The service row is the re-seed idempotency key: it must not survive alone.
+    expect(await demoService(db)).toBeUndefined();
+    expect(await db.select().from(buildConfigs)).toHaveLength(0);
+
+    await db.run(sql.raw('UPDATE f301_fail SET n = 0'));
+    expect((await seed(db)).statusCode).toBe(200);
+    const svc = (await demoService(db))!;
+    expect(await db.select().from(buildConfigs).where(eq(buildConfigs.serviceId, svc.id))).toHaveLength(1);
+    const deps = await db.select().from(deployments).where(eq(deployments.serviceId, svc.id));
+    expect(deps.filter((d) => d.status === 'queued')).toHaveLength(1);
+    expect(await db.select().from(serviceWorkspaces).where(eq(serviceWorkspaces.serviceId, svc.id))).toHaveLength(1);
   });
 });

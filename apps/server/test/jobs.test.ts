@@ -133,6 +133,14 @@ describe('jobs routes', () => {
     expect(res.json().error.message).toContain('cron');
   });
 
+  it('F240: rejects 6- and 7-field crons (a seconds field fires every second)', async () => {
+    for (const cron of ['* * * * * *', '0 0 3 * * * 2027']) {
+      const app = await appWith({ findFirst: { services: svcRow() } });
+      const res = await app.inject({ method: 'POST', url: '/services/1/jobs', headers: asUser(), payload: { name: 'x', cron, kind: 'deploy' } });
+      expect(res.statusCode, cron).toBe(400);
+    }
+  });
+
   it('rejects an exec job without a command', async () => {
     const app = await appWith({ findFirst: { services: svcRow() } });
     const res = await app.inject({
@@ -320,6 +328,26 @@ describe('jobs routes', () => {
       expect(asMember.body).not.toContain('hunter2');
       const asOperator = await (await appWith(fixtures)).inject({ method: 'GET', url: '/services/1/jobs/3/runs', headers: asUser() });
       expect(asOperator.json()[0].output).toContain('hunter2');
+    });
+
+    it('F241: switching an exec job to deploy/backup clears its command (non-operators would see it)', async () => {
+      for (const kind of ['deploy', 'backup'] as const) {
+        const existing = jobRow({ id: 3, kind: 'exec', command: 'pg_dump postgres://app:hunter2@db/app' });
+        const sets: Array<Record<string, unknown>> = [];
+        const app = await appWith({
+          findFirst: { services: svcRow(), scheduledJobs: existing },
+          update: {
+            scheduled_jobs: (s: Record<string, unknown>) => {
+              sets.push(s);
+              return [{ ...existing, ...s }];
+            },
+          },
+        });
+        const res = await app.inject({ method: 'PATCH', url: '/services/1/jobs/3', headers: asUser(), payload: { kind } });
+        expect(res.statusCode, kind).toBe(200);
+        expect(sets[0], kind).toMatchObject({ kind, command: null });
+        expect(res.body, kind).not.toContain('hunter2');
+      }
     });
   });
 

@@ -585,6 +585,24 @@ describe('GET /:id/test', () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  it('never echoes the stored token when fetch rejects it as a header value (F568)', async () => {
+    // fetch's header validation embeds the whole header value in its message.
+    h.guardedFetch.mockImplementationOnce(async (url: string | URL, init?: RequestInit) => {
+      new Request(url, init);
+      return new Response('{}', { status: 401 });
+    });
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { sources: sourceRow({ id: 1, type: 'gitlab', tokenEncrypted: encrypt('glpat-SECRETpart\nSECONDpart') }) },
+      }),
+    });
+    await app.register(sourcesRoutes);
+    const res = await app.inject({ method: 'GET', url: '/1/test', headers: asUser() });
+    expect(res.json()).toMatchObject({ ok: false });
+    expect(res.body).not.toContain('SECRETpart');
+    expect(res.body).not.toContain('SECONDpart');
+  });
 });
 
 describe('POST /:id/generate-deploy-key', () => {

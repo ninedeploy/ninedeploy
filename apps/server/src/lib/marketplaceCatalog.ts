@@ -88,7 +88,9 @@ export async function loadMarketplaceCatalog(
   const publicKey = opts.publicKey ?? process.env['NINEDEPLOY_MARKETPLACE_PUBLIC_KEY'];
 
   if (!opts.force && cache && Date.now() - cache.at < CACHE_TTL_MS) {
-    return cache.result;
+    // F244: the cached catalog carries the installed set of the call that
+    // filled it — recompute the badge for THIS caller's installedIds.
+    return withInstalled(cache.result, installedIds);
   }
 
   const fallback = baseResult(getMarketplaceCatalog(installedIds));
@@ -129,11 +131,15 @@ export async function loadMarketplaceCatalog(
     // refuse to serve the live data rather than trust
     // an unverified blob. The fallback catalog is still
     // returned so the panel isn't empty.
-    return fallback;
+    // F246: cached like the other fallbacks, so a non-forced call does not
+    // re-fetch the upstream on every request.
+    cache = { result: fallback, at: Date.now() };
+    return cache.result;
   }
 
   if (!verifyIndex(parsed, publicKey)) {
-    return fallback;
+    cache = { result: fallback, at: Date.now() }; // F246
+    return cache.result;
   }
 
   // Merge: live entries are appended after the static
@@ -146,6 +152,9 @@ export async function loadMarketplaceCatalog(
   const staticById = new Map(fallback.catalog.map((c) => [c.id, c]));
   const merged: MarketplacePluginItem[] = [...fallback.catalog];
   for (const e of parsed.entries) {
+    // F245: a malformed entry is skipped, not allowed to throw and take the
+    // whole catalog (static fallback included) down with it.
+    if (!isSignedEntry(e)) continue;
     if (staticById.has(e.id)) continue; // never override an installable catalog entry
     merged.push({
       id: e.id,
@@ -188,6 +197,19 @@ function verifyIndex(parsed: unknown, publicKeyBase64: string): boolean {
   // The signature is over the canonical JSON of `entries`.
   const payload = canonicalize(parsed.entries);
   return edVerify(null, Buffer.from(payload, 'utf8'), key, Buffer.from(parsed.signature, 'base64'));
+}
+
+function withInstalled(result: MarketplaceCatalogResult, installedIds: Set<string>): MarketplaceCatalogResult {
+  return { ...result, catalog: result.catalog.map((c) => ({ ...c, isInstalled: installedIds.has(c.id) })) };
+}
+
+function isSignedEntry(value: unknown): value is SignedEntry {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  for (const k of ['id', 'name', 'version', 'description', 'category']) {
+    if (typeof v[k] !== 'string') return false;
+  }
+  return v['image'] === undefined || typeof v['image'] === 'string';
 }
 
 function isSignedIndex(value: unknown): value is SignedIndex {

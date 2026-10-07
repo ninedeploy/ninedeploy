@@ -4,7 +4,7 @@ import { sources, type Source } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import { createSource, sourcePatch } from '@ninedeploy/schemas';
 import { decrypt, encrypt } from '../lib/crypto.js';
-import { notFound, parseId } from '../lib/errors.js';
+import { badRequest, notFound, parseId } from '../lib/errors.js';
 // Every outbound provider call below rides the egress SSRF guard like the
 // rest of the panel's webhooks/API clients — the hosts are hardcoded today,
 // the guard keeps that invariant from silently drifting.
@@ -27,11 +27,33 @@ function serialize(s: Source, bindings: RegistryBindings) {
   };
 }
 
+/**
+ * F568: a failed provider call as diagnostic text that never carries the
+ * decrypted token. fetch's header validation rejects a token holding CR/LF/NUL
+ * with a message that embeds the whole header value, and the token is
+ * write-only everywhere else in this module.
+ */
+function providerErrorText(err: unknown, token: string): string {
+  let text = err instanceof Error ? err.message : String(err);
+  const lines = token.split(/[\r\n\0]+/).filter((p) => p.trim().length >= 4);
+  const pieces = [token, token.trim(), ...lines].filter((p) => p.length > 0);
+  for (const piece of pieces.sort((a, b) => b.length - a.length)) text = text.split(piece).join('[redacted]');
+  return text;
+}
+
 /** Source (private-repo credential) management. Mounted under /sources. Admin-only. */
 export const sourcesRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', app.authenticate);
   // System-wide credentials — admin-only under the agreed RBAC model.
   app.addHook('preHandler', app.requireAdmin);
+  // F569: the diagnostic header is built from the caller's `repo` and from
+  // thrown messages — a CR/LF or a character above U+00FF made Node refuse it
+  // and turned the documented fallback into a 500.
+  app.addHook('onSend', async (_req, reply, payload) => {
+    const diag = reply.getHeader('x-nd-source-error');
+    if (typeof diag === 'string') reply.header('x-nd-source-error', diag.replace(/[^\x20-\x7e]/g, '?'));
+    return payload;
+  });
 
   app.get('/', async () => {
     const rows = await app.db.query.sources.findMany({ orderBy: (s, { desc }) => [desc(s.id)] });
@@ -121,7 +143,7 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
           isPrivate: r.private,
         }));
       } catch (err) {
-        reply.header('x-nd-source-error', `GitHub API unreachable: ${err instanceof Error ? err.message : String(err)}`);
+        reply.header('x-nd-source-error', `GitHub API unreachable: ${providerErrorText(err, token)}`);
         return [];
       }
     }
@@ -150,7 +172,7 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
           isPrivate: r.visibility !== 'public',
         }));
       } catch (err) {
-        reply.header('x-nd-source-error', `GitLab API unreachable: ${err instanceof Error ? err.message : String(err)}`);
+        reply.header('x-nd-source-error', `GitLab API unreachable: ${providerErrorText(err, token)}`);
         return [];
       }
     }
@@ -184,7 +206,7 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
           isPrivate: r.is_private,
         }));
       } catch (err) {
-        reply.header('x-nd-source-error', `Bitbucket API unreachable: ${err instanceof Error ? err.message : String(err)}`);
+        reply.header('x-nd-source-error', `Bitbucket API unreachable: ${providerErrorText(err, token)}`);
         return [];
       }
     }
@@ -220,7 +242,7 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
         const data = (await res.json()) as Array<{ name: string }>;
         return data.map((b) => b.name);
       } catch (err) {
-        reply.header('x-nd-source-error', `GitHub API unreachable: ${err instanceof Error ? err.message : String(err)}`);
+        reply.header('x-nd-source-error', `GitHub API unreachable: ${providerErrorText(err, token)}`);
         return ['main', 'master'];
       }
     }
@@ -241,7 +263,7 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
         const data = (await res.json()) as { values?: Array<{ name: string }> };
         return (data.values ?? []).map((b) => b.name);
       } catch (err) {
-        reply.header('x-nd-source-error', `Bitbucket API unreachable: ${err instanceof Error ? err.message : String(err)}`);
+        reply.header('x-nd-source-error', `Bitbucket API unreachable: ${providerErrorText(err, token)}`);
         return ['main', 'master'];
       }
     }
@@ -310,7 +332,7 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
       }
       return { ok: false, error: `Unknown source type: ${src.type}` };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: providerErrorText(err, token) };
     }
   });
 
@@ -327,6 +349,9 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
     const id = parseId((req.params as { id: string }).id);
     const src = await app.db.query.sources.findFirst({ where: eq(sources.id, id) });
     if (!src) throw notFound('Source not found');
+    // F570: a registry source's token IS its password and nothing reads a
+    // deploy key for it — generating one would only erase the credential.
+    if (src.type === 'registry') throw badRequest('Registry credentials have no deploy key', 'registry_source');
     const { generateDeployKeyPair } = await import('../lib/sshKey.js');
     const pair = await generateDeployKeyPair(`ninedeploy@${src.name}`);
     // The generated key supersedes whatever credential was there — wipe the

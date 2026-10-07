@@ -20,6 +20,8 @@ import {
 } from '../engine/database.js';
 import { decrypt, encrypt, randomToken } from '../lib/crypto.js';
 import { disablePgbouncer } from '../lib/pgbouncer.js';
+import { capture } from '../lib/exec.js';
+import { serviceBridgeName } from '../lib/serviceBridge.js';
 import { deleteRemoteBackupForRetention } from '../lib/backupRemote.js';
 import {
   assertServiceRole,
@@ -164,27 +166,20 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
     // Check + insert run under the per-volume lock: awaits between them would
     // otherwise let two concurrent creates both pass the check.
     const claimed = await serializeOnVolume(volumeName, async () => {
-      const [volumeClash] = await app.db.select().from(databases).where(eq(databases.volumeName, volumeName));
-      if (volumeClash) throw badRequest(`Volume "${volumeName}" already belongs to database "${volumeClash.name}"`);
-
-      // No row claims this volume — but it may still hold someone's data: a
-      // deleted database's volume is deliberately retained, and adoption
+      // A deleted database's volume is deliberately retained, and adoption
       // re-keys its credentials onto the NEW row, whose owner can then read
       // everything (r096). Below operator nobody can prove whose data an
       // unclaimed volume is (same rule as serviceVolumes.ts), so:
       //  • `existingVolume` (naming any volume) is operator-only;
-      //  • a default name that already exists on the host is operator-only.
-      if (!req.user!.isOperator) {
-        if (existingVolume) {
-          throw forbidden('Adopting an existing volume is operator-only — ask an operator to attach it');
-        }
-        if (await volumeExists(volumeName)) {
-          throw forbidden(
-            `A retained volume "${volumeName}" already exists for this name — pick another name, or ask an operator to adopt it`,
-          );
-        }
+      //  • a default name that already exists on the host is operator-only
+      //    (checked below, for a NEW claim only).
+      if (!req.user!.isOperator && existingVolume) {
+        throw forbidden('Adopting an existing volume is operator-only — ask an operator to attach it');
       }
 
+      // F136: the retry resumes the caller's OWN row, which already holds this
+      // default volume — so it must run before the new-claim guards below, or
+      // the caller's own claim makes every retry collide with itself.
       if (input.reuseExisting) {
         const existing = await app.db.query.databases.findFirst({ where: eq(databases.slug, slug) });
         if (existing) {
@@ -225,6 +220,16 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
             throw badRequest(`Failed to start database: ${err instanceof Error ? err.message : err}`);
           }
         }
+      }
+
+      const [volumeClash] = await app.db.select().from(databases).where(eq(databases.volumeName, volumeName));
+      if (volumeClash) throw badRequest(`Volume "${volumeName}" already belongs to database "${volumeClash.name}"`);
+
+      // No row claims this volume — but it may still hold someone's data.
+      if (!req.user!.isOperator && (await volumeExists(volumeName))) {
+        throw forbidden(
+          `A retained volume "${volumeName}" already exists for this name — pick another name, or ask an operator to adopt it`,
+        );
       }
 
       const [created] = await app.db
@@ -615,12 +620,27 @@ export const attachmentRoutes: FastifyPluginAsync = async (app) => {
       });
       if (existing) return { id: existing.id, databaseId: existing.databaseId, envAlias: existing.envAlias };
     }
+    // F138: the deploy pipeline injects `env[envAlias] = connectionString(d)`
+    // per attachment, last row wins — a second database under an alias the
+    // service already uses (the per-engine default, e.g. DATABASE_URL) would
+    // silently repoint the app at the newer database on its next deploy.
+    const aliasOwner = await app.db.query.databaseAttachments.findFirst({
+      where: and(eq(databaseAttachments.serviceId, id), eq(databaseAttachments.envAlias, envAlias)),
+    });
+    if (aliasOwner && aliasOwner.databaseId !== input.databaseId) {
+      throw conflict(`${envAlias} is already injected by another attached database — choose a different env alias`);
+    }
     const [a] = await app.db
       .insert(databaseAttachments)
       .values({ serviceId: id, databaseId: input.databaseId, envAlias })
       .returning()
       .catch((err: unknown) => {
-        if (err instanceof Error && /UNIQUE constraint/.test(err.message)) return [] as typeof databaseAttachments.$inferSelect[];
+        // F137: drizzle wraps the driver error (DrizzleQueryError, "Failed
+        // query: …"); the SQLite UNIQUE text lives on `cause`.
+        const cause = err instanceof Error ? (err as { cause?: unknown }).cause : undefined;
+        if ([err, cause].some((e) => e instanceof Error && /UNIQUE constraint/.test(e.message))) {
+          return [] as typeof databaseAttachments.$inferSelect[];
+        }
         throw err;
       });
     if (!a) throw badRequest('Already attached');
@@ -638,8 +658,22 @@ export const attachmentRoutes: FastifyPluginAsync = async (app) => {
     const deleted = await app.db
       .delete(databaseAttachments)
       .where(and(eq(databaseAttachments.id, attId), eq(databaseAttachments.serviceId, id)))
-      .returning({ id: databaseAttachments.id });
+      .returning({ id: databaseAttachments.id, databaseId: databaseAttachments.databaseId });
     if (deleted.length === 0) throw notFound('Attachment not found');
+    // F890: the attachment is what put the database on the service's bridge
+    // (attachDatabaseToServiceBridges) — take it off, or the network path
+    // outlives the attachment, and (with no row left for F843's delete-time
+    // disconnect) the service, reaching whoever takes the slug next.
+    // Best-effort, like F843: the row is gone either way.
+    const detached = await app.db.query.databases
+      .findFirst({ where: eq(databases.id, deleted[0]!.databaseId), columns: { containerName: true } })
+      .catch(() => undefined);
+    if (detached?.containerName) {
+      const container = detached.containerName;
+      await capture('docker', ['network', 'disconnect', serviceBridgeName(svc.slug), container]).catch((err: unknown) =>
+        req.log.warn({ err, container }, 'could not disconnect database from the service bridge'),
+      );
+    }
     void audit(app.db, req.user!.id, 'database.detach', `${svc.name}#${attId}`);
     return { ok: true };
   });

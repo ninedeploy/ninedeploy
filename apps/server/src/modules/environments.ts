@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { environments, services, workspaceMembers } from '@ninedeploy/db';
 import { audit } from '../lib/audit.js';
 import { assertWorkspaceRole, isWorkspaceMember } from '../lib/resourceAccess.js';
-import { badRequest, notFound, parseId } from '../lib/errors.js';
+import { badRequest, isUniqueViolation, notFound, parseId } from '../lib/errors.js';
 
 /**
  * Environments — named deployment lanes (production / staging / development)
@@ -16,13 +16,15 @@ import { badRequest, notFound, parseId } from '../lib/errors.js';
  * a lane is a structural change).
  */
 
+// F641: trim BEFORE min(1) — the routes store the trimmed name, so a
+// whitespace-only name used to pass validation and land as "".
 const environmentCreate = z.object({
   workspaceId: z.number().int().positive(),
-  name: z.string().min(1).max(80),
+  name: z.string().trim().min(1).max(80),
 });
 
 const environmentPatch = z.object({
-  name: z.string().min(1).max(80).optional(),
+  name: z.string().trim().min(1).max(80).optional(),
 });
 
 function serialize(row: typeof environments.$inferSelect, serviceCount: number) {
@@ -98,7 +100,7 @@ export const environmentRoutes: FastifyPluginAsync = async (app) => {
       // concurrent creates — translate it into the same clean response the
       // pre-check would produce. SQLite names columns with dots in the
       // constraint message, not the JS field names.
-      if (err instanceof Error && /UNIQUE constraint failed: environments\.(workspace_id|name)/i.test(err.message)) {
+      if (isUniqueViolation(err, /UNIQUE constraint failed: environments\.(workspace_id|name)/i)) {
         throw badRequest('An environment with this name already exists in the workspace');
       }
       throw err;
@@ -116,14 +118,29 @@ export const environmentRoutes: FastifyPluginAsync = async (app) => {
     const row = await app.db.query.environments.findFirst({ where: eq(environments.id, id) });
     if (!row) throw notFound('Environment not found');
     await assertEnvironmentRole(app.db, row.workspaceId, user, 'member');
-    const [updated] = await app.db
-      .update(environments)
-      .set({ ...(input.name != null ? { name: input.name.trim() } : {}), updatedAt: new Date() })
-      .where(eq(environments.id, id))
-      .returning();
+    let updated: typeof environments.$inferSelect | undefined;
+    try {
+      [updated] = await app.db
+        .update(environments)
+        .set({ ...(input.name != null ? { name: input.name.trim() } : {}), updatedAt: new Date() })
+        .where(eq(environments.id, id))
+        .returning();
+    } catch (err) {
+      // F640: a rename onto a taken name hits the same (workspace_id, name)
+      // unique index as create — answer the same 400, not a raw 500.
+      if (isUniqueViolation(err, /UNIQUE constraint failed: environments\.(workspace_id|name)/i)) {
+        throw badRequest('An environment with this name already exists in the workspace');
+      }
+      throw err;
+    }
     if (!updated) throw badRequest('Could not update environment');
     void audit(app.db, user.id, 'environment.update', updated.name);
-    return serialize(updated, 0);
+    // F642: report the lane's live service count, as the list route does.
+    const members = await app.db
+      .select({ id: services.id })
+      .from(services)
+      .where(eq(services.environmentId, id));
+    return serialize(updated, members.length);
   });
 
   // Delete an environment. Services in the lane survive, detached

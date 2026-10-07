@@ -1,4 +1,8 @@
-﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
+﻿import { fileURLToPath } from 'node:url';
+import { migrate } from 'drizzle-orm/libsql/migrator';
+import { eq } from 'drizzle-orm';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { createDb, servers, serviceTargets, services, users, type DB } from '@ninedeploy/db';
 import { serverRoutes } from '../src/modules/servers.js';
 import { asUser, buildTestApp, createFakeDb } from './helpers.js';
 
@@ -772,6 +776,74 @@ describe('GET /:id/stats (r467) — parser edge arms', () => {
     expect(body.host.cpuCores).toBe(2);
     expect(body.containers).toEqual([]);
     expect(body.disk).toEqual({ totalBytes: 0, usedBytes: 0 });
+    await app.close();
+  });
+});
+
+// F204/F205: deleting a server row is guarded by everything placed on it.
+// Real in-memory SQLite because the damage is done by the schema's FK
+// actions (services.server_id SET NULL, service_targets CASCADE) — a fake
+// db would agree with either implementation.
+describe('server removal guards (F204/F205, real SQLite)', () => {
+  const MIGRATIONS = fileURLToPath(new URL('../../../packages/db/src/migrations', import.meta.url));
+  let db: DB;
+  let seq = 0;
+  const node = async (status: 'pending' | 'online' | 'offline' | 'error') =>
+    (await db.insert(servers).values({ name: `n${++seq}`, host: `10.9.0.${seq}`, port: 4600, tokenEncrypted: 'x', status }).returning())[0]!;
+  const svcOn = async (serverId: number | null) =>
+    (await db.insert(services).values({ name: `s${++seq}`, slug: `s${seq}`, type: 'docker', image: 'nginx:1', port: 80, ownerUserId: 1, serverId }).returning())[0]!;
+  const realApp = async () => {
+    const app = await buildTestApp({ db });
+    await app.register(serverRoutes, { prefix: '/servers' });
+    return app;
+  };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ db } = createDb({ url: ':memory:' }));
+    await migrate(db, { migrationsFolder: MIGRATIONS });
+    await db.insert(users).values([{ id: 1, email: 'op@example.com', passwordHash: 'x', isOperator: true }]);
+  });
+
+  it('F204: reject refuses an approved node that hosts services; the service stays pinned', async () => {
+    const online = await node('online');
+    const svc = await svcOn(online.id);
+    const app = await realApp();
+    const res = await app.inject({ method: 'POST', url: `/servers/${online.id}/reject`, headers: asUser() });
+    expect(res.statusCode).toBe(409);
+    expect(await db.query.servers.findFirst({ where: eq(servers.id, online.id) })).toBeTruthy();
+    expect((await db.query.services.findFirst({ where: eq(services.id, svc.id) }))?.serverId).toBe(online.id);
+    expect(auditMocks.audit).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('F204: reject refuses a pending node that something is placed on, and still discards an empty pending node', async () => {
+    const pinned = await node('pending');
+    await svcOn(pinned.id);
+    const app = await realApp();
+    expect((await app.inject({ method: 'POST', url: `/servers/${pinned.id}/reject`, headers: asUser() })).statusCode).toBe(409);
+    const fresh = await node('pending');
+    const ok = await app.inject({ method: 'POST', url: `/servers/${fresh.id}/reject`, headers: asUser() });
+    expect(ok.statusCode).toBe(200);
+    expect(await db.query.servers.findFirst({ where: eq(servers.id, fresh.id) })).toBeUndefined();
+    await app.close();
+  });
+
+  it('F205: delete refuses a node that runs a fan-out target; force names the orphaned target', async () => {
+    const primary = await node('online');
+    const extra = await node('online');
+    const web = await svcOn(primary.id);
+    await db.insert(serviceTargets).values({ serviceId: web.id, serverId: extra.id, runtimeId: `web-t${extra.id}-7`, status: 'running' });
+    const app = await realApp();
+    const refused = await app.inject({ method: 'DELETE', url: `/servers/${extra.id}`, headers: asUser() });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json().error.message).toContain(web.name);
+    expect(await db.select().from(serviceTargets).where(eq(serviceTargets.serverId, extra.id))).toHaveLength(1);
+
+    const forced = await app.inject({ method: 'DELETE', url: `/servers/${extra.id}?force=true`, headers: asUser() });
+    expect(forced.statusCode).toBe(200);
+    expect(forced.json().orphanedTargets).toEqual([{ id: web.id, name: web.name, slug: web.slug }]);
+    expect((await db.query.services.findFirst({ where: eq(services.id, web.id) }))?.serverId).toBe(primary.id);
     await app.close();
   });
 });

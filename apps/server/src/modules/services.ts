@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { FastifyPluginAsync } from 'fastify';
 import {
   buildConfigs,
+  databaseAttachments,
   deployments,
   environments,
   envVars,
@@ -31,7 +32,7 @@ import { removeNodeWorkspace } from '../lib/agentCapabilities.js';
 import { config } from '../config.js';
 import { getStickyEnabledForService } from '../engine/proxy.js';
 import { setSettingString } from '../lib/settings.js';
-import { badRequest, conflict, forbidden, HttpError, notFound, parseId as num } from '../lib/errors.js';
+import { badRequest, conflict, forbidden, HttpError, isUniqueViolation, notFound, parseId as num } from '../lib/errors.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import {
   assertServiceRole,
@@ -53,7 +54,7 @@ import { remoteHookRefusal } from '../lib/remoteDeploy.js';
 import { pm2Builder, pm2Logs, pm2Restart, pm2Start, pm2Stop } from '../engine/builders/pm2.js';
 import { deleteLog } from '../engine/logs.js';
 import { writeDynamicConfig } from '../engine/proxy.js';
-import { removeServiceBridgeIfEmpty } from '../lib/serviceBridge.js';
+import { removeServiceBridgeIfEmpty, serviceBridgeName } from '../lib/serviceBridge.js';
 import { applyDefaultTags, replaceServiceTags } from './serviceTags.js';
 import { analyseComposeContent, stackEnvSeeds, stackPublicUrl } from './composeStacks.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
@@ -170,6 +171,26 @@ async function sourceNameFor(db: DB, sourceId: number | null): Promise<string | 
   return src?.name ?? null;
 }
 
+/**
+ * F961: settings a compose service cannot use — the compose builder publishes
+ * no host port and applies no docker resource flags (the stack's YAML owns
+ * both), and the limits route's live `docker update` is docker-only. Same rule
+ * as compose template deploys (F904): 0/null mean "unset" (the Network tab
+ * clears a port with null), and re-sending the stored value introduces nothing.
+ */
+type ComposeInertFields = Pick<Service, 'publishedPort' | 'cpuShares' | 'cpuLimitMilli' | 'memLimitMb'>;
+function composeInertFields(sent: { [K in keyof ComposeInertFields]?: number | null }, stored: ComposeInertFields): string[] {
+  return (['publishedPort', 'cpuShares', 'cpuLimitMilli', 'memLimitMb'] as const).filter((k) => {
+    const v = sent[k];
+    return v != null && v > 0 && v !== stored[k];
+  });
+}
+function assertComposeAccepts(sent: { [K in keyof ComposeInertFields]?: number | null }, stored: ComposeInertFields): void {
+  const inert = composeInertFields(sent, stored);
+  if (inert.length > 0) {
+    throw badRequest(`Compose services do not support ${inert.join(', ')} — the stack's compose file controls ports and resource limits`);
+  }
+}
 
 export const servicesRoutes: FastifyPluginAsync = async (app) => {
   // Every route here requires authentication.
@@ -272,6 +293,11 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       build: input.build,
     });
     assertMayPublishPort(req.user!, input.publishedPort);
+    // F985: create is held to the same rule as PATCH and /limits (F961) — a
+    // compose row would store these and nothing would ever apply them.
+    if (input.type === 'compose') {
+      assertComposeAccepts(input, { publishedPort: null, cpuShares: 0, cpuLimitMilli: 0, memLimitMb: 0 });
+    }
     // r522: deploy hooks run on the panel host, so a node-pinned service
     // cannot carry one; r520/r582: railpack is refused where it cannot build
     // (no BuildKit daemon configured via BUILDKIT_HOST).
@@ -466,7 +492,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       // constraint into the same clean slug_taken response the pre-check
       // produces. Any other insert failure keeps failing loudly.
       .catch((err: unknown): Array<typeof services.$inferSelect> => {
-        if (err instanceof Error && /UNIQUE constraint failed.*services\.slug/.test(err.message)) {
+        if (isUniqueViolation(err, /UNIQUE constraint failed.*services\.slug/)) {
           throw badRequest(`A service with slug '${slug}' already exists`, 'slug_taken');
         }
         throw err;
@@ -683,6 +709,9 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     }
     // Same merged-result reasoning for the host port.
     assertMayPublishPort(req.user!, patch.publishedPort === undefined ? existing.publishedPort : patch.publishedPort);
+    // F961: judged on the MERGED type — switching to docker in the same PATCH
+    // makes the port and limits real again.
+    if ((patch.type ?? existing.type) === 'compose') assertComposeAccepts(patch, existing);
     // r522: only a PATCH that introduces the conflict is refused — pinning a
     // hook-carrying service to a node, or setting a hook on a pinned one — so
     // an existing pinned service with a hook can still be edited (its deploy
@@ -748,6 +777,16 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       await assertSlugVolumeNotRetained(existing.slug, patch.type ?? existing.type, {
         db: app.db,
         serverId: patch.serverId ?? null,
+        ownerCreatedAt: existing.createdAt ?? null,
+      });
+    }
+    // F842: pm2 is exempt from that guard while Docker cannot answer, so a pm2
+    // row may never have been checked. Leaving pm2 makes it a docker-volume
+    // user — check now (a move above already did).
+    if (!moving && existing.type === 'pm2' && patch.type !== undefined && patch.type !== 'pm2') {
+      await assertSlugVolumeNotRetained(existing.slug, patch.type, {
+        db: app.db,
+        serverId: existing.serverId ?? null,
         ownerCreatedAt: existing.createdAt ?? null,
       });
     }
@@ -885,6 +924,19 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // r662: the fan-out targets, read while the row (and its FK-cascaded
     // target rows) still exist — see teardownTargets.
     const targetRows: FanoutTarget[] = await targetsForService(app.db, id).catch(() => []);
+    // F843: the databases attached to it sit on its bridge (templateDependencies
+    // → attachDatabaseToServiceBridges); read them while the FK-cascaded
+    // attachment rows still exist.
+    let attachedDbContainers: string[] = [];
+    try {
+      const rows = await app.db.query.databaseAttachments.findMany({
+        where: eq(databaseAttachments.serviceId, id),
+        with: { database: { columns: { containerName: true } } },
+      });
+      attachedDbContainers = rows.flatMap((r) => (r.database?.containerName ? [r.database.containerName] : []));
+    } catch (err) {
+      req.log.warn({ err, serviceId: id }, 'could not list attached databases to take off the service bridge');
+    }
     let orphanLogs: Array<{ id: number }> = [];
     try {
       orphanLogs = await app.db.select({ id: deployments.id }).from(deployments).where(eq(deployments.serviceId, id));
@@ -923,6 +975,13 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // and the panel can still show the connection). Failures are logged, not
     // thrown — the row is already gone and a stale bridge is recoverable.
     try {
+      // F843: the slug is free now — whoever takes it next gets this bridge,
+      // so the deleted service's databases leave it first.
+      for (const container of attachedDbContainers) {
+        await capture('docker', ['network', 'disconnect', serviceBridgeName(svc.slug), container]).catch((err: unknown) =>
+          req.log.warn({ err, container }, 'could not disconnect database from the service bridge'),
+        );
+      }
       await removeServiceBridgeIfEmpty(svc.slug, (line) => req.log.info({ bridge: svc.slug }, line));
     } catch (err) {
       req.log.warn({ err, slug: svc.slug }, 'failed to reap per-service bridge');
@@ -945,6 +1004,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     const limitTarget = await loadServiceForUser(app.db, id, req.user!);
     await assertServiceRole(app.db, limitTarget, req.user!, 'member');
     const input = setLimits.parse(req.body);
+    if (limitTarget.type === 'compose') assertComposeAccepts(input, limitTarget);
     const updateData: { cpuShares?: number; cpuLimitMilli?: number; memLimitMb?: number } = {};
     if (input.cpuShares !== undefined) {
       updateData.cpuShares = input.cpuShares && input.cpuShares > 0 ? input.cpuShares : 0;
@@ -989,6 +1049,15 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     const input = setTargets.parse(req.body ?? {});
     const requested = [...new Set(input.serverIds)];
     const existing = await app.db.select().from(serviceTargets).where(eq(serviceTargets.serviceId, id));
+    // F840: a NEW target node mounts `nd-svc-<slug>-data` there (fanout.ts) —
+    // ask that node the same retained-volume question a move asks (r662),
+    // before anything is torn down or inserted.
+    for (const serverId of requested) {
+      if (serverId === svc.serverId || existing.some((t) => t.serverId === serverId)) continue;
+      const node = await app.db.query.servers.findFirst({ where: eq(servers.id, serverId) });
+      if (!node) throw notFound(`Server ${serverId} not found`);
+      await assertSlugVolumeNotRetained(svc.slug, svc.type, { db: app.db, serverId, ownerCreatedAt: svc.createdAt ?? null });
+    }
     if (existing.some((t) => !requested.includes(t.serverId))) {
       await teardownTargets(app.db, id, () => undefined);
     }
@@ -1094,33 +1163,52 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     if (!svc?.runtimeId) throw notFound('Service not found or not deployed');
     // PM2 and Docker have disjoint runtimes — an unknown type must not silently
     // misroute to the docker CLI (which would no-op on a PM2 process name).
-    if (svc.type === 'pm2') {
-      // Stopping a process that is already gone is success, not failure.
-      await pm2Stop(svc.runtimeId).catch((err: unknown) => {
-        if (!isMissingRuntime(err)) throw err;
-        req.log.warn({ err, runtimeId: svc.runtimeId }, 'pm2 process already gone; stop is idempotent');
-      });
-    } else if ((svc.type === 'docker' || svc.type === 'compose') && svc.serverId != null) {
-      for (const name of replicaNames(svc.runtimeId, svc.replicas)) {
-        await remoteDocker(svc.serverId, 'docker.stop', { name }).catch((err: unknown) => {
-          if (!isMissingRuntime(err)) throw nodeUnavailable(err);
-          req.log.warn({ err, name }, 'remote container already gone; stop is idempotent');
-        });
-      }
-    } else if (svc.type === 'docker' || svc.type === 'compose') {
-      // One batched stop covers the whole generation: primary + -r2..-rN
-      // replicas. Stopping only the primary would leave replicas serving
-      // while the panel says `stopped`.
-      await capture('docker', ['stop', '-t', '5', ...replicaNames(svc.runtimeId, svc.replicas)]).catch((err: unknown) => {
-        if (isDaemonDown(err)) throw daemonUnavailable(err);
-        if (!isMissingRuntime(err)) throw err;
-        req.log.warn({ err, runtimeId: svc.runtimeId }, 'container already gone; stop is idempotent');
-      });
-    } else {
+    if (svc.type !== 'pm2' && svc.type !== 'docker' && svc.type !== 'compose') {
       req.log.warn({ type: svc.type, runtimeId: svc.runtimeId }, 'unsupported service type — cannot stop runtime');
       throw badRequest('Unsupported service type');
     }
+    // F888: persist `stopped` BEFORE stopping. The runtime reconcile revives a
+    // `running` row whose runtime is down, and `docker stop` returns only once
+    // the slowest member has exited (a node stops replicas one by one) — a
+    // pass inside that window restarted what the user was stopping, then never
+    // looked at the `stopped` row again. A failed stop restores the previous
+    // status, unless something else has moved the row since.
     await app.db.update(services).set({ status: 'stopped' }).where(eq(services.id, svc.id));
+    try {
+      if (svc.type === 'pm2') {
+        // Stopping a process that is already gone is success, not failure.
+        await pm2Stop(svc.runtimeId).catch((err: unknown) => {
+          if (!isMissingRuntime(err)) throw err;
+          req.log.warn({ err, runtimeId: svc.runtimeId }, 'pm2 process already gone; stop is idempotent');
+        });
+      } else if (svc.serverId != null) {
+        for (const name of replicaNames(svc.runtimeId, svc.replicas)) {
+          await remoteDocker(svc.serverId, 'docker.stop', { name }).catch((err: unknown) => {
+            if (!isMissingRuntime(err)) throw nodeUnavailable(err);
+            req.log.warn({ err, name }, 'remote container already gone; stop is idempotent');
+          });
+        }
+      } else {
+        // One batched stop covers the whole generation: primary + -r2..-rN
+        // replicas. Stopping only the primary would leave replicas serving
+        // while the panel says `stopped`.
+        await capture('docker', ['stop', '-t', '5', ...replicaNames(svc.runtimeId, svc.replicas)]).catch((err: unknown) => {
+          if (isDaemonDown(err)) throw daemonUnavailable(err);
+          if (!isMissingRuntime(err)) throw err;
+          req.log.warn({ err, runtimeId: svc.runtimeId }, 'container already gone; stop is idempotent');
+        });
+      }
+    } catch (err) {
+      try {
+        await app.db
+          .update(services)
+          .set({ status: svc.status })
+          .where(and(eq(services.id, svc.id), eq(services.status, 'stopped')));
+      } catch (restoreErr) {
+        req.log.warn({ err: restoreErr, serviceId: svc.id }, 'could not restore status after a failed stop');
+      }
+      throw err;
+    }
     void audit(app.db, req.user!.id, 'service.stop', svc.name);
     app.kernel?.events.emit('service.stopped', {
       serviceId: svc.id,
@@ -1284,6 +1372,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // r351: same retained-volume gate as create — the clone copies
     // `volumeMount`, so a freed slug would re-mount a deleted service's data.
     await assertSlugVolumeNotRetained(newSlug, svc.type);
+    // F841: and, like create (r648), not a name another service attaches.
+    if (svc.volumeMount) await assertPrimaryVolumeNotAttachedElsewhere(app.db, newSlug, null);
 
     const [created] = await app.db
       .insert(services)
@@ -1333,7 +1423,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       // the backstop for the same race as on the create path. Other insert
       // failures keep their original (throwing) behavior.
       .catch((err: unknown): Array<typeof services.$inferSelect> => {
-        if (err instanceof Error && /UNIQUE constraint failed.*services\.slug/.test(err.message)) {
+        if (isUniqueViolation(err, /UNIQUE constraint failed.*services\.slug/)) {
           throw badRequest(`A service with slug '${newSlug}' already exists`, 'slug_taken');
         }
         throw err;

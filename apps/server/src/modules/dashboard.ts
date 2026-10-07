@@ -13,6 +13,23 @@ import { ensureDockerImage } from '../lib/dockerPull.js';
 // supply-chain reason).
 const NETNS_PROBE_IMAGE = 'curlimages/curl:8.16.0';
 
+/** F585: docker CLI calls inherit capture()'s 30-minute default timeout; a
+ * wedged daemon must not hold the (polled) dashboard request that long. A
+ * probe past this deadline reads unhealthy; `docker ps` past it reads null. */
+const PROBE_DEADLINE_MS = 10_000;
+
+/** Resolve `fallback` if `p` has not settled within `ms` (never keeps the process alive). */
+function withDeadline<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    timer.unref?.();
+    p.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (err: unknown) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
+
 /**
  * The set of service ids a non-operator may see: services they own, plus
  * services tagged into a workspace they belong to. Used by the dashboard
@@ -130,8 +147,10 @@ async function probeService(svc: {
     void probeUrl(buildProbeUrl(ip, svc.port, path), 1200).then((direct) => {
       if (direct.healthy) {
         settle(direct);
-      } else {
+      } else if (!settled) {
         // Direct failed — containers outside the mesh need the netns probe.
+        // F584: skip it once the mesh already answered; the throwaway
+        // `docker run` would only produce a discarded result.
         void probeViaNetns(runtimeId, svc.port, path).then((ok) => settle({ healthy: ok, responseMs: null }));
       }
     });
@@ -232,13 +251,17 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         let responseMs: number | null = null;
 
         if (svc.status === 'running' && svc.port) {
-          const probe = await probeService({
-            type: svc.type,
-            serverId: svc.serverId,
-            runtimeId: svc.runtimeId,
-            port: svc.port,
-            healthPath: svc.healthPath,
-          });
+          const probe = await withDeadline(
+            probeService({
+              type: svc.type,
+              serverId: svc.serverId,
+              runtimeId: svc.runtimeId,
+              port: svc.port,
+              healthPath: svc.healthPath,
+            }),
+            PROBE_DEADLINE_MS,
+            { healthy: false, responseMs: null },
+          );
           healthy = probe.healthy;
           responseMs = probe.responseMs;
         } else if (svc.status === 'stopped') {
@@ -270,7 +293,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
     let containerCount: number | null = null;
     if (user.isOperator) {
       try {
-        containerCount = (await capture('docker', ['ps', '-q'])).split('\n').filter(Boolean).length;
+        containerCount = (await capture('docker', ['ps', '-q'], { timeoutMs: PROBE_DEADLINE_MS })).split('\n').filter(Boolean).length;
       } catch { /* ignore */ }
     }
 

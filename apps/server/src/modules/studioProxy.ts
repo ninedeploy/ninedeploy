@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { request as loopbackRequest } from 'node:http';
+import { pipeline } from 'node:stream';
 import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { databases, users } from '@ninedeploy/db';
@@ -186,8 +187,11 @@ export async function studioSessionValid(
 function rewriteCookiePath(cookie: string, cookiePath: string): string {
   // r560: a Domain attribute would widen the cookie to sibling hosts — drop it
   // so the studio's cookies stay host-only as well as path-scoped.
-  const hostOnly = cookie.replace(/;\s*domain=[^;]*/gi, '');
-  return /;\s*path=/i.test(hostOnly) ? hostOnly.replace(/;\s*path=[^;]*/i, `; Path=${cookiePath}`) : `${hostOnly}; Path=${cookiePath}`;
+  // F172: browsers trim attribute names (`Domain =x` is a Domain) and honour
+  // the LAST Path attribute, so strip EVERY Domain/Path attribute — names
+  // matched whitespace-tolerantly — and append the one scoped Path last.
+  const stripped = cookie.replace(/;\s*(?:domain|path)\s*(?:=[^;]*)?(?=;|$)/gi, '');
+  return `${stripped}; Path=${cookiePath}`;
 }
 
 /**
@@ -314,7 +318,11 @@ const proxyHandler = async (
       responseHeaders[cspKey] = upstreamCsp === undefined ? STUDIO_FRAME_CSP : ([] as string[]).concat(upstreamCsp, STUDIO_FRAME_CSP);
       responseHeaders['x-frame-options'] = 'DENY';
       reply.raw.writeHead(ures.statusCode ?? 502, responseHeaders);
-      ures.pipe(reply.raw);
+      // F173: pipeline, not pipe — a studio that dies mid-response must reset
+      // the browser's response instead of leaving it open forever.
+      pipeline(ures, reply.raw, (err) => {
+        if (err) app.log.debug({ err, dbId: id }, 'studio proxy stream ended early');
+      });
     },
   );
   upstreamReq.on('error', (err) => {

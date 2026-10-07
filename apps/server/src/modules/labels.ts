@@ -4,7 +4,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { createLabel, labelPatch, type Label, type LabelColor } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
 import { assertWorkspaceRole, isWorkspaceMember } from '../lib/resourceAccess.js';
-import { badRequest, forbidden, notFound, parseId } from '../lib/errors.js';
+import { badRequest, conflict, forbidden, isUniqueViolation, notFound, parseId } from '../lib/errors.js';
 import { iso } from '../lib/serialize.js';
 
 const DEFAULT_COLORS: readonly LabelColor[] = [
@@ -44,6 +44,31 @@ async function serializeLabel(row: SerializedLabelRow): Promise<Label> {
     createdAt: iso(row.createdAt) as string,
     updatedAt: iso(row.updatedAt) as string,
   };
+}
+
+/**
+ * F872: (workspace_id, name) is UNIQUE (labels_workspace_name_idx). drizzle
+ * wraps the SQLite error, so without this a duplicate name answered 500 with
+ * the raw SQL as its message instead of a clean conflict.
+ */
+function rethrowDuplicateName(err: unknown): never {
+  if (isUniqueViolation(err, /UNIQUE constraint failed: labels\.(workspace_id|name)/i)) {
+    throw conflict('A label with this name already exists in the workspace');
+  }
+  throw err;
+}
+
+/**
+ * F873: operators skip the seat check (assertWorkspaceRole), so nothing proves
+ * the workspace exists before the insert; workspace_id is the table's only
+ * foreign key, so its violation means the workspace is gone (cause-unwrapped
+ * like isUniqueViolation).
+ */
+function rethrowCreateError(err: unknown): never {
+  if ([err, err instanceof Error ? err.cause : undefined].some((e) => e instanceof Error && /FOREIGN KEY constraint failed/.test(e.message))) {
+    throw notFound('Workspace not found');
+  }
+  rethrowDuplicateName(err);
 }
 
 /**
@@ -146,7 +171,8 @@ export const labelRoutes: FastifyPluginAsync = async (app) => {
         name: input.name.trim(),
         color: normalizeColor(input.color),
       })
-      .returning();
+      .returning()
+      .catch(rethrowCreateError);
     if (!row) throw badRequest('Could not create label');
     void audit(app.db, user.id, 'label.create', `${row.name}${row.workspaceId ? ` (ws ${row.workspaceId})` : ''}`);
     return serializeLabel({
@@ -174,7 +200,8 @@ export const labelRoutes: FastifyPluginAsync = async (app) => {
         ...(input.color != null && { color: normalizeColor(input.color) }),
       })
       .where(eq(labels.id, id))
-      .returning();
+      .returning()
+      .catch(rethrowDuplicateName);
     if (!updated) throw notFound('Label not found');
     const countRow = await app.db
       .select({ n: serviceLabels.labelId })

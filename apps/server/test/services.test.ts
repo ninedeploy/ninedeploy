@@ -1,8 +1,13 @@
 ﻿import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { eq } from 'drizzle-orm';
+import { migrate } from 'drizzle-orm/libsql/migrator';
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
+import { createDb, services, users } from '@ninedeploy/db';
 import { servicesRoutes } from '../src/modules/services.js';
+import runtimeStatePlugin from '../src/plugins/runtimeState.js';
 import { getBundledTemplates } from '../src/templates/registry.js';
 import { asUser, buildTestApp, createFakeDb, svcRow, trackStatusUpdates } from './helpers.js';
 
@@ -224,6 +229,21 @@ describe('services routes', () => {
     expect(res.statusCode).toBe(409);
     expect(res.json().error.code).toBe('slug_volume_attached');
     expect(res.json().error.message).toContain("'nd-svc-shop-api-data' is already attached to another service");
+  });
+
+  it('F841: a clone carrying volumeMount refuses a slug whose primary volume another service attaches', async () => {
+    const db = createFakeDb({
+      findFirst: { services: (() => { let n = 0; return () => (n++ === 0 ? svcRow({ id: 1, slug: 'orig', volumeMount: '/data' }) : undefined); })() as never },
+      select: { service_volume_attachments: [{ serviceId: 44 }] },
+      insert: { services: [svcRow({ id: 2, slug: 'shop-api' })] },
+    });
+    const insert = vi.spyOn(db, 'insert');
+    const app = await buildTestApp({ db });
+    await app.register(servicesRoutes);
+    const res = await app.inject({ method: 'POST', url: '/1/clone', headers: asUser(), payload: { name: 'shop api', slug: 'shop-api' } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('slug_volume_attached');
+    expect(insert).not.toHaveBeenCalled();
   });
 
   it('r648: an already-enabled volumeMount (or its own attachment) is not a new collision', async () => {
@@ -825,6 +845,30 @@ describe('services routes', () => {
       {},
       expect.any(Function),
     );
+  });
+
+  // F843: an attached database sits on the service's bridge. Left there, the
+  // reaper keeps the bridge, and the next service to take the freed slug — in
+  // any workspace — deploys onto it next to the deleted service's database.
+  it('F843: takes attached databases off the service bridge before reaping it', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { services: svcRow({ id: 1, name: 'web' }) },
+        findMany: { databaseAttachments: [{ serviceId: 1, databaseId: 7, database: { containerName: 'nd-db-web-db' } }] },
+      }),
+    });
+    await app.register(servicesRoutes);
+    const res = await app.inject({ method: 'DELETE', url: '/1', headers: asUser() });
+    expect(res.statusCode).toBe(204);
+    const disconnectDb = execMocks.capture.mock.calls.findIndex(
+      (c) => JSON.stringify((c as unknown[]).slice(0, 2)) === JSON.stringify(['docker', ['network', 'disconnect', 'nd-svc-web', 'nd-db-web-db']]),
+    );
+    expect(disconnectDb).toBeGreaterThanOrEqual(0);
+    const reap = execMocks.run.mock.calls.findIndex(
+      (c) => JSON.stringify(c[1]) === JSON.stringify(['network', 'disconnect', 'nd-svc-web', 'ninedeploy-traefik']),
+    );
+    // Before the reaper counts the bridge's members.
+    expect(execMocks.capture.mock.invocationCallOrder[disconnectDb]!).toBeLessThan(execMocks.run.mock.invocationCallOrder[reap]!);
   });
 
   it('tears a compose project down on delete', async () => {
@@ -1512,6 +1556,35 @@ describe('inline compose stacks', () => {
     expect(res.statusCode).toBe(403);
   });
 
+  // F985: create stored these for a compose row that never applies them —
+  // held to the same rule as PATCH and /limits (F961). 0/null stay "unset".
+  it('F985: refuses a host port and resource limits on a compose create', async () => {
+    const inserts: unknown[] = [];
+    const app = await buildTestApp({
+      db: createFakeDb({
+        insert: {
+          services: (v: unknown) => {
+            inserts.push(v);
+            return [svcRow({ id: 4, name: 'Stack', slug: 'stack', type: 'compose' })];
+          },
+        },
+        findMany: { envVars: [] },
+      }),
+    });
+    await app.register(servicesRoutes);
+    const create = (extra: Record<string, unknown>) =>
+      app.inject({ method: 'POST', url: '/', headers: asUser(), payload: { name: 'Stack', type: 'compose', composeContent: STACK, ...extra } });
+
+    const res = await create({ publishedPort: 18080, memLimitMb: 256 });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toMatch(/^Compose services do not support publishedPort, memLimitMb/);
+    expect(inserts).toEqual([]);
+    expect(composeWorkspaceMocks.materialiseComposeFile).not.toHaveBeenCalled();
+
+    expect((await create({ publishedPort: null, cpuShares: 0, cpuLimitMilli: 0, memLimitMb: 0 })).statusCode).toBe(200);
+    expect(inserts).toHaveLength(1);
+  });
+
   it('PATCH rewrites the workspace copy of an existing stack', async () => {
     const next = 'services:\n  web:\n    image: nginx:1.27\n';
     const app = await buildTestApp({
@@ -1551,6 +1624,31 @@ describe('inline compose stacks', () => {
     expect(res.statusCode).toBe(400);
     expect(res.json().error.message).toMatch(/no inline compose stack/);
     expect(composeWorkspaceMocks.materialiseComposeFile).not.toHaveBeenCalled();
+  });
+
+  // F961: the compose builder publishes no host port and applies no docker
+  // resource flags, so these answered 200 and changed nothing (same rule as
+  // compose template deploys, F904). 0/null stay "unset".
+  it('F961: refuses a host port and resource limits a compose service would ignore', async () => {
+    const stack = svcRow({ id: 4, slug: 'stack', type: 'compose', composeService: 'web', composeContent: STACK, status: 'running', runtimeId: 'ndcmp-stack-web-1' });
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { services: stack }, update: { services: [stack] } }),
+    });
+    await app.register(servicesRoutes);
+    const patch = (url: string, payload: Record<string, unknown>) => app.inject({ method: 'PATCH', url, headers: asUser(), payload });
+
+    const port = await patch('/4', { name: 'Stack', publishedPort: 18080, memLimitMb: 256 });
+    expect(port.statusCode).toBe(400);
+    expect(port.json().error.message).toMatch(/^Compose services do not support publishedPort, memLimitMb/);
+    const limits = await patch('/4/limits', { cpuShares: 512, cpuLimitMilli: 500 });
+    expect(limits.statusCode).toBe(400);
+    expect(limits.json().error.message).toMatch(/^Compose services do not support cpuShares, cpuLimitMilli/);
+    expect(execMocks.capture).not.toHaveBeenCalledWith('docker', expect.arrayContaining(['update']));
+
+    expect((await patch('/4', { publishedPort: null, cpuShares: 0 })).statusCode).toBe(200);
+    expect((await patch('/4/limits', { cpuShares: null, memLimitMb: 0 })).statusCode).toBe(200);
+    // Switching to docker in the same PATCH makes them real again.
+    expect((await patch('/4', { type: 'docker', publishedPort: 18080 })).statusCode).toBe(200);
   });
 
   it('withholds the YAML from a member — a compose file can carry inline credentials', async () => {
@@ -1695,5 +1793,116 @@ describe('r522: deploy hooks on a node-pinned service', () => {
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().error.message).toMatch(/post-deploy hook runs on the panel host/);
+  });
+});
+
+// F888: the stop route wrote `stopped` only after `docker stop` returned. A
+// runtime-reconcile pass inside that window saw a `running` row over an exited
+// container and started it again — for good, since the reconcile never visits
+// a `stopped` row. Real routes + real reconcile plugin on a migrated SQLite;
+// gated (the fake `docker stop` blocks until one interval pass has finished).
+describe('F888: stop vs the runtime reconcile (real SQLite, gated)', () => {
+  const MIGRATIONS = fileURLToPath(new URL('../../../packages/db/src/migrations', import.meta.url));
+  const deferred = () => {
+    let resolve!: () => void;
+    const promise = new Promise<void>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  };
+  const capture = execMocks.capture as unknown as ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    capture.mockImplementation(async () => 'line1\nline2');
+  });
+
+  async function setup() {
+    const { db } = createDb({ url: ':memory:' });
+    await migrate(db, { migrationsFolder: MIGRATIONS });
+    const [u] = await db.insert(users).values({ email: 'op@x', passwordHash: 'h', isInstanceOperator: true }).returning();
+    const [svc] = await db
+      .insert(services)
+      .values({ name: 'web', slug: 'web', ownerUserId: u!.id, type: 'docker', status: 'running', runtimeId: 'web-c1', replicas: 2 })
+      .returning();
+    const containers = new Map([['web-c1', 'running'], ['web-c1-r2', 'running']]);
+    const hooks: { onStop: (() => Promise<void>) | null } = { onStop: null };
+    capture.mockImplementation(async (_cmd: string, args: string[]) => {
+      if (args[0] === 'stop') {
+        for (const n of args.slice(3)) containers.set(n, 'exited');
+        await hooks.onStop?.();
+        return '';
+      }
+      if (args[0] === 'start') {
+        for (const n of args.slice(1)) containers.set(n, 'running');
+        return '';
+      }
+      if (args[0] === 'inspect' && args[2] === '{{.State.Status}}') return containers.get(args[3]!) ?? '';
+      if (args[0] === 'inspect' && args[2] === '{{.State.OOMKilled}}|{{.State.ExitCode}}') return 'false|0';
+      return '';
+    });
+    // Pass boundaries: the local list query, then the remote one (= the end).
+    let pass: { calls: number; done: ReturnType<typeof deferred> } | null = null;
+    const q = db.query.services as unknown as { findMany: (...a: unknown[]) => Promise<unknown[]> };
+    const findMany = q.findMany.bind(q);
+    q.findMany = async (...a: unknown[]) => {
+      const rows = await findMany(...a);
+      if (pass && ++pass.calls === 2) pass.done.resolve();
+      return rows;
+    };
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const app = await buildTestApp({ db });
+    await app.register(servicesRoutes);
+    await app.register(runtimeStatePlugin);
+    pass = { calls: 0, done: deferred() };
+    await app.ready(); // the onReady pass: everything running, nothing to do
+    await pass.done.promise;
+    const runPass = async () => {
+      pass = { calls: 0, done: deferred() };
+      vi.advanceTimersByTime(60_000);
+      await pass.done.promise;
+    };
+    const status = async () => (await db.select({ s: services.status }).from(services).where(eq(services.id, svc!.id)))[0]?.s;
+    const stop = () => app.inject({ method: 'POST', url: `/${svc!.id}/stop`, headers: asUser({ id: u!.id, isOperator: true }) });
+    const starts = () => capture.mock.calls.filter((c) => (c[1] as string[])[0] === 'start').length;
+    return { app, containers, hooks, runPass, status, stop, starts };
+  }
+
+  it('a reconcile pass inside the docker-stop window leaves the service stopped', async () => {
+    const s = await setup();
+    const issued = deferred();
+    const release = deferred();
+    let rowDuringStop: string | undefined;
+    s.hooks.onStop = async () => {
+      rowDuringStop = await s.status();
+      issued.resolve();
+      await release.promise;
+    };
+    const resP = s.stop();
+    await issued.promise;
+    await s.runPass();
+    release.resolve();
+    expect((await resP).statusCode).toBe(200);
+    expect(rowDuringStop).toBe('stopped');
+    expect(await s.status()).toBe('stopped');
+    expect(s.containers.get('web-c1')).toBe('exited');
+    expect(s.containers.get('web-c1-r2')).toBe('exited');
+    expect(s.starts()).toBe(0);
+    await s.app.close();
+  });
+
+  it('a failed stop restores the previous status instead of leaving `stopped` over a live container', async () => {
+    const s = await setup();
+    s.hooks.onStop = async () => {
+      s.containers.set('web-c1', 'running');
+      s.containers.set('web-c1-r2', 'running');
+      throw new Error('`docker stop` exited 1: Cannot connect to the Docker daemon at unix:///var/run/docker.sock');
+    };
+    expect((await s.stop()).statusCode).toBe(503);
+    expect(await s.status()).toBe('running');
+    await s.app.close();
   });
 });

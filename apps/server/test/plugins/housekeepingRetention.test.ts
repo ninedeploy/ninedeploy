@@ -10,8 +10,9 @@ import { existsSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { eq } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/libsql/migrator';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   backupDrills,
   backups,
@@ -28,7 +29,15 @@ import {
   workspaces,
 } from '@ninedeploy/db';
 import { pruneDrillLeftovers } from '../../src/lib/backupDrill.js';
-import { pruneRetiredRecords, unsweepableDeploymentIds } from '../../src/plugins/housekeeping.js';
+import { pruneExpiredPendingDomains, pruneRetiredRecords, unsweepableDeploymentIds } from '../../src/plugins/housekeeping.js';
+
+// F108: the pending-domain sweep's audit calls are captured, not written.
+const auditCalls = vi.hoisted(() => [] as Array<{ action: string; entity: unknown }>);
+vi.mock('../../src/lib/audit.js', () => ({
+  audit: vi.fn(async (_db: unknown, _user: unknown, action: string, entity: unknown) => {
+    auditCalls.push({ action, entity });
+  }),
+}));
 
 const MIGRATIONS = fileURLToPath(new URL('../../../../packages/db/src/migrations', import.meta.url));
 const DAY = 24 * 60 * 60 * 1000;
@@ -200,5 +209,58 @@ describe('r302: pruneDrillLeftovers', () => {
     expect(existsSync(oldFetch)).toBe(false);
     expect(existsSync(freshDec)).toBe(true);
     expect(existsSync(backup)).toBe(true);
+  });
+});
+
+/**
+ * F108 — the pending-domain sweep SELECTs stale `pending` rows, then deletes
+ * each with a `status = 'pending'` guard because the verify route can make the
+ * row `active` in between. The audit (which fans out to notifications) and the
+ * count used to be emitted regardless, so a domain that had just gone live was
+ * reported to its claimant as removed.
+ */
+describe('F108: pruneExpiredPendingDomains', () => {
+  it('neither audits nor counts a domain verified between the sweep SELECT and its DELETE', async () => {
+    auditCalls.length = 0;
+    const [svc] = await db.insert(services).values({ name: 's', slug: 's' }).returning();
+    const [racing] = await db
+      .insert(domains)
+      .values({ serviceId: svc!.id, hostname: 'racing.example.org', status: 'pending', createdAt: ago(31) })
+      .returning();
+    await db.insert(domains).values({ serviceId: svc!.id, hostname: 'stale.example.org', status: 'pending', createdAt: ago(40) });
+
+    // Gate: the verify lands right after the sweep's SELECT over `domains`
+    // resolves, before any DELETE — no timing involved.
+    let fired = false;
+    const gated = new Proxy(db, {
+      get(target, prop, recv) {
+        if (prop !== 'select') return Reflect.get(target, prop, recv);
+        return (...args: unknown[]) => {
+          const sel = (target.select as (...a: unknown[]) => { from: (t: unknown) => { where: (c: unknown) => PromiseLike<unknown> } })(...args);
+          return {
+            from: (table: unknown) => {
+              const q = sel.from(table);
+              if (table !== domains) return q;
+              return {
+                where: async (cond: unknown) => {
+                  const rows = await q.where(cond);
+                  if (!fired) {
+                    fired = true;
+                    await db.update(domains).set({ status: 'active' }).where(eq(domains.id, racing!.id));
+                  }
+                  return rows;
+                },
+              };
+            },
+          };
+        };
+      },
+    }) as DB;
+
+    expect(await pruneExpiredPendingDomains(gated, NOW)).toBe(1);
+    expect(fired).toBe(true);
+    const left = (await db.select().from(domains)).map((r) => `${r.hostname}:${r.status}`);
+    expect(left).toEqual(['racing.example.org:active']);
+    expect(auditCalls.filter((c) => c.action === 'domain.pending_expired').map((c) => c.entity)).toEqual(['stale.example.org']);
   });
 });

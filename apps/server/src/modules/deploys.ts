@@ -93,7 +93,9 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     await assertRemoteServiceSupported(app.db, target);
     // Same repository is the promotion invariant: the target redeploys at the
     // source's pinned SHA, which only makes sense over a shared history.
-    if (source.repoUrl && target.repoUrl && source.repoUrl !== target.repoUrl) {
+    // F534: a repo-less target (image / inline compose) never checks the SHA
+    // out — it would redeploy as-is while recording the source commit.
+    if (!source.repoUrl || !target.repoUrl || source.repoUrl !== target.repoUrl) {
       throw badRequest('Promotion requires both services to track the same repository');
     }
     const latest = await app.db.query.deployments.findFirst({
@@ -436,13 +438,35 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     if (!open()) return;
     const backlog = logBus.read(depId);
     if (backlog) socket.send(backlog);
-    const unsub = logBus.subscribe(depId, (line) => {
-      try {
-        socket.send(`${line}\n`);
-      } catch {
-        /* socket closed */
-      }
-    });
+    // F881: end the stream (1000 'deploy finished') once the deployment has
+    // settled — a final status AND no run in this process still writing its
+    // log. Status alone is no end-of-log marker: the pipeline marks the row
+    // `running` before the proxy swap, which can still log a retry and flip
+    // it to `failed`. Re-checked at connect, on logBus's end-of-log signal and
+    // on every revalidation tick (a queued deploy cancelled by the route has
+    // no run to signal). Lines are sent synchronously as published, so every
+    // line precedes the close frame.
+    let finished = false;
+    const finishIfSettled = async (): Promise<void> => {
+      if (finished || !open()) return;
+      const row = await app.db.query.deployments.findFirst({ where: eq(deployments.id, depId) }).catch(() => null);
+      if (row === null || (row && isInFlight(row.status))) return;
+      if (finished || !open() || logBus.isWriting(depId)) return;
+      finished = true;
+      cleanup();
+      socket.close(1000, 'deploy finished');
+    };
+    const unsub = logBus.subscribe(
+      depId,
+      (line) => {
+        try {
+          socket.send(`${line}\n`);
+        } catch {
+          /* socket closed */
+        }
+      },
+      () => void finishIfSettled(),
+    );
     // r418: same revalidation the events socket got in r401 — a revoked
     // session (logout-everywhere, password change) must stop streaming build
     // logs (they routinely echo secrets), not hold the socket until the
@@ -453,7 +477,18 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
       if (!fresh || !authorizeWebsocketUser(fresh, req.url)) {
         socket.close(1008, 'session revoked');
         cleanup();
+        return;
       }
+      // F532: a live session is not live access — a member removed from the
+      // service's workspace (r694 seat loss) kept receiving this build log
+      // until the client closed it. Re-run the connect-time ownership check.
+      const stillAllowed = await loadServiceForUser(app.db, id, fresh).then(() => true, () => false);
+      if (!stillAllowed) {
+        socket.close(1008, 'access revoked');
+        cleanup();
+        return;
+      }
+      await finishIfSettled(); // F881
     }, 60_000);
     const cleanup = () => {
       clearInterval(revalidate);
@@ -461,6 +496,9 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     };
     socket.on('close', cleanup);
     socket.on('error', cleanup);
+    // F881: a deployment that settled before this connect — backlog replayed
+    // above, nothing more will come.
+    void finishIfSettled();
   });
 
   // Container exec — interactive shell via WebSocket (`docker exec -it`).
@@ -539,6 +577,10 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     // the command string — so a hostile-looking runtimeId can't inject options.
     // Both docker invocations use `--` before the dynamic container name.
     const hasPty = await isPtyAvailable();
+    // F533: last suspension point before the shell exists. A client that left
+    // during the awaits above already fired `close` — the listeners below would
+    // never run, orphaning `docker exec` and its revalidation interval.
+    if (socket.readyState !== 1) return;
     const child = hasPty
       ? spawn(
           'python3',

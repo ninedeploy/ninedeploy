@@ -11,7 +11,7 @@ import {
   projectScopeFilter,
   visibleServiceIdSet,
 } from '../lib/resourceAccess.js';
-import { badRequest, notFound, parseId as num } from '../lib/errors.js';
+import { badRequest, isUniqueViolation, notFound, parseId as num } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
 import { assertMayWriteVaultRefs } from '../lib/vault.js';
 
@@ -106,7 +106,7 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
       })
       .returning()
       .catch((err: unknown) => {
-        if (err instanceof Error && /UNIQUE constraint/.test(err.message)) return [] as typeof envVars.$inferSelect[];
+        if (isUniqueViolation(err)) return [] as typeof envVars.$inferSelect[];
         throw err;
       });
     if (!created) throw badRequest('Env var with that key already exists');
@@ -171,11 +171,22 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
     const errors: Array<{ line: number; message: string }> = [];
 
     for (const { key, value, line } of pairs) {
+      // F565: the same key/value caps as POST /:id/env — the parser applies
+      // neither, so a 40 KB value or a 150-char key was stored here.
+      const checked = upsertEnvVar.safeParse({ key, value });
+      if (!checked.success) {
+        const issue = checked.error.issues[0];
+        errors.push({ line, message: `${issue?.path.join('.') || 'value'}: ${issue?.message ?? 'invalid'}` });
+        continue;
+      }
       try {
         const existing = await app.db.query.envVars.findFirst({
           where: and(eq(envVars.serviceId, id), eq(envVars.key, key)),
         });
         if (existing) {
+          // F564: an explicit overwriteExisting:false keeps the stored value
+          // (the line counts as skipped); omitted keeps the documented overwrite.
+          if (input.overwriteExisting === false) continue;
           await app.db
             .update(envVars)
             .set({ valueEncrypted: encrypt(value), isSecret: input.isSecret ?? existing.isSecret })
@@ -197,7 +208,8 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const skipped = pairs.length - imported - errors.length;
-    void audit(app.db, req.user!.id, 'env.import', `${imported} imported, ${errors.length} errors`);
+    // F567: name the service like every other env mutation; counts only, never keys' values.
+    void audit(app.db, req.user!.id, 'env.import', svc.name, { imported, skipped, errors: errors.length });
     return { imported, skipped: skipped, errors };
   });
 
@@ -215,14 +227,29 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
       where: eq(envVars.serviceId, id),
       orderBy: (e, { asc }) => [asc(e.key)],
     });
-    const lines = rows
-      .filter((r) => !r.isSecret)
-      .map((r) => `${r.key}=${decrypt(r.valueEncrypted)}`);
+    // F566: the output must read back verbatim through parseDotEnv (which
+    // trims, strips one pair of matching outer quotes, and splits on lines).
+    // Single quotes guard surrounding whitespace/quotes; a multi-line value
+    // cannot be represented and is marked like a secret instead of being
+    // split into extra (possibly injected) variables.
+    const lines: string[] = [];
+    const omitted: string[] = [];
+    for (const r of rows.filter((r) => !r.isSecret)) {
+      const value = decrypt(r.valueEncrypted);
+      if (/[\r\n]/.test(value)) {
+        omitted.push(`# ${r.key}=<multi-line value not exported>`);
+        continue;
+      }
+      const guarded = value !== value.trim() || (value.length >= 2 && /^(["']).*\1$/s.test(value));
+      lines.push(`${r.key}=${guarded ? `'${value}'` : value}`);
+    }
+    const count = lines.length;
+    lines.push(...omitted);
     for (const r of rows.filter((r) => r.isSecret)) {
       lines.push(`# ${r.key}=<secret>`);
     }
     const body = lines.length > 0 ? `${lines.join('\n')}\n` : '';
-    return { content: body, count: rows.filter((r) => !r.isSecret).length };
+    return { content: body, count };
   });
 };
 
@@ -264,7 +291,7 @@ export const projectEnvRoutes: FastifyPluginAsync = async (app) => {
       })
       .returning()
       .catch((err: unknown) => {
-        if (err instanceof Error && /UNIQUE constraint/.test(err.message)) return [] as typeof envVars.$inferSelect[];
+        if (isUniqueViolation(err)) return [] as typeof envVars.$inferSelect[];
         throw err;
       });
     if (!created) throw badRequest('Env var with that key already exists');

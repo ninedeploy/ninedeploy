@@ -268,6 +268,69 @@ describe('environments', () => {
     await app.close();
   });
 
+  it('F640: a rename onto a taken name answers the same 400 as create, not 500', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { environments: envRow({ id: 2, name: 'Staging' }), workspaceMembers: member('member') },
+        update: {
+          environments: () => {
+            // drizzle wraps the driver error; the SQLite text rides on `cause`.
+            throw new Error('Failed query: update "environments" ...', {
+              cause: new Error('UNIQUE constraint failed: environments.workspace_id, environments.name'),
+            });
+          },
+        },
+      }),
+    });
+    await app.register(environmentRoutes);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/2',
+      headers: asUser({ id: 7, isOperator: false }),
+      payload: { name: 'Production' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toContain('already exists');
+    await app.close();
+  });
+
+  it('F641: refuses whitespace-only names on create and rename (400)', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { environments: envRow(), workspaceMembers: member('member') },
+        insert: { environments: [envRow({ id: 2, name: '' })] },
+        update: { environments: [envRow({ name: '' })] },
+      }),
+    });
+    await app.register(environmentRoutes);
+    const headers = asUser({ id: 7, isOperator: false });
+    const create = await app.inject({ method: 'POST', url: '/', headers, payload: { workspaceId: 1, name: '   ' } });
+    const rename = await app.inject({ method: 'PATCH', url: '/1', headers, payload: { name: '\t \n' } });
+    expect(create.statusCode).toBe(400);
+    expect(rename.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('F642: the rename response carries the lane’s live service count', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { environments: envRow(), workspaceMembers: member('member') },
+        update: { environments: [envRow({ name: 'Prod' })] },
+        select: { services: [{ id: 10 }, { id: 11 }] },
+      }),
+    });
+    await app.register(environmentRoutes);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/1',
+      headers: asUser({ id: 7, isOperator: false }),
+      payload: { name: 'Prod' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ name: 'Prod', serviceCount: 2 });
+    await app.close();
+  });
+
   it('deletes an environment for an admin and keeps services', async () => {
     const deleteCalls: Array<Record<string, unknown>> = [];
     const app = await buildTestApp({

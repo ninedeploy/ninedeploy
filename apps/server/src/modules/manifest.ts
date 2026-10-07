@@ -7,6 +7,7 @@ import { audit } from '../lib/audit.js';
 import { notFound, parseId as num, unprocessable } from '../lib/errors.js';
 import { loadServiceForUser } from '../lib/resourceAccess.js';
 import { assertServiceRole } from '../lib/resourceAccess.js';
+import { assertMayPublishPort } from '../lib/hostPort.js';
 
 /**
  * `POST /v1/services/:id/manifest/apply` — the server half of
@@ -127,6 +128,16 @@ export async function applyManifestRuntimeConfig(
   const diff = diffFor(manifest);
   const touched: string[] = [];
 
+  // F605: the build_configs row is required — check it BEFORE any write, so a
+  // refused apply never leaves a committed (and unaudited) services update.
+  const [existing] = await db
+    .select()
+    .from(buildConfigs)
+    .where(eq(buildConfigs.serviceId, serviceId));
+  if (!existing) {
+    throw unprocessable(`Service ${serviceId} has no build config — create the service first`);
+  }
+
   // 1. Update the service row with the diff's service fields.
   //    Only include the keys that are actually set so we don't
   //    blow away other operator-managed columns.
@@ -145,13 +156,6 @@ export async function applyManifestRuntimeConfig(
   //    correct merge — drizzle's partial update does the
   //    rest.)
   if (Object.keys(diff.build).length > 0) {
-    const [existing] = await db
-      .select()
-      .from(buildConfigs)
-      .where(eq(buildConfigs.serviceId, serviceId));
-    if (!existing) {
-      throw unprocessable(`Service ${serviceId} has no build config — create the service first`);
-    }
     await db
       .update(buildConfigs)
       .set(diff.build)
@@ -161,9 +165,7 @@ export async function applyManifestRuntimeConfig(
 
   return {
     service: { id: serviceId },
-    build: {
-      id: (await db.select().from(buildConfigs).where(eq(buildConfigs.serviceId, serviceId)))[0]!.id,
-    },
+    build: { id: existing.id },
     touched,
     diff,
   };
@@ -185,6 +187,9 @@ export const manifestRoutes: FastifyPluginAsync = async (app) => {
       await assertServiceRole(app.db, svc, req.user!, 'admin');
       if (!svc.id) throw notFound('Service not found');
       const body = applyBody.parse(req.body);
+      // F604: the same host-port gate as service create/PATCH — reserved
+      // ports (panel, Traefik, SSH) are refused for every role.
+      assertMayPublishPort(req.user!, body.manifest.network?.publishPort);
       const result = await applyManifestRuntimeConfig(app.db, svc.id, body.manifest, body.strategy);
       void audit(
         app.db,

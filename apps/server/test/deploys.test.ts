@@ -491,7 +491,8 @@ describe('deploys routes', () => {
     logBus.publish(5, 'backlog line');
     const app = await buildTestApp({
       websocket: true,
-      db: createFakeDb({ findFirst: { services: svcRow({ id: 1 }), deployments: depRow({ id: 5, serviceId: 1 }) } }),
+      // F881: an in-flight deployment — a settled one now ends the stream after the backlog.
+      db: createFakeDb({ findFirst: { services: svcRow({ id: 1 }), deployments: depRow({ id: 5, serviceId: 1, status: 'building' }) } }),
     });
     await app.register(deploysRoutes, { prefix: '/services' });
     const port = await listen(app);
@@ -589,6 +590,160 @@ describe('deploys routes', () => {
     } finally {
       subSpy.mockRestore();
       authMocks.resolveUser.mockImplementation(defaultImpl);
+    }
+  });
+
+  it('F532: the log stream revalidation closes the socket once the member loses their seat', async () => {
+    // The 60 s tick re-resolved the token only: a member removed from the
+    // service's workspace (session still valid) kept receiving this build log
+    // (logs echo secrets) until the client closed it.
+    let seated = true;
+    const db = createFakeDb({
+      // F881: in flight, so the stream stays open until the seat loss closes it.
+      findFirst: { services: svcRow({ id: 1, ownerUserId: 99 }), deployments: depRow({ id: 5, serviceId: 1, status: 'building' }) },
+      findMany: {
+        serviceWorkspaces: [{ serviceId: 1, workspaceId: 7 }],
+        workspaceMembers: () => (seated ? [{ userId: 2, workspaceId: 7, role: 'member' }] : []),
+      },
+    });
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const subSpy = vi.spyOn(logBus, 'subscribe');
+    const app = await buildTestApp({ websocket: true, db });
+    try {
+      await app.register(deploysRoutes, { prefix: '/services' });
+      const port = await listen(app);
+      authMocks.resolveUser.mockClear();
+      const ws = await openWs(wsUrl(port, '/services/1/deploys/5/logs'), 'ninedeploy.bearer.member');
+      sockets.push(ws);
+      const messages = collectMessages(ws);
+      const closed = new Promise<{ code: number; reason: string }>((resolve) =>
+        ws.addEventListener('close', (ev) => resolve({ code: ev.code, reason: ev.reason })),
+      );
+      await waitFor(() => subSpy.mock.calls.length === 1);
+      seated = false;
+      vi.advanceTimersByTime(60_000);
+      // Gate on the tick having run (token re-resolved), then on event-loop turns.
+      await waitFor(() => authMocks.resolveUser.mock.calls.length === 2);
+      for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+      const leaked = new Promise<'leaked'>((resolve) =>
+        ws.addEventListener('message', (ev) => { if (String(ev.data).includes('SECRET_TOKEN')) resolve('leaked'); }),
+      );
+      logBus.emit('5', 'SECRET_TOKEN=after-removal');
+      const first = await Promise.race([closed, leaked]);
+      expect(first).toEqual({ code: 1008, reason: 'access revoked' });
+      expect(messages.join('')).not.toContain('SECRET_TOKEN');
+    } finally {
+      subSpy.mockRestore();
+      vi.useRealTimers();
+      await app.close();
+    }
+  });
+
+  it('F881: the log stream ends (1000) once the run settled — not when the status turns final mid-run', async () => {
+    // The stream never closed, so `deploys watch` sat out its 30-minute cap and
+    // the server held the socket, subscription and interval. Status is no
+    // end-of-log marker: the pipeline marks the row `running` BEFORE the proxy
+    // swap, which can still log a retry and flip it to `failed`.
+    const dep = { status: 'building' };
+    let depReads = 0;
+    const db = createFakeDb({
+      findFirst: {
+        services: svcRow({ id: 1 }),
+        deployments: () => {
+          depReads++;
+          return depRow({ id: 881, serviceId: 1, status: dep.status });
+        },
+      },
+    });
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const app = await buildTestApp({ websocket: true, db });
+    logBus.beginRun(881); // the pipeline run writing this log
+    try {
+      await app.register(deploysRoutes, { prefix: '/services' });
+      const port = await listen(app);
+      const ws = await openWs(wsUrl(port, '/services/1/deploys/881/logs'), 'ninedeploy.bearer.valid');
+      sockets.push(ws);
+      const messages = collectMessages(ws);
+      const closed = new Promise<{ code: number; reason: string }>((resolve) =>
+        ws.addEventListener('close', (ev) => resolve({ code: ev.code, reason: ev.reason })),
+      );
+      await waitFor(() => depReads >= 2); // ownership binding + connect-time settle check
+      dep.status = 'running'; // finalize, before the swap
+      logBus.publish(881, '##[stage:PROXY_SWAP:running]');
+      const before = depReads;
+      vi.advanceTimersByTime(60_000);
+      await waitFor(() => depReads > before); // the tick's settle check ran
+      for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+      // Still subscribed: a line published now is delivered (cleanup unsubscribes before closing).
+      logBus.publish(881, 'proxy warning: ENOSPC — retrying once in 2s');
+      await waitFor(() => messages.join('').includes('retrying once'));
+      dep.status = 'failed';
+      logBus.publish(881, '✗ The Traefik config could not be written — Reverting to the previous runtime.');
+      logBus.end(881);
+      expect(await closed).toEqual({ code: 1000, reason: 'deploy finished' });
+      expect(messages.join('')).toContain('Reverting to the previous runtime');
+      expect(logBus.listenerCount('881')).toBe(0);
+      expect(logBus.listenerCount('end:881')).toBe(0);
+    } finally {
+      vi.useRealTimers();
+      await app.close();
+    }
+  });
+
+  it('F881: a deployment that settled before the connect gets its backlog, then a 1000 close', async () => {
+    logBus.publish(882, '✓ Deployment successful');
+    const app = await buildTestApp({
+      websocket: true,
+      db: createFakeDb({ findFirst: { services: svcRow({ id: 1 }), deployments: depRow({ id: 882, serviceId: 1, status: 'running' }) } }),
+    });
+    try {
+      await app.register(deploysRoutes, { prefix: '/services' });
+      const port = await listen(app);
+      const ws = await openWs(wsUrl(port, '/services/1/deploys/882/logs'), 'ninedeploy.bearer.valid');
+      sockets.push(ws);
+      const messages = collectMessages(ws);
+      const closed = await new Promise<{ code: number; reason: string }>((resolve) =>
+        ws.addEventListener('close', (ev) => resolve({ code: ev.code, reason: ev.reason })),
+      );
+      expect(closed).toEqual({ code: 1000, reason: 'deploy finished' });
+      expect(messages.join('')).toContain('✓ Deployment successful');
+      expect(logBus.listenerCount('882')).toBe(0);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('F533: does not spawn the exec shell for a client that left during setup (late-close race)', async () => {
+    // The route awaited auth, the DB and the python3 pty probe before spawning
+    // `docker exec` and attaching its close listener — a client gone in that
+    // window left an orphaned shell plus a never-cleared revalidation interval.
+    let releaseProbe: (() => void) | null = null;
+    execMocks.capture.mockImplementation(
+      () => new Promise((_resolve, reject) => { releaseProbe = () => reject(new Error('no python3')); }),
+    );
+    const app = await buildTestApp({
+      websocket: true,
+      db: createFakeDb({ findFirst: { services: svcRow({ id: 1, runtimeId: 'c1' }) } }),
+    });
+    try {
+      await app.register(deploysRoutes, { prefix: '/services' });
+      const port = await listen(app);
+      const ws = await openWs(wsUrl(port, '/services/1/exec'), 'ninedeploy.bearer.valid');
+      sockets.push(ws);
+      const closed = new Promise<void>((resolve) => ws.addEventListener('close', () => resolve()));
+      await waitFor(() => releaseProbe !== null); // handler parked on the probe
+      ws.close();
+      await closed;
+      // ws drops a client from `clients` inside its own 'close' handler, so this
+      // gates on the SERVER socket having emitted 'close'.
+      const wss = (app as unknown as { websocketServer: { clients: Set<unknown> } }).websocketServer;
+      await waitFor(() => wss.clients.size === 0);
+      releaseProbe!();
+      for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+      expect(childProc.spawn).not.toHaveBeenCalled();
+    } finally {
+      execMocks.capture.mockReset();
+      await app.close();
     }
   });
 

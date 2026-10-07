@@ -62,7 +62,8 @@ describe('projects routes', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/projects',
-      headers: { ...asUser({ isOperator: false }), 'content-type': 'application/json' },
+      // An operator: a workspace-less project is operator-only (F608).
+      headers: { ...asUser(), 'content-type': 'application/json' },
       payload: { name: 'Acme' },
     });
     expect(res.statusCode).toBe(400);
@@ -166,6 +167,45 @@ describe('projects routes', () => {
     expect(patch.statusCode).toBe(403);
     const del = await app.inject({ method: 'DELETE', url: '/projects/1', headers: asUser({ isOperator: false }) });
     expect(del.statusCode).toBe(403);
+  });
+
+  it('F608: refuses a workspace-less project to a non-operator (viewer seat or none)', async () => {
+    const app = await appWith({ insert: { projects: [projectRow({ name: 'production', slug: 'production' })] } });
+    for (const payload of [{ name: 'production' }, { name: 'production', workspaceId: null }]) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/projects',
+        headers: { ...asUser({ id: 7, isOperator: false }), 'content-type': 'application/json' },
+        payload,
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.message).toMatch(/operator/);
+    }
+    expect(auditMocks.audit).not.toHaveBeenCalled();
+  });
+
+  it('F609: refuses to delete a workspace project that still files databases', async () => {
+    const fixtures = (databases: unknown) => ({
+      findFirst: {
+        projects: projectRow({ workspaceId: 5 }),
+        workspaceMembers: { id: 2, workspaceId: 5, userId: 1, role: 'admin' },
+        databases,
+      },
+    });
+    // A workspace admin and an operator are both refused: SET NULL would take
+    // the database out of the workspace and leave it to its creator alone.
+    for (const headers of [asUser({ isOperator: false }), asUser()]) {
+      const app = await appWith(fixtures({ id: 3, projectId: 1, ownerUserId: 9 }));
+      const res = await app.inject({ method: 'DELETE', url: '/projects/1', headers });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error.code).toBe('conflict');
+    }
+    expect(auditMocks.audit).not.toHaveBeenCalled();
+    // Control: with no database filed, the same admin deletes it.
+    const app = await appWith(fixtures(undefined));
+    const ok = await app.inject({ method: 'DELETE', url: '/projects/1', headers: asUser({ isOperator: false }) });
+    expect(ok.statusCode).toBe(200);
+    expect(auditMocks.audit).toHaveBeenCalledWith(expect.anything(), 1, 'project.delete', 'Acme');
   });
 
   it('rejects an empty patch with 400', async () => {

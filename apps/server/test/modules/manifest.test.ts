@@ -380,4 +380,34 @@ describe('POST /:id/manifest/apply (HTTP)', () => {
     const body = await res.json();
     expect(body.diff.service.port).toBe(4000);
   });
+
+  it('F604: refuses a reserved host port in network.publishPort (same gate as service PATCH) and writes nothing', async () => {
+    const { port } = await startApp();
+    for (const reserved of [22, 80, 443]) {
+      updates = [];
+      const res = await fetch(`http://127.0.0.1:${port}/1/manifest/apply`, {
+        method: 'POST',
+        headers: { ...asUser(1), 'content-type': 'application/json' },
+        body: JSON.stringify({ manifest: { version: '1', run: { port: 3000 }, network: { publishPort: reserved } } }),
+      });
+      expect(res.status).toBe(403);
+      expect(updates).toEqual([]);
+    }
+  });
+
+  it('F605: a service without a build_configs row is refused before the services row is written', async () => {
+    buildConfigRow = null;
+    const audit = (await import('../../src/lib/audit.js')).audit as unknown as ReturnType<typeof vi.fn>;
+    audit.mockClear();
+    const { port } = await startApp();
+    const res = await fetch(`http://127.0.0.1:${port}/1/manifest/apply`, {
+      method: 'POST',
+      headers: { ...asUser(1), 'content-type': 'application/json' },
+      // run-only: used to write services.port, then 500 on the missing row with no audit
+      body: JSON.stringify({ manifest: { version: '1', run: { port: 4000 } } }),
+    });
+    expect(res.status).toBe(422);
+    expect(updates).toEqual([]);
+    expect(audit).not.toHaveBeenCalled();
+  });
 });

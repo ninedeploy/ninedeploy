@@ -105,6 +105,7 @@ describe('log drains API', () => {
   it('creates a log drain with validation and encryption', async () => {
     const app = await buildTestApp({
       db: createFakeDb({
+        select: { services: [{ id: 10 }] },
         insert: {
           log_drains: [
             drainRow({
@@ -193,6 +194,7 @@ describe('log drains API', () => {
       db: createFakeDb({
         select: {
           log_drains: [fakeDrain],
+          services: [{ id: 3 }],
         },
         update: {
           log_drains: [{ ...fakeDrain, name: 'Renamed Drain', enabled: false }],
@@ -339,6 +341,45 @@ describe('log drains API', () => {
     } finally {
       globalThis.fetch = origFetch;
     }
+  });
+
+  it('F600: refuses a serviceId that names no service (404, nothing written)', async () => {
+    const db = createFakeDb({ select: { log_drains: [fakeDrain], services: [] } });
+    const insert = vi.spyOn(db, 'insert');
+    const update = vi.spyOn(db, 'update');
+    const app = await buildTestApp({ db });
+    await app.register(logDrainRoutes);
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/',
+      headers: asUser(),
+      payload: { name: 'Dangling', type: 'http', url: 'https://logs.example.com/in', serviceId: 999 },
+    });
+    expect(created.statusCode).toBe(404);
+    expect(created.json().error.message).toBe('Service not found');
+
+    const patched = await app.inject({ method: 'PATCH', url: '/1', headers: asUser(), payload: { serviceId: 999 } });
+    expect(patched.statusCode).toBe(404);
+    expect(insert).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('F601: refuses drain URLs the http(s)-only transport can never deliver to', async () => {
+    const db = createFakeDb({ select: { log_drains: [fakeDrain] } });
+    const insert = vi.spyOn(db, 'insert');
+    const update = vi.spyOn(db, 'update');
+    const app = await buildTestApp({ db });
+    await app.register(logDrainRoutes);
+
+    for (const url of ['syslog://logs.example.com:514', 'logs.example.com/in', 'file:///etc/passwd']) {
+      const res = await app.inject({ method: 'POST', url: '/', headers: asUser(), payload: { name: 'x', type: 'syslog', url } });
+      expect(res.statusCode, url).toBe(422);
+    }
+    const patched = await app.inject({ method: 'PATCH', url: '/1', headers: asUser(), payload: { url: 'udp://logs.example.com:514' } });
+    expect(patched.statusCode).toBe(422);
+    expect(insert).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
   });
 
   it('requires admin permissions', async () => {

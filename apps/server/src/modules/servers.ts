@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { servers, services, type ServerRow } from '@ninedeploy/db';
+import { servers, serviceTargets, services, type DB, type ServerRow } from '@ninedeploy/db';
 import { serverAnnounce, serverCreate, serverSshBootstrap, serverSshTest } from '@ninedeploy/schemas';
 import type { FastifyPluginAsync } from 'fastify';
 import { audit } from '../lib/audit.js';
@@ -33,6 +33,22 @@ function parseHumanBytes(input: string): number {
 
 function normalizeHost(raw: string): string {
   return raw.replace(/:\d+$/, '');
+}
+
+/** F204/F205: everything placed on a node — services whose PRIMARY placement
+ *  it is (services.server_id, ON DELETE SET NULL: they would silently re-read
+ *  as panel-host services) and the services it runs as a fan-out target
+ *  (service_targets, ON DELETE CASCADE: the panel's only record of that
+ *  container would vanish). Every route that deletes a server row must ask. */
+async function hostedOn(db: DB, serverId: number) {
+  const primary = await db.query.services.findMany({ where: eq(services.serverId, serverId) });
+  const targetRows = await db.query.serviceTargets.findMany({ where: eq(serviceTargets.serverId, serverId) });
+  const targets = [];
+  for (const t of targetRows) {
+    const svc = await db.query.services.findFirst({ where: eq(services.id, t.serviceId) });
+    if (svc) targets.push(svc);
+  }
+  return { primary, targets, all: [...primary, ...targets] };
 }
 
 function serialize(s: ServerRow) {
@@ -170,14 +186,13 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
       const row = await authed.db.query.servers.findFirst({ where: eq(servers.id, id) });
       if (!row) throw notFound('Server not found');
 
-      const hostedServices = await authed.db.query.services.findMany({
-        where: eq(services.serverId, id),
-      });
+      const hosted = await hostedOn(authed.db, id);
+      const hostedServices = hosted.primary;
       const force = (req.query as { force?: string }).force === 'true';
-      if (hostedServices.length > 0 && !force) {
-        const names = hostedServices.map((s) => s.name).join(', ');
+      if (hosted.all.length > 0 && !force) {
+        const names = hosted.all.map((s) => s.name).join(', ');
         throw badRequest(
-          `Cannot delete server "${row.name}": It is locked and actively hosting ${hostedServices.length} service(s) (${names}). Reassign or delete these services first or pass ?force=true.`,
+          `Cannot delete server "${row.name}": It is locked and actively hosting ${hosted.all.length} service(s) (${names}). Reassign or delete these services first or pass ?force=true.`,
         );
       }
 
@@ -193,6 +208,11 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
               orphanedServices: hostedServices.map((s) => ({ id: s.id, name: s.name, slug: s.slug })),
               note: `${hostedServices.length} service(s) were hosted on this node; their containers remain on the removed host and the services now read as local — delete or reassign them.`,
             }
+          : {}),
+        // F205: fan-out targets on the removed node — their target rows are
+        // gone (cascade) but the containers still run there.
+        ...(force && hosted.targets.length > 0
+          ? { orphanedTargets: hosted.targets.map((s) => ({ id: s.id, name: s.name, slug: s.slug })) }
           : {}),
       };
     });
@@ -304,6 +324,18 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
       const id = parseId((req.params as { id: string }).id);
       const row = await authed.db.query.servers.findFirst({ where: eq(servers.id, id) });
       if (!row) throw notFound('Server not found');
+      // F204: reject discards a node that announced itself and was never
+      // approved. It used to delete ANY row with no hosted-services guard, so
+      // rejecting an approved node (a stale pending card, a direct API call)
+      // silently moved its services to the panel host. Anything else goes
+      // through DELETE and its guard.
+      if (row.status !== 'pending') {
+        throw conflict(`Server "${row.name}" is not pending approval — delete it instead`);
+      }
+      const hosted = await hostedOn(authed.db, id);
+      if (hosted.all.length > 0) {
+        throw conflict(`Server "${row.name}" hosts ${hosted.all.length} service(s) — reassign them, then delete it instead`);
+      }
       await authed.db.delete(servers).where(eq(servers.id, id));
       void audit(authed.db, req.user!.id, 'server.reject', row.name);
       authed.kernel?.events.emit('server.rejected', {

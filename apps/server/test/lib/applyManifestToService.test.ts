@@ -418,6 +418,12 @@ describe('applyManifestToService — database', () => {
 });
 
 describe('applyManifestToService — alerts', () => {
+  // F128: a highMemory thresholdPct is a percent of the memory limit (memory
+  // rules are evaluated in MiB), so the service under test needs a limit.
+  beforeEach(async () => {
+    await db.update(services).set({ memLimitMb: 512 }).where(eq(services.id, serviceId));
+  });
+
   it('inserts a rule for each metric alert and skips the event-shaped ones', async () => {
     const result = await applyManifestToService(
       db,
@@ -454,7 +460,7 @@ describe('applyManifestToService — alerts', () => {
     expect(rules).toHaveLength(0);
   });
 
-  it('maps highMemory to a memory-metric rule with the manifest threshold', async () => {
+  it('maps highMemory to a memory-metric rule at thresholdPct of the memory limit, in MiB', async () => {
     await applyManifestToService(
       db,
       serviceId,
@@ -466,7 +472,7 @@ describe('applyManifestToService — alerts', () => {
       .where(eq(alertRules.serviceId, serviceId));
     expect(rule!.metric).toBe('memory');
     expect(rule!.operator).toBe('>');
-    expect(rule!.threshold).toBe(75);
+    expect(rule!.threshold).toBe(384); // 75% of 512 MiB
   });
 
   it('encodes the channel in the rule name so two alerts with the same when can coexist', async () => {
@@ -504,7 +510,7 @@ describe('applyManifestToService — alerts', () => {
       .from(alertRules)
       .where(eq(alertRules.serviceId, serviceId));
     expect(rules).toHaveLength(1);
-    expect(rules[0]!.threshold).toBe(95);
+    expect(rules[0]!.threshold).toBe(486); // 95% of 512 MiB
   });
 
   it('does nothing when the manifest declares no alerts', async () => {
@@ -526,7 +532,7 @@ describe('applyManifestToService — alerts', () => {
 
     const t0 = Date.parse('2026-01-01T00:00:00Z');
     for (let tick = 0; tick <= 4; tick++) {
-      await evaluateAlerts(db, [{ serviceId, kind: 'memory', value: 95 }], new Date(t0 + tick * 30_000));
+      await evaluateAlerts(db, [{ serviceId, kind: 'memory', value: 470 }], new Date(t0 + tick * 30_000));
     }
 
     const [state] = await db.select().from(alertState);
@@ -544,12 +550,83 @@ describe('applyManifestToService — alerts', () => {
 
     const t0 = Date.parse('2026-01-01T00:00:00Z');
     for (let tick = 0; tick <= 4; tick++) {
-      await evaluateAlerts(db, [{ serviceId, kind: 'memory', value: 95 }], new Date(t0 + tick * 30_000));
+      await evaluateAlerts(db, [{ serviceId, kind: 'memory', value: 470 }], new Date(t0 + tick * 30_000));
     }
     await evaluateAlerts(db, [{ serviceId, kind: 'memory', value: 30 }], new Date(t0 + 5 * 30_000));
 
     const [state] = await db.select().from(alertState);
     expect(state?.status).toBe('ok');
+  });
+
+  it('F128: highMemory 90% does not fire on a service at 39% of its limit (MiB units)', async () => {
+    await db.delete(alertState);
+    await applyManifestToService(
+      db,
+      serviceId,
+      m({ alerts: [{ when: 'highMemory', channel: 'oncall', thresholdPct: 90 }] }),
+    );
+    const t0 = Date.parse('2026-01-01T00:00:00Z');
+    for (let tick = 0; tick <= 4; tick++) {
+      await evaluateAlerts(db, [{ serviceId, kind: 'memory', value: 200 }], new Date(t0 + tick * 30_000));
+    }
+    const [state] = await db.select().from(alertState);
+    expect(state?.status).toBe('ok');
+  });
+
+  it('F128: takes the limit from resources.memMb when the panel set none, and skips with a warning when there is none', async () => {
+    await db.update(services).set({ memLimitMb: 0 }).where(eq(services.id, serviceId));
+    const skipped = await applyManifestToService(
+      db,
+      serviceId,
+      m({ alerts: [{ when: 'highMemory', channel: 'oncall', thresholdPct: 90 }] }),
+    );
+    expect(skipped.alertsUpserted).toBe(0);
+    expect(skipped.warnings.some((w) => w.includes('when="highMemory"') && w.includes('memory limit'))).toBe(true);
+    expect(await db.select().from(alertRules).where(eq(alertRules.serviceId, serviceId))).toHaveLength(0);
+
+    await applyManifestToService(
+      db,
+      serviceId,
+      m({ resources: { memMb: 1024 }, alerts: [{ when: 'highMemory', channel: 'oncall', thresholdPct: 75 }] }),
+    );
+    const [rule] = await db.select().from(alertRules).where(eq(alertRules.serviceId, serviceId));
+    expect(rule!.threshold).toBe(768);
+  });
+
+  it('F129: certExpiry writes no service-scoped rule (cert expiry is sampled host-wide) and says so', async () => {
+    const result = await applyManifestToService(
+      db,
+      serviceId,
+      m({ alerts: [{ when: 'certExpiry', channel: 'oncall' }] }),
+    );
+    expect(result.alertsUpserted).toBe(0);
+    expect(result.warnings.some((w) => w.includes('when="certExpiry"') && w.includes('host-wide'))).toBe(true);
+    expect(await db.select().from(alertRules).where(eq(alertRules.serviceId, serviceId))).toHaveLength(0);
+  });
+
+  it('F130: drops manifest rules the section no longer declares, never panel rules or with an absent section', async () => {
+    await db
+      .insert(alertRules)
+      .values({ serviceId, name: 'web cpu (panel)', metric: 'cpu', operator: '>', threshold: 70, durationWindows: 1 });
+    await applyManifestToService(
+      db,
+      serviceId,
+      m({ alerts: [{ when: 'highCpu', channel: 'oncall', thresholdPct: 80 }] }),
+    );
+    await applyManifestToService(db, serviceId, m({}));
+    const names = async () =>
+      (await db.select().from(alertRules).where(eq(alertRules.serviceId, serviceId))).map((r) => r.name).sort();
+    expect(await names()).toEqual([`svc-${serviceId}-highCpu-oncall`, 'web cpu (panel)']);
+
+    await applyManifestToService(
+      db,
+      serviceId,
+      m({ alerts: [{ when: 'highCpu', channel: 'ops', thresholdPct: 80 }] }),
+    );
+    expect(await names()).toEqual([`svc-${serviceId}-highCpu-ops`, 'web cpu (panel)']);
+
+    await applyManifestToService(db, serviceId, m({ alerts: [] }));
+    expect(await names()).toEqual(['web cpu (panel)']);
   });
 });
 

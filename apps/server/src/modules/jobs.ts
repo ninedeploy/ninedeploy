@@ -13,7 +13,9 @@ import { execJobUnsupportedReason, runJob } from '../lib/jobRunner.js';
 /** Validate a 5-field cron expression up front (croner is the runtime parser). */
 function assertCron(expr: string): void {
   try {
-    new Cron(expr, { paused: true, unref: true });
+    // F240: croner's default 'auto' mode also takes 6/7-field patterns (a
+    // seconds field: `* * * * * *` fires every second in the scheduler).
+    new Cron(expr, { paused: true, unref: true, mode: '5-part' });
   } catch {
     throw badRequest('Invalid cron expression (expected 5 fields: minute hour day month weekday)');
   }
@@ -154,6 +156,18 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
     // be switched off instead of only deleted.
     const finalKind = values.kind ?? existingJob.kind;
     const finalEnabled = values.enabled ?? existingJob.enabled;
+    // F241: only an exec job keeps a command (as on create) — a stale exec
+    // command left on a deploy/backup job is shown to non-operators.
+    if (finalKind !== 'exec' && (values.command !== undefined || existingJob.command)) values.command = null;
+    // F242: a patch must not leave an exec job without a command (create
+    // refuses one; the runner silently skips it).
+    if (
+      finalKind === 'exec' &&
+      (values.kind !== undefined || values.command !== undefined) &&
+      !(values.command !== undefined ? values.command : existingJob.command)
+    ) {
+      throw badRequest('command is required for exec jobs');
+    }
     if (finalKind === 'exec' && finalEnabled) {
       const unsupported = execJobUnsupportedReason(svc);
       if (unsupported) throw badRequest(unsupported, 'exec_job_unsupported');

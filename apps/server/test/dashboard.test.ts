@@ -1,4 +1,4 @@
-﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dashboardRoutes } from '../src/modules/dashboard.js';
 import { asUser, buildTestApp, createFakeDb, depRow, svcRow } from './helpers.js';
 
@@ -374,5 +374,53 @@ describe('dashboard member scoping', () => {
     const body = res.json();
     expect(body.stats.services).toBe(2);
     expect(body.health).toHaveLength(2);
+  });
+});
+
+describe('dashboard probe lifecycle', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const flush = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
+  const runningSvc = () => svcRow({ id: 1, status: 'running', port: 3000, runtimeId: 'c1' });
+
+  it('F584: spawns no netns probe container once the mesh probe already answered healthy', async () => {
+    // Docker Desktop: the mesh answers first, the direct bridge-IP fetch only
+    // fails afterwards. Its failure must not start `docker run curlimages/curl`
+    // for a result that is already settled.
+    let failDirect!: (e: Error) => void;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise((_r, rej) => { failDirect = rej; })) as unknown as typeof fetch);
+    execMocks.capture.mockImplementation(async (_c: unknown, args: unknown[]) =>
+      (args as string[])[0] === 'inspect' ? 'running|172.18.0.2' : '200');
+    const app = await buildTestApp({ db: createFakeDb({ select: { services: [runningSvc()] }, counts: {} }) });
+    await app.register(dashboardRoutes);
+    const res = await app.inject({ method: 'GET', url: '/', headers: asUser() });
+    expect(res.json().health[0]).toMatchObject({ healthy: true });
+    failDirect(new Error('The operation was aborted due to timeout'));
+    await flush();
+    expect(execMocks.capture).not.toHaveBeenCalledWith('docker', expect.arrayContaining(['run']));
+  });
+
+  it('F585: a wedged docker daemon cannot hold the dashboard request (probe deadline + bounded docker ps)', async () => {
+    // capture() defaults to a 30-minute timeout; this fake honours opts.timeoutMs.
+    execMocks.capture.mockImplementation((_c: unknown, _args: unknown[], opts?: { timeoutMs?: number }) =>
+      new Promise((_r, rej) => { setTimeout(() => rej(new Error('timed out')), opts?.timeoutMs ?? 30 * 60_000); }) as never);
+    vi.stubGlobal('fetch', vi.fn(async () => ({ status: 200, ok: true })) as unknown as typeof fetch);
+    const app = await buildTestApp({ db: createFakeDb({ select: { services: [runningSvc()] }, counts: {} }) });
+    await app.register(dashboardRoutes);
+    await app.ready();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let done = false;
+    const resP = app.inject({ method: 'GET', url: '/', headers: asUser() }).then((r) => { done = true; return r; });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(done).toBe(true);
+    const body = (await resP).json();
+    expect(body.health[0]).toMatchObject({ healthy: false, responseMs: null });
+    expect(body.stats.containers).toBeNull();
+    await vi.advanceTimersByTimeAsync(30 * 60_000 + 1); // drain the stalled fakes
   });
 });

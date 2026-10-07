@@ -10,9 +10,11 @@ import { getSettingJson, getSettingString, setSettingJson, setSettingString } fr
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { assertServiceRole, roleAtLeast, serviceWorkspaceIds, userWorkspaceMemberships } from '../lib/resourceAccess.js';
 import { logBus } from '../engine/logs.js';
+import { redactEgressTarget } from '../lib/egressGuard.js';
 import {
   buildDiagnosisMessages,
   buildSuggestMessages,
+  MAX_LOG_CHARS,
   parseChatCompletionContent,
   sanitizeLogForAi,
   stripJsonFence,
@@ -133,6 +135,20 @@ async function requestDiagnosis(
   return chatCompletion(cfg, buildDiagnosisMessages(logTail), DIAGNOSIS_MAX_TOKENS);
 }
 
+/**
+ * F833: the log tail the provider sees, sanitized BEFORE the final cut. The
+ * sanitizer keys on whole lines (`DB_PASSWORD=…`, `scheme://user:pass@`); a
+ * character cut inside such a line left `WORD=hunter2` / `ploy:pw@host`
+ * unmasked. Sanitize a window one MAX_LOG_CHARS wider, started on a line
+ * boundary when it has one, then cut — every mask is applied in full context.
+ */
+function logTailForAi(raw: string): string {
+  const window = truncateTail(raw, MAX_LOG_CHARS * 2);
+  const midLine = window.length < raw.length && raw[raw.length - window.length - 1] !== '\n';
+  const start = midLine ? window.indexOf('\n') + 1 : 0;
+  return truncateTail(sanitizeLogForAi(window.slice(start)));
+}
+
 export const aiRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', app.authenticate);
 
@@ -157,14 +173,18 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
   app.put('/config', { onRequest: [app.requireOperator] }, async (req) => {    const input = aiConfigUpdate.parse(req.body ?? {});
     await setSettingJson(app.db, AI_CONFIG_KEY, { baseUrl: input.baseUrl, model: input.model });
     if (input.apiKey) await setSettingString(app.db, AI_KEY_KEY, encrypt(input.apiKey));
-    void audit(app.db, req.user!.id, 'ai.config', `${input.model} @ ${input.baseUrl}`);
+    // F832: the audit entity fans out to the activity feed, the live event
+    // stream and notifications — never the baseUrl's userinfo or path.
+    void audit(app.db, req.user!.id, 'ai.config', `${input.model} @ ${redactEgressTarget(input.baseUrl)}`);
     return { ok: true };
   });
 
   // Diagnose a failed deployment: member floor on the service (this call
   // ships the log to the configured provider and spends the operator's
   // money — read-only viewers don't get to trigger it).
-  app.post('/services/:id/deploys/:depId/diagnose', async (req) => {
+  // F834: and capped like suggest-manifest — each call ships up to 16 KB of
+  // log to the paid provider; the global 1000/min limiter is no spend cap.
+  app.post('/services/:id/deploys/:depId/diagnose', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
     const id = num((req.params as { id: string }).id);
     const depId = num((req.params as { depId: string }).depId);
     const svc = await loadServiceForUser(app.db, id, req.user!);
@@ -185,7 +205,7 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
     const raw = logBus.read(depId);
     if (!raw.trim()) throw badRequest('This deployment has no build log to diagnose');
 
-    const diagnosis = await requestDiagnosis(cfg, sanitizeLogForAi(truncateTail(raw)));
+    const diagnosis = await requestDiagnosis(cfg, logTailForAi(raw));
     void audit(app.db, req.user!.id, 'ai.diagnose', `service=${svc.name} deployment=${depId}`);
     return { diagnosis, model: cfg.model };
   });

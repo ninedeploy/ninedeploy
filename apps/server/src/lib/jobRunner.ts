@@ -1,7 +1,8 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { deployments, jobRuns, scheduledJobs, services, type DB } from '@ninedeploy/db';
 import { run } from './exec.js';
 import { audit } from './audit.js';
+import { MAX_QUEUED_PER_SERVICE } from './deployQueue.js';
 import { assertMayDeployStoredService } from './hostPrivilege.js';
 import { isOperator } from './resourceAccess.js';
 import { backupServiceVolumes } from '../modules/volumeBackups.js';
@@ -110,6 +111,22 @@ async function runJobInner(db: DB, jobId: number, opts: RunJobOptions): Promise<
       void audit(db, null, 'job.deploy_refused', `${job.name}: ${err instanceof Error ? err.message : String(err)}`);
       return;
     }
+    // F103: the same per-service queued cap as every user-triggered enqueue
+    // (lib/deployQueue). An every-minute deploy job behind a slow or stalled
+    // worker used to stack one queued row per tick without limit.
+    const queued = await db.query.deployments.findMany({
+      where: and(eq(deployments.serviceId, job.serviceId), eq(deployments.status, 'queued')),
+      columns: { id: true },
+    });
+    if (queued.length >= MAX_QUEUED_PER_SERVICE) {
+      void audit(
+        db,
+        null,
+        'job.deploy_skipped',
+        `${job.name}: the service already has ${queued.length} queued deploys (max ${MAX_QUEUED_PER_SERVICE})`,
+      );
+      return;
+    }
     // Delegated to the deployments table; the worker picks it up like any other.
     await db.insert(deployments).values({
       serviceId: job.serviceId,
@@ -153,27 +170,43 @@ async function runJobInner(db: DB, jobId: number, opts: RunJobOptions): Promise<
     .values({ jobId: job.id, status: 'running', startedAt: new Date() })
     .returning();
   const chunks: string[] = [];
+  // F100: `length` is the size of `chunks.join('\n')`. Keep the HEAD of the
+  // output up to MAX_OUTPUT chars, cutting the line that crosses the cap
+  // instead of dropping it — one long line (minified JSON) used to record
+  // an empty output.
   let length = 0;
   const sink = (line: string) => {
-    length += line.length + 1;
-    if (length <= MAX_OUTPUT) chunks.push(line);
+    const sep = chunks.length > 0 ? 1 : 0;
+    const room = MAX_OUTPUT - length - sep;
+    if (room <= 0) return;
+    let piece = line.length > room ? line.slice(0, room) : line;
+    // Never end on half of a surrogate pair.
+    if (piece.length < line.length && /[\uD800-\uDBFF]$/.test(piece)) piece = piece.slice(0, -1);
+    chunks.push(piece);
+    length += sep + piece.length;
   };
   let exitOk = true;
+  let failure: string | null = null;
   try {
     // `--` before the container name: a runtimeId starting with `-` must be
     // treated as an operand, not a flag (same hardening as the exec WS route).
     await run('docker', ['exec', '--', svc.runtimeId, 'sh', '-lc', job.command], {}, sink);
-  } catch {
+  } catch (err) {
     // The exec layer reports success/failure only (not the command's exit
     // status) — recorded coarsely as 0/1.
     exitOk = false;
+    // F101: say WHY (timeout, docker missing, exit code) — the bare catch
+    // left a failed run with empty or partial output. The command line is
+    // masked: it routinely carries credentials (r280).
+    failure = (err instanceof Error ? err.message : String(err)).split(`-lc ${job.command}`).join('-lc <command>');
   }
+  const output = failure === null ? chunks.join('\n') : [...chunks, `Failed: ${failure}`].join('\n');
   await db
     .update(jobRuns)
     .set({
       status: exitOk ? 'completed' : 'failed',
       exitCode: exitOk ? 0 : 1,
-      output: chunks.join('\n'),
+      output,
       finishedAt: new Date(),
     })
     .where(eq(jobRuns.id, runRow!.id));

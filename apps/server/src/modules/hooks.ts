@@ -5,7 +5,7 @@ import { gitBranch, gitRepoUrl, webhookCreate } from '@ninedeploy/schemas';
 import { config } from '../config.js';
 import { decrypt, encrypt, randomToken } from '../lib/crypto.js';
 import { matchesAny, parseWatchPaths } from '../lib/glob.js';
-import { parseId, notFound, unauthorized } from '../lib/errors.js';
+import { isUniqueViolation, parseId, notFound, unauthorized } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
 import { isPing, isPullRequest, isReplayedDelivery, parsePullRequest, parsePush, verifyWebhook } from '../lib/webhooks.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
@@ -237,7 +237,7 @@ export const hookReceiveRoutes: FastifyPluginAsync = async (app) => {
           // and proceeds idempotently — a 500 here would make the provider
           // redeliver and repeat the race. Other insert failures rethrow.
           .catch((err: unknown) => {
-            if (err instanceof Error && /UNIQUE constraint failed.*services\.slug/.test(err.message)) {
+            if (isUniqueViolation(err, /UNIQUE constraint failed.*services\.slug/)) {
               return [] as typeof services.$inferSelect[];
             }
             throw err;
@@ -338,10 +338,7 @@ export const hookReceiveRoutes: FastifyPluginAsync = async (app) => {
                 verifiedAt: new Date(),
               });
             } catch (err) {
-              if (
-                err instanceof Error &&
-                /UNIQUE constraint failed.*domains_host_path_idx/.test(err.message)
-              ) {
+              if (isUniqueViolation(err, /UNIQUE constraint failed.*(domains_host_path_idx|domains\.hostname, domains\.path)/)) {
                 previewDomainSkipped = 'domain_conflict_duplicate_hostname';
               } else {
                 throw err;

@@ -14,6 +14,7 @@ import {
 import { audit } from '../lib/audit.js';
 import { decrypt } from '../lib/crypto.js';
 import { purgeProjectEnvVars } from './projects.js';
+import { defaultWorkspaceIdsForUser } from './serviceTags.js';
 
 /**
  * The single demo payload: one real, deployable service built from a pinned
@@ -132,61 +133,69 @@ export const demoRoutes: FastifyPluginAsync = async (app) => {
       void audit(app.db, userId, 'project.create', project.name);
     }
 
-    let service = await app.db.query.services.findFirst({
-      where: eq(services.slug, DEMO.slug),
-    });
-
-    if (!service) {
-      const [inserted] = await app.db
-        .insert(services)
-        .values({
-          name: DEMO.name,
-          slug: DEMO.slug,
-          type: 'docker',
-          repoUrl: DEMO.repoUrl,
-          branch: DEMO.branch,
-          port: DEMO.port,
-          healthPath: DEMO.healthPath,
-          publishedPort: DEMO.publishedPort,
-          status: 'idle',
-          cpuShares: 512,
-          memLimitMb: 512,
-        })
-        .returning();
-      service = inserted!;
-
-      // The repo ships a root Dockerfile (multi-stage, EXPOSE 3000, its own
-      // /api/health healthcheck) — build exactly that.
-      await app.db.insert(buildConfigs).values({
-        serviceId: service.id,
-        buildPack: 'dockerfile',
-        baseDir: '/',
-        dockerfilePath: 'Dockerfile',
+    // F300: tag into the caller's own seats, exactly like applyDefaultTags
+    // (r152). The old `personal-<id>` lookup only matched 0034-migrated
+    // workspaces, so it fell back to EVERY workspace — and every tenant owner
+    // got `owner` on the operator's demo service.
+    const wsIds = await defaultWorkspaceIdsForUser(app.db, { id: userId });
+    const seeded = await app.db.transaction(async (tx) => {
+      let service = await tx.query.services.findFirst({
+        where: eq(services.slug, DEMO.slug),
       });
 
-      // Queue the first build right away: the deploy worker turns this row
-      // into a real clone → docker build → run.
-      await app.db.insert(deployments).values({
-        serviceId: service.id,
-        status: 'queued',
-        trigger: 'user',
-        message: 'Initial demo deployment from ersinkoc/nextjs-test',
-      });
+      // F301: the service row is the re-seed idempotency key, so it commits
+      // together with its build config, first queued build and tags — a failure
+      // part-way must not leave a never-built row every re-seed then skips.
+      let created = false;
+      if (!service) {
+        created = true;
+        const [inserted] = await tx
+          .insert(services)
+          .values({
+            name: DEMO.name,
+            slug: DEMO.slug,
+            type: 'docker',
+            repoUrl: DEMO.repoUrl,
+            branch: DEMO.branch,
+            port: DEMO.port,
+            healthPath: DEMO.healthPath,
+            publishedPort: DEMO.publishedPort,
+            status: 'idle',
+            cpuShares: 512,
+            memLimitMb: 512,
+          })
+          .returning();
+        service = inserted!;
 
-      void audit(app.db, userId, 'service.create', service.name);
+        // The repo ships a root Dockerfile (multi-stage, EXPOSE 3000, its own
+        // /api/health healthcheck) — build exactly that.
+        await tx.insert(buildConfigs).values({
+          serviceId: service.id,
+          buildPack: 'dockerfile',
+          baseDir: '/',
+          dockerfilePath: 'Dockerfile',
+        });
 
-      // Tag the new service into the demo project and the caller's personal
-      // workspace (or every workspace for operators). Only on create — a
-      // re-seed must not duplicate the tag rows.
-      const personalWs = await app.db.query.workspaces.findFirst({
-        where: (w, { eq: eqOp, and: andOp }) => andOp(eqOp(w.ownerId, userId), eqOp(w.slug, `personal-${String(userId)}`)),
-      });
-      const wsIds = personalWs ? [personalWs.id] : (await app.db.query.workspaces.findMany()).map((w) => w.id);
-      await app.db.insert(serviceProjects).values({ serviceId: service.id, projectId: project.id });
-      for (const wsId of wsIds) {
-        await app.db.insert(serviceWorkspaces).values({ serviceId: service.id, workspaceId: wsId });
+        // Queue the first build right away: the deploy worker turns this row
+        // into a real clone → docker build → run.
+        await tx.insert(deployments).values({
+          serviceId: service.id,
+          status: 'queued',
+          trigger: 'user',
+          message: 'Initial demo deployment from ersinkoc/nextjs-test',
+        });
+
+        // Tag the new service into the demo project and the caller's own
+        // workspaces. Only on create — a re-seed must not duplicate the tag rows.
+        await tx.insert(serviceProjects).values({ serviceId: service.id, projectId: project.id });
+        for (const wsId of wsIds) {
+          await tx.insert(serviceWorkspaces).values({ serviceId: service.id, workspaceId: wsId });
+        }
       }
-    }
+      return { service, created };
+    });
+    const service = seeded.service;
+    if (seeded.created) void audit(app.db, userId, 'service.create', service.name);
 
     return {
       ok: true,

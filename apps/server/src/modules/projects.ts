@@ -97,6 +97,10 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
     // else's workspace. Any seat is NOT enough: creating is a write, so the
     // floor is `member` and a viewer seat stays read-only.
     if (input.workspaceId != null) await assertWorkspaceRole(app.db, input.workspaceId, req.user!, 'member');
+    // F608: a project outside every workspace is operator-only (see the detach
+    // rule in PATCH): any other caller could not even see it, yet it would
+    // squat its globally unique slug for every tenant.
+    else if (!req.user!.isOperator) throw badRequest('Only an operator can create a project outside a workspace');
     const slug = input.slug ?? slugify(input.name);
     const exists = await app.db.query.projects.findFirst({ where: eq(projects.slug, slug) });
     if (exists) throw conflict(`Project slug "${slug}" is already taken`);
@@ -153,7 +157,15 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
     if (!req.user!.isOperator && row.workspaceId != null) {
       await assertWorkspaceRole(app.db, row.workspaceId, req.user!, 'admin');
     }
+    // F609: a database belongs to a workspace only through its project. The
+    // FK's SET NULL would take it out of the workspace and leave it to its
+    // creator alone (r694 personal fallback), beyond the reach of the team
+    // and of seat-loss hand-over, so refuse while any is still filed here.
     await app.db.transaction(async (tx) => {
+      if (row.workspaceId != null) {
+        const filed = await tx.query.databases.findFirst({ where: eq(databases.projectId, id) });
+        if (filed) throw conflict(`Project "${row.name}" still holds databases; delete them before deleting the project`);
+      }
       await purgeProjectEnvVars(tx, [id]);
       await tx.delete(projects).where(eq(projects.id, id));
     });

@@ -305,3 +305,62 @@ describe('studio responses can never be framed (r560)', () => {
     await app.close();
   });
 });
+
+// ── F172 / F173 (audit run 2026-10-07) ───────────────────────────────
+describe('studio proxy cookie scoping and stream teardown (F172/F173)', () => {
+  /** Browser cookie-jar view (RFC 6265 §5.2): names trimmed, LAST Path wins. */
+  const jarView = (line: string) => {
+    let path: string | null = null;
+    let domain: string | null = null;
+    for (const av of line.split(';').slice(1)) {
+      const eq = av.indexOf('=');
+      const name = (eq === -1 ? av : av.slice(0, eq)).trim().toLowerCase();
+      const value = eq === -1 ? '' : av.slice(eq + 1).trim();
+      if (name === 'path') path = value;
+      if (name === 'domain' && value !== '') domain = value;
+    }
+    return { path, domain };
+  };
+
+  it('F172: duplicate Path and whitespace-padded Domain attributes cannot escape the proxy scope', async () => {
+    upstream.removeAllListeners('request');
+    upstream.on('request', (_req, res) => {
+      res.setHeader('set-cookie', ['a=1; Path=/x; Path=/', 'b=2; Domain =example.test; Path=/', 'c=3;\tPATH\t=\t/', 'path=keep; Secure']);
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end('ok');
+    });
+    const app = await makeApp();
+    const res = await app.inject({ method: 'GET', url: '/databases/3/studio-proxy/', headers: { cookie: cookieHeader() } });
+    const lines = ([] as string[]).concat(res.headers['set-cookie'] ?? []);
+    expect(lines).toHaveLength(4);
+    for (const line of lines) expect(jarView(line)).toEqual({ path: '/v1/databases/3/studio-proxy', domain: null });
+    expect(lines[3]).toMatch(/^path=keep; Secure; Path=/);
+    await app.close();
+  });
+
+  it('F173: a studio dying mid-response resets the browser response instead of hanging it', async () => {
+    upstream.removeAllListeners('request');
+    upstream.on('request', (_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/sql' });
+      res.write('-- chunk 1\n', () => setImmediate(() => res.socket?.destroy()));
+    });
+    const app = await makeApp();
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const port = (app.server.address() as AddressInfo).port;
+    // Gated on the client's own events: before the fix neither fired and the
+    // test hung to its timeout.
+    const outcome = await new Promise<string>((resolve) => {
+      const creq = http.request({ host: '127.0.0.1', port, path: '/databases/3/studio-proxy/export', headers: { cookie: cookieHeader() } });
+      creq.on('error', () => resolve('aborted'));
+      creq.on('response', (cres) => {
+        cres.resume();
+        cres.on('end', () => resolve('end'));
+        cres.on('error', () => resolve('aborted'));
+        cres.on('close', () => resolve(cres.complete ? 'end' : 'aborted'));
+      });
+      creq.end();
+    });
+    expect(outcome).toBe('aborted');
+    await app.close();
+  });
+});

@@ -390,6 +390,32 @@ describe('startSelfUpdate', () => {
     expect(fs.existsSync(path.join(stateDir(), 'state.json.lock'))).toBe(false);
   });
 
+  it('F540: a start whose in-flight check straddles another full launch is refused under the claim', async () => {
+    // The running check runs before `await inFlightDeployments()` (the route
+    // always wires it). A start that launched completely inside that gap has
+    // already released the claim — without a re-check under the claim the
+    // second start spawned a second installer on the same tree.
+    configMock.isProd = true;
+    const lib = await loadLib();
+    const installDir = newInstallDir();
+    const gate = () => {
+      let open!: () => void;
+      const promise = new Promise<never[]>((r) => { open = () => r([]); });
+      return { promise, open };
+    };
+    const gA = gate();
+    const gB = gate();
+    const a = lib.startSelfUpdate('v99.0.0', { installDir, inFlightDeployments: () => gA.promise });
+    const b = lib.startSelfUpdate('v99.0.1', { installDir, inFlightDeployments: () => gB.promise });
+    gA.open();
+    await a;
+    gB.open();
+    await expect(b).rejects.toMatchObject({ statusCode: 409 });
+    expect(spawnMock.calls).toHaveLength(1);
+    expect(readState()).toMatchObject({ phase: 'running', to: 'v99.0.0' });
+    expect(fs.existsSync(path.join(stateDir(), 'state.json.lock'))).toBe(false);
+  });
+
   it('r-next: steals a claim left behind by a crashed claimer', async () => {
     configMock.isProd = true;
     const lib = await loadLib();

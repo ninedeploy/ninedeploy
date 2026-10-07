@@ -498,6 +498,12 @@ export async function startSelfUpdate(
     throw conflict('Another update attempt just started — try again in a moment');
   }
   try {
+    // F540: the running check above ran before the in-flight-deployments
+    // await; a start that finished its whole launch inside that gap has
+    // already released the claim. Re-read under the claim, or a second
+    // updater runs on the same tree.
+    const claimed = getSelfUpdateStatus({ installDir: opts.installDir, stateDir: opts.stateDir });
+    if (claimed.phase === 'running') throw conflict(`An update to ${claimed.targetVersion} is already in progress`);
     writeFileSync(p.script, updaterScript(p, support.installDir!), { mode: 0o700 });
     try { unlinkSync(p.exitCode); } catch { /* first run */ }
     // Truncate with the same restriction as the script beside it. The updater

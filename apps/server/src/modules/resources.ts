@@ -1,5 +1,6 @@
 import { createReadStream, existsSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync, mkdirSync, rmSync, copyFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { count, eq, inArray, sql } from 'drizzle-orm';
 import { databases, deployments, services, users } from '@ninedeploy/db';
@@ -11,6 +12,20 @@ import { getSelfUpdateStatus, startSelfUpdate } from '../lib/selfUpdate.js';
 import { selfUpdateStart } from '@ninedeploy/schemas';
 import { NETWORK } from '../engine/proxy.js';
 import { audit } from '../lib/audit.js';
+
+/** F869: docker CLI calls inherit capture()'s 30-minute default timeout; a
+ * wedged daemon must not hold this admin request that long. Past the bound the
+ * existing "docker unavailable" defaults apply. `system df` walks image and
+ * volume sizes, so it gets more room than the plain listings. */
+const DOCKER_LIST_TIMEOUT_MS = 10_000;
+const DOCKER_DF_TIMEOUT_MS = 20_000;
+/** F974: `docker image prune -f` deletes every dangling image's layers from
+ * disk, which can legitimately take minutes on a large store or slow disk. It
+ * gets 5 minutes, not a listing's 10 s. The 30-minute default held the admin
+ * request and a docker child per click on a wedged daemon. Past the bound the
+ * existing swallow applies: still `{ ok: true }` and audited, as for any prune
+ * failure, and the next prune picks up the rest. */
+const DOCKER_PRUNE_TIMEOUT_MS = 5 * 60_000;
 
 function parseDf(line: string): Record<string, string> | null {
   try { return JSON.parse(line) as Record<string, string>; } catch { return null; }
@@ -64,7 +79,7 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
     let volumes = 0;
 
     try {
-      const df = await capture('docker', ['system', 'df', '--format', '{{json .}}']);
+      const df = await capture('docker', ['system', 'df', '--format', '{{json .}}'], { timeoutMs: DOCKER_DF_TIMEOUT_MS });
       for (const line of df.split('\n')) {
         const row = parseDf(line);
         if (row && row['Type'] === 'Images') {
@@ -74,7 +89,7 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
     } catch { /* docker unavailable */ }
 
     try {
-      const out = await capture('docker', ['images', '--format', '{{.Repository}}|{{.Tag}}|{{.Size}}']);
+      const out = await capture('docker', ['images', '--format', '{{.Repository}}|{{.Tag}}|{{.Size}}'], { timeoutMs: DOCKER_LIST_TIMEOUT_MS });
       images = out.split('\n').filter(Boolean).map((l) => {
         const [repo, tag, size] = l.split('|');
         return { repo: repo!, tag: tag ?? '', size: size ?? '' };
@@ -82,8 +97,8 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
     } catch { /* ignore */ }
 
     try {
-      containers = (await capture('docker', ['ps', '-q'])).split('\n').filter(Boolean).length;
-      volumes = (await capture('docker', ['volume', 'ls', '-q'])).split('\n').filter(Boolean).length;
+      containers = (await capture('docker', ['ps', '-q'], { timeoutMs: DOCKER_LIST_TIMEOUT_MS })).split('\n').filter(Boolean).length;
+      volumes = (await capture('docker', ['volume', 'ls', '-q'], { timeoutMs: DOCKER_LIST_TIMEOUT_MS })).split('\n').filter(Boolean).length;
     } catch { /* ignore */ }
 
     return { network: NETWORK, containers, volumes, imagesSummary: summary, images };
@@ -91,7 +106,7 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
 
   app.post('/prune-images', async (req) => {
     const log = (line: string) => req.log.info({ component: 'system' }, line);
-    await run('docker', ['image', 'prune', '-f'], {}, log).catch(() => undefined);
+    await run('docker', ['image', 'prune', '-f'], { timeoutMs: DOCKER_PRUNE_TIMEOUT_MS }, log).catch(() => undefined);
     void audit(app.db, req.user?.id ?? null, 'system.prune_images');
     return { ok: true };
   });
@@ -105,7 +120,10 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
       const raw = await capture('docker', [
         'events', '--since', `${minutes}m`, '--until', '0s',
         '--format', '{{.Time}}|{{.Type}}|{{.Action}}|{{.Actor.Attributes.name}}',
-      ]);
+        // F938: single-shot (--until 0s), so a plain bound is the right one —
+        // capture() has no abort, and each poll otherwise left a 30-minute
+        // docker child behind on a wedged daemon. Below the page's 20 s poll.
+      ], { timeoutMs: DOCKER_LIST_TIMEOUT_MS });
       const events = raw
         .split('\n')
         .filter(Boolean)
@@ -130,8 +148,9 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
     void audit(app.db, req.user?.id ?? null, 'system.export');
     const files: string[] = [];
     // Unique temp names so two concurrent exports can't delete each other's
-    // artifacts mid-stream via the finally-cleanup below.
-    const stamp = `${process.pid}-${Date.now()}`;
+    // artifacts mid-stream via the finally-cleanup below. pid+ms alone is not
+    // unique: two requests handled in the same millisecond collided (F557).
+    const stamp = `${process.pid}-${Date.now()}-${randomUUID()}`;
     const archive = path.join(config.paths.dataDir, `ninedeploy-backup-${stamp}.tar.gz`);
     const envTmp = `_env-${stamp}`;
     const metaTmp = `_meta-${stamp}.json`;
@@ -412,6 +431,10 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
     } catch (err) {
       restoreFrom(backupDir);
       rmSync(tmpDir, { recursive: true, force: true });
+      // F828: the original files are back and the panel keeps serving — resume
+      // the deploy worker stopped above, or queued deploys never run again
+      // until a restart. (A throwing restoreFrom leaves it stopped: unknown state.)
+      try { (app as unknown as { worker?: { start?: () => void } }).worker?.start?.(); } catch { /* */ }
       throw err;
     }
 
@@ -423,6 +446,12 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
       meta,
       backupPath: backupDir,
     };
+    } catch (err) {
+      // F556: a THROW before the swap (tar list/extract failure on a truncated
+      // or non-archive upload) skipped every per-branch cleanup and left the
+      // uploaded archive — DB + master key + .env — in the scratch dir.
+      rmSync(path.join(config.paths.dataDir, '_import'), { recursive: true, force: true });
+      throw err;
     } finally {
       release();
       importInFlight = null;

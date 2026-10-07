@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDb, domains, services, users, webhooks, type DB } from '@ninedeploy/db';
+import { createDb, databaseAttachments, databases, domains, services, users, webhooks, type DB } from '@ninedeploy/db';
 
 // The retained-volume probe asks Docker.
 vi.mock('../src/lib/retainedSlugVolume.js', () => ({ assertSlugVolumeNotRetained: vi.fn(async () => undefined) }));
@@ -108,5 +108,34 @@ describe('POST /services/import (r656)', () => {
     const badDomain = await importBundle(bundle({ domains: [{ hostname: 'x.example.com', path: 'no-slash', ssl: true }] }));
     expect(badDomain.statusCode).toBe(400);
     expect(await db.select().from(services)).toHaveLength(0);
+  });
+
+  it('F192: refuses an attachment env alias that would inject lines into the deploy env-file', async () => {
+    await db.insert(databases).values({ name: 'pg', slug: 'pg', engine: 'postgres', status: 'running', passwordEncrypted: 'x', ownerUserId: opId });
+    const res = await importBundle(bundle({ attachments: [{ envAlias: 'X\nLD_PRELOAD=/tmp/evil.so\nY', databaseName: 'pg', databaseEngine: 'postgres' }] }));
+    expect(res.statusCode).toBe(400);
+    expect(await db.select().from(services)).toHaveLength(0);
+    expect(await db.select().from(databaseAttachments)).toHaveLength(0);
+  });
+
+  it('F194: refuses a leading-dash branch or a file:// repo the create path refuses, writing nothing', async () => {
+    const repo = { image: null, repoUrl: 'https://github.com/acme/web.git' };
+    const dash = await importBundle(bundle({ service: { ...bundle().service, ...repo, branch: '--pathspec-from-file=/etc/passwd' } }));
+    const file = await importBundle(bundle({ service: { ...bundle().service, ...repo, repoUrl: 'file:///var/lib/ninedeploy/repos/12' } }));
+    expect([dash.statusCode, file.statusCode]).toEqual([400, 400]);
+    expect(await db.select().from(services)).toHaveLength(0);
+  });
+
+  it('F193: a webhook path filter survives export -> import', async () => {
+    const first = await importBundle(bundle({ webhooks: [{ branch: 'main', events: ['push'], secret: 's3cret', watchPaths: 'apps/web/**' }] }));
+    expect(first.statusCode).toBe(200);
+    const app = await buildTestApp({ db });
+    await app.register(serviceMigrationRoutes, { prefix: '/services' });
+    const exp = await app.inject({ method: 'GET', url: `/services/${first.json().serviceId}/export`, headers: asUser({ id: opId }) });
+    await app.close();
+    const second = await importBundle({ ...exp.json(), domains: [] });
+    expect(second.statusCode).toBe(200);
+    const hooks = await db.select().from(webhooks);
+    expect(hooks.map((w) => w.watchPaths)).toEqual(['apps/web/**', 'apps/web/**']);
   });
 });

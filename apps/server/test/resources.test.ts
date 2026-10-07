@@ -1,5 +1,5 @@
 ﻿import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { gzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -79,6 +79,10 @@ const spawnMock = vi.hoisted(() => ({
   // would fetch and run install.sh) — its spawns are recorded and faked.
   updater: [] as Array<{ cmd: string; args: string[] }>,
   spawn: null as unknown as (...a: unknown[]) => unknown,
+  // F557: when set, every export tar (`-czf`) is held; the test releases each
+  // one in the order it chooses (gated completion, no sleeps).
+  heldExports: null as null | Array<() => void>,
+  onHeld: null as null | (() => void),
 }));
 vi.mock('node:child_process', async (importOriginal) => {
   const real = await importOriginal<typeof import('node:child_process')>();
@@ -91,6 +95,15 @@ vi.mock('node:child_process', async (importOriginal) => {
         const once: Record<string, (...a: unknown[]) => void> = {};
         queueMicrotask(() => once['exit']?.(0));
         return { once: (ev: string, cb: (...a: unknown[]) => void) => { once[ev] = cb; }, on: () => undefined, unref: () => undefined };
+      }
+      if (spawnMock.heldExports && args[0] === '-czf') {
+        const listeners: Array<[string, (...a: unknown[]) => void]> = [];
+        spawnMock.heldExports.push(() => {
+          const child = spawnMock.spawn(cmd, args, opts) as { on: (ev: string, cb: (...a: unknown[]) => void) => void };
+          for (const [ev, cb] of listeners) child.on(ev, cb);
+        });
+        spawnMock.onHeld?.();
+        return { on: (ev: string, cb: (...a: unknown[]) => void) => { listeners.push([ev, cb]); } };
       }
       spawnMock.calls += 1;
       const nth = spawnMock.forceNth === spawnMock.calls;
@@ -210,6 +223,7 @@ describe('system resources routes', () => {
     expect(execMocks.capture).toHaveBeenCalledWith(
       'docker',
       ['events', '--since', '30m', '--until', '0s', '--format', '{{.Time}}|{{.Type}}|{{.Action}}|{{.Actor.Attributes.name}}'],
+      { timeoutMs: 10_000 }, // F938: bounded single-shot read
     );
   });
 
@@ -226,6 +240,7 @@ describe('system resources routes', () => {
     expect(execMocks.capture).toHaveBeenCalledWith(
       'docker',
       expect.arrayContaining(['events', '--since', '1440m']),
+      { timeoutMs: 10_000 },
     );
   });
 
@@ -367,6 +382,45 @@ it('exports system state as a tar.gz and cleans up only after the stream closed'
   expect(await soon(() => leftovers().length === 0)).toBe(true);
 });
 
+  it("two exports started in the same millisecond do not delete each other's artifacts (F557)", async () => {
+    fs.writeFileSync(configMock.paths.dbFile, 'db-bytes');
+    fs.writeFileSync(configMock.paths.masterKeyFile, 'key-bytes');
+    const held: Array<() => void> = [];
+    spawnMock.heldExports = held;
+    let waiter: (() => void) | null = null;
+    spawnMock.onHeld = () => waiter?.();
+    const dir = configMock.paths.dataDir;
+    const artifacts = () => fs.readdirSync(dir).filter((f) => /^(ninedeploy-backup-|_meta-|_env-|_db-)/.test(f));
+    // Turn-bounded (not clock-bounded): Date.now is pinned below.
+    const untilTurns = async (pred: () => boolean) => {
+      for (let i = 0; i < 20000 && !pred(); i++) await new Promise((r) => setImmediate(r));
+      return pred();
+    };
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
+    try {
+      const app = await appWith({ counts: {} });
+      const pA = app.inject({ method: 'GET', url: '/export', headers: asUser() });
+      const pB = app.inject({ method: 'GET', url: '/export', headers: asUser() });
+      while (held.length < 2) await new Promise<void>((r) => (waiter = r));
+      // A runs to completion — its stream-close cleanup included — before B's tar.
+      held[0]!();
+      const a = await pA;
+      expect(await untilTurns(() => !artifacts().some((f) => f.startsWith('ninedeploy-backup-')))).toBe(true);
+      held[1]!();
+      const b = await pB;
+      expect(a.statusCode).toBe(200);
+      expect(b.statusCode).toBe(200);
+      expect(Number(b.headers['content-length'])).toBe(b.rawPayload.length);
+      expect(() => gunzipSync(b.rawPayload)).not.toThrow();
+      expect(await untilTurns(() => artifacts().length === 0)).toBe(true);
+      await app.close();
+    } finally {
+      now.mockRestore();
+      spawnMock.heldExports = null;
+      spawnMock.onHeld = null;
+    }
+  });
+
   it('includes the cwd .env file when present', async () => {
     const oldCwd = process.cwd();
     const cwdDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nd-cwd-'));
@@ -432,6 +486,40 @@ it('exports system state as a tar.gz and cleans up only after the stream closed'
       payload: Buffer.from('this is not a tar archive'),
     });
     expect(res.statusCode).toBe(500);
+  });
+
+  it('clears the scratch dir when a tar step throws — the upload is DB + master key + .env (F556)', async () => {
+    const buildDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nd-build-'));
+    createdDirs.push(buildDir);
+    fs.writeFileSync(path.join(buildDir, '_meta.json'), JSON.stringify({ version: '1.0.0', stats: {} }));
+    fs.writeFileSync(path.join(buildDir, 'master.key'), 'imported-key');
+    fs.writeFileSync(
+      path.join(buildDir, 'ninedeploy.db'),
+      Buffer.from(Array.from({ length: 65536 }, (_, i) => (i * 2654435761) >>> 24)),
+    );
+    const full = await makeArchive(buildDir);
+    const scratch = path.join(configMock.paths.dataDir, '_import');
+    const app = await appWith();
+    const post = (payload: Buffer) =>
+      app.inject({
+        method: 'POST',
+        url: '/import',
+        headers: { 'content-type': 'application/octet-stream', ...asUser() },
+        payload,
+      });
+    // Interrupted upload: truncated gzip → the member listing throws.
+    expect((await post(full.subarray(0, Math.floor(full.length * 0.6)))).statusCode).toBe(500);
+    expect(fs.existsSync(scratch)).toBe(false);
+    // Not an archive at all.
+    expect((await post(Buffer.from('not a tar archive'))).statusCode).toBe(500);
+    expect(fs.existsSync(scratch)).toBe(false);
+    // Extraction fails after a clean listing (spawn #3 of this request).
+    spawnMock.calls = 0;
+    spawnMock.forceNth = 3;
+    spawnMock.force.code = 2;
+    expect((await post(full)).statusCode).toBe(500);
+    expect(fs.existsSync(scratch)).toBe(false);
+    await app.close();
   });
 
   it('imports a full system state and stops the worker', async () => {

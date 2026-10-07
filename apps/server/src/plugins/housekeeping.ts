@@ -1,7 +1,7 @@
 import { tmpdir } from 'node:os';
 import { readdirSync, statSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
-import { and, eq, inArray, lt, notInArray, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, lt, ne, notInArray, or, sql } from 'drizzle-orm';
 import {
   auditLog,
   backupDrills,
@@ -121,6 +121,30 @@ const INTERRUPTED_DRILL_ERROR =
   'Drill interrupted: the panel stopped (restart, crash or update) before it finished — no verdict on the backup. Run it again.';
 
 /**
+ * F109: a helper that sweeps several tables must not let one table's failure
+ * skip the others — r544's per-step rule, one level down. `run` records a
+ * failure and yields `fallback`; `rethrow` then surfaces what failed so the
+ * housekeeping step still logs it under its own name.
+ */
+function failureCollector() {
+  const failures: unknown[] = [];
+  return {
+    async run<T>(fn: () => PromiseLike<T>, fallback: T): Promise<T> {
+      try {
+        return await fn();
+      } catch (err) {
+        failures.push(err);
+        return fallback;
+      }
+    },
+    rethrow(): void {
+      if (failures.length === 1) throw failures[0];
+      if (failures.length > 1) throw new AggregateError(failures, `${failures.length} retention sweeps failed`);
+    },
+  };
+}
+
+/**
  * r543: mark backups and backup drills that were left `running` by a process
  * that is gone. A manual database backup, a volume backup and a drill each
  * insert a `running` row and flip it when they finish; a crash or restart in
@@ -136,16 +160,25 @@ export async function failInterruptedOperations(
   db: import('@ninedeploy/db').DB,
   startedBefore: Date,
 ): Promise<{ backups: number[]; drills: number[] }> {
-  const stuckBackups = await db
-    .update(backups)
-    .set({ status: 'failed' })
-    .where(and(eq(backups.status, 'running'), lt(backups.createdAt, startedBefore)))
-    .returning({ id: backups.id });
-  const stuckDrills = await db
-    .update(backupDrills)
-    .set({ status: 'unverifiable', error: INTERRUPTED_DRILL_ERROR, completedAt: Math.floor(Date.now() / 1000) })
-    .where(and(eq(backupDrills.status, 'running'), lt(backupDrills.startedAt, startedBefore)))
-    .returning({ id: backupDrills.id });
+  const sweeps = failureCollector(); // F109
+  const stuckBackups = await sweeps.run(
+    () =>
+      db
+        .update(backups)
+        .set({ status: 'failed' })
+        .where(and(eq(backups.status, 'running'), lt(backups.createdAt, startedBefore)))
+        .returning({ id: backups.id }),
+    [],
+  );
+  const stuckDrills = await sweeps.run(
+    () =>
+      db
+        .update(backupDrills)
+        .set({ status: 'unverifiable', error: INTERRUPTED_DRILL_ERROR, completedAt: Math.floor(Date.now() / 1000) })
+        .where(and(eq(backupDrills.status, 'running'), lt(backupDrills.startedAt, startedBefore)))
+        .returning({ id: backupDrills.id }),
+    [],
+  );
   const result = { backups: stuckBackups.map((r) => r.id), drills: stuckDrills.map((r) => r.id) };
   if (result.backups.length > 0 || result.drills.length > 0) {
     void audit(
@@ -156,6 +189,7 @@ export async function failInterruptedOperations(
       { backupIds: result.backups, drillIds: result.drills },
     );
   }
+  sweeps.rethrow();
   return result;
 }
 
@@ -233,36 +267,66 @@ export async function unsweepableDeploymentIds(db: import('@ninedeploy/db').DB):
  * build-cache rows. See the window constants above for what each keeps.
  */
 export async function pruneRetiredRecords(db: import('@ninedeploy/db').DB, now: number = Date.now()): Promise<void> {
+  const sweeps = failureCollector(); // F109
   const drillCutoff = new Date(now - DRILL_MAX_AGE_MS);
-  await db.delete(backupDrills).where(
-    and(
-      // r356: an old `unverifiable` row goes too, but never counts as the
-      // database's kept "last verified" answer — it verified nothing.
-      inArray(backupDrills.status, ['passed', 'failed', 'unverifiable']),
-      lt(backupDrills.startedAt, drillCutoff),
-      sql`${backupDrills.id} NOT IN (SELECT MAX(${backupDrills.id}) FROM ${backupDrills} WHERE ${backupDrills.status} IN ('passed', 'failed') GROUP BY ${backupDrills.databaseId})`,
-    ),
+  await sweeps.run(
+    () =>
+      db.delete(backupDrills).where(
+        and(
+          // r356: an old `unverifiable` row goes too, but never counts as the
+          // database's kept "last verified" answer — it verified nothing.
+          inArray(backupDrills.status, ['passed', 'failed', 'unverifiable']),
+          lt(backupDrills.startedAt, drillCutoff),
+          sql`${backupDrills.id} NOT IN (SELECT MAX(${backupDrills.id}) FROM ${backupDrills} WHERE ${backupDrills.status} IN ('passed', 'failed') GROUP BY ${backupDrills.databaseId})`,
+        ),
+      ),
+    undefined,
   );
 
   const inviteCutoff = new Date(now - RETIRED_INVITE_GRACE_MS);
-  await db
-    .delete(workspaceInvitations)
-    .where(
-      or(
-        lt(workspaceInvitations.revokedAt, inviteCutoff),
-        lt(workspaceInvitations.acceptedAt, inviteCutoff),
-        lt(workspaceInvitations.expiresAt, inviteCutoff),
-      ),
-    );
+  await sweeps.run(
+    () =>
+      db
+        .delete(workspaceInvitations)
+        .where(
+          or(
+            lt(workspaceInvitations.revokedAt, inviteCutoff),
+            lt(workspaceInvitations.acceptedAt, inviteCutoff),
+            lt(workspaceInvitations.expiresAt, inviteCutoff),
+          ),
+        ),
+    undefined,
+  );
 
   // `expires_at` is unix SECONDS here. Every transfer — pending, accepted or
   // cancelled — is past any state change once it is past its expiry (accept
   // and cancel both require a pending, unexpired row), so expiry + grace is
   // the terminal timestamp for all of them.
   const transferCutoffSec = Math.floor((now - RETIRED_INVITE_GRACE_MS) / 1000);
-  await db.delete(domainTransfers).where(lt(domainTransfers.expiresAt, transferCutoffSec));
+  await sweeps.run(() => db.delete(domainTransfers).where(lt(domainTransfers.expiresAt, transferCutoffSec)), undefined);
 
-  await db.delete(cacheRegistryBlobs).where(lt(cacheRegistryBlobs.lastHitAt, new Date(now - COLD_CACHE_ROW_MAX_AGE_MS)));
+  await sweeps.run(
+    () => db.delete(cacheRegistryBlobs).where(lt(cacheRegistryBlobs.lastHitAt, new Date(now - COLD_CACHE_ROW_MAX_AGE_MS))),
+    undefined,
+  );
+  sweeps.rethrow();
+}
+
+/**
+ * F900: the metric-history plugin when it can sweep its own rows, else
+ * undefined. Its builtin backend archives snapshots INTO audit_log as
+ * `metric.archived` rows under its own `retention_days`; while this returns
+ * the plugin, the generic audit sweep leaves those rows to `runRetention`.
+ */
+function metricHistoryRetention(
+  fastify: import('fastify').FastifyInstance,
+): { runRetention: (ctx: unknown) => Promise<number> } | undefined {
+  const plugin = fastify.kernel?.getPlugin?.('metric-history') as
+    | { runRetention?: (ctx: unknown) => Promise<number> }
+    | undefined;
+  return typeof plugin?.runRetention === 'function'
+    ? (plugin as { runRetention: (ctx: unknown) => Promise<number> })
+    : undefined;
 }
 
 /**
@@ -275,14 +339,10 @@ export async function pruneRetiredRecords(db: import('@ninedeploy/db').DB, now: 
  * a missing kernel or a backend error must not abort the rest of the sweep.
  */
 async function pruneMetricHistory(fastify: import('fastify').FastifyInstance): Promise<void> {
-  const kernel = fastify.kernel;
-  if (!kernel) return;
-  const plugin = kernel.getPlugin?.('metric-history') as
-    | { runRetention?: (ctx: unknown) => Promise<number> }
-    | undefined;
-  if (typeof plugin?.runRetention !== 'function') return;
+  const plugin = metricHistoryRetention(fastify);
+  if (!plugin) return;
   try {
-    await plugin.runRetention(kernel);
+    await plugin.runRetention(fastify.kernel);
   } catch (err) {
     fastify.log.warn({ err }, 'metric-history retention sweep failed');
   }
@@ -320,15 +380,23 @@ export async function pruneExpiredPendingDomains(
     .select({ id: domains.id, serviceId: domains.serviceId, hostname: domains.hostname })
     .from(domains)
     .where(and(eq(domains.status, 'pending'), lt(domains.createdAt, cutoff)));
+  let removed = 0;
   for (const row of stale) {
-    await db.delete(domains).where(and(eq(domains.id, row.id), eq(domains.status, 'pending')));
+    // F108: the status guard skips a row the verify route made `active` since
+    // the SELECT — audit and count only what this DELETE actually removed.
+    const gone = await db
+      .delete(domains)
+      .where(and(eq(domains.id, row.id), eq(domains.status, 'pending')))
+      .returning({ id: domains.id });
+    if (gone.length === 0) continue;
+    removed++;
     void audit(db, null, 'domain.pending_expired', row.hostname, {
       domainId: row.id,
       serviceId: row.serviceId,
       pendingExpiryDays,
     });
   }
-  return stale.length;
+  return removed;
 }
 
 /**
@@ -402,7 +470,20 @@ export default fp(
       try {
         const now = Date.now();
         await step('deploy-logs', async () => pruneOldLogs(LOG_MAX_AGE_MS, await unsweepableDeploymentIds(fastify.db)));
-        await step('audit-log', () => fastify.db.delete(auditLog).where(lt(auditLog.ts, new Date(now - AUDIT_MAX_AGE_MS))));
+        // F900: `metric.archived` rows are metric-history's, swept by its own
+        // `retention_days` in the 'metric-history' step. Deleting them here too
+        // capped any window above 90 days at 90. With no plugin to sweep them
+        // they stay on the audit window, so they are never unbounded.
+        await step('audit-log', () =>
+          fastify.db
+            .delete(auditLog)
+            .where(
+              and(
+                lt(auditLog.ts, new Date(now - AUDIT_MAX_AGE_MS)),
+                metricHistoryRetention(fastify) ? ne(auditLog.action, 'metric.archived') : undefined,
+              ),
+            ),
+        );
         await step('notification-log', () =>
           fastify.db.delete(notificationLog).where(lt(notificationLog.ts, new Date(now - NOTIF_MAX_AGE_MS))),
         );

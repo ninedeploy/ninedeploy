@@ -18,13 +18,13 @@ import type { FastifyPluginAsync } from 'fastify';
  *
  * Data shape: three config-center entries per preset.
  *   - `preset.list` → `string[]` (preset ids, the "directory")
- *   - `preset.<id>.values` → `Record<string, unknown>` (the bundle)
+ *   - `preset.<id>.values` → the bundle, a secret (encrypted) JSON string (F277)
  *   - `preset.<id>.description` → `string` (operator note, optional)
  *
  * The apply endpoint writes each `value` to its key verbatim, so the
  * "preset" is really a thin, named snapshot of `configCenter.set`
- * calls — no transformations, no secret handling (operators should
- * pre-encrypt via the existing `isSecret` flag if needed). That keeps
+ * calls — no transformations; each write keeps the target key's secrecy
+ * (r284) and refuses the masked placeholder (F276). That keeps
  * the apply path a single ~10-line function and matches what the
  * panel already lets an operator do by hand.
  */
@@ -48,6 +48,13 @@ interface PresetDetail {
 
 const NAMESPACE_DEFAULT = 'plugin:config-presets';
 
+/**
+ * F276: the placeholder every unrevealed Config Center listing prints
+ * (modules/configCenter.ts SECRET_MASK). Writing it to a secret key destroys
+ * the stored credential, so the direct write refuses it — and so must apply.
+ */
+const SECRET_MASK = '••••••••';
+
 export const configPresetsRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', app.authenticate);
   // Presets read and write instance-wide Config Center keys.  Applying one
@@ -65,6 +72,24 @@ export const configPresetsRoutes: FastifyPluginAsync = async (app) => {
   const valuesKey = async (id: string) => `${await namespace()}:preset.${id}.values`;
   const descriptionKey = async (id: string) => `${await namespace()}:preset.${id}.description`;
 
+  // F277: a bundle may carry credentials (rotating a secret via a preset), so
+  // it is stored as an encrypted JSON string. Rows written before F277 are
+  // plain JSON objects and are still read as-is.
+  const readValues = async (id: string): Promise<Record<string, unknown>> => {
+    const raw = await app.kernel.configCenter.get<unknown>(await valuesKey(id), {});
+    const parsed = typeof raw === 'string' ? (JSON.parse(raw) as unknown) : raw;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  };
+
+  // F278: POST and DELETE read-modify-write `preset.list` across awaits; run
+  // them one at a time so concurrent calls cannot drop each other's update.
+  let registryTail: Promise<unknown> = Promise.resolve();
+  const withRegistryLock = <T>(fn: () => Promise<T>): Promise<T> => {
+    const run = registryTail.then(() => fn());
+    registryTail = run.catch(() => undefined);
+    return run;
+  };
+
   // ── GET /v1/config-presets — list registered preset ids ──────────────
   app.get('/', async () => {
     const raw = await app.kernel.configCenter.get<string[]>(await listKey(), []);
@@ -76,7 +101,7 @@ export const configPresetsRoutes: FastifyPluginAsync = async (app) => {
     const id = (req.params as { id: string }).id;
     const list = (await app.kernel.configCenter.get<string[]>(await listKey(), [])) ?? [];
     if (!list.includes(id)) throw notFound('Preset not found');
-    const values = (await app.kernel.configCenter.get<Record<string, unknown>>(await valuesKey(id), {})) ?? {};
+    const values = await readValues(id);
     const description = await app.kernel.configCenter.get<string | null>(await descriptionKey(id), null);
     const detail: PresetDetail = {
       id,
@@ -94,28 +119,32 @@ export const configPresetsRoutes: FastifyPluginAsync = async (app) => {
   // ── POST /v1/config-presets — register a new preset ────────────────
   app.post('/', async (req) => {
     const input = registerSchema.parse(req.body);
-    const list = (await app.kernel.configCenter.get<string[]>(await listKey(), [])) ?? [];
-    if (list.includes(input.id)) {
-      throw badRequest(`Preset "${input.id}" already exists; use PUT /:id to overwrite`);
-    }
-    const next = [...list, input.id];
-    await app.kernel.configCenter.set(await listKey(), next, {
-      userId: req.user!.id,
-      pluginId: 'config-presets',
-      description: `Add preset "${input.id}" to the registry`,
-    });
-    await app.kernel.configCenter.set(await valuesKey(input.id), input.values, {
-      userId: req.user!.id,
-      pluginId: 'config-presets',
-      description: `Values for preset "${input.id}"`,
-    });
-    if (input.description) {
-      await app.kernel.configCenter.set(await descriptionKey(input.id), input.description, {
+    const registryKey = await listKey();
+    await withRegistryLock(async () => {
+      const list = (await app.kernel.configCenter.get<string[]>(registryKey, [])) ?? [];
+      if (list.includes(input.id)) {
+        throw badRequest(`Preset "${input.id}" already exists; use PUT /:id to overwrite`);
+      }
+      const next = [...list, input.id];
+      await app.kernel.configCenter.set(registryKey, next, {
         userId: req.user!.id,
         pluginId: 'config-presets',
-        description: `Description for preset "${input.id}"`,
+        description: `Add preset "${input.id}" to the registry`,
       });
-    }
+      await app.kernel.configCenter.set(await valuesKey(input.id), JSON.stringify(input.values), {
+        isSecret: true,
+        userId: req.user!.id,
+        pluginId: 'config-presets',
+        description: `Values for preset "${input.id}"`,
+      });
+      if (input.description) {
+        await app.kernel.configCenter.set(await descriptionKey(input.id), input.description, {
+          userId: req.user!.id,
+          pluginId: 'config-presets',
+          description: `Description for preset "${input.id}"`,
+        });
+      }
+    });
     void audit(app.db, req.user!.id, 'config.preset.registered', input.id, {
       keyCount: Object.keys(input.values).length,
     });
@@ -140,7 +169,7 @@ export const configPresetsRoutes: FastifyPluginAsync = async (app) => {
       throw badRequest('Config Presets plugin is disabled (plugin:config-presets:enabled = false)');
     }
 
-    const stored = (await app.kernel.configCenter.get<Record<string, unknown>>(await valuesKey(id), {})) ?? {};
+    const stored = await readValues(id);
     // The `override` body wins over the stored value; both win over the
     // existing configCenter value (i.e. the preset is the new ground truth).
     const values = { ...stored, ...(body.override ?? {}) };
@@ -154,8 +183,12 @@ export const configPresetsRoutes: FastifyPluginAsync = async (app) => {
         // is_secret=0 (and reset its category/tags to defaults).
         const def = app.kernel.configCenter.getDefinition(key);
         const row = await app.db.query.configEntries.findFirst({ where: eq(configEntries.key, key) });
+        const isSecret = def?.isSecret ?? row?.isSecret ?? false;
+        if (isSecret && value === SECRET_MASK) {
+          throw new Error('Refusing to save the masked placeholder as a secret value (masked_secret_rejected)');
+        }
         await app.kernel.configCenter.set(key, value, {
-          isSecret: def?.isSecret ?? row?.isSecret ?? false,
+          isSecret,
           category: row?.category ?? undefined,
           tags: (row?.tags as string[] | null | undefined) ?? undefined,
           userId: req.user!.id,
@@ -198,16 +231,19 @@ export const configPresetsRoutes: FastifyPluginAsync = async (app) => {
   // ── DELETE /v1/config-presets/:id — unregister ─────────────────────
   app.delete('/:id', async (req) => {
     const id = (req.params as { id: string }).id;
-    const list = (await app.kernel.configCenter.get<string[]>(await listKey(), [])) ?? [];
-    if (!list.includes(id)) throw notFound('Preset not found');
-    const next = list.filter((x) => x !== id);
-    await app.kernel.configCenter.set(await listKey(), next, {
-      userId: req.user!.id,
-      pluginId: 'config-presets',
-      description: `Remove preset "${id}" from the registry`,
+    const registryKey = await listKey();
+    await withRegistryLock(async () => {
+      const list = (await app.kernel.configCenter.get<string[]>(registryKey, [])) ?? [];
+      if (!list.includes(id)) throw notFound('Preset not found');
+      const next = list.filter((x) => x !== id);
+      await app.kernel.configCenter.set(registryKey, next, {
+        userId: req.user!.id,
+        pluginId: 'config-presets',
+        description: `Remove preset "${id}" from the registry`,
+      });
+      await app.kernel.configCenter.delete(await valuesKey(id));
+      await app.kernel.configCenter.delete(await descriptionKey(id));
     });
-    await app.kernel.configCenter.delete(await valuesKey(id));
-    await app.kernel.configCenter.delete(await descriptionKey(id));
     void audit(app.db, req.user!.id, 'config.preset.removed', id);
     return { ok: true, id };
   });

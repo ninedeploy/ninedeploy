@@ -47,7 +47,8 @@ describe('service migration routes', () => {
       expect(body.buildConfig).toMatchObject({ buildPack: 'auto', baseDir: '/app', installCmd: 'npm i', startCmd: 'npm start' });
       expect(body.envVars).toEqual([{ key: 'PORT', value: '3000', isSecret: false }]);
       expect(body.domains).toEqual([{ hostname: 'web.example.com', path: '/', ssl: true }]);
-      expect(body.webhooks).toEqual([{ branch: 'main', events: ['push'], secret: 'hooksecret' }]);
+      // F193: the path filter rides along (null when the hook has none).
+      expect(body.webhooks).toEqual([{ branch: 'main', events: ['push'], secret: 'hooksecret', watchPaths: null }]);
       expect(body.attachments).toEqual([{ envAlias: 'DB_URL', databaseName: 'pg', databaseEngine: 'postgres' }]);
       expect(res.headers['content-disposition']).toContain('web-export.json');
     });

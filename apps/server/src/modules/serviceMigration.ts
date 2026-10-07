@@ -3,9 +3,9 @@ import {
   buildConfigs, databaseAttachments, databases, type DB, type dbEngine, domains, envVars, services, webhooks,
 } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
-import { createDomain, envVarName } from '@ninedeploy/schemas';
+import { createDomain, envVarName, gitBranch, gitRepoUrl, webhookCreate } from '@ninedeploy/schemas';
 import { decrypt, encrypt } from '../lib/crypto.js';
-import { badRequest, conflict, notFound, parseId as num } from '../lib/errors.js';
+import { badRequest, conflict, isUniqueViolation, notFound, parseId as num } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
 import { slugifyWithSuffix } from '../lib/slug.js';
 import { assertSlugVolumeNotRetained } from '../lib/retainedSlugVolume.js';
@@ -45,7 +45,7 @@ interface ServiceBundle {
   } | null;
   envVars: Array<{ key: string; value: string; isSecret: boolean }>;
   domains: Array<{ hostname: string; path: string; ssl: boolean }>;
-  webhooks: Array<{ branch: string; events: string[]; secret: string }>;
+  webhooks: Array<{ branch: string; events: string[]; secret: string; watchPaths?: string | null }>;
   attachments: Array<{ envAlias: string; databaseName: string; databaseEngine: string }>;
 }
 
@@ -106,7 +106,9 @@ export const serviceMigrationRoutes: FastifyPluginAsync = async (app) => {
       } : null,
       envVars: envs.map((e) => ({ key: e.key, value: decrypt(e.valueEncrypted), isSecret: e.isSecret })),
       domains: doms.map((d) => ({ hostname: d.hostname, path: d.path, ssl: d.ssl })),
-      webhooks: hooks.map((w) => ({ branch: w.branch, events: w.events, secret: decrypt(w.secretEncrypted) })),
+      // F193: the path filter decides which pushes deploy — dropping it made
+      // every push redeploy the service after the move.
+      webhooks: hooks.map((w) => ({ branch: w.branch, events: w.events, secret: decrypt(w.secretEncrypted), watchPaths: w.watchPaths ?? null })),
       attachments: attachmentInfos,
     };
 
@@ -142,6 +144,15 @@ export const serviceMigrationRoutes: FastifyPluginAsync = async (app) => {
     });
     if (raw.buildConfig && !['auto', 'nixpacks', 'dockerfile', 'railpack', 'static'].includes(raw.buildConfig.buildPack)) {
       throw badRequest('Invalid bundle: buildConfig.buildPack must be auto, nixpacks, dockerfile, railpack or static');
+    }
+    // F194: the same remote/ref rules POST and PATCH /services apply. The git
+    // sinks rely on them (lib/git.ts: a leading-dash branch is read as an
+    // option; vetCloneTarget lets file:// and local paths through).
+    if (raw.service.repoUrl != null && !gitRepoUrl.safeParse(raw.service.repoUrl).success) {
+      throw badRequest('Invalid bundle: service.repoUrl must be an http(s) or ssh URL');
+    }
+    if (raw.service.branch !== undefined && !gitBranch.safeParse(raw.service.branch).success) {
+      throw badRequest(`Invalid bundle: invalid branch name ${JSON.stringify(raw.service.branch)}`);
     }
     const bundle: ServiceBundle = {
       ...raw,
@@ -180,6 +191,19 @@ export const serviceMigrationRoutes: FastifyPluginAsync = async (app) => {
     for (const w of bundle.webhooks) {
       if (typeof w?.branch !== 'string' || typeof w.secret !== 'string' || !Array.isArray(w.events)) {
         throw badRequest('Invalid bundle: each webhook needs a branch, an events list and a secret');
+      }
+      // F193: same glob limits the webhook API applies (the patterns are matched per push).
+      if (w.watchPaths != null && !webhookCreate.shape.watchPaths.safeParse(w.watchPaths).success) {
+        throw badRequest('Invalid bundle: a webhook watchPaths value is not a safe glob list');
+      }
+    }
+    // F192: an attachment's alias becomes an env KEY at deploy
+    // (pipeline: env[envAlias] = connection string) and the env-file writer
+    // escapes values only — same rule as the env keys above and the attach
+    // route (createAttachment.envAlias).
+    for (const a of bundle.attachments) {
+      if (typeof a?.envAlias !== 'string' || !envVarName.safeParse(a.envAlias).success) {
+        throw badRequest(`Invalid bundle: bad attachment env alias ${JSON.stringify(a?.envAlias)}`);
       }
     }
     const domainRows = await claimBundleDomains(app.db, bundle.domains);
@@ -251,7 +275,7 @@ export const serviceMigrationRoutes: FastifyPluginAsync = async (app) => {
             .values(domainRows.map((d) => ({ ...d, serviceId: created.id, status: 'active' as const, verifiedAt: new Date() })));
         } catch (err) {
           // A route registered between the claim check and this insert.
-          if (err instanceof Error && /UNIQUE constraint/.test(err.message)) {
+          if (isUniqueViolation(err)) {
             throw conflict('A domain in the bundle was registered by another service while importing — import again');
           }
           throw err;
@@ -264,6 +288,7 @@ export const serviceMigrationRoutes: FastifyPluginAsync = async (app) => {
         branch: w.branch,
         events: w.events,
         secretEncrypted: encrypt(w.secret),
+        watchPaths: w.watchPaths?.trim() || null,
         active: true,
       }));
       if (webhookRows.length > 0) {

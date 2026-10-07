@@ -93,7 +93,7 @@ export async function applyManifestToService(
   // it: a PR preview runs code from a branch anyone with push access wrote.
   const target = await db.query.services.findFirst({
     where: eq(services.id, serviceId),
-    columns: { isEphemeralPreview: true },
+    columns: { isEphemeralPreview: true, memLimitMb: true },
   });
   const ownerIsOperator = ownerUserId ? await isOperator(db, { id: ownerUserId }) : false;
 
@@ -109,7 +109,11 @@ export async function applyManifestToService(
   } else {
     await attachManagedDatabase(db, serviceId, ownerUserId ?? null, ownerIsOperator, manifest.database, result);
   }
-  await syncAlertRules(db, serviceId, manifest.alerts, result);
+  // F128: the memory limit the container actually runs with — the panel's
+  // value, else the manifest's `resources.memMb` (engine/pipeline.ts applies
+  // the same panel > manifest precedence). 0 = unlimited.
+  const memLimitMb = target?.memLimitMb || manifest.resources?.memMb || 0;
+  await syncAlertRules(db, serviceId, manifest.alerts, memLimitMb, result);
   await applyPreviewConfig(db, serviceId, manifest.previews, result);
   if (manifest.notifications) {
     await syncNotificationSubscriptions(db, serviceId, ownerIsOperator, manifest.notifications, result);
@@ -622,32 +626,41 @@ async function attachManagedDatabase(
 
 // ── Alert rules ──────────────────────────────────────────────────────────
 
+/**
+ * F130: an `alerts` section that is present is the source of truth for the
+ * manifest-owned rules (`svc-<id>-<when>-<channel>`): one it no longer
+ * declares — removed, re-pointed to another channel, or skipped below — is
+ * deleted, like the `notifications` section replaces its set. An absent
+ * section leaves every rule alone; rules with any other name (the panel's)
+ * are never touched.
+ */
 async function syncAlertRules(
   db: DB,
   serviceId: number,
   alerts: NinedeployManifest['alerts'],
+  memLimitMb: number,
   result: ApplyManifestResult,
 ): Promise<void> {
-  if (!alerts || alerts.length === 0) return;
+  if (!alerts) return;
+  const declared = new Set<string>();
 
   for (const alert of alerts) {
     // Map the manifest's "when" to a (metric, operator, threshold) triple.
     // The schema has a separate "channel" string from the alert rule's own
     // "name" — we encode the channel into the rule name so multiple alerts
     // with the same `when` but different channels coexist.
-    const rule = alertToRule(alert);
-    if (!rule) {
-      // Event-shaped alert with no metric behind it. Writing SOMETHING here
-      // used to produce a `cert-expiry < 0` rule — a rule that can never fire
-      // and that shows up in Monitoring looking like a configured alert. Say
-      // it was skipped instead.
-      result.warnings.push(
-        `alerts: when="${alert.when}" is an event, not a metric threshold, and per-service event alerts are not yet implemented; rule skipped.`,
-      );
+    const rule = alertToRule(alert, memLimitMb);
+    if (typeof rule === 'string') {
+      // No rule the alert engine can evaluate. Writing SOMETHING here used to
+      // produce a rule that can never fire (or fires on the wrong unit) and
+      // that shows up in Monitoring looking like a configured alert. Say it
+      // was skipped instead.
+      result.warnings.push(`alerts: when="${alert.when}" ${rule}; rule skipped.`);
       continue;
     }
     const { metric, operator, threshold, durationWindows } = rule;
     const name = `svc-${serviceId}-${alert.when}-${alert.channel}`;
+    declared.add(name);
 
     const existing = await db
       .select()
@@ -682,26 +695,50 @@ async function syncAlertRules(
     }
     result.alertsUpserted += 1;
   }
+
+  const owned = new RegExp(`^svc-${serviceId}-(?:${MANIFEST_ALERT_WHENS.join('|')})-`);
+  const stale = (
+    await db
+      .select({ id: alertRules.id, name: alertRules.name })
+      .from(alertRules)
+      .where(eq(alertRules.serviceId, serviceId))
+  ).filter((r) => owned.test(r.name) && !declared.has(r.name));
+  for (const row of stale) {
+    await db.delete(alertRules).where(eq(alertRules.id, row.id));
+  }
 }
 
+/** Every manifest `alerts[].when` — the middle segment of a manifest-owned rule name. */
+const MANIFEST_ALERT_WHENS = ['deployFailed', 'restartLoop', 'highMemory', 'highCpu', 'certExpiry'] as const;
+
 /**
- * Translate one manifest alert into an `alert_rules` row, or `null` when the
- * trigger is event-shaped (`deployFailed`, `restartLoop`) and the metric-based
- * alert engine has nothing to evaluate. The caller turns `null` into a warning
- * rather than inventing a rule.
+ * Translate one manifest alert into an `alert_rules` row, or the reason the
+ * metric-based alert engine has nothing it can evaluate for it. The caller
+ * turns the reason into a warning rather than inventing a rule.
  */
-function alertToRule(alert: NonNullable<NinedeployManifest['alerts']>[number]): {
-  metric: 'cpu' | 'memory' | 'cert-expiry';
-  operator: '>' | '<';
-  threshold: number;
-  durationWindows: number;
-} | null {
+function alertToRule(
+  alert: NonNullable<NinedeployManifest['alerts']>[number],
+  memLimitMb: number,
+):
+  | {
+      metric: 'cpu' | 'memory' | 'cert-expiry';
+      operator: '>' | '<';
+      threshold: number;
+      durationWindows: number;
+    }
+  | string {
   switch (alert.when) {
     case 'highMemory':
+      // F128: `memory` rules are evaluated in MiB (plugins/collector.ts), and
+      // thresholdPct is a percent — of the memory limit, the only 100% a
+      // container has. Without a limit there is nothing to take a percent of.
+      if (memLimitMb <= 0) {
+        return 'is a percent of the memory limit, and this service has none (set resources.memMb or a limit in Service → Settings)';
+      }
       return {
         metric: 'memory',
         operator: '>',
-        threshold: alert.thresholdPct ?? 90,
+        threshold: Math.max(1, Math.round((memLimitMb * (alert.thresholdPct ?? 90)) / 100)),
         durationWindows: 3,
       };
     case 'highCpu':
@@ -712,13 +749,16 @@ function alertToRule(alert: NonNullable<NinedeployManifest['alerts']>[number]): 
         durationWindows: 3,
       };
     case 'certExpiry':
-      return { metric: 'cert-expiry', operator: '<', threshold: 14, durationWindows: 1 };
+      // F129: certificate expiry is sampled host-wide (serviceId null) by the
+      // collector, so a service-scoped rule never evaluates — the panel API
+      // refuses that shape for the same reason (alertRuleCreate).
+      return 'is tracked host-wide, not per service, so a service rule could never fire (an operator can add a host-wide cert-expiry rule under Monitoring)';
     case 'deployFailed':
     case 'restartLoop':
       // Event-shaped: the alert engine evaluates metric samples, and there is
       // no metric that means "the last deploy failed". `deploy.failed` reaches
       // notification channels directly from the deploy pipeline; a per-service
       // routing of it belongs with the `notifications` section.
-      return null;
+      return 'is an event, not a metric threshold, and per-service event alerts are not yet implemented';
   }
 }

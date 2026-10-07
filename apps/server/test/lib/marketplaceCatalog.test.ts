@@ -320,4 +320,14 @@ describe('lib/marketplaceCatalog', () => {
     expect(result.live).toBe(false);
     expect(result.catalog.map((c) => c.id)).toEqual(['static-a']);
   });
+
+  it('F244: a cache hit recomputes isInstalled for the current caller', async () => {
+    // Default config (no upstream URL): the static catalog is cached. A plugin
+    // installed within the 5-minute TTL used to keep its "Install" button.
+    await loadMarketplaceCatalog(new Set());
+    const afterInstall = await loadMarketplaceCatalog(new Set(['static-a']));
+    expect(afterInstall.catalog.find((c) => c.id === 'static-a')?.isInstalled).toBe(true);
+    const afterUninstall = await loadMarketplaceCatalog(new Set());
+    expect(afterUninstall.catalog.find((c) => c.id === 'static-a')?.isInstalled).toBe(false);
+  });
 });

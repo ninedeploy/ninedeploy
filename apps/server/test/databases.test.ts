@@ -1,7 +1,11 @@
 ﻿import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { and, eq } from 'drizzle-orm';
+import { migrate } from 'drizzle-orm/libsql/migrator';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createDb, databaseAttachments, databases, services, users } from '@ninedeploy/db';
 import { attachmentRoutes, databasesRoutes } from '../src/modules/databases.js';
 import { encrypt } from '../src/lib/crypto.js';
 import { studioCookieValid } from '../src/modules/studioProxy.js';
@@ -46,6 +50,17 @@ vi.mock('../src/engine/database.js', async (importOriginal) => {
     stopDatabaseStudio: engineMocks.stopDatabaseStudio,
     adoptRetainedVolume: engineMocks.adoptRetainedVolume,
     volumeExists: engineMocks.volumeExists,
+  };
+});
+
+// F890: detach shells out to `docker network disconnect`. Pass-through to the
+// real exec unless a test installs a fake, so every other test is unchanged.
+const execHook = vi.hoisted(() => ({ capture: null as null | ((cmd: string, args: string[]) => Promise<string>) }));
+vi.mock('../src/lib/exec.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/lib/exec.js')>();
+  return {
+    ...actual,
+    capture: (...a: Parameters<typeof actual.capture>) => (execHook.capture ? execHook.capture(a[0], a[1]) : actual.capture(...a)),
   };
 });
 
@@ -989,5 +1004,80 @@ describe('attachment routes', () => {
     await app.register(attachmentRoutes);
     const res = await app.inject({ method: 'DELETE', url: '/1/attachments/99', headers: asUser() });
     expect(res.statusCode).toBe(404);
+  });
+});
+
+// F138 / F137 — against a real migrated SQLite: the alias collision and the
+// unique-index error shape (drizzle wraps it, the text lives on `cause`) are
+// behaviour the fake db above cannot reproduce.
+describe('attachment env aliases (real SQLite)', () => {
+  const MIGRATIONS = fileURLToPath(new URL('../../../packages/db/src/migrations', import.meta.url));
+
+  async function setup() {
+    const { db } = createDb({ url: ':memory:' });
+    await migrate(db, { migrationsFolder: MIGRATIONS });
+    const [u] = await db.insert(users).values({ email: 'op@x', passwordHash: 'h', isInstanceOperator: true }).returning();
+    const [svc] = await db.insert(services).values({ name: 'api', slug: 'api', ownerUserId: u!.id }).returning();
+    const mk = async (slug: string) =>
+      (await db.insert(databases).values({ name: slug, slug, ownerUserId: u!.id, engine: 'postgres', status: 'running', passwordEncrypted: 'x' }).returning())[0]!;
+    const primary = await mk('primary');
+    const reports = await mk('reports');
+    const app = await buildTestApp({ db });
+    await app.register(attachmentRoutes);
+    const attach = (payload: Record<string, unknown>) =>
+      app.inject({ method: 'POST', url: `/${svc!.id}/attachments`, headers: asUser({ id: u!.id, isOperator: true }), payload });
+    const bound = async (alias: string) =>
+      (await db.select().from(databaseAttachments).where(and(eq(databaseAttachments.serviceId, svc!.id), eq(databaseAttachments.envAlias, alias)))).map((r) => r.databaseId);
+    return { primary, reports, attach, bound };
+  }
+
+  it('refuses a second database under an alias the service already injects (it would repoint DATABASE_URL)', async () => {
+    const s = await setup();
+    expect((await s.attach({ databaseId: s.primary.id })).statusCode).toBe(200);
+    // The web form sends no alias when the field is empty → engine default.
+    const clash = await s.attach({ databaseId: s.reports.id });
+    expect(clash.statusCode).toBe(409);
+    expect(await s.bound('DATABASE_URL')).toEqual([s.primary.id]);
+    expect((await s.attach({ databaseId: s.reports.id, envAlias: 'REPORTS_URL' })).statusCode).toBe(200);
+  });
+
+  it('maps a repeated attach of the same database to 400 "Already attached", not 500', async () => {
+    const s = await setup();
+    expect((await s.attach({ databaseId: s.primary.id })).statusCode).toBe(200);
+    const dup = await s.attach({ databaseId: s.primary.id });
+    expect(dup.statusCode).toBe(400);
+    expect(dup.json().error.message).toBe('Already attached');
+  });
+
+  // F890: the attachment is what put the database on the service's private
+  // bridge. Left there, the network path outlived the detach — and the
+  // service's delete (F843 reads attachment rows, none left), so the next
+  // service to take the slug in any workspace joined the database's bridge.
+  it('detaching takes the database container off that service bridge only', async () => {
+    const { db } = createDb({ url: ':memory:' });
+    await migrate(db, { migrationsFolder: MIGRATIONS });
+    const [u] = await db.insert(users).values({ email: 'op@x', passwordHash: 'h', isInstanceOperator: true }).returning();
+    const [api] = await db.insert(services).values({ name: 'api', slug: 'api', ownerUserId: u!.id }).returning();
+    const [web] = await db.insert(services).values({ name: 'web', slug: 'web', ownerUserId: u!.id }).returning();
+    const [shared] = await db
+      .insert(databases)
+      .values({ name: 'main', slug: 'main', ownerUserId: u!.id, engine: 'postgres', status: 'running', containerName: 'nd-db-main', passwordEncrypted: 'x' })
+      .returning();
+    const [att] = await db.insert(databaseAttachments).values({ serviceId: api!.id, databaseId: shared!.id, envAlias: 'DATABASE_URL' }).returning();
+    await db.insert(databaseAttachments).values({ serviceId: web!.id, databaseId: shared!.id, envAlias: 'DATABASE_URL' });
+    const docker: string[][] = [];
+    execHook.capture = async (_cmd, args) => {
+      docker.push(args);
+      return '';
+    };
+    try {
+      const app = await buildTestApp({ db });
+      await app.register(attachmentRoutes);
+      const res = await app.inject({ method: 'DELETE', url: `/${api!.id}/attachments/${att!.id}`, headers: asUser({ id: u!.id, isOperator: true }) });
+      expect(res.statusCode).toBe(200);
+      expect(docker).toEqual([['network', 'disconnect', 'nd-svc-api', 'nd-db-main']]);
+    } finally {
+      execHook.capture = null;
+    }
   });
 });

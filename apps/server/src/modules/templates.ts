@@ -24,7 +24,7 @@ import type { AuthedUser } from '../lib/resourceAccess.js';
 import { assertMayPublishPort } from '../lib/hostPort.js';
 import { assertMayWriteVaultRefs, hasVaultRef } from '../lib/vault.js';
 import { slugify } from '../lib/slug.js';
-import { assertSlugVolumeNotRetained } from '../lib/retainedSlugVolume.js';
+import { assertPrimaryVolumeNotAttachedElsewhere, assertSlugVolumeNotRetained } from '../lib/retainedSlugVolume.js';
 import { visibleProjectIds } from './projects.js';
 import { applyDefaultTags, defaultWorkspaceIdsForUser, replaceServiceTags } from './serviceTags.js';
 import { prepareComposeStack } from './composeStacks.js';
@@ -192,11 +192,14 @@ async function prepareTemplateService(
     }
     const trusted = {
       name,
+      // F554: a retry may pin a (repository-checked) tag like a fresh install.
+      image: input.image === undefined ? service.image : image,
       serverId: input.serverId === undefined ? service.serverId : input.serverId,
       publishedPort: input.publishedPort === undefined ? service.publishedPort : input.publishedPort,
       healthPath: input.healthPath ?? service.healthPath,
       cpuShares: input.cpuShares ?? service.cpuShares,
       memLimitMb: input.memLimitMb ?? service.memLimitMb,
+      cpuLimitMilli: input.cpuLimitMilli ?? service.cpuLimitMilli,
       cmd: template.cmd ?? null,
       dockerSocket: template.dockerSocket ?? false,
       templateId: template.id,
@@ -208,7 +211,10 @@ async function prepareTemplateService(
   } else {
     // r351: a template's `volumeMount` would re-mount a deleted service's
     // retained `nd-svc-<slug>-data` under a freed slug.
-    await assertSlugVolumeNotRetained(slug, 'docker');
+    // F553 (r466): a node placement mounts its volume ON THE NODE — probe there.
+    await assertSlugVolumeNotRetained(slug, 'docker', { db: app.db, serverId: input.serverId ?? null });
+    // F552 (r648): nor one another service already attaches as an extra volume.
+    if (template.volumeMount) await assertPrimaryVolumeNotAttachedElsewhere(app.db, slug, null);
     const [created] = await app.db.insert(services).values({
       ownerUserId,
       name,
@@ -223,6 +229,7 @@ async function prepareTemplateService(
       serverId: input.serverId ?? null,
       cpuShares: input.cpuShares ?? 0,
       memLimitMb: input.memLimitMb ?? 0,
+      cpuLimitMilli: input.cpuLimitMilli ?? 0,
       cmd: template.cmd ?? null,
       dockerSocket: template.dockerSocket ?? false,
       templateId: template.id,
@@ -347,6 +354,23 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
       dockerSocket: t.dockerSocket ?? false,
     });
     assertMayPublishPort(req.user!, input.publishedPort);
+    // F904: a compose stack runs its own YAML — the compose builder publishes
+    // no host port and applies no docker resource flags, so these would be
+    // dropped with a 200. 0/null mean "unset" (the wizard's defaults).
+    if (t.composeContent) {
+      const unsupported = [
+        // F984: the stack runs the YAML's own images — an override that
+        // differs from the template default would be dropped with a 200.
+        input.image !== undefined && input.image !== t.image ? 'image' : null,
+        input.publishedPort != null ? 'publishedPort' : null,
+        (input.cpuShares ?? 0) > 0 ? 'cpuShares' : null,
+        (input.cpuLimitMilli ?? 0) > 0 ? 'cpuLimitMilli' : null,
+        (input.memLimitMb ?? 0) > 0 ? 'memLimitMb' : null,
+      ].filter((f): f is string => f !== null);
+      if (unsupported.length > 0) {
+        throw badRequest(`Compose templates do not support ${unsupported.join(', ')} — the stack's compose file controls images, ports and resource limits`);
+      }
+    }
     // r601: the same write-time vault gate as the env routes (r510). The
     // service does not exist yet, so it is judged by the tags it is about to
     // get — a compose stack gets none, a container the caller's workspaces
@@ -372,6 +396,11 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
     const prepared = t.composeContent
       ? await (async () => {
           const stack = await prepareComposeStack(app, t, input, req.user!);
+          // F904: the dashboard probes a running stack at service.healthPath.
+          if (input.healthPath !== undefined && input.healthPath !== stack.service.healthPath) {
+            await app.db.update(services).set({ healthPath: input.healthPath }).where(eq(services.id, stack.service.id));
+            stack.service = { ...stack.service, healthPath: input.healthPath };
+          }
           const generatedSecrets = await reconcileEnvironment(app, stack.service.id, { ...t, env: stack.stackEnv }, input.env ?? []);
           return {
             service: stack.service,
@@ -411,7 +440,9 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
       message: t.dbEngine ? 'Database attachment queued for worker reconciliation' : 'No database attachment required',
     });
     prepared.stages.push({ id: 'deployment', status: 'success', message: 'Durable application deployment queued' });
-    void audit(app.db, req.user!.id, 'template.deploy', `${t.name} → ${prepared.service.name}`);
+    // F905: display names are not unique across the catalog — meta names the
+    // template. The entity keeps its shape (activity filters key on it).
+    void audit(app.db, req.user!.id, 'template.deploy', `${t.name} → ${prepared.service.name}`, { templateId: t.id });
     return {
       serviceId: prepared.service.id,
       serviceName: prepared.service.name,

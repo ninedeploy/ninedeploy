@@ -53,6 +53,8 @@ describe('real e2e: applyManifestToService against in-memory DB with real schema
       '  port: 3000',
       '  healthcheck: "/api/health"',
       '  restart: unless-stopped',
+      'resources:',
+      '  memMb: 1000',
       'env:',
       '  required:',
       '    - DATABASE_URL',
@@ -166,7 +168,9 @@ describe('real e2e: applyManifestToService against in-memory DB with real schema
     expect(alertRows.some((a) => a.metric === 'cert-expiry')).toBe(false);
     const mem = alertRows.find((a) => a.metric === 'memory');
     expect(mem).toBeDefined();
-    expect(mem!.threshold).toBe(85);
+    // F128: thresholdPct is a percent of the memory limit (resources.memMb
+    // above); memory rules are evaluated in MiB.
+    expect(mem!.threshold).toBe(850);
     expect(mem!.operator).toBe('>');
     expect(mem!.enabled).toBe(true);
   });
