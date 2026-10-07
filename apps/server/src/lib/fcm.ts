@@ -24,7 +24,7 @@
  * the token exchange to `oauth2.googleapis.com` is
  * also covered.
  */
-import { createSign, randomBytes } from 'node:crypto';
+import { createHash, createSign, randomBytes } from 'node:crypto';
 import { guardedFetch } from './egressGuard.js';
 
 export interface FcmServiceAccount {
@@ -52,6 +52,8 @@ interface BearerCacheEntry {
   expiresAt: number;
 }
 const bearerCache = new Map<string, BearerCacheEntry>();
+// F329: one in-flight token exchange per cache key, shared by concurrent sends.
+const bearerInflight = new Map<string, Promise<string>>();
 const BEARER_SKEW_MS = 60_000;
 
 export async function sendFcm(input: FcmDispatchInput): Promise<{ messageId: string }> {
@@ -118,11 +120,29 @@ function parseServiceAccount(json: string): FcmServiceAccount {
 
 // ── OAuth2 bearer (cached per service account) ───────────────────────────
 
+// F328: the bearer is minted from the private key at token_uri, so the cache
+// key covers all three — keyed by client_email alone, a config with a wrong
+// key or another token_uri reused (or planted) the bearer of another config.
+function bearerCacheKey(sa: FcmServiceAccount): string {
+  return createHash('sha256')
+    .update(JSON.stringify([sa.client_email, sa.private_key, sa.token_uri ?? 'https://oauth2.googleapis.com/token']))
+    .digest('hex');
+}
+
 async function getBearer(sa: FcmServiceAccount): Promise<string> {
-  const cached = bearerCache.get(sa.client_email);
+  const key = bearerCacheKey(sa);
+  const cached = bearerCache.get(key);
   if (cached && cached.expiresAt > Date.now() + BEARER_SKEW_MS) {
     return cached.token;
   }
+  const pending = bearerInflight.get(key);
+  if (pending) return pending;
+  const minted = mintBearer(sa, key).finally(() => bearerInflight.delete(key));
+  bearerInflight.set(key, minted);
+  return minted;
+}
+
+async function mintBearer(sa: FcmServiceAccount, key: string): Promise<string> {
   const assertion = signAssertion(sa);
   const params = new URLSearchParams({
     grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
@@ -142,7 +162,9 @@ async function getBearer(sa: FcmServiceAccount): Promise<string> {
   const out = (await res.json()) as { access_token?: string; expires_in?: number };
   if (!out.access_token) throw new Error('FCM token exchange: no access_token in response');
   const expiresInMs = (out.expires_in ?? 3600) * 1000;
-  bearerCache.set(sa.client_email, {
+  // Rotated configs leave their old key behind; drop expired entries on insert.
+  for (const [k, e] of bearerCache) if (e.expiresAt <= Date.now()) bearerCache.delete(k);
+  bearerCache.set(key, {
     token: out.access_token,
     expiresAt: Date.now() + expiresInMs,
   });

@@ -137,7 +137,9 @@ export const emailTemplateRoutes: FastifyPluginAsync = async (app) => {
           "Custom emails are sent from this instance's own mail server, so they are only used for workspaces an instance operator owns. This workspace's invitations use the built-in text.",
         );
       }
-      if (overrideMissingRequiredLink(name, body.data.text)) {
+      // F620: the renderer prints `\{{acceptUrl}}` literally, so an escaped
+      // placeholder is not the link — drop those before the check.
+      if (overrideMissingRequiredLink(name, body.data.text.replace(/\\\{\{acceptUrl\}\}/g, ' '))) {
         throw badRequest('The email text must include {{acceptUrl}} — the link the recipient follows.');
       }
       await setOverride(app.db, wid, body.data.name, body.data.subject, body.data.text);

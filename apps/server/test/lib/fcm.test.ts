@@ -318,5 +318,55 @@ describe('lib/fcm', () => {
       ).resolves.toEqual({ messageId: 'projects/proj-1/messages/42' });
       expect(fetchState.captured.some((c) => c.url === 'https://oauth2.googleapis.com/token')).toBe(true);
     });
+
+    it('F328: a bearer minted at another token_uri for the same client_email is not reused', async () => {
+      // Keyed by client_email alone, the first config's bearer (from any
+      // token_uri, with any expires_in) authenticated every later config
+      // sharing the e-mail — including one with a key Google would reject.
+      const email = 'f328-shared-email@proj';
+      fetchState.responses.set('https://token.example.com/oauth', {
+        body: { access_token: 'tok-elsewhere', expires_in: 1_000_000_000 },
+      });
+      fetchState.responses.set('https://oauth2.googleapis.com/token', {
+        body: { access_token: 'tok-google', expires_in: 3600 },
+      });
+      fetchState.responses.set('https://fcm.googleapis.com/v1/projects/proj-1/messages:send', {
+        body: { name: 'projects/proj-1/messages/x' },
+      });
+      await sendFcm({
+        deviceToken: 'd',
+        serviceAccountJson: JSON.stringify({
+          project_id: 'proj-1',
+          client_email: email,
+          private_key: privateKeyPem,
+          token_uri: 'https://token.example.com/oauth',
+        }),
+        body: 'b',
+      });
+      await sendFcm({
+        deviceToken: 'd',
+        serviceAccountJson: JSON.stringify({ project_id: 'proj-1', client_email: email, private_key: privateKeyPem }),
+        body: 'b',
+      });
+      const last = fetchState.captured.at(-1)!;
+      const headers = (last.init?.headers ?? {}) as Record<string, string>;
+      expect(headers['Authorization']).toBe('Bearer tok-google');
+    });
+
+    it('F329: concurrent sends on a cold cache share one token exchange', async () => {
+      const sa = SERVICE_ACCOUNT(undefined, 'f329-concurrent@proj');
+      fetchState.responses.set('https://oauth2.googleapis.com/token', {
+        body: { access_token: 'tok-shared', expires_in: 3600 },
+      });
+      fetchState.responses.set('https://fcm.googleapis.com/v1/projects/proj-1/messages:send', {
+        body: { name: 'projects/proj-1/messages/x' },
+      });
+      await Promise.all(
+        Array.from({ length: 4 }, (_, i) => sendFcm({ deviceToken: `d${i}`, serviceAccountJson: sa, body: 'b' })),
+      );
+      const tokenCalls = fetchState.captured.filter((c) => c.url === 'https://oauth2.googleapis.com/token');
+      expect(tokenCalls).toHaveLength(1);
+      expect(fetchState.captured.filter((c) => c.url.startsWith('https://fcm.googleapis.com/'))).toHaveLength(4);
+    });
   });
 });

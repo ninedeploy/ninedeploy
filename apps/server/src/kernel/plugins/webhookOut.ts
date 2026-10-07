@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { redactEgressTarget } from '../../lib/egressGuard.js';
 import type { DomainEvents, KernelContext, KernelPlugin } from '../types.js';
 
 /**
@@ -191,9 +192,13 @@ export class WebhookOutPlugin implements KernelPlugin {
       });
       status = res.status;
     } catch (err) {
+      // F296: fetch puts the raw URL in some messages (a credentialed or an
+      // unparseable endpoint), and this event reaches every wildcard listener —
+      // sandboxed plugins and the telemetry feed included. Keep scheme + host.
+      const message = err instanceof Error ? err.message : String(err);
       ctx.events.emitCustom('webhook.out_error', {
         event: eventName,
-        reason: err instanceof Error ? err.message : String(err),
+        reason: message.split(endpoint).join(redactEgressTarget(endpoint)),
         ts: new Date().toISOString(),
       });
       return;

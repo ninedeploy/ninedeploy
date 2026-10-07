@@ -278,6 +278,34 @@ describe('WebhookOutPlugin (kernel integration)', () => {
     expect(errors[0]).toMatchObject({ event: 'deployment.status_changed', reason: 'ECONNREFUSED' });
   });
 
+  it('F296: a fetch error that echoes the endpoint never carries its credential', async () => {
+    // Node's fetch builds this error from the raw URL; the event reaches every
+    // wildcard listener (sandboxed plugins, telemetry), so only scheme + host may remain.
+    fetchMock.mockImplementationOnce(async (url: string, init: RequestInit) => {
+      new Request(url, init);
+      return new Response('', { status: 200 });
+    });
+
+    kernel.db.query.configEntries.findFirst
+      .mockResolvedValueOnce({ value: 'true' } as never)
+      .mockResolvedValueOnce({ value: 'https://hookuser:S3cr3tPassw0rd@receiver.example/hook' } as never)
+      .mockResolvedValueOnce({ value: SECRET, isSecret: true } as never)
+      .mockResolvedValueOnce(null as never)
+      .mockResolvedValue(undefined as never);
+
+    await kernel.registerPlugin(plugin);
+    const received = new Promise<Record<string, unknown>>((resolve) => {
+      kernel.events.onCustom('webhook.out_error', (payload) => resolve(payload as Record<string, unknown>));
+    });
+
+    kernel.events.emit('deployment.status_changed', { deploymentId: 1, status: 'failed' });
+
+    const error = await received;
+    expect(String(error.reason)).toContain('https://receiver.example');
+    expect(String(error.reason)).not.toContain('S3cr3tPassw0rd');
+    expect(String(error.reason)).not.toContain('hookuser');
+  });
+
   it('destroy() unsubscribes — events emitted afterwards are not posted', async () => {
     kernel.db.query.configEntries.findFirst
       .mockResolvedValueOnce({ value: 'true' } as never)

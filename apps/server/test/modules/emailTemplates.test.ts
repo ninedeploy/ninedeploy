@@ -403,4 +403,22 @@ describe('r621: a workspace override cannot turn the instance into a mail relay'
     expect((await res.json()).error.message).toMatch(/acceptUrl/);
     expect(lib.setCalls).toEqual([]);
   });
+
+  it('F620: refuses an invitation override whose only {{acceptUrl}} is escaped (the renderer prints it literally)', async () => {
+    const { port } = await startApp();
+    const put = (text: string) =>
+      fetch(`http://127.0.0.1:${port}/1/email-templates/workspace-invitation`, {
+        method: 'PUT',
+        headers: { ...asUser(1), 'content-type': 'application/json' },
+        body: JSON.stringify({ subject: 'Hi', text }),
+      });
+    const escaped = await put('Visit https://evil.example\n\\{{acceptUrl}}');
+    expect(escaped.status).toBe(400);
+    expect((await escaped.json()).error.message).toMatch(/acceptUrl/);
+    expect(lib.setCalls).toEqual([]);
+    // An escaped literal next to the real placeholder is still a valid invitation.
+    const mixed = await put('Type \\{{acceptUrl}} in docs; your link: {{acceptUrl}}');
+    expect(mixed.status).toBe(200);
+    expect(lib.setCalls).toHaveLength(1);
+  });
 });

@@ -755,6 +755,59 @@ describe('dispatchChannel — fcm', () => {
   });
 });
 
+// F924: an fcm channel's target IS the device token. A token FCM declares dead
+// (404 UNREGISTERED) must deactivate the channel instead of being re-sent to on
+// every later event; a transient 503 must leave it alone.
+describe('notifyEvent — dead FCM device tokens (F924)', () => {
+  beforeEach(() => {
+    vi.stubEnv('NINEDEPLOY_MASTER_KEY', KEY_HEX);
+    vi.mocked(sendFcm).mockReset();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.mocked(sendFcm).mockReset(); // back to the module mock's own resolve-undefined implementation
+    vi.unstubAllEnvs();
+  });
+
+  function fcmDb() {
+    const channels = [
+      { id: 21, type: 'fcm', targetEncrypted: encrypt('device-token'), eventFilter: '', active: true, configJson: '{"project_id":"p"}' },
+    ];
+    const set = vi.fn((_patch: unknown) => ({ where: vi.fn(async () => undefined) }));
+    const update = vi.fn(() => ({ set }));
+    const fake = makeDb(channels);
+    (fake.db as unknown as { update: typeof update }).update = update;
+    return { ...fake, update, set };
+  }
+
+  async function run(db: never) {
+    const pending = notifyEvent(db, event);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await pending;
+  }
+
+  it('deactivates the channel when FCM answers 404 UNREGISTERED', async () => {
+    vi.mocked(sendFcm).mockRejectedValue(new Error('FCM send failed: 404 {\n  "error": {\n    "code": 404,'));
+    const { db, update, set, lastValues } = fcmDb();
+    await run(db);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(set).toHaveBeenCalledWith({ active: false });
+    expect(lastValues()).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'failed', error: expect.stringContaining('channel deactivated') }),
+    );
+  });
+
+  it('keeps the channel on a transient 503', async () => {
+    vi.mocked(sendFcm).mockRejectedValue(new Error('FCM send failed: 503 unavailable'));
+    const { db, update, lastValues } = fcmDb();
+    await run(db);
+    expect(sendFcm).toHaveBeenCalledTimes(3);
+    expect(update).not.toHaveBeenCalled();
+    expect(lastValues()).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed', error: 'FCM send failed: 503 unavailable' }));
+  });
+});
+
 describe('notifyEvent — per-service subscription deliveries', () => {
   beforeEach(() => {
     vi.stubEnv('NINEDEPLOY_MASTER_KEY', KEY_HEX);

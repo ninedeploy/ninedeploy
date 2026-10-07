@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import { redactEgressTarget } from '../../lib/egressGuard.js';
 import { isKernelOrigin } from '../eventBus.js';
 import type { EventOrigin, KernelContext, KernelPlugin } from '../types.js';
 
@@ -199,18 +200,27 @@ export class TelemetryStreamerPlugin implements KernelPlugin {
         headers,
         body,
         signal: AbortSignal.timeout(Math.max(100, timeoutMs)),
+        // F284 (as r658 for webhook-out): a 3xx from the collector is a failed
+        // export, never a reason to re-POST the signed record where it points.
+        redirect: 'manual',
       });
+      // F286: release the connection — an unread body keeps the socket busy.
+      await res.body?.cancel().catch(() => undefined);
       if (res.status < 200 || res.status >= 300) {
         ctx.events.emitCustom('telemetry.export.error', {
-          endpoint,
+          endpoint: redactEgressTarget(endpoint),
           status: res.status,
           ts: Date.now(),
         });
       }
     } catch (err) {
+      // F285: this event reaches every wildcard listener (sandboxed plugins
+      // included); the endpoint may carry credentials in its userinfo, path or
+      // query, and fetch repeats the raw URL in some messages. Scheme + host only.
+      const message = err instanceof Error ? err.message : String(err);
       ctx.events.emitCustom('telemetry.export.error', {
-        endpoint,
-        reason: err instanceof Error ? err.message : String(err),
+        endpoint: redactEgressTarget(endpoint),
+        reason: message.split(endpoint).join(redactEgressTarget(endpoint)),
         ts: Date.now(),
       });
     }

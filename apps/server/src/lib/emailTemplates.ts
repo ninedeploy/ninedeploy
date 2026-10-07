@@ -169,9 +169,12 @@ export async function workspaceOverridesAllowed(db: DB, workspaceId: number): Pr
 /**
  * r621: an override of a SENT email whose built-in text carries a link must keep
  * that link — otherwise the "invitation" is just arbitrary text.
+ * F876: `expand` prints an escaped `\{{acceptUrl}}` literally, so it is not the
+ * link — drop those before the check (also guards rows stored before F620).
  */
 export function overrideMissingRequiredLink(name: EmailTemplateName, text: string): boolean {
-  return TEMPLATE_DELIVERY[name].sent && DEFAULTS[name].text.includes('{{acceptUrl}}') && !text.includes('{{acceptUrl}}');
+  const live = text.replace(/\\\{\{acceptUrl\}\}/g, ' ');
+  return TEMPLATE_DELIVERY[name].sent && DEFAULTS[name].text.includes('{{acceptUrl}}') && !live.includes('{{acceptUrl}}');
 }
 
 /**

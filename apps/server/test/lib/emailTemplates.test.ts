@@ -542,6 +542,21 @@ describe('r621: workspace overrides cannot turn the instance into a mail relay',
     expect(r.text).toContain('https://x/y');
   });
 
+  it('F876: ignores a stored override whose only {{acceptUrl}} is escaped (renders literally)', async () => {
+    seedOverride(1, 'workspace-invitation', 'Action required', 'Go to https://evil.example \\{{acceptUrl}}');
+    const r = await renderTemplate(makeDb(), 'workspace-invitation', INVITE_VARS, { workspaceId: 1 });
+    expect(r.overridden).toBe(false);
+    expect(r.text).toContain('https://x/y');
+    expect(r.text).not.toContain('evil.example');
+  });
+
+  it('F876: still sends an override that has an escaped AND a live {{acceptUrl}}', async () => {
+    seedOverride(1, 'workspace-invitation', 'Hi', 'Literal \\{{acceptUrl}} / link {{acceptUrl}}');
+    const r = await renderTemplate(makeDb(), 'workspace-invitation', INVITE_VARS, { workspaceId: 1 });
+    expect(r.overridden).toBe(true);
+    expect(r.text).toBe('Literal {{acceptUrl}} / link https://x/y');
+  });
+
   it('still sends an operator-owned override that keeps the link', async () => {
     seedOverride(1, 'workspace-invitation', 'Join {{workspaceName}}', 'Accept: {{acceptUrl}}');
     const r = await renderTemplate(makeDb(), 'workspace-invitation', INVITE_VARS, { workspaceId: 1 });

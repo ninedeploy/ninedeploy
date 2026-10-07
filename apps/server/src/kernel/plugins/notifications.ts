@@ -48,6 +48,9 @@ export class NotificationsDispatcherPlugin implements KernelPlugin {
    * Emission timestamps inside the current sliding minute, for
    * `rate_limit_per_minute`. Bounded by the limit itself — entries older than
    * 60 s are dropped on every check, so this never grows.
+   * F629: monotonic (`performance.now()`), not the wall clock — a backwards
+   * clock step left "future" entries that kept the window full, silencing
+   * every alert for the size of the step instead of at most a minute.
    */
   private recentEmits: number[] = [];
 
@@ -55,11 +58,14 @@ export class NotificationsDispatcherPlugin implements KernelPlugin {
     // 1. Listen for deployment events
     const unsub1 = ctx.events.on('deployment.status_changed', (payload) => {
       const data = payload as { deploymentId?: number; status?: string; serviceName?: string };
+      // F628: `deploy.trigger` audits the bare service name, so the bridge
+      // carries no id — omit it rather than render a fabricated "#0".
+      const deployment = data.deploymentId === undefined ? '' : ` #${data.deploymentId}`;
       return this.publish(
         ctx,
         {
           title: `Deployment ${data.status ?? 'Updated'}`,
-          body: `Service ${data.serviceName ?? 'Unknown'} deployment #${data.deploymentId ?? 0} changed to ${data.status}`,
+          body: `Service ${data.serviceName ?? 'Unknown'} deployment${deployment} changed to ${data.status}`,
           level: data.status === 'failed' ? 'error' : 'info',
         },
         // `auditBridge` maps `deploy.success` onto this event with
@@ -154,10 +160,11 @@ export class NotificationsDispatcherPlugin implements KernelPlugin {
   private withinRateLimit(limit: number): boolean {
     if (typeof limit !== 'number' || !Number.isFinite(limit)) return true;
     if (limit <= 0) return false;
-    const cutoff = Date.now() - 60_000;
+    const now = performance.now();
+    const cutoff = now - 60_000;
     this.recentEmits = this.recentEmits.filter((t) => t > cutoff);
     if (this.recentEmits.length >= limit) return false;
-    this.recentEmits.push(Date.now());
+    this.recentEmits.push(now);
     return true;
   }
 

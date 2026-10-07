@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { type DB, notificationLog, serviceNotificationChannels, services, type NotificationChannel } from '@ninedeploy/db';
+import { type DB, notificationChannels, notificationLog, serviceNotificationChannels, services, type NotificationChannel } from '@ninedeploy/db';
 import { webhookChannelConfig, type WebhookChannelConfig } from '@ninedeploy/schemas';
 import { createHmac } from 'node:crypto';
 import { decrypt } from './crypto.js';
@@ -11,8 +11,11 @@ import { isOperator } from './resourceAccess.js';
 
 /** Check if an event matches a channel's filter (comma-separated prefixes). */
 function matchesFilter(eventAction: string, filter: string): boolean {
-  if (!filter.trim()) return true; // empty = all events
-  return filter.split(',').map((f) => f.trim()).some((prefix) => eventAction.startsWith(prefix));
+  // F112: drop empty segments — a trailing/doubled comma left a '' prefix that
+  // every action startsWith, so "deploy.failed," received every event.
+  const prefixes = filter.split(',').map((f) => f.trim()).filter((f) => f.length > 0);
+  if (prefixes.length === 0) return true; // empty = all events
+  return prefixes.some((prefix) => eventAction.startsWith(prefix));
 }
 
 /**
@@ -52,9 +55,10 @@ function formatMessage(action: string, entity?: string | null): string {
     tunnel: '☁️', user: '👤', template: '✨', source: '🔑', alert: '🔔',
   };
   const icon = emoji[subject] ?? '•';
-  // The entity (service/user names) is user-controlled — escape it so the
-  // Telegram HTML parse mode can't be broken (<b>, malformed tags → 400).
-  return `${icon} ${subject} ${verb}${entity ? `: ${escapeHtml(entity)}` : ''}`;
+  // F113: plain text. The entity is user-controlled, but escaping is per
+  // channel (dispatchChannel: Telegram HTML, Slack & < >) — escaping here put
+  // literal "&gt;" into Discord/email/ntfy/webhook/… messages.
+  return `${icon} ${subject} ${verb}${entity ? `: ${entity}` : ''}`;
 }
 
 /** A slow notification target must not stall its channel's dispatch. */
@@ -374,6 +378,21 @@ function parseChannelConfig(raw: string | null | undefined): Record<string, unkn
   }
 }
 
+/**
+ * F924: FCM's verdict that the device token itself is permanently dead —
+ * HTTP 404 (UNREGISTERED: app uninstalled / token rotated) or a 400 naming the
+ * token as invalid (INVALID_ARGUMENT for the token, not the payload). sendFcm
+ * reports `FCM send failed: <status> <body…>`; the body's errorCode is often
+ * cut by its 200-char truncation, so the status is the reliable signal.
+ * Transient errors (429/5xx) are not dead tokens.
+ */
+function isDeadFcmToken(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const m = /^FCM send failed: (\d{3})\b/.exec(err.message);
+  if (!m) return false;
+  return m[1] === '404' || (m[1] === '400' && /not a valid FCM registration token/i.test(err.message));
+}
+
 /** Dispatch a message to one channel by type. */
 export async function dispatchChannel(
   type: string,
@@ -387,7 +406,8 @@ export async function dispatchChannel(
     const botToken = idx > 0 ? target.slice(0, idx) : '';
     const chatId = idx > 0 ? target.slice(idx + 1) : '';
     if (!botToken || !chatId) throw new Error('Invalid Telegram target (expected botToken:chatId)');
-    await sendTelegram(botToken, chatId, message);
+    // parse_mode HTML: user-controlled text (<b>, malformed tags) must not break it (F113).
+    await sendTelegram(botToken, chatId, escapeHtml(message));
   } else if (type === 'webhook') {
     await sendWebhook(target, { event: event.action, entity: event.entity, ts: event.ts, message }, options?.configJson ?? null);
   } else if (type === 'discord') {
@@ -402,7 +422,8 @@ export async function dispatchChannel(
     if (typeof cfg.color === 'number' && Number.isFinite(cfg.color)) discordOpts.color = cfg.color;
     await sendDiscord(target, message, discordOpts);
   } else if (type === 'slack') {
-    await sendSlack(target, message);
+    // Slack treats & < > as control chars (<!channel>, <url|label>) — F113.
+    await sendSlack(target, escapeHtml(message));
   } else if (type === 'ntfy') {
     await sendNtfy(target, message);
   } else if (type === 'gotify') {
@@ -504,6 +525,19 @@ export async function notifyEvent(db: DB, event: AppEvent): Promise<void> {
       const attempts = await withRetry(() => dispatchChannel(ch.type, target, event, message, { configJson: channelConfigOf(ch) }));
       await db.insert(notificationLog).values({ channelId: ch.id, event: event.action, entity: event.entity, status: 'sent', attempts });
     } catch (err) {
+      // F924: an fcm channel's target IS the device token. Once FCM declares it
+      // dead, deactivate the channel — otherwise every later event re-sends
+      // (3 attempts) to it and logs another failure, forever. Best-effort: the
+      // failed row below must be written even if this update fails.
+      const deadToken = ch.type === 'fcm' && isDeadFcmToken(err);
+      if (deadToken) {
+        try {
+          await db.update(notificationChannels).set({ active: false }).where(eq(notificationChannels.id, ch.id));
+        } catch {
+          /* the failed row still records FCM's verdict */
+        }
+      }
+      const reason = err instanceof Error ? err.message : String(err);
       await db
         .insert(notificationLog)
         .values({
@@ -512,7 +546,7 @@ export async function notifyEvent(db: DB, event: AppEvent): Promise<void> {
           entity: event.entity,
           status: 'failed',
           attempts: RETRY_DELAYS_MS.length + 1,
-          error: err instanceof Error ? err.message : String(err),
+          error: deadToken ? `${reason} (device token rejected by FCM; channel deactivated)` : reason,
         })
         .catch(() => undefined); // one channel's log write must not sink the others
     }
@@ -554,10 +588,13 @@ export async function sendSystemEmail(db: DB, recipient: string, subject: string
     return false; // table might not exist yet
   }
   if (!channel) return false;
-  const target = decrypt(channel.targetEncrypted);
   try {
-    await withRetry(() => sendEmail(target, subject, text, recipient));
-    await db.insert(notificationLog).values({ channelId: channel.id, event: 'email.system', entity: subject, status: 'sent', attempts: 1 });
+    // F114: inside the try (r179 parity) — an undecryptable target must log
+    // `failed` and return false, not reject past every caller's catch.
+    const target = decrypt(channel.targetEncrypted);
+    // F115: log the real attempt count, not a hard-coded 1.
+    const attempts = await withRetry(() => sendEmail(target, subject, text, recipient));
+    await db.insert(notificationLog).values({ channelId: channel.id, event: 'email.system', entity: subject, status: 'sent', attempts });
     return true;
   } catch (err) {
     await db.insert(notificationLog).values({
