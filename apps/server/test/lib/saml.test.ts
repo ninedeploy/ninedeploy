@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   canonicalDigest,
+  checkAssertionConditions,
   checkAssertionNotReplayed,
   decodeSamlResponse,
   extractSamlSubject,
@@ -392,11 +393,50 @@ describe('lib/saml', () => {
       expect(() => checkAssertionNotReplayed(assertionWithId('_old-0'), t)).not.toThrow();
     });
 
+    it('F197: keeps an ID until the assertion itself expires, not just for the fixed TTL', () => {
+      const hour = 60 * 60 * 1000;
+      const t0 = Date.parse('2026-10-07T12:00:00Z');
+      const xml = `<saml:Assertion ID="_f197-long"><saml:Conditions NotOnOrAfter="2026-10-08T12:00:00Z"/></saml:Assertion>`;
+      checkAssertionConditions(xml, new Date(t0));
+      checkAssertionNotReplayed(xml, t0);
+      // +7h is past the 6h TTL but inside the 24h window: still a replay.
+      checkAssertionConditions(xml, new Date(t0 + 7 * hour));
+      expect(() => checkAssertionNotReplayed(xml, t0 + 7 * hour)).toThrow(/replay/);
+    });
+
     it('readIssuer extracts the Issuer element and returns null when absent', () => {
       expect(readIssuer('<samlp:Response><saml:Issuer> https://idp.example.com </saml:Issuer></samlp:Response>')).toBe(
         'https://idp.example.com',
       );
       expect(readIssuer('<samlp:Response />')).toBeNull();
+    });
+  });
+
+  describe('checkAssertionConditions validity windows', () => {
+    const now = new Date('2026-10-07T12:00:00Z');
+    const assertion = (inner: string) => `<saml:Assertion ID="_w"><saml:Subject><saml:NameID>a@b.c</saml:NameID>${inner}</saml:Subject></saml:Assertion>`;
+
+    it('F196: enforces the bearer SubjectConfirmationData window and single-quoted Conditions', () => {
+      const scd = (attrs: string) => assertion(`<saml:SubjectConfirmation><saml:SubjectConfirmationData ${attrs}/></saml:SubjectConfirmation><saml:Conditions NotOnOrAfter="2026-10-07T18:00:00Z"/>`);
+      expect(() => checkAssertionConditions(scd('NotOnOrAfter="2026-10-07T11:00:00Z"'), now)).toThrow(/expired/);
+      expect(() => checkAssertionConditions(scd('NotBefore="2026-10-07T13:00:00Z"'), now)).toThrow(/not yet valid/);
+      expect(() => checkAssertionConditions(assertion("<saml:Conditions NotOnOrAfter='2026-10-07T11:00:00Z'/>"), now)).toThrow(/expired/);
+      expect(() => checkAssertionConditions(scd('NotOnOrAfter="2026-10-07T12:05:00Z"'), now)).not.toThrow();
+    });
+
+    it('F198: reads zone-less instants as UTC in any host zone, and refuses unparseable ones', () => {
+      const savedTz = process.env.TZ;
+      try {
+        for (const tz of ['UTC', 'America/Los_Angeles', 'Asia/Tokyo']) {
+          process.env.TZ = tz;
+          expect(() => checkAssertionConditions(assertion('<saml:Conditions NotOnOrAfter="2026-10-07T10:00:00"/>'), now), tz).toThrow(/expired/);
+          expect(() => checkAssertionConditions(assertion('<saml:Conditions NotBefore="2026-10-07T13:00:00"/>'), now), tz).toThrow(/not yet valid/);
+        }
+        expect(() => checkAssertionConditions(assertion('<saml:Conditions NotOnOrAfter="not-a-date"/>'), now)).toThrow(/unparseable/);
+      } finally {
+        if (savedTz === undefined) delete process.env.TZ;
+        else process.env.TZ = savedTz;
+      }
     });
   });
 });

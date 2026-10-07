@@ -19,6 +19,7 @@ import { audit } from '../lib/audit.js';
 import {
   conflict,
   forbidden,
+  isUniqueViolation,
   notFound,
   parseId,
 } from '../lib/errors.js';
@@ -201,24 +202,18 @@ export async function findPendingInvitationByToken(
 ): Promise<typeof workspaceInvitations.$inferSelect | null> {
   if (!token || token.length < 32) return null;
   const now = new Date();
-  // Hash-first lookup: rows created since tokens were hashed are found here.
-  const row =
-    (await db.query.workspaceInvitations.findFirst({ where: eq(workspaceInvitations.token, sha256(token)) })) ??
-    // Legacy rows (created before hashing) still hold the cleartext token.
-    // Accept them once and rewrite the row to the hash so the fallback is
-    // self-retiring — outstanding emailed links keep working across the
-    // upgrade without leaving plaintext tokens in storage.
-    (await db.query.workspaceInvitations.findFirst({ where: eq(workspaceInvitations.token, token) }));
+  // F160: hash-only lookup. The old fallback matched the presented value
+  // against the stored column verbatim (for pre-0.3.0 cleartext rows), but a
+  // stored hash is itself 64 hex — so the hash from a leaked DB/backup worked
+  // as a live token. A pre-0.3.0 cleartext row no longer resolves; inviting
+  // the address again refreshes it with a hashed token.
+  const row = await db.query.workspaceInvitations.findFirst({
+    where: eq(workspaceInvitations.token, sha256(token)),
+  });
   if (!row) return null;
   if (row.revokedAt) return null;
   if (row.acceptedAt) return null;
   if (row.expiresAt.getTime() <= now.getTime()) return null;
-  if (row.token === token) {
-    await db
-      .update(workspaceInvitations)
-      .set({ token: sha256(token), updatedAt: now })
-      .where(eq(workspaceInvitations.id, row.id));
-  }
   return row;
 }
 
@@ -472,8 +467,7 @@ export const acceptInvitationRoutes: FastifyPluginAsync = async (app) => {
         // existence check; the loser hit the unique (workspace, user) index
         // and answered 500 — the loser's acceptance is the same fact, so
         // treat the collision as success like the idempotent re-accept.
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!msg.includes('workspace_members_workspace_user_idx') && !msg.includes('UNIQUE constraint failed')) throw err;
+        if (!isUniqueViolation(err, /workspace_members_workspace_user_idx|UNIQUE constraint failed/)) throw err;
       }
     }
     await app.db

@@ -80,7 +80,24 @@ export async function fetchOidcConfiguration(issuerUrl: string): Promise<{ autho
   if (!res.ok) {
     throw new Error(`Failed to fetch OIDC discovery configuration from ${cleanIssuer}: ${res.statusText}`);
   }
-  return res.json() as Promise<{ authorization_endpoint: string; token_endpoint: string; userinfo_endpoint?: string }>;
+  const doc = (await res.json()) as { authorization_endpoint: string; token_endpoint: string; userinfo_endpoint?: string } | null;
+  // F816: a 200 that is not a discovery document must not be used, and the
+  // authorization endpoint is handed to the browser (the link flow's SPA calls
+  // location.assign on it) — http(s) only. The callback path needs only the
+  // token endpoint, so a doc without authorization_endpoint is not refused here.
+  const isHttpUrl = (value: unknown): boolean => {
+    if (typeof value !== 'string') return false;
+    try {
+      const { protocol } = new URL(value);
+      return protocol === 'https:' || protocol === 'http:';
+    } catch {
+      return false;
+    }
+  };
+  if (!isHttpUrl(doc?.token_endpoint) || (doc?.authorization_endpoint !== undefined && !isHttpUrl(doc.authorization_endpoint))) {
+    throw new Error(`OIDC discovery document from ${cleanIssuer} lacks a valid authorization_endpoint/token_endpoint`);
+  }
+  return doc!;
 }
 
 /** Exchange authorization code at OIDC token endpoint */
@@ -110,7 +127,14 @@ export async function exchangeOidcCode(
     throw new Error(`OIDC token exchange failed (${res.status}): ${text}`);
   }
 
-  return res.json() as Promise<OidcTokenResponse>;
+  // F817: some IdPs answer 200 with an OAuth error body; never treat a
+  // response without an access token as success.
+  const tokens = (await res.json()) as (Partial<OidcTokenResponse> & { error?: unknown; error_description?: unknown }) | null;
+  if (typeof tokens?.access_token !== 'string' || !tokens.access_token) {
+    const reason = [tokens?.error_description, tokens?.error].find((v): v is string => typeof v === 'string' && v !== '');
+    throw new Error(`OIDC token exchange failed: ${reason ?? 'missing access_token'}`);
+  }
+  return tokens as OidcTokenResponse;
 }
 
 /** Fetch user profile info from OIDC userinfo endpoint */
@@ -128,7 +152,8 @@ export async function fetchOidcUserInfo(userinfoEndpoint: string, accessToken: s
   // Only a real `email` claim may identify the user. `preferred_username` is
   // typically a self-chosen handle — accepting it as an email lets an attacker
   // set it to a victim's address and log in as them.
-  const email = json['email'] as string | undefined;
+  // F818: a non-string or blank claim is a missing email, not a TypeError.
+  const email = typeof json['email'] === 'string' ? json['email'].trim() : '';
   if (!email) {
     throw new Error('OIDC userinfo did not contain an email address');
   }
@@ -143,7 +168,7 @@ export async function fetchOidcUserInfo(userinfoEndpoint: string, accessToken: s
   }
   return {
     sub: json['sub'],
-    email: email.toLowerCase().trim(),
+    email: email.toLowerCase(),
     emailVerified: json['email_verified'] === true,
     name: (json['name'] as string) ?? null,
   };

@@ -225,6 +225,27 @@ describe('lib/vault', () => {
     ).rejects.toThrow(/Doppler API 403/);
   });
 
+  it('F176: an undecryptable stored token reads as "no token" instead of throwing', async () => {
+    cryptoMocks.decrypt.mockImplementationOnce(() => {
+      throw new Error('Unknown master key version 0');
+    });
+    const cfg = await getVaultConfig(vaultDb({ vault_provider: 'infisical', vault_token_encrypted: 'v0:stale' }));
+    expect(cfg).toEqual({ provider: 'infisical', token: null, projectId: null, environment: null });
+  });
+
+  it('F177: a missing key named like an Object.prototype member is "not found", not garbage', async () => {
+    for (const name of ['constructor', '__proto__', 'toString']) {
+      fetchMock.mockResolvedValueOnce({ ok: true, json: async () => JSON.parse('{"API_KEY":"v"}') });
+      await expect(
+        resolveVaultRefs(
+          vaultDb({ vault_provider: 'doppler', vault_token_encrypted: 'enc:tok' }),
+          { KEY: DOPPLER_REF.replace('API_KEY', name) },
+          OPERATOR_SUBJECT,
+        ),
+      ).rejects.toThrow(/not found/);
+    }
+  });
+
   it('testVault throws without a provider/token', async () => {
     await expect(testVault(vaultDb())).rejects.toThrow(/No vault provider/);
   });

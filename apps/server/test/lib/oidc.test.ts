@@ -249,3 +249,58 @@ describe('r436: discovery cache', () => {
     expect(fetchMock.mock.calls).toHaveLength(3);
   });
 });
+
+// F216/F217 (audit run 2026-10-07): a 200 that is not the expected document is
+// a failure, and failures are never cached — one malformed IdP/proxy answer
+// used to stay sticky for the whole TTL (JWKS: every login crashed on
+// `keys.some`, defeating the kid-rotation refresh too).
+describe('F216/F217: malformed success responses are not cached', () => {
+  afterEach(() => bustOidcDiscoveryCache());
+
+  it('a 200 JWKS body without a keys array is rejected and refetched next time', async () => {
+    const key = makeKey('k1');
+    const uri = `https://idp.example.com/jwks-${uriCounter}`;
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ error: 'temporarily_unavailable' }) } as never)
+      .mockResolvedValue(jwksResponse([key.jwk]));
+    const token = signToken(key, claims());
+    await expect(verifyIdToken(discovery(uri), config, token, '')).rejects.toThrow(/not a JWK Set/);
+    await expect(verifyIdToken(discovery(uri), config, token, '')).resolves.toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('a 200 discovery body missing the required endpoints is rejected and refetched next time', async () => {
+    bustOidcDiscoveryCache();
+    const doc = discovery('https://idp.example.com/jwks');
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'starting' }), { status: 200 }))
+      .mockResolvedValue(new Response(JSON.stringify(doc), { status: 200 }));
+    await expect(discover(config)).rejects.toThrow(/lacks authorization_endpoint/);
+    await expect(discover(config)).resolves.toEqual(doc);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+// F218 (audit run 2026-10-07): RFC 7519 §4.1.5 — a token is not accepted
+// before its `nbf` (60 s leeway for an IdP clock running slightly ahead).
+describe('F218: nbf is enforced', () => {
+  const NOW = Date.UTC(2026, 9, 7, 12, 0, 0);
+  const T = Math.floor(NOW / 1000);
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('rejects a not-yet-valid token, honours the leeway boundary and a malformed nbf', async () => {
+    const key = makeKey('k1');
+    const uri = `https://idp.example.com/jwks-${uriCounter}`;
+    fetchMock.mockResolvedValue(jwksResponse([key.jwk]));
+    const verify = (nbf: unknown) => verifyIdToken(discovery(uri), config, signToken(key, claims({ iat: T, exp: T + 7200, nbf })), '');
+    await expect(verify(T + 3600)).rejects.toThrow(/not yet valid/);
+    await expect(verify(T + 61)).rejects.toThrow(/not yet valid/);
+    await expect(verify('0')).rejects.toThrow(/not yet valid/);
+    await expect(verify(T + 60)).resolves.toBeTruthy();
+    await expect(verify(T - 10)).resolves.toBeTruthy();
+  });
+});

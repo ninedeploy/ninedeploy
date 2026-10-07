@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
+import { auditLog, sessions } from '@ninedeploy/db';
 import { bustOidcDiscoveryCache } from '../../src/lib/oidc.js';
 import { SAML_UNAVAILABLE, ssoRoutes } from '../../src/modules/sso.js';
 import { buildTestApp, asUser } from '../helpers.js';
@@ -839,6 +840,34 @@ describe('POST-style OIDC callback (Sprint 6 PR #30)', () => {
     await app.close();
   });
 
+  it('F544: audits the session it mints (auth.sso_login), like every other sign-in path', async () => {
+    const kp = makeRsaKeyPair();
+    const audited: Array<Record<string, unknown>> = [];
+    const { app, issuer } = await oidcAppWithProvider((db) => {
+      const original = db.insert;
+      db.insert = ((table: unknown) => {
+        const chain = original();
+        if (table !== auditLog) return chain;
+        return {
+          values: (v: Record<string, unknown>) => {
+            audited.push(v);
+            return chain.values(v as never);
+          },
+        };
+      }) as typeof db.insert;
+    });
+    const body = (await runOidcFlow(app, kp, issuer, { ...validClaims(issuer), email_verified: true })).json() as {
+      ok: boolean;
+      tokens?: { accessToken: string };
+    };
+    expect(body.ok).toBe(true);
+    const signIns = audited.filter((a) => a.action === 'auth.sso_login');
+    expect(signIns).toHaveLength(1);
+    expect(signIns[0]).toMatchObject({ userId: 1, entity: 'corp-oidc (alice@example.com)' });
+    expect(JSON.stringify(signIns)).not.toContain(body.tokens!.accessToken);
+    await app.close();
+  });
+
   it('rejects when the state query does not match the cookie (CSRF defense)', async () => {
     const kp = makeRsaKeyPair();
     const issuer = uniqueIssuer();
@@ -1061,6 +1090,9 @@ describe('POST-style OIDC callback (Sprint 6 PR #30)', () => {
 // the wire path around it (provider lookup, body parsing, user
 // resolution, session mint).
 let verifyResult = true;
+// F544: count only the inserts into one table — audit() writes its own row.
+const insertsInto = (fn: { mock: { calls: unknown[][] } }, table: unknown) =>
+  fn.mock.calls.filter((c) => c[0] === table).length;
 vi.mock('../../src/lib/saml.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/lib/saml.js')>();
   return {
@@ -1352,8 +1384,9 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     expect(body.provider).toBe('corp-saml');
     expect(body.subject).toEqual({ nameId: 'alice@example.com', email: 'alice@example.com' });
     // `issueSessionTokens` writes a `sessions` row exactly once per
-    // successful SAML sign-in.
-    expect(insert).toHaveBeenCalledTimes(1);
+    // successful SAML sign-in, and (F544) the mint is audited once.
+    expect(insertsInto(insert, sessions)).toBe(1);
+    expect(insertsInto(insert, auditLog)).toBe(1);
     await app.close();
   });
 
@@ -1425,7 +1458,7 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     const body = res.json() as { ok: boolean; subject?: { nameId: string; email: string } };
     expect(body.ok).toBe(true);
     expect(body.subject).toEqual({ nameId: 'operator@example.com', email: 'operator@example.com' });
-    expect(insert).toHaveBeenCalledTimes(1);
+    expect(insertsInto(insert, sessions)).toBe(1);
     await app.close();
   });
 
@@ -1543,7 +1576,7 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     const body = second.json() as { ok: boolean; error?: string };
     expect(body.ok).toBe(false);
     expect(body.error).toMatch(/replay/i);
-    expect(insert).toHaveBeenCalledTimes(1);
+    expect(insertsInto(insert, sessions)).toBe(1);
     await app.close();
   });
 
@@ -1650,6 +1683,54 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     await app.close();
   });
 
+  it('F852: refuses an assertion with NO <Audience> when the provider declares spEntityId', async () => {
+    verifyResult = true;
+    const meta = idpMetadata();
+    const { db, seedProvider, insert } = wiredDb('alice@example.com', meta);
+    seedProvider('corp-saml', 'saml', { idpMetadata: meta, spEntityId: 'https://panel.example.com' });
+    const app = await buildTestApp({ db });
+    await app.register(ssoRoutes);
+    const unscoped = samlResponse('alice@example.com', { assertionId: '_f852_no_audience' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/corp-saml/saml-callback',
+      payload: { SAMLResponse: b64(unscoped) },
+      headers: asUser(),
+    });
+    const body = res.json() as { ok: boolean; error?: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toMatch(/Audience/i);
+    expect(insert).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('F853: an unsigned Destination naming this ACS does not stand in for an absent signed Recipient', async () => {
+    // The signature covers only the assertion; the <samlp:Response> wrapper
+    // (and its Destination) is whatever the presenter writes.
+    verifyResult = true;
+    const meta = idpMetadata();
+    const { db, seedProvider, insert } = wiredDb('alice@example.com', meta);
+    const acs = 'https://panel.example.com/v1/sso/corp-saml/saml-callback';
+    seedProvider('corp-saml', 'saml', { idpMetadata: meta, spAcsUrl: acs });
+    const app = await buildTestApp({ db });
+    await app.register(ssoRoutes);
+    const forgedWrapper = samlResponse('alice@example.com', { assertionId: '_f853_no_recipient' }).replace(
+      '<samlp:Response>',
+      `<samlp:Response Destination="${acs}">`,
+    );
+    const res = await app.inject({
+      method: 'POST',
+      url: '/corp-saml/saml-callback',
+      payload: { SAMLResponse: b64(forgedWrapper) },
+      headers: asUser(),
+    });
+    const body = res.json() as { ok: boolean; error?: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toMatch(/Recipient/i);
+    expect(insert).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it('rejects an assertion whose NotOnOrAfter has passed (replay window)', async () => {
     verifyResult = true;
     const meta = idpMetadata();
@@ -1687,7 +1768,7 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     });
     const body = res.json() as { ok: boolean };
     expect(body.ok).toBe(true);
-    expect(insert).toHaveBeenCalledTimes(1);
+    expect(insertsInto(insert, sessions)).toBe(1);
     await app.close();
   });
 });

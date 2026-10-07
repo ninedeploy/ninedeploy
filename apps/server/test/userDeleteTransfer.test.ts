@@ -163,4 +163,32 @@ describe('r540: deleting a workspace owner', () => {
     expect(byId.get(ownerId)).toEqual([{ id: workspaceId, name: 'Team' }]);
     expect(byId.get(colleagueId)).toEqual([]);
   });
+
+  it('F144/F145: account deletion still hands over services the user owned in every workspace — multi-seat and operator included', async () => {
+    // Member removal now keeps a service whose creator is still seated in
+    // another workspace it lives in, and never re-homes an operator's
+    // resources. Deletion must not inherit those skips: the user row goes,
+    // and anything left on it would be detached (owner NULL).
+    const [other] = await db.insert(workspaces).values({ name: 'Other', slug: 'other', ownerId: operatorId }).returning();
+    await db.insert(workspaceMembers).values([
+      { workspaceId: other!.id, userId: operatorId, role: 'owner' },
+      { workspaceId: other!.id, userId: colleagueId, role: 'member' },
+    ]);
+    const [shared] = await db.insert(services).values({ name: 'shared', slug: 'shared', ownerUserId: colleagueId }).returning();
+    await db.insert(serviceWorkspaces).values([
+      { serviceId: shared!.id, workspaceId },
+      { serviceId: shared!.id, workspaceId: other!.id },
+    ]);
+    const [op2] = await db.insert(users).values({ email: 'op2@example.com', passwordHash: 'x', isInstanceOperator: true }).returning();
+    await db.insert(workspaceMembers).values({ workspaceId, userId: op2!.id, role: 'admin' });
+    const [opSvc] = await db.insert(services).values({ name: 'op-svc', slug: 'op-svc', ownerUserId: op2!.id }).returning();
+    await db.insert(serviceWorkspaces).values({ serviceId: opSvc!.id, workspaceId });
+
+    expect((await app.inject({ method: 'DELETE', url: `/${colleagueId}`, headers: headersFor(operatorId) })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'DELETE', url: `/${op2!.id}`, headers: headersFor(operatorId) })).statusCode).toBe(200);
+    const sharedAfter = await db.query.services.findFirst({ where: eq(services.id, shared!.id) });
+    expect([ownerId, operatorId]).toContain(sharedAfter?.ownerUserId);
+    const opSvcAfter = await db.query.services.findFirst({ where: eq(services.id, opSvc!.id) });
+    expect(opSvcAfter?.ownerUserId).toBe(ownerId);
+  });
 });

@@ -1,5 +1,5 @@
 import { and, eq, isNotNull } from 'drizzle-orm';
-import { databases, projects, serviceWorkspaces, services, workspaceMembers, workspaces, type DB } from '@ninedeploy/db';
+import { databases, projects, serviceWorkspaces, services, users, workspaceMembers, workspaces, type DB } from '@ninedeploy/db';
 import { audit } from './audit.js';
 import { isOperator } from './resourceAccess.js';
 import { getSettingString, setSettingString } from './settings.js';
@@ -49,6 +49,15 @@ export async function rehomeSeatlessOwners(db: DB): Promise<OwnershipBackfillRes
     }
     return v;
   };
+  const deactivatedCache = new Map<number, boolean>();
+  const ownerIsDeactivated = async (id: number) => {
+    let v = deactivatedCache.get(id);
+    if (v === undefined) {
+      v = (await db.query.users.findFirst({ where: eq(users.id, id) }))?.deactivatedAt != null;
+      deactivatedCache.set(id, v);
+    }
+    return v;
+  };
   const wsOwner = new Map<number, number>();
   for (const ws of await db.select({ id: workspaces.id, ownerId: workspaces.ownerId }).from(workspaces)) {
     wsOwner.set(ws.id, ws.ownerId);
@@ -62,7 +71,11 @@ export async function rehomeSeatlessOwners(db: DB): Promise<OwnershipBackfillRes
     const ownerId = svc.ownerUserId!;
     if (await ownerIsOperator(ownerId)) continue;
     const tags = await db.query.serviceWorkspaces.findMany({ where: eq(serviceWorkspaces.serviceId, svc.id) });
-    const wsIds = tags.map((t) => t.workspaceId).filter((id) => wsOwner.has(id));
+    let wsIds = tags.map((t) => t.workspaceId).filter((id) => wsOwner.has(id));
+    // F976: a deactivated creator's own workspaces neither keep a team service
+    // nor inherit it (the F884/F952 hand-over); a seat in a team they still
+    // hold (SCIM PATCH keeps it) still counts.
+    if (await ownerIsDeactivated(ownerId)) wsIds = wsIds.filter((id) => wsOwner.get(id) !== ownerId);
     if (wsIds.length === 0) continue; // personal service: stays its creator's
     let stillSeated = false;
     for (const wsId of wsIds) {

@@ -224,20 +224,40 @@ function timingSafeBuffers(a: Buffer, b: Buffer): boolean {
 }
 
 /**
- * Enforce the assertion's validity window when the IdP published one
- * (`<saml:Conditions NotBefore NotOnOrAfter>`). Without it, a captured
- * response can be replayed forever.
+ * Parse a SAML `xs:dateTime`. SAMLCore §1.3.3 makes every SAML time UTC, so a
+ * value without a zone designator is UTC — never the host's local time (F198).
+ * Anything that is not an ISO-8601 instant yields null; callers fail closed.
+ */
+function parseSamlInstant(value: string): number | null {
+  const v = value.trim();
+  const zoned = /(?:Z|[+-]\d{2}:\d{2})$/i.test(v) ? v : `${v}Z`;
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i.test(zoned)) return null;
+  const t = Date.parse(zoned);
+  return Number.isNaN(t) ? null : t;
+}
+
+/**
+ * Enforce the assertion's validity windows when the IdP published them —
+ * `<saml:Conditions NotBefore NotOnOrAfter>` AND every
+ * `<saml:SubjectConfirmationData NotBefore NotOnOrAfter>` (the bearer
+ * confirmation window the Web SSO profile requires the SP to check; F196).
+ * Without it, a captured response can be replayed forever. An instant that
+ * does not parse is refused, not ignored (F198).
  */
 export function checkAssertionConditions(assertionXml: string, now: Date = new Date()): void {
-  const conditions = assertionXml.match(/<(?:[A-Za-z0-9]+:)?Conditions\b[^>]*>/)?.[0];
-  if (!conditions) return;
-  const notBefore = conditions.match(/NotBefore="([^"]+)"/)?.[1];
-  const notOnOrAfter = conditions.match(/NotOnOrAfter="([^"]+)"/)?.[1];
-  if (notBefore && !Number.isNaN(Date.parse(notBefore)) && Date.parse(notBefore) > now.getTime()) {
-    throw new Error('SAML response: assertion is not yet valid (NotBefore)');
-  }
-  if (notOnOrAfter && Date.parse(notOnOrAfter) <= now.getTime()) {
-    throw new Error('SAML response: assertion has expired (NotOnOrAfter)');
+  const windows = assertionXml.matchAll(/<(?:[A-Za-z0-9_-]+:)?(?:Conditions|SubjectConfirmationData)\b[^>]*>/g);
+  for (const [tag] of windows) {
+    const attrs = parseAttrs(tag);
+    if (attrs.NotBefore !== undefined) {
+      const notBefore = parseSamlInstant(attrs.NotBefore);
+      if (notBefore === null) throw new Error('SAML response: unparseable NotBefore — refusing');
+      if (notBefore > now.getTime()) throw new Error('SAML response: assertion is not yet valid (NotBefore)');
+    }
+    if (attrs.NotOnOrAfter !== undefined) {
+      const notOnOrAfter = parseSamlInstant(attrs.NotOnOrAfter);
+      if (notOnOrAfter === null) throw new Error('SAML response: unparseable NotOnOrAfter — refusing');
+      if (notOnOrAfter <= now.getTime()) throw new Error('SAML response: assertion has expired (NotOnOrAfter)');
+    }
   }
 }
 
@@ -250,23 +270,24 @@ export function checkAssertionConditions(assertionXml: string, now: Date = new D
 // the acceptable residual is one replay per panel restart, not one per
 // attacker attempt.
 
+/** Assertion ID → the instant after which the entry may be forgotten (F197). */
 const SEEN_ASSERTION_IDS = new Map<string, number>();
 const REPLAY_TTL_MS = 6 * 60 * 60 * 1000;
 const REPLAY_CACHE_MAX = 10_000;
 
 function pruneReplayCache(now: number): void {
-  for (const [id, seenAt] of SEEN_ASSERTION_IDS) {
-    if (now - seenAt > REPLAY_TTL_MS) SEEN_ASSERTION_IDS.delete(id);
+  for (const [id, forgetAfter] of SEEN_ASSERTION_IDS) {
+    if (now > forgetAfter) SEEN_ASSERTION_IDS.delete(id);
   }
   // Hard size bound regardless of age (an ID-flooding peer must not grow the
-  // map without limit).
+  // map without limit): evict the entry that would be forgotten soonest.
   while (SEEN_ASSERTION_IDS.size >= REPLAY_CACHE_MAX) {
     let oldestId: string | null = null;
     let oldestSeenAt = Number.POSITIVE_INFINITY;
-    for (const [id, seenAt] of SEEN_ASSERTION_IDS) {
-      if (seenAt < oldestSeenAt) {
+    for (const [id, forgetAfter] of SEEN_ASSERTION_IDS) {
+      if (forgetAfter < oldestSeenAt) {
         oldestId = id;
-        oldestSeenAt = seenAt;
+        oldestSeenAt = forgetAfter;
       }
     }
     if (oldestId === null) break;
@@ -287,7 +308,15 @@ export function checkAssertionNotReplayed(assertionXml: string, now: number = Da
   if (SEEN_ASSERTION_IDS.has(id)) {
     throw new Error('SAML response: assertion was already used (replay refused)');
   }
-  SEEN_ASSERTION_IDS.set(id, now);
+  // F197: remember the ID for at least as long as the assertion itself can
+  // still be accepted — a fixed TTL shorter than the IdP's NotOnOrAfter let a
+  // still-valid assertion replay once its ID was pruned.
+  let forgetAfter = now + REPLAY_TTL_MS;
+  for (const m of assertionXml.matchAll(/\bNotOnOrAfter\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
+    const t = parseSamlInstant(m[1] ?? m[2] ?? '');
+    if (t !== null && t > forgetAfter) forgetAfter = t;
+  }
+  SEEN_ASSERTION_IDS.set(id, forgetAfter);
 }
 
 /** Read the `<Issuer>` element of an XML block (response-level or assertion-level). */

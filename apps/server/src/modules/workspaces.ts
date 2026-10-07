@@ -1,5 +1,6 @@
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import {
+  databaseAttachments,
   databases,
   projects,
   services,
@@ -507,23 +508,85 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
  * credentials, backups, delete) over everything they had created inside it.
  * Services tagged into this workspace and databases in its projects now
  * change hands; resources the user owns elsewhere are untouched.
+ *
+ * `mode` (F144/F145): a `seat-loss` (member removal, SCIM) applies the
+ * r694/r710 rule ownershipBackfill.ts applies — an operator's resources are
+ * never handed over, and a service also tagged into a workspace where the
+ * user still holds a seat stays theirs. `account-deletion` (the user row is
+ * about to go, all seats still present) hands everything over so nothing is
+ * detached by `ON DELETE SET NULL`.
  */
 export async function rehomeOwnedResources(
-  db: Pick<DB, 'select' | 'update'>,
+  db: Pick<DB, 'query' | 'select' | 'update'>,
   workspaceId: number,
   removedUserId: number,
   newOwnerId: number,
+  mode: 'seat-loss' | 'account-deletion' = 'seat-loss',
 ): Promise<void> {
+  const seatLoss = mode === 'seat-loss';
+  // F952: another seat keeps a service only for an account that can still act,
+  // the same test the operator exemption applies. A deactivated user keeps
+  // their seats (SCIM PATCH), but those seats no longer keep anything.
+  let otherSeatsKeep = seatLoss;
+  if (seatLoss) {
+    const removed = await db.query.users.findFirst({ where: eq(users.id, removedUserId) });
+    if (removed?.isInstanceOperator === true && !removed.deactivatedAt) return;
+    if (removed?.deactivatedAt) otherSeatsKeep = false;
+  }
   const tagged = await db
     .select({ id: serviceWorkspaces.serviceId })
     .from(serviceWorkspaces)
     .where(eq(serviceWorkspaces.workspaceId, workspaceId));
-  const serviceIds = tagged.map((r) => r.id);
+  let serviceIds = tagged.map((r) => r.id);
+  if (otherSeatsKeep && serviceIds.length > 0) {
+    const otherSeats = (
+      await db
+        .select({ workspaceId: workspaceMembers.workspaceId })
+        .from(workspaceMembers)
+        .where(eq(workspaceMembers.userId, removedUserId))
+    )
+      .map((s) => s.workspaceId)
+      .filter((w) => w !== workspaceId);
+    if (otherSeats.length > 0) {
+      const kept = await db
+        .select({ id: serviceWorkspaces.serviceId })
+        .from(serviceWorkspaces)
+        .where(and(inArray(serviceWorkspaces.serviceId, serviceIds), inArray(serviceWorkspaces.workspaceId, otherSeats)));
+      const keep = new Set(kept.map((r) => r.id));
+      serviceIds = serviceIds.filter((id) => !keep.has(id));
+    }
+  }
   if (serviceIds.length > 0) {
+    // F147: a template service's managed database moves with it. An unfiled
+    // one (no project) is outside the project rule below, and left with the
+    // previous owner it fails the next deploy's same-owner check in
+    // reconcileTemplateDependencies ("belongs to another resource").
+    const templateServices = await db
+      .select({ id: services.id })
+      .from(services)
+      .where(and(eq(services.ownerUserId, removedUserId), inArray(services.id, serviceIds), isNotNull(services.templateId)));
     await db
       .update(services)
       .set({ ownerUserId: newOwnerId })
       .where(and(eq(services.ownerUserId, removedUserId), inArray(services.id, serviceIds)));
+    if (templateServices.length > 0) {
+      const attached = await db
+        .select({ id: databaseAttachments.databaseId })
+        .from(databaseAttachments)
+        .where(inArray(databaseAttachments.serviceId, templateServices.map((s) => s.id)));
+      if (attached.length > 0) {
+        await db
+          .update(databases)
+          .set({ ownerUserId: newOwnerId })
+          .where(
+            and(
+              eq(databases.ownerUserId, removedUserId),
+              isNull(databases.projectId),
+              inArray(databases.id, attached.map((a) => a.id)),
+            ),
+          );
+      }
+    }
   }
   const wsProjects = await db.select({ id: projects.id }).from(projects).where(eq(projects.workspaceId, workspaceId));
   const projectIds = wsProjects.map((p) => p.id);

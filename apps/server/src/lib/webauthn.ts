@@ -9,7 +9,9 @@ import { config } from '../config.js';
  */
 function rpIdentity(): { rpID: string; rpName: string; origin: string } {
   const url = new URL(config.publicUrl);
-  return { rpID: url.hostname, rpName: 'NineDeploy', origin: config.publicUrl.replace(/\/$/, '') };
+  // F341: browsers send the SERIALIZED origin (lower-case host, no default
+  // port, no path) — compare against that, not the raw configured string.
+  return { rpID: url.hostname, rpName: 'NineDeploy', origin: url.origin };
 }
 
 /** DB transports (plain strings) → the library's union type. */
@@ -81,7 +83,10 @@ export async function finishRegistration(
   });
   if (!verification.verified || !verification.registrationInfo) throw new Error('Passkey verification failed');
   const info = verification.registrationInfo;
-  const credentialId = Buffer.from(info.credential.id).toString('base64url');
+  // F340: the library already returns the id as base64url — exactly what the
+  // browser reports as `response.id` at login. Re-encoding it made every
+  // stored id unmatchable.
+  const credentialId = info.credential.id;
   if (existing.some((c) => c.credentialId === credentialId)) throw new Error('This passkey is already registered');
   return {
     credentialId,

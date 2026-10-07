@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   assertWorkspaceRole,
+  isOperator,
   maxRole,
   requireAccess,
   requireResourceAccess,
@@ -96,6 +97,21 @@ describe('userWorkspaceIds', () => {
       },
     } as never);
     expect(await userWorkspaceIds(db, 7)).toEqual([4, 5]);
+  });
+});
+
+describe('isOperator', () => {
+  const withUser = (row: Record<string, unknown> | undefined) => createFakeDb({ findFirst: { users: row } } as never);
+
+  it('reads the instance-operator flag', async () => {
+    expect(await isOperator(withUser({ id: 1, isInstanceOperator: true, deactivatedAt: null }), { id: 1 })).toBe(true);
+    expect(await isOperator(withUser({ id: 1, isInstanceOperator: false, deactivatedAt: null }), { id: 1 })).toBe(false);
+    expect(await isOperator(withUser(undefined), { id: 1 })).toBe(false);
+  });
+
+  it('F92: a deactivated account is no operator, even with the flag still set', async () => {
+    const db = withUser({ id: 1, isInstanceOperator: true, deactivatedAt: new Date(0) });
+    expect(await isOperator(db, { id: 1 })).toBe(false);
   });
 });
 

@@ -60,7 +60,7 @@ export async function transferUserHoldings(
     .innerJoin(workspaces, eq(workspaces.id, workspaceMembers.workspaceId))
     .where(eq(workspaceMembers.userId, fromUserId));
   for (const seat of seats) {
-    if (seat.ownerId !== fromUserId) await rehomeOwnedResources(db, seat.workspaceId, fromUserId, seat.ownerId);
+    if (seat.ownerId !== fromUserId) await rehomeOwnedResources(db, seat.workspaceId, fromUserId, seat.ownerId, 'account-deletion');
   }
   return owned;
 }

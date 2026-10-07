@@ -321,6 +321,11 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
         ip: req.ip,
         userAgent: req.headers['user-agent'],
       });
+      // F544: a minted session is a sign-in — audit it like every other path.
+      void audit(db, user.id, 'auth.sso_login', `${provider.name} (${claims.email})`, undefined, {
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
       return {
         ok: true,
         provider: provider.name,
@@ -459,7 +464,9 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
       if (spEntityId !== null) {
         const audiences = [...assertionBlock.matchAll(/<(?:[A-Za-z0-9]+:)?Audience\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z0-9]+:)?Audience>/g)]
           .map((m) => m[1]?.trim() ?? '');
-        if (audiences.length > 0 && !audiences.includes(spEntityId)) {
+        // F852: an assertion with NO <Audience> is scoped to nobody in
+        // particular — refuse it too (Web SSO profile §4.1.4.2 requires one).
+        if (!audiences.includes(spEntityId)) {
           return { ok: false, error: 'SAML response: assertion Audience does not include this panel’s entity ID' };
         }
       }
@@ -473,7 +480,10 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
           return { ok: false, error: 'SAML response: Destination is not this panel’s ACS URL' };
         }
         const recipient = assertionBlock.match(/\bRecipient="([^"]*)"/)?.[1];
-        if (recipient !== undefined && recipient !== spAcsUrl) {
+        // F853: Destination sits on the UNSIGNED wrapper (the signature covers
+        // only the assertion), so the signed Recipient is the binding that
+        // counts — an absent one is refused, not skipped.
+        if (recipient !== spAcsUrl) {
           return { ok: false, error: 'SAML response: SubjectConfirmationData Recipient is not this panel’s ACS URL' };
         }
       }
@@ -496,6 +506,11 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
       if (user.id !== req.user!.id) return { ok: false, error: 'SSO identity must match the signed-in account' };
       if (user.totpEnabled) return { ok: false, error: SSO_TOTP_REFUSAL };
       const tokens = await issueSessionTokens(db, user, {
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+      // F544: a minted session is a sign-in — audit it like every other path.
+      void audit(db, user.id, 'auth.sso_login', `${provider.name} (${lookupEmail})`, undefined, {
         ip: req.ip,
         userAgent: req.headers['user-agent'],
       });

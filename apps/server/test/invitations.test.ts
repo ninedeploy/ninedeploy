@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { eq } from 'drizzle-orm';
+import { migrate } from 'drizzle-orm/libsql/migrator';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createDb, users, workspaceInvitations, workspaceMembers, workspaces } from '@ninedeploy/db';
 import {
   acceptInvitationRoutes,
   acceptInvitationsForUser,
@@ -216,24 +223,74 @@ describe('invitation helpers', () => {
   describe('token hashing round-trip', () => {
     beforeEach(() => vi.clearAllMocks());
 
-    it('upgrades a legacy plaintext token row to its hash on first use', async () => {
-      // Invitations emailed before hashing shipped still hold the cleartext
-      // token; accepting one must rewrite the row so the fallback retires.
-      const legacy = invitationRow({ token: 'f'.repeat(64) });
-      const updates: Array<Record<string, unknown>> = [];
-      const db = createFakeDb({
-        findFirst: { workspace_invitations: legacy },
-        update: {
-          workspace_invitations: (s: Record<string, unknown>) => {
-            updates.push(s);
-            return [legacy];
-          },
-        },
+    // F160: the old cleartext fallback matched the presented value against the
+    // stored column verbatim, so the stored sha256 (64 hex, same shape as a
+    // token) from a leaked DB/backup worked as a live token — preview, accept,
+    // and it rewrote the row, killing the real invitee's link. Real migrated
+    // SQLite: the fake db ignores WHERE and cannot tell the lookups apart.
+    describe('F160: the stored hash is never itself a token (real SQLite)', () => {
+      const MIGRATIONS = fileURLToPath(new URL('../../../packages/db/src/migrations', import.meta.url));
+      let dir: string;
+      let close: () => void;
+
+      afterEach(() => {
+        close?.();
+        try {
+          rmSync(dir, { recursive: true, force: true });
+        } catch {
+          /* Windows file lock */
+        }
       });
-      const inv = await findPendingInvitationByToken(db, 'f'.repeat(64));
-      expect(inv).toEqual(legacy);
-      expect(updates).toHaveLength(1);
-      expect(updates[0]!.token).toBe(sha256('f'.repeat(64)));
+
+      async function realDbWithInvite() {
+        dir = mkdtempSync(path.join(os.tmpdir(), 'nd-invite-f160-'));
+        const created = createDb({ url: `file:${path.join(dir, 'test.db').split(path.sep).join('/')}` });
+        close = () => created.client?.close();
+        const db = created.db;
+        await migrate(db, { migrationsFolder: MIGRATIONS });
+        const [owner] = await db.insert(users).values({ email: 'owner@example.com', passwordHash: 'x' }).returning();
+        const [invitee] = await db.insert(users).values({ email: 'bob@example.com', passwordHash: 'x' }).returning();
+        const [ws] = await db.insert(workspaces).values({ name: 'W', slug: 'w', ownerId: owner!.id }).returning();
+        const { token } = await createOrRefreshInvitation(db, {
+          workspaceId: ws!.id,
+          email: 'bob@example.com',
+          role: 'admin',
+          invitedByUserId: owner!.id,
+        });
+        const stored = (await db.select().from(workspaceInvitations))[0]!.token;
+        const app = await buildTestApp({ db });
+        await app.register(publicInvitationRoutes, { prefix: '/v1' });
+        await app.register(acceptInvitationRoutes, { prefix: '/v1' });
+        await app.ready();
+        return { db, app, token, stored, inviteeId: invitee!.id, workspaceId: ws!.id };
+      }
+
+      it('refuses the stored hash on preview and accept, and leaves the real link working', async () => {
+        const { db, app, token, stored, inviteeId, workspaceId } = await realDbWithInvite();
+        expect(stored).toBe(sha256(token));
+
+        expect((await findPendingInvitationByToken(db, stored))).toBeNull();
+        expect((await app.inject({ method: 'GET', url: `/v1/invitations/${stored}` })).statusCode).toBe(404);
+        const viaHash = await app.inject({
+          method: 'POST',
+          url: `/v1/invitations/${stored}/accept`,
+          headers: asUser({ id: inviteeId, isOperator: false }),
+        });
+        expect(viaHash.statusCode).toBe(404);
+        expect(await db.select().from(workspaceMembers).where(eq(workspaceMembers.userId, inviteeId))).toHaveLength(0);
+        expect((await db.select().from(workspaceInvitations))[0]!.token).toBe(stored);
+
+        // Control: the real token still previews and accepts.
+        expect((await app.inject({ method: 'GET', url: `/v1/invitations/${token}` })).statusCode).toBe(200);
+        const viaToken = await app.inject({
+          method: 'POST',
+          url: `/v1/invitations/${token}/accept`,
+          headers: asUser({ id: inviteeId, isOperator: false }),
+        });
+        expect(viaToken.statusCode).toBe(200);
+        const seats = await db.select().from(workspaceMembers).where(eq(workspaceMembers.userId, inviteeId));
+        expect(seats).toEqual([expect.objectContaining({ workspaceId, role: 'admin' })]);
+      });
     });
 
     it('returns the row without rewriting when it already stores the hash', async () => {

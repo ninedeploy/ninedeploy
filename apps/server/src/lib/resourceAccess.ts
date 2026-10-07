@@ -197,7 +197,10 @@ export function maxRole(memberships: WorkspaceMembership[]): WorkspaceRole | nul
  */
 export async function isOperator(db: DbLike, user: { id: number }): Promise<boolean> {
   const row = await db.query.users.findFirst({ where: eq(users.id, user.id) });
-  return row?.isInstanceOperator === true;
+  // F92: a deactivated (SCIM-deprovisioned) account is no operator — the
+  // no-request callers (pipeline, autoUpdate, hooks…) must not keep granting
+  // its services operator trust; ai.ts and studioProxy.ts already agree.
+  return row?.isInstanceOperator === true && !row.deactivatedAt;
 }
 
 // ── services ───────────────────────────────────────────────────────────────

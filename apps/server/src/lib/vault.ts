@@ -33,7 +33,21 @@ export async function getVaultConfig(db: DB): Promise<VaultConfig> {
   const environment = getSettingString(db, 'vault_environment', null);
   const [p, t, pi, e] = await Promise.all([provider, tokenEncrypted, projectId, environment]);
   if (!p || p !== 'infisical' && p !== 'doppler') return { provider: null, token: null, projectId: null, environment: null };
-  return { provider: p, token: t ? decrypt(t) : null, projectId: pi, environment: e };
+  return { provider: p, token: t ? decryptToken(t) : null, projectId: pi, environment: e };
+}
+
+/**
+ * F176: an envelope this key ring cannot open (its version was dropped from
+ * NINEDEPLOY_MASTER_KEYS, a DB restored under other keys) reads as "no token"
+ * — as enrolment.ts and modules/ai.ts do — instead of throwing out of every
+ * caller, which 500'd the Vault settings routes and blocked re-entering it.
+ */
+function decryptToken(envelope: string): string | null {
+  try {
+    return decrypt(envelope);
+  } catch {
+    return null;
+  }
 }
 
 export async function setVaultConfig(
@@ -352,7 +366,9 @@ export async function resolveVaultRefs(
   for (const [key, value] of Object.entries(env)) {
     out[key] = value.replace(REF, (_all, provider: string, name: string) => {
       const pool = pools.get(provider as VaultProvider);
-      const resolved = pool?.[name];
+      // F177: own keys only — `constructor`, `toString`, `__proto__` … are
+      // inherited by the plain-object pool and must not resolve to garbage.
+      const resolved = pool && Object.hasOwn(pool, name) ? pool[name] : undefined;
       if (resolved === undefined) throw new Error(`Vault secret "${provider}:${name}" not found (env key ${key})`);
       return resolved;
     });

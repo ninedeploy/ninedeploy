@@ -141,6 +141,32 @@ describe('ownership backfill (r710)', () => {
     expect(await ownerOf(split)).toBe(gone);
   });
 
+  it('F976: a deactivated creator’s own workspace neither keeps nor inherits a team service', async () => {
+    const owner = await user();
+    const team = await workspace(owner);
+    // ≤0.10.42 instance-wide SCIM DELETE: deactivated, team seat removed, nothing re-homed.
+    const gone = await user();
+    await db.update(users).set({ deactivatedAt: new Date(0) }).where(eq(users.id, gone));
+    const personal = await workspace(gone);
+    const shared = await service(gone, [team, personal]);
+    const personalOnly = await service(gone, [personal]);
+    // SCIM PATCH keeps the seat: a team seat a deactivated user still holds still counts.
+    const paused = await user();
+    await db.update(users).set({ deactivatedAt: new Date(0) }).where(eq(users.id, paused));
+    await db.insert(workspaceMembers).values({ workspaceId: team, userId: paused, role: 'member' });
+    const pausedSvc = await service(paused, [team, await workspace(paused)]);
+    // An active creator's personal seat still keeps a shared service (r710 rule).
+    const active = await user();
+    const activeSvc = await service(active, [team, await workspace(active)]);
+
+    const result = await rehomeSeatlessOwners(db);
+    expect(result).toEqual({ services: [shared], databases: [], ambiguous: [] });
+    expect(await ownerOf(shared)).toBe(owner);
+    expect(await ownerOf(personalOnly)).toBe(gone);
+    expect(await ownerOf(pausedSvc)).toBe(paused);
+    expect(await ownerOf(activeSvc)).toBe(active);
+  });
+
   it('runs once per install and records what it moved', async () => {
     const owner = await user();
     const ws = await workspace(owner);

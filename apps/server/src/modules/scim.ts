@@ -271,8 +271,10 @@ async function deactivateUser(
       .delete(workspaceMembers)
       .where(and(eq(workspaceMembers.userId, userId), eq(workspaceMembers.workspaceId, byWorkspaceId)));
     // r695: same hand-over as an API removal (see deprovisionFor).
+    // F884: but the account is now deactivated instance-wide, and its only other
+    // seats are its own solo workspaces — they keep nothing, so hand over all.
     const ws = await db.query.workspaces.findFirst({ where: eq(workspaces.id, byWorkspaceId) });
-    if (ws && ws.ownerId !== userId) await rehomeOwnedResources(db, byWorkspaceId, userId, ws.ownerId);
+    if (ws && ws.ownerId !== userId) await rehomeOwnedResources(db, byWorkspaceId, userId, ws.ownerId, 'account-deletion');
   }
   // r444: "every credential the account holds" includes the 8-hour studio
   // cookie — a pre-authenticated DB client that must not outlive the
@@ -391,10 +393,15 @@ export const scimRoutes: FastifyPluginAsync = async (app) => {
     return scimUserBody(found.user, workspaceId, found.suspended !== null);
   });
 
-  app.get<{ Querystring: { filter?: string; startIndex?: string; count?: string } }>('/Users', async (req) => {
+  app.get<{ Querystring: { filter?: string; startIndex?: string; count?: string } }>('/Users', async (req, reply) => {
     const workspaceId = await bearer(req);
-    const filter = (req.query as { filter?: string }).filter ?? '';
-    const eqMatch = /userName\s+eq\s+"([^"]+)"/i.exec(filter);
+    const filter = String((req.query as { filter?: unknown }).filter ?? '').trim();
+    const eqMatch = /^userName\s+eq\s+"([^"]*)"$/i.exec(filter);
+    // F149: a filter we cannot evaluate is invalidFilter (RFC 7644 §3.4.2.2),
+    // never "every member" — IdPs link Resources[0] of a lookup.
+    if (filter && !eqMatch) {
+      return scimReply(reply, scimError(400, 'Only the filter userName eq "<value>" is supported', 'invalidFilter'));
+    }
     const rows = await app.db.query.users.findMany();
     const memberships = await app.db.query.workspaceMembers.findMany({ where: eq(workspaceMembers.workspaceId, workspaceId) });
     const memberIds = new Set(memberships.map((m) => m.userId));
@@ -403,7 +410,10 @@ export const scimRoutes: FastifyPluginAsync = async (app) => {
     const inWorkspace = rows.filter((u) => memberIds.has(u.id) || suspended.has(u.id));
     const matched = eqMatch ? inWorkspace.filter((u) => u.email.toLowerCase() === eqMatch[1]!.toLowerCase()) : inWorkspace;
     const start = Math.max(1, Number((req.query as { startIndex?: string }).startIndex ?? 1) || 1);
-    const count = Math.min(200, Math.max(0, Number((req.query as { count?: string }).count ?? 100) || 100));
+    // F150: count=0 is legal ("totalResults only", RFC 7644 §3.4.2.4) — only absent/NaN means the default.
+    const countRaw = String((req.query as { count?: unknown }).count ?? '').trim();
+    const countNum = countRaw === '' ? 100 : Number(countRaw);
+    const count = Math.min(200, Math.max(0, Number.isNaN(countNum) ? 100 : countNum));
     const page = matched.slice(start - 1, start - 1 + count);
     return {
       schemas: [SCIM_LIST_SCHEMA],
@@ -425,7 +435,13 @@ export const scimRoutes: FastifyPluginAsync = async (app) => {
       let suspended = found.suspended;
       for (const op of req.body.Operations ?? []) {
         const path = str(op.path)?.toLowerCase();
-        const active = op.value;
+        let active = op.value;
+        // F148: a path-less replace carries an attribute object (RFC 7644
+        // §3.5.2.3) — Okta deactivates with {"op":"replace","value":{"active":false}}.
+        if (!path && active && typeof active === 'object' && !Array.isArray(active)) {
+          const key = Object.keys(active).find((k) => k.toLowerCase() === 'active');
+          active = key === undefined ? undefined : (active as Record<string, unknown>)[key];
+        }
         if ((str(op.op)?.toLowerCase() === 'replace' || str(op.op)?.toLowerCase() === 'remove') && (path === 'active' || !path)) {
           if (active === false || active === 'False' || active === 'false') {
             const refused = await deprovisionFor(app.db, user, workspaceId, suspended !== null);

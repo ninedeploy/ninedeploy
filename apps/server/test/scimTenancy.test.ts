@@ -260,6 +260,22 @@ describe('r694/r695: an IdP removal ends what the user created in the workspace'
     expect(after!.ownerUserId).toBe(ownerA);
   });
 
+  it('F884: an instance-wide DELETE also hands over a service shared with the dead account’s personal workspace', async () => {
+    const prov = await app.inject({ method: 'POST', url: '/scim/v2/Users', headers: auth, payload: { userName: 'leaver@x.test' } });
+    expect(prov.statusCode).toBe(201);
+    const uid = Number(prov.json().id);
+    const [personal] = await db.insert(workspaces).values({ name: 'Mine', slug: 'mine', ownerId: uid }).returning();
+    await db.insert(workspaceMembers).values({ workspaceId: personal!.id, userId: uid, role: 'owner' });
+    const { svc } = await createdIn(uid);
+    await db.insert(serviceWorkspaces).values({ serviceId: svc.id, workspaceId: personal!.id });
+
+    expect((await app.inject({ method: 'DELETE', url: `/scim/v2/Users/${uid}`, headers: auth })).statusCode).toBe(200);
+    expect((await userById(uid))!.deactivatedAt).not.toBeNull();
+    // The personal seat of a deactivated account keeps nothing: the team gets the service.
+    const [after] = await db.select().from(services).where(eq(services.id, svc.id));
+    expect(after!.ownerUserId).toBe(ownerA);
+  });
+
   it('a personal (untagged) service and a database outside every workspace stay their creator’s', async () => {
     const creator = await localUserIn([wsB, 'member']);
     const [svc] = await db.insert(services).values({ name: 'solo', slug: `solo-${Math.random().toString(36).slice(2)}`, ownerUserId: creator.id }).returning();
@@ -272,5 +288,37 @@ describe('r694/r695: an IdP removal ends what the user created in the workspace'
     expect((await loadDatabaseForUser(db, database!.id, asUser(creator.id))).id).toBe(database!.id);
     expect(await visibleServiceIdSet(db, asUser(creator.id))).toContain(svc!.id);
     expect(await visibleDatabaseIds(db, asUser(creator.id))).toContain(database!.id);
+  });
+});
+
+describe('F148/F149: IdP request shapes', () => {
+  // F148: Okta deactivates with a path-less replace whose value is an attribute
+  // object; the route read `value` itself as the boolean and answered 200 with
+  // nothing revoked.
+  it('a path-less replace {active:false} deprovisions, {active:true} reactivates', async () => {
+    const created = await app.inject({ method: 'POST', url: '/scim/v2/Users', headers: auth, payload: { userName: 'okta@corp.test', externalId: 'okta-9' } });
+    const id = Number(created.json().id);
+    const patch = (value: Record<string, unknown>) =>
+      app.inject({ method: 'PATCH', url: `/scim/v2/Users/${id}`, headers: auth, payload: { Operations: [{ op: 'replace', value }] } });
+    const off = await patch({ active: false });
+    expect(off.json().active).toBe(false);
+    expect((await userById(id))!.deactivatedAt).not.toBeNull();
+    expect((await userById(id))!.tokenVersion).toBe(1);
+    expect((await patch({ Active: 'True' })).json().active).toBe(true);
+    expect((await userById(id))!.deactivatedAt).toBeNull();
+  });
+
+  // F149: an unsupported filter answered every member — an IdP linking
+  // Resources[0] of the lookup bound its user to the wrong account.
+  it('an unsupported filter is 400 invalidFilter, never "every member"', async () => {
+    await localUserIn([wsA, 'member']);
+    const list = (filter: string) => app.inject({ method: 'GET', url: `/scim/v2/Users?filter=${encodeURIComponent(filter)}`, headers: auth });
+    for (const f of ['externalId eq "nobody"', 'emails.value eq "nobody@x.test"', 'userName sw "x"']) {
+      const res = await list(f);
+      expect(res.statusCode, f).toBe(400);
+      expect(res.json().scimType).toBe('invalidFilter');
+    }
+    expect((await list('userName eq ""')).json().totalResults).toBe(0);
+    expect((await list('userName eq "OWNER-A@x.test"')).json().totalResults).toBe(1);
   });
 });

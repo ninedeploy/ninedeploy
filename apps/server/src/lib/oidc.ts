@@ -91,7 +91,16 @@ export async function discover(config: OidcConfig): Promise<OidcDiscovery> {
   const url = `${key}/.well-known/openid-configuration`;
   const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
   if (!res.ok) throw new Error(`OIDC discovery failed (${res.status}) for ${url}`);
-  const doc = (await res.json()) as OidcDiscovery;
+  const doc = (await res.json()) as OidcDiscovery | null;
+  // F217: a 200 that is not a discovery document (booting IdP, proxy answer)
+  // is a failure too — caching it would make it sticky for the whole TTL.
+  if (
+    typeof doc?.authorization_endpoint !== 'string' ||
+    typeof doc.token_endpoint !== 'string' ||
+    typeof doc.jwks_uri !== 'string'
+  ) {
+    throw new Error(`OIDC discovery document at ${url} lacks authorization_endpoint/token_endpoint/jwks_uri`);
+  }
   if (discoveryCache.size >= DISCOVERY_CACHE_MAX) discoveryCache.clear();
   discoveryCache.set(key, { doc, expires: Date.now() + DISCOVERY_TTL_MS });
   return doc;
@@ -169,7 +178,10 @@ async function fetchJwks(jwksUri: string, force = false): Promise<Jwk[]> {
   if (!force && cached && Date.now() - cached.fetchedAt < JWKS_TTL_MS) return cached.keys;
   const res = await fetch(jwksUri, { signal: AbortSignal.timeout(10_000) });
   if (!res.ok) throw new Error(`JWKS fetch failed (${res.status}) for ${jwksUri}`);
-  const jwks = (await res.json()) as Jwks;
+  const jwks = (await res.json()) as Jwks | null;
+  // F216: never cache a 200 that is not a JWK Set — `keys: undefined` would
+  // break every verification (and the kid-refresh guard) for the whole TTL.
+  if (!Array.isArray(jwks?.keys)) throw new Error(`JWKS response from ${jwksUri} is not a JWK Set`);
   if (jwksCache.size >= JWKS_CACHE_MAX) jwksCache.clear();
   jwksCache.set(jwksUri, { fetchedAt: Date.now(), keys: jwks.keys });
   return jwks.keys;
@@ -269,6 +281,12 @@ export async function verifyIdToken(
   const nowSec = Math.floor(Date.now() / 1000);
   if (typeof claims.exp !== 'number' || claims.exp <= nowSec) {
     throw new Error('ID token is expired');
+  }
+  // F218: RFC 7519 §4.1.5 — not accepted before `nbf`. A minute of leeway
+  // absorbs an IdP clock running slightly ahead (Azure AD sets nbf = iat).
+  const nbf = (claims as unknown as { nbf?: unknown }).nbf;
+  if (nbf !== undefined && (typeof nbf !== 'number' || nbf > nowSec + 60)) {
+    throw new Error('ID token is not yet valid (nbf)');
   }
   // The nonce check is only enforced when the caller passes a
   // non-empty `expectedNonce`. The OIDC callback wires that

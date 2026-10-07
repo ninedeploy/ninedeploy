@@ -930,6 +930,11 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     } else {
       if (!provider.issuerUrl) throw badRequest(`Provider "${slug}" is missing an issuer URL`);
       const oidcConfig = await fetchOidcConfiguration(provider.issuerUrl);
+      // F856: discovery may omit authorization_endpoint (the callback needs only
+      // token_endpoint); without this the browser was sent to "undefined?…".
+      if (!oidcConfig.authorization_endpoint) {
+        throw new HttpError(502, 'oidc_discovery_invalid', `OIDC discovery document for provider "${slug}" has no authorization_endpoint`);
+      }
       const params = new URLSearchParams({
         response_type: 'code',
         client_id: provider.clientId,

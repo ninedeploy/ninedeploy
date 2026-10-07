@@ -1,4 +1,19 @@
 ﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fileURLToPath } from 'node:url';
+import { eq } from 'drizzle-orm';
+import { migrate } from 'drizzle-orm/libsql/migrator';
+import {
+  createDb,
+  databaseAttachments,
+  databases as databasesTable,
+  projects as projectsTable,
+  services as servicesTable,
+  serviceWorkspaces,
+  users as usersTable,
+  workspaceMembers,
+  workspaces as workspacesTable,
+  type DB,
+} from '@ninedeploy/db';
 import { workspaceRoutes, ensureDefaultWorkspace } from '../src/modules/workspaces.js';
 import { asUser, buildTestApp, createFakeDb } from './helpers.js';
 
@@ -1012,5 +1027,190 @@ describe('workspaces routes', () => {
       const ws = await ensureDefaultWorkspace(db, { id: 5, email: 'orphan@example.com' });
       expect(ws.name).toBe("Orphan User's Workspace");
     });
+  });
+});
+
+/**
+ * F144/F145 — a member removal (seat loss) follows the r694/r710 hand-over
+ * rule that ownershipBackfill.ts applies: an operator's resources are never
+ * handed over, and a service also tagged into a workspace where the creator
+ * still holds a seat stays theirs. Real migrated SQLite: the rule depends on
+ * the other workspaces' tags and seats, which a fake db cannot model.
+ */
+describe('member removal hand-over follows the seat rule (F144/F145)', () => {
+  const MIGRATIONS = fileURLToPath(new URL('../../../packages/db/src/migrations', import.meta.url));
+  let db: DB;
+  const user = async (email: string, op = false) =>
+    (await db.insert(usersTable).values({ email, passwordHash: 'x', isInstanceOperator: op }).returning())[0]!.id;
+  const team = async (slug: string, ownerId: number) => {
+    const [ws] = await db.insert(workspacesTable).values({ name: slug, slug, ownerId }).returning();
+    await db.insert(workspaceMembers).values({ workspaceId: ws!.id, userId: ownerId, role: 'owner' });
+    return ws!.id;
+  };
+  const seat = async (workspaceId: number, userId: number, role: 'admin' | 'member') =>
+    (await db.insert(workspaceMembers).values({ workspaceId, userId, role }).returning())[0]!.id;
+  const service = async (slug: string, ownerUserId: number, tags: number[]) => {
+    const [s] = await db.insert(servicesTable).values({ name: slug, slug, ownerUserId }).returning();
+    await db.insert(serviceWorkspaces).values(tags.map((workspaceId) => ({ serviceId: s!.id, workspaceId })));
+    return s!.id;
+  };
+  const serviceOwner = async (id: number) =>
+    (await db.select({ o: servicesTable.ownerUserId }).from(servicesTable).where(eq(servicesTable.id, id)))[0]!.o;
+
+  beforeEach(async () => {
+    db = createDb({ url: ':memory:' }).db;
+    await migrate(db, { migrationsFolder: MIGRATIONS });
+  });
+
+  it('F144: keeps a service with its creator while they still hold a seat in another workspace it lives in', async () => {
+    const ownerA = await user('owner-a@example.com');
+    const ownerB = await user('owner-b@example.com');
+    const ownerC = await user('owner-c@example.com');
+    const creator = await user('creator@example.com');
+    const wsA = await team('ws-a', ownerA);
+    const wsB = await team('ws-b', ownerB);
+    const wsC = await team('ws-c', ownerC);
+    const seatA = await seat(wsA, creator, 'member');
+    await seat(wsB, creator, 'member');
+    const shared = await service('shared', creator, [wsA, wsB]);
+    const aOnly = await service('a-only', creator, [wsA]);
+    const aAndC = await service('a-and-c', creator, [wsA, wsC]);
+    const app = await buildTestApp({ db });
+    await app.register(workspaceRoutes, { prefix: '/workspaces' });
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/workspaces/${wsA}/members/${seatA}`,
+      headers: asUser({ id: ownerA, isOperator: false }),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(await serviceOwner(shared)).toBe(creator);
+    expect(await serviceOwner(aOnly)).toBe(ownerA);
+    expect(await serviceOwner(aAndC)).toBe(ownerA);
+  });
+
+  it("F145: never hands an instance operator's services or databases to the workspace owner", async () => {
+    const ownerA = await user('owner-a@example.com');
+    const operator = await user('op@example.com', true);
+    const member = await user('member@example.com');
+    const wsA = await team('ws-a', ownerA);
+    const opSeat = await seat(wsA, operator, 'admin');
+    const memberSeat = await seat(wsA, member, 'member');
+    const [proj] = await db.insert(projectsTable).values({ name: 'p', slug: 'p', workspaceId: wsA }).returning();
+    const opSvc = await service('op-svc', operator, [wsA]);
+    const memberSvc = await service('member-svc', member, [wsA]);
+    const [opDb] = await db
+      .insert(databasesTable)
+      .values({
+        name: 'op-db',
+        slug: 'op-db',
+        engine: 'postgres',
+        version: '16',
+        containerName: 'nd-db-op-db',
+        volumeName: 'nd-db-op-db-data',
+        internalHost: 'h',
+        internalPort: 5432,
+        username: 'u',
+        passwordEncrypted: 'x',
+        dbName: 'd',
+        ownerUserId: operator,
+        projectId: proj!.id,
+      })
+      .returning();
+    const app = await buildTestApp({ db });
+    await app.register(workspaceRoutes, { prefix: '/workspaces' });
+    const headers = asUser({ id: ownerA, isOperator: false });
+
+    expect((await app.inject({ method: 'DELETE', url: `/workspaces/${wsA}/members/${opSeat}`, headers })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'DELETE', url: `/workspaces/${wsA}/members/${memberSeat}`, headers })).statusCode).toBe(200);
+    expect(await serviceOwner(opSvc)).toBe(operator);
+    const dbOwner = await db.select({ o: databasesTable.ownerUserId }).from(databasesTable).where(eq(databasesTable.id, opDb!.id));
+    expect(dbOwner[0]!.o).toBe(operator);
+    expect(await serviceOwner(memberSvc)).toBe(ownerA);
+  });
+
+  it("F147: moves a template service's unfiled managed database with the service", async () => {
+    // reconcileTemplateDependencies refuses an attached template database
+    // whose owner differs from the service's ("belongs to another resource"),
+    // so a service handed over without its unfiled database failed every
+    // later deploy.
+    const ownerA = await user('owner-a@example.com');
+    const creator = await user('creator@example.com');
+    const wsA = await team('ws-a', ownerA);
+    const seatA = await seat(wsA, creator, 'member');
+    const attachedDb = async (slug: string, serviceId: number) => {
+      const [row] = await db
+        .insert(databasesTable)
+        .values({
+          name: slug,
+          slug,
+          engine: 'postgres',
+          version: '16',
+          containerName: `nd-db-${slug}`,
+          volumeName: `nd-db-${slug}-data`,
+          internalHost: 'h',
+          internalPort: 5432,
+          username: 'u',
+          passwordEncrypted: 'x',
+          dbName: 'd',
+          ownerUserId: creator,
+          projectId: null,
+        })
+        .returning();
+      await db.insert(databaseAttachments).values({ serviceId, databaseId: row!.id, envAlias: 'DATABASE_URL' });
+      return row!.id;
+    };
+    const tplSvc = await service('tpl-app', creator, [wsA]);
+    await db.update(servicesTable).set({ templateId: 'tpl-pg' }).where(eq(servicesTable.id, tplSvc));
+    const tplDb = await attachedDb('tpl-app-db', tplSvc);
+    const plainSvc = await service('plain-app', creator, [wsA]);
+    const plainDb = await attachedDb('plain-app-db', plainSvc);
+    const app = await buildTestApp({ db });
+    await app.register(workspaceRoutes, { prefix: '/workspaces' });
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/workspaces/${wsA}/members/${seatA}`,
+      headers: asUser({ id: ownerA, isOperator: false }),
+    });
+    expect(res.statusCode).toBe(200);
+    const dbOwner = async (id: number) =>
+      (await db.select({ o: databasesTable.ownerUserId }).from(databasesTable).where(eq(databasesTable.id, id)))[0]!.o;
+    expect(await serviceOwner(tplSvc)).toBe(ownerA);
+    expect(await dbOwner(tplDb)).toBe(ownerA);
+    // A non-template service's unfiled database stays personal (r694).
+    expect(await dbOwner(plainDb)).toBe(creator);
+  });
+
+  it("F952: a deactivated user's other seats keep nothing — the shared team service goes to the workspace owner", async () => {
+    // SCIM PATCH active=false deactivates instance-wide but keeps every seat
+    // (scim.ts deactivateUser, leaveWorkspace:false). A later API removal of
+    // the team seat used to leave a service shared with the dead account's
+    // personal workspace on that account, so the team project's shared env
+    // stopped being injected (filterTrustworthyProjectLinks needs a seat).
+    const ownerA = await user('owner-a@example.com');
+    const ownerB = await user('owner-b@example.com');
+    const dead = await user('dead@example.com');
+    const active = await user('active@example.com');
+    const wsA = await team('ws-a', ownerA);
+    const wsB = await team('ws-b', ownerB);
+    const personal = await team('dead-personal', dead);
+    const deadSeat = await seat(wsA, dead, 'member');
+    const activeSeat = await seat(wsA, active, 'member');
+    await seat(wsB, active, 'member');
+    await db.update(usersTable).set({ deactivatedAt: new Date(0), deactivatedByWorkspaceId: wsA }).where(eq(usersTable.id, dead));
+    const deadShared = await service('dead-shared', dead, [wsA, personal]);
+    const deadPersonal = await service('dead-personal-only', dead, [personal]);
+    const activeShared = await service('active-shared', active, [wsA, wsB]);
+    const app = await buildTestApp({ db });
+    await app.register(workspaceRoutes, { prefix: '/workspaces' });
+    const headers = asUser({ id: ownerA, isOperator: false });
+
+    expect((await app.inject({ method: 'DELETE', url: `/workspaces/${wsA}/members/${deadSeat}`, headers })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'DELETE', url: `/workspaces/${wsA}/members/${activeSeat}`, headers })).statusCode).toBe(200);
+    expect(await serviceOwner(deadShared)).toBe(ownerA);
+    // Untouched: a service that never lived in the team, and F144 for an active user.
+    expect(await serviceOwner(deadPersonal)).toBe(dead);
+    expect(await serviceOwner(activeShared)).toBe(active);
   });
 });
