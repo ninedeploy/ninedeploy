@@ -71,17 +71,30 @@ function cloneFailure(err: unknown, repoUrl: string, branch: string, creds: Clon
       text,
     )
   ) {
+    // F1009: a fixed reason class (never git's own text) so the user can tell
+    // "the credential was refused" from "the repository is invisible to it".
+    const reason = /returned error: 403\b/i.test(text)
+      ? 'HTTP 403 (permission denied)'
+      : /Authentication failed|could not read (Username|Password)|terminal prompts disabled|Invalid username or (password|token)|HTTP Basic: Access denied|returned error: 401\b|Permission denied \(publickey/i.test(text)
+        ? 'authentication failed'
+        : 'repository not found or no access';
     if (!creds?.token && !creds?.deployKey) {
       return badRequest(
-        `Could not clone ${url}: the repository was not found, or it is private — select a Git credential that has access to it.`,
+        `Could not clone ${url} (reason: ${reason}): the repository was not found, or it is private — select a Git credential that has access to it.`,
         'repo_unreachable',
       );
     }
-    const github = !!creds.token && (creds.type === 'github' || /^https?:\/\/(www\.)?github\.com\//i.test(url));
+    const detail =
+      reason === 'authentication failed'
+        ? 'the Git host refused the selected credential (an expired, revoked or mistyped token, or a deploy key it does not accept).'
+        : reason === 'HTTP 403 (permission denied)'
+          ? 'the selected credential was accepted but denied access to this repository.'
+          : 'the repository was not found or the selected credential has no access to it.';
+    const github = !!creds.token && reason !== 'authentication failed' && (creds.type === 'github' || /^https?:\/\/(www\.)?github\.com\//i.test(url));
     return badRequest(
-      `Could not clone ${url}: the repository was not found or the selected credential has no access to it.${
+      `Could not clone ${url} (reason: ${reason}): ${detail}${
         github
-          ? " For a fine-grained GitHub token, add this repository to the token's repository access (organization repositories may also need the token approved or SSO-authorized)."
+          ? " For a fine-grained GitHub token, add this repository to the token's repository access; fine-grained tokens also need Contents: Read-only (organization repositories may also need the token approved or SSO-authorized). A classic token needs the repo scope."
           : ''
       }`,
       'repo_unreachable',
@@ -89,7 +102,10 @@ function cloneFailure(err: unknown, repoUrl: string, branch: string, creds: Clon
   }
   // Not a bare "unable to access": git also says that for an HTTP 5xx, where the host WAS reached.
   if (/Could not resolve host|Failed to connect|Could not connect to server|Connection (timed out|refused|reset)|SSL certificate problem|certificate verif|\bSSL\b.*(connect|handshake)|schannel|Host key verification failed|Could not resolve hostname|Network is unreachable/i.test(text)) {
-    return badRequest(`Could not clone ${url}: the Git host could not be reached from the panel (DNS, network or TLS failure).`, 'repo_unreachable');
+    const reason = /SSL certificate problem|certificate verif|\bSSL\b.*(connect|handshake)|schannel|Host key verification failed/i.test(text)
+      ? 'TLS or host-key verification failed'
+      : 'could not resolve/connect';
+    return badRequest(`Could not clone ${url} (reason: ${reason}): the Git host could not be reached from the panel (DNS, network or TLS failure).`, 'repo_unreachable');
   }
   return null;
 }

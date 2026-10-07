@@ -200,6 +200,40 @@ describe('Sources', () => {
       expect(api.sources.create).toHaveBeenCalledWith(expect.objectContaining({ type: 'registry', registryUsername: 'ci-bot', token: 'regpass' })));
   });
 
+  // F1008: the credential test shows the GitHub token kind, scopes and the
+  // warnings that explain missing private repositories.
+  it('tests a token and shows its scopes and warnings; failures show the status', async () => {
+    const test = vi.fn();
+    (api.sources as unknown as { test: typeof test }).test = test;
+    test.mockResolvedValueOnce({
+      ok: true,
+      provider: 'github',
+      login: 'octocat',
+      name: 'The Octocat',
+      tokenKind: 'classic',
+      scopes: ['public_repo', 'read:org'],
+      warnings: ['This classic token lacks the `repo` scope — private repositories are not listed and cannot be cloned.'],
+    });
+    mockOf(api.sources.list).mockResolvedValue(sources as never);
+    renderWithProviders(<Sources />);
+    await screen.findByText('github-personal');
+    // Only the token-bearing GitHub source can be tested (source 2 has a key only).
+    const buttons = screen.getAllByRole('button', { name: /Test token/ });
+    expect(buttons).toHaveLength(1);
+    await userEvent.click(buttons[0]!);
+    await waitFor(() => expect(test).toHaveBeenCalledWith(1));
+    const result = await screen.findByTestId('source-test-result');
+    expect(result).toHaveTextContent('Authenticates as octocat (The Octocat)');
+    expect(result).toHaveTextContent('Token type: classic');
+    expect(result).toHaveTextContent('Scopes: public_repo, read:org');
+    expect(result).toHaveTextContent('lacks the `repo` scope');
+
+    test.mockResolvedValueOnce({ ok: false, provider: 'github', status: 401, error: 'Bad credentials' });
+    await userEvent.click(screen.getByRole('button', { name: /Test token/ }));
+    await waitFor(() => expect(screen.getByTestId('source-test-result')).toHaveTextContent('Check failed (HTTP 401): Bad credentials'));
+    expect(screen.getByTestId('source-test-result')).not.toHaveTextContent('Scopes');
+  });
+
   it('r473: a member gets the operators-only one-liner and no listing call', async () => {
     authState.user = { id: 7, isOperator: false };
     renderWithProviders(<Sources />);

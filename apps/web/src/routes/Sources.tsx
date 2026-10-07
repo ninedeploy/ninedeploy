@@ -8,7 +8,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
-import { Check, Copy, ExternalLink, KeyRound, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { AlertTriangle, Check, Copy, ExternalLink, KeyRound, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
 import { copyText } from '../lib/format.js';
@@ -30,6 +30,14 @@ const DEPLOY_KEY_DOCS: Record<string, { label: string; url: string }> = {
 
 type AuthKind = 'token' | 'ssh';
 
+/** Providers GET /sources/:id/test can check live. */
+const TESTABLE = new Set(['github', 'gitlab', 'bitbucket']);
+/**
+ * F1008: the test result, with the GitHub token diagnostics spelled out so
+ * this page does not depend on a rebuilt SDK declaration.
+ */
+type SourceTestResult = Awaited<ReturnType<typeof api.sources.test>> & { tokenKind?: string; scopes?: string[]; warnings?: string[] };
+
 export function Sources() {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -46,6 +54,8 @@ export function Sources() {
   // generated at a time, so we keep its public key + fingerprint local.
   const [keygenFor, setKeygenFor] = useState<{ id: number; name: string; type: string } | null>(null);
   const [generated, setGenerated] = useState<{ publicKey: string; fingerprint: string } | null>(null);
+  // F1008: last credential-test result per source card.
+  const [testResults, setTestResults] = useState<Record<number, SourceTestResult>>({});
 
   const list = useQuery({
     queryKey: ['sources'],
@@ -95,6 +105,11 @@ export function Sources() {
       toast('Deploy key generated. Paste the public key into your Git host.', 'success');
     },
     onError: (err: Error) => toast(`Could not generate key: ${err.message}`, 'error'),
+  });
+  const testSource = useMutation({
+    mutationFn: (id: number): Promise<SourceTestResult> => api.sources.test(id),
+    onSuccess: (data, id) => setTestResults((prev) => ({ ...prev, [id]: data })),
+    onError: (err: Error, id) => setTestResults((prev) => ({ ...prev, [id]: { ok: false, error: err.message } })),
   });
   // Stable callback the JSX onClick can reference — keeps the keygen set-up
   // logic out of the JSX expression.
@@ -294,6 +309,17 @@ export function Sources() {
                     onClick={() => onKeygenClick(s.id, s.name, s.type)}
                     disabled={isKeygenDisabled(s.id)}
                   />
+                  {s.hasToken && TESTABLE.has(s.type) && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => testSource.mutate(s.id)}
+                      disabled={testSource.isPending && testSource.variables === s.id}
+                    >
+                      <ShieldCheck size={12} /> {testSource.isPending && testSource.variables === s.id ? 'Testing…' : 'Test token'}
+                    </Button>
+                  )}
                   {DEPLOY_KEY_DOCS[s.type]?.url && (
                     <a
                       className="inline-flex h-8 items-center gap-1 rounded-md px-3 text-xs text-slate-400 transition hover:text-indigo-300"
@@ -306,6 +332,7 @@ export function Sources() {
                   )}
                 </div>
               )}
+              {testResults[s.id] && <TestResult result={testResults[s.id]!} />}
             </Card>
           ))}
         </div>
@@ -396,6 +423,40 @@ export function Sources() {
         onConfirm={() => pendingDelete && remove.mutate(pendingDelete.id)}
         onClose={() => setPendingDelete(null)}
       />
+    </div>
+  );
+}
+
+/**
+ * F1008: what the credential test found — who the token authenticates as,
+ * a GitHub token's kind and classic scopes, and warnings that explain why
+ * private repositories may be missing from the Deploy Wizard.
+ */
+function TestResult({ result }: { result: SourceTestResult }) {
+  return (
+    <div data-testid="source-test-result" className="mt-3 space-y-1.5 border-t border-white/5 pt-3 text-[11px] leading-relaxed">
+      {result.ok ? (
+        <div className="text-emerald-300">
+          Authenticates as <span className="font-mono">{result.login}</span>
+          {result.name ? ` (${result.name})` : ''}
+        </div>
+      ) : (
+        <div className="text-rose-300">
+          Check failed{result.status ? ` (HTTP ${result.status})` : ''}: {result.error || 'unknown error'}
+        </div>
+      )}
+      {result.tokenKind && <div className="text-slate-400">Token type: {result.tokenKind}</div>}
+      {result.scopes && (
+        <div className="text-slate-400">
+          Scopes: <span className="font-mono text-slate-300">{result.scopes.length > 0 ? result.scopes.join(', ') : 'none'}</span>
+        </div>
+      )}
+      {result.warnings?.map((w) => (
+        <div key={w} className="flex gap-1.5 text-amber-300">
+          <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+          <span>{w}</span>
+        </div>
+      ))}
     </div>
   );
 }

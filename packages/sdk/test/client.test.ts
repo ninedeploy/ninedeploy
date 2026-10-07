@@ -1182,6 +1182,23 @@ describe('createClient', () => {
       await client.sources.generateDeployKey(1);
       expect(last(calls)).toMatchObject({ url: '/v1/sources/1/generate-deploy-key', init: { method: 'POST' } });
     });
+
+    it('returns the GitHub token diagnostics from sources.test (F1008)', async () => {
+      const body = {
+        ok: true,
+        provider: 'github',
+        login: 'octocat',
+        name: null,
+        tokenKind: 'classic',
+        scopes: ['public_repo'],
+        warnings: ['This classic token lacks the `repo` scope — private repositories are not listed and cannot be cloned.'],
+      };
+      const { fetchMock } = makeFetch(() => ok(body));
+      const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+      const result = await client.sources.test(1);
+      expect(result).toEqual(body);
+      expect([result.tokenKind, result.scopes, result.warnings?.length]).toEqual(['classic', ['public_repo'], 1]);
+    });
   });
 
   describe('insights', () => {

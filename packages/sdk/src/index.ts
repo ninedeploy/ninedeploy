@@ -1221,8 +1221,23 @@ export interface NineDeployClient {
     remove: (id: number) => Promise<void>;
     repos: (id: number) => Promise<Array<{ name: string; fullName: string; url: string; defaultBranch: string; isPrivate: boolean }>>;
     branches: (id: number, repo: string) => Promise<string[]>;
-    /** Live credential check — proves a stored token still authenticates. */
-    test: (id: number) => Promise<{ ok: boolean; provider?: string; login?: string; name?: string | null; status?: number; error?: string }>;
+    /**
+     * Live credential check — proves a stored token still authenticates.
+     * GitHub successes also say what the token can see (F1008): `tokenKind`,
+     * the classic token's `scopes` (from `x-oauth-scopes`) and `warnings`
+     * explaining why private repositories may be missing. Never the token.
+     */
+    test: (id: number) => Promise<{
+      ok: boolean;
+      provider?: string;
+      login?: string;
+      name?: string | null;
+      status?: number;
+      error?: string;
+      tokenKind?: 'classic' | 'fine-grained' | 'oauth' | 'unknown';
+      scopes?: string[];
+      warnings?: string[];
+    }>;
     /**
      * Server-side generation of an ed25519 deploy key pair. The private key
      * is encrypted into the source row and never leaves the server; only the
@@ -2156,7 +2171,7 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       },
       repos: (id) => get<Array<{ name: string; fullName: string; url: string; defaultBranch: string; isPrivate: boolean }>>(`/v1/sources/${id}/repos`),
       branches: (id, repo) => get<string[]>(`/v1/sources/${id}/branches?repo=${encodeURIComponent(repo)}`),
-      test: (id) => get<{ ok: boolean; provider?: string; login?: string; name?: string | null; status?: number; error?: string }>(`/v1/sources/${id}/test`),
+      test: (id) => get<Awaited<ReturnType<NineDeployClient['sources']['test']>>>(`/v1/sources/${id}/test`),
       generateDeployKey: (id) => send<{ publicKey: string; fingerprint: string }>('POST', `/v1/sources/${id}/generate-deploy-key`),
     },
     insights: {

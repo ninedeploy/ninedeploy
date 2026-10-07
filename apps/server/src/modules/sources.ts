@@ -70,6 +70,47 @@ function linkHasNext(res: Response): boolean {
   return /<[^>]*>\s*;[^,]*\brel="?next"?/i.test(headerOf(res, 'link') ?? '');
 }
 
+/**
+ * F1008: why a GitHub token cannot see private repositories, from its prefix
+ * and the scopes GitHub reports in `x-oauth-scopes`. A classic token without
+ * `repo` lists and clones public repositories only; a fine-grained token sees
+ * only its selected repositories. Only the token's kind is returned — never
+ * the token. Scopes are read for scope-based tokens (classic, OAuth); a
+ * fine-grained token has permissions instead, so its header is ignored.
+ */
+type GithubTokenKind = 'classic' | 'fine-grained' | 'oauth' | 'unknown';
+
+function githubTokenDiagnostics(token: string, res: Response): { tokenKind: GithubTokenKind; scopes?: string[]; warnings: string[] } {
+  const t = token.trim();
+  const header = headerOf(res, 'x-oauth-scopes');
+  const tokenKind: GithubTokenKind = t.startsWith('github_pat_')
+    ? 'fine-grained'
+    : t.startsWith('ghp_')
+      ? 'classic'
+      : t.startsWith('gho_') || t.startsWith('ghu_')
+        ? 'oauth'
+        : header !== null
+          ? 'classic' // un-prefixed legacy personal access token
+          : 'unknown';
+  if (tokenKind === 'fine-grained') {
+    return {
+      tokenKind,
+      warnings: [
+        "Fine-grained token: private repositories appear only if selected under Repository access, and cloning needs Contents: Read-only; organization repositories also need the organization's approval (and SSO authorization).",
+      ],
+    };
+  }
+  if (header === null || tokenKind === 'unknown') return { tokenKind, warnings: [] };
+  const scopes = header
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  const warnings = scopes.includes('repo')
+    ? []
+    : [`This ${tokenKind === 'oauth' ? 'OAuth' : 'classic'} token lacks the \`repo\` scope — private repositories are not listed and cannot be cloned.`];
+  return { tokenKind, scopes, warnings };
+}
+
 async function listRepoPages(
   label: string,
   pageUrl: (page: number) => string,
@@ -173,6 +214,8 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
     // F1007: page 1 keeps the exact URL it always used; later pages add `&page=N`.
     const paged = (base: string) => (page: number) => (page === 1 ? base : `${base}&page=${page}`);
     let listed: { rows: RepoRow[]; diag?: string } | null = null;
+    // F1008: a classic token without `repo` lists public repositories only.
+    let scopeDiag: string | undefined;
     if (src.type === 'github') {
       listed = await listRepoPages(
         'GitHub',
@@ -200,6 +243,10 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
             defaultBranch: r.default_branch || 'main',
             isPrivate: r.private,
           }));
+          const diagnosis = githubTokenDiagnostics(token, res);
+          if (diagnosis.scopes && !diagnosis.scopes.includes('repo')) {
+            scopeDiag = `GitHub: this ${diagnosis.tokenKind === 'oauth' ? 'OAuth' : 'classic'} token lacks the repo scope, so private repositories are not listed`;
+          }
           return { rows, hasNext: linkHasNext(res) };
         },
       );
@@ -266,7 +313,8 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
     }
 
     if (listed) {
-      if (listed.diag) reply.header('x-nd-source-error', listed.diag);
+      const diag = [listed.diag, scopeDiag].filter(Boolean).join('; ');
+      if (diag) reply.header('x-nd-source-error', diag);
       return listed.rows;
     }
 
@@ -353,7 +401,8 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
         });
         if (res.ok) {
           const data = (await res.json()) as { login: string; name?: string };
-          return { ok: true, provider: 'github', login: data.login, name: data.name ?? null };
+          // F1008: additive token diagnostics (kind, classic scopes, warnings).
+          return { ok: true, provider: 'github', login: data.login, name: data.name ?? null, ...githubTokenDiagnostics(token, res) };
         }
         const body = await res.text().catch(() => '');
         return { ok: false, provider: 'github', status: res.status, error: body.slice(0, 240) };

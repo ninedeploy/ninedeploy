@@ -480,7 +480,8 @@ describe('GET /:id/test', () => {
   it('returns ok with the GitHub login on a 200', async () => {
     const res = await runTest(() => ({ ok: true, json: async () => ({ login: 'octocat', name: 'The Octocat' }) } as Response));
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ ok: true, provider: 'github', login: 'octocat', name: 'The Octocat' });
+    // F1008 adds tokenKind/warnings (no x-oauth-scopes header here, so no scopes).
+    expect(res.json()).toEqual({ ok: true, provider: 'github', login: 'octocat', name: 'The Octocat', tokenKind: 'classic', warnings: [] });
   });
 
   it('returns the upstream status + body on a 401', async () => {
@@ -834,5 +835,62 @@ describe('repo list pagination (F1007)', () => {
     );
     expect(res.json()).toHaveLength(100);
     expect(res.headers['x-nd-source-error']).toBe('GitHub API 502 on page 2; showing the first 100 repositories');
+  });
+});
+
+// F1008: "access is granted but private repositories are missing" was
+// undiagnosable — a classic token without `repo` and a fine-grained token
+// without the repository selected look identical from the panel. The test
+// route now reports the token kind, classic scopes and a warning; the repos
+// route adds the missing-scope note to x-nd-source-error.
+describe('GitHub token diagnostics (F1008)', () => {
+  async function callWith(path: 'test' | 'repos', token: string, res: () => Response) {
+    h.guardedFetch.mockImplementation(async () => res());
+    try {
+      const app = await buildTestApp({
+        db: createFakeDb({ findFirst: { sources: sourceRow({ id: 1, type: 'github', tokenEncrypted: encrypt(token) }) } }),
+      });
+      await app.register(sourcesRoutes);
+      const reply = await app.inject({ method: 'GET', url: `/1/${path}`, headers: asUser() });
+      expect(reply.body).not.toContain(token);
+      return reply;
+    } finally {
+      h.guardedFetch.mockImplementation(async (url: string | URL, init?: RequestInit) => globalThis.fetch(url, init));
+    }
+  }
+  const user = (headers: Record<string, string>) => () => Response.json({ login: 'octocat', name: null }, { headers });
+
+  it('a classic token without the repo scope lists its scopes and warns', async () => {
+    const res = await callWith('test', 'ghp_classicTOKEN123', user({ 'x-oauth-scopes': 'public_repo, read:org' }));
+    expect(res.json()).toEqual({
+      ok: true,
+      provider: 'github',
+      login: 'octocat',
+      name: null,
+      tokenKind: 'classic',
+      scopes: ['public_repo', 'read:org'],
+      warnings: ['This classic token lacks the `repo` scope — private repositories are not listed and cannot be cloned.'],
+    });
+  });
+
+  it('a classic token with repo has no warning', async () => {
+    const res = await callWith('test', 'ghp_classicTOKEN123', user({ 'x-oauth-scopes': 'repo, workflow' }));
+    expect(res.json()).toMatchObject({ tokenKind: 'classic', scopes: ['repo', 'workflow'], warnings: [] });
+  });
+
+  it('a fine-grained token gets the repository-access warning and no scopes', async () => {
+    const res = await callWith('test', 'github_pat_11FINEgrained', user({ 'x-oauth-scopes': '' }));
+    expect(res.json()).toMatchObject({ ok: true, tokenKind: 'fine-grained' });
+    expect(res.json()).not.toHaveProperty('scopes');
+    expect(res.json().warnings[0]).toMatch(/^Fine-grained token: private repositories appear only if selected under Repository access, and cloning needs Contents: Read-only/);
+  });
+
+  it('the repos route reports a classic token without repo in x-nd-source-error', async () => {
+    const row = [{ name: 'r', full_name: 'a/r', clone_url: 'https://github.com/a/r.git', default_branch: 'main', private: false }];
+    const without = await callWith('repos', 'ghp_classicTOKEN123', () => Response.json(row, { headers: { 'x-oauth-scopes': 'public_repo' } }));
+    expect(without.json()).toHaveLength(1);
+    expect(without.headers['x-nd-source-error']).toBe('GitHub: this classic token lacks the repo scope, so private repositories are not listed');
+    const withRepo = await callWith('repos', 'ghp_classicTOKEN123', () => Response.json(row, { headers: { 'x-oauth-scopes': 'repo' } }));
+    expect(withRepo.headers['x-nd-source-error']).toBeUndefined();
   });
 });

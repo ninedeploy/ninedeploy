@@ -361,8 +361,25 @@ describe('clone failures answer a classified 400 (F1006)', () => {
     const res = await analyzeWith(notFound);
     expect(res.statusCode).toBe(400);
     expect(res.json().error.code).toBe('repo_unreachable');
-    expect(res.json().error.message).toMatch(/^Could not clone https:\/\/github\.com\/acme\/private\.git: .*no access/);
+    expect(res.json().error.message).toMatch(/^Could not clone https:\/\/github\.com\/acme\/private\.git \(reason: repository not found or no access\): .*no access/);
     expect(res.json().error.message).toMatch(/fine-grained GitHub token/);
+    // F1009: the hint names the clone permission and the classic scope too.
+    expect(res.json().error.message).toContain('fine-grained tokens also need Contents: Read-only');
+    expect(res.json().error.message).toContain('A classic token needs the repo scope.');
+  });
+
+  // F1009: a fixed reason class from git's stderr tells "credential refused"
+  // from "repository invisible to it"; git's own text is never repeated.
+  it('names a sanitized reason class: authentication failed, HTTP 403, could not resolve/connect', async () => {
+    const refused = await analyzeWith(`remote: Invalid username or token.\nfatal: Authentication failed for '${REPO}/'\n`);
+    expect(refused.json().error.message).toContain('(reason: authentication failed): the Git host refused the selected credential');
+    expect(refused.json().error.message).not.toMatch(/Invalid username|remote:|fatal:/);
+    const denied = await analyzeWith(`fatal: unable to access '${REPO}/': The requested URL returned error: 403\n`);
+    expect(denied.json().error.message).toContain('(reason: HTTP 403 (permission denied)): the selected credential was accepted but denied access');
+    expect(denied.json().error.message).toContain('Contents: Read-only');
+    const dns = await analyzeWith(`fatal: unable to access '${REPO}/': Could not resolve host: github.com\n`);
+    expect(dns.json().error.message).toContain('(reason: could not resolve/connect)');
+    for (const r of [refused, denied, dns]) expect([r.statusCode, r.json().error.code]).toEqual([400, 'repo_unreachable']);
   });
 
   it('a missing branch → 400 branch_not_found', async () => {
