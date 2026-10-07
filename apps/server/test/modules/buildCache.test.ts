@@ -1,11 +1,34 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { buildWithBuildKit } from '../../src/engine/builders/buildkit.js';
 import { InlineBuildCache } from '../../src/kernel/drivers/inlineBuildCache.js';
 import { BuildCachePlugin } from '../../src/kernel/plugins/buildCachePlugin.js';
+import { buildCacheKey } from '../../src/lib/buildCacheKey.js';
 import { buildCacheRoutes } from '../../src/modules/buildCache.js';
 import { asUser, buildTestApp, captureAudits, type createFakeDb } from '../helpers.js';
 
 /** F944: the route accepts only the full pointer digest the drivers can store (F864). */
 const DIGEST = `sha256:${'de'.repeat(32)}`;
+/** F996: the pullable image reference a CI publish may attach to `DIGEST`. */
+const REF = `registry.example.test/ninedeploy/web@${DIGEST}`;
+
+// F996: the builder half of the round-trip test runs `docker buildx` through
+// lib/exec - never for real here. Everything else in exec stays the original.
+const exec = vi.hoisted(() => ({
+  run: vi.fn(async (..._args: unknown[]): Promise<void> => {
+    throw new Error('exec.run is not expected in this test');
+  }),
+  capture: vi.fn(async (..._args: unknown[]): Promise<string> => {
+    throw new Error('exec.capture is not expected in this test');
+  }),
+}));
+vi.mock('../../src/lib/exec.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/lib/exec.js')>()),
+  run: exec.run,
+  capture: exec.capture,
+}));
+
+/** The repo's error envelope for a 400 (lib/errors.ts badRequest). */
+const refused = (message: RegExp) => ({ error: { code: expect.any(String), message: expect.stringMatching(message) } });
 
 async function newApp() {
   const a = await buildTestApp();
@@ -106,12 +129,11 @@ describe('POST /v1/build-cache/store', () => {
       method: 'POST',
       url: '/store',
       headers: asUser(),
-      payload: { digest: 'sha256:def' },
+      payload: { digest: DIGEST },
     });
-    expect(res.statusCode).toBe(200); // helper returns 200 with ok:false
-    const body = res.json() as { ok: boolean; error: string };
-    expect(body.ok).toBe(false);
-    expect(body.error).toMatch(/key/);
+    // F996: a refusal is a 400 (was 200 {ok:false}, which `curl -f` read as success).
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual(refused(/key/));
   });
 
   it('rejects a non-sha256 digest', async () => {
@@ -122,9 +144,72 @@ describe('POST /v1/build-cache/store', () => {
       headers: asUser(),
       payload: { key: 'ndbuild:abc', digest: 'md5:deadbeef' },
     });
-    const body = res.json() as { ok: boolean; error: string };
-    expect(body.ok).toBe(false);
-    expect(body.error).toMatch(/sha256/);
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual(refused(/sha256/));
+  });
+
+  it('F996: every refusal is a 400 that neither stores nor audits', async () => {
+    const { app } = await newApp();
+    const cache = new InlineBuildCache();
+    app.kernel.registry.registerBuildCache(cache);
+    const store = vi.spyOn(cache, 'store');
+    const audits = captureAudits(app.db as ReturnType<typeof createFakeDb>);
+    const cases: Array<[Record<string, unknown> | undefined, RegExp]> = [
+      [undefined, /key/],
+      [{ key: '', digest: DIGEST }, /key/],
+      [{ key: 'k', digest: 'sha256:def' }, /sha256/],
+      [{ cacheName: 'nope', key: 'k', digest: DIGEST }, /not registered/],
+      [{ key: 'k', digest: DIGEST, ref: `registry.example.test/ninedeploy/web@sha256:${'0'.repeat(64)}` }, /ref/],
+      [{ key: 'k', digest: DIGEST, ref: `${REF},type=local,src=/` }, /ref/],
+      [{ key: 'k', digest: DIGEST, ref: 'registry.example.test/ninedeploy/web:latest' }, /ref/],
+      [{ key: 'k', digest: DIGEST, ref: null }, /ref/],
+    ];
+    for (const [payload, message] of cases) {
+      const res = await app.inject({ method: 'POST', url: '/store', headers: asUser(), payload });
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual(refused(message));
+    }
+    expect(store).not.toHaveBeenCalled();
+    expect(audits).toHaveLength(0);
+    expect(await cache.lookup('k')).toBeNull();
+  });
+
+  it('F996: a published ref round-trips through the cache and the next build runs with --cache-from', async () => {
+    const { app } = await newApp();
+    const cache = new InlineBuildCache();
+    app.kernel.registry.registerBuildCache(cache);
+    const audits = captureAudits(app.db as ReturnType<typeof createFakeDb>);
+    const build = { workDir: '/work', dockerfilePath: 'Dockerfile', baseDir: '.', commitSha: 'abc1234', serviceId: 7 };
+    const key = buildCacheKey(build);
+    const res = await app.inject({ method: 'POST', url: '/store', headers: asUser(), payload: { key, digest: DIGEST, ref: REF } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ ok: true, backend: 'inline', ref: { digest: DIGEST, ref: REF } });
+    expect(audits).toEqual([expect.objectContaining({ action: 'buildcache.store', meta: expect.objectContaining({ ref: REF }) })]);
+
+    exec.run.mockResolvedValue(undefined);
+    exec.capture.mockResolvedValue(`sha256:${'9'.repeat(64)}\n`);
+    const result = await buildWithBuildKit({ ...build, target: 'ninedeploy/web:abc1234', cache, log: () => {} });
+    const args = exec.run.mock.calls[0]?.[1] as string[];
+    expect(result.cacheHit).toBe(true);
+    expect(args[args.indexOf('--cache-from') + 1]).toBe(`type=registry,ref=${REF}`);
+  });
+
+  it('F996: omitting ref keeps the stats-only entry (no ref, no --cache-from)', async () => {
+    const { app } = await newApp();
+    const cache = new InlineBuildCache();
+    app.kernel.registry.registerBuildCache(cache);
+    const build = { workDir: '/work', dockerfilePath: 'Dockerfile', baseDir: '.', commitSha: 'def5678', serviceId: 8 };
+    const key = buildCacheKey(build);
+    const res = await app.inject({ method: 'POST', url: '/store', headers: asUser(), payload: { key, digest: DIGEST } });
+    expect(res.statusCode).toBe(200);
+    expect(Object.keys((res.json() as { ref: object }).ref).sort()).toEqual(['digest', 'sizeBytes', 'storedAt']);
+    expect((await cache.lookup(key))?.ref).toBeUndefined();
+
+    exec.run.mockResolvedValue(undefined);
+    exec.capture.mockResolvedValue(`sha256:${'9'.repeat(64)}\n`);
+    const result = await buildWithBuildKit({ ...build, target: 'ninedeploy/web:def5678', cache, log: () => {} });
+    expect(result.cacheHit).toBe(false);
+    expect(exec.run.mock.calls[0]?.[1]).not.toContain('--cache-from');
   });
 
   it('F944: refuses a digest the drivers cannot use as a pointer, without touching the stored entry', async () => {
@@ -141,7 +226,8 @@ describe('POST /v1/build-cache/store', () => {
     const store = vi.spyOn(cache, 'store');
     for (const digest of ['sha256:def', `sha256:${'a'.repeat(63)}`, `sha256:${'AB'.repeat(32)}`, `${DIGEST}\n`, `registry.example.test/web@${DIGEST}`]) {
       const res = await app.inject({ method: 'POST', url: '/store', headers: asUser(), payload: { key, digest } });
-      expect(res.json()).toEqual({ ok: false, error: expect.stringMatching(/sha256/) });
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual(refused(/sha256/));
     }
     expect(store).not.toHaveBeenCalled();
     expect((await cache.lookup(key))?.digest).toBe(DIGEST);

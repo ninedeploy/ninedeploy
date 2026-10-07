@@ -1,7 +1,8 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { isContentDigest } from '../kernel/drivers/inlineBuildCache.js';
+import { isBuildCacheRef, isContentDigest } from '../kernel/drivers/inlineBuildCache.js';
 import { BuildCachePlugin } from '../kernel/plugins/buildCachePlugin.js';
 import { audit } from '../lib/audit.js';
+import { badRequest } from '../lib/errors.js';
 
 /**
  * Build Cache HTTP surface — Sprint 3, Gap G-01 (PR-A).
@@ -67,35 +68,54 @@ export const buildCacheRoutes: FastifyPluginAsync = async (app) => {
    *
    * Operator-gated: any authenticated member writing shared keys would
    * poison digests that other services' builds chain from.
+   *
+   * F996: the optional `ref` is the pullable `<repo>@sha256:<64 hex>` image the
+   * digest belongs to. Only an entry carrying one yields `--cache-from` on the
+   * next build (F864); without it the publish counts for stats only. Every
+   * refusal is a 400 `{ error }` and writes nothing (was 200 `{ ok: false }`).
    */
-  app.post<{ Body: { cacheName?: string; key: string; digest: string; sizeBytes?: number } }>(
+  app.post<{ Body: { cacheName?: string; key: string; digest: string; ref?: string; sizeBytes?: number } }>(
     '/store',
     { preHandler: app.requireOperator },
     async (req) => {
-      const { cacheName, key, digest, sizeBytes } = req.body ?? ({} as Record<string, unknown>);
+      const { cacheName, key, digest, ref, sizeBytes } = req.body ?? ({} as Record<string, unknown>);
       if (typeof key !== 'string' || key.length === 0) {
-        return { ok: false, error: '`key` is required' };
+        throw badRequest('`key` is required', 'invalid_key');
       }
       // F944: the drivers take only a full `sha256:<64 lowercase hex>` as a marker
       // pointer (F864); a mere `sha256:` prefix was stored as a placeholder hash
       // (inline/registry) or a marker every lookup misses (S3), reported `ok: true`.
       if (!isContentDigest(digest)) {
-        return { ok: false, error: '`digest` must be a sha256:<64 lowercase hex> content digest' };
+        throw badRequest('`digest` must be a sha256:<64 lowercase hex> content digest', 'invalid_digest');
+      }
+      // F996: same rule as the drivers' markerPointer, but refused instead of
+      // silently dropped, so the caller learns the entry would not chain.
+      if (ref !== undefined && !(isBuildCacheRef(ref) && ref.endsWith(`@${digest}`))) {
+        throw badRequest('`ref` must be a <repo>@sha256:<64 hex> image reference naming `digest`', 'invalid_ref');
       }
       const targetName = cacheName ?? 'inline';
       const cache = app.kernel.registry.getBuildCache(targetName);
       if (!cache) {
-        return { ok: false, error: `Build cache "${targetName}" is not registered` };
+        throw badRequest(`Build cache "${targetName}" is not registered`, 'unknown_build_cache');
       }
-      const blob = Buffer.from(JSON.stringify({ digest, ts: Date.now() }));
-      const ref = await cache.store(key, blob);
+      const marker = ref === undefined ? { digest, ts: Date.now() } : { digest, ref, ts: Date.now() };
+      const stored = await cache.store(key, Buffer.from(JSON.stringify(marker)));
       // r286: a digest written here is what every later build chaining on
       // `key` trusts — record who published it.
-      void audit(app.db, req.user!.id, 'buildcache.store', key, { backend: cache.name, digest: ref.digest });
+      void audit(app.db, req.user!.id, 'buildcache.store', key, {
+        backend: cache.name,
+        digest: stored.digest,
+        ...(stored.ref ? { ref: stored.ref } : {}),
+      });
       return {
         ok: true,
         backend: cache.name,
-        ref: { digest: ref.digest, sizeBytes: sizeBytes ?? ref.sizeBytes, storedAt: ref.storedAt },
+        ref: {
+          digest: stored.digest,
+          sizeBytes: sizeBytes ?? stored.sizeBytes,
+          storedAt: stored.storedAt,
+          ...(stored.ref ? { ref: stored.ref } : {}),
+        },
       };
     },
   );
