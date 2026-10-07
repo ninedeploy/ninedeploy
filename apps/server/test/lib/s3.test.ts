@@ -1,4 +1,4 @@
-﻿import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+﻿import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -310,6 +310,30 @@ describe('s3PutFile / s3GetToFile (streamed transfers)', () => {
     } as unknown as Response);
     vi.stubGlobal('fetch', fetchMock);
     await expect(s3GetToFile(CFG, 'k', path.join(tmpdir(), `s3-stall-${Date.now()}`), 60)).rejects.toThrow();
+  });
+
+  it('F848: a stream that fails mid-body leaves no partial file; a 404 keeps an existing one', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('partial'));
+          controller.error(new Error('terminated'));
+        },
+      }),
+    } as unknown as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    const target = path.join(tmpdir(), `s3-partial-${Date.now()}`);
+    writeFileSync(target, 'stale');
+    await expect(s3GetToFile(CFG, 'k', target)).rejects.toThrow('terminated');
+    expect(existsSync(target)).toBe(false);
+
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 404 } as unknown as Response);
+    writeFileSync(target, 'precious');
+    await expect(s3GetToFile(CFG, 'k', target)).rejects.toThrow('S3 download failed (404)');
+    expect(readFileSync(target, 'utf8')).toBe('precious');
+    rmSync(target, { force: true });
   });
 
   it('s3GetToFile throws on failure and handles an empty body', async () => {

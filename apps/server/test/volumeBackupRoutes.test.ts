@@ -57,6 +57,22 @@ vi.mock('../src/lib/inventory.js', async () => {
   return { ...actual, ...inventoryMocks };
 });
 
+// F183: the restore guard probes `docker ps` directly (fail closed) instead of
+// inventory.containerRunning. This fake answers that probe from the same
+// `inventoryMocks.containerRunning` table the cases below declare; set
+// `dockerPs.fail` to make the probe itself fail.
+const dockerPs = vi.hoisted(() => ({ fail: false }));
+vi.mock('../src/lib/exec.js', () => ({
+  capture: vi.fn(async (_cmd: string, args: string[]) => {
+    const m = args[0] === 'ps' ? /^name=\^(.*)\$$/.exec(args[2] ?? '') : null;
+    if (!m) return '';
+    if (dockerPs.fail) throw new Error('error during connect: EOF');
+    return (await inventoryMocks.containerRunning(m[1])) ? 'f00dcafe' : '';
+  }),
+  run: vi.fn(async () => undefined),
+  sleep: vi.fn(async () => undefined),
+}));
+
 vi.mock('../src/lib/serviceAccess.js', async () => {
   const actual = await vi.importActual<typeof import('../src/lib/serviceAccess.js')>('../src/lib/serviceAccess.js');
   return { ...actual, loadServiceForUser: vi.fn(async () => svcRow({ id: 1 })) };
@@ -205,6 +221,31 @@ describe('volume backup routes', () => {
     expect(existsSync(written)).toBe(true);
   });
 
+  // F180: uploadBackup throws when the destination secret cannot be decrypted
+  // ("Unknown master key version N"). That throw used to land in the snapshot
+  // catch, flipping the completed row to `failed` and unlinking the finished
+  // snapshot — a good recovery point destroyed and reported as a failure.
+  it('F180: an upload failure keeps the completed snapshot and its file', async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    let written = '';
+    engineMocks.backupVolume.mockImplementationOnce(async (_name: string, file: string) => {
+      written = file;
+      writeFileSync(file, 'snapshot');
+    });
+    remoteMocks.uploadBackup.mockRejectedValueOnce(new Error('Unknown master key version 99'));
+    const app = await appWith({
+      insert: { backups: [backupRow({ id: 26, status: 'running' })] },
+      findFirst: { backups: backupRow({ id: 26 }) },
+      update: { backups: (v: Record<string, unknown>) => { updates.push(v); return [backupRow()]; } },
+      select: { backups: [] },
+    });
+    const res = await app.inject({ method: 'POST', url: `/volumes/${VOLUME}/backups`, headers: asUser(), payload: {} });
+    expect(res.statusCode).toBe(200);
+    expect(updates).toEqual([expect.objectContaining({ status: 'completed' })]);
+    expect(existsSync(written)).toBe(true);
+    expect(auditMocks.audit).toHaveBeenCalledWith(expect.anything(), 1, 'volume.backup.create', expect.stringContaining(VOLUME));
+  });
+
   it('404s when the volume disappears between the check and the snapshot', async () => {
     engineMocks.volumeExists.mockResolvedValue(false);
     const app = await appWith({});
@@ -311,6 +352,38 @@ describe('volume backup routes', () => {
     });
     const res = await app.inject({ method: 'POST', url: `/volumes/${VOLUME}/backups/10/restore`, headers: asUser() });
     expect(res.statusCode).toBe(409);
+    expect(engineMocks.restoreVolume).not.toHaveBeenCalled();
+  });
+
+  // F182: replicas (`<runtimeId>-r2..-rN`) mount the volume too. Only the
+  // primary container used to be probed, so with the primary exited and the
+  // replicas still serving, the restore swapped files under live processes.
+  // F183: inventory.containerRunning maps a failed `docker ps` to "not
+  // running", so a probe failure let the restore swap files under a live
+  // service. The guard now fails closed.
+  it('F183: refuses to restore when the running-container probe fails', async () => {
+    dockerPs.fail = true;
+    try {
+      const app = await appWith({
+        findFirst: { backups: backupRow(), services: svcRow({ id: 1, name: 'web', runtimeId: 'c1' }) },
+      });
+      const res = await app.inject({ method: 'POST', url: `/volumes/${VOLUME}/backups/10/restore`, headers: asUser() });
+      expect(res.statusCode).toBe(503);
+      expect(res.json().error.code).toBe('runtime_daemon_unavailable');
+      expect(engineMocks.restoreVolume).not.toHaveBeenCalled();
+    } finally {
+      dockerPs.fail = false;
+    }
+  });
+
+  it('F182: refuses to restore while a replica runs and the primary is down', async () => {
+    inventoryMocks.containerRunning.mockImplementation(async (name: string | null | undefined) => name === 'c1-r2');
+    const app = await appWith({
+      findFirst: { backups: backupRow(), services: svcRow({ id: 1, name: 'web', runtimeId: 'c1', replicas: 2 }) },
+    });
+    const res = await app.inject({ method: 'POST', url: `/volumes/${VOLUME}/backups/10/restore`, headers: asUser() });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.message).toMatch(/stop the service before restoring/);
     expect(engineMocks.restoreVolume).not.toHaveBeenCalled();
   });
 

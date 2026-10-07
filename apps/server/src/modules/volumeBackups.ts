@@ -9,9 +9,11 @@ import { audit } from '../lib/audit.js';
 import { config } from '../config.js';
 import { backupVolume, createBackupReadStream, restoreVolume, volumeExists } from '../engine/database.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
-import { badRequest, conflict, notFound, parseId as num } from '../lib/errors.js';
-import { containerRunning, listManagedVolumeNames, resolveVolumeOwnerWithSharing } from '../lib/inventory.js';
-import { uploadBackup, fetchRemoteBackup, deleteRemoteBackup } from '../lib/backupRemote.js';
+import { badRequest, conflict, HttpError, notFound, parseId as num } from '../lib/errors.js';
+import { capture } from '../lib/exec.js';
+import { listManagedVolumeNames, resolveVolumeOwnerWithSharing } from '../lib/inventory.js';
+import { uploadBackup, fetchRemoteBackup, deleteRemoteBackupForRetention } from '../lib/backupRemote.js';
+import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
 import { assertMayUseHostPrivilege } from '../lib/hostPrivilege.js';
 
 const VOLUMES_SUBDIR = 'volumes';
@@ -35,6 +37,26 @@ function newBackupFile(volumeName: string, label?: string): { file: string; dir:
   const safeLabel = label?.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 40);
   const filename = safeLabel ? `${volumeName}-${ts}-${safeLabel}.tar.gz` : `${volumeName}-${ts}.tar.gz`;
   return { file: path.join(dir, filename), dir };
+}
+
+/**
+ * F183: the pre-restore "is it running?" probe must fail CLOSED. The shared
+ * lib/inventory containerRunning() maps any docker CLI failure to "not
+ * running" — here that let a restore swap files under a live service. A
+ * failed probe refuses the restore (503) instead.
+ */
+async function runningForRestore(container: string): Promise<boolean> {
+  let out: string;
+  try {
+    out = await capture('docker', ['ps', '--filter', `name=^${container}$`, '-q']);
+  } catch (err) {
+    throw new HttpError(
+      503,
+      'runtime_daemon_unavailable',
+      `Could not verify that ${container} is stopped (${err instanceof Error ? err.message : String(err)}) — restore refused`,
+    );
+  }
+  return out.trim().length > 0;
 }
 
 /** Build the wire representation of a volume backup row. */
@@ -162,7 +184,12 @@ export const volumeBackupRoutes: FastifyPluginAsync = async (app) => {
       // Remote push (best-effort) — the local copy is the source of truth.
       // Phase 2 will switch to a "user-configured destination" lookup but
       // for now we share the active destination with DB backups.
-      await uploadBackup(app.db, row!.id, file, log);
+      // F180: uploadBackup can throw (an undecryptable destination secret);
+      // that must not reach the catch below, which would flip this completed
+      // row to `failed` and unlink the finished snapshot.
+      await uploadBackup(app.db, row!.id, file, log).catch((err: unknown) => {
+        log(`warning: remote upload failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
       // Prune older backups so the directory never grows unbounded.
       await pruneOldBackups(app.db, name, log).catch((err: unknown) => {
         log(`warning: backup retention failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -198,13 +225,18 @@ export const volumeBackupRoutes: FastifyPluginAsync = async (app) => {
 
     // Refuse if the owning database, the owning service or any service
     // attaching the volume is currently running.
-    if (databaseContainer && (await containerRunning(databaseContainer))) {
+    if (databaseContainer && (await runningForRestore(databaseContainer))) {
       throw conflict('The database is running — stop it before restoring its volume');
     }
     for (const sid of serviceIds) {
       const svc = await app.db.query.services.findFirst({ where: eq(services.id, sid) });
-      if (svc && (await containerRunning(svc.runtimeId))) {
-        throw conflict(`Service "${svc.name}" is running — stop the service before restoring`);
+      if (!svc?.runtimeId) continue;
+      // F182: replicas (`<runtimeId>-r2..-rN`) mount the volume too — a
+      // running replica blocks the restore even when the primary is down.
+      for (const container of replicaNames(svc.runtimeId, MAX_REPLICAS)) {
+        if (await runningForRestore(container)) {
+          throw conflict(`Service "${svc.name}" is running — stop the service before restoring`);
+        }
       }
     }
 
@@ -279,15 +311,26 @@ export async function pruneOldBackups(
     ...rows.filter((row) => row.status === 'completed').slice(keep),
     ...rows.filter((row) => row.status === 'failed').slice(keep),
   ];
-  const kept = rows.length - toDelete.length;
-  if (toDelete.length === 0) return { deleted: 0, kept };
+  if (toDelete.length === 0) return { deleted: 0, kept: rows.length };
+  let deleted = 0;
   for (const row of toDelete) {
     try { unlinkSync(row.path); } catch { /* file may already be gone */ }
-    if (row.remoteKey) await deleteRemoteBackup(db, row).catch(() => undefined);
+    // F181: the row is the only pointer to its remote object — drop it only
+    // once the recorded destination confirmed the delete (r542 contract);
+    // a failure or an unknown destination keeps it for the next sweep.
+    if (row.remoteKey) {
+      const outcome = await deleteRemoteBackupForRetention(db, row).catch((err: unknown) => {
+        log(`warning: remote retention delete failed for ${row.remoteKey}: ${err instanceof Error ? err.message : String(err)}`);
+        return 'failed' as const;
+      });
+      if (outcome !== 'deleted') continue;
+    }
     await db.delete(backups).where(eq(backups.id, row.id));
+    deleted++;
   }
-  log(`Pruned ${toDelete.length} old backup(s) for ${volumeName} (kept ${kept})`);
-  return { deleted: toDelete.length, kept };
+  const kept = rows.length - deleted;
+  log(`Pruned ${deleted} old backup(s) for ${volumeName} (kept ${kept})`);
+  return { deleted, kept };
 }
 
 /**

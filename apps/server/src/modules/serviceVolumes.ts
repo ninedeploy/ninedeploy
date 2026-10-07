@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { serviceVolumeAttachments, type services } from '@ninedeploy/db';
+import { serviceVolumeAttachments, services } from '@ninedeploy/db';
 import {
   createServiceVolumeAttachment,
   updateServiceVolumeAttachment,
@@ -16,10 +16,12 @@ import {
   assertDatabaseRole,
   assertServiceRole,
   loadDatabaseForUser,
+  roleAtLeast,
+  serviceRole,
   visibleServiceIdSet,
   type AuthedUser,
 } from '../lib/resourceAccess.js';
-import { badRequest, conflict, forbidden, notFound, parseId as num } from '../lib/errors.js';
+import { badRequest, conflict, forbidden, isUniqueViolation, notFound, parseId as num } from '../lib/errors.js';
 import { containerRunning, listManagedVolumeNames, HELPER_IMAGE } from '../lib/inventory.js';
 import type { DB } from '@ninedeploy/db';
 
@@ -56,6 +58,17 @@ function volumeSize(name: string): Promise<number> {
   volumeSizeCache.set(name, { at: now, size });
   return size;
 }
+
+/**
+ * F551: a unique-index violation on `column`. drizzle-orm wraps the driver
+ * error (`message` = "Failed query: <sql>
+params: …", SQLite text on
+ * `cause`), so the message alone never matched and duplicates answered 500.
+ * `.` stops at the newline, so a user value in the params line cannot pair
+ * with a column name in the SQL line. Raw string throws are still accepted.
+ */
+const uniqueOn = (err: unknown, column: string): boolean =>
+  isUniqueViolation(err instanceof Error ? err : new Error(String(err)), new RegExp(`UNIQUE.*${column}|${column}.*UNIQUE`, 'i'));
 
 interface InventoryEntry {
   id: number;
@@ -103,7 +116,8 @@ export function resolveVolumeNameImpl(
  *
  * Rule for non-operators:
  *  • every service that already has the volume attached must be visible to
- *    the caller — sharing within the tenant set they can see stays possible;
+ *    the caller, with at least `member` on it (F549) — sharing within the
+ *    tenant set they can write to stays possible;
  *  • `nd-db-*` additionally requires `admin` on every database the name could
  *    belong to — a data volume is full data access, the same tier as
  *    credentials and backups in resourceAccess.ts. Prefix matching is
@@ -124,6 +138,21 @@ async function assertVolumeOwnership(db: DB, user: AuthedUser, volumeName: strin
   for (const row of attached) {
     if (visible !== null && !visible.has(row.serviceId)) {
       throw forbidden('This volume is attached to a service that is not visible to you');
+    }
+  }
+  // F549: visible is not enough — a `viewer` seat sees a service but may not
+  // write to it, and mounting its volume (read-write, into a container the
+  // caller runs elsewhere) is full data access. Require the write tier
+  // (`member`) on every service that already holds the volume.
+  for (const serviceId of new Set(attached.map((row) => row.serviceId))) {
+    const holder = await db.query.services.findFirst({
+      where: eq(services.id, serviceId),
+      columns: { id: true, ownerUserId: true },
+    });
+    if (!holder) continue;
+    const role = await serviceRole(db, holder, user);
+    if (role === null || !roleAtLeast(role, 'member')) {
+      throw forbidden('This volume is attached to a service on which you do not hold the "member" role');
     }
   }
 
@@ -277,6 +306,21 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
         () => true,
       );
       if (onHost) await assertVolumeOwnership(app.db, req.user!, volumeName);
+      // F550: and a name another service already has attached is never a
+      // "new" volume — for anyone, operators included (the ownership guard
+      // skips them). `shop` + `api-uploads` pre-attached spells `shop-api` +
+      // `uploads`; adopting it would mount shop-api's future data into a
+      // volume the other tenant keeps reading. Sharing on purpose is what
+      // `volumeName` is for.
+      const holders = await app.db
+        .select({ serviceId: serviceVolumeAttachments.serviceId })
+        .from(serviceVolumeAttachments)
+        .where(eq(serviceVolumeAttachments.volumeName, volumeName));
+      if (holders.some((h) => h.serviceId !== svc.id)) {
+        throw conflict(
+          `'${volumeName}' is already attached to another service — pick a different label (attach it by name to share it on purpose)`,
+        );
+      }
     }
     // For create-on-attach, the volume does not have to exist yet; we
     // provision it on the next deploy. For an existing-volume attach, the
@@ -303,11 +347,10 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
       // Unique-index violations: surface as 409 (path or volume already
       // attached) so the operator can correct the input rather than chase a
       // raw sqlite error.
-      const msg = err instanceof Error ? err.message : String(err);
-      if (/UNIQUE.*container_path/i.test(msg) || /container_path/i.test(msg) && /UNIQUE/i.test(msg)) {
+      if (uniqueOn(err, 'container_path')) {
         throw conflict(`Path '${input.containerPath}' is already mounted on this service`);
       }
-      if (/UNIQUE.*volume_name/i.test(msg) || /volume_name/i.test(msg) && /UNIQUE/i.test(msg)) {
+      if (uniqueOn(err, 'volume_name')) {
         throw conflict(`Volume '${volumeName}' is already attached to this service`);
       }
       throw err;
@@ -410,6 +453,14 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!existing) throw notFound('Volume attachment not found');
 
+    // F548: read-only → read-write is a new grant of write access to the
+    // volume. The row may be an operator's read-only share of a volume the
+    // caller could never attach themselves, so it gets the attach route's
+    // ownership decision before the flag flips.
+    if (input.readOnly === false && existing.readOnly) {
+      await assertVolumeOwnership(app.db, req.user!, existing.volumeName);
+    }
+
     // Path changes must not collide with the primary volume or another attachment.
     if (input.containerPath && input.containerPath !== existing.containerPath) {
       if (svc.volumeMount && input.containerPath === svc.volumeMount) {
@@ -430,8 +481,7 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
         .where(eq(serviceVolumeAttachments.id, attId))
         .returning();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (/UNIQUE.*container_path/i.test(msg)) {
+      if (uniqueOn(err, 'container_path')) {
         throw conflict(`Path '${input.containerPath}' is already mounted on this service`);
       }
       throw err;

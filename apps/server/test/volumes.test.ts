@@ -425,6 +425,36 @@ describe('volume routes', () => {
       expect(dbEngineMocks.removeVolume).toHaveBeenCalledWith('nd-db-old-data', expect.any(Function));
     });
 
+    it('keeps a volume a database adopted under another name (F224)', async () => {
+      // An operator-adopted retained volume (`existingVolume`) is claimed by
+      // databases.volumeName, not by the row's slug. It used to read as
+      // ownerless, so prune destroyed a stopped database's data (stopDatabase
+      // removes the container, so docker's in-use refusal cannot catch it).
+      execMocks.capture.mockImplementation((_cmd: string, args: string[]) => {
+        if (args[0] === 'volume' && args[1] === 'ls') return Promise.resolve('nd-db-oldpg-data\nnd-db-gone-data\n');
+        if (args[0] === 'ps') return Promise.resolve('');
+        return Promise.resolve('2048 /v\n');
+      });
+      dbEngineMocks.volumeExists.mockResolvedValue(false);
+      const app = await buildTestApp({
+        db: createFakeDb({
+          select: {
+            services: [],
+            databases: [dbRow({ id: 5, slug: 'orders', name: 'Orders DB', volumeName: 'nd-db-oldpg-data', containerName: 'nd-db-orders' })],
+          },
+        }),
+      });
+      await app.register(volumeRoutes);
+      const res = await app.inject({ method: 'POST', url: '/prune', headers: asUser() });
+      expect(res.json()).toMatchObject({ ok: true, deleted: 1 });
+      expect(dbEngineMocks.removeVolume.mock.calls.map((c) => c[0])).toEqual(['nd-db-gone-data']);
+      const list = await app.inject({ method: 'GET', url: '/', headers: asUser() });
+      expect(list.json().find((v: { name: string }) => v.name === 'nd-db-oldpg-data').owner).toEqual({
+        kind: 'database', id: 5, name: 'Orders DB', engine: 'postgres',
+      });
+      await app.close();
+    });
+
     it('does not count a volume that survived prune as deleted/freed', async () => {
       // An ownerless volume still mounted by an orphaned container: docker
       // volume rm fails, removeVolume swallows it, and the old code answered

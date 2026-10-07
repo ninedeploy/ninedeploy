@@ -44,6 +44,14 @@ async function volumeOwners(
   ]);
   const out = new Map<string, VolumeOwner>();
   for (const name of names) {
+    // F224: a database that adopted a retained volume (`existingVolume`) names
+    // it in `volumeName`, not via its slug — without this explicit claim the
+    // volume read as ownerless and prune destroyed a stopped database's data.
+    const claimant = dbs.find((d) => d.volumeName === name);
+    if (claimant) {
+      out.set(name, { kind: 'database', id: claimant.id, name: claimant.name, engine: claimant.engine, containerName: claimant.containerName });
+      continue;
+    }
     const owner = resolveVolumeOwner(svcs, dbs, name, atts);
     if (owner) {
       out.set(name, { kind: owner.kind, id: owner.refId, name: owner.name, engine: owner.engine, containerName: owner.containerName });
@@ -199,11 +207,12 @@ export const volumeRoutes: FastifyPluginAsync = async (app) => {
       if (owner && (await containerRunning(owner.containerName))) {
         throw conflict(`Volume is in use by ${owner.kind} "${owner.name}" — stop it before deleting the volume`);
       }
-      void audit(app.db, req.user!.id, 'volume.delete', name);
       await removeVolume(name, (line) => req.log.info(line));
       if (await volumeExists(name)) {
         throw conflict(`Volume could not be deleted — it is still mounted by a container docker did not name (docker volume rm failed silently)`);
       }
+      // F225: audit only a delete that landed (as the node path does).
+      void audit(app.db, req.user!.id, 'volume.delete', name);
       return { ok: true };
     },
   );

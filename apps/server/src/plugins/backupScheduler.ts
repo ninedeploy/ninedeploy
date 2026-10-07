@@ -114,8 +114,18 @@ export default fp(
                 sizeBytes: existsSync(file) ? statSync(file).size : 0,
               })
               .returning({ id: backups.id });
-            // Remote copy (best-effort, same as manual backups).
-            if (row) await uploadBackup(fastify.db, row.id, file, log);
+            // Remote copy (best-effort, same as manual backups). F97: the dump
+            // and its `completed` row are already committed — an upload throw
+            // must not reach the failure arm below, which would add a `failed`
+            // row owning this same file (failed-row retention then unlinks a
+            // retained recovery point) and audit a success as a failure.
+            if (row) {
+              try {
+                await uploadBackup(fastify.db, row.id, file, log);
+              } catch (err) {
+                fastify.log.warn({ err }, `scheduled backup remote upload failed for ${d.name}`);
+              }
+            }
             // Covered again — clear any outstanding missed-backup incident.
             missedNotified.delete(d.id);
             // r528: audit() is the notification fan-out — without this a
@@ -144,53 +154,60 @@ export default fp(
             }
             void audit(fastify.db, null, 'backup.schedule_failed', `${d.name}: ${err instanceof Error ? err.message : String(err)}`);
           }
-          // Prune the latest KEEP_PER_DB SCHEDULED backups for this database.
-          // Manual (user-initiated) backups are never touched by the scheduler
-          // and must be deleted explicitly from the UI.
-          const rows = await fastify.db.query.backups.findMany({
-            where: eq(backups.databaseId, d.id),
-            orderBy: desc(backups.createdAt),
-          });
-          const scheduled = rows.filter((r) => r.scope === 'scheduled');
-          // Failed attempts are diagnostics, not recovery points. Keep their
-          // own bounded history so an outage cannot evict every usable dump.
-          // Never prune an operation that is still running.
-          const staleRows = [
-            ...scheduled.filter((r) => r.status === 'completed').slice(KEEP_PER_DB),
-            ...scheduled.filter((r) => r.status === 'failed').slice(KEEP_PER_DB),
-          ];
-          for (const stale of staleRows) {
-            try {
-              if (existsSync(stale.path)) unlinkSync(stale.path);
-            } catch {
-              /* file may be unreadable — still drop the row */
-            }
-            // r542: remote-backed rows used to be skipped forever, so every
-            // scheduled dump uploaded to S3 stayed there (and in this table)
-            // for good. They now get the same keep-newest-N retention: the
-            // remote object goes first, through the destination the row
-            // records, and the row only once that delete succeeded (or the
-            // object was already gone). A failure keeps the row for the next
-            // sweep; a row whose destination is unknown is kept as before.
-            if (stale.remoteKey) {
-              if (remoteBudget <= 0) {
-                remoteDeferred++;
-                continue;
-              }
+          // F96: retention is per database too — a prune error (e.g. SQLITE_BUSY
+          // on the read or a row delete) used to escape to the tick-level
+          // catch and silently skip the backups of every later database.
+          try {
+            // Prune the latest KEEP_PER_DB SCHEDULED backups for this database.
+            // Manual (user-initiated) backups are never touched by the scheduler
+            // and must be deleted explicitly from the UI.
+            const rows = await fastify.db.query.backups.findMany({
+              where: eq(backups.databaseId, d.id),
+              orderBy: desc(backups.createdAt),
+            });
+            const scheduled = rows.filter((r) => r.scope === 'scheduled');
+            // Failed attempts are diagnostics, not recovery points. Keep their
+            // own bounded history so an outage cannot evict every usable dump.
+            // Never prune an operation that is still running.
+            const staleRows = [
+              ...scheduled.filter((r) => r.status === 'completed').slice(KEEP_PER_DB),
+              ...scheduled.filter((r) => r.status === 'failed').slice(KEEP_PER_DB),
+            ];
+            for (const stale of staleRows) {
               try {
-                const outcome = await deleteRemoteBackupForRetention(fastify.db, stale);
-                if (outcome === 'unknown-destination') continue;
-                remoteBudget--;
-              } catch (err) {
-                remoteBudget--;
-                fastify.log.warn(
-                  { err, backupId: stale.id, remoteKey: stale.remoteKey },
-                  'scheduled backup retention: remote delete failed — row kept, retried next sweep',
-                );
-                continue;
+                if (existsSync(stale.path)) unlinkSync(stale.path);
+              } catch {
+                /* file may be unreadable — still drop the row */
               }
+              // r542: remote-backed rows used to be skipped forever, so every
+              // scheduled dump uploaded to S3 stayed there (and in this table)
+              // for good. They now get the same keep-newest-N retention: the
+              // remote object goes first, through the destination the row
+              // records, and the row only once that delete succeeded (or the
+              // object was already gone). A failure keeps the row for the next
+              // sweep; a row whose destination is unknown is kept as before.
+              if (stale.remoteKey) {
+                if (remoteBudget <= 0) {
+                  remoteDeferred++;
+                  continue;
+                }
+                try {
+                  const outcome = await deleteRemoteBackupForRetention(fastify.db, stale);
+                  if (outcome === 'unknown-destination') continue;
+                  remoteBudget--;
+                } catch (err) {
+                  remoteBudget--;
+                  fastify.log.warn(
+                    { err, backupId: stale.id, remoteKey: stale.remoteKey },
+                    'scheduled backup retention: remote delete failed — row kept, retried next sweep',
+                  );
+                  continue;
+                }
+              }
+              await fastify.db.delete(backups).where(eq(backups.id, stale.id));
             }
-            await fastify.db.delete(backups).where(eq(backups.id, stale.id));
+          } catch (err) {
+            fastify.log.error({ err }, `scheduled backup retention failed for ${d.name}`);
           }
         }
         if (remoteDeferred > 0) {

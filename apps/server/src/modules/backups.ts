@@ -7,10 +7,10 @@ import { backups, databases } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import { config } from '../config.js';
 import { backupDatabase, createBackupReadStream, databaseSize, restoreDatabase } from '../engine/database.js';
-import { deleteRemoteBackup, fetchRemoteBackup, uploadBackup } from '../lib/backupRemote.js';
+import { deleteRemoteBackup, deleteRemoteBackupForRetention, fetchRemoteBackup, uploadBackup } from '../lib/backupRemote.js';
 import { listBackupDrills, runBackupDrill } from '../lib/backupDrill.js';
 import { assertDatabaseRole, type AuthedUser, loadDatabaseForUser, visibleDatabaseIds } from '../lib/resourceAccess.js';
-import { badRequest, forbidden, notFound, parseId as num } from '../lib/errors.js';
+import { badRequest, forbidden, HttpError, notFound, parseId as num } from '../lib/errors.js';
 
 function serialize(b: typeof backups.$inferSelect) {
   return {
@@ -232,8 +232,19 @@ export const backupRoutes: FastifyPluginAsync = async (app) => {
     const bid = num((req.params as { bid: string }).bid);
     const b = await app.db.query.backups.findFirst({ where: eq(backups.id, bid) });
     await assertMayManageBackup(app, b, req.user!);
+    // F844: the row is the only pointer to the off-site copy (r542 contract).
+    // Delete it remotely first, against the destination the row records, and
+    // keep the row (and the local dump) when that fails so a retry can finish.
+    // Rows with no known destination keep the previous best-effort delete.
+    if (b?.remoteKey) {
+      const outcome = await deleteRemoteBackupForRetention(app.db, b).catch((err: unknown) => {
+        // The S3 error body is logged, not returned: it can name the destination's access key.
+        req.log.warn({ err, remoteKey: b.remoteKey }, 'remote backup delete failed; backup kept');
+        throw new HttpError(502, 'remote_delete_failed', 'The off-site backup copy could not be deleted; the backup was kept. Try again later.');
+      });
+      if (outcome === 'unknown-destination') await deleteRemoteBackup(app.db, b);
+    }
     if (b && existsSync(b.path)) unlinkSync(b.path);
-    if (b) await deleteRemoteBackup(app.db, b);
     await app.db.delete(backups).where(eq(backups.id, bid));
     void audit(app.db, req.user!.id, 'backup.delete', `#${bid}`);
     return { ok: true };

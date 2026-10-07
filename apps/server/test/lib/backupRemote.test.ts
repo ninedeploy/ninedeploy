@@ -99,6 +99,22 @@ describe('uploadBackup', () => {
     await expect(uploadBackup(db, 5, file, (l) => lines.push(l))).resolves.toBeUndefined();
     expect(lines.join('\n')).toContain('network down');
   });
+
+  // F288: the destination secret used to be decrypted before the try, so a
+  // key version this process does not hold rejected to the caller — the manual
+  // backup route then flipped a finished dump to `failed`.
+  it('F288: never throws when the destination secret cannot be decrypted', async () => {
+    cryptoMocks.decrypt.mockImplementationOnce(() => {
+      throw new Error('Unknown master key version 7 — is NINEDEPLOY_MASTER_KEYS missing this version?');
+    });
+    const stamp = vi.fn(() => [{}]);
+    const db = createFakeDb({ findMany: { backupDestinations: [dest] }, update: { backups: stamp } });
+    const lines: string[] = [];
+    await expect(uploadBackup(db, 5, path.join(tmp, 'z.dump'), (l) => lines.push(l))).resolves.toBeUndefined();
+    expect(lines).toEqual([expect.stringMatching(/^warning: remote upload failed: Unknown master key version 7/)]);
+    expect(s3Mocks.s3PutFile).not.toHaveBeenCalled();
+    expect(stamp).not.toHaveBeenCalled();
+  });
 });
 
 describe('fetchRemoteBackup / deleteRemoteBackup', () => {
@@ -173,6 +189,20 @@ describe('fetchRemoteBackup / deleteRemoteBackup', () => {
     s3Mocks.s3Delete.mockRejectedValueOnce(new Error('gone'));
     await expect(deleteRemoteBackup(db, { remoteKey: 'nd/k' })).resolves.toBeUndefined();
     await expect(deleteRemoteBackup(db, { remoteKey: null })).resolves.toBeUndefined();
+  });
+
+  // F289: the download ran outside the unlink-on-error arm, so a GET that died
+  // mid-stream left the partial object at the caller's per-attempt temp path,
+  // which no caller or sweeper removes.
+  it('F289: removes a partial download when the GET fails mid-stream', async () => {
+    s3Mocks.s3GetToFile.mockImplementationOnce(async (_cfg: unknown, _key: string, to: string) => {
+      writeFileSync(to, 'NDBK1:v1:AAAAAAAAAAAAAAAA\npartial');
+      throw new Error('S3 download stalled');
+    });
+    const db = createFakeDb({ findMany: { backupDestinations: [dest] } });
+    const target = path.join(fetchDir, 'partial.remote');
+    await expect(fetchRemoteBackup(db, { remoteKey: 'nd/k', scope: 'db' }, target)).rejects.toThrow('S3 download stalled');
+    expect(existsSync(target)).toBe(false);
   });
 
   it('refuses a fetch when no remote key is recorded', async () => {

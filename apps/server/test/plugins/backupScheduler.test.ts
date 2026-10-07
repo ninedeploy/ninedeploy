@@ -221,6 +221,70 @@ describe('backup scheduler plugin', () => {
     );    await app.close();
   });
 
+  // F96: the per-database retention read/delete ran outside every per-db
+  // guard, so one SQLITE_BUSY while pruning database A escaped to the
+  // tick-level catch and silently skipped the backups of every later database.
+  it('F96: a retention error for one database does not skip the backups of the next', async () => {
+    vi.useFakeTimers();
+    const { db, findMany } = makeDb({
+      dbs: [
+        { id: 1, slug: 'a', name: 'A', status: 'running' },
+        { id: 2, slug: 'b', name: 'B', status: 'running' },
+      ],
+    });
+    // Call 1 = boot history read, 2 = watchdog read, 3 = A's prune read.
+    let calls = 0;
+    findMany.mockImplementation(async () => {
+      if (++calls === 3) throw new Error('SQLITE_BUSY: database is locked');
+      return [];
+    });
+    const app = await buildApp(db);
+    const errorSpy = vi.spyOn(app.log, 'error');
+
+    await vi.advanceTimersByTimeAsync(DAY_MS);
+
+    expect(engineMock.backupDatabase).toHaveBeenCalledTimes(2);
+    expect(errorSpy).toHaveBeenCalledWith(
+      { err: expect.objectContaining({ message: 'SQLITE_BUSY: database is locked' }) },
+      'scheduled backup retention failed for A',
+    );
+    expect(errorSpy).not.toHaveBeenCalledWith(expect.anything(), 'backup scheduler tick failed');
+    await app.close();
+  });
+
+  // F97: an upload throw AFTER the dump and its `completed` row were committed
+  // fell into the dump-failure arm — a second `failed` row owning the same file
+  // (failed-row retention later unlinked a retained recovery point) and a
+  // `backup.schedule_failed` audit instead of `backup.create`. Real trigger: a
+  // destination secret sealed under a key version missing from the key ring.
+  it('F97: an upload failure after a committed dump is not recorded as a failed backup', async () => {
+    vi.useFakeTimers();
+    auditMock.audit.mockClear();
+    const { db, insert } = makeDb({ dbs: [{ id: 1, slug: 'a', name: 'A', status: 'running' }] });
+    (db as unknown as { query: Record<string, unknown> }).query.backupDestinations = {
+      findMany: vi.fn(async () => [
+        { id: 1, active: true, endpoint: 'https://s3.invalid', region: 'x', bucket: 'b', prefix: 'p',
+          accessKeyId: 'k', secretKeyEncrypted: 'v99:aaaa:bbbb:cccc' },
+      ]),
+    };
+    engineMock.backupDatabase.mockImplementation(async (_d: unknown, file: string) => {
+      writeFileSync(file, 'dump-data');
+    });
+    const app = await buildApp(db);
+
+    await vi.advanceTimersByTimeAsync(DAY_MS);
+
+    // Exactly one row: the completed one — no `failed` row sharing its file.
+    expect(insert).toHaveBeenCalledTimes(1);
+    const valuesFn = (insert.mock.results[0]!.value as { values: ReturnType<typeof vi.fn> }).values;
+    expect(valuesFn).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
+    expect(auditMock.audit).toHaveBeenCalledWith(expect.anything(), null, 'backup.create', 'A', { scope: 'scheduled' });
+    expect(auditMock.audit).not.toHaveBeenCalledWith(expect.anything(), null, 'backup.schedule_failed', expect.anything());
+    // Since F288 `uploadBackup` itself swallows the undecryptable-secret error,
+    // so the scheduler's own catch is defence in depth and may not log here.
+    await app.close();
+  });
+
   // r528: audit() is the notification fan-out — a successful scheduled
   // backup wrote none, so `backup.completed` never fired for daily backups.
   it('r528: audits each successful scheduled backup like the manual route does', async () => {

@@ -129,6 +129,14 @@ export async function assertSlugVolumeNotRetained(
       const res = await agentOp(db, serverId, 'docker.volumeInspect', { name: volume }, () => undefined, { tolerateExit: true });
       retained = res.exitCode === 0;
       if (retained) createdAt = volumeCreatedAt(res.lines.join('\n'));
+      // F332: only docker's own "No such volume" answer means MISSING. The
+      // same exit 1 is a daemon the CLI could not reach; 124/127 are the
+      // agent's timeout / an unspawnable docker — none of them answered.
+      else if (!res.lines.some((l) => /no such volume/i.test(l))) {
+        const last = res.lines.filter((l) => l.trim()).at(-1)?.trim().slice(0, 200);
+        unreachable = `docker volume inspect exited ${res.exitCode}${last ? `: ${last}` : ''}`;
+        retained = true;
+      }
     } catch (err) {
       // The agent itself blinked (offline node, unknown op on an old agent) —
       // fail closed: treat the node volume as retained.

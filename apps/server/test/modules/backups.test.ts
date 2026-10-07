@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   createBackupReadStream: vi.fn(async () => Buffer.from('plaintext-dump')),
   uploadBackup: vi.fn(async () => undefined),
   deleteRemoteBackup: vi.fn(async () => undefined),
+  deleteRemoteBackupForRetention: vi.fn(async (): Promise<'deleted' | 'unknown-destination'> => 'deleted'),
   fetchRemoteBackup: vi.fn(async () => undefined),
   runBackupDrill: vi.fn(async () => ({
     drillId: 99,
@@ -45,6 +46,7 @@ vi.mock('../../src/engine/database.js', () => ({
 vi.mock('../../src/lib/backupRemote.js', () => ({
   uploadBackup: mocks.uploadBackup,
   deleteRemoteBackup: mocks.deleteRemoteBackup,
+  deleteRemoteBackupForRetention: mocks.deleteRemoteBackupForRetention,
   fetchRemoteBackup: mocks.fetchRemoteBackup,
 }));
 vi.mock('../../src/lib/backupDrill.js', () => ({
@@ -396,7 +398,7 @@ describe('global backup routes', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ok: true });
     expect(fsMock.unlinkSync).toHaveBeenCalledOnce();
-    expect(mocks.deleteRemoteBackup).toHaveBeenCalledOnce();
+    expect(mocks.deleteRemoteBackupForRetention).toHaveBeenCalledOnce();
     expect(mocks.audit).toHaveBeenCalledOnce();
   });
 

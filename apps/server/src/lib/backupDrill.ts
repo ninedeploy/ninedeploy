@@ -52,14 +52,15 @@ export interface DrillResult {
 
 /**
  * Names of the drill's scratch files. A drill decrypts the backup to
- * `<backup>.<pid>-drill.dec` (PLAINTEXT) and fetches a remote-only backup to
- * `<tmpdir>/nd-drill-<pid>-<ms>.dump`; both are unlinked by the drill's
- * cleanup hook, which never runs when the process dies mid-drill.
- * `pruneDrillLeftovers` (housekeeping) matches the same names.
+ * `<backup>.<pid>-<drillId>-drill.dec` (PLAINTEXT) and fetches a remote-only
+ * backup to `<tmpdir>/nd-drill-<pid>-<drillId>-<ms>.dump`; both are unlinked
+ * by the drill's cleanup hook, which never runs when the process dies
+ * mid-drill. `pruneDrillLeftovers` (housekeeping) matches the same names,
+ * and the pre-F133 `<pid>-<ms>` fetch names.
  */
 const DRILL_PLAINTEXT_SUFFIX = '-drill.dec';
 const DRILL_FETCH_PREFIX = 'nd-drill-';
-const DRILL_FETCH_RE = /^nd-drill-\d+-\d+\.dump$/;
+const DRILL_FETCH_RE = /^nd-drill-\d+-\d+(?:-\d+)?\.dump$/;
 
 interface DrillContext {
   /** Host path to a plaintext dump ready for the engine-specific
@@ -113,7 +114,9 @@ export async function runBackupDrill(
   const image = ENGINES[dRow.engine]?.image(dRow.version ?? undefined) ?? null;
 
   try {
-    const ctx = await stageForDrill(db, bRow.path, bRow, dRow.engine);
+    // F133: scratch names carry this drill's row id — concurrent drills (same
+    // backup, or the same millisecond) must never share or unlink each other's.
+    const ctx = await stageForDrill(db, bRow.path, bRow, dRow.engine, `${process.pid}-${row.id}`);
     try {
       result = await validateDump(ctx, image);
     } finally {
@@ -209,6 +212,7 @@ async function stageForDrill(
   path: string,
   remote: RemoteBackupRef,
   _engine: string,
+  token: string,
 ): Promise<DrillContext> {
   // Remote-only backup: pull to a local temp file first.
   let source = path;
@@ -217,7 +221,7 @@ async function stageForDrill(
     if (!remote.remoteKey) {
       throw new Error('Backup file is missing on disk and no remote key is recorded');
     }
-    fetched = join(tmpdir(), `${DRILL_FETCH_PREFIX}${process.pid}-${Date.now()}.dump`);
+    fetched = join(tmpdir(), `${DRILL_FETCH_PREFIX}${token}-${Date.now()}.dump`);
     await fetchRemoteBackup(db, remote, fetched);
     source = fetched;
   }
@@ -225,36 +229,43 @@ async function stageForDrill(
     if (fetched) await unlink(fetched).catch(() => undefined);
   };
 
-  // r189: the fetched object goes through the SAME decryption as a local
-  // file. The remote copy is the on-disk file uploaded as-is — an encrypted
-  // NDBK1 envelope — and it used to be handed straight to the validator,
-  // so every drill of a pruned-locally backup "failed" on ciphertext.
-  if (await isEncryptedBackupFile(source)) {
-    const dec = `${source}.${process.pid}${DRILL_PLAINTEXT_SUFFIX}`;
-    await decryptBackupFile(source, dec);
-    return {
-      file: dec,
-      engine: _engine,
-      cleanup: async () => {
-        await unlink(dec).catch(() => undefined);
-        await dropFetched();
-      },
-    };
-  }
+  try {
+    // r189: the fetched object goes through the SAME decryption as a local
+    // file. The remote copy is the on-disk file uploaded as-is — an encrypted
+    // NDBK1 envelope — and it used to be handed straight to the validator,
+    // so every drill of a pruned-locally backup "failed" on ciphertext.
+    if (await isEncryptedBackupFile(source)) {
+      const dec = `${source}.${token}${DRILL_PLAINTEXT_SUFFIX}`;
+      await decryptBackupFile(source, dec);
+      return {
+        file: dec,
+        engine: _engine,
+        cleanup: async () => {
+          await unlink(dec).catch(() => undefined);
+          await dropFetched();
+        },
+      };
+    }
 
-  // Legacy single-line `v<n>:` envelope (pre-streaming backups), which the
-  // restore path still reads: decrypt it the same way restore does.
-  if (LEGACY_ENVELOPE_RE.test(await readHead(source, 32).catch(() => ''))) {
-    const dec = `${source}.${process.pid}${DRILL_PLAINTEXT_SUFFIX}`;
-    await writeFile(dec, readBackupBytes(source), { mode: 0o600 });
-    return {
-      file: dec,
-      engine: _engine,
-      cleanup: async () => {
-        await unlink(dec).catch(() => undefined);
-        await dropFetched();
-      },
-    };
+    // Legacy single-line `v<n>:` envelope (pre-streaming backups), which the
+    // restore path still reads: decrypt it the same way restore does.
+    if (LEGACY_ENVELOPE_RE.test(await readHead(source, 32).catch(() => ''))) {
+      const dec = `${source}.${token}${DRILL_PLAINTEXT_SUFFIX}`;
+      await writeFile(dec, readBackupBytes(source), { mode: 0o600 });
+      return {
+        file: dec,
+        engine: _engine,
+        cleanup: async () => {
+          await unlink(dec).catch(() => undefined);
+          await dropFetched();
+        },
+      };
+    }
+  } catch (err) {
+    // F134: staging failed after the fetch — no cleanup hook reaches the
+    // caller, so the fetched copy is dropped here.
+    await dropFetched();
+    throw err;
   }
 
   // Plaintext: use in place.
@@ -508,7 +519,9 @@ async function validatePostgres(file: string, image: string | null): Promise<Val
  */
 async function validateMysql(file: string): Promise<ValidationResult> {
   const head = await readHead(file);
-  const banner = /MySQL dump|MariaDB dump/i.test(head) ? head.match(/^(?:-+\s*)?(?:MySQL|MariaDB)\s+dump[\s\S]{0,80}/i)?.[0]?.trim() ?? null : null;
+  // F132: line-anchored (`m`) — mariadb-dump (since 10.5.25 / 10.6.18 / 11.x)
+  // writes `/*M!999999\- enable the sandbox mode */` BEFORE its banner.
+  const banner = /MySQL dump|MariaDB dump/i.test(head) ? head.match(/^(?:-+\s*)?(?:MySQL|MariaDB)\s+dump[\s\S]{0,80}/im)?.[0]?.trim() ?? null : null;
   if (!banner) {
     return failed('No mysqldump / mariadb-dump banner found in first 4 KiB');
   }

@@ -1,8 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => {
-  // The node probe's exit code, switchable per test.
-  const node = { exitCode: 0 };
+  // The node probe's exit code (and, F332, its output), switchable per test.
+  // A non-zero exit answers docker's "No such volume" unless a test says otherwise.
+  const node = { exitCode: 0, lines: null as string[] | null };
   // r470: the mock mirrors the REAL agentOp contract — non-zero exit codes
   // THROW unless the caller passes { tolerateExit: true }. A mock that
   // happily resolved { exitCode: 1 } is exactly how r466 shipped a probe
@@ -19,7 +20,7 @@ const mocks = vi.hoisted(() => {
     if (node.exitCode !== 0 && !opts?.tolerateExit) {
       throw new Error(`agent ${String(op)} exited with ${node.exitCode}`);
     }
-    return { exitCode: node.exitCode, lines: [] };
+    return { exitCode: node.exitCode, lines: node.lines ?? (node.exitCode !== 0 ? ['[]', 'Error: No such volume: nd-svc-web-data'] : []) };
   };
   return {
     node,
@@ -47,6 +48,7 @@ describe('assertSlugVolumeNotRetained (r351/r466)', () => {
     mocks.agentOp.mockImplementation(mocks.agentOpImpl);
     mocks.listManagedVolumeNames.mockResolvedValue([]);
     mocks.node.exitCode = 0;
+    mocks.node.lines = null;
   });
 
   it('local path: a retained local volume blocks the slug', async () => {
@@ -109,6 +111,30 @@ describe('assertSlugVolumeNotRetained (r351/r466)', () => {
     await expect(
       assertSlugVolumeNotRetained('web', 'pm2', { db: {} as never, serverId: 7 }),
     ).rejects.toMatchObject({ code: 'slug_volume_retained' });
+  });
+
+  // F332: `docker volume inspect` exits 1 for "no such volume" AND for a
+  // daemon the CLI cannot reach (124: agent timeout, 127: unspawnable). Only
+  // docker's own "No such volume" is a definitive MISSING — the rest used to
+  // read as missing too, so a node with a sick daemon let a freed slug
+  // re-mount a deleted service's node data once the daemon came back.
+  it('node path: a non-zero exit WITHOUT "No such volume" is unanswered — fails closed, pm2 exempt', async () => {
+    for (const [exitCode, lines] of [
+      [1, ['Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?']],
+      [124, ['Operation timed out after 595000ms — killed']],
+      [127, []],
+    ] as Array<[number, string[]]>) {
+      mocks.node.exitCode = exitCode;
+      mocks.node.lines = lines;
+      const err = await assertSlugVolumeNotRetained('web', 'docker', { db: {} as never, serverId: 7 }).catch((e: unknown) => e);
+      expect(err).toMatchObject({ statusCode: 409, code: 'slug_volume_retained' });
+      expect(String((err as Error).message)).toContain(`docker volume inspect exited ${exitCode}`);
+      await expect(assertSlugVolumeNotRetained('web', 'pm2', { db: {} as never, serverId: 7 })).resolves.toBeUndefined();
+    }
+    // Both CLI spellings of the definitive answer still free the slug.
+    mocks.node.exitCode = 1;
+    mocks.node.lines = ['[]', 'Error response from daemon: get nd-svc-web-data: no such volume'];
+    await expect(assertSlugVolumeNotRetained('web', 'docker', { db: {} as never, serverId: 7 })).resolves.toBeUndefined();
   });
 });
 

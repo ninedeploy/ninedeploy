@@ -233,6 +233,8 @@ export async function s3GetToFile(
     clearTimeout(stall);
     stall = setTimeout(() => controller.abort(new Error('S3 download stalled')), stallMs);
   };
+  // F848: once the destination is opened (and so truncated), this call owns it.
+  let opened = false;
   try {
     const res = await s3Request(cfg, 'GET', key, undefined, undefined, undefined, controller.signal);
     touch();
@@ -251,12 +253,22 @@ export async function s3GetToFile(
         done(null, chunk);
       },
     });
+    opened = true;
     await pipeline(
       Readable.fromWeb(res.body as unknown as import('node:stream/web').ReadableStream),
       progress,
       createWriteStream(filePath, { mode: 0o600 }),
       { signal: controller.signal },
     );
+  } catch (err) {
+    // F848: a failed stream (truncated body, reset, stall) left a partial file
+    // a caller could mistake for the object. A 404 or fetch failure never
+    // opened the destination, so a pre-existing file there is left alone.
+    if (opened) {
+      const { rmSync } = await import('node:fs');
+      try { rmSync(filePath, { force: true }); } catch { /* keep the download error */ }
+    }
+    throw err;
   } finally {
     clearTimeout(stall);
   }

@@ -384,6 +384,21 @@ describe('lib/backupDrill', () => {
       expect(result.error).toMatch(/Dump completed/);
     });
 
+    it('F132: passes a mariadb-dump whose first line is the sandbox-mode marker', async () => {
+      // mariadb-dump (10.5.25+ / 11.x / 12.x) writes this BEFORE its banner.
+      const db = buildDb();
+      seed('mariadb', await dumpFile('maria-sandbox.sql', [
+        '/*M!999999\\- enable the sandbox mode */ ',
+        '-- MariaDB dump 10.19-12.3.2-MariaDB, for debian-linux-gnu (x86_64)',
+        'CREATE TABLE t (id INT);',
+        '-- Dump completed on 2026-10-07 10:00:00',
+        '',
+      ].join('\n')));
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('passed');
+      expect(String(result.details?.['banner'])).toMatch(/^-- MariaDB dump/);
+    });
+
     it('fails a dump when the banner is missing', async () => {
       const db = buildDb();
       seed('mysql', await dumpFile('mysql.sql', 'CREATE TABLE only\n'));
@@ -595,6 +610,44 @@ describe('lib/backupDrill', () => {
         const result = await runBackupDrill(db, 1, 1);
         expect(result.status).toBe(status);
         expect(existsSync(cryptoState.decryptedTo.get(enc)!)).toBe(false);
+      }
+    });
+
+    it('F133: concurrent drills of one encrypted backup never share or unlink each other\'s plaintext', async () => {
+      const db = buildDb();
+      const enc = await dumpFile('enc-concurrent.dump', 'NDBK1:ciphertext');
+      cryptoState.encryptedPaths.add(enc);
+      seed('postgres', enc);
+      const { decryptBackupFile } = await import('../../src/lib/backupCrypto.js');
+      // Gated: the second drill decrypts only after the first has, and then
+      // waits until the first drill has finished (and run its cleanup).
+      let releaseFirst!: () => void;
+      const firstWritten = new Promise<void>((r) => { releaseFirst = r; });
+      let releaseSecond!: () => void;
+      const firstDone = new Promise<void>((r) => { releaseSecond = r; });
+      const decs: string[] = [];
+      vi.mocked(decryptBackupFile)
+        .mockImplementationOnce(async (_src, dest) => {
+          decs.push(dest);
+          await writeFile(dest, PG_PLAIN, 'utf8');
+          releaseFirst();
+        })
+        .mockImplementationOnce(async (_src, dest) => {
+          decs.push(dest);
+          await firstWritten;
+          await writeFile(dest, PG_PLAIN, 'utf8');
+          await firstDone;
+        });
+      const a = runBackupDrill(db, 1, 1);
+      const b = runBackupDrill(db, 1, 1);
+      await Promise.race([a, b]);
+      releaseSecond();
+      const results = await Promise.all([a, b]);
+      expect(results.map((r) => [r.status, r.error])).toEqual([['passed', null], ['passed', null]]);
+      expect(new Set(decs).size).toBe(2);
+      for (const dec of decs) {
+        expect(dec).toMatch(/-drill\.dec$/);
+        expect(existsSync(dec)).toBe(false);
       }
     });
   });

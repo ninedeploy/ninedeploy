@@ -21,6 +21,7 @@ const remoteMocks = vi.hoisted(() => ({
   uploadBackup: vi.fn(async () => undefined),
   fetchRemoteBackup: vi.fn(async (_db: unknown, _key: string, p: string) => p),
   deleteRemoteBackup: vi.fn(async () => undefined),
+  deleteRemoteBackupForRetention: vi.fn(async (): Promise<'deleted' | 'unknown-destination'> => 'deleted'),
 }));
 vi.mock('../src/lib/backupRemote.js', () => remoteMocks);
 
@@ -325,7 +326,35 @@ describe('backup routes', () => {
     expect(res.json()).toEqual({ ok: true });
     expect(fs.readdirSync(path.dirname(dumpFile))).toEqual([]);
     // The remote object is removed too.
-    expect(remoteMocks.deleteRemoteBackup).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ remoteKey: 'nd/x.dump' }));
+    expect(remoteMocks.deleteRemoteBackupForRetention).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ remoteKey: 'nd/x.dump' }));
+  });
+
+  it('F844: keeps the backup row and local dump when the remote delete fails', async () => {
+    const db = createFakeDb({ findFirst: { backups: backupRow({ id: 1, path: dumpFile, remoteKey: 'nd/x.dump', destinationId: 1 }) } });
+    const rowDelete = vi.spyOn(db, 'delete');
+    const app = await buildTestApp({ db });
+    await app.register(backupRoutes);
+    fsMocks.exists = true;
+    remoteMocks.deleteRemoteBackupForRetention.mockRejectedValueOnce(new Error('S3 DELETE failed (503)'));
+    const res = await app.inject({ method: 'DELETE', url: '/1', headers: asUser() });
+    expect(res.statusCode).toBe(502);
+    // The row is the only pointer to the off-site copy: dropping it would orphan the object.
+    expect(rowDelete).not.toHaveBeenCalled();
+    expect(fs.existsSync(dumpFile)).toBe(true);
+    expect(res.body).not.toContain('503');
+  });
+
+  it('F844: a row with no known destination keeps the best-effort remote delete', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { backups: backupRow({ id: 1, path: dumpFile, remoteKey: 'nd/x.dump', destinationId: null }) } }),
+    });
+    await app.register(backupRoutes);
+    fsMocks.exists = true;
+    remoteMocks.deleteRemoteBackupForRetention.mockResolvedValueOnce('unknown-destination');
+    const res = await app.inject({ method: 'DELETE', url: '/1', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(remoteMocks.deleteRemoteBackup).toHaveBeenCalledOnce();
+    expect(fs.readdirSync(path.dirname(dumpFile))).toEqual([]);
   });
 
   it('deletes a backup row even when the file is gone', async () => {

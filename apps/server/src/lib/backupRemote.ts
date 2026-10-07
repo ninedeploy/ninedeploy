@@ -63,11 +63,13 @@ export async function uploadBackup(
   localPath: string,
   log: (line: string) => void,
 ): Promise<void> {
-  const dest = await resolveDestination(db, null);
-  if (!dest) return;
-  const { prefix, ...cfg } = dest;
-  const key = `${prefix.replace(/\/$/, '')}/${basename(localPath)}`.replace(/^\/+/, '');
   try {
+    // F288: resolving the destination decrypts its secret, which throws for a
+    // key version this process does not hold — that is an upload failure too.
+    const dest = await resolveDestination(db, null);
+    if (!dest) return;
+    const { prefix, ...cfg } = dest;
+    const key = `${prefix.replace(/\/$/, '')}/${basename(localPath)}`.replace(/^\/+/, '');
     // The on-disk file is already the encrypted envelope, so a stolen bucket
     // alone can't leak database contents.
     await s3PutFile(cfg, key, localPath);
@@ -91,7 +93,8 @@ export interface RemoteBackupRef {
 /** Fetch a remote-only backup to a local path (returns the path to use).
  *  r645: the object must carry NineDeploy's backup encryption unless the row
  *  is a legacy plaintext volume snapshot — see {@link assertRemoteObjectSealed}.
- *  A refused object is removed from disk before the error propagates. */
+ *  A refused object — or a partial one from a failed download (F289) — is
+ *  removed from disk before the error propagates. */
 export async function fetchRemoteBackup(
   db: DB,
   backup: RemoteBackupRef,
@@ -101,9 +104,9 @@ export async function fetchRemoteBackup(
   const dest = await resolveDestination(db, backup.destinationId);
   if (!dest) throw new Error('No backup destination configured');
   const { prefix: _p, ...cfg } = dest;
-  // Stream straight to disk — never buffer the whole dump in memory.
-  await s3GetToFile(cfg, backup.remoteKey, localPath);
   try {
+    // Stream straight to disk — never buffer the whole dump in memory.
+    await s3GetToFile(cfg, backup.remoteKey, localPath);
     await assertRemoteObjectSealed(db, backup, localPath);
   } catch (err) {
     try { unlinkSync(localPath); } catch { /* absent */ }

@@ -1,4 +1,20 @@
-﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { eq, sql } from 'drizzle-orm';
+import { migrate } from 'drizzle-orm/libsql/migrator';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  createDb,
+  serviceVolumeAttachments,
+  serviceWorkspaces,
+  services,
+  users,
+  workspaceMembers,
+  workspaces,
+  type DB,
+} from '@ninedeploy/db';
 import { serviceVolumesRoutes, _internal } from '../src/modules/serviceVolumes.js';
 import { asUser, buildTestApp, createFakeDb, NOW, svcRow } from './helpers.js';
 
@@ -19,8 +35,10 @@ vi.mock('../src/lib/resourceAccess.js', async () => {
   const actual = await vi.importActual<typeof import('../src/lib/resourceAccess.js')>('../src/lib/resourceAccess.js');
   return {
     ...actual,
-    loadServiceForUser: vi.fn(async (db: { query: { services: { findFirst: (a?: unknown) => Promise<unknown> } } }, _id: number) => {
-      return db.query.services.findFirst();
+    // The id goes in as a `where` the fake db ignores; the real-SQLite
+    // regressions below (F548–F550) need it to pick the right row.
+    loadServiceForUser: vi.fn(async (db: { query: { services: { findFirst: (a?: unknown) => Promise<unknown> } } }, id: number) => {
+      return db.query.services.findFirst({ where: eq(services.id, id) });
     }),
   };
 });
@@ -1341,5 +1359,154 @@ describe('create.label cannot mint another service primary data volume (r648)', 
     expect(inserted).toBe(false);
     expect(dbEngineMocks.createDockerVolume).not.toHaveBeenCalled();
     await app.close();
+  });
+});
+
+// F548–F550: the volume ownership decision against a real migrated SQLite.
+// Workspace A runs the caller's service; workspace B holds `victim`, which has
+// `nd-svc-victim-uploads` attached.
+describe('volume ownership on real rows (F548, F549, F550)', () => {
+  const MIGRATIONS = fileURLToPath(new URL('../../../packages/db/src/migrations', import.meta.url));
+  const OP = 1;
+  let db: DB;
+  let wsA: number;
+  let wsB: number;
+  let victim: number;
+
+  beforeEach(async () => {
+    ({ db } = createDb({ url: ':memory:' }));
+    await migrate(db, { migrationsFolder: MIGRATIONS });
+    await db.insert(users).values({ id: OP, email: 'op@x', passwordHash: 'x', isInstanceOperator: true });
+    wsA = (await db.insert(workspaces).values({ name: 'A', slug: 'a', ownerId: OP }).returning())[0]!.id;
+    wsB = (await db.insert(workspaces).values({ name: 'B', slug: 'b', ownerId: OP }).returning())[0]!.id;
+    victim = (await db.insert(services).values({ name: 'victim', slug: 'victim', type: 'docker', ownerUserId: OP }).returning())[0]!.id;
+    await db.insert(serviceWorkspaces).values({ serviceId: victim, workspaceId: wsB });
+    await db.insert(serviceVolumeAttachments).values({ serviceId: victim, volumeName: 'nd-svc-victim-uploads', containerPath: '/uploads' });
+    const host = new Set(['nd-svc-victim-uploads']);
+    execMocks.capture.mockImplementation(async (_cmd: string, args: string[]) =>
+      args[0] === 'volume' && args[1] === 'ls' ? [...host].join('\n') : '',
+    );
+    dbEngineMocks.createDockerVolume.mockImplementation(async (name: string) => {
+      host.add(name);
+    });
+  });
+
+  /** Member in A with service `<slug>`; `roleInB` seat in B, or none. */
+  const caller = async (id: number, slug: string, roleInB: 'viewer' | 'member' | null): Promise<number> => {
+    await db.insert(users).values({ id, email: `u${id}@x`, passwordHash: 'x' });
+    await db.insert(workspaceMembers).values({ workspaceId: wsA, userId: id, role: 'member' });
+    if (roleInB) await db.insert(workspaceMembers).values({ workspaceId: wsB, userId: id, role: roleInB });
+    const svc = (await db.insert(services).values({ name: slug, slug, type: 'docker', ownerUserId: id }).returning())[0]!.id;
+    await db.insert(serviceWorkspaces).values({ serviceId: svc, workspaceId: wsA });
+    return svc;
+  };
+  const send = async (user: { id: number; isOperator: boolean }, method: 'POST' | 'PATCH', url: string, payload: object) => {
+    const app = await buildTestApp({ db });
+    await app.register(serviceVolumesRoutes);
+    const res = await app.inject({ method, url, headers: asUser(user), payload });
+    await app.close();
+    return res;
+  };
+  const holders = async (volume: string) =>
+    (await db.select().from(serviceVolumeAttachments).where(eq(serviceVolumeAttachments.volumeName, volume)))
+      .map((r) => r.serviceId)
+      .sort();
+
+  it('F549: a viewer seat in B cannot mount B data into an A service; a member seat still can', async () => {
+    const viewerSvc = await caller(12, 'v-svc', 'viewer');
+    const viewer = await send({ id: 12, isOperator: false }, 'POST', `/${viewerSvc}/volumes`, { volumeName: 'nd-svc-victim-uploads', containerPath: '/loot' });
+    expect(viewer.statusCode).toBe(403);
+    const memberSvc = await caller(11, 'm-svc', 'member');
+    const member = await send({ id: 11, isOperator: false }, 'POST', `/${memberSvc}/volumes`, { volumeName: 'nd-svc-victim-uploads', containerPath: '/shared' });
+    expect(member.statusCode).toBe(200);
+    expect(await holders('nd-svc-victim-uploads')).toEqual([victim, memberSvc].sort());
+  });
+
+  it('F548: PATCH readOnly:false on an operator read-only share runs the ownership guard', async () => {
+    const mine = await caller(2, 'mine', null);
+    const att = (await db.insert(serviceVolumeAttachments)
+      .values({ serviceId: mine, volumeName: 'nd-svc-victim-uploads', containerPath: '/feed', readOnly: true })
+      .returning())[0]!.id;
+    const widen = await send({ id: 2, isOperator: false }, 'PATCH', `/${mine}/volumes/${att}`, { readOnly: false });
+    expect(widen.statusCode).toBe(403);
+    const row = await db.query.serviceVolumeAttachments.findFirst({ where: eq(serviceVolumeAttachments.id, att) });
+    expect(row?.readOnly).toBe(true);
+    // Non-widening edits of the same row stay the member's to make.
+    expect((await send({ id: 2, isOperator: false }, 'PATCH', `/${mine}/volumes/${att}`, { containerPath: '/feed2' })).statusCode).toBe(200);
+  });
+
+  it('F550: create.label never adopts a volume another service has attached, operators included', async () => {
+    const shop = await caller(2, 'shop', null);
+    const shopApi = (await db.insert(services).values({ name: 'shop-api', slug: 'shop-api', type: 'docker', ownerUserId: OP }).returning())[0]!.id;
+    await db.insert(serviceWorkspaces).values({ serviceId: shopApi, workspaceId: wsB });
+    // `shop` + `api-uploads` is a fresh name — allowed, and kept attached.
+    expect((await send({ id: 2, isOperator: false }, 'POST', `/${shop}/volumes`, { create: { label: 'api-uploads' }, containerPath: '/stash' })).statusCode).toBe(200);
+    dbEngineMocks.createDockerVolume.mockClear();
+    // `shop-api` + `uploads` spells the same name.
+    const res = await send({ id: OP, isOperator: true }, 'POST', `/${shopApi}/volumes`, { create: { label: 'uploads' }, containerPath: '/uploads' });
+    expect(res.statusCode).toBe(409);
+    expect(await holders('nd-svc-shop-api-uploads')).toEqual([shop]);
+    expect(dbEngineMocks.createDockerVolume).not.toHaveBeenCalled();
+    // A fresh label still provisions.
+    expect((await send({ id: OP, isOperator: true }, 'POST', `/${shopApi}/volumes`, { create: { label: 'cache' }, containerPath: '/cache' })).statusCode).toBe(200);
+  });
+});
+
+// F551: drizzle-orm wraps the driver error ("Failed query: …", SQLite text on
+// `cause`), so matching `.message` alone turned every duplicate into a 500.
+// Real SQLite file database, real driver error shapes.
+describe('unique violations through the real driver answer 409 (F551)', () => {
+  const MIGRATIONS = fileURLToPath(new URL('../../../packages/db/src/migrations', import.meta.url));
+  let db: DB;
+  let close: () => void;
+  let dir: string;
+  let web: number;
+  let bId: number;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(path.join(os.tmpdir(), 'nd-svcvol-'));
+    const created = createDb({ url: `file:${path.join(dir, 't.db').split(path.sep).join('/')}` });
+    db = created.db;
+    close = () => created.client?.close();
+    await migrate(db, { migrationsFolder: MIGRATIONS });
+    await db.insert(users).values({ id: 1, email: 'op@x', passwordHash: 'x', isInstanceOperator: true });
+    web = (await db.insert(services).values({ name: 'web', slug: 'web', type: 'docker', ownerUserId: 1 }).returning())[0]!.id;
+    await db.insert(serviceVolumeAttachments).values({ serviceId: web, volumeName: 'nd-svc-web-a', containerPath: '/a' });
+    bId = (await db.insert(serviceVolumeAttachments).values({ serviceId: web, volumeName: 'nd-svc-web-b', containerPath: '/b' }).returning())[0]!.id;
+    // A non-unique failure whose text names the column (control).
+    await db.run(sql.raw(
+      `CREATE TRIGGER boom BEFORE INSERT ON service_volume_attachments WHEN NEW.container_path = '/boom'
+       BEGIN SELECT RAISE(ABORT, 'boom on container_path'); END;`,
+    ));
+    execMocks.capture.mockImplementation(async (_cmd: string, args: string[]) =>
+      args[0] === 'volume' && args[1] === 'ls' ? 'nd-svc-web-a\nnd-svc-web-b\nnd-svc-web-c\n' : '',
+    );
+  });
+  afterEach(() => {
+    close();
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* Windows file lock */
+    }
+  });
+
+  const send = async (method: 'POST' | 'PATCH', url: string, payload: object) => {
+    const app = await buildTestApp({ db });
+    await app.register(serviceVolumesRoutes);
+    const res = await app.inject({ method, url, headers: asUser({ id: 1, isOperator: true }), payload });
+    await app.close();
+    return res;
+  };
+
+  it('maps duplicate path / volume to 409 on attach and PATCH; a wrapped non-unique error stays 500', async () => {
+    const dupPath = await send('POST', `/${web}/volumes`, { volumeName: 'nd-svc-web-c', containerPath: '/a' });
+    expect(dupPath.statusCode).toBe(409);
+    expect(dupPath.json().error.message).toMatch(/already mounted/);
+    const dupVolume = await send('POST', `/${web}/volumes`, { volumeName: 'nd-svc-web-a', containerPath: '/z' });
+    expect(dupVolume.statusCode).toBe(409);
+    expect(dupVolume.json().error.message).toMatch(/already attached/);
+    expect((await send('PATCH', `/${web}/volumes/${bId}`, { containerPath: '/a' })).statusCode).toBe(409);
+    expect((await send('POST', `/${web}/volumes`, { volumeName: 'nd-svc-web-c', containerPath: '/boom' })).statusCode).toBe(500);
   });
 });
