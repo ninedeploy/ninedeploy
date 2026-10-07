@@ -1209,7 +1209,11 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       }
       throw err;
     }
-    void audit(app.db, req.user!.id, 'service.stop', svc.name);
+    // D3/F836: `<name> #<id>` is the entity shape kernel/auditBridge decodes
+    // (LAST `#<n>`); the bare name gave plugins no serviceId — or another
+    // service's, for a name ending in "#<n>". meta.serviceId is what the
+    // per-service Activity filter matches (modules/activity.ts).
+    void audit(app.db, req.user!.id, 'service.stop', `${svc.name} #${svc.id}`, { serviceId: svc.id });
     app.kernel?.events.emit('service.stopped', {
       serviceId: svc.id,
     });
@@ -1258,7 +1262,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       throw badRequest('Unsupported service type');
     }
     await app.db.update(services).set({ status: 'running' }).where(eq(services.id, svc.id));
-    void audit(app.db, req.user!.id, 'service.start', svc.name);
+    // D3/F836: see service.stop.
+    void audit(app.db, req.user!.id, 'service.start', `${svc.name} #${svc.id}`, { serviceId: svc.id });
     return { ok: true, status: 'running' };
   });
 
@@ -1311,7 +1316,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // docker restart / pm2.restart bring a stopped runtime back up — persist
     // the transition, or a stop → restart flow would forever show 'stopped'.
     await app.db.update(services).set({ status: 'running' }).where(eq(services.id, svc.id));
-    void audit(app.db, req.user!.id, 'service.restart', svc.name);
+    // D3/F836: see service.stop.
+    void audit(app.db, req.user!.id, 'service.restart', `${svc.name} #${svc.id}`, { serviceId: svc.id });
     return { ok: true, status: 'running' };
   });
 

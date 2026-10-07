@@ -1076,8 +1076,12 @@ export interface NineDeployClient {
     remove: (id: number) => Promise<void>;
   };
   activity: {
-    /** Filter + paginate the audit trail. Omitted filters return the newest page. */
-    list: (query?: { entity?: string; action?: string; userId?: number; before?: number }) => Promise<{ entries: ActivityEntry[]; nextCursor: number | null }>;
+    /**
+     * Filter + paginate the audit trail. Omitted filters return the newest page.
+     * `entity` matches the bare name and `<name> #<id>`; `serviceId` (with the
+     * service name as `entity`) narrows to one service's trail.
+     */
+    list: (query?: { entity?: string; serviceId?: number; action?: string; userId?: number; before?: number }) => Promise<{ entries: ActivityEntry[]; nextCursor: number | null }>;
   };
   alerts: {
     list: () => Promise<AlertRule[]>;
@@ -2049,6 +2053,7 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
     list: (query) => {
       const parts: string[] = [];
       if (query?.entity) parts.push(`entity=${encodeURIComponent(query.entity)}`);
+      if (query?.serviceId) parts.push(`serviceId=${query.serviceId}`);
       if (query?.action) parts.push(`action=${encodeURIComponent(query.action)}`);
       if (query?.userId) parts.push(`userId=${query.userId}`);
       if (query?.before) parts.push(`before=${query.before}`);

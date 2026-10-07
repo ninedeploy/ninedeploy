@@ -1393,8 +1393,9 @@ describe('ServiceDetail', () => {
     } as never);
     renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
     await openTab('Activity');
-    // the page asks the server to filter by the service's entity name
-    await waitFor(() => expect(api.activity.list).toHaveBeenCalledWith({ entity: 'api' }));
+    // the page asks the server to filter by the service's entity name AND id
+    // (D3: id-bearing rows match by meta.serviceId, legacy rows by name)
+    await waitFor(() => expect(api.activity.list).toHaveBeenCalledWith({ entity: 'api', serviceId: 1 }));
     expect(await screen.findByText('service.update')).toBeInTheDocument();
     expect(screen.getByText('service.stop')).toBeInTheDocument();
   });

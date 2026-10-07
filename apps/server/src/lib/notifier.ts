@@ -35,7 +35,11 @@ export function channelConfigOf(ch: { configJson: string | null }): string | nul
  * Pure and exported — the manifest wiring and its tests share it.
  */
 export function scopeMatchesAction(scope: 'deploy' | 'failure' | 'alert', action: string): boolean {
-  if (scope === 'deploy') return action.startsWith('deploy.');
+  // D3/F837: deploy.trigger started carrying meta.serviceId (for the
+  // per-service Activity filter). It is the REQUEST, not an outcome, and no
+  // per-service rule ever received it — keep `deploy` (manifest onDeploy) on
+  // outcomes so the new meta adds no deliveries.
+  if (scope === 'deploy') return action.startsWith('deploy.') && action !== 'deploy.trigger';
   if (scope === 'failure') return action === 'deploy.failed';
   return action.startsWith('alert.');
 }

@@ -71,7 +71,13 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     // r640: privilege re-check + queued cap + insert live in one helper that
     // every user-triggered enqueue shares (the volume routes skipped both).
     const deploymentId = await enqueueUserDeploy(app.db, req.user!, svc, { message: 'Manual deploy' });
-    void audit(app.db, req.user!.id, 'deploy.trigger', svc.name);
+    // D3/F837: `<name> #<deploymentId>`, the shape deploy.delete and the
+    // pipeline outcomes already use — the bridge decodes the LAST `#<n>` as the
+    // deployment id. The bare name gave webhook-out no deploymentId, and a
+    // service named "api #4" spoofed deployment 4. meta.serviceId feeds the
+    // per-service Activity filter; lib/notifier keeps per-service `deploy`
+    // rules on outcomes only (scopeMatchesAction).
+    void audit(app.db, req.user!.id, 'deploy.trigger', `${svc.name} #${deploymentId}`, { serviceId: svc.id, deploymentId });
     return { deploymentId };
   });
 

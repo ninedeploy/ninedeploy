@@ -927,6 +927,15 @@ describe('createClient', () => {
       expect(last(calls)).toMatchObject({ url: '/v1/activity?entity=my%20app', init: { method: 'GET' } });
     });
 
+    // D3: the per-service Activity tab sends the service id with its name, so
+    // id-bearing rows (`<name> #<id>` + meta.serviceId) match by id.
+    it('passes serviceId for one service trail', async () => {
+      const { fetchMock, calls } = makeFetch(() => ok({ entries: [], nextCursor: null }));
+      const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+      await client.activity.list({ entity: 'api #4', serviceId: 7 });
+      expect(last(calls)).toMatchObject({ url: '/v1/activity?entity=api%20%234&serviceId=7', init: { method: 'GET' } });
+    });
+
     it('combines action/userId/before filters', async () => {
       const { fetchMock, calls } = makeFetch(() => ok({ entries: [], nextCursor: null }));
       const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });

@@ -16,9 +16,13 @@ export function ActivityTab({ serviceId, name }: { serviceId: number; name: stri
   // don't ask, and say why instead.
   const isOperator = useAuth().user?.isOperator === true;
   const activity = useQuery({
-    queryKey: ['activity', serviceId],
-    // Service events are audited with the service NAME as their entity.
-    queryFn: async () => (await api.activity.list({ entity: name })).entries as ActivityRow[],
+    queryKey: ['activity', serviceId, name],
+    // D3: id-bearing service events (stop/start/restart, deploy.trigger and
+    // the deploy outcomes) carry meta.serviceId and an `<name> #<id>` entity;
+    // older rows and bare-name events (service.update, ...) only the NAME.
+    // `serviceId` makes the server match both — and keeps another service
+    // named "<name> #<id>" out of this trail.
+    queryFn: async () => (await api.activity.list({ entity: name, serviceId })).entries as ActivityRow[],
     refetchInterval: 10000,
     enabled: isOperator,
   });
