@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
+import { bridgeAuditEvents } from '../../src/kernel/auditBridge.js';
 import { NineDeployKernel } from '../../src/kernel/kernel.js';
 import { TemplateBundlesPlugin } from '../../src/kernel/plugins/templateBundles.js';
 
@@ -202,5 +204,102 @@ describe('TemplateBundlesPlugin', () => {
     expect(observed).toEqual([]);
     expect(errors).toHaveLength(1);
     expect(errors[0]).toMatchObject({ message: 'config db offline' });
+  });
+
+  /**
+   * F337 (action half). The observer listened for `template.install`, which
+   * nothing emits; the template deploy route audits `template.deploy`. Assert
+   * the mount: read the action the route really audits and drive it through
+   * the real audit bridge.
+   */
+  it('observes the audit action the template deploy route actually records', async () => {
+    const routeSrc = readFileSync(new URL('../../src/modules/templates.ts', import.meta.url), 'utf8');
+    const action = /audit\(\s*app\.db,\s*req\.user!\.id,\s*'(template\.[a-z_]+)',\s*`\$\{t\.name\} → /.exec(routeSrc)?.[1];
+    expect(action).toBeDefined();
+
+    const kernel = new NineDeployKernel(makeDb() as never, mockConfig);
+    const plugin = new TemplateBundlesPlugin();
+    await kernel.registerPlugin(plugin);
+    let publish: ((e: never) => void) | undefined;
+    bridgeAuditEvents((cb) => {
+      publish = cb as never;
+      return () => {};
+    }, kernel.events);
+    const observed: unknown[] = [];
+    kernel.events.onCustom('template.bundle.observed', (p) => observed.push(p));
+
+    publish!({ action, entity: 'n8n → my-n8n', actorUserId: 1, ts: '2026-10-07T00:00:00.000Z' } as never);
+    for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+
+    expect(observed).toHaveLength(1);
+    expect(await kernel.configCenter.get('plugin:template-bundles:override_count', 0)).toBe(1);
+    plugin.destroy();
+  });
+
+  /**
+   * F373. Each observation read the counter and wrote +1; a second read
+   * landing while the first upsert was in flight saw the same old value, so
+   * two installs counted once. Upserts are gated by deferreds, no sleeps.
+   */
+  it('counts concurrently observed installs exactly once each', async () => {
+    const pending: Array<() => void> = [];
+    const db = makeDb();
+    db.insert = vi.fn().mockReturnValue({
+      values: vi.fn().mockReturnValue({
+        onConflictDoUpdate: vi.fn(() => new Promise<void>((resolve) => pending.push(resolve))),
+      }),
+    });
+    const kernel = new NineDeployKernel(db as never, mockConfig);
+    const plugin = new TemplateBundlesPlugin();
+    await kernel.registerPlugin(plugin);
+
+    for (const name of ['ghost', 'umami', 'n8n']) {
+      kernel.events.emit('audit.recorded', { action: 'template.install', entity: `template:${name}`, actorUserId: 1, ts: 't' });
+    }
+    for (let round = 0; round < 50; round++) {
+      for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+      if (pending.length === 0) break;
+      for (const release of pending.splice(0)) release();
+    }
+
+    expect(pending).toHaveLength(0);
+    expect(await kernel.configCenter.get('plugin:template-bundles:override_count', 0)).toBe(3);
+    plugin.destroy();
+  });
+
+  /**
+   * F374. destroy() only unsubscribed, so an observation parked on the
+   * `enabled` config read when the plugin was disabled still published
+   * `template.bundle.observed` and wrote the counter afterwards. Gated order:
+   * emit -> unregister -> release the read.
+   */
+  it('publishes and persists nothing for an observation in flight across unregister', async () => {
+    const reads: Array<() => void> = [];
+    const upserts: string[] = [];
+    const db = makeDb();
+    db.query.configEntries.findFirst = vi.fn(() => new Promise((resolve) => reads.push(() => resolve(undefined))));
+    db.insert = vi.fn().mockReturnValue({
+      values: vi.fn((row: { key: string }) => {
+        upserts.push(row.key);
+        return { onConflictDoUpdate: vi.fn().mockResolvedValue([]) };
+      }),
+    });
+    const kernel = new NineDeployKernel(db as never, mockConfig);
+    await kernel.registerPlugin(new TemplateBundlesPlugin());
+    const observed: unknown[] = [];
+    kernel.events.onCustom('template.bundle.observed', (p) => observed.push(p));
+
+    kernel.events.emit('audit.recorded', { action: 'template.install', entity: 'template:n8n', actorUserId: 1, ts: 't' });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(reads).toHaveLength(1);
+
+    expect(await kernel.unregisterPlugin('template-bundles')).toBe(true);
+    for (let round = 0; round < 10; round++) {
+      for (const release of reads.splice(0)) release();
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+
+    expect(observed).toEqual([]);
+    expect(upserts.filter((k) => k.endsWith(':override_count'))).toEqual([]);
   });
 });

@@ -18,7 +18,10 @@
  *   - `composeContent` — a compose file routinely inlines
  *     `POSTGRES_PASSWORD: …`, and it cannot be redacted line by line safely;
  *   - credentials embedded in a URL's userinfo (`https://user:tok@host/…` in
- *     `repoUrl`) — the URL stays, the userinfo becomes `[redacted]`.
+ *     `repoUrl`) — the URL stays, the userinfo becomes `[redacted]`. F388: a
+ *     URL anywhere in a string counts (an error message or audit entity that
+ *     quotes one); F389: the userinfo runs to the LAST `@` before the path,
+ *     as URL parsing reads it, so a password holding a raw `@` is not split.
  *
  * Everything else (ids, names, slugs, image, branch, commit, ports, status,
  * hostnames, …) is passed through unchanged, so plugins keyed on those keep
@@ -38,7 +41,7 @@ const SECRET_KEY =
   /passw(or)?d|passphrase|secret|token|api[-_]?key|private[-_]?key|credential|htpasswd|basic[-_]?auth|^auth(orization)?$|cookie|master[-_]?key/i;
 const ENV_KEY = /^(env|envVars|environment)$/i;
 const OPAQUE_KEY = /^compose[-_]?content$/i;
-const URL_USERINFO = /^([a-z][a-z0-9+.-]*:\/\/)[^/?#@\s]+@/i;
+const URL_USERINFO = /([a-z][a-z0-9+.-]*:\/\/)[^/?#\s]+@/gi;
 
 /** Nested-depth ceiling: DB rows are shallow; anything deeper is not ours to walk. */
 const MAX_DEPTH = 12;
@@ -83,9 +86,8 @@ export function redactForSandbox<T>(input: T): RedactedPayload<T> {
 
   const walk = (v: unknown, path: Path, depth: number): unknown => {
     if (typeof v === 'string') {
-      const m = URL_USERINFO.exec(v);
-      if (m) {
-        const placeholder = `${m[1]}${REDACTED}@${v.slice(m[0].length)}`;
+      const placeholder = v.replace(URL_USERINFO, (_m, scheme: string) => `${scheme}${REDACTED}@`);
+      if (placeholder !== v) {
         replacements.push({ path, original: v, placeholder });
         return placeholder;
       }

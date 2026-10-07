@@ -201,8 +201,16 @@ export default fp(
       let detachAuditBridge: (() => void) | undefined;
 
       fastify.addHook('onReady', async () => {
+        // F264: restoring operator-installed plugins is best effort. Its own
+        // read failing (DB busy/locked at boot) used to abort this whole hook,
+        // so boot() and the audit bridge were skipped and every built-in plugin
+        // stayed deaf until a restart.
         try {
           await loadInstalledPlugins(fastify.db, kernel);
+        } catch (err) {
+          fastify.log.error({ err }, 'Failed to restore installed plugins; booting the built-ins without them');
+        }
+        try {
           await kernel.boot();
           detachAuditBridge = bridgeAuditEvents((cb) => eventBus.subscribe(cb), kernel.events);
           fastify.log.info({ state: kernel.state }, 'NineDeploy microkernel booted successfully');

@@ -386,3 +386,76 @@ describe('Config Center body validation (shared schema)', () => {
     await app.close();
   });
 });
+
+// F280/F281/F282: the "keep the current value" path and the secrecy precedence.
+describe('Config Center keep-value and declared-secret rules', () => {
+  async function setup() {
+    const store = new Map<string, any>();
+    const findEntry = (args: any) => {
+      for (const [k, v] of store.entries()) {
+        const chunks = args?.where?.queryChunks ?? args?.queryChunks;
+        if (Array.isArray(chunks) && chunks.some((c: any) => c === k || c?.value === k)) return v;
+        if (args?.where?.value === k || args?.where?.right?.value === k || args?.where?.left?.value === k) return v;
+        try {
+          if (JSON.stringify(args).includes(k)) return v;
+        } catch {}
+      }
+      return undefined;
+    };
+    const put = (val: any) => {
+      store.set(val.key, val);
+      return [val];
+    };
+    const fakeDb = createFakeDb({
+      findFirst: { configEntries: ((args: any) => findEntry(args)) as any },
+      findMany: { configEntries: (() => Array.from(store.values())) as any },
+      insert: { configEntries: put as any, config_entries: put as any },
+    });
+    const app = await buildTestApp({ db: fakeDb });
+    await app.register(configCenterRoutes);
+    app.kernel.configCenter.registerDefinition({
+      key: 'plugin:smtp:password',
+      pluginId: 'smtp',
+      type: 'string',
+      isSecret: true,
+      label: 'SMTP Password',
+      category: 'plugin:smtp',
+    });
+    const post = (key: string, payload: Record<string, unknown>) =>
+      app.inject({ method: 'POST', url: `/${key}`, headers: asUser({ isOperator: true }), payload });
+    return { app, store, post };
+  }
+
+  it('F280: a blank-field save on a key with no stored value is refused instead of storing "undefined"', async () => {
+    const { app, store, post } = await setup();
+    const res = await post('plugin:smtp:password', { isSecret: true, tags: [] });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('value_required');
+    expect(store.has('plugin:smtp:password')).toBe(false);
+    await app.close();
+  });
+
+  it('F281: a body isSecret:false cannot store a declared secret in plaintext or bypass the mask guard', async () => {
+    const { app, store, post } = await setup();
+    expect((await post('plugin:smtp:password', { value: 'pw-two', isSecret: false })).statusCode).toBe(200);
+    const stored = store.get('plugin:smtp:password');
+    expect(stored.isSecret).toBe(true);
+    expect(String(stored.value)).not.toContain('pw-two');
+    const mask = await post('plugin:smtp:password', { value: '••••••••', isSecret: false });
+    expect(mask.statusCode).toBe(400);
+    expect(mask.json().error.code).toBe('masked_secret_rejected');
+    expect(store.get('plugin:smtp:password').value).toBe(stored.value);
+    await app.close();
+  });
+
+  it('F282: a metadata-only save never overwrites a secret it cannot decrypt', async () => {
+    const { app, store, post } = await setup();
+    const foreign = 'v7:AAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAA==:AAAA';
+    store.set('plugin:smtp:password', { key: 'plugin:smtp:password', value: foreign, isSecret: true, tags: [] });
+    const res = await post('plugin:smtp:password', { isSecret: true, description: 'edited' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('secret_unreadable');
+    expect(store.get('plugin:smtp:password').value).toBe(foreign);
+    await app.close();
+  });
+});

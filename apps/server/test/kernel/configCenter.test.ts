@@ -1,6 +1,11 @@
-﻿import { describe, expect, it, vi } from 'vitest';
+﻿import { fileURLToPath } from 'node:url';
+import { configEntries, createDb } from '@ninedeploy/db';
+import { migrate } from 'drizzle-orm/libsql/migrator';
+import { describe, expect, it, vi } from 'vitest';
 import { ConfigCenter } from '../../src/kernel/configCenter.js';
 import { createFakeDb } from '../helpers.js';
+
+const MIGRATIONS = fileURLToPath(new URL('../../../../packages/db/src/migrations', import.meta.url));
 
 describe('ConfigCenter', () => {
   it('registers and lists configuration definitions', () => {
@@ -313,5 +318,73 @@ describe('ConfigCenter', () => {
     expect(await configCenter.purgePluginConfigs('my-plugin')).toBe(0);
 
     unsub();
+  });
+});
+
+// Real in-memory SQLite: these pin SQL semantics (LIKE vs exact prefix) and
+// the cache-fill ordering, which the fake DB cannot model.
+describe('ConfigCenter against SQLite', () => {
+  async function realCenter() {
+    vi.stubEnv('NINEDEPLOY_MASTER_KEY', 'a'.repeat(64));
+    const { db } = createDb({ url: ':memory:' });
+    await migrate(db, { migrationsFolder: MIGRATIONS });
+    const keys = async () =>
+      (await db.select({ key: configEntries.key }).from(configEntries)).map((r) => r.key).sort();
+    return { db, cc: new ConfigCenter(db), keys };
+  }
+
+  // F248: LIKE made `_` a wildcard and ignored case, so uninstalling sandbox
+  // plugin `domain_presets` / `Domain-Presets` (both accepted ids) erased the
+  // built-in domain-presets' token and DNS record ledger.
+  it('purgePluginConfigs never reaches a namespace that differs by "_" or case', async () => {
+    for (const id of ['domain_presets', 'Domain-Presets']) {
+      const { cc, keys } = await realCenter();
+      await cc.createScopedConfig('domain-presets').set('apiToken', 'tok', { isSecret: true });
+      await cc.createScopedConfig('domain-presets').set('record:a.example.com', { id: 'r' });
+      await cc.createScopedConfig(id).set('own', 1);
+      await cc.purgePluginConfigs(id);
+      expect(await keys()).toEqual(['plugin:domain-presets:apiToken', 'plugin:domain-presets:record:a.example.com']);
+    }
+    vi.unstubAllEnvs();
+  });
+
+  // F249: a get() whose read was overtaken by set()/delete() re-cached the
+  // overwritten value, so every later get() served it until a restart.
+  // Gated with deferreds: the read parks until the write has committed.
+  it('a get() overtaken by set()/delete() does not poison the cache', async () => {
+    for (const write of ['set', 'delete'] as const) {
+      const { db } = await realCenter();
+      await new ConfigCenter(db).set('app.mode', 'v1');
+      const cc = new ConfigCenter(db); // cold cache
+      const q = db.query.configEntries as unknown as { findFirst: (a: unknown) => Promise<unknown> };
+      const orig = q.findFirst.bind(q);
+      let releaseRead!: () => void;
+      let readDone!: () => void;
+      const released = new Promise<void>((r) => {
+        releaseRead = r;
+      });
+      const read = new Promise<void>((r) => {
+        readDone = r;
+      });
+      let parked = false;
+      q.findFirst = async (a: unknown) => {
+        const row = await orig(a);
+        if (!parked) {
+          parked = true;
+          readDone();
+          await released;
+        }
+        return row;
+      };
+
+      const late = cc.get('app.mode', 'fallback');
+      await read;
+      if (write === 'set') await cc.set('app.mode', 'v2');
+      else await cc.delete('app.mode');
+      releaseRead();
+      await late;
+      expect(await cc.get('app.mode', 'fallback')).toBe(write === 'set' ? 'v2' : 'fallback');
+    }
+    vi.unstubAllEnvs();
   });
 });

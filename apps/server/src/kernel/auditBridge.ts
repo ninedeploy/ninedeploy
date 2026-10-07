@@ -40,14 +40,32 @@ export interface MappedEvent {
   payload: DomainEvents[keyof DomainEvents];
 }
 
-/** First path segment of an audit entity, e.g. "web #3" -> "web". */
-function entityName(entity: string | null): string {
-  return (entity ?? '').split('#')[0]?.trim() ?? '';
+/**
+ * F356: the LAST `#<number>` in an audit entity. Producers append the id after
+ * a free-form name (`${service.name} #${id}`), and a service name may itself
+ * contain "#<n>" — taking the first match handed plugins another id.
+ */
+function lastIdMatch(entity: string | null): RegExpMatchArray | undefined {
+  let last: RegExpMatchArray | undefined;
+  for (const m of (entity ?? '').matchAll(/#(\d+)/g)) last = m;
+  return last;
 }
 
-/** Trailing `#<number>` in an audit entity, when present. */
+/**
+ * The name before the appended id, e.g. "worker #2 #57" -> "worker #2".
+ * F357: undefined (not '') when there is none, e.g. the rollback/cancel
+ * entities "#12 → abc1234" / "#5", so consumers' fallbacks still apply.
+ */
+function entityName(entity: string | null): string | undefined {
+  const text = entity ?? '';
+  const m = lastIdMatch(entity);
+  const name = (m ? text.slice(0, m.index ?? 0) : text).trim();
+  return name === '' ? undefined : name;
+}
+
+/** The appended `#<number>` in an audit entity, when present. */
 function entityId(entity: string | null): number | undefined {
-  const m = /#(\d+)/.exec(entity ?? '');
+  const m = lastIdMatch(entity);
   return m ? Number(m[1]) : undefined;
 }
 
@@ -71,7 +89,7 @@ export function mapAuditToDomainEvent(event: AppEvent): MappedEvent | null {
       name: 'deployment.status_changed',
       payload: {
         status: action.slice('deploy.'.length),
-        serviceName: entityName(entity),
+        ...(entityName(entity) === undefined ? {} : { serviceName: entityName(entity) }),
         ...(entityId(entity) === undefined ? {} : { deploymentId: entityId(entity) }),
       },
     } as MappedEvent;

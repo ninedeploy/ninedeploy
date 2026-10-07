@@ -1,4 +1,4 @@
-import { eq, like, or } from 'drizzle-orm';
+import { eq, or, sql } from 'drizzle-orm';
 import type { DB } from '@ninedeploy/db';
 import { configEntries } from '@ninedeploy/db';
 import { decrypt, encrypt } from '../lib/crypto.js';
@@ -11,6 +11,12 @@ export class ConfigCenter implements IConfigCenter {
   private readonly definitions = new Map<string, ConfigDefinition>();
   private readonly inMemoryCache = new Map<string, { value: unknown; isSecret: boolean }>();
   private readonly watchers = new Map<string, Set<Watcher>>();
+  /**
+   * F249: bumped by every committed write (set/delete/purge). A get() that
+   * read the DB before a write finished must not publish that pre-write row
+   * into the cache, or every later get() serves the overwritten value.
+   */
+  private writeEpoch = 0;
 
   constructor(db: DB) {
     this.db = db;
@@ -39,9 +45,11 @@ export class ConfigCenter implements IConfigCenter {
       return cached.value as T;
     }
 
+    const epoch = this.writeEpoch;
     const row = await this.db.query.configEntries.findFirst({
       where: eq(configEntries.key, key),
     });
+    const fresh = epoch === this.writeEpoch;
 
     if (!row) {
       const def = this.definitions.get(key);
@@ -62,10 +70,10 @@ export class ConfigCenter implements IConfigCenter {
 
     try {
       const parsed = JSON.parse(row.value) as T;
-      this.inMemoryCache.set(key, { value: parsed, isSecret: false });
+      if (fresh) this.inMemoryCache.set(key, { value: parsed, isSecret: false });
       return parsed;
     } catch {
-      this.inMemoryCache.set(key, { value: row.value, isSecret: false });
+      if (fresh) this.inMemoryCache.set(key, { value: row.value, isSecret: false });
       return row.value as unknown as T;
     }
   }
@@ -145,6 +153,7 @@ export class ConfigCenter implements IConfigCenter {
         },
       });
 
+    this.writeEpoch++;
     if (!isSecret) {
       this.inMemoryCache.set(key, { value, isSecret: false });
     } else {
@@ -167,6 +176,9 @@ export class ConfigCenter implements IConfigCenter {
   async delete(key: string): Promise<boolean> {
     this.inMemoryCache.delete(key);
     await this.db.delete(configEntries).where(eq(configEntries.key, key));
+    // F249: a get() that started inside the await read the still-present row.
+    this.writeEpoch++;
+    this.inMemoryCache.delete(key);
     return true;
   }
 
@@ -197,9 +209,18 @@ export class ConfigCenter implements IConfigCenter {
       }
     }
 
+    // F248: an exact, case-sensitive prefix test. LIKE treated `_` as a
+    // wildcard and ignored ASCII case, so purging sandbox id `domain_presets`
+    // (or `Domain-Presets`) erased the built-in `plugin:domain-presets:` rows.
     const res = await this.db
       .delete(configEntries)
-      .where(or(eq(configEntries.pluginId, pluginId), like(configEntries.key, `${prefix}%`)));
+      .where(or(eq(configEntries.pluginId, pluginId), sql`instr(${configEntries.key}, ${prefix}) = 1`));
+    this.writeEpoch++;
+    for (const key of Array.from(this.inMemoryCache.keys())) {
+      if (key.startsWith(prefix)) {
+        this.inMemoryCache.delete(key);
+      }
+    }
 
     return (res as unknown as { rowsAffected?: number })?.rowsAffected ?? 0;
   }

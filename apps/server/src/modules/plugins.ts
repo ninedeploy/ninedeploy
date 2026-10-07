@@ -251,19 +251,23 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const menus = req.kernel.menuRegistry.getPluginMenus(id);
-    const manifest = (dbRow?.manifest as Record<string, any> | null) ?? {};
+    // F573: like the list (r531), a stray row under a built-in id must not
+    // relabel the built-in — report the built-in, surface the collision.
+    const strayRow = kernelPlugin && isBuiltInPluginId(id) ? dbRow : undefined;
+    const row = strayRow ? undefined : dbRow;
+    const manifest = (row?.manifest as Record<string, any> | null) ?? {};
 
     const name = kernelPlugin ? kernelPlugin.name : dbRow!.name;
     const version = kernelPlugin ? kernelPlugin.version : dbRow!.version;
     const description = kernelPlugin ? kernelPlugin.description : manifest.description;
-    const isOfficial = dbRow ? dbRow.isOfficial : true;
+    const isOfficial = row ? row.isOfficial : true;
     const author = manifest.author ? manifest.author : (isOfficial ? 'NineDeploy Team' : 'Community Developer');
-    const enabled = dbRow ? dbRow.enabled : true;
-    const status = dbRow ? dbRow.status : 'active';
+    const enabled = row ? row.enabled : true;
+    const status = row ? row.status : 'active';
     const dependencies = kernelPlugin?.dependencies ?? manifest.dependencies ?? [];
     const configSchema = kernelPlugin?.configSchema ?? manifest.configSchema ?? [];
-    const installedAt = dbRow?.createdAt ? dbRow.createdAt.toISOString() : undefined;
-    const loadedAt = dbRow?.updatedAt ? dbRow.updatedAt.toISOString() : installedAt;
+    const installedAt = row?.createdAt ? row.createdAt.toISOString() : undefined;
+    const loadedAt = row?.updatedAt ? row.updatedAt.toISOString() : installedAt;
 
     return {
       id,
@@ -283,8 +287,8 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
       services: [] as string[],
       menus,
       configSchema,
-      error: dbRow?.error ?? null,
-      ...sandboxNetworkField(kernelPlugin instanceof SandboxPlugin || rowIsSandbox(dbRow ?? undefined)),
+      error: dbRow?.error ?? (strayRow ? builtInCollision(id) : null),
+      ...sandboxNetworkField(kernelPlugin instanceof SandboxPlugin || rowIsSandbox(row ?? undefined)),
       installedAt,
       runtimeStats: {
         eventsHandled: null,
@@ -305,6 +309,12 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(404).send({ error: `Plugin "${id}" is not installed` });
     }
     if (isBuiltInPluginId(id)) return reply.code(409).send({ error: builtInCollision(id) });
+    // F572: reload never consulted `enabled` — it re-initialised a DISABLED
+    // plugin (the state an operator disables a plugin to escape) and reported
+    // it active while the row kept enabled=false. Only enable loads it.
+    if (!dbRow.enabled) {
+      return reply.code(409).send({ error: `Plugin "${id}" is disabled — enable it instead of reloading it` });
+    }
 
     // r420: reload used to emit an event and return ok WITHOUT touching the
     // runtime. Actually swap the instance: tear the old one down (worker,

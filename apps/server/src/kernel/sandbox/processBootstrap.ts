@@ -19,6 +19,42 @@ function post(msg: WorkerToMainMessage): void {
   if (process.send) process.send(msg);
 }
 
+// F312: report an async fault with the SAME structured ERROR + errored status
+// a synchronous throw already produces (the outer try/catch below), so the host
+// learns the cause instead of guessing from a bare non-zero exit.
+function reportFault(err: unknown): void {
+  const e = err as Error;
+  const message = e?.message ?? String(err);
+  post({ type: 'ERROR', payload: { error: message, stack: e?.stack } });
+  post({ type: 'STATUS_CHANGED', payload: { status: 'errored', error: message } });
+}
+
+// F312: a stray unhandled rejection in third-party plugin code (a fire-and-forget
+// promise, a background timer that rejects) must not silently tear down the whole
+// sandbox child — that loses every registered hook and listener and leaves the
+// host to infer a fault from the exit code alone, marking the plugin "disabled"
+// rather than "errored". Report it and keep the process alive, exactly as a
+// synchronous throw is handled; registering the handler also suppresses Node's
+// default crash-on-unhandled-rejection. An uncaughtException leaves the runtime
+// in an undefined state, so report it and then exit non-zero.
+process.on('unhandledRejection', (reason) => reportFault(reason));
+process.on('uncaughtException', (err) => {
+  reportFault(err);
+  process.exit(1);
+});
+
+// F313: the host treats a HOOK_RESPONSE as a failure only when `error` is
+// truthy. A handler may throw anything — a string, null, an Error with an
+// empty message — so the reason must always be a non-empty string, and
+// reading it must never throw (that skipped the reply altogether).
+function thrownReason(err: unknown): string {
+  let text = '';
+  try {
+    text = String((err as Error | null)?.message || err);
+  } catch {}
+  return text || 'sandbox hook handler failed';
+}
+
 const hookHandlers = new Map<string, (payload: any) => Promise<any> | any>();
 const eventHandlers = new Map<string, Set<(payload: any) => Promise<void> | void>>();
 const pendingConfigRequests = new Map<string, { resolve: (val: any) => void; reject: (err: Error) => void }>();
@@ -162,7 +198,7 @@ process.on('message', async (msg: MainToWorkerMessage) => {
           const result = await handler(initialPayload);
           post({ type: 'HOOK_RESPONSE', payload: { hookId, callId, result: result ?? initialPayload } });
         } catch (err) {
-          post({ type: 'HOOK_RESPONSE', payload: { hookId, callId, error: (err as Error).message } });
+          post({ type: 'HOOK_RESPONSE', payload: { hookId, callId, error: thrownReason(err) } });
         }
         break;
       }

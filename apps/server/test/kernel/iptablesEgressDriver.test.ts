@@ -34,14 +34,15 @@ describe('IptablesEgressDriver', () => {
     expect(driver.name).toBe('iptables');
   });
 
-  it('runs iptables -t nat -A POSTROUTING with the SNAT rule', async () => {
+  it('runs iptables -t nat -I POSTROUTING with the SNAT rule (F228: inserted, not appended)', async () => {
     await driver.attach({ projectId: 7 }, '203.0.113.7');
     const call = runMock.mock.calls.find(
       (c) => c[0] === 'iptables' && c[1]?.[0] === '-t' && c[1]?.[1] === 'nat',
     );
     expect(call).toBeDefined();
     const argv = call?.[1] as string[];
-    expect(argv).toContain('-A');
+    expect(argv).toContain('-I');
+    expect(argv).not.toContain('-A');
     expect(argv).toContain('POSTROUTING');
     expect(argv).toContain('--to-source');
     expect(argv).toContain('203.0.113.7');
@@ -89,11 +90,11 @@ describe('IptablesEgressDriver', () => {
     await driver.attach({ projectId: 7 }, '203.0.113.7');
     await driver.attach({ projectId: 7 }, '198.51.100.7');
     const argvList = runMock.mock.calls.map((c) => c[1] as string[]);
-    // First call: -A (attach 203.0.113.7)
+    // First call: -I (attach 203.0.113.7)
     // Second call: -D (detach 203.0.113.7)
-    // Third call: -A (attach 198.51.100.7)
-    const flags = argvList.map((argv) => argv[argv.indexOf('-A') > -1 ? argv.indexOf('-A') : argv.indexOf('-D')]);
-    expect(flags).toEqual(['-A', '-D', '-A']);
+    // Third call: -I (attach 198.51.100.7)
+    const flags = argvList.map((argv) => argv[2]);
+    expect(flags).toEqual(['-I', '-D', '-I']);
   });
 
   it('detach on an unknown project is a no-op', async () => {
@@ -172,7 +173,7 @@ describe('ESM purity (r025 regression)', () => {
 
 describe('r240: real source networks and reboot re-apply', () => {
   const addCidrs = () =>
-    runMock.mock.calls.filter((c) => (c[1] as string[])[2] === '-A').map((c) => (c[1] as string[])[5]);
+    runMock.mock.calls.filter((c) => (c[1] as string[])[2] === '-I').map((c) => (c[1] as string[])[5]);
 
   it('applies one SNAT rule per resolved service bridge', async () => {
     const d = new IptablesEgressDriver({ rootDir: tmpRoot, resolveCidrs: async () => ['172.21.0.0/16', '172.22.0.0/16'] });
@@ -204,7 +205,7 @@ describe('r240: real source networks and reboot re-apply', () => {
 
   it('rolls back the rules already added when a later one is rejected', async () => {
     runMock.mockImplementation(async (_t: string, argv: string[]) => {
-      if (argv[2] === '-A' && argv[5] === '172.22.0.0/16') throw new Error('Permission denied');
+      if (argv[2] === '-I' && argv[5] === '172.22.0.0/16') throw new Error('Permission denied');
     });
     const d = new IptablesEgressDriver({ rootDir: tmpRoot, resolveCidrs: async () => ['172.21.0.0/16', '172.22.0.0/16'] });
     await expect(d.attach({ projectId: 3 }, '203.0.113.3')).rejects.toThrow(/Permission denied/);
@@ -228,3 +229,85 @@ describe('r240: real source networks and reboot re-apply', () => {
   });
 });
 
+// The fakes below model nat/POSTROUTING as an ordered list of rule specs:
+// `-A` appends, `-I` inserts at the top, `-D` removes the first match, `-C`
+// checks. No real iptables runs.
+describe('F228/F229/F230 regressions', () => {
+  const chain: string[] = [];
+  const spec = (argv: string[]) => argv.slice(4).join(' ');
+  const fakeIptables = (opts: { gate?: Array<() => void>; failDelete?: () => boolean } = {}) =>
+    runMock.mockImplementation(async (_t: string, argv: string[]) => {
+      const op = argv[2];
+      if (op === '-A' || op === '-I') {
+        if (opts.gate) await new Promise<void>((r) => opts.gate?.push(r));
+        if (op === '-A') chain.push(spec(argv));
+        else chain.unshift(spec(argv));
+        return;
+      }
+      if (op === '-D' && opts.failDelete?.()) throw new Error('`iptables` exited with code 4');
+      const i = chain.indexOf(spec(argv));
+      if (i < 0) throw new Error('`iptables` exited with code 1');
+      if (op === '-D') chain.splice(i, 1);
+    });
+  const flush = async () => {
+    for (let i = 0; i < 50; i++) await Promise.resolve();
+  };
+
+  beforeEach(() => {
+    chain.length = 0;
+  });
+
+  it('F228: the SNAT rule lands ahead of the MASQUERADE rule Docker inserted for the bridge', async () => {
+    fakeIptables();
+    const masq = '-s 172.21.0.0/16 ! -o br-nd-svc-web -j MASQUERADE';
+    chain.push(masq); // `docker network create` already ran
+    const d = new IptablesEgressDriver({ rootDir: tmpRoot, resolveCidrs: async () => ['172.21.0.0/16'] });
+    await d.attach({ projectId: 1 }, '203.0.113.1');
+    // nat/POSTROUTING is first-match and MASQUERADE is terminating.
+    expect(chain[0]).toContain('--to-source 203.0.113.1');
+    expect(chain[1]).toBe(masq);
+    // Same after a reboot: dockerd re-creates its rule before reapply() runs.
+    chain.splice(0, chain.length, masq);
+    const fresh = new IptablesEgressDriver({ rootDir: tmpRoot });
+    expect(await fresh.reapply()).toEqual({ restored: 1, failed: 0 });
+    expect(chain[0]).toContain('--to-source 203.0.113.1');
+  });
+
+  it('F229: overlapping attach() calls for one project leave one kernel rule, which detach() removes', async () => {
+    const gate: Array<() => void> = [];
+    fakeIptables({ gate });
+    const d = new IptablesEgressDriver({ rootDir: tmpRoot, resolveCidrs: async () => ['172.21.0.0/16'] });
+    const a = d.attach({ projectId: 4 }, '203.0.113.4');
+    const b = d.attach({ projectId: 4 }, '198.51.100.4');
+    await flush();
+    expect(gate).toHaveLength(1); // the second call is queued behind the first
+    while (gate.length > 0) {
+      gate.shift()?.();
+      await flush();
+    }
+    await Promise.all([a, b]);
+    expect(chain).toHaveLength(1);
+    expect(chain[0]).toContain('--to-source 198.51.100.4');
+    expect((await d.list()).map((r) => r.ip)).toEqual(['198.51.100.4']);
+    await d.detach({ projectId: 4 });
+    expect(chain).toEqual([]);
+  });
+
+  it('F230: a delete that fails while the rule is still live keeps it tracked; a gone rule is scrubbed', async () => {
+    let lockHeld = false;
+    fakeIptables({ failDelete: () => lockHeld });
+    const d = new IptablesEgressDriver({ rootDir: tmpRoot, resolveCidrs: async () => ['172.21.0.0/16'] });
+    await d.attach({ projectId: 6 }, '203.0.113.6');
+    lockHeld = true;
+    await expect(d.detach({ projectId: 6 })).rejects.toThrow(/-D POSTROUTING failed for project 6/);
+    expect(chain).toHaveLength(1);
+    expect(await d.list()).toHaveLength(1);
+    expect(existsSync(join(tmpRoot, '6.rules'))).toBe(true);
+    // Rule flushed out from under us: scrubbing is right.
+    lockHeld = false;
+    chain.length = 0;
+    await d.detach({ projectId: 6 });
+    expect(await d.list()).toEqual([]);
+    expect(existsSync(join(tmpRoot, '6.rules'))).toBe(false);
+  });
+});

@@ -103,6 +103,25 @@ describe('mapAuditToDomainEvent', () => {
     // to know about every action for the bus to be useful.
     expect(mapAuditToDomainEvent(evt('auth.login', 'a@b.test'))).toBeNull();
   });
+
+  it('F356: takes the appended #id, not one inside a free-form service name', () => {
+    expect(mapAuditToDomainEvent(evt('deploy.failed', 'worker #2 #57'))).toEqual({
+      name: 'deployment.status_changed',
+      payload: { status: 'failed', serviceName: 'worker #2', deploymentId: 57 },
+    });
+    expect(mapAuditToDomainEvent(evt('alert.service_down', 'worker #2 #14'))?.payload).toEqual({
+      status: 'dead',
+      serviceId: 14,
+    });
+  });
+
+  it('F357: omits serviceName when the entity carries none', () => {
+    expect(mapAuditToDomainEvent(evt('deploy.rollback', '#12 → abc1234'))?.payload).toEqual({
+      status: 'rollback',
+      deploymentId: 12,
+    });
+    expect(mapAuditToDomainEvent(evt('deploy.cancel', '#5'))?.payload).toEqual({ status: 'cancel', deploymentId: 5 });
+  });
 });
 
 describe('bridgeAuditEvents', () => {

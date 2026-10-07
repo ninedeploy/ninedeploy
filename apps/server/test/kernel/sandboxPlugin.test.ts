@@ -196,6 +196,100 @@ describe('SandboxPlugin (Worker Threads)', () => {
     }
   }, 20000);
 
+  it('F140: messages the sandbox posts after destroy() began change nothing in the kernel', async () => {
+    // destroy() drains its unsubs, then gives the sandbox a SHUTDOWN grace —
+    // a REGISTER_HOOK delivered in that window (or still queued when the
+    // transport dies) used to tap a hook nothing would ever remove, and a
+    // CONFIG_SET wrote config for a stopped plugin. Delivered here through
+    // the real Worker's own listener, in a fixed order relative to destroy().
+    const workerScriptPath = join(tmpdir(), `test-worker-late-${Date.now()}.mjs`);
+    writeFileSync(
+      workerScriptPath,
+      `
+      import { parentPort } from 'node:worker_threads';
+      parentPort.on('message', (msg) => {
+        if (msg.type === 'INIT') parentPort.postMessage({ type: 'READY', payload: {} });
+        if (msg.type === 'SHUTDOWN') process.exit(0);
+      });
+      `,
+      'utf8',
+    );
+    try {
+      const kernel = new NineDeployKernel(createFakeDb(), mockConfig);
+      const setSpy = vi.spyOn(kernel.configCenter, 'set');
+      const emitSpy = vi.spyOn(kernel.events, 'emitCustom');
+      const plugin = new SandboxPlugin({ id: 'late-sandbox', name: 'Late', workerPath: workerScriptPath });
+      await kernel.registerPlugin(plugin);
+      const worker = (plugin as unknown as { worker: import('node:worker_threads').Worker }).worker;
+
+      const stopping = kernel.unregisterPlugin('late-sandbox');
+      worker.emit('message', { type: 'REGISTER_HOOK', payload: { hookId: 'late-1', hookName: 'deploy:before' } });
+      worker.emit('message', { type: 'CONFIG_SET', payload: { key: 'token', value: 'abc' } });
+      worker.emit('message', { type: 'EMIT_EVENT', payload: { event: 'plugin.late-sandbox.bye', data: {} } });
+      await stopping;
+      worker.emit('message', { type: 'REGISTER_HOOK', payload: { hookId: 'late-2', hookName: 'deploy:after' } });
+      await new Promise((r) => setImmediate(r));
+
+      expect(kernel.hooks.hasListeners('deploy:before')).toBe(false);
+      expect(kernel.hooks.hasListeners('deploy:after')).toBe(false);
+      expect(setSpy).not.toHaveBeenCalled();
+      expect(emitSpy).not.toHaveBeenCalledWith('plugin.late-sandbox.bye', expect.anything(), expect.anything());
+    } finally {
+      try {
+        unlinkSync(workerScriptPath);
+      } catch {}
+    }
+  });
+
+  it('F143: CONFIG_SET options cannot pick the row owner, category or updating user', async () => {
+    // `options` crosses the trust boundary from plugin code. It used to reach
+    // ConfigCenter.set() whole: a sandbox could file its rows under another
+    // plugin (whose uninstall then purged them) or a core category, and
+    // attribute the write to an administrator via userId.
+    const workerScriptPath = join(tmpdir(), `test-worker-cfgset-${Date.now()}.mjs`);
+    writeFileSync(
+      workerScriptPath,
+      `
+      import { parentPort } from 'node:worker_threads';
+      parentPort.on('message', (msg) => {
+        if (msg.type === 'INIT') {
+          parentPort.postMessage({ type: 'CONFIG_SET', payload: {
+            key: 'banner', value: 'x',
+            options: { pluginId: 'domain-presets', category: 'security', userId: 1, description: 'd', tags: ['t'] },
+          } });
+          parentPort.postMessage({ type: 'READY', payload: {} });
+        }
+        if (msg.type === 'SHUTDOWN') process.exit(0);
+      });
+      `,
+      'utf8',
+    );
+    try {
+      const kernel = new NineDeployKernel(createFakeDb(), mockConfig);
+      let wrote!: (args: unknown[]) => void;
+      const written = new Promise<unknown[]>((r) => {
+        wrote = r;
+      });
+      vi.spyOn(kernel.configCenter, 'set').mockImplementation(async (...args: unknown[]) => wrote(args));
+      await kernel.registerPlugin(new SandboxPlugin({ id: 'cfg-sandbox', name: 'Cfg', workerPath: workerScriptPath }));
+      const [key, value, opts] = await written;
+      expect(key).toBe('plugin:cfg-sandbox:banner');
+      expect(value).toBe('x');
+      expect(opts).toEqual({
+        isSecret: undefined,
+        description: 'd',
+        tags: ['t'],
+        pluginId: 'cfg-sandbox',
+        category: 'plugin:cfg-sandbox',
+      });
+      await kernel.unregisterPlugin('cfg-sandbox');
+    } finally {
+      try {
+        unlinkSync(workerScriptPath);
+      } catch {}
+    }
+  });
+
   it('handles worker error events gracefully without crashing kernel', async () => {
     const db = createFakeDb();
     const kernel = new NineDeployKernel(db, mockConfig);

@@ -3,7 +3,8 @@ import type { KernelContext, KernelPlugin } from '../types.js';
 /**
  * Template Bundles plugin — Sprint 1, Gap G-04.
  *
- * Listens for `audit.recorded` events whose action is `template.install` and,
+ * Listens for `audit.recorded` events whose action is `template.deploy` (the
+ * template deploy route's audit; `template.install` is still accepted) and,
  * when the panel already knows about a per-template manifest override, republishes
  * the fact as a typed domain event (`template.bundle.observed`) on the kernel bus.
  *
@@ -68,7 +69,16 @@ export class TemplateBundlesPlugin implements KernelPlugin {
 
   private unsubs: Array<() => void> = [];
 
+  /**
+   * F373: override_count increments run one at a time. Two observations that
+   * both read the counter before either write landed wrote the same value.
+   */
+  private counterChain: Promise<void> = Promise.resolve();
+
   init(ctx: KernelContext): void {
+    // F374: an observation already waiting on the config read when destroy()
+    // ran must not publish or persist anything afterwards.
+    let active = true;
     // Subscribe to the audit firehose (bridged from lib/events.ts). We only care
     // about template installs; everything else passes through untouched.
     const unsub = ctx.events.on('audit.recorded', (payload) => {
@@ -79,7 +89,9 @@ export class TemplateBundlesPlugin implements KernelPlugin {
         ts?: string;
       };
 
-      if (record.action !== 'template.install') {
+      // F372: the template deploy route audits `template.deploy`; nothing ever
+      // emitted `template.install`, so the observer never fired in production.
+      if (record.action !== 'template.deploy' && record.action !== 'template.install') {
         return;
       }
 
@@ -89,7 +101,7 @@ export class TemplateBundlesPlugin implements KernelPlugin {
       void ctx.configCenter
         .get<boolean>('plugin:template-bundles:enabled', true)
         .then((enabled) => {
-          if (!enabled) {
+          if (!enabled || !active) {
             return;
           }
           // Re-emit as a typed, plugin-friendly event. The downstream
@@ -105,14 +117,21 @@ export class TemplateBundlesPlugin implements KernelPlugin {
           // so the counter an operator reads was permanently 0 no matter how
           // many templates they installed. Persisting it here is what makes
           // the number the schema advertises mean something.
-          return ctx.configCenter
-            .get<number>('plugin:template-bundles:override_count', 0)
-            .then((current) =>
-              ctx.configCenter.set(
-                'plugin:template-bundles:override_count',
-                (typeof current === 'number' && Number.isFinite(current) ? current : 0) + 1,
-              ),
-            );
+          const increment = this.counterChain.then(() => {
+            if (!active) return;
+            return ctx.configCenter
+              .get<number>('plugin:template-bundles:override_count', 0)
+              .then((current) => {
+                if (!active) return;
+                return ctx.configCenter.set(
+                  'plugin:template-bundles:override_count',
+                  (typeof current === 'number' && Number.isFinite(current) ? current : 0) + 1,
+                );
+              });
+          });
+          // A failed write is reported below; it must not wedge later increments.
+          this.counterChain = increment.catch(() => undefined);
+          return increment;
         })
         .catch((err: unknown) => {
           // A config read failure must not crash the audit bus. The error is
@@ -125,7 +144,10 @@ export class TemplateBundlesPlugin implements KernelPlugin {
         });
     });
 
-    this.unsubs.push(unsub);
+    this.unsubs.push(() => {
+      active = false;
+      unsub();
+    });
   }
 
   destroy(): void {

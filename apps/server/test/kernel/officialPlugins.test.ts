@@ -59,13 +59,13 @@ describe('Official Kernel Plugins', () => {
         level: 'info',
       });
 
-      // 3. Deployment status without name/id
+      // 3. Deployment status without name/id — F628: no fabricated "#0"
       kernel.events.emit('deployment.status_changed', {});
       await settle();
       expect(notifications).toHaveLength(3);
       expect(notifications[2]).toEqual({
         title: 'Deployment Updated',
-        body: 'Service Unknown deployment #0 changed to undefined',
+        body: 'Service Unknown deployment changed to undefined',
         level: 'info',
       });
 

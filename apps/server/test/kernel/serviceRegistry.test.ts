@@ -99,4 +99,36 @@ describe('ServiceRegistry', () => {
     registry.clear();
     expect(registry.has('s2')).toBe(false);
   });
+
+  it('F368: unregistering a typed driver drops it from its list and allows a replacement', () => {
+    const registry = new ServiceRegistry();
+    const inline = { name: 'inline' } as never;
+    const s3 = { name: 's3' } as never;
+    const old = { name: 'iptables' } as never;
+    registry.registerBuildCache(inline);
+    registry.registerBuildCache(s3);
+    registry.registerEgressIpDriver(old);
+
+    expect(registry.unregister('build-cache:inline')).toBe(true);
+    expect(registry.unregister('egress-ip:iptables')).toBe(true);
+    // A `list*()[0]` default must not keep handing out the unregistered instance.
+    expect(registry.listBuildCaches()).toEqual([s3]);
+    expect(registry.listEgressIpDrivers()).toEqual([]);
+
+    const replacement = { name: 'iptables' } as never;
+    registry.registerEgressIpDriver(replacement);
+    expect(registry.listEgressIpDrivers()).toEqual([replacement]);
+    expect(registry.getEgressIpDriver('iptables')).toBe(replacement);
+  });
+
+  it('F369: a typed registration refused on a taken key leaves no list entry', () => {
+    const registry = new ServiceRegistry();
+    const squatter = { squatter: true };
+    registry.register('orchestrator:local', squatter);
+    expect(() => registry.registerOrchestrator({ name: 'local' } as never)).toThrow(
+      'Service "orchestrator:local" is already registered',
+    );
+    expect(registry.listOrchestrators()).toEqual([]);
+    expect(registry.getOrchestrator('local')).toBe(squatter);
+  });
 });

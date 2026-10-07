@@ -192,6 +192,29 @@ describe('r531 — reserved built-in plugin ids', () => {
     expect(kernel.getPlugin('domain-presets')).toBe(builtIn);
   });
 
+  it('F120: uninstalling a stray built-in-id or ":" row does not purge the namespace it shares', async () => {
+    // The boot error tells the operator to uninstall such a row. Its
+    // `plugin:<id>:` namespace IS the built-in's (or, for "domain-presets:record",
+    // the built-in's DNS record ledger), so the r527 config purge must not run.
+    const recordKey = 'plugin:domain-presets:record:app.example.com';
+    for (const id of ['domain-presets', 'domain-presets:record']) {
+      const kernel = new NineDeployKernel(createFakeDb(), mockConfig);
+      const cache = (kernel.configCenter as unknown as { inMemoryCache: Map<string, unknown> }).inMemoryCache;
+      cache.set(recordKey, { value: { recordId: 'cf-1' }, isSecret: false });
+      const purge = vi.spyOn(kernel.configCenter, 'purgePluginConfigs');
+      const db = loaderDb({ id, name: 'Shadow', manifest: { source: 'sandbox', target: id } });
+      await uninstallPlugin(db as never, kernel, id);
+      expect(purge, id).not.toHaveBeenCalled();
+      expect(cache.has(recordKey), id).toBe(true);
+      expect(db.delete, id).toHaveBeenCalledTimes(1);
+    }
+    // An ordinary row still has its own config purged (r527).
+    const kernel = new NineDeployKernel(createFakeDb(), mockConfig);
+    const purge = vi.spyOn(kernel.configCenter, 'purgePluginConfigs').mockResolvedValue(0);
+    await uninstallPlugin(loaderDb({ id: 'acme', name: 'Acme' }) as never, kernel, 'acme');
+    expect(purge).toHaveBeenCalledWith('acme');
+  });
+
   it('routes: enable/disable/reload refuse a built-in id with 409; list keeps the built-in active', async () => {
     const stray = {
       id: 'domain-presets',

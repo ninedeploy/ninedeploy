@@ -27,9 +27,14 @@ export class HookPipeline implements IHookPipeline {
     },
   ): () => void {
     const hookName = hook as string;
+    // F385: a non-numeric priority (a sandbox plugin's `{ priority: 'high' }`
+    // arrives verbatim over REGISTER_HOOK) made the comparator below return
+    // NaN, which sort treats as "equal" — the order stopped being total and
+    // other plugins' handlers ran out of priority order.
+    const priority = Number(opts?.priority ?? 100);
     const entry: HookHandlerEntry = {
       id: opts?.id,
-      priority: opts?.priority ?? 100,
+      priority: Number.isNaN(priority) ? 100 : priority,
       timeoutMs: opts?.timeoutMs ?? 5000,
       handler,
       rollback: opts?.rollback,
@@ -83,6 +88,10 @@ export class HookPipeline implements IHookPipeline {
     };
 
     for (const entry of Array.from(list)) {
+      // F384: unsubscribed (plugin disabled/reloaded) or cleared (kernel
+      // shutdown) while an earlier handler of this call was still running —
+      // its owner is torn down, so the snapshot must not invoke it.
+      if (!this.hooks.get(hookName)?.includes(entry)) continue;
       try {
         let timer: NodeJS.Timeout | undefined;
         const timeoutPromise = new Promise<never>((_, reject) => {

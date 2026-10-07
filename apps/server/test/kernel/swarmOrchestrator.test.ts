@@ -302,13 +302,46 @@ describe('SwarmOrchestrator', () => {
         '--env', 'LOG=info',
         '--env', 'PORT=8080',
         '--label', 'tier=web',
-        '--health-cmd', 'curl -f /healthz',
+        '--label', 'ninedeploy.stack=demo',
+        // F187: curl gets a URL — a bare "/healthz" exits 3 without a request.
+        '--health-cmd', 'curl -f http://localhost:8080/healthz',
         '--health-interval', '30s',
         '--health-timeout', '5s',
         '--health-retries', '3',
         '--publish', '8080:8080',
         'ghcr.io/x/api:1',
       ]);
+    });
+
+    it('F187: passes a full health URL through and renders no --health-cmd without a port', async () => {
+      captureMock.mockResolvedValue('');
+      runMock.mockResolvedValue(undefined);
+      const base = {
+        image: 'x:1',
+        replicas: 1,
+        networks: [],
+        secrets: [],
+        configs: [],
+        env: {},
+        labels: {},
+      };
+      await newOrchestrator().deployStack({
+        name: 'demo',
+        services: [
+          { ...base, name: 'full', port: 8080, healthPath: 'http://127.0.0.1:9000/ready' },
+          { ...base, name: 'noport', port: null, healthPath: '/healthz' },
+        ],
+        networks: [],
+        secrets: [],
+        configs: [],
+        volumes: [],
+      });
+      const creates = runMock.mock.calls
+        .filter((c) => c[1]?.[0] === 'service' && c[1]?.[1] === 'create')
+        .map((c) => c[1] as string[]);
+      const full = creates.find((a) => a.includes('full')) ?? [];
+      expect(full[full.indexOf('--health-cmd') + 1]).toBe('curl -f http://127.0.0.1:9000/ready');
+      expect(creates.find((a) => a.includes('noport'))).not.toContain('--health-cmd');
     });
 
     it('omits --publish when svc.port is null', async () => {
@@ -631,9 +664,9 @@ describe('SwarmOrchestrator', () => {
           appliedAt: '2026-01-01T00:00:00.000Z',
         }),
       });
-      // `docker service ls --format '{{.Replicas}} {{.DesiredTasks}}'`
-      // produces "running/desired desired", e.g. "3/3 3".
-      captureMock.mockResolvedValueOnce('3/3 3');
+      // `docker service ls --format '{{.Name}} {{.Replicas}} {{.DesiredTasks}}'`
+      // produces "name running/desired desired", e.g. "api 3/3 3".
+      captureMock.mockResolvedValueOnce('api 3/3 3');
       const o = newOrchestrator();
       const status = await o.getStackStatus('s');
       expect(status?.services).toEqual([{ name: 'api', state: 'running', replicas: 3 }]);
@@ -650,7 +683,7 @@ describe('SwarmOrchestrator', () => {
           appliedAt: '2026-01-01T00:00:00.000Z',
         }),
       });
-      captureMock.mockResolvedValueOnce('0/0 0');
+      captureMock.mockResolvedValueOnce('api 0/0 0');
       const o = newOrchestrator();
       const status = await o.getStackStatus('s');
       expect(status?.services).toEqual([{ name: 'api', state: 'stopped', replicas: 0 }]);
@@ -667,7 +700,7 @@ describe('SwarmOrchestrator', () => {
           appliedAt: '2026-01-01T00:00:00.000Z',
         }),
       });
-      captureMock.mockResolvedValueOnce('1/3 3');
+      captureMock.mockResolvedValueOnce('api 1/3 3');
       const o = newOrchestrator();
       const status = await o.getStackStatus('s');
       expect(status?.services).toEqual([{ name: 'api', state: 'partial', replicas: 1 }]);
@@ -721,6 +754,113 @@ describe('SwarmOrchestrator', () => {
       // markPartial path returns a snapshotStatus that, when no state file
       // is present yet, falls back to the "all unknown" synthesis.
       expect(status).toBeDefined();
+    });
+  });
+
+  describe('ownership + exact-name matching (F184/F186)', () => {
+    // A small stateful swarm behind the exec seam. `service ls --filter name=X`
+    // is a PREFIX match (Docker docs) and a `label=` filter is ANDed with it.
+    type Svc = { image: string; running: number; desired: number; labels: Record<string, string> };
+    function fakeSwarm(): Map<string, Svc> {
+      const services = new Map<string, Svc>();
+      captureMock.mockImplementation(async (_cmd: string, args: string[]) => {
+        let rows = [...services.entries()];
+        args.forEach((a, i) => {
+          if (a !== '--filter') return;
+          const f = args[i + 1] as string;
+          if (f.startsWith('name=')) rows = rows.filter(([n]) => n.startsWith(f.slice('name='.length)));
+          if (f.startsWith('label=')) {
+            const [k, v] = f.slice('label='.length).split('=');
+            rows = rows.filter(([, s]) => s.labels[k as string] === v);
+          }
+        });
+        rows.sort(([a], [b]) => (a < b ? -1 : 1));
+        const fmt = args[args.indexOf('--format') + 1] as string;
+        return rows
+          .map(([n, s]) =>
+            fmt
+              .replace('{{.Name}}', n)
+              .replace('{{.Replicas}}', `${s.running}/${s.desired}`)
+              .replace('{{.DesiredTasks}}', String(s.desired)),
+          )
+          .join('\n');
+      });
+      runMock.mockImplementation(async (_cmd: string, args: string[]) => {
+        if (args[0] !== 'service') return;
+        if (args[1] === 'create') {
+          const name = args[args.indexOf('--name') + 1] as string;
+          if (services.has(name)) throw new Error('name conflicts with an existing object');
+          const labels: Record<string, string> = {};
+          args.forEach((a, i) => {
+            if (a === '--label') {
+              const [k, v] = (args[i + 1] as string).split('=');
+              labels[k as string] = v as string;
+            }
+          });
+          services.set(name, { image: args[args.length - 1] as string, running: 1, desired: 1, labels });
+        } else if (args[1] === 'update') {
+          const svc = services.get(args[args.length - 1] as string);
+          if (!svc) throw new Error('not found');
+          svc.image = args[args.indexOf('--image') + 1] as string;
+        } else if (args[1] === 'rm') {
+          if (!services.delete(args[2] as string)) throw new Error('not found');
+        }
+      });
+      return services;
+    }
+    const stack = (name: string, svcName: string, image: string) => ({
+      name,
+      services: [
+        { name: svcName, image, replicas: 1, networks: [], secrets: [], configs: [], env: {}, labels: {}, port: null },
+      ],
+      networks: [],
+      secrets: [],
+      configs: [],
+      volumes: [],
+    });
+
+    it("F186: a stack never updates or removes another stack's same-named service", async () => {
+      const services = fakeSwarm();
+      const o = newOrchestrator();
+      await o.deployStack(stack('a', 'web', 'a/web:1'));
+      await o.deployStack(stack('b', 'web', 'b/web:9'));
+      expect(services.get('web')?.image).toBe('a/web:1');
+      await o.removeStack('b');
+      expect(services.get('web')).toMatchObject({ image: 'a/web:1', labels: { 'ninedeploy.stack': 'a' } });
+      // The owning stack still updates its own service.
+      await o.deployStack(stack('a', 'web', 'a/web:2'));
+      expect(services.get('web')?.image).toBe('a/web:2');
+    });
+
+    it('F186: a pre-label service recorded in the stack state is still updated', async () => {
+      const services = fakeSwarm();
+      services.set('web', { image: 'a/web:1', running: 1, desired: 1, labels: {} });
+      fsState.set(stackPath('a'), { dir: true });
+      fsState.set(stackPath('a', 'stack.json'), {
+        data: JSON.stringify({
+          name: 'a',
+          networks: [],
+          secrets: [],
+          configs: [],
+          serviceNames: ['web'],
+          appliedAt: '2026-01-01T00:00:00.000Z',
+        }),
+      });
+      const o = newOrchestrator();
+      await o.deployStack(stack('a', 'web', 'a/web:2'));
+      expect(services.get('web')?.image).toBe('a/web:2');
+    });
+
+    it('F184: a prefix sibling neither hides the service on redeploy nor stands in for it in status', async () => {
+      const services = fakeSwarm();
+      const o = newOrchestrator();
+      await o.deployStack(stack('demo', 'web', 'img/web:1'));
+      services.set('web-api', { image: 'x', running: 3, desired: 3, labels: { 'ninedeploy.stack': 'demo' } });
+      await o.deployStack(stack('demo', 'web', 'img/web:2'));
+      expect(services.get('web')?.image).toBe('img/web:2');
+      services.delete('web');
+      const status = await o.getStackStatus('demo');
+      expect(status?.services).toEqual([{ name: 'web', state: 'stopped', replicas: 0 }]);
     });
   });
 

@@ -27,6 +27,9 @@ import type {
 // The row is the source of truth across a kernel restart; the file
 // is what the next apply diffs against.
 const STACK_ROOT = '/var/lib/ninedeploy/stacks';
+// F186: service names are swarm-global, so each service this driver creates
+// carries its owning stack's name; only an owned service is updated.
+const STACK_LABEL = 'ninedeploy.stack';
 
 export interface SwarmStackState {
   name: string;
@@ -100,8 +103,13 @@ export class SwarmOrchestrator implements IOrchestrator {
 
     // 3. Services
     const createdServices: string[] = [];
+    // F186: a same-named service owned by another stack is never adopted: it
+    // must carry this stack's label, or (created before the label existed) be
+    // recorded in this stack's own state. Otherwise the create below fails on
+    // the name conflict and the stack is marked partial.
+    const priorServices = new Set((await this.readState(stack.name))?.serviceNames ?? []);
     for (const svc of stack.services) {
-      const existing = await serviceExists(svc.name);
+      const existing = await serviceExists(svc.name, priorServices.has(svc.name) ? undefined : stack.name);
       if (existing) {
         try {
           await run('docker', ['service', 'update', '--image', svc.image, svc.name], {
@@ -109,7 +117,7 @@ export class SwarmOrchestrator implements IOrchestrator {
             heartbeatLabel: `swarm service update ${svc.name}`,
           }, () => {});
         } catch (err) {
-          await this.markPartial(stack.name, createdServices, err);
+          await this.markPartial(stack, createdServices, err);
           return await this.snapshotStatus(stack);
         }
       } else {
@@ -119,7 +127,7 @@ export class SwarmOrchestrator implements IOrchestrator {
             heartbeatLabel: `swarm service create ${svc.name}`,
           }, () => {});
         } catch (err) {
-          await this.markPartial(stack.name, createdServices, err);
+          await this.markPartial(stack, createdServices, err);
           return await this.snapshotStatus(stack);
         }
       }
@@ -217,11 +225,17 @@ export class SwarmOrchestrator implements IOrchestrator {
           '--filter',
           `name=${svc}`,
           '--format',
-          '{{.Replicas}} {{.DesiredTasks}}',
+          '{{.Name}} {{.Replicas}} {{.DesiredTasks}}',
         ]);
-        const tokens = (out ?? '').trim().split(/\s+/);
-        const replicasStr = tokens[0];
-        const desiredStr = tokens[1];
+        // F184: the name filter is a prefix match (`web` also lists `web-api`);
+        // read only this service's own row.
+        const tokens =
+          (out ?? '')
+            .split('\n')
+            .map((line) => line.trim().split(/\s+/))
+            .find((t) => t[0] === svc) ?? [];
+        const replicasStr = tokens[1];
+        const desiredStr = tokens[2];
         replicas = Number(replicasStr?.split('/')[0] ?? 0);
         const desired = Number(desiredStr ?? 0);
         if (replicas >= desired && desired > 0) {
@@ -251,13 +265,15 @@ export class SwarmOrchestrator implements IOrchestrator {
     );
   }
 
-  private async markPartial(name: string, created: string[], err: unknown): Promise<void> {
+  private async markPartial(stack: StackSpec, created: string[], err: unknown): Promise<void> {
     void err;
+    // F185: steps 1-2 already ran for every network/secret/config, so record
+    // them — removeStack reads this row when no stack.json exists yet.
     const partial: SwarmStackState = {
-      name,
-      networks: [],
-      secrets: [],
-      configs: [],
+      name: stack.name,
+      networks: stack.networks.map((n) => n.name),
+      secrets: stack.secrets.map((s) => s.name),
+      configs: stack.configs.map((c) => c.name),
       serviceNames: created,
       appliedAt: new Date().toISOString(),
     };
@@ -302,8 +318,7 @@ export class SwarmOrchestrator implements IOrchestrator {
   }
 }
 
-function buildServiceCreateArgs(svc: StackServiceSpec, _stack: StackSpec): string[] {
-  void _stack;
+function buildServiceCreateArgs(svc: StackServiceSpec, stack: StackSpec): string[] {
   const args: string[] = [
     'service',
     'create',
@@ -322,8 +337,18 @@ function buildServiceCreateArgs(svc: StackServiceSpec, _stack: StackSpec): strin
   for (const [k, v] of Object.entries(svc.labels)) {
     args.push('--label', `${k}=${v}`);
   }
-  if (svc.healthPath) {
-    args.push('--health-cmd', `curl -f ${svc.healthPath}`);
+  args.push('--label', `${STACK_LABEL}=${stack.name}`); // F186: after user labels, so it wins
+  // F187: curl needs a URL — a bare path exits 3 without sending a request,
+  // so the check could never pass. With no port there is no URL to probe.
+  const healthUrl = svc.healthPath
+    ? /^https?:\/\//.test(svc.healthPath)
+      ? svc.healthPath
+      : svc.port !== null
+        ? `http://localhost:${svc.port}${svc.healthPath.startsWith('/') ? '' : '/'}${svc.healthPath}`
+        : null
+    : null;
+  if (healthUrl) {
+    args.push('--health-cmd', `curl -f ${healthUrl}`);
     args.push('--health-interval', '30s');
     args.push('--health-timeout', '5s');
     args.push('--health-retries', '3');
@@ -335,17 +360,20 @@ function buildServiceCreateArgs(svc: StackServiceSpec, _stack: StackSpec): strin
   return args;
 }
 
-async function serviceExists(name: string): Promise<boolean> {
+async function serviceExists(name: string, ownerStack?: string): Promise<boolean> {
   try {
     const out = await capture('docker', [
       'service',
       'ls',
       '--filter',
       `name=${name}`,
+      // F186: when given, only a service labelled for this stack counts.
+      ...(ownerStack === undefined ? [] : ['--filter', `label=${STACK_LABEL}=${ownerStack}`]),
       '--format',
       '{{.Name}}',
     ]);
-    return (out ?? '').trim() === name;
+    // F184: the name filter is a prefix match; look for the exact row.
+    return (out ?? '').split('\n').some((line) => line.trim() === name);
   } catch {
     return false;
   }

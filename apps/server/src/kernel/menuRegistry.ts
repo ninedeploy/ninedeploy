@@ -1,18 +1,31 @@
 import type { IMenuRegistry, MenuItemDefinition, MenuSlot } from './types.js';
 
+// F896: an item is owned by (pluginId, id). Keyed by the bare id, a second
+// plugin reusing an id (plugins do not namespace their item ids) replaced the
+// first plugin's entry, and the first plugin's disposer deleted the second's.
+const itemKey = (item: MenuItemDefinition): string => JSON.stringify([item.pluginId ?? null, item.id]);
+
 export class MenuRegistry implements IMenuRegistry {
   private readonly items = new Map<string, MenuItemDefinition>();
 
   registerMenuItem(item: MenuItemDefinition): () => void {
-    this.items.set(item.id, item);
+    const key = itemKey(item);
+    this.items.set(key, item);
 
     return () => {
-      this.unregisterMenuItem(item.id);
+      this.items.delete(key);
     };
   }
 
   unregisterMenuItem(id: string): boolean {
-    return this.items.delete(id);
+    let removed = false;
+    for (const [key, item] of Array.from(this.items.entries())) {
+      if (item.id === id) {
+        this.items.delete(key);
+        removed = true;
+      }
+    }
+    return removed;
   }
 
   getItemsForSlot(slot: MenuSlot, isOperator?: boolean): MenuItemDefinition[] {

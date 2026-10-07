@@ -913,7 +913,10 @@ export async function uninstallPlugin(
 
   // r527: uninstall is the ONE path that erases the plugin's saved config —
   // explicitly, so a plugin that was disabled (not loaded) is purged too.
-  await kernel.configCenter.purgePluginConfigs(id);
+  // F120: but not for a row the boot restore refuses — `plugin:<id>:` then IS
+  // the built-in's namespace (or, for a ":" id, a slice of another plugin's),
+  // so the purge would erase that plugin's settings, secrets and records.
+  if (!bootRestoreConflict(id)) await kernel.configCenter.purgePluginConfigs(id);
 
   // 2. Remove DB record
   await db.delete(installedPlugins).where(eq(installedPlugins.id, id));
@@ -945,8 +948,9 @@ export async function restorePluginFromRow(
     target: (manifest.target as string) || row.id,
     name: row.name,
     version: row.version,
-    description: row.description ?? undefined,
-    author: row.author ?? undefined,
+    // F121: installPlugin writes these into `manifest`, not the columns.
+    description: row.description ?? (manifest.description as string | undefined),
+    author: row.author ?? (manifest.author as string | undefined),
     icon: row.icon ?? undefined,
     configSchema: manifest.configSchema,
     menuItems: manifest.menuItems,

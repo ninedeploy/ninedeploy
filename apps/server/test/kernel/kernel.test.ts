@@ -388,4 +388,119 @@ describe('NineDeployKernel', () => {
     expect(rollbackTrace).toHaveLength(1);
     expect(rollbackTrace[0]).toContain('Operation vetoed');
   });
+
+  // F252: destroy() is the teardown plugins implement (a sandbox plugin's
+  // SHUTDOWN + worker/child termination); shutdown used to skip it entirely.
+  it('F252: shutdown destroys every plugin in reverse boot order, isolating a throwing destroy', async () => {
+    const kernel = new NineDeployKernel(createFakeDb(), mockConfig);
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const trace: string[] = [];
+    const mk = (id: string, deps?: string[], crash = false): KernelPlugin => ({
+      id,
+      name: id,
+      version: '1.0.0',
+      dependencies: deps,
+      init: () => {},
+      onShutdown: () => {
+        trace.push(`shutdown-${id}`);
+      },
+      destroy: () => {
+        trace.push(`destroy-${id}`);
+        if (crash) throw new Error('destroy crash');
+      },
+    });
+    await kernel.registerPlugin(mk('a'));
+    await kernel.registerPlugin(mk('b', ['a'], true));
+    await kernel.boot();
+    await kernel.shutdown();
+    await kernel.shutdown();
+    expect(kernel.state).toBe('TERMINATED');
+    expect(trace).toEqual(['shutdown-b', 'destroy-b', 'shutdown-a', 'destroy-a']);
+    errSpy.mockRestore();
+  });
+
+  // F253: registerPlugin owned the id across `await plugin.init()` without
+  // re-checking. Gated: each init waits on a deferred released after the
+  // disable / reload has already happened.
+  it('F253: a disable or reload landing while init is in flight leaves no stale state', async () => {
+    const gate = () => {
+      let open!: () => void;
+      const promise = new Promise<void>((res) => {
+        open = res;
+      });
+      return { promise, open };
+    };
+    const gated = (id: string, wait: Promise<void>, fail = false) => {
+      const unsubs: Array<() => void> = [];
+      const plugin: KernelPlugin = {
+        id,
+        name: id,
+        version: '1.0.0',
+        menuItems: [{ id: `${id}-menu`, slot: 'sidebar:main', label: id, route: `/${id}` } as never],
+        init: async (ctx) => {
+          await wait;
+          if (fail) throw new Error('worker exited before READY');
+          unsubs.push(ctx.events.on('service.deployed', () => {}));
+        },
+        destroy: () => {
+          for (const u of unsubs.splice(0)) u();
+        },
+      };
+      return plugin;
+    };
+
+    // Disable during init: init finishing later must not leave a listener
+    // owned by a removed plugin, nor report the registration as successful.
+    const kA = new NineDeployKernel(createFakeDb(), mockConfig);
+    const registered: string[] = [];
+    kA.events.on('plugin.registered', (p) => {
+      registered.push(p.pluginId);
+    });
+    const gA = gate();
+    const regA = kA.registerPlugin(gated('p', gA.promise));
+    await kA.unregisterPlugin('p');
+    gA.open();
+    await expect(regA).rejects.toThrow('Plugin "p" was unregistered while it was initializing');
+    expect(kA.events.listenerCount('service.deployed')).toBe(0);
+    expect(kA.getPlugin('p')).toBeUndefined();
+    expect(registered).toEqual([]);
+
+    // Reload during init, and the OLD init then fails: its cleanup must not
+    // remove the fresh instance that replaced it.
+    const kB = new NineDeployKernel(createFakeDb(), mockConfig);
+    const gOld = gate();
+    const regOld = kB.registerPlugin(gated('q', gOld.promise, true));
+    await kB.unregisterPlugin('q');
+    const fresh = gated('q', Promise.resolve());
+    await kB.registerPlugin(fresh);
+    gOld.open();
+    await expect(regOld).rejects.toThrow('Failed to initialize plugin "q"');
+    expect(kB.getPlugin('q')).toBe(fresh);
+    expect(kB.menuRegistry.getPluginMenus('q')).toHaveLength(1);
+    expect(kB.events.listenerCount('service.deployed')).toBe(1);
+  });
+
+  // F254: `Promise.resolve(plugin.destroy(this))` let a synchronous throw
+  // escape, skipping the r235 cleanup — the plugin stayed half-registered.
+  it('F254: a failed init whose destroy throws synchronously is still fully unregistered', async () => {
+    const kernel = new NineDeployKernel(createFakeDb(), mockConfig);
+    const bad: KernelPlugin = {
+      id: 'sync-crash',
+      name: 'Sync crash',
+      version: '1.0.0',
+      menuItems: [{ id: 'sync-crash-menu', slot: 'sidebar:main', label: 'X', route: '/x' } as never],
+      init: () => {
+        throw new Error('endpoint unreachable');
+      },
+      destroy: () => {
+        throw new Error('destroy crash');
+      },
+    };
+    await expect(kernel.registerPlugin(bad)).rejects.toThrow('Failed to initialize plugin "sync-crash": endpoint unreachable');
+    expect(kernel.getPlugin('sync-crash')).toBeUndefined();
+    expect(kernel.menuRegistry.getAllItems()).toHaveLength(0);
+    await expect(
+      kernel.registerPlugin({ id: 'sync-crash', name: 'Retry', version: '1.0.0', init: () => {} }),
+    ).resolves.toBeUndefined();
+  });
 });

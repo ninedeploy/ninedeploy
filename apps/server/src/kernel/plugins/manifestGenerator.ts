@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
+import { ninedeployManifest } from '@ninedeploy/schemas';
 import { buildManifestFromTemplate, type TemplateRegistryEntry } from '@ninedeploy/sdk';
 import type { KernelContext, KernelPlugin } from '../types.js';
 
@@ -150,6 +151,23 @@ export class ManifestGeneratorPlugin implements KernelPlugin {
           }
 
           const manifest = buildManifestFromTemplate(entry, defaultHost);
+          // F336: `default_host` '' means "panel picks", but the mapper always
+          // writes a starter route, and `routes[].host: ''` fails the schema —
+          // so every manifest at the shipped default was unusable. Drop the
+          // route instead, and never publish a manifest the loader would reject
+          // (an operator-set host like `https://x` is caught here too).
+          if (!defaultHost) delete manifest.routes;
+          const checked = ninedeployManifest.safeParse(manifest);
+          if (!checked.success) {
+            ctx.events.emitCustom('manifest.generator_error', {
+              templateId,
+              reason: `generated manifest failed validation: ${checked.error.issues
+                .map((i) => `${i.path.join('.') || '<root>'}: ${i.message}`)
+                .join('; ')}`,
+              ts: new Date().toISOString(),
+            });
+            return;
+          }
           ctx.events.emitCustom('manifest.generated', {
             templateId,
             manifest,

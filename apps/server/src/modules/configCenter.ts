@@ -168,7 +168,11 @@ export const configCenterRoutes: FastifyPluginAsync = async (app) => {
     const body = setConfigSchema.parse(req.body);
     const def = req.kernel.configCenter.getDefinition(key);
     const row = await app.db.query.configEntries.findFirst({ where: eq(configEntries.key, key) });
-    const isSecret = body.isSecret ?? def?.isSecret ?? row?.isSecret ?? false;
+    // F281: a key its owner DECLARES secret stays encrypted. The read paths
+    // above report `def.isSecret || row.isSecret`, so a body `isSecret: false`
+    // stored the credential in plaintext (and skipped the mask guard) while
+    // the API kept showing it masked.
+    const isSecret = def?.isSecret === true || (body.isSecret ?? def?.isSecret ?? row?.isSecret ?? false);
 
     // The mask is what the UI displays for an unrevealed secret; saving it
     // back would silently destroy the stored credential.
@@ -181,8 +185,26 @@ export const configCenterRoutes: FastifyPluginAsync = async (app) => {
 
     // Omitted value on an existing entry = keep the current value (metadata-only update).
     let value = body.value;
-    if (value === undefined && row) {
-      value = row.isSecret ? await req.kernel.configCenter.getSecret(key) : await req.kernel.configCenter.get(key);
+    if (value === undefined) {
+      // F280: with no stored row there is nothing to keep — set(key, undefined)
+      // encrypted the literal "undefined" as a secret (500 for a plain key).
+      if (!row) {
+        throw badRequest(`Config key "${key}" has no stored value to keep — provide a value`, 'value_required');
+      }
+      if (row.isSecret) {
+        const current = await req.kernel.configCenter.getSecret(key);
+        // F282: null = the ciphertext cannot be decrypted (e.g. its key version
+        // is missing). Re-saving it would replace it with encrypt("null").
+        if (current === null) {
+          throw badRequest(
+            `The stored secret for "${key}" cannot be decrypted — enter a new value to replace it`,
+            'secret_unreadable',
+          );
+        }
+        value = current;
+      } else {
+        value = await req.kernel.configCenter.get(key);
+      }
     }
 
     // r155: pass the RESOLVED secrecy and the row's metadata. `set()` only

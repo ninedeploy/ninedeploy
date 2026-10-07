@@ -54,6 +54,35 @@ describe('r533 — redactForSandbox', () => {
     expect(bare.restore('ssh://other@host/x')).toBe('ssh://other@host/x');
   });
 
+  it('F388: strips userinfo from a URL quoted mid-string (error text, audit entity)', () => {
+    // modules/ai.ts audits `${model} @ ${baseUrl}`; undici quotes the raw URL in its errors.
+    const r = redactForSandbox({
+      entity: 'gpt-4o-mini @ https://gw:s3cret@llm.internal/v1',
+      reason: "fatal: unable to access 'https://x-access-token:tok@github.com/o/r.git/' and ssh://git:k@h/x",
+    });
+    expect(r.value).toEqual({
+      entity: `gpt-4o-mini @ https://${REDACTED}@llm.internal/v1`,
+      reason: `fatal: unable to access 'https://${REDACTED}@github.com/o/r.git/' and ssh://${REDACTED}@h/x`,
+    });
+    expect(JSON.stringify(r.value)).not.toMatch(/s3cret|tok@|git:k/);
+    const echoed = JSON.parse(JSON.stringify(r.value));
+    expect(r.restore(echoed)).toEqual({
+      entity: 'gpt-4o-mini @ https://gw:s3cret@llm.internal/v1',
+      reason: "fatal: unable to access 'https://x-access-token:tok@github.com/o/r.git/' and ssh://git:k@h/x",
+    });
+    // Plain text, emails and `@` past the authority are not URLs with userinfo.
+    expect(redactForSandbox({ m: 'mail ops@example.com re https://cdn.example.com/@scope/p?a=b@c' }).redactedCount).toBe(0);
+  });
+
+  it('F389: a password holding a raw @ is redacted up to the last @ of the authority', () => {
+    expect(redactForSandbox({ repoUrl: 'https://deploy:Hunter@2Tail@git.example.com/r.git' }).value).toEqual({
+      repoUrl: `https://${REDACTED}@git.example.com/r.git`,
+    });
+    expect(redactForSandbox({ repoUrl: 'https://u:p@git.example.com/@team/r.git' }).value).toEqual({
+      repoUrl: `https://${REDACTED}@git.example.com/@team/r.git`,
+    });
+  });
+
   it('restore() puts originals back only where the placeholder survived', () => {
     const r = redactForSandbox({ service: { name: 'web', composeContent: 'secret: 1' }, token: 't', list: [{ password: 'p' }] });
     const echoed = JSON.parse(JSON.stringify(r.value));

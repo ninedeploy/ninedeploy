@@ -80,8 +80,13 @@ export class LocalOrchestrator implements IOrchestrator {
       return emptyStatus(stack.name, 'unknown');
     }
     writeFileSync(composePath, composeYaml, 'utf8');
+    // F212: renderCompose points each stack secret/config at `file: <name>.txt`
+    // in the stack dir; without these writes the data was dropped and compose
+    // mounted a source that does not exist.
+    for (const s of stack.secrets) writeFileSync(join(stackDir, `${s.name}.txt`), s.data, { mode: 0o600 });
+    for (const c of stack.configs) writeFileSync(join(stackDir, `${c.name}.txt`), c.data, 'utf8');
 
-    let allRunning = true;
+    let upFailed = false;
     const serviceLines: StackStatus['services'] = [];
     try {
       await run('docker', ['compose', '-f', composePath, 'up', '-d', '--remove-orphans'], {
@@ -89,9 +94,8 @@ export class LocalOrchestrator implements IOrchestrator {
         heartbeatLabel: `stack ${stack.name}`,
       }, () => {});
     } catch {
-      allRunning = false;
+      upFailed = true;
     }
-    void allRunning; // reserved for a future "status" rollup
     for (const svc of stack.services) {
       let state: 'running' | 'stopped' | 'partial' | 'unknown' = 'unknown';
       try {
@@ -115,6 +119,9 @@ export class LocalOrchestrator implements IOrchestrator {
       } catch {
         state = 'unknown';
       }
+      // F213: after a failed `up` a running container is the previous apply's,
+      // not this one's — the compose call did not confirm it.
+      if (upFailed && state === 'running') state = 'unknown';
       serviceLines.push({ name: svc.name, state, replicas: 1 });
     }
 
@@ -275,9 +282,18 @@ function renderCompose(stack: StackSpec): string {
       lines.push(`    configs:`);
       for (const c of svc.configs) lines.push(`      - ${c}`);
     }
-    if (svc.healthPath) {
+    // F214: curl needs a URL — a bare path exits 3 without sending a request,
+    // so the check could never pass. With no port there is no URL to probe.
+    const healthUrl = svc.healthPath
+      ? /^https?:\/\//.test(svc.healthPath)
+        ? svc.healthPath
+        : svc.port !== null
+          ? `http://localhost:${svc.port}${svc.healthPath.startsWith('/') ? '' : '/'}${svc.healthPath}`
+          : null
+      : null;
+    if (healthUrl) {
       lines.push(`    healthcheck:`);
-      lines.push(`      test: ["CMD", "curl", "-f", "${svc.healthPath}"]`);
+      lines.push(`      test: ["CMD", "curl", "-f", "${healthUrl}"]`);
       lines.push(`      interval: 30s`);
       lines.push(`      timeout: 5s`);
       lines.push(`      retries: 3`);

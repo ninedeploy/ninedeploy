@@ -111,6 +111,9 @@ class BuiltinBackend implements MetricBackend {
    */
   async prune(db: DB, retentionDays: number): Promise<number> {
     const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+    // F200: a window past the Date range is an Invalid Date that binds as NaN
+    // and fails the DELETE every sweep; nothing can be that old, so prune none.
+    if (Number.isNaN(cutoff.getTime())) return 0;
     const result = await db
       .delete(auditLog)
       // Typed columns, not a raw sql template: audit_log.ts is INTEGER
@@ -287,8 +290,13 @@ export class MetricHistoryPlugin implements KernelPlugin {
   async runRetention(ctx: KernelContext): Promise<number> {
     const backend = this.backends.builtin;
     if (!(backend instanceof BuiltinBackend)) return 0;
-    const retention = await ctx.configCenter.get<number>('plugin:metric-history:retention_days', 30);
-    return backend.prune(ctx.db as DB, Math.max(1, retention));
+    const retention = await ctx.configCenter.get<unknown>('plugin:metric-history:retention_days', 30);
+    // F200: the stored value is unvalidated JSON (the settings UI saves 0 for a
+    // cleared field and null for a typo). Math.max(1, null|0|''|true) is 1, so
+    // a misconfiguration pruned history to ONE day while GET /v1/metric-history
+    // reported 30. Fall back to the same 30-day default the status route shows.
+    const days = typeof retention === 'number' && Number.isFinite(retention) && retention > 0 ? retention : 30;
+    return backend.prune(ctx.db as DB, Math.max(1, days));
   }
 
   private async handle(

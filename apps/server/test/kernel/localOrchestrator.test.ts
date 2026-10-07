@@ -149,13 +149,35 @@ describe('LocalOrchestrator', () => {
       expect(body).toContain('configs:');
       expect(body).toContain('- app_cfg');
       expect(body).toContain('healthcheck:');
-      expect(body).toContain('"CMD", "curl", "-f", "/healthz"');
+      // F214: curl gets a URL — a bare "/healthz" exits 3 without a request.
+      expect(body).toContain('"CMD", "curl", "-f", "http://localhost:80/healthz"');
       expect(body).toContain('labels:');
       expect(body).toContain('traefik.enable: "true"');
       // Stack-level secrets / configs / volumes blocks.
       expect(body).toMatch(/^secrets:\n {2}db_url:\n {4}file: db_url\.txt/m);
       expect(body).toMatch(/^configs:\n {2}app_cfg:\n {4}file: app_cfg\.txt/m);
       expect(body).toMatch(/^volumes:\n {2}data:\n/m);
+      // F212: the `file:` sources hold the data (secrets owner-only), written
+      // before `compose up` runs.
+      expect(writeFileSyncSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/demo[\\/]db_url\.txt$/),
+        'postgres://localhost/db',
+      );
+      expect(writeFileSyncSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/demo[\\/]app_cfg\.txt$/),
+        'level=info',
+      );
+      expect(writeFileSyncSpy.mock.invocationCallOrder.at(-1)).toBeLessThan(
+        runMock.mock.invocationCallOrder[0] as number,
+      );
+    });
+
+    it('renders no healthcheck for a bare healthPath without a port (F214)', async () => {
+      runMock.mockResolvedValue(undefined);
+      captureMock.mockResolvedValue('running\n');
+      await newOrchestrator().deployStack(newStack({ services: [svc({ port: null, healthPath: '/healthz' })] }));
+      const body = (writeFileSyncSpy.mock.calls[0] as [string, string])[1];
+      expect(body).not.toContain('healthcheck:');
     });
 
     it('records the requested replicas as a comment when > 1 (local driver collapses to 1)', async () => {
@@ -234,6 +256,13 @@ describe('LocalOrchestrator', () => {
       captureMock.mockResolvedValue('exited\n');
       const status = await newOrchestrator().deployStack(newStack());
       expect(status.services[0]?.state).toBe('stopped');
+    });
+
+    it('does not report the previous apply\'s running containers after a failed compose up (F213)', async () => {
+      runMock.mockRejectedValueOnce(new Error('manifest unknown'));
+      captureMock.mockResolvedValue('running\n');
+      const status = await newOrchestrator().deployStack(newStack());
+      expect(status.services[0]?.state).toBe('unknown');
     });
 
     it('surfaces an empty "unknown" status when STACK_ROOT cannot be created', async () => {

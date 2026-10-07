@@ -106,4 +106,33 @@ describe('MenuRegistry', () => {
     expect(registry.getAllItems()).toHaveLength(1);
     expect(registry.getAllItems()[0]?.id).toBe('core-item');
   });
+
+  // F896: item ids are not namespaced per plugin, so the registry must key by
+  // (pluginId, id) — a second plugin reusing an id used to replace the first
+  // plugin's item (route included), and the first plugin's disposer removed it.
+  it('keeps same-id items from different plugins apart and scopes dispose/purge to the owner', () => {
+    const registry = new MenuRegistry();
+    const routes = () =>
+      registry
+        .getItemsForSlot('sidebar:main', true)
+        .map((i) => `${i.pluginId}:${i.route}`)
+        .sort();
+
+    const disposeA = registry.registerMenuItem({
+      id: 'settings',
+      pluginId: 'plugin-a',
+      slot: 'sidebar:main',
+      label: 'A',
+      route: '/a',
+    });
+    registry.registerMenuItem({ id: 'settings', pluginId: 'plugin-b', slot: 'sidebar:main', label: 'B', route: '/b' });
+    expect(routes()).toEqual(['plugin-a:/a', 'plugin-b:/b']);
+
+    disposeA();
+    expect(routes()).toEqual(['plugin-b:/b']);
+
+    registry.registerMenuItem({ id: 'settings', pluginId: 'plugin-a', slot: 'sidebar:main', label: 'A', route: '/a' });
+    expect(registry.purgePluginMenus('plugin-b')).toBe(1);
+    expect(routes()).toEqual(['plugin-a:/a']);
+  });
 });

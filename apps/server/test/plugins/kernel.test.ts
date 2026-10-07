@@ -1,5 +1,6 @@
 ﻿import Fastify from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
+import { eventBus } from '../../src/lib/events.js';
 import kernelPlugin from '../../src/plugins/kernel.js';
 import { createFakeDb } from '../helpers.js';
 
@@ -119,6 +120,33 @@ describe('Fastify Kernel Plugin', () => {
 
     bootSpy.mockRestore();
     shutdownSpy.mockRestore();
+  });
+
+  // F264 wiring guard: restoring operator-installed plugins is best effort. Its
+  // own DB read failing at boot used to skip kernel.boot() AND the audit
+  // bridge, leaving every built-in plugin deaf until a restart.
+  it('F264: a failing installed-plugins read still boots the kernel and attaches the audit bridge', async () => {
+    const base = createFakeDb() as any;
+    const query = new Proxy(base.query, {
+      get: (t, p, r) =>
+        p === 'installedPlugins'
+          ? { findMany: async () => Promise.reject(new Error('SQLITE_BUSY: database is locked')) }
+          : Reflect.get(t, p, r),
+    });
+    const app = Fastify({ logger: false });
+    app.decorate('db', new Proxy(base, { get: (t, p, r) => (p === 'query' ? query : Reflect.get(t, p, r)) }));
+    await app.register(kernelPlugin);
+    const listenersBefore = eventBus.listenerCount('event');
+
+    await app.ready();
+    expect(app.kernel.state).toBe('READY');
+    const seen: string[] = [];
+    app.kernel.events.on('deployment.status_changed', (p) => seen.push(`${p.serviceName}:${p.status}`));
+    eventBus.publish('deploy.success', 'web #3');
+    expect(seen).toEqual(['web:success']);
+
+    await app.close();
+    expect(eventBus.listenerCount('event')).toBe(listenersBefore);
   });
 
   it('skips setup if kernel is already decorated', async () => {

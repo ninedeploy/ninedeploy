@@ -5,7 +5,7 @@ import type { EgressIpRule, EgressIpSelector, IEgressIpDriver } from '../types.j
 /**
  * iptables-based egress IP driver — Sprint 5, Gap G-15 (PR #22).
  *
- * The reference implementation: an `iptables -t nat -A POSTROUTING`
+ * The reference implementation: an `iptables -t nat -I POSTROUTING`
  * SNAT rule scoped to a project's Docker network. The driver
  * never throws on a missing `iptables` binary or a missing kernel
  * module — the rules file on disk is the source of truth across a
@@ -22,10 +22,12 @@ import type { EgressIpRule, EgressIpSelector, IEgressIpDriver } from '../types.j
  *   - `attach()` is idempotent on (projectId, ip) — re-apply is a
  *     no-op. A different ip for the same projectId REPLACES the
  *     rule (the old SNAT is removed first).
- *   - `detach()` is best-effort: a missing iptables rules surfaces
- *     as a 500 with a descriptive message, but the in-process
- *     state and the on-disk state are both updated so a future
- *     `list()` does not return a phantom.
+ *   - `detach()` is best-effort: a rule that is already gone (or a
+ *     host without iptables) still scrubs the in-process and on-disk
+ *     state so a future `list()` does not return a phantom. A delete
+ *     that fails while the rule is still in the kernel throws and keeps
+ *     the state, so the live rule stays detachable (F230).
+ *   - Calls for the same project are serialized (F229).
  *   - `list()` returns every rule the driver has, sorted by
  *     projectId for stable rendering in the panel.
  */
@@ -44,7 +46,11 @@ export interface IptablesEgressOptions {
   resolveCidrs?: (projectId: number) => Promise<string[]>;
 }
 
-const snatArgs = (op: '-A' | '-D' | '-C', cidr: string, ip: string, projectId: number): string[] => [
+// F228: rules are INSERTED (`-I`, position 1), never appended. Docker inserts
+// `-s <subnet> ! -o <bridge> -j MASQUERADE` into nat/POSTROUTING when it creates
+// the bridge, and the first terminating match wins, so an appended SNAT rule
+// for the same subnet is never reached.
+const snatArgs = (op: '-I' | '-D' | '-C', cidr: string, ip: string, projectId: number): string[] => [
   '-t', 'nat', op, 'POSTROUTING',
   '-s', cidr,
   '!', '-d', cidr,
@@ -59,6 +65,8 @@ export class IptablesEgressDriver implements IEgressIpDriver {
   private readonly rootDir: string;
   private readonly rules = new Map<number, EgressIpRule>();
   private readonly resolveCidrs: (projectId: number) => Promise<string[]>;
+  /** F229: per-project tail of the attach/detach queue. */
+  private readonly queues = new Map<number, Promise<void>>();
 
   constructor(opts: IptablesEgressOptions = {}) {
     this.rootDir = opts.rootDir ?? RULES_ROOT;
@@ -74,7 +82,35 @@ export class IptablesEgressDriver implements IEgressIpDriver {
     this.rehydrate();
   }
 
-  async attach(selector: EgressIpSelector, ip: string): Promise<EgressIpRule> {
+  /**
+   * F229: attach/detach for one project run one at a time. Both read the
+   * in-process map before an awaited iptables call and write it after, so two
+   * overlapping calls each added a kernel rule while the map kept one; the
+   * extra copy outlived detach() (which removes one match) untracked.
+   */
+  private serialize<T>(projectId: number, fn: () => Promise<T>): Promise<T> {
+    const prev = this.queues.get(projectId) ?? Promise.resolve();
+    const next = prev.then(fn);
+    const tail = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.queues.set(projectId, tail);
+    void tail.then(() => {
+      if (this.queues.get(projectId) === tail) this.queues.delete(projectId);
+    });
+    return next;
+  }
+
+  attach(selector: EgressIpSelector, ip: string): Promise<EgressIpRule> {
+    return this.serialize(selector.projectId, () => this.attachUnlocked(selector, ip));
+  }
+
+  detach(selector: EgressIpSelector): Promise<void> {
+    return this.serialize(selector.projectId, () => this.detachUnlocked(selector));
+  }
+
+  private async attachUnlocked(selector: EgressIpSelector, ip: string): Promise<EgressIpRule> {
     // Validate the IP via a regex; we do not want a typo to
     // silently become "0.0.0.0/0" in iptables.
     if (!isValidIPv4(ip)) {
@@ -92,7 +128,7 @@ export class IptablesEgressDriver implements IEgressIpDriver {
     const existing = this.rules.get(selector.projectId);
     if (existing) {
       if (existing.ip === ip && sameList(existing.sourceCidrs ?? [], cidrs)) return existing;
-      await this.detach(selector);
+      await this.detachUnlocked(selector);
     }
 
     // One SNAT rule per source network. The comment is what makes the rule
@@ -104,16 +140,16 @@ export class IptablesEgressDriver implements IEgressIpDriver {
       for (const cidr of cidrs) {
         await run(
           'iptables',
-          snatArgs('-A', cidr, ip, selector.projectId),
+          snatArgs('-I', cidr, ip, selector.projectId),
           { heartbeatMs: 10_000, heartbeatLabel: `egress attach project ${selector.projectId}` },
           () => {},
         );
         applied.push(cidr);
       }
     } catch (err) {
-      for (const cidr of applied) await this.deleteRule(cidr, ip, selector.projectId);
+      for (const cidr of applied) await this.deleteRule(cidr, ip, selector.projectId).catch(() => undefined);
       throw new Error(
-        `iptables -t nat -A POSTROUTING failed for project ${selector.projectId}: ${err instanceof Error ? err.message : String(err)}`,
+        `iptables -t nat -I POSTROUTING failed for project ${selector.projectId}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
 
@@ -128,15 +164,16 @@ export class IptablesEgressDriver implements IEgressIpDriver {
     return rule;
   }
 
-  async detach(selector: EgressIpSelector): Promise<void> {
+  private async detachUnlocked(selector: EgressIpSelector): Promise<void> {
     const existing = this.rules.get(selector.projectId);
     if (!existing) return;
     // Remove exactly what attach added. Rules persisted before r240 carry no
     // list: fall back to the selector's CIDR, then to a fresh lookup.
     let cidrs = existing.sourceCidrs ?? (existing.selector.sourceCidr ? [existing.selector.sourceCidr] : []);
     if (cidrs.length === 0) cidrs = await this.resolveCidrs(selector.projectId).catch(() => []);
-    // Best-effort: the rule may already be gone, or iptables may be missing.
-    // The state is scrubbed either way so `list()` never returns a phantom.
+    // Best-effort: the rule may already be gone, or iptables may be missing,
+    // and the state is then scrubbed so `list()` never returns a phantom. A
+    // rule still present after a failed delete throws (F230) and keeps it.
     for (const cidr of cidrs) await this.deleteRule(cidr, existing.ip, selector.projectId);
     this.rules.delete(selector.projectId);
     this.persistDelete(selector.projectId);
@@ -161,7 +198,7 @@ export class IptablesEgressDriver implements IEgressIpDriver {
           /* missing: add it below */
         }
         try {
-          await run('iptables', snatArgs('-A', cidr, rule.ip, projectId), {}, () => {});
+          await run('iptables', snatArgs('-I', cidr, rule.ip, projectId), {}, () => {});
           restored++;
         } catch {
           failed++;
@@ -179,8 +216,20 @@ export class IptablesEgressDriver implements IEgressIpDriver {
         { heartbeatMs: 10_000, heartbeatLabel: `egress detach project ${projectId}` },
         () => {},
       );
-    } catch {
-      /* already gone, or iptables missing */
+    } catch (err) {
+      // F230: run() only reports the exit code, so "no such rule" and "delete
+      // failed" (e.g. xtables lock held, exit 4) look alike. Swallow only when
+      // the rule is verifiably absent (or iptables is missing: -C fails too);
+      // otherwise the caller would forget a rule that is still live.
+      const stillPresent = await run('iptables', snatArgs('-C', cidr, ip, projectId), {}, () => {}).then(
+        () => true,
+        () => false,
+      );
+      if (stillPresent) {
+        throw new Error(
+          `iptables -t nat -D POSTROUTING failed for project ${projectId} (${cidr}): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
   }
 

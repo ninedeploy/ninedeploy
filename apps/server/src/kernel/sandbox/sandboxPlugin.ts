@@ -93,6 +93,13 @@ export class SandboxPlugin implements KernelPlugin {
   /** r530: emissions refused for leaving the plugin's namespace (this load). */
   private rejectedEmits = 0;
   private readonly rejectedEventNames = new Set<string>();
+  /**
+   * F140: bumped by destroy(). A transport's listener only acts while its
+   * generation is current — a message posted during the SHUTDOWN grace (or
+   * still queued when the child is killed) must not tap a hook whose unsub
+   * nobody will ever call, write config, or emit for a stopped plugin.
+   */
+  private transportGen = 0;
 
   /** r530: how many out-of-namespace emissions this load refused. */
   get rejectedEmitCount(): number {
@@ -284,6 +291,7 @@ export class SandboxPlugin implements KernelPlugin {
     // Forward system events to the sandbox (registered once, before the
     // handshake, so no early event is missed).
     this.wireEventForwarder(ctx, send);
+    const gen = this.transportGen;
 
     return new Promise((resolve, reject) => {
       let isResolved = false;
@@ -298,6 +306,8 @@ export class SandboxPlugin implements KernelPlugin {
 
       attach(
         async (msg) => {
+          // F140: a stopped plugin's sandbox may still log, nothing else.
+          if (gen !== this.transportGen && msg?.type !== 'LOG') return;
           try {
             await this.handleMessage(ctx, msg, send, () => {
               if (!isResolved) {
@@ -337,6 +347,14 @@ export class SandboxPlugin implements KernelPlugin {
             pending.reject(new Error(`Sandbox exited with code ${code} while executing hook "${pending.hookId}"`));
           }
           this.pendingHookCalls.clear();
+
+          // F142: a forked child never raises 'error' for a crash — exiting
+          // before READY must fail init now, not as a 10 s "timed out".
+          if (!isResolved) {
+            isResolved = true;
+            clearTimeout(initTimeout);
+            reject(new Error(`Sandbox plugin "${this.id}" exited with code ${code} during initialization`));
+          }
         },
       );
 
@@ -506,7 +524,17 @@ export class SandboxPlugin implements KernelPlugin {
         if (value === null) {
           await ctx.configCenter.delete(namespacedKey);
         } else {
-          await ctx.configCenter.set(namespacedKey, value, options);
+          // F143: `options` is plugin-controlled. Pass only what the protocol
+          // declares and pin the ownership fields, as createScopedConfig does
+          // for native plugins — the sandbox must not file its row under
+          // another plugin or a core category, or attribute it to a user.
+          await ctx.configCenter.set(namespacedKey, value, {
+            isSecret: options?.isSecret,
+            description: options?.description,
+            tags: options?.tags,
+            pluginId: this.id,
+            category: `plugin:${this.id}`,
+          });
         }
         break;
       }
@@ -552,12 +580,18 @@ export class SandboxPlugin implements KernelPlugin {
   }
 
   async destroy(_ctx?: KernelContext): Promise<void> {
+    this.transportGen++;
     for (const unsub of this.unsubs) {
       try {
         unsub();
       } catch {}
     }
     this.unsubs.length = 0;
+    // F141: fail in-flight calls now, as the error/exit paths do — clearing
+    // them silently left each caller waiting out the 5 s reply timer.
+    for (const pending of Array.from(this.pendingHookCalls.values())) {
+      pending.reject(new Error(`Sandbox plugin "${this.id}" was stopped while executing hook "${pending.hookId}"`));
+    }
     this.pendingHookCalls.clear();
 
     if (this.child) {

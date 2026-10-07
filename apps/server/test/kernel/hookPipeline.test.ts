@@ -121,4 +121,51 @@ describe('HookPipeline', () => {
     expect(later).toHaveBeenCalledTimes(1);
     errSpy.mockRestore();
   });
+
+  it('F384: a handler unsubscribed or cleared while the call is in flight is not invoked by it', async () => {
+    for (const mode of ['unsubscribe', 'clear'] as const) {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        const pipeline = new HookPipeline(() => mockContext);
+        let release!: () => void;
+        const gate = new Promise<void>((r) => { release = r; });
+        let entered!: () => void;
+        const enteredP = new Promise<void>((r) => { entered = r; });
+        pipeline.tap('deploy:before', async () => {
+          entered();
+          await gate;
+          return undefined;
+        }, { priority: 200 });
+        // Models a stopped sandbox plugin: it never answers.
+        const stale = vi.fn(() => new Promise<undefined>(() => undefined));
+        const unsubStale = pipeline.tap('deploy:before', stale, { priority: 100 });
+        let settled = false;
+        const p = pipeline.call('deploy:before', { service: { id: 1 } as any }).then(() => { settled = true; });
+        await enteredP;
+        if (mode === 'unsubscribe') unsubStale();
+        else pipeline.clear();
+        release();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(stale, mode).not.toHaveBeenCalled();
+        expect(settled, mode).toBe(true);
+        await p;
+      } finally {
+        errSpy.mockRestore();
+        vi.useRealTimers();
+      }
+    }
+  });
+
+  it('F385: a non-numeric priority does not reorder the other handlers', async () => {
+    for (const bad of ['high', Number.NaN]) {
+      const pipeline = new HookPipeline(() => mockContext);
+      const trace: string[] = [];
+      pipeline.tap('deploy:after', async () => { trace.push('low'); return undefined; }, { priority: 10 });
+      pipeline.tap('deploy:after', async () => { trace.push('bad'); return undefined; }, { priority: bad as number });
+      pipeline.tap('deploy:after', async () => { trace.push('high'); return undefined; }, { priority: 200 });
+      await pipeline.call('deploy:after', { service: { id: 1 } as any, deployId: 1, success: true });
+      expect(trace).toEqual(['high', 'bad', 'low']);
+    }
+  });
 });

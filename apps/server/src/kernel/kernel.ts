@@ -79,26 +79,46 @@ export class NineDeployKernel implements KernelContext {
 
     try {
       await plugin.init(this);
-      this.events.emit('plugin.registered', { pluginId: plugin.id, version: plugin.version });
     } catch (err) {
       // r235: a plugin whose init failed is not installed. It used to stay in
       // the plugin map and boot order — reported active, its reinstall refused
       // as "already installed", its onReady still run at boot, and any bus
       // listener it had registered leaked. Undo what registration did.
-      if (plugin.destroy) {
-        await Promise.resolve(plugin.destroy(this)).catch(() => undefined);
+      // F254: a destroy() that threw synchronously escaped the former
+      // `Promise.resolve(plugin.destroy(this)).catch()` and skipped the cleanup.
+      try {
+        await plugin.destroy?.(this);
+      } catch {
+        // best effort — the init failure is what the caller must see
       }
-      this.menuRegistry.purgePluginMenus(plugin.id);
-      // r527: the operator's saved config (secrets included) survives a failed
-      // init — the usual cause is a transient one (an unreachable endpoint at
-      // boot), and purging here made the next restart start the plugin from
-      // empty settings. Only an uninstall erases config (pluginLoader).
-      this.plugins.delete(plugin.id);
-      const idx = this.bootOrder.indexOf(plugin.id);
-      if (idx >= 0) this.bootOrder.splice(idx, 1);
-      this.events.emit('plugin.status_changed', { pluginId: plugin.id, status: 'errored' });
+      // F253: only while this instance still owns the id — a reload that
+      // replaced it during init must not lose the new instance's entry/menus.
+      if (this.plugins.get(plugin.id) === plugin) {
+        this.menuRegistry.purgePluginMenus(plugin.id);
+        // r527: the operator's saved config (secrets included) survives a failed
+        // init — the usual cause is a transient one (an unreachable endpoint at
+        // boot), and purging here made the next restart start the plugin from
+        // empty settings. Only an uninstall erases config (pluginLoader).
+        this.plugins.delete(plugin.id);
+        const idx = this.bootOrder.indexOf(plugin.id);
+        if (idx >= 0) this.bootOrder.splice(idx, 1);
+        this.events.emit('plugin.status_changed', { pluginId: plugin.id, status: 'errored' });
+      }
       throw new Error(`Failed to initialize plugin "${plugin.id}": ${(err as Error).message}`);
     }
+    // F253: unregistered (disable), replaced (reload) or the kernel shut down
+    // while init was in flight. The earlier destroy() ran on a half-initialised
+    // instance, so whatever init registered after it would leak: tear it down
+    // again and report the registration as not having taken effect.
+    if (this.plugins.get(plugin.id) !== plugin || this._state === 'DRAINING' || this._state === 'TERMINATED') {
+      try {
+        await plugin.destroy?.(this);
+      } catch {
+        // best effort — the stale registration is refused either way
+      }
+      throw new Error(`Plugin "${plugin.id}" was unregistered while it was initializing`);
+    }
+    this.events.emit('plugin.registered', { pluginId: plugin.id, version: plugin.version });
   }
 
   async unregisterPlugin(id: string): Promise<boolean> {
@@ -179,6 +199,16 @@ export class NineDeployKernel implements KernelContext {
           await plugin.onShutdown(this);
         } catch (err) {
           console.error(`[NineDeployKernel] Error in onShutdown for plugin "${pluginId}":`, err);
+        }
+      }
+      // F252: destroy() is the teardown plugins actually implement (a sandbox
+      // plugin's SHUTDOWN + worker/child termination). Only unregisterPlugin
+      // called it, so a panel shutdown left every sandbox runtime running.
+      if (plugin?.destroy) {
+        try {
+          await plugin.destroy(this);
+        } catch (err) {
+          console.error(`[NineDeployKernel] Error in destroy for plugin "${pluginId}":`, err);
         }
       }
     }

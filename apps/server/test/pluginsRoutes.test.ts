@@ -1,6 +1,6 @@
 ﻿import { describe, expect, it, vi } from 'vitest';
 import { pluginRoutes } from '../src/modules/plugins.js';
-import { asUser, buildTestApp, createFakeDb } from './helpers.js';
+import { asUser, buildTestApp, createFakeDb, trackStatusUpdates } from './helpers.js';
 
 describe('Plugins HTTP API', () => {
   it('lists plugins and allows enabling/disabling with admin authorization', async () => {
@@ -411,6 +411,38 @@ describe('Plugins HTTP API', () => {
     const uninstalled = await app.inject({ method: 'POST', url: '/keeper/uninstall', headers: asUser({ isOperator: true }) });
     expect(uninstalled.statusCode).toBe(200);
     expect(purge).toHaveBeenCalledWith('keeper');
+    await app.close();
+  });
+
+  // F572: reload never consulted `enabled` — it re-initialised a DISABLED
+  // plugin's runtime and wrote status 'active' while the row kept
+  // enabled=false. Enable is the only route that loads a disabled plugin.
+  it('F572: reload refuses a disabled plugin; enable still loads it', async () => {
+    const row = {
+      id: 'datadog-apm',
+      name: 'Datadog APM',
+      version: '1.0.0',
+      isOfficial: true,
+      enabled: false,
+      status: 'disabled',
+      manifest: { source: 'marketplace', target: 'datadog-apm' },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const db = createFakeDb({ findFirst: { installedPlugins: (() => row) as never } });
+    const { updates } = trackStatusUpdates(db);
+    const app = await buildTestApp({ db });
+    await app.register(pluginRoutes);
+
+    const reload = await app.inject({ method: 'POST', url: '/datadog-apm/reload', headers: asUser({ isOperator: true }) });
+    expect(reload.statusCode).toBe(409);
+    expect(reload.json().error).toMatch(/is disabled/);
+    expect(app.kernel.getPlugin('datadog-apm')).toBeUndefined();
+    expect(updates).toHaveLength(0);
+
+    const enable = await app.inject({ method: 'POST', url: '/datadog-apm/enable', headers: asUser({ isOperator: true }) });
+    expect(enable.statusCode).toBe(200);
+    expect(app.kernel.getPlugin('datadog-apm')).toBeDefined();
     await app.close();
   });
 });

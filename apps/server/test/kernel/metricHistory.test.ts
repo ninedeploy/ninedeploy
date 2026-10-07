@@ -267,4 +267,44 @@ describe('MetricHistoryPlugin', () => {
       'metric.archived:fresh',
     ]);
   });
+
+  // F200 regression: retention_days is stored unvalidated (the settings UI
+  // saves 0 for a cleared field and null for a typo). `Math.max(1, value)`
+  // turned null/0/''/negative into a ONE-day window and wiped the history
+  // while GET /v1/metric-history reported 30; NaN/out-of-range made the DELETE
+  // throw on every sweep. Invalid values must fall back to 30 days.
+  it('falls back to the 30-day window for an invalid retention_days and never throws on an out-of-range one', async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const NOW = Date.UTC(2026, 9, 7, 12, 0, 0);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+    try {
+      const survivors = async (retention: unknown) => {
+        const { db, client, ready } = createDb({ url: ':memory:' });
+        await ready;
+        await client.execute(`CREATE TABLE audit_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT NOT NULL,
+          entity TEXT, meta TEXT, ts INTEGER NOT NULL DEFAULT (unixepoch()))`);
+        for (const [entity, age] of [['d2', 2], ['d10', 10], ['d40', 40]] as const) {
+          await db.insert(auditLog).values({ userId: null, action: 'metric.archived', entity, meta: {}, ts: new Date(NOW - age * DAY) });
+        }
+        const kernel = {
+          db,
+          configCenter: { get: async (key: string, def: unknown) => (key.endsWith(':retention_days') ? retention : def) },
+          events: { on: () => () => {}, emitCustom: () => {} },
+        };
+        await new MetricHistoryPlugin().runRetention(kernel as never);
+        const left = (await db.select().from(auditLog)).map((r) => String(r.entity)).sort();
+        client.close();
+        return left;
+      };
+      for (const invalid of [null, 0, -5, '', true, 'abc', Number.NaN]) {
+        expect(await survivors(invalid), `retention=${String(invalid)}`).toEqual(['d10', 'd2']);
+      }
+      expect(await survivors(1e308)).toEqual(['d10', 'd2', 'd40']);
+      expect(await survivors(7)).toEqual(['d2']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
