@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.10.45';
+export const VERSION = '0.11.0';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.11.0',
+    date: '2026-10-07',
+    title: 'The Evidence Audit Release — 300+ Proven Fixes',
+    changes: [
+      'Read the upgrade notes: POST /v1/build-cache/store now answers 400 on refusal (was 200 {ok:false}); compose services and templates refuse host port, resource limits and image overrides with 400 (they were silently ignored); deleting a backup whose remote copy cannot be removed answers 502; deleting a project that still holds databases answers 409; `ninedeploy deploys watch` exits 1 on any abnormal end, including its 30-minute cap. No database migrations.',
+      'Critical and high fixes: enabling the host firewall could lock you out (ufw rejected the SSH/HTTP/HTTPS safety rules, and the panel port was never allowed); passkeys could not sign in (existing passkeys now work and migrate on first use); tenant header/basic-auth values ran as Traefik templates and a wildcard router could skip basic auth or IP allow-lists; a Namecheap reply without a host list could wipe a whole DNS zone; backups, volumes and database data could be pruned or overwritten by retention, doctor or restore; plus fixes across SCIM, domains, templates, self-update and the egress driver.',
+      'Reliability: about 25 Docker calls that could hang a deploy or request for 30 minutes are now bounded; the deploy-log stream closes when a deploy settles; a stopped service is no longer restarted by the background reconcile; template services with a second database get the right database settings; the build cache finally passes --cache-from.',
+      'Tenancy: deactivated (SCIM-deprovisioned) accounts cannot be seated or handed ownership, and their team services move to the workspace owner, including a one-shot repair on upgrade; SSO sign-ups always own their personal workspace. Audit events carry correct service and deployment ids, and the Activity tab still lists older entries.',
+    ],
+  },
+{
     version: '0.10.45',
     date: '2026-10-05',
     title: 'Deployment Reliability — Evidence-Led Audit Fixes',

@@ -9,6 +9,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-07
+
+> The evidence audit release: over 300 defects, each reproduced on the previous code before it was fixed, then verified and, where it mattered, pinned by a regression test.
+
+### Upgrade notes
+
+- No database migrations or new configuration fields.
+- **API changes:**
+  - `POST /v1/build-cache/store` answers HTTP 400 `{ error }` for a missing key, malformed digest or unknown cache (was `200 { ok: false }`). It also accepts an optional `ref` (`<repo>@sha256:<64 hex>`).
+  - Compose services and compose templates refuse `publishedPort`, `cpuShares`, `memLimitMb`, `cpuLimitMilli` and image overrides with 400. Nothing ever applied them; the compose file controls these.
+  - Deleting a backup whose off-site copy cannot be removed answers 502 `remote_delete_failed` instead of orphaning the remote dump.
+  - Deleting a project that still holds databases answers 409.
+  - A deactivated account cannot be added to a workspace or given ownership (409 `user_deactivated`, SCIM 403).
+- **CLI:**
+  - `ninedeploy deploys watch` exits 1 on any close other than a clean end, including when its 30-minute wait limit is reached. Ctrl-C still exits 0.
+  - The source-token environment variable is `NINEDEPLOY_SOURCE_TOKEN`.
+- **One-shot repairs on first boot:**
+  - Team services and databases still owned by a deactivated user move to the workspace owner (`ownership_repair_deactivated_owner_r976`).
+  - SSO personal workspaces get their owner seat back.
+  - Both write audit entries and never block startup.
+- **Behaviour:**
+  - The build cache now stores a pullable image reference (new marker and registry-manifest fields).
+  - An FCM channel whose device token is rejected as dead is deactivated.
+  - Docker inspects that time out (10 s) fail instead of falling through to a pull.
+  - A pre-0.3.0 cleartext invite link answers 404.
+  - `alerts: []` in a manifest clears the alert rules that manifest created.
+  - Preset values are stored encrypted.
+
+### Security
+
+- Enabling the host firewall could lock the operator out. ufw rejected most generated rules, including the SSH/HTTP/HTTPS safety rules. A failed safety rule was ignored, and the panel port was never allowed.
+- Tenant-supplied header and basic-auth values were evaluated as Traefik Go templates, which could leak environment secrets. A covering wildcard router could outrank an exact host and skip basic auth or IP allow-lists.
+- Templates could deploy onto another tenant's attached volume. A member could claim another tenant's future PR-preview hostnames, or the www/apex half of an active redirect. A pending domain transfer outlived its initiator's admin seat.
+- An HTTPS token stayed in `.git/config` of relative submodules and was copied into images. Repository framework detection had a ReDoS on member-controlled files.
+- `logs search` printed tenant container output raw, so terminal escape sequences (clipboard writes, title changes) reached the operator's terminal.
+- Okta's pathless SCIM `PATCH active:false` was ignored, leaving the user active. The demo seed gave every tenant owner owner rights on the operator's demo service.
+- Audit events for service lifecycle and manual deploys carry the correct service and deployment ids. A service name can no longer spoof another id to webhook-out consumers. Plugins receive only an allow-listed part of audit metadata.
+
+### Fixed
+
+- **Data safety:**
+  - Backup retention could delete the last good backup after a failed upload.
+  - Restore checked only the primary container while replicas kept running on the volume.
+  - Prune, delete and the doctor treated database-adopted volumes as ownerless and could destroy stopped database data.
+- **DNS:**
+  - A Namecheap reply without a host list could wipe the whole zone on the next write.
+  - Concurrent record changes in one zone overwrote each other.
+  - IPv6 targets were sent as CNAME records; they are now AAAA.
+- **Deploys:**
+  - A template service with a second attached database took its database settings from the wrong one.
+  - Compose deploys picked the wrong main container.
+  - A pipeline crash left deployments `building` for up to 45 minutes.
+  - Scheduled 6-field crons fired every second.
+  - A second database could take an env alias already in use.
+- **Runtime:**
+  - About 25 Docker calls that could hang a deploy, a health check or a request for 30 minutes are now bounded.
+  - A user-stopped service is no longer restarted by the background reconcile.
+  - The deploy-log WebSocket closes once a deploy settles.
+  - Deleted services' networks no longer exhaust Docker's address pools.
+  - Deleted PM2 services no longer come back at boot.
+- **Build cache:**
+  - Cache hits now reach `docker buildx --cache-from` on the inline, registry and S3 backends.
+  - Malformed digests are refused instead of overwriting a valid entry.
+- **Plugins and kernel:**
+  - Uninstalling a refused plugin, or a purge with wildcard characters, could wipe a built-in plugin's settings and secrets.
+  - Plugins reusing a menu item id took over each other's sidebar entries.
+  - The sticky-IP egress SNAT never took effect.
+  - Template deploys trigger the manifest generator again.
+- **Tenancy:**
+  - Deactivated users' team services move to the workspace owner, and their seats no longer keep resources.
+  - SSO sign-ups always own their personal workspace.
+- **Passkeys:** sign-in works, and passkeys enrolled on earlier versions migrate to the canonical credential id on first use.
+- **Self-update:** a second update start during the in-flight check could launch a second root installer.
+- **Web:**
+  - The deploy wizard and Network tab no longer offer settings compose services ignore.
+  - Plugin Reload/Enable buttons match what the server allows.
+  - The project delete dialog describes the database rule correctly.
+
+### Tests
+
+- Permanent regressions cover the race, ownership, High and Critical fixes: reconcile and stop races, concurrent passkey migration, domain transfer accept, seat hand-over, audit entity formats, deploy-log close codes and the boot repairs.
+
 ## [0.10.45] - 2026-10-05
 
 > Deployment reliability and shared-contract fixes from the evidence-led audit.
