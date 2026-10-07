@@ -20,7 +20,7 @@ import { consumeTotpCode } from '../lib/totpReplay.js';
 import { audit } from '../lib/audit.js';
 import { getSetting } from '../lib/settings.js';
 import { findLiveSession, issueSessionTokens, refreshSessionTokens, revokeAllSessions, revokeApiTokens } from '../lib/sessions.js';
-import { beginAuthentication, beginRegistration, finishAuthentication, finishRegistration } from '../lib/webauthn.js';
+import { beginAuthentication, beginRegistration, finishAuthentication, finishRegistration, legacyCredentialId } from '../lib/webauthn.js';
 import { CLIENT_NONCE_PATTERN, exchangeGitHubCode, exchangeOidcCode, fetchOidcConfiguration, fetchOidcUserInfo, generateOAuthState, verifyOAuthState } from '../lib/oauth.js';
 import { ensureDefaultWorkspace, ensureDefaultWorkspaceWithRole } from './workspaces.js';
 import { acceptInvitationsForUser } from './invitations.js';
@@ -459,9 +459,21 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     const input = passkeyLoginVerify.parse(req.body);
     const id = String((input.response as { id?: unknown }).id ?? '');
     if (!id) throw unauthorized('Invalid passkey response');
-    const cred = await app.db.query.webauthnCredentials.findFirst({
+    let cred = await app.db.query.webauthnCredentials.findFirst({
       where: eq(webauthnCredentials.credentialId, id),
     });
+    // D2/F989 LEGACY FALLBACK — remove after 2–3 releases (with
+    // legacyCredentialId in lib/webauthn.ts). Passkeys registered before F340
+    // hold base64url(utf8(id)); look that form up only when the canonical id
+    // misses. The row is rewritten to the canonical id below, after the
+    // assertion verifies, so each legacy row takes this path at most once.
+    let legacyId: string | null = null;
+    if (!cred) {
+      legacyId = legacyCredentialId(id);
+      cred = await app.db.query.webauthnCredentials.findFirst({
+        where: eq(webauthnCredentials.credentialId, legacyId),
+      });
+    }
     if (!cred) throw unauthorized('Unknown passkey');
     let newCounter: number;
     try {
@@ -473,6 +485,21 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       .update(webauthnCredentials)
       .set({ counter: newCounter })
       .where(eq(webauthnCredentials.id, cred.id));
+    if (legacyId) {
+      // D2/F989 (legacy fallback, remove with it): migrate the verified row to
+      // the canonical id. Conditional on the OLD value, so a concurrent login
+      // that already migrated it (or any other change since the read) turns
+      // this into a no-op instead of a clobber. Best-effort: the sign-in is
+      // already proven, and an unmigrated row still works through the fallback.
+      try {
+        await app.db
+          .update(webauthnCredentials)
+          .set({ credentialId: id })
+          .where(and(eq(webauthnCredentials.id, cred.id), eq(webauthnCredentials.credentialId, legacyId)));
+      } catch (err) {
+        req.log.warn({ err, credentialRowId: cred.id }, 'passkey: could not migrate a pre-F340 credential id');
+      }
+    }
     const user = await app.db.query.users.findFirst({ where: eq(users.id, cred.userId) });
     if (!user) throw unauthorized();
     void audit(app.db, user.id, 'auth.passkey_login', user.email, undefined, { ip: req.ip, userAgent: req.headers['user-agent'] });

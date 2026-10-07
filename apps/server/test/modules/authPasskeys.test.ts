@@ -13,6 +13,8 @@ const webauthnMocks = vi.hoisted(() => ({
   })),
   beginAuthentication: vi.fn(async () => '{"challenge":"a"}'),
   finishAuthentication: vi.fn(async () => 4),
+  // D2/F989: the login route's pre-F340 fallback lookup (real encoding).
+  legacyCredentialId: vi.fn((id: string) => Buffer.from(id).toString('base64url')),
 }));
 vi.mock('../../src/lib/webauthn.js', () => webauthnMocks);
 

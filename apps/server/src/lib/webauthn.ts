@@ -17,6 +17,25 @@ function rpIdentity(): { rpID: string; rpName: string; origin: string } {
 /** DB transports (plain strings) → the library's union type. */
 const asTransports = (t: string[]): AuthenticatorTransport[] => t as AuthenticatorTransport[];
 
+// ── pre-F340 credential ids (D2 lazy migration) ────────────────────────────
+// LEGACY FALLBACK — remove after 2–3 releases (added in the release that
+// ships F340/F989), together with its callers in modules/auth.ts and below.
+// Before F340, finishRegistration stored base64url(utf8(<canonical id>)), an
+// id no browser ever reports. The login route looks such a row up by this
+// form only when the canonical id misses, and rewrites it once the assertion
+// verifies; registration only ever writes the canonical form.
+
+/** The id a pre-F340 row holds for the browser-reported (canonical) `id`. */
+export function legacyCredentialId(canonicalId: string): string {
+  return Buffer.from(canonicalId, 'utf8').toString('base64url');
+}
+
+/** Inverse of legacyCredentialId, or null when `stored` cannot be a pre-F340 id. */
+function canonicalFromLegacy(stored: string): string | null {
+  const decoded = Buffer.from(stored, 'base64url').toString('utf8');
+  return /^[A-Za-z0-9_-]+$/.test(decoded) && legacyCredentialId(decoded) === stored ? decoded : null;
+}
+
 // ── challenge store ────────────────────────────────────────────────────────
 // In-memory with a 5-minute TTL: challenges are single-use and short-lived by
 // design; a restart simply aborts in-flight ceremonies (user retries).
@@ -56,7 +75,13 @@ export async function beginRegistration(
     userName: user.email,
     userDisplayName: user.name ?? user.email,
     attestationType: 'none',
-    excludeCredentials: existing.map((c) => ({ id: c.credentialId, transports: asTransports(c.transports) })),
+    // D2 (legacy fallback, see above): a pre-F340 row also names the id the
+    // authenticator really holds, so re-enrolling it is refused by the browser.
+    // An extra id that no authenticator holds is ignored, so a false decode is harmless.
+    excludeCredentials: existing.flatMap((c) => {
+      const legacy = canonicalFromLegacy(c.credentialId);
+      return [c.credentialId, ...(legacy ? [legacy] : [])].map((id) => ({ id, transports: asTransports(c.transports) }));
+    }),
     // 'required' (not 'preferred'): the login ceremony sends an empty
     // allowCredentials list (see beginAuthentication), so a non-discoverable
     // credential would register successfully and then never be offered.
@@ -87,7 +112,11 @@ export async function finishRegistration(
   // browser reports as `response.id` at login. Re-encoding it made every
   // stored id unmatchable.
   const credentialId = info.credential.id;
-  if (existing.some((c) => c.credentialId === credentialId)) throw new Error('This passkey is already registered');
+  // D2 (legacy fallback, see above): a pre-F340 row for the same authenticator is a duplicate too.
+  const legacyId = legacyCredentialId(credentialId);
+  if (existing.some((c) => c.credentialId === credentialId || c.credentialId === legacyId)) {
+    throw new Error('This passkey is already registered');
+  }
   return {
     credentialId,
     publicKey: Buffer.from(info.credential.publicKey).toString('base64url'),
