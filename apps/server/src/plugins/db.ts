@@ -5,6 +5,7 @@ import { reconcileDeploymentHistory } from '../engine/pipeline.js';
 import { ensureDeactivatedOwnersRepaired, ensureOwnershipBackfilled } from '../lib/ownershipBackfill.js';
 import { ensureRegistryBindingsInitialised } from '../lib/registryBinding.js';
 import { ensureVaultAllowlistInitialised } from '../lib/vault.js';
+import { repairOwnerSeats } from '../lib/ownerSeatRepair.js';
 
 // Augment the Fastify instance so `fastify.db` is typed everywhere.
 declare module 'fastify' {
@@ -78,6 +79,15 @@ export default fp(
         if (demoted > 0) fastify.log.info({ demoted }, 'stale running deployments marked superseded');
       } catch (err) {
         fastify.log.warn({ err }, 'deployment history reconciliation skipped');
+      }
+      // D1/F146 (F1000): SSO auto-enroll used to seat a new user in their own
+      // personal workspace with the provider's defaultRole. Upgrade exactly
+      // that seat (ownerId's own, only when nobody else holds owner) back to
+      // owner. Idempotent, so it runs on every boot; never blocks startup.
+      try {
+        await repairOwnerSeats(db, (msg, detail) => fastify.log.warn(detail, msg));
+      } catch (err) {
+        fastify.log.warn({ err }, 'workspace owner seat repair deferred');
       }
 
       // r510/r512 upgrade path: seed the vault allowlist and the registry

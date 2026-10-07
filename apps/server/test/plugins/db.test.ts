@@ -54,6 +54,13 @@ describe('db plugin — r510/r512/r710 upgrade seeding on first boot', () => {
     await pre.db.insert(workspaceMembers).values({ workspaceId: ws!.id, userId: teamOwner!.id, role: 'owner' });
     const [orphan] = await pre.db.insert(services).values({ name: 'orphan', slug: 'orphan', ownerUserId: member!.id }).returning();
     await pre.db.insert(serviceWorkspaces).values({ serviceId: orphan!.id, workspaceId: ws!.id });
+    // D1/F146 (F1000): a pre-fix SSO personal workspace — its owner seated as 'member'.
+    const [ssoUser] = await pre.db.insert(users).values({ email: 'sso@x', passwordHash: 'h' }).returning();
+    const [personal] = await pre.db.insert(workspaces).values({ name: 'Sso', slug: 'sso', ownerId: ssoUser!.id }).returning();
+    const [ssoSeat] = await pre.db
+      .insert(workspaceMembers)
+      .values({ workspaceId: personal!.id, userId: ssoUser!.id, role: 'member' })
+      .returning();
     pre.client?.close();
 
     const app = Fastify();
@@ -69,6 +76,8 @@ describe('db plugin — r510/r512/r710 upgrade seeding on first boot', () => {
     expect(rehomed!.ownerUserId).toBe(teamOwner!.id);
     // The un-tagged legacy service is personal and stays its creator's.
     expect((await app.db.query.services.findFirst({ where: eq(services.id, svc!.id) }))!.ownerUserId).toBe(member!.id);
+    // F1000: the boot repair gave the personal workspace's owner their owner seat back.
+    expect((await app.db.query.workspaceMembers.findFirst({ where: eq(workspaceMembers.id, ssoSeat!.id) }))!.role).toBe('owner');
     await app.close();
   });
 });

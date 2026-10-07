@@ -1043,8 +1043,13 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       return reply.redirect(`${config.publicUrl}/settings?oidcLinked=1`);
     }
     if (resolved.created) {
-      const roleForFirstWorkspace: WorkspaceRole = resolved.firstUser ? 'owner' : (provider.defaultRole as WorkspaceRole);
-      await ensureDefaultWorkspaceWithRole(app.db, user, roleForFirstWorkspace);
+      // D1/F146: a user always owns the personal workspace created for them
+      // (workspaces.ownerId = the user), first user or not. provider.defaultRole
+      // is a team-workspace role; it never downgrades this seat. An OIDC
+      // provider maps users into no team workspace today, so it has no target
+      // here (team seats come from invitations, which carry their own role).
+      const personalRole: WorkspaceRole = 'owner';
+      await ensureDefaultWorkspaceWithRole(app.db, user, personalRole);
     }
     // For users who already existed (no auto-enroll block above) we still
     // make sure they have a personal workspace, in case one was wiped.
