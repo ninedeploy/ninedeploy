@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
+import { isContentDigest } from '../kernel/drivers/inlineBuildCache.js';
 import { BuildCachePlugin } from '../kernel/plugins/buildCachePlugin.js';
 import { audit } from '../lib/audit.js';
 
@@ -75,8 +76,11 @@ export const buildCacheRoutes: FastifyPluginAsync = async (app) => {
       if (typeof key !== 'string' || key.length === 0) {
         return { ok: false, error: '`key` is required' };
       }
-      if (typeof digest !== 'string' || !digest.startsWith('sha256:')) {
-        return { ok: false, error: '`digest` must be a sha256:hex string' };
+      // F944: the drivers take only a full `sha256:<64 lowercase hex>` as a marker
+      // pointer (F864); a mere `sha256:` prefix was stored as a placeholder hash
+      // (inline/registry) or a marker every lookup misses (S3), reported `ok: true`.
+      if (!isContentDigest(digest)) {
+        return { ok: false, error: '`digest` must be a sha256:<64 lowercase hex> content digest' };
       }
       const targetName = cacheName ?? 'inline';
       const cache = app.kernel.registry.getBuildCache(targetName);

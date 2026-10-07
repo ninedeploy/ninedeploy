@@ -16,6 +16,7 @@
  */
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { createServer, type Socket } from 'node:net';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -59,19 +60,46 @@ interface RecordedCall {
 
 const tags = new Map<string, TagEntry>();
 const calls: RecordedCall[] = [];
+/** F191: blobs the registry holds. A manifest PUT referencing any other blob is refused. */
+const blobs = new Set<string>();
+const EMPTY_BLOB_DIGEST = 'sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a';
 
 function sha256hex(s: string): string {
   return createHash('sha256').update(s, 'utf8').digest('hex');
 }
+/** F864: drivers accept only a full `sha256:<64 hex>` pointer; derive one per label. */
+const D = (label: string): string => `sha256:${sha256hex(label)}`;
+
+const manifestPuts = (): RecordedCall[] =>
+  calls.filter((c) => c.init.method === 'PUT' && c.url.includes('/manifests/'));
 
 async function registryFetch(input: string | URL | globalThis.Request, init?: RequestInit): Promise<Response> {
   const url = String(input);
   const method = (init?.method ?? 'GET').toUpperCase();
   const body = typeof init?.body === 'string' ? init.body : undefined;
   calls.push({ url, init: { method, headers: (init?.headers ?? {}) as Record<string, string>, body } });
+  // Blob push flow (distribution spec): HEAD probe, POST → 202 + Location,
+  // PUT <location>?digest= accepted only when the bytes hash to the digest.
+  const blobPath = new URL(url).pathname.match(/\/blobs\/(uploads\/[^/]*|sha256:[0-9a-f]{64})$/);
+  if (blobPath) {
+    const ref = blobPath[1] ?? '';
+    if (method === 'HEAD') return new Response(null, { status: blobs.has(ref) ? 200 : 404 });
+    if (method === 'POST') return new Response(null, { status: 202, headers: { Location: `${url}u1` } });
+    const digest = new URL(url).searchParams.get('digest') ?? '';
+    if (method !== 'PUT' || digest !== `sha256:${sha256hex(body ?? '')}`) return new Response(null, { status: 400 });
+    blobs.add(digest);
+    return new Response(null, { status: 201 });
+  }
   const tag = decodeURIComponent(url.split('/manifests/')[1] ?? '');
   if (method === 'PUT') {
     const bytes = body ?? '';
+    // Real registries refuse a manifest whose config/layer blobs they do not
+    // hold (MANIFEST_BLOB_UNKNOWN). The pre-F191 driver never uploaded any.
+    const man = JSON.parse(bytes) as { config?: { digest?: string }; layers?: Array<{ digest?: string }> };
+    const refs = [man.config?.digest, ...(man.layers ?? []).map((l) => l.digest)];
+    if (refs.some((d) => typeof d !== 'string' || !blobs.has(d))) {
+      return new Response('{"errors":[{"code":"MANIFEST_BLOB_UNKNOWN"}]}', { status: 400 });
+    }
     const manifestDigest = `sha256:${sha256hex(bytes)}`;
     tags.set(tag, { bytes, manifestDigest });
     // Real registries answer a manifest PUT with the manifest's own digest.
@@ -104,6 +132,7 @@ function newCache(opts: { username?: string; password?: string } = {}): Registry
 
 beforeEach(async () => {
   tags.clear();
+  blobs.clear();
   calls.length = 0;
   await resetDb();
 });
@@ -117,8 +146,8 @@ afterAll(async () => {
 const LAYER_DIGEST = `sha256:${'a'.repeat(64)}`;
 const OTHER_LAYER_DIGEST = `sha256:${'b'.repeat(64)}`;
 const KEY = `ndbuild:${'c'.repeat(24)}`;
-const marker = (digest: string): Buffer =>
-  Buffer.from(JSON.stringify({ digest, ts: 1_700_000_000_000 }));
+const marker = (digest: string, extra: Record<string, unknown> = {}): Buffer =>
+  Buffer.from(JSON.stringify({ digest, ...extra, ts: 1_700_000_000_000 }));
 
 describe('RegistryBuildCache', () => {
   it('exposes a stable name and starts at zero stats', async () => {
@@ -138,9 +167,9 @@ describe('RegistryBuildCache', () => {
 
   it('passes the configured credentials via the Authorization header on push', async () => {
     const cache = newCache({ username: 'alice', password: 's3cret' });
-    const blob = Buffer.from(JSON.stringify({ digest: 'sha256:auth', sizeBytes: 1, ts: 0 }));
+    const blob = Buffer.from(JSON.stringify({ digest: D('auth'), sizeBytes: 1, ts: 0 }));
     await cache.store('ndbuild:auth', blob);
-    const putCall = calls.find((c) => c.init.method === 'PUT');
+    const putCall = manifestPuts()[0];
     expect(putCall).toBeDefined();
     const authHeader = putCall?.init.headers?.Authorization;
     expect(authHeader).toMatch(/^Basic /);
@@ -155,22 +184,31 @@ describe('RegistryBuildCache', () => {
 
   it('puts a manifest on the registry with the expected OCI shape', async () => {
     const cache = newCache();
-    const blob = Buffer.from(JSON.stringify({ digest: 'sha256:shape', sizeBytes: 42, ts: 0 }));
+    const blob = Buffer.from(JSON.stringify({ digest: D('shape'), sizeBytes: 42, ts: 0 }));
     await cache.store('ndbuild:shape', blob);
-    const putCall = calls.find((c) => c.init.method === 'PUT');
+    const putCall = manifestPuts()[0];
     expect(putCall).toBeDefined();
     expect(putCall?.init.headers?.['Content-Type']).toMatch(/application\/vnd\.oci\.image\.manifest/);
-    const body = JSON.parse(putCall?.init.body ?? '{}') as { schemaVersion: number; layers?: Array<{ digest: string }> };
+    const body = JSON.parse(putCall?.init.body ?? '{}') as {
+      schemaVersion: number;
+      config?: { digest: string };
+      layers?: Array<{ digest: string }>;
+      annotations?: Record<string, string>;
+    };
     expect(body.schemaVersion).toBe(2);
-    expect(body.layers?.[0]?.digest).toBe('sha256:shape');
+    // F191: config + layer are the uploaded empty blob; the pointer rides in the annotations.
+    expect(body.config?.digest).toBe(EMPTY_BLOB_DIGEST);
+    expect(body.layers?.map((l) => l.digest)).toEqual([EMPTY_BLOB_DIGEST]);
+    expect(body.annotations?.['io.ninedeploy.build-cache.digest']).toBe(D('shape'));
+    expect(body.annotations?.['io.ninedeploy.build-cache.size']).toBe('42');
   });
 
   it('maps a key with non-tag-safe characters to a valid OCI tag', async () => {
     const cache = newCache();
-    const blob = Buffer.from(JSON.stringify({ digest: 'sha256:tag', sizeBytes: 1, ts: 0 }));
+    const blob = Buffer.from(JSON.stringify({ digest: D('tag'), sizeBytes: 1, ts: 0 }));
     await cache.store('ndbuild:abc/123', blob);
     // The registry path should contain a tag without `/`.
-    const putCall = calls.find((c) => c.init.method === 'PUT');
+    const putCall = manifestPuts()[0];
     expect(putCall?.url).toMatch(/\/manifests\//);
     const tag = putCall?.url.split('/manifests/')[1];
     expect(tag).not.toContain('/');
@@ -247,15 +285,79 @@ describe('RegistryBuildCache', () => {
   // lands on placeholderHash() — the branch that contained the lazy
   // require('node:crypto'). It is a documented, deterministic fallback, not
   // an error path, and must resolve (not reject) with the blob's own digest.
+  // F864: a RepoDigest-shaped digest is now split into digest + ref (next
+  // test), so the placeholder branch is exercised with a digest that is
+  // neither `sha256:` nor a valid `<repo>@sha256:` reference.
   it('resolves the placeholder digest for a marker whose digest lacks the sha256: prefix (r026 regression)', async () => {
     const blob = Buffer.from(
-      JSON.stringify({ digest: `registry.example.com/ninedeploy/app@${LAYER_DIGEST}`, ts: 1 }),
+      JSON.stringify({ digest: `Registry.example.com/NineDeploy/App@${LAYER_DIGEST}`, ts: 1 }),
     );
     const stored = await newCache().store('ndbuild:prefixless', blob);
     const hex = createHash('sha256').update(blob).digest('hex');
     expect(stored.digest, 'a rejected marker must fall back to the blob digest, never reject').toBe(
       `sha256:${hex}`,
     );
+    expect(stored.ref).toBeUndefined();
+  });
+
+  // F864: the pullable reference rides in a manifest annotation next to the
+  // pointer and comes back from lookup(); an invalid one is never pushed, a
+  // pre-F864 tag (no annotation) still hits but carries no ref.
+  it('F864: persists the marker ref as a manifest annotation and returns it on lookup', async () => {
+    const ref = `registry.example.com/ninedeploy/app@${LAYER_DIGEST}`;
+    const cache = newCache();
+    const stored = await cache.store(KEY, marker(LAYER_DIGEST, { ref }));
+    expect(stored).toMatchObject({ digest: LAYER_DIGEST, ref });
+    const put = JSON.parse(manifestPuts().at(-1)?.init.body ?? '{}') as { annotations?: Record<string, string> };
+    expect(put.annotations?.['io.ninedeploy.build-cache.ref']).toBe(ref);
+    expect(await cache.lookup(KEY)).toMatchObject({ digest: LAYER_DIGEST, ref });
+    // Pre-F864 shape: the RepoDigest sat in `digest` — split, not hashed.
+    const legacy = await cache.store(KEY, Buffer.from(JSON.stringify({ digest: ref, ts: 1 })));
+    expect(legacy).toMatchObject({ digest: LAYER_DIGEST, ref });
+  });
+
+  it('F864: a manifest pointer that is only `sha256:`-prefixed reads as cold, not a hit', async () => {
+    // No row for KEY: the manifest alone would be trusted as a hit (an
+    // instance that joined an existing cluster), so the pointer check is all
+    // that stands between a malformed tag and a "hit".
+    const cache = newCache();
+    blobs.add(EMPTY_BLOB_DIGEST);
+    const tag = `ndbuild-${KEY.slice('ndbuild:'.length)}`;
+    const empty = { mediaType: 'application/vnd.oci.empty.v1+json', digest: EMPTY_BLOB_DIGEST, size: 2 };
+    for (const annotations of [
+      { 'io.ninedeploy.build-cache.digest': 'sha256:abc' },
+      { 'io.ninedeploy.build-cache.digest': `sha256:${'A'.repeat(64)}` },
+    ]) {
+      await registryFetch(`https://registry.example.com/v2/ninedeploy/test/manifests/${tag}`, {
+        method: 'PUT',
+        body: JSON.stringify({ schemaVersion: 2, config: empty, layers: [empty], annotations }),
+      });
+      expect(await cache.lookup(KEY)).toBeNull();
+    }
+    // Legacy tag shape (pointer as layers[0]) with a short digest: also cold.
+    blobs.add('sha256:abc');
+    await registryFetch(`https://registry.example.com/v2/ninedeploy/test/manifests/${tag}`, {
+      method: 'PUT',
+      body: JSON.stringify({ schemaVersion: 2, config: empty, layers: [{ digest: 'sha256:abc', size: 1 }] }),
+    });
+    expect(await cache.lookup(KEY)).toBeNull();
+  });
+
+  it('F864: drops an invalid or mismatched ref; a ref-less tag still hits without one', async () => {
+    const cache = newCache();
+    for (const bad of [
+      `registry.example.com/ninedeploy/app@${LAYER_DIGEST},type=local,src=/`,
+      `registry.example.com/ninedeploy/app@${OTHER_LAYER_DIGEST}`,
+      'registry.example.com/ninedeploy/app:latest',
+    ]) {
+      const stored = await cache.store(KEY, marker(LAYER_DIGEST, { ref: bad }));
+      expect(stored.ref, bad).toBeUndefined();
+      const put = JSON.parse(manifestPuts().at(-1)?.init.body ?? '{}') as { annotations?: Record<string, string> };
+      expect(put.annotations?.['io.ninedeploy.build-cache.ref'], bad).toBeUndefined();
+      const hit = await cache.lookup(KEY);
+      expect(hit?.digest).toBe(LAYER_DIGEST);
+      expect(hit && 'ref' in hit).toBe(false);
+    }
   });
 });
 
@@ -317,5 +419,164 @@ describe('RegistryBuildCache lazy configuration', () => {
     expect(String(fetchImpl.mock.calls[0]?.[0])).toBe(
       'https://registry.example.com/v2/ninedeploy/build-cache/manifests/ndbuild-a',
     );
+  });
+});
+
+/**
+ * F188. The key → tag mapping must be injective: lookup() trusts any marker
+ * at tagFor(key) as this key's content (cluster-join branch). Folding bad
+ * chars to `-` and truncating at 128 aliased distinct keys, so a never-stored
+ * key read another key's digest as a HIT and storing it evicted the other.
+ */
+describe('RegistryBuildCache key → tag mapping (F188 regression)', () => {
+  const putTags = (): string[] =>
+    manifestPuts().map((c) => c.url.split('/manifests/')[1] ?? '');
+
+  it('does not alias `ndbuild:x` with `ndbuild-x`, nor two keys sharing 128 chars', async () => {
+    const cache = newCache();
+    await cache.store('ndbuild:abc', marker(LAYER_DIGEST));
+    expect(await cache.lookup('ndbuild-abc'), 'a never-stored key must miss').toBeNull();
+
+    const long = 'k'.repeat(128);
+    await cache.store(`${long}1`, marker(LAYER_DIGEST));
+    expect(await cache.lookup(`${long}2`), 'a never-stored key must miss').toBeNull();
+
+    await cache.store('ndbuild-abc', marker(OTHER_LAYER_DIGEST));
+    expect((await cache.lookup('ndbuild:abc'))?.digest, 'storing another key must not evict this one').toBe(
+      LAYER_DIGEST,
+    );
+  });
+
+  it('keeps the production tag for canonical keys and emits valid tags for everything else', async () => {
+    const cache = newCache();
+    await cache.store(KEY, marker(LAYER_DIGEST));
+    expect(putTags()[0]).toBe(KEY.replace(':', '-'));
+
+    for (const k of ['-lead', 'ndbuild:', 'ndbuild:ü', 'x'.repeat(300), `ndbuild:${'a'.repeat(121)}`]) {
+      await cache.store(k, marker(LAYER_DIGEST));
+    }
+    const tagsPut = putTags();
+    expect(new Set(tagsPut).size).toBe(tagsPut.length);
+    for (const t of tagsPut) expect(t).toMatch(/^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/);
+  });
+});
+
+/**
+ * F189. store() was findFirst → insert: two concurrent first stores of one
+ * key both read "no row", the second insert hit UNIQUE(key, backend, repo)
+ * and store() rejected AFTER its manifest PUT landed — registry and row then
+ * disagreed and the next lookup missed. Gated with a barrier, no sleeps.
+ */
+describe('RegistryBuildCache concurrent store (F189 regression)', () => {
+  function gatedDb(parties: number): typeof db {
+    let arrived = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const realQuery = db.query.cacheRegistryBlobs;
+    const query = new Proxy(db.query, {
+      get(t, p, r) {
+        if (p !== 'cacheRegistryBlobs') return Reflect.get(t, p, r);
+        return {
+          findFirst: async (...args: Parameters<typeof realQuery.findFirst>) => {
+            const row = await realQuery.findFirst(...args);
+            arrived += 1;
+            if (arrived >= parties) release();
+            await gate; // neither racer may write until both have read
+            return row;
+          },
+        };
+      },
+    });
+    return new Proxy(db, { get: (t, p, r) => (p === 'query' ? query : Reflect.get(t, p, r)) });
+  }
+
+  it('two first stores that both read "no row" both resolve into one hittable row', async () => {
+    const racing = new RegistryBuildCache({
+      db: gatedDb(2),
+      credentials: { url: 'https://registry.example.com', repo: 'ninedeploy/test' },
+      fetchImpl: registryFetch,
+    });
+    const results = await Promise.allSettled([
+      racing.store(KEY, marker(LAYER_DIGEST)),
+      racing.store(KEY, marker(OTHER_LAYER_DIGEST)),
+    ]);
+    expect(results.map((r) => r.status)).toEqual(['fulfilled', 'fulfilled']);
+    const rows = await client.execute('SELECT digest FROM "cache_registry_blobs"');
+    expect(rows.rows).toHaveLength(1);
+    expect((await newCache().lookup(KEY))?.digest, 'row and registry must agree after the race').toBe(
+      OTHER_LAYER_DIGEST,
+    );
+  });
+});
+
+/**
+ * F191. The marker manifest referenced a config blob and a layer blob it
+ * never uploaded; an enforcing registry answers MANIFEST_BLOB_UNKNOWN, so
+ * store() always failed and the backend never cached. The fake above refuses
+ * exactly that, like distribution's OCI manifest verifier.
+ */
+describe('RegistryBuildCache conformant push (F191 regression)', () => {
+  it('uploads the blobs a marker references before the manifest, and the round-trip hits', async () => {
+    const cache = newCache();
+    await expect(cache.store(KEY, marker(LAYER_DIGEST))).resolves.toMatchObject({ digest: LAYER_DIGEST });
+    const order = calls.map((c) => `${c.init.method} ${new URL(c.url).pathname.split('/').slice(-2).join('/')}`);
+    expect(order.indexOf(`PUT manifests/${KEY.replace(':', '-')}`)).toBeGreaterThan(
+      order.findIndex((o) => o.startsWith('PUT uploads/')),
+    );
+    expect((await cache.lookup(KEY))?.digest).toBe(LAYER_DIGEST);
+  });
+
+  it('still reads a legacy tag whose pointer is layers[0].digest', async () => {
+    const legacy = JSON.stringify({
+      schemaVersion: 2,
+      config: { mediaType: 'application/vnd.oci.empty.v1+json', digest: EMPTY_BLOB_DIGEST, size: 2 },
+      layers: [{ mediaType: 'application/vnd.oci.image.layer.v1.tar+gzip', digest: LAYER_DIGEST, size: 3 }],
+    });
+    tags.set(KEY.replace(':', '-'), { bytes: legacy, manifestDigest: `sha256:${sha256hex(legacy)}` });
+    expect(await newCache().lookup(KEY)).toMatchObject({ digest: LAYER_DIGEST, sizeBytes: 3 });
+  });
+});
+
+/**
+ * F190. Registry calls had no deadline: a registry that accepts the
+ * connection and never answers held the build's cache lookup until undici's
+ * own 300 s default. Real 127.0.0.1 listener + real fetch; fake timers drive
+ * the 10 s deadline; gated on the request bytes arriving, no sleeps.
+ */
+describe('RegistryBuildCache request deadline (F190 regression)', () => {
+  it('a stalled registry reads as a miss once the deadline passes', async () => {
+    const sockets: Socket[] = [];
+    let seen!: () => void;
+    const requestSeen = new Promise<void>((r) => {
+      seen = r;
+    });
+    const server = createServer((sock) => {
+      sockets.push(sock);
+      sock.on('error', () => {});
+      sock.once('data', () => seen()); // read the request, never answer
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const port = (server.address() as { port: number }).port;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const cache = new RegistryBuildCache({ db, credentials: { url: `http://127.0.0.1:${port}`, repo: 'nd/test' } });
+      let state = 'pending';
+      void cache.lookup(KEY).then((v) => {
+        state = v === null ? 'miss' : 'hit';
+      });
+      await requestSeen;
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(state, 'not before the deadline').toBe('pending');
+      await vi.advanceTimersByTimeAsync(1);
+      // Bounded event-loop turns (not wall-clock) so a missing deadline fails fast instead of hanging.
+      for (let i = 0; i < 20 && state === 'pending'; i++) await new Promise<void>((r) => setImmediate(r));
+      expect(state).toBe('miss');
+    } finally {
+      vi.useRealTimers();
+      for (const s of sockets) s.destroy();
+      await new Promise<void>((r) => server.close(() => r()));
+    }
   });
 });

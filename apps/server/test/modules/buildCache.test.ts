@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { InlineBuildCache } from '../../src/kernel/drivers/inlineBuildCache.js';
 import { BuildCachePlugin } from '../../src/kernel/plugins/buildCachePlugin.js';
 import { buildCacheRoutes } from '../../src/modules/buildCache.js';
 import { asUser, buildTestApp, captureAudits, type createFakeDb } from '../helpers.js';
+
+/** F944: the route accepts only the full pointer digest the drivers can store (F864). */
+const DIGEST = `sha256:${'de'.repeat(32)}`;
 
 async function newApp() {
   const a = await buildTestApp();
@@ -67,7 +71,7 @@ describe('POST /v1/build-cache/store', () => {
       method: 'POST',
       url: '/store',
       headers: asUser(),
-      payload: { key: 'ndbuild:abc', digest: 'sha256:def', sizeBytes: 4096 },
+      payload: { key: 'ndbuild:abc', digest: DIGEST, sizeBytes: 4096 },
     });
     expect(res.statusCode).toBe(200);
     const body = res.json() as { ok: boolean; backend: string; ref: { digest: string; sizeBytes: number } };
@@ -88,7 +92,7 @@ describe('POST /v1/build-cache/store', () => {
       method: 'POST',
       url: '/store',
       headers: asUser(),
-      payload: { key: 'ndbuild:abc', digest: 'sha256:def' },
+      payload: { key: 'ndbuild:abc', digest: DIGEST },
     });
     expect(res.statusCode).toBe(200);
     expect(audits).toEqual([
@@ -121,6 +125,27 @@ describe('POST /v1/build-cache/store', () => {
     const body = res.json() as { ok: boolean; error: string };
     expect(body.ok).toBe(false);
     expect(body.error).toMatch(/sha256/);
+  });
+
+  it('F944: refuses a digest the drivers cannot use as a pointer, without touching the stored entry', async () => {
+    // A mere `sha256:` prefix used to be answered ok:true, audited, and stored
+    // as a placeholder hash that overwrote the key's valid pointer (S3: a
+    // marker every later lookup misses).
+    const { app } = await newApp();
+    const cache = new InlineBuildCache();
+    app.kernel.registry.registerBuildCache(cache);
+    const audits = captureAudits(app.db as ReturnType<typeof createFakeDb>);
+    const key = 'ndbuild:f944';
+    const ok = await app.inject({ method: 'POST', url: '/store', headers: asUser(), payload: { key, digest: DIGEST } });
+    expect(ok.json()).toMatchObject({ ok: true, backend: 'inline', ref: { digest: DIGEST } });
+    const store = vi.spyOn(cache, 'store');
+    for (const digest of ['sha256:def', `sha256:${'a'.repeat(63)}`, `sha256:${'AB'.repeat(32)}`, `${DIGEST}\n`, `registry.example.test/web@${DIGEST}`]) {
+      const res = await app.inject({ method: 'POST', url: '/store', headers: asUser(), payload: { key, digest } });
+      expect(res.json()).toEqual({ ok: false, error: expect.stringMatching(/sha256/) });
+    }
+    expect(store).not.toHaveBeenCalled();
+    expect((await cache.lookup(key))?.digest).toBe(DIGEST);
+    expect(audits).toHaveLength(1);
   });
 
   it('rejects unauthenticated callers', async () => {

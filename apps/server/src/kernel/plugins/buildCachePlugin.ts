@@ -235,6 +235,8 @@ export class BuildCachePlugin implements KernelPlugin {
       misses: number;
       stores: number;
       evictions: number;
+      /** F221: set when this backend's stats() failed; its counters are zero. */
+      error?: string;
     }>;
     totals: {
       entries: number;
@@ -252,13 +254,34 @@ export class BuildCachePlugin implements KernelPlugin {
         totals: { entries: 0, totalBytes: 0, hits: 0, misses: 0, stores: 0, evictions: 0 },
       };
     }
+    // F221: one backend's failure (the registry driver's stats() is a DB read)
+    // must not reject the whole surface and hide the healthy counters. The
+    // driver's own error text (SQL, endpoints) is not passed through.
     const rows = await Promise.all(
       backends.map(async (b) => {
-        const s = await b.stats();
-        return { name: b.name, ...s };
+        try {
+          const s = await b.stats();
+          return { name: b.name, ...s };
+        } catch {
+          const zero = { entries: 0, totalBytes: 0, hits: 0, misses: 0, stores: 0, evictions: 0 };
+          return { name: b.name, ...zero, error: 'stats unavailable' };
+        }
       }),
     );
-    const totals = rows.reduce(
+    // F220: honour the operator's `cache_name` pin, read the way the deploy
+    // worker reads it. A pinned, registered backend is the one deploys use, so
+    // the totals (the CLI's hit rate) are that backend's alone; summing every
+    // backend let an unused backend's persisted history set the hit rate.
+    // Unset / empty / unknown names keep the merged totals.
+    let pinned: string | undefined;
+    try {
+      pinned = await ctx.configCenter?.get<string>('plugin:build-cache:cache_name', 'inline');
+    } catch {
+      pinned = undefined;
+    }
+    const pinnedRows = typeof pinned === 'string' && pinned ? rows.filter((r) => r.name === pinned) : [];
+    const counted = pinnedRows.length > 0 ? pinnedRows : rows;
+    const totals = counted.reduce(
       (acc, r) => ({
         entries: acc.entries + r.entries,
         totalBytes: acc.totalBytes + r.totalBytes,

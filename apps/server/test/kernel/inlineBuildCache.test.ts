@@ -94,6 +94,43 @@ describe('InlineBuildCache', () => {
     expect(await cache.lookup('k4')).not.toBeNull();
   });
 
+  it('F360: hands back the digest a { digest, ts } marker records, not a hash of the marker', async () => {
+    // Both writers (BuildKit builder, POST /v1/build-cache/store) store a marker;
+    // the registry and S3 drivers return its digest, and so must this one.
+    const cache = new InlineBuildCache();
+    const recorded = `sha256:${'d'.repeat(64)}`;
+    const r1 = await cache.store('ndbuild:k', Buffer.from(JSON.stringify({ digest: recorded, ts: 1 })));
+    const r2 = await cache.store('ndbuild:k', Buffer.from(JSON.stringify({ digest: recorded, ts: 2 })));
+    expect(r1.digest).toBe(recorded);
+    expect(r2.digest).toBe(recorded);
+    expect((await cache.lookup('ndbuild:k'))?.digest).toBe(recorded);
+    // A marker without a usable sha256 digest stays content-addressed.
+    const bad = await cache.store('bad', Buffer.from(JSON.stringify({ digest: 'md5:x', ts: 1 })));
+    expect(bad.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+  });
+
+  it('F864: keeps a valid marker ref, splits a pre-F864 RepoDigest digest, drops invalid refs', async () => {
+    const cache = new InlineBuildCache();
+    const digest = `sha256:${'d'.repeat(64)}`;
+    const ref = `registry.example.com/ninedeploy/web@${digest}`;
+    const m = (o: Record<string, unknown>) => Buffer.from(JSON.stringify({ ...o, ts: 1 }));
+    expect(await cache.store('a', m({ digest, ref }))).toMatchObject({ digest, ref });
+    expect(await cache.lookup('a')).toMatchObject({ digest, ref });
+    expect(await cache.store('b', m({ digest: ref }))).toMatchObject({ digest, ref });
+    for (const bad of [`${ref},type=local,src=/`, `sha256:${'d'.repeat(64)}`, 'web:latest', `x/y@sha256:${'e'.repeat(64)}`]) {
+      const stored = await cache.store('c', m({ digest, ref: bad }));
+      expect(stored.digest).toBe(digest);
+      expect('ref' in stored, bad).toBe(false);
+    }
+    // The pointer digest itself must be a full `sha256:<64 hex>`, not a prefix match.
+    for (const short of ['sha256:abc', `sha256:${'D'.repeat(64)}`, `sha256:${'d'.repeat(64)}x`]) {
+      const blob = m({ digest: short });
+      const stored = await cache.store('s', blob);
+      expect(stored.digest, short).not.toBe(short);
+      expect(stored.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    }
+  });
+
   it('rejects a zero-byte blob', async () => {
     const cache = new InlineBuildCache();
     await expect(cache.store('empty', bytes(0))).rejects.toThrow(/zero-byte/);

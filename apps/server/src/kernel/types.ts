@@ -289,6 +289,15 @@ export interface BlobRef {
   sizeBytes: number;
   /** When the blob was first stored. Used by the LRU eviction policy. */
   storedAt: string;
+  /**
+   * F864: the pullable image reference (`<repo>@sha256:<64 hex>`) the cached
+   * build can be imported from with `--cache-from type=registry,ref=…`.
+   * Present only when the marker carried one that passes `isBuildCacheRef`
+   * (kernel/drivers/inlineBuildCache.ts) and names `digest`. A ref-less entry
+   * (unpushed image, pre-F864 marker) is still a hit, but gives buildx
+   * nothing to import, so the builder emits no `--cache-from` for it.
+   */
+  ref?: string;
 }
 
 export interface IBuildCache {
@@ -300,7 +309,10 @@ export interface IBuildCache {
    */
   lookup(key: string): Promise<BlobRef | null>;
   /**
-   * Store a blob. Returns the `BlobRef` the backend will hand out for
+   * Store a blob — in practice the builder's marker
+   * `{ digest: "sha256:<hex>", ref?: "<repo>@sha256:<hex>", ts }` (F864 added
+   * `ref`; a pre-F864 marker whose `digest` is itself a `<repo>@sha256:`
+   * reference is split into the two). Returns the `BlobRef` the backend will hand out for
    * subsequent lookups. Backends are free to deduplicate (same digest
    * twice = single copy) and to evict when the budget is exceeded; the
    * contract guarantees only that the returned ref is valid for

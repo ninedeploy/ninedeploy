@@ -1,5 +1,9 @@
+import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { S3BuildCache } from '../../src/kernel/drivers/s3BuildCache.js';
+
+/** F864: drivers accept only a full `sha256:<64 hex>` pointer; derive one per label. */
+const D = (label: string): string => `sha256:${createHash('sha256').update(label).digest('hex')}`;
 
 // r019: a faithful mini-S3 for the operations the driver actually issues.
 //   PUT  — stores the body by object key. Real S3 keeps metadata headers
@@ -107,10 +111,10 @@ describe('S3BuildCache', () => {
   // round-trip miss and the cache never produced a hit.
   it('resolves the stored digest on a store→lookup round-trip (r019)', async () => {
     const cache = newCache();
-    await cache.store('ndbuild:abc', markerBlob('sha256:abc'));
+    await cache.store('ndbuild:abc', markerBlob(D('abc')));
     const ref = await cache.lookup('ndbuild:abc');
     expect(ref).not.toBeNull();
-    expect(ref?.digest).toBe('sha256:abc');
+    expect(ref?.digest).toBe(D('abc'));
     expect(ref?.sizeBytes).toBe(4096);
     const stats = await cache.stats();
     expect(stats.hits).toBe(1);
@@ -130,7 +134,7 @@ describe('S3BuildCache', () => {
 
   it('uses the configured prefix to scope object keys', async () => {
     const cache = newCache();
-    await cache.store('ndbuild:abc', markerBlob('sha256:abc'));
+    await cache.store('ndbuild:abc', markerBlob(D('abc')));
     await cache.lookup('ndbuild:abc');
     expect(s3.calls.length).toBeGreaterThan(0);
     expect(s3.calls.every((c) => c.path.includes('/test-bucket/build-cache/'))).toBe(true);
@@ -139,29 +143,48 @@ describe('S3BuildCache', () => {
   it('isolates two operators on the same bucket via the prefix', async () => {
     const a = new S3BuildCache({ config: baseCfg(), prefix: 'team-a/' });
     const b = new S3BuildCache({ config: baseCfg(), prefix: 'team-b/' });
-    await a.store('ndbuild:shared', markerBlob('sha256:aaa'));
-    await b.store('ndbuild:shared', markerBlob('sha256:bbb'));
+    await a.store('ndbuild:shared', markerBlob(D('aaa')));
+    await b.store('ndbuild:shared', markerBlob(D('bbb')));
     // One shared bucket map, but the prefixes scope the object keys:
     // each operator resolves its OWN digest for the shared cache key.
-    expect((await a.lookup('ndbuild:shared'))?.digest).toBe('sha256:aaa');
-    expect((await b.lookup('ndbuild:shared'))?.digest).toBe('sha256:bbb');
+    expect((await a.lookup('ndbuild:shared'))?.digest).toBe(D('aaa'));
+    expect((await b.lookup('ndbuild:shared'))?.digest).toBe(D('bbb'));
     expect(s3.calls.some((c) => c.path.includes('/team-a/'))).toBe(true);
     expect(s3.calls.some((c) => c.path.includes('/team-b/'))).toBe(true);
   });
 
   it('parses a marker blob on store() and surfaces the digest', async () => {
     const cache = newCache();
-    const ref = await cache.store('ndbuild:abc', markerBlob('sha256:def'));
-    expect(ref.digest).toBe('sha256:def');
+    const ref = await cache.store('ndbuild:abc', markerBlob(D('def')));
+    expect(ref.digest).toBe(D('def'));
     expect(ref.sizeBytes).toBe(4096);
     const stats = await cache.stats();
     expect(stats.stores).toBe(1);
   });
 
+  it('F864: the marker body carries the ref through a store→lookup round-trip', async () => {
+    const cache = newCache();
+    const digest = `sha256:${'d'.repeat(64)}`;
+    const ref = `registry.example.com/ninedeploy/web@${digest}`;
+    expect(await cache.store('ndbuild:f864', Buffer.from(JSON.stringify({ digest, ref, ts: 1 })))).toMatchObject({
+      digest,
+      ref,
+    });
+    expect(await cache.lookup('ndbuild:f864')).toMatchObject({ digest, ref });
+    // Pre-F864 body whose digest is the RepoDigest: split on read, not a miss.
+    await cache.store('ndbuild:legacy', Buffer.from(JSON.stringify({ digest: ref, ts: 1 })));
+    expect(await cache.lookup('ndbuild:legacy')).toMatchObject({ digest, ref });
+    // An invalid ref is dropped; the entry still hits without one.
+    await cache.store('ndbuild:bad', Buffer.from(JSON.stringify({ digest, ref: `${ref},type=local`, ts: 1 })));
+    const hit = await cache.lookup('ndbuild:bad');
+    expect(hit?.digest).toBe(digest);
+    expect(hit && 'ref' in hit).toBe(false);
+  });
+
   it('r186: a rejected PUT is an error, never counted as a store', async () => {
     const cache = newCache();
     miniS3.putStatus = 403;
-    await expect(cache.store('ndbuild:abc', markerBlob('sha256:def'))).rejects.toThrow(/HTTP 403/);
+    await expect(cache.store('ndbuild:abc', markerBlob(D('def')))).rejects.toThrow(/HTTP 403/);
     expect((await cache.stats()).stores).toBe(0);
   });
 
@@ -175,11 +198,11 @@ describe('S3BuildCache', () => {
   it('aggregates in-process counters in stats()', async () => {
     const cache = newCache();
     await cache.lookup('a'); // miss (absent)
-    await cache.store('b', markerBlob('sha256:x'));
+    await cache.store('b', markerBlob(D('x')));
     await cache.lookup('b'); // hit
-    await cache.store('c', markerBlob('sha256:y'));
+    await cache.store('c', markerBlob(D('y')));
     await cache.lookup('c'); // hit
-    await cache.store('d', markerBlob('sha256:z')); // store
+    await cache.store('d', markerBlob(D('z'))); // store
     const stats = await cache.stats();
     expect(stats.hits).toBe(2);
     expect(stats.misses).toBe(1);
@@ -225,10 +248,40 @@ describe('S3BuildCache lazy configuration', () => {
       }),
       prefix: 'ignored/',
     });
-    await cache.store('ndbuild:abc', Buffer.from(JSON.stringify({ digest: 'sha256:abc', sizeBytes: 1 })));
+    await cache.store('ndbuild:abc', Buffer.from(JSON.stringify({ digest: D('abc'), sizeBytes: 1 })));
     // A leading slash would produce an unreachable `//team-b/...` object key.
     expect(s3.calls.some((c) => c.path.includes('/test-bucket/team-b/'))).toBe(true);
     expect(s3.calls.every((c) => !c.path.includes('//team-b'))).toBe(true);
     s3.restore();
+  });
+});
+
+/**
+ * F272. Cache keys reach store()/lookup() verbatim (POST /v1/build-cache/store
+ * takes any non-empty key), and lookup() trusts any marker at the mapped
+ * object key. Folding every disallowed char to `_` aliased distinct keys —
+ * a never-stored key read another key's digest as a hit, and storing one
+ * evicted the other — and a long key overflowed S3's 1024-byte key limit.
+ */
+describe('S3BuildCache key → object-key mapping (F272 regression)', () => {
+  it('never lets two distinct keys share a marker object', async () => {
+    const cache = newCache();
+    await cache.store('ndbuild:abc', markerBlob(D('aaa')));
+    expect(await cache.lookup('ndbuild_abc')).toBeNull();
+    await cache.store('svc/1', markerBlob(D('bbb')));
+    await cache.store('svc:1', markerBlob(D('ccc')));
+    expect((await cache.lookup('svc/1'))?.digest).toBe(D('bbb'));
+    expect((await cache.lookup('svc:1'))?.digest).toBe(D('ccc'));
+    expect((await cache.lookup('ndbuild:abc'))?.digest).toBe(D('aaa'));
+  });
+
+  it('keeps canonical keys on their existing object name and bounds every other key', async () => {
+    const cache = newCache();
+    await cache.store('ndbuild:0123456789abcdef01234567', markerBlob(D('aaa')));
+    expect(s3.calls.at(-1)?.path).toBe('/test-bucket/build-cache/ndbuild_0123456789abcdef01234567.ndcache');
+    const long = `ndbuild:${'k'.repeat(1100)}`;
+    await cache.store(long, markerBlob(D('bbb')));
+    expect(s3.calls.at(-1)?.path).toMatch(/^\/test-bucket\/build-cache\/h-[0-9a-f]{64}\.ndcache$/);
+    expect((await cache.lookup(long))?.digest).toBe(D('bbb'));
   });
 });

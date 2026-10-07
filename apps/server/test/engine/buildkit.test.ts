@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildWithBuildKit, isImageRef } from '../../src/engine/builders/buildkit.js';
+import { InlineBuildCache } from '../../src/kernel/drivers/inlineBuildCache.js';
 
 interface FakeCache {
   name: string;
@@ -59,7 +60,7 @@ describe('buildWithBuildKit', () => {
     expect(args[args.indexOf('--cache-to') + 1]).toBe('type=inline');
   });
 
-  it('marks cache hit and uses the digest when lookup returns a ref', async () => {
+  it('records a ref-less lookup hit without claiming a cache hit (F864)', async () => {
     runMock.mockResolvedValue(undefined);
     captureMock.mockResolvedValue('myimage@sha256:abc');
     const cache = newCache();
@@ -84,21 +85,24 @@ describe('buildWithBuildKit', () => {
       log,
     });
 
-    expect(result.cacheHit).toBe(true);
+    // F864: `cacheHit` means "built with --cache-from"; a hit carrying no
+    // pullable `ref` gives buildx nothing to import.
+    expect(result.cacheHit).toBe(false);
     expect(result.imageDigest).toBe('myimage@sha256:abc');
     // r034: a BARE content digest is not a registry reference — buildx cannot
-    // resolve `ref=sha256:<hex>` because it names no repository. The hit is
-    // still recorded (and reported), the build just runs without --cache-from.
+    // resolve `ref=sha256:<hex>` because it names no repository. The build
+    // just runs without --cache-from.
     const args = runMock.mock.calls[0]?.[1] as string[];
     expect(args).not.toContain('--cache-from');
   });
 
-  it('passes a repository-qualified digest through to --cache-from', async () => {
+  it('passes the BlobRef.ref reference through to --cache-from (F864)', async () => {
     runMock.mockResolvedValue(undefined);
     captureMock.mockResolvedValue('myimage@sha256:abc');
     const cache = newCache();
     (cache.lookup as ReturnType<typeof vi.fn>).mockResolvedValue({
-      digest: 'registry.example.com/ninedeploy/build-cache@sha256:abc',
+      digest: `sha256:${'a'.repeat(64)}`,
+      ref: `registry.example.com/ninedeploy/build-cache@sha256:${'a'.repeat(64)}`,
       sizeBytes: 1024,
       storedAt: '2026-08-29T00:00:00.000Z',
     });
@@ -120,8 +124,79 @@ describe('buildWithBuildKit', () => {
 
     const args = runMock.mock.calls[0]?.[1] as string[];
     expect(args[args.indexOf('--cache-from') + 1]).toBe(
-      'type=registry,ref=registry.example.com/ninedeploy/build-cache@sha256:abc',
+      `type=registry,ref=registry.example.com/ninedeploy/build-cache@sha256:${'a'.repeat(64)}`,
     );
+  });
+
+  // F864 regression, REAL driver: every backend used to round-trip only a bare
+  // `sha256:` digest, so `--cache-from` was unreachable and the cache was a
+  // no-op while reporting hits. The previous test stubbed `lookup()` with a
+  // repo-qualified digest no driver could ever return.
+  describe('with a real InlineBuildCache (F864)', () => {
+    const REPO_DIGEST = `registry.example.com/ninedeploy/web@sha256:${'b'.repeat(64)}`;
+    const opts = (cache: InlineBuildCache, lines: string[] = []) => ({
+      workDir: '/work',
+      dockerfilePath: 'Dockerfile',
+      baseDir: '.',
+      target: 'ninedeploy/web:abc1234',
+      commitSha: 'abc1234',
+      serviceId: 7,
+      cache,
+      log: (l: string) => lines.push(l),
+    });
+    const cacheFromOf = (call: number): string | null => {
+      const args = runMock.mock.calls[call]?.[1] as string[];
+      const i = args.indexOf('--cache-from');
+      return i >= 0 ? (args[i + 1] ?? null) : null;
+    };
+
+    it('feeds the stored RepoDigest back into --cache-from on the next build', async () => {
+      runMock.mockResolvedValue(undefined);
+      captureMock.mockResolvedValue(`${REPO_DIGEST}\n`);
+      const cache = new InlineBuildCache();
+      const first = await buildWithBuildKit(opts(cache));
+      const second = await buildWithBuildKit(opts(cache));
+      expect(first.cacheHit).toBe(false);
+      expect(cacheFromOf(0)).toBeNull();
+      expect(second.cacheHit).toBe(true);
+      expect(cacheFromOf(1)).toBe(`type=registry,ref=${REPO_DIGEST}`);
+      // The marker's digest is the bare content digest, the ref rides alongside.
+      expect(await cache.lookup(first.cacheKey)).toMatchObject({
+        digest: `sha256:${'b'.repeat(64)}`,
+        ref: REPO_DIGEST,
+      });
+    });
+
+    it('stores no ref for an unpushed image, so its hit never emits --cache-from', async () => {
+      runMock.mockResolvedValue(undefined);
+      captureMock.mockResolvedValue(`sha256:${'c'.repeat(64)}\n`); // `.Id`: no RepoDigests
+      const cache = new InlineBuildCache();
+      const lines: string[] = [];
+      await buildWithBuildKit(opts(cache));
+      const second = await buildWithBuildKit(opts(cache, lines));
+      expect(second.cacheHit).toBe(false);
+      expect(cacheFromOf(1)).toBeNull();
+      expect((await cache.lookup(second.cacheKey))?.ref).toBeUndefined();
+      expect(lines.some((l) => l.includes('records no pullable image reference'))).toBe(true);
+    });
+
+    it('keeps a pre-F864 marker readable as a hit but never turns it into --cache-from', async () => {
+      runMock.mockResolvedValue(undefined);
+      captureMock.mockResolvedValue(`${REPO_DIGEST}\n`);
+      const cache = new InlineBuildCache();
+      const { cacheKey } = await buildWithBuildKit(opts(cache));
+      for (const legacy of [
+        { digest: `sha256:${'d'.repeat(64)}`, ts: 1 },
+        { digest: `sha256:${'b'.repeat(64)}`, ref: `${REPO_DIGEST},type=local,src=/`, ts: 1 },
+      ]) {
+        await cache.store(cacheKey, Buffer.from(JSON.stringify(legacy)));
+        const calls = runMock.mock.calls.length;
+        const result = await buildWithBuildKit(opts(cache));
+        expect(result.cacheHit).toBe(false);
+        expect(cacheFromOf(calls)).toBeNull();
+      }
+      expect((await cache.stats()).hits).toBe(2);
+    });
   });
 
   it('publishes the real hit / miss / error observation to the event sink', async () => {

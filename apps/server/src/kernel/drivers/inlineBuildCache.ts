@@ -87,12 +87,19 @@ export class InlineBuildCache implements IBuildCache {
       );
     }
 
-    const digest = digestFor(blob);
+    // F360: both writers (the BuildKit builder and POST /v1/build-cache/store)
+    // hand us a `{ digest, ts }` marker, not layer bytes. Hand back the digest
+    // the marker records — as the registry and S3 drivers do — instead of a
+    // hash of the marker JSON, which names nothing and changes with `ts`.
+    const pointer = markerPointerOf(blob);
     const ref: BlobRef = {
-      digest,
+      digest: pointer?.digest ?? digestFor(blob),
       sizeBytes,
       storedAt: this.now().toISOString(),
     };
+    // F864: keep the pullable image reference so the next build's lookup can
+    // hand buildx a `--cache-from` it can actually import.
+    if (pointer?.ref) ref.ref = pointer.ref;
 
     // Idempotent re-store: if the key already maps to the same content,
     // just bump the counter and refresh the LRU order. A different
@@ -141,6 +148,57 @@ export class InlineBuildCache implements IBuildCache {
       evictions: this.evictions,
     };
   }
+}
+
+/** The pointer a `{ digest, ref?, ts }` cache marker records, or null for any other blob. */
+function markerPointerOf(blob: Buffer | Uint8Array): { digest: string; ref?: string } | null {
+  // A marker is a JSON object; skip decoding layer bytes that cannot be one.
+  if (blob[0] !== 0x7b /* '{' */) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(blob).toString('utf8')) as { digest?: unknown; ref?: unknown } | null;
+    return markerPointer(parsed?.digest, parsed?.ref);
+  } catch {
+    return null;
+  }
+}
+
+// F864: `[host[:port]/]component(/component)*@sha256:<64 hex>` — the docker
+// reference grammar restricted to a digest reference. No tag, no whitespace,
+// no `,` or `=` (the value is spliced into buildx's `type=registry,ref=` csv).
+const BUILD_CACHE_REF =
+  /^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*(?::[0-9]{1,5})?\/)?[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:\/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*@sha256:[0-9a-f]{64}$/;
+
+/** F864: a pointer digest is exactly `sha256:<64 lowercase hex>` — never a mere prefix match. */
+export function isContentDigest(value: unknown): boolean {
+  return typeof value === 'string' && /^sha256:[0-9a-f]{64}$/.test(value);
+}
+
+/**
+ * F864: true when `value` is a pullable digest reference
+ * (`<repo>@sha256:<64 hex>`) that `BlobRef.ref` may carry. Shared by every
+ * driver and by the BuildKit builder, which re-checks it before it reaches
+ * `--cache-from`.
+ */
+export function isBuildCacheRef(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= 512 && BUILD_CACHE_REF.test(value);
+}
+
+/**
+ * F864: normalise a marker's `digest` / `ref` fields into a `BlobRef` pointer.
+ *   - `digest` `sha256:<64 hex>` → kept; `ref` kept only when it is valid AND names
+ *     that same digest (an invalid or mismatched ref is dropped, never stored).
+ *   - `digest` that is itself a valid `<repo>@sha256:<hex>` (the pre-F864
+ *     builder stored the RepoDigest there) → split into digest + ref, instead
+ *     of hashing the marker JSON into a digest that names nothing.
+ *   - anything else → null (not a marker).
+ */
+export function markerPointer(digest: unknown, ref: unknown): { digest: string; ref?: string } | null {
+  if (typeof digest !== 'string') return null;
+  if (isContentDigest(digest)) {
+    return isBuildCacheRef(ref) && ref.endsWith(`@${digest}`) ? { digest, ref } : { digest };
+  }
+  if (isBuildCacheRef(digest)) return { digest: digest.slice(digest.lastIndexOf('@') + 1), ref: digest };
+  return null;
 }
 
 function digestFor(blob: Buffer | Uint8Array): string {

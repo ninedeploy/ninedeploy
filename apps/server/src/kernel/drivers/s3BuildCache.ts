@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { s3Request, type S3Config } from '../../lib/s3.js';
 import type { BlobRef, IBuildCache } from '../types.js';
+import { markerPointer } from './inlineBuildCache.js';
 
 /**
  * S3-backed build cache — Sprint 4, Gap G-01 (PR-D).
@@ -118,7 +119,11 @@ export class S3BuildCache implements IBuildCache {
     }
     const lastModified = res.headers.get('last-modified') ?? new Date().toISOString();
     this.hits += 1;
-    return { digest: parsed.digest, sizeBytes: parsed.sizeBytes, storedAt: lastModified };
+    // F864: the marker body carries the pullable reference; a pre-F864 body
+    // has none and is still a hit, just not one buildx can import from.
+    const ref: BlobRef = { digest: parsed.digest, sizeBytes: parsed.sizeBytes, storedAt: lastModified };
+    if (parsed.ref) ref.ref = parsed.ref;
+    return ref;
   }
 
   async store(key: string, blob: Buffer | Uint8Array): Promise<BlobRef> {
@@ -152,7 +157,9 @@ export class S3BuildCache implements IBuildCache {
     if (!res.ok) throw new Error(`S3 build-cache PUT failed (HTTP ${res.status})`);
 
     this.stores += 1;
-    return { digest, sizeBytes, storedAt: new Date().toISOString() };
+    const ref: BlobRef = { digest, sizeBytes, storedAt: new Date().toISOString() };
+    if (parsed?.ref) ref.ref = parsed.ref;
+    return ref;
   }
 
   async stats(): Promise<{
@@ -184,29 +191,41 @@ function normalisePrefix(prefix: string): string {
   return prefix.replace(/^\/+/, '');
 }
 
+/** A `buildCacheKey()`-shaped key whose object name stays human-readable. */
+const CANONICAL_KEY = /^ndbuild:[A-Za-z0-9._-]{1,200}$/;
+
 function objectKeyFor(prefix: string, key: string): string {
-  // S3 keys are 1-1024 bytes; the cache key is `ndbuild:<hex>`
-  // and the prefix already includes a `/`, so the final key is
-  // safe and within the limit.
-  const safe = key.replace(/[^A-Za-z0-9._-]/g, '_');
-  return `${prefix}${safe}.ndcache`;
+  // The mapping MUST be injective: lookup() trusts any marker at this object
+  // key as this key's content. F272: folding every other char to `_` aliased
+  // `ndbuild:abc` with `ndbuild_abc` (keys arrive verbatim via POST
+  // /build-cache/store) and a long key overflowed S3's 1024-byte limit.
+  // Canonical keys keep their `ndbuild_<suffix>` name (live caches stay
+  // warm); every other key gets a fixed-length `h-<sha256>`. The two
+  // namespaces cannot overlap.
+  const name = CANONICAL_KEY.test(key)
+    ? `ndbuild_${key.slice('ndbuild:'.length)}`
+    : `h-${createHash('sha256').update(key, 'utf8').digest('hex')}`;
+  return `${prefix}${name}.ndcache`;
 }
 
 interface MarkerPayload {
   digest: string;
   sizeBytes: number;
   ts: number;
+  /** F864: pullable `<repo>@sha256:` reference, when the marker carried a valid one. */
+  ref?: string;
 }
 
 function parseMarker(blob: Buffer | Uint8Array): MarkerPayload | null {
   try {
     const text = Buffer.from(blob).toString('utf8');
     const parsed = JSON.parse(text) as Partial<MarkerPayload>;
-    if (typeof parsed.digest !== 'string' || !parsed.digest.startsWith('sha256:')) {
-      return null;
-    }
+    // F864: `markerPointer` keeps the `sha256:` rule for `digest`, adds the
+    // validated `ref`, and splits a pre-F864 `<repo>@sha256:` digest field.
+    const pointer = markerPointer(parsed.digest, parsed.ref);
+    if (!pointer) return null;
     return {
-      digest: parsed.digest,
+      ...pointer,
       sizeBytes: typeof parsed.sizeBytes === 'number' ? parsed.sizeBytes : 0,
       ts: typeof parsed.ts === 'number' ? parsed.ts : 0,
     };

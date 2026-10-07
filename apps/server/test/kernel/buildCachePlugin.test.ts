@@ -164,4 +164,38 @@ describe('BuildCachePlugin', () => {
     expect(stats.totals).toEqual({ entries: 3, totalBytes: 3072, hits: 5, misses: 7, stores: 9, evictions: 11 });
   });
 
+  // F220: totals ignored `cache_name`, so an unused backend's persisted history
+  // (the registry driver's table hits) set the hit rate the CLI reports.
+  it('aggregateStats totals follow the pinned cache_name backend; unknown names keep the merged totals', async () => {
+    const zero = { entries: 0, totalBytes: 0, hits: 0, misses: 0, stores: 0, evictions: 0 };
+    const inline = { name: 'inline', stats: vi.fn().mockResolvedValue({ ...zero, misses: 3 }) };
+    const registry = { name: 'registry', stats: vi.fn().mockResolvedValue({ ...zero, entries: 1, hits: 40 }) };
+    const p = new BuildCachePlugin();
+
+    const pinned = withDefaultGet(newKernel(), { 'plugin:build-cache:cache_name': 'inline' });
+    (pinned.registry.listBuildCaches as ReturnType<typeof vi.fn>).mockReturnValue([inline, registry]);
+    const s = await p.aggregateStats(pinned as never);
+    expect(s.totals).toEqual({ ...zero, misses: 3 });
+    expect(s.backends.map((b) => b.name)).toEqual(['inline', 'registry']);
+
+    const unknown = withDefaultGet(newKernel(), { 'plugin:build-cache:cache_name': 'S3' });
+    (unknown.registry.listBuildCaches as ReturnType<typeof vi.fn>).mockReturnValue([inline, registry]);
+    expect((await p.aggregateStats(unknown as never)).totals).toEqual({ ...zero, entries: 1, hits: 40, misses: 3 });
+  });
+
+  // F221: a bare Promise.all let one backend's failing stats() (the registry
+  // driver's is a DB read) reject the whole /v1/build-cache/stats surface.
+  it('aggregateStats reports a failing backend as unavailable instead of rejecting', async () => {
+    const zero = { entries: 0, totalBytes: 0, hits: 0, misses: 0, stores: 0, evictions: 0 };
+    const kernel = newKernel();
+    const ok = { name: 'inline', stats: vi.fn().mockResolvedValue({ ...zero, misses: 2 }) };
+    const bad = { name: 'registry', stats: vi.fn().mockRejectedValue(new Error('Failed query: select … SQLITE_BUSY')) };
+    (kernel.registry.listBuildCaches as ReturnType<typeof vi.fn>).mockReturnValue([ok, bad]);
+    const stats = await new BuildCachePlugin().aggregateStats(kernel as never);
+    expect(stats.backends).toEqual([
+      { name: 'inline', ...zero, misses: 2 },
+      { name: 'registry', ...zero, error: 'stats unavailable' },
+    ]);
+    expect(stats.totals).toEqual({ ...zero, misses: 2 });
+  });
 });
