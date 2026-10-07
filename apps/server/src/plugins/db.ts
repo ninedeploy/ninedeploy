@@ -2,7 +2,7 @@ import { createDb, runMigrations, sql, type DB } from '@ninedeploy/db';
 import fp from 'fastify-plugin';
 import { config } from '../config.js';
 import { reconcileDeploymentHistory } from '../engine/pipeline.js';
-import { ensureOwnershipBackfilled } from '../lib/ownershipBackfill.js';
+import { ensureDeactivatedOwnersRepaired, ensureOwnershipBackfilled } from '../lib/ownershipBackfill.js';
 import { ensureRegistryBindingsInitialised } from '../lib/registryBinding.js';
 import { ensureVaultAllowlistInitialised } from '../lib/vault.js';
 
@@ -101,6 +101,13 @@ export default fp(
         await ensureOwnershipBackfilled(db, (msg, detail) => fastify.log.warn(detail, msg));
       } catch (err) {
         fastify.log.warn({ err }, 'ownership backfill deferred');
+      }
+      // F1002 (r976): installs whose r710 marker predates F976 never re-ran
+      // it; hand team resources still owned by a deactivated user over, once.
+      try {
+        await ensureDeactivatedOwnersRepaired(db, (msg, detail) => fastify.log.warn(detail, msg));
+      } catch (err) {
+        fastify.log.warn({ err }, 'deactivated-owner repair deferred');
       }
 
       fastify.decorate('db', db);

@@ -3,7 +3,7 @@
  * before r695 (SCIM removals up to 0.10.42), against a real migrated SQLite:
  * seats, tags and project workspaces are SQL state a fake db cannot model.
  */
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,9 +22,15 @@ import {
   workspaces,
   type DB,
 } from '@ninedeploy/db';
-import { OWNERSHIP_BACKFILL_KEY, ensureOwnershipBackfilled, rehomeSeatlessOwners } from '../src/lib/ownershipBackfill.js';
+import {
+  DEACTIVATED_OWNER_REPAIR_KEY,
+  OWNERSHIP_BACKFILL_KEY,
+  ensureDeactivatedOwnersRepaired,
+  ensureOwnershipBackfilled,
+  rehomeSeatlessOwners,
+} from '../src/lib/ownershipBackfill.js';
 import { filterTrustworthyProjectLinks } from '../src/engine/pipeline.js';
-import { getSettingString } from '../src/lib/settings.js';
+import { getSettingString, setSettingString } from '../src/lib/settings.js';
 
 const MIGRATIONS = fileURLToPath(new URL('../../../packages/db/src/migrations', import.meta.url));
 const HASH = '$argon2id$v=19$m=19456,t=2,p=1$fixture$fixture';
@@ -185,5 +191,58 @@ describe('ownership backfill (r710)', () => {
     const later = await service(await user(), [ws]);
     expect(await ensureOwnershipBackfilled(db)).toBeNull();
     expect(await ownerOf(later)).not.toBe(owner);
+  });
+
+  it('F1002: after an r710-marked upgrade the r976 repair hands a deactivated owner’s team service over, once', async () => {
+    const owner = await user();
+    const team = await workspace(owner);
+    const gone = await user();
+    await db.update(users).set({ deactivatedAt: new Date(0) }).where(eq(users.id, gone));
+    const shared = await service(gone, [team, await workspace(gone)]); // left behind by the pre-F976 backfill
+    const teamDb = await database(gone, team);
+    const ownerB = await user();
+    const split = await service(gone, [team, await workspace(ownerB)]); // two heirs: never picked
+    const active = await user();
+    const activeSvc = await service(active, [team]); // seatless but active: the repair is not r710 again
+    await setSettingString(db, OWNERSHIP_BACKFILL_KEY, '2026-09-30T00:00:00.000Z');
+    expect(await ensureOwnershipBackfilled(db)).toBeNull();
+    const logged: string[] = [];
+
+    const result = await ensureDeactivatedOwnersRepaired(db, (msg) => logged.push(msg));
+    expect(result).toEqual({ services: [shared], databases: [teamDb], ambiguous: [split] });
+    expect(await ownerOf(shared)).toBe(owner);
+    expect(await dbOwnerOf(teamDb)).toBe(owner);
+    expect(await ownerOf(split)).toBe(gone);
+    expect(await ownerOf(activeSvc)).toBe(active);
+    const audits = (await db.query.auditLog.findMany()).filter((a) => a.action === 'ownership.backfill');
+    expect(audits.map((a) => a.meta)).toEqual([
+      { kind: 'service', id: shared, from: gone, to: owner, repair: 'r976' },
+      { kind: 'database', id: teamDb, from: gone, to: owner, repair: 'r976' },
+    ]);
+    expect(logged).toHaveLength(3);
+    expect(logged.every((m) => m.includes('(r976)'))).toBe(true);
+    expect(await getSettingString(db, DEACTIVATED_OWNER_REPAIR_KEY, null)).not.toBeNull();
+
+    // Second boot: the marker makes it a no-op.
+    const later = await service(gone, [team]);
+    expect(await ensureDeactivatedOwnersRepaired(db)).toBeNull();
+    expect(await ownerOf(later)).toBe(gone);
+  });
+
+  it('F1002: the repair runs without the r710 marker and is wired at boot after r710', async () => {
+    const owner = await user();
+    const team = await workspace(owner);
+    const gone = await user();
+    await db.update(users).set({ deactivatedAt: new Date(0) }).where(eq(users.id, gone));
+    const svc = await service(gone, [team]);
+    expect(await getSettingString(db, OWNERSHIP_BACKFILL_KEY, null)).toBeNull();
+    expect((await ensureDeactivatedOwnersRepaired(db))?.services).toEqual([svc]);
+    expect(await ownerOf(svc)).toBe(owner);
+
+    // Assert the mount, not just the unit: plugins/db.ts calls it after r710.
+    const boot = readFileSync(fileURLToPath(new URL('../src/plugins/db.ts', import.meta.url)), 'utf8');
+    const r710 = boot.indexOf('await ensureOwnershipBackfilled(db');
+    expect(r710).toBeGreaterThan(0);
+    expect(boot.indexOf('await ensureDeactivatedOwnersRepaired(db')).toBeGreaterThan(r710);
   });
 });

@@ -30,6 +30,29 @@ export interface OwnershipBackfillResult {
   ambiguous: number[];
 }
 
+/**
+ * F1002 (r976): one-shot repair for installs whose r710 marker predates F976.
+ * The pre-F976 backfill counted a deactivated creator's own workspace, so a
+ * team service could stay on the dead account; the marker keeps the corrected
+ * backfill from ever running there. This pass applies the same rules, limited
+ * to resources whose owner is deactivated, under its own marker.
+ */
+export const DEACTIVATED_OWNER_REPAIR_KEY = 'ownership_repair_deactivated_owner_r976';
+
+export interface OwnershipMove {
+  kind: 'service' | 'database';
+  id: number;
+  from: number;
+  to: number;
+}
+
+export interface RehomeOptions {
+  /** F1002: only resources whose owner is deactivated (the r976 repair). */
+  onlyDeactivatedOwners?: boolean;
+  /** Called once for every resource handed over. */
+  onMove?: (move: OwnershipMove) => void;
+}
+
 async function seated(db: DB, userId: number, workspaceId: number): Promise<boolean> {
   const row = await db.query.workspaceMembers.findFirst({
     where: and(eq(workspaceMembers.userId, userId), eq(workspaceMembers.workspaceId, workspaceId)),
@@ -38,7 +61,7 @@ async function seated(db: DB, userId: number, workspaceId: number): Promise<bool
 }
 
 /** Run the backfill now, regardless of the done-marker. Exported for tests. */
-export async function rehomeSeatlessOwners(db: DB): Promise<OwnershipBackfillResult> {
+export async function rehomeSeatlessOwners(db: DB, opts: RehomeOptions = {}): Promise<OwnershipBackfillResult> {
   const result: OwnershipBackfillResult = { services: [], databases: [], ambiguous: [] };
   const operatorCache = new Map<number, boolean>();
   const ownerIsOperator = async (id: number) => {
@@ -69,6 +92,7 @@ export async function rehomeSeatlessOwners(db: DB): Promise<OwnershipBackfillRes
     .where(isNotNull(services.ownerUserId));
   for (const svc of owned) {
     const ownerId = svc.ownerUserId!;
+    if (opts.onlyDeactivatedOwners && !(await ownerIsDeactivated(ownerId))) continue;
     if (await ownerIsOperator(ownerId)) continue;
     const tags = await db.query.serviceWorkspaces.findMany({ where: eq(serviceWorkspaces.serviceId, svc.id) });
     let wsIds = tags.map((t) => t.workspaceId).filter((id) => wsOwner.has(id));
@@ -94,6 +118,7 @@ export async function rehomeSeatlessOwners(db: DB): Promise<OwnershipBackfillRes
     if (heir === ownerId) continue;
     await db.update(services).set({ ownerUserId: heir }).where(and(eq(services.id, svc.id), eq(services.ownerUserId, ownerId)));
     result.services.push(svc.id);
+    opts.onMove?.({ kind: 'service', id: svc.id, from: ownerId, to: heir });
   }
 
   const ownedDbs = await db
@@ -106,10 +131,12 @@ export async function rehomeSeatlessOwners(db: DB): Promise<OwnershipBackfillRes
     if (row.workspaceId == null) continue;
     const heir = wsOwner.get(row.workspaceId);
     if (heir === undefined || heir === ownerId) continue;
+    if (opts.onlyDeactivatedOwners && !(await ownerIsDeactivated(ownerId))) continue;
     if (await ownerIsOperator(ownerId)) continue;
     if (await seated(db, ownerId, row.workspaceId)) continue;
     await db.update(databases).set({ ownerUserId: heir }).where(and(eq(databases.id, row.id), eq(databases.ownerUserId, ownerId)));
     result.databases.push(row.id);
+    opts.onMove?.({ kind: 'database', id: row.id, from: ownerId, to: heir });
   }
   return result;
 }
@@ -136,5 +163,33 @@ export async function ensureOwnershipBackfilled(
     });
   }
   await setSettingString(db, OWNERSHIP_BACKFILL_KEY, new Date().toISOString());
+  return result;
+}
+
+/**
+ * F1002 boot hook: run the r976 repair once per install, whether or not the
+ * r710 marker is set (on a fresh install the corrected backfill has already
+ * done the work and this finds nothing). Each hand-over is audited and logged
+ * on its own; ambiguous services are logged and left alone, as in r710. The
+ * marker is written only after a complete pass.
+ */
+export async function ensureDeactivatedOwnersRepaired(
+  db: DB,
+  log?: (msg: string, detail: Record<string, unknown>) => void,
+): Promise<OwnershipBackfillResult | null> {
+  if ((await getSettingString(db, DEACTIVATED_OWNER_REPAIR_KEY, null)) !== null) return null;
+  const moves: OwnershipMove[] = [];
+  const result = await rehomeSeatlessOwners(db, { onlyDeactivatedOwners: true, onMove: (m) => moves.push(m) });
+  for (const m of moves) {
+    const summary = `${m.kind} #${m.id} re-homed from deactivated user #${m.from} to workspace owner #${m.to}`;
+    await audit(db, null, 'ownership.backfill', summary, { ...m, repair: 'r976' });
+    log?.(`a ${m.kind} owned by a deactivated user was handed to the workspace owner (r976)`, { ...m });
+  }
+  if (result.ambiguous.length > 0) {
+    log?.('services owned by a deactivated user span workspaces with different owners — left unchanged; reassign them by hand (r976)', {
+      services: result.ambiguous,
+    });
+  }
+  await setSettingString(db, DEACTIVATED_OWNER_REPAIR_KEY, new Date().toISOString());
   return result;
 }
