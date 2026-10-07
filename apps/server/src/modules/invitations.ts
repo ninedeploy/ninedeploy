@@ -233,6 +233,8 @@ export async function acceptInvitationsForUser(
   user: { id: number; email: string; emailVerified?: boolean },
 ): Promise<Array<{ workspaceId: number; role: WorkspaceRole; email: string }>> {
   if (user.emailVerified !== true) return [];
+  // F1004: a deactivated account takes no seat; its invitations stay pending.
+  if ((await db.query.users.findFirst({ where: eq(users.id, user.id) }))?.deactivatedAt) return [];
   const now = new Date();
   const pending = await db
     .select()
@@ -449,6 +451,12 @@ export const acceptInvitationRoutes: FastifyPluginAsync = async (app) => {
     if (inv.email.toLowerCase() !== me.email.toLowerCase()) {
       reply.status(403);
       return { error: { code: 'invitation_email_mismatch', message: 'This invitation was sent to a different email address' } };
+    }
+    // F1004: state at seat time — authenticate refuses a deactivated caller,
+    // but a deactivation can land after it. The invitation stays pending.
+    if (me.deactivatedAt) {
+      reply.status(409);
+      return { error: { code: 'user_deactivated', message: 'This account is deactivated. Reactivate it before adding it to a workspace.' } };
     }
     // Idempotent: a member who clicks accept twice should not error out.
     const existing = await app.db.query.workspaceMembers.findFirst({

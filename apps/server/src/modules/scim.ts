@@ -350,6 +350,12 @@ export const scimRoutes: FastifyPluginAsync = async (app) => {
       // A push from workspace A must not undo a deprovision another tenant
       // performed (r153) — see mayReactivate.
       const reactivate = existing.deactivatedAt !== null && (await mayReactivate(app.db, existing, workspaceId));
+      // F1004: a seat (new or reinstated) only for an account this push leaves
+      // active; the other tenant's deactivation stands, the seat stays parked.
+      if (existing.deactivatedAt !== null && !reactivate && !alreadyMember) {
+        void audit(app.db, null, 'scim.adopt_refused', `${email} -> workspace #${workspaceId} (deactivated)`);
+        return scimReply(reply, scimError(403, REACTIVATE_REFUSED));
+      }
       await app.db
         .update(users)
         .set({

@@ -10,11 +10,13 @@ import {
   services as servicesTable,
   serviceWorkspaces,
   users as usersTable,
+  workspaceInvitations,
   workspaceMembers,
   workspaces as workspacesTable,
   type DB,
 } from '@ninedeploy/db';
 import { workspaceRoutes, ensureDefaultWorkspace } from '../src/modules/workspaces.js';
+import { acceptInvitationRoutes, acceptInvitationsForUser } from '../src/modules/invitations.js';
 import { asUser, buildTestApp, createFakeDb } from './helpers.js';
 
 const auditMocks = vi.hoisted(() => ({ audit: vi.fn(async () => undefined) }));
@@ -1212,5 +1214,135 @@ describe('member removal hand-over follows the seat rule (F144/F145)', () => {
     // Untouched: a service that never lived in the team, and F144 for an active user.
     expect(await serviceOwner(deadPersonal)).toBe(dead);
     expect(await serviceOwner(activeShared)).toBe(active);
+  });
+});
+
+/**
+ * D6/F1004–F1005 — a deactivated account (SCIM sets users.deactivatedAt) gets
+ * no seat and no workspace ownership on any path; the state is read at seat
+ * time, so re-activating the account first makes every path work again. This
+ * removes the F952 trade-off (a seat in a second tenant deciding who inherits
+ * a shared service). Real migrated SQLite.
+ */
+describe('a deactivated account gets no seat and no ownership (F1004/F1005)', () => {
+  const MIGRATIONS = fileURLToPath(new URL('../../../packages/db/src/migrations', import.meta.url));
+  let db: DB;
+  const user = async (email: string, op = false) =>
+    (await db.insert(usersTable).values({ email, passwordHash: 'x', isInstanceOperator: op }).returning())[0]!.id;
+  const team = async (slug: string, ownerId: number) => {
+    const [ws] = await db.insert(workspacesTable).values({ name: slug, slug, ownerId }).returning();
+    await db.insert(workspaceMembers).values({ workspaceId: ws!.id, userId: ownerId, role: 'owner' });
+    return ws!.id;
+  };
+  const seatOf = async (workspaceId: number, userId: number) =>
+    (await db.select().from(workspaceMembers).where(eq(workspaceMembers.workspaceId, workspaceId))).find((m) => m.userId === userId);
+  const setDeactivated = (id: number, on: boolean) =>
+    db.update(usersTable).set({ deactivatedAt: on ? new Date(0) : null }).where(eq(usersTable.id, id));
+  const json = { 'content-type': 'application/json' };
+  const errorCode = (res: { json: () => unknown }) => (res.json() as { error?: { code?: string } }).error?.code;
+  const appFor = async () => {
+    const app = await buildTestApp({ db });
+    await app.register(workspaceRoutes, { prefix: '/workspaces' });
+    await app.register(acceptInvitationRoutes);
+    return app;
+  };
+
+  beforeEach(async () => {
+    db = createDb({ url: ':memory:' }).db;
+    await migrate(db, { migrationsFolder: MIGRATIONS });
+  });
+
+  it('F1004: an operator cannot add a deactivated account; an active or re-activated one is added', async () => {
+    const op = await user('op@example.com', true);
+    const owner = await user('owner@example.com');
+    const dead = await user('dead@example.com');
+    const live = await user('live@example.com');
+    const ws = await team('ws', owner);
+    await setDeactivated(dead, true);
+    const app = await appFor();
+    const add = (email: string) =>
+      app.inject({ method: 'POST', url: `/workspaces/${ws}/members`, headers: { ...asUser({ id: op, isOperator: true }), ...json }, payload: { email, role: 'member' } });
+
+    const refused = await add('dead@example.com');
+    expect([refused.statusCode, errorCode(refused)]).toEqual([409, 'user_deactivated']);
+    expect(await seatOf(ws, dead)).toBeUndefined();
+    expect((await add('live@example.com')).statusCode).toBe(200);
+    expect((await seatOf(ws, live))?.role).toBe('member');
+    await setDeactivated(dead, false);
+    expect((await add('dead@example.com')).statusCode).toBe(200);
+    expect((await seatOf(ws, dead))?.role).toBe('member');
+  });
+
+  it('F1004: a non-operator still gets the same invitation answer (r604); a deactivated account cannot accept it until re-activated', async () => {
+    const owner = await user('owner@example.com');
+    const dead = await user('dead@example.com');
+    await user('live@example.com');
+    const ws = await team('ws', owner);
+    await setDeactivated(dead, true);
+    const app = await appFor();
+    const invite = (email: string) =>
+      app.inject({ method: 'POST', url: `/workspaces/${ws}/members`, headers: { ...asUser({ id: owner, isOperator: false }), ...json }, payload: { email, role: 'member' } });
+    const shape = (res: Awaited<ReturnType<typeof invite>>) => [res.statusCode, Object.keys(res.json() as object).sort().join(',')];
+
+    const deadInvite = await invite('dead@example.com');
+    expect(shape(deadInvite)).toEqual(shape(await invite('live@example.com')));
+    expect(shape(deadInvite)).toEqual(shape(await invite('nobody@example.com')));
+    const accept = () =>
+      app.inject({ method: 'POST', url: `/invitations/${String(deadInvite.headers['x-invitation-token'])}/accept`, headers: asUser({ id: dead, isOperator: false }) });
+
+    const refused = await accept();
+    expect([refused.statusCode, errorCode(refused)]).toEqual([409, 'user_deactivated']);
+    expect(await seatOf(ws, dead)).toBeUndefined();
+    const pending = (await db.select().from(workspaceInvitations)).find((i) => i.email === 'dead@example.com');
+    expect(pending?.acceptedAt).toBeNull();
+    await setDeactivated(dead, false);
+    expect((await accept()).statusCode).toBe(200);
+    expect((await seatOf(ws, dead))?.role).toBe('member');
+  });
+
+  it('F1004: SSO auto-accept seats nothing for a deactivated account and leaves its invitations pending', async () => {
+    const owner = await user('owner@example.com');
+    const dead = await user('dead@example.com');
+    const ws = await team('ws', owner);
+    await db.insert(workspaceInvitations).values({
+      workspaceId: ws,
+      email: 'dead@example.com',
+      role: 'viewer',
+      token: 'f1004-auto-accept-token-hash',
+      invitedByUserId: owner,
+      expiresAt: new Date('2999-01-01T00:00:00.000Z'),
+    });
+    await setDeactivated(dead, true);
+    expect(await acceptInvitationsForUser(db, { id: dead, email: 'dead@example.com', emailVerified: true })).toEqual([]);
+    expect(await seatOf(ws, dead)).toBeUndefined();
+    await setDeactivated(dead, false);
+    expect(await acceptInvitationsForUser(db, { id: dead, email: 'dead@example.com', emailVerified: true })).toHaveLength(1);
+    expect((await seatOf(ws, dead))?.role).toBe('viewer');
+  });
+
+  it('F1005: ownership never transfers to a deactivated member; other role changes still apply', async () => {
+    const op = await user('op@example.com', true);
+    const owner = await user('owner@example.com');
+    const dead = await user('dead@example.com');
+    const ws = await team('ws', owner);
+    const [deadSeat] = await db.insert(workspaceMembers).values({ workspaceId: ws, userId: dead, role: 'member' }).returning();
+    await setDeactivated(dead, true);
+    const app = await appFor();
+    const setRole = (callerId: number, isOperator: boolean, role: string) =>
+      app.inject({ method: 'PATCH', url: `/workspaces/${ws}/members/${deadSeat!.id}`, headers: { ...asUser({ id: callerId, isOperator }), ...json }, payload: { role } });
+    const wsOwner = async () => (await db.select().from(workspacesTable).where(eq(workspacesTable.id, ws)))[0]!.ownerId;
+
+    for (const [caller, isOp] of [[owner, false], [op, true]] as const) {
+      const refused = await setRole(caller, isOp, 'owner');
+      expect([refused.statusCode, errorCode(refused)]).toEqual([409, 'user_deactivated']);
+      expect(await wsOwner()).toBe(owner);
+      expect((await seatOf(ws, owner))?.role).toBe('owner');
+    }
+    expect((await setRole(owner, false, 'viewer')).statusCode).toBe(200);
+    expect((await seatOf(ws, dead))?.role).toBe('viewer');
+    await setDeactivated(dead, false);
+    expect((await setRole(owner, false, 'owner')).statusCode).toBe(200);
+    expect(await wsOwner()).toBe(dead);
+    expect((await seatOf(ws, owner))?.role).toBe('admin');
   });
 });

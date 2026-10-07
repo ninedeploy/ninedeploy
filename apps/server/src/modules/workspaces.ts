@@ -25,7 +25,7 @@ import {
   type WorkspaceRole,
 } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
-import { badRequest, conflict, forbidden, notFound, parseId } from '../lib/errors.js';
+import { badRequest, conflict, forbidden, HttpError, notFound, parseId } from '../lib/errors.js';
 import { iso } from '../lib/serialize.js';
 import { slugify, slugifyWithSuffix } from '../lib/slug.js';
 import { createOrRefreshInvitation, buildAcceptUrl, renderInviteEmail } from './invitations.js';
@@ -63,10 +63,18 @@ function serializeWorkspace(
   };
 }
 
+/**
+ * D6/F1004: a deactivated account (SCIM sets `users.deactivatedAt`) gets no
+ * seat and no workspace ownership. Its seats keep nothing (F952), so a seat
+ * added later would only decide who inherits a shared service. The account is
+ * re-activated first (SCIM PATCH active=true); callers test the state at seat time.
+ */
+const userDeactivated = (action = 'adding it to a workspace') =>
+  new HttpError(409, 'user_deactivated', `This account is deactivated. Reactivate it before ${action}.`);
+
 export async function ensureDefaultWorkspace(
   db: Pick<DB, 'query' | 'select' | 'insert' | 'update' | 'delete'>,
   user: { id: number; name?: string | null; email?: string },
-  role: WorkspaceRole = 'owner',
 ): Promise<Workspace> {
   const existingMembership = await db.query.workspaceMembers.findFirst({
     where: eq(workspaceMembers.userId, user.id),
@@ -101,10 +109,11 @@ export async function ensureDefaultWorkspace(
     })
     .returning();
 
+  // F146: the workspace is the user's own (ownerId), so the seat is owner.
   await db.insert(workspaceMembers).values({
     workspaceId: ws!.id,
     userId: user.id,
-    role,
+    role: 'owner',
   });
 
   return ws!;
@@ -112,21 +121,22 @@ export async function ensureDefaultWorkspace(
 
 /**
  * Like `ensureDefaultWorkspace` but always grants the given role even when
- * a personal workspace already exists. Used by SSO auto-enroll where the
- * provider's `defaultRole` is a workspace role.
+ * a workspace already exists — except to the workspace's owner (F146): the
+ * ownerId's seat is always owner (see the role PATCH route), so a personal
+ * workspace never gets a non-owner seat for its own owner.
  */
 export async function ensureDefaultWorkspaceWithRole(
   db: Pick<DB, 'query' | 'select' | 'insert' | 'update' | 'delete'>,
   user: { id: number; name?: string | null; email?: string },
   role: WorkspaceRole,
 ): Promise<Workspace> {
-  const ws = await ensureDefaultWorkspace(db, user, role);
+  const ws = await ensureDefaultWorkspace(db, user);
   // ensureDefaultWorkspace is a no-op when a workspace already exists; in
   // that case we still need to align the membership role with the requested
   // value (idempotent UPDATE).
   await db
     .update(workspaceMembers)
-    .set({ role })
+    .set({ role: ws.ownerId === user.id ? 'owner' : role })
     .where(and(eq(workspaceMembers.workspaceId, ws.id), eq(workspaceMembers.userId, user.id)));
   return ws;
 }
@@ -361,6 +371,8 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
     // the invitation flow, whose response is the same whether or not an
     // account exists (a registered recipient accepts it from their account).
     if (targetUser && req.user!.isOperator) {
+      // F1004: an operator sees account states anyway, so the refusal reveals nothing.
+      if (targetUser.deactivatedAt) throw userDeactivated();
       const [created] = await app.db
         .insert(workspaceMembers)
         .values({
@@ -441,6 +453,10 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
       if (ws.ownerId !== userId && !req.user!.isOperator) {
         throw forbidden('Only the workspace owner can transfer ownership');
       }
+      // F1005: the owner is the heir of every hand-over (rehomeOwnedResources),
+      // so ownership never goes to an account that cannot act.
+      const heir = await app.db.query.users.findFirst({ where: eq(users.id, targetMembership.userId) });
+      if (heir?.deactivatedAt) throw userDeactivated('transferring workspace ownership to it');
       // Demote current owner to admin in members table and update workspace ownerId
       await app.db
         .update(workspaceMembers)

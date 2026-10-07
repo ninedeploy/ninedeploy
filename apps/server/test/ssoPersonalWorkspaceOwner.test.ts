@@ -153,17 +153,40 @@ describe('D1/F146: SSO auto-enroll owns its personal workspace', () => {
     expect(owned).toHaveLength(1);
     expect(await seatRole(owned[0]!.id, uid)).toBe('owner');
   });
+
+  it('F146: ensureDefaultWorkspaceWithRole never seats or demotes the workspace owner below owner; a team seat is still aligned', async () => {
+    for (const role of ['member', 'viewer', 'admin'] as const) {
+      const uid = await user(`helper-${role}@corp.test`);
+      const ws = await ensureDefaultWorkspaceWithRole(db, { id: uid, name: `Helper ${role}` }, role);
+      expect(ws.ownerId).toBe(uid);
+      expect(await seatRole(ws.id, uid)).toBe('owner');
+      expect(await rename(uid, ws.id)).toBe(200);
+      expect((await ensureDefaultWorkspaceWithRole(db, { id: uid }, role)).id).toBe(ws.id);
+      expect(await seatRole(ws.id, uid)).toBe('owner');
+    }
+    // A team workspace (someone else's) as the first seat keeps the old contract.
+    const owner = await user('team-owner@corp.test');
+    const joiner = await user('joiner@corp.test');
+    const [team] = await db.insert(workspaces).values({ name: 'T', slug: 't', ownerId: owner }).returning();
+    await db.insert(workspaceMembers).values({ workspaceId: team!.id, userId: owner, role: 'owner' });
+    await db.insert(workspaceMembers).values({ workspaceId: team!.id, userId: joiner, role: 'viewer' });
+    expect((await ensureDefaultWorkspaceWithRole(db, { id: joiner }, 'admin')).id).toBe(team!.id);
+    expect(await seatRole(team!.id, joiner)).toBe('admin');
+    expect(await seatRole(team!.id, owner)).toBe('owner');
+  });
 });
 
 describe('F1000: repairOwnerSeats (boot repair)', () => {
   it('upgrades a pre-fix SSO personal seat so its owner can manage it again', async () => {
     const uid = await user('legacy@corp.test');
-    // The exact pre-fix call shape the OIDC callback used (defaultRole 'member').
-    const ws = await ensureDefaultWorkspaceWithRole(db, { id: uid, name: 'Legacy' }, 'member');
-    expect(await rename(uid, ws.id)).toBe(403);
+    // The row the pre-fix OIDC callback left (defaultRole 'member'). The helper
+    // can no longer produce it (F146, test below), so it is inserted directly.
+    const [ws] = await db.insert(workspaces).values({ name: 'Legacy', slug: 'legacy', ownerId: uid }).returning();
+    await db.insert(workspaceMembers).values({ workspaceId: ws!.id, userId: uid, role: 'member' });
+    expect(await rename(uid, ws!.id)).toBe(403);
     expect((await repairOwnerSeats(db)).repaired).toHaveLength(1);
-    expect(await seatRole(ws.id, uid)).toBe('owner');
-    expect(await rename(uid, ws.id)).toBe(200);
+    expect(await seatRole(ws!.id, uid)).toBe('owner');
+    expect(await rename(uid, ws!.id)).toBe(200);
   });
 
   it('touches only ownerId’s own seat, skips ambiguous workspaces, never inserts, and is idempotent', async () => {

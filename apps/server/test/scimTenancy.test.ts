@@ -322,3 +322,49 @@ describe('F148/F149: IdP request shapes', () => {
     expect((await list('userName eq "OWNER-A@x.test"')).json().totalResults).toBe(1);
   });
 });
+
+// D6/F1004: a seat goes only to an account that is active once the push is
+// applied. Re-activation followed by seating stays legitimate.
+describe('F1004: a deactivated account gets no SCIM seat', () => {
+  const TOKEN_B = ['scim', 'tenant-b', 'token'].join('_');
+  const authB = { authorization: `Bearer ${TOKEN_B}` };
+  const push = (email: string) => app.inject({ method: 'POST', url: '/scim/v2/Users', headers: auth, payload: { userName: email } });
+  const patchB = (id: number, active: boolean) =>
+    app.inject({ method: 'PATCH', url: `/scim/v2/Users/${id}`, headers: authB, payload: { Operations: [{ op: 'replace', path: 'active', value: active }] } });
+
+  it("a re-push cannot reinstate a parked seat while another tenant's deactivation stands; it can once that tenant re-activates", async () => {
+    await db.insert(scimTokens).values({ name: 'IdP B', tokenHash: sha256(TOKEN_B), workspaceId: wsB });
+    // SCIM-created (no argon2 hash), seated in A and B.
+    const [u] = await db.insert(users).values({ email: 'both@x.test', passwordHash: 'scim-random-secret' }).returning();
+    await db.insert(workspaceMembers).values([
+      { workspaceId: wsA, userId: u!.id, role: 'member' },
+      { workspaceId: wsB, userId: u!.id, role: 'member' },
+    ]);
+    expect((await deactivate(u!.id)).statusCode).toBe(200); // A: suspended (B seat elsewhere)
+    expect(await seat(u!.id, wsA)).toBeUndefined();
+    expect((await patchB(u!.id, false)).statusCode).toBe(200); // B: its only tenant now → instance-wide
+    expect((await userById(u!.id))!.deactivatedByWorkspaceId).toBe(wsB);
+
+    const refused = await push('both@x.test');
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json().detail).toBe('This account was deprovisioned by another workspace');
+    expect(await seat(u!.id, wsA)).toBeUndefined();
+    expect((await userById(u!.id))!.deactivatedAt).not.toBeNull();
+
+    expect((await patchB(u!.id, true)).statusCode).toBe(200);
+    const ok = await push('both@x.test');
+    expect([ok.statusCode, ok.json().active]).toEqual([200, true]);
+    expect((await seat(u!.id, wsA))!.role).toBe('member');
+  });
+
+  it('the deactivating tenant re-activates and seats in one push (unchanged)', async () => {
+    const created = await app.inject({ method: 'POST', url: '/scim/v2/Users', headers: auth, payload: { userName: 'gone@x.test' } });
+    const id = Number(created.json().id);
+    expect((await app.inject({ method: 'DELETE', url: `/scim/v2/Users/${id}`, headers: auth })).statusCode).toBe(200);
+    expect((await userById(id))!.deactivatedAt).not.toBeNull();
+    expect(await seat(id, wsA)).toBeUndefined();
+    const back = await push('gone@x.test');
+    expect([back.statusCode, back.json().active]).toEqual([200, true]);
+    expect((await seat(id, wsA))!.role).toBe('member');
+  });
+});
