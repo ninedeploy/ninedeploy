@@ -44,6 +44,33 @@ describe('deployFromGithub', () => {
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('https://'));
   });
 
+  it('F588: rejects a plain http:// url before any token-bearing source is attached', async () => {
+    const client = makeClient({ sources: { list: vi.fn().mockResolvedValue([{ id: 1, name: 'gh', type: 'github', hasToken: true }]), create: vi.fn() } });
+    await deployFromGithub(client, 'http://github.com/owner/app');
+    const c = client as unknown as { sources: { list: ReturnType<typeof vi.fn> }; insights: { analyze: ReturnType<typeof vi.fn> } };
+    expect(c.sources.list).not.toHaveBeenCalled();
+    expect(c.insights.analyze).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Only https://'));
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('F589: refuses an unlisted / unparseable source pick instead of binding the first source', async () => {
+    const sources = { list: vi.fn().mockResolvedValue([
+      { id: 1, name: 'gh1', type: 'github', hasToken: true },
+      { id: 2, name: 'gh2', type: 'github', hasToken: true },
+    ]) };
+    for (const pick of ['2x', '77']) {
+      process.exitCode = 0;
+      const create = vi.fn();
+      const analyze = vi.fn();
+      h.prompt.mockReset().mockResolvedValueOnce(pick).mockResolvedValue('');
+      await deployFromGithub(makeClient({ sources, insights: { analyze }, services: { create } }), 'https://github.com/owner/app');
+      expect(analyze, pick).not.toHaveBeenCalled();
+      expect(create, pick).not.toHaveBeenCalled();
+      expect(process.exitCode, pick).toBe(1);
+    }
+  });
+
   it('rejects when no URL is given and the prompt returns empty', async () => {
     await deployFromGithub(makeClient());
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Repository URL is required'));

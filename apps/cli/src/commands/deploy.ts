@@ -45,6 +45,19 @@ function nameFromUrl(url: string): string {
 }
 
 /**
+ * F589: resolve a typed source id against the ids just listed. Empty input
+ * keeps the shown default (the first row); anything else must be one of the
+ * listed ids. `Number(picked) || first` bound the FIRST source (a different
+ * credential) on a typo and passed an unlisted id through unchecked.
+ */
+function pickListedSource(picked: string, listed: ReadonlyArray<{ id: number }>): number | null {
+  const raw = picked.trim();
+  if (!raw) return listed[0]!.id;
+  const id = Number(raw);
+  return listed.some((s) => s.id === id) ? id : null;
+}
+
+/**
  * `ninedeploy deploy create-from-github [url]` — the headline command.
  * End-to-end private GitHub deploy in a single wizard:
  *   1. resolve the source (existing PAT or create-on-the-spot with `NINEDEPLOY_GITHUB_TOKEN`)
@@ -58,7 +71,9 @@ export async function deployFromGithub(client: NineDeployClient, urlArg?: string
   const repoUrl = urlArg ?? (await prompt('Repository URL (https://github.com/owner/app[.git])'));
   /* v8 ignore next -- exercised by test/deploy.test.ts "rejects when no URL is given and the prompt returns empty" */
   if (!repoUrl) return error('Repository URL is required');
-  if (!/^https?:\/\//i.test(repoUrl)) {
+  // F588: https only, as the message says — a plain-http URL had a PAT-bearing
+  // source auto-attached and the panel injects that token into the http:// URL.
+  if (!/^https:\/\//i.test(repoUrl)) {
     return error('Only https:// URLs are supported in this command. For SSH use the Web UI or services create.');
   }
 
@@ -84,8 +99,9 @@ export async function deployFromGithub(client: NineDeployClient, urlArg?: string
       matching.map((s) => ({ id: s.id, name: s.name, type: s.type })),
       ['id', 'name', 'type'],
     );
-    const picked = await prompt('Source id', String(matching[0]!.id));
-    sourceId = Number(picked) || matching[0]!.id;
+    const picked = pickListedSource(await prompt('Source id', String(matching[0]!.id)), matching);
+    if (picked === null) return error('Unknown source id — pick one of the ids listed above.');
+    sourceId = picked;
   } else if (sources.length > 0) {
     const all = sources.filter((s) => s.hasToken);
     if (all.length > 0) {
@@ -93,8 +109,9 @@ export async function deployFromGithub(client: NineDeployClient, urlArg?: string
         all.map((s) => ({ id: s.id, name: s.name, type: s.type })),
         ['id', 'name', 'type'],
       );
-      const picked = await prompt('Source id (the one with this repo access)', String(all[0]!.id));
-      sourceId = Number(picked) || all[0]!.id;
+      const picked = pickListedSource(await prompt('Source id (the one with this repo access)', String(all[0]!.id)), all);
+      if (picked === null) return error('Unknown source id — pick one of the ids listed above.');
+      sourceId = picked;
     }
   }
   /* v8 ignore stop */
@@ -133,8 +150,9 @@ export async function deployFromGithub(client: NineDeployClient, urlArg?: string
         sources.map((s) => ({ id: s.id, name: s.name, type: s.type })),
         ['id', 'name', 'type'],
       );
-      const picked = await prompt('Source id (must reach the repository)', String(sources[0]!.id));
-      sourceId = Number(picked) || sources[0]!.id;
+      const picked = pickListedSource(await prompt('Source id (must reach the repository)', String(sources[0]!.id)), sources);
+      if (picked === null) return error('Unknown source id — pick one of the ids listed above.');
+      sourceId = picked;
       /* v8 ignore stop */
     }
   }

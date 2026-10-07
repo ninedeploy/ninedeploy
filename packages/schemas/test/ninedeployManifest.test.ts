@@ -94,6 +94,16 @@ describe('ninedeployManifest', () => {
     it('accepts a dockerfile override', () => {
       ok(build, { dockerfile: 'docker/Dockerfile.prod' });
     });
+    it('rejects a dockerfile path that leaves the repository (F928)', () => {
+      bad(build, { dockerfile: '../../etc/x' });
+      bad(build, { dockerfile: 'docker/../../Dockerfile' });
+      bad(build, { dockerfile: '..\\Dockerfile' });
+      bad(build, { dockerfile: 'C:\\Dockerfile' });
+      bad(build, { dockerfile: '' });
+      bad(build, { dockerfile: 'a'.repeat(201) });
+      // A leading slash means "from the repo root", as for baseDir.
+      ok(build, { dockerfile: '/docker/Dockerfile' });
+    });
     it('rejects empty commands', () => {
       bad(build, { install: '' });
       bad(build, { build: '' });

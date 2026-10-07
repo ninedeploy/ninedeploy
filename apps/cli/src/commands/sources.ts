@@ -30,7 +30,7 @@ export async function sourcesList(client: NineDeployClient): Promise<void> {
 /**
  * Resolve a credential with a strict, documented precedence:
  *   1. explicit CLI flag (already handled by the caller)
- *   2. NINEDEPLOY_GITHUB_TOKEN / NINEDEPLOY_GITLAB_TOKEN / NINEDEPLOY_TOKEN env var
+ *   2. NINEDEPLOY_GITHUB_TOKEN / NINEDEPLOY_GITLAB_TOKEN / NINEDEPLOY_SOURCE_TOKEN env var
  *   3. interactive masked prompt
  *
  * The env fallback is the documented "no-stdin / CI" path: an operator
@@ -41,6 +41,34 @@ async function resolveSecret(envName: string, label: string): Promise<string> {
   if (fromEnv) return fromEnv;
   // Last resort: masked prompt. Honors a piped-stdin default (empty).
   return await promptHidden(label);
+}
+
+/**
+ * F596: the generic provider-token env var for gitea / registry / custom.
+ * NOT `NINEDEPLOY_TOKEN` — that is the documented panel API token (MCP / API
+ * clients); reading it here stored the panel credential on the source and
+ * sent it to the third-party git host / registry, without a prompt.
+ */
+const SOURCE_TOKEN_ENV = 'NINEDEPLOY_SOURCE_TOKEN';
+
+/**
+ * F597: the prompt asks for the key on one line with escaped newlines (a
+ * hidden prompt ends at the first real newline). Turn the escapes back into
+ * the newlines the key file needs — a PEM/OpenSSH key never holds a backslash.
+ */
+async function resolveDeployKey(): Promise<string> {
+  const key = await resolveSecret('NINEDEPLOY_SSH_KEY', 'SSH private key (PEM, single line — escape newlines)');
+  return key.replace(/(?:\\r)?\\n/g, '\n');
+}
+
+/**
+ * F598: canonical decimal id only, as the server's parseId accepts it.
+ * `Number()` mapped `1e1`→10 and `0x4`→4, and NaN fell into the picker whose
+ * default is the first listed source — keygen then rewrote the wrong source.
+ */
+function parseSourceId(raw: string): number {
+  const t = raw.trim();
+  return /^[1-9]\d*$/.test(t) && Number.isSafeInteger(Number(t)) ? Number(t) : 0;
 }
 
 /** `ninedeploy sources add [name]` */
@@ -62,22 +90,22 @@ export async function sourcesAdd(client: NineDeployClient, nameArg?: string): Pr
 
   if (type === 'registry') {
     registryUsername = (await prompt('Registry username (e.g. ci-bot)')) || undefined;
-    token = await resolveSecret('NINEDEPLOY_TOKEN', 'Registry password / access token (PAT)');
+    token = await resolveSecret(SOURCE_TOKEN_ENV, 'Registry password / access token (PAT)');
   } else if (type === 'gitea') {
-    token = await resolveSecret('NINEDEPLOY_TOKEN', 'Gitea access token');
+    token = await resolveSecret(SOURCE_TOKEN_ENV, 'Gitea access token');
   } else if (type === 'custom') {
     // Custom source: token or SSH key, your choice
     const authKind = (await prompt('Auth kind (token | ssh)', 'token')) === 'ssh' ? 'ssh' : 'token';
     if (authKind === 'ssh') {
-      deployKey = await resolveSecret('NINEDEPLOY_SSH_KEY', 'SSH private key (PEM, single line — escape newlines)');
+      deployKey = await resolveDeployKey();
     } else {
-      token = await resolveSecret('NINEDEPLOY_TOKEN', 'Access token (PAT)');
+      token = await resolveSecret(SOURCE_TOKEN_ENV, 'Access token (PAT)');
     }
   } else {
     // github / gitlab — both accept token or SSH
     const authKind = (await prompt('Auth kind (token | ssh)', 'token')) === 'ssh' ? 'ssh' : 'token';
     if (authKind === 'ssh') {
-      deployKey = await resolveSecret('NINEDEPLOY_SSH_KEY', 'SSH private key (PEM, single line — escape newlines)');
+      deployKey = await resolveDeployKey();
     } else {
       const envName = type === 'github' ? 'NINEDEPLOY_GITHUB_TOKEN' : 'NINEDEPLOY_GITLAB_TOKEN';
       token = await resolveSecret(envName, `${type === 'github' ? 'GitHub' : 'GitLab'} Personal Access Token (PAT)`);
@@ -113,7 +141,8 @@ export async function sourcesAdd(client: NineDeployClient, nameArg?: string): Pr
 /** `ninedeploy sources test [id]` — verify the stored token still authenticates. */
 export async function sourcesTest(client: NineDeployClient, idArg?: string): Promise<void> {
   header('Test Source Credentials');
-  let id = Number(idArg);
+  if (idArg !== undefined && !parseSourceId(idArg)) return error(`Invalid source id: ${idArg}`);
+  let id = idArg === undefined ? 0 : parseSourceId(idArg);
   if (!id) {
     const sources = await spinner('Fetching sources', () => client.sources.list());
     if (sources.length === 0) {
@@ -125,7 +154,7 @@ export async function sourcesTest(client: NineDeployClient, idArg?: string): Pro
       ['id', 'name', 'type'],
     );
     const picked = await prompt('Source id to test', String(sources[0]!.id));
-    id = Number(picked);
+    id = parseSourceId(picked);
     if (!id) return error('A numeric source id is required');
   }
   const result = await spinner('Verifying credentials', () => client.sources.test(id));
@@ -143,7 +172,8 @@ export async function sourcesTest(client: NineDeployClient, idArg?: string): Pro
  */
 export async function sourcesKeygen(client: NineDeployClient, idArg?: string): Promise<void> {
   header('Generate Deploy Key');
-  let id = Number(idArg);
+  if (idArg !== undefined && !parseSourceId(idArg)) return error(`Invalid source id: ${idArg}`);
+  let id = idArg === undefined ? 0 : parseSourceId(idArg);
   if (!id) {
     const sources = await spinner('Fetching sources', () => client.sources.list());
     if (sources.length === 0) {
@@ -155,7 +185,7 @@ export async function sourcesKeygen(client: NineDeployClient, idArg?: string): P
       ['id', 'name', 'type'],
     );
     const picked = await prompt('Source id to generate a deploy key for', String(sources[0]!.id));
-    id = Number(picked);
+    id = parseSourceId(picked);
     if (!id) return error('A numeric source id is required');
   }
   const result = await spinner('Generating ed25519 key pair on the panel server', () => client.sources.generateDeployKey(id));
@@ -174,7 +204,8 @@ export async function sourcesKeygen(client: NineDeployClient, idArg?: string): P
 /** `ninedeploy sources remove [id]` */
 export async function sourcesRemove(client: NineDeployClient, idArg?: string): Promise<void> {
   header('Remove Source');
-  let id = Number(idArg);
+  if (idArg !== undefined && !parseSourceId(idArg)) return error(`Invalid source id: ${idArg}`);
+  let id = idArg === undefined ? 0 : parseSourceId(idArg);
   if (!id) {
     const sources = await spinner('Fetching sources', () => client.sources.list());
     if (sources.length === 0) {
@@ -186,7 +217,7 @@ export async function sourcesRemove(client: NineDeployClient, idArg?: string): P
       ['id', 'name', 'type'],
     );
     const picked = await prompt('Source id to remove', String(sources[0]!.id));
-    id = Number(picked);
+    id = parseSourceId(picked);
     if (!id) return error('A numeric source id is required');
   }
   const confirm = await prompt(`Type "delete" to confirm removal of source #${id}`, '');

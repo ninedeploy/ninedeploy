@@ -83,7 +83,13 @@ export async function renderTemplateManifest(
   opts: TemplatesInitOptions = {},
 ): Promise<{ yaml: string; entry: TemplateRegistryEntry }> {
   const entry = await fetchTemplateEntry(client, templateId);
-  const manifest = buildManifestFromTemplate(entry, opts.host ?? '');
+  const host = opts.host?.trim() ?? '';
+  const manifest = buildManifestFromTemplate(entry, host);
+  // F929: the mapper always emits a starter route, but `routes[].host` is
+  // required (a hostname, min 3 chars) while `routes` itself is optional. With
+  // no --host, drop the route instead of writing `host: ""` that `manifest
+  // validate` and the deploy-time loader reject (mirrors the server's F336).
+  if (!host) delete manifest.routes;
   const yaml = formatManifestYaml(manifest);
   return { yaml, entry };
 }

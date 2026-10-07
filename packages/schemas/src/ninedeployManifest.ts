@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { envVarName, httpPath, repoBaseDir, slug } from './common.js';
+import { envVarName, httpPath, repoBaseDir, repoRelativePath, slug } from './common.js';
 
 /**
  * `.ninedeploy` manifest schema — project-side declarative config for how
@@ -49,7 +49,9 @@ export const build = z
     build: z.string().min(1).max(500).optional(),
     start: z.string().min(1).max(500).optional(),
     baseDir: repoBaseDir.optional(),
-    dockerfile: z.string().min(1).max(200).optional(),
+    // F928: same "inside the repository" rule as baseDir above and the panel's
+    // service.build.dockerfilePath — a repo-committed `../../x` must not pass.
+    dockerfile: repoRelativePath.min(1).max(200).optional(),
   })
   .strict();
 export type Build = z.infer<typeof build>;

@@ -400,3 +400,54 @@ describe('sourcesKeygen', () => {
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('numeric source id is required'));
   });
 });
+
+describe('credential + id hardening (F596/F597/F598)', () => {
+  it('F596: never takes the panel API token (NINEDEPLOY_TOKEN) as a gitea credential; NINEDEPLOY_SOURCE_TOKEN is the env path', async () => {
+    const prev = { panel: process.env['NINEDEPLOY_TOKEN'], src: process.env['NINEDEPLOY_SOURCE_TOKEN'] };
+    process.env['NINEDEPLOY_TOKEN'] = 'panel-api-token';
+    delete process.env['NINEDEPLOY_SOURCE_TOKEN'];
+    try {
+      const create = vi.fn().mockResolvedValue({ id: 1, name: 'gt' });
+      h.prompt.mockResolvedValueOnce('gitea').mockResolvedValueOnce('main');
+      h.promptHidden.mockResolvedValueOnce('gitea-token');
+      await sourcesAdd(makeClient({ sources: { create, test: vi.fn() } }), 'gt');
+      expect(create).toHaveBeenCalledWith(expect.objectContaining({ token: 'gitea-token' }));
+
+      process.env['NINEDEPLOY_SOURCE_TOKEN'] = 'env-source-token';
+      const create2 = vi.fn().mockResolvedValue({ id: 2, name: 'gt' });
+      h.prompt.mockResolvedValueOnce('gitea').mockResolvedValueOnce('main');
+      await sourcesAdd(makeClient({ sources: { create: create2, test: vi.fn() } }), 'gt');
+      expect(create2).toHaveBeenCalledWith(expect.objectContaining({ token: 'env-source-token' }));
+    } finally {
+      for (const [k, v] of [['NINEDEPLOY_TOKEN', prev.panel], ['NINEDEPLOY_SOURCE_TOKEN', prev.src]] as const) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
+  it('F597: decodes the escaped newlines of a one-line SSH key typed at the prompt', async () => {
+    delete process.env['NINEDEPLOY_SSH_KEY'];
+    const create = vi.fn().mockResolvedValue({ id: 1, name: 'k' });
+    h.prompt.mockResolvedValueOnce('github').mockResolvedValueOnce('main').mockResolvedValueOnce('ssh');
+    h.promptHidden.mockResolvedValueOnce('-----BEGIN PRIVATE KEY-----\\nAAAA\\r\\nBBBB\\n-----END PRIVATE KEY-----');
+    await sourcesAdd(makeClient({ sources: { create, test: vi.fn() } }), 'k');
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ deployKey: '-----BEGIN PRIVATE KEY-----\nAAAA\nBBBB\n-----END PRIVATE KEY-----' }),
+    );
+  });
+
+  it('F598: rejects a non-canonical explicit id instead of keygen-ing another source', async () => {
+    for (const bad of ['abc', '1e1', '0x4', '1.5', '-3']) {
+      const list = vi.fn().mockResolvedValue([{ id: 9, name: 'newest', type: 'github' }]);
+      const generateDeployKey = vi.fn();
+      h.prompt.mockImplementation((_m: string, def?: string) => Promise.resolve(def ?? ''));
+      process.exitCode = 0;
+      await sourcesKeygen(makeClient({ sources: { list, generateDeployKey } }), bad);
+      expect(generateDeployKey).not.toHaveBeenCalled();
+      expect(list).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    }
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Invalid source id'));
+  });
+});

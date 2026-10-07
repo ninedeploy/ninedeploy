@@ -2,9 +2,14 @@ import type { NineDeployClient } from '../client.js';
 import { c, error, fmtTime, header, info, spinner, success, table } from '../lib/format.js';
 import { prompt } from '../prompts.js';
 
+/** F537: canonical decimal ids only — the server's `parseId` rule (r260).
+ *  Bare `Number()` turned `0x10`/`1e1`/`0b11` into 16/10/3 and `""` into 0,
+ *  so a destructive call (rm, restore, revoke) hit an id nobody typed. */
+const CANONICAL_ID = /^[1-9]\d*$/;
+
 const num = (v: string, usage: string): number => {
-  const n = Number(v);
-  if (Number.isNaN(n)) {
+  const n = CANONICAL_ID.test(v) ? Number(v) : Number.NaN;
+  if (!Number.isSafeInteger(n)) {
     error(usage);
     // error() sets the exit code; throw so execution never continues with
     // NaN (and tests can observe the failure).
@@ -301,7 +306,7 @@ export async function sessionsList(client: NineDeployClient): Promise<void> {
 /** `ninedeploy sessions revoke <id>` */
 export async function sessionsRevoke(client: NineDeployClient, idStr: string): Promise<void> {
   const id = Number(idStr);
-  if (!Number.isInteger(id) || id <= 0) return error('Usage: ninedeploy sessions revoke <id>');
+  if (!CANONICAL_ID.test(idStr) || !Number.isSafeInteger(id)) return error('Usage: ninedeploy sessions revoke <id>');
   try {
     await spinner('Revoking session', () => client.auth.sessions.revoke(id));
     success(`Session #${id} revoked.`);
@@ -433,14 +438,18 @@ export async function alertsCreate(client: NineDeployClient, name: string, metri
     return error('Usage: ninedeploy alerts create <name> <cpu|memory|cert-expiry> <|<> <threshold>');
   }
   const threshold = Number(thresholdStr);
-  if (!threshold) return error('Threshold must be a number.');
+  // F536: 0 is a valid threshold; only a non-number (or blank) is refused.
+  if (thresholdStr.trim() === '' || !Number.isFinite(threshold)) return error('Threshold must be a number.');
+  // F536: `Number('web')` is NaN, which JSON-serializes to null — the server
+  // reads null as "host-wide", so a typoed scope silently watched the host.
+  if (opts.service !== undefined && !CANONICAL_ID.test(opts.service)) return error('--service must be a service id.');
   try {
     const rule = await client.alerts.create({
       name,
       metric: metric as 'cpu' | 'memory' | 'cert-expiry',
       operator: operator as '>' | '<',
       threshold,
-      serviceId: opts.service ? Number(opts.service) : null,
+      serviceId: opts.service !== undefined ? Number(opts.service) : null,
       durationWindows: opts.windows ? Number(opts.windows) : undefined,
     });
     success(`Alert "${rule.name}" created (id: ${rule.id}).`);
@@ -525,6 +534,25 @@ export async function systemExport(file?: string): Promise<void> {
   } catch (err) { fail(err); }
 }
 
+/**
+ * F538: a build log is repo-controlled text (Dockerfile RUN output, install
+ * scripts), so its frames must not drive the operator's terminal. SGR colour
+ * sequences (`ESC [ … m`) are kept; every other control is dropped — OSC
+ * strings (OSC 52 clipboard write, window title, hyperlinks) and the other
+ * ESC P/X/^/_ strings, non-SGR CSI (cursor moves / line erase that hide
+ * output), stray escapes, and C0/DEL/C1 controls other than tab, LF and CR.
+ */
+const ESC = String.fromCharCode(27);
+const TERMINAL_CONTROL = new RegExp(
+  `${ESC}[\\]PX^_][\\s\\S]*?(?:${String.fromCharCode(7)}|${ESC}\\\\|$)` +
+    `|${ESC}\\[[0-?]*[ -/]*[@-~]` +
+    `|${ESC}[\\s\\S]?` +
+    '|[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f]',
+  'g',
+);
+const SGR_ONLY = new RegExp(`^${ESC}\\[[0-9;]*m$`);
+const terminalSafe = (s: string): string => s.replace(TERMINAL_CONTROL, (m) => (SGR_ONLY.test(m) ? m : ''));
+
 /** `ninedeploy deploys watch <serviceId> <deployId>` — stream deploy logs over WebSocket. */
 export async function deploysWatch(serviceIdStr: string, deployIdStr: string, timeoutMs = 30 * 60_000): Promise<void> {
   const serviceId = Number(serviceIdStr);
@@ -563,13 +591,27 @@ export async function deploysWatch(serviceIdStr: string, deployIdStr: string, ti
       });
       return true;
     };
-    socket.on('message', (data) => process.stdout.write(String(data)));
+    socket.on('message', (data) => process.stdout.write(terminalSafe(String(data))));
     socket.on('close', (code?: number, reason?: Buffer) => {
       if (retrying) return;
       if (code === 1008 && String(reason ?? '') === 'unauthorized') {
         if (retryAfterRefresh('unauthorized')) return;
         closed = true;
         error('Stream rejected (unauthorized). Run `ninedeploy login` again.');
+        return;
+      }
+      // F956/F980: only a normal close (1000, the server's 'deploy finished')
+      // is a clean end. A policy close (1008 'not found' for a wrong or foreign
+      // deploy id, 'forbidden' for a scoped token, 'session revoked' / 'access
+      // revoked' mid-stream) or an abnormal one (1006: server crash or network
+      // drop, which ws reports without an 'error' event) must fail, or
+      // `deploys watch && next-step` carries on as if the deploy had finished.
+      // A close we started (Ctrl-C, the hard cap) or one following an already
+      // reported error is not re-reported.
+      if (code !== 1000 && !closed) {
+        closed = true;
+        const why = String(reason ?? '');
+        error(code === 1008 ? `Stream rejected (${why || 'policy violation'}).` : `Log stream ended abnormally (${code ?? 'no close code'}${why ? `: ${why}` : ''}).`);
         return;
       }
       closed = true;
@@ -601,7 +643,10 @@ export async function deploysWatch(serviceIdStr: string, deployIdStr: string, ti
   while (!closed && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  if (!closed) ws?.close();
+  if (!closed) {
+    closed = true; // F956/F980: our own close is not a server rejection
+    ws?.close();
+  }
 }
 
 /** `ninedeploy system import <file>` — restores a system bundle (destructive). */

@@ -365,10 +365,68 @@ describe('alerts commands', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  // F536: `Number('web')` is NaN, which the SDK JSON-serializes to null — the
+  // server reads null as host-wide, so a typoed --service silently created a
+  // rule watching the whole host. Threshold 0 is a valid integer.
+  it('F536: refuses a non-id --service instead of creating a host-wide rule', async () => {
+    const client = { alerts: { create: vi.fn().mockResolvedValue({ id: 6, name: 'x' }) } };
+    for (const service of ['web', '', '0', '0x7']) {
+      process.exitCode = 0;
+      await alertsCreate(client as never, 'x', 'cpu', '>', '80', { service });
+      expect(process.exitCode, `--service ${JSON.stringify(service)}`).toBe(1);
+    }
+    expect(client.alerts.create).not.toHaveBeenCalled();
+  });
+
+  it('F536: accepts threshold 0 and refuses a blank threshold', async () => {
+    const client = { alerts: { create: vi.fn().mockResolvedValue({ id: 6, name: 'x' }) } };
+    await alertsCreate(client as never, 'x', 'cpu', '>', '0', { service: '7' });
+    expect(client.alerts.create).toHaveBeenCalledWith(expect.objectContaining({ threshold: 0, serviceId: 7 }));
+    client.alerts.create.mockClear();
+    await alertsCreate(client as never, 'x', 'cpu', '>', '  ', {});
+    expect(client.alerts.create).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
   it('removes an alert rule', async () => {
     const client = { alerts: { remove: vi.fn().mockResolvedValue(undefined) } };
     await alertsRemove(client as never, '4');
     expect(client.alerts.remove).toHaveBeenCalledWith(4);
+  });
+});
+
+// F537: ids follow the server's parseId rule (canonical decimal). Bare Number()
+// turned `0x10`/`1e1`/`0b11` into 16/10/3 and `""` into 0, so rm / restore /
+// revoke hit an id nobody typed.
+describe('F537: non-canonical id arguments', () => {
+  it('refuses them before any destructive request', async () => {
+    const client = {
+      alerts: { remove: vi.fn() },
+      backups: { restore: vi.fn() },
+      domains: { remove: vi.fn() },
+      auth: { sessions: { revoke: vi.fn() } },
+    };
+    h.prompt.mockResolvedValue('yes');
+    for (const raw of ['0x10', '1e1', '0b11', '', ' 5', '-1', '1.5', '007']) {
+      await expect(alertsRemove(client as never, raw), `alerts rm ${JSON.stringify(raw)}`).rejects.toThrow('Usage');
+      await expect(backupsRestore(client as never, raw, '2')).rejects.toThrow('Usage');
+      await expect(domainsRemove(client as never, '3', raw)).rejects.toThrow('Usage');
+      process.exitCode = 0;
+      await sessionsRevoke(client as never, raw);
+      expect(process.exitCode, `sessions revoke ${JSON.stringify(raw)}`).toBe(1);
+    }
+    expect(client.alerts.remove).not.toHaveBeenCalled();
+    expect(client.backups.restore).not.toHaveBeenCalled();
+    expect(client.domains.remove).not.toHaveBeenCalled();
+    expect(client.auth.sessions.revoke).not.toHaveBeenCalled();
+  });
+
+  it('passes canonical ids through unchanged', async () => {
+    const client = { alerts: { remove: vi.fn() }, auth: { sessions: { revoke: vi.fn() } } };
+    await alertsRemove(client as never, '16');
+    await sessionsRevoke(client as never, '9007199254740991');
+    expect(client.alerts.remove).toHaveBeenCalledWith(16);
+    expect(client.auth.sessions.revoke).toHaveBeenCalledWith(9007199254740991);
   });
 });
 
@@ -606,8 +664,26 @@ describe('deploys watch', () => {
     await new Promise((r) => setTimeout(r, 10));
     handlers['message']?.(`hello${String.fromCharCode(10)}`);
     expect(writeSpy).toHaveBeenCalledWith(`hello${String.fromCharCode(10)}`);
+    handlers['close']?.(1000, Buffer.from('deploy finished')); // F956: the server's normal end
+    await pending;
+    expect(process.exitCode).toBe(0);
+    writeSpy.mockRestore();
+  });
+
+  // F538: build logs are repo-controlled; their frames must not drive the
+  // operator's terminal (OSC 52 clipboard write, title, cursor/erase), while
+  // SGR colours and ordinary text still print.
+  it('F538: strips terminal-control sequences from log frames but keeps colours', async () => {
+    const handlers = fakeSocket();
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const esc = String.fromCharCode(27);
+    const bel = String.fromCharCode(7);
+    const pending = deploysWatch('1', '2', 60_000);
+    await vi.waitFor(() => expect(handlers['message']).toBeDefined());
+    handlers['message']?.(`${esc}]52;c;Y3VybCBldmlsfHNo${bel}${esc}]0;ok${bel}${esc}[31merror${esc}[0m\n${esc}[1A${esc}[2Kall good\n`);
     handlers['close']?.();
     await pending;
+    expect(writeSpy).toHaveBeenCalledWith(`${esc}[31merror${esc}[0m\nall good\n`);
     writeSpy.mockRestore();
   });
 
@@ -638,6 +714,56 @@ describe('deploys watch', () => {
     handlers['unexpected-response']?.({}, { statusCode: 502 });
     await pending;
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Stream rejected (502)'));
+  });
+
+  // F956/F980: `deploys watch && next-step` is an exit-code contract scripts
+  // rely on. Only the server's normal 1000 close is a finished deploy; every
+  // other 1008 the deploy-log route sends, and an abnormal 1006 (server crash,
+  // network drop — ws emits no 'error' for those), must exit 1.
+  it('F956: the server\'s 1000 deploy-finished close is a clean end (exit 0)', async () => {
+    const handlers = fakeSocket();
+    const pending = deploysWatch('1', '2', 60_000);
+    await vi.waitFor(() => expect(handlers['close']).toBeDefined());
+    handlers['close']?.(1000, Buffer.from('deploy finished'));
+    await pending;
+    expect(process.exitCode).toBe(0);
+    expect(errorSpy).not.toHaveBeenCalled();
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Log stream closed.'));
+  });
+
+  it.each(['not found', 'forbidden', 'session revoked', 'access revoked'])(
+    'F956: a 1008 "%s" close fails the watch (exit 1)',
+    async (reason) => {
+      const handlers = fakeSocket();
+      const pending = deploysWatch('1', '2', 60_000);
+      await vi.waitFor(() => expect(handlers['close']).toBeDefined());
+      handlers['close']?.(1008, Buffer.from(reason));
+      await pending;
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(`Stream rejected (${reason}).`));
+      expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('Log stream closed.'));
+    },
+  );
+
+  it('F980: an abnormal 1006 close (server crash, network drop) fails the watch (exit 1)', async () => {
+    const handlers = fakeSocket();
+    const pending = deploysWatch('1', '2', 60_000);
+    await vi.waitFor(() => expect(handlers['close']).toBeDefined());
+    handlers['close']?.(1006, Buffer.alloc(0));
+    await pending;
+    expect(process.exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Log stream ended abnormally (1006)'));
+  });
+
+  it('F956: a close the CLI started itself (Ctrl-C, server echoes 1005) stays exit 0', async () => {
+    const handlers = fakeSocket();
+    const pending = deploysWatch('1', '2', 60_000);
+    await vi.waitFor(() => expect(handlers['close']).toBeDefined());
+    process.emit('SIGINT');
+    handlers['close']?.(1005, Buffer.alloc(0));
+    await pending;
+    expect(process.exitCode).toBe(0);
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 
   describe('r550: token refresh and base path', () => {

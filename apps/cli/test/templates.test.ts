@@ -170,6 +170,18 @@ describe('templatesInit (filesystem side-effects)', () => {
     const writes = stdoutSpy.mock.calls.map((c) => String(c[0])).join('');
     expect(writes).toMatch(/host: automation\.example\.com/);
   });
+
+  it('omits the starter route instead of writing host: "" when no --host is given (F929)', async () => {
+    const client = makeClient(TEMPLATE);
+    const out = join(tmpDir, '.ninedeploy');
+
+    await templatesInit(client, 'n8n', tmpDir, { write: true });
+
+    const written = readFileSync(out, 'utf8');
+    // `routes[].host` is a required hostname; `routes` itself is optional.
+    expect(written).not.toMatch(/routes:|host:/);
+    expect(written).toMatch(/port: 5678/);
+  });
 });
 
 describe('fetchTemplateEntry null path', () => {

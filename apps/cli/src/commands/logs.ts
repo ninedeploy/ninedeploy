@@ -16,6 +16,25 @@ const num = (v: string, usage: string): number => {
   return n;
 };
 
+/**
+ * F880: a searched line is container stdout of any tenant's service (and its
+ * `service` label comes from the shipping pipeline), so it must not drive the
+ * operator's terminal. Same filter as F538 (`deploys watch`, manage.ts): SGR
+ * colours are kept; OSC/DCS strings (OSC 52 clipboard write, window title),
+ * non-SGR CSI (cursor moves, erase, clear screen), stray escapes and C0/DEL/C1
+ * controls other than tab, LF and CR are dropped.
+ */
+const ESC = String.fromCharCode(27);
+const TERMINAL_CONTROL = new RegExp(
+  `${ESC}[\\]PX^_][\\s\\S]*?(?:${String.fromCharCode(7)}|${ESC}\\\\|$)` +
+    `|${ESC}\\[[0-?]*[ -/]*[@-~]` +
+    `|${ESC}[\\s\\S]?` +
+    '|[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f]',
+  'g',
+);
+const SGR_ONLY = new RegExp(`^${ESC}\\[[0-9;]*m$`);
+const terminalSafe = (s: string): string => s.replace(TERMINAL_CONTROL, (m) => (SGR_ONLY.test(m) ? m : ''));
+
 export async function logsSearch(
   client: NineDeployClient,
   query: string,
@@ -48,8 +67,8 @@ export async function logsSearch(
   console.log();
   for (const line of result.lines) {
     const ts = new Date(line.ts).toISOString();
-    const svc = line.service ? c.dim(`[${line.service}]`) : '';
-    console.log(`${c.dim(ts)} ${svc} ${line.line}`);
+    const svc = line.service ? c.dim(`[${terminalSafe(line.service)}]`) : '';
+    console.log(`${c.dim(ts)} ${svc} ${terminalSafe(line.line)}`);
   }
 }
 
