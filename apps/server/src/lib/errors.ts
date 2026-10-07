@@ -21,6 +21,15 @@ export const unprocessable = (message = 'Unprocessable entity', code = 'unproces
   new HttpError(422, code, message);
 
 /**
+ * True when `err` is a SQLite unique-constraint violation whose text matches
+ * `pattern`. drizzle-orm wraps driver errors in DrizzleQueryError ("Failed
+ * query: …") with the SQLite text on `cause` (as deployQueue.ts unwraps), so
+ * both are checked. SQLite names the columns ("t.a, t.b"), not the index.
+ */
+export const isUniqueViolation = (err: unknown, pattern: RegExp = /UNIQUE constraint/): boolean =>
+  [err, err instanceof Error ? err.cause : undefined].some((e) => e instanceof Error && pattern.test(e.message));
+
+/**
  * Parse a route-param id into a positive integer. Throws 400 (not 404) on
  * malformed input so an id like `abc` produces a clear validation error
  * instead of silently becoming NaN and yielding a misleading "not found".
