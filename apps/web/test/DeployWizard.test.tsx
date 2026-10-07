@@ -1154,6 +1154,27 @@ describe('DeployWizard — advanced review and repository-picker variants', () =
     expect(apiMock.api.templates.prepare.mock.calls[0]![1]).not.toHaveProperty('serverId');
   });
 
+  // F960/F962: a compose stack's YAML owns its ports, limits and images — the
+  // server refuses the first two for a compose template (F904) and ignores an
+  // image pin, so the wizard neither offers nor sends them.
+  it('F960/F962: a compose template offers no host port, limits or image pin', async () => {
+    const user = userEvent.setup();
+    renderWizard({ template: { ...TEMPLATE, composeContent: 'services:\n  app:\n    image: n8nio/n8n\n' } });
+    expect(screen.getByDisplayValue('n8nio/n8n')).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    expect(screen.queryByPlaceholderText('e.g. 8080')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    expect(screen.queryByPlaceholderText('512')).not.toBeInTheDocument();
+    expect(screen.getByText(/A compose stack sets its own host ports and resource limits/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.click(screen.getByRole('button', { name: /deploy/i }));
+    await waitFor(() => expect(apiMock.api.templates.prepare).toHaveBeenCalled());
+    const sent = apiMock.api.templates.prepare.mock.calls[0]![1];
+    for (const key of ['publishedPort', 'cpuShares', 'memLimitMb', 'image']) expect(sent).not.toHaveProperty(key);
+    expect(sent.healthPath).toBe('/');
+  });
+
   /**
    * Inline compose stacks: Type = Compose swaps the Image source for "Paste
    * YAML". The wizard refuses to move on until the SERVER has said the file

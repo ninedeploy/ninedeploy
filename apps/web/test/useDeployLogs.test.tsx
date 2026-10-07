@@ -92,6 +92,26 @@ describe('useDeployLogs', () => {
     vi.useRealTimers();
   });
 
+  it('F881: does not reconnect after the server ends the stream with a normal 1000 close', () => {
+    // The server now closes 1000 once the deployment settled — at connect for a
+    // finished one. Reconnecting on that (the budget refills on every open)
+    // replayed the whole log every 2 s forever.
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useDeployLogs(1, 2));
+    const first = FakeWebSocket.instances[0]!;
+    act(() => {
+      first.open();
+      first.message('✓ Deployment successful\n');
+      first.readyState = 3;
+      (first.onclose as ((ev?: unknown) => void) | null)?.({ code: 1000, reason: 'deploy finished' });
+    });
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(result.current.open).toBe(false);
+    expect(result.current.lines).toBe('✓ Deployment successful\n');
+    vi.useRealTimers();
+  });
+
   it('r209: a reconnect replaces the replayed backlog instead of appending it', () => {
     vi.useFakeTimers();
     const { result } = renderHook(() => useDeployLogs(1, 2));

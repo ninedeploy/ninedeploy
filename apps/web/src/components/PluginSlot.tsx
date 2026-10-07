@@ -35,7 +35,9 @@ export function PluginSlot({ slot, className = '' }: PluginSlotProps) {
 
         return (
           <div
-            key={item.id}
+            // F921: since F896 two plugins may each own an item with the same
+            // id — key by (pluginId, id), the registry's own identity.
+            key={JSON.stringify([item.pluginId ?? null, item.id])}
             className="flex items-center justify-between p-3.5 rounded-lg border border-slate-700/60 bg-slate-800/40 hover:bg-slate-800/80 transition-colors"
           >
             <div className="flex items-center gap-3">

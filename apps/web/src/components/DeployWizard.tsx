@@ -159,6 +159,10 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
   );
   // Database-backed templates are provisioned atomically by the server route.
   const dbEngine = template?.dbEngine ?? null;
+  // F960: a compose stack's own YAML sets its host ports and resource limits —
+  // the compose builder reads neither publishedPort nor the limits, and a
+  // compose template deploy refuses them (400, F904). Not offered, not sent.
+  const composeDeploy = template ? !!template.composeContent : type === 'compose';
   const [provisionStatus, setProvisionStatus] = useState<string | null>(null);
 
   // ── Repository analysis (framework detection) ─────────────────────────────
@@ -317,11 +321,10 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
           name,
           // Pin a different TAG of the template's own repository — the server
           // rejects cross-repository overrides and digest references.
-          ...(image && image !== template.image ? { image } : {}),
-          publishedPort: toInt(publishedPort),
+          // F962: a compose template runs its YAML's images — no pin to send.
+          ...(!template.composeContent && image && image !== template.image ? { image } : {}),
+          ...(composeDeploy ? {} : { publishedPort: toInt(publishedPort), cpuShares: toInt(cpuShares), memLimitMb: toInt(memLimitMb) }),
           healthPath: healthPath || undefined,
-          cpuShares: toInt(cpuShares),
-          memLimitMb: toInt(memLimitMb),
           env: envRows
             .filter((entry) => entry.key.trim())
             .filter((entry) => !(entry.secret && entry.value === '' && template.env?.some((preset) => preset.key === entry.key && preset.secret)))
@@ -374,11 +377,10 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
         branch,
         sourceId: toInt(sourceId),
         port: effectivePort,
-        publishedPort: toInt(publishedPort),
+        // F960: a value typed before switching the type to compose stays unsent.
+        ...(composeDeploy ? {} : { publishedPort: toInt(publishedPort), cpuShares: toInt(cpuShares), memLimitMb: toInt(memLimitMb) }),
         volumeMount: volumeMount || undefined,
         healthPath: healthPath || undefined,
-        cpuShares: toInt(cpuShares),
-        memLimitMb: toInt(memLimitMb),
         ...(trimmedBaseDir || cmdSource.install || cmdSource.build || cmdSource.start
           ? {
               build: {
@@ -1073,9 +1075,10 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
                   )}
                 </>
               ) : (
-                <L label={template ? 'Image — pin a version (same repository, e.g. :11.5)' : 'Image'}>
+                <L label={template?.composeContent ? "Image — set by the stack's compose file" : template ? 'Image — pin a version (same repository, e.g. :11.5)' : 'Image'}>
                   <Input
                     value={image}
+                    disabled={!!template?.composeContent}
                     onChange={(e) => setImage(e.target.value)}
                     placeholder={template?.image ?? 'n8nio/n8n'}
                     className="font-mono text-xs"
@@ -1119,7 +1122,7 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <L label={template ? 'Registry-managed container port' : 'Container Port'}><Input value={port} disabled={!!template} onChange={(e) => setPort(e.target.value)} inputMode="numeric" autoComplete="off" placeholder="3000" className="font-mono text-xs" /></L>
-                <L label="Public Host Port (optional)"><Input value={publishedPort} onChange={(e) => setPublishedPort(e.target.value)} placeholder="e.g. 8080" className="font-mono text-xs" /></L>
+                {!composeDeploy && <L label="Public Host Port (optional)"><Input value={publishedPort} onChange={(e) => setPublishedPort(e.target.value)} placeholder="e.g. 8080" className="font-mono text-xs" /></L>}
               </div>
               <L label={template ? 'Registry-managed volume mount' : 'Persistent Volume Mount'}><Input value={volumeMount} disabled={!!template} onChange={(e) => setVolumeMount(e.target.value)} placeholder="/app/data" className="font-mono text-xs" /></L>
               <L label="Healthcheck Path"><Input value={healthPath} onChange={(e) => setHealthPath(e.target.value)} placeholder="/" className="font-mono text-xs" /></L>
@@ -1213,7 +1216,13 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
           )}
 
           {/* Step 4: Resource Limits */}
-          {step === 3 && (
+          {step === 3 && composeDeploy && (
+            <p className="rounded-xl border border-white/10 bg-white/[0.02] p-3.5 text-xs text-slate-400">
+              A compose stack sets its own host ports and resource limits — use <code className="font-mono">ports:</code> and{' '}
+              <code className="font-mono">deploy.resources.limits</code> in the compose file.
+            </p>
+          )}
+          {step === 3 && !composeDeploy && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <L label="CPU shares (0 = unlimited)"><Input value={cpuShares} onChange={(e) => setCpuShares(e.target.value)} placeholder="512" className="font-mono text-xs" /></L>
@@ -1248,10 +1257,10 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
                 <Row label="Build commands" value={[installCmd, buildCmd, startCmd].filter(Boolean).join('  →  ')} />
               )}
               {port && <Row label="Port" value={`:${port}`} />}
-              {publishedPort && <Row label="Host Port" value={`:${publishedPort}`} />}
+              {!composeDeploy && publishedPort && <Row label="Host Port" value={`:${publishedPort}`} />}
               {volumeMount && <Row label="Volume" value={volumeMount} />}
               <Row label="Env vars" value={String(envRows.filter((e) => e.key.trim()).length)} />
-              <Row label="Limits" value={cpuShares || memLimitMb ? `${cpuShares || '—'} shares · ${memLimitMb || '—'} MB` : 'none'} />
+              {!composeDeploy && <Row label="Limits" value={cpuShares || memLimitMb ? `${cpuShares || '—'} shares · ${memLimitMb || '—'} MB` : 'none'} />}
             </div>
           )}
         </form>

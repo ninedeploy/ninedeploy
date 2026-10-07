@@ -317,7 +317,11 @@ export function Projects() {
         title="Delete project"
         message={
           pendingDelete
-            ? `Delete "${pendingDelete.name}"? Services and databases inside it are detached (their projectId is set to null) — they are NOT deleted.`
+            ? // F922: the server refuses (409) deleting a workspace project
+              // that still holds databases; only a personal one detaches them.
+              pendingDelete.workspaceId != null && pendingDelete.databaseCount > 0
+              ? `"${pendingDelete.name}" still holds ${pendingDelete.databaseCount} database${pendingDelete.databaseCount === 1 ? '' : 's'}: a workspace project cannot be deleted while it holds databases — delete them first. Services inside it are detached when it is deleted — they are NOT deleted.`
+              : `Delete "${pendingDelete.name}"? Services and databases inside it are detached (their projectId is set to null) — they are NOT deleted.`
             : ''
         }
         confirmLabel="Delete"

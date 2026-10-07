@@ -103,6 +103,32 @@ function DirectPortCard({ serviceId, svc }: { serviceId: number; svc?: Service |
   const containerPort = svc?.port ?? currentPublished ?? 'unknown';
   const hostUrl = currentPublished ? `http://${window.location.hostname}:${currentPublished}` : null;
 
+  // F986: the server refuses a host port for compose services (F961) — the
+  // stack's compose file publishes its own. Only clearing a stored one is left.
+  if (svc?.type === 'compose') {
+    return (
+      <Card>
+        <CardBody>
+          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-300">
+            <Radio size={15} className="text-slate-500" /> Direct Host Port Publishing
+          </div>
+          <p className="text-xs text-slate-500">
+            A compose stack publishes its own host ports — set them under the service's{' '}
+            <code className="font-mono">ports:</code> in the stack's compose file.
+          </p>
+          {currentPublished && (
+            <div className="mt-3 flex items-center justify-between gap-3 text-xs text-slate-400">
+              <span>A stored host port :{currentPublished} is not applied to compose stacks.</span>
+              <Button size="sm" variant="ghost" onClick={() => update.mutate(null)} disabled={update.isPending}>
+                Clear
+              </Button>
+            </div>
+          )}
+        </CardBody>
+      </Card>
+    );
+  }
+
   return (
     <Card>
       <CardBody>

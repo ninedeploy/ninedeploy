@@ -23,6 +23,24 @@ import { api } from '../../lib/api.js';
 import { useAuth } from '../../lib/auth.js';
 import { useExperienceMode } from '../../lib/mode.js';
 
+// F969: the server's compiled-in plugins (BUILT_IN_PLUGIN_IDS in
+// apps/server/src/kernel/pluginLoader.ts). They have no installed row, so
+// POST /plugins/:id/reload refuses them (404, or 409 for a stray row).
+const BUILT_IN_PLUGIN_IDS: ReadonlySet<string> = new Set([
+  'notifications-dispatcher',
+  'cloudflare-tunnels',
+  'telemetry-streamer',
+  'template-bundles',
+  'manifest-generator',
+  'webhook-out',
+  'domain-presets',
+  'config-presets',
+  'sticky-session',
+  'metric-history',
+  'build-cache',
+  'sticky-ip',
+]);
+
 export function PluginsSection() {
   const { user } = useAuth();
   const { isSimple } = useExperienceMode();
@@ -197,7 +215,12 @@ export function PluginsSection() {
           </Card>
         ) : (
           (() => {
-            const isCore = (p: typeof plugins[0]) => (p as any).source === 'builtin' || p.id.startsWith('core-') || p.id === 'traefik' || p.id === 'docker' || p.isOfficial;
+            // F968: a DISABLED row is never core — a built-in is always listed
+            // enabled, so a disabled row is an installed one the server lets
+            // an operator enable again (an official row included).
+            const isCore = (p: typeof plugins[0]) =>
+              p.enabled &&
+              ((p as any).source === 'builtin' || p.id.startsWith('core-') || p.id === 'traefik' || p.id === 'docker' || p.isOfficial);
             const coreList = plugins.filter(isCore);
             const extList = plugins.filter((p) => !isCore(p));
 
@@ -621,7 +644,9 @@ function PluginInspectModal({
               <p className="text-slate-400">{p.description || 'No description provided.'}</p>
               <div className="text-[11px] text-slate-500">Author: {p.author || 'NineDeploy'}</div>
             </div>
-            {isAdmin && (
+            {/* F920: the server refuses (409) reloading a disabled plugin.
+                F969: and every built-in (404/409). */}
+            {isAdmin && p.enabled && !BUILT_IN_PLUGIN_IDS.has(id) && (
               <Button
                 variant="secondary"
                 size="sm"
@@ -843,16 +868,20 @@ function PluginCard({
               <Info size={14} className="mr-1.5" />
               Inspect
             </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              aria-label={`Reload ${p.name}`}
-              title="Reload Plugin"
-              disabled={isReloadPending}
-              onClick={onReload}
-            >
-              <RefreshCw size={14} className={isReloadPending ? 'animate-spin' : ''} />
-            </Button>
+            {/* F920: reload is operator-only and refused (409) for a disabled
+                plugin — enable is what loads it. F969: and for a built-in. */}
+            {isAdmin && p.enabled && !BUILT_IN_PLUGIN_IDS.has(p.id) && (
+              <Button
+                variant="secondary"
+                size="sm"
+                aria-label={`Reload ${p.name}`}
+                title="Reload Plugin"
+                disabled={isReloadPending}
+                onClick={onReload}
+              >
+                <RefreshCw size={14} className={isReloadPending ? 'animate-spin' : ''} />
+              </Button>
+            )}
             {isAdmin && !isCore && (
               <>
                 <Button

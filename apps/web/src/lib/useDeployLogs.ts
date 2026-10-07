@@ -105,10 +105,14 @@ export function useDeployLogs(serviceId: number | null, deploymentId: number | n
       ws.onerror = () => {
         if (!disposed) setOpen(false);
       };
-      ws.onclose = () => {
+      ws.onclose = (event?: CloseEvent) => {
         if (disposed) return;
         setOpen(false);
         flush();
+        // F881: 1000 is the server ending the stream — the deployment settled
+        // and its whole log was sent. Reconnecting would replay it every 2 s
+        // forever (the budget refills on each open).
+        if (event?.code === 1000) return;
         if (activeId.current === deploymentId && attempts < RECONNECT_ATTEMPTS) {
           attempts++;
           reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
