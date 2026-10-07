@@ -225,6 +225,42 @@ describe('r662: moving and deleting remote services', () => {
       ]),
     );
   });
+
+  // F840: fanout.ts mounts `nd-svc-<slug>-data` on every target node — adding
+  // one must ask that node the same question a move does, before any change.
+  it("F840: refuses a new fan-out target that holds a DELETED service's volume, before tearing anything down", async () => {
+    nodeVolume.exists = true;
+    nodeVolume.createdAt = '2020-01-01T00:00:00Z'; // older than the service row
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { services: remote({ replicas: 1, image: 'nginx:1' }), servers: { id: 5 } },
+        select: { serviceTargets: [{ id: 2, serverId: 6, runtimeId: null }] },
+      }),
+    });
+    await app.register(servicesRoutes);
+    const res = await app.inject({ method: 'PATCH', url: '/1/targets', headers: asUser({ isOperator: true }), payload: { serverIds: [5] } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('slug_volume_retained');
+    // Node 6 (being replaced) is untouched: the probe is the only agent call.
+    expect(ops()).toEqual(['5 docker.volumeInspect {"name":"nd-svc-web-data"}']);
+  });
+
+  // F842: pm2 is exempt from the guard while docker cannot answer, so a pm2
+  // row may never have been checked — leaving pm2 runs it on the service's node.
+  it('F842: re-checks the node volume when a pinned pm2 service switches to docker', async () => {
+    nodeVolume.exists = true;
+    nodeVolume.createdAt = '2020-01-01T00:00:00Z';
+    const app = await appFor(remote({ type: 'pm2', runtimeId: null, replicas: 1 }));
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/1',
+      headers: asUser({ isOperator: true }),
+      payload: { type: 'docker', image: 'nginx:1', volumeMount: '/data' },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('slug_volume_retained');
+    expect(ops()).toEqual(['4 docker.volumeInspect {"name":"nd-svc-web-data"}']);
+  });
 });
 
 /** r667: `--tail 300` bounds lines, not bytes — the local logs read is byte-capped too. */

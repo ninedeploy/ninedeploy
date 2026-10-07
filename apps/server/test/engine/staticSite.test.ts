@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -96,6 +96,29 @@ describe('buildStaticSite', () => {
     await expect(
       buildStaticSite({ workDir: dir, baseDir: dir, buildConfig: { buildCmd: null }, env: {}, log: () => undefined }, 't'),
     ).rejects.toThrow('requires a build command');
+  });
+
+  it('refuses to write the generated files through a repo symlink (F376)', async () => {
+    seedOutput();
+    const outside = mkdtempSync(path.join(os.tmpdir(), 'nd-static-outside-'));
+    try {
+      const victim = path.join(outside, 'nginx.conf');
+      writeFileSync(victim, 'OTHER SERVICE CONFIG');
+      symlinkSync(victim, path.join(dir, 'nginx-static.conf'), 'file');
+      const planted = path.join(outside, 'planted');
+      symlinkSync(planted, path.join(dir, 'Dockerfile.static'), 'file');
+      const input = { workDir: dir, baseDir: dir, buildConfig: { buildCmd: 'hugo', outputDir: 'dist' }, env: {}, log: () => undefined };
+
+      await expect(buildStaticSite(input, 't')).rejects.toThrow('nginx-static.conf through a symlink');
+      expect(readFileSync(victim, 'utf8')).toBe('OTHER SERVICE CONFIG');
+
+      rmSync(path.join(dir, 'nginx-static.conf'));
+      await expect(buildStaticSite(input, 't')).rejects.toThrow('Dockerfile.static through a symlink');
+      expect(existsSync(planted)).toBe(false);
+      expect(vi.mocked(run).mock.calls.some((c) => c[0] === 'docker')).toBe(false);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it('fails when the build produced no index.html', async () => {

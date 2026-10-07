@@ -62,6 +62,25 @@ describe('logBus', () => {
 
     expect(listener).toHaveBeenCalledWith('line');
   });
+
+  it('F881: signals end-of-log only once every writer is done, and unsubscribe drops the end listener', () => {
+    const onEnd = vi.fn();
+    const unsubscribe = logBus.subscribe(881, () => undefined, onEnd);
+    logBus.beginRun(881); // the worker's claim
+    logBus.beginRun(881); // the pipeline run
+    logBus.end(881);
+    expect(onEnd).not.toHaveBeenCalled();
+    expect(logBus.isWriting(881)).toBe(true);
+    logBus.end(881);
+    expect(onEnd).toHaveBeenCalledTimes(1);
+    expect(logBus.isWriting(881)).toBe(false);
+    // A settle with no run in this process (boot recovery) still signals.
+    logBus.end(881);
+    expect(onEnd).toHaveBeenCalledTimes(2);
+    expect(logBus.isWriting(881)).toBe(false);
+    unsubscribe();
+    expect(logBus.listenerCount('end:881')).toBe(0);
+  });
 });
 
 describe('pruneOldLogs', () => {

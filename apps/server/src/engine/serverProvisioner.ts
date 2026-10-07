@@ -76,6 +76,13 @@ export function normalizeNodeHost(raw: string): string {
  */
 const HOST_KEY_ALIAS = 'ninedeploy-node';
 
+/**
+ * F153: the Docker install and the agent start (whose `docker run` pulls the
+ * full panel image on a fresh node) get the project's `docker pull` ceiling
+ * (lib/dockerPull.ts), not runSshCommand's 60 s default.
+ */
+const REMOTE_SETUP_TIMEOUT_MS = 10 * 60 * 1000;
+
 /** r661: where the key a host presented on first contact is recorded. */
 const hostKeySettingKey = (host: string, port: number) => `ssh.hostKeys:${host}:${port}`;
 
@@ -161,7 +168,9 @@ export async function runSshCommand(
       '-o',
       'LogLevel=ERROR',
       '-o',
-      `ConnectTimeout=${Math.max(1, Math.floor((opts.timeoutMs ?? 15000) / 1000))}`,
+      // F153: the TCP connect wait stays short even when the session itself
+      // is given minutes (Docker install, first agent image pull).
+      `ConnectTimeout=${Math.max(1, Math.min(15, Math.floor((opts.timeoutMs ?? 15000) / 1000)))}`,
       '-o',
       'BatchMode=yes',
     ];
@@ -169,7 +178,9 @@ export async function runSshCommand(
     if (opts.authType === 'key' && opts.sshKey) {
       const id = randomBytes(8).toString('hex');
       keyPath = join(tmpdir(), `nd_ssh_${id}.key`);
-      await fs.writeFile(keyPath, opts.sshKey, { mode: 0o600 });
+      // F152: OpenSSH refuses ("invalid format") a private key whose last line
+      // has no newline or whose lines end in CRLF — normalise both.
+      await fs.writeFile(keyPath, `${opts.sshKey.replace(/\r\n?/g, '\n').trimEnd()}\n`, { mode: 0o600 });
       args.push('-i', keyPath);
     }
 
@@ -432,7 +443,7 @@ export async function bootstrapServer(
       }
       emitStep('docker_install', 'running', 'Installing Docker via get.docker.com automated bootstrap script...');
       await runSshCommand(
-        sshOpts,
+        { ...sshOpts, timeoutMs: REMOTE_SETUP_TIMEOUT_MS },
         'curl -fsSL https://get.docker.com | sh && (systemctl enable --now docker 2>/dev/null || service docker start 2>/dev/null || true)',
         emitLog,
       );
@@ -454,7 +465,7 @@ export async function bootstrapServer(
       agentDockerRunCommand({ hostPort: input.agentPort, imageTag: `v${VERSION}`, tokenSha256 }),
     ].join(' && ');
 
-    await runSshCommand(sshOpts, agentStartCmd, emitLog);
+    await runSshCommand({ ...sshOpts, timeoutMs: REMOTE_SETUP_TIMEOUT_MS }, agentStartCmd, emitLog);
     emitStep('agent_deploy', 'success', 'Agent container started successfully');
 
     // ── Step 5: Verify & Database Registration ──────────────────────────────

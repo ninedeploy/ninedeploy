@@ -266,7 +266,11 @@ export async function filterTrustworthyProjectLinks(
   return kept;
 }
 
-async function loadRuntimeEnv(db: DB, service: typeof services.$inferSelect): Promise<RuntimeEnvironment> {
+async function loadRuntimeEnv(
+  db: DB,
+  service: typeof services.$inferSelect,
+  templateDatabaseId?: number,
+): Promise<RuntimeEnvironment> {
   const env: Record<string, string> = {};
   const managedDatabaseKeys = new Set<string>();
   // r651: a PR preview is built from a branch anyone with push access wrote.
@@ -320,6 +324,11 @@ async function loadRuntimeEnv(db: DB, service: typeof services.$inferSelect): Pr
     attaches.push(a);
   }
   let readyAttachmentCount = 0;
+  // F860: the template contract describes ONE database — the template's own
+  // (the one the reconcile returned; without that, the first ready attachment
+  // it fits). Applied to every attachment, a second database (a Redis cache
+  // next to WordPress' MySQL) overwrote the mapped keys and lost its alias.
+  let mappingApplied = false;
   for (const a of attaches) {
     const d = await db.query.databases.findFirst({ where: eq(databases.id, a.databaseId) });
     if (d && d.status === 'running') {
@@ -335,7 +344,8 @@ async function loadRuntimeEnv(db: DB, service: typeof services.$inferSelect): Pr
         && template.dbEngine === d.engine
       )?.databaseEnv;
       const mapping = bundledMapping ?? service.templateDatabaseEnv;
-      if (!mapping || Object.keys(mapping).length === 0) {
+      const isTemplateDatabase = templateDatabaseId != null ? a.databaseId === templateDatabaseId : !mappingApplied;
+      if (!mapping || Object.keys(mapping).length === 0 || !isTemplateDatabase) {
         env[a.envAlias] = connectionString(d);
         managedDatabaseKeys.add(a.envAlias);
         continue;
@@ -360,6 +370,7 @@ async function loadRuntimeEnv(db: DB, service: typeof services.$inferSelect): Pr
         env[key] = values[source];
         managedDatabaseKeys.add(key);
       }
+      mappingApplied = true;
     }
   }
 
@@ -514,12 +525,47 @@ type PipelineKernelCtx = {
 /** Run the full deploy pipeline for one deployment row. */
 export async function runDeployment(db: DB, deploymentId: number, kernelCtx?: PipelineKernelCtx): Promise<void> {
   const events = kernelCtx?.events;
+  // F881: this run writes the deploy log until its final settle below (incl.
+  // the proxy swap/revert and F861's failUnsettledDeployment line). Both
+  // awaits between here and the end() are .catch()ed, so end() always runs.
+  logBus.beginRun(deploymentId);
   if (events) await emitDeploying(db, deploymentId, events).catch(() => undefined);
   try {
     await runDeploymentCore(db, deploymentId, kernelCtx);
+  } catch (err) {
+    // F861: an error the pipeline did not handle itself (a DB hiccup before
+    // its try, or in an unwrapped status write) must not leave the row
+    // `building` — that blocks every later deploy of the service and the
+    // stale sweep silently re-runs it 45 minutes later.
+    await failUnsettledDeployment(db, deploymentId, err).catch(() => undefined);
+    throw err;
   } finally {
     if (kernelCtx?.hooks || events) await announceOutcome(db, deploymentId, kernelCtx).catch(() => undefined);
+    logBus.end(deploymentId);
   }
+}
+
+/**
+ * F861: settle a row runDeploymentCore threw out of — only while it is still
+ * `queued`/`building` (a cancel, a finalize or a handled failure wins), and
+ * the service only while it is still `deploying` (this run's own mark).
+ */
+async function failUnsettledDeployment(db: DB, deploymentId: number, err: unknown): Promise<void> {
+  const settled = await db
+    .update(deployments)
+    .set({ status: 'failed', finishedAt: new Date() })
+    .where(and(eq(deployments.id, deploymentId), inArray(deployments.status, ['queued', 'building'])))
+    .returning({ id: deployments.id });
+  if (settled.length === 0) return;
+  logBus.publish(deploymentId, `✗ Deployment failed: ${msg(err)}`);
+  const dep = await db.query.deployments.findFirst({ where: eq(deployments.id, deploymentId) });
+  if (!dep) return;
+  await db
+    .update(services)
+    .set({ status: 'error' })
+    .where(and(eq(services.id, dep.serviceId), eq(services.status, 'deploying')));
+  const service = await db.query.services.findFirst({ where: eq(services.id, dep.serviceId) });
+  if (service) await auditOutcome(db, service, deploymentId, 'failed', msg(err));
 }
 
 async function linkedProjectIds(db: DB, serviceId: number): Promise<number[]> {
@@ -688,6 +734,9 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   // Fingerprint of the resolved managed-database env values — filled once the
   // runtime env is built inside the try; consumed by the success finalize.
   let managedFp: Record<string, string> = {};
+  // F860: the template's own database (from the reconcile) — the only
+  // attachment the template's env contract applies to.
+  let templateDatabaseId: number | undefined;
   try {
     // Cancel checkpoint: the route may have flipped the row between claim and here.
     if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled();
@@ -793,6 +842,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       log('##[stage:DEPENDENCIES:running] Reconciling managed template dependencies');
       const dependency = await reconcileTemplateDependencies(db, service, log);
       if (dependency) {
+        templateDatabaseId = dependency.database.id;
         log(`Managed database ${dependency.database.slug} is running and attached`);
       }
       log('##[stage:DEPENDENCIES:success]');
@@ -808,7 +858,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       if (lateDbRefusal) throw new Error(lateDbRefusal);
     }
 
-    const runtimeEnvironment = await loadRuntimeEnv(db, service);
+    const runtimeEnvironment = await loadRuntimeEnv(db, service, templateDatabaseId);
     fanoutEnv = runtimeEnvironment.values;
     if (runtimeEnvironment.withheldFromPreview.length > 0) {
       log(
@@ -1264,7 +1314,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
         // forever with the service row already pointing at the new one.
         let currentEnvironment: Awaited<ReturnType<typeof loadRuntimeEnv>> | null = null;
         try {
-          currentEnvironment = await loadRuntimeEnv(db, service);
+          currentEnvironment = await loadRuntimeEnv(db, service, templateDatabaseId);
         } catch (err) {
           log(`pre-stop warning: could not load the runtime environment (${msg(err)}) — running the hook without it`);
         }

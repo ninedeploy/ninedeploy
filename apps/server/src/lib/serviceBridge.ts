@@ -22,6 +22,17 @@ import { NETWORK, TRAEFIK_CONTAINER } from '../engine/dockerNames.js';
 
 const swallow = (): void => undefined;
 
+/**
+ * F320: the docker builder's health prober (engine/builders/docker.ts
+ * `PROBE_CONTAINER`) joins every runtime bridge and stays there. Like Traefik
+ * it is platform plumbing, not a tenant: it must not keep a bridge alive.
+ */
+const PROBE_CONTAINER = 'ninedeploy-prober';
+
+/** F321: docker's own "this network does not exist" answer (old + new CLI wording). */
+const isMissingNetwork = (err: unknown): boolean =>
+  /no such network|network \S+ not found/i.test(err instanceof Error ? err.message : String(err));
+
 /** Canonical name for a service's private bridge. */
 export const serviceBridgeName = (slug: string): string => `nd-svc-${slug}`;
 
@@ -139,12 +150,15 @@ export async function removeServiceBridgeIfEmpty(slug: string, log: (line: strin
   const hasNonTraefik = members
     .split(/\s+/)
     .filter(Boolean)
-    .some((c) => c !== TRAEFIK_CONTAINER);
+    .some((c) => c !== TRAEFIK_CONTAINER && c !== PROBE_CONTAINER);
   if (hasNonTraefik) {
     // Reconnect Traefik (we just disconnected) and leave the bridge in place.
     await run('docker', ['network', 'connect', name, TRAEFIK_CONTAINER], {}, swallow).catch(() => undefined);
     return;
   }
+  // F320: the prober is an active endpoint too; `network rm` refuses while it
+  // is attached. It rejoins on demand at the next sibling healthcheck.
+  await run('docker', ['network', 'disconnect', name, PROBE_CONTAINER], {}, swallow).catch(() => undefined);
   try {
     await run('docker', ['network', 'rm', name], {}, log);
     log(`removed per-service bridge ${name}`);
@@ -185,8 +199,10 @@ export async function projectBridgeCidrs(db: DB, projectId: number): Promise<str
         '--format', '{{range .IPAM.Config}}{{.Subnet}} {{end}}',
       ]);
       for (const subnet of out.split(/\s+/)) if (/^\d+\.\d+\.\d+\.\d+\/\d+$/.test(subnet)) cidrs.push(subnet);
-    } catch {
-      /* bridge not created yet */
+    } catch (err) {
+      // Bridge not created yet. F321: any other failure must surface — the
+      // egress driver persists this list as the rule set it applied.
+      if (!isMissingNetwork(err)) throw err;
     }
   }
   return cidrs;

@@ -576,14 +576,38 @@ async function deleteWorkspaceFileOp(params: Params): Promise<void> {
  * Best effort: a project whose containers cannot be listed or updated is
  * reported and left alone rather than failing a deployment that already
  * succeeded.
+ *
+ * F812 (the node twin of F561): only services WITHOUT their own policy get
+ * the default — a `restart: "no"` one-shot job, `on-failure:N` or
+ * `deploy.restart_policy` keeps what the file declares. An unreadable config
+ * falls back to every container (the previous behaviour). The config output
+ * carries resolved env values, so it is parsed here and never echoed.
  */
 async function composeRestartPolicyOp(params: Params, onLine: (l: string) => void): Promise<number> {
   const dir = await resolveWorkspace(validated(str(params, 'workspace'), RE_NAME, 'workspace name'));
   guardWorkspacePaths('docker.composePs', params, dir); // r660
+  let services: string[] = [];
+  const cfgLines: string[] = [];
+  const cfgCode = await spawnValidated(
+    'docker',
+    [...composeStackArgs(params), 'config', '--format', 'json'],
+    (line) => cfgLines.push(line),
+    { cwd: dir },
+  );
+  const declared = cfgCode === 0 ? composeServicePolicies(cfgLines) : null;
+  if (declared !== null) {
+    const defaultable = [...declared].filter(([, own]) => !own).map(([name]) => name);
+    const usable = defaultable.filter((name) => RE_NAME.test(name));
+    if (usable.length === 0) {
+      onLine('every compose service declares its own restart policy — none changed');
+      return 0;
+    }
+    if (usable.length < declared.size) services = usable;
+  }
   const ids: string[] = [];
   const psCode = await spawnValidated(
     'docker',
-    [...composeStackArgs(params), 'ps', '-q'],
+    [...composeStackArgs(params), 'ps', '-q', ...services],
     (line) => {
       const id = line.trim();
       // Container ids are hex; anything else on this stream is progress noise.
@@ -604,6 +628,27 @@ async function composeRestartPolicyOp(params: Params, onLine: (l: string) => voi
   if (code !== 0) onLine('docker update failed — containers keep the policy their compose file gave them');
   onLine(`restart policy applied to ${ids.length} container(s)`);
   return 0;
+}
+
+/**
+ * F812: service name → "declares its own restart policy", from the lines of
+ * `compose config --format json` (stderr warnings are merged into the same
+ * stream, so the JSON is cut from its first `{` line to its last `}` line).
+ * Null when the output is not a readable config.
+ */
+function composeServicePolicies(lines: string[]): Map<string, boolean> | null {
+  const start = lines.findIndex((l) => l.trimStart().startsWith('{'));
+  const end = lines.findLastIndex((l) => l.trimEnd().endsWith('}'));
+  if (start === -1 || end < start) return null;
+  try {
+    const cfg = JSON.parse(lines.slice(start, end + 1).join('\n')) as {
+      services?: Record<string, { restart?: unknown; deploy?: { restart_policy?: unknown } | null } | null>;
+    };
+    if (!cfg?.services || typeof cfg.services !== 'object' || Array.isArray(cfg.services)) return null;
+    return new Map(Object.entries(cfg.services).map(([name, def]) => [name, Boolean(def?.restart || def?.deploy?.restart_policy)]));
+  } catch {
+    return null;
+  }
 }
 
 /** Env files the agent writes for docker.runEnv live under this fixed dir. */
@@ -778,6 +823,17 @@ export async function runOp(op: string, params: Params, onLine: (l: string) => v
       const setUrl = await spawnValidated('git', ['remote', 'set-url', 'origin', url], onLine, { cwd: dir });
       if (setUrl !== 0) return setUrl;
       return spawnValidated('git', [...GIT_EGRESS_FLAGS, 'fetch', '--all', '--prune'], onLine, { cwd: dir });
+    }
+    // F813: `git clone <url> .` refuses a non-empty directory before any
+    // transport, and the workspace is shared with the service's other source
+    // kinds — an inline compose deploy leaves its docker-compose.yml here, as
+    // does a stale workspace a reused slug inherits. Without a `.git` nothing
+    // in it is a checkout; clear it (links are removed as links) and clone.
+    const { readdirSync, rmSync } = await import('node:fs');
+    const leftovers = readdirSync(dir);
+    if (leftovers.length > 0) {
+      for (const entry of leftovers) rmSync(pathmod.join(dir, entry), { recursive: true, force: true });
+      onLine(`workspace held ${leftovers.length} non-repository file(s) — cleared before cloning`);
     }
     const depth = str(params, 'depth');
     const argv = [...GIT_EGRESS_FLAGS, 'clone'];

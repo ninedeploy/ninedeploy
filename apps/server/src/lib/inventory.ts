@@ -40,6 +40,14 @@ export function resolveVolumeOwner(
   name: string,
   attachments: VolumeAttachmentRow[] = [],
 ): VolumeOwnerRef | null {
+  // F820: a database names its volume in `volumeName` — for an adopted
+  // retained volume (`existingVolume`) that is NOT `nd-db-<slug>-data`. This
+  // explicit claim wins; without it the Doctor offered to delete the stopped
+  // database's data and the restore guard skipped the running database.
+  const claimant = dbs.find((d) => d.volumeName === name);
+  if (claimant) {
+    return { kind: 'database', refId: claimant.id, name: claimant.name, engine: claimant.engine, containerName: claimant.containerName };
+  }
   // 1) explicit attachment link (any service may own the volume).
   for (const att of attachments) {
     if (att.volumeName !== name) continue;

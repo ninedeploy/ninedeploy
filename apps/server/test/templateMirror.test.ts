@@ -147,4 +147,16 @@ describe('upstream file conversion', () => {
     expect(viaHostIp.skip).toBe(true);
     if (viaHostIp.skip) expect(viaHostIp.reason).toContain('host ports');
   });
+
+  // F317: `network_mode: host` binds every container port on the host with no
+  // `ports:` key at all — the same host binding r041 refuses, by another route.
+  it('skips host-networked services, including interpolated network modes', () => {
+    const stack = (mode: string) => `# port: 8123\nservices:\n  app:\n    image: a:1\n    network_mode: ${mode}\n`;
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: compose interpolation is the literal under test
+    for (const mode of ['host', '"host"', '${NET:-host}']) {
+      const result = convertCoolifyComposeFile('ha.yaml', stack(mode));
+      expect(result).toEqual({ skip: true, reason: "service 'app' uses host networking" });
+    }
+    expect(convertCoolifyComposeFile('br.yaml', stack('bridge')).skip).toBe(false);
+  });
 });

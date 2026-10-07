@@ -59,7 +59,10 @@ describe('collectContainerStats', () => {
     expect(map.get('loner')).toEqual({ name: 'loner', cpuPct: 0, memBytes: 0, memLimitBytes: 0 });
     expect(map.get('num')).toEqual({ name: 'num', cpuPct: 9, memBytes: 123, memLimitBytes: 0 });
     expect(map.get('nolit')).toEqual({ name: 'nolit', cpuPct: 9, memBytes: 100, memLimitBytes: 0 });
-    expect(execMock.capture).toHaveBeenCalledWith('docker', expect.arrayContaining(['stats']));
+    // F868: every docker call is bounded (capture()'s 30-min default would stall the collector).
+    expect(execMock.capture).toHaveBeenCalledWith('docker', expect.arrayContaining(['stats']), { timeoutMs: 20_000 });
+    expect(execMock.capture).toHaveBeenCalledWith('docker', ['ps', '-q'], { timeoutMs: 10_000 });
+    expect(execMock.capture).toHaveBeenCalledWith('docker', expect.arrayContaining(['inspect']), { timeoutMs: 10_000 });
   });
 
   it('returns an empty map when docker is unavailable', async () => {

@@ -306,6 +306,28 @@ describe('run — timeout & tree-kill', () => {
     expect(killSpy).toHaveBeenCalledWith(-4242, 'SIGKILL');
   });
 
+  // F908: the escalation timer used to survive the child's close — 5s later it
+  // SIGKILLed a process group id that, once reaped, may belong to anything.
+  it('never escalates to SIGKILL once the timed-out child has closed (run and capture)', async () => {
+    vi.useFakeTimers();
+    const killSpy = vi.spyOn(process, 'kill').mockReturnValue(true);
+    for (const [pid, start] of [
+      [4242, () => run('stuck', [], { timeoutMs: 500 }, vi.fn())],
+      [4343, () => capture('stuck', [], { timeoutMs: 500 })],
+    ] as const) {
+      killSpy.mockClear();
+      const child = makeChild({ pid });
+      mockSpawn.mockReturnValue(child);
+      const promise: Promise<unknown> = start();
+      promise.catch(() => {});
+      await vi.advanceTimersByTimeAsync(500);
+      await expect(promise).rejects.toBeInstanceOf(ExecTimeoutError);
+      child.emit('close', null, 'SIGTERM');
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(killSpy.mock.calls).toEqual([[-pid, 'SIGTERM']]);
+    }
+  });
+
   it('falls back to child.kill when the group signal fails', async () => {
     vi.useFakeTimers();
     vi.spyOn(process, 'kill').mockImplementation(() => {

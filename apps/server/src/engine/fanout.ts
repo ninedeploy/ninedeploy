@@ -4,7 +4,7 @@ import { agentOp } from '../lib/agentClient.js';
 import { assertAgentGuardsBuildPaths, nodeLabel } from '../lib/agentCapabilities.js';
 import { acquireRegistryLock, registryLockKey } from '../lib/registryLock.js';
 import { assertCloneTargetAllowed } from '../lib/gitEgress.js';
-import { envForAgent } from './builders/remoteDocker.js';
+import { createRemoteDockerBuilder, envForAgent } from './builders/remoteDocker.js';
 
 /**
  * Multi-server fan-out (phase 1): push an IMAGE-based release to additional
@@ -28,6 +28,8 @@ import { envForAgent } from './builders/remoteDocker.js';
 
 const HEALTH_POLL_MS = 2_000;
 const HEALTH_TIMEOUT_MS = 60_000;
+/** F973: `docker image inspect` in pullableReleaseRef (local metadata read). */
+const RELEASE_REF_INSPECT_TIMEOUT_MS = 10_000;
 
 export type AgentCaller = (
   op: string,
@@ -49,34 +51,25 @@ export async function targetsForService(db: DB, serviceId: number): Promise<Fano
   return rows;
 }
 
-function parseState(lines: string[]): { status: string } {
-  const raw = lines.filter((l) => l.trim() !== '').at(-1) ?? '';
-  return { status: raw.trim().split('|')[0] ?? '' };
-}
-
-/** Poll `docker.inspect` until the container settles, like remoteDocker but short. */
+/**
+ * F117: the primary's r265 verdict, with a shorter deadline. The first
+ * `running` sample used to be accepted — under `--restart unless-stopped` a
+ * crash-looping container reads `running` between crashes, so the proven
+ * generation was retired for it. The new container must now hold `running`
+ * (and pass its image HEALTHCHECK) over consecutive samples with no restart
+ * in between, and a rising restart count fails fast.
+ */
 async function waitRunning(
   agent: AgentCaller,
   name: string,
   log: (line: string) => void,
 ): Promise<boolean> {
-  const deadline = Date.now() + HEALTH_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    try {
-      const res = await agent('docker.inspect', { name, format: 'state' }, () => undefined);
-      const { status } = parseState(res.lines);
-      if (status === 'running') return true;
-      if (status === 'exited' || status === 'dead' || status === 'removing') {
-        log(`target container ${name} reached state "${status}"`);
-        return false;
-      }
-    } catch (err) {
-      log(`waiting for ${name}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, HEALTH_POLL_MS));
-  }
-  log(`${name} did not reach a running state in time`);
-  return false;
+  return createRemoteDockerBuilder(agent, { pollMs: HEALTH_POLL_MS }).isHealthy(
+    { runtimeId: name, port: null, healthPath: '/' },
+    HEALTH_TIMEOUT_MS,
+    undefined,
+    log,
+  );
 }
 
 export interface FanoutContext {
@@ -215,6 +208,13 @@ export async function deployToTargets(
       }
       try {
         await agent('docker.runEnv', runParams, log);
+      } catch (err) {
+        // F116: `docker run -d` that fails after create leaves a Created
+        // container under this name, and the catch below records the OLD
+        // runtime — nothing would ever reference (or remove) it again. Same
+        // cleanup as the primary (remoteDocker r264); never the tracked one.
+        if (name !== target.runtimeId) await agent('docker.rm', { name }, () => undefined).catch(() => undefined);
+        throw err;
       } finally {
         await agent('file.deleteEnv', { name: envName }, log).catch(() => undefined);
       }
@@ -252,7 +252,10 @@ export async function pullableReleaseRef(image: string, digest: string | undefin
   try {
     const { capture } = await import('../lib/exec.js');
     const repo = image.replace(/@.*$/, '').replace(/:[^/:]+$/, '');
-    const digests = (await capture('docker', ['image', 'inspect', digest, '--format', '{{join .RepoDigests " "}}']))
+    // F973: a local metadata read awaited by deploy, rollback and fan-out;
+    // capture()'s 30-minute default held them on a wedged daemon. Past the
+    // bound the catch falls back to the tag, as on any other inspect failure.
+    const digests = (await capture('docker', ['image', 'inspect', digest, '--format', '{{join .RepoDigests " "}}'], { timeoutMs: RELEASE_REF_INSPECT_TIMEOUT_MS }))
       .split(/\s+/)
       .filter(Boolean);
     return digests.find((d) => d.startsWith(`${repo}@`)) ?? digests[0] ?? image;

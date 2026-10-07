@@ -52,6 +52,21 @@ describe('lib/inventory', () => {
     });
   });
 
+  it('F820: a database that adopted a volume under another name (existingVolume) owns it', () => {
+    // Without the `databases.volumeName` claim the Doctor reported this volume
+    // as an orphan and its delete_volume fix destroyed the stopped database's
+    // data; the volume-restore guard skipped the running database container.
+    const svcs = [svcRow({ id: 2, slug: 'web', name: 'web', runtimeId: 'web-2' })];
+    const dbs = [dbRow({ id: 5, slug: 'orders', name: 'Orders DB', engine: 'postgres', volumeName: 'nd-db-oldpg-data', containerName: 'nd-db-orders' })];
+    const owner = { kind: 'database', refId: 5, name: 'Orders DB', engine: 'postgres', containerName: 'nd-db-orders' };
+    expect(resolveVolumeOwner(svcs, dbs, 'nd-db-oldpg-data')).toEqual(owner);
+    // An explicit claim also wins over a service attachment of the same volume.
+    const atts = [{ id: 9, serviceId: 2, volumeName: 'nd-db-oldpg-data', containerPath: '/d', readOnly: false, createdAt: NOW, updatedAt: NOW }];
+    expect(resolveVolumeOwner(svcs, dbs, 'nd-db-oldpg-data', atts)).toEqual(owner);
+    // Once the row is gone the retained volume is ownerless again.
+    expect(resolveVolumeOwner(svcs, [], 'nd-db-oldpg-data')).toBeNull();
+  });
+
   it('resolveVolumeOwnerWithSharing reports how many other services also attach the volume', () => {
     const svcs = [
       svcRow({ id: 2, slug: 'web', name: 'web', runtimeId: 'web-2' }),

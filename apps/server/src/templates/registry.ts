@@ -76,8 +76,13 @@ export function getBundledTemplates(): Template[] {
   return bundledList();
 }
 
-/** In-memory cache: one successful load per source string. */
-const memo = new Map<string, Template[]>();
+/** F616: a degraded (fallback) result is retried after this window. */
+const FALLBACK_RETRY_MS = 60_000;
+
+/** In-memory cache per source string. F616: remote loads expire with the
+ *  disk-cache TTL and fallback results after FALLBACK_RETRY_MS, so a transient
+ *  outage at first load no longer pins the bundled list for the process life. */
+const memo = new Map<string, { templates: Template[]; expiresAt: number }>();
 
 /** Drop cached registries (after a source change, and in tests). */
 export function invalidateTemplateCache(): void {
@@ -149,20 +154,23 @@ export async function getTemplates(db: DB | null): Promise<Template[]> {
   if (!source) return bundledList();
 
   const memoized = memo.get(source);
-  if (memoized) return memoized;
+  if (memoized && Date.now() < memoized.expiresAt) return memoized.templates;
 
   let templates: Template[];
+  let ttl = Number.POSITIVE_INFINITY;
   try {
     // r655: plain http still loads — Settings refuses it for new values, and
     // a stored/env one is flagged by Doctor (templates_source_plaintext)
     // instead of silently emptying the Hub on upgrade.
     if (/^https?:\/\//i.test(source)) {
       templates = (await freshCache(source)) ?? (await fetchRemote(source));
+      ttl = CACHE_TTL_MS;
     } else {
       templates = readBundleFile(source);
     }
   } catch {
     // Source failed → stale cache is better than nothing → bundled is guaranteed.
+    ttl = FALLBACK_RETRY_MS;
     try {
       const stale = JSON.parse(readFileSync(cachePath(), 'utf8')) as { source?: string; templates?: unknown };
       if (stale.source === source && stale.templates) {
@@ -174,7 +182,7 @@ export async function getTemplates(db: DB | null): Promise<Template[]> {
       templates = bundledList();
     }
   }
-  memo.set(source, templates);
+  memo.set(source, { templates, expiresAt: Date.now() + ttl });
   return templates;
 }
 

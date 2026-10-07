@@ -1753,3 +1753,81 @@ describe('golden dynamic config is valid Traefik v3 (r638)', () => {
     }
   });
 });
+
+// ── F520: Traefik renders dynamic.yml as a Go template before the YAML ──────
+// Its file provider runs text/template (sprig func map, `env` included) over
+// the file. A tenant header value `{{ env `X` }}` executed and leaked the
+// Traefik container's env; a bare `{{` made Traefik refuse the whole file.
+describe('dynamic config is inert to Traefik templating (F520)', () => {
+  /** Go text/template, restricted to what may appear: lone string constants print themselves. */
+  function evalTemplate(src: string): string {
+    let out = '';
+    let i = 0;
+    for (;;) {
+      const open = src.indexOf('{{', i);
+      if (open === -1) return out + src.slice(i);
+      out += src.slice(i, open);
+      const close = src.indexOf('}}', open + 2);
+      if (close === -1) throw new Error('unclosed template action — Traefik refuses the file');
+      const action = src.slice(open + 2, close).trim();
+      const lit = /^"([^"\\]*)"$/.exec(action) ?? /^`([^`]*)`$/.exec(action);
+      if (!lit) throw new Error(`template action would execute: {{${action}}}`);
+      out += lit[1];
+      i = close + 2;
+    }
+  }
+  type Doc = { http: { middlewares: Record<string, { headers?: { customResponseHeaders?: Record<string, string> }; basicAuth?: { users: string[] } }> } };
+  const svcRow = { id: 1, slug: 'web', port: 3000, runtimeId: 'web-1' };
+  const row = (extra: Record<string, unknown>) => ({ id: 1, serviceId: 1, hostname: 'app.example.com', path: '/', ssl: false, status: 'active', ...extra });
+
+  it('keeps header values and basicAuth users literal, whatever braces they carry', async () => {
+    for (const value of ['{{ env `CF_DNS_API_TOKEN` }}', 'a {{ b', '{{{', '{{`{{`}}', '{x}']) {
+      const yaml = await renderDynamicConfig(makeDb([row({ headers: JSON.stringify([{ name: 'X-T', value }]) })], [svcRow]) as never, { serverId: null });
+      const doc = load(evalTemplate(yaml)) as Doc;
+      expect(doc.http.middlewares['mw_web_1_headers']?.headers?.customResponseHeaders).toEqual({ 'X-T': value });
+    }
+    const entry = '{{ env `CF_DNS_API_TOKEN` }}:$apr1$abcdefgh$0123456789abcdefghijkl';
+    const yaml = await renderDynamicConfig(makeDb([row({ basicAuth: JSON.stringify([entry]) })], [svcRow]) as never, { serverId: null });
+    expect((load(evalTemplate(yaml)) as Doc).http.middlewares['mw_web_1_auth']?.basicAuth?.users).toEqual([entry]);
+  });
+});
+
+// ── F521: Traefik's default priority is the rule's LENGTH ───────────────────
+// `HostRegexp(^[a-zA-Z0-9-]+\.example\.com$)` is longer than
+// `Host(admin.example.com)`, so a wildcard took every request for an exact
+// host it covers — past that domain's basicAuth / ipAllowList.
+describe('exact hosts out-rank a covering wildcard (F521)', () => {
+  type Router = { rule: string; entryPoints: string[]; priority?: number; middlewares?: string[] };
+  const svcRows = [
+    { id: 1, slug: 'tenants', port: 3000, runtimeId: 'tenants-1' },
+    { id: 2, slug: 'admin', port: 4000, runtimeId: 'admin-1' },
+  ];
+  const auth = JSON.stringify(['ops:$apr1$abcdefgh$0123456789abcdefghijkl']);
+  const routers = async (rows: unknown[]) =>
+    (load(await renderDynamicConfig(makeDb(rows, svcRows) as never, { serverId: null })) as { http: { routers: Record<string, Router> } }).http.routers;
+  const prio = (r: Router | undefined) => r?.priority ?? r?.rule.length ?? 0;
+
+  it('ranks the exact router and its https twin above the wildcard; uncovered hosts keep the default', async () => {
+    const r = await routers([
+      { id: 1, serviceId: 1, hostname: '*.example.com', path: '/api/v1/long/prefix', ssl: false, status: 'active' },
+      { id: 2, serviceId: 1, hostname: 'admin.example.com', path: '/', ssl: true, status: 'active', basicAuth: auth },
+      { id: 3, serviceId: 2, hostname: 'admin.example.com', path: '/api', ssl: false, status: 'active' },
+      { id: 4, serviceId: 2, hostname: 'other.example.org', path: '/', ssl: false, status: 'active' },
+    ]);
+    const wildcard = prio(r['tenants_1']);
+    expect(prio(r['tenants_2'])).toBeGreaterThan(wildcard);
+    expect(prio(r['tenants_2_http'])).toBe(prio(r['tenants_2']));
+    expect(r['tenants_2']?.middlewares).toEqual(['mw_tenants_2_auth']);
+    // Path precedence among the exact routers is kept.
+    expect(prio(r['admin_3'])).toBeGreaterThan(prio(r['tenants_2_http']));
+    expect(r['admin_4']?.priority).toBeUndefined();
+  });
+
+  it('adds no priority when the wildcard does not route (pending)', async () => {
+    const r = await routers([
+      { id: 1, serviceId: 1, hostname: '*.example.com', path: '/', ssl: false, status: 'pending' },
+      { id: 2, serviceId: 2, hostname: 'admin.example.com', path: '/', ssl: false, status: 'active' },
+    ]);
+    expect(r['admin_2']?.priority).toBeUndefined();
+  });
+});

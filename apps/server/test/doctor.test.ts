@@ -193,6 +193,36 @@ describe('doctor scan', () => {
     expect(report.host.dockerImagesBytes).toBeGreaterThan(0);
   });
 
+  it('F528: an unreadable `docker ps` fails the scan instead of reporting every running service as gone', async () => {
+    host.containers = [{ Names: 'nd-web-1', State: 'running', Image: 'nginx' }];
+    const base = ex.capture.getMockImplementation()!;
+    ex.capture.mockImplementation(async (cmd: string, args: string[]) => {
+      if (args[0] === 'ps') throw new Error('Cannot connect to the Docker daemon');
+      return base(cmd, args);
+    });
+    const updates: Array<Record<string, unknown>> = [];
+    const db = createFakeDb({
+      select: { services: [svcRow()] },
+      update: { services: (value) => { updates.push(value); return [value]; } },
+    });
+    await expect(scanDoctor(db)).rejects.toThrow('Cannot connect to the Docker daemon');
+    await expect(fixDoctorFinding(db, 'service_runtime_desync:1', vi.fn())).rejects.toThrow('Cannot connect');
+    expect(updates).toEqual([]);
+  });
+
+  it('F529: exited siblings of a live compose stack are not removable junk; a deleted stack\'s leftovers are', async () => {
+    host.containers = [
+      { Names: 'ndcmp-shop-app-1', State: 'running', Image: 'shop' },
+      { Names: 'ndcmp-shop-db-1', State: 'exited', Image: 'postgres:17' },
+      { Names: 'ndcmp-gone-app-1', State: 'exited', Image: 'x' },
+    ];
+    const db = createFakeDb({ select: { services: [svcRow({ id: 9, slug: 'shop', type: 'compose', runtimeId: 'ndcmp-shop-app-1' })] } });
+    const report = await scanDoctor(db);
+    expect(report.findings.filter((f) => f.kind === 'exited_container').map((f) => f.id)).toEqual(['exited_container:ndcmp-gone-app-1']);
+    await expect(fixDoctorFinding(db, 'exited_container:ndcmp-shop-db-1', vi.fn())).resolves.toBeNull();
+    expect(ex.run).not.toHaveBeenCalled();
+  });
+
   it('flags a deploy frozen in queued past the stale window', async () => {
     const report = await scanDoctor(createFakeDb({
       select: { deployments: [{ id: 55, status: 'queued', createdAt: new Date(Date.now() - 10 * 3600_000) }] },

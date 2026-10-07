@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readSync } from 'node:fs';
 import type { ProcessDescription } from 'pm2';
 import pm2 from 'pm2';
 import type { Builder } from '../types.js';
@@ -33,10 +33,20 @@ const withPm2 = async <T>(fn: () => Promise<T>): Promise<T> => {
  * restart), taking bare-metal deployments with it; the ninedeploy-pm2 systemd
  * unit resurrects this dump at boot, so it must reflect every lifecycle
  * change. Best-effort: a dump failure must not fail the lifecycle operation.
+ *
+ * F236: pm2's `dump(cb)` REFUSES an empty process list and keeps the old dump
+ * file, so deleting the last process left it in dump.pm2 and the boot
+ * resurrect brought a deleted service back. `force` (pm2's `dump(true, cb)`)
+ * writes the list even when empty; callers pass it only after a delete that
+ * really removed a process from this daemon.
  */
-const dumpProcessList = async (): Promise<void> => {
+const dumpProcessList = async (force = false): Promise<void> => {
   try {
-    await new Promise<void>((res) => pm2.dump(() => res()));
+    await new Promise<void>((res) =>
+      force
+        ? (pm2 as unknown as { dump: (force: boolean, cb: () => void) => void }).dump(true, () => res())
+        : pm2.dump(() => res()),
+    );
   } catch {
     /* best-effort: never fail the lifecycle operation over a dump */
   }
@@ -48,8 +58,14 @@ const dumpProcessList = async (): Promise<void> => {
  * `script: 'node', args: 'dist/index.js'`, and `npm start` must become
  * `script: 'npm', args: 'start'`. Without this, PM2 treats the whole string as
  * a (non-existent) script path.
+ *
+ * F237: PM2 execs `script` directly (interpreter 'none'), so shell syntax in
+ * the command — `$PORT`, a `VAR=x` prefix, `&&`, pipes, quotes, globs — only
+ * works through a shell, exactly as install/build commands run (`sh -c`).
  */
-function parseStartCommand(cmd: string): { script: string; args: string } {
+const SHELL_SYNTAX = /[$`;&|<>(){}*?~"'\\#\n]|^[A-Za-z_][A-Za-z0-9_]*=/;
+function parseStartCommand(cmd: string): { script: string; args: string | string[] } {
+  if (SHELL_SYNTAX.test(cmd.trim())) return { script: 'sh', args: ['-c', cmd.trim()] };
   const parts = cmd.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return { script: 'npm', args: 'start' };
   return { script: parts[0]!, args: parts.slice(1).join(' ') };
@@ -156,8 +172,8 @@ export const pm2Builder: Builder = {
 
   async stop(runtimeId) {
     await withPm2(async () => {
-      await new Promise<void>((res) => pm2.delete(runtimeId, () => res()));
-      await dumpProcessList();
+      const deleted = await new Promise<boolean>((res) => pm2.delete(runtimeId, (err) => res(!err)));
+      await dumpProcessList(deleted);
     }).catch(() => undefined);
   },
 };
@@ -226,6 +242,13 @@ export async function pm2Resurrect(): Promise<void> {
   ).catch(() => undefined);
 }
 
+/**
+ * F238: PM2 log files are never rotated, so a tail reads at most this many
+ * bytes from the END of each file instead of loading the whole file (which
+ * blocked the event loop and, past V8's max string length, threw → no logs).
+ */
+const LOG_TAIL_WINDOW_BYTES = 1024 * 1024;
+
 /** Tail the last 300 lines of a process's combined stdout+stderr log files. */
 export async function pm2Logs(runtimeId: string): Promise<string> {
   return withPm2(async () => {
@@ -235,14 +258,29 @@ export async function pm2Logs(runtimeId: string): Promise<string> {
     const proc = procs.find((p) => p?.name === runtimeId);
     const tail = (file: string | undefined): string => {
       if (!file) return '';
+      let fd: number | undefined;
       try {
-        const lines = readFileSync(file, 'utf8').split('\n');
+        fd = openSync(file, 'r');
+        const size = fstatSync(fd).size;
+        const start = Math.max(0, size - LOG_TAIL_WINDOW_BYTES);
+        const buf = Buffer.alloc(size - start);
+        let got = 0;
+        while (got < buf.length) {
+          const n = readSync(fd, buf, got, buf.length - got, start + got);
+          if (n === 0) break;
+          got += n;
+        }
+        const lines = buf.subarray(0, got).toString('utf8').split('\n');
+        // A window that starts mid-file starts mid-line: drop that fragment.
+        if (start > 0 && lines.length > 1) lines.shift();
         // A trailing newline yields a final empty element — drop it so joined
         // out+err logs don't end in a stray blank line.
         if (lines[lines.length - 1] === '') lines.pop();
         return lines.slice(-300).join('\n');
       } catch {
         return '';
+      } finally {
+        if (fd !== undefined) closeSync(fd);
       }
     };
     return [tail(proc?.pm2_env?.pm_out_log_path), tail(proc?.pm2_env?.pm_err_log_path)].filter(Boolean).join('\n');

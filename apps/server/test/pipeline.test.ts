@@ -2304,7 +2304,7 @@ describe('r353: source fan-out and Git credentials', () => {
     // The node answers every op; the new container is reported running.
     h.agentOp.mockImplementation(async (...args: unknown[]) =>
       args[2] === 'docker.inspect'
-        ? { exitCode: 0, lines: ['running|10.0.0.9'] }
+        ? { exitCode: 0, lines: ['running|none|0|0'] }
         : args[2] === 'agent.ping'
           ? { exitCode: 0, lines: ['ND-AGENT {"version":"0.10.42","caps":["build-path-guard","workspace.remove"]}'] }
           : { exitCode: 0, lines: [] },
@@ -2441,5 +2441,156 @@ describe('r520: railpack on an install that cannot run it', () => {
     baseSetup(other.db);
     await runDeployment(other.db as never, 1);
     expect(h.railpackUnavailableReason).not.toHaveBeenCalled();
+  });
+});
+
+describe('F860: a template service with a second attached database', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    logBus.removeAllListeners();
+    h.builder.buildAndRun.mockImplementation(async () => ({ runtimeId: 'c-1', port: 3000, healthPath: '/' }));
+    h.builder.isHealthy.mockImplementation(async () => true);
+    h.writeDynamicConfig.mockImplementation(async () => undefined);
+    h.connectionString.mockImplementation(((d: { engine: string; internalHost: string }) => `${d.engine}://${d.internalHost}`) as never);
+  });
+
+  afterEach(() => {
+    h.connectionString.mockImplementation(() => 'postgres://db/app');
+    delete (h.ENGINES as Record<string, unknown>).redis;
+  });
+
+  const mysqlWp = { id: 10, engine: 'mysql', status: 'running', internalHost: 'nd-db-wp', internalPort: 3306, passwordEncrypted: 'wp-secret', dbName: 'app' };
+  const redisCache = { id: 11, engine: 'redis', status: 'running', internalHost: 'nd-db-cache', internalPort: 6379, passwordEncrypted: 'redis-secret', dbName: null };
+
+  it.each([
+    ['template database attached first', [10, 11]],
+    ['cache attached first', [11, 10]],
+  ])('maps the contract onto the template database only, and the cache keeps REDIS_URL (%s)', async (_label, order) => {
+    (h.ENGINES as Record<string, unknown>).redis = { port: 6379, username: () => undefined, dbName: () => undefined };
+    const { db } = makeDb();
+    baseSetup(db, {
+      image: 'wordpress:6',
+      port: 80,
+      templateId: 'wordpress',
+      templateDatabaseEnv: { WORDPRESS_DB_HOST: 'hostPort', WORDPRESS_DB_PASSWORD: 'password' },
+    });
+    // The reconcile hands back the template's own database row.
+    h.reconcileTemplateDependencies.mockResolvedValueOnce({ database: { ...mysqlWp, slug: 'wp-db' }, alreadyAttached: true } as never);
+    const byId: Record<number, unknown> = { 10: mysqlWp, 11: redisCache };
+    const alias: Record<number, string> = { 10: 'DATABASE_URL', 11: 'REDIS_URL' };
+    db.query.databaseAttachments.findMany.mockResolvedValue(order.map((id, i) => ({ id: i + 1, serviceId: 5, databaseId: id, envAlias: alias[id] })));
+    let n = 0;
+    db.query.databases.findFirst.mockImplementation(async () => byId[order[n++ % order.length]!]);
+
+    await runDeployment(db as never, 1);
+
+    const [ctx] = h.builder.buildAndRun.mock.calls.at(-1) as [{ env: Record<string, string> }];
+    // Before the fix the redis attachment (last) won: WORDPRESS_DB_HOST=nd-db-cache:6379, REDIS_URL unset.
+    expect(ctx.env).toMatchObject({
+      WORDPRESS_DB_HOST: 'nd-db-wp:3306',
+      WORDPRESS_DB_PASSWORD: 'dec:wp-secret',
+      REDIS_URL: 'redis://nd-db-cache',
+    });
+    expect(ctx.env).not.toHaveProperty('DATABASE_URL');
+  });
+});
+
+describe('F861: an error the pipeline does not handle itself settles the row', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    logBus.removeAllListeners();
+    h.builder.buildAndRun.mockImplementation(async () => ({ runtimeId: 'c-1', port: 3000, healthPath: '/' }));
+    h.builder.isHealthy.mockImplementation(async () => true);
+    h.writeDynamicConfig.mockImplementation(async () => undefined);
+  });
+
+  it('marks the deployment failed when the "deploying" write throws, and still rejects', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { image: 'nginx:latest' });
+    const plainUpdate = db.update.getMockImplementation()!;
+    let thrown = false;
+    db.update.mockImplementation((table: unknown) => {
+      const builder = plainUpdate(table) as { set: (values: Record<string, unknown>) => unknown };
+      return {
+        set: (values: Record<string, unknown>) => {
+          if (!thrown && table === services && values.status === 'deploying') {
+            thrown = true;
+            throw new Error('SQLITE_BUSY: database is locked');
+          }
+          return builder.set(values);
+        },
+      };
+    });
+    const lines = collectLogs(1);
+
+    await expect(runDeployment(db as never, 1)).rejects.toThrow('SQLITE_BUSY');
+
+    // Before the fix the last deployment write was the claim (`building`): the
+    // row stayed `building`, blocking the service's queue until the 45-min sweep.
+    const depWrites = updates.filter((u) => u.table === deployments).map((u) => u.values.status);
+    expect(depWrites.at(-1)).toBe('failed');
+    expect(lines).toContain('✗ Deployment failed: SQLITE_BUSY: database is locked');
+    expect(h.builder.buildAndRun).not.toHaveBeenCalled();
+  });
+});
+
+describe('F881: the run signals end-of-log only after its final settle', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    logBus.removeAllListeners();
+    h.builder.buildAndRun.mockImplementation(async () => ({ runtimeId: 'c-1', port: 3000, healthPath: '/' }));
+    h.builder.isHealthy.mockImplementation(async () => true);
+    h.writeDynamicConfig.mockImplementation(async () => undefined);
+  });
+
+  it('a proxy swap that fails after the row was finalized `running` still writes its lines before the end signal', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { runtimeId: 'old-c', port: 8080, commitSha: 'oldsha1' });
+    h.builder.buildAndRun.mockResolvedValue({ runtimeId: 'c-2', port: 3000, healthPath: '/' });
+    const duringSwap: { finalized: boolean; writing: boolean }[] = [];
+    h.writeDynamicConfig.mockImplementation(async () => {
+      duringSwap.push({
+        finalized: updates.some((u) => u.table === deployments && u.values.status === 'running'),
+        writing: logBus.isWriting(1),
+      });
+      throw new Error('ENOSPC: no space left on device');
+    });
+    const seen: string[] = [];
+    logBus.subscribe(
+      1,
+      (line) => seen.push(line),
+      () => seen.push('<END>'),
+    );
+
+    await runDeployment(db as never, 1);
+
+    // The row was already `running` while the swap ran — and the log was still being written.
+    expect(duringSwap).toEqual([
+      { finalized: true, writing: true },
+      { finalized: true, writing: true },
+    ]);
+    expect(seen.filter((l) => l === '<END>')).toHaveLength(1);
+    expect(seen.at(-1)).toBe('<END>');
+    const revert = seen.findIndex((l) => l.includes('Reverting to the previous runtime'));
+    expect(revert).toBeGreaterThan(-1);
+    expect(revert).toBeLessThan(seen.indexOf('<END>'));
+    expect(logBus.isWriting(1)).toBe(false);
+  });
+
+  it("F861's failUnsettledDeployment line precedes the end signal", async () => {
+    const { db } = makeDb();
+    baseSetup(db, { image: 'nginx:latest' });
+    db.query.buildConfigs.findFirst.mockRejectedValue(new Error('SQLITE_BUSY: database is locked'));
+    const seen: string[] = [];
+    logBus.subscribe(
+      1,
+      (line) => seen.push(line),
+      () => seen.push('<END>'),
+    );
+
+    await expect(runDeployment(db as never, 1)).rejects.toThrow('SQLITE_BUSY');
+
+    expect(seen).toEqual(['✗ Deployment failed: SQLITE_BUSY: database is locked', '<END>']);
+    expect(logBus.isWriting(1)).toBe(false);
   });
 });

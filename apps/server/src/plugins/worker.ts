@@ -73,7 +73,8 @@ interface InterruptedRow {
 
 declare module 'fastify' {
   interface FastifyInstance {
-    worker: { stop: () => Promise<void> };
+    /** F828: `start()` resumes a worker `stop()` paused (a no-op while running or after close). */
+    worker: { stop: () => Promise<void>; start: () => void };
   }
 }
 
@@ -116,12 +117,31 @@ export default fp(
      * accumulated ~43 000 dead handles per slot per day.
      */
     const timers = new Set<NodeJS.Timeout>();
+    /**
+     * F829: ticks between "decided to claim" and "run pushed to `currents`".
+     * stop() waits for these before it snapshots `currents`.
+     */
+    const launches = new Set<Promise<void>>();
+    const beginLaunch = (): (() => void) => {
+      let done!: () => void;
+      const p = new Promise<void>((r) => {
+        done = r;
+      });
+      launches.add(p);
+      void p.then(() => launches.delete(p));
+      return done;
+    };
+    /** F828: bumped by start(), so a tick from before a stop/start cycle can never re-arm a loop. */
+    let generation = 0;
+    let closed = false;
+    const live = (gen: number): boolean => running && gen === generation;
 
     /** Queue the next poll, self-removing so the set only holds live timers. */
     const schedule = (delayMs: number): void => {
+      const gen = generation;
       const t = setTimeout(() => {
         timers.delete(t);
-        void tick();
+        void tick(gen);
       }, delayMs);
       t.unref?.();
       timers.add(t);
@@ -171,6 +191,10 @@ export default fp(
           logBus.publish(row.deploymentId, `Removed the container(s) this deploy had started: ${removedContainers.join(', ')}`);
         }
       }
+      // F881: the row is failed and the recovery's last line is written — end
+      // the log stream of anyone still following the dead run (a throw above
+      // is caught by the WS route's periodic settle re-check instead).
+      logBus.end(row.deploymentId);
       // The service row still says `deploying`. The previous runtime (if any)
       // was never retired — the pipeline only does that after a successful
       // routing flip — so hand it back to the runtime-state reconcile as
@@ -296,7 +320,7 @@ export default fp(
     // claimed again (nextClaimable skips services with a build in flight) and,
     // at the default concurrency of 1, it held the local partition's only
     // slot. Re-run it so such rows resume once they cross the stale cutoff.
-    const sweepTimer = setInterval(() => void sweepStaleBuilding(), STALE_SWEEP_EVERY_MS);
+    let sweepTimer = setInterval(() => void sweepStaleBuilding(), STALE_SWEEP_EVERY_MS);
     sweepTimer.unref?.();
 
     /** The oldest queued deployment of a service with nothing in `building`,
@@ -342,8 +366,11 @@ export default fp(
       return next;
     };
 
-    const tick = async () => {
-      if (!running) return;
+    const tick = async (gen: number) => {
+      if (!live(gen)) return;
+      let launched: (() => void) | undefined;
+      // F881: a claimed deployment whose run was not handed to `tracked` yet.
+      let claimedRun: number | undefined;
       try {
         // r238: selection + claim are serialized across slots, so two slots
         // can never both read a partition as having a free seat and overfill
@@ -351,6 +378,11 @@ export default fp(
         const picked = await withClaimLock(async () => {
           const queued = await nextClaimable();
           if (!queued) return undefined;
+          // F829: stop() ran while the selection was suspended. Claiming now
+          // would start a pipeline after stop() returned (the import swaps
+          // the database next; onClose lets the process exit).
+          if (!live(gen)) return undefined;
+          launched = beginLaunch();
           // Atomically claim: only flip queued→building if still queued, then
           // verify we won the claim via rowsAffected. A single-row update
           // affects exactly 1 row on success, so `=== 1` is a precise win test.
@@ -372,7 +404,14 @@ export default fp(
             ))) as
             | { rowsAffected?: number }
             | undefined;
-          if (claimed?.rowsAffected === 1) return queued;
+          if (claimed?.rowsAffected === 1) {
+            // F881: this claim writes the deploy log from here on — a cancel
+            // before the pipeline starts must not end the log stream ahead of
+            // the run's own lines.
+            logBus.beginRun(queued.id);
+            claimedRun = queued.id;
+            return queued;
+          }
           fastify.log.info({ deploymentId: queued.id }, 'deployment already claimed, skipping');
           return undefined;
         });
@@ -430,7 +469,9 @@ export default fp(
                 currents.splice(currents.indexOf(tracked), 1);
                 inFlight.delete(queued.id);
                 inFlightServices.delete(queued.serviceId);
+                logBus.end(queued.id); // F881: the run has settled — its last line is written
               });
+            claimedRun = undefined;
             currents.push(tracked);
             inFlight.add(queued.id);
             inFlightServices.add(queued.serviceId);
@@ -438,7 +479,10 @@ export default fp(
       } catch (err) {
         fastify.log.error({ err }, 'worker tick failed');
       } finally {
-        if (running) schedule(POLL_MS);
+        // F881: claimed but never launched — release the claim's writer mark.
+        if (claimedRun !== undefined) logBus.end(claimedRun);
+        launched?.();
+        if (live(gen)) schedule(POLL_MS);
       }
     };
 
@@ -456,12 +500,31 @@ export default fp(
           t.unref();
         });
         await Promise.race([
-          Promise.allSettled([...currents]).then(() => undefined),
+          // F829: a tick past its claim still launches its run — wait for it
+          // first so that run is in `currents` when it is snapshotted.
+          Promise.allSettled([...launches])
+            .then(() => Promise.allSettled([...currents]))
+            .then(() => undefined),
           grace,
         ]);
       },
+      // F828: a failed system import stop()s the worker, restores the original
+      // database and keeps serving — without this nothing ever polled again
+      // until the next restart.
+      start: () => {
+        if (running || closed) return;
+        running = true;
+        generation++;
+        sweepTimer = setInterval(() => void sweepStaleBuilding(), STALE_SWEEP_EVERY_MS);
+        sweepTimer.unref?.();
+        for (let slot = 0; slot < config.deployConcurrency; slot++) {
+          schedule(POLL_MS + slot * 100);
+        }
+        fastify.log.info({ concurrency: config.deployConcurrency }, 'deploy worker resumed');
+      },
     });
     fastify.addHook('onClose', async () => {
+      closed = true;
       await fastify.worker.stop();
     });
 

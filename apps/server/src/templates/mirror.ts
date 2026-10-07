@@ -33,7 +33,8 @@ const HEADER_LINE = /^#\s*([a-z]+):\s*(.*)$/;
 /** Upstream header comments: documentation, slogan, category, tags, logo, port, ignore, minversion. */
 export function parseHeader(raw: string): Record<string, string> {
   const header: Record<string, string> = {};
-  for (const line of raw.split('\n')) {
+  // F318: CRLF checkouts — `.` in HEADER_LINE never matches the trailing '\r'.
+  for (const line of raw.split(/\r?\n/)) {
     if (!line.startsWith('#')) {
       if (line.trim() === '') continue;
       break; // headers end at the first non-comment, non-blank line
@@ -88,7 +89,10 @@ export function extractConfigurableEnv(composeContent: string): Template['env'] 
   const found = new Map<string, string>();
   for (const m of composeContent.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*):-([^}]*)\}/g)) {
     const key = m[1];
-    if (key && !key.startsWith('SERVICE_')) found.set(key, m[2]!);
+    // F316: an interpolating default (`${A:-${B}}`, `$B`, `$$`) is not a literal
+    // value — as an env row it is stored verbatim (and truncated at the first
+    // `}`), so A becomes SET to unresolved text and compose's default never runs.
+    if (key && !key.startsWith('SERVICE_') && !m[2]!.includes('$')) found.set(key, m[2]!);
   }
   return [...found.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
@@ -163,6 +167,11 @@ export function convertCoolifyComposeFile(fileName: string, raw: string): Mirror
       )
     ) {
       return { skip: true, reason: `service '${name}' publishes host ports` };
+    }
+    // F317: host networking binds EVERY container port on the host with no
+    // `ports:` key at all (and `$` can smuggle it in via interpolation).
+    if (typeof entry.network_mode === 'string' && (entry.network_mode.trim() === 'host' || entry.network_mode.includes('$'))) {
+      return { skip: true, reason: `service '${name}' uses host networking` };
     }
   }
 

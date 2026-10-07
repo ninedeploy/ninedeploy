@@ -498,7 +498,9 @@ describe('dockerBuilder.buildAndRun', () => {
 
     await expect(dockerBuilder.buildAndRun(ctx as never)).rejects.toThrow('name conflict');
 
-    const runArgs = h.run.mock.calls.at(-1)![1] as unknown[];
+    // F524: the failed start is followed by removal of this deploy's candidate.
+    expect(h.run.mock.calls.at(-1)![1]).toEqual(['rm', '-f', 'web-3']);
+    const runArgs = h.run.mock.calls.findLast((c) => (c[1] as unknown[])[0] === 'run')![1] as unknown[];
     const file = envFilePath(runArgs);
     expect(file).toBeTruthy();
     expect(existsSync(file)).toBe(false);
@@ -703,7 +705,7 @@ describe('dockerBuilder.isHealthy', () => {
     expect(h.capture).toHaveBeenCalledWith('docker', [
       'inspect', 'r',
       '--format', '{{.State.Status}}|{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}',
-    ]);
+    ], { timeoutMs: 10_000 }); // F870: containerIp is bounded
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

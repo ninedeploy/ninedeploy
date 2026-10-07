@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { deployToTargets, listFanoutCandidates, pullableReleaseRef, recordFanoutResults, teardownTargets } from '../src/engine/fanout.js';
+import { deployToTargets as deployToTargetsNow, listFanoutCandidates, pullableReleaseRef, recordFanoutResults, teardownTargets } from '../src/engine/fanout.js';
 import { createFakeDb } from './helpers.js';
 
 const agentMocks = vi.hoisted(() => ({ agentOp: vi.fn() }));
@@ -31,6 +31,22 @@ function dbWithTargets(rows: Array<{ serverId: number; runtimeId: string | null 
   return createFakeDb({ select: { serviceTargets: rows } });
 }
 
+/** F117: the target state check polls (stable samples, 2 s apart) — every call here runs on fake time. */
+async function deployToTargets(...args: Parameters<typeof deployToTargetsNow>) {
+  vi.useFakeTimers();
+  try {
+    let done = false;
+    const run = deployToTargetsNow(...args).finally(() => {
+      done = true;
+    });
+    run.catch(() => undefined);
+    for (let i = 0; i < 400 && !done; i++) await vi.advanceTimersByTimeAsync(500);
+    return await run;
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
 describe('multi-server fan-out (phase 1)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -39,7 +55,7 @@ describe('multi-server fan-out (phase 1)', () => {
 
   it('pushes the release to each extra node: login, pull, run, health', async () => {
     agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string, params: Record<string, unknown>) => {
-      if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|10.0.0.9'] };
+      if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|none|0|0'] };
       if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${params.name}.env`] };
       return { exitCode: 0, lines: [] };
     });
@@ -53,14 +69,15 @@ describe('multi-server fan-out (phase 1)', () => {
     expect(results).toEqual([{ serverId: 5, runtimeId: 'web-t5-9', ok: true, error: undefined }]);
     const ops = agentMocks.agentOp.mock.calls.map((c) => c[2]);
     // No registryAuth in this context — the login op is skipped.
-    expect(ops).toEqual(['docker.pull', 'file.writeEnv', 'docker.runEnv', 'file.deleteEnv', 'docker.inspect']);
+    // F117: three consecutive stable samples before the node counts as serving.
+    expect(ops).toEqual(['docker.pull', 'file.writeEnv', 'docker.runEnv', 'file.deleteEnv', 'docker.inspect', 'docker.inspect', 'docker.inspect']);
     const run = agentMocks.agentOp.mock.calls.find((c) => c[2] === 'docker.runEnv')![3] as Record<string, unknown>;
     expect(run).toMatchObject({ name: 'web-t5-9', image: 'nginx:1.25@sha256:abc' });
   });
 
   it('r267: sends multi-line env values escaped, as the local builder writes them', async () => {
     agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string) =>
-      op === 'docker.inspect' ? { exitCode: 0, lines: ['running|10.0.0.9'] } : { exitCode: 0, lines: [] },
+      op === 'docker.inspect' ? { exitCode: 0, lines: ['running|none|0|0'] } : { exitCode: 0, lines: [] },
     );
     const db = dbWithTargets([{ serverId: 5, runtimeId: null }]);
     await deployToTargets(
@@ -87,7 +104,7 @@ describe('multi-server fan-out (phase 1)', () => {
   });
 
   it('r226: retires the previous target generation only AFTER the new one runs', async () => {
-    agentMocks.agentOp.mockResolvedValue({ exitCode: 0, lines: ['running|10.0.0.9'] });
+    agentMocks.agentOp.mockResolvedValue({ exitCode: 0, lines: ['running|none|0|0'] });
     const db = dbWithTargets([{ serverId: 5, runtimeId: 'web-t5-8' }]);
     await deployToTargets(db as never, { service: svc, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null }, vi.fn());
     const ops = agentMocks.agentOp.mock.calls.map((c) => `${c[2]} ${(c[3] as { name?: string }).name ?? ''}`.trim());
@@ -108,11 +125,56 @@ describe('multi-server fan-out (phase 1)', () => {
   });
 
   it('r226: a host-port publish still retires the old container first', async () => {
-    agentMocks.agentOp.mockResolvedValue({ exitCode: 0, lines: ['running|10.0.0.9'] });
+    agentMocks.agentOp.mockResolvedValue({ exitCode: 0, lines: ['running|none|0|0'] });
     const db = dbWithTargets([{ serverId: 5, runtimeId: 'web-t5-8' }]);
     await deployToTargets(db as never, { service: { ...svc, publishedPort: 8080 }, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null }, vi.fn());
     const ops = agentMocks.agentOp.mock.calls.map((c) => `${c[2]} ${(c[3] as { name?: string }).name ?? ''}`.trim());
     expect(ops.indexOf('docker.rm web-t5-8')).toBeLessThan(ops.indexOf('docker.runEnv web-t5-9'));
+  });
+
+  // F116: `docker run -d` failing after create left a Created container that
+  // no row tracked — the result keeps the OLD runtime, so nothing removed it.
+  it('F116: removes the Created container of a failed target start, never the tracked one', async () => {
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string) => {
+      if (op === 'docker.runEnv') throw new Error('agent docker.runEnv exited with 125: port is already allocated');
+      return { exitCode: 0, lines: [] };
+    });
+    const db = dbWithTargets([{ serverId: 5, runtimeId: 'web-t5-8' }]);
+    const results = await deployToTargets(db as never, { service: svc, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null }, vi.fn());
+    expect(results).toEqual([{ serverId: 5, runtimeId: 'web-t5-8', ok: false, error: 'agent docker.runEnv exited with 125: port is already allocated' }]);
+    const removed = agentMocks.agentOp.mock.calls.filter((c) => c[2] === 'docker.rm').map((c) => (c[3] as { name: string }).name);
+    expect(removed).toEqual(['web-t5-9']);
+
+    // A re-run of the same deployment whose row already tracks that name.
+    agentMocks.agentOp.mockClear();
+    await deployToTargets(dbWithTargets([{ serverId: 5, runtimeId: 'web-t5-9' }]) as never, { service: svc, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null }, vi.fn());
+    expect(agentMocks.agentOp.mock.calls.some((c) => c[2] === 'docker.rm')).toBe(false);
+  });
+
+  // F117: the first `running` sample was the verdict — a crash-looping
+  // container (running between crashes) retired the proven generation.
+  it('F117: a crash-looping target container is refused and the proven one keeps serving', async () => {
+    const samples = ['running|none|0|0', 'restarting|none|0|1', 'running|none|0|1', 'restarting|none|0|2', 'running|none|0|3'];
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string, params: Record<string, unknown>) => {
+      if (op === 'docker.inspect') {
+        expect(params).toMatchObject({ name: 'web-t5-9', format: 'health' });
+        return { exitCode: 0, lines: [samples.shift() ?? 'running|none|0|9'] };
+      }
+      return { exitCode: 0, lines: [] };
+    });
+    const results = await deployToTargets(dbWithTargets([{ serverId: 5, runtimeId: 'web-t5-8' }]) as never, { service: svc, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null }, vi.fn());
+    expect(results).toEqual([{ serverId: 5, runtimeId: 'web-t5-8', ok: false, error: 'container did not reach running state' }]);
+    const touched = agentMocks.agentOp.mock.calls.filter((c) => c[2] === 'docker.stop' || c[2] === 'docker.rm').map((c) => `${c[2]} ${(c[3] as { name: string }).name}`);
+    expect(touched).toEqual(['docker.stop web-t5-9', 'docker.rm web-t5-9']);
+
+    // A stable run: the proven container is retired only after the third good sample.
+    agentMocks.agentOp.mockClear();
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string) => ({ exitCode: 0, lines: op === 'docker.inspect' ? ['running|none|0|0'] : [] }));
+    const ok = await deployToTargets(dbWithTargets([{ serverId: 5, runtimeId: 'web-t5-8' }]) as never, { service: svc, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null }, vi.fn());
+    expect(ok[0]).toMatchObject({ runtimeId: 'web-t5-9', ok: true });
+    const ops = agentMocks.agentOp.mock.calls.map((c) => `${c[2]} ${(c[3] as { name?: string }).name ?? ''}`.trim());
+    expect(ops.filter((o) => o === 'docker.inspect web-t5-9')).toHaveLength(3);
+    expect(ops.indexOf('docker.stop web-t5-8')).toBeGreaterThan(ops.lastIndexOf('docker.inspect web-t5-9'));
   });
 
   it('r226: turns a local image ID into a reference a node can pull', async () => {
@@ -129,7 +191,7 @@ describe('multi-server fan-out (phase 1)', () => {
   it('builds the pinned commit on each target node for source releases', async () => {
     agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string, params: Record<string, unknown>) => {
       if (op === 'agent.ping') return PING_CURRENT;
-      if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|10.0.0.9'] };
+      if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|none|0|0'] };
       if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${params.name}.env`] };
       return { exitCode: 0, lines: [] };
     });
@@ -275,7 +337,7 @@ describe('multi-server fan-out (phase 1)', () => {
   // private base image anonymously and every target failed.
   it('r526: logs into the registry BEFORE a target builds from source, and out after', async () => {
     agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string) =>
-      op === 'agent.ping' ? PING_CURRENT : op === 'docker.inspect' ? { exitCode: 0, lines: ['running|10.0.0.9'] } : { exitCode: 0, lines: [] },
+      op === 'agent.ping' ? PING_CURRENT : op === 'docker.inspect' ? { exitCode: 0, lines: ['running|none|0|0'] } : { exitCode: 0, lines: [] },
     );
     const db = dbWithTargets([{ serverId: 5, runtimeId: null }]);
     await deployToTargets(
@@ -302,7 +364,7 @@ describe('multi-server fan-out (phase 1)', () => {
     agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string) => {
       if (op === 'docker.login') throw new Error('agent docker.login exited with 1');
       if (op === 'agent.ping') return PING_CURRENT;
-      return op === 'docker.inspect' ? { exitCode: 0, lines: ['running|10.0.0.9'] } : { exitCode: 0, lines: [] };
+      return op === 'docker.inspect' ? { exitCode: 0, lines: ['running|none|0|0'] } : { exitCode: 0, lines: [] };
     });
     const db = dbWithTargets([{ serverId: 5, runtimeId: null }]);
     const log = vi.fn();

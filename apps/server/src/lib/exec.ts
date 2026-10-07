@@ -201,12 +201,22 @@ export function makeLineSplitter() {
  * Returns a cancel function to clear both timers once the child settles.
  */
 export function armTimeout(child: ChildProcess, timeoutMs: number, onTimeout: () => void): () => void {
+  // F908: once 'close' fired the child is reaped and its pid/pgid can be
+  // reused, so the SIGKILL escalation must never outlive it — cancel() is not
+  // enough (run()/capture() skip it after a timeout already settled them).
+  let closed = false;
+  let killTimer: ReturnType<typeof setTimeout> | undefined;
+  child.on('close', () => {
+    closed = true;
+    if (killTimer) clearTimeout(killTimer);
+  });
   // fire runs at most once: setTimeout fires once and cancel() clears it.
   const fire = () => {
     killTree(child, 'SIGTERM');
     onTimeout();
+    if (closed) return;
     // Escalate so a stuck process can never block shutdown forever.
-    const killTimer = setTimeout(() => killTree(child, 'SIGKILL'), 5000);
+    killTimer = setTimeout(() => killTree(child, 'SIGKILL'), 5000);
     killTimer.unref();
   };
   const timer = setTimeout(fire, timeoutMs);

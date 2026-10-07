@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { request as httpRequest } from 'node:http';
+import { isIPv6 } from 'node:net';
 import { servers, type DB } from '@ninedeploy/db';
 import { decrypt, randomToken } from './crypto.js';
 import { open as openSealed, seal } from './agentSeal.js';
@@ -116,6 +117,13 @@ function isTimeoutError(err: unknown): boolean {
   );
 }
 
+/**
+ * F892: the agent's base URL. A bare IPv6 literal (the SSH bootstrap accepts
+ * one and stores it whole) must be bracketed, or `http://2001:db8::1:4600`
+ * is not a URL at all.
+ */
+const agentBaseUrl = (host: string, port: number): string => `http://${isIPv6(host) ? `[${host}]` : host}:${port}`;
+
 /** Generate a fresh agent token (raw value stored encrypted, shown once). */
 export function generateAgentToken(): string {
   return randomToken(32);
@@ -162,7 +170,7 @@ async function supportsSealed(serverId: number, host: string, port: number): Pro
   const cached = sealedSupport.get(serverId);
   if (cached?.host === host && cached.port === port) return true;
   try {
-    const res = await fetch(`http://${host}:${port}/agent/ping`, { signal: AbortSignal.timeout(5000) });
+    const res = await fetch(`${agentBaseUrl(host, port)}/agent/ping`, { signal: AbortSignal.timeout(5000) });
     if (!res.ok) return false;
     const body = (await res.json()) as { sealed?: unknown };
     const supported = body.sealed === true;
@@ -230,7 +238,7 @@ export async function agentOp(
   // "successful" answer to a different operation.
   const nonce = randomBytes(16).toString('hex');
 
-  const url = `http://${row.host}:${row.port}/agent/exec`;
+  const url = `${agentBaseUrl(row.host, row.port)}/agent/exec`;
   const headers: Record<string, string> = sealedOk
     ? { 'content-type': 'application/json' }
     : { 'content-type': 'application/json', 'x-agent-token': token };
@@ -313,7 +321,7 @@ export async function agentPing(host: string, port: number, token: string): Prom
   // Never fall back to transmitting the token, even for legacy agents.
   const shared = sha256(token);
   const nonce = randomBytes(16).toString('hex');
-  const res = await fetch(`http://${host}:${port}/agent/exec`, {
+  const res = await fetch(`${agentBaseUrl(host, port)}/agent/exec`, {
     method: 'POST',
     redirect: 'error',
     headers: { 'content-type': 'application/json' },

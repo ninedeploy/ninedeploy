@@ -122,5 +122,39 @@ describe('vetCloneTarget (r355 — the gate returns what it vetted)', () => {
   });
 });
 
+describe('gate parses remotes the way git dials them (F352/F353)', () => {
+  it('F352: blocks scp-style remotes with any user or a bracketed host', async () => {
+    // git dials `deploy@10.0.0.5`, `git@::1`, `10.0.0.5` for these — the gate
+    // used to recognise only `git@<host>:` and judged `git@[::1]` on host `[`.
+    for (const url of [
+      'deploy@10.0.0.5:team/app.git',
+      'git@[::1]:repo',
+      'git@[169.254.169.254]:repo',
+      'a@b@10.0.0.5:repo',
+      '10.0.0.5:repo',
+      '[127.0.0.1]:repo',
+    ]) {
+      await expect(assertCloneTargetAllowed(url), url).rejects.toBeInstanceOf(EgressBlockedError);
+    }
+    expect(h.lookup).not.toHaveBeenCalled();
+  });
+
+  it('F352: public scp-style remotes still pass, whatever the user or brackets', async () => {
+    h.lookup.mockResolvedValue([{ address: '140.82.121.4' }]);
+    await expect(assertCloneTargetAllowed('deploy@github.com:acme/app.git')).resolves.toBeUndefined();
+    await expect(assertCloneTargetAllowed('git@[github.com]:acme/app.git')).resolves.toBeUndefined();
+    expect(h.lookup.mock.calls.map((c) => c[0])).toEqual(['github.com', 'github.com']);
+    await expect(assertCloneTargetAllowed('/srv/repos/app.git')).resolves.toBeUndefined();
+  });
+
+  it('F353: refuses ssh:// and git:// URLs the URL parser rejects (git dials the bracketed host)', async () => {
+    for (const url of ['ssh://git@[10.0.0.5]/team/app.git', 'git://[127.0.0.1]:9418/repo', 'ssh://git@[localhost]/x']) {
+      await expect(assertCloneTargetAllowed(url), url).rejects.toBeInstanceOf(EgressBlockedError);
+    }
+    const err = await assertCloneTargetAllowed('ssh://user:s3cret@[10.0.0.5]/x').catch((e: unknown) => e);
+    expect(String((err as Error).message)).not.toContain('s3cret');
+  });
+});
+
 // Silence unused-import lint on node:test-less environments.
 afterAll(() => undefined);

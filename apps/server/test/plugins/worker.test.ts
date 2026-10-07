@@ -13,7 +13,8 @@ vi.mock('../../src/config.js', () => configMock);
 
 const auditMock = vi.hoisted(() => ({ audit: vi.fn(async () => undefined) }));
 vi.mock('../../src/lib/audit.js', () => auditMock);
-const logsMock = vi.hoisted(() => ({ logBus: { publish: vi.fn() } }));
+// F881: the worker also holds a log writer from claim to settle (beginRun/end).
+const logsMock = vi.hoisted(() => ({ logBus: { publish: vi.fn(), beginRun: vi.fn(), end: vi.fn() } }));
 vi.mock('../../src/engine/logs.js', () => logsMock);
 // r593: the boot recovery's container cleanup talks to docker — never for real.
 const execMock = vi.hoisted(() => ({
@@ -372,6 +373,9 @@ describe('worker plugin', () => {
     const call = pipelineMock.runDeployment.mock.calls[0];
     expect(call?.[0]).toBe(db);
     expect(call?.[1]).toBe(5);
+    // F881: the claimed run holds a log writer and releases it once the run settles.
+    expect(logsMock.logBus.beginRun).toHaveBeenCalledWith(5);
+    expect(logsMock.logBus.end).toHaveBeenCalledWith(5);
     expect(call?.[2]).toMatchObject({ useBuildKit: false });
     await app.close();
   });
@@ -643,6 +647,114 @@ describe('worker plugin', () => {
     await vi.advanceTimersByTimeAsync(POLL_MS * 10);
     expect(outerSelect).toHaveBeenCalledTimes(1); // no further polls scheduled
     expect(pipelineMock.runDeployment).not.toHaveBeenCalled();
+  });
+
+  // F829: a tick suspended in its claim selection when stop() ran still
+  // claimed the row and started its pipeline after stop() had resolved — the
+  // system import swaps the database right after stop(), onClose exits.
+  it('F829: a tick still selecting when stop() runs claims nothing afterwards', async () => {
+    vi.useFakeTimers();
+    const gate = deferred();
+    let rows: Array<{ id: number; serviceId: number }> = [];
+    const { db, updates } = makeDb({ queued: [], selectImpl: () => gate.promise.then(() => rows) });
+    const app = await buildApp(db);
+
+    vi.advanceTimersByTime(POLL_MS); // the tick suspends on the gated candidate query
+    await app.worker.stop();
+
+    rows = [{ id: 9, serviceId: 3 }];
+    gate.resolve(); // the stale tick resumes after stop() resolved
+    await vi.advanceTimersByTimeAsync(POLL_MS * 5);
+    expect(updates.filter((u) => u.status === 'building')).toHaveLength(0);
+    expect(pipelineMock.runDeployment).not.toHaveBeenCalled();
+  });
+
+  it('F829: a row claimed before stop() is run, and stop() waits for that run', async () => {
+    vi.useFakeTimers();
+    const cfgGate = deferred();
+    let reached!: () => void;
+    const inCfg = new Promise<void>((r) => {
+      reached = r;
+    });
+    const kernel = {
+      configCenter: {
+        get: async (key: string, fallback: unknown) => {
+          if (key === 'engine:use_buildkit') {
+            reached();
+            await cfgGate.promise;
+          }
+          return fallback;
+        },
+      },
+    };
+    const run = deferred();
+    pipelineMock.runDeployment.mockReturnValueOnce(run.promise as never);
+    const { db, updates } = makeDb({ queued: [{ id: 4 }] });
+    const app = await buildApp(db, kernel);
+
+    vi.advanceTimersByTime(POLL_MS);
+    await inCfg; // claimed, run not launched yet
+    expect(updates.filter((u) => u.status === 'building')).toHaveLength(1);
+    let stopped = false;
+    const stopping = app.worker.stop().then(() => {
+      stopped = true;
+    });
+    cfgGate.resolve();
+    for (let i = 0; i < 50; i++) await Promise.resolve();
+    expect(pipelineMock.runDeployment.mock.calls.map((c) => c[1])).toEqual([4]);
+    expect(stopped).toBe(false);
+    run.resolve();
+    await stopping;
+    expect(stopped).toBe(true);
+  });
+
+  // F828: a failed system import stop()s the worker and restores the original
+  // database; with no way to resume, queued deploys never ran until a restart.
+  it('F828: start() resumes a stopped worker with exactly one loop per slot (idempotent)', async () => {
+    vi.useFakeTimers();
+    const { db, outerSelect } = makeDb({ queued: [] });
+    const app = await buildApp(db);
+    await app.worker.stop();
+    await vi.advanceTimersByTimeAsync(POLL_MS * 3);
+    expect(outerSelect).toHaveBeenCalledTimes(0);
+
+    app.worker.start();
+    app.worker.start();
+    await vi.advanceTimersByTimeAsync(POLL_MS * 3 + 50);
+    expect(outerSelect).toHaveBeenCalledTimes(3);
+
+    await app.close();
+    app.worker.start(); // no-op once closed
+    await vi.advanceTimersByTimeAsync(POLL_MS * 5);
+    expect(outerSelect).toHaveBeenCalledTimes(3);
+  });
+
+  it('F828: a tick hung across stop() (grace expired) and start() neither claims nor re-arms a second loop', async () => {
+    vi.useFakeTimers();
+    const gate = deferred();
+    let first = true;
+    const { db, updates, outerSelect } = makeDb({
+      queued: [],
+      selectImpl: () => {
+        if (!first) return Promise.resolve([]);
+        first = false;
+        return gate.promise.then(() => [{ id: 99, serviceId: 9 }]);
+      },
+    });
+    const app = await buildApp(db);
+    vi.advanceTimersByTime(POLL_MS);
+    const stopping = app.worker.stop();
+    await vi.advanceTimersByTimeAsync(61_000); // grace backstop
+    await stopping;
+
+    app.worker.start();
+    gate.resolve(); // the stale tick resumes inside the new generation
+    await vi.advanceTimersByTimeAsync(POLL_MS + 50);
+    expect(updates.filter((u) => u.status === 'building')).toHaveLength(0);
+    const polls = outerSelect.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(POLL_MS * 4);
+    expect(outerSelect.mock.calls.length - polls).toBe(4);
+    await app.close();
   });
 });
 

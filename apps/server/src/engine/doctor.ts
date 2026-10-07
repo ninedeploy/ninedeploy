@@ -81,12 +81,10 @@ interface ContainerFact {
 }
 
 async function listAllContainers(): Promise<ContainerFact[]> {
-  let raw = '';
-  try {
-    raw = await capture('docker', ['ps', '-a', '--format', '{{json .}}']);
-  } catch {
-    return [];
-  }
+  // F528: a failed `docker ps -a` must propagate. Swallowing it into [] made
+  // every running service read as "container gone" (critical) and let the
+  // sync_service fix flip healthy rows to error.
+  const raw = await capture('docker', ['ps', '-a', '--format', '{{json .}}']);
   const out: ContainerFact[] = [];
   for (const line of raw.split('\n')) {
     const t = line.trim();
@@ -301,12 +299,17 @@ export async function scanDoctor(db: DB): Promise<DoctorReport> {
   const activeDeployRows = activeDeploys.filter((d) => d.status === 'queued' || d.status === 'building');
   const runtimeIds = new Set(svcs.map((s) => s.runtimeId).filter((r): r is string => Boolean(r)));
   const dbContainerNames = new Set(dbs.map((d) => d.containerName).filter(Boolean) as string[]);
+  // F529: a compose runtimeId names only the stack's MAIN container; its
+  // siblings are `ndcmp-<slug>-<service>-<n>`. A prefix can over-claim (slug
+  // `web` vs `web-api`) — the safe side for a removal offer.
+  const composePrefixes = svcs.filter((s) => s.slug).map((s) => `ndcmp-${s.slug}-`);
 
   // ── containers: dead Hub junk + rows that lie about reality ─────────────
   for (const c of allContainers) {
     if (!isHubContainerName(c.name)) continue;
     if (c.state === 'running' || c.state === 'restarting') continue;
     if (runtimeIds.has(c.name) || dbContainerNames.has(c.name)) continue;
+    if (composePrefixes.some((p) => c.name.startsWith(p))) continue;
     finding({
       id: `exited_container:${c.name}`,
       kind: 'exited_container',

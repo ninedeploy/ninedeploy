@@ -72,21 +72,37 @@ function mainContainer(slug: string, composeService: string): string {
  * Compose `up` offers no policy override, so apply the platform default
  * (unless-stopped, same as the docker builder) to the project's containers
  * after each `up`. `docker update` persists the policy on the container.
+ *
+ * F561: only services WITHOUT their own policy get the default — a service
+ * that declares `restart:` (a one-shot `"no"` migration job, `on-failure`)
+ * or `deploy.restart_policy` keeps it; unless-stopped would re-run a job
+ * that exited 0 forever. When the resolved config cannot be read, fall back
+ * to every container (the previous behaviour).
+ *
+ * F560: runs while the deploy's .env / override file still exist and with
+ * the resolved env — compose re-loads (and interpolates) the project for `ps`.
  */
 async function applyBootRestartPolicy(
-  project: string,
-  composeFile: string,
-  workDir: string,
+  stackArgs: string[],
+  opts: { cwd: string; env: Record<string, string> },
   log: (line: string) => void,
 ): Promise<void> {
   try {
-    const ids = (
-      await capture(
-        'docker',
-        ['compose', '-p', project, '-f', composeFile, 'ps', '-aq'],
-        { cwd: workDir },
-      )
-    )
+    let services: string[] = [];
+    try {
+      const cfg = JSON.parse(await capture('docker', [...stackArgs, 'config', '--format', 'json'], opts)) as {
+        services?: Record<string, { restart?: string; deploy?: { restart_policy?: unknown } } | null>;
+      };
+      if (cfg?.services && typeof cfg.services === 'object' && !Array.isArray(cfg.services)) {
+        const all = Object.entries(cfg.services);
+        const defaultable = all.filter(([, def]) => !def?.restart && !def?.deploy?.restart_policy).map(([name]) => name);
+        if (defaultable.length === 0) return;
+        if (defaultable.length < all.length) services = defaultable;
+      }
+    } catch {
+      /* unreadable config: apply to every container */
+    }
+    const ids = (await capture('docker', [...stackArgs, 'ps', '-aq', ...services], opts))
       .trim()
       .split(/\s+/)
       .filter(Boolean);
@@ -233,6 +249,7 @@ export const composeBuilder: Builder = {
       writeFileSync(dotEnv, merged, { mode: 0o600 });
     }
 
+    let runtimeId: string;
     try {
       const gateOpts = {
         cwd: workDir,
@@ -294,6 +311,44 @@ export const composeBuilder: Builder = {
         { ...gateOpts, timeoutMs: 1_200_000, heartbeatLabel: `Starting Compose project ${project} (waiting for service healthchecks)` },
         log,
       );
+
+      // F560: everything below still needs the deploy inputs — compose
+      // re-loads the project (every -f file, .env interpolation) for `ps`.
+      // Run it BEFORE the finally deletes the override file and the .env,
+      // and with the resolved env, or a stack with volume attachments or a
+      // `${VAR:?}` reference silently loses both steps.
+      await applyBootRestartPolicy(stackArgs, { cwd: workDir, env: gateOpts.env }, log);
+
+      // Route-ability: Traefik must share the project's default network to reach
+      // the stack's containers by DNS. Tolerant — routing failures surface as
+      // the finalize PROXY_SWAP warning instead of failing a live deployment.
+      try {
+        await connectTraefikToComposeNetwork(service.slug, log);
+      } catch (err) {
+        log(`warning: could not attach traefik to ${project}_default: ${err instanceof Error ? err.message : err}`);
+      }
+
+      // Resolve the ACTUAL main container. Compose's default suffix is `-1`,
+      // but templates that pin `container_name:` (or scale changes) produce a
+      // different name — routing must target what really runs. Strict JSON
+      // validation: anything unparseable falls back to the deterministic name.
+      runtimeId = mainContainer(service.slug, composeService);
+      try {
+        const psOut = await capture('docker', [...stackArgs, 'ps', '--format', 'json', composeService], { cwd: workDir, env: gateOpts.env });
+        const parsed = parseComposePs(psOut);
+        // F562: `restarting` is the SAME container cycling through its
+        // restart policy during boot — falling back to the default name
+        // would point health checks at a container that does not exist.
+        // `exited` (and anything else) keeps the deterministic fallback.
+        if (parsed?.Name && (parsed.State === 'running' || parsed.State === 'restarting')) {
+          runtimeId = parsed.Name.replace(/^\//, '');
+          if (runtimeId !== mainContainer(service.slug, composeService)) {
+            log(`main container resolved as ${runtimeId}`);
+          }
+        }
+      } catch (err) {
+        log(`warning: could not resolve main container name, using ${runtimeId}: ${err instanceof Error ? err.message : err}`);
+      }
     } finally {
       // r352: restore the repo's own .env byte-for-byte, or remove only the
       // file this builder created. Untouched when the panel had no values.
@@ -309,35 +364,6 @@ export const composeBuilder: Builder = {
         /* best-effort cleanup */
       }
     }
-    await applyBootRestartPolicy(project, composeFile, workDir, log);
-
-    // Route-ability: Traefik must share the project's default network to reach
-    // the stack's containers by DNS. Tolerant — routing failures surface as
-    // the finalize PROXY_SWAP warning instead of failing a live deployment.
-    try {
-      await connectTraefikToComposeNetwork(service.slug, log);
-    } catch (err) {
-      log(`warning: could not attach traefik to ${project}_default: ${err instanceof Error ? err.message : err}`);
-    }
-
-    // Resolve the ACTUAL main container. Compose's default suffix is `-1`,
-    // but templates that pin `container_name:` (or scale changes) produce a
-    // different name — routing must target what really runs. Strict JSON
-    // validation: anything unparseable falls back to the deterministic name.
-    let runtimeId = mainContainer(service.slug, composeService);
-    try {
-      const psOut = await capture('docker', [...stackArgs, 'ps', '--format', 'json', composeService], { cwd: workDir });
-      const parsed = parseComposePs(psOut);
-      if (parsed?.Name && parsed.State === 'running') {
-        runtimeId = parsed.Name.replace(/^\//, '');
-        if (runtimeId !== mainContainer(service.slug, composeService)) {
-          log(`main container resolved as ${runtimeId}`);
-        }
-      }
-    } catch (err) {
-      log(`warning: could not resolve main container name, using ${runtimeId}: ${err instanceof Error ? err.message : err}`);
-    }
-
     return {
       runtimeId,
       port: service.port ?? null,

@@ -116,11 +116,18 @@ async function downReason(runtimeId: string): Promise<{ oomKilled: boolean; exit
  * that no longer exists (service scaled down between deploys) reports gone
  * and is recreated on the next deploy; that is not drift to repair here.
  */
-async function reviveReplicas(runtimeId: string, replicas: number, log: (line: string) => void): Promise<void> {
+async function reviveReplicas(
+  runtimeId: string,
+  replicas: number,
+  log: (line: string) => void,
+  stillOwned: () => Promise<boolean>,
+): Promise<void> {
   for (const name of replicaNames(runtimeId, replicas).slice(1)) {
     try {
       const state = (await execDocker(['inspect', '--format', '{{.State.Status}}', name])).trim();
       if (state === 'running' || state === 'restarting') continue;
+      // F940: a replica found down may be one the user is stopping right now.
+      if (!(await stillOwned())) return;
       await execDocker(['start', name]);
       log(`revived replica ${name}`);
     } catch {
@@ -178,10 +185,15 @@ export default fp(
     ) => {
       // Also match on runtimeId: if a deploy swapped the runtime between our
       // read and this write, the stale reconcile must not clobber it.
-      await fastify.db
+      // F164: and on status — a row deleted, stopped or put mid-deploy
+      // (compose redeploys keep the runtimeId) while we were inspecting is
+      // not ours to judge; no row changed means no outage to report.
+      const changed = await fastify.db
         .update(services)
         .set({ status })
-        .where(and(eq(services.id, svc.id), eq(services.runtimeId, svc.runtimeId)));
+        .where(and(eq(services.id, svc.id), eq(services.runtimeId, svc.runtimeId), eq(services.status, 'running')))
+        .returning({ id: services.id });
+      if (changed.length === 0) return;
       fastify.log.warn(
         { serviceId: svc.id, name: svc.name, runtimeId: svc.runtimeId, status },
         'service runtime is down and could not be revived — status reconciled from live state (a redeploy recreates it)',
@@ -192,6 +204,26 @@ export default fp(
       // status. Once per outage: the reconcile only visits `running` rows. An
       // `alert.*` action, so per-service alert subscriptions receive it too.
       void audit(fastify.db, null, 'alert.service_down', `${svc.name} #${svc.id}`, { serviceId: svc.id, runtimeId: svc.runtimeId, status });
+    };
+
+    /**
+     * F889/F940: a pass acts on the rows it listed at its start, with docker /
+     * pm2 / agent round-trips in between, so a row may since have been stopped
+     * by its user, redeployed (new runtimeId, or `deploying` for a compose
+     * in-place redeploy) or deleted. Re-read it right before every start with
+     * the predicate setStatus uses (F164); a row that no longer matches is not
+     * ours to revive. Residual: a stop whose `stopped` write lands AFTER this
+     * read and whose own `docker stop` reaches the daemon before our start is
+     * still undone — one read and one CLI spawn wide (it was the whole pass);
+     * closing it needs a lock shared with the lifecycle routes.
+     */
+    const stillRunning = async (svc: { id: number; runtimeId: string }): Promise<boolean> => {
+      const rows = await fastify.db
+        .select({ id: services.id })
+        .from(services)
+        .where(and(eq(services.id, svc.id), eq(services.runtimeId, svc.runtimeId), eq(services.status, 'running')))
+        .limit(1);
+      return rows.length > 0;
     };
 
     /**
@@ -317,6 +349,8 @@ export default fp(
         unreachableNodes.delete(serverId);
         if (live === 'running' || live === 'unknown') continue;
         if (live === 'stopped') {
+          // F940: not `running` (or not this runtime) any more — leave it.
+          if (!(await stillRunning(svc))) continue;
           try {
             const started = await agent('docker.start', { name: svc.runtimeId });
             if (started.exitCode === 0 && (await stateOf(svc.runtimeId)) === 'running') {
@@ -367,6 +401,8 @@ export default fp(
               }
               if (live === 'online') continue;
               if (live === 'stopped') {
+                // F940: a PM2 process found stopped may be one its user just stopped.
+                if (!(await stillRunning({ id: svc.id, runtimeId }))) continue;
                 await pm2Start(runtimeId);
                 if ((await pm2Status(runtimeId)) === 'online') {
                   fastify.log.warn(
@@ -380,11 +416,15 @@ export default fp(
             } else if (svc.type === 'docker' || svc.type === 'compose') {
               if (daemonDown) continue;
               const live = await containerState(runtimeId);
+              const owned = () => stillRunning({ id: svc.id, runtimeId });
               if (live === 'running') {
                 // Main healthy ≠ replicas healthy — a single dead clone
                 // quietly halves capacity while the row reads `running`.
-                await reviveReplicas(runtimeId, svc.replicas ?? 1, (line) =>
-                  fastify.log.warn({ serviceId: svc.id, name: svc.name, runtimeId }, line),
+                await reviveReplicas(
+                  runtimeId,
+                  svc.replicas ?? 1,
+                  (line) => fastify.log.warn({ serviceId: svc.id, name: svc.name, runtimeId }, line),
+                  owned,
                 );
                 // Healthy local ≠ healthy targets: fan-out containers live on
                 // other machines and only the agent can see them.
@@ -398,6 +438,9 @@ export default fp(
                 // OOMKilled flag's meaning (it reports the *last* exit, so a
                 // healthy post-revive exit would mask the crash).
                 const reason = await downReason(runtimeId);
+                // F889: the user may have stopped (or a deploy replaced) it
+                // since the list was read — a stale row is not ours to start.
+                if (!(await owned())) continue;
                 if (await reviveContainer(runtimeId)) {
                   fastify.log.warn(
                     { serviceId: svc.id, name: svc.name, runtimeId, exitCode: reason?.exitCode, oomKilled: reason?.oomKilled ?? false },
@@ -408,8 +451,11 @@ export default fp(
                   if (reason?.oomKilled || reason?.exitCode === 137) {
                     void alertOom(svc.id, svc.name, runtimeId, reason.exitCode);
                   }
-                  await reviveReplicas(runtimeId, svc.replicas ?? 1, (line) =>
-                    fastify.log.warn({ serviceId: svc.id, name: svc.name, runtimeId }, line),
+                  await reviveReplicas(
+                    runtimeId,
+                    svc.replicas ?? 1,
+                    (line) => fastify.log.warn({ serviceId: svc.id, name: svc.name, runtimeId }, line),
+                    owned,
                   );
                   continue;
                 }

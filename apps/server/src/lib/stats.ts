@@ -39,6 +39,13 @@ function parseBytes(input: string): number {
   return n * mult;
 }
 
+/** F868: docker CLI calls inherit capture()'s 30-minute default timeout; a
+ * wedged daemon must not stall the metrics collector (which awaits these every
+ * tick) that long. Past the bound the existing "docker unavailable" fallbacks
+ * apply. `docker stats --no-stream` samples twice, so it gets more room. */
+const DOCKER_QUERY_TIMEOUT_MS = 10_000;
+const DOCKER_STATS_TIMEOUT_MS = 20_000;
+
 /**
  * Configured memory limits per container name (bytes, 0 = unlimited), from
  * HostConfig.Memory. `docker stats` reports the HOST total as the "limit" for
@@ -49,14 +56,14 @@ function parseBytes(input: string): number {
 async function containerMemoryLimits(): Promise<Map<string, number>> {
   const limits = new Map<string, number>();
   try {
-    const ids = (await capture('docker', ['ps', '-q'])).trim().split('\n').filter(Boolean);
+    const ids = (await capture('docker', ['ps', '-q'], { timeoutMs: DOCKER_QUERY_TIMEOUT_MS })).trim().split('\n').filter(Boolean);
     if (ids.length === 0) return limits;
     const raw = await capture('docker', [
       'inspect',
       '--format',
       '{{.Name}}|{{.HostConfig.Memory}}',
       ...ids,
-    ]);
+    ], { timeoutMs: DOCKER_QUERY_TIMEOUT_MS });
     for (const line of raw.split('\n')) {
       const [name, mem] = line.trim().split('|');
       if (name) limits.set(name.replace(/^\//, ''), Number(mem) || 0);
@@ -78,7 +85,7 @@ export async function collectContainerStats(): Promise<Map<string, ContainerStat
       '--no-stream',
       '--format',
       '{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}',
-    ]);
+    ], { timeoutMs: DOCKER_STATS_TIMEOUT_MS });
   } catch {
     return out;
   }

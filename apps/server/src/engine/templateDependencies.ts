@@ -55,7 +55,7 @@ const MAX_DEPENDENCY_SLUG_CANDIDATES = 10;
 async function resolveDependencySlug(
   db: DB,
   service: Service,
-  serviceProjectId: number | null,
+  inServiceProjects: (projectId: number | null) => boolean,
   engine: string,
   log: (line: string) => void,
 ): Promise<{ kind: 'existing'; database: Database } | { kind: 'fresh'; slug: string }> {
@@ -65,7 +65,7 @@ async function resolveDependencySlug(
     const slug = i === 0 ? base : `${base}-${i + 1}`;
     const row = await db.query.databases.findFirst({ where: eq(databases.slug, slug) });
     if (row) {
-      if (row.ownerUserId === service.ownerUserId && row.projectId === serviceProjectId && row.engine === engine) {
+      if (row.ownerUserId === service.ownerUserId && inServiceProjects(row.projectId) && row.engine === engine) {
         return { kind: 'existing', database: row };
       }
       // r642: someone else's database holds this name — never fail the deploy
@@ -132,6 +132,13 @@ export async function reconcileTemplateDependencies(
     where: eq(serviceProjects.serviceId, service.id),
   });
   const serviceProjectId = links[0]?.projectId ?? null;
+  // F268: the first link is only where a NEW row is filed. An existing row of
+  // the same owner stays this service's when it is unfiled or filed under any
+  // of the service's projects — filing the service under a project later, or
+  // adding a lower-id one, must not turn its own database into "another
+  // resource" and fail every redeploy.
+  const linkedProjectIds = links.map((link) => link.projectId);
+  const inServiceProjects = (projectId: number | null) => projectId == null || linkedProjectIds.includes(projectId);
 
   const attachments = await db.query.databaseAttachments.findMany({ where: eq(databaseAttachments.serviceId, service.id) });
   let database: Database | undefined;
@@ -139,7 +146,7 @@ export async function reconcileTemplateDependencies(
   for (const attachment of attachments) {
     const candidate = await db.query.databases.findFirst({ where: eq(databases.id, attachment.databaseId) });
     if (candidate?.engine === template.dbEngine) {
-      if (candidate.ownerUserId !== service.ownerUserId || candidate.projectId !== serviceProjectId) {
+      if (candidate.ownerUserId !== service.ownerUserId || !inServiceProjects(candidate.projectId)) {
         throw new Error('Attached template database belongs to another resource');
       }
       database = candidate;
@@ -149,7 +156,7 @@ export async function reconcileTemplateDependencies(
   }
 
   if (!database) {
-    const resolved = await resolveDependencySlug(db, service, serviceProjectId, template.dbEngine, log);
+    const resolved = await resolveDependencySlug(db, service, inServiceProjects, template.dbEngine, log);
     if (resolved.kind === 'existing') {
       database = resolved.database;
     } else {

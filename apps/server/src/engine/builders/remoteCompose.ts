@@ -1,3 +1,5 @@
+import { lstatSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import type { Builder, BuildContext, DeployRuntime } from '../types.js';
 import type { AgentCall } from './remoteDocker.js';
 import { RemoteDeployUnsupportedError } from './remoteDocker.js';
@@ -85,6 +87,28 @@ function renderVolumeOverride(
   return `services:\n  ${composeService}:\n    volumes:\n${mounts}\nvolumes:\n${externals}`;
 }
 
+/**
+ * F208: the repository's own committed `.env`, read from the panel's checkout
+ * of the SAME commit (`ctx.workDir`, which the node resets to `ctx.commitSha`).
+ * Same rules as the local builder (r352/r423): null when the repo has none,
+ * and a committed symlink is refused rather than followed — on the panel host
+ * it would read an arbitrary file and ship it to the node.
+ */
+function readRepoDotEnv(workDir: string): string | null {
+  const file = path.join(workDir, '.env');
+  try {
+    if (lstatSync(file).isSymbolicLink()) {
+      throw new Error(
+        'the repository commits .env as a symlink — refusing to write resolved secrets through it. Replace the symlink with a regular file.',
+      );
+    }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw err;
+  }
+  return readFileSync(file, 'utf8');
+}
+
 export function createRemoteComposeBuilder(agent: AgentCall, opts: { nodeLabel?: string } = {}): Builder {
   // Recorded at buildAndRun time: the project this builder MINTED for the
   // runtimeId it MINTED. The Builder interface only hands `stop()` the
@@ -149,40 +173,53 @@ export function createRemoteComposeBuilder(agent: AgentCall, opts: { nodeLabel?:
 
       const attachments = ctx.volumeAttachments ?? [];
       const stack: Record<string, unknown> = { workspace, project, file: composeFile };
-      if (attachments.length > 0) {
-        await agent(
-          'file.writeWorkspace',
-          {
-            workspace,
-            kind: 'compose-override',
-            content: renderVolumeOverride(composeService, attachments),
-          },
-          sink,
-        );
-        stack['override'] = '.ninedeploy.compose.override.yml';
-        log(`Wrote ${attachments.length} volume attachment(s) into the compose override`);
-      }
-
       const hasEnv = Object.keys(env).length > 0;
-      if (hasEnv) {
-        await agent(
-          'file.writeWorkspace',
-          {
-            workspace,
-            kind: 'dotenv',
-            content: `${Object.entries(env)
-              .map(([k, v]) => `${k}=${dotenvValue(v)}`)
-              .join('\n')}\n`,
-          },
-          sink,
-        );
-      }
+      // F208 (r352 on the node): a repository stack may commit its own `.env`
+      // (interpolation defaults). Panel values are appended AFTER the repo's
+      // lines (compose's dotenv parser is last-wins per key) and the repo's
+      // file is restored afterwards instead of deleted. An inline stack has
+      // no repository file to keep.
+      const repoDotEnv = hasEnv && !service.composeContent ? readRepoDotEnv(ctx.workDir) : null;
 
       // Declared before the try: the r464 resolution inside it may replace
       // the deterministic name with the one the stack actually runs.
       let runtimeId = mainContainer(project, composeService);
 
       try {
+        // F209: both writes happen INSIDE the try — a write the node performed
+        // but whose answer the panel never got ("the node may still be
+        // running it") must still reach the cleanup below.
+        if (attachments.length > 0) {
+          stack['override'] = '.ninedeploy.compose.override.yml';
+          await agent(
+            'file.writeWorkspace',
+            {
+              workspace,
+              kind: 'compose-override',
+              content: renderVolumeOverride(composeService, attachments),
+            },
+            sink,
+          );
+          log(`Wrote ${attachments.length} volume attachment(s) into the compose override`);
+        }
+
+        if (hasEnv) {
+          const panelLines = `${Object.entries(env)
+            .map(([k, v]) => `${k}=${dotenvValue(v)}`)
+            .join('\n')}\n`;
+          const repoText = repoDotEnv ?? '';
+          await agent(
+            'file.writeWorkspace',
+            {
+              workspace,
+              kind: 'dotenv',
+              content:
+                repoText === '' || repoText.endsWith('\n') ? repoText + panelLines : `${repoText}\n${panelLines}`,
+            },
+            sink,
+          );
+        }
+
         // Preflight, in this order, BEFORE anything touches the running stack.
         log(`Validating compose project ${project} on the node …`);
         await agent('docker.composeConfig', stack, sink);
@@ -236,7 +273,10 @@ export function createRemoteComposeBuilder(agent: AgentCall, opts: { nodeLabel?:
         try {
           const res = await agent('docker.composePs', { ...stack, service: composeService }, sink);
           const parsed = parseComposePs(res.lines.join('\n'));
-          if (parsed?.Name && parsed.State === 'running') {
+          // F210: a `restarting` main container (an app that restarts until
+          // its database is up) is still THE container — only its name was
+          // being asked for; the health check judges its state.
+          if (parsed?.Name && (parsed.State === 'running' || parsed.State === 'restarting')) {
             const resolved = parsed.Name.replace(/^\//, '');
             if (resolved !== runtimeId) {
               log(`main container resolved as ${resolved}`);
@@ -250,8 +290,18 @@ export function createRemoteComposeBuilder(agent: AgentCall, opts: { nodeLabel?:
         }
       } finally {
         // Both files carry resolved secrets and compose has already read them.
+        // F208: the repository's own `.env` is put back, not deleted; if
+        // that write fails the secret-bearing file is deleted all the same.
         if (hasEnv) {
-          await agent('file.deleteWorkspace', { workspace, kind: 'dotenv' }, sink).catch(() => undefined);
+          const removeDotEnv = () =>
+            agent('file.deleteWorkspace', { workspace, kind: 'dotenv' }, sink).catch(() => undefined);
+          if (repoDotEnv !== null) {
+            await agent('file.writeWorkspace', { workspace, kind: 'dotenv', content: repoDotEnv }, sink).catch(
+              removeDotEnv,
+            );
+          } else {
+            await removeDotEnv();
+          }
         }
         if (attachments.length > 0) {
           await agent('file.deleteWorkspace', { workspace, kind: 'compose-override' }, sink).catch(

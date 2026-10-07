@@ -55,10 +55,49 @@ class LogBus extends EventEmitter {
     return `… ${size - (read - (firstLine + 1))} earlier bytes of this log omitted — download the full log to see them\n${text}`;
   }
 
-  subscribe(deploymentId: number, onLine: (line: string) => void): () => void {
+  /**
+   * F881: writers still appending to a deployment's log (the worker from its
+   * claim, the pipeline run itself). A row's status is not an end-of-log
+   * marker — the pipeline marks it `running` before the proxy swap, which can
+   * still log a retry and flip it to `failed` — so the log stream ends only
+   * once the row is final AND no writer remains.
+   */
+  private readonly writers = new Map<number, number>();
+
+  /** F881: a writer starts appending to this deployment's log. Pair with end(). */
+  beginRun(deploymentId: number): void {
+    this.writers.set(deploymentId, (this.writers.get(deploymentId) ?? 0) + 1);
+  }
+
+  /**
+   * F881: a writer has written its last line. Once no writer remains, emits
+   * the end-of-log signal subscribers re-check the deployment on. Also called
+   * without a beginRun by paths that settle a row no run in this process owns
+   * (the worker's boot recovery).
+   */
+  end(deploymentId: number): void {
+    const left = (this.writers.get(deploymentId) ?? 0) - 1;
+    if (left > 0) {
+      this.writers.set(deploymentId, left);
+      return;
+    }
+    this.writers.delete(deploymentId);
+    this.emit(`end:${deploymentId}`);
+  }
+
+  /** F881: true while a run in this process may still append to the log. */
+  isWriting(deploymentId: number): boolean {
+    return this.writers.has(deploymentId);
+  }
+
+  subscribe(deploymentId: number, onLine: (line: string) => void, onEnd?: () => void): () => void {
     const key = String(deploymentId);
     this.on(key, onLine);
-    return () => this.off(key, onLine);
+    if (onEnd) this.on(`end:${deploymentId}`, onEnd);
+    return () => {
+      this.off(key, onLine);
+      if (onEnd) this.off(`end:${deploymentId}`, onEnd);
+    };
   }
 }
 

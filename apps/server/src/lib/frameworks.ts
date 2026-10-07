@@ -114,7 +114,37 @@ function readJson(file: string): unknown | null {
   }
 }
 
-const VERSION_RANGE = /(\d+)\.(\d+)(?:\.(\d+))?/;
+/** F124: keep only the string-valued entries of a member-controlled record. */
+function stringRecord(v: unknown): Record<string, string> | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  return Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === 'string'));
+}
+
+/**
+ * F124: a parsed package.json is member-controlled JSON, not a
+ * ParsedPackageJson — narrow every field to its declared type so a
+ * `"packageManager": 1` cannot throw and a `"scripts": {"build": {}}` cannot
+ * reach the stored insights (scripts is z.record(string, string)).
+ */
+function toPackageJson(raw: unknown): ParsedPackageJson | null {
+  if (!raw) return null;
+  const o = (typeof raw === 'object' && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
+  const engines = o.engines && typeof o.engines === 'object' ? (o.engines as { node?: unknown }) : undefined;
+  return {
+    name: str(o.name),
+    dependencies: stringRecord(o.dependencies),
+    devDependencies: stringRecord(o.devDependencies),
+    scripts: stringRecord(o.scripts),
+    engines: engines ? { node: str(engines.node) } : undefined,
+    packageManager: str(o.packageManager),
+    workspaces: o.workspaces,
+  };
+}
+
+// F127: the lookbehind keeps the same leftmost match but stops every start
+// position inside a digit run from re-scanning it (O(n^2) on "111…1").
+const VERSION_RANGE = /(?<!\d)(\d+)\.(\d+)(?:\.(\d+))?/;
 
 /** Normalize a package.json version range to its leading numeric version. */
 function versionOf(range: string | undefined): string | null {
@@ -400,9 +430,18 @@ function detectPythonFramework(dir: string, marker: string): Preset {
   const notes = ['Nixpacks provisions Python and installs requirements when no Dockerfile exists.'];
   const pyEnv = [{ key: 'PYTHONUNBUFFERED', value: '1', description: 'Stream logs instead of buffering' }];
 
-  const hasDjango = /(^|\n)\s*django([=><~;\s]|\n)/.test(contents) || /dependencies[\s\S]*django/.test(contents);
-  const hasFastapi = /(^|\n)\s*fastapi([=><~;\s]|\n)/.test(contents) || /dependencies[\s\S]*fastapi/.test(contents);
-  const hasFlask = /(^|\n)\s*flask([=><~;\s]|\n)/.test(contents) || /dependencies[\s\S]*flask/.test(contents);
+  // F126: requirement names are case-insensitive (`pip freeze` writes
+  // "Django==4.2.7"), may carry extras/`!=`, and may end the file.
+  // F127: line-anchored `[ \t]*` and an indexOf scan instead of `\s*` /
+  // `[\s\S]*` — those backtracked O(n^2) over the 2 MiB marker.
+  const lower = contents.toLowerCase();
+  const depsAt = lower.indexOf('dependencies');
+  const requires = (name: string): boolean =>
+    new RegExp(`^[ \\t]*${name}(?:[=><~!;\\[\\s]|$)`, 'im').test(contents) ||
+    (depsAt >= 0 && lower.indexOf(name, depsAt + 'dependencies'.length) >= 0);
+  const hasDjango = requires('django');
+  const hasFastapi = requires('fastapi');
+  const hasFlask = requires('flask');
 
   if (hasDjango) {
     return {
@@ -527,11 +566,17 @@ function parseWorkspaceGlobs(pkg: ParsedPackageJson | null, dir: string): string
   // pnpm-workspace.yaml: line-parse just the `packages:` list — pulling a YAML
   // dependency for one flat list would be overkill.
   const pnpmWs = readText(path.join(dir, 'pnpm-workspace.yaml'));
+  // F127: walked line by line — the old block regex backtracked O(n^2) on
+  // "packages:" followed by blank lines.
   if (pnpmWs !== null) {
-    const block = pnpmWs.match(/^packages:\s*\n((?:\s+-\s+.+\n?)+)/m);
-    if (block) {
-      for (const line of block[1]!.split('\n')) {
-        add(line.replace(/^\s*-\s*/, '').trim().replace(/^['"]|['"]$/g, ''));
+    const lines = pnpmWs.split(/\r?\n/);
+    const start = lines.findIndex((l) => /^packages:\s*$/.test(l));
+    if (start >= 0) {
+      for (const line of lines.slice(start + 1)) {
+        if (line.trim() === '') continue;
+        const item = /^\s+-\s+(.+)$/.exec(line);
+        if (!item) break;
+        add(item[1]!.trim().replace(/^['"]|['"]$/g, ''));
       }
     }
   }
@@ -574,7 +619,7 @@ function enumerateWorkspacePackages(
       }
       if (subPkgPath && !seen.has(relDir) && matchesAny(relDir, globs) && existsSync(subPkgPath)) {
         seen.add(relDir);
-        const subPkg = readJson(subPkgPath) as ParsedPackageJson | null;
+        const subPkg = toPackageJson(readJson(subPkgPath));
         if (subPkg) {
           const { preset, frameworkVersion } = detectNodeFramework(subPkg, pm, false);
           results.push({
@@ -630,7 +675,7 @@ export function analyzeRepo(workDir: string, baseDir?: string, commitSha?: strin
   const monorepoMarkers = ['pnpm-workspace.yaml', 'turbo.json', 'lerna.json'];
 
   // ── Node ecosystem ────────────────────────────────────────────────────────
-  const pkgRaw = readJson(path.join(dir, 'package.json')) as ParsedPackageJson | null;
+  const pkgRaw = toPackageJson(readJson(path.join(dir, 'package.json')));
   if (pkgRaw) {
     detectedFiles.push('package.json');
     const lockfile = LOCKFILES.find((l) => probe(l.file));
@@ -640,6 +685,9 @@ export function analyzeRepo(workDir: string, baseDir?: string, commitSha?: strin
       declared && (['npm', 'pnpm', 'yarn', 'bun'] as const).includes(declared as PackageManagerId)
         ? (declared as PackageManagerId)
         : (lockfile?.pm ?? null);
+    // F125: a frozen/immutable install needs the EFFECTIVE manager's own
+    // lockfile — `yarn install --immutable` next to package-lock.json aborts.
+    const pmHasLockfile = pm !== null && LOCKFILES.some((l) => l.pm === pm && existsSync(path.join(dir, l.file)));
 
     const nvmrc = readText(path.join(dir, '.nvmrc'));
     if (nvmrc !== null) detectedFiles.push('.nvmrc');
@@ -653,7 +701,7 @@ export function analyzeRepo(workDir: string, baseDir?: string, commitSha?: strin
     const workspacePackages = isRootAnalysis ? enumerateWorkspacePackages(dir, workspaceGlobs, pm) : [];
     const monorepo = workspaceGlobs.length > 0 || pkgRaw.workspaces != null || monorepoMarkers.some((m) => probe(m));
 
-    const { preset, frameworkVersion } = detectNodeFramework(pkgRaw, pm, lockfile != null);
+    const { preset, frameworkVersion } = detectNodeFramework(pkgRaw, pm, pmHasLockfile);
 
     return finalize(preset, {
       language: 'javascript',

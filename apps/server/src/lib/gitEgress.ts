@@ -75,14 +75,25 @@ export function curlResolveEntry(pin: CloneTargetPin): string {
   return `${pin.host}:${pin.port}:${addrs}`;
 }
 
-/** Host part of an scp-style remote of the shape produced by `toSshUrl`
- * (`git@<host>:<path>`), or null when it does not match that shape. */
+/** Host part of an scp-style remote, parsed the way git's connect.c does, or
+ * null when the remote is a URL or a local path.
+ *
+ * F352: this used to accept only `git@<host>:` and cut the host at the first
+ * ':'. git dials ANY `[user@]host:path` (a ':' before any '/') and strips the
+ * brackets of `[user@][host]:path`, so `deploy@10.0.0.5:repo` was never
+ * checked and `git@[::1]:repo` was judged on the host `[`. */
 function scpStyleHost(remote: string): string | null {
-  if (!remote.startsWith('git@')) return null;
-  const at = remote.indexOf('@');
-  const colon = remote.indexOf(':', at);
-  if (at < 0 || colon <= at + 1) return null;
-  return remote.slice(at + 1, colon) || null;
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(remote)) return null; // a URL (git's is_url)
+  const colon = remote.indexOf(':');
+  const slash = remote.indexOf('/');
+  if (colon < 0 || (slash >= 0 && slash < colon)) return null; // a local path
+  // git's host_end(): `@[` (anywhere) or a leading `[` opens a bracketed host.
+  const at = remote.indexOf('@[');
+  const open = at >= 0 ? at + 1 : remote.startsWith('[') ? 0 : -1;
+  const close = open >= 0 ? remote.indexOf(']', open) : -1;
+  const userHost = close > open ? remote.slice(0, open) + remote.slice(open + 1, close) : remote.slice(0, colon);
+  // ssh splits the user off at the LAST '@'.
+  return userHost.slice(userHost.lastIndexOf('@') + 1) || null;
 }
 
 /**
@@ -123,7 +134,8 @@ export async function vetCloneTarget(repoUrl: string): Promise<CloneTargetPin | 
     try {
       url = new URL(repoUrl);
     } catch {
-      return null; // malformed URL is the schema's job, not a dial risk
+      // F353: fail closed — git dials forms this parser rejects (`git://[10.0.0.5]/r`).
+      throw new EgressBlockedError(repoUrl, 'it is not a valid URL');
     }
     await rejectIfPrivateHost(url.hostname, repoUrl);
     return null;
@@ -134,7 +146,8 @@ export async function vetCloneTarget(repoUrl: string): Promise<CloneTargetPin | 
     try {
       url = new URL(repoUrl);
     } catch {
-      return null; // malformed non-http URL is the schema's job, not a dial risk
+      // F353: fail closed — git dials forms this parser rejects (`ssh://git@[10.0.0.5]/r`).
+      throw new EgressBlockedError(repoUrl, 'it is not a valid URL');
     }
     await rejectIfPrivateHost(url.hostname, repoUrl);
     return null;

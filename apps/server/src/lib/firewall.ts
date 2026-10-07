@@ -1,3 +1,4 @@
+import { config } from '../config.js';
 import { capture } from './exec.js';
 
 export interface FirewallRule {
@@ -113,21 +114,23 @@ export async function addFirewallRule(opts: {
   const from = opts.from && opts.from !== 'any' && opts.from !== 'Anywhere' ? opts.from.trim() : null;
   const comment = opts.comment?.replace(/["']/g, '').trim();
 
-  const args: string[] = [];
-  if (comment) {
-    args.push('--comment', comment);
-  }
-
-  args.push(action);
-
-  if (proto !== 'any') {
-    args.push('proto', proto);
-  }
+  // F348: ufw(8) grammar. The simple form is `ACTION PORT[/PROTO]` (a `proto`
+  // keyword there is refused: "Need 'to' or 'from' clause"); the extended form
+  // is `ACTION [proto P] from A to any port N`. ufw has no `--comment` option —
+  // the comment is the trailing `comment C` keyword (as install.sh uses it).
+  const args: string[] = [action];
 
   if (from) {
+    if (proto !== 'any') {
+      args.push('proto', proto);
+    }
     args.push('from', from, 'to', 'any', 'port', String(opts.port));
   } else {
     args.push(proto !== 'any' ? `${opts.port}/${proto}` : String(opts.port));
+  }
+
+  if (comment) {
+    args.push('comment', comment);
   }
 
   await execUfw(args);
@@ -138,21 +141,43 @@ export async function deleteFirewallRule(id: number | string): Promise<void> {
   await execUfw(['--force', 'delete', String(id)]);
 }
 
-/** Enable or disable UFW firewall. Safe: always ensures SSH (22) is allowed before enabling! */
+/**
+ * Ports that must stay reachable once ufw's default-deny is on: SSH, and the
+ * panel's own listener when it is bound to a public interface (F350) —
+ * otherwise the click that enables the firewall cuts the operator's session.
+ */
+function lifelineRules(): Array<{ port: number; comment: string }> {
+  const rules = [{ port: 22, comment: 'SSH Safety' }];
+  const loopback = /^(127\.|::1$|localhost$)/i.test(config.host);
+  if (!loopback && ![22, 80, 443].includes(config.port)) {
+    rules.push({ port: config.port, comment: 'NineDeploy Panel' });
+  }
+  return rules;
+}
+
+/** Enable or disable UFW firewall. Safe: always ensures SSH (22) and the panel port are allowed before enabling! */
 export async function setFirewallActive(enable: boolean): Promise<void> {
   if (enable) {
-    // Safety guard: ensure SSH is allowed before enabling so user is never locked out
-    await addFirewallRule({ port: 22, proto: 'tcp', action: 'allow', comment: 'SSH Safety' }).catch(() => undefined);
+    // Safety guard: ensure SSH and the panel are allowed before enabling so the
+    // user is never locked out. F349: a failed allow aborts the enable (fail
+    // closed) instead of being swallowed.
+    for (const rule of lifelineRules()) {
+      await addFirewallRule({ port: rule.port, proto: 'tcp', action: 'allow', comment: rule.comment });
+    }
     await execUfw(['--force', 'enable']);
   } else {
     await execUfw(['disable']);
   }
 }
 
-/** Apply standard VPS hardening rules (22 SSH, 80 HTTP, 443 HTTPS, enable). */
+/** Apply standard VPS hardening rules (22 SSH, 80 HTTP, 443 HTTPS, panel port, enable). */
 export async function applyRecommendedVpsRules(): Promise<void> {
-  await addFirewallRule({ port: 22, proto: 'tcp', action: 'allow', comment: 'SSH' }).catch(() => undefined);
-  await addFirewallRule({ port: 80, proto: 'tcp', action: 'allow', comment: 'HTTP (Traefik Ingress)' }).catch(() => undefined);
-  await addFirewallRule({ port: 443, proto: 'tcp', action: 'allow', comment: 'HTTPS (Traefik Ingress)' }).catch(() => undefined);
+  // F349: any failed allow aborts before `enable` — never default-deny half-applied.
+  await addFirewallRule({ port: 22, proto: 'tcp', action: 'allow', comment: 'SSH' });
+  await addFirewallRule({ port: 80, proto: 'tcp', action: 'allow', comment: 'HTTP (Traefik Ingress)' });
+  await addFirewallRule({ port: 443, proto: 'tcp', action: 'allow', comment: 'HTTPS (Traefik Ingress)' });
+  for (const rule of lifelineRules()) {
+    if (rule.port !== 22) await addFirewallRule({ port: rule.port, proto: 'tcp', action: 'allow', comment: rule.comment });
+  }
   await execUfw(['--force', 'enable']);
 }

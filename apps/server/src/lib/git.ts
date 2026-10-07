@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { simpleGit, type SimpleGit, type SimpleGitOptions } from 'simple-git';
 import { type CloneTargetPin, curlResolveEntry, vetCloneTarget } from './gitEgress.js';
@@ -29,12 +29,49 @@ function toSshUrl(url: string): string {
   return m ? `git@${m[1]}:${m[2]}.git` : url;
 }
 
+/** The basic-auth userinfo `injectToken` puts in front of the host. */
+function tokenUserinfo(token: string, type?: string): string {
+  const user = type === 'gitlab' ? 'oauth2' : 'x-access-token';
+  return `${user}:${encodeURIComponent(token)}@`;
+}
+
 /** Inject a token into an HTTPS URL as basic-auth userinfo. */
 function injectToken(url: string, token: string, type?: string): string {
   const m = /^(https?:\/\/)([^/]+)(\/.*)$/.exec(url);
   if (!m) return url;
-  const user = type === 'gitlab' ? 'oauth2' : 'x-access-token';
-  return `${m[1]}${user}:${encodeURIComponent(token)}@${m[2]}${m[3]}`;
+  return `${m[1]}${tokenUserinfo(token, type)}${m[2]}${m[3]}`;
+}
+
+/**
+ * F576: `git submodule init` resolves a relative submodule URL against the
+ * (tokenized) origin and persists the result in `.git/config` and in the
+ * submodule's own `.git/modules/<name>/config` — copies the origin reset never
+ * touches. Remove exactly the userinfo this checkout injected from every
+ * config of the superproject and its (nested) submodule git dirs.
+ */
+function scrubInjectedUserinfo(dir: string, userinfo: string): void {
+  const scrub = (file: string) => {
+    if (!existsSync(file)) return;
+    const text = readFileSync(file, 'utf8');
+    if (text.includes(userinfo)) writeFileSync(file, text.split(`//${userinfo}`).join('//'));
+  };
+  const walk = (modulesDir: string) => {
+    if (!existsSync(modulesDir)) return;
+    for (const e of readdirSync(modulesDir, { withFileTypes: true })) {
+      if (!e.isDirectory()) continue;
+      const sub = path.join(modulesDir, e.name);
+      // A submodule git dir has HEAD + config; a name with `/` is a plain
+      // directory level above it.
+      if (existsSync(path.join(sub, 'HEAD'))) {
+        scrub(path.join(sub, 'config'));
+        walk(path.join(sub, 'modules'));
+      } else {
+        walk(sub);
+      }
+    }
+  };
+  scrub(path.join(dir, '.git', 'config'));
+  walk(path.join(dir, '.git', 'modules'));
 }
 
 /** Hide any embedded credentials before logging. */
@@ -96,7 +133,10 @@ async function initSubmodules(
   if (depth >= MAX_SUBMODULE_DEPTH || !existsSync(path.join(repoDir, '.gitmodules'))) return;
   let raw = '';
   try {
-    raw = await git.raw(['config', '-f', '.gitmodules', '--get-regexp', '^submodule\\..*\\.(url|path)$']);
+    // F577: `-z` (`<key>\n<value>\0`). The plain `<key> <value>` form is
+    // ambiguous — names and values may both contain spaces, so a URL holding
+    // ".path " parsed as a path entry and skipped the egress gate below.
+    raw = await git.raw(['config', '-z', '-f', '.gitmodules', '--get-regexp', '^submodule\\..*\\.(url|path)$']);
   } catch {
     return; // no url/path entries at all
   }
@@ -104,10 +144,11 @@ async function initSubmodules(
   // r355: the pins of every level so far — relative submodule URLs resolve
   // against an already-pinned parent, absolute https ones add their own.
   const levelConfig = [...config];
-  for (const line of raw.split('\n')) {
-    const m = /^submodule\..*\.(url|path) (.+)$/.exec(line.trim());
+  for (const entry of raw.split('\0')) {
+    const nl = entry.indexOf('\n');
+    const m = nl < 0 ? null : /\.(url|path)$/.exec(entry.slice(0, nl));
     if (!m) continue;
-    const value = m[2]!.trim();
+    const value = entry.slice(nl + 1).trim();
     if (m[1] === 'path') {
       paths.push(value);
       continue;
@@ -124,6 +165,9 @@ async function initSubmodules(
   // `-c` settings reach the child clones `submodule update` spawns (git keeps
   // GIT_CONFIG_PARAMETERS for submodule processes), so the pins apply there.
   const updater = levelConfig.length === config.length ? git : simpleGit(repoDir, { config: levelConfig, unsafe: HOOKS_OPT_IN });
+  // F576: the stored submodule URLs are scrubbed after every checkout; re-derive
+  // them from the (vetted) `.gitmodules` and this run's origin before fetching.
+  await updater.raw(['submodule', 'sync', '--quiet']);
   await updater.submoduleUpdate(['--init']);
   for (const rel of paths) {
     const subDir = path.resolve(repoDir, rel);
@@ -231,7 +275,9 @@ export async function checkoutCommit(
         await git.remote(['set-url', 'origin', injectToken(repoUrl, creds.token, creds.type)]);
       }
       sink('Fetching latest…');
-      await git.fetch(['--all']);
+      // F576: submodules are fetched by initSubmodules after their URLs are
+      // re-synced; an on-demand recursion here would use the scrubbed ones.
+      await git.fetch(['--all', '--no-recurse-submodules']);
     } else {
       rmSync(dir, { recursive: true, force: true });
       mkdirSync(dir, { recursive: true });
@@ -297,6 +343,7 @@ export async function checkoutCommit(
         // in .git/config (nor leak into later git error output).
         await cleaner.remote(['set-url', 'origin', repoUrl]).catch(() => undefined);
       }
+      scrubInjectedUserinfo(dir, tokenUserinfo(creds.token, creds.type));
     }
     if (creds?.deployKey) {
       rmSync(keyFile, { force: true });

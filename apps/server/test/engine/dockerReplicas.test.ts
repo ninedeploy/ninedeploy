@@ -109,3 +109,54 @@ describe('docker builder replicas', () => {
     expect(runtime.replicas).toBe(2);
   });
 });
+
+describe('docker builder candidate ownership on failure', () => {
+  // F525: the proxy renders `replicaNames(id, achieved)` — the contiguous
+  // -r2..-rN names. A middle replica failing must not leave the achieved
+  // count pointing at the dead name while a later replica runs unrouted.
+  it('stops at the achieved prefix and removes the failed replica when a middle one fails', async () => {
+    const running = new Set<string>();
+    execMocks.run.mockImplementation(async (_cmd: string, args: string[]) => {
+      if (args[0] === 'run' && args[1] === '-d') {
+        if (args[3] === 'web-7-r2') throw new Error('replica start failed');
+        running.add(args[3]!);
+      }
+      if (args[0] === 'rm') for (const n of args.slice(2)) running.delete(n);
+      return undefined;
+    });
+    const runtime = await dockerBuilder.buildAndRun(ctx(3) as never);
+    expect(runtime.replicas).toBe(1);
+    expect([...running]).toEqual(['web-7']);
+    expect(runArgs()).toContainEqual(['rm', '-f', 'web-7-r2']);
+    expect(runCalls().some((a) => a[3] === 'web-7-r3')).toBe(false);
+  });
+
+  // F524: a failed primary start leaves the created container behind and the
+  // pipeline never learns its id — the builder removes exactly that name.
+  it('removes only its own candidate when the primary fails to start and rethrows', async () => {
+    execMocks.run.mockImplementation(async (_cmd: string, args: string[]) => {
+      if (args[0] === 'run' && args[1] === '-d' && args[3] === 'web-7') throw new Error('port is already allocated');
+      return undefined;
+    });
+    await expect(
+      dockerBuilder.buildAndRun(ctx(3) as never, { runtimeId: 'web-6', port: 80, healthPath: '/' } as never),
+    ).rejects.toThrow('port is already allocated');
+    const all = runArgs();
+    const startIdx = all.findIndex((a) => a[0] === 'run' && a[1] === '-d' && a[3] === 'web-7');
+    expect(all.slice(startIdx + 1)).toEqual([['rm', '-f', 'web-7']]);
+  });
+
+  // F526: only the host-port `-p` option is stripped — the container
+  // command's own `-p` (memcached -p 11212) reaches every replica.
+  it('copies a container command containing -p verbatim into replicas', async () => {
+    await dockerBuilder.buildAndRun({
+      ...ctx(2),
+      service: { ...service, image: 'memcached:1.6', replicas: 2, cmd: ['memcached', '-p', '11212'] },
+    } as never);
+    const [primary, replica] = runCalls();
+    const tail = (a: string[]) => a.slice(a.indexOf('memcached:1.6') + 1);
+    expect(tail(replica!)).toEqual(['memcached', '-p', '11212']);
+    expect(tail(replica!)).toEqual(tail(primary!));
+    expect(replica!.slice(0, replica!.indexOf('memcached:1.6')).includes('-p')).toBe(false);
+  });
+});

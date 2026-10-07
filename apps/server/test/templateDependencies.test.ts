@@ -180,6 +180,31 @@ describe('template dependency recovery', () => {
     await expect(reconcileTemplateDependencies(db, service(), vi.fn())).rejects.toThrow('another resource');
   });
 
+  it('F268: re-filing the service under projects keeps its own attached database', async () => {
+    // Installed unfiled (database projectId null), later filed under project 2;
+    // or filed under 2 and then also tagged with the lower-id project 1. Both
+    // used to fail every redeploy with "belongs to another resource" because
+    // only the FIRST project link was compared.
+    for (const [dbProjectId, links] of [[null, [2]], [2, [1, 2]]] as const) {
+      const own = dbRow({ id: 11, ownerUserId: 1, projectId: dbProjectId, engine: 'mysql' });
+      const db = createFakeDb({
+        findMany: {
+          database_attachments: [{ serviceId: 7, databaseId: 11 }],
+          serviceProjects: links.map((projectId) => ({ serviceId: 7, projectId })),
+        },
+        findFirst: { databases: own },
+        insert: { database_attachments: () => { throw new Error('must not duplicate'); } },
+      });
+      await expect(reconcileTemplateDependencies(db, service(), vi.fn())).resolves.toMatchObject({ database: { id: 11 }, alreadyAttached: true });
+    }
+    // Still refused: a database filed under a project the service is not in.
+    const elsewhere = createFakeDb({
+      findMany: { database_attachments: [{ serviceId: 7, databaseId: 11 }], serviceProjects: [{ serviceId: 7, projectId: 1 }, { serviceId: 7, projectId: 2 }] },
+      findFirst: { databases: dbRow({ id: 11, ownerUserId: 1, projectId: 3, engine: 'mysql' }) },
+    });
+    await expect(reconcileTemplateDependencies(elsewhere, service(), vi.fn())).rejects.toThrow('another resource');
+  });
+
   it('reuses a retained owned database when no matching attachment exists', async () => {
     const retained = dbRow({ id: 12, slug: 'wordpress-db', ownerUserId: 1, projectId: 2, engine: 'mysql' });
     let calls = 0;

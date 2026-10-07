@@ -1,10 +1,13 @@
-﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   containerdCliArgs,
   ensureDockerImage,
   isTransientSnapshotFailure,
   normalizeContainerdImageRef,
   pullDockerImage,
+  recoverImageDirectlyFromRegistry,
 } from '../../src/lib/dockerPull.js';
 
 const h = vi.hoisted(() => ({
@@ -23,8 +26,17 @@ vi.mock('../../src/lib/exec.js', () => ({ capture: h.capture, run: h.run, sleep:
 // "targets Docker managed containerd" case above.
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
-  return { ...actual, existsSync: () => false };
+  // Only the containerd socket probe is pinned; other paths (the extracted
+  // crane binary, F105) answer from the real filesystem.
+  return { ...actual, existsSync: (p: string) => !String(p).endsWith('containerd.sock') && actual.existsSync(p) };
 });
+
+/** Fake `tar` extraction of crane: really create the binary so the cache sees it. */
+function fakeCraneExtraction(cmd: string, args: string[]): boolean {
+  if (cmd !== 'tar' || args[0] !== '-xzf') return false;
+  writeFileSync(path.join(args[3]!, 'crane'), '');
+  return true;
+}
 
 describe('pullDockerImage', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -46,7 +58,8 @@ describe('pullDockerImage', () => {
 
     await ensureDockerImage('busybox:1.36', vi.fn());
 
-    expect(h.capture).toHaveBeenCalledWith('docker', ['image', 'inspect', 'busybox:1.36', '--format', '{{.Id}}']);
+    // F975: the inspect is bounded (10 s) instead of inheriting capture()'s 30-min default.
+    expect(h.capture).toHaveBeenCalledWith('docker', ['image', 'inspect', 'busybox:1.36', '--format', '{{.Id}}'], { timeoutMs: 10_000 });
     expect(h.run).not.toHaveBeenCalled();
   });
 
@@ -120,6 +133,7 @@ describe('pullDockerImage', () => {
         throw new Error('docker pull exited 1');
       }
       if (cmd === 'ctr' && args.includes('native')) throw new Error('native snapshotter exited 1');
+      fakeCraneExtraction(cmd, args);
     });
     h.capture
       .mockResolvedValueOnce(JSON.stringify({
@@ -266,5 +280,46 @@ describe('pullDockerImage', () => {
     expect(log).toHaveBeenCalledWith(expect.stringContaining('existing Docker state was preserved'));
     expect(log).toHaveBeenCalledWith(expect.stringContaining('retrying through ctr local mode'));
     expect(h.sleep).not.toHaveBeenCalled();
+  });
+
+  it('fails a disk-full extraction snapshot error immediately instead of retrying and recovering (F104)', async () => {
+    h.run.mockImplementation(async (cmd, args, _opts, sink) => {
+      if (cmd === 'docker' && args[0] === 'pull') {
+        sink('failed to prepare extraction snapshot "extract-1-sha256:ab": mkdir /var/lib/x/new-1: no space left on device');
+        throw new Error('docker pull exited 1');
+      }
+      throw new Error(`recovery step ${cmd} must not run`);
+    });
+
+    await expect(pullDockerImage('app:1', vi.fn())).rejects.toThrow(/^docker pull exited 1$/);
+    expect(h.run).toHaveBeenCalledTimes(1);
+    expect(h.sleep).not.toHaveBeenCalled();
+    expect(isTransientSnapshotFailure(['failed to prepare extraction snapshot "k": disk quota exceeded'])).toBe(false);
+    expect(isTransientSnapshotFailure(['failed to prepare extraction snapshot "k": read-only file system'])).toBe(false);
+    expect(isTransientSnapshotFailure(['failed to prepare extraction snapshot "k": parent snapshot sha256:a does not exist'])).toBe(true);
+  });
+
+  it('re-downloads crane when the cached binary was reaped from the temp dir (F105)', async () => {
+    const cranes = new Set<string>();
+    h.run.mockImplementation(async (cmd, args) => {
+      if (fakeCraneExtraction(cmd, args)) cranes.add(path.join(args[3], 'crane'));
+    });
+    h.capture.mockImplementation(async (cmd: string) => {
+      if (cmd.endsWith('crane')) return JSON.stringify({ config: { Cmd: ['app'] } });
+      return 'sha256:recovered';
+    });
+    const spawnedCranes = () => h.capture.mock.calls.map(([cmd]) => cmd as string).filter((cmd) => cmd.endsWith('crane'));
+
+    await recoverImageDirectlyFromRegistry('app:1', vi.fn());
+    const first = spawnedCranes().at(-1)!;
+    rmSync(first, { force: true }); // the host's tmp reaper ages the binary out
+    const log = vi.fn();
+    await recoverImageDirectlyFromRegistry('app:2', log);
+    const second = spawnedCranes().at(-1)!;
+
+    expect(second).not.toBe(first);
+    expect(cranes.has(second)).toBe(true);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('downloading it again'));
+    for (const crane of [first, second]) rmSync(path.dirname(crane), { recursive: true, force: true });
   });
 });

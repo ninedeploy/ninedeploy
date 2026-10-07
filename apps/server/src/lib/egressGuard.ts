@@ -76,14 +76,20 @@ function ipv6Words(ip: string): number[] | null {
   const addr = ip.toLowerCase().split('%')[0] ?? '';
   const halves = addr.split('::');
   if (halves.length > 2) return null;
-  const parse = (half: string): number[] | null => {
+  const parse = (half: string, last: boolean): number[] | null => {
     if (!half) return [];
     const segments = half.split(':');
+    // F88: a trailing dotted IPv4 (`::ffff:203.0.113.5`, how Node reports an
+    // IPv4 peer on a dual-stack listener) is two words, not a parse failure.
+    const tail = segments[segments.length - 1]!;
+    const v4 = last && isIP(tail) === 4 ? tail.split('.').map(Number) : null;
+    if (v4) segments.pop();
     if (segments.some((segment) => !/^[0-9a-f]{1,4}$/.test(segment))) return null;
-    return segments.map((segment) => Number.parseInt(segment, 16));
+    const words = segments.map((segment) => Number.parseInt(segment, 16));
+    return v4 ? [...words, (v4[0]! << 8) | v4[1]!, (v4[2]! << 8) | v4[3]!] : words;
   };
-  const left = parse(halves[0] ?? '');
-  const right = parse(halves[1] ?? '');
+  const left = parse(halves[0] ?? '', halves.length === 1);
+  const right = parse(halves[1] ?? '', true);
   if (!left || !right) return null;
   if (halves.length === 1) return left.length === 8 ? left : null;
   const zeroes = 8 - left.length - right.length;
@@ -100,6 +106,9 @@ function isPrivateIPv6(ip: string): boolean {
   if (addr === '::' || addr === '::1') return true;
   const words = ipv6Words(addr);
   if (!words) return true;
+  // F89: ::/96 — unspecified, loopback in any spelling, and the deprecated
+  // IPv4-compatible range (`[::127.0.0.1]` serialises as `[::7f00:1]`).
+  if (words.slice(0, 6).every((word) => word === 0)) return true;
 
   // URL normalisation turns ::ffff:127.0.0.1 into ::ffff:7f00:1, so
   // compare numeric words rather than a dotted-quad spelling. RFC 6052

@@ -39,6 +39,11 @@ describe('isPrivateAddress', () => {
       '::ffff:a9fe:a9fe', // same address after WHATWG URL normalisation
       '64:ff9b::a9fe:a9fe', // RFC 6052 NAT64 metadata endpoint
       '2002:a9fe:a9fe::1', // 6to4 metadata endpoint
+      '::7f00:1', // F89: IPv4-compatible loopback — URL form of [::127.0.0.1]
+      '::a9fe:a9fe', // F89: IPv4-compatible metadata endpoint
+      '0:0:0:0:0:0:0:1', // F89: loopback spelled out
+      '::127.0.0.1', // F89: dotted IPv4-compatible must stay private once dotted tails parse
+      '::ffff:10.0.0.2', // F88: dotted mapped private
     ]) {
       expect(isPrivateAddress(ip), ip).toBe(true);
     }
@@ -48,6 +53,18 @@ describe('isPrivateAddress', () => {
     for (const ip of ['1.1.1.1', '8.8.8.8', '203.0.113.10', '172.32.0.1', '2606:4700::1111']) {
       expect(isPrivateAddress(ip), ip).toBe(false);
     }
+  });
+
+  it('F88: a public IPv4 peer in dotted mapped form is public — trustProxy must not trust it', () => {
+    // Node reports an IPv4 client of a dual-stack ("::") listener as
+    // ::ffff:a.b.c.d; config.ts trustProxy treats "private" as a trusted hop.
+    expect(isPrivateAddress('::ffff:203.0.113.5')).toBe(false);
+    expect(isPrivateAddress('::ffff:8.8.8.8')).toBe(false);
+  });
+
+  it('F89: IPv4-compatible URL literals are refused', async () => {
+    await expect(assertPublicHttpUrl('http://[::127.0.0.1]/')).rejects.toThrow(/private/);
+    await expect(assertPublicHttpUrl('http://[::169.254.169.254]/')).rejects.toThrow(/private/);
   });
 
   it('treats a non-address as unsafe rather than assuming', () => {

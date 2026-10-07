@@ -44,9 +44,9 @@ function makeGit() {
           const sec = /^\[submodule "(.+)"\]/.exec(line.trim());
           if (sec) name = sec[1]!;
           const kv = /^(url|path)\s*=\s*(.+)$/.exec(line.trim());
-          if (kv) out.push(`submodule.${name}.${kv[1]} ${kv[2]}`);
+          if (kv) out.push(args.includes('-z') ? `submodule.${name}.${kv[1]}\n${kv[2]}\0` : `submodule.${name}.${kv[1]} ${kv[2]}\n`);
         }
-        return `${out.join('\n')}\n`;
+        return out.join('');
       }
       return '0123456789abcdef\n';
     }),
@@ -269,7 +269,7 @@ describe('checkoutCommit — existing checkout', () => {
     const resolved = await checkoutCommit('https://github.com/ada/repo.git', 'main', undefined, dir, sink);
 
     expect(gitState.simpleGit).toHaveBeenCalledWith(dir, HARDENED);
-    expect(git.fetch).toHaveBeenCalledWith(['--all']);
+    expect(git.fetch).toHaveBeenCalledWith(['--all', '--no-recurse-submodules']);
     // r273: no swallowed `pull` — the checkout is reset to origin's tip.
     expect(git.raw).toHaveBeenCalledWith(['checkout', '-f', '-B', 'main', 'refs/remotes/origin/main', '--']);
     expect(git.pull).not.toHaveBeenCalled();
@@ -425,6 +425,48 @@ describe('checkoutCommit — edge cases', () => {
     expect(git.submoduleUpdate).not.toHaveBeenCalled();
   });
 
+  it('F577: a submodule URL holding ".path " is still gated (no greedy key/value misparse)', async () => {
+    const dir = existingCheckout('submodule-parse', 'https://github.com/ada/repo.git');
+    writeFileSync(path.join(dir, '.gitmodules'), '[submodule "meta"]\n\tpath = meta\n\turl = http://169.254.169.254/latest.path ./x\n');
+    const git = makeGit();
+    gitState.simpleGit.mockImplementation(() => git);
+
+    await expect(checkoutCommit('https://github.com/ada/repo.git', 'main', undefined, dir, vi.fn())).rejects.toThrow(/169\.254\.169\.254/);
+    expect(git.raw).toHaveBeenCalledWith(['config', '-z', '-f', '.gitmodules', '--get-regexp', '^submodule\\..*\\.(url|path)$']);
+    expect(git.submoduleUpdate).not.toHaveBeenCalled();
+  });
+
+  it('F576: scrubs the injected token from submodule URLs git persisted, and re-syncs them before the next update', async () => {
+    const dir = existingCheckout('submodule-token', 'https://github.com/org/repo.git');
+    writeFileSync(path.join(dir, '.gitmodules'), '[submodule "lib"]\n\tpath = lib\n\turl = ../lib.git\n');
+    // What `git submodule init` left behind on an earlier run: the relative URL
+    // resolved against the TOKENIZED origin, in both config files.
+    const tokenized = 'https://x-access-token:s3cret@github.com/org/lib.git';
+    const modDir = path.join(dir, '.git', 'modules', 'lib');
+    mkdirSync(modDir, { recursive: true });
+    writeFileSync(path.join(modDir, 'HEAD'), 'ref: refs/heads/main\n');
+    writeFileSync(path.join(modDir, 'config'), `[remote "origin"]\n\turl = ${tokenized}\n`);
+    const sshSub = 'ssh://git@github.com/org/other.git';
+    writeFileSync(path.join(dir, '.git', 'config'), `[submodule "lib"]\n\turl = ${tokenized}\n[submodule "other"]\n\turl = ${sshSub}\n`);
+    const git = makeGit();
+    gitState.simpleGit.mockImplementation(() => git);
+
+    await checkoutCommit('https://github.com/org/repo.git', 'main', undefined, dir, vi.fn(), { token: 's3cret' });
+
+    // The fetch must not recurse with the stored (scrubbed) submodule URLs;
+    // initSubmodules re-derives them from the tokenized origin first.
+    expect(git.fetch).toHaveBeenCalledWith(['--all', '--no-recurse-submodules']);
+    const syncAt = git.raw.mock.calls.findIndex(([args]) => args.join(' ') === 'submodule sync --quiet');
+    expect(syncAt).toBeGreaterThanOrEqual(0);
+    expect(git.raw.mock.invocationCallOrder[syncAt]!).toBeLessThan(git.submoduleUpdate.mock.invocationCallOrder[0]!);
+    for (const file of [path.join(dir, '.git', 'config'), path.join(modDir, 'config')]) {
+      expect(readFileSync(file, 'utf8')).not.toContain('s3cret');
+      expect(readFileSync(file, 'utf8')).toContain('https://github.com/org/lib.git');
+    }
+    // Only the userinfo this checkout injected is removed.
+    expect(readFileSync(path.join(dir, '.git', 'config'), 'utf8')).toContain(sshSub);
+  });
+
   it('r172: re-clones when the service now points at a different repository', async () => {
     const dir = existingCheckout('moved-repo', 'https://github.com/old/app.git');
     const sink = vi.fn();
@@ -478,7 +520,7 @@ describe('checkoutCommit — r355 DNS-rebinding pin', () => {
       unsafe: { allowUnsafeHooksPath: true },
       config: ['http.followRedirects=false', 'core.hooksPath=/dev/null', `http.curloptResolve=git.example.com:8443:${VETTED_IP}`],
     });
-    expect(git.fetch).toHaveBeenCalledWith(['--all']);
+    expect(git.fetch).toHaveBeenCalledWith(['--all', '--no-recurse-submodules']);
   });
 
   it('adds the pin of an absolute https submodule to the submodule update', async () => {

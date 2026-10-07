@@ -64,9 +64,9 @@ describe('analyzeRepo — Node frameworks', () => {
     const insights = analyzeRepo(dir);
     expect(insights.packageManager).toBe('yarn');
     expect(insights.framework.id).toBe('node-backend');
-    // The pnpm/yarn/bun runners have no per-lockfile install variant; the
-    // suggestion follows the lockfile that is actually present.
-    expect(insights.framework.installCmd).toBe('yarn install --immutable');
+    // F125: the suggestion follows the lockfile that is actually present —
+    // there is no yarn.lock, so `yarn install --immutable` would abort.
+    expect(insights.framework.installCmd).toBe('yarn install');
   });
 
   it('falls back to npm install without a lockfile', () => {
@@ -222,6 +222,27 @@ describe('analyzeRepo — baseDir', () => {
     const sub = analyzeRepo(dir, '/apps/web');
     expect(sub.framework.id).toBe('nextjs');
     expect(sub.baseDir).toBe('/apps/web');
+  });
+});
+
+describe('analyzeRepo — hostile marker files', () => {
+  it('parses 2 MiB pathological markers in linear time (ReDoS F127)', () => {
+    // Each of these backtracked O(n^2) before F127 — `(^|\n)\s*django` over
+    // blank lines, `(\d+)\.(\d+)` over a digit run, and the pnpm-workspace
+    // block regex over "packages:" + blank lines — blocking the event loop
+    // for tens of minutes per analysis at the 2 MiB marker cap.
+    const n = 2 * 1024 * 1024 - 64;
+    write('requirements.txt', '\n'.repeat(n));
+    let start = performance.now();
+    expect(analyzeRepo(dir).framework.id).toBe('python');
+    expect(performance.now() - start).toBeLessThan(2000);
+
+    rmSync(path.join(dir, 'requirements.txt'));
+    pkgJson({ dependencies: { next: '1'.repeat(n - 40) } });
+    write('pnpm-workspace.yaml', `packages:${'\n'.repeat(n - 10)}`);
+    start = performance.now();
+    expect(analyzeRepo(dir).framework.id).toBe('nextjs');
+    expect(performance.now() - start).toBeLessThan(2000);
   });
 });
 

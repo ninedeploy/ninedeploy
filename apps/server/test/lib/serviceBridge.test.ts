@@ -332,6 +332,31 @@ describe('removeServiceBridgeIfEmpty', () => {
     );
     expect(reconnects.length).toBeGreaterThan(0);
   });
+
+  it('F320: the health prober does not pin a deleted service\'s bridge', async () => {
+    // engine/builders/docker.ts ensureProbeNetworks joins `ninedeploy-prober`
+    // to every runtime bridge and leaves it there; counting it as a tenant
+    // leaked one Docker network per deleted service / closed preview.
+    execState.byArgs.set(
+      'docker network inspect nd-svc-foo --format {{range .Containers}}{{.Name}} {{end}}',
+      { stdout: 'ninedeploy-prober ' },
+    );
+    await removeServiceBridgeIfEmpty('foo', vi.fn());
+    const ops = execState.runCalls.map((c) => c.args.join(' '));
+    expect(ops).toContain('network disconnect nd-svc-foo ninedeploy-prober');
+    expect(ops.at(-1)).toBe('network rm nd-svc-foo');
+  });
+
+  it('F320: keeps the bridge when a tenant sits next to the prober', async () => {
+    execState.byArgs.set(
+      'docker network inspect nd-svc-foo --format {{range .Containers}}{{.Name}} {{end}}',
+      { stdout: 'ninedeploy-prober nd-db-pg ' },
+    );
+    await removeServiceBridgeIfEmpty('foo', vi.fn());
+    const ops = execState.runCalls.map((c) => c.args.join(' '));
+    expect(ops).not.toContain('network rm nd-svc-foo');
+    expect(ops).not.toContain('network disconnect nd-svc-foo ninedeploy-prober');
+  });
 });
 
 describe('r240: projectBridgeCidrs', () => {
@@ -354,6 +379,21 @@ describe('r240: projectBridgeCidrs', () => {
     chain.where = async () => rows;
     const db = { select: () => chain };
     expect(await projectBridgeCidrs(db as never, 1)).toEqual(['172.21.0.0/16']);
+  });
+
+  it('F321: a docker failure other than "no such network" surfaces instead of shrinking the set', async () => {
+    const { projectBridgeCidrs } = await import('../../src/lib/serviceBridge.js');
+    execState.byArgs.set('docker network inspect nd-svc-web --format {{range .IPAM.Config}}{{.Subnet}} {{end}}', {
+      stdout: '172.21.0.0/16 ',
+    });
+    execState.byArgs.set('docker network inspect nd-svc-api --format {{range .IPAM.Config}}{{.Subnet}} {{end}}', {
+      throw: new Error('Cannot connect to the Docker daemon at unix:///var/run/docker.sock'),
+    });
+    const chain: Record<string, unknown> = {};
+    chain.from = () => chain;
+    chain.innerJoin = () => chain;
+    chain.where = async () => [{ slug: 'web', serverId: null }, { slug: 'api', serverId: null }];
+    await expect(projectBridgeCidrs({ select: () => chain } as never, 1)).rejects.toThrow(/Docker daemon/);
   });
 });
 

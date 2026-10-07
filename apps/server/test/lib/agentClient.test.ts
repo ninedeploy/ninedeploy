@@ -362,6 +362,20 @@ describe('agentPing', () => {
     fetchMock.mockResolvedValue({ ok: false, status: 502 });
     await expect(agentPing('10.0.0.5', 4600, 'tok')).rejects.toThrow('agent unreachable (502)');
   });
+
+  it('F892: brackets an IPv6-literal host (the SSH bootstrap stores one whole)', async () => {
+    _resetSealedSupportCache();
+    honestSealedAgent();
+    await expect(agentPing('2001:db8::1', 4600, 'raw-token')).resolves.toBeUndefined();
+    await agentOp(createFakeDb({ findFirst: { servers: { ...serverRow, host: '2001:db8::1' } } }), 1, 'docker.pull', { image: 'nginx' }, () => undefined);
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls).toEqual([
+      'http://[2001:db8::1]:4600/agent/exec',
+      'http://[2001:db8::1]:4600/agent/ping',
+      'http://[2001:db8::1]:4600/agent/exec',
+    ]);
+    for (const u of urls) expect(new URL(u).port).toBe('4600');
+  });
 });
 
 describe('agent typed-operation table (unit)', () => {

@@ -43,6 +43,15 @@ const PATH_RE = /[^A-Za-z0-9.\-/_]/g;
 const PANEL_ROUTER_PRIORITY = 100_000;
 
 /**
+ * F521: base priority for an exact-host router that a rendered wildcard also
+ * covers. Left at the default (the rule's length), `HostRegexp(...example\.com$)`
+ * out-ranks `Host(admin.example.com)` and takes all of its traffic, past its
+ * basicAuth / ipAllowList. Above any wildcard rule (host ≤ 253, path ≤ 200 at
+ * the schema boundary) and, plus the exact rule's length, below the panel's.
+ */
+const EXACT_OVER_WILDCARD_PRIORITY = 10_000;
+
+/**
  * r637: the one middleware every plain-HTTP twin of an SSL router uses. Not
  * permanent: a 301/308 is cached by browsers for good, and turning a
  * domain's SSL toggle off must take effect.
@@ -666,6 +675,14 @@ export async function renderDynamicConfig(
   // r637: emitted once, only when some router uses it — an unreferenced
   // middleware is harmless, but an empty `middlewares:` section is not.
   let httpsRedirectUsed = false;
+  // F521: the wildcard hosts this render will route (same gates as the loop).
+  const wildcardHosts = all
+    .filter((o) => {
+      const w = String(o.hostname ?? '').trim();
+      const osvc = servicesById.get(o.serviceId);
+      return o.status === 'active' && w.startsWith('*.') && w.replace(HOST_RE, '') === w && !!osvc?.port && !!osvc.runtimeId;
+    })
+    .map((o) => String(o.hostname).trim());
 
   for (const d of all) {
     // H-2 layer 2: a domain awaiting DNS ownership proof must not route. This
@@ -790,11 +807,18 @@ export async function renderDynamicConfig(
     const fullRule =
       (needParens ? `(${hostMatcher})` : hostMatcher) +
       (cleanPath && cleanPath !== '/' ? ` && PathPrefix(\`${cleanPath}\`)` : '');
+    // F521: an exact host a wildcard also covers states its precedence.
+    const ruleHosts = wwwPair ? [apexHost, `www.${apexHost}`] : [host];
+    const priority =
+      !host.startsWith('*.') && wildcardHosts.some((w) => ruleHosts.some((rh) => hostsCollide(w, rh)))
+        ? `      priority: ${EXACT_OVER_WILDCARD_PRIORITY + fullRule.length}\n`
+        : '';
 
     routers.push(
       `    ${key}:\n` +
         `      rule: "${yamlDoubleQuoted(fullRule)}"\n` +
         `      service: svc_${key}\n` +
+        priority +
         (mwList.length ? `      middlewares:\n${mwList.map((m) => `        - ${m}`).join('\n')}\n` : '') +
         `      entryPoints:\n        - ${entry}` +
         tlsBlock,
@@ -811,6 +835,7 @@ export async function renderDynamicConfig(
         `    ${key}_http:\n` +
           `      rule: "${yamlDoubleQuoted(fullRule)}"\n` +
           `      service: svc_${key}\n` +
+          priority +
           `      middlewares:\n        - ${HTTPS_REDIRECT_MW}\n` +
           '      entryPoints:\n        - web',
       );
@@ -970,7 +995,18 @@ export async function renderDynamicConfig(
         tlsCerts
     : '';
 
-  return yaml;
+  return escapeTemplateDelims(yaml);
+}
+
+/**
+ * F520: Traefik's file provider runs the dynamic file through Go text/template
+ * (sprig func map, `env` included) BEFORE decoding the YAML, so a tenant's
+ * header value `{{ env `CF_DNS_API_TOKEN` }}` was executed and a bare `{{`
+ * made Traefik refuse the whole file. Every `{{` is re-emitted as the action
+ * {{`{{`}}, which prints the two braces literally.
+ */
+function escapeTemplateDelims(text: string): string {
+  return text.replaceAll('{{', '{{`{{`}}');
 }
 
 /** Parse the domain `headers` JSON column into sanitized {name, value} pairs. */

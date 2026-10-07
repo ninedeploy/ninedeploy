@@ -299,6 +299,27 @@ describe('agent workspaces', () => {
     }
   });
 
+  it('F813: a workspace an inline compose deploy left behind is cleared before cloning', async () => {
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(mkdtempSync(join(tmpdir(), 'nd-agent-git-')));
+    try {
+      const dir = await resolveWorkspace('f813-inline');
+      const { readdirSync, writeFileSync } = await import('node:fs');
+      writeFileSync(join(dir, 'docker-compose.yml'), 'services: {}\n');
+      // `git clone <url> .` refuses a non-empty directory before any transport.
+      spawnMock.mockImplementation((async (_exe: string, argv: string[], onLine: (l: string) => void, opts?: { cwd?: string }) => {
+        if (argv.includes('clone') && readdirSync(opts?.cwd ?? '.').length > 0) {
+          onLine("fatal: destination path '.' already exists and is not an empty directory.");
+          return 128;
+        }
+        return 0;
+      }) as never);
+      await expect(runOp('git.ensure', { workspace: 'f813-inline', url: 'https://x/y.git', depth: '1' }, () => {})).resolves.toBe(0);
+      expect(readdirSync(dir)).toEqual([]);
+    } finally {
+      cwdSpy.mockRestore();
+    }
+  });
+
   it('r227: git.reset fetches a pinned commit the shallow checkout lacks', async () => {
     // cat-file -e says "missing" → fetch exactly that sha → reset.
     spawnMock.mockResolvedValueOnce(1);
@@ -638,6 +659,24 @@ describe('agent compose operations', () => {
     ).resolves.toBe(0);
     expect(lines.join(String.fromCharCode(10))).toMatch(/no containers/);
     expect(spawnMock.mock.calls.some((c) => (c[1] as string[])[0] === 'update')).toBe(false);
+  });
+
+  it('F812: services with their own restart policy keep it (no unless-stopped override)', async () => {
+    const cfg = { services: { api: { image: 'x' }, migrate: { image: 'x', restart: 'no' }, worker: { image: 'x', deploy: { restart_policy: { condition: 'on-failure' } } } } };
+    const ids: Record<string, string> = { api: 'aaaaaaaaaaaa', migrate: 'bbbbbbbbbbbb', worker: 'cccccccccccc' };
+    spawnMock.mockImplementation((async (_exe: string, argv: string[], onLine: (l: string) => void) => {
+      if (argv.includes('config')) for (const l of JSON.stringify(cfg, null, 2).split(String.fromCharCode(10))) onLine(l);
+      if (argv.includes('ps')) {
+        const named = argv.slice(argv.indexOf('-q') + 1);
+        for (const s of named.length > 0 ? named : Object.keys(ids)) onLine(ids[s] as string);
+      }
+      return 0;
+    }) as never);
+    await expect(
+      runOp('docker.composeRestartPolicy', { workspace: 'ghost', project: 'ndcmp-ghost', file: 'docker-compose.yml' }, () => {}),
+    ).resolves.toBe(0);
+    const update = spawnMock.mock.calls.find((c) => (c[1] as string[])[0] === 'update')!;
+    expect(update[1]).toEqual(['update', '--restart', 'unless-stopped', 'aaaaaaaaaaaa']);
   });
 });
 

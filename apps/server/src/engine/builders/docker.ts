@@ -144,20 +144,22 @@ async function ensureProbeContainer(log: (line: string) => void): Promise<void> 
   if (probeContainerReady) return;
   if (probeContainerInit) return probeContainerInit;
   probeContainerInit = (async () => {
+    // F972: every docker call on the sibling-probe path is bounded (see
+    // PROBE_SETUP_TIMEOUT_MS); a timeout fails this attempt and isHealthy retries.
     const state = await capture('docker', [
       'inspect', PROBE_CONTAINER,
       '--format', '{{.State.Running}}|{{json .NetworkSettings.Networks}}',
-    ]).catch(() => '');
+    ], { timeoutMs: DOCKER_READ_TIMEOUT_MS }).catch(() => '');
     if (!state) {
       await ensureDockerImage(PROBE_IMAGE, log);
       await run('docker', [
         'run', '-d', '--name', PROBE_CONTAINER, '--restart', 'unless-stopped',
         '--network', NETWORK, PROBE_IMAGE, 'sh', '-c', 'while :; do sleep 3600; done',
-      ], {}, log);
+      ], { timeoutMs: PROBE_SETUP_TIMEOUT_MS }, log);
     } else {
-      if (!state.startsWith('true|')) await run('docker', ['start', PROBE_CONTAINER], {}, log);
+      if (!state.startsWith('true|')) await run('docker', ['start', PROBE_CONTAINER], { timeoutMs: PROBE_SETUP_TIMEOUT_MS }, log);
       if (!state.includes(`"${NETWORK}"`)) {
-        await run('docker', ['network', 'connect', NETWORK, PROBE_CONTAINER], {}, log).catch(() => undefined);
+        await run('docker', ['network', 'connect', NETWORK, PROBE_CONTAINER], { timeoutMs: PROBE_SETUP_TIMEOUT_MS }, log).catch(() => undefined);
       }
     }
     probeContainerReady = true;
@@ -170,7 +172,7 @@ async function ensureProbeContainer(log: (line: string) => void): Promise<void> 
 /** All user-defined networks a container is attached to (empty on inspect failure). */
 async function containerNetworks(name: string): Promise<string[]> {
   try {
-    const raw = await capture('docker', ['inspect', name, '--format', '{{json .NetworkSettings.Networks}}']);
+    const raw = await capture('docker', ['inspect', name, '--format', '{{json .NetworkSettings.Networks}}'], { timeoutMs: DOCKER_READ_TIMEOUT_MS });
     const parsed = JSON.parse(raw.trim()) as Record<string, unknown> | null;
     return parsed ? Object.keys(parsed) : [];
   } catch {
@@ -194,7 +196,7 @@ async function ensureProbeNetworks(runtimeId: string, log: (line: string) => voi
   const joined = new Set(await containerNetworks(PROBE_CONTAINER));
   for (const network of runtimeNets) {
     if (joined.has(network)) continue;
-    await run('docker', ['network', 'connect', network, PROBE_CONTAINER], {}, log).catch(
+    await run('docker', ['network', 'connect', network, PROBE_CONTAINER], { timeoutMs: PROBE_SETUP_TIMEOUT_MS }, log).catch(
       (err: unknown) => log(
         `warning: could not attach ${PROBE_CONTAINER} to ${network}: ${err instanceof Error ? err.message : String(err)}`,
       ),
@@ -339,6 +341,24 @@ export function nixpacksEnvArgs(env: Record<string, string>): string[] {
 const swallowLine = (line: string): void => void line;
 const swallowErr = (): void => undefined;
 
+/** F870: per-call bound for containerIp's `docker inspect` (a local metadata read). */
+const CONTAINER_IP_TIMEOUT_MS = 10_000;
+
+/** F871/F936/F937: the same bound for the other local reads on the deploy and
+ * health path (`docker inspect`, `docker logs --tail`). capture()/run() default
+ * to 30 minutes, so one call on a wedged daemon outlived isHealthy's deadline. */
+const DOCKER_READ_TIMEOUT_MS = 10_000;
+
+/** F972: sibling-probe daemon mutations (`docker start` / `run -d` of the local
+ * busybox prober, `docker network connect`) wire veth, iptables and DNS and can
+ * take seconds on a busy host, so they get 3x a read. Unbounded, one of them on
+ * a wedged daemon held isHealthy (and the deploy) 30 minutes past its deadline. */
+const PROBE_SETUP_TIMEOUT_MS = 30_000;
+
+/** F972: `docker exec <prober> nc -w 3`. nc's own 3 s bounds only the connect
+ * inside the prober; this bounds the CLI-to-daemon exec create/start/attach. */
+const PROBE_EXEC_TIMEOUT_MS = 10_000;
+
 /**
  * Resolve a container's IP address on the shared Docker network, or null when
  * the container is not running. The host can route to bridge-network IPs
@@ -348,10 +368,13 @@ const swallowErr = (): void => undefined;
  */
 export async function containerIp(name: string): Promise<string | null> {
   try {
+    // F870: bounded — capture()'s 30-minute default would let one inspect on a
+    // wedged daemon outlive isHealthy's whole deadline (and leave a 30-minute
+    // child behind every dashboard poll). Past the bound it reads "not running".
     const out = await capture('docker', [
       'inspect', name,
       '--format', '{{.State.Status}}|{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}',
-    ]);
+    ], { timeoutMs: CONTAINER_IP_TIMEOUT_MS });
     const [status, ip] = out.trim().split('|');
     return status === 'running' && ip ? ip : null;
   } catch {
@@ -383,7 +406,8 @@ export function sanitiseRuntimeLogs(raw: string): string {
 /** Inspect and log why a container is not reachable. Returns its state. */
 async function logContainerDiagnostic(name: string, log: (line: string) => void): Promise<DockerContainerState | null> {
   try {
-    const state = JSON.parse((await capture('docker', ['inspect', name, '--format', '{{json .State}}'])).trim()) as DockerContainerState;
+    // F936: bounded — past it the diagnostic is skipped (null), never the deploy held.
+    const state = JSON.parse((await capture('docker', ['inspect', name, '--format', '{{json .State}}'], { timeoutMs: DOCKER_READ_TIMEOUT_MS })).trim()) as DockerContainerState;
     log(`container ${name} is ${state.Status ?? 'unavailable'} (exit ${state.ExitCode ?? 'unknown'}${state.OOMKilled ? ', OOM-killed' : ''})`);
     if (state.Error) log(`container runtime error: ${state.Error}`);
     try {
@@ -391,7 +415,7 @@ async function logContainerDiagnostic(name: string, log: (line: string) => void)
       // app wrote to stderr used to vanish here — exactly the output a crashed
       // boot explains itself with. Stream both streams through run's sink.
       let tail = '';
-      await run('docker', ['logs', '--tail', '30', name], {}, (line) => {
+      await run('docker', ['logs', '--tail', '30', name], { timeoutMs: DOCKER_READ_TIMEOUT_MS }, (line) => {
         tail += `${line}\n`;
       });
       const cleaned = sanitiseRuntimeLogs(tail);
@@ -411,7 +435,7 @@ export async function containerExposedTcpPorts(name: string): Promise<number[]> 
     const raw = await capture('docker', [
       'inspect', name,
       '--format', '{{json .Config.ExposedPorts}}',
-    ]);
+    ], { timeoutMs: DOCKER_READ_TIMEOUT_MS }); // F972
     const exposed = JSON.parse(raw.trim()) as Record<string, unknown> | null;
     if (!exposed) return [];
     return [...new Set(
@@ -722,7 +746,8 @@ export const dockerBuilder: Builder = {
         // old code — and a missing image can never start anyway.
         let local = false;
         try {
-          await capture('docker', ['image', 'inspect', target, '--format', '{{.Id}}']);
+          // F988: bounded; a timeout reads as "not local" and rethrows the pull error.
+          await capture('docker', ['image', 'inspect', target, '--format', '{{.Id}}'], { timeoutMs: DOCKER_READ_TIMEOUT_MS });
           local = true;
         } catch {
           local = false;
@@ -988,6 +1013,9 @@ export const dockerBuilder: Builder = {
 
     const envFile = composeSpec ? null : writeEnvFile(env);
     if (envFile) args.push('--env-file', envFile.path);
+    // F526: where the image sits in `args` — everything after it is the
+    // container's own command, which replica cloning must copy verbatim.
+    const imageIndex = args.length;
     if (!composeSpec) {
       args.push(target);
       // Template-defined command (argv after the image) — e.g. minio needs
@@ -1012,6 +1040,13 @@ export const dockerBuilder: Builder = {
           log,
         );
       }
+    } catch (err) {
+      // F524: `docker run -d` / `compose up` create the container before
+      // starting it, so a failed start leaves this deployment's candidate
+      // behind — and buildAndRun throwing means the pipeline never learns its
+      // runtime id to stop it. Remove exactly the name this deploy owns.
+      await run('docker', ['rm', '-f', name], {}, swallowLine).catch(swallowErr);
+      throw err;
     } finally {
       envFile?.cleanup();
       composeEnvFile?.cleanup();
@@ -1045,7 +1080,9 @@ export const dockerBuilder: Builder = {
       const cloneArgs = (replicaName: string): string[] => {
         const out: string[] = [];
         for (let i = 0; i < args.length; i++) {
-          if (args[i] === '-p' && i + 1 < args.length) {
+          // F526: only a `docker run` option (before the image) — a `-p` in
+          // the container command (`memcached -p 11212`) is the app's own.
+          if (args[i] === '-p' && i + 1 < imageIndex) {
             i++; // skip the host:container port pair
             continue;
           }
@@ -1100,6 +1137,12 @@ export const dockerBuilder: Builder = {
             log(`Replica ${replicaName} started (${i}/${replicaCount})`);
           } catch (err) {
             log(`warning: replica ${replicaName} failed to start — continuing with fewer replicas (${msg(err)})`);
+            // F525: the proxy routes `replicaNames(id, achieved)` — the
+            // CONTIGUOUS names -r2..-rN. Starting -r(i+1) after -ri failed
+            // would route the dead -ri and leave the live one unrouted, so
+            // drop the failed candidate and stop at the achieved prefix.
+            await run('docker', ['rm', '-f', replicaName], {}, swallowLine).catch(swallowErr);
+            break;
           } finally {
             replicaComposeSpec?.cleanup();
             replicaComposeSpec = null;
@@ -1116,7 +1159,8 @@ export const dockerBuilder: Builder = {
     // RepoDigests and keep the local id, whose rollback stays local-only.
     let digest: string | undefined;
     try {
-      const imageId = (await capture('docker', ['inspect', name, '--format', '{{.Image}}'])).trim() || undefined;
+      // F937: bounded — the digest is best-effort and must not hold the deploy.
+      const imageId = (await capture('docker', ['inspect', name, '--format', '{{.Image}}'], { timeoutMs: DOCKER_READ_TIMEOUT_MS })).trim() || undefined;
       if (imageId && service.image) {
         const pullable = await pullableReleaseRef(service.image, imageId);
         digest = pullable && pullable !== service.image ? pullable : imageId;
@@ -1157,7 +1201,8 @@ export const dockerBuilder: Builder = {
         // short grace period for transient dependency startup, then fails with
         // its real logs instead of printing five minutes of TCP probe noise.
         try {
-          const raw = await capture('docker', ['inspect', runtime.runtimeId, '--format', '{{json .State}}']);
+          // F871: bounded — a timeout lands in the catch ("still transitioning").
+          const raw = await capture('docker', ['inspect', runtime.runtimeId, '--format', '{{json .State}}'], { timeoutMs: DOCKER_READ_TIMEOUT_MS });
           const state = JSON.parse(raw.trim()) as DockerContainerState;
           const terminal = state.Status === 'exited' || state.Status === 'dead';
           const restartLoop = state.Status === 'restarting' && elapsed >= 30_000;
@@ -1213,7 +1258,7 @@ export const dockerBuilder: Builder = {
           await ensureProbeNetworks(runtime.runtimeId, log);
           await run('docker', [
             'exec', PROBE_CONTAINER, 'nc', '-w', '3', ip, String(runtime.port),
-          ], {}, log);
+          ], { timeoutMs: PROBE_EXEC_TIMEOUT_MS }, log);
           return true;
         } catch (probeErr) {
           probeContainerReady = false;
@@ -1240,7 +1285,7 @@ export const dockerBuilder: Builder = {
           try {
             await run('docker', [
               'exec', PROBE_CONTAINER, 'nc', '-w', '3', ip, String(candidate),
-            ], {}, () => undefined);
+            ], { timeoutMs: PROBE_EXEC_TIMEOUT_MS }, () => undefined);
             log(`detected healthy image port ${candidate}/tcp; replacing incorrect configured port ${runtime.port}`);
             runtime.port = candidate;
             return true;
@@ -1259,7 +1304,9 @@ export const dockerBuilder: Builder = {
   },
 
   async stop(runtimeId, opts) {
-    const grace = opts?.graceSeconds && opts.graceSeconds >= 0 ? Math.min(Math.floor(opts.graceSeconds), 300) : 5;
+    // F527: 0 is a valid grace (schema min 0) — test for a number, not truthiness.
+    const g = opts?.graceSeconds;
+    const grace = typeof g === 'number' && g >= 0 ? Math.min(Math.floor(g), 300) : 5;
     // One batched rm covers the generation: the primary plus its `-r2..-rN`
     // replicas (deterministic names — see replicaNames). docker rm -f on a
     // missing name is an error per name but the batch still removes the rest,

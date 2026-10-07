@@ -6,6 +6,7 @@ import {
   getFirewallStatus,
   setFirewallActive,
 } from '../../src/lib/firewall.js';
+import { config } from '../../src/config.js';
 
 const execMock = vi.hoisted(() => ({
   capture: vi.fn(),
@@ -121,9 +122,8 @@ describe('firewall library (src/lib/firewall.ts)', () => {
       from: '10.0.0.1/24',
       comment: 'Postgres "Internal"',
     });
+    // F348: ufw has no `--comment` option; the comment is the trailing keyword.
     expect(execMock.capture).toHaveBeenCalledWith('ufw', [
-      '--comment',
-      'Postgres Internal',
       'allow',
       'proto',
       'tcp',
@@ -133,6 +133,8 @@ describe('firewall library (src/lib/firewall.ts)', () => {
       'any',
       'port',
       '5432',
+      'comment',
+      'Postgres Internal',
     ]);
 
     // Rule 2: any proto + deny + no from
@@ -148,7 +150,9 @@ describe('firewall library (src/lib/firewall.ts)', () => {
     await addFirewallRule({
       port: 3000,
     });
-    expect(execMock.capture).toHaveBeenCalledWith('ufw', ['allow', 'proto', 'tcp', '3000/tcp']);
+    // F348: the simple form takes no `proto` keyword (`allow proto tcp 3000/tcp`
+    // is refused by ufw: "Need 'to' or 'from' clause").
+    expect(execMock.capture).toHaveBeenCalledWith('ufw', ['allow', '3000/tcp']);
   });
 
   it('enables and disables firewall active state safely', async () => {
@@ -167,5 +171,63 @@ describe('firewall library (src/lib/firewall.ts)', () => {
 
     await applyRecommendedVpsRules();
     expect(execMock.capture).toHaveBeenCalledWith('ufw', expect.arrayContaining(['--force', 'enable']));
+  });
+
+  describe('lifeline rules before enable (F348/F349/F350)', () => {
+    const orig = { port: config.port, host: config.host };
+    beforeEach(() => {
+      (config as { port: number }).port = 3000;
+      (config as { host: string }).host = '0.0.0.0';
+    });
+    afterEach(() => {
+      (config as { port: number }).port = orig.port;
+      (config as { host: string }).host = orig.host;
+    });
+    const ufwCalls = () =>
+      execMock.capture.mock.calls.filter(([cmd]) => cmd === 'ufw').map(([, args]) => (args as string[]).join(' '));
+
+    it('F348/F350: enable allows SSH and the panel port with valid ufw syntax, before enabling', async () => {
+      execMock.capture.mockResolvedValue('ok');
+      await setFirewallActive(true);
+      expect(ufwCalls()).toEqual([
+        'allow 22/tcp comment SSH Safety',
+        'allow 3000/tcp comment NineDeploy Panel',
+        '--force enable',
+      ]);
+
+      execMock.capture.mockClear();
+      await applyRecommendedVpsRules();
+      expect(ufwCalls()).toEqual([
+        'allow 22/tcp comment SSH',
+        'allow 80/tcp comment HTTP (Traefik Ingress)',
+        'allow 443/tcp comment HTTPS (Traefik Ingress)',
+        'allow 3000/tcp comment NineDeploy Panel',
+        '--force enable',
+      ]);
+    });
+
+    it('F350: a loopback-bound panel or a panel on 443 adds no extra rule', async () => {
+      execMock.capture.mockResolvedValue('ok');
+      (config as { host: string }).host = '127.0.0.1';
+      await setFirewallActive(true);
+      expect(ufwCalls()).toEqual(['allow 22/tcp comment SSH Safety', '--force enable']);
+
+      execMock.capture.mockClear();
+      (config as { host: string }).host = '0.0.0.0';
+      (config as { port: number }).port = 443;
+      await setFirewallActive(true);
+      expect(ufwCalls()).toEqual(['allow 22/tcp comment SSH Safety', '--force enable']);
+    });
+
+    it('F349: a failed SSH allow aborts the enable instead of locking the operator out', async () => {
+      execMock.capture.mockImplementation(async (_cmd: string, args: string[]) => {
+        if (args.includes('22/tcp')) throw new Error('ERROR: problem running ufw-init');
+        return 'ok';
+      });
+      await expect(setFirewallActive(true)).rejects.toThrow('problem running ufw-init');
+      await expect(applyRecommendedVpsRules()).rejects.toThrow('problem running ufw-init');
+      const enables = execMock.capture.mock.calls.filter(([, args]) => (args as string[]).includes('enable'));
+      expect(enables).toEqual([]);
+    });
   });
 });

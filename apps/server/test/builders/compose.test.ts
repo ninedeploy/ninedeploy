@@ -371,6 +371,55 @@ describe('composeBuilder redeploy safety gates', () => {
     const runtime = await composeBuilder.buildAndRun(makeCtx() as never);
     expect(runtime.runtimeId).toBe('ndcmp-stack-api-1');
   });
+
+  it('F560: post-up ps runs while the override file and .env still exist, with the resolved env', async () => {
+    // Compose re-loads the project for `ps`: a deleted -f override or a
+    // `${VAR:?}` that only the panel env satisfies makes it exit non-zero —
+    // the pinned container_name was lost and the restart policy never applied.
+    const overridePath = path.join(tmp, '.ninedeploy.compose.override.yml');
+    const dotEnvPath = path.join(tmp, '.env');
+    const seen: { args: string[]; override: boolean; dotEnv: boolean; env: unknown }[] = [];
+    h.capture.mockImplementation((async (_cmd: string, args: string[], opts?: { env?: unknown }) => {
+      if (args.includes('ps')) seen.push({ args, override: existsSync(overridePath), dotEnv: existsSync(dotEnvPath), env: opts?.env });
+      return args.includes('--format') ? JSON.stringify([{ Name: 'pinned-name', State: 'running' }]) : 'c1';
+    }) as never);
+    const ctx = makeCtx({
+      volumeAttachments: [{ id: 1, serviceId: 1, volumeName: 'nd-svc-stack-data', containerPath: '/data', readOnly: false, createdAt: NOW, updatedAt: NOW }],
+    });
+    const runtime = await composeBuilder.buildAndRun(ctx as never);
+    expect(runtime.runtimeId).toBe('pinned-name');
+    expect(seen.length).toBe(2); // restart-policy `ps -aq` + main-container `ps --format json`
+    for (const s of seen) {
+      expect(s.args).toContain(overridePath);
+      expect(s).toMatchObject({ override: true, dotEnv: true, env: { TOKEN: 'secret-value' } });
+    }
+    expect(h.run.mock.calls.some((c) => (c[1] as string[])[0] === 'update')).toBe(true);
+    expect(existsSync(overridePath)).toBe(false);
+    expect(existsSync(dotEnvPath)).toBe(false);
+  });
+
+  it('F561: services with their own restart policy keep it (no unless-stopped override)', async () => {
+    h.capture.mockImplementation((async (_cmd: string, args: string[]) => {
+      if (args.includes('config')) return JSON.stringify({ services: { api: {}, migrate: { restart: 'no' }, worker: { deploy: { restart_policy: { condition: 'on-failure' } } } } });
+      if (args.includes('-aq')) return args.slice(args.indexOf('-aq') + 1).map((s) => `id-${s}`).join('\n');
+      return 'running';
+    }) as never);
+    await composeBuilder.buildAndRun(makeCtx() as never);
+    const ps = h.capture.mock.calls.find((c) => (c[1] as string[]).includes('-aq'))![1] as string[];
+    expect(ps.slice(ps.indexOf('-aq') + 1)).toEqual(['api']);
+    const update = h.run.mock.calls.find((c) => (c[1] as string[])[0] === 'update')![1] as string[];
+    expect(update).toEqual(['update', '--restart', 'unless-stopped', 'id-api']);
+  });
+
+  it('F562: a pinned main container that is `restarting` is still resolved by its real name', async () => {
+    // Falling back to <project>-<service>-1 pointed health checks at a
+    // container that does not exist — the deploy waited out its window.
+    h.capture.mockResolvedValue(JSON.stringify([{ Name: 'pinned-name', State: 'restarting' }]));
+    expect((await composeBuilder.buildAndRun(makeCtx() as never)).runtimeId).toBe('pinned-name');
+    h.capture.mockResolvedValue(JSON.stringify([{ Name: 'pinned-name', State: 'exited' }]));
+    expect((await composeBuilder.buildAndRun(makeCtx() as never)).runtimeId).toBe('ndcmp-stack-api-1');
+  });
+
   it('fails fast when the main container is crash-looping', async () => {
     let poll = 0;
     // First poll sets the restart baseline, the next one jumps past the

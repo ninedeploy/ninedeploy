@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { run } from '../../lib/exec.js';
 import { resolveInRepo } from '../../lib/repoPath.js';
@@ -28,6 +28,16 @@ export interface StaticBuildInput {
   log: (line: string) => void;
 }
 
+// F377: nginx inherits add_header from the parent level only when the current
+// level declares none — the asset location's Cache-Control would otherwise
+// strip every security header from JS/CSS/SVG/image responses.
+const SECURITY_HEADERS = [
+  'add_header X-Frame-Options "SAMEORIGIN" always;',
+  'add_header X-Content-Type-Options "nosniff" always;',
+  'add_header Referrer-Policy "strict-origin-when-cross-origin" always;',
+  'add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;',
+];
+
 /** Pure: the nginx server block for the built assets. */
 export function renderStaticConf(spa: boolean): string {
   const tryFiles = spa ? 'try_files $uri $uri/ /index.html;' : 'try_files $uri =404;';
@@ -42,16 +52,14 @@ export function renderStaticConf(spa: boolean): string {
     '  gzip_types text/css application/javascript application/json image/svg+xml;',
     '  gzip_min_length 1024;',
     '',
-    '  add_header X-Frame-Options "SAMEORIGIN" always;',
-    '  add_header X-Content-Type-Options "nosniff" always;',
-    '  add_header Referrer-Policy "strict-origin-when-cross-origin" always;',
-    '  add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;',
+    ...SECURITY_HEADERS.map((h) => `  ${h}`),
     '',
     '  # Hashed build assets are immutable — cache them hard; everything else',
     '  # revalidates so deploys propagate on the next request.',
     '  location ~* \\.(?:js|css|woff2?|png|jpe?g|gif|svg|ico|webp|avif)$ {',
     '    expires 30d;',
     '    add_header Cache-Control "public, max-age=2592000, immutable";',
+    ...SECURITY_HEADERS.map((h) => `    ${h}`),
     '  }',
     '',
     `  location / { ${tryFiles} }`,
@@ -80,12 +88,33 @@ export function resolveStaticOutput(
   baseDirAbs: string,
   outputDir: string | null | undefined,
 ): { abs: string; relFromBase: string } {
-  const abs = path.resolve(baseDirAbs, outputDir ?? 'dist');
+  // F378: a leading slash is the repoRelativePath convention, not the
+  // filesystem root — re-anchor it on baseDir (as resolveInRepo does for
+  // dockerfilePath). A bare '/' still lands on the context root and is refused.
+  const abs = path.resolve(baseDirAbs, (outputDir ?? 'dist').replace(/^[/\\]+/, ''));
   const root = path.resolve(baseDirAbs);
   if (!abs.startsWith(root + path.sep)) {
     throw new Error(`static output dir escapes the build context: ${outputDir ?? 'dist'}`);
   }
   return { abs, relFromBase: path.relative(root, abs).split(path.sep).join('/') };
+}
+
+/**
+ * F376: write a generated file into the checkout without following a symlink
+ * at that name — writeFileSync follows links, so a repo-committed
+ * `Dockerfile.static -> /etc/…` would overwrite (or, dangling, create) a host
+ * file as the panel user. Same policy as resolveInRepo: a symlink is refused.
+ */
+function writeGeneratedFile(dir: string, name: string, content: string): void {
+  const file = path.join(dir, name);
+  try {
+    if (lstatSync(file).isSymbolicLink()) {
+      throw new Error(`Refusing to write the generated ${name} through a symlink in the repository`);
+    }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException | null)?.code !== 'ENOENT') throw err;
+  }
+  writeFileSync(file, content);
 }
 
 /**
@@ -124,8 +153,8 @@ export async function buildStaticSite(input: StaticBuildInput, target: string): 
   const spa = buildConfig?.staticSpa !== false;
   const confName = 'nginx-static.conf';
   const dockerfileName = 'Dockerfile.static';
-  writeFileSync(path.join(baseDirAbs, confName), renderStaticConf(spa));
-  writeFileSync(path.join(baseDirAbs, dockerfileName), renderStaticDockerfile(relFromBase));
+  writeGeneratedFile(baseDirAbs, confName, renderStaticConf(spa));
+  writeGeneratedFile(baseDirAbs, dockerfileName, renderStaticDockerfile(relFromBase));
 
   log(`Building static image (nginx:alpine, SPA fallback ${spa ? 'on' : 'off'}) …`);
   await run(

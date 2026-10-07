@@ -267,6 +267,54 @@ describe('pm2Builder.stop', () => {
 
     await expect(pm2Builder.stop('api-2')).resolves.toBeUndefined();
   });
+
+  // F236: pm2's dump(cb) refuses an EMPTY process list and keeps the old
+  // dump.pm2 (pm2 lib/API/Startup.js dump(force, cb)), so deleting the last
+  // process left it in the dump and the boot resurrect revived a deleted
+  // service. The fake below mirrors that contract.
+  describe('F236: boot-resurrect dump after a delete', () => {
+    const daemon = (live: string[], dumpFile: string[]) => {
+      const procs = new Set(live);
+      const state = { dumpFile };
+      h.pm2.delete.mockImplementationOnce((name: string, cb: (err?: Error | null) => void) =>
+        procs.delete(name) ? cb(null) : cb(new Error('process or namespace not found')),
+      );
+      h.pm2.dump.mockImplementationOnce(((force: unknown, cb?: (err: Error | null) => void) => {
+        if (typeof force === 'function') {
+          cb = force as (err: Error | null) => void;
+          force = false;
+        }
+        if (!force && procs.size === 0) return cb!(new Error('Process list empty, cannot save empty list'));
+        state.dumpFile = [...procs];
+        cb!(null);
+      }) as never);
+      return state;
+    };
+
+    it('deleting the LAST process clears it from the dump', async () => {
+      const state = daemon(['api-2'], ['api-2']);
+
+      await pm2Builder.stop('api-2');
+
+      expect(state.dumpFile).toEqual([]);
+    });
+
+    it('a delete that removed nothing (fresh daemon before resurrect) never wipes the dump', async () => {
+      const state = daemon([], ['api-2', 'web-3']);
+
+      await pm2Builder.stop('api-9');
+
+      expect(state.dumpFile).toEqual(['api-2', 'web-3']);
+    });
+
+    it('deleting one of several processes dumps the survivors', async () => {
+      const state = daemon(['api-2', 'web-3'], ['api-2', 'web-3']);
+
+      await pm2Builder.stop('api-2');
+
+      expect(state.dumpFile).toEqual(['web-3']);
+    });
+  });
 });
 
 describe('pm2 lifecycle helpers', () => {

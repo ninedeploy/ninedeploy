@@ -4,9 +4,17 @@ import path from 'node:path';
 import { capture, run, sleep } from './exec.js';
 
 const SNAPSHOT_FAILURE = /extraction snapshot|target snapshot .*already exists|parent snapshot .*does not exist/i;
+// F104: containerd wraps every snapshotter Prepare error as `failed to prepare
+// extraction snapshot "<key>": <cause>`; a full, over-quota or read-only disk is
+// the actionable root cause, never a race, so it must fail immediately.
+const PERSISTENT_STORAGE_FAILURE = /no space left on device|disk quota exceeded|read-only file system/i;
 const STALE_EXISTING_SNAPSHOT = /target snapshot .*already exists/i;
 const STALE_SNAPSHOT_KEY = /target snapshot\s+"?(sha256:[a-f0-9]{64})"?\s+already exists/i;
 const CONTAINERD_TRANSFER_PLATFORM_BUG = /no unpack platforms defined/i;
+/** F975: `docker image inspect` is a local metadata read; capture()'s 30-minute
+ * default let one on a wedged daemon hold every ensureDockerImage caller (the
+ * deploy health probe, Traefik, database and volume helpers) for 30 minutes. */
+const IMAGE_INSPECT_TIMEOUT_MS = 10_000;
 const CONTAINERD_SOCKETS = ['/run/containerd/containerd.sock', '/var/run/docker/containerd/containerd.sock'] as const;
 const DEPLOY_HEARTBEAT_MS = 20_000;
 const CRANE_VERSION = 'v0.21.7';
@@ -25,7 +33,8 @@ let cranePreparation: Promise<string> | undefined;
 
 /** Docker/containerd snapshot errors known to be transient on Docker 29+. */
 export function isTransientSnapshotFailure(lines: readonly string[]): boolean {
-  return SNAPSHOT_FAILURE.test(lines.join('\n'));
+  const output = lines.join('\n');
+  return SNAPSHOT_FAILURE.test(output) && !PERSISTENT_STORAGE_FAILURE.test(output);
 }
 
 type Descriptor = {
@@ -182,7 +191,16 @@ async function verifySha256(file: string, expected: string, log: (line: string) 
 }
 
 async function prepareCrane(log: (line: string) => void): Promise<string> {
-  if (cranePreparation) return cranePreparation;
+  if (cranePreparation) {
+    // F105: the cached binary lives under os.tmpdir(), which the host's tmp
+    // reaper ages out; re-validate it instead of spawning a dead path forever.
+    const cached = cranePreparation;
+    const crane = await cached;
+    if (existsSync(crane)) return crane;
+    if (cranePreparation === cached) cranePreparation = undefined;
+    log(`Cached crane binary ${crane} is gone; downloading it again …`);
+    return prepareCrane(log);
+  }
   const preparation = (async () => {
     const arch = hostArchitecture();
     const release = CRANE_RELEASES[arch as keyof typeof CRANE_RELEASES];
@@ -417,9 +435,13 @@ export async function pullDockerImage(
  */
 export async function ensureDockerImage(image: string, log: (line: string) => void): Promise<void> {
   try {
-    await capture('docker', ['image', 'inspect', image, '--format', '{{.Id}}']);
+    await capture('docker', ['image', 'inspect', image, '--format', '{{.Id}}'], { timeoutMs: IMAGE_INSPECT_TIMEOUT_MS });
     return;
-  } catch {
+  } catch (err) {
+    // F975: a timed-out inspect means the daemon is not answering, not that the
+    // image is missing. Pulling then would wedge on the same daemon for the
+    // pull's own 30-minute bound, so fail now. Other errors still mean "missing".
+    if (err instanceof Error && err.name === 'ExecTimeoutError') throw err;
     // Missing locally: use the same bounded containerd recovery as deployments.
   }
 
