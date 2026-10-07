@@ -1,4 +1,5 @@
-import { eq } from 'drizzle-orm';
+import { isIP } from 'node:net';
+import { and, eq } from 'drizzle-orm';
 import { domains } from '@ninedeploy/db';
 import { detectPublicIp } from '../../lib/cloudflare.js';
 import { getSettingString } from '../../lib/settings.js';
@@ -26,7 +27,7 @@ import type { KernelContext, KernelPlugin } from '../types.js';
  *     `detectPublicIp()` when not (same convention `modules/domains.ts`
  *     already uses for manual creates).
  *   - Record type is `A` when the content looks like an IPv4 address,
- *     `CNAME` otherwise — mirrors `lib/cloudflare.ts:createDnsRecord`.
+ *     `AAAA` for an IPv6 address (F917), `CNAME` otherwise.
  *   - The plugin NEVER throws. Every failure is surfaced as a
  *     `domain.preset.failed` custom event on the kernel bus so the audit
  *     pipeline picks it up.
@@ -92,6 +93,8 @@ export class DomainPresetsPlugin implements KernelPlugin {
   ];
 
   private unsubs: Array<() => void> = [];
+  /** F305: tail of each hostname's create/delete chain (see `serialized`). */
+  private chains = new Map<string, Promise<void>>();
 
   init(ctx: KernelContext): void {
     const unsub = ctx.events.on('audit.recorded', (payload) => {
@@ -114,9 +117,29 @@ export class DomainPresetsPlugin implements KernelPlugin {
   ): Promise<void> {
     const hostname = payload.entity;
     if (!hostname) return;
-    if (payload.action === 'domain.delete') return this.removeRecord(ctx, hostname);
+    if (payload.action === 'domain.delete') return this.serialized(hostname, () => this.removeRecord(ctx, hostname));
     if (payload.action !== 'domain.add' && payload.action !== 'domain.verified') return;
+    return this.serialized(hostname, () => this.applyRecord(ctx, hostname));
+  }
 
+  /**
+   * F305: the ledger read → provider call → ledger write of one hostname is not
+   * atomic. A `domain.delete` landing mid-create found no ledger and returned,
+   * then the create stored a record for a deleted domain (orphaned upstream);
+   * two concurrent adds both created. Same-hostname work now runs one at a
+   * time, in arrival order; other hostnames are unaffected.
+   */
+  private serialized(hostname: string, op: () => Promise<void>): Promise<void> {
+    const run = (this.chains.get(hostname) ?? Promise.resolve()).then(op, op);
+    this.chains.set(hostname, run);
+    const settle = (): void => {
+      if (this.chains.get(hostname) === run) this.chains.delete(hostname);
+    };
+    run.then(settle, settle);
+    return run;
+  }
+
+  private async applyRecord(ctx: KernelContext, hostname: string): Promise<void> {
     try {
       const enabled = await ctx.configCenter.get<boolean>('plugin:domain-presets:enabled', true);
       if (!enabled) return;
@@ -126,8 +149,11 @@ export class DomainPresetsPlugin implements KernelPlugin {
       // The domains route owns Cloudflare records (create + delete).
       if (providerName === ROUTE_OWNED_PROVIDER) return;
 
-      // Only a routed hostname gets a record, and only once.
-      const row = await ctx.db.query.domains.findFirst({ where: eq(domains.hostname, hostname) });
+      // Only a routed hostname gets a record, and only once. F306: look for an
+      // ACTIVE route — a still-pending sibling path must not hide a live one.
+      const row = await ctx.db.query.domains.findFirst({
+        where: and(eq(domains.hostname, hostname), eq(domains.status, 'active')),
+      });
       if (!row || row.status !== 'active' || row.dnsRecordId) return;
       if (await ctx.configCenter.get<string | null>(recordKey(hostname), null)) return;
 
@@ -145,7 +171,12 @@ export class DomainPresetsPlugin implements KernelPlugin {
 
       const configured = await getSettingString(ctx.db, 'dns_records_content', null);
       const content = configured && configured.length > 0 ? configured : await detectPublicIp();
-      const type: 'A' | 'CNAME' = /^\d{1,3}(\.\d{1,3}){3}$/.test(content) ? 'A' : 'CNAME';
+      // F917: an IPv6 address is an AAAA record, never a CNAME target.
+      const type: 'A' | 'AAAA' | 'CNAME' = /^\d{1,3}(\.\d{1,3}){3}$/.test(content)
+        ? 'A'
+        : isIP(content) === 6
+          ? 'AAAA'
+          : 'CNAME';
 
       const result = await provider.createRecord(zone.id, {
         hostname,
@@ -174,6 +205,13 @@ export class DomainPresetsPlugin implements KernelPlugin {
     try {
       const raw = await ctx.configCenter.get<string | null>(recordKey(hostname), null);
       if (!raw) return;
+      // F304: the record serves the HOSTNAME, not one route. While another
+      // active route still uses it, keep it (and the ledger): the last one out
+      // removes it — the rule modules/domains.ts applies to Cloudflare (F157).
+      const sharer = await ctx.db.query.domains.findFirst({
+        where: and(eq(domains.hostname, hostname), eq(domains.status, 'active')),
+      });
+      if (sharer) return;
       const stored = JSON.parse(raw) as StoredRecord;
       const provider = ctx.registry.getDomainProvider(stored.provider);
       if (!provider) {

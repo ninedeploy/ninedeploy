@@ -206,6 +206,20 @@ describe('lib/namecheap', () => {
       );
       await expect(getNamecheapHosts(creds, 'example.com')).resolves.toEqual([]);
     });
+
+    // F916: setHosts replaces the zone, so the read-modify-write callers would
+    // write back only their new row — an unknown answer must not read as `[]`.
+    it.each([
+      ['no CommandResponse', '<ApiResponse Status="OK"><Errors /></ApiResponse>'],
+      ['an empty CommandResponse', '<ApiResponse Status="OK"><CommandResponse Type="namecheap.domains.dns.getHosts" /></ApiResponse>'],
+      [
+        'no DomainDNSGetHostsResult',
+        '<ApiResponse Status="OK"><CommandResponse><host HostId="10" Name="@" Type="A" Address="2.2.2.2" TTL="60" /></CommandResponse></ApiResponse>',
+      ],
+    ])('F916: rejects an OK answer with %s instead of returning an empty zone', async (_label, xml) => {
+      fetchMock.mockResolvedValueOnce(xmlResponse(xml));
+      await expect(getNamecheapHosts(creds, 'example.com')).rejects.toThrow(/returned no host list/);
+    });
   });
 
   describe('setNamecheapHosts', () => {

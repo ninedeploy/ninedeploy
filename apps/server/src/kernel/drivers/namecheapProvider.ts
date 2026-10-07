@@ -82,6 +82,16 @@ export class NamecheapProvider implements IDomainProvider {
 
   async createRecord(zoneId: string, spec: DomainRecordSpec): Promise<DomainRecordResult> {
     const creds = await this.requireCredentials();
+    // F364: `setHosts` replaces the whole zone — the read-modify-write below
+    // must not interleave with another mutation of the same zone.
+    return withZoneLock(zoneId, () => this.createRecordLocked(creds, zoneId, spec));
+  }
+
+  private async createRecordLocked(
+    creds: NamecheapCredentials,
+    zoneId: string,
+    spec: DomainRecordSpec,
+  ): Promise<DomainRecordResult> {
     // r244: Namecheap host names are RELATIVE to the domain (`www`, `@`).
     // Callers such as the domain-presets plugin pass the full hostname, which
     // was written verbatim and produced `app.example.com.example.com`.
@@ -97,7 +107,7 @@ export class NamecheapProvider implements IDomainProvider {
       name,
       type: spec.type,
       address: spec.content,
-      ttl: spec.ttl ? String(spec.ttl) : '1800',
+      ttl: namecheapTtl(spec.ttl),
     });
     // 3. Push the merged list. Namecheap's `setHosts` is the only
     //    mutation endpoint; the new entry's `HostId` is assigned by
@@ -116,6 +126,11 @@ export class NamecheapProvider implements IDomainProvider {
 
   async deleteRecord(zoneId: string, recordId: string): Promise<void> {
     const creds = await this.requireCredentials();
+    // F364: same whole-zone read-modify-write as createRecord.
+    return withZoneLock(zoneId, () => this.deleteRecordLocked(creds, zoneId, recordId));
+  }
+
+  private async deleteRecordLocked(creds: NamecheapCredentials, zoneId: string, recordId: string): Promise<void> {
     const { hosts: existing, emailType } = await readNamecheapHostList(creds, zoneId);
     const filtered = existing.filter((h) => h.hostId !== recordId);
     // If nothing matched, the desired terminal state is already
@@ -123,6 +138,32 @@ export class NamecheapProvider implements IDomainProvider {
     if (filtered.length === existing.length) return;
     await setNamecheapHosts(creds, zoneId, filtered, { emailType });
   }
+}
+
+/**
+ * F364: tail of each zone's mutation chain. Module-level, not per instance:
+ * the zone is one shared upstream resource, whoever holds the driver. Only
+ * in-process writers are serialised — an edit in Namecheap's own panel can
+ * still interleave (the API has no compare-and-set).
+ */
+const zoneChains = new Map<string, Promise<unknown>>();
+
+function withZoneLock<T>(zoneId: string, op: () => Promise<T>): Promise<T> {
+  const key = zoneId.toLowerCase();
+  const run = (zoneChains.get(key) ?? Promise.resolve()).then(op, op);
+  zoneChains.set(key, run);
+  const settle = (): void => {
+    if (zoneChains.get(key) === run) zoneChains.delete(key);
+  };
+  run.then(settle, settle);
+  return run;
+}
+
+/** F365: the contract's TTL `1` means "automatic"; Namecheap has no such
+ *  sentinel and documents 60..60000 (default 1800). */
+function namecheapTtl(ttl: number | undefined): string {
+  if (!ttl || ttl === 1) return '1800';
+  return String(Math.min(60000, Math.max(60, Math.round(ttl))));
 }
 
 /** `app.example.com` in zone `example.com` → `app`; the apex → `@`. A name

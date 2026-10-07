@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { z } from 'zod';
 import { audit } from '../lib/audit.js';
 import { detectPublicIp } from '../lib/cloudflare.js';
@@ -26,8 +27,9 @@ import type { FastifyPluginAsync } from 'fastify';
  *     supplied, else from `dns_records_content` (the panel's static
  *     override), else from `detectPublicIp()` — same precedence the
  *     audit-bus path uses.
- *   - Record type is `A` for an IPv4-shaped content, `CNAME` otherwise
- *     — mirrors `lib/cloudflare.ts:createDnsRecord`.
+ *   - Record type is `A` for an IPv4-shaped content, `AAAA` for an IPv6
+ *     address (F965), `CNAME` otherwise — mirrors
+ *     `lib/cloudflare.ts:createDnsRecord`.
  *   - A successful apply emits a `domain.preset.manual` audit event so
  *     the rest of the panel (activity log, audit firehose subscribers)
  *     stays consistent with the plugin's own `domain.preset.applied`
@@ -67,7 +69,12 @@ export const domainPresetsRoutes: FastifyPluginAsync = async (app) => {
     }
     const configured = await getSettingString(app.db, 'dns_records_content', null);
     const content = input.content ?? (configured && configured.length > 0 ? configured : await detectPublicIp());
-    const type: 'A' | 'CNAME' = /^\d{1,3}(\.\d{1,3}){3}$/.test(content) ? 'A' : 'CNAME';
+    // F965: an IPv6 address is an AAAA record, never a CNAME target.
+    const type: 'A' | 'AAAA' | 'CNAME' = /^\d{1,3}(\.\d{1,3}){3}$/.test(content)
+      ? 'A'
+      : isIP(content) === 6
+        ? 'AAAA'
+        : 'CNAME';
     const result = await provider.createRecord(zone.id, {
       hostname: input.hostname,
       type,

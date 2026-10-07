@@ -29,7 +29,7 @@
  * background sweep.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { and, eq, gt, sql } from 'drizzle-orm';
+import { and, eq, gte, sql } from 'drizzle-orm';
 import { domainTransfers, domains, services, users, type DB } from '@ninedeploy/db';
 
 const TOKEN_BYTES = 32;
@@ -113,6 +113,9 @@ export async function startTransfer(
   // forever, so the check filters on the clock, not the column —
   // otherwise an expired transfer would block every future
   // transfer of that domain until someone cancelled it by hand.
+  // F912: `>=`, the exact complement of effectiveStatus's
+  // `expires_at < now` — at now === expires_at the old token is
+  // still acceptable, so it must still block a second transfer.
   const nowSeconds = Math.floor(Date.now() / 1000);
   const existing = await db
     .select({ id: domainTransfers.id })
@@ -121,7 +124,7 @@ export async function startTransfer(
       and(
         eq(domainTransfers.domainId, input.domainId),
         eq(domainTransfers.status, 'pending'),
-        gt(domainTransfers.expiresAt, nowSeconds),
+        gte(domainTransfers.expiresAt, nowSeconds),
       ),
     )
     .limit(1);
@@ -213,27 +216,32 @@ export async function acceptTransfer(db: DB, input: AcceptTransferInput): Promis
   // concurrent accepts — or an accept racing a cancel — then cannot both move
   // the domain row. Exactly one caller wins the conditional flip; the loser
   // gets a clean "no longer pending" error instead of a double move.
+  // F913: claim and move commit together — a failed move (busy DB, the target
+  // service deleted meanwhile) used to leave the one-time token consumed and
+  // the transfer `accepted` while the domain never moved.
   const now = Math.floor(Date.now() / 1000);
-  const claimed = await db
-    .update(domainTransfers)
-    .set({
-      status: 'accepted',
-      targetUserId: input.userId,
-      targetServiceId: input.targetServiceId,
-      acceptedAt: now,
-    })
-    .where(and(eq(domainTransfers.id, row.id), eq(domainTransfers.status, 'pending')))
-    .returning({ id: domainTransfers.id });
-  if (claimed.length === 0) throw new Error('Transfer is no longer pending');
+  await db.transaction(async (tx) => {
+    const claimed = await tx
+      .update(domainTransfers)
+      .set({
+        status: 'accepted',
+        targetUserId: input.userId,
+        targetServiceId: input.targetServiceId,
+        acceptedAt: now,
+      })
+      .where(and(eq(domainTransfers.id, row.id), eq(domainTransfers.status, 'pending')))
+      .returning({ id: domainTransfers.id });
+    if (claimed.length === 0) throw new Error('Transfer is no longer pending');
 
-  // Move the domain row. The (hostname, path) unique index
-  // could collide if the target service already has the
-  // same host:path; let drizzle raise the error and the
-  // route translates it to a 409.
-  await db
-    .update(domains)
-    .set({ serviceId: input.targetServiceId, updatedAt: new Date() })
-    .where(eq(domains.id, row.domainId));
+    // Move the domain row. The (hostname, path) unique index
+    // could collide if the target service already has the
+    // same host:path; let drizzle raise the error and the
+    // route translates it to a 409.
+    await tx
+      .update(domains)
+      .set({ serviceId: input.targetServiceId, updatedAt: new Date() })
+      .where(eq(domains.id, row.domainId));
+  });
 
   return {
     transferId: row.id,

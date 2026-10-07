@@ -248,6 +248,32 @@ describe('r633: the www companion passes the same claim rules as the host', () =
     expect(yaml).toContain('rule: "Host(`example.net`)"');
     expect(yaml).not.toContain('www.example.net');
   });
+
+  // F156: the reverse direction — an ACTIVE redirect routes its companion, so
+  // that host is held as much as the stored one. Only the stored hostname used
+  // to be compared: a pending foreign claim on the companion made the proxy
+  // drop the holder's www route, and an own-zone one went live and took it.
+  it("refuses a claim on the companion another service's active redirect routes; the pair stays", async () => {
+    await db.insert(domains).values({ serviceId: alpha, hostname: 'example.net', path: '/', ssl: false, redirectWww: true, status: 'active' });
+    const res = await addDomain(await app(), bravo, { hostname: 'www.example.net', ssl: false }, member(BOB));
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.message).toMatch(/already routed by another service/);
+    expect(await renderDynamicConfig(db, { serverId: null })).toContain('Host(`example.net`) || Host(`www.example.net`)');
+  });
+
+  it('refuses an own-zone claim on such a companion — nothing goes live for the claimant', async () => {
+    await db.insert(domains).values({ serviceId: alpha, hostname: 'shop.apps.example.com', path: '/', ssl: false, redirectWww: true, status: 'active' });
+    const res = await addDomain(await app(), bravo, { hostname: 'www.shop.apps.example.com', ssl: false }, member(BOB));
+    expect(res.statusCode).toBe(409);
+    expect(await db.query.domains.findFirst({ where: eq(domains.serviceId, bravo) })).toBeUndefined();
+  });
+
+  it('a PENDING redirect row holds no companion and is not evicted by a claim on it', async () => {
+    await db.insert(domains).values({ serviceId: alpha, hostname: 'example.net', path: '/', ssl: false, redirectWww: true, status: 'pending' });
+    const res = await addDomain(await app(), bravo, { hostname: 'www.example.net', ssl: false }, member(BOB));
+    expect(res.statusCode).toBe(200);
+    expect((await row('example.net'))?.status).toBe('pending');
+  });
 });
 
 // ── r634 (I5) ────────────────────────────────────────────────────────────────

@@ -253,4 +253,32 @@ describe('r223: own-zone first-come claims', () => {
     });
     expect(opRes.statusCode).toBe(200);
   });
+
+  // F232: the names a service's future PR previews will get are as predictable
+  // as its automatic domain; claimed first, the webhook's preview insert hit
+  // the unique index and the claimant served the preview.
+  it("refuses a member claiming another service's future PR-preview names", async () => {
+    const billing = svcRow({ id: 2, name: 'billing', slug: 'billing', ownerUserId: 99, previewDomainPattern: null, previewParentServiceId: null });
+    const self = svcRow({ id: 1, slug: 'mine', ownerUserId: MEMBER, previewDomainPattern: null, previewParentServiceId: null });
+    for (const hostname of ['pr-7-billing.apps.ninedeploy.test', 'billing-pr-7.apps.ninedeploy.test']) {
+      const { a, inserted } = await app({
+        findFirst: { services: servicesBySlug(undefined) },
+        select: { domains: [], services: [self, billing] },
+      });
+      const res = await a.inject({ method: 'POST', url: '/1/domains', headers: member(), payload: { hostname } });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error.message).toMatch(/reserved for the PR previews of service "billing"/);
+      expect(inserted).toHaveLength(0);
+    }
+    // the owner keeps its own preview names; a near miss stays free
+    const own = await app({
+      findFirst: { services: servicesBySlug(undefined) },
+      select: { domains: [], services: [svcRow({ id: 1, slug: 'billing', ownerUserId: MEMBER, previewDomainPattern: null, previewParentServiceId: null })] },
+    });
+    const ok = await own.a.inject({ method: 'POST', url: '/1/domains', headers: member(), payload: { hostname: 'pr-7-billing.apps.ninedeploy.test' } });
+    expect(ok.statusCode).toBe(200);
+    const near = await app({ findFirst: { services: servicesBySlug(undefined) }, select: { domains: [], services: [self, billing] } });
+    const free = await near.a.inject({ method: 'POST', url: '/1/domains', headers: member(), payload: { hostname: 'pr-7-billingx.apps.ninedeploy.test' } });
+    expect(free.statusCode).toBe(200);
+  });
 });

@@ -363,4 +363,57 @@ describe('DomainPresetsPlugin', () => {
       expect(provider.deleteRecord).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('record ledger ownership and ordering', () => {
+    const listenerOf = (kernel: FakeKernel) =>
+      (kernel.events.on as ReturnType<typeof vi.fn>).mock.calls.find((c: unknown[]) => c[0] === 'audit.recorded')?.[1] as (
+        payload: unknown,
+      ) => Promise<void>;
+    const audit = (action: string) => ({ action, entity: 'app.example.com', actorUserId: 1, ts: '2026-10-07T00:00:00.000Z' });
+
+    it('F304: keeps the hostname record while another active route still uses it', async () => {
+      const provider = dnsimpleProvider();
+      const { kernel, plugin } = newKernel(provider, { dns_records_provider: 'dnsimple', dns_records_content: '203.0.113.9' });
+      plugin.init(kernel as unknown as never);
+      await fireDomainAdd(kernel, 'app.example.com');
+      // The `/` route is deleted; `/api` on the same hostname is still active.
+      domainRow = { id: 2, hostname: 'app.example.com', path: '/api', status: 'active', dnsRecordId: null };
+      await fireDomainAdd(kernel, 'app.example.com', 'domain.delete');
+      expect(provider.deleteRecord).not.toHaveBeenCalled();
+      // The last route out removes it.
+      domainRow = undefined;
+      await fireDomainAdd(kernel, 'app.example.com', 'domain.delete');
+      expect(provider.deleteRecord).toHaveBeenCalledWith('example.com', '42');
+    });
+
+    it('F305: a domain.delete during an in-flight create still removes the record', async () => {
+      let entered!: () => void;
+      const enteredP = new Promise<void>((r) => {
+        entered = r;
+      });
+      let release!: () => void;
+      const releaseP = new Promise<void>((r) => {
+        release = r;
+      });
+      const provider = dnsimpleProvider({
+        createRecord: vi.fn(async () => {
+          entered();
+          await releaseP;
+          return { recordId: '42', hostname: 'app.example.com', type: 'A' as const };
+        }),
+      });
+      const { kernel, plugin } = newKernel(provider, { dns_records_provider: 'dnsimple', dns_records_content: '203.0.113.9' });
+      plugin.init(kernel as unknown as never);
+      const listener = listenerOf(kernel);
+      const pAdd = listener(audit('domain.add'));
+      await enteredP; // the create is now inside the provider
+      domainRow = undefined; // the route row is gone
+      const pDel = listener(audit('domain.delete'));
+      await new Promise<void>((r) => setImmediate(r));
+      release();
+      await Promise.all([pAdd, pDel]);
+      expect(provider.deleteRecord).toHaveBeenCalledWith('example.com', '42');
+      expect(kernel.configCenter.delete).toHaveBeenCalledWith('plugin:domain-presets:record:app.example.com');
+    });
+  });
 });

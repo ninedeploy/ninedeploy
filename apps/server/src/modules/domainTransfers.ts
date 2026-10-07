@@ -33,10 +33,11 @@ import {
 } from '../lib/domainTransfer.js';
 import { writeDynamicConfig } from '../engine/proxy.js';
 import { audit } from '../lib/audit.js';
-import { badRequest, HttpError, notFound, parseId as num, unprocessable } from '../lib/errors.js';
-import { loadServiceForUser, assertServiceRole } from '../lib/resourceAccess.js';
+import { badRequest, conflict, HttpError, notFound, parseId as num, unprocessable } from '../lib/errors.js';
+import { loadServiceForUser, assertServiceRole, roleAtLeast, serviceRole } from '../lib/resourceAccess.js';
+import { ownZoneClaimRefusal } from '../lib/domainVerification.js';
 import { eq } from 'drizzle-orm';
-import { domains } from '@ninedeploy/db';
+import { domainTransfers, domains, services, users } from '@ninedeploy/db';
 
 const startBody = z.object({
   targetEmail: z.string().min(3).max(254),
@@ -139,6 +140,18 @@ export const domainTransferTokenRoutes: FastifyPluginAsync = async (app) => {
         // victim container and bypass that service's routing middleware.
         const targetService = await loadServiceForUser(app.db, body.data.targetServiceId, req.user!);
         await assertServiceRole(app.db, targetService, req.user!, 'admin');
+        // F308 / F309: re-check both ends of the move against the CURRENT state.
+        const pending = await pendingTransferDomain(app, req.params.token);
+        if (pending) {
+          await assertInitiatorStillAdmin(app, pending.sourceUserId, pending.domain.serviceId);
+          // r223 claim rules, as on every other path that puts a hostname on a
+          // service: another service's automatic domain and `*.<zone>` stay
+          // off a non-operator's target.
+          if (!req.user!.isOperator) {
+            const refusal = await ownZoneClaimRefusal(app.db, targetService.id, pending.domain.hostname);
+            if (refusal) throw conflict(`${pending.domain.hostname} ${refusal}`);
+          }
+        }
         let result: Awaited<ReturnType<typeof acceptTransfer>>;
         try {
           result = await acceptTransfer(app.db, {
@@ -171,9 +184,18 @@ export const domainTransferTokenRoutes: FastifyPluginAsync = async (app) => {
     );
 
     authed.post<{ Params: { token: string } }>('/:token/cancel', async (req) => {
+      // F308: a current admin of the domain's service may withdraw a transfer
+      // someone else started (an offboarded admin's link otherwise blocked
+      // every new transfer of the domain until it expired).
+      const pending = req.user!.isOperator ? null : await pendingTransferDomain(app, req.params.token);
+      const svc = pending
+        ? await app.db.query.services.findFirst({ where: eq(services.id, pending.domain.serviceId) })
+        : undefined;
+      const role = svc ? await serviceRole(app.db, svc, req.user!) : null;
+      const mayCancelAny = req.user!.isOperator || (role !== null && roleAtLeast(role, 'admin'));
       let result: Awaited<ReturnType<typeof cancelTransfer>>;
       try {
-        result = await cancelTransfer(app.db, req.params.token, req.user!.id, req.user!.isOperator);
+        result = await cancelTransfer(app.db, req.params.token, req.user!.id, mayCancelAny);
       } catch (err) {
         throw badRequest(err instanceof Error ? err.message : String(err));
       }
@@ -182,6 +204,36 @@ export const domainTransferTokenRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 };
+
+type AppInstance = Parameters<FastifyPluginAsync>[0];
+
+/** The still-pending transfer behind `token` and the domain row it would move, else null (the lib reports why). */
+async function pendingTransferDomain(app: AppInstance, token: string) {
+  const preview = await previewTransfer(app.db, token);
+  if (!preview || preview.status !== 'pending') return null;
+  const row = await app.db.query.domainTransfers.findFirst({ where: eq(domainTransfers.id, preview.id) });
+  if (!row) return null;
+  const domain = await app.db.query.domains.findFirst({ where: eq(domains.id, row.domainId) });
+  return domain ? { sourceUserId: row.sourceUserId, domain } : null;
+}
+
+/**
+ * F308: the token is a deferred use of the initiator's admin seat on the
+ * domain's service, so it dies with that seat. An offboarded or demoted admin
+ * (r694) used to keep a 7-day bearer link that moved the team's hostname to a
+ * service of their choosing, and the remaining admins could not cancel it.
+ */
+async function assertInitiatorStillAdmin(app: AppInstance, sourceUserId: number, serviceId: number): Promise<void> {
+  const refuse = () =>
+    conflict(
+      'The user who started this transfer no longer administers the domain; a current admin of its service can cancel it and start a new one',
+    );
+  const initiator = await app.db.query.users.findFirst({ where: eq(users.id, sourceUserId) });
+  const svc = await app.db.query.services.findFirst({ where: eq(services.id, serviceId) });
+  if (!initiator || initiator.deactivatedAt || !svc) throw refuse();
+  const role = await serviceRole(app.db, svc, { id: initiator.id, isOperator: initiator.isInstanceOperator === true });
+  if (role === null || !roleAtLeast(role, 'admin')) throw refuse();
+}
 
 /**
  * Resolve the panel origin used to build the acceptUrl.

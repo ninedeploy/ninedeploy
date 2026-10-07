@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import type { DB } from '@ninedeploy/db';
 import type { DomainZone } from '../kernel/types.js';
 import { decrypt, encrypt } from './crypto.js';
@@ -123,7 +124,8 @@ export async function detectPublicIp(): Promise<string> {
 
 /**
  * Create the DNS record for a service hostname. Type is A when the content
- * looks like an IPv4 address, CNAME otherwise. Returns the record id.
+ * looks like an IPv4 address, AAAA for an IPv6 address (F964), CNAME
+ * otherwise. Returns the record id.
  */
 export async function createDnsRecord(
   token: string,
@@ -132,7 +134,8 @@ export async function createDnsRecord(
 ): Promise<string> {
   const zoneId = await findZoneId(token, hostname);
   if (!zoneId) throw new Error(`No Cloudflare zone matches ${hostname}`);
-  const type = /^\d{1,3}(\.\d{1,3}){3}$/.test(content) ? 'A' : 'CNAME';
+  // F964: an IPv6 address is an AAAA record, never a CNAME target.
+  const type = /^\d{1,3}(\.\d{1,3}){3}$/.test(content) ? 'A' : isIP(content) === 6 ? 'AAAA' : 'CNAME';
   const record = await cf<{ id: string }>(`/zones/${zoneId}/dns_records`, token, {
     method: 'POST',
     body: JSON.stringify({ type, name: hostname, content, ttl: 1, proxied: false }),

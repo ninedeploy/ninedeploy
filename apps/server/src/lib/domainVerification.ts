@@ -4,6 +4,7 @@ import { domainToASCII } from 'node:url';
 import { eq } from 'drizzle-orm';
 import { services, type DB } from '@ninedeploy/db';
 import { config } from '../config.js';
+import { DEFAULT_PREVIEW_DOMAIN_PATTERN, previewBaseDomain } from './previewDomain.js';
 
 /**
  * H-2, second layer: prove control of the DNS zone before a hostname routes.
@@ -86,9 +87,49 @@ export async function ownZoneClaimRefusal(db: DB, serviceId: number, hostname: s
   const zone = (config.wildcardDomain ?? '').trim().toLowerCase().replace(/^\*\./, '').replace(/\.$/, '');
   if (!zone || !host.endsWith(`.${zone}`)) return null;
   const label = host.slice(0, -(zone.length + 1));
-  if (label.includes('.')) return null;
-  const owner = await db.query.services.findFirst({ where: eq(services.slug, label) });
-  return owner && owner.id !== serviceId ? `is reserved as the automatic domain of service "${owner.name}"` : null;
+  if (!label.includes('.')) {
+    const owner = await db.query.services.findFirst({ where: eq(services.slug, label) });
+    if (owner) return owner.id !== serviceId ? `is reserved as the automatic domain of service "${owner.name}"` : null;
+  }
+  return previewNameRefusal(db, serviceId, host, label);
+}
+
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * F232: the names the webhook and pipeline will generate for another
+ * service's future PR previews are as predictable as its automatic domain —
+ * `renderPreviewHost(pattern, <pr>, slug)` and the preview service's own
+ * automatic domain `<slug>-pr-<pr>.<zone>` — and were claimable first, so the
+ * preview's later insert hit the unique index and the claimant served it.
+ * A service, its parent and that parent's other previews share the names.
+ */
+async function previewNameRefusal(db: DB, serviceId: number, host: string, label: string): Promise<string | null> {
+  const all = await db
+    .select({
+      id: services.id,
+      name: services.name,
+      slug: services.slug,
+      previewDomainPattern: services.previewDomainPattern,
+      previewParentServiceId: services.previewParentServiceId,
+    })
+    .from(services);
+  const claimant = all.find((s) => s.id === serviceId);
+  const root = claimant?.previewParentServiceId ?? serviceId;
+  const base = previewBaseDomain().toLowerCase();
+  for (const s of all) {
+    if (s.id === root || s.previewParentServiceId === root || !s.slug) continue;
+    const slug = escapeRe(s.slug.toLowerCase());
+    const pattern = (s.previewDomainPattern || DEFAULT_PREVIEW_DOMAIN_PATTERN).trim();
+    const rendered = pattern
+      .split(/(\{\{pr\}\}|\{\{slug\}\}|\{\{domain\}\})/)
+      .map((p) => (p === '{{pr}}' ? '[0-9]+' : p === '{{slug}}' ? slug : p === '{{domain}}' ? escapeRe(base) : escapeRe(p.toLowerCase())))
+      .join('');
+    if (new RegExp(`^${rendered}$`).test(host) || new RegExp(`^${slug}-pr-[0-9]+$`).test(label)) {
+      return `is reserved for the PR previews of service "${s.name}"`;
+    }
+  }
+  return null;
 }
 
 /** Whether this claim has to be proved before it may route. */
@@ -234,7 +275,9 @@ export function wwwCompanionHost(hostname: string): string | null {
 export function companionOutsideProof(hostname: string): string | null {
   const companion = wwwCompanionHost(hostname);
   if (!companion) return null;
-  return companion.startsWith('www.') ? null : companion;
+  // F233: covered only when the companion sits one label BELOW the stored
+  // host. `www.www.example.com` pairs with the shallower `www.example.com`.
+  return companion === `www.${normalizeHost(hostname)}` ? null : companion;
 }
 
 /**

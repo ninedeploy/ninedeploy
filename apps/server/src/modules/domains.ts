@@ -7,7 +7,7 @@ import { parseHeaders, writeDynamicConfig } from '../engine/proxy.js';
 import { createDnsRecord, deleteDnsRecord, detectPublicIp, getDnsRecordsConfig, listDnsRecordsByName } from '../lib/cloudflare.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { assertServiceRole, roleAtLeast, serviceRole } from '../lib/resourceAccess.js';
-import { badRequest, conflict, HttpError, notFound, parseId as num } from '../lib/errors.js';
+import { badRequest, conflict, HttpError, isUniqueViolation, notFound, parseId as num } from '../lib/errors.js';
 import { getSettingString } from '../lib/settings.js';
 import { classifyResolution, resolveHostAddresses } from '../lib/dnsStatus.js';
 import {
@@ -74,7 +74,14 @@ async function assertHostnameClaimable(
   const unverified: Domain[] = [];
   for (const row of rows) {
     if (row.serviceId === serviceId) continue;
-    if (!hostsCollide(row.hostname, hostname)) continue;
+    // F156: an ACTIVE www-redirect row routes its companion host too (the
+    // proxy renders `Host(apex) || Host(www.apex)`), so it holds that host as
+    // much as its own. Only the hostname used to be compared: another tenant's
+    // claim on the companion was accepted — pending, it made the proxy drop
+    // the holder's www route; in the instance zone, it went live and took it.
+    const companion = row.redirectWww && row.status === 'active' ? wwwCompanionHost(row.hostname) : null;
+    const onCompanion = companion != null && hostsCollide(companion, hostname);
+    if (!onCompanion && !hostsCollide(row.hostname, hostname)) continue;
     let manageable = false;
     try {
       // Admins pass; a member passes only for a service they can WRITE to.
@@ -289,7 +296,7 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
       })
       .returning()
       .catch((err: unknown) => {
-        if (err instanceof Error && /UNIQUE constraint/.test(err.message)) return [] as Domain[];
+        if (isUniqueViolation(err)) return [] as Domain[];
         throw err;
       });
     if (!d) throw conflict('A domain with that host already exists');
@@ -511,7 +518,22 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
     await app.db.delete(domains).where(and(eq(domains.id, domainId), eq(domains.serviceId, id)));
     // Remove the provider DNS record (best-effort — a stale record only points
     // at the server, it no longer routes anywhere once Traefik rewrites).
-    if (existing.dnsRecordId) {
+    // F157: the record serves the HOSTNAME, not this row. Another active row
+    // routing the same host on another path (whose own create was refused by
+    // the provider as a duplicate) lost its DNS when this one was deleted.
+    // Hand the record over instead; the last row out removes it.
+    const sharers = existing.dnsRecordId
+      ? await app.db.query.domains.findMany({
+          where: and(eq(domains.hostname, existing.hostname), eq(domains.status, 'active')),
+        })
+      : [];
+    // A sharer that holds its own record keeps the host covered; this record
+    // can then go as before.
+    const heir = sharers.some((s) => s.dnsRecordId) ? undefined : sharers[0];
+    if (heir) {
+      await app.db.update(domains).set({ dnsRecordId: existing.dnsRecordId }).where(eq(domains.id, heir.id));
+    }
+    if (existing.dnsRecordId && !heir) {
       const dnsCfg = await getDnsRecordsConfig(app.db);
       if (dnsCfg.enabled && dnsCfg.token) {
         await deleteDnsRecord(dnsCfg.token, existing.hostname, existing.dnsRecordId).catch(() => undefined);

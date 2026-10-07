@@ -210,9 +210,12 @@ export async function readNamecheapHostList(
   params.set('SLD', sldOf(domain));
   params.set('TLD', tldOf(domain));
   const root = await namecheapRequest(creds, params);
+  // F916: callers write this list back through setHosts, which REPLACES the
+  // zone. An answer without the host-list result is unknown, not an empty
+  // zone — reading it as `[]` made the next write delete every record.
   const result = findChild(root, 'CommandResponse');
-  if (!result) return { hosts: [] };
-  const domainEl = findChild(result, 'DomainDNSGetHostsResult') ?? result;
+  const domainEl = result ? findChild(result, 'DomainDNSGetHostsResult') : undefined;
+  if (!domainEl) throw new Error(`Namecheap getHosts for ${domain} returned no host list`);
   // The host list lives under `<DomainDNSGetHostsResult><hosts>…</hosts></…>`.
   // If the wrapping `<hosts>` is missing, treat the result element itself
   // as the container — keeps the driver working against test fixtures
