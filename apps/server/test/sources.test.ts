@@ -539,7 +539,7 @@ describe('GET /:id/test', () => {
     expect(res.json()).toEqual({ ok: false, error: 'No token configured for this source' });
   });
 
-  it('rejects a gitea source (no upstream support yet)', async () => {
+  it('keeps the { ok:false, error } shape for a gitea source with no base URL (0.13: live test needs one)', async () => {
     const app = await buildTestApp({
       db: createFakeDb({
         findFirst: { sources: sourceRow({ id: 3, type: 'gitea', tokenEncrypted: encrypt('gtok') }) },
@@ -547,7 +547,7 @@ describe('GET /:id/test', () => {
     });
     await app.register(sourcesRoutes);
     const res = await app.inject({ method: 'GET', url: '/3/test', headers: asUser() });
-    expect(res.json()).toEqual({ ok: false, error: expect.stringContaining('gitea sources') });
+    expect(res.json()).toEqual({ ok: false, error: 'Set the Gitea base URL to enable the live test' });
   });
 
   it('rejects an unknown source type', async () => {

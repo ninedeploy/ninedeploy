@@ -180,10 +180,10 @@ export const MARKETPLACE_CATALOG: Omit<MarketplacePluginItem, 'isInstalled'>[] =
   {
     id: 'github-app',
     implemented: false,
-    builtIn: { label: 'Sources + per-service auto-deploy webhooks', path: '/sources' },
+    builtIn: { label: 'Sources → GitHub Apps (built in since 0.13)', path: '/sources' },
     name: 'GitHub App & CI/CD Webhooks',
     version: '1.0.0',
-    description: 'Bi-directional GitHub App integration for commit statuses, PR preview environments, and instant webhook deployment triggers',
+    description: 'Built in since 0.13: register a GitHub App under Sources → GitHub Apps (one-click manifest setup, or manual entry for GitHub Enterprise Server), sync its installations, and deploy with short-lived installation tokens, commit statuses and PR preview comments. This catalog entry stays a placeholder; its settings are not read.',
     author: 'NineDeploy Official',
     icon: 'Github',
     category: 'automation',

@@ -46,6 +46,7 @@ import { configCenterRoutes } from './configCenter.js';
 import { pluginRoutes } from './plugins.js';
 import { menuRoutes } from './menus.js';
 import { sourcesRoutes } from './sources.js';
+import { githubAppsRoutes } from './githubApps.js';
 import { systemRoutes } from './resources.js';
 import { panelBackupRoutes } from './panelBackup.js';
 import { templateRoutes } from './templates.js';
@@ -137,6 +138,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(systemRoutes, { prefix: '/system' });
   await app.register(panelBackupRoutes, { prefix: '/system/panel-backup' });
   await app.register(sourcesRoutes, { prefix: '/sources' });
+  // GitHub App registration and installations (0.13), operator-only.
+  await app.register(githubAppsRoutes, { prefix: '/github-apps' });
   await app.register(insightsRoutes, { prefix: '/insights' });
   await app.register(settingsRoutes, { prefix: '/settings' });
   await app.register(firewallRoutes, { prefix: '/firewall' });
