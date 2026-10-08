@@ -22,9 +22,9 @@ This plan was drawn up on 2026-10-08 from a feature-gap analysis against Dokploy
 - **Preview-only environment:** an environment set that applies only to PR previews. Previews deliberately receive no production secrets, so this set fills that gap.
 - **Disk and server-offline alerts:** two new alert metrics, `disk` and `server_offline`, next to cpu, memory and certificate expiry.
 
-## 0.13 — Git integration (in progress)
+## 0.13 — Git integration (done)
 
-Status: the GitHub App (setup, installations, clone tokens, App webhooks, service links, feedback, remote-node job tokens) and the Gitea base URL are implemented on `release/0.13`; see [GITHUB_APP.md](./GITHUB_APP.md). The release is pending its upgrade smoke.
+Shipped in 0.13.0; see [GITHUB_APP.md](./GITHUB_APP.md).
 
 - **GitHub App:**
   - one-click setup through the manifest flow;

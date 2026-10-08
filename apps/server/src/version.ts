@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.12.0';
+export const VERSION = '0.13.0';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.13.0',
+    date: '2026-10-08',
+    title: 'GitHub App Integration',
+    changes: [
+      'GitHub App integration: register an App in one click (Sources → GitHub Apps) or enter a GitHub Enterprise Server App by hand. Each installation becomes a source that clones with short-lived, repository-scoped tokens instead of a long-lived personal access token.',
+      'App webhooks route pushes and pull requests by repository id, so renamed repositories keep deploying. Existing services can migrate to the App and back from Settings → GitHub; their PAT and webhook stay until you finalize.',
+      'Optional commit statuses and one self-updating PR comment with the preview URL and deploy outcome. Private App repositories can now deploy to remote nodes running agent v0.13.0 or newer, with a per-job token that is revoked afterwards.',
+      'Gitea sources take a base URL, which enables the token test and repository listing. Upgrades change nothing until an operator registers an App; the migration only adds tables and one nullable column, and rolling back to 0.12 is safe (see docs/GITHUB_APP.md).',
+    ],
+  },
+{
     version: '0.12.0',
     date: '2026-10-08',
     title: 'Backups, Preview Environments and Disk Alerts',

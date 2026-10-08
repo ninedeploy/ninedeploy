@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-08
+
+> GitHub App integration: short-lived installation tokens instead of long-lived PATs, App webhooks, commit statuses and PR comments, private clones on remote nodes, and Gitea repository listing. See [docs/GITHUB_APP.md](docs/GITHUB_APP.md).
+
+### Upgrade notes
+
+- One additive migration, `0069_github_app`: four new tables (`github_apps`, `github_app_installations`, `service_github_links`, `github_pr_comments`) and a nullable `sources.base_url` column. No existing row is changed.
+- Nothing changes until an operator registers a GitHub App. PAT, deploy-key and webhook services deploy exactly as before, and their per-service webhooks keep working.
+- Moving an existing service to the App is explicit and reversible: **migrate** links it while keeping its PAT and webhook, **finalize** detaches them, and **revert** goes back.
+- Deploying an App repository to a **remote node** needs the node agent v0.13.0 or newer over the sealed transport, and git 2.31 or newer on the node. An older agent gets a refusal telling you to update it; nothing is minted. The check runs when the deploy is queued.
+- Deleting an App in the panel also removes its installation rows and service links. The generated `github_app` sources stay, and their clones then fail closed until you attach another credential.
+- Rolling back to 0.12 is safe: the new tables and column are ignored, migrated-but-not-finalized services keep their PAT and webhook, App-only services fail closed on private repositories (no secret is exposed), and `/v1/hooks/github-app/*` answers 404. Details in docs/GITHUB_APP.md §9.
+- Verified before release: in-place upgrades from 0.12.0 and from 0.10.45. After the upgrade a pre-existing GitHub PAT source still lists and tests, and the App API, Gitea base URL and manifest guards work on the upgraded panel.
+
+### Added
+
+- **GitHub App setup.**
+  - One-click setup through GitHub's manifest flow, for a personal account or an organization (Sources → GitHub Apps).
+  - Manual entry for GitHub Enterprise Server or an existing App. The webhook is registered automatically.
+  - Maintenance: install, sync installations, rotate the private key or webhook secret, re-point the webhook after a domain change.
+  - The private key, webhook secret and client secret are encrypted at rest and covered by master-key rotation; no route returns them.
+- **Installations as sources.** Each installation becomes a `github_app` source. Clones use a repository-scoped, read-only installation token that lives in memory for at most an hour. A token is only ever sent to the App's own GitHub host.
+- **App webhooks.** Pushes and pull requests arrive at `POST /v1/hooks/github-app/<key>`, signature-checked with replay protection, and are routed by repository id, so a renamed or transferred repository keeps deploying and the service's URL is corrected. A service linked to the App skips its old per-service webhook; while the installation is suspended the old webhook takes over again.
+- **Service links.** The Deploy Wizard links a new service to the App repository it picked; existing services can migrate, finalize and revert from the service's Settings → GitHub card, the API (`/v1/services/:id/github`), SDK `services.github` or CLI `ninedeploy services github`.
+- **Commit statuses and PR comments.** Opt-in per service: a `ninedeploy/<slug>` commit status for each deploy, and one preview comment per pull request, edited in place with the URL and outcome. Feedback never fails a deploy.
+- **Private clones on remote nodes.** For App repositories, the panel mints a per-job token, sends it sealed to the agent (capability `git.credential`), which passes it to git only through the environment, and revokes it when the job ends.
+- **Gitea base URL.** Gitea sources take a base URL; the token test and the Deploy Wizard's repository and branch listing then work against it.
+- **Surfaces.** SDK `githubApps` and `services.github`; CLI `ninedeploy github-app list|show|add-manual|sync|rotate-key|remove`, `services github` and `sources add --base-url`; MCP tool `list_github_installations`.
+
+### Fixed
+
+- `/v1/hooks/<non-numeric id>` answers 404 instead of 500.
+- After a session expired, the login redirect now keeps the query string, so returning from GitHub's setup pages still completes the setup.
+
 ## [0.12.0] - 2026-10-08
 
 > Backups, preview environments and disk alerts — the first release of the [roadmap](docs/ROADMAP.md).
