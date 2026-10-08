@@ -21,6 +21,7 @@ export const DATABASE_TAB_TOPICS: Record<string, HelpTopic> = {
           'Launch the admin studio container for a quick web UI into the data (supported engines).',
           'Rotate credentials — attached services pick up the new connection string on their next deploy.',
           'Jump to Backups for snapshots, restore points and offsite sync state.',
+          'Operators: Shell opens a terminal in the database container; Client opens the engine client with the stored credentials.',
         ],
         tip: 'Deleting a database from its Settings tab is permanent for the data volume — export or snapshot first.',
       },
@@ -29,6 +30,7 @@ export const DATABASE_TAB_TOPICS: Record<string, HelpTopic> = {
       { label: 'Database · Backups', helpId: 'database.backups' },
       { label: 'Backups centre', helpId: 'backups' },
       { label: 'Databases list', helpId: 'databases' },
+      { label: 'Terminal sessions', helpId: 'terminals' },
     ],
   },
 

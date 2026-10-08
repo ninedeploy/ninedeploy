@@ -57,6 +57,7 @@ export const NETWORK_TOPICS: Record<string, HelpTopic> = {
       { label: 'Tunnels (Cloudflare)', helpId: 'tunnels' },
       { label: 'Traefik · Custom config', helpId: 'traefik.custom-config' },
       { label: 'Traefik · Uploaded certificates', helpId: 'traefik.certificates' },
+      { label: 'Traffic analytics', helpId: 'traffic-analytics' },
     ],
   },
 

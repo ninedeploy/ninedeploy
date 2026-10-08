@@ -96,6 +96,16 @@ describe('Projects route', () => {
     expect(screen.getByText('3 svc · 1 db')).toBeInTheDocument();
   });
 
+  it('0.15: opens the access view of a workspace project', async () => {
+    mockOf(api.access.project).mockResolvedValue([{ user: { id: 2, email: 'g@x.test', name: null }, role: 'member', via: ['grant'] }] as never);
+    renderWithProviders(<Projects />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Project access' }));
+    expect(await screen.findByText('g@x.test')).toBeInTheDocument();
+    expect(api.access.project).toHaveBeenCalledWith(1);
+    fireEvent.click(screen.getByRole('button', { name: /close/i }));
+    await waitFor(() => expect(screen.queryByText('g@x.test')).toBeNull());
+  });
+
   it('labels an unscoped project and omits a missing description', async () => {
     mockOf(api.projects.list).mockResolvedValue([
       project({ id: 2, name: 'Shared', workspaceId: null, description: null }),
@@ -104,6 +114,8 @@ describe('Projects route', () => {
 
     expect(await screen.findByText('No workspace')).toBeInTheDocument();
     expect(screen.queryByText('Marketing site')).not.toBeInTheDocument();
+    // 0.15: only a workspace project has grants to explain.
+    expect(screen.queryByRole('button', { name: 'Project access' })).toBeNull();
   });
 
   it('scopes the tag filter to the project and navigates to the service list', async () => {

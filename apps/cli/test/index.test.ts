@@ -370,6 +370,7 @@ describe('program registration', () => {
       'reset-link <idOrEmail>', 'activity', 'plugins', 'config-center', 'workspaces',
       'images', 'demo', 'server',
       'logs', 'email-templates', 'certificates', 'proxy', 'secrets',
+      'terminals', 'terminal', 'traffic', 'access',
       'doctor',
       'sources', 'github-app', 'deploy', 'webhooks', 'firewall', 'manifest',
     ]);
@@ -403,7 +404,12 @@ describe('program registration', () => {
     // 0.12 panel backup: `system panel-backup` + 5 subcommands.
     // 0.13: + `services github` and `github-app` with 6 subcommands.
     // 0.14: + 3 database commands, `certificates custom` (5), `proxy config` (6), `secrets providers` (7).
-    expect(h.FakeCommand.instances).toHaveLength(225);
+    // 0.15: + `terminals` (3), `terminal` (4), `traffic` (3), `access` (grants 4 + me).
+    expect(h.FakeCommand.instances).toHaveLength(245);
+    expect(findCommand('terminals').children).toHaveLength(3);
+    expect(findCommand('terminal').children).toHaveLength(4);
+    expect(findCommand('traffic').children).toHaveLength(3);
+    expect(findCommand('access').children).toHaveLength(2);
     expect(findCommand('certificates').children).toHaveLength(3);
     expect(findCommand('proxy').children).toHaveLength(1);
     expect(findCommand('secrets').children).toHaveLength(1);

@@ -58,6 +58,11 @@ import {
   type AwsCliOptions, type VaultCliOptions,
 } from './commands/secretProviders.js';
 import {
+  accessGrantsAdd, accessGrantsList, accessGrantsRemove, accessGrantsUpdate, accessMe,
+  terminalOpen, terminalsKill, terminalsList, terminalsShow, trafficService, trafficSettings, trafficSummary,
+  type TerminalOpenOptions, type TerminalsListOptions,
+} from './commands/operations.js';
+import {
   communityTemplatesImport,
   communityTemplatesList,
   communityTemplatesRemove,
@@ -943,6 +948,94 @@ providersCmd.command('delete <kind>')
   .alias('rm')
   .option('-y, --yes', 'Skip the confirmation prompt')
   .action((kind: string, opts: { yes?: boolean }) => secretProvidersDelete(getClient(), kind, opts));
+/* v8 ignore stop */
+
+// ── 0.15: terminals, traffic analytics, access grants ────────────────────
+const terminalsCmd = program.command('terminals').description('Terminal session history and termination (operator)');
+/* v8 ignore start -- exercised by test/operations.test.ts. */
+terminalsCmd.command('list')
+  .description('List terminal sessions, newest first (metadata only)')
+  .option('--status <status>', 'pending | active | ended | failed | expired')
+  .option('--target <kind>', 'service | database | container | host')
+  .option('--limit <n>', 'Page size (1-200, default 50)')
+  .option('--before <id>', 'Page back from this session id')
+  .action((opts: TerminalsListOptions) => terminalsList(getClient(), opts));
+terminalsCmd.command('show <id>').description('Show one terminal session').action((id: string) => terminalsShow(getClient(), id));
+terminalsCmd.command('kill <id>')
+  .description('Terminate a live session (or revoke a pending one)')
+  .option('-y, --yes', 'Skip the confirmation prompt')
+  .action((id: string, opts: { yes?: boolean }) => terminalsKill(getClient(), id, opts));
+/* v8 ignore stop */
+const terminalCmd = program.command('terminal').alias('shell').description('Open an interactive shell (operator; needs a TTY)');
+/* v8 ignore start -- exercised by test/operations.test.ts. */
+terminalCmd.command('service <id>')
+  .description('Shell into the container of a service')
+  .option('--replica <n>', 'Replica number (1-based)')
+  .option('--node <serverId>', 'A node the service runs on (fan-out target)')
+  .action((id: string, opts: TerminalOpenOptions) => terminalOpen(getClient(), 'service', id, opts));
+terminalCmd.command('db <id>')
+  .description('Shell into the container of a database')
+  .option('--client', 'Open the engine client (psql, mysql, redis-cli) with the stored credentials')
+  .action((id: string, opts: TerminalOpenOptions) => terminalOpen(getClient(), 'db', id, opts));
+terminalCmd.command('container <name>')
+  .description('Shell into a managed container on the panel host')
+  .action((name: string) => terminalOpen(getClient(), 'container', name));
+terminalCmd.command('host [serverId]')
+  .description('Root shell on the panel host or a node (off by default; asks for your password)')
+  .action((serverId: string | undefined) => terminalOpen(getClient(), 'host', serverId));
+/* v8 ignore stop */
+const trafficCmd = program.command('traffic').description('Traffic analytics (opt-in)');
+/* v8 ignore start -- exercised by test/operations.test.ts. */
+trafficCmd.command('settings')
+  .description('Show or change traffic analytics (enabling or disabling recreates Traefik once)')
+  .option('--enable', 'Turn analytics on')
+  .option('--disable', 'Turn analytics off')
+  .option('--retention <days>', 'Keep hourly rows this many days (1-400)')
+  .option('-y, --yes', 'Skip the confirmation prompt')
+  .action((opts: { enable?: boolean; disable?: boolean; retention?: string; yes?: boolean }) => trafficSettings(getClient(), opts));
+trafficCmd.command('summary')
+  .description('Instance traffic: totals, percentiles and top domains (operator)')
+  .option('--range <range>', '1h | 24h | 7d | 30d (default 24h)')
+  .option('--top <n>', 'Top domains (1-50, default 10)')
+  .action((opts: { range?: string; top?: string }) => trafficSummary(getClient(), opts));
+trafficCmd.command('service <id>')
+  .description('Traffic of one service, by domain')
+  .option('--range <range>', '1h | 24h | 7d | 30d (default 24h)')
+  .action((id: string, opts: { range?: string }) => trafficService(getClient(), id, opts));
+/* v8 ignore stop */
+const accessCmd = program.command('access').description('Project and environment access grants');
+const grantsCmd = accessCmd.command('grants').description('Manage access grants in a workspace (workspace admin)');
+/* v8 ignore start -- exercised by test/operations.test.ts. */
+grantsCmd.command('list')
+  .description('List the grants in a workspace')
+  .option('--workspace <id>', 'Workspace id')
+  .option('--user <id>', 'Only this user')
+  .option('--project <id>', 'Only this project')
+  .option('--environment <id>', 'Only this environment')
+  .action((opts: { workspace?: string; user?: string; project?: string; environment?: string }) => accessGrantsList(getClient(), opts));
+grantsCmd.command('add')
+  .description('Grant a role on a project, an environment, or both')
+  .option('--workspace <id>', 'Workspace id')
+  .option('--email <email>', 'The user, by email')
+  .option('--user <id>', 'The user, by id')
+  .option('--project <id>', 'Project id')
+  .option('--environment <id>', 'Environment id')
+  .option('--role <role>', 'viewer | member | admin')
+  .action((opts: { workspace?: string; email?: string; user?: string; project?: string; environment?: string; role?: string }) =>
+    accessGrantsAdd(getClient(), opts),
+  );
+grantsCmd.command('update <grantId>')
+  .description('Change the role of a grant')
+  .option('--workspace <id>', 'Workspace id')
+  .option('--role <role>', 'viewer | member | admin')
+  .action((grantId: string, opts: { workspace?: string; role?: string }) => accessGrantsUpdate(getClient(), grantId, opts));
+grantsCmd.command('remove <grantId>')
+  .alias('rm')
+  .description('Revoke a grant')
+  .option('--workspace <id>', 'Workspace id')
+  .option('-y, --yes', 'Skip the confirmation prompt')
+  .action((grantId: string, opts: { workspace?: string; yes?: boolean }) => accessGrantsRemove(getClient(), grantId, opts));
+accessCmd.command('me').description('Your own grants and guest workspaces').action(() => accessMe(getClient()));
 /* v8 ignore stop */
 
 deploys.command('watch <serviceId> <deployId>').description('Stream a deployment\'s build logs live').action((svcId: string, depId: string) => deploysWatch(svcId, depId));

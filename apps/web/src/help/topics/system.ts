@@ -147,6 +147,7 @@ export const SYSTEM_TOPICS: Record<string, HelpTopic> = {
         bullets: [
           'Agent traffic travels in sealed (authenticated-encrypted) envelopes by default; plaintext is refused unless an operator explicitly opts in for an old agent. Still prefer a LAN or VPN for node agents.',
           'Agents run the same binary, so the panel and agents should stay on compatible versions.',
+          'The Terminal column shows what each agent offers: shells into containers, and host shells unless the node owner set NINEDEPLOY_AGENT_HOST_TERMINAL=off. "No terminal" means the agent is older than v0.15.0: update it.',
         ],
         tip: 'Check each agent\'s connectivity from this page after registration — most setup problems are firewall rules between panel and agent.',
       },
@@ -154,6 +155,7 @@ export const SYSTEM_TOPICS: Record<string, HelpTopic> = {
     related: [
       { label: 'Monitoring', helpId: 'monitoring' },
       { label: 'Settings · System (self-update)', helpId: 'settings.system' },
+      { label: 'Terminal sessions', helpId: 'terminals' },
     ],
   },
 

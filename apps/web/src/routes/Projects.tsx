@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
-import { Edit2, FolderKanban, Plus, Trash2 } from 'lucide-react';
+import { Edit2, FolderKanban, Plus, Trash2, Users } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
@@ -10,6 +10,7 @@ import { useToast } from '../components/Toast.js';
 import { Badge, Button, Card, ConfirmDialog, EmptyState, ErrorCard, Field, Input, Modal, PageHeader, Skeleton, Textarea } from '../components/ui.js';
 import { formatDateTime } from '../lib/format.js';
 import type { ProjectEntry } from '@ninedeploy/sdk';
+import { ProjectAccessModal } from '../components/access/ProjectAccessModal.js';
 
 /**
  * Projects page.
@@ -47,6 +48,8 @@ export function Projects() {
   const [description, setDescription] = useState('');
   const [workspaceId, setWorkspaceId] = useState<number | ''>('');
   const [pendingDelete, setPendingDelete] = useState<ProjectEntry | null>(null);
+  // 0.15: who reaches a project and why (project admins; the server decides).
+  const [accessFor, setAccessFor] = useState<ProjectEntry | null>(null);
 
   const openCreate = () => {
     setEditing(null);
@@ -210,6 +213,18 @@ export function Projects() {
                     </td>
                     <td className="px-5 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
+                        {p.workspaceId != null && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setAccessFor(p)}
+                            title="Who has access"
+                            className="h-7 w-7 p-0"
+                            aria-label="Project access"
+                          >
+                            <Users size={13} />
+                          </Button>
+                        )}
                         {operator && (
                           <Button
                             variant="secondary"
@@ -328,6 +343,8 @@ export function Projects() {
         onConfirm={() => pendingDelete && deleteMutation.mutate(pendingDelete.id)}
         onClose={() => setPendingDelete(null)}
       />
+
+      {accessFor && <ProjectAccessModal project={accessFor} onClose={() => setAccessFor(null)} />}
     </div>
   );
 }

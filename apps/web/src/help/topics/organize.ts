@@ -34,6 +34,7 @@ export const ORGANIZE_TOPICS: Record<string, HelpTopic> = {
     related: [
       { label: 'Users (instance administration)', helpId: 'users' },
       { label: 'Projects', helpId: 'projects' },
+      { label: 'Project & environment access', helpId: 'access-grants' },
     ],
   },
 
@@ -56,6 +57,7 @@ export const ORGANIZE_TOPICS: Record<string, HelpTopic> = {
       { label: 'Labels', helpId: 'labels' },
       { label: 'Workspaces', helpId: 'workspaces' },
       { label: 'Service · Environment', helpId: 'service.environment' },
+      { label: 'Project & environment access', helpId: 'access-grants' },
     ],
   },
 

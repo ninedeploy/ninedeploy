@@ -8,6 +8,7 @@ import { DATABASE_TAB_TOPICS } from './topics/databaseTabs.js';
 import { NETWORK_TOPICS } from './topics/network.js';
 import { SYSTEM_TOPICS } from './topics/system.js';
 import { SETTINGS_TAB_TOPICS } from './topics/settingsTabs.js';
+import { OPERATIONS_TOPICS } from './topics/operations.js';
 
 /**
  * Every help topic, keyed by the ids `helpKeyForLocation` produces (see
@@ -23,4 +24,5 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
   ...NETWORK_TOPICS,
   ...SYSTEM_TOPICS,
   ...SETTINGS_TAB_TOPICS,
+  ...OPERATIONS_TOPICS,
 };

@@ -49,6 +49,11 @@ import { BackupScheduleCard } from './database/BackupScheduleCard.js';
 import { ImportCard } from './database/ImportCard.js';
 import { PublicAccessCard } from './database/PublicAccessCard.js';
 import { ManifestTab } from './service/ManifestTab.js';
+import { TerminalPanel } from '../components/terminal/TerminalPanel.js';
+import { useAuth } from '../lib/auth.js';
+
+/** Engines with an interactive client (`mode: 'client'`); the others get a shell only. */
+export const CLIENT_ENGINES = new Set(['postgres', 'mysql', 'mariadb', 'redis', 'valkey']);
 
 const ENGINE_LABEL: Record<string, string> = {
   postgres: 'PostgreSQL',
@@ -71,6 +76,9 @@ export function DatabaseDetail() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { toast } = useToast();
+  // 0.15: shells (and the engine client) into the database container, operators only.
+  const isOperator = useAuth().user?.isOperator === true;
+  const [shell, setShell] = useState<'shell' | 'client' | null>(null);
   // r343: the tab is OWNED by `?tab=` (as on the service page), so deep links
   // like /databases/7?tab=backups land on that tab and the help drawer —
   // which resolves its topic from the same param — matches what is shown.
@@ -249,9 +257,33 @@ export function DatabaseDetail() {
               <Download size={13} />
               Backup now
             </Button>
+
+            {isOperator && isRunning && (
+              <>
+                <Button variant="secondary" size="sm" onClick={() => setShell('shell')} title="Open a shell in the database container">
+                  <Terminal size={13} />
+                  Shell
+                </Button>
+                {CLIENT_ENGINES.has(db.engine) && (
+                  <Button variant="secondary" size="sm" onClick={() => setShell('client')} title="Open the engine's client with the stored credentials">
+                    <Terminal size={13} />
+                    Client
+                  </Button>
+                )}
+              </>
+            )}
           </div>
         </div>
       </div>
+
+      {shell && (
+        <TerminalPanel
+          key={shell}
+          target={{ kind: 'database', databaseId: db.id, mode: shell }}
+          title={`${db.name} · ${shell === 'client' ? 'client' : 'shell'}`}
+          onClose={() => setShell(null)}
+        />
+      )}
 
       {/* Tabs */}
       <Tabs

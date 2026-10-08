@@ -27,6 +27,7 @@ import {
   Textarea,
 } from '../components/ui.js';
 import { useToast } from '../components/Toast.js';
+import { AccessGrantsCard } from '../components/access/AccessGrantsCard.js';
 import type {
   WorkspaceInvitationEntry,
   WorkspaceMemberAddInput,
@@ -533,6 +534,9 @@ export function Workspaces() {
           </div>
         </Card>
       )}
+
+      {/* 0.15: project and environment access grants (workspace admins). */}
+      {isAdmin && workspaceId !== undefined && <AccessGrantsCard workspaceId={workspaceId} cap="admin" />}
 
       {/* Danger Zone (Workspace Deletion) */}
       {isOwner && (

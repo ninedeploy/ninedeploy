@@ -43,6 +43,7 @@ const Volumes = lazy(() => import('./routes/Volumes.js').then((m) => ({ default:
 const Networks = lazy(() => import('./routes/Networks.js').then((m) => ({ default: m.Networks })));
 const DockerDashboard = lazy(() => import('./routes/Docker.js').then((m) => ({ default: m.DockerDashboard })));
 const Traefik = lazy(() => import('./routes/Traefik.js').then((m) => ({ default: m.Traefik })));
+const Terminals = lazy(() => import('./routes/Terminals.js').then((m) => ({ default: m.Terminals })));
 const Activity = lazy(() => import('./routes/Activity.js').then((m) => ({ default: m.Activity })));
 const Projects = lazy(() => import('./routes/Projects.js').then((m) => ({ default: m.Projects })));
 const Labels = lazy(() => import('./routes/Labels.js').then((m) => ({ default: m.Labels })));
@@ -149,6 +150,7 @@ export default function App() {
           <Route path="monitoring" element={<Monitoring />} />
           <Route path="activity" element={<Activity />} />
           <Route path="traefik" element={<Traefik />} />
+          <Route path="terminals" element={<Terminals />} />
           <Route path="services/:id" element={<ServiceDetail />} />
           <Route path="databases/:id" element={<DatabaseDetail />} />
           {/*

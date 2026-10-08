@@ -146,6 +146,12 @@ describe('ServiceDetail', () => {
     fireEvent.click(await screen.findByRole('tab', { name: new RegExp(`^${escaped}(\\s|$)`) }));
   };
 
+  it('0.15: the overview tab shows the service traffic card', async () => {
+    renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+    expect(await screen.findByText(/Traffic analytics is off/)).toBeInTheDocument();
+    expect(api.traffic.service).toHaveBeenCalledWith(1, { range: '24h' });
+  });
+
   it('shows skeleton while the service loads', () => {
     mockOf(api.services.get).mockReturnValue(new Promise(() => {}));
     renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });

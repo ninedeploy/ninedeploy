@@ -74,6 +74,20 @@ describe('Workspaces route', () => {
     });
   });
 
+  it('0.15: workspace admins manage project & environment access grants here', async () => {
+    renderWithProviders(<Workspaces />);
+    expect(await screen.findByText('Project & environment access')).toBeInTheDocument();
+    await waitFor(() => expect(api.accessGrants.list).toHaveBeenCalledWith(1));
+  });
+
+  it('0.15: the access grants card is hidden below the admin role', async () => {
+    mockOf(api.workspaces.get).mockResolvedValue({ ...mockWs, myRole: 'viewer' } as never);
+    renderWithProviders(<Workspaces />);
+    expect(await screen.findByText('dev@acme.com')).toBeInTheDocument();
+    expect(screen.queryByText('Project & environment access')).toBeNull();
+    expect(api.accessGrants.list).not.toHaveBeenCalled();
+  });
+
   it('falls back to a stable shell when no workspace is selected', async () => {
     // When currentWorkspace is null, the page should not crash and should not
     // call the invitation listing endpoint.

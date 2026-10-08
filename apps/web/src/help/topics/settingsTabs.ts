@@ -69,8 +69,17 @@ export const SETTINGS_TAB_TOPICS: Record<string, HelpTopic> = {
         ],
         tip: 'See a session you cannot place? Revoke it and change your password — then check the Activity ledger for what that session did.',
       },
+      {
+        heading: 'Terminals (operators)',
+        bullets: [
+          'Host shells are off by default. Turning them on asks for your password, and so does every host shell session.',
+          'NINEDEPLOY_HOST_TERMINAL=off in the panel environment forbids host shells whatever the switch says.',
+          'The idle timeout, maximum session length, the panel-wide cap and the history retention apply to every terminal.',
+        ],
+      },
     ],
     related: [
+      { label: 'Terminal sessions', helpId: 'terminals' },
       { label: 'Settings · SSO', helpId: 'settings.sso' },
       { label: 'Activity (audit ledger)', helpId: 'activity' },
     ],

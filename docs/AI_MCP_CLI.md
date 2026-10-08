@@ -6,7 +6,7 @@ NineDeploy is API-first. You can manage and automate your infrastructure via the
 
 ## 🤖 1. Model Context Protocol (MCP) for AI Assistants
 
-NineDeploy includes an official stdio MCP server exposing **38 dedicated tools** to AI agents (Claude Desktop, Cursor, Antigravity, Cline).
+NineDeploy includes an official stdio MCP server for AI agents (Claude Desktop, Cursor, Antigravity, Cline): hand-written tools plus, since 0.15, read-only tools generated from the OpenAPI document (see below).
 
 ### Adding to Claude Desktop / Cursor Config:
 ```json
@@ -45,6 +45,33 @@ Both 0.14 tools take `{ "databaseId": <id> }` and stay available with
 `NINEDEPLOY_MCP_READONLY=1`. Turning public access on, uploading a dump and the
 proxy and secret-manager settings have no MCP write tools; use the CLI, the SDK
 or the panel.
+
+### Tools generated from the OpenAPI document (0.15)
+
+The server describes every route in an OpenAPI 3.1 document (section 4). Routes
+whose spec entry opts in become read-only MCP tools, generated into
+`packages/mcp/src/generated/specTools.ts` by
+`apps/server/scripts/generateMcpSpecTools.ts` (a drift test fails when the
+checked-in file differs from a fresh run). Each one is a plain `GET` through
+`client.api.get`; the generator refuses non-GET, sensitive and WebSocket routes,
+so there is no generated write tool and no "call any endpoint" tool.
+
+| Tool | Route | Who |
+|---|---|---|
+| `list_environments`, `list_labels` | `GET /v1/environments`, `GET /v1/labels` | any member, coarse token only |
+| `get_database`, `get_backup_policy`, `list_backups` | `GET /v1/databases/:id…` | seat on the database (`read/databases`) |
+| `list_jobs` | `GET /v1/services/:id/jobs` | seat on the service (`read/services`) |
+| `traffic_summary` | `GET /v1/services/:id/traffic` | seat on the service (`read/services`) |
+| `list_servers`, `list_volumes`, `list_networks`, `certificate_inventory`, `doctor_report`, `instance_traffic_summary` | operator routes | operator, coarse token only |
+
+All of them stay available with `NINEDEPLOY_MCP_READONLY=1`. `search_api`
+(hand-written, coarse token) searches the OpenAPI document by free text and
+returns each matching operation's method, path, summary, minimum caller and
+API-token scope. It lists operations; it never calls them.
+
+Terminals, access grants and the traffic settings have no MCP tools: opening a
+shell, granting access and recreating Traefik stay with the panel, the CLI and
+the SDK.
 
 ---
 
@@ -145,6 +172,39 @@ values. `databases import` uploads in 8 MiB chunks because Traefik's 60-second
 read timeout would cut off a single multi-GB request; it prints the import id
 first, so an interrupted upload continues with `--resume <import-id>`.
 
+```bash
+# Terminals (0.15, operator): history, termination and interactive shells
+ninedeploy terminals list [--status active] [--target host] [--limit 50] [--before <id>]
+ninedeploy terminals show <session-id>
+ninedeploy terminals kill <session-id> [-y]
+ninedeploy terminal service <service-id> [--replica 2] [--node <server-id>]
+ninedeploy terminal db <database-id> [--client]      # --client: psql / mysql / redis-cli with the stored credentials
+ninedeploy terminal container <container-name>
+ninedeploy terminal host [server-id]                 # off by default; prompts for your password
+
+# Traffic analytics (0.15, opt-in)
+ninedeploy traffic settings                          # show
+ninedeploy traffic settings --enable [-y]            # recreates Traefik once (about 1–2 s of refused connections)
+ninedeploy traffic settings --disable [-y] [--retention 30]
+ninedeploy traffic summary [--range 1h|24h|7d|30d] [--top 10]   # operator
+ninedeploy traffic service <service-id> [--range 7d]
+
+# Project and environment access grants (0.15, raise-only)
+ninedeploy access grants list --workspace <id> [--user <id>] [--project <id>] [--environment <id>]
+ninedeploy access grants add --workspace <id> --email dev@example.com --project <id> [--environment <id>] --role member
+ninedeploy access grants update <grant-id> --workspace <id> --role viewer
+ninedeploy access grants remove <grant-id> --workspace <id> [-y]
+ninedeploy access me
+```
+
+`ninedeploy terminal` (alias `shell`) needs a TTY: it puts the local terminal
+in raw mode, forwards window resizes, and exits with the shell's exit code (1
+when the session ends any other way, with the reason printed: idle timeout,
+maximum length, terminated by an operator, too many terminals). A host shell
+asks for your password with a hidden prompt for every session; it is never read
+from the command line. Accounts that sign in only through SSO leave it empty
+within 10 minutes of `ninedeploy login`. API tokens cannot open host shells.
+
 `deploys rm` refuses an in-flight deployment (cancel it first) and the one
 currently serving traffic — that row carries the image digest a rollback
 re-deploys. Finished deployments age out on their own after 30 days, together
@@ -209,4 +269,59 @@ await client.settings.secretProviders.set('vault', {
   credentials: { token },                            // write-only; omit to keep the stored value
 });
 await client.settings.secretProviders.test('vault', { probePath: 'app/prod' });
+
+// 0.15: terminals (operator). Create a session, then attach with its
+// single-use ticket (valid 30 s) over protocol v1. Input written before the
+// server's `ready` is held and flushed on `ready`.
+const created = await client.terminals.create({ target: { kind: 'database', databaseId: dbId, mode: 'client' }, cols: 120, rows: 32 });
+const shell = client.terminals.connect(created, {
+  onData: (bytes) => process.stdout.write(bytes),
+  onExit: ({ code }) => console.log(`exit ${code}`),
+  onClose: ({ code, message }) => console.log(code, message),   // 4408 idle, 4409 max length, 4410 terminated, 4429 too many
+}, { socketFactory: (url, protocols) => new WebSocket(url, protocols) });  // e.g. the `ws` package in Node
+shell.write('\\dt\r');
+shell.resize(160, 40);
+// Or build the socket yourself: { url, protocols } = client.terminals.attachInfo(created)
+// protocols = ['ninedeploy.terminal.v1', 'ninedeploy.ticket.<ticket>']
+const { items, nextBefore } = await client.terminals.list({ status: 'active' });
+await client.terminals.terminate(items[0].id);
+await client.terminals.settings.set({ hostTerminalEnabled: true, password });   // step-up
+
+// 0.15: traffic analytics (opt-in; settings and summary are operator only)
+await client.traffic.settings.set({ enabled: true });   // recreates Traefik; on a network error, read settings.get() again
+const summary = await client.traffic.summary({ range: '24h', top: 10 });
+const svcTraffic = await client.traffic.service(serviceId, { range: '7d' });
+
+// 0.15: access grants (workspace admin) and the caller's own access
+await client.accessGrants.create(workspaceId, { email: 'dev@example.com', projectId, role: 'member' });
+const grants = await client.accessGrants.list(workspaceId, { projectId });
+await client.accessGrants.update(workspaceId, grants[0].id, { role: 'admin' });
+await client.accessGrants.delete(workspaceId, grants[0].id);
+const who = await client.access.project(projectId);   // [{ user, role, via: ['seat' | 'grant' | 'operator' | 'creator'] }]
+const mine = await client.access.me();                // { grants, guestWorkspaces }
+
+// 0.15: read-only access to any documented route
+const spec = await client.api.get('/v1/openapi.json');
+const backups = await client.api.get('/v1/databases/3/backups', { limit: 5 });
 ```
+
+`GET /v1/servers` now carries `terminal: { host, container, reason? }` per node
+(absent on older panels): a node needs agent v0.15.0 for terminals.
+
+---
+
+## 📜 4. OpenAPI 3.1 document (0.15)
+
+`GET /v1/openapi.json` describes every HTTP route: its path, parameters,
+request and response schemas, the minimum caller (`x-ninedeploy-floor`) and the
+API-token scope it needs. It is served only behind login (a session, or a
+coarse or unrestricted API token; fine-grained tokens are refused), with an
+`ETag` so an unchanged document answers `304`. Add `?download=1` for a file
+download.
+
+```bash
+curl -H "Authorization: Bearer $NINEDEPLOY_TOKEN" https://panel.example.com/v1/openapi.json?download=1 -o ninedeploy-openapi.json
+```
+
+Use it to generate clients in other languages, or to browse the API in any
+OpenAPI viewer you run yourself. The panel does not bundle Swagger UI.

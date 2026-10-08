@@ -2,7 +2,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 're
 import {
   Activity, Building2, ChevronLeft, ChevronRight, Clock, Cloud, Container, Database, FolderKanban, Globe, HardDrive,
   FileCode, Info, KeyRound, Layers, LayoutDashboard, LifeBuoy, ListOrdered, Moon, Network, Shield, Stethoscope, Tag, type LucideIcon,
-  Rocket, Search, Server, Settings as SettingsIcon, Sparkles, Sun, Users, X,
+  Rocket, Search, Server, Settings as SettingsIcon, Sparkles, SquareTerminal, Sun, Users, X,
 } from 'lucide-react';
 import { Link, Outlet, useLocation } from 'react-router';
 import { useAuth } from '../lib/auth.js';
@@ -104,6 +104,8 @@ const GROUPS: NavGroup[] = [
       { to: '/docker', label: 'Docker', icon: Container, advancedOnly: true, operatorOnly: true },
       { to: '/sources', label: 'Sources', icon: KeyRound, operatorOnly: true },
       { to: '/servers', label: 'Servers', icon: HardDrive, advancedOnly: true, operatorOnly: true },
+      // 0.15: terminal session history (every terminal route is operator-only).
+      { to: '/terminals', label: 'Terminals', icon: SquareTerminal, operatorOnly: true },
       { to: '/users', label: 'Users', icon: Users, operatorOnly: true },
       { to: '/settings', label: 'Settings', icon: SettingsIcon },
       { to: '/about', label: 'About', icon: Info },
@@ -452,7 +454,8 @@ function ActivityDrawer({ onClose }: { onClose: () => void }) {
       // served from a different host than the API, and every other socket
       // already resolves through VITE_API_URL — a page-origin URL here made
       // the drawer retry a dead endpoint forever.
-      ws = new WebSocket(eventsWsUrl(), token ? [`ninedeploy.bearer.${token}`] : ['ninedeploy']);
+      // 0.15: `ninedeploy` first, so the server never echoes the bearer back.
+      ws = new WebSocket(eventsWsUrl(), token ? ['ninedeploy', `ninedeploy.bearer.${token}`] : ['ninedeploy']);
       ws.onopen = () => {
         attempts = 0;
         setConnected(true);

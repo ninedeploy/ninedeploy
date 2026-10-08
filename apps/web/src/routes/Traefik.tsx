@@ -8,6 +8,7 @@ import { useToast } from '../components/Toast.js';
 import { Button, Card, ErrorCard, PageHeader, Skeleton, StatusBadge, Tabs, cn } from '../components/ui.js';
 import { CertificatesCard } from './traefik/CertificatesCard.js';
 import { CustomConfigCard } from './traefik/CustomConfigCard.js';
+import { TrafficAnalyticsCard } from './traefik/TrafficAnalyticsCard.js';
 
 export function Traefik() {
   const { user: me } = useAuth();
@@ -60,6 +61,8 @@ export function Traefik() {
           { id: 'logs', label: 'Logs' },
           // 0.14: the custom dynamic config is operator-only (as are its routes).
           ...(isAdmin ? [{ id: 'custom', label: 'Custom config' }] : []),
+          // 0.15: opt-in traffic analytics, operator-only like its routes.
+          ...(isAdmin ? [{ id: 'traffic', label: 'Traffic' }] : []),
         ]}
       />
 
@@ -84,6 +87,7 @@ export function Traefik() {
             <LogsTab logs={logs.data?.logs ?? []} isLoading={logs.isLoading} />
           ))}
         {activeTab === 'custom' && isAdmin && <CustomConfigCard />}
+        {activeTab === 'traffic' && isAdmin && <TrafficAnalyticsCard />}
       </div>
     </div>
   );

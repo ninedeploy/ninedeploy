@@ -54,7 +54,8 @@ export const SERVICE_TAB_TOPICS: Record<string, HelpTopic> = {
         heading: 'Opening a shell',
         steps: [
           'Make sure the service is running — exec needs a live container.',
-          'Click Open Terminal; a PTY attaches to the container.',
+          'Click Open Terminal; a real TTY attaches to the container and follows the panel size.',
+          'When a session closes, the terminal says why: the shell exited, idle timeout, maximum length, terminated by an operator, or too many open terminals.',
           'Work as usual; the session runs as the container\'s own user and filesystem.',
         ],
       },
@@ -71,6 +72,7 @@ export const SERVICE_TAB_TOPICS: Record<string, HelpTopic> = {
     related: [
       { label: 'Service · File browser', helpId: 'service.files' },
       { label: 'Audit ledger (Activity)', helpId: 'activity' },
+      { label: 'Terminal sessions', helpId: 'terminals' },
     ],
   },
 

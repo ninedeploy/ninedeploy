@@ -97,6 +97,8 @@ const MENU_CASES: MenuCase[] = [
   { path: '/docker', group: 'System', activeLink: /Docker/, mode: 'advanced' },
   { path: '/sources', group: 'System', activeLink: /Sources/ },
   { path: '/servers', group: 'System', activeLink: /Servers/, mode: 'advanced' },
+  // 0.15: terminal session history (operators).
+  { path: '/terminals', group: 'System', activeLink: /Terminals/ },
   { path: '/users', group: 'System', activeLink: /Users/ },
   { path: '/settings', group: 'System', activeLink: /Settings/ },
   { path: '/about', group: 'System', activeLink: /About/ },

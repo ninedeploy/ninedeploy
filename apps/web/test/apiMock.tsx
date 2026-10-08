@@ -309,6 +309,26 @@ export function createFakeApiModule() {
       deleteRule: vi.fn(),
       applyRecommended: vi.fn(),
     },
+    // 0.15 T6: terminals, traffic analytics, access grants
+    terminals: {
+      create: vi.fn(),
+      list: vi.fn().mockResolvedValue({ items: [], nextBefore: null }),
+      get: vi.fn(),
+      terminate: vi.fn(),
+      settings: {
+        get: vi.fn().mockResolvedValue({ hostTerminalEnabled: false, hostTerminalForbiddenByEnv: false, idleTimeoutMinutes: 15, maxSessionMinutes: 240, maxConcurrent: 10, retentionDays: 180 }),
+        set: vi.fn(),
+      },
+      attachInfo: vi.fn(),
+      connect: vi.fn(),
+    },
+    traffic: {
+      settings: { get: vi.fn(), set: vi.fn() },
+      summary: vi.fn(),
+      service: vi.fn().mockResolvedValue({ enabled: false, range: '24h', granularity: 60, totals: { requests: 0, status1xx: 0, status2xx: 0, status3xx: 0, status4xx: 0, status5xx: 0, statusOther: 0, bytesOut: 0, durationSumMs: 0, durationMaxMs: 0, p50Ms: null, p95Ms: null, p99Ms: null }, series: [], domains: [] }),
+    },
+    accessGrants: { list: vi.fn().mockResolvedValue([]), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+    access: { me: vi.fn().mockResolvedValue({ grants: [], guestWorkspaces: [] }), project: vi.fn().mockResolvedValue([]) },
   };
   const getToken = vi.fn((): string | null => 'test-token');
   return {

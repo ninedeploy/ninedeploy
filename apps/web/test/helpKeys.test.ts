@@ -10,10 +10,11 @@ import { DATABASE_TAB_TOPICS } from '../src/help/topics/databaseTabs.js';
 import { NETWORK_TOPICS } from '../src/help/topics/network.js';
 import { SYSTEM_TOPICS } from '../src/help/topics/system.js';
 import { SETTINGS_TAB_TOPICS } from '../src/help/topics/settingsTabs.js';
+import { OPERATIONS_TOPICS } from '../src/help/topics/operations.js';
 
 const GROUPS = [
   MISC_TOPICS, DEPLOY_TOPICS, SERVICE_TAB_TOPICS, ORGANIZE_TOPICS, DATA_TOPICS,
-  DATABASE_TAB_TOPICS, NETWORK_TOPICS, SYSTEM_TOPICS, SETTINGS_TAB_TOPICS,
+  DATABASE_TAB_TOPICS, NETWORK_TOPICS, SYSTEM_TOPICS, SETTINGS_TAB_TOPICS, OPERATIONS_TOPICS,
 ];
 
 describe('helpKeys', () => {
@@ -50,6 +51,12 @@ describe('helpKeys', () => {
   it('r343: resolves the Settings AI section and the service Compose tab to their own topics', () => {
     expect(helpKeyForLocation('/settings', '?section=ai')).toBe('settings.ai');
     expect(helpKeyForLocation('/services/3', '?tab=compose')).toBe('service.compose');
+  });
+
+  it('0.15: the terminal sessions page has its own topic, and the new topics are linked', () => {
+    expect(helpKeyForLocation('/terminals', '')).toBe('terminals');
+    const linked = new Set(Object.values(HELP_TOPICS).flatMap((t) => (t.related ?? []).map((r) => r.helpId)));
+    for (const id of ['terminals', 'traffic-analytics', 'access-grants']) expect(linked.has(id), id).toBe(true);
   });
 
   it('falls back to the general topic for unknown routes', () => {

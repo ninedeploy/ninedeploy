@@ -195,10 +195,15 @@ function getWsBase(): { proto: string; host: string; pathPrefix: string } {
   };
 }
 
-/** Browser-safe WebSocket auth: bearer token travels in a header, not the URL. */
+/**
+ * Browser-safe WebSocket auth: bearer token travels in a header, not the URL.
+ * 0.15: `ninedeploy` is offered first, so a 0.15 server selects it and never
+ * echoes the credential in the 101 response; a 0.14 server selects the first
+ * offer too, and both read the bearer from wherever it sits in the list.
+ */
 export function websocketAuthProtocols(): string[] {
   const token = getToken();
-  return token ? [`ninedeploy.bearer.${token}`] : ['ninedeploy'];
+  return token ? ['ninedeploy', `ninedeploy.bearer.${token}`] : ['ninedeploy'];
 }
 
 /** Build a WebSocket URL for streaming a deployment's logs. */

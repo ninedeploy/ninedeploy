@@ -163,6 +163,12 @@ describe('Layout', () => {
     expect(screen.getByRole('link', { name: 'Doctor' })).toBeInTheDocument();
   });
 
+  it('0.15: shows the Terminals sidebar link to instance operators', () => {
+    renderLayout();
+    fireEvent.click(screen.getByRole('button', { name: 'System' }));
+    expect(screen.getByRole('link', { name: 'Terminals' })).toHaveAttribute('href', '/terminals');
+  });
+
   it('hides the Doctor sidebar link from non-operators', () => {
     authMock.useAuth.mockReturnValue({
       user: { id: 2, email: 'member@example.com', name: 'Mem', isOperator: false },
@@ -172,6 +178,7 @@ describe('Layout', () => {
     renderLayout();
     fireEvent.click(screen.getByRole('button', { name: 'System' }));
     expect(screen.queryByRole('link', { name: 'Doctor' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Terminals' })).not.toBeInTheDocument();
   });
 
   it('opens the group panel and marks the matching link active', () => {
@@ -412,7 +419,7 @@ describe('Layout', () => {
     expect(screen.getByText('Events')).toBeInTheDocument();
     const ws = FakeWebSocket.instances[0];
     expect(ws?.url).toBe('ws://localhost/v1/events');
-    expect(ws?.protocols).toEqual(['ninedeploy.bearer.tok']);
+    expect(ws?.protocols).toEqual(['ninedeploy', 'ninedeploy.bearer.tok']);
 
     const now = Date.now();
     const payload = [

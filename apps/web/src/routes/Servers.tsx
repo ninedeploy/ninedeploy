@@ -18,14 +18,39 @@ import {
   XCircle,
 } from 'lucide-react';
 import { Link } from 'react-router';
-import type { ServerBootstrapResult, ServerSshTestResult } from '@ninedeploy/sdk';
+import type { NodeTerminalCapability, ServerBootstrapResult, ServerSshTestResult } from '@ninedeploy/sdk';
 import { api } from '../lib/api.js';
 import { useToast } from '../components/Toast.js';
-import { Button, Card, ConfirmDialog, EmptyState, ErrorCard, Field, Input, Modal, PageHeader, Skeleton, cn } from '../components/ui.js';
+import { Badge, Button, Card, ConfirmDialog, EmptyState, ErrorCard, Field, Input, Modal, PageHeader, Skeleton, cn } from '../components/ui.js';
+import { TerminalPanel } from '../components/terminal/TerminalPanel.js';
 import { formatRelative, useCopy } from '../lib/format.js';
 import { agentDockerRunCommand } from '@ninedeploy/schemas';
 import { useAuth } from '../lib/auth.js';
 import { EnrolmentTokenCard, useEnrolmentToken } from '../components/EnrolmentTokenCard.js';
+
+/**
+ * 0.15: what a node's agent offers terminals (`GET /v1/servers` → `terminal`).
+ * A 0.14 panel omits the field; an agent before v0.15.0 reports no terminal.
+ */
+export function TerminalCapabilityBadges({ cap }: { cap: NodeTerminalCapability | undefined }) {
+  if (!cap) return <span className="text-xs text-slate-600">—</span>;
+  if (!cap.container) {
+    return (
+      <div className="space-y-0.5">
+        <Badge>no terminal</Badge>
+        <div className="max-w-[16rem] text-[11px] text-slate-500">
+          {cap.reason ?? 'The node agent does not offer terminals.'} Update the agent to v0.15.0 for node terminals.
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-wrap gap-1">
+      <Badge tone="emerald">shell</Badge>
+      {cap.host ? <Badge tone="amber">host shell</Badge> : <Badge>host shell off</Badge>}
+    </div>
+  );
+}
 
 /**
  * Remote server registry (admin). Supports zero-touch SSH auto-onboarding,
@@ -77,6 +102,14 @@ export function Servers() {
     // URL directly must not fire (and keep refetching) a refused listing.
     enabled: isOperator,
   });
+  // 0.15: host shells (panel host and nodes) show only while enabled.
+  const terminalSettings = useQuery({
+    queryKey: ['terminal-settings'],
+    queryFn: () => api.terminals.settings.get(),
+    enabled: isOperator,
+  });
+  const hostShellsOn = terminalSettings.data?.hostTerminalEnabled === true && !terminalSettings.data.hostTerminalForbiddenByEnv;
+  const [hostShell, setHostShell] = useState<{ serverId: number | null; name: string } | null>(null);
 
   const create = useMutation({
     mutationFn: () => api.servers.create({ name, host, port: Number(port) || 4600 }),
@@ -690,10 +723,26 @@ export function Servers() {
       {/* Connected Servers List Table */}
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-200">Connected Nodes ({registeredServers.length})</h2>
-        <Button size="sm" variant="secondary" onClick={() => setOpen((v) => !v)}>
-          <Plus size={14} /> {open ? 'Hide form' : 'Add server'}
-        </Button>
+        <div className="flex items-center gap-2">
+          {hostShellsOn && (
+            <Button size="sm" variant="secondary" onClick={() => setHostShell({ serverId: null, name: 'panel host' })} title="Open a root shell on the panel host">
+              <Terminal size={14} /> Panel host shell
+            </Button>
+          )}
+          <Button size="sm" variant="secondary" onClick={() => setOpen((v) => !v)}>
+            <Plus size={14} /> {open ? 'Hide form' : 'Add server'}
+          </Button>
+        </div>
       </div>
+
+      {hostShell && (
+        <TerminalPanel
+          key={hostShell.serverId ?? 'panel'}
+          target={{ kind: 'host', serverId: hostShell.serverId }}
+          title={`${hostShell.name} · host shell`}
+          onClose={() => setHostShell(null)}
+        />
+      )}
 
       {list.isLoading ? (
         <Card className="p-5"><Skeleton className="h-10 w-full" /></Card>
@@ -709,6 +758,7 @@ export function Servers() {
               <th className="px-5 py-3 font-medium">Server</th>
               <th className="px-5 py-3 font-medium">Address</th>
               <th className="px-5 py-3 font-medium">Status</th>
+              <th className="px-5 py-3 font-medium">Terminal</th>
               <th className="px-5 py-3" />
             </tr>
           </thead>
@@ -726,8 +776,22 @@ export function Servers() {
                     {s.lastSeenAt && <span className="text-[10px] opacity-70">· {formatRelative(s.lastSeenAt)}</span>}
                   </span>
                 </td>
+                <td className="px-5 py-3">
+                  <TerminalCapabilityBadges cap={s.terminal} />
+                </td>
                 <td className="px-5 py-3 text-right">
                   <div className="flex items-center justify-end gap-3">
+                    {hostShellsOn && s.terminal?.host && (
+                      <button
+                        type="button"
+                        onClick={() => setHostShell({ serverId: s.id, name: s.name })}
+                        className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1"
+                        title="Open a root shell on this node"
+                      >
+                        <Terminal size={13} />
+                        host shell
+                      </button>
+                    )}
                     <Link
                       to="/monitoring"
                       className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium"

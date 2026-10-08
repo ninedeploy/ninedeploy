@@ -10,6 +10,7 @@ import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, ConfirmDialog, Skeleton, StatusBadge, cn } from '../../components/ui.js';
 import { downloadBlob } from '../../lib/format.js';
 import { OverviewTab } from './OverviewTab.js';
+import { ServiceTrafficCard } from './ServiceTrafficCard.js';
 import { ArchitectureTab } from './ArchitectureTab.js';
 import { ManifestTab } from './ManifestTab.js';
 import { ComposeTab } from './ComposeTab.js';
@@ -373,7 +374,13 @@ export function ServiceDetail() {
 
         {/* Right Content Pane */}
         <main id="service-tab-panel" role="tabpanel" className="flex-1 min-w-0 w-full">
-          {tab === 'overview' && <OverviewTab serviceId={id} svc={svc} />}
+          {tab === 'overview' && (
+            <>
+              <OverviewTab serviceId={id} svc={svc} />
+              {/* 0.15: per-service traffic analytics (opt-in instance-wide). */}
+              <ServiceTrafficCard serviceId={id} />
+            </>
+          )}
           {tab === 'terminal' && (
             <div className="space-y-4">
               {/* Both terminal states render across the exec tests; the

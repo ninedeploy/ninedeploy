@@ -539,7 +539,7 @@ describe('deployLogsWsUrl', () => {
   it('builds a credential-free ws:// URL and puts the token in a subprotocol', () => {
     sessionStorage.setItem(TOKEN_KEY, 'sec');
     expect(deployLogsWsUrl(7, 42)).toBe('ws://localhost/v1/services/7/deploys/42/logs');
-    expect(websocketAuthProtocols()).toEqual(['ninedeploy.bearer.sec']);
+    expect(websocketAuthProtocols()).toEqual(['ninedeploy', 'ninedeploy.bearer.sec']);
   });
 
   it('uses an empty token when none is stored', () => {

@@ -4,10 +4,14 @@ import { ShieldCheck } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, ErrorCard, cn } from '../../components/ui.js';
+import { useAuth } from '../../lib/auth.js';
+import { TerminalsCard } from './TerminalsCard.js';
 
 /** Security: open registration, ACME, template source, DNS-01 and wildcard domain. */
 export function SecuritySection() {
   const qc = useQueryClient();
+  // 0.15: the Terminals card is operator-only (every terminal route is).
+  const isOperator = useAuth().user?.isOperator === true;
   const { toast } = useToast();
   const instanceSettings = useQuery({ queryKey: ['instance-settings'], queryFn: () => api.settings.get() });
   // Hoisted so the loading fallback is computed once.
@@ -282,6 +286,12 @@ export function SecuritySection() {
           </div>
         </CardBody>
       </Card>
+
+      {isOperator && (
+        <div className="mb-5">
+          <TerminalsCard />
+        </div>
+      )}
     </>
   );
 }
