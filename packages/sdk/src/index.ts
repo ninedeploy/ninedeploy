@@ -1397,6 +1397,18 @@ export interface NineDeployClient {
     update: (projectId: number, varId: number, input: UpsertEnvVarInput) => Promise<EnvVar>;
     remove: (projectId: number, varId: number) => Promise<void>;
   };
+  /**
+   * 0.12 preview-only env: values a service hands ONLY to its PR previews
+   * (they override the parent's non-secret values there; production never
+   * sees them). Same floors as `env`: viewer reads, member writes. A panel
+   * older than 0.12 answers 404.
+   */
+  previewEnv: {
+    list: (serviceId: number) => Promise<EnvVar[]>;
+    create: (serviceId: number, input: UpsertEnvVarInput) => Promise<EnvVar>;
+    update: (serviceId: number, varId: number, input: UpsertEnvVarInput) => Promise<EnvVar>;
+    remove: (serviceId: number, varId: number) => Promise<void>;
+  };
   stats: {
     snapshot: () => Promise<StatsSnapshot>;
     metrics: (serviceId: number, opts?: { kind?: 'cpu' | 'memory'; minutes?: number }) => Promise<MetricSeries>;
@@ -2351,6 +2363,14 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       update: (projectId, varId, input) => send<EnvVar>('PATCH', `/v1/projects/${projectId}/env/${varId}`, input),
       remove: async (projectId, varId) => {
         await request(`/v1/projects/${projectId}/env/${varId}`, { method: 'DELETE' });
+      },
+    },
+    previewEnv: {
+      list: (serviceId) => get<EnvVar[]>(`/v1/services/${serviceId}/env/preview`),
+      create: (serviceId, input) => send<EnvVar>('POST', `/v1/services/${serviceId}/env/preview`, input),
+      update: (serviceId, varId, input) => send<EnvVar>('PATCH', `/v1/services/${serviceId}/env/preview/${varId}`, input),
+      remove: async (serviceId, varId) => {
+        await request(`/v1/services/${serviceId}/env/preview/${varId}`, { method: 'DELETE' });
       },
     },
     stats: {

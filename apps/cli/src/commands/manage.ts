@@ -24,43 +24,52 @@ const fail = (err: unknown): void => {
 
 // ── env ────────────────────────────────────────────────────────────────────
 
-/** `ninedeploy env list <serviceId>` */
-export async function envList(client: NineDeployClient, idStr: string): Promise<void> {
+/**
+ * 0.12: `--preview` targets the service's preview-only set — values only its
+ * PR previews receive — instead of the service's own (production) env.
+ */
+interface EnvTarget { preview?: boolean }
+const envApi = (client: NineDeployClient, opts: EnvTarget = {}) => (opts.preview ? client.previewEnv : client.env);
+
+/** `ninedeploy env list <serviceId> [--preview]` */
+export async function envList(client: NineDeployClient, idStr: string, opts: EnvTarget = {}): Promise<void> {
   const id = num(idStr, 'Usage: ninedeploy env list <serviceId>');
-  header('Environment Variables');
+  header(opts.preview ? 'Preview-only Environment Variables' : 'Environment Variables');
   await spinner('Fetching', async () => {
-    const vars = await client.env.list(id);
+    const vars = await envApi(client, opts).list(id);
     if (vars.length === 0) { info('No env vars.'); return; }
     table(vars.map((v) => ({ id: v.id, key: v.key, secret: v.isSecret ? '•••' : 'plain', value: v.isSecret ? '—' : v.value })), ['id', 'key', 'secret', 'value']);
   });
 }
 
-/** `ninedeploy env set <serviceId> <key> <value> [--public]` */
-export async function envSet(client: NineDeployClient, idStr: string, key: string, value: string, opts: { public?: boolean }): Promise<void> {
+/** `ninedeploy env set <serviceId> <key> <value> [--public] [--preview]` */
+export async function envSet(client: NineDeployClient, idStr: string, key: string, value: string, opts: { public?: boolean } & EnvTarget): Promise<void> {
   const id = num(idStr, 'Usage: ninedeploy env set <serviceId> <key> <value>');
   if (!key || value === undefined) return error('Usage: ninedeploy env set <serviceId> <key> <value>');
   const input = { key, value, isSecret: !opts.public };
+  const api = envApi(client, opts);
   try {
-    const vars = await client.env.list(id);
+    const vars = await api.list(id);
     const existing = vars.find((v) => v.key === key);
     if (existing) {
-      await client.env.update(id, existing.id, input);
+      await api.update(id, existing.id, input);
     } else {
-      await client.env.create(id, input);
+      await api.create(id, input);
     }
-    success(`Set ${c.cyan(key)}${input.isSecret ? ' (secret)' : ''}.`);
+    success(`Set ${c.cyan(key)}${input.isSecret ? ' (secret)' : ''}${opts.preview ? ' for PR previews only' : ''}.`);
   } catch (err) { fail(err); }
 }
 
-/** `ninedeploy env rm <serviceId> <key>` */
-export async function envRemove(client: NineDeployClient, idStr: string, key: string): Promise<void> {
+/** `ninedeploy env rm <serviceId> <key> [--preview]` */
+export async function envRemove(client: NineDeployClient, idStr: string, key: string, opts: EnvTarget = {}): Promise<void> {
   const id = num(idStr, 'Usage: ninedeploy env rm <serviceId> <key>');
   if (!key) return error('Usage: ninedeploy env rm <serviceId> <key>');
+  const api = envApi(client, opts);
   try {
-    const vars = await client.env.list(id);
+    const vars = await api.list(id);
     const existing = vars.find((v) => v.key === key);
     if (!existing) return info(`No env var named "${key}".`);
-    await client.env.remove(id, existing.id);
+    await api.remove(id, existing.id);
     success(`Removed ${c.cyan(key)}.`);
   } catch (err) { fail(err); }
 }

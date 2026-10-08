@@ -1392,6 +1392,24 @@ describe('createClient', () => {
       await client.env.remove(1, 2);
       expect(last(calls)).toMatchObject({ url: '/v1/services/1/env/2', init: { method: 'DELETE' } });
     });
+
+    it('0.12: the preview-only set lives on its own sub-routes', async () => {
+      const { fetchMock, calls } = makeFetch(() => ok({}));
+      const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+
+      await client.previewEnv.list(1);
+      expect(last(calls)).toMatchObject({ url: '/v1/services/1/env/preview', init: { method: 'GET' } });
+
+      await client.previewEnv.create(1, { key: 'STRIPE_KEY', value: 'sk_test', isSecret: true });
+      expect(last(calls)).toMatchObject({ url: '/v1/services/1/env/preview', init: { method: 'POST' } });
+      expect(JSON.parse(last(calls).init.body ?? '{}')).toEqual({ key: 'STRIPE_KEY', value: 'sk_test', isSecret: true });
+
+      await client.previewEnv.update(1, 2, { key: 'STRIPE_KEY', value: 'sk_test_2' });
+      expect(last(calls)).toMatchObject({ url: '/v1/services/1/env/preview/2', init: { method: 'PATCH' } });
+
+      await client.previewEnv.remove(1, 2);
+      expect(last(calls)).toMatchObject({ url: '/v1/services/1/env/preview/2', init: { method: 'DELETE' } });
+    });
   });
 
   describe('stats', () => {

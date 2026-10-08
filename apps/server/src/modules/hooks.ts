@@ -284,6 +284,9 @@ export const hookReceiveRoutes: FastifyPluginAsync = async (app) => {
           );
           // Preview code arrives from a PR branch, so production secrets must
           // not ride along into it: inherit non-secret configuration only.
+          // Values meant for previews live in the parent's preview-only set
+          // (`preview_env_vars`), which the pipeline overlays at every
+          // preview deploy — they are deliberately not copied here.
           const parentEnvs = await app.db.query.envVars.findMany({ where: eq(envVars.serviceId, parent.id) });
           for (const env of parentEnvs) {
             if (env.isSecret) {

@@ -12,7 +12,16 @@ import { Button, Card, CardBody, ConfirmDialog, Input, Skeleton, cn } from '../.
 import { SecretRow } from './SecretRow.js';
 
 /** Environment variables, auto-deploy webhooks, file attachments and cron jobs. */
-export function EnvironmentTab({ serviceId, svc }: { serviceId: number; svc?: { type: string } }) {
+export function EnvironmentTab({
+  serviceId,
+  svc,
+}: {
+  serviceId: number;
+  svc?: { type: string; repoUrl?: string | null; isEphemeralPreview?: boolean; previewDeploymentsEnabled?: boolean };
+}) {
+  // 0.12: a PR preview is created only for a git-backed service (the webhook
+  // needs `repoUrl`), and a preview has no previews of its own.
+  const previewsPossible = Boolean(svc?.repoUrl) && svc?.isEphemeralPreview !== true;
   return (
     <div className="mt-5 grid max-w-6xl grid-cols-1 gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       <div className="space-y-5">
@@ -20,6 +29,14 @@ export function EnvironmentTab({ serviceId, svc }: { serviceId: number; svc?: { 
             through; the plain docker builder's env-file cannot carry real
             newlines — let the editor say so when one shows up (r409). */}
         <EnvCard serviceId={serviceId} literalNewlines={svc?.type === 'docker'} />
+        {previewsPossible && (
+          <EnvCard
+            serviceId={serviceId}
+            variant="preview"
+            literalNewlines={svc?.type === 'docker'}
+            previewsEnabled={svc?.previewDeploymentsEnabled === true}
+          />
+        )}
         <WebhooksCard serviceId={serviceId} />
       </div>
       <div className="space-y-5">

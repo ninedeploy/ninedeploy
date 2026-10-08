@@ -110,6 +110,7 @@ interface FakeDb {
     buildConfigs: { findFirst: ReturnType<typeof vi.fn> };
     sources: { findFirst: ReturnType<typeof vi.fn> };
     envVars: { findMany: ReturnType<typeof vi.fn> };
+    previewEnvVars: { findMany: ReturnType<typeof vi.fn> };
     databaseAttachments: { findMany: ReturnType<typeof vi.fn> };
     databases: { findFirst: ReturnType<typeof vi.fn> };
     domains: { findFirst: ReturnType<typeof vi.fn> };
@@ -137,6 +138,8 @@ function makeDb(): { db: FakeDb; updates: { table: unknown; values: Record<strin
       buildConfigs: { findFirst: vi.fn() },
       sources: { findFirst: vi.fn() },
       envVars: { findMany: vi.fn().mockResolvedValue([]) },
+      // 0.12: the parent's preview-only set — read for PR previews only.
+      previewEnvVars: { findMany: vi.fn().mockResolvedValue([]) },
       databaseAttachments: { findMany: vi.fn().mockResolvedValue([]) },
       databases: { findFirst: vi.fn().mockResolvedValue(undefined) },
       domains: { findFirst: vi.fn() },
@@ -310,6 +313,90 @@ describe('runDeployment — PR preview credentials (r651)', () => {
     await runDeployment(db as never, 1);
     const ctx = h.builder.buildAndRun.mock.calls.at(-1)![0] as { env: Record<string, string> };
     expect(ctx.env.DATABASE_URL).toBe('postgres://db/app');
+  });
+});
+
+// 0.12 preview-only env: the parent's `preview_env_vars` rows reach its PR
+// previews at deploy time — over the non-secret values the webhook copied —
+// and never a production deploy. r651's withholding keeps holding.
+describe('runDeployment — preview-only env (0.12)', () => {
+  function setup(serviceOver: Record<string, unknown>) {
+    const made = makeDb();
+    const { db } = made;
+    baseSetup(db, { image: 'nginx:latest', ...serviceOver });
+    db.query.serviceProjects.findMany.mockResolvedValue([{ serviceId: 5, projectId: 4 }]);
+    // Call order: config snapshot (service), project scope, service scope.
+    let n = 0;
+    db.query.envVars.findMany.mockImplementation(async () => {
+      n++;
+      if (n === 2) {
+        return [
+          { key: 'PROD_DB_PASSWORD', valueEncrypted: 'enc:pw', isSecret: true, scope: 'project' },
+          { key: 'PUBLIC_FLAG', valueEncrypted: 'enc:flag', isSecret: false, scope: 'project' },
+        ];
+      }
+      // The preview's own row: the parent's NON-secret value, copied by the webhook.
+      return [{ key: 'API_URL', valueEncrypted: 'enc:prod-url', isSecret: false, scope: 'service' }];
+    });
+    db.query.previewEnvVars.findMany.mockResolvedValue([
+      { id: 1, serviceId: 3, key: 'API_URL', valueEncrypted: 'enc:staging-url', isSecret: false },
+      { id: 2, serviceId: 3, key: 'STRIPE_KEY', valueEncrypted: 'enc:test-stripe', isSecret: true },
+      { id: 3, serviceId: 3, key: 'PUBLIC_FLAG', valueEncrypted: 'enc:preview-flag', isSecret: false },
+    ]);
+    return made;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    h.decrypt.mockImplementation((v: string) => `dec:${v}`);
+  });
+
+  it('a preview receives the set over its copied values and project values; project secrets stay withheld', async () => {
+    const { db, updates } = setup({ isEphemeralPreview: true, previewParentServiceId: 3 });
+    const logs = collectLogs(1);
+    await runDeployment(db as never, 1);
+    const ctx = h.builder.buildAndRun.mock.calls.at(-1)![0] as { env: Record<string, string> };
+    expect(ctx.env).toEqual({
+      API_URL: 'dec:enc:staging-url',
+      STRIPE_KEY: 'dec:enc:test-stripe',
+      PUBLIC_FLAG: 'dec:enc:preview-flag',
+    });
+    expect(logs.find((l) => l.includes('PR preview: withheld'))).toContain('project secret PROD_DB_PASSWORD');
+    // The deploy diff names the preview-only keys (secret marked), never values.
+    const building = updates.find((u) => u.values.status === 'building');
+    const snapshot = JSON.parse(building!.values.configSnapshot as string) as Record<string, unknown>;
+    expect(snapshot.previewEnvKeys).toEqual(['API_URL', 'PUBLIC_FLAG', 'STRIPE_KEY*']);
+    expect(JSON.stringify(snapshot)).not.toContain('staging-url');
+  });
+
+  it('a vault reference that reached the set is still dropped for the preview', async () => {
+    const { db } = setup({ isEphemeralPreview: true, previewParentServiceId: 3 });
+    h.decrypt.mockImplementation((v: string) => (v === 'enc:test-stripe' ? ['$', '{{doppler:STRIPE_KEY}}'].join('') : `dec:${v}`));
+    await runDeployment(db as never, 1);
+    const ctx = h.builder.buildAndRun.mock.calls.at(-1)![0] as { env: Record<string, string> };
+    expect(ctx.env).not.toHaveProperty('STRIPE_KEY');
+  });
+
+  it('a production service never reads the set, and its env and snapshot are unchanged', async () => {
+    const { db, updates } = setup({});
+    db.query.users.findFirst.mockResolvedValue({ id: 7, isInstanceOperator: true });
+    await runDeployment(db as never, 1);
+    expect(db.query.previewEnvVars.findMany).not.toHaveBeenCalled();
+    const ctx = h.builder.buildAndRun.mock.calls.at(-1)![0] as { env: Record<string, string> };
+    expect(ctx.env).toEqual({ PROD_DB_PASSWORD: 'dec:enc:pw', PUBLIC_FLAG: 'dec:enc:flag', API_URL: 'dec:enc:prod-url' });
+    const building = updates.find((u) => u.values.status === 'building');
+    const snapshot = JSON.parse(building!.values.configSnapshot as string) as Record<string, unknown>;
+    expect(snapshot).not.toHaveProperty('previewEnvKeys');
+  });
+
+  it('a preview without a parent link (or an empty set) deploys exactly as before', async () => {
+    const { db, updates } = setup({ isEphemeralPreview: true, previewParentServiceId: null });
+    await runDeployment(db as never, 1);
+    expect(db.query.previewEnvVars.findMany).not.toHaveBeenCalled();
+    const ctx = h.builder.buildAndRun.mock.calls.at(-1)![0] as { env: Record<string, string> };
+    expect(ctx.env).toEqual({ PUBLIC_FLAG: 'dec:enc:flag', API_URL: 'dec:enc:prod-url' });
+    const building = updates.find((u) => u.values.status === 'building');
+    expect(JSON.parse(building!.values.configSnapshot as string)).not.toHaveProperty('previewEnvKeys');
   });
 });
 

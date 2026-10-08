@@ -232,6 +232,12 @@ export const SERVICE_TAB_TOPICS: Record<string, HelpTopic> = {
         ],
         tip: 'Changed an env var but see no effect? The running container predates the change — deploy again; the config diff on the deploy will show the variable changing.',
       },
+      {
+        heading: 'Preview deployments',
+        body: [
+          'A git-backed service also has a preview-only set. Its values reach only the service’s pull-request previews (they override the non-secret values a preview inherits) and never the service itself. Previews never receive this service’s secrets, project-shared secrets or vault references, so put test or staging credentials here. A preview picks up changes on its next deploy.',
+        ],
+      },
     ],
     related: [
       { label: 'Service · Deploys', helpId: 'service.deploys' },

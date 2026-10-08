@@ -220,6 +220,7 @@ interface Res {
   domain: number;
   envVar: number;
   projectEnvVar: number;
+  previewEnvVar: number;
   webhook: number;
   job: number;
   database: number;
@@ -319,6 +320,8 @@ async function seed(side: 'A' | 'B'): Promise<Res> {
       { id, serviceId: id, scope: 'service', scopeKey: id, key: `${mark.toUpperCase()}_KEY`, valueEncrypted: crypto.encrypt(`${mark}-${SECRET}-env`) },
       { id: id + 1, serviceId: null, scope: 'project', scopeKey: id, key: `${mark.toUpperCase()}_PKEY`, valueEncrypted: crypto.encrypt(`${mark}-${SECRET}-penv`) },
     ]),
+    // 0.12 preview-only env: a secret value only an admin-tier reader may see.
+    db.insert(S.previewEnvVars).values({ id, serviceId: id, key: `${mark.toUpperCase()}_VKEY`, valueEncrypted: crypto.encrypt(`${mark}-${SECRET}-venv`), isSecret: true }),
     db.insert(S.webhooks).values({ id, serviceId: id, branch: 'main', secretEncrypted: crypto.encrypt(`${mark}-${SECRET}-hook`) }),
     db.insert(S.scheduledJobs).values({ id, serviceId: id, name: `${mark}-job-${n}`, cron: '0 3 * * *', kind: 'deploy' }),
     db.insert(S.jobRuns).values({ id, jobId: id, status: 'completed', output: `${mark} run` }),
@@ -380,6 +383,7 @@ async function seed(side: 'A' | 'B'): Promise<Res> {
     domain: id,
     envVar: id,
     projectEnvVar: id + 1,
+    previewEnvVar: id,
     webhook: id,
     job: id,
     database: id,
@@ -413,7 +417,7 @@ function paramValue(url: string, param: string, r: Res): string {
     case 'domainId':
       return String(r.domain);
     case 'varId':
-      return String(at('/v1/projects') ? r.projectEnvVar : r.envVar);
+      return String(at('/v1/projects') ? r.projectEnvVar : url.includes('/env/preview/') ? r.previewEnvVar : r.envVar);
     case 'hookId':
       return String(r.webhook);
     case 'jobId':
@@ -711,6 +715,11 @@ export const MATRIX: Record<string, Rule> = {
   'DELETE /v1/services/:id/env/:varId': R('member'),
   'GET /v1/services/:id/env/export': R('admin'),
   'POST /v1/services/:id/env/import': R('member', { body: () => ({ content: 'IMPORTED=1' }) }),
+  // 0.12 preview-only env: the same floors as the service env routes above.
+  'GET /v1/services/:id/env/preview': R('viewer'),
+  'POST /v1/services/:id/env/preview': R('member', { body: () => ({ key: 'NEW_PREVIEW_KEY', value: 'v' }) }),
+  'PATCH /v1/services/:id/env/preview/:varId': R('member', { body: () => ({ key: `${MARK_A.toUpperCase()}_VKEY`, value: 'v2' }) }),
+  'DELETE /v1/services/:id/env/preview/:varId': R('member'),
   'GET /v1/services/:id/attachments': R('viewer'),
   'POST /v1/services/:id/attachments': R('admin', { body: (r) => ({ databaseId: r.database, envAlias: 'OTHER_DB' }) }),
   'DELETE /v1/services/:id/attachments/:attId': R('member', { note: 'detaching is member; attaching needs admin on the database' }),

@@ -37,7 +37,8 @@ vi.mock('../src/components/ContainerTerminal.js', () => ({
 }));
 
 vi.mock('../src/components/EnvCard.js', () => ({
-  EnvCard: () => <div data-testid="env-card">env</div>,
+  // 0.12: a git-backed service also renders the preview-only variant.
+  EnvCard: ({ variant }: { variant?: string }) => <div data-testid={variant === 'preview' ? 'preview-env-card' : 'env-card'}>env</div>,
 }));
 
 vi.mock('../src/components/AttachmentsCard.js', () => ({
@@ -355,6 +356,8 @@ describe('ServiceDetail', () => {
     // cards live under the Environment tab
     await openTab('Environment');
     expect(screen.getByTestId('env-card')).toBeInTheDocument();
+    // A git-backed service can have PR previews, so their env set shows too.
+    expect(screen.getByTestId('preview-env-card')).toBeInTheDocument();
     expect(screen.getByTestId('attachments-card')).toBeInTheDocument();
   });
 

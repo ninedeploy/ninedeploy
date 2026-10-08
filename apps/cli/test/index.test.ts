@@ -800,6 +800,13 @@ describe('delegating actions', () => {
     await sub('env', 'list').actionFn!('1');
     await sub('env', 'set').actionFn!('1', 'K', 'V', {});
     await sub('env', 'rm').actionFn!('1', 'K');
+    // 0.12: `--preview` reaches the handlers on all three env verbs.
+    await sub('env', 'list').actionFn!('1', { preview: true });
+    expect(h.envList).toHaveBeenLastCalledWith(client, '1', { preview: true });
+    await sub('env', 'set').actionFn!('1', 'K', 'V', { preview: true });
+    expect(h.envSet).toHaveBeenLastCalledWith(client, '1', 'K', 'V', { preview: true });
+    await sub('env', 'rm').actionFn!('1', 'K', { preview: true });
+    expect(h.envRemove).toHaveBeenLastCalledWith(client, '1', 'K', { preview: true });
     await sub('domains', 'list').actionFn!();
     await sub('domains', 'add').actionFn!('1', 'h.test', {});
     await sub('domains', 'rm').actionFn!('1', '2');

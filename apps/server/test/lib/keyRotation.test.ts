@@ -121,6 +121,15 @@ describe('rotateSecrets', () => {
     expect(updates.find((u) => u.table === sources)?.values).toEqual({ tokenEncrypted: null, deployKeyEncrypted: null });
   });
 
+  it('0.12: rotates the preview-only env set like env_vars', async () => {
+    const { previewEnvVars } = await import('@ninedeploy/db');
+    const updates: Array<{ table: unknown; values: Record<string, unknown> }> = [];
+    const db = makeDb(new Map([[previewEnvVars, [{ id: 1, v: 'pev-enc' }]]]), updates);
+
+    expect(await rotateSecrets(db as never)).toBe(1);
+    expect(updates).toEqual([{ table: previewEnvVars, values: { valueEncrypted: 're:pev-enc' } }]);
+  });
+
   it('reports zero when there is nothing to rotate', async () => {
     const updates: Array<{ table: unknown; values: Record<string, unknown> }> = [];
     const db = makeDb(new Map(), updates);

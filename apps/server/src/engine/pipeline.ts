@@ -2,7 +2,7 @@ import path from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { and, desc, eq, inArray, isNotNull, lt, ne } from 'drizzle-orm';
-import { buildConfigs, databaseAttachments, databases, type DB, deployments, domains, envVars, projects, services, serviceProjects, serviceVolumeAttachments, sources, workspaceMembers } from '@ninedeploy/db';
+import { buildConfigs, databaseAttachments, databases, type DB, deployments, domains, envVars, previewEnvVars, projects, services, serviceProjects, serviceVolumeAttachments, sources, workspaceMembers } from '@ninedeploy/db';
 import { config } from '../config.js';
 import { decrypt } from '../lib/crypto.js';
 import { checkoutCommit, type CloneCreds } from '../lib/git.js';
@@ -267,7 +267,22 @@ export async function filterTrustworthyProjectLinks(
   return kept;
 }
 
-async function loadRuntimeEnv(
+/**
+ * The parent's preview-only env set (`preview_env_vars`) for a PR preview;
+ * nothing for any other service. Only an ephemeral preview with a parent
+ * reads the table, so a production deploy issues exactly the queries it did
+ * before 0.12.
+ */
+async function loadPreviewOnlyEnv(
+  db: DB,
+  service: typeof services.$inferSelect,
+): Promise<Array<typeof previewEnvVars.$inferSelect>> {
+  if (service.isEphemeralPreview !== true || service.previewParentServiceId == null) return [];
+  return db.query.previewEnvVars.findMany({ where: eq(previewEnvVars.serviceId, service.previewParentServiceId) });
+}
+
+/** Exported for the 0068 upgrade-compatibility test (test/previewEnvUpgrade.test.ts). */
+export async function loadRuntimeEnv(
   db: DB,
   service: typeof services.$inferSelect,
   templateDatabaseId?: number,
@@ -311,6 +326,13 @@ async function loadRuntimeEnv(
   // Service-scope env overrides shared values.
   const rows = await db.query.envVars.findMany({ where: eq(envVars.serviceId, service.id) });
   for (const r of rows) env[r.key] = decrypt(r.valueEncrypted);
+
+  // 0.12 preview-only env: the parent's values meant for its previews win
+  // over the preview's own rows (the parent's NON-secret values the webhook
+  // copied) and over project-shared values. Read at every deploy, so a
+  // preview created before the set existed picks it up on its next deploy.
+  // Managed-database keys below still win, exactly as over service env.
+  for (const r of await loadPreviewOnlyEnv(db, service)) env[r.key] = decrypt(r.valueEncrypted);
 
   const allAttaches = await db.query.databaseAttachments.findMany({ where: eq(databaseAttachments.serviceId, service.id) });
   const attaches: typeof allAttaches = [];
@@ -487,6 +509,10 @@ async function snapshotConfig(
   buildConfig: typeof buildConfigs.$inferSelect | undefined,
 ): Promise<string> {
   const envRows = await db.query.envVars.findMany({ where: eq(envVars.serviceId, service.id) });
+  // 0.12: a preview's diff also names the parent's preview-only keys it
+  // received. The field is omitted when there are none, so every production
+  // snapshot (and a preview's without a set) is byte-identical to 0.11's.
+  const previewRows = await loadPreviewOnlyEnv(db, service);
   return JSON.stringify({
     buildPack: buildConfig?.buildPack ?? 'auto',
     baseDir: buildConfig?.baseDir ?? '/',
@@ -502,6 +528,7 @@ async function snapshotConfig(
     image: service.image ?? null,
     port: service.port ?? null,
     envKeys: envRows.map((r) => `${r.key}${r.isSecret ? '*' : ''}`).sort(),
+    ...(previewRows.length > 0 ? { previewEnvKeys: previewRows.map((r) => `${r.key}${r.isSecret ? '*' : ''}`).sort() } : {}),
   });
 }
 
@@ -881,7 +908,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     fanoutEnv = runtimeEnvironment.values;
     if (runtimeEnvironment.withheldFromPreview.length > 0) {
       log(
-        `🔒 PR preview: withheld from this preview's environment — ${runtimeEnvironment.withheldFromPreview.join(', ')}. A preview runs code from a pull-request branch, so it never receives project-shared secrets, vault references or the production service's databases. To give it its own values, set them on the preview service (Service → Environment) or attach a separate, non-production database to it (Service → Databases).`,
+        `🔒 PR preview: withheld from this preview's environment — ${runtimeEnvironment.withheldFromPreview.join(', ')}. A preview runs code from a pull-request branch, so it never receives project-shared secrets, vault references or the production service's databases. To give previews their own values, add them to the parent service's preview-only set (Service → Environment → Preview deployments) or attach a separate, non-production database to it (Service → Databases).`,
       );
     }
     if (runtimeEnvironment.readyAttachmentCount !== runtimeEnvironment.attachmentCount) {

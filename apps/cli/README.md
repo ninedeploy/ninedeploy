@@ -135,6 +135,7 @@ ninedeploy env list <serviceId>                    # List environment variables
 ninedeploy env set <serviceId> KEY VALUE           # Set encrypted secret
 ninedeploy env set <serviceId> KEY VALUE --public  # Set public env variable
 ninedeploy env rm <serviceId> KEY                  # Remove variable
+ninedeploy env set <serviceId> KEY VALUE --preview # Value only this service's PR previews receive (also: list/rm --preview)
 ```
 
 ### 🌐 Domains & Routing

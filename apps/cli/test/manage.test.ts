@@ -82,6 +82,25 @@ describe('env commands', () => {
     expect(client.env.remove).toHaveBeenCalledWith(2, 9);
   });
 
+  it('0.12 --preview targets the preview-only set and never the production env', async () => {
+    const production = { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() };
+    const preview = {
+      list: vi.fn().mockResolvedValue([{ id: 4, key: 'OLD', value: '', isSecret: true }]),
+      create: vi.fn().mockResolvedValue({ id: 5 }),
+      update: vi.fn(),
+      remove: vi.fn(),
+    };
+    const client = { env: production, previewEnv: preview };
+    await envList(client as never, '3', { preview: true });
+    await envSet(client as never, '3', 'STRIPE_KEY', 'sk_test', { preview: true });
+    await envRemove(client as never, '3', 'OLD', { preview: true });
+    expect(preview.list).toHaveBeenCalledWith(3);
+    expect(preview.create).toHaveBeenCalledWith(3, { key: 'STRIPE_KEY', value: 'sk_test', isSecret: true });
+    expect(preview.remove).toHaveBeenCalledWith(3, 4);
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('for PR previews only'));
+    for (const fn of Object.values(production)) expect(fn).not.toHaveBeenCalled();
+  });
+
   it('is a no-op when the key does not exist', async () => {
     const client = { env: { list: vi.fn().mockResolvedValue([]), remove: vi.fn() } };
     await envRemove(client as never, '2', 'MISSING');

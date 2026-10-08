@@ -632,6 +632,33 @@ export const envVars = sqliteTable(
   }),
 );
 
+// 0.12 preview-only env: values a service hands ONLY to its PR previews
+// (engine/pipeline.ts overlays them at preview deploy time). A separate table
+// rather than a third `env_vars.scope`: `env_vars` is unique on
+// (service_id, key), so a preview row keyed to the parent would collide with
+// the production key it exists to replace (DATABASE_URL, STRIPE_KEY…), and a
+// NULL service_id would lose the ON DELETE CASCADE below. Every existing
+// `env_vars` read — production env assembly, export, clone, migration,
+// search — therefore cannot see these rows by construction.
+export const previewEnvVars = sqliteTable(
+  'preview_env_vars',
+  {
+    id: id(),
+    /** The PARENT (production) service whose previews receive the value. */
+    serviceId: integer('service_id')
+      .notNull()
+      .references(() => services.id, { onDelete: 'cascade' }),
+    key: text('key').notNull(),
+    valueEncrypted: text('value_encrypted').notNull(),
+    isSecret: integer('is_secret', { mode: 'boolean' }).notNull().default(false),
+    createdAt: ts('created_at'),
+    updatedAt: tsUpdatable('updated_at'),
+  },
+  (t) => ({
+    serviceKeyIdx: uniqueIndex('preview_env_vars_service_key_idx').on(t.serviceId, t.key),
+  }),
+);
+
 // ─── git sources ──────────────────────────────────────────────────────────
 export const sources = sqliteTable('sources', {
   id: id(),
@@ -1606,6 +1633,7 @@ export type ServiceLabel = typeof serviceLabels.$inferSelect;
 export type BuildConfig = typeof buildConfigs.$inferSelect;
 export type Deployment = typeof deployments.$inferSelect;
 export type EnvVar = typeof envVars.$inferSelect;
+export type PreviewEnvVar = typeof previewEnvVars.$inferSelect;
 export type Source = typeof sources.$inferSelect;
 export type Domain = typeof domains.$inferSelect;
 export type Webhook = typeof webhooks.$inferSelect;

@@ -343,14 +343,24 @@ system.command('rotate-keys')
 // ── Env vars ──────────────────────────────────────────────────────────────
 const envCmd = program.command('env').description('Manage service environment variables');
 
-envCmd.command('list <serviceId>').description('List a service\'s env vars').action((id: string) => envList(getClient(), id));
+// 0.12 `--preview`: the service's preview-only set — injected ONLY into its
+// PR previews (overriding the parent's non-secret values there), never into
+// the service itself. Previews still never receive the service's secrets.
+const PREVIEW_FLAG = 'Target the preview-only set: values only this service\'s PR previews receive';
+
+envCmd.command('list <serviceId>').description('List a service\'s env vars')
+  .option('--preview', PREVIEW_FLAG)
+  .action((id: string, opts?: { preview?: boolean }) => envList(getClient(), id, opts));
 
 envCmd.command('set <serviceId> <key> <value>')
   .description('Create or update an env var (secret by default)')
   .option('--public', 'Store as a plain (non-secret) value')
-  .action((id: string, key: string, value: string, opts: { public?: boolean }) => envSet(getClient(), id, key, value, opts));
+  .option('--preview', PREVIEW_FLAG)
+  .action((id: string, key: string, value: string, opts: { public?: boolean; preview?: boolean }) => envSet(getClient(), id, key, value, opts));
 
-envCmd.command('rm <serviceId> <key>').description('Remove an env var by key').action((id: string, key: string) => envRemove(getClient(), id, key));
+envCmd.command('rm <serviceId> <key>').description('Remove an env var by key')
+  .option('--preview', PREVIEW_FLAG)
+  .action((id: string, key: string, opts?: { preview?: boolean }) => envRemove(getClient(), id, key, opts));
 
 // ── Domains ────────────────────────────────────────────────────────────────
 const domainsCmd = program.command('domains').description('Manage domains & routing');

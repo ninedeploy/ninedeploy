@@ -8,6 +8,7 @@ import {
   logDrains,
   notificationChannels,
   oidcProviders,
+  previewEnvVars,
   servers,
   settings,
   sources,
@@ -37,6 +38,12 @@ const ENCRYPTED_COLUMNS = [
   {
     table: envVars,
     select: { id: envVars.id, v: envVars.valueEncrypted },
+    pick: (r: { id: number; v: string }) => ({ valueEncrypted: reencrypt(r.v) }),
+  },
+  // 0.12: the preview-only env set has the same envelope as env_vars.
+  {
+    table: previewEnvVars,
+    select: { id: previewEnvVars.id, v: previewEnvVars.valueEncrypted },
     pick: (r: { id: number; v: string }) => ({ valueEncrypted: reencrypt(r.v) }),
   },
   {

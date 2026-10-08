@@ -1,11 +1,12 @@
 import { and, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
-import { envVars, projects, services } from '@ninedeploy/db';
+import { envVars, previewEnvVars, projects, services } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import { envImport, upsertEnvVar } from '@ninedeploy/schemas';
 import { decrypt, encrypt } from '../lib/crypto.js';
 import {
   assertServiceRole,
   assertWorkspaceRole,
+  type AuthedUser,
   loadProjectForUser,
   loadServiceForUser,
   projectScopeFilter,
@@ -13,7 +14,7 @@ import {
 } from '../lib/resourceAccess.js';
 import { badRequest, isUniqueViolation, notFound, parseId as num } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
-import { assertMayWriteVaultRefs } from '../lib/vault.js';
+import { assertMayWriteVaultRefs, hasVaultRef } from '../lib/vault.js';
 
 /**
  * Parse a .env-formatted string into key/value pairs. Handles `export`
@@ -42,7 +43,7 @@ export function parseDotEnv(content: string): Array<{ key: string; value: string
   return out;
 }
 
-function serialize(e: typeof envVars.$inferSelect) {
+function serialize(e: Pick<typeof envVars.$inferSelect, 'id' | 'key' | 'valueEncrypted' | 'isSecret'>) {
   return {
     id: e.id,
     key: e.key,
@@ -250,6 +251,118 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
     }
     const body = lines.length > 0 ? `${lines.join('\n')}\n` : '';
     return { content: body, count };
+  });
+
+  // ── 0.12 preview-only env ──────────────────────────────────────────────
+  // Values injected ONLY into this service's PR previews (engine/pipeline.ts
+  // overlays them at preview deploy time), never into the service itself.
+  // Stored in `preview_env_vars`, so no production env read can see them.
+  // Same authorization as the service env routes above: viewer reads (secret
+  // values masked), member writes. Sub-routes rather than a `?scope=` flag on
+  // the routes above: a newer client talking to an older panel then gets a
+  // 404 instead of the older panel silently writing a PRODUCTION variable.
+
+  /** The parent service of a preview-env write, after the `member` gate. */
+  const previewParentForWrite = async (id: number, user: AuthedUser) => {
+    const svc = await loadServiceForUser(app.db, id, user);
+    await assertServiceRole(app.db, svc, user, 'member');
+    if (svc.isEphemeralPreview) {
+      throw badRequest('A PR preview has no previews of its own — set preview-only values on its parent service');
+    }
+    return svc;
+  };
+  // A vault reference resolves with the instance-wide vault token, and a
+  // preview never resolves one (r651 drops them at deploy) — refuse it at
+  // write time instead of letting the operator find out from a deploy log.
+  const refuseVaultRef = (value: string) => {
+    if (hasVaultRef(value)) {
+      throw badRequest('Vault references are not resolved for PR previews — store the preview value itself');
+    }
+  };
+
+  app.get('/:id/env/preview', async (req) => {
+    const id = num((req.params as { id: string }).id);
+    await loadServiceForUser(app.db, id, req.user!);
+    const rows = await app.db.query.previewEnvVars.findMany({
+      where: eq(previewEnvVars.serviceId, id),
+      orderBy: (e, { asc }) => [asc(e.key)],
+    });
+    return rows.map(serialize);
+  });
+
+  app.post('/:id/env/preview', async (req) => {
+    const id = num((req.params as { id: string }).id);
+    const input = upsertEnvVar.parse(req.body);
+    const svc = await previewParentForWrite(id, req.user!);
+    refuseVaultRef(input.value);
+    if (input.overwriteExisting) {
+      const existing = await app.db.query.previewEnvVars.findFirst({
+        where: and(eq(previewEnvVars.serviceId, id), eq(previewEnvVars.key, input.key)),
+      });
+      if (existing) {
+        const [updated] = await app.db
+          .update(previewEnvVars)
+          .set({ valueEncrypted: encrypt(input.value), isSecret: input.isSecret ?? existing.isSecret })
+          .where(and(eq(previewEnvVars.id, existing.id), eq(previewEnvVars.serviceId, id)))
+          .returning();
+        if (!updated) throw badRequest('Could not update existing env var');
+        // Key only, never the value — same as the service env routes.
+        void audit(app.db, req.user!.id, 'env.preview.update', `${svc.name}/${updated.key}`);
+        return serialize(updated);
+      }
+    }
+    const [created] = await app.db
+      .insert(previewEnvVars)
+      .values({
+        serviceId: id,
+        key: input.key,
+        valueEncrypted: encrypt(input.value),
+        isSecret: input.isSecret ?? false,
+      })
+      .returning()
+      .catch((err: unknown) => {
+        if (isUniqueViolation(err)) return [] as typeof previewEnvVars.$inferSelect[];
+        throw err;
+      });
+    if (!created) throw badRequest('Env var with that key already exists');
+    void audit(app.db, req.user!.id, 'env.preview.create', `${svc.name}/${created.key}`);
+    return serialize(created);
+  });
+
+  app.patch('/:id/env/preview/:varId', async (req) => {
+    const id = num((req.params as { id: string }).id);
+    const varId = num((req.params as { varId: string }).varId);
+    const svc = await previewParentForWrite(id, req.user!);
+    const input = upsertEnvVar.parse(req.body);
+    refuseVaultRef(input.value);
+    const existing = await app.db.query.previewEnvVars.findFirst({
+      where: and(eq(previewEnvVars.id, varId), eq(previewEnvVars.serviceId, id)),
+    });
+    if (!existing) throw notFound('Env var not found');
+    const [updated] = await app.db
+      .update(previewEnvVars)
+      // Omitted isSecret preserves the stored classification (same rule as
+      // the service-scope routes).
+      .set({ valueEncrypted: encrypt(input.value), isSecret: input.isSecret ?? existing.isSecret })
+      .where(and(eq(previewEnvVars.id, varId), eq(previewEnvVars.serviceId, id)))
+      .returning();
+    if (!updated) throw notFound('Env var not found');
+    void audit(app.db, req.user!.id, 'env.preview.update', `${svc.name}/${updated.key}`);
+    return serialize(updated);
+  });
+
+  app.delete('/:id/env/preview/:varId', async (req) => {
+    const id = num((req.params as { id: string }).id);
+    const varId = num((req.params as { varId: string }).varId);
+    const target = await loadServiceForUser(app.db, id, req.user!);
+    await assertServiceRole(app.db, target, req.user!, 'member');
+    const gone = await app.db
+      .delete(previewEnvVars)
+      .where(and(eq(previewEnvVars.id, varId), eq(previewEnvVars.serviceId, id)))
+      .returning({ key: previewEnvVars.key });
+    if (!gone[0]) throw notFound('Environment variable not found');
+    void audit(app.db, req.user!.id, 'env.preview.delete', `${target.name}/${gone[0].key}`);
+    return { ok: true };
   });
 };
 

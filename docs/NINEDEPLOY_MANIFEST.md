@@ -282,7 +282,7 @@ previews:
 
 `pattern` must contain `{n}` when `enabled: true`. The web panel still owns the per-PR environment lifecycle (create, list, destroy); the manifest only declares the routing pattern and retention policy.
 
-A preview deploys code from a pull-request branch, so the manifest's `database:` section is not applied to it, and its runtime env never carries project-shared secrets, vault references or the production service's databases; the deploy log names what was withheld (see docs/DEPLOYMENTS.md §4).
+A preview deploys code from a pull-request branch, so the manifest's `database:` section is not applied to it, and its runtime env never carries project-shared secrets, vault references or the production service's databases; the deploy log names what was withheld (see docs/DEPLOYMENTS.md §4). Values meant for previews belong in the service's preview-only env set in the panel (0.12), not in the manifest — a manifest never carries env values; `env.required` is checked against the preview's final environment, so a key supplied by that set counts.
 
 ### 4.12 `volume` — Persistent Mount
 

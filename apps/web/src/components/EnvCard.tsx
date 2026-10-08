@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useMemo, useState } from 'react';
-import { FileCode, KeyRound, Lock, Plus, Rows3, Save, Trash2 } from 'lucide-react';
+import { FileCode, GitPullRequest, KeyRound, Lock, Plus, Rows3, Save, Trash2 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { downloadBlob } from '../lib/format.js';
 import { useToast } from './Toast.js';
@@ -54,7 +54,25 @@ export function parseEnvText(text: string): { entries: Array<{ key: string; valu
   return { entries, errors };
 }
 
-export function EnvCard({ serviceId, literalNewlines = false }: { serviceId: number; literalNewlines?: boolean }) {
+/**
+ * `variant="preview"` (0.12) edits the service's preview-only set: values only
+ * its PR previews receive, through `/env/preview` — same table UI, its own
+ * query key, and no vault references (a preview never resolves one).
+ */
+export function EnvCard({
+  serviceId,
+  literalNewlines = false,
+  variant = 'service',
+  previewsEnabled = true,
+}: {
+  serviceId: number;
+  literalNewlines?: boolean;
+  variant?: 'service' | 'preview';
+  previewsEnabled?: boolean;
+}) {
+  const preview = variant === 'preview';
+  const envApi = preview ? api.previewEnv : api.env;
+  const queryKey = preview ? ['preview-env', serviceId] : ['env', serviceId];
   const qc = useQueryClient();
   const { toast } = useToast();
   const [key, setKey] = useState('');
@@ -67,8 +85,8 @@ export function EnvCard({ serviceId, literalNewlines = false }: { serviceId: num
   const [rawMode, setRawMode] = useState(false);
   const [rawText, setRawText] = useState('');
 
-  const env = useQuery({ queryKey: ['env', serviceId], queryFn: () => api.env.list(serviceId) });
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['env', serviceId] });
+  const env = useQuery({ queryKey, queryFn: () => envApi.list(serviceId) });
+  const invalidate = () => qc.invalidateQueries({ queryKey });
   // r562: the raw editor DIFFS against the loaded list — every key it does not
   // see is deleted on Apply. A failed load used to read as "no variables", so
   // applying a pasted .env over it would have wiped every existing one.
@@ -84,7 +102,7 @@ export function EnvCard({ serviceId, literalNewlines = false }: { serviceId: num
   const parsed = useMemo(() => parseEnvText(rawText), [rawText]);
 
   const add = useMutation({
-    mutationFn: () => api.env.create(serviceId, { key, value, isSecret: secret }),
+    mutationFn: () => envApi.create(serviceId, { key, value, isSecret: secret }),
     // r217: the inputs clear only once the variable is stored. They used to
     // clear on submit, so a refused add (an invalid key name, a 403) lost
     // what was typed — and the toast blamed a duplicate key the server would
@@ -101,12 +119,12 @@ export function EnvCard({ serviceId, literalNewlines = false }: { serviceId: num
     // isSecret is passed through explicitly: the server preserves the stored
     // classification when it is omitted, but sending it removes any doubt.
     mutationFn: (v: { id: number; key: string; value: string; isSecret: boolean }) =>
-      api.env.update(serviceId, v.id, { key: v.key, value: v.value, isSecret: v.isSecret }),
+      envApi.update(serviceId, v.id, { key: v.key, value: v.value, isSecret: v.isSecret }),
     onSuccess: invalidate,
     onError: () => toast('Could not save the variable', 'error'),
   });
   const remove = useMutation({
-    mutationFn: (id: number) => api.env.remove(serviceId, id),
+    mutationFn: (id: number) => envApi.remove(serviceId, id),
     onSuccess: invalidate,
     onError: () => toast('Could not delete the variable', 'error'),
   });
@@ -118,11 +136,11 @@ export function EnvCard({ serviceId, literalNewlines = false }: { serviceId: num
       const wanted = new Map(parsed.entries.map((e) => [e.key, e.value]));
       const creates = [...wanted]
         .filter(([k]) => !current.some((v) => v.key === k))
-        .map(([k, val]) => api.env.create(serviceId, { key: k, value: val, isSecret: false }));
+        .map(([k, val]) => envApi.create(serviceId, { key: k, value: val, isSecret: false }));
       const updates = current
         .filter((v) => wanted.has(v.key) && wanted.get(v.key) !== v.value)
-        .map((v) => api.env.update(serviceId, v.id, { key: v.key, value: wanted.get(v.key) ?? '' }));
-      const removes = current.filter((v) => !wanted.has(v.key)).map((v) => api.env.remove(serviceId, v.id));
+        .map((v) => envApi.update(serviceId, v.id, { key: v.key, value: wanted.get(v.key) ?? '' }));
+      const removes = current.filter((v) => !wanted.has(v.key)).map((v) => envApi.remove(serviceId, v.id));
       // Independent single-variable calls; one failure among many still leaves
       // a coherent subset persisted, which the refetch below renders truthfully.
       // r297: wait for every call to land (Promise.all rejected on the first
@@ -153,7 +171,15 @@ export function EnvCard({ serviceId, literalNewlines = false }: { serviceId: num
       <CardBody>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
-            <KeyRound size={15} className="text-slate-500" /> Environment
+            {preview ? (
+              <>
+                <GitPullRequest size={15} className="text-slate-500" /> Preview deployments
+              </>
+            ) : (
+              <>
+                <KeyRound size={15} className="text-slate-500" /> Environment
+              </>
+            )}
           </div>
           {/* r409/r465: docker-builder services with multi-line env values
               start through a one-service compose bridge whose dotenv parser
@@ -178,7 +204,7 @@ export function EnvCard({ serviceId, literalNewlines = false }: { serviceId: num
                   .join('\n')}\n`;
                 // downloadBlob delays the URL revoke — a synchronous revoke
                 // cancels the download in Safari (r409).
-                downloadBlob(content, '.env', 'text/plain');
+                downloadBlob(content, preview ? '.env.preview' : '.env', 'text/plain');
               }}
               disabled={(env.data?.length ?? 0) === 0}
               className="flex items-center gap-1.5 rounded-lg bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400 ring-1 ring-inset ring-white/10 transition hover:bg-white/[0.08] hover:text-slate-200 disabled:opacity-30"
@@ -250,11 +276,24 @@ export function EnvCard({ serviceId, literalNewlines = false }: { serviceId: num
           </>
         ) : (
           <>
-            <p className="mb-2 text-[11px] text-slate-600">
-              Values may reference an external secret store and are resolved at deploy time:{' '}
-              <code className="rounded bg-white/5 px-1 font-mono text-[10px] text-slate-500">{REF_INFISICAL}</code>{' '}
-              / <code className="rounded bg-white/5 px-1 font-mono text-[10px] text-slate-500">{REF_DOPPLER}</code>
-            </p>
+            {preview ? (
+              <div className="mb-2 space-y-1 text-[11px] leading-relaxed text-slate-500">
+                <p>
+                  Values here reach only this service&apos;s pull-request previews, never the service itself. They override
+                  the non-secret values a preview inherits. Previews never receive this service&apos;s secrets, project-shared
+                  secrets or vault references — PR branches are untrusted code, so use test or staging credentials here.
+                </p>
+                {!previewsEnabled && (
+                  <p className="text-amber-300/80">PR previews are off for this service — turn them on under Settings.</p>
+                )}
+              </div>
+            ) : (
+              <p className="mb-2 text-[11px] text-slate-600">
+                Values may reference an external secret store and are resolved at deploy time:{' '}
+                <code className="rounded bg-white/5 px-1 font-mono text-[10px] text-slate-500">{REF_INFISICAL}</code>{' '}
+                / <code className="rounded bg-white/5 px-1 font-mono text-[10px] text-slate-500">{REF_DOPPLER}</code>
+              </p>
+            )}
 
             <form onSubmit={onAdd} className="space-y-2">
               <div className="flex gap-2">
