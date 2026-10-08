@@ -31,6 +31,20 @@ export interface RouteSpec {
   response?: z.ZodType;
   /** TS type name when no zod response exists (documented as x-ninedeploy-response-type). */
   responseType?: string;
+  /**
+   * A module-local zod schema the handler parses, as `<module>.ts#<name>`
+   * (documented as x-ninedeploy-body-schema / x-ninedeploy-query-schema). It
+   * is not exported, so the document names it instead of rendering it.
+   */
+  localBody?: string;
+  localQuery?: string;
+  /**
+   * The TypeScript shape a handler casts an unvalidated body or query to
+   * (`validation: 'handler'`; documented as x-ninedeploy-body-type /
+   * x-ninedeploy-query-type).
+   */
+  bodyType?: string;
+  queryType?: string;
   /** 'handler' marks the `req.body as` sites: documented shape, not enforced. */
   validation?: 'zod' | 'handler';
   /** Returns secrets (credentials, env values): never becomes an MCP tool. */

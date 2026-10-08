@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { buildServer, DEFAULT_IO, isDirectRun, main, staticToken } from '../src/index.js';
+import { buildServer, DEFAULT_IO, isDirectRun, main, staticToken, TOOLS } from '../src/index.js';
 import type { NineDeployClient } from '@ninedeploy/sdk';
 
 vi.mock('@modelcontextprotocol/sdk/server/stdio.js', () => ({
@@ -38,7 +38,7 @@ describe('buildServer', () => {
   it('lists all tools with schemas', async () => {
     const mcp = await connected(fake());
     const tools = await mcp.listTools();
-    expect(tools.tools).toHaveLength(41);
+    expect(tools.tools).toHaveLength(TOOLS.length);
     expect(tools.tools.map((t) => t.name)).toContain('deploy_service');
     // An agent that can start a build must be able to stop one.
     expect(tools.tools.map((t) => t.name)).toContain('cancel_deploy');
@@ -72,7 +72,7 @@ describe('buildServer', () => {
     // a shared pending-scope filter would silently drop all scoped tools.
     for (const tokenScopes of [[], ['session']]) {
       const mcp = await connected(fake(), { tokenScopes });
-      expect((await mcp.listTools()).tools).toHaveLength(41);
+      expect((await mcp.listTools()).tools).toHaveLength(TOOLS.length);
     }
   });
 
@@ -133,6 +133,10 @@ describe('buildServer', () => {
     // 0.14: credential-free database reads are allowed read-only.
     expect(names).toContain('get_database_public_access');
     expect(names).toContain('list_database_imports');
+    // 0.15: API search and the spec-generated GET tools are read-only.
+    expect(names).toContain('search_api');
+    expect(names).toContain('get_database');
+    expect(names).toContain('doctor_report');
   });
 
   it('rejects invalid arguments with isError', async () => {

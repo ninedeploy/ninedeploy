@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { NineDeployClient } from '@ninedeploy/sdk';
+import { SPEC_TOOLS } from './generated/specTools.js';
 
 /**
  * The MCP tool surface: read-only inspection plus a handful of guarded actions
@@ -54,7 +55,8 @@ const serviceId = z.object({ serviceId: z.number().int().positive() });
 const databaseId = z.object({ databaseId: z.number().int().positive() });
 const entityOpt = z.object({ entity: z.string().optional() });
 
-export const TOOLS: ToolDef[] = [
+/** The hand-curated tools: every write lives here. */
+const HAND_WRITTEN: ToolDef[] = [
   {
     name: 'list_services',
     description: 'List all deployed services with status, type and branch. Optionally scope to a project.',
@@ -459,4 +461,81 @@ export const TOOLS: ToolDef[] = [
     requiredScopes: ['operator', 'nd://scope/write/housekeeping'],
     handler: (c) => c.housekeeping.runPrune(),
   },
+  // ── API discovery (0.15) ───────────────────────────────────────────────
+  {
+    name: 'search_api',
+    description:
+      'Search the NineDeploy HTTP API (its OpenAPI 3.1 document) by free text. Returns matching operations with method, path, summary, tag, the minimum caller (floor) and the API-token scope each needs. It lists operations; it never calls them. Omit the query to list the first operations.',
+    input: z.object({
+      query: z.string().max(200).optional(),
+      limit: z.number().int().min(1).max(100).optional(),
+    }),
+    // GET /v1/openapi.json: unmapped prefix (sessions and coarse tokens only).
+    coarseTokenOnly: true,
+    handler: (c, input) => searchApi(c, input as { query?: string; limit?: number }),
+  },
 ];
+
+// ── 0.15: search_api ──────────────────────────────────────────────────────
+/** One documented operation, as `search_api` reports it. */
+export interface ApiOperation {
+  method: string;
+  path: string;
+  summary: string;
+  tag: string | null;
+  floor: string | null;
+  scope: string | null;
+}
+
+interface OpenApiLike {
+  paths?: Record<string, Record<string, { summary?: unknown; tags?: unknown; [ext: string]: unknown }>>;
+}
+
+/** The document is fetched once per client (per process, in practice); a failed fetch is retried next time. */
+const operationsCache = new WeakMap<NineDeployClient, Promise<ApiOperation[]>>();
+
+/** Flatten an OpenAPI document into its operations, tolerating a missing or partial document. */
+export function apiOperations(doc: OpenApiLike | null | undefined): ApiOperation[] {
+  const out: ApiOperation[] = [];
+  for (const [path, ops] of Object.entries(doc?.paths ?? {})) {
+    for (const [method, op] of Object.entries(ops ?? {})) {
+      if (typeof op !== 'object' || op === null) continue;
+      const tags = Array.isArray(op.tags) ? op.tags : [];
+      out.push({
+        method: method.toUpperCase(),
+        path,
+        summary: typeof op.summary === 'string' ? op.summary : '',
+        tag: typeof tags[0] === 'string' ? tags[0] : null,
+        floor: typeof op['x-ninedeploy-floor'] === 'string' ? op['x-ninedeploy-floor'] : null,
+        scope: typeof op['x-ninedeploy-scope'] === 'string' ? op['x-ninedeploy-scope'] : null,
+      });
+    }
+  }
+  return out;
+}
+
+function loadOperations(c: NineDeployClient): Promise<ApiOperation[]> {
+  let pending = operationsCache.get(c);
+  if (!pending) {
+    pending = c.api.get<OpenApiLike>('/v1/openapi.json').then(apiOperations);
+    operationsCache.set(c, pending);
+    pending.catch(() => operationsCache.delete(c));
+  }
+  return pending;
+}
+
+/** Every whitespace-separated term must appear in the operation's method, path, summary or tag (case-insensitive). */
+export async function searchApi(
+  c: NineDeployClient,
+  input: { query?: string; limit?: number },
+): Promise<{ total: number; operations: ApiOperation[] }> {
+  const terms = (input.query ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (await loadOperations(c)).filter((op) => {
+    const text = `${op.method} ${op.path} ${op.summary} ${op.tag ?? ''}`.toLowerCase();
+    return terms.every((t) => text.includes(t));
+  });
+  return { total: matches.length, operations: matches.slice(0, input.limit ?? 25) };
+}
+
+/** Hand-written tools first, then the read-only tools generated from the route specs (0.15). */
+export const TOOLS: ToolDef[] = [...HAND_WRITTEN, ...SPEC_TOOLS];

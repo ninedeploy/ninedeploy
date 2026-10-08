@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { TOOLS } from '../src/tools.js';
+import { SPEC_READ_ONLY_TOOL_NAMES, SPEC_TOOLS } from '../src/generated/specTools.js';
+import { READ_ONLY_TOOL_NAMES } from '../src/index.js';
+import { apiOperations, searchApi, TOOLS } from '../src/tools.js';
 import type { NineDeployClient } from '@ninedeploy/sdk';
 
 /** A client where every method is a spy returning a marker. */
@@ -33,6 +35,7 @@ function fakeClient(): NineDeployClient {
     stats: { snapshot: vi.fn(async () => 'STATS') },
     topology: { get: vi.fn(async () => 'TOPO') },
     health: vi.fn(async () => 'HEALTH'),
+    api: { get: vi.fn(async () => 'API_GET') },
     demo: { seed: vi.fn(async () => 'DEMO_SEEDED') },
     plugins: {
       list: vi.fn(async () => 'PLUGINS_LIST'),
@@ -83,9 +86,9 @@ const byName = (name: string) => {
 };
 
 describe('MCP tools', () => {
-  it('exposes 41 unique tools with descriptions', () => {
-    expect(TOOLS).toHaveLength(41);
-    expect(new Set(TOOLS.map((t) => t.name)).size).toBe(41);
+  it('exposes 42 hand-written tools plus the generated ones, every name unique', () => {
+    expect(TOOLS).toHaveLength(42 + SPEC_TOOLS.length);
+    expect(new Set(TOOLS.map((t) => t.name)).size).toBe(TOOLS.length);
     for (const t of TOOLS) expect(t.description.length).toBeGreaterThan(10);
   });
 
@@ -303,6 +306,88 @@ describe('MCP tools', () => {
         expect(byName(name).input.safeParse({}).success).toBe(false);
         expect(byName(name).input.safeParse({ databaseId: 0 }).success).toBe(false);
       }
+    });
+  });
+
+  // 0.15 (DESIGN §3.4): read-only tools generated from the route specs.
+  describe('generated spec tools', () => {
+    it('are GET-only through client.api.get and all read-only listed', async () => {
+      expect(SPEC_TOOLS.length).toBeGreaterThan(0);
+      expect([...SPEC_READ_ONLY_TOOL_NAMES].sort()).toEqual(SPEC_TOOLS.map((t) => t.name).sort());
+      for (const name of SPEC_READ_ONLY_TOOL_NAMES) expect(READ_ONLY_TOOL_NAMES.has(name)).toBe(true);
+      for (const tool of SPEC_TOOLS) {
+        const c = fakeClient();
+        // Satisfy any path parameter (integers are positive; strings non-empty).
+        const shape = (tool.input as unknown as { shape: Record<string, { safeParse: (v: unknown) => { success: boolean } }> }).shape;
+        const args: Record<string, unknown> = {};
+        for (const [k, s] of Object.entries(shape)) if (!s.safeParse(undefined).success) args[k] = s.safeParse(7).success ? 7 : 'x';
+        expect(await tool.handler(c, tool.input.parse(args))).toBe('API_GET');
+        const [path] = (c.api.get as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string];
+        expect(path).toMatch(/^\/v1\/[A-Za-z0-9/_.-]+$/);
+      }
+    });
+
+    it('forward path ids and query filters', async () => {
+      const c = fakeClient();
+      await byName('get_database').handler(c, { databaseId: 3 });
+      expect(c.api.get).toHaveBeenLastCalledWith('/v1/databases/3');
+      await byName('list_jobs').handler(c, { serviceId: 9 });
+      expect(c.api.get).toHaveBeenLastCalledWith('/v1/services/9/jobs');
+      expect(byName('get_database').input.safeParse({ databaseId: 0 }).success).toBe(false);
+      expect(byName('list_volumes').requiredScopes).toEqual(['operator', 'nd://scope/read/volumes']);
+      expect(byName('doctor_report')).toMatchObject({ coarseTokenOnly: true, requiredScopes: ['operator'] });
+      expect(byName('list_environments').coarseTokenOnly).toBe(true);
+      expect(byName('list_environments').requiredScopes).toBeUndefined();
+    });
+  });
+
+  describe('search_api', () => {
+    const doc = {
+      paths: {
+        '/v1/services': {
+          get: { summary: 'List services', tags: ['services'], 'x-ninedeploy-floor': 'authed', 'x-ninedeploy-scope': 'nd://scope/read/services' },
+          post: { summary: 'Create a service', tags: ['services'], 'x-ninedeploy-floor': 'member', 'x-ninedeploy-scope': 'nd://scope/write/services' },
+        },
+        '/v1/doctor': { get: { summary: 'Scan the host', tags: ['doctor'], 'x-ninedeploy-floor': 'operator', 'x-ninedeploy-scope': null } },
+        '/v1/odd': { get: { tags: 'nope' }, put: null },
+      },
+    };
+
+    it('is read-only listed and coarse-token only', () => {
+      const tool = byName('search_api');
+      expect(tool.coarseTokenOnly).toBe(true);
+      expect(tool.requiredScopes).toBeUndefined();
+      expect(READ_ONLY_TOOL_NAMES.has('search_api')).toBe(true);
+      expect(tool.input.safeParse({}).success).toBe(true);
+      expect(tool.input.safeParse({ limit: 0 }).success).toBe(false);
+    });
+
+    it('matches every term case-insensitively, fetching the document once per client', async () => {
+      const c = fakeClient();
+      (c.api.get as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(doc);
+      const hit = (await byName('search_api').handler(c, { query: 'SERVICES post' })) as { total: number; operations: unknown[] };
+      expect(hit).toEqual({
+        total: 1,
+        operations: [{ method: 'POST', path: '/v1/services', summary: 'Create a service', tag: 'services', floor: 'member', scope: 'nd://scope/write/services' }],
+      });
+      const all = await searchApi(c, { limit: 2 });
+      expect(all.total).toBe(4);
+      expect(all.operations).toHaveLength(2);
+      expect(c.api.get).toHaveBeenCalledTimes(1);
+      expect(c.api.get).toHaveBeenCalledWith('/v1/openapi.json');
+      expect((await searchApi(c, { query: 'doctor' })).operations[0]).toMatchObject({ floor: 'operator', scope: null });
+    });
+
+    it('retries after a failed fetch and tolerates a partial document', async () => {
+      const c = fakeClient();
+      const get = c.api.get as unknown as ReturnType<typeof vi.fn>;
+      get.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({});
+      await expect(searchApi(c, {})).rejects.toThrow('offline');
+      expect(await searchApi(c, {})).toEqual({ total: 0, operations: [] });
+      expect(apiOperations(undefined)).toEqual([]);
+      expect(apiOperations({ paths: { '/v1/odd': { get: { tags: 'nope' } } } })).toEqual([
+        { method: 'GET', path: '/v1/odd', summary: '', tag: null, floor: null, scope: null },
+      ]);
     });
   });
 });

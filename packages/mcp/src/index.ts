@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createClient } from '@ninedeploy/sdk';
+import { SPEC_READ_ONLY_TOOL_NAMES } from './generated/specTools.js';
 import { TOOLS } from './tools.js';
 export { TOOLS };
 
@@ -166,6 +167,11 @@ export const READ_ONLY_TOOL_NAMES = new Set([
   'list_github_installations',
   // 0.14: database public-access state and import history; neither carries a credential.
   'get_database_public_access', 'list_database_imports',
+  // 0.15: API discovery (lists operations, never calls them), plus every tool
+  // generated from the route specs — the generator emits only non-sensitive
+  // GETs, and its explicit list lives in generated/specTools.ts.
+  'search_api',
+  ...SPEC_READ_ONLY_TOOL_NAMES,
 ]);
 
 /** A getToken closure that always returns the configured static token. */

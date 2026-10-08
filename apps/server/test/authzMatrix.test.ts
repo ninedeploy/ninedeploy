@@ -1079,7 +1079,8 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/services/:id/traffic': R('viewer'),
   // ── end 0.15 T3 ──
   // ── 0.15 T4 openapi ──
-  // 'GET /v1/openapi.json': R('authed'),
+  // Behind login (owner decision O4); no PREFIX_SCOPES entry, so fine-grained tokens are refused.
+  'GET /v1/openapi.json': R('authed'),
   // ── end 0.15 T4 ──
   // ── 0.15 T5 access grants ──
   // 'GET /v1/workspaces/:wid/access-grants': R('admin'),
@@ -1410,11 +1411,31 @@ describe('authorization matrix (r690)', () => {
 
 // ── 0.15 T4 openapi ──
 /**
- * T4 flips this to `true` once every route that predates 0.15 has its
- * ROUTE_SPECS entry. Until then only the 0.15 routes (`NEW_015_ROUTE`) must
- * carry one.
+ * On since T4: every route that predates 0.15 has its ROUTE_SPECS entry, so
+ * every live route must carry one (a 0.15 route counts once it is registered).
  */
-const ROUTE_SPECS_ENFORCED = false;
+const ROUTE_SPECS_ENFORCED = true;
+
+describe('OpenAPI documentation agrees with enforcement (0.15 T4)', () => {
+  it("every ROUTE_SPECS entry's floor equals its MATRIX floor", async () => {
+    const { ROUTE_SPECS } = await import('../src/openapi/specs/index.js');
+    const drift = Object.entries(ROUTE_SPECS)
+      .filter(([key, spec]) => MATRIX[key]?.floor !== spec.floor)
+      .map(([key, spec]) => `${key}: spec says ${spec.floor}, MATRIX says ${MATRIX[key]?.floor ?? '(unclassified)'}`);
+    expect(drift, 'documented floor differs from the enforced one').toEqual([]);
+  });
+
+  it('serves the spec to a signed-in caller, documenting every live route (no undocumented operation)', async () => {
+    const res = await call('outsider', 'GET', '/v1/openapi.json');
+    expect(res.status).toBe(200);
+    const doc = JSON.parse(res.body) as { openapi: string; paths: Record<string, Record<string, Record<string, unknown>>> };
+    expect(doc.openapi).toBe('3.1.0');
+    const ops = Object.values(doc.paths).flatMap((p) => Object.values(p));
+    expect(ops).toHaveLength(liveRoutes().length);
+    expect(ops.filter((op) => op['x-ninedeploy-undocumented']).map((op) => op['operationId'])).toEqual([]);
+    expect((await call('anon', 'GET', '/v1/openapi.json')).status).toBe(401);
+  });
+});
 // ── end 0.15 T4 ──
 
 // ── 0.15 T1 openapi coverage (DESIGN §3.2) ──

@@ -1830,7 +1830,42 @@ export interface NineDeployClient {
     fix: (input: DoctorFixRequestInput) => Promise<DoctorFixResponse>;
   };
   health: () => Promise<HealthStatus>;
+  // ── 0.15 T4 api ──
+  /**
+   * Raw access to the documented API (0.15, see `GET /v1/openapi.json`).
+   * Read-only on purpose: there is no generic write method. The generated MCP
+   * read tools call through here.
+   */
+  api: {
+    /**
+     * GET any `/v1/…` route. The path must match `^/v1/[A-Za-z0-9/_.-]+$` and
+     * may not contain a `..` segment; query values are URL-encoded and
+     * `undefined` values are dropped.
+     */
+    get: <T = unknown>(path: `/v1/${string}`, query?: ApiQuery) => Promise<T>;
+  };
+  // ── end 0.15 T4 ──
 }
+
+// ── 0.15 T4 api ──
+/** Query parameters for `client.api.get`. */
+export type ApiQuery = Record<string, string | number | boolean | undefined>;
+
+/** The paths `client.api.get` accepts: under `/v1/`, plain segments, no `..`. */
+const API_PATH = /^\/v1\/[A-Za-z0-9/_.-]+$/;
+
+/** Validate an `api.get` path and append its query string. Exported for tests. */
+export function apiGetUrl(path: string, query?: ApiQuery): string {
+  if (!API_PATH.test(path) || path.split('/').includes('..')) {
+    throw new NineDeployError(0, 'invalid_path', `Not an API path: ${path}`);
+  }
+  const qs = Object.entries(query ?? {})
+    .filter((entry): entry is [string, string | number | boolean] => entry[1] !== undefined)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+    .join('&');
+  return qs ? `${path}?${qs}` : path;
+}
+// ── end 0.15 T4 ──
 
 export interface ContainerInspectData {
   id: string;
@@ -2965,5 +3000,11 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
        *  finding first; a stale finding answers 409 instead of acting. */
       fix: (input: DoctorFixRequestInput) => send<DoctorFixResponse>('POST', '/v1/doctor/fix', input),
     },
+    // ── 0.15 T4 api ──
+    api: {
+      // async: a refused path rejects like any other failed call, never throws synchronously.
+      get: async <T = unknown>(path: `/v1/${string}`, query?: ApiQuery) => get<T>(apiGetUrl(path, query)),
+    },
+    // ── end 0.15 T4 ──
   };
 }

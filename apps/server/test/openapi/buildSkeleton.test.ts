@@ -82,7 +82,7 @@ describe('buildOpenApiDocument (skeleton)', () => {
 
   it('is an OpenAPI 3.1 document with both security schemes', () => {
     expect(doc.openapi).toBe('3.1.0');
-    expect(doc.info).toEqual({ title: 'NineDeploy API', version: '0.15.0' });
+    expect(doc.info).toMatchObject({ title: 'NineDeploy API', version: '0.15.0' });
     expect(doc.servers).toEqual([{ url: '/' }]);
     expect(Object.keys(doc.components.securitySchemes).sort()).toEqual(['bearerAuth', 'scimBearer']);
   });
