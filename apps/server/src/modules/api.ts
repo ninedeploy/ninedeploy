@@ -12,6 +12,8 @@ import { aiRoutes } from './ai.js';
 import { studioProxyRoutes } from './studioProxy.js';
 import { backupRoutes, databaseBackupRoutes } from './backups.js';
 import { databaseBackupPolicyRoutes } from './backupPolicy.js';
+import { databasePublicAccessRoutes } from './databasePublicAccess.js';
+import { databaseImportRoutes } from './databaseImports.js';
 import { pgbouncerRoutes } from './pgbouncer.js';
 import { logSearchRoutes } from './logSearch.js';
 import { backupDestinationRoutes } from './backupDestinations.js';
@@ -44,6 +46,7 @@ import { manifestRoutes } from './manifest.js';
 import { serviceMigrationRoutes } from './serviceMigration.js';
 import { serviceVolumesRoutes } from './serviceVolumes.js';
 import { settingsRoutes } from './settings.js';
+import { secretProviderRoutes } from './secretProviders.js';
 import { configCenterRoutes } from './configCenter.js';
 import { pluginRoutes } from './plugins.js';
 import { menuRoutes } from './menus.js';
@@ -55,6 +58,7 @@ import { templateRoutes } from './templates.js';
 import { topologyRoutes } from './topology.js';
 import { tunnelRoutes } from './tunnels.js';
 import { traefikRoutes } from './traefik.js';
+import { traefikCustomRoutes } from './traefikCustom.js';
 import { demoRoutes } from './demo.js';
 import { userRoutes } from './users.js';
 import { volumeRoutes } from './volumes.js';
@@ -113,6 +117,10 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(databaseBackupRoutes, { prefix: '/databases' });
   // Per-database backup schedule + retention + destination (0.12).
   await app.register(databaseBackupPolicyRoutes, { prefix: '/databases' });
+  // Public database access through a TCP sidecar (0.14, DESIGN §1.2).
+  await app.register(databasePublicAccessRoutes, { prefix: '/databases' });
+  // Chunked dump imports into a managed database (0.14, DESIGN §3.3).
+  await app.register(databaseImportRoutes, { prefix: '/databases' });
   // Deployment lanes (production / staging / development) per workspace.
   await app.register(environmentRoutes, { prefix: '/environments' });
   await app.register(aiRoutes, { prefix: '/ai' });
@@ -147,6 +155,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(githubAppsRoutes, { prefix: '/github-apps' });
   await app.register(insightsRoutes, { prefix: '/insights' });
   await app.register(settingsRoutes, { prefix: '/settings' });
+  // Vault / OpenBao and AWS Secrets Manager (0.14, DESIGN §4.2), operator-only.
+  await app.register(secretProviderRoutes, { prefix: '/settings/secret-providers' });
   await app.register(firewallRoutes, { prefix: '/firewall' });
   await app.register(configCenterRoutes, { prefix: '/config' });
   await app.register(buildCacheRoutes, { prefix: '/build-cache' });
@@ -206,4 +216,7 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(serviceTagRoutes, { prefix: '/services' });
   await app.register(labelRoutes, { prefix: '/labels' });
   await app.register(traefikRoutes, { prefix: '' });
+  // Custom dynamic config and custom certificates (0.14, DESIGN §2.5),
+  // operator-only. `traefikRoutes` above owns the other /traefik paths.
+  await app.register(traefikCustomRoutes, { prefix: '/traefik' });
 };

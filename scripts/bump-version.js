@@ -139,8 +139,6 @@ if (failures.length === 0) prependChangelogEntry();
 // a silent miss pins copiers to the previous release (r476: critical).
 replaceInFile('apps/web/src/routes/About.tsx', /--version v\d+\.\d+\.\d+/g, `--version v${newVersion}`, true);
 replaceInFile('docs/QUICKSTART.md', /--version v\d+\.\d+\.\d+/g, `--version v${newVersion}`, true);
-replaceInFile('website/src/pages/Home.tsx', /<span className="tag font-bold">v\d+\.\d+\.\d+<\/span>/, `<span className="tag font-bold">v${newVersion}</span>`);
-replaceInFile('website/src/components/Layout.tsx', /v\d+\.\d+\.\d+ GA/g, `v${newVersion} GA`);
 replaceInFile('README.md', /Release-\d+\.\d+\.\d+-blue/, `Release-${newVersion}-blue`);
 replaceInFile('README.md', /--version v\d+\.\d+\.\d+/, `--version v${newVersion}`, true);
 replaceInFile('README.md', /newest release tag \(\*\*\d+\.\d+\.\d+\*\*\)/, `newest release tag (**${newVersion}**)`);

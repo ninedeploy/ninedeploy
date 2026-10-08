@@ -65,6 +65,9 @@ vi.mock('../src/plugins/jobScheduler.js', () => noop('authz-jobs'));
 vi.mock('../src/plugins/panelBackupScheduler.js', () => noop('authz-panel-backup'));
 // Deploy feedback to GitHub (0.13) listens on the kernel bus; it calls GitHub, never the database for a caller.
 vi.mock('../src/plugins/githubFeedback.js', () => noop('authz-github-feedback'));
+// 0.14: public-database sidecar reconcile (docker) and import boot recovery / expiry sweep (timers).
+vi.mock('../src/plugins/publicDatabaseAccess.js', () => noop('authz-public-db-access'));
+vi.mock('../src/plugins/databaseImports.js', () => noop('authz-database-imports'));
 vi.mock('../src/plugins/staticFiles.js', () => noop('authz-static'));
 // The limiter is not under test, and ~4k requests from one address trip it.
 vi.mock('../src/plugins/rateLimit.js', () => noop('authz-ratelimit'));
@@ -975,6 +978,14 @@ export const MATRIX: Record<string, Rule> = {
   'PUT /v1/volumes/:name/files': OP,
   'POST /v1/volumes/:name/files/dir': OP,
   'DELETE /v1/volumes/:name/files': OP,
+  // ── 0.14 T2 proxy management ──
+  // ── end 0.14 T2 ──
+  // ── 0.14 T3 public access ──
+  // ── end 0.14 T3 ──
+  // ── 0.14 T4 database import ──
+  // ── end 0.14 T4 ──
+  // ── 0.14 T5 secret providers ──
+  // ── end 0.14 T5 ──
 };
 
 // ── harness ──────────────────────────────────────────────────────────────

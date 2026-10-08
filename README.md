@@ -549,7 +549,6 @@ NineDeploy/                    pnpm 11 workspace + Turborepo
 │   ├── sdk/                   typed API client over an injectable fetch
 │   ├── mcp/                   Model Context Protocol server (38 tools, stdio)
 │   └── plugin-sdk/            definePlugin + scoped config helpers
-├── website/                   marketing site, docs and template hub
 ├── docs/                      11 operator guides
 ├── install.sh                 one-command installer and upgrader
 ├── Dockerfile                 multi-stage, non-root, checksum-pinned Nixpacks

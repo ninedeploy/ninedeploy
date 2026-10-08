@@ -160,6 +160,34 @@ describe('rotateSecrets', () => {
     expect(cryptoMock.reencrypt).not.toHaveBeenCalledWith(null);
   });
 
+  it('0.14: rotates certificate keys, secret-provider credentials and the custom Traefik config settings', async () => {
+    const { tlsCertificates, secretProviders } = await import('@ninedeploy/db');
+    const { SETTINGS_ENCRYPTED_KEYS } = await import('../../src/lib/keyRotation.js');
+    const updates: Array<{ table: unknown; values: Record<string, unknown> }> = [];
+    const db = makeDb(
+      new Map<unknown, Array<Record<string, unknown>>>([
+        [tlsCertificates, [{ id: 1, v: 'key-enc' }]],
+        [secretProviders, [{ id: 2, v: 'cred-enc' }]],
+        [
+          settings,
+          [
+            { key: 'traefik_custom_config_encrypted', v: 'cc-enc' },
+            { key: 'traefik_custom_config_last_good_encrypted', v: 'cclg-enc' },
+          ],
+        ],
+      ]),
+      updates,
+    );
+
+    expect(await rotateSecrets(db as never)).toBe(4);
+    expect(updates.find((u) => u.table === tlsCertificates)?.values).toEqual({ keyEncrypted: 're:key-enc' });
+    expect(updates.find((u) => u.table === secretProviders)?.values).toEqual({ credentialEncrypted: 're:cred-enc' });
+    expect(updates.filter((u) => u.table === settings).map((u) => u.values.value)).toEqual(['re:cc-enc', 're:cclg-enc']);
+    expect(SETTINGS_ENCRYPTED_KEYS).toEqual(
+      expect.arrayContaining(['traefik_custom_config_encrypted', 'traefik_custom_config_last_good_encrypted']),
+    );
+  });
+
   it('reports zero when there is nothing to rotate', async () => {
     const updates: Array<{ table: unknown; values: Record<string, unknown> }> = [];
     const db = makeDb(new Map(), updates);

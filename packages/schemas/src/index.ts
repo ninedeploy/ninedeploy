@@ -20,3 +20,7 @@ export * from './agentCommand.js';
 export * from './backupPolicy.js';
 export * from './panelBackup.js';
 export * from './githubApp.js';
+export * from './publicAccess.js';
+export * from './proxyConfig.js';
+export * from './databaseImport.js';
+export * from './secretProviders.js';

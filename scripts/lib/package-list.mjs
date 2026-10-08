@@ -14,5 +14,4 @@ export const PACKAGE_JSONS = [
   'packages/plugin-sdk/package.json',
   'packages/schemas/package.json',
   'packages/sdk/package.json',
-  'website/package.json',
 ];

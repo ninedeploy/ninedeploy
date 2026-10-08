@@ -1049,6 +1049,155 @@ export const databaseBackupPolicies = sqliteTable('database_backup_policies', {
   updatedAt: tsUpdatable('updated_at'),
 });
 
+// ─── network and data access (0.14) ───────────────────────────────────────
+// Four new tables (migration 0070, additive only). Every one starts empty and
+// every new behaviour is opt-in: no sidecar, custom certificate, import or
+// secret provider exists until an operator (or db admin, for imports) creates
+// a row. Nothing here changes how an existing database, domain or env var
+// behaves. Design: .temp_files/run_0.14/DESIGN.md §5.
+export const databasePublicTlsMode = ['none', 'terminate'] as const;
+export const databaseImportSource = ['upload', 's3'] as const;
+export const databaseImportStatus = [
+  'uploading',
+  'pending',
+  'running',
+  'completed',
+  'completed_with_warnings',
+  'failed',
+  'cancelled',
+  'expired',
+] as const;
+export const databaseImportFormat = ['pg_custom', 'pg_plain', 'mysql_sql', 'mongo_archive', 'rdb'] as const;
+export const secretProviderKind = ['vault', 'aws'] as const;
+
+// One row per database that has ever had public access configured. Disabling
+// keeps the row (enabled=false) so the configuration survives; the FK cascade
+// removes it with the database. The sidecar is `nd-dbpub-<slug>`.
+export const databasePublicAccess = sqliteTable(
+  'database_public_access',
+  {
+    databaseId: integer('database_id')
+      .primaryKey()
+      .references(() => databases.id, { onDelete: 'cascade' }),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(false),
+    /** Host port the sidecar publishes (1024–65535, unique across rows). */
+    publicPort: integer('public_port').notNull(),
+    tlsMode: text('tls_mode', { enum: databasePublicTlsMode }).notNull().default('none'),
+    tlsHostname: text('tls_hostname'),
+    /** Normalised CIDR / address entries (1–100), validated with node:net. */
+    ipAllowlist: text('ip_allowlist', { mode: 'json' })
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'`),
+    containerName: text('container_name'),
+    appliedAt: integer('applied_at', { mode: 'timestamp' }),
+    lastError: text('last_error'),
+    createdByUserId: integer('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: ts('created_at'),
+    updatedAt: tsUpdatable('updated_at'),
+  },
+  (t) => ({
+    publicPortIdx: uniqueIndex('database_public_access_port_idx').on(t.publicPort),
+  }),
+);
+
+// Operator-uploaded TLS certificates for the panel's Traefik (and the hosts a
+// node routes). The chain is public and stored as-is; the private key is
+// always encrypted (ENCRYPTED_COLUMNS) and never returned by a route.
+export const tlsCertificates = sqliteTable(
+  'tls_certificates',
+  {
+    id: id(),
+    name: text('name').notNull(),
+    /** PEM chain, leaf first. */
+    certPem: text('cert_pem').notNull(),
+    keyEncrypted: text('key_encrypted').notNull(),
+    /** SAN DNS names (CN only when there are no SANs). */
+    hostnames: text('hostnames', { mode: 'json' })
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'`),
+    fingerprintSha256: text('fingerprint_sha256').notNull(),
+    subject: text('subject'),
+    issuer: text('issuer'),
+    notBefore: integer('not_before', { mode: 'timestamp' }).notNull(),
+    notAfter: integer('not_after', { mode: 'timestamp' }).notNull(),
+    createdByUserId: integer('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: ts('created_at'),
+    updatedAt: tsUpdatable('updated_at'),
+  },
+  (t) => ({
+    fingerprintIdx: uniqueIndex('tls_certificates_fingerprint_idx').on(t.fingerprintSha256),
+  }),
+);
+
+// One row per dump import (chunked upload or S3 object). Boot recovery fails
+// `running` rows and expires stale `uploading` / `pending` ones.
+export const databaseImports = sqliteTable(
+  'database_imports',
+  {
+    id: id(),
+    databaseId: integer('database_id')
+      .notNull()
+      .references(() => databases.id, { onDelete: 'cascade' }),
+    source: text('source', { enum: databaseImportSource }).notNull(),
+    status: text('status', { enum: databaseImportStatus }).notNull().default('uploading'),
+    format: text('format', { enum: databaseImportFormat }),
+    sizeBytes: integer('size_bytes').notNull().default(0),
+    receivedBytes: integer('received_bytes').notNull().default(0),
+    chunkSize: integer('chunk_size').notNull().default(0),
+    sha256: text('sha256'),
+    filename: text('filename'),
+    /** Server-chosen `<backupsDir>/imports/<id>.part`; never client-named. */
+    stagingPath: text('staging_path'),
+    destinationId: integer('destination_id').references(() => backupDestinations.id, { onDelete: 'set null' }),
+    objectKey: text('object_key'),
+    options: text('options', { mode: 'json' })
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'`),
+    safetyBackupId: integer('safety_backup_id').references(() => backups.id, { onDelete: 'set null' }),
+    error: text('error'),
+    createdByUserId: integer('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: ts('created_at'),
+    updatedAt: tsUpdatable('updated_at'),
+    startedAt: integer('started_at', { mode: 'timestamp' }),
+    completedAt: integer('completed_at', { mode: 'timestamp' }),
+  },
+  (t) => ({
+    dbCreatedIdx: index('database_imports_db_created_idx').on(t.databaseId, t.createdAt),
+    statusIdx: index('database_imports_status_idx').on(t.status),
+  }),
+);
+
+// External secret managers (HashiCorp Vault / OpenBao KV v2, AWS Secrets
+// Manager), one row per kind. They run alongside the settings-based
+// Infisical / Doppler provider, which is untouched. `config_json` holds the
+// non-secret settings; `credential_encrypted` is one envelope over a JSON
+// object of secrets (ENCRYPTED_COLUMNS). An undecryptable envelope reads as
+// "not configured".
+export const secretProviders = sqliteTable(
+  'secret_providers',
+  {
+    id: id(),
+    kind: text('kind', { enum: secretProviderKind }).notNull(),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    configJson: text('config_json', { mode: 'json' })
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'`),
+    credentialEncrypted: text('credential_encrypted').notNull(),
+    lastTestedAt: integer('last_tested_at', { mode: 'timestamp' }),
+    lastTestError: text('last_test_error'),
+    createdByUserId: integer('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: ts('created_at'),
+    updatedAt: tsUpdatable('updated_at'),
+  },
+  (t) => ({
+    kindIdx: uniqueIndex('secret_providers_kind_idx').on(t.kind),
+  }),
+);
+
 export const metrics = sqliteTable(
   'metrics',
   {
@@ -1801,6 +1950,14 @@ export type AlertState = typeof alertState.$inferSelect;
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 export type BackupDestination = typeof backupDestinations.$inferSelect;
 export type DatabaseBackupPolicy = typeof databaseBackupPolicies.$inferSelect;
+export type DatabasePublicAccess = typeof databasePublicAccess.$inferSelect;
+export type NewDatabasePublicAccess = typeof databasePublicAccess.$inferInsert;
+export type TlsCertificate = typeof tlsCertificates.$inferSelect;
+export type NewTlsCertificate = typeof tlsCertificates.$inferInsert;
+export type DatabaseImport = typeof databaseImports.$inferSelect;
+export type NewDatabaseImport = typeof databaseImports.$inferInsert;
+export type SecretProvider = typeof secretProviders.$inferSelect;
+export type NewSecretProvider = typeof secretProviders.$inferInsert;
 export type ScheduledJob = typeof scheduledJobs.$inferSelect;
 export type JobRun = typeof jobRuns.$inferSelect;
 export type ServerRow = typeof servers.$inferSelect;

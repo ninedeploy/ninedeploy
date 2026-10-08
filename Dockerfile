@@ -55,7 +55,6 @@ COPY packages/schemas/package.json packages/schemas/
 COPY packages/sdk/package.json packages/sdk/
 COPY packages/plugin-sdk/package.json packages/plugin-sdk/
 COPY packages/mcp/package.json packages/mcp/
-COPY website/package.json website/
 RUN pnpm install --frozen-lockfile
 
 # Copy the rest and build (tsc for server/packages, vite for web).

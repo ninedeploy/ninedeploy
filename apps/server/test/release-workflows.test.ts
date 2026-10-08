@@ -116,7 +116,7 @@ describe('release delivery invariants', () => {
     // The SDK takes getToken (a provider); a static token: key is silently
     // ignored at runtime and every call 401s. Sweep every doc-bearing
     // surface so a new copy cannot ship.
-    const surfaces = ['../../../README.md', '../../../docs', '../../../website/src', '../../../apps/web/src', '../../../packages/mcp', '../../../packages/plugin-sdk'];
+    const surfaces = ['../../../README.md', '../../../docs', '../../../apps/web/src', '../../../packages/mcp', '../../../packages/plugin-sdk'];
     const offenders: string[] = [];
     for (const surface of surfaces) {
       const url = new URL(surface, import.meta.url);
@@ -141,8 +141,8 @@ describe('release delivery invariants', () => {
     const listUrl = new URL('../../../scripts/lib/package-list.mjs', import.meta.url);
     const list = readFileSync(listUrl, 'utf8');
     const listed = [...list.matchAll(/'([^']*package\.json)'/g)].map((m) => m[1]);
-    expect(listed.length).toBeGreaterThanOrEqual(10);
-    const workspaces = ['.', 'apps/cli', 'apps/server', 'apps/web', 'packages/db', 'packages/mcp', 'packages/plugin-sdk', 'packages/schemas', 'packages/sdk', 'website'];
+    expect(listed.length).toBeGreaterThanOrEqual(9);
+    const workspaces = ['.', 'apps/cli', 'apps/server', 'apps/web', 'packages/db', 'packages/mcp', 'packages/plugin-sdk', 'packages/schemas', 'packages/sdk'];
     const expected = workspaces.map((w) => (w === '.' ? 'package.json' : `${w}/package.json`));
     for (const rel of expected) expect(listed, `missing ${rel}`).toContain(rel);
     // And both scripts import the shared module instead of a private copy.
@@ -188,7 +188,7 @@ describe('r573: release publishing and version bumping', () => {
     const PACKAGES = [
       'package.json', 'apps/cli/package.json', 'apps/server/package.json', 'apps/web/package.json',
       'packages/db/package.json', 'packages/mcp/package.json', 'packages/plugin-sdk/package.json',
-      'packages/schemas/package.json', 'packages/sdk/package.json', 'website/package.json',
+      'packages/schemas/package.json', 'packages/sdk/package.json',
     ];
 
     /** A miniature repo carrying every file the script rewrites, at 0.0.1. */
@@ -210,8 +210,6 @@ describe('r573: release publishing and version bumping', () => {
       );
       put('apps/web/src/routes/About.tsx', 'install.sh --version v0.0.1\n');
       put('docs/QUICKSTART.md', 'install.sh --version v0.0.1\n');
-      put('website/src/pages/Home.tsx', '<span className="tag font-bold">v0.0.1</span>\n');
-      put('website/src/components/Layout.tsx', 'v0.0.1 GA\n');
       put('README.md', 'Release-0.0.1-blue --version v0.0.1 newest release tag (**0.0.1**)\n');
       return root;
     }

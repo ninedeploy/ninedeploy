@@ -25,6 +25,8 @@ import runtimeStatePlugin from './plugins/runtimeState.js';
 import securityHeadersPlugin from './plugins/securityHeaders.js';
 import staticFilesPlugin from './plugins/staticFiles.js';
 import traefikPlugin from './plugins/traefik.js';
+import publicDatabaseAccessPlugin from './plugins/publicDatabaseAccess.js';
+import databaseImportsPlugin from './plugins/databaseImports.js';
 import workerPlugin from './plugins/worker.js';
 
 /** Translate thrown ZodErrors into a consistent 400 envelope. */
@@ -119,6 +121,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(workerPlugin);
   // Traefik reverse proxy + dynamic routing
   await app.register(traefikPlugin);
+  // Public database access sidecars: boot reconcile + watchdog (0.14)
+  await app.register(publicDatabaseAccessPlugin);
+  // Database dump imports: boot recovery + hourly expiry sweep (0.14)
+  await app.register(databaseImportsPlugin);
   // Runtime-state reconciliation (panel status vs live containers/processes)
   await app.register(runtimeStatePlugin);
   // Resource metrics collector

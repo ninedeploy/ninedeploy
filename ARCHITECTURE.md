@@ -141,13 +141,12 @@ ninedeploy/                       pnpm 11 workspace + Turborepo
 │   ├── plugin-sdk/  definePlugin + scopedConfig helpers for kernel plugins
 │   └── mcp/         MCP server (`ninedeploy-mcp`, stdio) — 38 tools
 │
-├── website/                       Marketing + docs site
 ├── docs/                          11 operator guides (QUICKSTART, DEPLOYMENTS,
 │                                  WORKSPACES_RBAC, NINEDEPLOY_MANIFEST,
 │                                  PLUGINS_MICROKERNEL, TRAEFIK_INGRESS, …)
 ├── .github/workflows/             ci.yml (typecheck/lint/build/test/schema-drift/
 │                                  deprecated-deps/image build/integration),
-│                                  release-publish.yml (gated on the smokes), website.yml
+│                                  release-publish.yml (gated on the smokes)
 ├── Dockerfile                     multi-stage; docker CLI + git + tini +
 │                                  checksum-pinned Nixpacks 1.41.0 + Railpack 0.39.0; non-root
 ├── docker-compose.yml             development environment

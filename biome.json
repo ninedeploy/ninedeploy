@@ -13,6 +13,7 @@
       "!**/coverage",
       "!**/.turbo",
       "!**/.data",
+      "!old_website",
       "!packages/db/src/migrations/meta"
     ]
   },

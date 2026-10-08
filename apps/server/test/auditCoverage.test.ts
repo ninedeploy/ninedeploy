@@ -33,6 +33,14 @@ const EXEMPT: Record<string, string> = {
   'logSearch.ts POST /search': 'read (POST only for the body)',
   'templates.ts POST /:id/prepare': 'shared `queue` handler, audited as template.deploy',
   'templates.ts POST /:id/deploy': 'shared `queue` handler, audited as template.deploy',
+  // 0.14: each task uncomments its entry in the same change that adds the
+  // route. Not live yet because a stale entry (no such route) fails below.
+  // ── 0.14 T2 proxy management ──
+  // 'traefikCustom.ts POST /custom-config/validate': 'validates a candidate config, no state change',
+  // ── end 0.14 T2 ──
+  // ── 0.14 T5 secret providers ──
+  // 'secretProviders.ts POST /:kind/test': 'connectivity probe; updates last_tested_* only',
+  // ── end 0.14 T5 ──
 };
 
 // importSystemArchive (lib/systemArchive.ts) audits `system.import`; the panel

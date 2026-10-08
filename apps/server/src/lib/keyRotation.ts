@@ -10,10 +10,12 @@ import {
   notificationChannels,
   oidcProviders,
   previewEnvVars,
+  secretProviders,
   servers,
   settings,
   sources,
   ssoProviders,
+  tlsCertificates,
   tunnels,
   users,
   webhooks,
@@ -105,6 +107,19 @@ const ENCRYPTED_COLUMNS = [
       webhookSecretEncrypted: reencrypt(r.w),
       clientSecretEncrypted: r.c === null ? null : reencrypt(r.c),
     }),
+  },
+  // 0.14: an uploaded TLS certificate's private key (the chain is plaintext).
+  {
+    table: tlsCertificates,
+    select: { id: tlsCertificates.id, v: tlsCertificates.keyEncrypted },
+    pick: (r: { id: number; v: string }) => ({ keyEncrypted: reencrypt(r.v) }),
+  },
+  // 0.14: one envelope over the provider's JSON credential object (Vault
+  // token / AppRole, AWS access keys).
+  {
+    table: secretProviders,
+    select: { id: secretProviders.id, v: secretProviders.credentialEncrypted },
+    pick: (r: { id: number; v: string }) => ({ credentialEncrypted: reencrypt(r.v) }),
   },
   {
     table: users,
@@ -216,6 +231,8 @@ export const SETTINGS_ENCRYPTED_KEYS = [
   'dns_token_encrypted', // /settings /dns route (encryptDnsToken)
   'dns_records_token_encrypted', // lib/cloudflare.ts
   'panel_backup_passphrase_encrypted', // lib/panelBackup.ts (recovery passphrase)
+  'traefik_custom_config_encrypted', // 0.14 lib/traefikCustomConfig.ts (custom dynamic config)
+  'traefik_custom_config_last_good_encrypted', // 0.14 lib/traefikCustomConfig.ts (last good version)
 ] as const;
 
 async function rotateKeyedStoreSecrets(db: DB): Promise<number> {

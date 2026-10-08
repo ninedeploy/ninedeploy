@@ -1,7 +1,6 @@
 packages:
   - "apps/*"
   - "packages/*"
-  - "website"
 
 # Force js-yaml >= 4.3.2: pm2 pins the vulnerable 4.3.0 exactly. 4.3.1 fixed
 # CVE-2026-59870 / GHSA-5p4m-2wfm-xmqj; 4.3.2 fixes the merge-key CPU
