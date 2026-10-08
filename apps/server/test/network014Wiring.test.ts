@@ -28,7 +28,7 @@ const read = (rel: string) =>
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '');
 
-const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 
 const MODULES: Array<{ binding: string; file: string; prefix: string; routes: FastifyPluginAsync }> = [
   { binding: 'databasePublicAccessRoutes', file: './databasePublicAccess.js', prefix: '/databases', routes: databasePublicAccessRoutes },
@@ -62,9 +62,9 @@ describe('0.14 route modules are mounted in modules/api.ts (M1)', () => {
 
   for (const m of MODULES) {
     it(`${m.binding} is imported and registered under ${m.prefix}`, () => {
-      expect(api).toMatch(new RegExp(`import \\{[^}]*\\b${m.binding}\\b[^}]*\\} from '${escape(m.file)}';`));
+      expect(api).toMatch(new RegExp(`import \\{[^}]*\\b${m.binding}\\b[^}]*\\} from '${escapeRe(m.file)}';`));
       const registrations = api.match(
-        new RegExp(`await app\\.register\\(${m.binding}, \\{ prefix: '${escape(m.prefix)}' \\}\\);`, 'g'),
+        new RegExp(`await app\\.register\\(${m.binding}, \\{ prefix: '${escapeRe(m.prefix)}' \\}\\);`, 'g'),
       );
       expect(registrations).toHaveLength(1);
     });
@@ -92,7 +92,7 @@ describe('0.14 plugins are registered in app.ts after the traefik plugin (M2)', 
 
   for (const p of PLUGINS) {
     it(`${p.binding} is imported and registered once, after traefikPlugin`, () => {
-      expect(src).toMatch(new RegExp(`import ${p.binding} from '${escape(p.file)}';`));
+      expect(src).toMatch(new RegExp(`import ${p.binding} from '${escapeRe(p.file)}';`));
       const call = `await app.register(${p.binding});`;
       expect(src.split(call)).toHaveLength(2);
       expect(src.indexOf(call)).toBeGreaterThan(traefikAt);
