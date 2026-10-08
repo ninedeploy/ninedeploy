@@ -133,9 +133,14 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
   const [sourceId, setSourceId] = useState('');
   const remoteRepos = useQuery({
     queryKey: ['source-repos', sourceId],
-    queryFn: () => api.sources.repos(Number(sourceId)),
+    queryFn: () => api.sources.reposWithDiagnostics(Number(sourceId)),
     enabled: Boolean(sourceId && Number(sourceId) > 0),
   });
+  // F1010: the server explains a short list (capped at the page limit, a
+  // later page failed, a classic token without `repo`) in a response header
+  // the plain `repos` call drops; the picker shows it next to the list.
+  const repoList = remoteRepos.data?.repos;
+  const repoListWarning = remoteRepos.data?.warning ?? null;
   const remoteBranches = useQuery({
     queryKey: ['source-branches', sourceId, repoUrl],
     queryFn: () => api.sources.branches(Number(sourceId), repoUrl),
@@ -603,12 +608,12 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
                         {/* v8 ignore stop */}
                       </div>
                     </L>
-                    {remoteRepos.data && remoteRepos.data.length > 0 ? (
+                    {repoList && repoList.length > 0 ? (
                       <L label="Select Repository">
                         <Select
                           value={repoUrl}
                           onChange={(e) => {
-                            const found = remoteRepos.data?.find((r) => r.url === e.target.value);
+                            const found = repoList?.find((r) => r.url === e.target.value);
                             setRepoUrl(e.target.value);
                             if (found) {
                               if (!name) setName(found.name);
@@ -616,8 +621,8 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
                             }
                           }}
                         >
-                          <option value="">Choose a repo ({remoteRepos.data.length})…</option>
-                          {remoteRepos.data.map((r) => (
+                          <option value="">Choose a repo ({repoList.length})…</option>
+                          {repoList.map((r) => (
                             <option key={r.url} value={r.url}>
                               {r.fullName} {r.isPrivate ? '🔒' : '🌐'}
                             </option>
@@ -638,6 +643,16 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
                       </L>
                     )}
                   </div>
+
+                  {repoListWarning && (
+                    <p
+                      className="-mt-1 rounded-md border border-amber-500/25 bg-amber-500/[0.06] px-2 py-1 text-[11px] leading-relaxed text-amber-200/90"
+                      data-testid="repo-list-warning"
+                      role="status"
+                    >
+                      {repoListWarning}
+                    </p>
+                  )}
 
                   {/* The provider decides which repositories a token can list —
                       a fine-grained GitHub token sees only the ones selected for
@@ -672,7 +687,7 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
                           {sources.data?.find((s) => String(s.id) === sourceId)?.name ?? `#${sourceId}`}
                           {/* v8 ignore stop */}
                         </span>
-                        {remoteRepos.data?.some((r) => r.url === repoUrl && r.isPrivate) && (
+                        {repoList?.some((r) => r.url === repoUrl && r.isPrivate) && (
                           <> — this repository is <span className="font-medium">private</span></>
                         )}
                         .
@@ -844,7 +859,7 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
                     />
                   </L>
 
-                  {remoteRepos.data && remoteRepos.data.length > 0 && (
+                  {repoList && repoList.length > 0 && (
                     <L label="Branch">
                       {remoteBranches.data && remoteBranches.data.length > 0 ? (
                         <Select value={branch} onChange={(e) => setBranch(e.target.value)}>

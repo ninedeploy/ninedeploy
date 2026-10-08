@@ -151,7 +151,13 @@ export type FetchLike = (input: string, init: {
     headers?: Record<string, string>;
     body?: string;
     credentials?: 'omit' | 'same-origin' | 'include';
-  }) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>
+  }) => Promise<{
+    ok: boolean;
+    status: number;
+    text(): Promise<string>;
+    /** Optional so minimal fetch stand-ins stay assignable; a real fetch has it (F1010). */
+    headers?: { get(name: string): string | null };
+  }>
 
 /** Scheduled-job kind (`scheduled_jobs.kind`). */
 export type JobKind = 'deploy' | 'exec' | 'backup';
@@ -1220,6 +1226,16 @@ export interface NineDeployClient {
     update: (id: number, input: Partial<CreateSourceInput>) => Promise<Source>;
     remove: (id: number) => Promise<void>;
     repos: (id: number) => Promise<Array<{ name: string; fullName: string; url: string; defaultBranch: string; isPrivate: boolean }>>;
+    /**
+     * `repos` plus the server's diagnostic for the list (F1010): a list capped
+     * at the page limit, a later page that failed, a classic token without the
+     * `repo` scope, or a provider error. The server sends it in the
+     * `x-nd-source-error` response header; `warning` is null when absent.
+     */
+    reposWithDiagnostics: (id: number) => Promise<{
+      repos: Awaited<ReturnType<NineDeployClient['sources']['repos']>>;
+      warning: string | null;
+    }>;
     branches: (id: number, repo: string) => Promise<string[]>;
     /**
      * Live credential check — proves a stored token still authenticates.
@@ -1611,7 +1627,12 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
   /** Default per-request budget when the caller does not configure one. */
   const DEFAULT_TIMEOUT_MS = 30_000;
 
-  async function request<T>(path: string, init: RequestInit = {}, minTimeoutMs?: number): Promise<T> {
+  /** A call's parsed body plus read access to its response headers (F1010). */
+  async function requestWithHeaders<T>(
+    path: string,
+    init: RequestInit = {},
+    minTimeoutMs?: number,
+  ): Promise<{ data: T; header: (name: string) => string | null }> {
     const token = opts.getToken?.();
     const headers: Record<string, string> = { ...(init.headers ?? {}) };
     if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -1639,6 +1660,7 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
     }
 
     const res = await fetchImpl(`${baseUrl}${path}`, out);
+    const header = (name: string): string | null => (typeof res.headers?.get === 'function' ? res.headers.get(name) : null);
     const text = await res.text();
     // Guard the parse: proxies (HTML 502 pages, empty bodies) must surface as a
     // typed error, not an opaque SyntaxError.
@@ -1659,10 +1681,14 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
     // undefined"). Empty 2xx bodies resolve to {}; non-JSON bodies surface as
     // a typed error so callers see the real problem instead of a crash.
     if (parsed === undefined) {
-      if (text === '') return {} as T;
+      if (text === '') return { data: {} as T, header };
       throw new NineDeployError(res.status, 'invalid_response', `Expected JSON but received a non-JSON body (status ${res.status})`);
     }
-    return parsed as T;
+    return { data: parsed as T, header };
+  }
+
+  async function request<T>(path: string, init: RequestInit = {}, minTimeoutMs?: number): Promise<T> {
+    return (await requestWithHeaders<T>(path, init, minTimeoutMs)).data;
   }
 
   const get = <T>(path: string) => request<T>(path);
@@ -2170,6 +2196,11 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
         await request(`/v1/sources/${id}`, { method: 'DELETE' });
       },
       repos: (id) => get<Array<{ name: string; fullName: string; url: string; defaultBranch: string; isPrivate: boolean }>>(`/v1/sources/${id}/repos`),
+      reposWithDiagnostics: async (id) => {
+        const { data, header } = await requestWithHeaders<Awaited<ReturnType<NineDeployClient['sources']['repos']>>>(`/v1/sources/${id}/repos`);
+        const warning = header('x-nd-source-error')?.trim();
+        return { repos: Array.isArray(data) ? data : [], warning: warning ? warning : null };
+      },
       branches: (id, repo) => get<string[]>(`/v1/sources/${id}/branches?repo=${encodeURIComponent(repo)}`),
       test: (id) => get<Awaited<ReturnType<NineDeployClient['sources']['test']>>>(`/v1/sources/${id}/test`),
       generateDeployKey: (id) => send<{ publicKey: string; fingerprint: string }>('POST', `/v1/sources/${id}/generate-deploy-key`),

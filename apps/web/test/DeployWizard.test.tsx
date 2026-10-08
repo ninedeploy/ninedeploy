@@ -7,9 +7,22 @@ import { ToastProvider } from '../src/components/Toast.js';
 import { ModeProvider } from '../src/lib/mode.js';
 import { deferred } from './web-utils.js';
 
+// F1010: the wizard lists repositories through `reposWithDiagnostics`; by
+// default it wraps the `repos` mock (no warning) so every repo-picker test
+// keeps stubbing `repos` exactly as before.
+const sourcesMock = vi.hoisted(() => {
+  const repos = vi.fn();
+  return {
+    list: vi.fn(),
+    repos,
+    reposWithDiagnostics: vi.fn(async (id: number) => ({ repos: await repos(id), warning: null as string | null })),
+    branches: vi.fn(),
+  };
+});
+
 const apiMock = vi.hoisted(() => ({
   api: {
-    sources: { list: vi.fn(), repos: vi.fn(), branches: vi.fn() },
+    sources: sourcesMock,
     servers: { list: vi.fn() },
     services: { create: vi.fn(), composePreview: vi.fn() },
     env: { create: vi.fn() },
@@ -749,6 +762,52 @@ describe('DeployWizard — repository analysis & Git credential guidance', () =>
 
     await fillRepo(user);
     expect(await screen.findByText(message, {}, { timeout: 4000 })).toBeInTheDocument();
+  });
+
+  // F1010: the server's x-nd-source-error diagnostic (classic token without
+  // `repo`, list capped, later page failed, provider error) is shown as an
+  // amber note next to the repo picker; a source without one shows nothing.
+  it("shows the server's repo-list diagnostic next to the picker (F1010)", async () => {
+    const user = userEvent.setup();
+    const scopeNote = 'GitHub: this classic token lacks the repo scope, so private repositories are not listed';
+    const lists: Record<number, { repos: unknown[]; warning: string | null }> = {
+      3: { repos: [{ name: 'a', fullName: 'x/a', url: 'https://github.com/x/a', defaultBranch: 'main', isPrivate: false }], warning: scopeNote },
+      4: { repos: [{ name: 'b', fullName: 'g/b', url: 'https://gitlab.com/g/b.git', defaultBranch: 'main', isPrivate: true }], warning: null },
+      5: { repos: [], warning: 'GitHub API 401' },
+    };
+    const restore = sourcesMock.reposWithDiagnostics.getMockImplementation()!;
+    sourcesMock.reposWithDiagnostics.mockImplementation(async (id: number) => lists[id] as never);
+    try {
+      apiMock.api.sources.list.mockResolvedValue([
+        { id: 3, name: 'github-app', type: 'github' },
+        { id: 4, name: 'gitlab-app', type: 'gitlab' },
+        { id: 5, name: 'stale-pat', type: 'github' },
+      ]);
+      apiMock.api.sources.branches.mockResolvedValue([]);
+      renderWizard();
+
+      await screen.findByRole('option', { name: 'gitlab-app (gitlab)' });
+      const sourceSelect = screen.getAllByRole('combobox')[1]!;
+      expect(screen.queryByTestId('repo-list-warning')).not.toBeInTheDocument();
+
+      await user.selectOptions(sourceSelect, '4');
+      await screen.findByRole('option', { name: 'Choose a repo (1)…' });
+      expect(screen.queryByTestId('repo-list-warning')).not.toBeInTheDocument(); // no diagnostic → no note
+
+      await user.selectOptions(sourceSelect, '3');
+      const note = await screen.findByTestId('repo-list-warning');
+      expect(note).toHaveTextContent(scopeNote);
+      expect(note.className).toMatch(/amber/);
+      expect(screen.getByRole('option', { name: 'Choose a repo (1)…' })).toBeInTheDocument(); // list still offered
+
+      // Page-1 failure: no list at all, but the reason is still shown.
+      await user.selectOptions(sourceSelect, '5');
+      expect(await screen.findByTestId('repo-list-warning')).toHaveTextContent('GitHub API 401');
+      expect(screen.queryByRole('option', { name: /Choose a repo/ })).not.toBeInTheDocument();
+      expect(sourcesMock.reposWithDiagnostics).toHaveBeenCalledWith(5);
+    } finally {
+      sourcesMock.reposWithDiagnostics.mockImplementation(restore);
+    }
   });
 
   it('applies framework suggestions to the form', async () => {

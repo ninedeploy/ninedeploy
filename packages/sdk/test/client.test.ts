@@ -1199,6 +1199,29 @@ describe('createClient', () => {
       expect(result).toEqual(body);
       expect([result.tokenKind, result.scopes, result.warnings?.length]).toEqual(['classic', ['public_repo'], 1]);
     });
+
+    it('reposWithDiagnostics returns the x-nd-source-error diagnostic; repos stays a bare array (F1010)', async () => {
+      const rows = [{ name: 'a', fullName: 'x/a', url: 'https://github.com/x/a', defaultBranch: 'main', isPrivate: false }];
+      const note = 'GitHub: this classic token lacks the repo scope, so private repositories are not listed';
+      let headers: Record<string, string> | undefined = { 'x-nd-source-error': `  ${note} ` };
+      const fetchMock = vi.fn(async (url: string) => ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify(rows),
+        ...(headers ? { headers: { get: (n: string) => headers?.[n.toLowerCase()] ?? null } } : {}),
+        url,
+      }));
+      const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+
+      expect(await client.sources.reposWithDiagnostics(1)).toEqual({ repos: rows, warning: note });
+      expect(fetchMock).toHaveBeenLastCalledWith('http://api.test/v1/sources/1/repos', expect.objectContaining({ method: 'GET' }));
+      expect(await client.sources.repos(1)).toEqual(rows); // unchanged contract
+
+      headers = { 'x-nd-source-error': '   ' };
+      expect(await client.sources.reposWithDiagnostics(1)).toEqual({ repos: rows, warning: null });
+      headers = undefined; // a fetch stand-in without `headers`
+      expect(await client.sources.reposWithDiagnostics(1)).toEqual({ repos: rows, warning: null });
+    });
   });
 
   describe('insights', () => {
