@@ -63,6 +63,9 @@ so there is no generated write tool and no "call any endpoint" tool.
 | `list_jobs` | `GET /v1/services/:id/jobs` | seat on the service (`read/services`) |
 | `traffic_summary` | `GET /v1/services/:id/traffic` | seat on the service (`read/services`) |
 | `list_servers`, `list_volumes`, `list_networks`, `certificate_inventory`, `doctor_report`, `instance_traffic_summary` | operator routes | operator, coarse token only |
+| `list_terminal_sessions` | `GET /v1/terminals` | operator, coarse token only. Session metadata only (no transcript exists), but it **includes each session's client IP** |
+| `list_access_grants` | `GET /v1/workspaces/:wid/access-grants` | workspace admin or operator, coarse token only |
+| `my_access` | `GET /v1/access/me` | the caller (their own grants and guest workspaces), coarse token only |
 
 All of them stay available with `NINEDEPLOY_MCP_READONLY=1`. `search_api`
 (hand-written, coarse token) searches the OpenAPI document by free text and
@@ -193,6 +196,7 @@ ninedeploy traffic service <service-id> [--range 7d]
 ninedeploy access grants list --workspace <id> [--user <id>] [--project <id>] [--environment <id>]
 ninedeploy access grants add --workspace <id> --email dev@example.com --project <id> [--environment <id>] --role member
 ninedeploy access grants update <grant-id> --workspace <id> --role viewer
+ninedeploy access grants update <grant-id> --workspace <id> --suspend    # stays listed, stops counting; --reinstate undoes it
 ninedeploy access grants remove <grant-id> --workspace <id> [-y]
 ninedeploy access me
 ```
@@ -296,6 +300,7 @@ const svcTraffic = await client.traffic.service(serviceId, { range: '7d' });
 await client.accessGrants.create(workspaceId, { email: 'dev@example.com', projectId, role: 'member' });
 const grants = await client.accessGrants.list(workspaceId, { projectId });
 await client.accessGrants.update(workspaceId, grants[0].id, { role: 'admin' });
+await client.accessGrants.update(workspaceId, grants[0].id, { suspended: true });   // { suspended: false } reinstates; 409 grant_suspended_by_idp while SCIM holds it
 await client.accessGrants.delete(workspaceId, grants[0].id);
 const who = await client.access.project(projectId);   // [{ user, role, via: ['seat' | 'grant' | 'operator' | 'creator'] }]
 const mine = await client.access.me();                // { grants, guestWorkspaces }

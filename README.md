@@ -302,6 +302,9 @@ Watch paths, `[skip ci]` handling, cancellation and PR previews: [**docs/DEPLOYM
   generated ones, validated and loaded by a throwaway Traefik before the live one sees them.
 - **Uploaded certificates** (0.14): bring a commercial, internal-CA or wildcard certificate; a domain it
   fully covers stops using the ACME resolver, and it feeds the expiry alert like ACME ones.
+- **Traffic analytics** (0.15, opt-in): requests, status classes and latency percentiles per domain and
+  service, from a JSON access log that keeps no client address, path or header. Off, Traefik's config
+  is byte-identical to 0.14; Traefik's own container log is rotated on the json-file/local drivers.
 - **Cloudflare Tunnels** for hosts with no inbound ports.
 - Non-operators must **prove control of a hostname** before attaching it.
 
@@ -337,6 +340,9 @@ Watch paths, `[skip ci]` handling, cancellation and PR previews: [**docs/DEPLOYM
   a CI or MCP token can never outrank its owner. Tokens support expiry.
 - Services can be tagged into many **workspaces, projects and labels** at once, and the whole panel
   filters by all three — AND across the groups, OR inside one.
+- **Project and environment access grants** (0.15): raise one user's role on a project, an environment
+  or both, on top of their seat — or give a seatless guest access to just that. Grants never lower a
+  role, can be suspended (and are held by SCIM), and a rollback to 0.14 only ever removes access.
 
 ### Secrets and hardening
 
@@ -387,8 +393,11 @@ Watch paths, `[skip ci]` handling, cancellation and PR previews: [**docs/DEPLOYM
 
 ### Observability
 
-- Live deploy logs and a container **exec terminal** over WebSocket, plus a container file browser and
-  a volume browser.
+- Live deploy logs over WebSocket, plus a container file browser and a volume browser.
+- **Terminals** (0.15, operator-only): container, database and node shells with a real TTY and resize,
+  single-use tickets and idle/length limits; host shells off by default behind a password re-check
+  and kill switches; node shells over an encrypted agent channel (agent v0.15.0). Every session is
+  audited as metadata, never as a transcript.
 - 30-second metric samples feeding threshold **alert rules** (CPU, memory, certificate expiry, disk
   usage across the panel host and nodes, and remote servers gone offline) with a breaching → firing →
   recovered state machine and a 30-minute anti-spam cooldown.
@@ -534,6 +543,11 @@ anything the HTTP API could not: inspection (`list_services`, `service_logs`, `l
 (`deploy_service`, `restart_service`, `rollback_deploy`, `update_service`, `system_autoprune`), and
 configuration writes (`set_config`, `install_plugin`, `enable_plugin`, …).
 
+From 0.15 the panel serves an **OpenAPI 3.1 document** for every route at `GET /v1/openapi.json`
+(behind login, with an ETag). The MCP server adds read-only tools generated from it (traffic, grants,
+terminal history, backups, servers and more) and `search_api`, which searches the document without
+calling anything. There is no generated write tool and no "call any endpoint" tool.
+
 The default surface **mutates**. `NINEDEPLOY_MCP_READONLY=1` exposes only the non-mutating,
 non-secret allowlist — and pair it with a `read`-scoped token so the restriction is enforced by the
 server rather than by the client.
@@ -611,14 +625,15 @@ build, and the integration job.
 | [Private repositories](./docs/PRIVATE_REPO_GUIDE.md) | GitHub PATs, server-generated SSH deploy keys, build-pack choice, auto-deploy webhooks |
 | [`.ninedeploy` manifest](./docs/NINEDEPLOY_MANIFEST.md) | Every section, precedence rules, and the `manifest init/validate/show` CLI |
 | [Deployments & pipelines](./docs/DEPLOYMENTS.md) | Blue-green, cancellation, watch paths, PR preview environments |
-| [Workspaces & RBAC](./docs/WORKSPACES_RBAC.md) | Tenancy, invitations, the role matrix, the instance-operator flag |
+| [Workspaces & RBAC](./docs/WORKSPACES_RBAC.md) | Tenancy, invitations, the role matrix, the instance-operator flag, project and environment access grants |
+| [Terminals](./docs/TERMINALS.md) | Container, database, node and host shells, the protocol, limits, host-shell gates, audit |
 | [Security & SSO](./docs/SECURITY_SSO.md) | Vault design, OIDC, passkeys, TOTP, session handling |
 | [Databases & backups](./docs/DATABASES_BACKUPS.md) | Engines, injected connection strings, encryption, S3 destinations, restores, dump import |
-| [Ingress & tunnels](./docs/TRAEFIK_INGRESS.md) | Dynamic routing, ACME HTTP-01/DNS-01, middlewares, Cloudflare Tunnels, custom config, uploaded certificates, public database access |
+| [Ingress & tunnels](./docs/TRAEFIK_INGRESS.md) | Dynamic routing, ACME HTTP-01/DNS-01, middlewares, Cloudflare Tunnels, custom config, uploaded certificates, public database access, traffic analytics |
 | [Secret managers](./docs/SECRET_MANAGERS.md) | HashiCorp Vault / OpenBao and AWS Secrets Manager references, setup, limits |
 | [Rolling back](./docs/ROLLBACK.md) | What a rollback to the previous release leaves behind, and how to clean it up |
 | [Plugins & microkernel](./docs/PLUGINS_MICROKERNEL.md) | Lifecycle hooks, dynamic menus, driver registries |
-| [AI, MCP, CLI & SDK](./docs/AI_MCP_CLI.md) | Tool reference, CLI reference, SDK usage |
+| [AI, MCP, CLI & SDK](./docs/AI_MCP_CLI.md) | Tool reference, CLI reference, SDK usage, the OpenAPI 3.1 document |
 | [Troubleshooting](./docs/TROUBLESHOOTING.md) | Socket permissions, database locking, healthcheck tuning |
 | [Architecture](./ARCHITECTURE.md) | The full internal spec — schema, lifecycle, security model, known gaps |
 

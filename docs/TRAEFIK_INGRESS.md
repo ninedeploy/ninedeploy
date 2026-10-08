@@ -189,3 +189,66 @@ Turning it on spends a host-wide port and puts the database within reach of the 
 - Changes are audited as `database.public_access.enable`, `.update` and `.disable`, with the port, the number of allow-list entries and the TLS mode, never the addresses.
 
 **Rolling back to 0.13** leaves the sidecars running with their allow-lists, and 0.13 cannot turn them off. Remove them with `docker rm -f $(docker ps -aq --filter label=ninedeploy.public-db)`. See [ROLLBACK.md](./ROLLBACK.md).
+
+---
+
+## 📈 10. Traffic analytics (0.15, opt-in)
+
+Requests, status codes and latency per domain, read from Traefik's access log: **Traefik → Traffic** (operators), the traffic card on a service's page, `ninedeploy traffic …`, or the API:
+
+| Route | Who | Purpose |
+| :--- | :--- | :--- |
+| `GET /v1/traffic/settings` | Instance operator | `{enabled, retentionDays, status: off\|starting\|running\|error, lastError, lastIngestAt, logBytes, malformedLines, dockerLogDriver}` |
+| `PUT /v1/traffic/settings` | Instance operator | `{enabled?, retentionDays?}`; answers with the GET shape |
+| `GET /v1/traffic/summary?range=1h\|24h\|7d\|30d&top=10` | Instance operator | Instance totals, a series, the top domains, the panel and the custom-config buckets, p50/p95/p99 |
+| `GET /v1/services/:id/traffic?range=…` | Any seat on the service (`read/services`) | The same for the service's domains; empty series, never 404, without data |
+
+`1h` and `24h` use minute buckets, `7d` and `30d` hour buckets; every answer states its `granularity` and whether analytics is `enabled`. Percentiles are estimated from a 12-bucket latency histogram (edges 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000 and 10000 ms). The read-only MCP tools are `traffic_summary` (per service) and `instance_traffic_summary` (operator).
+
+**It is off on every install, new or upgraded.** With it off, the static config still says `accessLog: {}`, byte for byte what 0.14 wrote, so upgrading never recreates `ninedeploy-traefik`. **Turning it on or off recreates Traefik once,** synchronously, through the usual guarded path: about 1–2 seconds of refused connections. If the recreate fails, the setting goes back to its previous value, the previous config is re-applied and the answer is 502 `traefik_recreate_failed`. A browser that reaches the panel through Traefik can lose the answer to the recreate itself; the web card reads the settings again.
+
+**What is logged.** When on, `accessLog: {}` is replaced by a JSON access log in a file:
+
+```yaml
+accessLog:
+  filePath: /var/log/ninedeploy-traffic/access.log
+  format: json
+  fields:
+    defaultMode: drop
+    names:
+      StartUTC: keep
+      RouterName: keep
+      ServiceName: keep
+      RequestHost: keep
+      RequestMethod: keep
+      DownstreamStatus: keep
+      DownstreamContentSize: keep
+      Duration: keep
+      OriginDuration: keep
+    headers:
+      defaultMode: drop
+```
+
+Every field not listed is dropped, and every header. **No client IP, no path, no query string, no user name and no header ever reaches the disk.** The host name is kept so the history keeps a label after a domain is deleted. Turning analytics on also ends the stdout access log, which held full request lines with query strings (OAuth codes, tokens in links) for as long as Docker kept the container log.
+
+**Where the log lives.** `<data>/traffic-logs/`, mounted read-write into Traefik at `/var/log/ninedeploy-traffic` only while analytics is on. The panel creates the directory, so it can rename and delete the files Traefik writes. It sits outside `<data>/traefik/`, so the system export never includes it.
+
+**How it is read.** The panel reads new complete lines every 10 seconds (at most 32 MiB per pass) from a cursor it stores with the counts in the same transaction, so a crash neither loses nor double-counts lines. Lines are attributed by router name: `<slug>_<domainId>` (and its `_http` twin) to the domain and its service, `ninedeploy_panel*` to the panel, `custom-*`/`custom_*` to your custom config, anything else to `other`. Malformed lines are skipped and counted in `malformedLines`.
+
+**Rotation and disk use.** Once the file has been read past 64 MiB, the panel renames it to `access.log.1` and sends Traefik `SIGUSR1`, which reopens the log; the old file is drained and deleted on a later pass. That keeps the directory near 2 × 64 MiB while the panel runs. If Traefik does not reopen the file, the panel falls back to truncating after each read, losing at most one pass of lines. While the panel is down Traefik keeps appending; if the file is over 1 GiB at boot, the panel skips to its end, rotates, and audits `traffic.log_skipped` with the number of bytes skipped.
+
+**Turning it off** recreates Traefik without the mount and with `accessLog: {}` again, drains what is left, and deletes the files in `<data>/traffic-logs`. The counts stay until retention.
+
+**Retention.** Minute rows are kept 48 hours; hour rows `retentionDays` (default 30, 1–400). The hourly housekeeping deletes them in batches.
+
+**Not covered in 0.15:** node proxies (their traffic is not counted), paths, client addresses and user agents (by design), and alerts on error rates or latency.
+
+Changes are audited as `traffic.settings.update`, plus `traffic.enable` / `traffic.disable` with the previous state.
+
+### Log rotation for Traefik's own container log (0.15)
+
+Through 0.14, Traefik's stdout, where the default access log goes, was written to Docker's `json-file` log with no size limit, on the panel host and on every node. From 0.15, when `docker info` reports the `json-file` or `local` log driver, `ninedeploy-traefik` and node proxies are started with `--log-opt max-size=20m --log-opt max-file=3`. With any other driver nothing is added, because an option the driver does not accept would make `docker run` fail and take the ingress down.
+
+The option is not part of the config fingerprint, so **it never forces a recreate**: it applies the next time the proxy is recreated for another reason (an ACME or DNS change, a Traefik update, turning analytics on or off). `GET /v1/traffic/settings` shows the detected driver as `dockerLogDriver`. To apply it sooner on the panel host, turn analytics on and off again; on a node, it applies at the node proxy's next recreate, with a 0.15 agent.
+
+**Rolling back to 0.14 with analytics on:** 0.14 renders `accessLog: {}`, sees the fingerprint change and recreates Traefik once without the mount. `<data>/traffic-logs` stays on disk; see [ROLLBACK.md](./ROLLBACK.md).

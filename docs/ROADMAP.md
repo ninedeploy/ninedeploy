@@ -50,12 +50,18 @@ Shipped in 0.14.0; see [TRAEFIK_INGRESS.md](./TRAEFIK_INGRESS.md) (directory pro
 - **Database dump import:** chunked, resumable upload or an S3 object, behind a `pre-import` safety backup.
 - **Secret managers:** HashiCorp Vault / OpenBao (KV v2) and AWS Secrets Manager, alongside the existing Infisical and Doppler.
 
-## 0.15 — Operations and API
+## 0.15 — Operations and API (done)
 
-- **Terminals:** a server terminal through the agent, and remote container shells. Both are operator-only and every session is audited.
-- **Traffic analytics:** requests, status codes and latency, read from the Traefik access log.
-- **OpenAPI 3.1:** a spec generated from the zod schemas, with MCP tools extended from that spec.
-- **Project- and environment-level access grants:** layered on top of workspace roles.
+Shipped in 0.15.0; see [TERMINALS.md](./TERMINALS.md), [TRAEFIK_INGRESS.md §10](./TRAEFIK_INGRESS.md) (traffic analytics and log rotation), [WORKSPACES_RBAC.md §2.3](./WORKSPACES_RBAC.md) (access grants), [AI_MCP_CLI.md](./AI_MCP_CLI.md) (the OpenAPI document and the generated MCP tools) and [ROLLBACK.md](./ROLLBACK.md).
+
+- **Terminals:**
+  - container, database and node shells with a real TTY (Docker installs had none before), a resize-aware protocol, single-use tickets, idle and length limits;
+  - host shells on the panel host and on nodes, off by default, behind operator, an interactive session, a password re-check and kill switches on the panel and on each node;
+  - node shells through the agent over an encrypted channel (agent v0.15.0);
+  - every session audited as metadata; no transcripts.
+- **Traffic analytics:** opt-in; requests, status classes, bytes and latency percentiles per domain and service, from a JSON access log that keeps no client address, path or header. Off, the Traefik config is byte-identical to 0.14, so the upgrade does not recreate Traefik. Traefik's container log is rotated on the json-file/local drivers.
+- **OpenAPI 3.1:** `GET /v1/openapi.json` behind login, covering every route, with read-only MCP tools generated from it and a `search_api` tool. Writes stay hand-curated.
+- **Project- and environment-level access grants:** raise-only on top of workspace roles, with grant-only guests, suspend/reinstate and SCIM holds; a rollback to 0.14 only ever removes access.
 
 ## 0.16 — Multi-node
 
