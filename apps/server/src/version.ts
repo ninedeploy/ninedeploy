@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.11.2';
+export const VERSION = '0.12.0';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.12.0',
+    date: '2026-10-08',
+    title: 'Backups, Preview Environments and Disk Alerts',
+    changes: [
+      'Per-database backup schedules: each database can have its own cron, local and remote retention, and destination (database → Backups → Backup schedule). Databases without one keep the daily backup with 7 kept.',
+      'Panel self-backup: the panel\'s database, master key, .env and proxy config can be written to a backup destination on a schedule, encrypted with a recovery passphrase you keep. Restore it from Settings or offline with `ninedeploy system panel-backup decrypt`. Off until you enable it.',
+      'Preview-only environment: give PR previews their own values (Env → Preview deployments). Previews still never receive the service\'s secrets.',
+      'New alert metrics: disk usage across the panel host and nodes, and remote servers gone offline. The panel now pings nodes, so SSH-bootstrapped nodes stay online while reachable. Upgrades change nothing until you configure these features; the two new database tables are additive.',
+    ],
+  },
+{
     version: '0.11.2',
     date: '2026-10-08',
     title: 'Security Release — Clone Errors No Longer Leak the Git Token',

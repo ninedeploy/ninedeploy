@@ -9,6 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-08
+
+> Backups, preview environments and disk alerts — the first release of the [roadmap](docs/ROADMAP.md).
+
+### Upgrade notes
+
+- Two additive migrations: `0067_database_backup_policies` and `0068_preview_env_vars`. Both are new tables only. No existing row is changed, and a rollback to 0.11.x ignores both tables.
+- Nothing changes until you configure it:
+  - A database without a backup policy keeps the daily backup with 7 kept.
+  - Panel self-backup is off.
+  - No alert rules are created.
+  - PR previews get exactly the environment they got before.
+- The panel now pings approved remote nodes every 30 seconds. SSH-bootstrapped nodes therefore stay "online" on the Servers page while they are reachable. They used to show offline about 5 minutes after bootstrap.
+- Verified before release: in-place upgrades from 0.11.2 and from 0.10.45, plus the feature checks above on the upgraded panel.
+
+### Added
+
+- **Per-database backup policy.**
+  - Settings: a cron schedule, local retention (1–365), optional remote retention, and a destination or local-only.
+  - Where to configure it: the database's Backups tab, `GET`/`PUT /v1/databases/:id/backup-policy`, SDK `backups.getPolicy`/`setPolicy`, or CLI `ninedeploy databases backup-policy get|set`.
+  - Retention never prunes the newest good dump or the newest remote copy.
+  - Missed-backup alerts follow each policy's own interval.
+  - Choosing a specific destination is operator-only.
+- **Panel self-backup.**
+  - What is backed up: the panel database (a consistent snapshot), master key, `.env` and Traefik config.
+  - It is written to a backup destination on a schedule, encrypted with a recovery passphrase the operator keeps, and old copies are pruned by keep-newest-N retention.
+  - Runs never overlap. Every outcome is audited, so a failure triggers notifications.
+  - Where to use it: the Settings → Panel backup section, `/v1/system/panel-backup`, SDK `system.panelBackup`, or CLI `ninedeploy system panel-backup status|set|now|list|decrypt`.
+  - Restore: from Settings after typing the file name to confirm, or offline with `decrypt`.
+  - See `docs/PANEL_BACKUP.md`.
+- **Preview-only environment.** A git-backed service can hold environment values that only its PR previews receive. Previews still never receive the service's secrets.
+  - Where to set them: Env tab → Preview deployments, `/v1/services/:id/env/preview`, SDK `previewEnv`, or CLI `ninedeploy env list|set|rm --preview`.
+  - Precedence: project env < the preview's own copy < the preview-only set < attached databases.
+  - Existing previews pick up the set on their next deploy.
+- **Alert metrics `disk` and `server_offline`.**
+  - `disk` is the worst disk-usage percentage across the panel host, Docker's data root and the remote nodes.
+  - `server_offline` is the number of minutes a remote node has gone unseen.
+  - Both are host-wide. Firing and recovery notify through the existing channels.
+
+### Changed
+
+- System export and import share one archive implementation (`lib/systemArchive.ts`) with panel backup. The API and the archive format are unchanged.
+- An alert rule PATCH now validates the merged rule. An existing `cert-expiry` rule can no longer be scoped to a service.
+
 ## [0.11.2] - 2026-10-08
 
 > Security release: a failed submodule clone could put the Git source's access token into deploy logs, the audit log and notifications.
