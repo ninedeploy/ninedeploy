@@ -132,13 +132,14 @@ interface ServiceShape {
 }
 
 function covers(g: ActiveGrant, s: ServiceShape): boolean {
+  // Every grant shape needs the service to be tagged into the grant's
+  // workspace: service access in 0.14 comes only from those tags, and a
+  // project link alone does not tie a service to a workspace (another
+  // workspace's service can be linked to this workspace's project), so a
+  // project grant must never reach across tenants through such a link.
+  if (!s.workspaceIds.has(g.workspaceId)) return false;
   if (g.projectId != null && !s.projectIds.has(g.projectId)) return false;
-  if (g.environmentId != null) {
-    if (s.environmentId !== g.environmentId) return false;
-    // A bare environment grant needs the service to live in E's workspace;
-    // with a project too, the project link already ties it to the grant.
-    if (g.projectId == null && !s.workspaceIds.has(g.workspaceId)) return false;
-  }
+  if (g.environmentId != null && s.environmentId !== g.environmentId) return false;
   return true;
 }
 
@@ -155,7 +156,6 @@ export async function grantRoleForService(
   if (grants.length === 0) return null;
   const needsLinks = grants.some((g) => g.projectId != null);
   const needsEnv = grants.some((g) => g.environmentId != null);
-  const needsTags = grants.some((g) => g.environmentId != null && g.projectId == null);
   const projectIds = new Set<number>();
   if (needsLinks) {
     const links = await db
@@ -173,7 +173,7 @@ export async function grantRoleForService(
     }
   }
   const workspaceIds = new Set<number>();
-  if (needsTags) {
+  {
     const tags = await db
       .select({ workspaceId: serviceWorkspaces.workspaceId })
       .from(serviceWorkspaces)
@@ -212,13 +212,14 @@ export async function servicesCoveredByGrants(db: DbLike, grants: ActiveGrant[])
       .from(services)
       .where(inArray(services.environmentId, eIds));
     for (const s of inEnv) shapeOf(s.id).environmentId = s.environmentId;
-    if (inEnv.length > 0 && grants.some((g) => g.environmentId != null && g.projectId == null)) {
-      const tags = await db
-        .select({ serviceId: serviceWorkspaces.serviceId, workspaceId: serviceWorkspaces.workspaceId })
-        .from(serviceWorkspaces)
-        .where(inArray(serviceWorkspaces.serviceId, inEnv.map((s) => s.id)));
-      for (const t of tags) shapeOf(t.serviceId).workspaceIds.add(t.workspaceId);
-    }
+  }
+  // Workspace tags for every candidate: `covers` requires the grant's workspace.
+  if (shapes.size > 0) {
+    const tags = await db
+      .select({ serviceId: serviceWorkspaces.serviceId, workspaceId: serviceWorkspaces.workspaceId })
+      .from(serviceWorkspaces)
+      .where(inArray(serviceWorkspaces.serviceId, [...shapes.keys()]));
+    for (const t of tags) shapeOf(t.serviceId).workspaceIds.add(t.workspaceId);
   }
   for (const [id, shape] of shapes) if (grants.some((g) => covers(g, shape))) out.add(id);
   return out;

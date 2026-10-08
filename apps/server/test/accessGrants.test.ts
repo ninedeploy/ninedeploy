@@ -147,6 +147,18 @@ describe('what a grant covers', () => {
     expect(await ra.isWorkspaceMember(db, W.W1, u)).toBe(false);
   });
 
+  it('a project grant never reaches another workspace’s service linked to the project (cross-tenant)', async () => {
+    // 112 lives in W2 (tagged W2 only) but is linked to W1's P1. In 0.14 a
+    // project link grants nothing; W1's grant on P1 must not cover it.
+    await grant(U.outsider, { ws: W.W1, project: P.P1, role: 'admin' });
+    const u = as(U.outsider);
+    expect(await ra.serviceRole(db, await svc(112), u)).toBeNull();
+    expect(await loads(() => ra.loadServiceForUser(db, 112, u))).toBe(false);
+    expect(await visible(U.outsider)).not.toContain(112);
+    // The W1-tagged services linked to P1 are still covered.
+    expect(await ra.serviceRole(db, await svc(104), u)).toBe('admin');
+  });
+
   it('an environment grant: services in E tagged into E’s workspace, never a database', async () => {
     await grant(U.outsider, { ws: W.W1, env: E.E1, role: 'member' });
     const u = as(U.outsider);
