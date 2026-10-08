@@ -77,7 +77,9 @@ export async function buildApp(): Promise<FastifyInstance> {
       ...extraOrigins,
     ]),
   ];
-  await app.register(cors, { origin: allowedOrigins, credentials: true });
+  // F1016: a dashboard on another origin (VITE_API_URL) must be able to read
+  // the repo-list diagnostic; browsers hide non-safelisted headers otherwise.
+  await app.register(cors, { origin: allowedOrigins, credentials: true, exposedHeaders: ['x-nd-source-error'] });
   await app.register(websocket);
   await app.register(securityHeadersPlugin);
   await app.register(rateLimitPlugin);

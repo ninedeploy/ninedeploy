@@ -159,6 +159,8 @@ describe('buildApp', () => {
       headers: { origin: 'https://panel.example.test' },
     });
     expect(panel.headers['access-control-allow-origin']).toBe('https://panel.example.test');
+    // F1016: a cross-origin dashboard must be able to read the source diagnostic.
+    expect(panel.headers['access-control-expose-headers']).toContain('x-nd-source-error');
     await app.close();
   });
 
