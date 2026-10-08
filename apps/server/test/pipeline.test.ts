@@ -2594,3 +2594,95 @@ describe('F881: the run signals end-of-log only after its final settle', () => {
     expect(logBus.isWriting(1)).toBe(false);
   });
 });
+
+describe('F1012/F1013: a failed clone names its reason and never repeats the credential', () => {
+  const OWNER = 42;
+  // decrypt() is mocked as `dec:<value>`; the checkout injects it URL-encoded.
+  const TOKEN = 'dec:ghp_F1013SECRET/x+y';
+  const userinfo = `x-access-token:${encodeURIComponent(TOKEN)}@`;
+  const githubSource = { id: 7, type: 'github', tokenEncrypted: 'ghp_F1013SECRET/x+y', deployKeyEncrypted: null };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    logBus.removeAllListeners();
+    h.builder.buildAndRun.mockImplementation(async () => ({ runtimeId: 'c-1', port: 3000, healthPath: '/' }));
+    h.builder.isHealthy.mockImplementation(async () => true);
+    h.writeDynamicConfig.mockImplementation(async () => undefined);
+  });
+
+  afterEach(() => {
+    logBus.removeAllListeners();
+    h.checkoutCommit.mockImplementation(async () => 'sha-1234567');
+  });
+
+  function failedReason(inserts: { table: unknown; values: Record<string, unknown> }[]): string | undefined {
+    const row = inserts.find((i) => i.table === auditLog && i.values.action === 'deploy.failed');
+    return (row?.values.meta as { reason?: string } | undefined)?.reason;
+  }
+
+  it('names the reason class with the token advice in the deploy log and the deploy.failed reason', async () => {
+    const { db, updates, inserts } = makeDb();
+    baseSetup(db, { ownerUserId: OWNER, sourceId: 7 });
+    db.query.sources.findFirst.mockResolvedValue(githubSource);
+    h.checkoutCommit.mockRejectedValue(
+      new Error("Cloning into '/srv/repos/5'...\nremote: Repository not found.\nfatal: repository 'https://github.com/a/b.git/' not found\n"),
+    );
+    const lines = collectLogs(1);
+
+    await runDeployment(db as never, 1);
+
+    const want = 'Clone failed (reason: repository not found or no access): the repository was not found or the selected credential has no access to it.';
+    expect(lines.some((l) => l.startsWith(`✗ ${want} For a fine-grained GitHub token`))).toBe(true);
+    expect(lines.some((l) => l.startsWith(`✗ Deployment failed: ${want}`))).toBe(true);
+    expect(failedReason(inserts)?.startsWith(want)).toBe(true);
+    // Built from constants — none of git's text, nor the panel's repos path.
+    expect(failedReason(inserts)).not.toContain('/srv/repos');
+    // Unchanged flow: the row is failed and the per-setup hint is still logged.
+    expect(updates.some((u) => u.table === deployments && u.values.status === 'failed')).toBe(true);
+    expect(lines.some((l) => l.startsWith('hint: cloning used the source'))).toBe(true);
+  });
+
+  it('keeps the access token out of the log, the log file and the deploy.failed reason when a submodule clone fails', async () => {
+    const { db, inserts } = makeDb();
+    baseSetup(db, { ownerUserId: OWNER, sourceId: 7 });
+    db.query.sources.findFirst.mockResolvedValue(githubSource);
+    // git 2.55's submodule helper prints the submodule URL resolved against the
+    // tokenized origin (captured offline, see the F1013 ledger entry).
+    h.checkoutCommit.mockRejectedValue(
+      new Error(
+        "Cloning into '/srv/repos/5/lib/shared'...\nremote: Repository not found.\nfatal: repository 'https://github.com/a/shared.git/' not found\n" +
+          `fatal: clone of 'https://${userinfo}github.com/a/shared.git' into submodule path '/srv/repos/5/lib/shared' failed\n`,
+      ),
+    );
+    const lines = collectLogs(1);
+
+    await runDeployment(db as never, 1);
+
+    const onDisk = readFileSync(path.join(logsDir, '1.log'), 'utf8');
+    for (const text of [lines.join('\n'), onDisk, failedReason(inserts) ?? '']) {
+      expect(text).not.toContain('F1013SECRET');
+      expect(text).not.toContain('x-access-token:');
+    }
+    expect(failedReason(inserts)).toContain('The failing clone was a submodule of this repository');
+    expect(lines.some((l) => l.startsWith('git output (credentials removed): ') && l.includes("clone of 'https://***@github.com/a/shared.git'"))).toBe(true);
+  });
+
+  it('redacts an unrecognised clone error but leaves a clean one untouched', async () => {
+    const { db, inserts } = makeDb();
+    baseSetup(db, { ownerUserId: OWNER, sourceId: 7 });
+    db.query.sources.findFirst.mockResolvedValue(githubSource);
+    h.checkoutCommit.mockRejectedValueOnce(new Error(`fatal: clone of 'https://${userinfo}github.com/a/shared.git' into submodule path 'lib/shared' failed`));
+    const lines = collectLogs(1);
+
+    await runDeployment(db as never, 1);
+
+    expect(lines).toContain("✗ Clone failed: fatal: clone of 'https://***@github.com/a/shared.git' into submodule path 'lib/shared' failed");
+    expect(failedReason(inserts)).toBe("fatal: clone of 'https://***@github.com/a/shared.git' into submodule path 'lib/shared' failed");
+
+    const second = makeDb();
+    baseSetup(second.db, { ownerUserId: OWNER });
+    h.checkoutCommit.mockRejectedValueOnce(new Error('auth failed'));
+    await runDeployment(second.db as never, 1);
+    expect(failedReason(second.inserts)).toBe('auth failed');
+  });
+});

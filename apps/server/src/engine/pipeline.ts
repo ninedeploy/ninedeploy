@@ -6,6 +6,7 @@ import { buildConfigs, databaseAttachments, databases, type DB, deployments, dom
 import { config } from '../config.js';
 import { decrypt } from '../lib/crypto.js';
 import { checkoutCommit, type CloneCreds } from '../lib/git.js';
+import { classifyCloneFailure, redactGitOutput } from '../lib/cloneFailure.js';
 import { detectDeployHints } from '../lib/deployHints.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
 import { remoteDatabaseRefusal, remoteDeploySupported, remoteDeployUnsupportedReason, remoteHookRefusal, remoteServiceRefusal, sourceHasGitCredential } from '../lib/remoteDeploy.js';
@@ -780,7 +781,24 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
         // The clone error itself is often a bare "repository not found" —
         // git says that for BOTH a nonexistent repo and a private one read
         // anonymously. Say which fix applies to THIS service's setup.
-        log(`✗ Clone failed: ${msg(err)}`);
+        //
+        // F1012: name the reason class (the analysis route's classifier) in
+        // the log AND in the failure message (audit → notifications, feed).
+        // F1013: git's text never leaves here unredacted — a failed submodule
+        // clone prints its URL resolved against the tokenized origin.
+        const gitText = redactGitOutput(msg(err), creds);
+        const failure = classifyCloneFailure(err, service.branch, creds, service.repoUrl ?? '');
+        const failMessage = failure
+          ? `Clone failed (reason: ${failure.reason}): ${failure.advice}${
+              failure.submodule ? ' The failing clone was a submodule of this repository; the credential needs access to that repository too.' : ''
+            }`
+          : null;
+        if (failMessage) {
+          log(`✗ ${failMessage}`);
+          log(`git output (credentials removed): ${gitText}`);
+        } else {
+          log(`✗ Clone failed: ${gitText}`);
+        }
         if (!creds) {
           log('hint: no Git credential is attached to this service. If the repository is PRIVATE, attach one: System → Sources (PAT or generate a deploy key), then select it under Service → Settings → Git credential and redeploy. Public repos need no credential.');
         } else if (creds.deployKey && !creds.token) {
@@ -788,7 +806,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
         } else if (creds.token) {
           log('hint: cloning used the source\u2019s access token. Check that the token is still valid and has read access to this repository (System → Sources → Test).');
         }
-        throw err;
+        if (failMessage) throw new Error(failMessage);
+        throw gitText === msg(err) ? err : new Error(gitText);
       }
       await db.update(deployments).set({ commitSha: sha }).where(eq(deployments.id, deploymentId));
 
