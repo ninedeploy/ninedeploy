@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.11.0';
+export const VERSION = '0.11.1';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.11.1',
+    date: '2026-10-07',
+    title: 'Private Repositories — Full Repo Lists and Clear Clone Errors',
+    changes: [
+      'Fixed: a Git credential listed only its 100 most recently updated repositories, so older private repositories never appeared. Repository lists now follow GitHub, GitLab and Bitbucket pagination up to 1000 repositories.',
+      'Fixed: analysing a private repository the credential cannot clone answered "Internal Server Error". It now says why — authentication failed, HTTP 403, not found or no access, or could not connect — with advice for GitHub tokens (classic tokens need the repo scope; fine-grained tokens need the repository selected and Contents: Read-only). Missing branches get their own message.',
+      'New: a "Test token" button on Git sources shows the GitHub token type, its scopes and warnings when private repositories cannot be listed or cloned.',
+    ],
+  },
+{
     version: '0.11.0',
     date: '2026-10-07',
     title: 'The Evidence Audit Release — 300+ Proven Fixes',

@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-08
+
+> Private repositories: complete repository lists, clone errors that say why, and a token check.
+
+### Upgrade notes
+
+- No database migrations or new configuration fields.
+- `POST /v1/insights` and `POST /v1/services/:id/insights/refresh` answer 400 `repo_unreachable` or `branch_not_found` when the repository cannot be cloned. The first answered 500 and the refresh route answered 404 before.
+- `GET /v1/sources/:id/test` returns `tokenKind`, `scopes` and `warnings` for GitHub sources. These fields are additive.
+
+### Fixed
+
+- Git source repository lists stopped at the provider's first page (100 repositories, most recently updated first), so older private repositories never appeared. Lists now follow GitHub `Link`, GitLab `X-Next-Page` and Bitbucket `next` pagination up to 10 pages (1000 repositories). Later pages reuse the fixed API URL, so the token is never sent to a provider-supplied URL, and truncation is reported.
+- Analysing a repository the selected credential cannot clone answered "Internal Server Error". The answer now names a reason: authentication failed, HTTP 403 (permission denied), not found or no access, could not resolve/connect, or TLS/host-key verification failed. For GitHub tokens it adds advice: classic tokens need the `repo` scope, and fine-grained tokens need the repository selected, Contents: Read-only, and organization approval or SSO authorization. git's output, URL credentials and the token never appear in the message.
+
+### Added
+
+- Sources: a "Test token" button shows the login, the GitHub token type, a classic token's scopes, and warnings when private repositories cannot be listed or cloned.
+- The Deploy Wizard explains, next to the repository picker, why a repository may be missing from a GitHub source.
+
 ## [0.11.0] - 2026-10-07
 
 > The evidence audit release: over 300 defects, each reproduced on the previous code before it was fixed, then verified and, where it mattered, pinned by a regression test.
