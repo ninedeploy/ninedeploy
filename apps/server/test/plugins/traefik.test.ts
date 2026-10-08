@@ -1,19 +1,32 @@
 ﻿import Fastify from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
 
-const proxyMock = vi.hoisted(() => ({
-  ensureNetwork: vi.fn(async (log: (line: string) => void) => {
-    log('network ready');
-  }),
-  ensureTraefik: vi.fn(async (log: (line: string) => void) => {
-    log('traefik ready');
-  }),
-  writeDynamicConfig: vi.fn(async () => undefined),
-  getAcmeEmail: vi.fn(async () => null),
-  getDnsConfig: vi.fn(async () => ({ provider: '', token: null, wildcardApex: null })),
-  // 0.14 (M12): the uploaded certificates are re-written from the database at boot.
-  materialiseCertificatesFile: vi.fn(async () => undefined),
-}));
+const proxyMock = vi.hoisted(() => {
+  const m = {
+    ensureNetwork: vi.fn(async (log: (line: string) => void) => {
+      log('network ready');
+    }),
+    ensureTraefik: vi.fn(async (log: (line: string) => void) => {
+      log('traefik ready');
+    }),
+    writeDynamicConfig: vi.fn(async () => undefined),
+    getAcmeEmail: vi.fn(async () => null),
+    getDnsConfig: vi.fn(async () => ({ provider: '', token: null, wildcardApex: null })),
+    // 0.14 (M12): the uploaded certificates are re-written from the database at boot.
+    materialiseCertificatesFile: vi.fn(async () => undefined),
+    // 0.15: the one source of ensureTraefik's inputs. Mirrors the real helper:
+    // ACME/DNS read failures fall back to null; the analytics switch decides
+    // the access-log mode.
+    traefikInputs: vi.fn(async (_db: unknown) => ({}) as Record<string, unknown>),
+    accessLog: 'stdout' as 'stdout' | 'file',
+  };
+  m.traefikInputs.mockImplementation(async (db: unknown) => ({
+    acmeEmail: await (m.getAcmeEmail as (d: unknown) => Promise<string | null>)(db).catch(() => null),
+    dns: await (m.getDnsConfig as (d: unknown) => Promise<unknown>)(db).catch(() => null),
+    accessLog: m.accessLog,
+  }));
+  return m;
+});
 const customConfigMock = vi.hoisted(() => ({
   // 0.14 (M12): the operator's custom dynamic config is re-written from its last good version.
   materialiseCustomConfig: vi.fn(async () => undefined),
@@ -68,8 +81,30 @@ describe('traefik plugin', () => {
       expect.any(Function),
       null,
       { provider: 'cloudflare', token: 'tok', wildcardApex: 'example.com' },
+      expect.objectContaining({ accessLog: 'stdout' }),
     );
     await app.close();
+  });
+
+  it('passes the traffic-analytics access-log mode through (0.15 M14: no recreate flap)', async () => {
+    proxyMock.ensureTraefik.mockClear();
+    proxyMock.traefikInputs.mockClear();
+    proxyMock.accessLog = 'file';
+    try {
+      const db = { select: vi.fn() };
+      const app = await buildApp(db);
+      await app.ready();
+      expect(proxyMock.traefikInputs).toHaveBeenCalledWith(db);
+      expect(proxyMock.ensureTraefik).toHaveBeenCalledWith(
+        expect.any(Function),
+        null,
+        { provider: '', token: null, wildcardApex: null },
+        expect.objectContaining({ accessLog: 'file' }),
+      );
+      await app.close();
+    } finally {
+      proxyMock.accessLog = 'stdout';
+    }
   });
 
   it('tolerates a failing DNS config read', async () => {
@@ -79,7 +114,7 @@ describe('traefik plugin', () => {
     const app = await buildApp({ select: vi.fn() });
     await app.ready();
 
-    expect(proxyMock.ensureTraefik).toHaveBeenCalledWith(expect.any(Function), null, null);
+    expect(proxyMock.ensureTraefik).toHaveBeenCalledWith(expect.any(Function), null, null, expect.objectContaining({ accessLog: 'stdout' }));
     await app.close();
   });
 
@@ -90,7 +125,12 @@ describe('traefik plugin', () => {
     const app = await buildApp({ select: vi.fn() });
     await app.ready();
 
-    expect(proxyMock.ensureTraefik).toHaveBeenCalledWith(expect.any(Function), 'ops@example.com', { provider: '', token: null, wildcardApex: null });
+    expect(proxyMock.ensureTraefik).toHaveBeenCalledWith(
+      expect.any(Function),
+      'ops@example.com',
+      { provider: '', token: null, wildcardApex: null },
+      expect.objectContaining({ accessLog: 'stdout' }),
+    );
     await app.close();
   });
 
@@ -101,7 +141,12 @@ describe('traefik plugin', () => {
     const app = await buildApp({ select: vi.fn() });
     await app.ready();
 
-    expect(proxyMock.ensureTraefik).toHaveBeenCalledWith(expect.any(Function), null, { provider: '', token: null, wildcardApex: null });
+    expect(proxyMock.ensureTraefik).toHaveBeenCalledWith(
+      expect.any(Function),
+      null,
+      { provider: '', token: null, wildcardApex: null },
+      expect.objectContaining({ accessLog: 'stdout' }),
+    );
     await app.close();
   });
 

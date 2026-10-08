@@ -9,12 +9,11 @@ import {
   ensureNetwork,
   ensureTraefik,
   generatedConfigPath,
-  getAcmeEmail,
-  getDnsConfig,
   legacyDynamicPath,
   readCertificates,
   TRAEFIK_CONTAINER,
   TRAEFIK_IMAGE,
+  traefikInputs,
 } from '../engine/proxy.js';
 import {
   buildCertificateInventory,
@@ -530,7 +529,8 @@ export const traefikRoutes: FastifyPluginAsync = async (app) => {
     // drift from startup/watchdog behavior.
     log('Starting new container...');
     await ensureNetwork(log);
-    await ensureTraefik(log, await getAcmeEmail(app.db), await getDnsConfig(app.db));
+    const t = await traefikInputs(app.db);
+    await ensureTraefik(log, t.acmeEmail, t.dns, t);
     
     const newVersion = await getLatestTraefikVersion();
     log(`Traefik updated to ${newVersion}`);

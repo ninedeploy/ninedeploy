@@ -28,6 +28,8 @@ const dnsMock = vi.hoisted(() => ({
   getAcmeEmail: vi.fn(async () => 'acme@example.com'),
   getDnsConfig: vi.fn(async () => null),
   writeDynamicConfig: vi.fn(async () => undefined),
+  // 0.15: callers gather ensureTraefik's inputs through traefikInputs.
+  traefikInputs: vi.fn(async () => ({ acmeEmail: 'acme@example.com', dns: null, accessLog: 'stdout' as const })),
 }));
 vi.mock('../src/engine/proxy.js', () => dnsMock);
 
@@ -927,6 +929,7 @@ describe('settings routes — Traefik apply timer', () => {
       expect.any(Function),
       'acme@example.com',
       null,
+      expect.objectContaining({ accessLog: 'stdout' }),
     );
     expect(dnsMock.writeDynamicConfig).toHaveBeenCalledWith(db);
     // The one-shot mock implementations invoked the route's log

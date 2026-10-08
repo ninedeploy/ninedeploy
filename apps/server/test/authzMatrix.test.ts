@@ -1070,10 +1070,13 @@ export const MATRIX: Record<string, Rule> = {
   // ── 0.15 T2b node terminals ──
   // ── end 0.15 T2b ──
   // ── 0.15 T3 traffic ──
-  // 'GET /v1/traffic/settings': OP,
-  // 'PUT /v1/traffic/settings': OP,
-  // 'GET /v1/traffic/summary': OP,
-  // 'GET /v1/services/:id/traffic': R('viewer'),
+  // Instance-wide analytics: operator only. The PUT's positive call sends {}
+  // (no toggle), so it never reaches Traefik.
+  'GET /v1/traffic/settings': OP,
+  'PUT /v1/traffic/settings': OP,
+  'GET /v1/traffic/summary': OP,
+  // Any seat on the service (loadServiceForUser); empty series without data.
+  'GET /v1/services/:id/traffic': R('viewer'),
   // ── end 0.15 T3 ──
   // ── 0.15 T4 openapi ──
   // 'GET /v1/openapi.json': R('authed'),

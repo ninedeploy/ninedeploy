@@ -475,6 +475,8 @@ describe('wiring', () => {
       }),
       getAcmeEmail: vi.fn(async () => null),
       getDnsConfig: vi.fn(async () => null),
+      // 0.15: the plugin gathers ensureTraefik's inputs through traefikInputs.
+      traefikInputs: vi.fn(async () => ({ acmeEmail: null, dns: null, accessLog: 'stdout' })),
       materialiseCertificatesFile: vi.fn(async () => calls.push('certificates')),
       writeDynamicConfig: vi.fn(async () => calls.push('writeDynamicConfig')),
     }));

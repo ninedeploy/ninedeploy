@@ -14,6 +14,12 @@ import { hostsCollide, wwwCompanionHost } from '../lib/domainVerification.js';
 import { hashBasicAuthEntry, parseBasicAuth } from '../lib/htpasswd.js';
 import { reapTraefikNetworks } from '../lib/serviceBridge.js';
 import {
+  TRAFFIC_LOG_CONTAINER_DIR,
+  TRAFFIC_LOG_FILE,
+  trafficAnalyticsEnabled,
+  trafficLogDir,
+} from '../lib/trafficAnalytics.js';
+import {
   cachedCustomCertificates,
   certificateHostnames,
   certificatesCovering,
@@ -192,11 +198,18 @@ export function encryptDnsToken(token: string): string {
  * node proxies loaded no routes at all (D1, test/lib/nodeProxyD1.test.ts).
  *
  * `logLevel` exists for the custom-config preflight container only.
+ *
+ * 0.15: `accessLog: 'file'` (traffic analytics, opt-in) replaces the
+ * stdout `accessLog: {}` with {@link TRAFFIC_ACCESS_LOG_BLOCK}. The default,
+ * `'stdout'`, renders byte-for-byte what 0.14 rendered, so an upgrade with
+ * analytics off never changes the fingerprint and never recreates Traefik
+ * (golden: test/trafficStaticGolden.test.ts). Node proxies and the custom
+ * config preflight never pass `'file'`.
  */
 export function renderStaticConfig(
   acmeEmail: string | null,
   dns: DnsConfig | null = null,
-  opts: { logLevel?: 'INFO' | 'ERROR' } = {},
+  opts: { logLevel?: 'INFO' | 'ERROR'; accessLog?: TraefikAccessLogMode } = {},
 ): string {
   const useDns = !!(dns?.provider && dns.token && DNS_PROVIDERS[dns.provider]);
   const challenge = useDns
@@ -233,8 +246,65 @@ api:
   dashboard: false
 log:
   level: ${opts.logLevel ?? 'INFO'}
-accessLog: {}
-${acme}`;
+${opts.accessLog === 'file' ? TRAFFIC_ACCESS_LOG_BLOCK : 'accessLog: {}\n'}${acme}`;
+}
+
+/** Where Traefik writes its access log: stdout (0.14 and analytics off) or the analytics file. */
+export type TraefikAccessLogMode = 'stdout' | 'file';
+
+/**
+ * 0.15 traffic analytics (DESIGN §2.2): a JSON access log in a file the panel
+ * tails, holding only what the rollups need. `fields.defaultMode: drop` drops
+ * every field that is not explicitly kept — no client address, no path or
+ * query string, no user — and `headers.defaultMode: drop` drops every header.
+ * Option names per Traefik v3's access-log reference (`filePath`, `format`,
+ * `fields.defaultMode`, `fields.names`, `fields.headers.defaultMode`); the
+ * DinD smoke verifies a written line carries `RouterName` and no `ClientAddr`.
+ */
+export const TRAFFIC_ACCESS_LOG_BLOCK = `accessLog:
+  filePath: ${TRAFFIC_LOG_CONTAINER_DIR}/${TRAFFIC_LOG_FILE}
+  format: json
+  fields:
+    defaultMode: drop
+    names:
+      StartUTC: keep
+      RouterName: keep
+      ServiceName: keep
+      RequestHost: keep
+      RequestMethod: keep
+      DownstreamStatus: keep
+      DownstreamContentSize: keep
+      Duration: keep
+      OriginDuration: keep
+    headers:
+      defaultMode: drop
+`;
+
+/** Every static input that decides the panel Traefik's config, read from the database. */
+export interface TraefikInputs {
+  acmeEmail: string | null;
+  dns: DnsConfig | null;
+  accessLog: TraefikAccessLogMode;
+}
+
+/**
+ * 0.15 recreate-flap guard: the ONE way callers gather `ensureTraefik`'s
+ * inputs. A caller that read the ACME email and DNS config but forgot the
+ * analytics switch would render the stdout config while analytics is on, and
+ * every heal would flip Traefik between the two configs (a recreate each
+ * time). `ensureTraefik`'s fourth parameter is required for the same reason;
+ * test/trafficStaticGolden.test.ts asserts every caller passes these inputs.
+ *
+ * The ACME email and DNS reads fall back exactly as the callers did before.
+ * The analytics read is NOT defaulted: guessing "off" on a transient database
+ * error with analytics on would recreate Traefik, so the error propagates and
+ * the heal is retried (boot logs it, the watchdog retries in 5 minutes).
+ */
+export async function traefikInputs(db: DB): Promise<TraefikInputs> {
+  const acmeEmail = await getAcmeEmail(db).catch(() => null);
+  const dns = await getDnsConfig(db).catch(() => null);
+  const accessLog: TraefikAccessLogMode = (await trafficAnalyticsEnabled(db)) ? 'file' : 'stdout';
+  return { acmeEmail, dns, accessLog };
 }
 
 /** Where every NineDeploy-managed Traefik (panel and nodes) reads its dynamic files. */
@@ -478,6 +548,7 @@ async function ensureTraefikUnlocked(
   log: (line: string) => void,
   acmeEmail: string | null = config.acmeEmail ?? null,
   dns: DnsConfig | null = null,
+  opts: TraefikStaticOptions = { accessLog: 'stdout' },
 ): Promise<boolean> {
   mkdirSync(dir(), { recursive: true });
   mkdirSync(traefikDynamicDir(), { recursive: true });
@@ -486,8 +557,9 @@ async function ensureTraefikUnlocked(
   // the container, so the new Traefik starts with every existing route and
   // there is no 404 window between its start and the boot-time render.
   migrateLegacyRoutes();
-  const renderedStaticConfig = renderStaticConfig(acmeEmail, dns);
-  const configFingerprint = traefikConfigFingerprint(acmeEmail, dns);
+  const staticOpts = { accessLog: opts?.accessLog ?? 'stdout' } as const;
+  const renderedStaticConfig = renderStaticConfig(acmeEmail, dns, staticOpts);
+  const configFingerprint = traefikConfigFingerprint(acmeEmail, dns, staticOpts);
   const staticConfigChanged =
     !existsSync(staticPath()) || readFileSync(staticPath(), 'utf8') !== renderedStaticConfig;
   if (staticConfigChanged) writeAtomic(staticPath(), renderedStaticConfig);
@@ -528,6 +600,9 @@ async function ensureTraefikUnlocked(
     } else if (runningOnNetwork && (!runningCurrentConfig || staticConfigChanged)) {
       log('traefik static configuration changed; recreating container to apply it');
     }
+    // 0.15 D5: probe the log driver before the old proxy is removed, so the
+    // probe never lengthens the ingress gap.
+    const logOptArgs = traefikLogOptArgs(await dockerLoggingDriver());
     // Prepare the replacement before removing a currently serving proxy. A
     // registry/containerd failure must not turn a config refresh into an
     // avoidable ingress outage.
@@ -564,6 +639,21 @@ async function ensureTraefikUnlocked(
       writeFileSync(dnsEnvPath(), dnsEnv, { mode: 0o600 });
       runArgs.push('--env-file', dnsEnvPath());
     }
+    // 0.15 traffic analytics: the access-log directory is mounted exactly
+    // when the static config writes to it. The fingerprint covers the static
+    // text, so the mount needs no fingerprint of its own. Created here, by the
+    // panel, so in docker mode the panel's uid owns it and can rename and
+    // delete the root-written log inside it.
+    if (staticWritesAccessLogFile(renderedStaticConfig)) {
+      mkdirSync(trafficLogDir(), { recursive: true });
+      runArgs.push('-v', `${await hostPathFor(trafficLogDir())}:${TRAFFIC_LOG_CONTAINER_DIR}`);
+    }
+    // 0.15 D5 (owner decision O7): bound Docker's own copy of Traefik's
+    // stdout (the 0.14 access log goes there). Only on drivers that take
+    // these options — another driver would make `docker run` fail and take
+    // ingress down. NOT fingerprinted: it applies at the next natural
+    // recreate and never forces one.
+    runArgs.push(...logOptArgs);
     runArgs.push(TRAEFIK_IMAGE);
     await run(
       'docker',
@@ -644,21 +734,76 @@ function migrateLegacyRoutes(): void {
 // remove and recreate the singleton container.
 let traefikEnsureTail: Promise<void> = Promise.resolve();
 
+/** The static options `ensureTraefik` renders with (0.15: the access-log mode). */
+export interface TraefikStaticOptions {
+  accessLog: TraefikAccessLogMode;
+}
+
+/**
+ * Ensure the panel's Traefik runs with the given static inputs, recreating it
+ * when they changed. 0.15: `opts` is REQUIRED so a caller cannot forget the
+ * analytics switch; callers pass the result of {@link traefikInputs}:
+ * `const t = await traefikInputs(db); await ensureTraefik(log, t.acmeEmail, t.dns, t)`.
+ */
 export function ensureTraefik(
   log: (line: string) => void,
   acmeEmail: string | null = config.acmeEmail ?? null,
   dns: DnsConfig | null = null,
+  opts: TraefikStaticOptions,
 ): Promise<boolean> {
-  const runEnsure = traefikEnsureTail.then(() => ensureTraefikUnlocked(log, acmeEmail, dns));
+  const runEnsure = traefikEnsureTail.then(() => ensureTraefikUnlocked(log, acmeEmail, dns, opts));
   traefikEnsureTail = runEnsure.then(() => undefined, () => undefined);
   return runEnsure;
 }
 
+/** Whether a rendered static config writes the access log to the analytics file. */
+export function staticWritesAccessLogFile(staticConfig: string): boolean {
+  return /^ {2}filePath: /m.test(staticConfig);
+}
+
+/** Docker log drivers that accept `max-size` / `max-file` (D5). */
+const ROTATING_LOG_DRIVERS = new Set(['json-file', 'local']);
+
+/** D5: `--log-opt` rotation for Traefik's container log, only on a driver that accepts it. */
+export function traefikLogOptArgs(driver: string | null): string[] {
+  return driver && ROTATING_LOG_DRIVERS.has(driver)
+    ? ['--log-opt', 'max-size=20m', '--log-opt', 'max-file=3']
+    : [];
+}
+
+let loggingDriverCache: string | null = null;
+
+/**
+ * The Docker daemon's default logging driver (`docker info`), cached for the
+ * process once known. `null` when Docker did not answer — then no log option
+ * is added (and nothing is cached, so the next recreate asks again).
+ */
+export async function dockerLoggingDriver(): Promise<string | null> {
+  if (loggingDriverCache) return loggingDriverCache;
+  try {
+    const out = String((await capture('docker', ['info', '--format', '{{.LoggingDriver}}'])) ?? '').trim();
+    if (!/^[A-Za-z0-9._-]{1,64}$/.test(out)) return null;
+    loggingDriverCache = out;
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/** Test hook: forget the cached logging driver. */
+export function resetDockerLoggingDriverCache(): void {
+  loggingDriverCache = null;
+}
+
 /** Fingerprint every static input that requires a Traefik container recreate. */
-export function traefikConfigFingerprint(acmeEmail: string | null, dns: DnsConfig | null): string {
+export function traefikConfigFingerprint(
+  acmeEmail: string | null,
+  dns: DnsConfig | null,
+  opts: { accessLog?: TraefikAccessLogMode } = {},
+): string {
   const dnsEnv = dns ? renderDnsEnvFile(dns) : null;
   return createHash('sha256')
-    .update(renderStaticConfig(acmeEmail, dns))
+    .update(renderStaticConfig(acmeEmail, dns, { accessLog: opts.accessLog }))
     .update('\0')
     .update(dnsEnv ?? '')
     .digest('hex');

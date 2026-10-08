@@ -1,0 +1,119 @@
+{
+  "comment": "Produced by running the v0.14.0 engine/proxy.ts (generator: .temp_files/run_0.15/t3/gen_014_golden.test.ts). <DATA> is the panel data dir.",
+  "caServer": "https://acme-staging-v02.api.letsencrypt.org/directory",
+  "dns": {
+    "provider": "cloudflare",
+    "token": "cf-token",
+    "wildcardApex": "apps.example.com"
+  },
+  "cases": {
+    "noAcme": {
+      "static": "# Managed by NineDeploy — do not edit by hand.\nentryPoints:\n  web:\n    address: \":80\"\n  websecure:\n    address: \":443\"\n    http3: {}\nproviders:\n  file:\n    directory: /etc/traefik/dynamic\n    watch: true\napi:\n  dashboard: false\nlog:\n  level: INFO\naccessLog: {}\n",
+      "fingerprint": "6cab4803c8c3a5cdf002622f06b4eb9f466e202a15341653146f8e499e8f5dc4",
+      "argv": [
+        "run",
+        "-d",
+        "--name",
+        "ninedeploy-traefik",
+        "--restart",
+        "unless-stopped",
+        "--network",
+        "ninedeploy",
+        "--label",
+        "ninedeploy.traefik.config-sha=6cab4803c8c3a5cdf002622f06b4eb9f466e202a15341653146f8e499e8f5dc4",
+        "--add-host",
+        "host.docker.internal:host-gateway",
+        "-p",
+        "80:80",
+        "-p",
+        "443:443",
+        "-v",
+        "<DATA>/traefik:/etc/traefik:ro",
+        "traefik:3"
+      ]
+    },
+    "acmeHttp": {
+      "static": "# Managed by NineDeploy — do not edit by hand.\nentryPoints:\n  web:\n    address: \":80\"\n  websecure:\n    address: \":443\"\n    http3: {}\nproviders:\n  file:\n    directory: /etc/traefik/dynamic\n    watch: true\napi:\n  dashboard: false\nlog:\n  level: INFO\naccessLog: {}\ncertificatesResolvers:\n  letsencrypt:\n    acme:\n      email: ops@example.com\n      storage: /etc/traefik/acme.json\n      httpChallenge:\n        entryPoint: web\n",
+      "fingerprint": "470630514afb2a5da7a3ec9b65fe8e51c5493aa954bac0b30a39a3c9fdb92972",
+      "argv": [
+        "run",
+        "-d",
+        "--name",
+        "ninedeploy-traefik",
+        "--restart",
+        "unless-stopped",
+        "--network",
+        "ninedeploy",
+        "--label",
+        "ninedeploy.traefik.config-sha=470630514afb2a5da7a3ec9b65fe8e51c5493aa954bac0b30a39a3c9fdb92972",
+        "--add-host",
+        "host.docker.internal:host-gateway",
+        "-p",
+        "80:80",
+        "-p",
+        "443:443",
+        "-v",
+        "<DATA>/traefik:/etc/traefik:ro",
+        "-v",
+        "<DATA>/traefik/acme.json:/etc/traefik/acme.json",
+        "traefik:3"
+      ]
+    },
+    "acmeDns": {
+      "static": "# Managed by NineDeploy — do not edit by hand.\nentryPoints:\n  web:\n    address: \":80\"\n  websecure:\n    address: \":443\"\n    http3: {}\nproviders:\n  file:\n    directory: /etc/traefik/dynamic\n    watch: true\napi:\n  dashboard: false\nlog:\n  level: INFO\naccessLog: {}\ncertificatesResolvers:\n  letsencrypt:\n    acme:\n      email: ops@example.com\n      storage: /etc/traefik/acme.json\n      dnsChallenge:\n        provider: cloudflare\n        delayBeforeCheck: 30\n",
+      "fingerprint": "3c39326f6736e598f23419f52db9c3ee921e4f82cf0fc2be7c8b077d321e170a",
+      "argv": [
+        "run",
+        "-d",
+        "--name",
+        "ninedeploy-traefik",
+        "--restart",
+        "unless-stopped",
+        "--network",
+        "ninedeploy",
+        "--label",
+        "ninedeploy.traefik.config-sha=3c39326f6736e598f23419f52db9c3ee921e4f82cf0fc2be7c8b077d321e170a",
+        "--add-host",
+        "host.docker.internal:host-gateway",
+        "-p",
+        "80:80",
+        "-p",
+        "443:443",
+        "-v",
+        "<DATA>/traefik:/etc/traefik:ro",
+        "-v",
+        "<DATA>/traefik/acme.json:/etc/traefik/acme.json",
+        "--env-file",
+        "<DATA>/traefik/dns.env",
+        "traefik:3"
+      ]
+    },
+    "caServer": {
+      "static": "# Managed by NineDeploy — do not edit by hand.\nentryPoints:\n  web:\n    address: \":80\"\n  websecure:\n    address: \":443\"\n    http3: {}\nproviders:\n  file:\n    directory: /etc/traefik/dynamic\n    watch: true\napi:\n  dashboard: false\nlog:\n  level: INFO\naccessLog: {}\ncertificatesResolvers:\n  letsencrypt:\n    acme:\n      email: ops@example.com\n      caServer: https://acme-staging-v02.api.letsencrypt.org/directory\n      storage: /etc/traefik/acme.json\n      httpChallenge:\n        entryPoint: web\n",
+      "fingerprint": "979cd3a9ae804ffe0966f2ddb8bc3ec1f59a47b39f144c18893d179469f16172",
+      "argv": [
+        "run",
+        "-d",
+        "--name",
+        "ninedeploy-traefik",
+        "--restart",
+        "unless-stopped",
+        "--network",
+        "ninedeploy",
+        "--label",
+        "ninedeploy.traefik.config-sha=979cd3a9ae804ffe0966f2ddb8bc3ec1f59a47b39f144c18893d179469f16172",
+        "--add-host",
+        "host.docker.internal:host-gateway",
+        "-p",
+        "80:80",
+        "-p",
+        "443:443",
+        "-v",
+        "<DATA>/traefik:/etc/traefik:ro",
+        "-v",
+        "<DATA>/traefik/acme.json:/etc/traefik/acme.json",
+        "traefik:3"
+      ]
+    }
+  }
+}

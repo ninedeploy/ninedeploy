@@ -2,9 +2,8 @@ import fp from 'fastify-plugin';
 import {
   ensureNetwork,
   ensureTraefik,
-  getAcmeEmail,
-  getDnsConfig,
   materialiseCertificatesFile,
+  traefikInputs,
   writeDynamicConfig,
 } from '../engine/proxy.js';
 import { materialiseCustomConfig } from '../lib/traefikCustomConfig.js';
@@ -19,11 +18,10 @@ export default fp(
     const healTraefik = async (component: string): Promise<boolean> => {
       const log = (line: string) => fastify.log.info({ component }, line);
       await ensureNetwork(log);
-      return ensureTraefik(
-        log,
-        await getAcmeEmail(fastify.db).catch(() => null),
-        await getDnsConfig(fastify.db).catch(() => null),
-      );
+      // 0.15: every static input, the traffic-analytics switch included
+      // (traefikInputs keeps the ACME/DNS read fallbacks this used to inline).
+      const t = await traefikInputs(fastify.db);
+      return ensureTraefik(log, t.acmeEmail, t.dns, t);
     };
 
     fastify.addHook('onReady', async () => {

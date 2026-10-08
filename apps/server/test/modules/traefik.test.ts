@@ -14,6 +14,7 @@ const proxyMocks = vi.hoisted(() => ({
   ensureTraefik: vi.fn(async () => undefined),
   getAcmeEmail: vi.fn(async () => 'ops@example.com'),
   getDnsConfig: vi.fn(async () => null),
+  traefikInputs: vi.fn(async () => ({ acmeEmail: 'ops@example.com', dns: null, accessLog: 'stdout' as const })),
 }));
 
 vi.mock('node:fs', async () => {
@@ -572,7 +573,12 @@ tcp:
     );
     expect(exec.run).toHaveBeenCalledWith('docker', ['rm', '-f', 'ninedeploy-traefik'], {}, expect.any(Function));
     expect(proxyMocks.ensureNetwork).toHaveBeenCalled();
-    expect(proxyMocks.ensureTraefik).toHaveBeenCalledWith(expect.any(Function), 'ops@example.com', null);
+    expect(proxyMocks.ensureTraefik).toHaveBeenCalledWith(
+      expect.any(Function),
+      'ops@example.com',
+      null,
+      expect.objectContaining({ accessLog: 'stdout' }),
+    );
 
     // Update without existing acme.json
     fsMocks.existsSync.mockReturnValue(false);

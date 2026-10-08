@@ -11,8 +11,7 @@ import {
   encryptDnsToken,
   ensureNetwork,
   ensureTraefik,
-  getAcmeEmail,
-  getDnsConfig,
+  traefikInputs,
   writeDynamicConfig,
 } from '../engine/proxy.js';
 import { activeKeyVersion, knownKeyVersions } from '../lib/crypto.js';
@@ -100,7 +99,8 @@ export const settingsRoutes: FastifyPluginAsync = async (app) => {
   const applyTraefikSettings = async () => {
     const log = (line: string) => app.log.info({ component: 'settings' }, line);
     await ensureNetwork(log);
-    await ensureTraefik(log, await getAcmeEmail(app.db), await getDnsConfig(app.db));
+    const t = await traefikInputs(app.db);
+    await ensureTraefik(log, t.acmeEmail, t.dns, t);
     await writeDynamicConfig(app.db);
   };
   const traefikApplyTimers = new Set<ReturnType<typeof setTimeout>>();

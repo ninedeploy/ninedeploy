@@ -149,7 +149,8 @@ describe('0.15 housekeeping steps (M5)', () => {
 
   it('the T1 retention stubs delete nothing yet', async () => {
     expect(await pruneTerminalSessions({} as never)).toBe(0);
-    expect(await pruneTrafficRollups({} as never, 0)).toBe(0);
+    // T3 implemented the traffic sweep (test/lib/trafficAnalytics.test.ts runs it on a real database).
+    expect(typeof pruneTrafficRollups).toBe('function');
   });
 });
 
