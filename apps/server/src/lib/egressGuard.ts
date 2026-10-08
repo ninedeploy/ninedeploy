@@ -34,10 +34,16 @@ import { isIP, type LookupFunction } from 'node:net';
  * (`engine/logDrainManager.ts`), push delivery (`lib/fcm.ts`), git remotes
  * (`lib/gitEgress.ts`), the marketplace catalog, the Namecheap API, OAuth
  * token exchange (`lib/oauth.ts`), `templates_source`
- * (`templates/registry.ts`), repo insights and the git-host API calls in
- * `modules/sources.ts` (hardcoded provider hosts, guarded so that invariant
- * cannot silently drift), and the image auto-update registry probe
+ * (`templates/registry.ts`), repo insights, the git-host API calls in
+ * `modules/sources.ts`, and the image auto-update registry probe
  * (`lib/imageWatch.ts`, r514 — its host comes from a member-editable image).
+ * 0.13: the git-host calls are no longer all hardcoded hosts. A Gitea
+ * source's `base_url` and a GitHub App's API base (GitHub Enterprise Server,
+ * `lib/githubApp.ts`: tokens, installations, repository lists, and the
+ * commit statuses / PR comments of `lib/githubFeedback.ts`; the manifest
+ * conversion in `modules/githubApps.ts`) are OPERATOR-SUPPLIED, so the guard
+ * is what keeps them off private addresses. They must also be https; http is
+ * accepted only together with NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1.
  *
  * DELIBERATELY NOT guarded, because private addresses are the NORMAL
  * deployment for them and blocking would break working installs:

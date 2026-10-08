@@ -41,6 +41,15 @@ const pendingNonces = new Map<string, number>();
 /** One installation sync per App at a time, so two syncs never create two sources for one installation. */
 const syncGuard = createKeyedOperationGuard<number>();
 
+/**
+ * Run `operation` under the App's installation-sync lock, so an
+ * installation webhook (`modules/githubAppHooks.ts`) and an operator sync
+ * never both create a source for the same installation.
+ */
+export function withInstallationSyncLock<T>(githubAppRowId: number, operation: () => Promise<T>): Promise<T> {
+  return syncGuard(githubAppRowId, operation);
+}
+
 interface ManifestState {
   k: typeof STATE_KIND;
   uid: number;
@@ -327,13 +336,70 @@ async function insertApp(db: DB, values: typeof githubApps.$inferInsert): Promis
   }
 }
 
-interface GithubInstallationPayload {
+export interface GithubInstallationPayload {
   id?: unknown;
   app_id?: unknown;
   account?: { login?: unknown; type?: unknown; id?: unknown } | null;
   repository_selection?: unknown;
   permissions?: unknown;
   suspended_at?: unknown;
+}
+
+/**
+ * Upsert one installation from GitHub's installation object (the
+ * `GET /app/installations` list, or an `installation.created` webhook) and
+ * give it a `github_app` source when it has none (no token: clones mint
+ * one). A live row is the result: `removed_at` is cleared and `suspended_at`
+ * mirrors GitHub. Null when the object carries no usable installation id.
+ */
+export async function upsertInstallation(
+  db: DB,
+  row: Pick<GithubApp, 'id'>,
+  item: GithubInstallationPayload,
+): Promise<{ inst: GithubAppInstallation; created: boolean; sourceCreated: boolean } | null> {
+  const installationId = item.id;
+  if (!Number.isSafeInteger(installationId) || (installationId as number) <= 0) return null;
+  const accountId = item.account?.id;
+  const suspended = typeof item.suspended_at === 'string' ? new Date(item.suspended_at) : null;
+  const fields = {
+    accountLogin: str(item.account?.login),
+    accountType: str(item.account?.type),
+    accountId: Number.isSafeInteger(accountId) ? (accountId as number) : null,
+    repositorySelection: item.repository_selection === 'all' ? ('all' as const) : ('selected' as const),
+    permissions: stringMap(item.permissions),
+    suspendedAt: suspended && !Number.isNaN(suspended.getTime()) ? suspended : null,
+    removedAt: null,
+  };
+  const existing = await db.query.githubAppInstallations.findFirst({
+    where: and(eq(githubAppInstallations.githubAppId, row.id), eq(githubAppInstallations.installationId, installationId as number)),
+  });
+  let inst: GithubAppInstallation;
+  if (existing) {
+    [inst] = (await db.update(githubAppInstallations).set(fields).where(eq(githubAppInstallations.id, existing.id)).returning()) as [
+      GithubAppInstallation,
+    ];
+  } else {
+    [inst] = (await db
+      .insert(githubAppInstallations)
+      .values({ githubAppId: row.id, installationId: installationId as number, ...fields })
+      .returning()) as [GithubAppInstallation];
+  }
+  // A source deleted by the operator leaves `source_id` NULL (FK SET NULL); a live installation gets a new one.
+  const hasSource = inst.sourceId != null && !!(await db.query.sources.findFirst({ where: eq(sources.id, inst.sourceId) }));
+  let sourceCreated = false;
+  if (!hasSource) {
+    const [src] = await db
+      .insert(sources)
+      .values({ type: 'github_app', name: `gh-app:${fields.accountLogin ?? `installation-${installationId}`}`.slice(0, 100) })
+      .returning();
+    [inst] = (await db
+      .update(githubAppInstallations)
+      .set({ sourceId: src!.id })
+      .where(eq(githubAppInstallations.id, inst.id))
+      .returning()) as [GithubAppInstallation];
+    sourceCreated = true;
+  }
+  return { inst, created: !existing, sourceCreated };
 }
 
 export interface InstallationSyncResult {
@@ -366,48 +432,17 @@ async function syncInstallations(db: DB, row: GithubApp, actorId: number): Promi
     const seen = new Set<number>();
     const createdIds: number[] = [];
     for (const item of listed.rows) {
-      const installationId = item.id;
-      if (!Number.isSafeInteger(installationId) || (installationId as number) <= 0) continue;
       if (item.app_id !== undefined && item.app_id !== row.appId) continue;
-      seen.add(installationId as number);
-      const accountId = item.account?.id;
-      const suspended = typeof item.suspended_at === 'string' ? new Date(item.suspended_at) : null;
-      const fields = {
-        accountLogin: str(item.account?.login),
-        accountType: str(item.account?.type),
-        accountId: Number.isSafeInteger(accountId) ? (accountId as number) : null,
-        repositorySelection: item.repository_selection === 'all' ? ('all' as const) : ('selected' as const),
-        permissions: stringMap(item.permissions),
-        suspendedAt: suspended && !Number.isNaN(suspended.getTime()) ? suspended : null,
-        removedAt: null,
-      };
-      const existing = await db.query.githubAppInstallations.findFirst({
-        where: and(eq(githubAppInstallations.githubAppId, row.id), eq(githubAppInstallations.installationId, installationId as number)),
-      });
-      let inst: GithubAppInstallation;
-      if (existing) {
-        [inst] = (await db.update(githubAppInstallations).set(fields).where(eq(githubAppInstallations.id, existing.id)).returning()) as [
-          GithubAppInstallation,
-        ];
-        result.updated++;
-      } else {
-        [inst] = (await db
-          .insert(githubAppInstallations)
-          .values({ githubAppId: row.id, installationId: installationId as number, ...fields })
-          .returning()) as [GithubAppInstallation];
+      const upserted = await upsertInstallation(db, row, item);
+      if (!upserted) continue;
+      seen.add(upserted.inst.installationId);
+      if (upserted.created) {
         result.created++;
-        createdIds.push(installationId as number);
+        createdIds.push(upserted.inst.installationId);
+      } else {
+        result.updated++;
       }
-      // A source deleted by the operator leaves `source_id` NULL (FK SET NULL); a live installation gets a new one.
-      const hasSource = inst.sourceId != null && !!(await db.query.sources.findFirst({ where: eq(sources.id, inst.sourceId) }));
-      if (!hasSource) {
-        const [src] = await db
-          .insert(sources)
-          .values({ type: 'github_app', name: `gh-app:${fields.accountLogin ?? `installation-${installationId}`}`.slice(0, 100) })
-          .returning();
-        await db.update(githubAppInstallations).set({ sourceId: src!.id }).where(eq(githubAppInstallations.id, inst.id));
-        result.sourcesCreated++;
-      }
+      if (upserted.sourceCreated) result.sourcesCreated++;
     }
     // Only a complete list proves an installation is gone.
     if (!listed.truncated) {

@@ -24,6 +24,10 @@ const EXEMPT: Record<string, string> = {
   'emailTemplates.ts POST /:wid/email-templates/preview': 'renders a preview, no state change',
   'services.ts POST /compose/preview': 'analyses YAML, no state change',
   'hooks.ts POST /:id': 'inbound git webhook; the deploy it queues is audited by the pipeline',
+  'githubAppHooks.ts POST /:hookKey':
+    'inbound GitHub App webhook; deploys are audited by the pipeline, installation/repo/rename changes by the module helpers it calls',
+  'githubApps.ts POST /manifest': 'issues a signed setup state and a manifest, no state change (the completing call is audited)',
+  'githubApps.ts POST /:id/installations/sync': 'audited as github_app.sync inside syncInstallations',
   'insights.ts POST /': 'repository analysis, no state change',
   'insights.ts POST /:id/insights/refresh': 're-runs repository analysis, no state change',
   'logSearch.ts POST /search': 'read (POST only for the body)',

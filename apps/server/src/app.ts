@@ -18,6 +18,7 @@ import logShipperPlugin from './plugins/logShipper.js';
 import jobSchedulerPlugin from './plugins/jobScheduler.js';
 import panelBackupSchedulerPlugin from './plugins/panelBackupScheduler.js';
 import kernelPlugin from './plugins/kernel.js';
+import githubFeedbackPlugin from './plugins/githubFeedback.js';
 import rateLimitPlugin from './plugins/rateLimit.js';
 import rawBodyPlugin from './plugins/rawBody.js';
 import runtimeStatePlugin from './plugins/runtimeState.js';
@@ -87,6 +88,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(rawBodyPlugin);
   await app.register(dbPlugin);
   await app.register(kernelPlugin);
+  // Commit statuses / PR comments for opted-in GitHub links (0.13); listens on
+  // the kernel bus, so it comes after the kernel.
+  await app.register(githubFeedbackPlugin);
   await app.register(authPlugin);
 
   app.setErrorHandler((err: FastifyError, _req: FastifyRequest, reply: FastifyReply) => {

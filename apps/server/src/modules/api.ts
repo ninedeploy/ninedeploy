@@ -25,6 +25,8 @@ import { domainsRoutes } from './domains.js';
 import { domainTransferStartRoutes, domainTransferTokenRoutes } from './domainTransfers.js';
 import { envRoutes, envSearchRoutes, projectEnvRoutes } from './env.js';
 import { hookReceiveRoutes, webhookMgmtRoutes } from './hooks.js';
+import { githubAppHookRoutes } from './githubAppHooks.js';
+import { serviceGithubRoutes } from './serviceGithub.js';
 import { insightsRoutes, serviceInsightsRoutes } from './insights.js';
 import { jobRoutes } from './jobs.js';
 import { serverRoutes } from './servers.js';
@@ -79,6 +81,9 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
 
   // Public webhook receiver (auto-deploy on verified push).
   await app.register(hookReceiveRoutes, { prefix: '/hooks' });
+  // GitHub App deliveries (0.13). The two-segment path never collides with
+  // the per-service `/hooks/:id` (a static segment outranks a parameter).
+  await app.register(githubAppHookRoutes, { prefix: '/hooks/github-app' });
 
   await app.register(authRoutes, { prefix: '/auth' });
   // Public invitation routes (token-only access) MUST be registered before the
@@ -164,6 +169,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(deploysRoutes, { prefix: '/services' });
   await app.register(domainsRoutes, { prefix: '/services' });
   await app.register(webhookMgmtRoutes, { prefix: '/services' });
+  // GitHub App link, feedback toggles and PAT → App migration (0.13).
+  await app.register(serviceGithubRoutes, { prefix: '/services' });
   await app.register(attachmentRoutes, { prefix: '/services' });
   await app.register(envRoutes, { prefix: '/services' });
   await app.register(serviceInsightsRoutes, { prefix: '/services' });

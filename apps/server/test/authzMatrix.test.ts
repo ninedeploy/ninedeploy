@@ -63,6 +63,8 @@ vi.mock('../src/plugins/housekeeping.js', () => noop('authz-housekeeping'));
 vi.mock('../src/plugins/logShipper.js', () => noop('authz-logshipper'));
 vi.mock('../src/plugins/jobScheduler.js', () => noop('authz-jobs'));
 vi.mock('../src/plugins/panelBackupScheduler.js', () => noop('authz-panel-backup'));
+// Deploy feedback to GitHub (0.13) listens on the kernel bus; it calls GitHub, never the database for a caller.
+vi.mock('../src/plugins/githubFeedback.js', () => noop('authz-github-feedback'));
 vi.mock('../src/plugins/staticFiles.js', () => noop('authz-static'));
 // The limiter is not under test, and ~4k requests from one address trip it.
 vi.mock('../src/plugins/rateLimit.js', () => noop('authz-ratelimit'));
@@ -420,6 +422,9 @@ function paramValue(url: string, param: string, r: Res): string {
       return String(at('/v1/projects') ? r.projectEnvVar : url.includes('/env/preview/') ? r.previewEnvVar : r.envVar);
     case 'hookId':
       return String(r.webhook);
+    case 'hookKey':
+      // No App is seeded: an unknown key must 404 before any signature work.
+      return 'zz0000000000000000000000000000zz';
     case 'jobId':
       return String(r.job);
     case 'attId':
@@ -545,6 +550,8 @@ export const MATRIX: Record<string, Rule> = {
   'POST /v1/auth/passkey/login/options': R('public'),
   'POST /v1/auth/passkey/login/verify': R('token'),
   'POST /v1/hooks/:id': R('token'),
+  // 0.13: the GitHub App receiver — the App's webhook secret (HMAC) is the credential.
+  'POST /v1/hooks/github-app/:hookKey': R('token'),
   'POST /v1/servers/announce': R('token'),
   'GET /v1/invitations/:token': R('token'),
   'POST /v1/invitations/:token/accept': R('token'),
@@ -731,6 +738,17 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/services/:id/webhooks': R('viewer'),
   'POST /v1/services/:id/webhooks': R('admin', { body: () => ({ branch: 'main' }) }),
   'DELETE /v1/services/:id/webhooks/:hookId': R('admin'),
+  // 0.13 GitHub App link: which credential clones the repo is the operator
+  // source-attach gate (services.ts); the feedback toggles are service admin.
+  'GET /v1/services/:id/github': R('viewer'),
+  'PUT /v1/services/:id/github': OP,
+  'PATCH /v1/services/:id/github/feedback': R('admin', {
+    body: () => ({ reportStatus: true }),
+    allow404: 'no GitHub link is seeded; test/modules/serviceGithub.test.ts covers the linked case',
+  }),
+  'POST /v1/services/:id/github/migrate': OP,
+  'POST /v1/services/:id/github/finalize': OP,
+  'DELETE /v1/services/:id/github': OP,
   'GET /v1/services/:id/jobs': R('viewer'),
   'POST /v1/services/:id/jobs': R('member', { body: (r) => ({ name: uniq(r, 'job'), cron: '0 4 * * *', kind: 'deploy' }) }),
   'PATCH /v1/services/:id/jobs/:jobId': R('member', { body: () => ({ enabled: false }) }),

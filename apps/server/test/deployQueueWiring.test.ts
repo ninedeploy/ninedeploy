@@ -15,9 +15,12 @@ import { describe, expect, it } from 'vitest';
  * not belong in the helper. Adding to it needs the same justification.
  */
 const ALLOWED: Record<string, { count: number; reason: string }> = {
-  'hooks.ts': {
+  // 0.13: moved out of modules/hooks.ts so the GitHub App receiver shares it.
+  // Outside modulesDir, so the scan below does not see it; the staleness check
+  // pins its count instead.
+  '../lib/webhookDispatch.ts': {
     count: 2,
-    reason: 'git webhook deliveries (preview + push): no session user; gated by assertWebhookMayDeploy against the service OWNER',
+    reason: 'git webhook deliveries (preview + push), per-service and GitHub App receivers: no session user; gated by assertWebhookMayDeploy against the service OWNER',
   },
   'templates.ts': {
     count: 1,
