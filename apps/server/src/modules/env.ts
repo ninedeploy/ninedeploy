@@ -4,8 +4,8 @@ import type { FastifyPluginAsync } from 'fastify';
 import { envImport, upsertEnvVar } from '@ninedeploy/schemas';
 import { decrypt, encrypt } from '../lib/crypto.js';
 import {
+  assertProjectRole,
   assertServiceRole,
-  assertWorkspaceRole,
   type AuthedUser,
   loadProjectForUser,
   loadServiceForUser,
@@ -387,7 +387,7 @@ export const projectEnvRoutes: FastifyPluginAsync = async (app) => {
     const id = num((req.params as { id: string }).id);
     const project = await loadProjectForUser(app.db, id, req.user!);
     if (!req.user!.isOperator && project.workspaceId != null) {
-      await assertWorkspaceRole(app.db, project.workspaceId, req.user!, 'member');
+      await assertProjectRole(app.db, project, req.user!, 'member');
     }
     const input = upsertEnvVar.parse(req.body);
     // r510: project env reaches every linked service's container.
@@ -417,7 +417,7 @@ export const projectEnvRoutes: FastifyPluginAsync = async (app) => {
     const varId = num((req.params as { varId: string }).varId);
     const project = await loadProjectForUser(app.db, id, req.user!);
     if (!req.user!.isOperator && project.workspaceId != null) {
-      await assertWorkspaceRole(app.db, project.workspaceId, req.user!, 'member');
+      await assertProjectRole(app.db, project, req.user!, 'member');
     }
     const input = upsertEnvVar.parse(req.body);
     await assertMayWriteVaultRefs(app.db, req.user!, { kind: 'project', project }, [input.value]);
@@ -442,7 +442,7 @@ export const projectEnvRoutes: FastifyPluginAsync = async (app) => {
     const varId = num((req.params as { varId: string }).varId);
     const project = await loadProjectForUser(app.db, id, req.user!);
     if (!req.user!.isOperator && project.workspaceId != null) {
-      await assertWorkspaceRole(app.db, project.workspaceId, req.user!, 'member');
+      await assertProjectRole(app.db, project, req.user!, 'member');
     }
     const gone = await app.db
       .delete(envVars)

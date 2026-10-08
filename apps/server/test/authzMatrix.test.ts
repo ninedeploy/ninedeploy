@@ -201,7 +201,9 @@ type Role = (typeof ROLES)[number];
 // Grant-only identities (a user with grants and no seat, e.g. `guestA`). Each
 // is created in beforeAll, after the seated ones; `seedGrants` below gives it
 // its grants in every freshly seeded workspace.
-const EXTRA_IDENTITIES = [] as const;
+//   guestA — no seat anywhere; a `member` project grant on every seeded A's
+//            project (which links A's two services and holds A's database).
+const EXTRA_IDENTITIES = ['guestA'] as const;
 // ── end 0.15 T5 ──
 type ExtraIdentity = (typeof EXTRA_IDENTITIES)[number];
 type Who = `${Role}A` | `${Role}B` | 'outsider' | 'leaverA' | 'operator' | 'anon' | ExtraIdentity;
@@ -272,9 +274,16 @@ let seq = 0;
 let B: Res;
 
 // ── 0.15 T5 access grants: per-seed hook ──
-/** Extra rows for each freshly seeded workspace (`id` is its id block, see `seed`). */
-async function seedGrants(_side: 'A' | 'B', _id: number): Promise<void> {
-  // No grants until T5: with `access_grants` empty every role is 0.14's.
+/**
+ * Extra rows for each freshly seeded workspace (`id` is its id block, see `seed`).
+ * Workspace A: guestA's `member` grant on A's project (grant id = `id`, the
+ * `:grantId` the grant routes are called with). Workspace B: a `viewer` grant
+ * for B's viewer on B's project (no elevation), so B holds a grant row of its own.
+ */
+async function seedGrants(side: 'A' | 'B', id: number): Promise<void> {
+  const userId = side === 'A' ? ids.guestA : ids.viewerB;
+  const role = side === 'A' ? 'member' : 'viewer';
+  await db.insert(S.accessGrants).values({ id, workspaceId: id, userId, projectId: id, targetKey: `p:${id}`, role, createdByUserId: ids[`owner${side}`] });
 }
 // ── end 0.15 T5 ──
 
@@ -484,6 +493,9 @@ function paramValue(url: string, param: string, r: Res): string {
     // ── 0.15 T2a terminals ── (no session row is seeded: `:id` under /v1/terminals is unknown)
     // ── end 0.15 T2a ──
     // ── 0.15 T5 access grants ── (e.g. `:grantId`)
+    case 'grantId':
+      // seedGrants gives each workspace's grant its id block, like every other row.
+      return String(r.ws);
     // ── end 0.15 T5 ──
     case '*':
       return '';
@@ -1083,12 +1095,16 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/openapi.json': R('authed'),
   // ── end 0.15 T4 ──
   // ── 0.15 T5 access grants ──
-  // 'GET /v1/workspaces/:wid/access-grants': R('admin'),
-  // 'POST /v1/workspaces/:wid/access-grants': R('admin'),
-  // 'PATCH /v1/workspaces/:wid/access-grants/:grantId': R('admin'),
-  // 'DELETE /v1/workspaces/:wid/access-grants/:grantId': R('admin'),
-  // 'GET /v1/projects/:id/access': R('admin'),
-  // 'GET /v1/access/me': R('self'),
+  // Workspace admin floor (operators pass); no PREFIX_SCOPES entry, so
+  // fine-grained tokens are refused. `victim` holds a seat in A, so A's admin
+  // may name them.
+  'GET /v1/workspaces/:wid/access-grants': R('admin'),
+  'POST /v1/workspaces/:wid/access-grants': R('admin', { body: (r) => ({ userId: r.victim, projectId: r.project, role: 'viewer' }) }),
+  'PATCH /v1/workspaces/:wid/access-grants/:grantId': R('admin', { body: () => ({ role: 'viewer' }) }),
+  'DELETE /v1/workspaces/:wid/access-grants/:grantId': R('admin'),
+  // Project admin: a workspace admin seat, or an admin project grant.
+  'GET /v1/projects/:id/access': R('admin'),
+  'GET /v1/access/me': R('self'),
   // ── end 0.15 T5 ──
 };
 
@@ -1476,4 +1492,108 @@ describe('OpenAPI route coverage (0.15)', () => {
 // ── 0.15 T5 access grants: guest cases ──
 // A grant-only identity reaches A's covered resources at its granted role and
 // nothing workspace-level, nor anything of B's (DESIGN §4.7).
+describe('access grants: the grant-only guest (0.15)', () => {
+  /** Routes on one service / database / project — what guestA's project grant covers. */
+  const COVERED = /^\/v1\/(?:services|databases|projects)\/:id(?:\/|$)/;
+  /** Workspace-level: a grant never reaches them, whatever its role. */
+  const WORKSPACE_LEVEL = /^\/v1\/(?:workspaces\/:(?:id|wid)|labels\/:id|environments\/:id)(?:\/|$)/;
+  const cases = Object.entries(MATRIX)
+    .filter(([, r]) => !r.skip && isRoleFloor(r.floor))
+    .map(([key, rule]) => {
+      const [method, url] = key.split(' ') as [string, string];
+      return { key, rule, verb: method === 'ALL' ? 'GET' : method, url };
+    });
+  /**
+   * Covered routes whose MATRIX body asks for more than the project grant
+   * gives; each has its own case below.
+   */
+  const OWN_CASE = new Set(['PATCH /v1/services/:id']);
+  const build = (rule: Rule, verb: string, url: string, r: Res, child: Res = r) => ({
+    url: `${fill(url, r, child)}${rule.query ? `?${rule.query(child)}` : ''}`,
+    body: rule.body ? rule.body(child) : verb === 'GET' || verb === 'DELETE' ? undefined : {},
+  });
+
+  it('holds a member grant and no seat', async () => {
+    const A = await seed('A');
+    const seats = await db.query.workspaceMembers.findMany({ where: (m, { eq }) => eq(m.userId, ids.guestA) });
+    expect(seats).toEqual([]);
+    const grant = await db.query.accessGrants.findFirst({ where: (g, { eq }) => eq(g.id, A.ws) });
+    expect(grant).toMatchObject({ userId: ids.guestA, projectId: A.project, environmentId: null, role: 'member' });
+  });
+
+  it('edits a covered service, but cannot move it into an environment no grant names', async () => {
+    const A = await seed('A');
+    // The MATRIX body re-selects A's environment: selecting E needs a seat in
+    // E's workspace or a grant on E (DESIGN §4.2) — a project grant is neither.
+    let m = await mark();
+    const lane = await call('guestA', 'PATCH', `/v1/services/${A.service}`, { healthPath: '/healthz', environmentId: A.environment });
+    expect(lane.status, errorText(lane)).toBe(403);
+    expect(errorText(lane)).toMatch(/access to this environment/);
+    expect(await writesSince(m)).toEqual([]);
+    m = await mark();
+    const edit = await call('guestA', 'PATCH', `/v1/services/${A.service}`, { healthPath: '/healthz' });
+    expect(edit.status, errorText(edit)).toBe(200);
+    expect(await writesSince(m)).toContain('services');
+  });
+
+  it('creates no database, even in the granted project (DESIGN §4.1: guests create nothing)', async () => {
+    const A = await seed('A');
+    for (const r of [A, B]) {
+      const m = await mark();
+      const res = await call('guestA', 'POST', '/v1/databases', { name: uniq(A, 'db'), engine: 'postgres', projectId: r.project });
+      // The refusal any non-member gets.
+      expect(res.status, errorText(res)).toBe(403);
+      expect(errorText(res)).toBe('Insufficient role for this workspace');
+      expect(await writesSince(m)).toEqual([]);
+    }
+  });
+
+  it('sees its grant and guest workspace in /v1/access/me, and A’s project in /v1/projects', async () => {
+    const A = await seed('A');
+    const me = await call('guestA', 'GET', '/v1/access/me');
+    expect(me.status).toBe(200);
+    const body = JSON.parse(me.body) as { grants: Array<{ id: number; isGuest: boolean }>; guestWorkspaces: Array<{ id: number }> };
+    expect(body.grants.find((g) => g.id === A.ws)).toMatchObject({ isGuest: true });
+    expect(body.guestWorkspaces.map((w) => w.id)).toContain(A.ws);
+    const projects = JSON.parse((await call('guestA', 'GET', '/v1/projects')).body) as Array<{ id: number }>;
+    expect(projects.map((p) => p.id)).toContain(A.project);
+    expect(projects.map((p) => p.id)).not.toContain(B.project);
+  });
+
+  for (const { key, rule, verb, url } of cases) {
+    const floor = rule.floor as Role;
+    if (OWN_CASE.has(key)) continue;
+    if (COVERED.test(url) && RANK[floor] <= RANK.member && !rule.noPositive) {
+      it(`reaches ${key} (member grant, "${floor}" floor)`, async () => {
+        const A = await seed('A');
+        const { url: u, body } = build(rule, verb, url, A);
+        const res = await call('guestA', verb, u, body);
+        // The same test as the matrix's at-floor call: past authz is enough (a
+        // stubbed host call may still fail the request after it).
+        const refused = res.status === 401 || res.status === 403 || (res.status === 404 && !rule.allow404);
+        expect(refused, `${key}: ${res.status} (${errorText(res)})`).toBe(false);
+      });
+    } else if (COVERED.test(url) || WORKSPACE_LEVEL.test(url)) {
+      it(`is refused ${key} (${COVERED.test(url) ? `"${floor}" floor, above the grant` : 'workspace-level'})`, async () => {
+        const A = await seed('A');
+        const { url: u, body } = build(rule, verb, url, A);
+        const m = await mark();
+        const res = await call('guestA', verb, u, body);
+        expect([403, 404], `${key}: ${res.status} (${errorText(res)})`).toContain(res.status);
+        expect(await writesSince(m), key).toEqual([]);
+      });
+    }
+    if (paramCount(url) > 0) {
+      it(`gets nothing of B's from ${key}`, async () => {
+        await seed('A');
+        const { url: u, body } = build(rule, verb, url, B);
+        const m = await mark();
+        const res = await call('guestA', verb, u, body);
+        expect([403, 404], `${key}: ${res.status} (${errorText(res)})`).toContain(res.status);
+        expect(res.body.includes(MARK_B) && res.status < 300, key).toBe(false);
+        expect(await writesSince(m), key).toEqual([]);
+      });
+    }
+  }
+});
 // ── end 0.15 T5 ──

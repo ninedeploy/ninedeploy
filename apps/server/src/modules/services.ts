@@ -14,7 +14,6 @@ import {
   servers,
   serviceWorkspaces,
   sources,
-  workspaceMembers,
   type DB,
   type Service,
 } from '@ninedeploy/db';
@@ -37,6 +36,7 @@ import { loadServiceForUser } from '../lib/serviceAccess.js';
 import {
   assertServiceRole,
   maxRole,
+  mayUseEnvironment,
   roleAtLeast,
   userWorkspaceMemberships,
   visibleServiceIdSet,
@@ -365,22 +365,16 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       }
     }
     // Deployment lane at create time: the environment must belong to a
-    // workspace the caller holds a seat in (same rule as PATCH). Operators
-    // skip the seat check.
+    // workspace the caller holds a seat in, or (0.15) be named by one of
+    // their access grants — same rule as PATCH. Operators skip the check.
     let environmentId: number | null = null;
     if (input.environmentId !== undefined) {
       const envRow = await app.db.query.environments.findFirst({
         where: eq(environments.id, input.environmentId),
       });
       if (!envRow) throw badRequest('Environment not found');
-      if (!req.user!.isOperator) {
-        const seat = await app.db.query.workspaceMembers.findFirst({
-          where: and(
-            eq(workspaceMembers.workspaceId, envRow.workspaceId),
-            eq(workspaceMembers.userId, req.user!.id),
-          ),
-        });
-        if (!seat) throw forbidden('You do not have access to this environment');
+      if (!(await mayUseEnvironment(app.db, req.user!, envRow))) {
+        throw forbidden('You do not have access to this environment');
       }
       environmentId = envRow.id;
     }
@@ -663,7 +657,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       throw forbidden('Only operators may place a service on a remote server');
     }
     // Deployment lane assignment: the environment must belong to a workspace
-    // the caller holds a seat in. null clears the lane (ungrouped).
+    // the caller holds a seat in, or (0.15) be named by one of their access
+    // grants. null clears the lane (ungrouped).
     if (patch.environmentId !== undefined) {
       if (patch.environmentId === null) {
         patch.environmentId = null;
@@ -672,14 +667,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
           where: eq(environments.id, patch.environmentId),
         });
         if (!envRow) throw badRequest('Environment not found');
-        if (!req.user!.isOperator) {
-          const seat = await app.db.query.workspaceMembers.findFirst({
-            where: and(
-              eq(workspaceMembers.workspaceId, envRow.workspaceId),
-              eq(workspaceMembers.userId, req.user!.id),
-            ),
-          });
-          if (!seat) throw forbidden('You do not have access to this environment');
+        if (!(await mayUseEnvironment(app.db, req.user!, envRow))) {
+          throw forbidden('You do not have access to this environment');
         }
       }
     }

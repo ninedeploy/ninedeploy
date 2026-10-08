@@ -1,3 +1,18 @@
+// biome-ignore-all lint: verbatim copy of released code, kept byte-for-byte below the banner.
+/**
+ * FROZEN FIXTURE — DO NOT EDIT (0.15 T5, DESIGN §4.7).
+ *
+ * Part 1 is a VERBATIM copy of v0.14.0's `apps/server/src/lib/resourceAccess.ts`
+ * (`git show 23e9c0d7:apps/server/src/lib/resourceAccess.ts`); the only change
+ * is the `./errors.js` import path. Part 2 copies the predicates of the eight
+ * direct seat reads that bypassed the choke point in v0.14.0 (DESIGN §0.1 D7),
+ * each wrapped in a function with the inline code kept as it was.
+ *
+ * `test/accessGrantsEquivalence.test.ts` compares the live code against this
+ * file for every user × resource × action with `access_grants` empty: grants
+ * are raise-only (owner decision O5), so with no grant rows every answer must
+ * be 0.14's exactly. If this file ever needs editing, the upgrade proof is gone.
+ */
 import { and, eq, inArray, isNull, notExists, or } from 'drizzle-orm';
 import {
   databases,
@@ -26,16 +41,7 @@ type DbLike = Pick<DB, 'query' | 'select' | 'insert' | 'update' | 'delete'>;
 /** Workspace role union, derived from the runtime enum. */
 type WorkspaceRole = (typeof workspaceRole)[number];
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import {
-  grantedEnvironmentIds,
-  grantedProjectIds,
-  grantRoleForService,
-  grantsForUser,
-  projectGrantRole,
-  servicesCoveredByGrants,
-  type GrantRole,
-} from './accessGrants.js';
-import { forbidden, notFound, parseId } from './errors.js';
+import { forbidden, notFound, parseId } from '../../src/lib/errors.js';
 
 /**
  * Central authorization choke-point for every resource-scoped route.
@@ -77,13 +83,6 @@ import { forbidden, notFound, parseId } from './errors.js';
  * denied, so resource ids cannot be enumerated by probing for a status-code
  * difference. `assert*` helpers operate on a row the caller already holds and
  * throw 403, because existence is by then already established.
- *
- * 0.15 access grants (lib/accessGrants.ts, owner decision O5): every resource
- * helper below resolves `max(seat path, matching grants)`. Grants are
- * raise-only, so with no grant rows each answer is exactly 0.14's
- * (test/accessGrantsEquivalence.test.ts); `assertWorkspaceRole` stays
- * seat-only because no grant is workspace-level. The r694 creator rule now
- * reads "while holding a seat OR a grant covering the resource".
  */
 
 export interface AuthedUser {
@@ -157,13 +156,6 @@ const ROLE_RANK: Record<WorkspaceRole, number> = {
 
 export function roleAtLeast(actual: WorkspaceRole, required: WorkspaceRole): boolean {
   return ROLE_RANK[actual] >= ROLE_RANK[required]!;
-}
-
-/** The higher of a seat-derived role and a grant role (`null` = none). Grants never lower. */
-function withGrant(seat: WorkspaceRole | null, grant: GrantRole | null): WorkspaceRole | null {
-  if (grant === null) return seat;
-  if (seat === null) return grant;
-  return ROLE_RANK[seat] >= ROLE_RANK[grant] ? seat : grant;
 }
 
 export async function assertWorkspaceRole(
@@ -269,9 +261,6 @@ export async function loadServiceForUser(db: DbLike, id: number, user: AuthedUse
     });
     if (hits.length > 0) return svc;
   }
-  // 0.15: a grant covering the service (raise-only — the seat path above is
-  // unchanged, this only adds callers it refused).
-  if ((await grantRoleForService(db, await grantsForUser(db, user.id), svc)) !== null) return svc;
   // 404 on miss so members cannot probe for the existence of services they
   // can't see by id.
   throw notFound('Service not found');
@@ -313,8 +302,6 @@ export async function visibleServiceIdSet(db: DbLike, user: AuthedUser): Promise
       .where(inArray(serviceWorkspaces.workspaceId, wsIds));
     for (const r of tagged) set.add(r.id);
   }
-  // 0.15: plus every service a grant covers.
-  for (const id of await servicesCoveredByGrants(db, await grantsForUser(db, user.id))) set.add(id);
   return set;
 }
 
@@ -333,27 +320,19 @@ export async function visibleServiceIdSet(db: DbLike, user: AuthedUser): Promise
  */
 export async function serviceRole(
   db: DbLike,
-  service: Pick<Service, 'id' | 'ownerUserId'> & { environmentId?: number | null },
+  service: Pick<Service, 'id' | 'ownerUserId'>,
   user: AuthedUser,
 ): Promise<WorkspaceRole | null> {
   if (user.isOperator) return 'owner';
   const tagWsIds = await serviceWorkspaceIds(db, service.id);
-  if (tagWsIds.length === 0 && service.ownerUserId === user.id) return 'owner';
-  const seats =
-    tagWsIds.length === 0
-      ? []
-      : await db.query.workspaceMembers.findMany({
-          where: and(eq(workspaceMembers.userId, user.id), inArray(workspaceMembers.workspaceId, tagWsIds)),
-        });
-  if (seats.length > 0 && service.ownerUserId === user.id) return 'owner';
-  const seatRole = maxRole(seats.map((m) => ({ workspaceId: m.workspaceId, role: m.role as WorkspaceRole })));
-  // A grant tops out at `admin`, so an admin/owner seat needs no grant lookup.
-  if (seatRole === 'owner' || seatRole === 'admin') return seatRole;
-  const grant = await grantRoleForService(db, await grantsForUser(db, user.id), service);
-  // r694: no seat (and, from 0.15, no covering grant) where the service lives
-  // → no role, creator or not. A covering grant keeps the creator its owner.
-  if (grant !== null && service.ownerUserId === user.id) return 'owner';
-  return withGrant(seatRole, grant);
+  if (tagWsIds.length === 0) return service.ownerUserId === user.id ? 'owner' : null;
+  const seats = await db.query.workspaceMembers.findMany({
+    where: and(eq(workspaceMembers.userId, user.id), inArray(workspaceMembers.workspaceId, tagWsIds)),
+  });
+  // r694: no seat where the service lives → no role, creator or not.
+  if (seats.length === 0) return null;
+  if (service.ownerUserId === user.id) return 'owner';
+  return maxRole(seats.map((m) => ({ workspaceId: m.workspaceId, role: m.role as WorkspaceRole })));
 }
 
 /**
@@ -419,50 +398,8 @@ export async function loadProjectForUser(db: DbLike, id: number, user: AuthedUse
   // fresh DB read here would silently undo that narrowing.
   if (user.isOperator) return project;
   if (project.workspaceId == null) throw notFound('Project not found');
-  if (await isWorkspaceMember(db, project.workspaceId, user)) return project;
-  // 0.15: a project grant opens the project row (its databases and linked services too).
-  if (projectGrantRole(await grantsForUser(db, user.id), project.id) !== null) return project;
-  throw notFound('Project not found');
-}
-
-/**
- * The caller's effective role on a project: their seat in its workspace or a
- * project grant on it, whichever is higher (0.15). Operators are `owner`; a
- * project outside every workspace has no role for anyone else. `null` = none.
- */
-export async function projectRole(
-  db: DbLike,
-  project: Pick<Project, 'id' | 'workspaceId'>,
-  user: AuthedUser,
-): Promise<WorkspaceRole | null> {
-  if (user.isOperator) return 'owner';
-  if (project.workspaceId == null) return null;
-  const seat = await db.query.workspaceMembers.findFirst({
-    where: and(eq(workspaceMembers.workspaceId, project.workspaceId), eq(workspaceMembers.userId, user.id)),
-  });
-  const seatRole = (seat?.role as WorkspaceRole | undefined) ?? null;
-  if (seatRole === 'owner' || seatRole === 'admin') return seatRole;
-  return withGrant(seatRole, projectGrantRole(await grantsForUser(db, user.id), project.id));
-}
-
-/**
- * Throws 403 unless the caller holds `required` or higher on the project
- * (`projectRole`). The project-targeted writes use it — creating a database in
- * a project, writing its shared env — where 0.14 asked
- * `assertWorkspaceRole(project.workspaceId)`; with no grants the two agree
- * exactly (same answer, same message). Renaming, moving or deleting a project
- * stays a workspace-level act (`assertWorkspaceRole`).
- */
-export async function assertProjectRole(
-  db: DbLike,
-  project: Pick<Project, 'id' | 'workspaceId'>,
-  user: AuthedUser,
-  required: WorkspaceRole,
-): Promise<void> {
-  const actual = await projectRole(db, project, user);
-  if (actual === null || !roleAtLeast(actual, required)) {
-    throw forbidden('Insufficient role for this workspace');
-  }
+  if (!(await isWorkspaceMember(db, project.workspaceId, user))) throw notFound('Project not found');
+  return project;
 }
 
 /**
@@ -472,11 +409,8 @@ export async function assertProjectRole(
 export async function projectScopeFilter(db: DbLike, user: AuthedUser) {
   if (user.isOperator) return undefined;
   const ids = await userWorkspaceIds(db, user.id);
-  // 0.15: plus the projects a project grant opens.
-  const granted = grantedProjectIds(await grantsForUser(db, user.id));
-  if (granted.length === 0) return ids.length === 0 ? null : inArray(projects.workspaceId, ids);
-  if (ids.length === 0) return inArray(projects.id, granted);
-  return or(inArray(projects.workspaceId, ids), inArray(projects.id, granted));
+  if (ids.length === 0) return null;
+  return inArray(projects.workspaceId, ids);
 }
 
 // ── databases ──────────────────────────────────────────────────────────────
@@ -499,9 +433,6 @@ export async function loadDatabaseForUser(db: DbLike, id: number, user: AuthedUs
   if (workspaceId == null) {
     if (row.ownerUserId === user.id) return row;
   } else if (await isWorkspaceMember(db, workspaceId, user)) {
-    return row;
-  } else if (projectGrantRole(await grantsForUser(db, user.id), row.projectId) !== null) {
-    // 0.15: a project grant on the database's project.
     return row;
   }
   throw notFound('Database not found');
@@ -536,14 +467,6 @@ export async function visibleDatabaseIds(db: DbLike, user: AuthedUser): Promise<
     for (const r of tagged) if (r.id != null) set.add(r.id);
   }
 
-  // 0.15: databases in a project a project grant opens (the grant resolver
-  // already requires that project to sit in the grant's workspace).
-  const granted = grantedProjectIds(await grantsForUser(db, user.id));
-  if (granted.length > 0) {
-    const inGranted = await db.select({ id: databases.id }).from(databases).where(inArray(databases.projectId, granted));
-    for (const r of inGranted) set.add(r.id);
-  }
-
   return Array.from(set);
 }
 
@@ -569,14 +492,9 @@ export async function databaseRole(
   const seat = await db.query.workspaceMembers.findFirst({
     where: and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, user.id)),
   });
-  if (seat && row.ownerUserId === user.id) return 'owner';
-  const seatRole = (seat?.role as WorkspaceRole | undefined) ?? null;
-  if (seatRole === 'owner' || seatRole === 'admin') return seatRole;
-  const grant = projectGrantRole(await grantsForUser(db, user.id), row.projectId);
-  // r694: no seat (and, from 0.15, no project grant) in the database's
-  // workspace → no role, creator or not. A grant keeps the creator its owner.
-  if (grant !== null && row.ownerUserId === user.id) return 'owner';
-  return withGrant(seatRole, grant);
+  // r694: no seat in the database's workspace → no role, creator or not.
+  if (!seat) return null;
+  return row.ownerUserId === user.id ? 'owner' : (seat.role as WorkspaceRole);
 }
 
 /** The workspace a database lives in: its project's, or null when it has none. */
@@ -609,39 +527,6 @@ export async function assertDatabaseRole(
   if (actual === null || !roleAtLeast(actual, required)) {
     throw forbidden(`This action requires the "${required}" role or higher on this database`);
   }
-}
-
-// ── environments (deployment lanes) ─────────────────────────────────────────
-
-/**
- * May the caller put a service in this environment (service create and PATCH)?
- * Operators may; anyone else needs a seat in the environment's workspace or,
- * from 0.15, a grant naming the environment. Before 0.15 both routes read the
- * seat inline (DESIGN §0.1 D7), where a grant would silently not apply.
- */
-export async function mayUseEnvironment(
-  db: DbLike,
-  user: AuthedUser,
-  env: { id: number; workspaceId: number },
-): Promise<boolean> {
-  if (user.isOperator) return true;
-  if (await isWorkspaceMember(db, env.workspaceId, user)) return true;
-  return grantedEnvironmentIds(await grantsForUser(db, user.id)).includes(env.id);
-}
-
-/**
- * Which environments GET /v1/environments lists for the caller: those in their
- * workspaces plus (0.15) those a grant names. `null` = every one (operators).
- */
-export async function environmentVisibility(
-  db: DbLike,
-  user: AuthedUser,
-): Promise<{ workspaceIds: Set<number>; environmentIds: Set<number> } | null> {
-  if (user.isOperator) return null;
-  return {
-    workspaceIds: new Set(await userWorkspaceIds(db, user.id)),
-    environmentIds: new Set(grantedEnvironmentIds(await grantsForUser(db, user.id))),
-  };
 }
 
 // ── generic dispatcher ─────────────────────────────────────────────────────
@@ -687,3 +572,120 @@ export function requireAccess(kind: ResourceKind, param = 'id') {
 // Re-exported so call sites can compose without importing drizzle directly.
 export { or };
 export const _internal = { workspaces, workspaceMembers, serviceProjects, serviceWorkspaces };
+
+// ════════════════════════════════════════════════════════════════════════════
+// Part 2 — v0.14.0 bypass-site predicates (DESIGN §0.1 D7), copied verbatim.
+// ════════════════════════════════════════════════════════════════════════════
+import { asc } from 'drizzle-orm';
+import { environments, labels } from '@ninedeploy/db';
+
+/**
+ * modules/services.ts:371-384 (create) and :670-683 (PATCH): may the caller
+ * put a service in this environment? `false` is the route's 403
+ * "You do not have access to this environment".
+ */
+export async function environmentSelectable014(
+  db: DbLike,
+  user: AuthedUser,
+  envRow: typeof environments.$inferSelect,
+): Promise<boolean> {
+  if (!user.isOperator) {
+    const seat = await db.query.workspaceMembers.findFirst({
+      where: and(
+        eq(workspaceMembers.workspaceId, envRow.workspaceId),
+        eq(workspaceMembers.userId, user.id),
+      ),
+    });
+    if (!seat) return false;
+  }
+  return true;
+}
+
+/** modules/environments.ts:66-72 (GET /v1/environments): the ids the list shows. */
+export async function visibleEnvironmentIds014(db: DbLike, user: AuthedUser): Promise<number[]> {
+  const memberships = await db.query.workspaceMembers.findMany({
+    where: eq(workspaceMembers.userId, user.id),
+  });
+  const wsIds = new Set(memberships.map((m) => m.workspaceId));
+  const all = await db.query.environments.findMany({ orderBy: [asc(environments.name)] });
+  const visible = user.isOperator ? all : all.filter((e) => e.workspaceId != null && wsIds.has(e.workspaceId));
+  return visible.map((e) => e.id);
+}
+
+/** modules/projects.ts:198-218 `visibleProjectIds`, verbatim. */
+export async function visibleProjectIds014(
+  db: import('@ninedeploy/db').DB,
+  user: { id: number; isOperator: boolean },
+  ids: number[],
+  minRole: WorkspaceRole = 'viewer',
+): Promise<number[]> {
+  if (ids.length === 0) return [];
+  const rows = await db.query.projects.findMany({
+    where: (p, { inArray: inOp }) => inOp(p.id, ids),
+  });
+  if (user.isOperator) return rows.map((r) => r.id);
+  const ms = await db.query.workspaceMembers.findMany({
+    where: (m, { eq: eqOp }) => eqOp(m.userId, user.id),
+  });
+  const wsIds = new Set(ms.filter((m) => roleAtLeast(m.role, minRole)).map((m) => m.workspaceId));
+  return rows
+    .filter((r) => r.workspaceId != null && wsIds.has(r.workspaceId))
+    .map((r) => r.id);
+}
+
+/** engine/pipeline.ts:245-276 `filterTrustworthyProjectLinks`, verbatim. */
+export async function filterTrustworthyProjectLinks014(
+  db: DB,
+  service: Pick<typeof services.$inferSelect, 'ownerUserId'>,
+  links: Array<{ projectId: number }>,
+): Promise<Array<{ projectId: number }>> {
+  const ownerId = service.ownerUserId;
+  // No owner at all: there is nobody whose membership could authorize the
+  // links, so none of them may inject shared env.
+  if (ownerId == null) return [];
+  if (await isOperator(db, { id: ownerId })) return links;
+  const kept: Array<{ projectId: number }> = [];
+  for (const link of links) {
+    const project = await db.query.projects.findFirst({ where: eq(projects.id, link.projectId) });
+    if (!project || project.workspaceId == null) continue;
+    const seat = await db.query.workspaceMembers.findFirst({
+      where: and(
+        eq(workspaceMembers.userId, ownerId),
+        eq(workspaceMembers.workspaceId, project.workspaceId),
+      ),
+    });
+    // A seat alone is not enough (r095): a `viewer` is read-only and the API
+    // masks secret values from them, so a link from a viewer-seat owner must
+    // not decrypt the project's shared env into a container they control.
+    if (seat && roleAtLeast(seat.role, 'member')) kept.push(link);
+  }
+  return kept;
+}
+
+/** modules/serviceTags.ts:227-232 `defaultWorkspaceIdsForUser`, verbatim. */
+export async function defaultWorkspaceIdsForUser014(db: DB, user: { id: number }): Promise<number[]> {
+  const ms = await db.query.workspaceMembers.findMany({
+    where: (m, { eq: eqOp }) => eqOp(m.userId, user.id),
+  });
+  return ms.map((m) => m.workspaceId);
+}
+
+/** modules/labels.ts:238-257 `visibleLabelIds`, verbatim. */
+export async function visibleLabelIds014(
+  db: import('@ninedeploy/db').DB,
+  user: { id: number; isOperator: boolean },
+  ids: number[],
+): Promise<number[]> {
+  if (ids.length === 0) return [];
+  if (!user.isOperator) {
+    const memberships = await db.query.workspaceMembers.findMany({
+      where: (m, { eq: eqOp }) => eqOp(m.userId, user.id),
+    });
+    const wsIds = new Set(memberships.map((m) => m.workspaceId));
+    const rows = await db.query.labels.findMany({ where: inArray(labels.id, ids) });
+    return rows.filter((r) => r.workspaceId != null && wsIds.has(r.workspaceId)).map((r) => r.id);
+  }
+  // Operators can see every requested id (we still verify the rows exist).
+  const rows = await db.query.labels.findMany({ where: inArray(labels.id, ids) });
+  return rows.map((r) => r.id);
+}

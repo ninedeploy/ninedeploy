@@ -31,8 +31,9 @@ import { serviceBridgeName } from '../lib/serviceBridge.js';
 import { deleteRemoteBackupForRetention } from '../lib/backupRemote.js';
 import {
   assertServiceRole,
-  assertWorkspaceRole,
+  assertProjectRole,
   assertDatabaseRole,
+  isWorkspaceMember,
   loadDatabaseForUser,
   loadServiceForUser,
   visibleDatabaseIds,
@@ -151,10 +152,17 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
       const project = await app.db.query.projects.findFirst({ where: eq(projects.id, input.projectId) });
       if (!project) throw badRequest('Project not found');
       // Creating a database (and provisioning its volume + credentials) is a
-      // write on the workspace: `member` floor, so a viewer seat stays
-      // read-only.
-      if (project.workspaceId != null) await assertWorkspaceRole(app.db, project.workspaceId, req.user!, 'member');
-      else if (!req.user!.isOperator) throw badRequest('Project not found');
+      // write on the project: `member` floor, so a viewer stays read-only.
+      // 0.15 (DESIGN §4.1): a seat in the project's workspace is required —
+      // guests (grants, no seat) create no databases, as they create no
+      // services — and a project grant may then raise that seat
+      // (`assertProjectRole`). A guest gets the refusal any non-member gets.
+      if (project.workspaceId != null) {
+        if (!req.user!.isOperator && !(await isWorkspaceMember(app.db, project.workspaceId, req.user!))) {
+          throw forbidden('Insufficient role for this workspace');
+        }
+        await assertProjectRole(app.db, project, req.user!, 'member');
+      } else if (!req.user!.isOperator) throw badRequest('Project not found');
     }
     const slug = slugify(input.name);
     const cfg = ENGINES[input.engine];

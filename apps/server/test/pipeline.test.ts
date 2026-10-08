@@ -2243,8 +2243,18 @@ describe('filterTrustworthyProjectLinks', () => {
   const links = [{ projectId: 4 }, { projectId: 9 }];
   const owner = { ownerUserId: 7 as number | null };
 
+  /** `db.select()…` resolving to no rows: the owner holds no 0.15 access grant. */
+  function noRows(): unknown {
+    const chain: Record<string, unknown> = {};
+    for (const k of ['from', 'innerJoin', 'leftJoin', 'where']) chain[k] = () => chain;
+    // biome-ignore lint/suspicious/noThenProperty: an awaitable stand-in for a drizzle query.
+    chain.then = (ok: (v: unknown[]) => unknown) => Promise.resolve(ok([]));
+    return chain;
+  }
+
   function spyDb() {
     return {
+      select: noRows,
       query: {
         users: { findFirst: vi.fn().mockResolvedValue({ id: 7, isInstanceOperator: false }) },
         // Default: the requested project lives in workspace #1. Individual

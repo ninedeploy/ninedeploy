@@ -86,4 +86,10 @@ describe('access grant views', () => {
     expect(projectAccessEntry.parse(entry)).toEqual(entry);
     expect(projectAccessEntry.safeParse({ ...entry, via: [] }).success).toBe(false);
   });
+
+  it('carries an account without a display name as name: null', () => {
+    const unnamed = { ...grant, user: { id: 4, email: 'dev@example.com', name: null } };
+    expect(accessGrant.parse(unnamed).user.name).toBeNull();
+    expect(projectAccessEntry.parse({ user: unnamed.user, role: 'viewer', via: ['grant'] }).user.name).toBeNull();
+  });
 });

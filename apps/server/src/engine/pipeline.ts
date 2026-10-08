@@ -30,6 +30,7 @@ import { run, sleep } from '../lib/exec.js';
 import { hasVaultRef, resolveVaultRefs } from '../lib/vault.js';
 import { registryCredentialFor, registryCredentialForSourceBuild } from '../lib/registryBinding.js';
 import { databaseRole, isOperator, roleAtLeast } from '../lib/resourceAccess.js';
+import { grantsForUser, projectGrantRole } from '../lib/accessGrants.js';
 import { getBundledTemplates } from '../templates/registry.js';
 import type { BuildContext, Builder, DeployRuntime } from './types.js';
 import { reconcileTemplateDependencies } from './templateDependencies.js';
@@ -253,6 +254,7 @@ export async function filterTrustworthyProjectLinks(
   if (ownerId == null) return [];
   if (await isOperator(db, { id: ownerId })) return links;
   const kept: Array<{ projectId: number }> = [];
+  let grants: Awaited<ReturnType<typeof grantsForUser>> | null = null;
   for (const link of links) {
     const project = await db.query.projects.findFirst({ where: eq(projects.id, link.projectId) });
     if (!project || project.workspaceId == null) continue;
@@ -265,7 +267,15 @@ export async function filterTrustworthyProjectLinks(
     // A seat alone is not enough (r095): a `viewer` is read-only and the API
     // masks secret values from them, so a link from a viewer-seat owner must
     // not decrypt the project's shared env into a container they control.
-    if (seat && roleAtLeast(seat.role, 'member')) kept.push(link);
+    if (seat && roleAtLeast(seat.role, 'member')) {
+      kept.push(link);
+      continue;
+    }
+    // 0.15: the owner's project grant counts like a seat of its role
+    // (max(seat, grant) ≥ member). Read once, only when a seat fell short.
+    grants ??= await grantsForUser(db, ownerId);
+    const granted = projectGrantRole(grants, project.id);
+    if (granted !== null && roleAtLeast(granted, 'member')) kept.push(link);
   }
   return kept;
 }

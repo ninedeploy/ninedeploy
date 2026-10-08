@@ -1,8 +1,18 @@
 ﻿import { describe, expect, it } from 'vitest';
 import { assertCanManageService, loadServiceForUser } from '../../src/lib/serviceAccess.js';
 
+/** `db.select()…` resolving to no rows: the 0.15 access-grant lookup finds none. */
+function noRows(): unknown {
+  const chain: Record<string, unknown> = {};
+  for (const k of ['from', 'innerJoin', 'leftJoin', 'where']) chain[k] = () => chain;
+  // biome-ignore lint/suspicious/noThenProperty: an awaitable stand-in for a drizzle query.
+  chain.then = (ok: (v: unknown[]) => unknown) => Promise.resolve(ok([]));
+  return chain;
+}
+
 function makeDb(opts: { service: unknown; workspaceTags?: Array<{ workspaceId: number }>; memberships?: Array<{ workspaceId: number }> }) {
   return {
+    select: noRows,
     query: {
       services: { findFirst: async () => opts.service },
       serviceWorkspaces: { findMany: async () => opts.workspaceTags ?? [] },

@@ -3,6 +3,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { apiTokens, scimTokens, users, workspaces, workspaceMembers, workspaceRole, type DB } from '@ninedeploy/db';
 import { audit } from '../lib/audit.js';
+import { deleteGrantsForMember, reinstateGrantsForMember, suspendGrantsForMember } from '../lib/accessGrants.js';
 import { randomToken, sha256 } from '../lib/crypto.js';
 import { unauthorized } from '../lib/errors.js';
 import { getSettingJson, setSettingJson, setSettingString } from '../lib/settings.js';
@@ -228,6 +229,11 @@ async function deprovisionFor(
     where: and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.workspaceId, workspaceId)),
   });
   await setSuspended(db, user.id, workspaceId, (seat?.role as WorkspaceRole | undefined) ?? 'member');
+  // 0.15 (M22): the user's access grants in this workspace stop counting with
+  // the seat (suspended, not deleted, so a reinstatement restores them). The
+  // instance-wide branch above needs nothing: a deactivated account's grants
+  // never count (lib/accessGrants.ts grantsForUser).
+  await suspendGrantsForMember(db, workspaceId, user.id);
   await db
     .delete(workspaceMembers)
     .where(and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.workspaceId, workspaceId)));
@@ -246,6 +252,8 @@ async function reinstateSeat(db: DB, userId: number, email: string, workspaceId:
     await db.insert(workspaceMembers).values({ workspaceId, userId, role });
   }
   await setSuspended(db, userId, workspaceId, null);
+  // 0.15 (M22): the grants suspended with the seat count again.
+  await reinstateGrantsForMember(db, workspaceId, userId);
   void audit(db, null, 'scim.reinstate', `${email} in workspace #${workspaceId}`);
 }
 
@@ -510,6 +518,9 @@ export const scimRoutes: FastifyPluginAsync = async (app) => {
     const { user } = found;
     if (user.isInstanceOperator) return scimReply(reply, scimError(403, OPERATOR_REFUSED));
     if (await deactivatesInstanceWide(app.db, user, workspaceId)) {
+      // 0.15 (M22): leaving the workspace takes the user's access grants in
+      // it too (both branches) — a deprovisioned user is no guest.
+      await deleteGrantsForMember(app.db, workspaceId, user.id, null);
       await deactivateUser(app.db, user.id, workspaceId, { leaveWorkspace: true });
       if (found.suspended) await setSuspended(app.db, user.id, workspaceId, null);
       void audit(app.db, null, 'scim.deprovision', user.email);
@@ -518,6 +529,7 @@ export const scimRoutes: FastifyPluginAsync = async (app) => {
     // r501: someone else's user too — leave THIS workspace, keep the account.
     const ws = await app.db.query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
     if (ws?.ownerId === user.id) return scimReply(reply, scimError(403, OWNER_REFUSED));
+    await deleteGrantsForMember(app.db, workspaceId, user.id, null);
     await app.db
       .delete(workspaceMembers)
       .where(and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.workspaceId, workspaceId)));

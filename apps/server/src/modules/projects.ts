@@ -12,6 +12,7 @@ import {
 import type { FastifyPluginAsync } from 'fastify';
 import { createProject, projectPatch, type WorkspaceRole } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
+import { deleteGrantsForProject, grantsForUser, projectGrantRole } from '../lib/accessGrants.js';
 import {
   assertWorkspaceMember,
   assertWorkspaceRole,
@@ -147,6 +148,12 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
       .where(eq(projects.id, id))
       .returning();
     if (!updated) throw badRequest('Could not update project');
+    // 0.15 (M23): access grants on a project belong to the workspace that
+    // issued them. A moved project already stops matching them (the grant
+    // resolver joins on the project's current workspace); drop them too.
+    if (input.workspaceId !== undefined && input.workspaceId !== project.workspaceId) {
+      await deleteGrantsForProject(app.db, id, req.user!.id);
+    }
     void audit(app.db, req.user!.id, 'project.update', updated.name);
     return serialize(updated);
   });
@@ -210,7 +217,14 @@ export async function visibleProjectIds(
     where: (m, { eq: eqOp }) => eqOp(m.userId, user.id),
   });
   const wsIds = new Set(ms.filter((m) => roleAtLeast(m.role, minRole)).map((m) => m.workspaceId));
+  // 0.15: max(seat, project grant) ≥ minRole — a project grant of that role
+  // counts like a seat of it (grants only raise; DESIGN §4.2).
+  const grants = await grantsForUser(db, user.id);
+  const grantOk = (projectId: number) => {
+    const role = projectGrantRole(grants, projectId);
+    return role !== null && roleAtLeast(role, minRole);
+  };
   return rows
-    .filter((r) => r.workspaceId != null && wsIds.has(r.workspaceId))
+    .filter((r) => r.workspaceId != null && (wsIds.has(r.workspaceId) || grantOk(r.id)))
     .map((r) => r.id);
 }

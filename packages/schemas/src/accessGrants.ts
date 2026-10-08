@@ -64,12 +64,14 @@ export const accessGrantListQuery = z
 export type AccessGrantListQuery = z.infer<typeof accessGrantListQuery>;
 
 const namedRef = z.object({ id, name: z.string() });
+/** `users.name` is optional; the API sends `null` when it is unset. */
+const userRef = z.object({ id, email: z.string(), name: z.string().nullable() });
 
 /** One grant as the workspace admin sees it. */
 export const accessGrant = z.object({
   id,
   workspaceId: id,
-  user: z.object({ id, email: z.string(), name: z.string() }),
+  user: userRef,
   project: namedRef.nullable(),
   environment: namedRef.nullable(),
   role: accessGrantRole,
@@ -87,7 +89,7 @@ export type ProjectAccessVia = z.infer<typeof projectAccessVia>;
 
 /** GET /v1/projects/:id/access (project admin). */
 export const projectAccessEntry = z.object({
-  user: z.object({ id, email: z.string(), name: z.string() }),
+  user: userRef,
   /** Effective role on the project (operators are `owner`). */
   role: z.enum(['owner', 'admin', 'member', 'viewer']),
   via: z.array(projectAccessVia).min(1),

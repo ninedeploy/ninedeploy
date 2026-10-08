@@ -25,6 +25,7 @@ import {
   type WorkspaceRole,
 } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
+import { deleteGrantsForMember } from '../lib/accessGrants.js';
 import { badRequest, conflict, forbidden, HttpError, notFound, parseId } from '../lib/errors.js';
 import { iso } from '../lib/serialize.js';
 import { slugify, slugifyWithSuffix } from '../lib/slug.js';
@@ -507,6 +508,10 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
       throw forbidden('Cannot remove the workspace owner. Transfer ownership or delete the workspace.');
     }
 
+    // 0.15 (M21): their access grants in this workspace go first — a removed
+    // member must not linger as a guest, and if the seat delete below failed
+    // the user would merely have lost the grants (fail-closed).
+    await deleteGrantsForMember(app.db, id, targetMembership.userId, req.user!.id);
     await app.db.delete(workspaceMembers).where(eq(workspaceMembers.id, memberId));
     await rehomeOwnedResources(app.db, id, targetMembership.userId, ws.ownerId);
     void audit(app.db, req.user!.id, 'workspace.member.remove', `Removed member #${memberId} from ${ws.name}`);

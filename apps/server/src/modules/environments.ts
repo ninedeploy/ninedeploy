@@ -1,9 +1,9 @@
 import { asc, eq } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { environments, services, workspaceMembers } from '@ninedeploy/db';
+import { environments, services } from '@ninedeploy/db';
 import { audit } from '../lib/audit.js';
-import { assertWorkspaceRole, isWorkspaceMember } from '../lib/resourceAccess.js';
+import { assertWorkspaceRole, environmentVisibility, isWorkspaceMember } from '../lib/resourceAccess.js';
 import { badRequest, isUniqueViolation, notFound, parseId } from '../lib/errors.js';
 
 /**
@@ -61,15 +61,16 @@ export const environmentRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', app.authenticate);
 
   // List environments (with live service counts) across the caller's
-  // workspaces. Operators see the whole instance.
+  // workspaces, plus (0.15) those an access grant names. Operators see the
+  // whole instance.
   app.get('/', async (req) => {
     const user = req.user!;
-    const memberships = await app.db.query.workspaceMembers.findMany({
-      where: eq(workspaceMembers.userId, user.id),
-    });
-    const wsIds = new Set(memberships.map((m) => m.workspaceId));
+    const scope = await environmentVisibility(app.db, user);
     const all = await app.db.query.environments.findMany({ orderBy: [asc(environments.name)] });
-    const visible = user.isOperator ? all : all.filter((e) => e.workspaceId != null && wsIds.has(e.workspaceId));
+    const visible =
+      scope === null
+        ? all
+        : all.filter((e) => (e.workspaceId != null && scope.workspaceIds.has(e.workspaceId)) || scope.environmentIds.has(e.id));
     const counts = new Map<number, number>();
     for (const s of await app.db.select({ id: services.id, environmentId: services.environmentId }).from(services)) {
       if (s.environmentId != null) counts.set(s.environmentId, (counts.get(s.environmentId) ?? 0) + 1);
