@@ -994,6 +994,16 @@ export const MATRIX: Record<string, Rule> = {
   // ── 0.14 T4 database import ──
   // ── end 0.14 T4 ──
   // ── 0.14 T5 secret providers ──
+  // Operator only (own authenticate + requireAdmin hooks). The at-floor PUT
+  // sends `{}` (a 400, nothing saved), so the test route then finds no
+  // provider and makes no outbound call.
+  'GET /v1/settings/secret-providers': OP,
+  'PUT /v1/settings/secret-providers/vault': OP,
+  'PUT /v1/settings/secret-providers/aws': OP,
+  'DELETE /v1/settings/secret-providers/vault': OP,
+  'DELETE /v1/settings/secret-providers/aws': OP,
+  'POST /v1/settings/secret-providers/vault/test': OP,
+  'POST /v1/settings/secret-providers/aws/test': OP,
   // ── end 0.14 T5 ──
 };
 

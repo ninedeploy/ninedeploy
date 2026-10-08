@@ -39,7 +39,9 @@ const EXEMPT: Record<string, string> = {
   'traefikCustom.ts POST /custom-config/validate': 'validates a candidate config, no state change',
   // ── end 0.14 T2 ──
   // ── 0.14 T5 secret providers ──
-  // 'secretProviders.ts POST /:kind/test': 'connectivity probe; updates last_tested_* only',
+  // One static path per kind (an unknown kind is a plain 404), hence two entries.
+  'secretProviders.ts POST /vault/test': 'connectivity probe; updates last_tested_* only',
+  'secretProviders.ts POST /aws/test': 'connectivity probe; updates last_tested_* only',
   // ── end 0.14 T5 ──
 };
 

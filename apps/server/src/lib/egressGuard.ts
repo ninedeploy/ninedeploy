@@ -44,6 +44,12 @@ import { isIP, type LookupFunction } from 'node:net';
  * conversion in `modules/githubApps.ts`) are OPERATOR-SUPPLIED, so the guard
  * is what keeps them off private addresses. They must also be https; http is
  * accepted only together with NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1.
+ * 0.14: the secret managers in `lib/secretProviders/` — the operator-supplied
+ * HashiCorp Vault / OpenBao address, the AWS Secrets Manager endpoint and the
+ * regional STS endpoint — follow the same rules (guarded, https unless
+ * private egress is on, a 3xx is an error). An internal Vault therefore needs
+ * NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1, and the IMDS link-local address stays
+ * blocked. A static test keeps every call there on `guardedFetch`.
  *
  * DELIBERATELY NOT guarded, because private addresses are the NORMAL
  * deployment for them and blocking would break working installs:
@@ -51,10 +57,15 @@ import { isIP, type LookupFunction } from 'node:net';
  *     usually sits on the same Docker network;
  *   - the S3 endpoint (`lib/s3.ts`) — MinIO at `minio:9000` is the common
  *     self-hosted backup target;
- *   - the Vault address (`lib/vault.ts`), the log-search backend
- *     (`lib/logSearch.ts`), the telemetry `export_endpoint` and the
- *     `webhook-out` endpoint — Loki, Prometheus and Vault are internal by
- *     design. (`webhook-out` does not follow redirects, r658.)
+ *   - the log-search backend (`lib/logSearch.ts`), the telemetry
+ *     `export_endpoint` and the `webhook-out` endpoint — Loki and Prometheus
+ *     are internal by design. (`webhook-out` does not follow redirects, r658.)
+ * Also not guarded, for a different reason: the Infisical and Doppler calls
+ * in `lib/vault.ts` use plain `fetch` against their fixed public API hosts,
+ * so no operator-supplied address is involved; moving them onto
+ * `guardedFetch` is a follow-up. (An earlier version of this comment listed
+ * "the Vault address (`lib/vault.ts`)" here — no such address existed until
+ * 0.14, and the one 0.14 added is guarded, above.)
  * An earlier version of this comment claimed the OIDC issuer and the S3
  * endpoint were covered. They never were, and a security note that overstates
  * its coverage is worse than no note: it stops the next reader from checking.

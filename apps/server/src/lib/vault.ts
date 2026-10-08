@@ -4,6 +4,8 @@ import { audit } from './audit.js';
 import { decrypt, encrypt } from './crypto.js';
 import { forbidden } from './errors.js';
 import { isOperator, type AuthedUser } from './resourceAccess.js';
+import { findSecretRefs, hasSecretRef, replaceSecretRefs, type ExternalSecretRef } from './secretRefs.js';
+import { loadConfiguredProvider, resolveExternalRefs, type ConfiguredProvider } from './secretProviders/index.js';
 import { getSettingJson, getSettingString, setSettingJson, setSettingString } from './settings.js';
 
 /**
@@ -12,7 +14,10 @@ import { getSettingJson, getSettingString, setSettingJson, setSettingString } fr
  * resolved at deploy time and never stored. Zero-dependency: plain fetch.
  *
  * Providers: infisical (Machine Identity / Universal Auth token),
- * doppler (service token — Basic auth).
+ * doppler (service token — Basic auth). Since 0.14 the resolver also
+ * dispatches `${{vault:…#…}}` and `${{aws:…}}` to the secret managers in
+ * `lib/secretProviders` (their own table and routes, through guardedFetch);
+ * Infisical / Doppler stay on plain fetch against their fixed hosts.
  */
 
 export const vaultProviders = ['infisical', 'doppler'] as const;
@@ -112,14 +117,20 @@ export async function testVault(db: DB): Promise<number> {
 }
 
 // ── deploy-time resolution ─────────────────────────────────────────────────
-// One shared regex; caching avoids re-parsing. Provider+key are both
-// constrained ([\w.-]+) so a hostile value can't smuggle extra syntax.
-const REF = /\$\{\{(infisical|doppler):([\w.-]+)\}\}/g;
+// The grammar lives in lib/secretRefs.ts (0.14): the legacy
+// `${{infisical|doppler:KEY}}` form is unchanged there — provider and key are
+// both constrained ([\w.-]+) so a hostile value can't smuggle extra syntax.
 
-/** True when the value contains at least one vault reference. */
+/**
+ * True when the value contains at least one secret reference — Infisical /
+ * Doppler, and since 0.14 also `${{vault:<path>#<field>}}` and
+ * `${{aws:<secretId>[#<key>]}}` (`lib/secretRefs.ts`). Every gate calls this
+ * (env writes, the preview refusal, templates, service bundles, the preview
+ * withholding at deploy), so delegating here is what makes them all cover the
+ * new providers. DESIGN §4.1 / mount point M14.
+ */
 export function hasVaultRef(value: string): boolean {
-  REF.lastIndex = 0;
-  return REF.test(value);
+  return hasSecretRef(value);
 }
 
 // ── r510: who may resolve vault references ─────────────────────────────────
@@ -209,7 +220,9 @@ async function seedVaultAllowlist(
     } catch {
       continue; // undecryptable envelope: it cannot resolve today either
     }
-    if (!hasVaultRef(value)) continue;
+    // Grandfather only what resolved before r510: the Infisical / Doppler
+    // forms. A 0.14 `vault:` / `aws:` string never resolved on those releases.
+    if (!findSecretRefs(value).some((r) => r.provider === 'infisical' || r.provider === 'doppler')) continue;
     if (row.scope === 'project') projectIdsWithRefs.add(row.scopeKey);
     else if (row.serviceId != null) serviceIdsWithRefs.add(row.serviceId);
   }
@@ -278,7 +291,7 @@ async function workspacesAllowed(
   return false;
 }
 
-const REF_EXAMPLE = ['$', '{{infisical:…}} / $', '{{doppler:…}}'].join('');
+const REF_EXAMPLE = ['$', '{{infisical:…}} / $', '{{doppler:…}} / $', '{{vault:…#…}} / $', '{{aws:…}}'].join('');
 
 function notAllowedMessage(what: string): string {
   return (
@@ -331,46 +344,89 @@ export async function assertMayWriteVaultRefs(
 }
 
 /**
- * Resolve every `${{provider:KEY}}` reference in an env map, in place of the
- * caller. Loads each referenced provider once (deploy-scoped cache). Missing
- * keys throw — a half-resolved secret leaking the raw reference into a
- * container is worse than a failed deploy. `subject` (r510) is the service
- * the env belongs to; it must be allowed to resolve references at all.
+ * Resolve every secret reference in an env map, in place of the caller.
+ *
+ * Infisical / Doppler (`${{provider:KEY}}`): unchanged — each referenced
+ * provider is loaded once (deploy-scoped cache), a provider that is not
+ * configured throws, a missing key throws.
+ *
+ * Vault / AWS (0.14, `lib/secretProviders`): each distinct path or secret id
+ * is fetched once, within the limits of `SECRET_REF_LIMITS`. A provider that
+ * is NOT configured leaves its references literal and says so through `log`
+ * — exactly what every release before 0.14 did with such a string, so a
+ * provider-less install deploys byte-identically (upgrade safety). A missing
+ * field or key throws.
+ *
+ * A half-resolved secret leaking the raw reference into a container is worse
+ * than a failed deploy. `subject` (r510) is the service the env belongs to:
+ * it must be allowed to resolve references at all, checked ONCE before the
+ * first fetch of any provider.
  */
 export async function resolveVaultRefs(
   db: DB,
   env: Record<string, string>,
   subject: VaultSubject,
+  log?: (line: string) => void,
 ): Promise<Record<string, string>> {
   const needed = new Map<VaultProvider, void>();
-  for (const value of Object.values(env)) {
-    REF.lastIndex = 0;
-    for (const m of value.matchAll(REF)) needed.set(m[1] as VaultProvider);
+  const external = new Map<string, { ref: ExternalSecretRef; envKeys: string[] }>();
+  for (const [key, value] of Object.entries(env)) {
+    for (const ref of findSecretRefs(value)) {
+      if (ref.provider === 'infisical' || ref.provider === 'doppler') {
+        needed.set(ref.provider);
+        continue;
+      }
+      const entry = external.get(ref.raw) ?? { ref: ref as ExternalSecretRef, envKeys: [] };
+      if (!entry.envKeys.includes(key)) entry.envKeys.push(key);
+      external.set(ref.raw, entry);
+    }
   }
-  if (needed.size === 0) return env;
-  const pools = new Map<VaultProvider, Record<string, string>>();
+  if (needed.size === 0 && external.size === 0) return env;
+
+  // Legacy providers: an unconfigured one fails the deploy, as before.
+  const legacyCfg = needed.size > 0 ? await getVaultConfig(db) : null;
   for (const provider of needed.keys()) {
-    const cfg = await getVaultConfig(db);
-    if (cfg.provider !== provider || !cfg.token) {
+    if (legacyCfg?.provider !== provider || !legacyCfg.token) {
       throw new Error(`Vault provider "${provider}" is referenced but not configured`);
     }
-    // r510: no unscoped resolution — a service the operator has not allowed
-    // fails its deploy with an actionable message instead of receiving the
-    // operator's secrets. Checked before the first provider fetch.
-    if (pools.size === 0 && !(await vaultRefsAllowed(db, subject, { ownerOperatorCounts: true }))) {
-      throw new Error(notAllowedMessage('this service'));
-    }
-    pools.set(provider, await fetchVaultSecrets(cfg));
   }
+
+  // Vault / AWS: an unconfigured (absent, disabled, undecryptable) provider
+  // keeps its references literal, with a warning naming the env keys only.
+  const kinds = (['vault', 'aws'] as const).filter((k) => [...external.values()].some((e) => e.ref.provider === k));
+  const providers: { vault?: ConfiguredProvider | null; aws?: ConfiguredProvider | null } = {};
+  for (const kind of kinds) {
+    providers[kind] = await loadConfiguredProvider(db, kind);
+    if (providers[kind]) continue;
+    const keys = [...new Set([...external.values()].filter((e) => e.ref.provider === kind).flatMap((e) => e.envKeys))].sort();
+    log?.(
+      `⚠ ${kind === 'vault' ? 'Vault' : 'AWS Secrets Manager'} references in ${keys.join(', ')} were left as literal text: ` +
+        `no ${kind} secret manager is configured (Settings → Integrations → Secret managers).`,
+    );
+  }
+  const resolvable = new Map([...external].filter(([, e]) => providers[e.ref.provider]));
+  if (needed.size === 0 && resolvable.size === 0) return env;
+
+  // r510: no unscoped resolution — a service the operator has not allowed
+  // fails its deploy with an actionable message instead of receiving the
+  // operator's secrets. Checked once, before the first provider fetch.
+  if (!(await vaultRefsAllowed(db, subject, { ownerOperatorCounts: true }))) {
+    throw new Error(notAllowedMessage('this service'));
+  }
+  const pools = new Map<VaultProvider, Record<string, string>>();
+  for (const provider of needed.keys()) pools.set(provider, await fetchVaultSecrets(legacyCfg!));
+  const resolved = resolvable.size > 0 ? await resolveExternalRefs(providers, resolvable) : new Map<string, string>();
+
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
-    out[key] = value.replace(REF, (_all, provider: string, name: string) => {
-      const pool = pools.get(provider as VaultProvider);
+    out[key] = replaceSecretRefs(value, (ref) => {
+      if (ref.provider === 'vault' || ref.provider === 'aws') return resolved.get(ref.raw) ?? ref.raw;
+      const pool = pools.get(ref.provider);
       // F177: own keys only — `constructor`, `toString`, `__proto__` … are
       // inherited by the plain-object pool and must not resolve to garbage.
-      const resolved = pool && Object.hasOwn(pool, name) ? pool[name] : undefined;
-      if (resolved === undefined) throw new Error(`Vault secret "${provider}:${name}" not found (env key ${key})`);
-      return resolved;
+      const found = pool && Object.hasOwn(pool, ref.key) ? pool[ref.key] : undefined;
+      if (found === undefined) throw new Error(`Vault secret "${ref.provider}:${ref.key}" not found (env key ${key})`);
+      return found;
     });
   }
   return out;

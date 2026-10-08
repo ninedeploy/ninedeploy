@@ -473,10 +473,11 @@ export const MARKETPLACE_CATALOG: Omit<MarketplacePluginItem, 'isInstalled'>[] =
   {
     id: 'vault-secrets',
     implemented: false,
-    builtIn: { label: 'Settings → Integrations → Vault provider', path: '/settings?section=integrations' },
+    builtIn: { label: 'Settings → Integrations → Secret managers', path: '/settings?section=integrations' },
     name: 'HashiCorp Vault Secret Synchronization',
     version: '1.0.0',
-    description: 'Dynamic secret leasing, token renewal, and automatic environment variable injection directly from HashiCorp Vault KV v2 engines',
+    description:
+      'Built in since 0.14: env values reference HashiCorp Vault / OpenBao KV v2 secrets (vault:<path>#<field>), resolved at deploy time with a token or AppRole. Dynamic secret leasing and token renewal are not offered.',
     author: 'Community Verified',
     icon: 'Shield',
     category: 'security',

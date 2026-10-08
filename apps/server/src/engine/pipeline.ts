@@ -289,6 +289,8 @@ export async function loadRuntimeEnv(
   db: DB,
   service: typeof services.$inferSelect,
   templateDatabaseId?: number,
+  /** Deploy log: the resolver warns there about references it left literal (0.14). */
+  log?: (line: string) => void,
 ): Promise<RuntimeEnvironment> {
   const env: Record<string, string> = {};
   const managedDatabaseKeys = new Set<string>();
@@ -414,7 +416,7 @@ export async function loadRuntimeEnv(
   // Vault references resolve last, from the fully-merged map — and only for
   // a service the operator allowed (r510).
   return {
-    values: await resolveVaultRefs(db, env, { service, projectIds: projectLinks.map((p) => p.projectId) }),
+    values: await resolveVaultRefs(db, env, { service, projectIds: projectLinks.map((p) => p.projectId) }, log),
     attachmentCount: attaches.length,
     readyAttachmentCount,
     managedDatabaseKeys: [...managedDatabaseKeys].sort(),
@@ -911,7 +913,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       if (lateDbRefusal) throw new Error(lateDbRefusal);
     }
 
-    const runtimeEnvironment = await loadRuntimeEnv(db, service, templateDatabaseId);
+    const runtimeEnvironment = await loadRuntimeEnv(db, service, templateDatabaseId, log);
     fanoutEnv = runtimeEnvironment.values;
     if (runtimeEnvironment.withheldFromPreview.length > 0) {
       log(
