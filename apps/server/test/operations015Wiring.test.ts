@@ -148,7 +148,8 @@ describe('0.15 housekeeping steps (M5)', () => {
   });
 
   it('the T1 retention stubs delete nothing yet', async () => {
-    expect(await pruneTerminalSessions({} as never)).toBe(0);
+    // T2a implemented the terminal sweep (test/lib/terminalSessions.test.ts runs it on a real database).
+    expect(typeof pruneTerminalSessions).toBe('function');
     // T3 implemented the traffic sweep (test/lib/trafficAnalytics.test.ts runs it on a real database).
     expect(typeof pruneTrafficRollups).toBe('function');
   });

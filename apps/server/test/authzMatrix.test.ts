@@ -1059,13 +1059,13 @@ export const MATRIX: Record<string, Rule> = {
   // such route) fails `classifies every registered route`.
   // ── 0.15 T2a terminals ──
   // Operator only, no PREFIX_SCOPES entry (fine-grained tokens refused).
-  // 'POST /v1/terminals': R('operator', { noPositive: 'opens a shell' }),
-  // 'GET /v1/terminals': OP,
-  // 'GET /v1/terminals/:id': OP,
-  // 'DELETE /v1/terminals/:id': OP,
-  // 'GET /v1/terminals/settings': OP,
-  // 'PUT /v1/terminals/settings': OP,
-  // 'GET /v1/terminals/:id/attach': R('operator', { skip: 'WebSocket — covered by test/terminalsWs.test.ts' }),
+  'POST /v1/terminals': R('operator', { noPositive: 'opens a shell' }),
+  'GET /v1/terminals': OP,
+  'GET /v1/terminals/:id': OP,
+  'DELETE /v1/terminals/:id': OP,
+  'GET /v1/terminals/settings': OP,
+  'PUT /v1/terminals/settings': OP,
+  'GET /v1/terminals/:id/attach': R('operator', { skip: 'WebSocket — covered by test/terminalsWs.test.ts' }),
   // ── end 0.15 T2a ──
   // ── 0.15 T2b node terminals ──
   // ── end 0.15 T2b ──

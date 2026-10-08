@@ -19,6 +19,8 @@ import { assertRemoteDatabaseReachable, assertRemoteDeploySupported, assertRemot
 import { assertServiceRole, visibleServiceIdSet } from '../lib/resourceAccess.js';
 import { badRequest, notFound, parseId as num } from '../lib/errors.js';
 import { websocketBearerToken } from '../lib/websocketAuth.js';
+import { dockerTransport, isEngineTransport, openExecTty, SHELL_CMD } from '../lib/dockerTty.js';
+import { reserveLive, runTerminalSession, startLegacyExecRecord, type TerminalSocket } from '../lib/terminalSessions.js';
 
 /**
  * Statuses that mean the worker or the pipeline may still write to the row.
@@ -511,12 +513,19 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
   // Admin-only + audited: this is a root shell inside the service container
   // (it can read env vars incl. DB credentials and mounted data).
   //
-  // TTY: `docker exec -t` requires the docker client's stdio to be a tty, which
-  // a plain Node pipe is not — without one the shell has no prompt, no echo
-  // and no line editing, which reads as "terminal is broken". When python3 is
-  // available we wrap docker in `pty.spawn(...)` (real pty, full interactivity);
-  // otherwise we fall back to the legacy pipe mode (works, just less shell-like).
-  // Probed per connection (~30ms) — cheap next to a WS handshake.
+  // 0.15: DEPRECATED in favour of `/v1/terminals` (protocol v1: resize, limits,
+  // terminate), removed no earlier than 0.17. Its raw-frame protocol, auth and
+  // close codes are unchanged; it is now an adapter onto the terminal session
+  // engine: every session gets a `terminal_sessions` row and start/end audits
+  // (D2), and wherever the Docker Engine API is reachable (the default socket,
+  // `unix://`, plain `tcp://`) the shell gets a real PTY from `lib/dockerTty.ts`
+  // (D1: the runtime image has no python3, so docker installs never had one).
+  //
+  // CLI fallback (TLS / ssh / context DOCKER_HOST): `docker exec -t` requires
+  // the docker client's stdio to be a tty, which a plain Node pipe is not —
+  // without one the shell has no prompt, no echo and no line editing. When
+  // python3 is available we wrap docker in `pty.spawn(...)`; otherwise pipe
+  // mode. Probed per connection (~30ms) — cheap next to a WS handshake.
   const isPtyAvailable = async (): Promise<boolean> => {
     try {
       await capture('python3', ['-c', 'import pty']);
@@ -542,9 +551,11 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
       socket.close(1008, 'operator access required');
       return;
     }
-    // Workspace guard: match the deploy handler — the operator must have membership
-    // in the service's workspace before they can open a shell in any of its containers.
-    // Without this, an instance operator could exec into any workspace's service.
+    // Resolve the service through the access choke point, like the deploy
+    // handler. D4 (0.15): an instance operator passes `loadServiceForUser` for
+    // EVERY service (operators are `owner` everywhere; no workspace seat is
+    // needed) — the operator gate above is the authorization; this call keeps
+    // the 404 for an unknown id and stays correct should the gate ever widen.
     // The reply is hijacked on a websocket route, so a thrown 404 cannot become an
     // HTTP response — it would strand the socket open forever. Close it explicitly,
     // like the log-stream route above.
@@ -569,15 +580,73 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     if (svc.serverId != null) {
       socket.send(
         `\x1b[33m✕ "${svc.name}" runs on remote node #${svc.serverId} — the web terminal only reaches containers on the panel host. ` +
-          `Open a shell on the node itself (docker exec -it ${svc.runtimeId} sh).\x1b[0m\r\n`,
+          `Open a shell on the node itself (docker exec -it ${svc.runtimeId} sh), or use the service's Terminal (/v1/terminals).\x1b[0m\r\n`,
       );
       socket.close(1008, 'service runs on a remote node');
       return;
     }
     const targetContainer = svc.runtimeId;
     void audit(app.db, user.id, 'service.exec', svc.name);
+    const recorder = await startLegacyExecRecord(app.db, {
+      userId: user.id,
+      serviceId: svc.id,
+      container: targetContainer,
+      label: svc.name,
+      authKind: user.viaApiToken ? 'api_token' : 'session',
+      ctx: { ip: req.ip, userAgent: req.headers['user-agent'] },
+    });
+    const revalidateExec = async (): Promise<string | null> => {
+      const fresh = token ? await resolveUser(app.db, token).catch(() => null) : null;
+      const ok = fresh && fresh.isOperator && !(Array.isArray(fresh.tokenScopes) && !fresh.tokenScopes.includes('operator'));
+      return ok ? null : 'session revoked';
+    };
+    if (socket.readyState !== 1) {
+      await recorder.end('client_closed');
+      return;
+    }
 
     socket.send(`\x1b[36m⚡ Attached to container shell [${targetContainer}]\x1b[0m\r\n`);
+
+    // D1: a real PTY over the Engine API wherever it is reachable.
+    const transport = dockerTransport();
+    if (isEngineTransport(transport)) {
+      const slot = reserveLive({ id: recorder.info.id ?? 0, userId: user.id, targetKind: 'service', legacy: true });
+      let tty: Awaited<ReturnType<typeof openExecTty>>;
+      try {
+        tty = await openExecTty(transport, { container: targetContainer, cmd: SHELL_CMD, cols: 80, rows: 24 });
+      } catch (err) {
+        slot.release();
+        const message = err instanceof Error ? err.message : String(err);
+        try {
+          socket.send(`\r\n\x1b[31m✕ Failed to open container shell: ${message}\x1b[0m\r\n`);
+          socket.close();
+        } catch {
+          /* already closed */
+        }
+        await recorder.end('target_unreachable', { failed: true, error: message });
+        return;
+      }
+      // F533: the client may have left while Docker started the shell.
+      if (socket.readyState !== 1) {
+        slot.release();
+        await tty.kill();
+        await recorder.end('client_closed');
+        return;
+      }
+      const run = runTerminalSession({
+        socket: socket as unknown as TerminalSocket,
+        tty,
+        recorder,
+        protocol: 'legacy',
+        // 0.14 behaviour: no idle or duration limit on this socket.
+        idleMs: null,
+        maxMs: null,
+        revalidate: revalidateExec,
+        liveKey: slot.key,
+      });
+      slot.attach(run.live);
+      return;
+    }
 
     // The container name reaches python via the environment — never through
     // the command string — so a hostile-looking runtimeId can't inject options.
@@ -586,7 +655,10 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     // F533: last suspension point before the shell exists. A client that left
     // during the awaits above already fired `close` — the listeners below would
     // never run, orphaning `docker exec` and its revalidation interval.
-    if (socket.readyState !== 1) return;
+    if (socket.readyState !== 1) {
+      await recorder.end('client_closed');
+      return;
+    }
     const child = hasPty
       ? spawn(
           'python3',
@@ -603,6 +675,36 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
           stdio: ['pipe', 'pipe', 'pipe'],
         });
 
+    // D2: the session's end (reason, exit code, bytes) is recorded once, when
+    // the socket closes — every path below ends there.
+    let endReason = 'client_closed';
+    let exitCode: number | null = null;
+    let terminatedBy: number | null = null;
+    const slot = reserveLive({ id: recorder.info.id ?? 0, userId: user.id, targetKind: 'service', legacy: true });
+    const stop = (reason: string, message: string, closeReason: string) => {
+      endReason = reason;
+      try {
+        socket.send(message);
+      } catch { /* already closed */ }
+      try { child.kill(); } catch { /* already gone */ }
+      socket.close(1008, closeReason);
+    };
+    slot.attach({
+      terminate: (by) => {
+        terminatedBy = by;
+        stop('terminated', '\r\n\x1b[31m✕ Session terminated by an operator — disconnecting.\x1b[0m\r\n', 'session terminated');
+      },
+      revoke: () => stop('revoked', '\r\n\x1b[31m✕ Session revoked — disconnecting.\x1b[0m\r\n', 'session revoked'),
+    });
+    socket.on('close', () => {
+      slot.release();
+      void recorder.end(endReason, { exitCode, terminatedByUserId: terminatedBy });
+    });
+    child.on('exit', (code: unknown) => {
+      if (endReason === 'client_closed') endReason = 'shell_exited';
+      exitCode = typeof code === 'number' ? code : null;
+    });
+
     // Absorb EPIPE on stdin: a keystroke racing the child's exit must never
     // crash the process (unhandled 'error' on a stream is fatal).
     child.stdin.on('error', () => { /* child already gone */ });
@@ -616,6 +718,13 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     });
 
     socket.on('message', (data) => {
+      recorder.bytesIn += Buffer.isBuffer(data)
+        ? data.length
+        : data instanceof ArrayBuffer
+          ? data.byteLength
+          : Array.isArray(data)
+            ? data.reduce((n, b) => n + b.length, 0)
+            : Buffer.byteLength(String(data));
       if (child.stdin && !child.stdin.destroyed) {
         try {
           if (Buffer.isBuffer(data)) {
@@ -634,6 +743,7 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     });
 
     child.stdout.on('data', (data) => {
+      recorder.bytesOut += Buffer.byteLength(data);
       try {
         socket.send(data);
       } catch {
@@ -642,6 +752,7 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     });
 
     child.stderr.on('data', (data) => {
+      recorder.bytesOut += Buffer.byteLength(data);
       try {
         socket.send(data);
       } catch {
@@ -662,10 +773,8 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     // tokenVersion, password change, operator flag pulled) kills the shell
     // within a minute instead of keeping it open until the client closes.
     const execRevalidate = setInterval(async () => {
-      const fresh = token ? await resolveUser(app.db, token).catch(() => null) : null;
-      const stillOperator = fresh && fresh.isOperator
-        && !(Array.isArray(fresh.tokenScopes) && !fresh.tokenScopes.includes('operator'));
-      if (!stillOperator) {
+      if (await revalidateExec()) {
+        endReason = 'revoked';
         try {
           socket.send('\r\n\x1b[31m✕ Session revoked — disconnecting.\x1b[0m\r\n');
         } catch { /* already closed */ }

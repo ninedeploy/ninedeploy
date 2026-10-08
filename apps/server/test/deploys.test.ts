@@ -4,7 +4,20 @@
 import { WebSocket as WsClient } from '../../../node_modules/.pnpm/ws@8.21.3/node_modules/ws';
 import { logBus } from '../src/engine/logs.js';
 import { deploysRoutes } from '../src/modules/deploys.js';
-import { asUser, buildTestApp, collectMessages, createFakeDb, depRow, listen, openWs, svcRow, waitFor, wsUrl } from './helpers.js';
+import {
+  asUser,
+  buildTestApp,
+  captureAudits,
+  collectMessages,
+  createFakeDb,
+  depRow,
+  listen,
+  openWs,
+  svcRow,
+  trackStatusUpdates,
+  waitFor,
+  wsUrl,
+} from './helpers.js';
 
 const authMocks = vi.hoisted(() => ({
   // 'valid' = admin session; 'member' = non-admin (used for the RBAC test).
@@ -60,11 +73,26 @@ vi.mock('../src/lib/exec.js', () => ({
   buildEnv: (extra?: Record<string, string>) => execMocks.buildEnv(extra),
 }));
 
+// 0.15: the exec socket reaches Docker through `lib/dockerTty.ts` when the
+// Engine API is reachable. The 0.14 cases below exercise the CLI fallback
+// (python pty / pipe mode), so the transport is CLI unless a case says
+// otherwise — and no case can ever reach a real daemon socket.
+const ttyMocks = vi.hoisted(() => ({
+  transport: { kind: 'cli', reason: 'test' } as { kind: string; reason?: string; socketPath?: string },
+  openExecTty: vi.fn(),
+}));
+vi.mock('../src/lib/dockerTty.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/dockerTty.js')>()),
+  dockerTransport: () => ttyMocks.transport,
+  openExecTty: (...a: unknown[]) => ttyMocks.openExecTty(...a),
+}));
+
 const sockets: WebSocket[] = [];
 
 beforeEach(() => {
   vi.clearAllMocks();
   childProc.children.length = 0;
+  ttyMocks.transport = { kind: 'cli', reason: 'test' };
 });
 
 describe('deploys config diff route', () => {
@@ -979,6 +1007,172 @@ describe('deploys routes', () => {
     const child = childProc.children[0]!;
 
     child.emit('error', new Error('spawn error'));
+    await app.close();
+  });
+});
+
+/**
+ * 0.15: the deprecated exec socket is an adapter onto the terminal session
+ * engine. D1: wherever the Engine API is reachable the shell gets a real PTY
+ * (no python3 probe, no `docker exec` child). D2: every session has a row and
+ * start/end audits with the end reason, bytes and exit code.
+ */
+describe('legacy exec socket on the terminal session engine (0.15)', () => {
+  const fakeTty = () => {
+    const dataCbs: Array<(c: Buffer) => void> = [];
+    const endCbs: Array<(c: number | null) => void> = [];
+    return {
+      mode: 'exec' as const,
+      pid: 7,
+      write: vi.fn(),
+      resize: vi.fn(),
+      pause: vi.fn(),
+      resume: vi.fn(),
+      kill: vi.fn(async () => undefined),
+      onData: (cb: (c: Buffer) => void) => void dataCbs.push(cb),
+      onEnd: (cb: (c: number | null) => void) => void endCbs.push(cb),
+      emit: (s: string) => {
+        for (const cb of dataCbs) cb(Buffer.from(s));
+      },
+      exit: (code: number | null) => {
+        for (const cb of endCbs) cb(code);
+      },
+    };
+  };
+
+  const setup = async () => {
+    const db = createFakeDb({
+      findFirst: { services: svcRow({ id: 1, name: 'web', runtimeId: 'c1' }) },
+      insert: { terminal_sessions: [{ id: 41 }] },
+    });
+    const audits = captureAudits(db);
+    const { updates } = trackStatusUpdates(db);
+    const app = await buildTestApp({ websocket: true, db });
+    await app.register(deploysRoutes, { prefix: '/services' });
+    const port = await listen(app);
+    return { app, port, audits, updates };
+  };
+
+  it('D1: opens an Engine-API PTY (no python3 probe, no docker child) and records the session (D2)', async () => {
+    ttyMocks.transport = { kind: 'socket', socketPath: '/var/run/docker.sock' };
+    const tty = fakeTty();
+    ttyMocks.openExecTty.mockResolvedValue(tty);
+    const { SHELL_CMD } = await import('../src/lib/dockerTty.js');
+    const { app, port, audits, updates } = await setup();
+    const ws = await openWs(wsUrl(port, '/services/1/exec'), 'ninedeploy.bearer.valid');
+    sockets.push(ws);
+    ws.binaryType = 'arraybuffer';
+    const messages: string[] = [];
+    ws.addEventListener('message', (ev) =>
+      messages.push(typeof ev.data === 'string' ? ev.data : Buffer.from(ev.data as ArrayBuffer).toString()),
+    );
+    await waitFor(() => ttyMocks.openExecTty.mock.calls.length === 1);
+    expect(ttyMocks.openExecTty).toHaveBeenCalledWith(ttyMocks.transport, { container: 'c1', cmd: SHELL_CMD, cols: 80, rows: 24 });
+    // The 0.14 PTY path needed python3, which the runtime image lacks: neither is touched now.
+    expect(execMocks.capture).not.toHaveBeenCalled();
+    expect(childProc.spawn).not.toHaveBeenCalled();
+
+    // Raw frames, as in 0.14: every client frame is stdin, output arrives as is.
+    await new Promise((r) => setTimeout(r, 20));
+    tty.emit('$ ');
+    await waitFor(() => messages.some((m) => m.includes('$ ')));
+    ws.send('ls\r');
+    await waitFor(() => tty.write.mock.calls.length === 1);
+    expect((tty.write.mock.calls[0]![0] as Buffer).toString()).toBe('ls\r');
+
+    const closed = new Promise<number>((resolve) => ws.addEventListener('close', (ev) => resolve(ev.code)));
+    tty.exit(0);
+    expect(await closed).toBe(1005); // `socket.close()` with no code, exactly like 0.14's child exit
+    await waitFor(() => audits.some((a) => a.action === 'terminal.session.end'));
+    expect(audits.map((a) => a.action)).toEqual(expect.arrayContaining(['service.exec', 'terminal.session.start', 'terminal.session.end']));
+    const end = audits.find((a) => a.action === 'terminal.session.end')!;
+    expect(end.meta).toMatchObject({ sessionId: 41, targetKind: 'service', reason: 'shell_exited', exitCode: 0, bytesIn: 3, bytesOut: 2 });
+    expect(updates).toContainEqual(expect.objectContaining({ status: 'ended', endReason: 'shell_exited', exitCode: 0, bytesIn: 3, bytesOut: 2 }));
+    expect(tty.kill).toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('a failed Engine-API exec is reported in the terminal and recorded as failed', async () => {
+    ttyMocks.transport = { kind: 'socket', socketPath: '/var/run/docker.sock' };
+    ttyMocks.openExecTty.mockRejectedValue(new Error('No such container: c1'));
+    const { app, port, audits, updates } = await setup();
+    const ws = await openWs(wsUrl(port, '/services/1/exec'), 'ninedeploy.bearer.valid');
+    sockets.push(ws);
+    const messages = collectMessages(ws);
+    await new Promise<void>((resolve) => ws.addEventListener('close', () => resolve()));
+    expect(messages.join('')).toContain('No such container: c1');
+    await waitFor(() => audits.some((a) => a.action === 'terminal.session.end'));
+    expect(audits.find((a) => a.action === 'terminal.session.end')!.meta).toMatchObject({ reason: 'target_unreachable' });
+    expect(updates).toContainEqual(expect.objectContaining({ status: 'failed', endReason: 'target_unreachable' }));
+    await app.close();
+  });
+
+  it('the CLI fallback (pipe mode) records the session end too', async () => {
+    execMocks.capture.mockRejectedValue(new Error('no python3'));
+    const { app, port, audits, updates } = await setup();
+    const ws = await openWs(wsUrl(port, '/services/1/exec'), 'ninedeploy.bearer.valid');
+    sockets.push(ws);
+    await waitFor(() => childProc.children.length === 1);
+    const child = childProc.children[0]!;
+    child.stdout.emit('data', 'hello');
+    ws.send('id\n');
+    await waitFor(() => (child.stdin.write as ReturnType<typeof vi.fn>).mock.calls.length > 0);
+    const closed = new Promise<void>((resolve) => ws.addEventListener('close', () => resolve()));
+    child.emit('exit', 0);
+    await closed;
+    await waitFor(() => audits.some((a) => a.action === 'terminal.session.end'));
+    expect(audits.find((a) => a.action === 'terminal.session.start')!.meta).toMatchObject({ sessionId: 41, legacy: true });
+    expect(audits.find((a) => a.action === 'terminal.session.end')!.meta).toMatchObject({
+      sessionId: 41,
+      reason: 'shell_exited',
+      exitCode: 0,
+      bytesIn: 3,
+      bytesOut: 5,
+    });
+    expect(updates).toContainEqual(expect.objectContaining({ status: 'ended', endReason: 'shell_exited' }));
+    await app.close();
+  });
+
+  it('DELETE /v1/terminals/:id reaches a legacy session too (pipe mode: 1008 "session terminated")', async () => {
+    const { terminateLive } = await import('../src/lib/terminalSessions.js');
+    execMocks.capture.mockRejectedValue(new Error('no python3'));
+    const { app, port, audits, updates } = await setup();
+    const ws = await openWs(wsUrl(port, '/services/1/exec'), 'ninedeploy.bearer.valid');
+    sockets.push(ws);
+    const messages = collectMessages(ws);
+    await waitFor(() => childProc.children.length === 1);
+    const closed = new Promise<{ code: number; reason: string }>((resolve) =>
+      ws.addEventListener('close', (ev) => resolve({ code: ev.code, reason: ev.reason })),
+    );
+    expect(terminateLive(41, 9)).toBe(true);
+    expect(await closed).toEqual({ code: 1008, reason: 'session terminated' });
+    expect(messages.join('')).toContain('terminated by an operator');
+    expect(childProc.children[0]!.kill).toHaveBeenCalled();
+    await waitFor(() => audits.some((a) => a.action === 'terminal.session.end'));
+    expect(audits.find((a) => a.action === 'terminal.session.end')!.meta).toMatchObject({ reason: 'terminated', terminatedByUserId: 9 });
+    expect(updates).toContainEqual(expect.objectContaining({ endReason: 'terminated', terminatedByUserId: 9 }));
+    expect(terminateLive(41, 9)).toBe(false);
+    await app.close();
+  });
+
+  it('F533 on the Engine-API path: a client gone while Docker starts the shell leaves nothing running', async () => {
+    ttyMocks.transport = { kind: 'socket', socketPath: '/var/run/docker.sock' };
+    const tty = fakeTty();
+    let release: (() => void) | null = null;
+    ttyMocks.openExecTty.mockImplementation(() => new Promise((resolve) => { release = () => resolve(tty); }));
+    const { app, port, audits } = await setup();
+    const ws = await openWs(wsUrl(port, '/services/1/exec'), 'ninedeploy.bearer.valid');
+    sockets.push(ws);
+    await waitFor(() => release !== null);
+    const closed = new Promise<void>((resolve) => ws.addEventListener('close', () => resolve()));
+    ws.close();
+    await closed;
+    const wss = (app as unknown as { websocketServer: { clients: Set<unknown> } }).websocketServer;
+    await waitFor(() => wss.clients.size === 0);
+    release!();
+    await waitFor(() => tty.kill.mock.calls.length === 1);
+    await waitFor(() => audits.some((a) => a.action === 'terminal.session.end'));
+    expect(audits.find((a) => a.action === 'terminal.session.end')!.meta).toMatchObject({ reason: 'client_closed' });
     await app.close();
   });
 });

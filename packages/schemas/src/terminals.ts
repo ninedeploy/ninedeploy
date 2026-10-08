@@ -106,6 +106,20 @@ export const terminalSessionCreated = z.object({
 });
 export type TerminalSessionCreated = z.infer<typeof terminalSessionCreated>;
 
+/** GET /v1/terminals answer: newest first; `nextBefore` pages further back (null = no more). */
+export const terminalSessionList = z.object({
+  items: z.array(terminalSession),
+  nextBefore: id.nullable(),
+});
+export type TerminalSessionList = z.infer<typeof terminalSessionList>;
+
+/** DELETE /v1/terminals/:id answer. `wasLive`: a running shell was closed (otherwise a pending ticket was revoked). */
+export const terminalTerminateResult = z.object({
+  ok: z.literal(true),
+  wasLive: z.boolean(),
+});
+export type TerminalTerminateResult = z.infer<typeof terminalTerminateResult>;
+
 /** GET /v1/terminals query (history). Query strings arrive as text. */
 export const terminalSessionListQuery = z
   .object({

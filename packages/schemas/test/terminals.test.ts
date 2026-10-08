@@ -15,12 +15,14 @@ import {
   terminalServerMessage,
   terminalSession,
   terminalSessionCreated,
+  terminalSessionList,
   terminalSessionListQuery,
   terminalSessionStatus,
   terminalSettings,
   terminalSettingsView,
   terminalTarget,
   terminalTargetKind,
+  terminalTerminateResult,
 } from '../src/terminals.js';
 
 describe('terminalTarget (0.15)', () => {
@@ -190,5 +192,38 @@ describe('attach protocol v1', () => {
     expect(TERMINAL_FRAME_MAX_BYTES).toBe(65_536);
     expect(TERMINAL_PROTOCOL).toBe('ninedeploy.terminal.v1');
     expect(TERMINAL_TICKET_PROTOCOL_PREFIX).toBe('ninedeploy.ticket.');
+  });
+});
+
+describe('history page and terminate answer (0.15 T2a)', () => {
+  const session = {
+    id: 4,
+    status: 'ended',
+    targetKind: 'container',
+    targetLabel: 'nd-app-web',
+    serverId: null,
+    userId: 1,
+    userEmail: 'op@example.com',
+    createdAt: '2026-10-08T00:00:00.000Z',
+    startedAt: '2026-10-08T00:00:01.000Z',
+    endedAt: '2026-10-08T00:01:01.000Z',
+    durationMs: 60000,
+    bytesIn: 10,
+    bytesOut: 200,
+    endReason: 'shell_exited',
+    exitCode: 0,
+    clientIp: '10.0.0.1',
+  };
+
+  it('a page carries sessions and the id to page back from (null at the end)', () => {
+    expect(terminalSessionList.parse({ items: [session], nextBefore: 4 })).toEqual({ items: [session], nextBefore: 4 });
+    expect(terminalSessionList.parse({ items: [], nextBefore: null }).items).toEqual([]);
+    expect(terminalSessionList.safeParse({ items: [{ ...session, bytesIn: -1 }], nextBefore: null }).success).toBe(false);
+    expect(terminalSessionList.safeParse({ items: [] }).success).toBe(false);
+  });
+
+  it('terminate says whether a running shell was closed', () => {
+    expect(terminalTerminateResult.parse({ ok: true, wasLive: false })).toEqual({ ok: true, wasLive: false });
+    expect(terminalTerminateResult.safeParse({ ok: false, wasLive: true }).success).toBe(false);
   });
 });
