@@ -502,7 +502,9 @@ describe('agent node proxy', () => {
     // directory in its place and Traefik cannot store certificates.
     expect(statSync(join(work, '.agent-proxy', 'acme.json')).isFile()).toBe(true);
 
-    const argvs = spawnMock.mock.calls.map((c) => (c as unknown[])[1] as string[]);
+    // 0.15 D5: the log-driver probe (`docker info`) runs between the pull and
+    // the removal; it is covered in agentTerminal.test.ts.
+    const argvs = spawnMock.mock.calls.map((c) => (c as unknown[])[1] as string[]).filter((a) => a[0] !== 'info');
     expect(argvs[0]).toEqual(['network', 'create', 'ninedeploy']);
     // r416: the image is PULLED before the live proxy is removed — a failed
     // pull can no longer leave the node's only proxy destroyed.

@@ -151,3 +151,157 @@ export async function removeNodeWorkspace(
     );
   }
 }
+
+// ── 0.15 (T2b): node terminals ──────────────────────────────────────────────
+
+/** 0.15: the capability an agent advertises when it serves `terminal.open` and `/agent/terminal`. */
+export const AGENT_CAP_TERMINAL = 'terminal';
+/** 0.15: advertised next to it while the node allows host shells (no `NINEDEPLOY_AGENT_HOST_TERMINAL=off`). */
+export const AGENT_CAP_TERMINAL_HOST = 'terminal.host';
+/** 0.15: the first agent release that advertises {@link AGENT_CAP_TERMINAL}. */
+export const AGENT_TERMINAL_VERSION = '0.15.0';
+
+/** Why a node terminal cannot be opened: the HTTP status and code the terminals route answers. */
+export interface TerminalRefusal {
+  status: number;
+  code: 'node_terminal_unsupported' | 'node_unreachable' | 'host_terminal_disabled';
+  message: string;
+}
+
+/** What a node's agent offers terminals, as `GET /v1/servers` reports it (additive field). */
+export interface NodeTerminalCapability {
+  host: boolean;
+  container: boolean;
+  reason?: string;
+}
+
+const terminalUpdateHint =
+  `Update the node agent to v${AGENT_TERMINAL_VERSION} or newer for terminals on this node ` +
+  "(re-run the node's bootstrap from the Servers page, or pull and restart the matching ninedeploy agent image on the node).";
+
+/** The `GET /v1/servers` view of a parsed `agent.ping` answer. */
+export function terminalCapabilityView(info: { version: string | null; caps: ReadonlySet<string> }): NodeTerminalCapability {
+  if (!info.caps.has(AGENT_CAP_TERMINAL)) {
+    return {
+      host: false,
+      container: false,
+      reason: `The agent (${info.version ? `version ${info.version}` : 'an older release'}) has no terminal support. ${terminalUpdateHint}`,
+    };
+  }
+  if (!info.caps.has(AGENT_CAP_TERMINAL_HOST)) {
+    return { host: false, container: true, reason: 'Host shells are disabled on this node (NINEDEPLOY_AGENT_HOST_TERMINAL=off on the agent).' };
+  }
+  return { host: true, container: true };
+}
+
+/**
+ * 0.15: why a terminal cannot be opened on this node, or null when it can —
+ * modelled on {@link gitCredentialRefusal}. All must hold: the panel reaches
+ * the agent over the SEALED transport (the channel key's salt travels in the
+ * sealed reply, and terminal bytes never cross the network in clear), the
+ * agent advertises `terminal` inside its sealed `agent.ping`, and for a host
+ * shell also `terminal.host`. Asked on every session: agents are updated
+ * separately from the panel. The answer refreshes the `GET /v1/servers` cache.
+ */
+export async function terminalRefusal(
+  agent: AgentCaller,
+  nodeLabel: string,
+  sealed: boolean,
+  opts: { host: boolean; serverId?: number },
+): Promise<TerminalRefusal | null> {
+  if (!sealed) {
+    return {
+      status: 422,
+      code: 'node_terminal_unsupported',
+      message:
+        `The panel reaches the agent on node ${nodeLabel} only over the unencrypted transport, and a terminal is never ` +
+        `opened in clear. ${terminalUpdateHint}`,
+    };
+  }
+  let lines: string[];
+  try {
+    ({ lines } = await agent('agent.ping', {}, () => undefined));
+  } catch (err) {
+    return {
+      status: 502,
+      code: 'node_unreachable',
+      message: `Could not reach the agent on node ${nodeLabel}: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+  const info = parseAgentCapabilities(lines);
+  if (opts.serverId !== undefined) rememberNodeCapabilities(opts.serverId, info);
+  if (!info.caps.has(AGENT_CAP_TERMINAL)) {
+    return {
+      status: 422,
+      code: 'node_terminal_unsupported',
+      message: `The agent on node ${nodeLabel} (${info.version ? `version ${info.version}` : 'an older release'}) cannot open terminals. ${terminalUpdateHint}`,
+    };
+  }
+  if (opts.host && !info.caps.has(AGENT_CAP_TERMINAL_HOST)) {
+    return {
+      status: 403,
+      code: 'host_terminal_disabled',
+      message: `Host shells are disabled on node ${nodeLabel} by its owner (NINEDEPLOY_AGENT_HOST_TERMINAL=off on the agent).`,
+    };
+  }
+  return null;
+}
+
+/** How long a node's advertised capabilities are reused by `GET /v1/servers`. */
+export const NODE_CAPABILITY_TTL_MS = 5 * 60 * 1000;
+/** How long `GET /v1/servers` waits for one node's refresh before answering without it. */
+const NODE_CAPABILITY_WAIT_MS = 3000;
+
+type CachedCapabilities = { at: number; info: { version: string | null; caps: ReadonlySet<string> } | null; error: string | null };
+const nodeCapabilities = new Map<number, CachedCapabilities>();
+
+function rememberNodeCapabilities(serverId: number, info: { version: string | null; caps: ReadonlySet<string> }, now = Date.now()): void {
+  nodeCapabilities.set(serverId, { at: now, info, error: null });
+}
+
+/** Test hook. */
+export function resetNodeCapabilityCache(): void {
+  nodeCapabilities.clear();
+}
+
+/**
+ * 0.15: the `terminal` field of one node in `GET /v1/servers`, from the last
+ * cached sealed `agent.ping`, refreshed at most every 5 minutes (and only for
+ * a node that is online — an offline one answers from the cache or says it is
+ * unknown). A refresh slower than a few seconds does not hold the listing up:
+ * the node then reads as unknown until it lands.
+ */
+export async function nodeTerminalCapability(
+  db: DB,
+  serverId: number,
+  opts: { online: boolean; now?: number },
+): Promise<NodeTerminalCapability> {
+  const now = opts.now ?? Date.now();
+  let cached = nodeCapabilities.get(serverId);
+  if (opts.online && (!cached || now - cached.at >= NODE_CAPABILITY_TTL_MS)) {
+    const refresh = (async (): Promise<CachedCapabilities> => {
+      try {
+        const res = await agentOp(db, serverId, 'agent.ping', {}, () => undefined);
+        return { at: now, info: parseAgentCapabilities(res.lines), error: null };
+      } catch (err) {
+        return { at: now, info: null, error: err instanceof Error ? err.message : String(err) };
+      }
+    })().then((entry) => {
+      nodeCapabilities.set(serverId, entry);
+      return entry;
+    });
+    let timer: NodeJS.Timeout | undefined;
+    const late = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), NODE_CAPABILITY_WAIT_MS);
+      timer.unref?.();
+    });
+    cached = (await Promise.race([refresh, late])) ?? cached;
+    clearTimeout(timer);
+  }
+  if (cached?.info) return terminalCapabilityView(cached.info);
+  return {
+    host: false,
+    container: false,
+    reason: cached?.error ? `The node agent did not answer: ${cached.error.slice(0, 200)}` : 'The node agent has not been reached yet.',
+  };
+}

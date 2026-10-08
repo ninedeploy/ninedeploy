@@ -39,6 +39,16 @@ vi.mock('../src/lib/dockerTty.js', async (importOriginal) => ({
   inspectContainer: (...a: unknown[]) => tty.inspect(...a),
   probeHostShellImage: (...a: unknown[]) => tty.probe(...a),
 }));
+// 0.15 T2b: node targets go through the agent. Here the node is reached only
+// over plaintext (and the agent never answers), so they are refused without
+// any network I/O; the node path itself is test/terminalsNode.test.ts.
+vi.mock('../src/lib/agentClient.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/agentClient.js')>()),
+  agentTransportSealed: async () => false,
+  agentOp: async () => {
+    throw new Error('no agent in this test');
+  },
+}));
 const execMock = vi.hoisted(() => ({ capture: vi.fn() }));
 vi.mock('../src/lib/exec.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/exec.js')>()),
@@ -172,7 +182,7 @@ describe('POST /v1/terminals: service targets', () => {
     expect(await db.select().from(terminalSessions)).toHaveLength(0);
   });
 
-  it('node placements are refused until node terminals land (T2b), fan-out targets included', async () => {
+  it('node placements without the sealed transport are refused (422, update the agent), fan-out targets included', async () => {
     const node = await create({ kind: 'service', serviceId: ids.nodeSvc });
     expect([node.statusCode, node.json().error.code]).toEqual([422, 'node_terminal_unsupported']);
     const fan = await create({ kind: 'service', serviceId: ids.fanout, serverId: ids.server });
@@ -303,7 +313,7 @@ describe('POST /v1/terminals: host shells (owner decision O1)', () => {
     expect(row).toMatchObject({ containerName: null, authKind: 'session' });
   });
 
-  it('a node host is checked by the same gates first, then refused until T2b', async () => {
+  it('a node host is checked by the same gates first, then refused without the sealed transport', async () => {
     await enableHost();
     expect((await create({ kind: 'host', serverId: ids.server })).json().error.code).toBe('reauth_required');
     expect((await create({ kind: 'host', serverId: ids.server }, { password: PASSWORD })).json().error.code).toBe('node_terminal_unsupported');

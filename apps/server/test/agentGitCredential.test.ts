@@ -54,7 +54,8 @@ function expectNoSecretOutsideEnv() {
 
 describe('agent capability', () => {
   it('advertises git.credential next to the r660/r662 capabilities', () => {
-    expect(AGENT_CAPABILITIES).toEqual(['build-path-guard', 'workspace.remove', 'git.credential']);
+    // 0.15 (T2b) appended `terminal`; the 0.13 entries keep their order.
+    expect(AGENT_CAPABILITIES).toEqual(['build-path-guard', 'workspace.remove', 'git.credential', 'terminal']);
   });
 });
 

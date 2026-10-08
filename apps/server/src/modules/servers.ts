@@ -6,6 +6,7 @@ import { audit } from '../lib/audit.js';
 import { decrypt, encrypt, secretEquals } from '../lib/crypto.js';
 import { badRequest, conflict, notFound, parseId, unauthorized } from '../lib/errors.js';
 import { agentOp, agentPing, generateAgentToken } from '../lib/agentClient.js';
+import { nodeTerminalCapability } from '../lib/agentCapabilities.js';
 import { ENROLMENT_HEADER, assertEnrolmentAllowed } from '../lib/enrolment.js';
 import { bootstrapServer, getBootstrapLogs, testSshConnection } from '../engine/serverProvisioner.js';
 import { agentDockerRunCommand } from '@ninedeploy/schemas';
@@ -150,7 +151,16 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
 
     authed.get('/', async () => {
       const rows = await authed.db.query.servers.findMany();
-      return rows.map(serialize);
+      // 0.15 (T2b): `terminal` (additive) says what the node's agent offers
+      // terminals — from its last sealed `agent.ping`, refreshed at most every
+      // 5 minutes and only for an online node. `host` is the node's own
+      // switch; the panel's host-shell setting applies on top of it.
+      return Promise.all(
+        rows.map(async (row) => {
+          const base = serialize(row);
+          return { ...base, terminal: await nodeTerminalCapability(authed.db, row.id, { online: base.status === 'online' }) };
+        }),
+      );
     });
 
     authed.post('/', async (req) => {

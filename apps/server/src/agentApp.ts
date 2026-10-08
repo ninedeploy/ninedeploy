@@ -1,11 +1,23 @@
+import websocket, { type WebsocketPluginOptions } from '@fastify/websocket';
 import Fastify, { type FastifyError, type FastifyReply, type FastifyRequest } from 'fastify';
 import { config } from './config.js';
 import rateLimitPlugin from './plugins/rateLimit.js';
 
 /**
+ * 0.15 (T2b): the agent's WebSocket server, used only by the node terminal
+ * channel (`GET /agent/terminal`). The panel sends at most 32 KiB of payload
+ * per frame, so 256 KiB bounds what an unauthenticated peer can make the
+ * agent buffer. The default subprotocol selection (the first offered) echoes
+ * the single-use channel id, which is not a credential.
+ */
+export const AGENT_WEBSOCKET_MAX_PAYLOAD = 256 * 1024;
+export const agentWebsocketOptions: WebsocketPluginOptions = { options: { maxPayload: AGENT_WEBSOCKET_MAX_PAYLOAD } };
+
+/**
  * The agent's minimal HTTP surface: rate limiting plus (once the caller
  * registers `agentRoutes`) ONLY the token-gated /agent/exec and /agent/ping
- * routes. Deliberately NOT buildApp(): an agent host must never expose the
+ * routes, and (0.15) the /agent/terminal channel a sealed `terminal.open`
+ * hands out. Deliberately NOT buildApp(): an agent host must never expose the
  * API/dashboard/deploy worker, which would run against a fresh local SQLite
  * and turn any reachable agent into a full control plane.
  */
@@ -38,6 +50,8 @@ export async function buildAgentApp() {
   });
 
   await app.register(rateLimitPlugin);
+  // 0.15 (T2b): after the rate limiter, so the upgrade request is limited too.
+  await app.register(websocket, agentWebsocketOptions);
 
   app.setErrorHandler((err: FastifyError, _req: FastifyRequest, reply: FastifyReply) => {
     const status =

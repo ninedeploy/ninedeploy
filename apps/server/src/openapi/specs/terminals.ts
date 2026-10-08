@@ -21,7 +21,8 @@ export const terminalSpecs: RouteSpecMap = {
     tag: 'terminals',
     description:
       'Resolves and authorises the target, then answers 201 with a single-use ticket (valid 30s) for GET /v1/terminals/{id}/attach. ' +
-      'Host shells are off by default and additionally need an interactive session, a password re-check (`password`) and no NINEDEPLOY_HOST_TERMINAL=off.',
+      'Host shells are off by default and additionally need an interactive session, a password re-check (`password`) and no NINEDEPLOY_HOST_TERMINAL=off. ' +
+      'Node targets need the sealed agent transport and an agent v0.15.0+ (422 node_terminal_unsupported otherwise); a node host shell also needs the agent to allow it (NINEDEPLOY_AGENT_HOST_TERMINAL).',
     floor: 'operator',
     body: createTerminalSession,
     response: terminalSessionCreated,

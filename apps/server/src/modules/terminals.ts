@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { and, desc, eq, inArray, isNotNull, lt } from 'drizzle-orm';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
-import { type Database, type Service, serviceTargets, services, terminalSessions, users } from '@ninedeploy/db';
+import { type Database, type Service, servers, serviceTargets, services, terminalSessions, users } from '@ninedeploy/db';
 import {
   createTerminalSession,
   TERMINAL_CLOSE,
@@ -16,6 +16,9 @@ import {
 } from '@ninedeploy/schemas';
 import { replicaNames } from '../engine/dockerNames.js';
 import { ENGINES } from '../engine/database.js';
+import { type AgentCaller, terminalRefusal } from '../lib/agentCapabilities.js';
+import { agentOp, agentTransportSealed } from '../lib/agentClient.js';
+import { openNodeTerminalTty } from '../lib/agentTerminal.js';
 import { panelAllowedOrigins } from '../lib/allowedOrigins.js';
 import { audit } from '../lib/audit.js';
 import { decrypt } from '../lib/crypto.js';
@@ -79,8 +82,14 @@ import {
  * additionally need an interactive session (no API token), a password
  * re-check, the setting, and no `NINEDEPLOY_HOST_TERMINAL=off`.
  *
- * Node targets (a service on a node, a node's host) are task T2b; until then
- * they are refused with `node_terminal_unsupported`.
+ * Node targets (a service on a node — primary placement or fan-out target —
+ * and a node's host) run through the node's agent (T2b, lib/agentTerminal.ts):
+ * the sealed `terminal.open` op plus an encrypted frame channel, under the
+ * same caps, limits, revalidation, terminate and audit as a local session.
+ * They need the sealed transport and an agent that advertises `terminal`
+ * (v0.15.0+); an older agent is refused with 422 `node_terminal_unsupported`
+ * and an "update the agent" message. A node host shell also needs the
+ * agent's `terminal.host` (the node owner's `NINEDEPLOY_AGENT_HOST_TERMINAL`).
  *
  * Design: .temp_files/run_0.15/DESIGN.md §1. Contract: `@ninedeploy/schemas` terminals.ts.
  */
@@ -136,15 +145,6 @@ async function assertRunningLocal(transport: DockerTransport, name: string): Pro
   return summary;
 }
 
-/** Placeholder for task T2b (node targets through the agent). */
-function nodeTargetRefusal(serverId: number): HttpError {
-  return err(
-    422,
-    'node_terminal_unsupported',
-    `Node #${serverId}: terminals on remote nodes are not available in this build. Open a shell on the node itself.`,
-  );
-}
-
 function serviceContainer(svc: Service, replica: number | undefined): string {
   if (!svc.runtimeId) throw err(409, 'not_running', `Service "${svc.name}" has no running container.`);
   const n = replica ?? 1;
@@ -156,6 +156,37 @@ function serviceContainer(svc: Service, replica: number | undefined): string {
 
 export const terminalRoutes: FastifyPluginAsync = async (app) => {
   const guard = { onRequest: [app.authenticate], preHandler: [app.requireOperator] };
+
+  // ── 0.15 T2b: node targets ────────────────────────────────────────────────
+  const nodeAgent =
+    (serverId: number): AgentCaller =>
+    (op, params, sink) =>
+      agentOp(app.db, serverId, op, params, sink);
+
+  /** The node, after `terminalRefusal` (sealed transport, `terminal` capability, `terminal.host` for a host shell). */
+  const assertNodeTerminal = async (serverId: number, host: boolean): Promise<{ name: string }> => {
+    const node = await app.db.query.servers.findFirst({ where: eq(servers.id, serverId) });
+    if (!node) throw notFound(`Node #${serverId} not found`);
+    const label = `"${node.name}" (#${serverId})`;
+    const sealed = await agentTransportSealed(app.db, serverId).catch(() => false);
+    const refusal = await terminalRefusal(nodeAgent(serverId), label, sealed, { host, serverId });
+    if (refusal) throw err(refusal.status, refusal.code, refusal.message);
+    return node;
+  };
+
+  /** 409 unless `container` exists and runs on the node (the existing `docker.inspect` op, which every agent has). */
+  const assertRunningOnNode = async (serverId: number, nodeName: string, container: string): Promise<void> => {
+    let res: { exitCode: number; lines: string[] };
+    try {
+      res = await agentOp(app.db, serverId, 'docker.inspect', { name: container, format: 'state' }, () => undefined, { tolerateExit: true });
+    } catch (e) {
+      throw err(502, 'node_unreachable', `Could not reach the agent on node "${nodeName}": ${e instanceof Error ? e.message : String(e)}`);
+    }
+    const state = res.exitCode === 0 ? (res.lines.find((l) => l.includes('|')) ?? '').split('|')[0]?.trim() : null;
+    if (state === null) throw err(409, 'not_running', `Container ${container} does not exist on node "${nodeName}".`);
+    if (state !== 'running') throw err(409, 'not_running', `Container ${container} is not running on node "${nodeName}".`);
+  };
+  // ── end 0.15 T2b ──
 
   /** Resolve and authorise a target (DESIGN §1.6). Throws an HttpError the client can act on. */
   const resolveTarget = async (
@@ -193,9 +224,14 @@ export const terminalRoutes: FastifyPluginAsync = async (app) => {
         } else {
           container = serviceContainer(svc, target.replica);
         }
-        if (serverId !== null) throw nodeTargetRefusal(serverId);
-        await assertRunningLocal(transport, container);
         const label = target.replica && target.replica > 1 ? `${svc.name} (replica ${target.replica})` : svc.name;
+        if (serverId !== null) {
+          // 0.15 T2b: the container lives on a node.
+          const node = await assertNodeTerminal(serverId, false);
+          await assertRunningOnNode(serverId, node.name, container);
+          return { ...base, kind: 'service', label, serverId, serviceId: svc.id, containerName: container };
+        }
+        await assertRunningLocal(transport, container);
         return { ...base, kind: 'service', label, serverId: null, serviceId: svc.id, containerName: container };
       }
       case 'database': {
@@ -239,7 +275,11 @@ export const terminalRoutes: FastifyPluginAsync = async (app) => {
         const row = await app.db.query.users.findFirst({ where: eq(users.id, user.id) });
         if (!row) throw err(401, 'unauthorized', 'Unauthorized');
         await assertStepUp(app.db, req, row, password);
-        if (target.serverId !== null) throw nodeTargetRefusal(target.serverId);
+        if (target.serverId !== null) {
+          // 0.15 T2b: the panel gates above, then the node's own (capability + its owner's switch).
+          const node = await assertNodeTerminal(target.serverId, true);
+          return { ...base, kind: 'host', label: `node ${node.name} host`, serverId: target.serverId, containerName: null };
+        }
         if (!isEngineTransport(transport)) {
           throw err(422, 'host_shell_unsupported_docker_host', `Host shells need the Docker Engine API: ${transport.reason}.`);
         }
@@ -478,7 +518,11 @@ export const terminalRoutes: FastifyPluginAsync = async (app) => {
     const maxMs = settings.maxSessionMinutes * 60_000;
     let tty: Awaited<ReturnType<typeof openTargetTty>>;
     try {
-      tty = await openTargetTty(dockerTransport(), ctxPending.target, { sessionId: row.id, cols: ctxPending.cols, rows: ctxPending.rows, maxMs });
+      tty =
+        ctxPending.target.serverId !== null
+          ? // 0.15 T2b: through the node's agent (sealed op + encrypted channel).
+            await openNodeTerminalTty(app.db, ctxPending.target, { sessionId: row.id, cols: ctxPending.cols, rows: ctxPending.rows })
+          : await openTargetTty(dockerTransport(), ctxPending.target, { sessionId: row.id, cols: ctxPending.cols, rows: ctxPending.rows, maxMs });
     } catch (e) {
       slot.release();
       const detail = e instanceof DockerEngineError || e instanceof Error ? e.message : String(e);

@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs';
 import { join as joinPath, relative as relativePath, resolve as resolvePath, sep as pathSep } from 'node:path';
-import { buildAgentApp } from './agentApp.js';
+import { agentWebsocketOptions, buildAgentApp } from './agentApp.js';
 import { agentChildTimeoutMs, tokenMatches } from './lib/agentClient.js';
 import { MAX_SKEW_MS, open as openSealed, seal as sealResponse } from './lib/agentSeal.js';
 import { spawnValidated } from './lib/spawnValidated.js';
@@ -86,7 +86,26 @@ export async function resolveWorkspace(name: string): Promise<string> {
  * a missing capability as "too old" and refuses what depends on it with a
  * message naming the node — see lib/agentClient.ts `agentCapabilities`.
  */
-export const AGENT_CAPABILITIES = ['build-path-guard', 'workspace.remove', 'git.credential'] as const;
+export const AGENT_CAPABILITIES = ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal'] as const;
+
+/**
+ * 0.15 (T2b): advertised next to {@link AGENT_CAPABILITIES} only while this
+ * node allows host shells — the node owner's kill switch
+ * (`NINEDEPLOY_AGENT_HOST_TERMINAL=off`, or `NINEDEPLOY_HOST_TERMINAL=off`
+ * like the panel's) removes it, and `terminal.open` refuses `host` anyway.
+ */
+export const AGENT_CAP_TERMINAL_HOST = 'terminal.host';
+
+/** 0.15 (T2b): the node owner's switch. Either variable set to off/false/0/no/disabled forbids host shells. */
+export function nodeHostTerminalForbidden(env: NodeJS.ProcessEnv = process.env): boolean {
+  const off = (v: string | undefined) => /^(off|false|0|no|disabled)$/i.test((v ?? '').trim());
+  return off(env['NINEDEPLOY_AGENT_HOST_TERMINAL']) || off(env['NINEDEPLOY_HOST_TERMINAL']);
+}
+
+/** 0.15 (T2b): what `agent.ping` advertises right now. */
+export function agentCapabilities(env: NodeJS.ProcessEnv = process.env): string[] {
+  return nodeHostTerminalForbidden(env) ? [...AGENT_CAPABILITIES] : [...AGENT_CAPABILITIES, AGENT_CAP_TERMINAL_HOST];
+}
 
 /**
  * 0.13 (T5): the ops that accept a per-job Git credential — the three that
@@ -574,6 +593,11 @@ async function proxyEnsureOp(params: Params, onLine: (l: string) => void): Promi
   // image local, the only remaining run-failure window is tiny; on failure
   // the proxy is GONE and the caller must be told so (see nodeProxy.ts).
   await spawnValidated('docker', ['pull', image], () => {});
+  // 0.15 D5 (O7): probed before the live proxy is removed, so the probe never
+  // lengthens the ingress gap. Only part of the argv: this op recreates the
+  // proxy only when the panel asks (a static-config change), so the rotation
+  // lands at the next natural recreate and never forces one.
+  const logOpts = nodeProxyLogOptArgs(await nodeDockerLoggingDriver());
   await spawnValidated('docker', ['rm', '-f', PROXY_CONTAINER], () => {});
   return spawnValidated(
     'docker',
@@ -584,10 +608,51 @@ async function proxyEnsureOp(params: Params, onLine: (l: string) => void): Promi
       '-p', '80:80', '-p', '443:443',
       '-v', `${base}:/etc/traefik:ro`,
       '-v', `${acme}:/etc/traefik/acme.json`,
+      ...logOpts,
       image,
     ],
     onLine,
   );
+}
+
+/** 0.15 D5: Docker log drivers that accept `max-size` / `max-file`. */
+const ROTATING_LOG_DRIVERS = new Set(['json-file', 'local']);
+
+/**
+ * 0.15 D5 (node side of engine/proxy.ts `traefikLogOptArgs`): Traefik's access
+ * log goes to the container log, which the json-file driver never rotates. A
+ * driver that does not accept these options would make `docker run` fail and
+ * take the node's ingress down, so anything else (or an unknown driver) keeps
+ * today's argv.
+ */
+export function nodeProxyLogOptArgs(driver: string | null): string[] {
+  return driver && ROTATING_LOG_DRIVERS.has(driver) ? ['--log-opt', 'max-size=20m', '--log-opt', 'max-file=3'] : [];
+}
+
+let nodeLoggingDriver: string | null = null;
+
+/**
+ * 0.15 D5: the node daemon's default logging driver (`docker info`), cached
+ * for the process once known. Null when Docker did not answer (nothing is
+ * cached, so the next recreate asks again).
+ */
+export async function nodeDockerLoggingDriver(): Promise<string | null> {
+  if (nodeLoggingDriver) return nodeLoggingDriver;
+  const lines: string[] = [];
+  try {
+    const code = await spawnValidated('docker', ['info', '--format', '{{.LoggingDriver}}'], (l) => lines.push(l));
+    const out = lines.join('').trim();
+    if (code !== 0 || !/^[A-Za-z0-9._-]{1,64}$/.test(out)) return null;
+    nodeLoggingDriver = out;
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/** Test hook: forget the cached logging driver. */
+export function resetNodeDockerLoggingDriverCache(): void {
+  nodeLoggingDriver = null;
 }
 
 /**
@@ -818,6 +883,356 @@ async function agentStatsOp(onLine: (l: string) => void): Promise<number> {
   return dockerStats !== 0 ? dockerStats : df;
 }
 
+// ── 0.15 T2b: node terminals ────────────────────────────────────────────────
+//
+// `terminal.open` (sealed only) starts the exec or the host-shell helper and
+// parks it under a single-use channel for 30 s; the panel then connects
+// `GET /agent/terminal` with that channel and every frame is encrypted and
+// authenticated per channel (lib/agentFrameCipher.ts). The process is killed
+// (HUP then KILL, or the helper removed) whenever the panel connection drops.
+// No byte of terminal input or output is ever logged or stored (O2).
+
+/** WebSocket route of the terminal channel. */
+export const AGENT_TERMINAL_PATH = '/agent/terminal';
+/** Subprotocol carrying the channel id (`ninedeploy.agent-terminal.<channelId>`). */
+export const AGENT_TERMINAL_PROTOCOL_PREFIX = 'ninedeploy.agent-terminal.';
+/** A channel nobody attached within this window is closed and its process killed. */
+export const TERMINAL_CHANNEL_TTL_MS = 30_000;
+/** Channels (pending + attached) one agent holds at a time. */
+export const TERMINAL_MAX_CHANNELS = 8;
+/** Hard cap on one channel's life, whatever the panel's settings say. */
+export const TERMINAL_HARD_CAP_MS = 24 * 3600 * 1000;
+/** The panel's first frame (it authenticates the channel) must arrive within this window. */
+export const TERMINAL_AUTH_TIMEOUT_MS = 10_000;
+/** Backpressure: stop reading the process while the panel socket holds more than this. */
+const TERMINAL_BACKPRESSURE_HIGH = 4 * 1024 * 1024;
+const TERMINAL_HELPER_SWEEP_MS = 60_000;
+
+/** The node's own containers a terminal must never enter (the agent holds the token hash, the proxy the certificates). */
+const AGENT_CONTAINER = 'ninedeploy-agent';
+
+interface TerminalChannel {
+  id: string;
+  salt: Buffer;
+  tty: import('./lib/dockerTty.js').TtyProcess;
+  kind: 'container' | 'host';
+  sessionId: number;
+  /** The host-shell helper's container id (host channels). */
+  helperId: string | null;
+  state: 'pending' | 'attached' | 'closed';
+  timers: NodeJS.Timeout[];
+}
+
+const terminalChannels = new Map<string, TerminalChannel>();
+/** Host-shell helpers this process started and has not yet seen removed. */
+const ownTerminalHelpers = new Set<string>();
+let helperSweep: NodeJS.Timeout | undefined;
+
+/** Live terminal channels (pending + attached), for tests and the shutdown hook. */
+export const terminalChannelCount = (): number => terminalChannels.size;
+
+/** Close a channel: stop its timers, forget it, kill the process. Idempotent, never throws. */
+async function closeTerminalChannel(ch: TerminalChannel): Promise<void> {
+  if (ch.state === 'closed') return;
+  ch.state = 'closed';
+  for (const t of ch.timers) clearTimeout(t);
+  terminalChannels.delete(ch.id);
+  try {
+    await ch.tty.kill();
+  } catch {
+    /* gone already: the sweep is the backstop */
+  }
+}
+
+/** Close every channel (agent shutdown, tests). */
+export async function closeAllTerminalChannels(): Promise<void> {
+  await Promise.all([...terminalChannels.values()].map((ch) => closeTerminalChannel(ch)));
+  if (helperSweep) clearInterval(helperSweep);
+  helperSweep = undefined;
+}
+
+/**
+ * Backstop for helpers whose kill did not land (a Docker hiccup): every 60 s,
+ * remove the host-shell helpers this process started whose channel is gone,
+ * and any terminal helper past its expiry label. Started with the first host
+ * channel, so an agent that never opens one never lists containers.
+ */
+function ensureHelperSweep(): void {
+  if (helperSweep) return;
+  helperSweep = setInterval(() => {
+    void (async () => {
+      const { dockerTransport, isEngineTransport, listContainersWithLabel, forceRemoveContainer, TERMINAL_SESSION_LABEL, TERMINAL_EXPIRES_LABEL } =
+        await import('./lib/dockerTty.js');
+      const t = dockerTransport();
+      if (!isEngineTransport(t)) return;
+      const live = new Set([...terminalChannels.values()].map((c) => c.helperId).filter((id): id is string => id !== null));
+      const nowSec = Math.floor(Date.now() / 1000);
+      for (const h of await listContainersWithLabel(t, TERMINAL_SESSION_LABEL)) {
+        const expires = Number(h.labels[TERMINAL_EXPIRES_LABEL]);
+        const expired = Number.isFinite(expires) && expires > 0 && expires < nowSec;
+        if (expired || (ownTerminalHelpers.has(h.id) && !live.has(h.id))) {
+          await forceRemoveContainer(t, h.id).catch(() => undefined);
+          ownTerminalHelpers.delete(h.id);
+        }
+      }
+    })().catch(() => undefined);
+  }, TERMINAL_HELPER_SWEEP_MS);
+  helperSweep.unref?.();
+}
+
+function intParam(p: Params, k: string, min: number, max: number): number {
+  const v = p[k];
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < min || v > max) throw new Error(`Invalid ${k}`);
+  return v;
+}
+
+/**
+ * True for a container a node terminal must not enter: the agent's own (it
+ * holds the token hash every sealed request is keyed with), the node proxy
+ * (certificates), and terminal helpers. Every service container on a node is
+ * named `<slug>-<deployment>` with no label, so there is no positive marker to
+ * require — the panel names only containers it resolved from its own rows,
+ * inside a sealed request.
+ */
+async function refusedTerminalContainer(name: string, summary: { id: string; hostname: string | null; labels: Record<string, string> }) {
+  const { hostname } = await import('node:os');
+  const { TERMINAL_SESSION_LABEL } = await import('./lib/dockerTty.js');
+  if (name === AGENT_CONTAINER || name === PROXY_CONTAINER) return true;
+  if (summary.labels[TERMINAL_SESSION_LABEL] !== undefined) return true;
+  const own = hostname();
+  if (/^[0-9a-f]{12,64}$/.test(own) && summary.id.startsWith(own)) return true;
+  return existsSync('/.dockerenv') && summary.hostname === own;
+}
+
+/** The host-shell helper image on a node: `NINEDEPLOY_HOST_SHELL_IMAGE`, else the node proxy's image (already present). */
+export function nodeHostShellImage(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = (env['NINEDEPLOY_HOST_SHELL_IMAGE'] ?? '').trim();
+  return configured && configured.length <= 255 && RE_IMAGE.test(configured) ? configured : PROXY_IMAGE;
+}
+
+/**
+ * `terminal.open {kind, container?, cols, rows, sessionId}` → one line,
+ * `ND-TERMINAL {"channel","salt"}`, inside the sealed reply. Refused unless
+ * the request arrived sealed (the reply carries the channel key's salt).
+ */
+async function terminalOpenOp(params: Params, onLine: (l: string) => void, sealed: boolean): Promise<number> {
+  if (!sealed) {
+    throw new Error('Refusing to open a terminal over the unencrypted transport: terminal.open is accepted only inside a sealed request');
+  }
+  const kind = str(params, 'kind');
+  if (kind !== 'container' && kind !== 'host') throw new Error('Invalid terminal kind');
+  const cols = intParam(params, 'cols', 10, 500);
+  const rows = intParam(params, 'rows', 5, 200);
+  const sessionId = intParam(params, 'sessionId', 1, 2 ** 31 - 1);
+  if (kind === 'host' && nodeHostTerminalForbidden()) {
+    throw new Error('Host shells are disabled on this node (NINEDEPLOY_AGENT_HOST_TERMINAL=off)');
+  }
+  const container = kind === 'container' ? validated(str(params, 'container'), RE_NAME, 'container name') : null;
+  if (container !== null && container.length > 128) throw new Error('Invalid container name');
+  if (terminalChannels.size >= TERMINAL_MAX_CHANNELS) {
+    throw new Error(`Too many open terminals on this node (at most ${TERMINAL_MAX_CHANNELS})`);
+  }
+  const tty = await import('./lib/dockerTty.js');
+  const t = tty.dockerTransport();
+  if (!tty.isEngineTransport(t)) throw new Error(`Terminals need the Docker Engine API on this node (${t.reason})`);
+
+  let proc: import('./lib/dockerTty.js').TtyProcess;
+  let helperId: string | null = null;
+  if (kind === 'host') {
+    const image = nodeHostShellImage();
+    const probe = await tty.probeHostShellImage(t, image);
+    if (!probe.ok) throw new Error(`Cannot start a host shell on this node: ${probe.reason}. Set NINEDEPLOY_HOST_SHELL_IMAGE on the agent to an image with nsenter.`);
+    const helper = await tty.openHostShellTty(t, {
+      image,
+      sessionId,
+      expiresAt: Math.ceil((Date.now() + TERMINAL_HARD_CAP_MS) / 1000) + 60,
+      cols,
+      rows,
+    });
+    helperId = helper.containerId;
+    ownTerminalHelpers.add(helperId);
+    ensureHelperSweep();
+    proc = helper;
+  } else {
+    const name = container as string;
+    const summary = await tty.inspectContainer(t, name);
+    if (!summary) throw new Error(`Container ${name} does not exist on this node`);
+    if (!summary.running) throw new Error(`Container ${name} is not running`);
+    if (await refusedTerminalContainer(name, summary)) throw new Error(`A shell inside ${name} is refused`);
+    proc = await tty.openExecTty(t, { container: name, cmd: tty.SHELL_CMD, cols, rows });
+  }
+
+  const { randomBytes } = await import('node:crypto');
+  const { FRAME_SALT_BYTES } = await import('./lib/agentFrameCipher.js');
+  const ch: TerminalChannel = {
+    id: randomBytes(16).toString('hex'),
+    salt: randomBytes(FRAME_SALT_BYTES),
+    tty: proc,
+    kind,
+    sessionId,
+    helperId,
+    state: 'pending',
+    timers: [],
+  };
+  const unref = (timer: NodeJS.Timeout) => {
+    timer.unref?.();
+    return timer;
+  };
+  ch.timers.push(
+    unref(setTimeout(() => {
+      if (ch.state === 'pending') void closeTerminalChannel(ch);
+    }, TERMINAL_CHANNEL_TTL_MS)),
+    unref(setTimeout(() => void closeTerminalChannel(ch), TERMINAL_HARD_CAP_MS)),
+  );
+  // A process that ends before anyone attached frees its slot at once.
+  proc.onEnd(() => {
+    if (ch.state === 'pending') void closeTerminalChannel(ch);
+  });
+  terminalChannels.set(ch.id, ch);
+  onLine(`ND-TERMINAL ${JSON.stringify({ channel: ch.id, salt: ch.salt.toString('base64') })}`);
+  return 0;
+}
+
+/** The parts of a `ws` socket the channel bridge uses. */
+interface AgentTerminalSocket {
+  readonly readyState: number;
+  readonly bufferedAmount: number;
+  send(data: Buffer): void;
+  close(code?: number, reason?: string): void;
+  on(event: 'message', cb: (data: unknown, isBinary: boolean) => void): unknown;
+  on(event: 'close' | 'error', cb: () => void): unknown;
+}
+
+/** The channel id a handshake offers, or null. */
+export function agentTerminalChannelId(header: string | string[] | undefined): string | null {
+  const raw = Array.isArray(header) ? header.join(',') : (header ?? '');
+  const entry = raw
+    .split(',')
+    .map((p) => p.trim())
+    .find((p) => p.startsWith(AGENT_TERMINAL_PROTOCOL_PREFIX));
+  const id = entry?.slice(AGENT_TERMINAL_PROTOCOL_PREFIX.length) ?? '';
+  return /^[0-9a-f]{32}$/.test(id) ? id : null;
+}
+
+/**
+ * Bridge one attached channel: decrypt the panel's frames into the process,
+ * encrypt its output back. The process's output is withheld until the
+ * panel's first frame has authenticated (anyone can race a WebSocket to the
+ * channel id; only the panel can derive the key). Any bad frame, the socket
+ * closing, or the process ending closes the channel and kills the process.
+ */
+async function bridgeTerminalChannel(socket: AgentTerminalSocket, ch: TerminalChannel, tokenHash: string): Promise<void> {
+  const { deriveFrameKey, FrameOpener, FrameSealer, FRAME_TYPE, decodeResize, encodeExit } = await import('./lib/agentFrameCipher.js');
+  const key = deriveFrameKey(tokenHash, ch.salt);
+  const rx = new FrameOpener(key, 'panel');
+  const tx = new FrameSealer(key, 'agent');
+  const OPEN = 1;
+  let authed = false;
+  let panelPaused = false;
+  let pressurePaused = false;
+  let drain: NodeJS.Timeout | undefined;
+  const shut = (code: number, reason: string) => {
+    clearInterval(drain);
+    try {
+      if (socket.readyState === OPEN) socket.close(code, reason);
+    } catch {
+      /* already closed */
+    }
+    void closeTerminalChannel(ch);
+  };
+  const send = (frame: Buffer) => {
+    if (socket.readyState !== OPEN) return;
+    try {
+      socket.send(frame);
+    } catch {
+      /* closed: the close handler ends the channel */
+    }
+  };
+  const authTimer = setTimeout(() => {
+    if (!authed) shut(1008, 'channel not authenticated');
+  }, TERMINAL_AUTH_TIMEOUT_MS);
+  authTimer.unref?.();
+  ch.timers.push(authTimer);
+
+  const applyPause = () => {
+    if (panelPaused || pressurePaused) ch.tty.pause();
+    else ch.tty.resume();
+  };
+  const startOutput = () => {
+    ch.tty.onData((chunk) => {
+      if (ch.state === 'closed') return;
+      for (const frame of tx.sealData(chunk)) send(frame);
+      if (!pressurePaused && socket.bufferedAmount > TERMINAL_BACKPRESSURE_HIGH) {
+        pressurePaused = true;
+        applyPause();
+        drain = setInterval(() => {
+          if (socket.readyState !== OPEN || socket.bufferedAmount <= TERMINAL_BACKPRESSURE_HIGH / 4) {
+            clearInterval(drain);
+            pressurePaused = false;
+            applyPause();
+          }
+        }, 50);
+        drain.unref?.();
+      }
+    });
+    ch.tty.onEnd((code) => {
+      send(tx.seal(FRAME_TYPE.exit, encodeExit(code)));
+      shut(1000, 'shell exited');
+    });
+  };
+
+  socket.on('message', (data, isBinary) => {
+    if (ch.state === 'closed') return;
+    if (!isBinary) return shut(1008, 'text frames are not part of this protocol');
+    const bytes = Buffer.isBuffer(data) ? data : Array.isArray(data) ? Buffer.concat(data as Buffer[]) : Buffer.from(data as ArrayBuffer);
+    let frame: { type: number; payload: Buffer };
+    try {
+      frame = rx.open(bytes);
+    } catch {
+      return shut(1008, 'bad frame');
+    }
+    if (!authed) {
+      authed = true;
+      clearTimeout(authTimer);
+      startOutput();
+    }
+    switch (frame.type) {
+      case FRAME_TYPE.data:
+        ch.tty.write(frame.payload);
+        return;
+      case FRAME_TYPE.resize: {
+        const size = decodeResize(frame.payload);
+        if (size) ch.tty.resize(size.cols, size.rows);
+        return;
+      }
+      case FRAME_TYPE.pause:
+        panelPaused = true;
+        applyPause();
+        return;
+      case FRAME_TYPE.resume:
+        panelPaused = false;
+        applyPause();
+        return;
+      case FRAME_TYPE.close:
+        return shut(1000, 'closed by the panel');
+      default:
+        // `exit` is the agent's to send.
+        return shut(1008, 'unexpected frame');
+    }
+  });
+  socket.on('close', () => shut(1000, ''));
+  socket.on('error', () => shut(1011, ''));
+}
+
+/** Test hook: forget every channel without touching processes. */
+export function _resetAgentTerminals(): void {
+  for (const ch of terminalChannels.values()) for (const t of ch.timers) clearTimeout(t);
+  terminalChannels.clear();
+  ownTerminalHelpers.clear();
+  if (helperSweep) clearInterval(helperSweep);
+  helperSweep = undefined;
+}
+
 /**
  * Operations handled by `runOp` directly rather than through the argv table.
  * The route consults this alongside `OPS` so a new handler cannot be reachable
@@ -836,6 +1251,8 @@ const HANDLED_OPS = new Set([
   'git.ensure',
   'proxy.writeConfig',
   'proxy.ensure',
+  // 0.15 (T2b): sealed only; advertised as the `terminal` capability.
+  'terminal.open',
 ]);
 
 /**
@@ -857,7 +1274,7 @@ export async function runOp(
     // r660: version + capabilities ride inside the sealed answer, so the panel
     // can refuse what an older agent would do unsafely (see AGENT_CAPABILITIES).
     const { VERSION } = await import('./version.js');
-    onLine(`ND-AGENT ${JSON.stringify({ version: VERSION, caps: AGENT_CAPABILITIES })}`);
+    onLine(`ND-AGENT ${JSON.stringify({ version: VERSION, caps: agentCapabilities() })}`);
     return 0;
   }
   if (op === 'workspace.remove') {
@@ -949,6 +1366,9 @@ export async function runOp(
   }
   if (op === 'proxy.ensure') {
     return proxyEnsureOp(params, onLine);
+  }
+  if (op === 'terminal.open') {
+    return terminalOpenOp(params, onLine, ctx.sealed === true);
   }
   if (op === 'git.reset') {
     // r227: a pinned commit older than the shallow tip (a rollback, or a
@@ -1325,6 +1745,42 @@ export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: 
     sealed: true,
     version: (await import('./version.js')).VERSION,
   }));
+
+  // 0.15 (T2b): the node terminal channel. No token check here: the channel
+  // id comes only from a SEALED `terminal.open` reply, is single use and
+  // expires in 30 s, and every frame is encrypted and authenticated under a
+  // key derived from the shared secret — a peer without it can neither feed
+  // the shell nor read it. Anything but a pending channel closes 1008.
+  if (!app.hasDecorator('websocketServer')) {
+    // agentApp registers it; a bare instance (tests) gets the same options here.
+    const { default: websocket } = await import('@fastify/websocket');
+    await app.register(websocket, agentWebsocketOptions);
+  }
+  app.addHook('onClose', async () => {
+    await closeAllTerminalChannels();
+  });
+  app.get(AGENT_TERMINAL_PATH, { websocket: true, config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, (socket, req) => {
+    const id = agentTerminalChannelId(req.headers['sec-websocket-protocol']);
+    const ch = id === null ? undefined : terminalChannels.get(id);
+    if (!ch || ch.state !== 'pending') {
+      try {
+        socket.close(1008, 'unknown terminal channel');
+      } catch {
+        /* already closed */
+      }
+      return;
+    }
+    // Consumed: a second connection with the same id finds nothing.
+    ch.state = 'attached';
+    void bridgeTerminalChannel(socket as unknown as AgentTerminalSocket, ch, tokenHash).catch(() => {
+      try {
+        socket.close(1011, 'terminal error');
+      } catch {
+        /* already closed */
+      }
+      void closeTerminalChannel(ch);
+    });
+  });
 };
 
 // Boot when the agent flag is set. Tests set NINEDEPLOY_AGENT=1 explicitly
@@ -1344,4 +1800,4 @@ if (process.env['NINEDEPLOY_AGENT'] === '1') {
   });
 }
 
-export const agentMode = { main, OPS };
+export const agentMode = { main, OPS, HANDLED_OPS };

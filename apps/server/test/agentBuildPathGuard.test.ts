@@ -16,7 +16,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AGENT_CAPABILITIES, runOp } from '../src/agent.js';
+import { AGENT_CAPABILITIES, agentCapabilities, runOp } from '../src/agent.js';
 
 const spawnMock = vi.hoisted(() => vi.fn(async () => 0));
 vi.mock('../src/lib/spawnValidated.js', () => ({ spawnValidated: spawnMock }));
@@ -130,7 +130,9 @@ describe('r660: node-side build paths', () => {
     await runOp('agent.ping', {}, (l) => lines.push(l));
     expect(lines).toHaveLength(1);
     const info = JSON.parse((lines[0] as string).replace(/^ND-AGENT /, '')) as { version: string; caps: string[] };
-    expect(info.caps).toEqual([...AGENT_CAPABILITIES]);
+    // 0.15 (T2b): plus `terminal.host` while the node's host-shell switch is not off.
+    expect(info.caps).toEqual(agentCapabilities());
+    expect(info.caps.slice(0, AGENT_CAPABILITIES.length)).toEqual([...AGENT_CAPABILITIES]);
     expect(info.caps).toContain('build-path-guard');
     expect(typeof info.version).toBe('string');
   });
