@@ -191,3 +191,43 @@ describe('lib/certificateInventory', () => {
     });
   });
 });
+
+// D4 (0.14): the inventory reports the real issuer/subject and stops calling
+// an operator upload auto-renewed.
+describe('lib/certificateInventory — D4', () => {
+  it('reports a custom upload as static, not auto-renewed, with its real issuer and subject', async () => {
+    proxyState.certs = [
+      {
+        domain: 'shop.example.com',
+        expiresAt: inDays(90),
+        source: 'custom',
+        issuer: 'O=Example CA, CN=Example Issuing CA',
+        subject: 'CN=*.example.com',
+        sans: ['*.example.com'],
+        notBefore: agoDays(10),
+      } as never,
+    ];
+    const [entry] = (await buildCertificateInventory()).certificates;
+    expect(entry).toMatchObject({
+      host: 'shop.example.com',
+      issuer: 'O=Example CA, CN=Example Issuing CA',
+      subject: 'CN=*.example.com',
+      sans: ['*.example.com'],
+      notBefore: agoDays(10).toISOString(),
+      autoRenew: false,
+      source: 'static',
+    });
+  });
+
+  it('uses the parsed issuer of an ACME certificate, and keeps 0.13 values when it did not parse', async () => {
+    proxyState.certs = [
+      { domain: 'a.example.com', expiresAt: inDays(60), source: 'acme', issuer: "C=US, O=Let's Encrypt, CN=R11", subject: 'CN=a.example.com' } as never,
+      { domain: 'b.example.com', expiresAt: inDays(60), source: 'acme' } as never,
+      { domain: 'c.example.com', expiresAt: null, source: 'custom' } as never,
+    ];
+    const [a, b, c] = (await buildCertificateInventory()).certificates;
+    expect(a).toMatchObject({ issuer: "C=US, O=Let's Encrypt, CN=R11", subject: 'CN=a.example.com', autoRenew: true, source: 'acme.json' });
+    expect(b).toMatchObject({ issuer: "Let's Encrypt", subject: null, sans: [], notBefore: null, autoRenew: true, source: 'acme.json' });
+    expect(c).toMatchObject({ issuer: null, autoRenew: false, source: 'static' });
+  });
+});

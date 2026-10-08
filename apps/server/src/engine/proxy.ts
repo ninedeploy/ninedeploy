@@ -1,6 +1,6 @@
 import { hostPathFor } from '../lib/hostPath.js';
-import { createHash, randomUUID } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash, randomUUID, X509Certificate } from 'node:crypto';
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { domains, serviceTargets, servers, services, type DB } from '@ninedeploy/db';
 import { eq } from 'drizzle-orm';
@@ -13,6 +13,16 @@ import { ensureDockerImage } from '../lib/dockerPull.js';
 import { hostsCollide, wwwCompanionHost } from '../lib/domainVerification.js';
 import { hashBasicAuthEntry, parseBasicAuth } from '../lib/htpasswd.js';
 import { reapTraefikNetworks } from '../lib/serviceBridge.js';
+import {
+  cachedCustomCertificates,
+  certificateHostnames,
+  certificatesCovering,
+  hostsFullyCovered,
+  type LoadedCertificate,
+  refreshCustomCertificates,
+  renderCertificateEntries,
+  servableCertificates,
+} from '../lib/customCertificates.js';
 import { MAX_REPLICAS, NETWORK, replicaNames, TRAEFIK_CONTAINER, TRAEFIK_IMAGE } from './dockerNames.js';
 
 // Defined in a leaf module and re-exported here: `proxy` and `serviceBridge`
@@ -77,7 +87,7 @@ function auditRenderRefusal(db: DB, d: { id: number; serviceId: number; hostname
 }
 
 /** Atomically replace `file`'s contents: write to a sibling temp file then rename. */
-function writeAtomic(file: string, content: string): void {
+function writeAtomic(file: string, content: string, mode?: number): void {
   // Unique temp name per write: both writes are fully synchronous (no yield
   // point in Node), but a second process — or a stale `.tmp` from a crashed
   // run — must never collide with this write.
@@ -89,7 +99,7 @@ function writeAtomic(file: string, content: string): void {
   // until the next deploy or domain change happened to rewrite the file.
   mkdirSync(path.dirname(file), { recursive: true });
   try {
-    writeFileSync(tmp, content);
+    writeFileSync(tmp, content, mode === undefined ? undefined : { mode });
     renameSync(tmp, file);
   } catch (err) {
     // A failed rename (a full disk, a Windows lock on the mounted file) used
@@ -172,8 +182,22 @@ export function encryptDnsToken(token: string): string {
  * SSL toggle issue real certificates. Without an email the resolver is
  * omitted so an unconfigured instance keeps working (routing still
  * functions; `ssl` domains fall back to Traefik's default self-signed cert).
+ *
+ * 0.14: the file provider reads a DIRECTORY (`/etc/traefik/dynamic`) rather
+ * than one file, on the panel and on every node alike. The panel keeps three
+ * files there — the generated `ninedeploy.yml`, `certificates.yml` and the
+ * operator's `custom.yml` — and the node agent has always written its routes
+ * to `dynamic/ninedeploy.yml`. Through 0.13 the shared rendering said
+ * `filename: /etc/traefik/dynamic.yml`, a path nothing on a node writes, so
+ * node proxies loaded no routes at all (D1, test/lib/nodeProxyD1.test.ts).
+ *
+ * `logLevel` exists for the custom-config preflight container only.
  */
-export function renderStaticConfig(acmeEmail: string | null, dns: DnsConfig | null = null): string {
+export function renderStaticConfig(
+  acmeEmail: string | null,
+  dns: DnsConfig | null = null,
+  opts: { logLevel?: 'INFO' | 'ERROR' } = {},
+): string {
   const useDns = !!(dns?.provider && dns.token && DNS_PROVIDERS[dns.provider]);
   const challenge = useDns
     ? `      dnsChallenge:
@@ -203,20 +227,38 @@ entryPoints:
     http3: {}
 providers:
   file:
-    filename: /etc/traefik/dynamic.yml
+    directory: ${TRAEFIK_DYNAMIC_DIR}
     watch: true
 api:
   dashboard: false
 log:
-  level: INFO
+  level: ${opts.logLevel ?? 'INFO'}
 accessLog: {}
 ${acme}`;
 }
 
+/** Where every NineDeploy-managed Traefik (panel and nodes) reads its dynamic files. */
+export const TRAEFIK_DYNAMIC_DIR = '/etc/traefik/dynamic';
+
 /** Path helpers for the Traefik config directory under the data dir. */
 const dir = () => path.join(config.paths.dataDir, 'traefik');
 const staticPath = () => path.join(dir(), 'traefik.yml');
-const dynamicPath = () => path.join(dir(), 'dynamic.yml');
+/** 0.14: the directory the file provider watches (`<data>/traefik/dynamic`). */
+export const traefikDynamicDir = () => path.join(dir(), 'dynamic');
+/** The generated routes — byte-for-byte what 0.13 wrote to `dynamic.yml`. */
+export const generatedConfigPath = () => path.join(traefikDynamicDir(), 'ninedeploy.yml');
+/** Uploaded certificates (inline PEM); present only while some are servable. */
+export const certificatesConfigPath = () => path.join(traefikDynamicDir(), 'certificates.yml');
+/** The operator's custom dynamic config; present only when one is saved. */
+export const customConfigPath = () => path.join(traefikDynamicDir(), 'custom.yml');
+/**
+ * 0.13's single route file. Kept on disk for a rollback, never created by
+ * 0.14, and only mirrored while the running Traefik may still be reading it
+ * (see {@link legacyMirrorActive}).
+ */
+export const legacyDynamicPath = () => path.join(dir(), 'dynamic.yml');
+/** Files in the dynamic directory that hold private keys or operator input. */
+const PRIVATE_FILE_MODE = 0o600;
 // ACME account key + issued certificates live here; persisted under the data
 // dir so renewals survive container recreates.
 const acmePath = () => path.join(dir(), 'acme.json');
@@ -271,6 +313,13 @@ export async function getAcmeEmail(db: DB): Promise<string | null> {
 export interface CertificateInfo {
   domain: string;
   expiresAt: Date | null;
+  /** 0.14: `acme` (Traefik's acme.json) or `custom` (an operator upload). */
+  source?: 'acme' | 'custom';
+  /** Issuer / subject DN on one line, when the PEM parsed. */
+  issuer?: string | null;
+  subject?: string | null;
+  sans?: string[];
+  notBefore?: Date | null;
 }
 
 /**
@@ -305,8 +354,40 @@ export function parseCertExpiry(pem: string): Date | null {
  * Read the issued certificates out of Traefik's acme.json storage.
  * Shape: { <resolver>: { Certificates: [{ domain: { main }, certificate: PEM }] } }.
  * Returns [] when ACME is unused or the file is absent/corrupt.
+ *
+ * 0.14: followed by one entry per hostname of every uploaded certificate
+ * (`source: 'custom'`), from the cache each render refreshes — so the
+ * collector's expiry alert, the domain index, the inventory and the kernel
+ * driver all see uploads without knowing about them.
  */
 export function readCertificates(): CertificateInfo[] {
+  return [...readAcmeCertificates(), ...customCertificateInfos()];
+}
+
+/** acme.json PEMs are base64 of the PEM text (Traefik stores `[]byte`). */
+function acmePemText(stored: string): string {
+  if (stored.includes('-----BEGIN')) return stored;
+  try {
+    return Buffer.from(stored, 'base64').toString('utf8');
+  } catch {
+    return stored;
+  }
+}
+
+/** D4: the real issuer/subject of an ACME certificate, when its PEM parses. */
+function acmeMetadata(stored: string): Pick<CertificateInfo, 'issuer' | 'subject' | 'sans' | 'notBefore'> {
+  try {
+    const leaf = acmePemText(stored).match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/)?.[0];
+    if (!leaf) return {};
+    const x = new X509Certificate(leaf);
+    const dn = (v: string | undefined) => (v ? v.split('\n').filter(Boolean).join(', ') : null);
+    return { issuer: dn(x.issuer), subject: dn(x.subject), sans: certificateHostnames(x), notBefore: x.validFromDate };
+  } catch {
+    return {};
+  }
+}
+
+function readAcmeCertificates(): CertificateInfo[] {
   try {
     if (!existsSync(acmePath())) return [];
     const raw = JSON.parse(readFileSync(acmePath(), 'utf-8')) as Record<
@@ -318,13 +399,30 @@ export function readCertificates(): CertificateInfo[] {
       for (const cert of resolver.Certificates ?? []) {
         const domain = cert.domain?.main;
         if (!domain || !cert.certificate) continue;
-        out.push({ domain, expiresAt: parseCertExpiry(cert.certificate) });
+        // T2-A: Traefik stores the PEM base64-encoded (a Go []byte); fed raw,
+        // parseCertExpiry found no timestamp and every ACME certificate
+        // reported no expiry, so the cert-expiry alert could never fire.
+        out.push({ domain, expiresAt: parseCertExpiry(acmePemText(cert.certificate)), source: 'acme', ...acmeMetadata(cert.certificate) });
       }
     }
     return out;
   } catch {
     return [];
   }
+}
+
+function customCertificateInfos(): CertificateInfo[] {
+  return cachedCustomCertificates().flatMap((c) =>
+    c.hostnames.map((domain) => ({
+      domain,
+      expiresAt: c.notAfter,
+      source: 'custom' as const,
+      issuer: c.issuer,
+      subject: c.subject,
+      sans: [...c.hostnames],
+      notBefore: c.notBefore,
+    })),
+  );
 }
 
 /** Whether `container` is attached to `network`. */
@@ -382,6 +480,12 @@ async function ensureTraefikUnlocked(
   dns: DnsConfig | null = null,
 ): Promise<boolean> {
   mkdirSync(dir(), { recursive: true });
+  mkdirSync(traefikDynamicDir(), { recursive: true });
+  // 0.14 (M8): the routes move from `dynamic.yml` to `dynamic/ninedeploy.yml`.
+  // Copy the legacy file into place BEFORE the static change below recreates
+  // the container, so the new Traefik starts with every existing route and
+  // there is no 404 window between its start and the boot-time render.
+  migrateLegacyRoutes();
   const renderedStaticConfig = renderStaticConfig(acmeEmail, dns);
   const configFingerprint = traefikConfigFingerprint(acmeEmail, dns);
   const staticConfigChanged =
@@ -389,8 +493,8 @@ async function ensureTraefikUnlocked(
   if (staticConfigChanged) writeAtomic(staticPath(), renderedStaticConfig);
   // r363: an empty placeholder has no routes — report it so the caller
   // renders the real ones instead of serving 404s until the next deploy.
-  const seededPlaceholder = !existsSync(dynamicPath());
-  if (seededPlaceholder) writeFileSync(dynamicPath(), 'http:\n  routers:\n  services:\n');
+  const seededPlaceholder = !existsSync(generatedConfigPath());
+  if (seededPlaceholder) writeFileSync(generatedConfigPath(), 'http:\n  routers:\n  services:\n');
   if (acmeEmail) {
     if (!existsSync(acmePath())) {
       // Seed the ACME storage file so the bind mount below is a FILE and not an
@@ -413,6 +517,9 @@ async function ensureTraefikUnlocked(
     const hostConfigDir = await hostPathFor(dir());
     const runningOurDir = runningCurrentConfig && await mountsConfigDir(TRAEFIK_CONTAINER, hostConfigDir);
     if (runningOurDir && !staticConfigChanged) {
+      // The fingerprint matched the directory-provider static config: the
+      // running Traefik no longer reads the legacy file.
+      legacyMirror = false;
       log('traefik already running on shared network');
       return seededPlaceholder;
     }
@@ -482,12 +589,53 @@ async function ensureTraefikUnlocked(
       const logs = await capture('docker', ['logs', '--tail', '50', TRAEFIK_CONTAINER]).catch(() => 'logs unavailable');
       throw new Error(`traefik container did not stay running on network '${NETWORK}': ${logs.trim()}`);
     }
+    legacyMirror = false;
     log('traefik started (http :80 / https :443) on shared network');
     return true;
   } catch (err) {
     log(`traefik warning: ${err instanceof Error ? err.message : err}`);
     log('domain routing will be unavailable until traefik can bind :80/:443');
     throw err instanceof Error ? err : new Error(String(err));
+  }
+}
+
+/**
+ * 0.14: until this process has seen the panel's Traefik running on the
+ * directory-provider static config, the container serving traffic may still
+ * be a 0.13 one reading `dynamic.yml` (the boot recreate failed — an image
+ * pull error keeps the old container up, by design). While that is possible,
+ * every route write is mirrored into the legacy file, but only if it already
+ * exists, so a failed recreate costs freshness, never routes. Once the new
+ * container is confirmed the legacy file is left alone, as the design says.
+ */
+let legacyMirror = true;
+
+/** Whether route writes are still mirrored into the legacy `dynamic.yml` (exported for tests). */
+export function legacyMirrorActive(): boolean {
+  return legacyMirror;
+}
+
+/**
+ * The one-time 0.13 → 0.14 route move (M8). Copies `dynamic.yml` to
+ * `dynamic/ninedeploy.yml` when the new file is missing — the first 0.14 boot
+ * — or when the legacy file was written after it and differs, which only a
+ * rollback to 0.13 (or a 0.13 archive import) does: a re-upgrade must not
+ * start Traefik on the routes from before the rollback. Atomic, and never
+ * throws: a failed copy falls back to the placeholder plus the boot render.
+ */
+function migrateLegacyRoutes(): void {
+  try {
+    const legacy = legacyDynamicPath();
+    if (!existsSync(legacy)) return;
+    const target = generatedConfigPath();
+    const content = readFileSync(legacy, 'utf8');
+    if (existsSync(target)) {
+      if (statSync(legacy).mtimeMs <= statSync(target).mtimeMs) return;
+      if (readFileSync(target, 'utf8') === content) return;
+    }
+    writeAtomic(target, content);
+  } catch {
+    /* best effort — the boot render rewrites the routes right after */
   }
 }
 
@@ -549,8 +697,52 @@ export function writeDynamicConfig(db: DB, opts: DynamicConfigOptions = {}): Pro
 }
 
 async function writeDynamicConfigUnlocked(db: DB, opts: DynamicConfigOptions): Promise<void> {
-  writeAtomic(dynamicPath(), await renderDynamicConfig(db, { serverId: null }));
+  // The render refreshes the uploaded-certificate cache; the certificates
+  // file is written from it FIRST, so a router that just switched to
+  // `tls: {}` never appears before the certificate it relies on.
+  const routes = await renderDynamicConfig(db, { serverId: null });
+  writeCertificatesFile(cachedCustomCertificates());
+  writeAtomic(generatedConfigPath(), routes);
+  if (legacyMirror && existsSync(legacyDynamicPath())) {
+    try {
+      writeAtomic(legacyDynamicPath(), routes);
+    } catch {
+      /* the mirror is a courtesy to a container that may already be gone */
+    }
+  }
   await refreshNodeProxies(db, opts.requireNode);
+}
+
+/**
+ * Write (or remove) the panel's `dynamic/certificates.yml` from these
+ * certificates. Only unexpired ones are served (an expired upload must not
+ * shadow ACME or the default certificate), capped at 100, mode 0600 because
+ * it carries private keys inline.
+ */
+function writeCertificatesFile(certs: readonly LoadedCertificate[]): void {
+  const servable = servableCertificates(certs);
+  const file = certificatesConfigPath();
+  if (servable.length === 0) {
+    rmSync(file, { force: true });
+    return;
+  }
+  const body =
+    '# Managed by NineDeploy — uploaded TLS certificates. Do not edit by hand.\n' +
+    `tls:\n  certificates:\n${renderCertificateEntries(servable).join('')}`;
+  writeAtomic(file, escapeTemplateDelims(body), PRIVATE_FILE_MODE);
+}
+
+/**
+ * M12: rebuild `certificates.yml` from the database (the source of truth),
+ * e.g. at boot before Traefik is (re)started. Never throws.
+ */
+export async function materialiseCertificatesFile(db: DB): Promise<void> {
+  try {
+    mkdirSync(traefikDynamicDir(), { recursive: true });
+    writeCertificatesFile(await refreshCustomCertificates(db));
+  } catch {
+    /* the next route write retries */
+  }
 }
 
 /** Per-node cooldown for the best-effort refresh audit — a dead node must not
@@ -667,6 +859,12 @@ export async function renderDynamicConfig(
   const acmeEmail = await getAcmeEmail(db);
   const dns = await getDnsConfig(db);
   const dnsReady = !!(dns.provider && dns.token && DNS_PROVIDERS[dns.provider]);
+  // 0.14 (M9): uploaded certificates. With none stored this is `[]` and every
+  // branch below renders exactly what 0.13 rendered.
+  const customCerts = await refreshCustomCertificates(db);
+  const now = new Date();
+  /** Hosts this proxy routes — a node inlines only certificates covering them. */
+  const routedHosts = new Set<string>();
 
   const routers: string[] = [];
   const svcBlocks: string[] = [];
@@ -754,13 +952,21 @@ export async function renderDynamicConfig(
     // A www pair lists both domains SEPARATELY — Traefik orders one
     // certificate per `domains` entry, so a `www.` host whose DNS never
     // points here fails only its own issuance and leaves the apex intact.
+    // 0.14: a domain whose every routed host an unexpired upload covers is
+    // served that certificate — `tls: {}`, no resolver, so Traefik never
+    // orders an ACME certificate in its place. A www pair needs both names.
+    const routerHosts = wwwPair ? [apexHost, `www.${apexHost}`] : [host];
+    for (const rh of routerHosts) routedHosts.add(rh);
+    const customCovered = d.ssl && hostsFullyCovered(routerHosts, customCerts, now);
     const tlsBlock = d.ssl
-      ? acmeEmail
-        ? wwwPair
-          ? '\n      tls:\n        certResolver: letsencrypt\n        domains:\n' +
-            `          - main: "${apexHost}"\n          - main: "www.${apexHost}"\n`
-          : '\n      tls:\n        certResolver: letsencrypt'
-        : '\n      tls: {}'
+      ? customCovered
+        ? '\n      tls: {}'
+        : acmeEmail
+          ? wwwPair
+            ? '\n      tls:\n        certResolver: letsencrypt\n        domains:\n' +
+              `          - main: "${apexHost}"\n          - main: "www.${apexHost}"\n`
+            : '\n      tls:\n        certResolver: letsencrypt'
+          : '\n      tls: {}'
       : '';
     // Traefik's Host() matcher is literal — a wildcard hostname needs a
     // HostRegexp rule instead (`*.example.com` → one label + the suffix).
@@ -910,16 +1116,19 @@ export async function renderDynamicConfig(
     const host = String(panelDomain).replace(HOST_RE, '');
     if (host) {
       const hostMatcher = `Host(\`${host}\`)`;
-      const tlsBlock = acmeEmail
-        ? '\n      tls:\n        certResolver: letsencrypt'
-        : '\n      tls: {}';
+      // 0.14: the panel domain follows the same rule as any domain — an
+      // unexpired upload covering it replaces the resolver.
+      const panelCovered = certificatesCovering(host, customCerts, now).length > 0;
+      const tlsBlock =
+        acmeEmail && !panelCovered ? '\n      tls:\n        certResolver: letsencrypt' : '\n      tls: {}';
       // r637: a router with a `tls` section serves HTTPS only — Traefik
       // ignores it for plain-HTTP requests, so listing `web` here never made
       // http://panel work; it answered 404. With a real certificate (ACME
       // configured) plain HTTP now redirects to the TLS router. Without one
       // the config is left exactly as it was: redirecting an operator onto a
       // self-signed certificate is not a fix to make for them.
-      const redirectPanel = !!acmeEmail;
+      // 0.14: an uploaded certificate is a real one too, so it earns the redirect.
+      const redirectPanel = !!acmeEmail || panelCovered;
 
       routers.push(
         '    ninedeploy_panel:\n' +
@@ -973,6 +1182,18 @@ export async function renderDynamicConfig(
       `        - main: "*.${apex}"\n` +
       `          sans:\n            - "${apex}"\n`;
   }
+  // 0.14: a NODE serves inline the uploads covering hosts it routes (the
+  // agent writes a single file); the panel gets them in `certificates.yml`.
+  // Appended to the same `tls.certificates` list — a second `tls:` key would
+  // be a duplicate mapping key.
+  if (forNode) {
+    const entries = renderCertificateEntries(
+      servableCertificates(customCerts, now).filter((c) =>
+        [...routedHosts].some((h) => certificatesCovering(h, [c], now).length > 0),
+      ),
+    );
+    if (entries.length) tlsCerts = (tlsCerts || 'tls:\n  certificates:\n') + entries.join('');
+  }
 
   if (httpsRedirectUsed) {
     middlewares.push(`    ${HTTPS_REDIRECT_MW}:\n      redirectScheme:\n        scheme: https\n        permanent: false\n`);
@@ -1005,7 +1226,7 @@ export async function renderDynamicConfig(
  * made Traefik refuse the whole file. Every `{{` is re-emitted as the action
  * {{`{{`}}, which prints the two braces literally.
  */
-function escapeTemplateDelims(text: string): string {
+export function escapeTemplateDelims(text: string): string {
   return text.replaceAll('{{', '{{`{{`}}');
 }
 

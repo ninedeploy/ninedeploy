@@ -1,13 +1,17 @@
 import { copyFileSync, existsSync, readFileSync } from 'node:fs';
+import { CORE_SCHEMA, load } from 'js-yaml';
 import { config } from '../config.js';
 import { capture, run } from '../lib/exec.js';
 import { audit } from '../lib/audit.js';
 import { pullDockerImage } from '../lib/dockerPull.js';
 import {
+  customConfigPath,
   ensureNetwork,
   ensureTraefik,
+  generatedConfigPath,
   getAcmeEmail,
   getDnsConfig,
+  legacyDynamicPath,
   readCertificates,
   TRAEFIK_CONTAINER,
   TRAEFIK_IMAGE,
@@ -182,7 +186,9 @@ function processCertificates(): TraefikCertificate[] {
       domain: cert.domain,
       expiresAt: cert.expiresAt?.toISOString() ?? null,
       daysUntilExpiry,
-      issuer: 'Let\'s Encrypt',
+      // D4: the parsed issuer when there is one; an ACME entry whose PEM did
+      // not parse keeps 0.13's label.
+      issuer: cert.issuer ?? (cert.source === 'custom' ? null : 'Let\'s Encrypt'),
     };
   });
 }
@@ -197,11 +203,64 @@ async function getTraefikLogs(lines: number = 100): Promise<string[]> {
   }
 }
 
-/** Dinamik konfigürasyonu parse et */
-async function getTraefikConfig(): Promise<{ routers: TraefikRouter[]; services: TraefikService[]; middlewares: TraefikMiddleware[] }> {
-  const dataDir = config.paths.dataDir;
-  const dynamicPath = `${dataDir}/traefik/dynamic.yml`;
-  
+/** The routing tables of one dynamic file. */
+interface TraefikTables {
+  routers: TraefikRouter[];
+  services: TraefikService[];
+  middlewares: TraefikMiddleware[];
+}
+
+/**
+ * 0.14 (M11): the generated routes live in `dynamic/ninedeploy.yml`; until
+ * the first 0.14 Traefik heal moved them they are still in `dynamic.yml`.
+ * `custom` lists what the operator's `custom.yml` defines, separately.
+ */
+async function getTraefikConfig(): Promise<TraefikTables & { custom: TraefikTables }> {
+  const generated = existsSync(generatedConfigPath()) ? generatedConfigPath() : legacyDynamicPath();
+  return { ...(await parseGeneratedConfig(generated)), custom: parseCustomConfig(customConfigPath()) };
+}
+
+/** Routers, services and middlewares the operator's custom file defines (`http` and `tcp`). */
+function parseCustomConfig(file: string): TraefikTables {
+  const out: TraefikTables = { routers: [], services: [], middlewares: [] };
+  try {
+    if (!existsSync(file)) return out;
+    const doc = load(readFileSync(file, 'utf8'), { schema: CORE_SCHEMA });
+    const obj = (v: unknown): Record<string, unknown> =>
+      typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+    const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+    for (const proto of ['http', 'tcp']) {
+      const section = obj(obj(doc)[proto]);
+      for (const [name, r] of Object.entries(obj(section['routers']))) {
+        const ro = obj(r);
+        out.routers.push({
+          name,
+          rule: typeof ro['rule'] === 'string' ? ro['rule'] : '',
+          service: typeof ro['service'] === 'string' ? ro['service'] : '',
+          entryPoints: strs(ro['entryPoints']),
+          tls: ro['tls'] !== undefined,
+          middleware: strs(ro['middlewares']),
+        });
+      }
+      for (const [name, sv] of Object.entries(obj(section['services']))) {
+        const servers = obj(obj(sv)['loadBalancer'])['servers'];
+        const first = Array.isArray(servers) ? obj(servers[0]) : {};
+        const url = first['url'] ?? first['address'];
+        out.services.push({ name, url: typeof url === 'string' ? url : '', loadBalancer: 'roundRobin' });
+      }
+      for (const [name, mw] of Object.entries(obj(section['middlewares']))) {
+        const [type = 'custom', cfg] = Object.entries(obj(mw))[0] ?? [];
+        out.middlewares.push({ name, type, config: obj(cfg) });
+      }
+    }
+    return out;
+  } catch {
+    return { routers: [], services: [], middlewares: [] };
+  }
+}
+
+/** Hand-parse the generated route file (its layout is ours; see renderDynamicConfig). */
+async function parseGeneratedConfig(dynamicPath: string): Promise<TraefikTables> {
   try {
     if (!existsSync(dynamicPath)) {
       return { routers: [], services: [], middlewares: [] };

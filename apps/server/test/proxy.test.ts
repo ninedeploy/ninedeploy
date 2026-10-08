@@ -85,7 +85,7 @@ describe('certificate tracking', () => {
       JSON.stringify({ letsencrypt: { Certificates: [{ domain: { main: 'app.example.com' }, certificate: pem }] } }),
     );
     const certs = readCertificates();
-    expect(certs).toEqual([{ domain: 'app.example.com', expiresAt: new Date('2027-01-01T00:00:00Z') }]);
+    expect(certs).toEqual([{ domain: 'app.example.com', expiresAt: new Date('2027-01-01T00:00:00Z'), source: 'acme' }]);
   });
 
   it('skips acme.json entries without a domain or certificate', () => {
@@ -163,18 +163,18 @@ describe('writeDynamicConfig', () => {
 
     await writeDynamicConfig(db as never);
 
-    expect(readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8')).toContain('app.example.com');
+    expect(readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8')).toContain('app.example.com');
   });
 
   it('r363: leaves no temp file behind when the rename fails', async () => {
     // A DIRECTORY where dynamic.yml should be makes renameSync fail.
-    rmSync(path.join(traefikDir, 'dynamic.yml'), { recursive: true, force: true });
-    mkdirSync(path.join(traefikDir, 'dynamic.yml', 'blocker'), { recursive: true });
+    rmSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), { recursive: true, force: true });
+    mkdirSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml', 'blocker'), { recursive: true });
     try {
       await expect(writeDynamicConfig(makeDb([], []) as never)).rejects.toThrow();
       expect(readdirSync(traefikDir).filter((f) => f.endsWith('.tmp'))).toEqual([]);
     } finally {
-      rmSync(path.join(traefikDir, 'dynamic.yml'), { recursive: true, force: true });
+      rmSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), { recursive: true, force: true });
     }
   });
 
@@ -189,7 +189,7 @@ describe('writeDynamicConfig', () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     expect(yaml).toContain('rule: "Host(`app.example.com`)');
     expect(yaml).toContain('entryPoints:\n        - websecure');
     expect(yaml).toContain('tls: {}');
@@ -198,10 +198,11 @@ describe('writeDynamicConfig', () => {
     expect(yaml).toContain('svc_web_1:');
     expect(yaml).toContain('svc_web_2:');
     expect(yaml).toContain('url: "http://web-1:3000"');
-    // domains + services to render, then `servers` to decide whether any node
-    // proxy needs the same refresh. A single-host install pays that third
-    // select over an empty table and fans out to nobody.
-    expect(db.select).toHaveBeenCalledTimes(3);
+    // domains + services + (0.14) uploaded certificates to render, then
+    // `servers` to decide whether any node proxy needs the same refresh. A
+    // single-host install pays that select over an empty table and fans out
+    // to nobody.
+    expect(db.select).toHaveBeenCalledTimes(4);
   });
 
   it('load-balances a docker service with replicas and health-checks each server', async () => {
@@ -212,7 +213,7 @@ describe('writeDynamicConfig', () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     // One server per generation container: the primary plus -r2/-r3.
     expect(yaml).toContain('url: "http://web-7:3000"');
     expect(yaml).toContain('url: "http://web-7-r2:3000"');
@@ -249,7 +250,7 @@ describe('writeDynamicConfig', () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     expect(yaml).toContain('url: "http://web-1:3000"');
     expect(yaml).not.toContain('-r2');
     expect(yaml).not.toContain('healthCheck:');
@@ -266,7 +267,7 @@ describe('writeDynamicConfig', () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     expect(yaml).toContain('url: "http://host.docker.internal:3000"');
     expect(yaml).not.toContain('http://legacy-42:3000');
   });
@@ -285,7 +286,7 @@ describe('writeDynamicConfig', () => {
 
     // This file IS the enforcement point: a pending row exists in the database
     // and is simply never described to Traefik, so the claim serves nothing.
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     expect(yaml).toContain('proven.example.com');
     expect(yaml).not.toContain('unproven.victim.com');
     expect(yaml).not.toContain('failed.victim.com');
@@ -308,7 +309,7 @@ describe('writeDynamicConfig', () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     expect(yaml).toContain('ok.example.com');
     expect(yaml).not.toContain('orphan.example.com');
     expect(yaml).not.toContain('noport.example.com');
@@ -320,7 +321,7 @@ describe('writeDynamicConfig', () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     // Traefik v3 rejects empty maps like `middlewares: {}` ("cannot be a
     // standalone element"), so empty sections must not be emitted at all.
     expect(yaml).not.toContain('routers:');
@@ -340,7 +341,7 @@ describe('writeDynamicConfig', () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     expect(yaml.match(/svc_web_1:/g)).toHaveLength(1);
   });
 
@@ -369,7 +370,7 @@ describe('writeDynamicConfig', () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     // Backticks, ')' and other unsafe chars are stripped; the safe remainder is kept.
     expect(yaml).toContain('Host(`evil.example.com`) && PathPrefix(`/apibreakout`)');
     expect(yaml).not.toMatch(/\)$/); // no unescaped ')' terminating a rule
@@ -405,7 +406,7 @@ describe('writeDynamicConfig', () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     expect(yaml).toContain('good.example.com');
     // Only one router survived (the null-hostname one was skipped).
     expect(yaml.match(/rule:/g)).toHaveLength(1);
@@ -419,7 +420,7 @@ describe('writeDynamicConfig', () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     expect(yaml).toContain('Host(`app.example.com`)');
     expect(yaml).not.toContain('PathPrefix');
   });
@@ -483,7 +484,7 @@ describe('ensureTraefik', () => {
     mkdirSync(traefikDir, { recursive: true });
     // Start each ensureTraefik test with no dynamic.yml so the bootstrap write
     // branch (the initial empty config) is exercised.
-    rmSync(path.join(traefikDir, 'dynamic.yml'), { force: true });
+    rmSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), { force: true });
   });
 
   it('writes static + dynamic config and returns early when traefik is on the network', async () => {
@@ -496,7 +497,7 @@ describe('ensureTraefik', () => {
     expect(log).toHaveBeenCalledWith('traefik already running on shared network');
     expect(h.run).not.toHaveBeenCalled();
     expect(existsSync(path.join(traefikDir, 'traefik.yml'))).toBe(true);
-    expect(existsSync(path.join(traefikDir, 'dynamic.yml'))).toBe(true);
+    expect(existsSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'))).toBe(true);
   });
 
   // r363: the caller rewrites the routes when this reports true.
@@ -642,13 +643,13 @@ describe('ensureTraefik', () => {
   });
 
   it('leaves an existing dynamic.yml untouched', async () => {
-    writeFileSync(path.join(traefikDir, 'dynamic.yml'), '# keep me');
+    writeFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), '# keep me');
     psWith('abc\n', '{"ninedeploy":{}}');
     const log = vi.fn();
 
     await ensureTraefik(log);
 
-    expect(readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8')).toBe('# keep me');
+    expect(readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8')).toBe('# keep me');
     expect(log).toHaveBeenCalledWith('traefik already running on shared network');
   });
 });
@@ -657,6 +658,18 @@ describe("ACME / Let's Encrypt", () => {
   beforeEach(() => {
     mkdirSync(traefikDir, { recursive: true });
     rmSync(path.join(traefikDir, 'acme.json'), { force: true });
+  });
+
+  it('0.14 (M8/M13): every static config — panel and nodes — reads the dynamic DIRECTORY', () => {
+    for (const yaml of [renderStaticConfig(null, null), renderStaticConfig('ops@example.com', null)]) {
+      const doc = load(yaml) as { providers: { file: Record<string, unknown> }; log: { level: string } };
+      expect(doc.providers.file).toEqual({ directory: '/etc/traefik/dynamic', watch: true });
+      expect(doc.log.level).toBe('INFO');
+    }
+    // The custom-config preflight container only lowers the log level.
+    expect(renderStaticConfig(null, null, { logLevel: 'ERROR' })).toBe(
+      renderStaticConfig(null, null).replace('  level: INFO', '  level: ERROR'),
+    );
   });
 
   it('omits the ACME resolver from the static config when no email is configured', async () => {
@@ -744,7 +757,7 @@ describe("ACME / Let's Encrypt", () => {
 
       await writeDynamicConfig(db as never);
 
-      const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+      const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
       expect(yaml).toContain('tls:\n        certResolver: letsencrypt');
       expect(yaml).not.toContain('tls: {}');
     } finally {
@@ -760,7 +773,7 @@ describe("ACME / Let's Encrypt", () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     expect(yaml).toContain('tls: {}');
     expect(yaml).not.toContain('certResolver');
   });
@@ -924,7 +937,7 @@ describe('DNS-01 challenge (wildcard SSL)', () => {
       [{ id: 1, slug: 'web', port: 3000, runtimeId: 'web-1' }],
     );
     await writeDynamicConfig(db as never);
-    const yml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     // Wildcard host → HostRegexp with an escaped suffix.
     // Backslashes are doubled: the rule sits in a double-quoted YAML scalar.
     expect(yml).toContain('HostRegexp(`^[a-zA-Z0-9-]+\\\\.example\\\\.com$`)');
@@ -946,7 +959,7 @@ describe('DNS-01 challenge (wildcard SSL)', () => {
     h.config.dnsProvider = null; // no provider → HTTP-01 only
     h.config.wildcardDomain = 'example.com';
     await writeDynamicConfig(makeDb([], []) as never);
-    const yml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     expect(yml).not.toContain('main: "*.example.com"');
     h.config.acmeEmail = null;
     h.config.wildcardDomain = '';
@@ -961,7 +974,7 @@ describe('DNS-01 challenge (wildcard SSL)', () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     // The router claims BOTH hosts — a www request that matches no router
     // would never reach the redirect and never get a certificate.
     expect(yaml).toContain('rule: "Host(`example.com`) || Host(`www.example.com`)"');
@@ -990,7 +1003,7 @@ describe('DNS-01 challenge (wildcard SSL)', () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     expect(yaml).toContain('rule: "Host(`example.com`) || Host(`www.example.com`)"');
     expect(yaml).toContain('mw_web_1_www:');
     expect(yaml).toContain('replacement: "https://example.com$1"');
@@ -1013,7 +1026,7 @@ describe('DNS-01 challenge (wildcard SSL)', () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     // Extending the apex row's rule would outrank the www row's own router
     // (Traefik ranks by rule length) and steal its traffic — so the apex row
     // keeps its plain single-host rule and no per-router domains list.
@@ -1035,7 +1048,7 @@ describe('DNS-01 challenge (wildcard SSL)', () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     // Traefik v3 refuses rules that mix && and || without parentheses.
     expect(yaml).toContain('rule: "(Host(`example.com`) || Host(`www.example.com`)) && PathPrefix(`/app`)"');
   });
@@ -1048,7 +1061,7 @@ describe('DNS-01 challenge (wildcard SSL)', () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     expect(yaml).not.toContain('mw_web_1_www');
   });
 
@@ -1070,7 +1083,7 @@ describe('DNS-01 challenge (wildcard SSL)', () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     expect(yaml).toContain('mw_web_1_headers:');
     expect(yaml).toContain('"X-Frame-Options": "DENY"');
     // Unsafe chars are stripped from names and values; empty names dropped.
@@ -1087,7 +1100,7 @@ describe('DNS-01 challenge (wildcard SSL)', () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     expect(yaml).not.toContain('mw_web_1_headers');
     expect(yaml).not.toContain('middlewares:');
   });
@@ -1100,7 +1113,7 @@ describe('DNS-01 challenge (wildcard SSL)', () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     expect(yaml).not.toContain('mw_web_1_headers');
   });
 
@@ -1112,7 +1125,7 @@ describe('DNS-01 challenge (wildcard SSL)', () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     expect(yaml).not.toContain('middlewares:');
   });
 
@@ -1136,7 +1149,7 @@ describe('DNS-01 challenge (wildcard SSL)', () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     expect(yaml).toContain('mw_web_1_auth:');
     expect(yaml).toContain('basicAuth:');
     expect(yaml).toContain('- "admin:$apr1$xyz"');
@@ -1175,7 +1188,7 @@ describe('DNS-01 challenge (wildcard SSL)', () => {
 
     await writeDynamicConfig(db as never);
 
-    const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+    const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
     expect(yaml).toContain('mw_web_2_ratelimit:');
     expect(yaml).toContain('average: 20');
     expect(yaml).toContain('burst: 20');
@@ -1187,7 +1200,7 @@ describe('DNS-01 challenge (wildcard SSL)', () => {
       const db = makeDb([], []);
       await writeDynamicConfig(db as never);
 
-      const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+      const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
       expect(yaml).toContain('ninedeploy_panel:');
       expect(yaml).toContain('Host(`panel.example.com`)');
       expect(yaml).toContain('svc_ninedeploy_panel:');
@@ -1202,7 +1215,7 @@ describe('DNS-01 challenge (wildcard SSL)', () => {
     try {
       const db = makeDb([], []);
       await writeDynamicConfig(db as never);
-      const yaml = readFileSync(path.join(traefikDir, 'dynamic.yml'), 'utf8');
+      const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
 
       // Traefik's default priority IS the rule length, so a service router with
       // `Host(panel…) && PathPrefix(/v1)` would otherwise out-rank the panel and

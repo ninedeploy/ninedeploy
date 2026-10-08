@@ -133,6 +133,20 @@ describe('syncNodeProxy', () => {
   });
 });
 
+describe('syncNodeProxy — inline certificates (0.14)', () => {
+  it('warns above 512 KiB, well before the agent refuses 1 MiB', async () => {
+    h.agentOp.mockReset();
+    agentSteady();
+    const lines: string[] = [];
+    h.renderDynamicConfig.mockResolvedValueOnce('x'.repeat(600 * 1024));
+    await expect(syncNodeProxy(db, 4, (l) => lines.push(l))).resolves.toEqual({ ok: true });
+    expect(lines.join('\n')).toMatch(/node #4 is 600 KiB .*refuses anything above 1 MiB/);
+    lines.length = 0;
+    await syncNodeProxy(db, 4, (l) => lines.push(l));
+    expect(lines.join('\n')).not.toMatch(/KiB/);
+  });
+});
+
 describe('syncAllNodeProxies', () => {
   it('visits each node once and keeps going after one fails', async () => {
     h.agentOp.mockReset();

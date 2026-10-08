@@ -1,6 +1,7 @@
 import type { DB } from '@ninedeploy/db';
 import { agentOp } from './agentClient.js';
 import { getAcmeEmail, getDnsConfig, renderDynamicConfig, renderStaticConfig } from '../engine/proxy.js';
+import { NODE_DYNAMIC_WARN_BYTES } from './customCertificates.js';
 
 /**
  * Keep a node's own reverse proxy in step with the panel's model of it.
@@ -58,6 +59,15 @@ export async function syncNodeProxy(
     const dynamicConfig = await renderDynamicConfig(db, { serverId });
 
     const sink = (line: string) => log(`  node proxy: ${line}`);
+    // 0.14: uploaded certificates are inlined into the node's single dynamic
+    // file, and the agent refuses one above 1 MiB. Say so well before that.
+    const bytes = Buffer.byteLength(dynamicConfig, 'utf8');
+    if (bytes > NODE_DYNAMIC_WARN_BYTES) {
+      log(
+        `⚠ node proxy: the dynamic config for node #${serverId} is ${Math.round(bytes / 1024)} KiB ` +
+          '(uploaded certificates are inlined); the agent refuses anything above 1 MiB.',
+      );
+    }
     const wroteStatic = await agentOp(
       db, serverId, 'proxy.writeConfig', { kind: 'static', content: staticConfig }, sink,
     );

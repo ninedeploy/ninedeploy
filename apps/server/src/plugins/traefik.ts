@@ -1,5 +1,13 @@
 import fp from 'fastify-plugin';
-import { ensureNetwork, ensureTraefik, getAcmeEmail, getDnsConfig, writeDynamicConfig } from '../engine/proxy.js';
+import {
+  ensureNetwork,
+  ensureTraefik,
+  getAcmeEmail,
+  getDnsConfig,
+  materialiseCertificatesFile,
+  writeDynamicConfig,
+} from '../engine/proxy.js';
+import { materialiseCustomConfig } from '../lib/traefikCustomConfig.js';
 
 /**
  * Ensures the shared Docker network, the Traefik reverse proxy, and the dynamic
@@ -19,6 +27,12 @@ export default fp(
     };
 
     fastify.addHook('onReady', async () => {
+      // 0.14 (M12): the database is the source of truth for the operator's
+      // custom config and uploaded certificates. Re-create both files BEFORE
+      // the heal below may (re)start Traefik, so it starts with them. Neither
+      // step throws.
+      await materialiseCustomConfig(fastify.db, (line) => fastify.log.warn({ component: 'infra' }, line));
+      await materialiseCertificatesFile(fastify.db);
       // A transient docker outage at boot must not crash-exit the panel: the
       // infra heal stays failed-open and the 5-minute watchdog below is the
       // recovery path (matching how every other background subsystem treats a

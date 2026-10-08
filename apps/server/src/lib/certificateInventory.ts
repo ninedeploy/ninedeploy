@@ -12,7 +12,7 @@
  * `?days=N` to get a focused "expiring within N
  * days" list.
  */
-import { readCertificates } from '../engine/proxy.js';
+import { type CertificateInfo, readCertificates } from '../engine/proxy.js';
 import type {
   CertificateInventoryEntry,
   CertificateInventoryReport,
@@ -56,34 +56,24 @@ export function expiringWithin(
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
-function toEntry(
-  c: { domain: string; expiresAt: Date | null },
-  expiringThresholdDays: number,
-): CertificateInventoryEntry {
+function toEntry(c: CertificateInfo, expiringThresholdDays: number): CertificateInventoryEntry {
   const days = daysUntil(c.expiresAt);
   const status = classify(c.expiresAt, days, expiringThresholdDays);
+  // D4 (0.14): issuer, subject, SANs and notBefore come from the parsed PEM.
+  // An ACME entry whose PEM did not parse keeps 0.13's values; an operator
+  // upload (`source: 'custom'`) is never renewed by Traefik.
+  const custom = c.source === 'custom';
   return {
     host: c.domain,
-    issuer: 'Let\'s Encrypt', // The only path the panel can read today
-                                // is Traefik's acme.json; the issuer is
-                                // the configured ACME CA. A future PR
-                                // can parse the leaf PEM for the
-                                // subject.
-    subject: null,
-    sans: [],
-    notBefore: null,
+    issuer: c.issuer ?? (custom ? null : 'Let\'s Encrypt'),
+    subject: c.subject ?? null,
+    sans: c.sans ?? [],
+    notBefore: c.notBefore ? c.notBefore.toISOString() : null,
     notAfter: c.expiresAt ? c.expiresAt.toISOString() : null,
     daysToExpiry: days,
     status,
-    // Traefik + the NineDeploy DNS-01 solver auto-renew
-    // every certificate routed through the panel; the
-    // static fallback (a manually-placed .pem in
-    // /etc/traefik/certs) does not. We can't read
-    // Traefik's file watcher to know which is which
-    // today, so we assume every cert is auto-renewed
-    // and surface the assumption in `source`.
-    autoRenew: true,
-    source: 'acme.json',
+    autoRenew: !custom,
+    source: custom ? 'static' : 'acme.json',
   };
 }
 

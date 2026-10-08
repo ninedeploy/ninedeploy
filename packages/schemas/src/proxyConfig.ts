@@ -109,3 +109,31 @@ export const customCertificate = z.object({
   ),
 });
 export type CustomCertificate = z.infer<typeof customCertificate>;
+
+// ── Write results (0.14 T2, additive) ──────────────────────────────────────
+
+/** PUT /v1/traefik/custom-config → 200. Router-level findings come back as warnings. */
+export const traefikCustomConfigApplied = z.object({
+  ok: z.literal(true),
+  status: z.literal('applied'),
+  sha256: z.string(),
+  warnings: z.array(traefikCustomConfigIssue),
+});
+export type TraefikCustomConfigApplied = z.infer<typeof traefikCustomConfigApplied>;
+
+/**
+ * The 400 / 422 body of PUT /v1/traefik/custom-config: the error envelope
+ * plus the findings (`errors` empty only on a 503).
+ */
+export const traefikCustomConfigRefusal = z.object({
+  error: z.object({ code: z.string(), message: z.string() }),
+  errors: z.array(traefikCustomConfigIssue).default([]),
+  warnings: z.array(traefikCustomConfigIssue).default([]),
+});
+export type TraefikCustomConfigRefusal = z.infer<typeof traefikCustomConfigRefusal>;
+
+/** POST (201) and PUT of /v1/traefik/certificates/custom: the listing entry plus size warnings. */
+export const customCertificateSaved = customCertificate.extend({
+  warnings: z.array(z.string()),
+});
+export type CustomCertificateSaved = z.infer<typeof customCertificateSaved>;

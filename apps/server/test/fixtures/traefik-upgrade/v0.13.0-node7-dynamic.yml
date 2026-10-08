@@ -1,0 +1,35 @@
+# Managed by NineDeploy — regenerated on deploy/domain changes.
+http:
+  routers:
+    edge_6:
+      rule: "Host(`node.example.com`)"
+      service: svc_edge_6
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+    edge_6_http:
+      rule: "Host(`node.example.com`)"
+      service: svc_edge_6
+      middlewares:
+        - mw_https_redirect
+      entryPoints:
+        - web
+  middlewares:
+    mw_https_redirect:
+      redirectScheme:
+        scheme: https
+        permanent: false
+
+  services:
+    svc_edge_6:
+      loadBalancer:
+        servers:
+          - url: "http://edge-1:5000"
+tls:
+  certificates:
+    - certResolver: letsencrypt
+      domains:
+        - main: "*.apps.example.com"
+          sans:
+            - "apps.example.com"

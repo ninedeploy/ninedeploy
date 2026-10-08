@@ -47,6 +47,8 @@ vi.mock('../../src/engine/proxy.js', async () => {
   };
 });
 
+const EMPTY_TABLES = { routers: [], services: [], middlewares: [] };
+
 describe('traefik module', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -195,7 +197,8 @@ describe('traefik module', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ routers: [], services: [], middlewares: [] });
+    // 0.14: the operator's custom.yml is listed separately (additive field).
+    expect(res.json()).toEqual({ ...EMPTY_TABLES, custom: EMPTY_TABLES });
   });
 
   it('GET /traefik/config parses dynamic YAML when present', async () => {
@@ -316,6 +319,42 @@ http:
     expect(res4.json().outdated).toBe(false);
   });
 
+  it('M11: GET /traefik/config reads dynamic/ninedeploy.yml and lists custom.yml separately', async () => {
+    const app = await makeTraefikApp();
+    const generated = 'http:\n  routers:\n    web_1:\n      rule: "Host(`gen.example.com`)"\n      service: svc_web_1\n';
+    const custom =
+      'http:\n  routers:\n    custom-site:\n      rule: "Host(`c.example.com`)"\n      service: custom-svc\n      entryPoints: [websecure]\n      middlewares: [custom-h]\n      tls: {}\n' +
+      '  services:\n    custom-svc:\n      loadBalancer:\n        servers:\n          - url: "http://c:80"\n' +
+      '  middlewares:\n    custom-h:\n      headers: {}\n' +
+      'tcp:\n  routers:\n    custom-db:\n      rule: "HostSNI(`*`)"\n      entryPoints: [websecure]\n';
+    const read: string[] = [];
+    fsMocks.existsSync.mockImplementation(((p: string) => /ninedeploy\.yml$|custom\.yml$/.test(String(p))) as never);
+    fsMocks.readFileSync.mockImplementation(((p: string) => {
+      read.push(String(p));
+      return String(p).endsWith('custom.yml') ? custom : generated;
+    }) as never);
+
+    const body = (await app.inject({ method: 'GET', url: '/traefik/config', headers: asUser() })).json();
+    expect(body.routers.map((r: { name: string }) => r.name)).toEqual(['web_1']);
+    expect(body.custom.routers).toEqual([
+      { name: 'custom-site', rule: 'Host(`c.example.com`)', service: 'custom-svc', entryPoints: ['websecure'], tls: true, middleware: ['custom-h'] },
+      { name: 'custom-db', rule: 'HostSNI(`*`)', service: '', entryPoints: ['websecure'], tls: false, middleware: [] },
+    ]);
+    expect(body.custom.services).toEqual([{ name: 'custom-svc', url: 'http://c:80', loadBalancer: 'roundRobin' }]);
+    expect(body.custom.middlewares).toEqual([{ name: 'custom-h', type: 'headers', config: {} }]);
+    // The legacy file is not read once the new one exists.
+    expect(read.some((p) => /[\\/]dynamic\.yml$/.test(p))).toBe(false);
+  });
+
+  it('M11: before the first 0.14 heal it still reads the legacy dynamic.yml', async () => {
+    const app = await makeTraefikApp();
+    fsMocks.existsSync.mockImplementation(((p: string) => /[\\/]dynamic\.yml$/.test(String(p))) as never);
+    fsMocks.readFileSync.mockImplementation((() => 'http:\n  routers:\n    web_9:\n      rule: "Host(`old.example.com`)"\n') as never);
+    const body = (await app.inject({ method: 'GET', url: '/traefik/config', headers: asUser() })).json();
+    expect(body.routers.map((r: { name: string }) => r.name)).toEqual(['web_9']);
+    expect(body.custom).toEqual(EMPTY_TABLES);
+  });
+
   it('GET /traefik/config parses multiple items and handles read error', async () => {
     const app = await makeTraefikApp();
     const multiYaml = `
@@ -355,7 +394,7 @@ http:
     // Catch branch
     fsMocks.readFileSync.mockImplementation(() => { throw new Error('corrupt file'); });
     const resError = await app.inject({ method: 'GET', url: '/traefik/config', headers: asUser() });
-    expect(resError.json()).toEqual({ routers: [], services: [], middlewares: [] });
+    expect(resError.json()).toEqual({ ...EMPTY_TABLES, custom: EMPTY_TABLES });
 
     // Single section: routers only with http entrypoint and unknown property line
     const routersOnlyYaml = `

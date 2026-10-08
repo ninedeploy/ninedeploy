@@ -1,0 +1,172 @@
+# Managed by NineDeploy — regenerated on deploy/domain changes.
+http:
+  routers:
+    web_1:
+      rule: "Host(`app.example.com`) || Host(`www.app.example.com`)"
+      service: svc_web_1
+      middlewares:
+        - mw_web_1_www
+        - mw_web_1_headers
+        - mw_web_1_auth
+        - mw_web_1_ip
+        - mw_web_1_ratelimit
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+        domains:
+          - main: "app.example.com"
+          - main: "www.app.example.com"
+
+    web_1_http:
+      rule: "Host(`app.example.com`) || Host(`www.app.example.com`)"
+      service: svc_web_1
+      middlewares:
+        - mw_https_redirect
+      entryPoints:
+        - web
+    api_2:
+      rule: "Host(`api.example.com`) && PathPrefix(`/v1`)"
+      service: svc_api_2
+      entryPoints:
+        - web
+    web_3:
+      rule: "HostRegexp(`^[a-zA-Z0-9-]+\\.apps\\.example\\.com$`)"
+      service: svc_web_3
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+    web_3_http:
+      rule: "HostRegexp(`^[a-zA-Z0-9-]+\\.apps\\.example\\.com$`)"
+      service: svc_web_3
+      middlewares:
+        - mw_https_redirect
+      entryPoints:
+        - web
+    proc_4:
+      rule: "Host(`admin.apps.example.com`)"
+      service: svc_proc_4
+      priority: 10030
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+    proc_4_http:
+      rule: "Host(`admin.apps.example.com`)"
+      service: svc_proc_4
+      priority: 10030
+      middlewares:
+        - mw_https_redirect
+      entryPoints:
+        - web
+    web_7:
+      rule: "Host(`tpl.example.com`)"
+      service: svc_web_7
+      middlewares:
+        - mw_web_7_headers
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+    web_7_http:
+      rule: "Host(`tpl.example.com`)"
+      service: svc_web_7
+      middlewares:
+        - mw_https_redirect
+      entryPoints:
+        - web
+    ninedeploy_panel:
+      rule: "Host(`panel.example.com`)"
+      service: svc_ninedeploy_panel
+      priority: 100000
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+    ninedeploy_panel_http:
+      rule: "Host(`panel.example.com`)"
+      service: svc_ninedeploy_panel
+      middlewares:
+        - mw_https_redirect
+      priority: 100000
+      entryPoints:
+        - web
+  middlewares:
+    mw_web_1_www:
+      redirectRegex:
+        regex: "^https?://www\\.app\\.example\\.com(.*)"
+        replacement: "https://app.example.com$1"
+
+    mw_web_1_headers:
+      headers:
+        customResponseHeaders:
+          "X-Frame-Options": "DENY"
+
+    mw_web_1_auth:
+      basicAuth:
+        users:
+        - "admin:$apr1$Em/5lJ01$hBiiob53/Os85u/zWfWuB/"
+
+    mw_web_1_ip:
+      ipAllowList:
+        sourceRange:
+        - "10.0.0.0/8"
+
+    mw_web_1_ratelimit:
+      rateLimit:
+        average: 10
+        burst: 10
+
+    mw_web_7_headers:
+      headers:
+        customResponseHeaders:
+          "X-T": "{{`{{`}} env `CF_DNS_API_TOKEN` }}"
+
+    mw_https_redirect:
+      redirectScheme:
+        scheme: https
+        permanent: false
+
+  services:
+    svc_web_1:
+      loadBalancer:
+        servers:
+          - url: "http://web-1:3000"
+    svc_api_2:
+      loadBalancer:
+        sticky:
+          cookie:
+            name: "ninedeploy_sticky"
+            httpOnly: true
+        servers:
+          - url: "http://api-1:8080"
+          - url: "http://api-1-r2:8080"
+          - url: "http://api-1-r3:8080"
+        healthCheck:
+          path: "/health"
+          interval: "10s"
+          timeout: "5s"
+    svc_web_3:
+      loadBalancer:
+        servers:
+          - url: "http://web-1:3000"
+    svc_proc_4:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:4000"
+    svc_web_7:
+      loadBalancer:
+        servers:
+          - url: "http://web-1:3000"
+    svc_ninedeploy_panel:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:3001"
+tls:
+  certificates:
+    - certResolver: letsencrypt
+      domains:
+        - main: "*.apps.example.com"
+          sans:
+            - "apps.example.com"

@@ -75,6 +75,14 @@ describe('0.14 route modules are mounted in modules/api.ts (M1)', () => {
       expect(typeof m.routes, m.binding).toBe('function');
       // It mounts cleanly under its prefix in an isolated instance.
       const app = Fastify();
+      // The auth plugin's hooks, inert: modules reference them at route
+      // registration, and the guard is about mounting, not authorization.
+      const noop = async () => undefined;
+      app.decorate('authenticate', noop);
+      app.decorate('requireOperator', noop);
+      app.decorate('requireAdmin', noop);
+      app.decorate('requireInteractive', noop);
+      app.decorate('requireScope', () => noop);
       await app.register(m.routes, { prefix: `/v1${m.prefix}` });
       await expect(app.ready()).resolves.toBeDefined();
       await app.close();

@@ -979,6 +979,15 @@ export const MATRIX: Record<string, Rule> = {
   'POST /v1/volumes/:name/files/dir': OP,
   'DELETE /v1/volumes/:name/files': OP,
   // ── 0.14 T2 proxy management ──
+  // Operator only: a custom router or a wildcard certificate would let a member take over other tenants' hostnames.
+  'GET /v1/traefik/custom-config': OP,
+  'POST /v1/traefik/custom-config/validate': OP,
+  'PUT /v1/traefik/custom-config': OP,
+  'DELETE /v1/traefik/custom-config': OP,
+  'GET /v1/traefik/certificates/custom': OP,
+  'POST /v1/traefik/certificates/custom': OP,
+  'PUT /v1/traefik/certificates/custom/:id': OP,
+  'DELETE /v1/traefik/certificates/custom/:id': OP,
   // ── end 0.14 T2 ──
   // ── 0.14 T3 public access ──
   // ── end 0.14 T3 ──

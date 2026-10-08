@@ -6,9 +6,12 @@ import {
   TRAEFIK_CUSTOM_CONFIG_MAX_BYTES,
   customCertificate,
   customCertificateReplace,
+  customCertificateSaved,
   customCertificateUpload,
   traefikCustomConfig,
+  traefikCustomConfigApplied,
   traefikCustomConfigInput,
+  traefikCustomConfigRefusal,
   traefikCustomConfigValidation,
 } from '../src/proxyConfig.js';
 
@@ -84,5 +87,31 @@ describe('custom certificates (0.14)', () => {
       coveredDomains: [{ id: 3, hostname: 'app.example.com', serviceId: 2 }],
     };
     expect(customCertificate.parse({ ...view, keyPem: KEY })).toEqual(view);
+  });
+
+  it('shapes the write results', () => {
+    const issue = { path: 'http.routers.custom-a.service', message: 'generated name' };
+    expect(traefikCustomConfigApplied.parse({ ok: true, status: 'applied', sha256: 'ab', warnings: [issue] }).warnings).toEqual([issue]);
+    expect(traefikCustomConfigApplied.safeParse({ ok: false, status: 'applied', sha256: 'ab', warnings: [] }).success).toBe(false);
+    expect(traefikCustomConfigRefusal.parse({ error: { code: 'traefik_validation_unavailable', message: 'm' } })).toEqual({
+      error: { code: 'traefik_validation_unavailable', message: 'm' },
+      errors: [],
+      warnings: [],
+    });
+    const saved = {
+      id: 1,
+      name: 'n',
+      hostnames: ['a.example.com'],
+      subject: null,
+      issuer: null,
+      notBefore: '2026-01-01T00:00:00.000Z',
+      notAfter: '2099-01-01T00:00:00.000Z',
+      fingerprint: 'ab',
+      expired: false,
+      coveredDomains: [],
+      warnings: ['big'],
+    };
+    expect(customCertificateSaved.parse(saved)).toEqual(saved);
+    expect(customCertificateSaved.safeParse({ ...saved, warnings: undefined }).success).toBe(false);
   });
 });

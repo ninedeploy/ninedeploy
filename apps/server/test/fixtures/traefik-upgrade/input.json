@@ -1,0 +1,29 @@
+{
+  "comment": "A representative 0.13 install: render input shared by the 0.13 golden generator and test/traefikDirectoryProviderUpgrade.test.ts.",
+  "settings": {
+    "acme_email": "ops@example.com",
+    "panel_domain": "panel.example.com",
+    "dns_provider": "cloudflare",
+    "dns_token_encrypted": "enc:cf-token",
+    "wildcard_domain": "apps.example.com",
+    "sticky_session:2:enabled": "true"
+  },
+  "services": [
+    { "id": 1, "slug": "web", "type": "docker", "port": 3000, "runtimeId": "web-1", "replicas": 1, "runtimeReplicas": 1, "healthPath": "/", "serverId": null },
+    { "id": 2, "slug": "api", "type": "docker", "port": 8080, "runtimeId": "api-1", "replicas": 3, "runtimeReplicas": 3, "healthPath": "/health", "serverId": null },
+    { "id": 3, "slug": "proc", "type": "pm2", "port": 4000, "runtimeId": "proc", "replicas": 1, "runtimeReplicas": 1, "healthPath": "/", "serverId": null },
+    { "id": 4, "slug": "edge", "type": "docker", "port": 5000, "runtimeId": "edge-1", "replicas": 1, "runtimeReplicas": 1, "healthPath": "/", "serverId": 7 }
+  ],
+  "domains": [
+    { "id": 1, "serviceId": 1, "hostname": "app.example.com", "path": "/", "ssl": true, "status": "active", "redirectWww": true,
+      "headers": "[{\"name\":\"X-Frame-Options\",\"value\":\"DENY\"}]", "basicAuth": "admin:secret", "ipAllowlist": "[\"10.0.0.0/8\"]",
+      "rateLimitAverage": 10, "rateLimitBurst": 0 },
+    { "id": 2, "serviceId": 2, "hostname": "api.example.com", "path": "/v1", "ssl": false, "status": "active", "redirectWww": false },
+    { "id": 3, "serviceId": 1, "hostname": "*.apps.example.com", "path": "/", "ssl": true, "status": "active", "redirectWww": false },
+    { "id": 4, "serviceId": 3, "hostname": "admin.apps.example.com", "path": "/", "ssl": true, "status": "active", "redirectWww": false },
+    { "id": 5, "serviceId": 1, "hostname": "pending.example.com", "path": "/", "ssl": true, "status": "pending", "redirectWww": false },
+    { "id": 6, "serviceId": 4, "hostname": "node.example.com", "path": "/", "ssl": true, "status": "active", "redirectWww": false },
+    { "id": 7, "serviceId": 1, "hostname": "tpl.example.com", "path": "/", "ssl": true, "status": "active", "redirectWww": false,
+      "headers": "[{\"name\":\"X-T\",\"value\":\"{{ env `CF_DNS_API_TOKEN` }}\"}]" }
+  ]
+}

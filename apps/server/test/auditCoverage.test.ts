@@ -36,7 +36,7 @@ const EXEMPT: Record<string, string> = {
   // 0.14: each task uncomments its entry in the same change that adds the
   // route. Not live yet because a stale entry (no such route) fails below.
   // ── 0.14 T2 proxy management ──
-  // 'traefikCustom.ts POST /custom-config/validate': 'validates a candidate config, no state change',
+  'traefikCustom.ts POST /custom-config/validate': 'validates a candidate config, no state change',
   // ── end 0.14 T2 ──
   // ── 0.14 T5 secret providers ──
   // 'secretProviders.ts POST /:kind/test': 'connectivity probe; updates last_tested_* only',

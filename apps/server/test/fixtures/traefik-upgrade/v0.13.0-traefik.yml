@@ -1,0 +1,24 @@
+# Managed by NineDeploy — do not edit by hand.
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+    http3: {}
+providers:
+  file:
+    filename: /etc/traefik/dynamic.yml
+    watch: true
+api:
+  dashboard: false
+log:
+  level: INFO
+accessLog: {}
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: ops@example.com
+      storage: /etc/traefik/acme.json
+      dnsChallenge:
+        provider: cloudflare
+        delayBeforeCheck: 30
