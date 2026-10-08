@@ -44,6 +44,23 @@ describe('accessGrantCreate (0.15)', () => {
   });
 });
 
+describe('accessGrantUpdate: suspend and reinstate (0.15)', () => {
+  it('takes suspended alone or with a role; {role} alone is unchanged', () => {
+    expect(accessGrantUpdate.parse({ suspended: true })).toEqual({ suspended: true });
+    expect(accessGrantUpdate.parse({ suspended: false })).toEqual({ suspended: false });
+    expect(accessGrantUpdate.parse({ role: 'viewer', suspended: true })).toEqual({ role: 'viewer', suspended: true });
+    expect(accessGrantUpdate.parse({ role: 'member' })).toEqual({ role: 'member' });
+  });
+
+  it('needs at least one change and a real boolean', () => {
+    const empty = accessGrantUpdate.safeParse({});
+    expect(empty.success).toBe(false);
+    expect(empty.error?.issues[0]?.path).toEqual(['role']);
+    expect(accessGrantUpdate.safeParse({ suspended: 'yes' }).success).toBe(false);
+    expect(accessGrantUpdate.safeParse({ suspended: null }).success).toBe(false);
+  });
+});
+
 describe('accessGrantTargetKey', () => {
   it('builds the uniqueness key the table stores', () => {
     expect(accessGrantTargetKey({ projectId: 3 })).toBe('p:3');

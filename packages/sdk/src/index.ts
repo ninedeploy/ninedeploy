@@ -1914,7 +1914,11 @@ export interface NineDeployClient {
   accessGrants: {
     list: (workspaceId: number, query?: Partial<AccessGrantListQuery>) => Promise<AccessGrant[]>;
     create: (workspaceId: number, input: AccessGrantCreate) => Promise<AccessGrant>;
-    /** Only the role changes. */
+    /**
+     * Change the role, suspend (`suspended: true`) or reinstate
+     * (`suspended: false`), or both. A grant the user's identity provider
+     * suspended cannot be reinstated here (409 `grant_suspended_by_idp`).
+     */
     update: (workspaceId: number, grantId: number, input: AccessGrantUpdate) => Promise<AccessGrant>;
     delete: (workspaceId: number, grantId: number) => Promise<{ ok: boolean }>;
   };

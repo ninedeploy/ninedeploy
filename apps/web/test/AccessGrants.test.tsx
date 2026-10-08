@@ -50,7 +50,7 @@ describe('workspace access grants', () => {
     expect(screen.getByText('guest')).toBeInTheDocument();
     expect(screen.getByText('suspended')).toBeInTheDocument();
     expect(screen.getByText(/project shop · granted by admin@x.test/)).toBeInTheDocument();
-    expect(screen.getByText(/environment production · suspended by SCIM/)).toBeInTheDocument();
+    expect(screen.getByText(/environment production · suspended: it gives no access until reinstated/)).toBeInTheDocument();
     expect(api.accessGrants.list).toHaveBeenCalledWith(1);
     expect(api.projects.list).toHaveBeenCalledWith('?workspaceId=1');
   });
@@ -123,6 +123,35 @@ describe('workspace access grants', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Revoke access for guest@x.test' }));
     fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('gone', 'error'));
+  });
+
+  it('suspends and reinstates a grant; a grant above the cap cannot be suspended', async () => {
+    mockOf(api.accessGrants.list).mockResolvedValue([
+      grant(),
+      grant({ id: 9, user: { id: 6, email: 'dev@x.test', name: null }, suspended: true }),
+      grant({ id: 10, user: { id: 7, email: 'boss@x.test', name: null }, role: 'admin' }),
+    ]);
+    mockOf(api.accessGrants.update)
+      .mockResolvedValueOnce(grant({ suspended: true }))
+      .mockResolvedValueOnce(grant({ id: 9, suspended: false }))
+      .mockRejectedValueOnce(new Error("This user's identity provider suspended them in this workspace"))
+      .mockRejectedValueOnce('x');
+    renderWithProviders(<AccessGrantsCard workspaceId={1} cap="member" />);
+    const suspendGuest = await screen.findByRole('button', { name: 'Suspend access for guest@x.test' });
+    expect(screen.getByRole('button', { name: 'Suspend access for boss@x.test' })).toBeDisabled();
+    fireEvent.click(suspendGuest);
+    await waitFor(() => expect(api.accessGrants.update).toHaveBeenCalledWith(1, 8, { suspended: true }));
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Grant suspended', 'success'));
+    const reinstate = screen.getByRole('button', { name: 'Reinstate access for dev@x.test' });
+    fireEvent.click(reinstate);
+    await waitFor(() => expect(api.accessGrants.update).toHaveBeenLastCalledWith(1, 9, { suspended: false }));
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Grant reinstated', 'success'));
+    await waitFor(() => expect(reinstate).not.toBeDisabled());
+    fireEvent.click(reinstate);
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith("This user's identity provider suspended them in this workspace", 'error'));
+    await waitFor(() => expect(reinstate).not.toBeDisabled());
+    fireEvent.click(reinstate);
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Could not change the suspension', 'error'));
   });
 
   it('shows a load error with retry', async () => {

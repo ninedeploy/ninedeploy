@@ -115,6 +115,18 @@ async function suspendedRole(db: DB, userId: number, workspaceId: number): Promi
   return role && (workspaceRole as readonly string[]).includes(role) ? role : null;
 }
 
+/**
+ * 0.15: whether `workspaceId`'s IdP holds this user deprovisioned there — the
+ * seat parked as suspended (r501), or the account deactivated by this
+ * workspace's IdP. The access-grant routes refuse to reinstate or create a
+ * grant for such a user, so an admin cannot hand back what the IdP took.
+ */
+export async function isScimSuspendedIn(db: DB, userId: number, workspaceId: number): Promise<boolean> {
+  if ((await suspendedRole(db, userId, workspaceId)) !== null) return true;
+  const u = await db.query.users.findFirst({ where: eq(users.id, userId) });
+  return u?.deactivatedAt != null && u.deactivatedByWorkspaceId === workspaceId;
+}
+
 async function setSuspended(db: DB, userId: number, workspaceId: number, role: WorkspaceRole | null): Promise<void> {
   const seats = await suspendedSeats(db, workspaceId);
   if (role) seats[String(userId)] = role;

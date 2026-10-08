@@ -27,13 +27,18 @@ export const accessGrantSpecs: RouteSpecMap = {
     query: accessGrantListQuery,
     response: z.array(accessGrant),
     validation: 'zod',
+    mcp: {
+      name: 'list_access_grants',
+      description: 'Project and environment access grants in a workspace, optionally filtered by user, project or environment (workspace admin).',
+      readOnly: true,
+    },
   },
   'POST /v1/workspaces/:wid/access-grants': {
     summary: 'Grant a user access to a project or environment',
     tag: 'workspaces',
     description:
       'Name the user by `email` or `userId` and target a project, an environment, or both. 201 with the grant. ' +
-      'An account the caller cannot already see (or an unknown email) gets 404; a duplicate target 409; a role above the caller’s own (capped at admin) 403 `grant_exceeds_role`. ' +
+      'An account the caller cannot already see (or an unknown email) gets 404; a duplicate target 409; a user their identity provider suspended in this workspace 409 `user_suspended_by_idp`; a role above the caller’s own (capped at admin) 403 `grant_exceeds_role`. ' +
       RAISE_ONLY,
     floor: 'admin',
     body: accessGrantCreate,
@@ -41,8 +46,12 @@ export const accessGrantSpecs: RouteSpecMap = {
     validation: 'zod',
   },
   'PATCH /v1/workspaces/:wid/access-grants/:grantId': {
-    summary: 'Change an access grant’s role',
+    summary: 'Change an access grant’s role, or suspend or reinstate it',
     tag: 'workspaces',
+    description:
+      'Send `role`, `suspended`, or both. A suspended grant stays listed but stops counting on the next request; `suspended: false` makes it count again. ' +
+      'Asking for the state a grant is already in changes nothing. Admin and identity-provider (SCIM) suspensions are held separately and the grant counts only when neither holds it; an admin cannot lift the provider’s hold, or reinstate while the provider has the user suspended here: 409 `grant_suspended_by_idp`. ' +
+      'The role cap applies to the old and the new role (403 `grant_exceeds_role`).',
     floor: 'admin',
     body: accessGrantUpdate,
     response: accessGrant,
@@ -67,5 +76,10 @@ export const accessGrantSpecs: RouteSpecMap = {
     description: 'The caller’s own grants, and the workspaces they reach only through grants (no seat).',
     floor: 'self',
     response: accessMe,
+    mcp: {
+      name: 'my_access',
+      description: 'The caller’s own access grants and the workspaces they reach only through grants.',
+      readOnly: true,
+    },
   },
 };

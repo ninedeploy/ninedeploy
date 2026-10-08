@@ -59,6 +59,17 @@ export const SPEC_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'list_access_grants',
+    description: 'Project and environment access grants in a workspace, optionally filtered by user, project or environment (workspace admin).',
+    input: z.object({ wid: z.string().min(1), userId: z.number().int().optional(), projectId: z.number().int().optional(), environmentId: z.number().int().optional() }),
+    // GET /v1/workspaces/:wid/access-grants
+    coarseTokenOnly: true,
+    handler: (c, input) => {
+      const i = input as { wid: string; userId?: number; projectId?: number; environmentId?: number };
+      return c.api.get(`/v1/workspaces/${encodeURIComponent(i.wid)}/access-grants`, { userId: i.userId, projectId: i.projectId, environmentId: i.environmentId });
+    },
+  },
+  {
     name: 'list_backups',
     description: 'Backups of one managed database (newest first): status, size, destination and timestamps.',
     input: z.object({ databaseId: z.number().int().positive() }),
@@ -115,12 +126,32 @@ export const SPEC_TOOLS: ToolDef[] = [
     handler: (c) => c.api.get('/v1/servers'),
   },
   {
+    name: 'list_terminal_sessions',
+    description: 'Terminal session history, newest first: target, user, status, duration, bytes and client IP; no transcript (operator).',
+    input: z.object({ status: z.enum(['pending', 'active', 'ended', 'failed', 'expired']).optional(), userId: z.number().int().optional(), targetKind: z.enum(['service', 'database', 'container', 'host']).optional(), limit: z.number().int().optional(), before: z.number().int().optional() }),
+    // GET /v1/terminals
+    coarseTokenOnly: true,
+    requiredScopes: ['operator'],
+    handler: (c, input) => {
+      const i = input as { status?: string; userId?: number; targetKind?: string; limit?: number; before?: number };
+      return c.api.get('/v1/terminals', { status: i.status, userId: i.userId, targetKind: i.targetKind, limit: i.limit, before: i.before });
+    },
+  },
+  {
     name: 'list_volumes',
     description: 'Docker volumes on the instance with size and owning service. Operator only.',
     input: z.object({}),
     // GET /v1/volumes
     requiredScopes: ['operator', 'nd://scope/read/volumes'],
     handler: (c) => c.api.get('/v1/volumes'),
+  },
+  {
+    name: 'my_access',
+    description: 'The caller’s own access grants and the workspaces they reach only through grants.',
+    input: z.object({}),
+    // GET /v1/access/me
+    coarseTokenOnly: true,
+    handler: (c) => c.api.get('/v1/access/me'),
   },
   {
     name: 'traffic_summary',
@@ -142,12 +173,15 @@ export const SPEC_READ_ONLY_TOOL_NAMES: readonly string[] = [
   'get_backup_policy',
   'get_database',
   'instance_traffic_summary',
+  'list_access_grants',
   'list_backups',
   'list_environments',
   'list_jobs',
   'list_labels',
   'list_networks',
   'list_servers',
+  'list_terminal_sessions',
   'list_volumes',
+  'my_access',
   'traffic_summary',
 ];

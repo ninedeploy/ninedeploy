@@ -677,3 +677,176 @@ describe('grant routes', () => {
     expect(empty.json()).toEqual({ grants: [], guestWorkspaces: [] });
   });
 });
+
+// ── suspending a grant through the API (PATCH `suspended`) ──
+
+describe('PATCH suspended: admin suspend and reinstate', () => {
+  async function app() {
+    // adminW1 sits in W2 too, so it may name viewerW2 (see 'grant routes').
+    await db.insert(workspaceMembers).values({ workspaceId: W.W2, userId: U.adminW1, role: 'viewer' });
+    const a = await buildTestApp({ db });
+    await a.register(accessGrantRoutes, { prefix: '/workspaces' });
+    await a.register(servicesRoutes, { prefix: '/services' });
+    return a;
+  }
+  const h = (id: number, operator = false) => ({ 'x-test-user': String(id), 'x-test-operator': String(operator) });
+  const base = `/workspaces/${W.W1}/access-grants`;
+  const grantActions = async () =>
+    (await db.select().from(auditLog)).map((r) => r.action).filter((a) => a.startsWith('workspace.access_grant.'));
+
+  it('a suspended grant stops granting on the next request; a reinstated one grants again — each change audited once', async () => {
+    const a = await app();
+    const created = await a.inject({ method: 'POST', url: base, headers: h(U.adminW1), payload: { userId: U.viewerW2, projectId: P.P1, role: 'member' } });
+    expect(created.statusCode, created.body).toBe(201);
+    const id = created.json().id as number;
+    const read = () => a.inject({ method: 'GET', url: '/services/104', headers: h(U.viewerW2) });
+    const patch = (payload: object) => a.inject({ method: 'PATCH', url: `${base}/${id}`, headers: h(U.adminW1), payload });
+    expect((await read()).statusCode).toBe(200);
+
+    const suspended = await patch({ suspended: true });
+    expect(suspended.statusCode, suspended.body).toBe(200);
+    expect(suspended.json()).toMatchObject({ id, role: 'member', suspended: true });
+    expect((await read()).statusCode).toBe(404);
+    // Still listed, marked suspended.
+    expect((await a.inject({ method: 'GET', url: base, headers: h(U.adminW1) })).json()).toEqual([expect.objectContaining({ id, suspended: true })]);
+    // Asking for the state it is already in changes nothing.
+    expect((await patch({ suspended: true })).json().suspended).toBe(true);
+
+    const reinstated = await patch({ suspended: false });
+    expect(reinstated.statusCode).toBe(200);
+    expect(reinstated.json().suspended).toBe(false);
+    expect((await read()).statusCode).toBe(200);
+    expect((await patch({ suspended: false })).json().suspended).toBe(false);
+    expect(await grantActions()).toEqual(['workspace.access_grant.create', 'workspace.access_grant.suspend', 'workspace.access_grant.reinstate']);
+
+    // With a role: both changes, both audited.
+    const both = await patch({ role: 'viewer', suspended: true });
+    expect(both.json()).toMatchObject({ role: 'viewer', suspended: true });
+    expect((await grantActions()).slice(-2)).toEqual(['workspace.access_grant.update', 'workspace.access_grant.suspend']);
+    const meta = (await db.select().from(auditLog)).filter((r) => r.action === 'workspace.access_grant.suspend').at(-1)!.meta;
+    expect(meta).toMatchObject({ grantId: id, userId: U.viewerW2, projectId: P.P1, role: 'viewer' });
+    // {role} alone keeps its 0.15.0 behaviour (and leaves the suspension alone).
+    expect((await patch({ role: 'member' })).json()).toMatchObject({ role: 'member', suspended: true });
+  });
+
+  it('same authorization as the role change; an empty or unknown body is a 400', async () => {
+    const id = await grant(U.viewerW2, { ws: W.W1, project: P.P1, role: 'member' });
+    const other = await grant(U.viewerW1, { ws: W.W2, project: P.P2, role: 'viewer' });
+    const a = await app();
+    const patch = (gid: number, as: number, payload: object, operator = false) =>
+      a.inject({ method: 'PATCH', url: `${base}/${gid}`, headers: h(as, operator), payload });
+    expect((await patch(id, U.memberW1, { suspended: true })).statusCode).toBe(403);
+    expect((await patch(id, U.viewerW1, { suspended: true })).statusCode).toBe(403);
+    expect((await patch(id, U.ownerW2, { suspended: true })).statusCode).toBe(404);
+    expect((await patch(other, U.adminW1, { suspended: true })).statusCode).toBe(404);
+    expect((await patch(id, U.adminW1, {})).statusCode).toBe(400);
+    expect((await patch(id, U.adminW1, { suspended: 'yes' })).statusCode).toBe(400);
+    expect((await patch(id, U.adminW1, { suspended: true, userId: 1 })).statusCode).toBe(400);
+    expect((await patch(id, U.operator, { suspended: true }, true)).statusCode).toBe(200);
+    expect((await db.select().from(accessGrants).where(eq(accessGrants.id, other)))[0]!.suspendedAt).toBeNull();
+  });
+
+  it('DELETE of an admin-held grant drops its hold', async () => {
+    const id = await grant(U.viewerW2, { ws: W.W1, project: P.P1, role: 'member' });
+    const a = await app();
+    expect((await a.inject({ method: 'PATCH', url: `${base}/${id}`, headers: h(U.adminW1), payload: { suspended: true } })).statusCode).toBe(200);
+    expect(await ag.adminHeldGrantIds(db, W.W1)).toEqual([id]);
+    expect((await a.inject({ method: 'DELETE', url: `${base}/${id}`, headers: h(U.adminW1) })).statusCode).toBe(200);
+    expect(await ag.adminHeldGrantIds(db, W.W1)).toEqual([]);
+  });
+});
+
+describe('admin and identity-provider suspensions are separate holds', () => {
+  const TOKEN = ['scim', 'w1', 'holds'].join('_');
+  const LOCAL_HASH = '$argon2id$v=19$m=19456,t=2,p=1$fixture$fixture';
+  async function app() {
+    await db.insert(scimTokens).values({ name: 'IdP W1', tokenHash: sha256(TOKEN), workspaceId: W.W1 });
+    // A local account: W1's IdP suspends its seat in W1, never the account.
+    await db.update(users).set({ passwordHash: LOCAL_HASH }).where(eq(users.id, U.multi));
+    const a = await buildTestApp({ db });
+    await a.register(accessGrantRoutes, { prefix: '/workspaces' });
+    await a.register(scimRoutes, { prefix: '/scim/v2' });
+    return a;
+  }
+  const h = (id: number) => ({ 'x-test-user': String(id), 'x-test-operator': 'false' });
+  const scim = (a: FastifyInstance, active: boolean) =>
+    a.inject({
+      method: 'PATCH',
+      url: `/scim/v2/Users/${U.multi}`,
+      headers: { authorization: `Bearer ${TOKEN}` },
+      payload: { Operations: [{ op: 'replace', path: 'active', value: active }] },
+    });
+  const admin = (a: FastifyInstance, id: number, suspended: boolean) =>
+    a.inject({ method: 'PATCH', url: `/workspaces/${W.W1}/access-grants/${id}`, headers: h(U.adminW1), payload: { suspended } });
+  // Database 308 sits in P1b: multi (a W1 member seat) reaches it as admin only through the grant.
+  const role = async () => ra.databaseRole(db, await dbRow(308), as(U.multi));
+  const isSuspended = async (id: number) => (await db.query.accessGrants.findFirst({ where: eq(accessGrants.id, id) }))!.suspendedAt !== null;
+
+  it('IdP suspend → admin suspend → admin reinstate is refused (409) and the grant stays suspended', async () => {
+    const id = await grant(U.multi, { ws: W.W1, project: P.P1b, role: 'admin' });
+    const a = await app();
+    expect((await scim(a, false)).statusCode).toBe(200);
+    expect(await role()).toBeNull();
+    expect((await admin(a, id, true)).statusCode).toBe(200);
+    const refused = await admin(a, id, false);
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().error.code).toBe('grant_suspended_by_idp');
+    expect(await isSuspended(id)).toBe(true);
+    expect(await ag.idpHeldGrantIds(db, W.W1, U.multi)).toEqual([id]);
+    // The IdP's reinstatement leaves the admin's hold: still suspended.
+    expect((await scim(a, true)).statusCode).toBe(200);
+    expect(await isSuspended(id)).toBe(true);
+    // Only the restored member seat counts, not the admin grant.
+    expect(await role()).toBe('member');
+    // Both holds lifted: the grant counts again on the next check.
+    expect((await admin(a, id, false)).statusCode).toBe(200);
+    expect(await isSuspended(id)).toBe(false);
+    expect(await role()).toBe('admin');
+  });
+
+  it('admin suspend first, then the IdP: the IdP’s reinstatement keeps the admin hold', async () => {
+    const id = await grant(U.multi, { ws: W.W1, project: P.P1b, role: 'admin' });
+    const a = await app();
+    expect((await admin(a, id, true)).statusCode).toBe(200);
+    expect((await scim(a, false)).statusCode).toBe(200);
+    expect((await scim(a, true)).statusCode).toBe(200);
+    expect(await isSuspended(id)).toBe(true);
+    expect((await admin(a, id, false)).statusCode).toBe(200);
+    expect(await role()).toBe('admin');
+  });
+
+  it('while the IdP has the user suspended, an admin can neither reinstate nor grant anew', async () => {
+    const id = await grant(U.multi, { ws: W.W1, project: P.P1b, role: 'admin' });
+    const a = await app();
+    expect((await scim(a, false)).statusCode).toBe(200);
+    const fresh = await a.inject({
+      method: 'POST',
+      url: `/workspaces/${W.W1}/access-grants`,
+      headers: h(U.adminW1),
+      payload: { userId: U.multi, projectId: P.P1, role: 'member' },
+    });
+    expect(fresh.statusCode).toBe(409);
+    expect(fresh.json().error.code).toBe('user_suspended_by_idp');
+    expect((await admin(a, id, false)).statusCode).toBe(409);
+  });
+
+  it('an account this workspace’s IdP deactivated cannot be reinstated by an admin either', async () => {
+    const id = await grant(U.viewerW1, { ws: W.W1, project: P.P1b, role: 'admin' });
+    const a = await app();
+    expect((await admin(a, id, true)).statusCode).toBe(200);
+    await db.update(users).set({ deactivatedAt: new Date(), deactivatedByWorkspaceId: W.W1 }).where(eq(users.id, U.viewerW1));
+    expect((await admin(a, id, false)).statusCode).toBe(409);
+    expect(await isSuspended(id)).toBe(true);
+  });
+
+  it('SCIM DELETE still removes the grants, held or not', async () => {
+    const id = await grant(U.multi, { ws: W.W1, project: P.P1b, role: 'admin' });
+    await grant(U.multi, { ws: W.W1, env: E.E1, role: 'viewer' });
+    const a = await app();
+    expect((await admin(a, id, true)).statusCode).toBe(200);
+    const res = await a.inject({ method: 'DELETE', url: `/scim/v2/Users/${U.multi}`, headers: { authorization: `Bearer ${TOKEN}` } });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(await db.select().from(accessGrants).where(and(eq(accessGrants.userId, U.multi), eq(accessGrants.workspaceId, W.W1)))).toEqual([]);
+    expect(await ag.adminHeldGrantIds(db, W.W1)).toEqual([]);
+  });
+});

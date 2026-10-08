@@ -487,6 +487,33 @@ describe('access grants', () => {
     expect(c.accessGrants.update).toHaveBeenCalledTimes(2);
   });
 
+  it('suspends and reinstates a grant, alone or with a role', async () => {
+    const c = makeClient();
+    c.accessGrants.update
+      .mockResolvedValueOnce(grant({ suspended: true }))
+      .mockResolvedValueOnce(grant({ suspended: false }))
+      .mockResolvedValueOnce(grant({ role: 'viewer', suspended: true }))
+      .mockRejectedValueOnce(new Error('grant_suspended_by_idp'));
+    await accessGrantsUpdate(asClient(c), '8', { workspace: '1', suspend: true });
+    expect(c.accessGrants.update).toHaveBeenLastCalledWith(1, 8, { suspended: true });
+    expect(out()).toContain('Grant #8 is now suspended');
+    await accessGrantsUpdate(asClient(c), '8', { workspace: '1', reinstate: true });
+    expect(c.accessGrants.update).toHaveBeenLastCalledWith(1, 8, { suspended: false });
+    expect(out()).toContain('Grant #8 is now active');
+    await accessGrantsUpdate(asClient(c), '8', { workspace: '1', role: 'viewer', suspend: true });
+    expect(c.accessGrants.update).toHaveBeenLastCalledWith(1, 8, { role: 'viewer', suspended: true });
+    expect(out()).toContain('Grant #8 is now viewer, suspended');
+    await accessGrantsUpdate(asClient(c), '8', { workspace: '1', reinstate: true });
+    expect(err()).toContain('grant_suspended_by_idp');
+    await accessGrantsUpdate(asClient(c), '8', { workspace: '1', suspend: true, reinstate: true });
+    await accessGrantsUpdate(asClient(c), '8', { workspace: '1' });
+    await accessGrantsUpdate(asClient(c), '8', { workspace: '1', role: 'root', suspend: true });
+    expect(c.accessGrants.update).toHaveBeenCalledTimes(4);
+    expect(err()).toContain('only one of --suspend or --reinstate');
+    expect(err()).toContain('Pass --role, --suspend or --reinstate');
+    expect(err()).toContain('--role must be one of');
+  });
+
   it('removes after confirmation', async () => {
     const c = makeClient();
     c.accessGrants.delete.mockResolvedValueOnce({ ok: true }).mockRejectedValueOnce(new Error('Access grant not found'));

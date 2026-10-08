@@ -3,6 +3,7 @@ import type {
   AccessGrant,
   AccessGrantCreate,
   AccessGrantRole,
+  AccessGrantUpdate,
   CreateTerminalSessionInput,
   TerminalSession,
   TerminalSessionStatus,
@@ -24,7 +25,7 @@ import { plain } from './sources.js';
  *   ninedeploy terminals list|show <id>|kill <id>
  *   ninedeploy terminal service <id> | db <id> [--client] | container <name> | host [serverId]
  *   ninedeploy traffic settings [--enable|--disable] [--retention <days>] | summary | service <id>
- *   ninedeploy access grants list|add|update <grantId>|remove <grantId> --workspace <id>
+ *   ninedeploy access grants list|add|update <grantId> [--role|--suspend|--reinstate]|remove <grantId> --workspace <id>
  *   ninedeploy access me
  *
  * Terminals and the instance traffic routes are operator only on the
@@ -447,16 +448,36 @@ export async function accessGrantsAdd(
   }
 }
 
-/** `ninedeploy access grants update <grantId> --workspace <id> --role <role>` */
-export async function accessGrantsUpdate(client: NineDeployClient, grantRaw: string, opts: { workspace?: string; role?: string } = {}): Promise<void> {
+/**
+ * `ninedeploy access grants update <grantId> --workspace <id> [--role <role>] [--suspend | --reinstate]`
+ *
+ * A suspended grant stays listed but gives no access; `--reinstate` makes it
+ * count again (refused while the user's identity provider has them suspended).
+ */
+export async function accessGrantsUpdate(
+  client: NineDeployClient,
+  grantRaw: string,
+  opts: { workspace?: string; role?: string; suspend?: boolean; reinstate?: boolean } = {},
+): Promise<void> {
   const workspaceId = positiveInt(opts.workspace, '--workspace');
   const grantId = workspaceId === null ? null : positiveInt(grantRaw, 'Grant id');
   if (workspaceId === null || grantId === null) return;
-  const role = parseRole(opts.role);
-  if (role === null) return;
+  if (opts.suspend && opts.reinstate) return error('Pass only one of --suspend or --reinstate');
+  const suspended = opts.suspend ? true : opts.reinstate ? false : undefined;
+  if (opts.role === undefined && suspended === undefined) return error('Pass --role, --suspend or --reinstate');
+  const input: AccessGrantUpdate = {};
+  if (opts.role !== undefined) {
+    const role = parseRole(opts.role);
+    if (role === null) return;
+    input.role = role;
+  }
+  if (suspended !== undefined) input.suspended = suspended;
   try {
-    const g = await spinner('Changing the role', () => client.accessGrants.update(workspaceId, grantId, { role }));
-    success(`Grant #${g.id} is now ${g.role}`);
+    const g = await spinner(suspended === undefined ? 'Changing the role' : 'Updating the grant', () =>
+      client.accessGrants.update(workspaceId, grantId, input),
+    );
+    if (suspended === undefined) success(`Grant #${g.id} is now ${g.role}`);
+    else success(`Grant #${g.id} is now ${input.role !== undefined ? `${g.role}, ` : ''}${g.suspended ? 'suspended' : 'active'}`);
   } catch (err) {
     error(message(err));
   }

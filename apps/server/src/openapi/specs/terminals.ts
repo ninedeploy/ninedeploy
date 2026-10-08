@@ -38,6 +38,15 @@ export const terminalSpecs: RouteSpecMap = {
     query: terminalSessionListQuery,
     response: terminalSessionList,
     validation: 'zod',
+    // Metadata only: who opened which shell on what, when, for how long, and
+    // from which client IP. No ticket, transcript or credential, so not
+    // `sensitive` (that flag means secrets); operator-only and coarse tokens
+    // only, like the activity log tool.
+    mcp: {
+      name: 'list_terminal_sessions',
+      description: 'Terminal session history, newest first: target, user, status, duration, bytes and client IP; no transcript (operator).',
+      readOnly: true,
+    },
   },
   'GET /v1/terminals/settings': {
     summary: 'Terminal settings',

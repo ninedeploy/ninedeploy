@@ -1025,10 +1025,14 @@ grantsCmd.command('add')
     accessGrantsAdd(getClient(), opts),
   );
 grantsCmd.command('update <grantId>')
-  .description('Change the role of a grant')
+  .description('Change the role of a grant, or suspend or reinstate it')
   .option('--workspace <id>', 'Workspace id')
   .option('--role <role>', 'viewer | member | admin')
-  .action((grantId: string, opts: { workspace?: string; role?: string }) => accessGrantsUpdate(getClient(), grantId, opts));
+  .option('--suspend', 'Keep the grant but stop it giving access')
+  .option('--reinstate', 'Make a suspended grant give access again')
+  .action((grantId: string, opts: { workspace?: string; role?: string; suspend?: boolean; reinstate?: boolean }) =>
+    accessGrantsUpdate(getClient(), grantId, opts),
+  );
 grantsCmd.command('remove <grantId>')
   .alias('rm')
   .description('Revoke a grant')

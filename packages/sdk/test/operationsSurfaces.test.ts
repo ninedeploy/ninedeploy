@@ -66,6 +66,13 @@ describe('0.15 route mapping', () => {
         { email: 'a@b.test', projectId: 5, role: 'member' },
       ],
       [() => api.accessGrants.update(2, 8, { role: 'admin' }), 'PATCH', '/v1/workspaces/2/access-grants/8', { role: 'admin' }],
+      [() => api.accessGrants.update(2, 8, { suspended: true }), 'PATCH', '/v1/workspaces/2/access-grants/8', { suspended: true }],
+      [
+        () => api.accessGrants.update(2, 8, { role: 'viewer', suspended: false }),
+        'PATCH',
+        '/v1/workspaces/2/access-grants/8',
+        { role: 'viewer', suspended: false },
+      ],
       [() => api.accessGrants.delete(2, 8), 'DELETE', '/v1/workspaces/2/access-grants/8', undefined],
       [() => api.access.me(), 'GET', '/v1/access/me', undefined],
       [() => api.access.project(5), 'GET', '/v1/projects/5/access', undefined],

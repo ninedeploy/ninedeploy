@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
-import { KeyRound, Trash2 } from 'lucide-react';
+import { KeyRound, Pause, Play, Trash2 } from 'lucide-react';
 import type { AccessGrant, AccessGrantCreate, AccessGrantRole } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { useToast } from '../Toast.js';
@@ -58,6 +58,17 @@ export function AccessGrantsCard({ workspaceId, cap }: { workspaceId: number; ca
     mutationFn: ({ id, role: next }: { id: number; role: AccessGrantRole }) => api.accessGrants.update(workspaceId, id, { role: next }),
     onSuccess: () => void refresh(),
     onError: onError('Could not change the role'),
+  });
+  // Suspend keeps the grant listed but stops it counting; reinstate makes it
+  // count again. A grant the identity provider suspended stays suspended
+  // until the provider re-enables the user (the server answers 409).
+  const suspend = useMutation({
+    mutationFn: ({ id, suspended }: { id: number; suspended: boolean }) => api.accessGrants.update(workspaceId, id, { suspended }),
+    onSuccess: (_g, { suspended }) => {
+      toast(suspended ? 'Grant suspended' : 'Grant reinstated', 'success');
+      void refresh();
+    },
+    onError: onError('Could not change the suspension'),
   });
   const revoke = useMutation({
     mutationFn: (id: number) => api.accessGrants.delete(workspaceId, id),
@@ -162,7 +173,7 @@ export function AccessGrantsCard({ workspaceId, cap }: { workspaceId: number; ca
                 <div className="text-xs text-slate-500">
                   {grantTargetLabel(g)}
                   {g.createdBy && ` · granted by ${g.createdBy.email}`}
-                  {g.suspended && ' · suspended by SCIM until the identity provider reinstates the user'}
+                  {g.suspended && ' · suspended: it gives no access until reinstated (a suspension by the identity provider lifts only there)'}
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -179,6 +190,16 @@ export function AccessGrantsCard({ workspaceId, cap }: { workspaceId: number; ca
                     </option>
                   ))}
                 </Select>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`${g.suspended ? 'Reinstate' : 'Suspend'} access for ${g.user.email}`}
+                  title={g.suspended ? 'Reinstate' : 'Suspend'}
+                  disabled={RANK[g.role] > RANK[cap] || suspend.isPending}
+                  onClick={() => suspend.mutate({ id: g.id, suspended: !g.suspended })}
+                >
+                  {g.suspended ? <Play size={14} /> : <Pause size={14} />}
+                </Button>
                 <Button
                   size="sm"
                   variant="ghost"

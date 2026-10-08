@@ -49,8 +49,20 @@ export const accessGrantCreate = z
   .refine(hasTarget, { message: 'a grant needs a projectId, an environmentId, or both', path: ['projectId'] });
 export type AccessGrantCreate = z.infer<typeof accessGrantCreate>;
 
-/** PATCH /v1/workspaces/:wid/access-grants/:grantId: only the role changes. */
-export const accessGrantUpdate = z.object({ role: accessGrantRole }).strict();
+/**
+ * PATCH /v1/workspaces/:wid/access-grants/:grantId: change the role, suspend
+ * or reinstate the grant, or both. `{role}` alone is the 0.15.0 contract and
+ * still means exactly that. `suspended: true` stops the grant counting (it
+ * stays listed, like a SCIM suspension); `false` makes it count again. The
+ * target and the user never change: revoke and grant again instead.
+ */
+export const accessGrantUpdate = z
+  .object({ role: accessGrantRole.optional(), suspended: z.boolean().optional() })
+  .strict()
+  .refine((v) => v.role !== undefined || v.suspended !== undefined, {
+    message: 'change the role, suspended, or both',
+    path: ['role'],
+  });
 export type AccessGrantUpdate = z.infer<typeof accessGrantUpdate>;
 
 /** GET /v1/workspaces/:wid/access-grants query. Query strings arrive as text. */

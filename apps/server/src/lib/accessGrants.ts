@@ -10,6 +10,7 @@ import {
   type DB,
 } from '@ninedeploy/db';
 import { audit } from './audit.js';
+import { getSettingJson, setSettingJson } from './settings.js';
 
 /**
  * Project- and environment-level access grants (0.15, DESIGN §4). Owner
@@ -243,6 +244,10 @@ export async function deleteGrantsForMember(
     .delete(accessGrants)
     .where(and(eq(accessGrants.workspaceId, workspaceId), eq(accessGrants.userId, userId)))
     .returning({ id: accessGrants.id });
+  // Admin holds name grant ids, which AUTOINCREMENT never reuses; dropping the
+  // deleted ones is hygiene only. The IdP's holds are left to the IdP's own
+  // reinstatement (no admin action ever edits them).
+  if (gone.length > 0) await releaseAdminHolds(db, workspaceId, ids(gone));
   if (gone.length > 0) {
     void audit(db as DB, actorUserId, 'workspace.access_grant.delete', `user #${userId} in workspace #${workspaceId}`, {
       grantIds: ids(gone),
@@ -254,37 +259,121 @@ export async function deleteGrantsForMember(
   return gone.length;
 }
 
-/** SCIM deactivation in W: the user's grants in W stop counting until reinstated. */
-export async function suspendGrantsForMember(db: DbLike, workspaceId: number, userId: number): Promise<number> {
-  const rows = await db
-    .update(accessGrants)
-    .set({ suspendedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(accessGrants.workspaceId, workspaceId), eq(accessGrants.userId, userId), isNull(accessGrants.suspendedAt)))
-    .returning({ id: accessGrants.id });
-  if (rows.length > 0) {
-    void audit(db as DB, null, 'workspace.access_grant.suspend', `user #${userId} in workspace #${workspaceId}`, {
-      grantIds: ids(rows),
-      userId,
-      workspaceId,
-    });
-  }
-  return rows.length;
+// ── suspension holds: the IdP (SCIM) and workspace admins (PATCH) ─────────
+// A grant can be held suspended by the user's identity provider, by a
+// workspace admin, or by both. Each hold is recorded on its own (settings
+// rows, no migration: 0071 is frozen) and `suspended_at` is set while either
+// exists. Only the SCIM re-activation path removes an IdP hold, and only the
+// admin PATCH removes an admin hold, so neither can lift the other's: a grant
+// the IdP suspended cannot be reinstated by an admin, and the IdP's
+// reinstatement leaves an admin-held grant suspended.
+type IdpHolds = Record<string, number[]>;
+const idpHoldKey = (workspaceId: number) => `access_grants.idp_suspended.ws${workspaceId}`;
+const adminHoldKey = (workspaceId: number) => `access_grants.admin_suspended.ws${workspaceId}`;
+const intList = (v: unknown): number[] => (Array.isArray(v) ? v.filter((n): n is number => Number.isInteger(n)) : []);
+
+async function readIdpHolds(db: DbLike, workspaceId: number): Promise<IdpHolds> {
+  const all = await getSettingJson<IdpHolds>(db as DB, idpHoldKey(workspaceId), {});
+  return all && typeof all === 'object' && !Array.isArray(all) ? all : {};
 }
 
-/** SCIM re-activation in W: grants suspended there count again. */
-export async function reinstateGrantsForMember(db: DbLike, workspaceId: number, userId: number): Promise<number> {
-  const rows = await db
-    .update(accessGrants)
-    .set({ suspendedAt: null, updatedAt: new Date() })
-    .where(and(eq(accessGrants.workspaceId, workspaceId), eq(accessGrants.userId, userId), isNotNull(accessGrants.suspendedAt)))
-    .returning({ id: accessGrants.id });
-  if (rows.length > 0) {
-    void audit(db as DB, null, 'workspace.access_grant.reinstate', `user #${userId} in workspace #${workspaceId}`, {
-      grantIds: ids(rows),
-      userId,
-      workspaceId,
-    });
+async function writeIdpHolds(db: DbLike, workspaceId: number, userId: number, grantIds: number[]): Promise<void> {
+  const all = await readIdpHolds(db, workspaceId);
+  if (grantIds.length > 0) all[String(userId)] = grantIds;
+  else delete all[String(userId)];
+  await setSettingJson(db as DB, idpHoldKey(workspaceId), all);
+}
+
+/** The ids of `userId`'s grants in W the IdP (SCIM) holds suspended. */
+export async function idpHeldGrantIds(db: DbLike, workspaceId: number, userId: number): Promise<number[]> {
+  return intList((await readIdpHolds(db, workspaceId))[String(userId)]);
+}
+
+/** The ids of grants in W a workspace admin holds suspended. */
+export async function adminHeldGrantIds(db: DbLike, workspaceId: number): Promise<number[]> {
+  return intList(await getSettingJson<number[]>(db as DB, adminHoldKey(workspaceId), []));
+}
+
+/** Add an admin hold. Returns false when the grant was already admin-held. */
+export async function addAdminHold(db: DbLike, workspaceId: number, grantId: number): Promise<boolean> {
+  const held = await adminHeldGrantIds(db, workspaceId);
+  if (held.includes(grantId)) return false;
+  await setSettingJson(db as DB, adminHoldKey(workspaceId), [...held, grantId]);
+  return true;
+}
+
+/** Remove admin holds. Returns the ids that were held. */
+export async function releaseAdminHolds(db: DbLike, workspaceId: number, grantIds: number[]): Promise<number[]> {
+  const held = await adminHeldGrantIds(db, workspaceId);
+  const released = held.filter((id) => grantIds.includes(id));
+  if (released.length > 0) {
+    await setSettingJson(
+      db as DB,
+      adminHoldKey(workspaceId),
+      held.filter((id) => !grantIds.includes(id)),
+    );
   }
+  return released;
+}
+
+/**
+ * SCIM deactivation in W: every grant the user holds in W gets an IdP hold
+ * and stops counting until the IdP re-enables the user.
+ */
+export async function suspendGrantsForMember(db: DbLike, workspaceId: number, userId: number): Promise<number> {
+  const all = ids(
+    await db
+      .select({ id: accessGrants.id })
+      .from(accessGrants)
+      .where(and(eq(accessGrants.workspaceId, workspaceId), eq(accessGrants.userId, userId))),
+  );
+  const before = await idpHeldGrantIds(db, workspaceId, userId);
+  const added = all.filter((id) => !before.includes(id));
+  if (added.length === 0) return 0;
+  await writeIdpHolds(db, workspaceId, userId, [...before, ...added]);
+  await db
+    .update(accessGrants)
+    .set({ suspendedAt: new Date(), updatedAt: new Date() })
+    .where(and(inArray(accessGrants.id, added), isNull(accessGrants.suspendedAt)));
+  void audit(db as DB, null, 'workspace.access_grant.suspend', `user #${userId} in workspace #${workspaceId}`, {
+    grantIds: added,
+    userId,
+    workspaceId,
+  });
+  return added.length;
+}
+
+/**
+ * SCIM re-activation in W: the IdP's holds on the user's grants in W go.
+ * A grant a workspace admin also holds stays suspended.
+ */
+export async function reinstateGrantsForMember(db: DbLike, workspaceId: number, userId: number): Promise<number> {
+  const held = await idpHeldGrantIds(db, workspaceId, userId);
+  if (held.length === 0) return 0;
+  await writeIdpHolds(db, workspaceId, userId, []);
+  const adminHeld = await adminHeldGrantIds(db, workspaceId);
+  const lift = held.filter((id) => !adminHeld.includes(id));
+  const rows =
+    lift.length === 0
+      ? []
+      : await db
+          .update(accessGrants)
+          .set({ suspendedAt: null, updatedAt: new Date() })
+          .where(
+            and(
+              eq(accessGrants.workspaceId, workspaceId),
+              eq(accessGrants.userId, userId),
+              inArray(accessGrants.id, lift),
+              isNotNull(accessGrants.suspendedAt),
+            ),
+          )
+          .returning({ id: accessGrants.id });
+  void audit(db as DB, null, 'workspace.access_grant.reinstate', `user #${userId} in workspace #${workspaceId}`, {
+    grantIds: ids(rows),
+    stillHeldByAdmin: held.filter((id) => adminHeld.includes(id)),
+    userId,
+    workspaceId,
+  });
   return rows.length;
 }
 

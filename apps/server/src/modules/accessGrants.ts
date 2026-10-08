@@ -20,11 +20,19 @@ import {
   type ProjectAccessEntry,
   type ProjectAccessVia,
 } from '@ninedeploy/schemas';
-import { grantedWorkspaceIds, grantsForUser, higherGrantRole } from '../lib/accessGrants.js';
+import {
+  grantedWorkspaceIds,
+  grantsForUser,
+  higherGrantRole,
+  addAdminHold,
+  idpHeldGrantIds,
+  releaseAdminHolds,
+} from '../lib/accessGrants.js';
 import { audit } from '../lib/audit.js';
 import { conflict, forbidden, HttpError, isUniqueViolation, notFound, parseId } from '../lib/errors.js';
 import { assertProjectRole, loadProjectForUser, roleAtLeast, type AuthedUser } from '../lib/resourceAccess.js';
 import { iso } from '../lib/serialize.js';
+import { isScimSuspendedIn } from './scim.js';
 
 /**
  * Project- and environment-level access grants (0.15, raise-only — owner
@@ -207,6 +215,14 @@ export const accessGrantRoutes: FastifyPluginAsync = async (app) => {
       if (!env || env.workspaceId !== wid) throw notFound('Environment not found');
     }
     const target = await resolveSubject(app.db, wid, req.user!, input);
+    // A fresh grant would hand back what the user's IdP took away here.
+    if (await isScimSuspendedIn(app.db, target.id, wid)) {
+      throw new HttpError(
+        409,
+        'user_suspended_by_idp',
+        "This user's identity provider suspended them in this workspace; grant access after the provider re-enables them",
+      );
+    }
     const targetKey = accessGrantTargetKey(input);
     const duplicate = () => conflict('This user already holds a grant on that target; change its role instead');
     const existing = await app.db.query.accessGrants.findFirst({
@@ -237,23 +253,72 @@ export const accessGrantRoutes: FastifyPluginAsync = async (app) => {
     return reply.code(201).send(view);
   });
 
+  /**
+   * Change the role, suspend or reinstate, or both. `{role}` alone behaves
+   * exactly as in 0.15.0 (written and audited as `.update` even when the role
+   * is unchanged). `suspended: true` adds the admin hold and `false` removes
+   * it (lib/accessGrants.ts "suspension holds"); each is audited (`.suspend`
+   * / `.reinstate`) only when it changes the hold, and asking for the state
+   * the grant is already in changes nothing. A grant stays suspended while
+   * the IdP holds it too, and an admin can never lift the IdP's hold (409).
+   * Grants are read fresh per check, so the change applies on the next request.
+   */
   app.patch('/:wid/access-grants/:grantId', async (req) => {
     const { wid: rawWid, grantId: rawGrant } = req.params as { wid: string; grantId: string };
     const wid = parseId(rawWid);
     const cap = await grantingRights(app.db, wid, req.user!);
     const grant = await loadGrant(app.db, wid, parseId(rawGrant));
     const input = accessGrantUpdate.parse(req.body);
-    assertWithinCap(input.role, cap);
-    // Lowering a grant someone above the caller's cap issued is still a
+    if (input.role !== undefined) assertWithinCap(input.role, cap);
+    // Changing a grant someone above the caller's cap issued is still a
     // change to a grant they could not have made: same cap on the old role.
     assertWithinCap(grant.role as AccessGrantRole, cap);
+    let suspendChange: 'suspend' | 'reinstate' | null = null;
+    let suspendedAt: Date | null | undefined;
+    const now = new Date();
+    if (input.suspended === true) {
+      if (await addAdminHold(app.db, wid, grant.id)) {
+        suspendChange = 'suspend';
+        if (grant.suspendedAt == null) suspendedAt = now;
+      }
+    } else if (input.suspended === false) {
+      if (
+        (await idpHeldGrantIds(app.db, wid, grant.userId)).includes(grant.id) ||
+        (await isScimSuspendedIn(app.db, grant.userId, wid))
+      ) {
+        throw new HttpError(
+          409,
+          'grant_suspended_by_idp',
+          "This user's identity provider suspended them in this workspace; the grant counts again only when the provider re-enables them",
+        );
+      }
+      const released = (await releaseAdminHolds(app.db, wid, [grant.id])).length > 0;
+      if (released || grant.suspendedAt != null) {
+        suspendChange = 'reinstate';
+        suspendedAt = null;
+      }
+    }
+    if (input.role === undefined && suspendChange === null) {
+      const [view] = await viewGrants(app.db, [grant]);
+      return view;
+    }
     const [updated] = await app.db
       .update(accessGrants)
-      .set({ role: input.role, updatedAt: new Date() })
+      .set({
+        updatedAt: now,
+        ...(input.role !== undefined && { role: input.role }),
+        ...(suspendedAt !== undefined && { suspendedAt }),
+      })
       .where(eq(accessGrants.id, grant.id))
       .returning();
     if (!updated) throw notFound('Access grant not found');
-    void audit(app.db, req.user!.id, 'workspace.access_grant.update', `grant #${grant.id}: ${grant.role} → ${input.role}`, auditMeta(updated, grant.role));
+    if (input.role !== undefined) {
+      void audit(app.db, req.user!.id, 'workspace.access_grant.update', `grant #${grant.id}: ${grant.role} → ${input.role}`, auditMeta(updated, grant.role));
+    }
+    if (suspendChange !== null) {
+      const action = suspendChange === 'suspend' ? 'workspace.access_grant.suspend' : 'workspace.access_grant.reinstate';
+      void audit(app.db, req.user!.id, action, `grant #${grant.id}`, auditMeta(updated));
+    }
     const [view] = await viewGrants(app.db, [updated]);
     return view;
   });
@@ -266,6 +331,7 @@ export const accessGrantRoutes: FastifyPluginAsync = async (app) => {
     assertWithinCap(grant.role as AccessGrantRole, cap);
     const gone = await app.db.delete(accessGrants).where(eq(accessGrants.id, grant.id)).returning({ id: accessGrants.id });
     if (!gone[0]) throw notFound('Access grant not found');
+    await releaseAdminHolds(app.db, wid, [grant.id]);
     void audit(app.db, req.user!.id, 'workspace.access_grant.delete', `grant #${grant.id}`, auditMeta(grant));
     return { ok: true };
   });
