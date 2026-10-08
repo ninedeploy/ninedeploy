@@ -138,7 +138,30 @@ export async function sourcesAdd(client: NineDeployClient, nameArg?: string): Pr
   }
 }
 
-/** `ninedeploy sources test [id]` — verify the stored token still authenticates. */
+/**
+ * F1011: the login, name, scopes, warnings and failure text come from the Git
+ * provider's API response (relayed by the server), so they must not drive the
+ * operator's terminal — the class F538 (`deploys watch`) and F880
+ * (`logs search`) closed for log lines. Same pattern set, but these are
+ * one-line metadata fields, so nothing is kept: OSC/DCS/APC/PM/SOS strings,
+ * every CSI (SGR included), stray escapes, and all C0/DEL/C1 controls
+ * (tab/LF/CR too — a newline in a login could forge a second status line).
+ */
+const ESC = String.fromCharCode(27);
+const PROVIDER_TEXT_CONTROL = new RegExp(
+  `${ESC}[\\]PX^_][\\s\\S]*?(?:${String.fromCharCode(7)}|${ESC}\\\\|$)` +
+    `|${ESC}\\[[0-?]*[ -/]*[@-~]` +
+    `|${ESC}[\\s\\S]?` +
+    '|[\\u0000-\\u001f\\u007f-\\u009f]',
+  'g',
+);
+const plain = (value: unknown): string => String(value).replace(PROVIDER_TEXT_CONTROL, '');
+
+/**
+ * `ninedeploy sources test [id]` — verify the stored token still authenticates.
+ * GitHub successes also print what the token can see (F1008/F1011): its kind,
+ * its classic/OAuth scopes and each warning about missing private repositories.
+ */
 export async function sourcesTest(client: NineDeployClient, idArg?: string): Promise<void> {
   header('Test Source Credentials');
   if (idArg !== undefined && !parseSourceId(idArg)) return error(`Invalid source id: ${idArg}`);
@@ -159,9 +182,14 @@ export async function sourcesTest(client: NineDeployClient, idArg?: string): Pro
   }
   const result = await spinner('Verifying credentials', () => client.sources.test(id));
   if (result.ok) {
-    success(`✓ ${result.provider} token authenticates as ${result.login}${result.name ? ` (${result.name})` : ''}`);
+    success(`${plain(result.provider)} token authenticates as ${plain(result.login)}${result.name ? ` (${plain(result.name)})` : ''}`);
+    if (result.tokenKind) kv('Token type', plain(result.tokenKind));
+    if (Array.isArray(result.scopes)) kv('Scopes', result.scopes.length > 0 ? result.scopes.map(plain).join(', ') : c.gray('none'));
+    for (const warning of result.warnings ?? []) {
+      console.log(`  ${c.yellow('!')} ${c.yellow(`warning: ${plain(warning)}`)}`);
+    }
   } else {
-    error(`✗ ${result.provider ?? 'source'} check failed (status ${result.status ?? 'n/a'}): ${result.error ?? 'unknown error'}`);
+    error(`${plain(result.provider ?? 'source')} check failed (status ${plain(result.status ?? 'n/a')}): ${plain(result.error ?? 'unknown error')}`);
   }
 }
 

@@ -281,6 +281,45 @@ describe('sourcesTest', () => {
     await sourcesTest(makeClient({ sources: { test } }), '5');
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('unknown error'));
   });
+
+  // F1011: the F1008 token diagnostics reach the terminal.
+  it('prints the token kind, scopes and each warning (F1011)', async () => {
+    const warning = 'This classic token lacks the `repo` scope — private repositories are not listed and cannot be cloned.';
+    const test = vi.fn().mockResolvedValue({
+      ok: true, provider: 'github', login: 'me', name: null, tokenKind: 'classic', scopes: ['public_repo', 'read:org'], warnings: [warning],
+    });
+    await sourcesTest(makeClient({ sources: { test } }), '5');
+    const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(out).toMatch(/Token type.*classic/);
+    expect(out).toMatch(/Scopes.*public_repo, read:org/);
+    expect(out).toContain(`warning: ${warning}`);
+    expect(process.exitCode).toBe(0);
+
+    logSpy.mockClear();
+    test.mockResolvedValue({ ok: true, provider: 'gitlab', login: 'me', name: null });
+    await sourcesTest(makeClient({ sources: { test } }), '5');
+    expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).not.toMatch(/Token type|Scopes|warning:/);
+  });
+
+  // F1011: provider-supplied strings must not drive the terminal (F538 class).
+  it('strips terminal control sequences from provider-supplied strings (F1011)', async () => {
+    const ESC = String.fromCharCode(27);
+    const BEL = String.fromCharCode(7);
+    const test = vi.fn().mockResolvedValue({
+      ok: true, provider: 'github', login: `octo${ESC}]52;c;ZXZpbA==${BEL}cat\nforged`, name: null,
+      tokenKind: 'classic', scopes: [`repo${ESC}[1A`], warnings: [`w${ESC}[2J`],
+    });
+    await sourcesTest(makeClient({ sources: { test } }), '5');
+    const visible = logSpy.mock.calls.map((c) => String(c[0])).join('\n').replace(new RegExp(`${ESC}\\[[0-9;]*m`, 'g'), '');
+    expect(visible).not.toMatch(new RegExp(`[${ESC}${BEL}]`));
+    expect(visible).toContain('authenticates as octocatforged');
+    expect(visible).toMatch(/Scopes.*repo$/m);
+
+    test.mockResolvedValue({ ok: false, provider: 'github', status: 401, error: `Bad credentials${ESC}]0;x${BEL}` });
+    await sourcesTest(makeClient({ sources: { test } }), '5');
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Bad credentials'));
+    expect(String(errorSpy.mock.calls.at(-1)?.[0])).not.toContain(BEL);
+  });
 });
 
 describe('sourcesRemove', () => {
