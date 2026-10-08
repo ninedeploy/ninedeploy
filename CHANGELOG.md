@@ -9,6 +9,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-08
+
+> Network and data access: public database access, editable Traefik configuration with your own certificates, database dump import, and HashiCorp Vault / OpenBao and AWS Secrets Manager. See [docs/TRAEFIK_INGRESS.md](docs/TRAEFIK_INGRESS.md), [docs/DATABASES_BACKUPS.md](docs/DATABASES_BACKUPS.md) and [docs/SECRET_MANAGERS.md](docs/SECRET_MANAGERS.md).
+
+### Upgrade notes
+
+- One additive migration, `0070_network_data_access`: four new tables (`database_public_access`, `tls_certificates`, `database_imports`, `secret_providers`). No existing row is changed.
+- **Traefik is recreated once** on the first 0.14 boot. Traefik now reads its dynamic configuration from a directory (`/etc/traefik/dynamic`). The current routes are copied there before the recreate, so sites keep serving. If the recreate cannot happen (for example the image pull fails), the old container keeps running and route changes are mirrored to the old file until it succeeds.
+- **Remote nodes start serving their routes.** Since remote servers were introduced, a node's Traefik read a file the agent never wrote, so it loaded no routes. Nodes recreate their proxy once after the upgrade and then serve the routes the panel sends.
+- **Certificate-expiry alerts start working.** Expiry dates of Let's Encrypt certificates were never read (Traefik stores them base64-encoded), so the `cert-expiry` alert could not fire. After the upgrade it fires for certificates that are really about to expire.
+- Everything else is opt-in. No database is exposed, no custom config or certificate exists, and no secret provider is configured until an operator sets one up.
+- `${{vault:…}}` and `${{aws:…}}` references stay literal while their provider is not configured, exactly as before. PR previews now withhold them.
+- **Rolling back to 0.13** is supported; see [docs/ROLLBACK.md](docs/ROLLBACK.md).
+  - Traefik goes back to the single file.
+  - Delete the leftover `<data>/traefik/dynamic/` directory: it holds uploaded private keys.
+  - Remove public-database sidecars with `docker rm -f $(docker ps -aq --filter label=ninedeploy.public-db)`.
+  - Containers receive the literal text of `vault:` and `aws:` references.
+- Verified before release:
+  - in-place upgrades from 0.13.0 and from 0.10.45;
+  - every new feature exercised on the upgraded panel with a real Traefik;
+  - a rehearsed rollback to 0.13.0.
+
+### Added
+
+- **Public database access.** An operator can publish a managed postgres, mysql, mariadb, redis, valkey or mongo database on one host port.
+  - It runs through its own Traefik TCP sidecar (`nd-dbpub-<slug>`); the main Traefik is never touched.
+  - An IP allow-list is required (at most 100 ranges, never `/0`).
+  - TLS termination with an uploaded certificate is optional; it is not available for mysql/mariadb.
+  - Database credentials gain `publicConnectionString`.
+  - Off by default. The connection uses the database's root credentials, so create a limited user.
+- **Custom Traefik dynamic config.** Operators can add their own routers, middlewares and services.
+  - Every name must start with `custom-`, so it can't collide with the panel's own routes.
+  - Each save is validated, then tried in a throwaway Traefik container before it is applied. If the live Traefik rejects it, the panel reverts to the last good version.
+- **Uploaded TLS certificates.** Operators can upload PEM certificates and keys; the key is stored encrypted. A domain fully covered by an uploaded certificate stops requesting a Let's Encrypt certificate. Uploaded certificates feed the certificate inventory and the expiry alerts.
+- **Database dump import.**
+  - Sources: resumable 8 MiB chunked uploads (database admin), or an object from a backup destination (operator).
+  - Formats: postgres (custom or plain SQL), mysql/mariadb (SQL), mongo (archive) and redis/valkey (RDB), each optionally gzipped.
+  - A `pre-import` safety backup is taken first, and a check afterwards confirms the panel can still sign in.
+- **Secret managers.** Env values can reference HashiCorp Vault / OpenBao KV v2 (`${{vault:path#field}}`) and AWS Secrets Manager (`${{aws:id}}` or `${{aws:id#key}}`).
+  - Configure them under Settings → Integrations. Infisical and Doppler keep working as before.
+  - Every call goes through the egress guard.
+- **Surfaces.**
+  - SDK, with `importFile` for chunked, resumable uploads.
+  - CLI: `ninedeploy databases public-access|import|imports`, `proxy config`, `certificates custom` and `secrets providers`.
+  - MCP read-only tools `get_database_public_access` and `list_database_imports`.
+
+### Fixed
+
+- Remote-node proxies loaded no routes: the static config pointed at `dynamic.yml`, while the agent writes `dynamic/ninedeploy.yml`.
+- Let's Encrypt certificate expiry was never read, so the `cert-expiry` alert never fired, and the certificate inventory always showed the issuer "Let's Encrypt" and the source `acme.json`.
+
 ## [0.13.0] - 2026-10-08
 
 > GitHub App integration: short-lived installation tokens instead of long-lived PATs, App webhooks, commit statuses and PR comments, private clones on remote nodes, and Gitea repository listing. See [docs/GITHUB_APP.md](docs/GITHUB_APP.md).

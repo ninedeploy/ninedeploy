@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.13.0';
+export const VERSION = '0.14.0';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.14.0',
+    date: '2026-10-08',
+    title: 'Network and Data Access',
+    changes: [
+      'Public database access: an operator can publish a managed database on one host port, through its own Traefik sidecar, behind a required IP allow-list and with optional TLS. Off by default (database → Settings → Public access).',
+      'Traefik: add your own routes and middlewares as a validated custom config, and upload your own TLS certificates (Traefik page). Traefik is recreated once on upgrade; your current routes keep serving. Remote nodes now actually serve their routes, and certificate-expiry alerts now fire.',
+      'Database dump import: upload a dump in resumable chunks, or pick one from a backup destination, and import it into postgres, mysql, mariadb, mongo, redis or valkey. A safety backup is taken first (database → Backups → Import).',
+      'Secret managers: reference HashiCorp Vault / OpenBao and AWS Secrets Manager values in env (${{vault:path#field}}, ${{aws:id#key}}), configured under Settings → Integrations. Nothing changes until you configure one; rolling back to 0.13 is supported (see docs/ROLLBACK.md).',
+    ],
+  },
+{
     version: '0.13.0',
     date: '2026-10-08',
     title: 'GitHub App Integration',
