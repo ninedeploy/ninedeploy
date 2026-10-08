@@ -45,6 +45,7 @@ import { PluginSlot } from '../components/PluginSlot.js';
 import { downloadBlob, formatBytes, formatDateTime, useCopy } from '../lib/format.js';
 import { ContainerFileBrowser } from '../components/ContainerFileBrowser.js';
 import { DatabaseTopologyTab } from './database/DatabaseTopologyTab.js';
+import { BackupScheduleCard } from './database/BackupScheduleCard.js';
 import { ManifestTab } from './service/ManifestTab.js';
 
 const ENGINE_LABEL: Record<string, string> = {
@@ -290,7 +291,12 @@ export function DatabaseDetail() {
           {/* v8 ignore stop */}
         </div>
       )}
-      {activeTab === 'backups' && <BackupsPanel dbId={db.id} dbName={db.name} />}
+      {activeTab === 'backups' && (
+        <div className="space-y-4">
+          <BackupScheduleCard dbId={db.id} />
+          <BackupsPanel dbId={db.id} dbName={db.name} />
+        </div>
+      )}
       {activeTab === 'logs' && <LogsPanel dbId={db.id} isRunning={isRunning} />}
       {activeTab === 'settings' && <SettingsPanel db={db} onDeleted={() => navigate('/databases')} />}
 

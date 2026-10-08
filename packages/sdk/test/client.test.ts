@@ -585,6 +585,32 @@ describe('createClient', () => {
       expect(client.system.exportUrl()).toBe('/v1/system/export');
       expect(calls).toHaveLength(0);
     });
+
+    it('panelBackup: get, update, run, list and restore hit /v1/system/panel-backup', async () => {
+      const { fetchMock, calls } = makeFetch(() => ok({}));
+      const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+
+      await client.system.panelBackup.get();
+      expect(last(calls)).toMatchObject({ url: '/v1/system/panel-backup', init: { method: 'GET' } });
+
+      const settings = { enabled: true, destinationId: 2, retain: 5, passphrase: 'a long recovery phrase' };
+      await client.system.panelBackup.update(settings);
+      expect(last(calls)).toMatchObject({ url: '/v1/system/panel-backup', init: { method: 'PUT' } });
+      expect(JSON.parse(last(calls).init.body ?? '{}')).toEqual(settings);
+
+      await client.system.panelBackup.run();
+      expect(last(calls)).toMatchObject({ url: '/v1/system/panel-backup/run', init: { method: 'POST' } });
+
+      await client.system.panelBackup.list();
+      expect(last(calls).url).toBe('/v1/system/panel-backup/remote');
+      await client.system.panelBackup.list(3);
+      expect(last(calls).url).toBe('/v1/system/panel-backup/remote?destinationId=3');
+
+      const restore = { destinationId: 3, key: 'nd/panel-backups/x.ndpb', passphrase: 'p', confirm: 'x.ndpb' };
+      await client.system.panelBackup.restore(restore);
+      expect(last(calls)).toMatchObject({ url: '/v1/system/panel-backup/restore', init: { method: 'POST' } });
+      expect(JSON.parse(last(calls).init.body ?? '{}')).toEqual(restore);
+    });
   });
 
   describe('tunnels', () => {
@@ -1434,6 +1460,18 @@ describe('createClient', () => {
       const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
       expect(client.backups.downloadUrl(3)).toBe('/v1/backups/3/download');
       expect(calls).toHaveLength(0);
+    });
+
+    it('0.12: reads and saves a database backup policy', async () => {
+      const { fetchMock, calls } = makeFetch(() => ok({ databaseId: 4, configured: true }));
+      const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+
+      await client.backups.getPolicy(4);
+      expect(last(calls)).toMatchObject({ url: '/v1/databases/4/backup-policy', init: { method: 'GET' } });
+
+      await client.backups.setPolicy(4, { cron: '0 */6 * * *', retainCount: 14, localOnly: true });
+      expect(last(calls)).toMatchObject({ url: '/v1/databases/4/backup-policy', init: { method: 'PUT' } });
+      expect(JSON.parse(last(calls).init.body ?? '{}')).toEqual({ cron: '0 */6 * * *', retainCount: 14, localOnly: true });
     });
   });
 

@@ -375,11 +375,12 @@ describe('program registration', () => {
     ]);
     expect(findCommand('server').children).toHaveLength(4);
     expect(findCommand('services').children).toHaveLength(13);
-    expect(findCommand('databases').children).toHaveLength(3);
+    expect(findCommand('databases').children).toHaveLength(4);
     expect(findCommand('templates').children).toHaveLength(4);
     expect(findCommand('deploys').children).toHaveLength(6);
     expect(findCommand('token').children).toHaveLength(2);
-    expect(findCommand('system').children).toHaveLength(7);
+    // 0.12: + `panel-backup` (status / set / now / list / decrypt).
+    expect(findCommand('system').children).toHaveLength(8);
     expect(findCommand('workspaces').children).toHaveLength(4);
     expect(findCommand('env').children).toHaveLength(3);
     expect(findCommand('domains').children).toHaveLength(9);
@@ -397,7 +398,8 @@ describe('program registration', () => {
     expect(findCommand('branding').children).toHaveLength(2);
     expect(findCommand('egress').children).toHaveLength(3);
     expect(findCommand('sso').children).toHaveLength(3);
-    expect(h.FakeCommand.instances).toHaveLength(187);
+    // 0.12 panel backup: `system panel-backup` + 5 subcommands.
+    expect(h.FakeCommand.instances).toHaveLength(196);
     // sanity: every new command we added has at least the subcommands it owns
     expect(findCommand('sources').children.length).toBeGreaterThanOrEqual(6);
     expect(findCommand('deploy').children.length).toBeGreaterThanOrEqual(1);

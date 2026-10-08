@@ -62,11 +62,14 @@ export async function uploadBackup(
   backupId: number,
   localPath: string,
   log: (line: string) => void,
+  /** 0.12 backup policy: upload to this destination instead of the active
+   *  one (a missing row falls back to the active destination, like reads). */
+  opts: { destinationId?: number | null } = {},
 ): Promise<void> {
   try {
     // F288: resolving the destination decrypts its secret, which throws for a
     // key version this process does not hold — that is an upload failure too.
-    const dest = await resolveDestination(db, null);
+    const dest = await resolveDestination(db, opts.destinationId ?? null);
     if (!dest) return;
     const { prefix, ...cfg } = dest;
     const key = `${prefix.replace(/\/$/, '')}/${basename(localPath)}`.replace(/^\/+/, '');

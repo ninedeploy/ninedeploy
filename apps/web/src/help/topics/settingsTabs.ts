@@ -332,6 +332,43 @@ export const SETTINGS_TAB_TOPICS: Record<string, HelpTopic> = {
     ],
   },
 
+  'settings.panel-backup': {
+    title: 'Settings · Panel backup',
+    summary:
+      'Scheduled backups of the panel itself — its database, master key, .env and Traefik config — encrypted with a recovery passphrase and kept in an S3 backup destination.',
+    sections: [
+      {
+        heading: 'Turning it on',
+        steps: [
+          'Add an S3-compatible bucket under Backups → Destinations.',
+          'Pick it here, set a schedule (5-field cron) and how many backups to keep.',
+          'Set a recovery passphrase and store it in a password manager — NOT on this server.',
+          'Use "Back up now" once and check the run succeeds.',
+        ],
+        tip: 'Without the recovery passphrase no panel backup can be opened, by anyone. Changing it later only affects new backups.',
+      },
+      {
+        heading: 'Restoring on a new server',
+        steps: [
+          'Install the same (or a newer) NineDeploy version and sign in.',
+          'Add the same bucket under Backups → Destinations.',
+          'Open this section, list that destination, choose a backup and Restore with the passphrase.',
+          'Restart NineDeploy. Offline alternative: `ninedeploy system panel-backup decrypt` then `ninedeploy system import`.',
+        ],
+      },
+      {
+        heading: 'What is not included',
+        body: [
+          'App volumes and managed database data are covered by their own backups (Backups page). Docker images are rebuilt or pulled on redeploy.',
+        ],
+      },
+    ],
+    related: [
+      { label: 'Settings · Migration', helpId: 'settings.migration' },
+      { label: 'Backups', helpId: 'backups' },
+    ],
+  },
+
   'settings.migration': {
     title: 'Settings · Migration',
     summary:
@@ -356,6 +393,7 @@ export const SETTINGS_TAB_TOPICS: Record<string, HelpTopic> = {
     ],
     related: [
       { label: 'Settings · System (export)', helpId: 'settings.system' },
+      { label: 'Settings · Panel backup', helpId: 'settings.panel-backup' },
       { label: 'Backups', helpId: 'backups' },
     ],
   },

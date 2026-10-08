@@ -213,6 +213,12 @@ export function createFakeApiModule() {
       list: vi.fn(),
       remove: vi.fn(),
       downloadUrl: vi.fn(),
+      // 0.12: a database with no saved policy (the built-in schedule).
+      getPolicy: vi.fn(async (databaseId: number) => ({
+        databaseId, configured: false, enabled: true, cron: null, retainCount: 7,
+        retainRemoteCount: null, destinationId: null, localOnly: false, nextRunAt: null, updatedAt: null,
+      })),
+      setPolicy: vi.fn(),
     },
     limits: { setService: vi.fn(), setDatabase: vi.fn() },
     backupDestinations: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), test: vi.fn() },

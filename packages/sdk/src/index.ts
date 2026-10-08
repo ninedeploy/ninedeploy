@@ -12,6 +12,8 @@ import type {
   ServiceVolumeAttachment,
   UpdateServiceVolumeAttachmentInput,
   Backup,
+  BackupPolicy,
+  BackupPolicyInput,
   BackupWithDb,
   ComposePreviewRequestInput,
   ComposePreviewResponse,
@@ -125,6 +127,10 @@ import type {
   OidcProviderEntry,
   OidcProviderCreateInput,
   OidcProviderUpdateInput,
+  PanelBackupObject,
+  PanelBackupRestore,
+  PanelBackupSettingsPatch,
+  PanelBackupStatus,
 } from '@ninedeploy/schemas';
 import { NineDeployError } from './errors.js';
 
@@ -1054,6 +1060,25 @@ export interface NineDeployClient {
     updateStart: (version: string, opts?: { force?: boolean }) => Promise<{ ok: boolean }>;
     /** Recent docker daemon events (single-shot, for the Docker dashboard feed). */
     dockerEvents: (minutes?: number) => Promise<{ events: Array<{ time: string; type: string; action: string; name: string }> }>;
+    /**
+     * Panel self-backup (0.12, operator-only): the `/system/export` archive sealed with a
+     * recovery passphrase and written to a backup destination on a schedule.
+     */
+    panelBackup: {
+      /** Settings, last run, next run (passphrase never returned — only `hasPassphrase`). */
+      get: () => Promise<PanelBackupStatus>;
+      /** Omitted fields keep their stored value; `passphrase` omitted = keep the stored one. */
+      update: (input: PanelBackupSettingsPatch) => Promise<PanelBackupStatus>;
+      /** "Back up now": starts a run in the background (409 while one is running); poll `get()`. */
+      run: () => Promise<{ ok: boolean; started: boolean }>;
+      /** Panel backups in a destination (default: the configured one), newest first. */
+      list: (destinationId?: number) => Promise<{ destinationId: number; items: PanelBackupObject[] }>;
+      /**
+       * DESTRUCTIVE: replaces this panel's database, master key, .env and Traefik config with
+       * the backup's. `confirm` must repeat the object's file name. Restart the panel afterwards.
+       */
+      restore: (input: PanelBackupRestore) => Promise<{ ok: boolean; message: string; meta: unknown; backupPath: string }>;
+    };
   };
   networks: {
     list: () => Promise<{
@@ -1394,6 +1419,11 @@ export interface NineDeployClient {
     list: () => Promise<BackupWithDb[]>;
     remove: (backupId: number) => Promise<void>;
     downloadUrl: (backupId: number) => string;
+    /** 0.12: the database's backup schedule. `configured: false` = no policy
+     *  saved — the built-in daily run with 7 kept applies. */
+    getPolicy: (databaseId: number) => Promise<BackupPolicy>;
+    /** 0.12: save (replace) the database's backup schedule, retention and destination. */
+    setPolicy: (databaseId: number, input: BackupPolicyInput) => Promise<BackupPolicy>;
   };
   backupDestinations: {
     list: () => Promise<Array<{ id: number; name: string; endpoint: string; region: string; bucket: string; prefix: string; active: boolean; createdAt: string }>>;
@@ -2073,6 +2103,17 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
         get<{ events: Array<{ time: string; type: string; action: string; name: string }> }>(
           `/v1/system/docker-events?minutes=${minutes ?? 60}`,
         ),
+      panelBackup: {
+        get: () => get<PanelBackupStatus>('/v1/system/panel-backup'),
+        update: (input) => send<PanelBackupStatus>('PUT', '/v1/system/panel-backup', input),
+        run: () => send<{ ok: boolean; started: boolean }>('POST', '/v1/system/panel-backup/run'),
+        list: (destinationId) =>
+          get<{ destinationId: number; items: PanelBackupObject[] }>(
+            `/v1/system/panel-backup/remote${destinationId != null ? `?destinationId=${destinationId}` : ''}`,
+          ),
+        restore: (input) =>
+          send<{ ok: boolean; message: string; meta: unknown; backupPath: string }>('POST', '/v1/system/panel-backup/restore', input),
+      },
     },
     networks: {
       list: () => get<{ networks: Array<{ name: string; driver: string; members: string[] }>; remote: number | null }>('/v1/networks'),
@@ -2352,6 +2393,8 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
         await request(`/v1/backups/${backupId}`, { method: 'DELETE' });
       },
       downloadUrl: (backupId) => `/v1/backups/${backupId}/download`,
+      getPolicy: (databaseId) => get<BackupPolicy>(`/v1/databases/${databaseId}/backup-policy`),
+      setPolicy: (databaseId, input) => send<BackupPolicy>('PUT', `/v1/databases/${databaseId}/backup-policy`, input),
     },
     backupDestinations: {
       list: () => get('/v1/backup-destinations'),

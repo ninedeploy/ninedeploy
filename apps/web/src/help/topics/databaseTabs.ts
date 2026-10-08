@@ -117,8 +117,10 @@ export const DATABASE_TAB_TOPICS: Record<string, HelpTopic> = {
       {
         heading: 'Schedule & retention',
         bullets: [
-          'A daily schedule with a retention window (oldest pruned first) is the default.',
+          'Without a saved schedule the database is backed up daily and the newest 7 scheduled dumps are kept.',
+          'The Backup schedule card sets this database\'s own cron (daily, every 6 hours, weekly or custom, in server time), how many dumps to keep locally and off-site, and where the off-site copy goes — or turns scheduled backups off.',
           'Tighten the interval for busy production databases; keep retention long enough to reach a pre-incident point.',
+          'Retention never removes the newest good backup, and manual snapshots are never pruned by the schedule.',
         ],
         tip: 'A restore is the fastest rollback for data mistakes — deploys roll back code, snapshots roll back data.',
       },

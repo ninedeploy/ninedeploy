@@ -17,3 +17,5 @@ export * from './runtimeVersions.js';
 export * from './doctor.js';
 export * from './agentCommand.js';
 
+export * from './backupPolicy.js';
+export * from './panelBackup.js';

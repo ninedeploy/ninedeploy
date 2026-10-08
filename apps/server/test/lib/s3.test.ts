@@ -2,7 +2,7 @@
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { s3Delete, s3Get, s3GetToFile, s3Put, s3PutFile, s3Request, s3Test } from '../../src/lib/s3.js';
+import { s3Delete, s3Get, s3GetToFile, s3List, s3Put, s3PutFile, s3Request, s3Test } from '../../src/lib/s3.js';
 
 const CFG = {
   endpoint: 'https://s3.example.com',
@@ -346,5 +346,42 @@ describe('s3PutFile / s3GetToFile (streamed transfers)', () => {
     await s3GetToFile(CFG, 'k', target);
     expect(readFileSync(target, 'utf8')).toBe('');
     rmSync(target, { force: true });
+  });
+});
+
+describe('s3List (panel self-backup listing)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    fetchMock.mockReset();
+  });
+
+  const page = (contents: string, more?: string) =>
+    `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><IsTruncated>${more ? 'true' : 'false'}</IsTruncated>${contents}` +
+    `${more ? `<NextContinuationToken>${more}</NextContinuationToken>` : ''}</ListBucketResult>`;
+  const obj = (key: string, size: number) =>
+    `<Contents><Key>${key}</Key><LastModified>2026-10-08T03:00:00.000Z</LastModified><Size>${size}</Size></Contents>`;
+
+  it('signs a ListObjectsV2 query on the bucket, follows continuation tokens and decodes keys', async () => {
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => page(obj('nd/panel-backups/a&amp;b.ndpb', 10), 'tok/1') })
+      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => page(obj('nd/panel-backups/c.ndpb', 20)) });
+    vi.stubGlobal('fetch', fetchMock);
+    const out = await s3List(CFG, 'nd/panel-backups/');
+    expect(out).toEqual([
+      { key: 'nd/panel-backups/a&b.ndpb', sizeBytes: 10, lastModified: '2026-10-08T03:00:00.000Z' },
+      { key: 'nd/panel-backups/c.ndpb', sizeBytes: 20, lastModified: '2026-10-08T03:00:00.000Z' },
+    ]);
+    const [first] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(first.pathname).toBe('/backups/');
+    expect(first.searchParams.get('list-type')).toBe('2');
+    expect(first.searchParams.get('prefix')).toBe('nd/panel-backups/');
+    const [second] = fetchMock.mock.calls[1] as [URL, RequestInit];
+    expect(second.searchParams.get('continuation-token')).toBe('tok/1');
+  });
+
+  it('throws with the response body when the listing is refused', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 403, text: async () => '<Error><Code>AccessDenied</Code></Error>' });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(s3List(CFG, 'nd/')).rejects.toThrow(/S3 list failed \(403\).*AccessDenied/);
   });
 });

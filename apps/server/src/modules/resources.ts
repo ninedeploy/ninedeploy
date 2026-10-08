@@ -1,17 +1,14 @@
-import { createReadStream, existsSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync, mkdirSync, rmSync, copyFileSync } from 'node:fs';
-import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import path from 'node:path';
-import { count, eq, inArray, sql } from 'drizzle-orm';
-import { databases, deployments, services, users } from '@ninedeploy/db';
+import { createReadStream } from 'node:fs';
+import { eq, inArray } from 'drizzle-orm';
+import { deployments, services } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import { capture, run } from '../lib/exec.js';
-import { config } from '../config.js';
 import { checkForUpdate } from '../lib/updateCheck.js';
 import { getSelfUpdateStatus, startSelfUpdate } from '../lib/selfUpdate.js';
 import { selfUpdateStart } from '@ninedeploy/schemas';
 import { NETWORK } from '../engine/proxy.js';
 import { audit } from '../lib/audit.js';
+import { createSystemArchive, importSystemArchive } from '../lib/systemArchive.js';
 
 /** F869: docker CLI calls inherit capture()'s 30-minute default timeout; a
  * wedged daemon must not hold this admin request that long. Past the bound the
@@ -142,319 +139,47 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // ── Export: download a tar.gz of the entire system state ──────────────
+  // The archive format is built in lib/systemArchive.ts, shared with the
+  // panel self-backup (which seals the same archive and uploads it).
   app.get('/export', async (req, reply) => {
     // The archive holds the database AND the master key — every secret on the
     // instance. Its download must leave a trail.
     void audit(app.db, req.user?.id ?? null, 'system.export');
-    const files: string[] = [];
-    // Unique temp names so two concurrent exports can't delete each other's
-    // artifacts mid-stream via the finally-cleanup below. pid+ms alone is not
-    // unique: two requests handled in the same millisecond collided (F557).
-    const stamp = `${process.pid}-${Date.now()}-${randomUUID()}`;
-    const archive = path.join(config.paths.dataDir, `ninedeploy-backup-${stamp}.tar.gz`);
-    const envTmp = `_env-${stamp}`;
-    const metaTmp = `_meta-${stamp}.json`;
-    // Cleanup runs when the RESPONSE is finished (stream close), not when the
-    // handler returns — see the comment at the send below.
-    let streamed = false;
-    let cleaned = false;
-    const cleanup = () => {
-      if (cleaned) return;
-      cleaned = true;
-      try { unlinkSync(path.join(config.paths.dataDir, envTmp)); } catch { /* */ }
-      try { unlinkSync(path.join(config.paths.dataDir, metaTmp)); } catch { /* */ }
-      try { unlinkSync(path.join(config.paths.dataDir, `_db-${stamp}.db`)); } catch { /* */ }
-      try { unlinkSync(archive); } catch { /* */ }
-    };
-
+    // Throws (500) with every intermediate already removed when VACUUM/tar fails.
+    const built = await createSystemArchive(app.db, { warn: (msg) => app.log.warn(msg) });
+    let stream: ReturnType<typeof createReadStream>;
     try {
-      // Tar'ing the LIVE database races concurrent writes: a transaction
-      // overlapping the archive yields a torn or journal-orphaned file that
-      // fails integrity on import — silently corrupting the primary DR
-      // artifact. `VACUUM INTO` produces a fully self-contained snapshot
-      // while the server keeps serving.
-      const dbRel = path.relative(config.paths.dataDir, config.paths.dbFile);
-      if (existsSync(config.paths.dbFile)) {
-        const dbSnapshot = `_db-${stamp}.db`;
-        const dbSnapshotPath = path.join(config.paths.dataDir, dbSnapshot);
-        // VACUUM INTO refuses to overwrite; clear any orphan from a crash
-        // between VACUUM and the finally-cleanup.
-        try { unlinkSync(dbSnapshotPath); } catch { /* first run */ }
-        await app.db.run(sql`VACUUM INTO ${dbSnapshotPath}`);
-        if (existsSync(dbSnapshotPath)) {
-          files.push(dbSnapshot);
-        } else {
-          // libsql either writes the snapshot or throws; a resolved run with
-          // no file only happens under test doubles — fall back to the live
-          // file rather than shipping an archive with no database at all.
-          app.log.warn('VACUUM INTO produced no snapshot file; archiving the live database file');
-          files.push(dbRel);
-        }
-      }
-      if (existsSync(config.paths.masterKeyFile)) files.push(path.relative(config.paths.dataDir, config.paths.masterKeyFile));
-      const envFile = path.join(process.cwd(), '.env');
-      if (existsSync(envFile)) {
-        writeFileSync(path.join(config.paths.dataDir, envTmp), readFileSync(envFile, 'utf8'));
-        files.push(envTmp);
-      }
-      const traefikDir = path.join(config.paths.dataDir, 'traefik');
-      if (existsSync(traefikDir)) files.push('traefik');
-
-      const [s, d, dep, u] = await Promise.all([
-        app.db.select({ n: count() }).from(services),
-        app.db.select({ n: count() }).from(databases),
-        app.db.select({ n: count() }).from(deployments),
-        app.db.select({ n: count() }).from(users),
-      ]);
-      const meta = {
-        version: '1.0.0', exportedAt: new Date().toISOString(),
-        stats: { services: s[0]?.n ?? 0, databases: d[0]?.n ?? 0, deployments: dep[0]?.n ?? 0, users: u[0]?.n ?? 0 },
-        files,
-      };
-      writeFileSync(path.join(config.paths.dataDir, metaTmp), JSON.stringify(meta, null, 2));
-      files.push(metaTmp);
-
-      await new Promise<void>((resolve, reject) => {
-        // Run tar with cwd + RELATIVE names: GNU tar on Windows mistakes
-        // `D:\path` (drive-letter colon) for a remote-host spec, so absolute
-        // Windows paths break every tar flag that takes a file (-f/-C).
-        const child = spawn('tar', ['-czf', path.basename(archive), ...files.map((f) => f.split(path.sep).join('/'))], {
-          cwd: config.paths.dataDir,
-        });
-        child.on('error', reject);
-        child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`tar exited ${code}`))));
-      });
-
-      const size = statSync(archive).size;
-      const stream = createReadStream(archive);
-      // The old finally unlinked these artifacts in the same tick as
-      // reply.send(), racing the stream's own open() (intermittent ENOENT
-      // downloads on Linux; on Windows the unlink of an open file fails
-      // silently and the archive — DB + master key + .env — leaked into the
-      // data dir forever). 'close' fires after the fd is released (normal
-      // end, consumer abort, or error) — the first moment the unlink can
-      // actually succeed everywhere.
-      stream.once('close', cleanup);
-      stream.once('error', cleanup);
-      streamed = true;
-      reply.type('application/gzip')
-        .header('content-disposition', `attachment; filename="ninedeploy-backup-${new Date().toISOString().slice(0, 10)}.tar.gz"`)
-        .header('content-length', size);
-      return reply.send(stream);
-    } finally {
-      // Failure paths (VACUUM/tar threw) never created a stream — clean now.
-      if (!streamed) cleanup();
+      stream = createReadStream(built.archive);
+    } catch (err) {
+      built.cleanup();
+      throw err;
     }
+    // The old finally unlinked these artifacts in the same tick as
+    // reply.send(), racing the stream's own open() (intermittent ENOENT
+    // downloads on Linux; on Windows the unlink of an open file fails
+    // silently and the archive — DB + master key + .env — leaked into the
+    // data dir forever). 'close' fires after the fd is released (normal
+    // end, consumer abort, or error) — the first moment the unlink can
+    // actually succeed everywhere.
+    stream.once('close', built.cleanup);
+    stream.once('error', built.cleanup);
+    reply.type('application/gzip')
+      .header('content-disposition', `attachment; filename="ninedeploy-backup-${new Date().toISOString().slice(0, 10)}.tar.gz"`)
+      .header('content-length', built.size);
+    return reply.send(stream);
   });
 
   // ── Import: upload a tar.gz and restore system state ──────────────────
   // A backup archive is the sole large request this API accepts. Keep the
   // 256 MB allowance local so login, webhooks and ordinary JSON endpoints
   // cannot allocate a quarter-gigabyte Buffer before authentication runs.
-  //
-  // r454: the extraction uses one FIXED scratch dir, so two concurrent
-  // imports would delete each other's in-flight files (the second request's
-  // up-front `rmSync` wipes the first's archive mid-extraction). Single-panel
-  // is single-process — a promise mutex serializes them and the loser gets an
-  // explicit 409 instead of a mysterious half-import.
-  let importInFlight: Promise<unknown> | null = null;
+  // Concurrent imports are serialized inside importSystemArchive (r454).
   app.post('/import', { bodyLimit: 256 * 1024 * 1024 }, async (req, reply) => {
     const body = req.body;
     if (!body || typeof body !== 'string') {
       return reply.status(400).send({ error: { code: 'bad_request', message: 'No body received' } });
     }
-    if (importInFlight) {
-      return reply.status(409).send({
-        error: { code: 'conflict', message: 'Another import is already running — wait for it to finish' },
-      });
-    }
-    let release: () => void = () => {};
-    importInFlight = new Promise<void>((r) => (release = r));
-    try {
-
-    const tmpDir = path.join(config.paths.dataDir, '_import');
-    const archivePath = path.join(tmpDir, 'upload.tar.gz');
-    // A previous import that crashed (or hit one of the early throws below)
-    // leaves its extracted `_db-<stamp>.db` / `_meta-<stamp>.json` behind, and
-    // the prefix finds further down would pick the STALE files over the new
-    // archive's — silently restoring the wrong database. Clear the scratch
-    // dir before reusing it; a leftover can only come from a dead request.
-    rmSync(tmpDir, { recursive: true, force: true });
-    mkdirSync(tmpDir, { recursive: true });
-    writeFileSync(archivePath, Buffer.from(body, 'binary'));
-
-    // Tar-slip guard: list the members FIRST and refuse anything that would
-    // escape the extraction dir (absolute paths, .., or a parent ref) — GNU tar
-    // strips leading '/' but happily extracts '../..' entries.
-    const listing = await new Promise<string>((resolve, reject) => {
-      let out = '';
-      // Relative -f + cwd: see the export route note about drive-letter colons.
-      const child = spawn('tar', ['-tzf', path.basename(archivePath)], { cwd: tmpDir });
-      child.stdout.on('data', (d) => (out += d.toString()));
-      child.on('error', reject);
-      child.on('close', (code) => (code === 0 ? resolve(out) : reject(new Error(`tar list exited ${code}`))));
-    });
-    const safe = (name: string) =>
-      !name.startsWith('/') && !name.split('/').includes('..') && !path.isAbsolute(name);
-    for (const member of listing.split('\n').map((l) => l.trim()).filter(Boolean)) {
-      if (!safe(member)) {
-        rmSync(tmpDir, { recursive: true, force: true });
-        return reply.status(400).send({ error: { code: 'bad_request', message: `Invalid archive: unsafe member ${JSON.stringify(member)}` } });
-      }
-    }
-
-    // Member-TYPE guard. The name check above cannot see a symlink: an archive
-    // holding `data -> /etc` followed by `data/passwd` has two innocent-looking
-    // names but writes outside the extraction dir. Verbose listing puts the type
-    // in column 0 (`-` regular, `d` directory, `l` symlink, `h` hardlink, and
-    // c/b/p/s for devices/fifos/sockets); only the first two are accepted.
-    const verbose = await new Promise<string>((resolve, reject) => {
-      let out = '';
-      const child = spawn('tar', ['-tvzf', path.basename(archivePath)], { cwd: tmpDir });
-      child.stdout.on('data', (d) => (out += d.toString()));
-      child.on('error', reject);
-      child.on('close', (code) => (code === 0 ? resolve(out) : reject(new Error(`tar list exited ${code}`))));
-    });
-    for (const entry of verbose.split('\n').map((l) => l.trim()).filter(Boolean)) {
-      const type = entry[0]!;
-      if (type !== '-' && type !== 'd') {
-        rmSync(tmpDir, { recursive: true, force: true });
-        return reply.status(400).send({
-          error: {
-            code: 'bad_request',
-            message: `Invalid archive: only regular files and directories are allowed (found ${JSON.stringify(entry)})`,
-          },
-        });
-      }
-    }
-
-    await new Promise<void>((resolve, reject) => {
-      // Relative -f + cwd: see the export route note about drive-letter colons.
-      // --no-same-owner / --no-same-permissions: never let an archive restore
-      // setuid bits or hand extracted files to another uid. --no-overwrite-dir
-      // keeps an existing directory's mode instead of adopting the archive's.
-      const child = spawn(
-        'tar',
-        ['-xzf', path.basename(archivePath), '--no-same-owner', '--no-same-permissions', '-C', '.'],
-        { cwd: tmpDir },
-      );
-      child.on('error', reject);
-      child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`tar extract exited ${code}`))));
-    });
-
-    const extractedFiles = readdirSync(tmpDir);
-    const metaFilename = extractedFiles.find((f) => f === '_meta.json' || (f.startsWith('_meta') && f.endsWith('.json')));
-    if (!metaFilename) {
-      rmSync(tmpDir, { recursive: true, force: true });
-      return reply.status(400).send({ error: { code: 'bad_request', message: 'Invalid archive: no _meta.json' } });
-    }
-    const metaPath = path.join(tmpDir, metaFilename);
-    // A malformed _meta.json must clean the scratch dir too — leaving it
-    // behind poisons the next import's prefix finds (see the note at the top
-    // of this handler).
-    let meta: unknown;
-    try {
-      meta = JSON.parse(readFileSync(metaPath, 'utf8'));
-    } catch {
-      rmSync(tmpDir, { recursive: true, force: true });
-      return reply.status(400).send({ error: { code: 'bad_request', message: 'Invalid archive: _meta.json is not valid JSON' } });
-    }
-
-    // Audited BEFORE the swap: once the imported database is in place this
-    // connection's file is the backup. The event still fans out live.
-    void audit(app.db, req.user?.id ?? null, 'system.import', String((meta as { exportedAt?: string } | null)?.exportedAt ?? 'unknown export'));
-    try { const inst = app as unknown as { worker?: { stop: () => Promise<void> } }; if (inst.worker) await inst.worker.stop(); } catch { /* */ }
-
-    const backupDir = path.join(config.paths.dataDir, `_backup-${Date.now()}`);
-
-    // Restore-from-backup: if any move fails midway (e.g. a read-only cwd), put
-    // the ORIGINAL files back so we never leave a moved DB with an old key
-    // (which would make every secret undecryptable).
-    const restoreFrom = (dir: string) => {
-      // No per-file try/catch: anything that could be moved INTO the backup can
-      // be moved back (same filesystem); letting an error surface here is more
-      // honest than silently skipping a restore step.
-      for (const name of ['ninedeploy.db', 'master.key', '.env', 'traefik']) {
-        const b = path.join(dir, name);
-        if (!existsSync(b)) continue;
-        if (name === 'ninedeploy.db') renameSync(b, config.paths.dbFile);
-        else if (name === 'master.key') renameSync(b, config.paths.masterKeyFile);
-        else if (name === '.env') renameSync(b, path.join(process.cwd(), '.env'));
-        else {
-          // The half-imported traefik dir may occupy the target — rename(2)
-          // cannot replace a non-empty directory, so clear it first (rmSync
-          // with force is a no-op when the target is already gone).
-          const target = path.join(config.paths.dataDir, 'traefik');
-          rmSync(target, { recursive: true, force: true });
-          renameSync(b, target);
-        }
-      }
-    };
-
-    try {
-      // Exports store the db under its data-dir-relative name (legacy
-      // archives) or as `_db-<stamp>.db` — the consistent VACUUM INTO
-      // snapshot taken at export time (see the export route). Prefix-matching
-      // mirrors how the stamped `_env-` file is located below.
-      const dbRel = path.relative(config.paths.dataDir, config.paths.dbFile);
-      const dbFilename = extractedFiles.find((f) => f === dbRel || f.startsWith('_db-'));
-      const importedDb = dbFilename ? path.join(tmpDir, dbFilename) : null;
-      if (importedDb && existsSync(importedDb)) {
-        mkdirSync(backupDir, { recursive: true });
-        if (existsSync(config.paths.dbFile)) renameSync(config.paths.dbFile, path.join(backupDir, 'ninedeploy.db'));
-        renameSync(importedDb, config.paths.dbFile);
-      }
-
-      const importedKey = path.join(tmpDir, path.relative(config.paths.dataDir, config.paths.masterKeyFile));
-      if (existsSync(importedKey)) {
-        mkdirSync(backupDir, { recursive: true });
-        if (existsSync(config.paths.masterKeyFile)) renameSync(config.paths.masterKeyFile, path.join(backupDir, 'master.key'));
-        renameSync(importedKey, config.paths.masterKeyFile);
-      }
-
-      const importedTraefik = path.join(tmpDir, 'traefik');
-      if (existsSync(importedTraefik)) {
-        mkdirSync(backupDir, { recursive: true });
-        const traefikDir = path.join(config.paths.dataDir, 'traefik');
-        if (existsSync(traefikDir)) renameSync(traefikDir, path.join(backupDir, 'traefik'));
-        renameSync(importedTraefik, traefikDir);
-      }
-
-      const envFilename = extractedFiles.find((f) => f === '_env' || f.startsWith('_env-'));
-      const importedEnv = envFilename ? path.join(tmpDir, envFilename) : null;
-      if (importedEnv && existsSync(importedEnv)) {
-        mkdirSync(backupDir, { recursive: true });
-        const envPath = path.join(process.cwd(), '.env');
-        if (existsSync(envPath)) renameSync(envPath, path.join(backupDir, '.env'));
-        copyFileSync(importedEnv, envPath);
-      }
-    } catch (err) {
-      restoreFrom(backupDir);
-      rmSync(tmpDir, { recursive: true, force: true });
-      // F828: the original files are back and the panel keeps serving — resume
-      // the deploy worker stopped above, or queued deploys never run again
-      // until a restart. (A throwing restoreFrom leaves it stopped: unknown state.)
-      try { (app as unknown as { worker?: { start?: () => void } }).worker?.start?.(); } catch { /* */ }
-      throw err;
-    }
-
-    rmSync(tmpDir, { recursive: true, force: true });
-
-    return {
-      ok: true,
-      message: 'System state imported. Restart NineDeploy for changes to take effect.',
-      meta,
-      backupPath: backupDir,
-    };
-    } catch (err) {
-      // F556: a THROW before the swap (tar list/extract failure on a truncated
-      // or non-archive upload) skipped every per-branch cleanup and left the
-      // uploaded archive — DB + master key + .env — in the scratch dir.
-      rmSync(path.join(config.paths.dataDir, '_import'), { recursive: true, force: true });
-      throw err;
-    } finally {
-      release();
-      importInFlight = null;
-    }
+    const outcome = await importSystemArchive(app, Buffer.from(body, 'binary'), req.user?.id ?? null);
+    return reply.status(outcome.status).send(outcome.body);
   });
 };

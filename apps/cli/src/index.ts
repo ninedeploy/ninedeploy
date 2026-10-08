@@ -33,6 +33,7 @@ import {
   notificationsTest as _notifTest,
 } from './commands/notifications.js';
 import { databasePgbouncer } from './commands/pgbouncer.js';
+import { backupPolicyGet, backupPolicySet } from './commands/backupPolicy.js';
 import { logsSearch } from './commands/logs.js';
 import {
   emailTemplatesList,
@@ -102,6 +103,10 @@ import {
 import {
   ssoAddAction, ssoListAction, ssoRemoveAction,
 } from './commands/sso.js';
+import {
+  panelBackupDecryptAction, panelBackupListAction, panelBackupNowAction, panelBackupSetAction, panelBackupStatusAction,
+  type PanelBackupSetOptions,
+} from './commands/panelBackup.js';
 
 const program = new Command();
 
@@ -249,6 +254,28 @@ databases
   .option('--port <port>', 'Override the listen port (enable only)', (v: string) => Number(v))
   .action((dbId: string, action: string, opts: { port?: number }) =>
     databasePgbouncer(getClient(), dbId, action, opts),
+  );
+
+// ── Per-database backup policy (0.12) ────────────────────────────────────
+const backupPolicyCmd = databases
+  .command('backup-policy')
+  .description('Per-database backup schedule, retention and destination');
+backupPolicyCmd
+  .command('get <dbId>')
+  .description('Show the backup policy (or the built-in daily schedule)')
+  .action((dbId: string) => backupPolicyGet(getClient(), dbId));
+backupPolicyCmd
+  .command('set <dbId>')
+  .description('Save the backup policy; unset flags keep their current value')
+  .option('--cron <expr>', '5-field cron (minute hour day month weekday), server local time')
+  .option('--preset <name>', 'daily | 6h | weekly')
+  .option('--keep <n>', 'Scheduled dumps kept locally (1-365)')
+  .option('--keep-remote <n>', 'Remote copies kept (1-365; default: same as --keep)')
+  .option('--destination <dest>', 'Backup destination id, "active" or "local"')
+  .option('--enable', 'Turn scheduled backups on')
+  .option('--disable', 'Turn scheduled backups off for this database')
+  .action((dbId: string, opts: { cron?: string; preset?: string; keep?: string; keepRemote?: string; destination?: string; enable?: boolean; disable?: boolean }) =>
+    backupPolicySet(getClient(), dbId, opts),
   );
 
 // ── Templates ─────────────────────────────────────────────────────────────
@@ -721,6 +748,34 @@ emailTemplatesCmd
 system.command('export [file]').description('Export the full system state as JSON').action((file?: string) => systemExport(file));
 
 system.command('import <file>').description('Import a system bundle (destructive)').action((file: string) => systemImport(file));
+
+// ── Panel self-backup (0.12) ────────────────────────────────────────────────
+const panelBackupCmd = system.command('panel-backup').description("Scheduled, passphrase-sealed backups of the panel's own state");
+panelBackupCmd.command('status').description('Show the schedule, destination, retention and the last run').action(() => panelBackupStatusAction(getClient()));
+panelBackupCmd
+  .command('set')
+  .description('Change the panel backup settings (omitted options keep their value)')
+  .option('--enable', 'Turn scheduled panel backups on')
+  .option('--disable', 'Turn scheduled panel backups off')
+  .option('--cron <expr>', '5-field cron expression, e.g. "0 3 * * *"')
+  .option('--destination <id>', 'Backup destination id (see Settings → Integrations)')
+  .option('--retain <n>', 'How many panel backups to keep in the destination')
+  .option('--passphrase', 'Prompt for a new recovery passphrase (keep it off this server)')
+  .action((opts: PanelBackupSetOptions) => panelBackupSetAction(getClient(), opts));
+panelBackupCmd
+  .command('now')
+  .description('Back up the panel now')
+  .option('--wait', 'Wait for the run to finish and report its outcome')
+  .action((opts: { wait?: boolean }) => panelBackupNowAction(getClient(), opts));
+panelBackupCmd
+  .command('list')
+  .description('List the panel backups in the destination, newest first')
+  .option('--destination <id>', 'Destination to list (default: the configured one)')
+  .action((opts: { destination?: string }) => panelBackupListAction(getClient(), opts));
+panelBackupCmd
+  .command('decrypt <file> [out]')
+  .description('Offline: open a downloaded .ndpb with the recovery passphrase into a .tar.gz for `system import`')
+  .action((file: string, out?: string) => panelBackupDecryptAction(file, out));
 
 // ── Certificates (G-15) ─────────────────────────────────────────────────────
 const certificates = program.command('certificates').description('Traefik certificate inventory and renewal status');

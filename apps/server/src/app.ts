@@ -16,6 +16,7 @@ import dbPlugin from './plugins/db.js';
 import housekeepingPlugin from './plugins/housekeeping.js';
 import logShipperPlugin from './plugins/logShipper.js';
 import jobSchedulerPlugin from './plugins/jobScheduler.js';
+import panelBackupSchedulerPlugin from './plugins/panelBackupScheduler.js';
 import kernelPlugin from './plugins/kernel.js';
 import rateLimitPlugin from './plugins/rateLimit.js';
 import rawBodyPlugin from './plugins/rawBody.js';
@@ -127,6 +128,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Container output → configured log drains (r231: drains had no sender)
   await app.register(logShipperPlugin);
   await app.register(jobSchedulerPlugin);
+  // Panel self-backup (off until an operator enables it in settings)
+  await app.register(panelBackupSchedulerPlugin);
 
   // Web dashboard (SPA) — registered LAST so every API/WS route wins over the
   // catch-all; unknown API paths still get JSON 404s via the SPA fallback guard.

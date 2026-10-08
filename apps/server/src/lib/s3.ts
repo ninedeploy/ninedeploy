@@ -280,6 +280,46 @@ export async function s3Delete(cfg: S3Config, key: string): Promise<void> {
   if (!res.ok && res.status !== 404) throw new Error(`S3 delete failed (${res.status})`);
 }
 
+/** One object from a bucket listing. */
+export interface S3ObjectSummary {
+  key: string;
+  sizeBytes: number;
+  /** ISO-8601 timestamp as the server reported it ('' when absent). */
+  lastModified: string;
+}
+
+/** Upper bound on listing pages (1000 keys each) — a runaway prefix must not
+ *  keep the panel paging forever. */
+const LIST_MAX_PAGES = 50;
+
+/**
+ * List the objects under `prefix` (ListObjectsV2, path-style). Follows
+ * continuation tokens up to {@link LIST_MAX_PAGES} pages; throws with the
+ * response body when the listing is refused.
+ */
+export async function s3List(cfg: S3Config, prefix: string): Promise<S3ObjectSummary[]> {
+  const { decodeXmlEntities } = await import('./xml.js');
+  const tag = (block: string, name: string): string =>
+    decodeXmlEntities(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(block)?.[1] ?? '');
+  const out: S3ObjectSummary[] = [];
+  let token: string | undefined;
+  for (let page = 0; page < LIST_MAX_PAGES; page++) {
+    const query = new URLSearchParams({ 'list-type': '2', prefix });
+    if (token) query.set('continuation-token', token);
+    const res = await s3Request(cfg, 'GET', '', undefined, undefined, query);
+    const body = await res.text();
+    if (!res.ok) throw new Error(`S3 list failed (${res.status}): ${body.slice(0, 200)}`);
+    for (const m of body.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)) {
+      const block = m[1]!;
+      out.push({ key: tag(block, 'Key'), sizeBytes: Number(tag(block, 'Size')) || 0, lastModified: tag(block, 'LastModified') });
+    }
+    if (tag(body, 'IsTruncated') !== 'true') break;
+    token = tag(body, 'NextContinuationToken') || undefined;
+    if (!token) break;
+  }
+  return out;
+}
+
 /** Cheap connectivity/auth probe — PUT+DELETE a tiny marker object. */
 export async function s3Test(cfg: S3Config): Promise<void> {
   const marker = `.ninedeploy-test-${Date.now()}`;

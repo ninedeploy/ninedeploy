@@ -6,6 +6,7 @@ import {
   Bell,
   Bot,
   Boxes,
+  DatabaseBackup,
   HardDrive,
   KeyRound,
   Palette,
@@ -33,6 +34,7 @@ import { LogDrainsSection } from './LogDrainsSection.js';
 import { StorageSection } from './StorageSection.js';
 import { SsoSection } from './SsoSection.js';
 import { FirewallSection } from './FirewallSection.js';
+import { PanelBackupSection } from './PanelBackupSection.js';
 import { AutofillRejectingInput, PageHeader, cn } from '../../components/ui.js';
 
 type SectionId =
@@ -48,6 +50,7 @@ type SectionId =
   | 'config'
   | 'plugins'
   | 'system'
+  | 'panel-backup'
   | 'notifications'
   | 'migration';
 
@@ -98,6 +101,7 @@ const SETTING_GROUPS: SectionCategory[] = [
     category: 'Platform & Lifecycle',
     items: [
       { id: 'system', label: 'System', desc: 'Resources, version & updates', icon: <Server size={16} />, operatorOnly: true },
+      { id: 'panel-backup', label: 'Panel backup', desc: 'Scheduled, encrypted self-backup', icon: <DatabaseBackup size={16} />, operatorOnly: true },
       { id: 'migration', label: 'Migration', desc: 'Full backups import/export', icon: <ArrowLeftRight size={16} />, operatorOnly: true },
     ],
   },
@@ -253,6 +257,7 @@ export function Settings() {
             {section === 'config' && <ConfigCenterSection />}
             {section === 'plugins' && <PluginsSection />}
             {section === 'system' && <SystemSection />}
+            {section === 'panel-backup' && <PanelBackupSection />}
             {section === 'migration' && <MigrationSection />}
           </div>
         </main>

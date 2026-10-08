@@ -44,7 +44,7 @@ describe('helpKeys', () => {
     const settingsKeys = new Set(
       HELP_ROUTE_TABLE.filter((e) => e.key.startsWith('settings.')).map((e) => e.key),
     );
-    expect(settingsKeys.size).toBe(14);
+    expect(settingsKeys.size).toBe(15);
   });
 
   it('r343: resolves the Settings AI section and the service Compose tab to their own topics', () => {

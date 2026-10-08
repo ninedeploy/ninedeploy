@@ -40,7 +40,29 @@ The same destination stores attached-volume snapshots as `tar.gz` archives encry
 
 Retention counts completed recovery points separately from failed attempts and leaves running backups untouched. Failed attempts cannot evict the last successful backups.
 
-The daily database scheduler retains seven completed local dumps. Older remote copies keep their database records so they remain discoverable after local files are pruned; configure bucket lifecycle rules for remote retention. Backup records currently use the active destination for remote retrieval, so migrate existing objects before changing that destination.
+Without a backup policy (below), the scheduler backs each running database up once a day and keeps the seven newest completed scheduled dumps. A dump that falls out of that window is removed together with its remote copy: the remote object is deleted first, through the destination its record names, and the record only once that delete succeeded. A record whose destination is unknown or unreachable is kept and retried on a later run, at most 100 remote deletes per run (or two per database, if that is more).
+
+---
+
+## 🗓️ 3a. Per-database backup policy
+
+Each database can have its own **Backup schedule** (Database → Backups tab, `ninedeploy databases backup-policy`, or `GET`/`PUT /v1/databases/:id/backup-policy`):
+
+| Field | Meaning |
+| :--- | :--- |
+| `enabled` | `false` turns scheduled backups off for this database. Manual snapshots still work. |
+| `cron` | A 5-field cron expression (`minute hour day month weekday`) in the server's local time, checked with the same rule as scheduled jobs. A 6-field (seconds) pattern is refused. The UI offers daily (`0 3 * * *`), every 6 hours (`0 */6 * * *`) and weekly (`0 3 * * 0`). |
+| `retainCount` | Completed scheduled dumps kept on the panel host, 1–365. |
+| `retainRemoteCount` | Optional, 1–365. Off-site copies kept, counted over the dumps that actually have one. If you leave it out, a dump's remote copy is removed with the dump (the built-in rule). If it is higher than `retainCount`, older dumps stay restorable from the bucket after their local file is pruned. If it is lower, newer dumps keep their local file and lose only the remote copy. |
+| `destinationId` | Optional. A specific backup destination for this database's scheduled dumps. Leave it out to use the active destination. Only an instance operator can choose a specific destination, because destinations are managed by operators. If that destination is deleted, the policy falls back to the active one. |
+| `localOnly` | `true` keeps this database's scheduled dumps on the panel host only. It cannot be combined with `destinationId` or `retainRemoteCount`. |
+
+- **Upgrades change nothing.** Policies live in their own table (`database_backup_policies`, migration 0067). A database with no policy row keeps the built-in schedule exactly: daily, seven kept, the active destination. `GET` reports such a database as `configured: false`.
+- **Authorization:** reading a policy follows the database (the same as listing its backups). Saving one needs `admin` on the database, the same as taking a backup. Every save is audited as `backup.policy.update`.
+- **Applied at once:** saving a policy re-arms that database's schedule immediately. The scheduler also resyncs every 15 minutes. A policy database is skipped by the built-in daily run.
+- **Retention safety:** the newest completed dump, and the newest remote copy, are never pruned (both counts are at least 1). Failed attempts are bounded separately (seven kept) and can never evict a completed dump. Manual snapshots and running operations are never touched. A dump file still referenced by a kept record is never unlinked.
+- **Missed-backup alert:** a database with a policy is judged against its own cadence (twice its interval, and never less than two days). A disabled policy is exempt.
+- **Scope:** the policy governs **scheduled** dumps. "Backup now" still uploads to the active destination, and manual snapshots are only removed by hand.
 
 ---
 

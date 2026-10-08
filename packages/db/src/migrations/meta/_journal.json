@@ -463,6 +463,13 @@
       "when": 1790899161118,
       "tag": "0066_retention_indexes_project_env_orphans",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "6",
+      "when": 1791442874253,
+      "tag": "0067_database_backup_policies",
+      "breakpoints": true
     }
   ]
 }

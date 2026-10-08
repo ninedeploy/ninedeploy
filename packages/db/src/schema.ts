@@ -854,6 +854,35 @@ export const backupDestinations = sqliteTable('backup_destinations', {
   updatedAt: tsUpdatable('updated_at'),
 });
 
+// ─── per-database backup policy (0.12) ────────────────────────────────────
+// Opt-in, one row per database. A database WITHOUT a row keeps the built-in
+// schedule exactly (daily, 7 scheduled dumps kept, active destination), so an
+// upgrade changes nothing until an operator saves a policy. A new table (not
+// columns on `databases`) so the migration touches no existing row.
+export const databaseBackupPolicies = sqliteTable('database_backup_policies', {
+  databaseId: integer('database_id')
+    .primaryKey()
+    .references(() => databases.id, { onDelete: 'cascade' }),
+  // false = no scheduled backups for this database (manual ones still work).
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  // 5-field cron (minute hour day month weekday), validated with croner's
+  // '5-part' mode at the route — same rule as scheduled jobs.
+  cron: text('cron').notNull().default('0 3 * * *'),
+  // Completed scheduled dumps kept on local disk (1–365).
+  retainCount: integer('retain_count').notNull().default(7),
+  // NULL = keep the remote copies of the newest `retainCount` dumps (the
+  // built-in rule). Otherwise the number of remote copies kept (1–365),
+  // counted over the dumps that actually have one.
+  retainRemoteCount: integer('retain_remote_count'),
+  // NULL = the active destination (built-in behaviour). Deleting the
+  // destination drops the policy back to the active one.
+  destinationId: integer('destination_id').references(() => backupDestinations.id, { onDelete: 'set null' }),
+  // true = never upload this database's scheduled dumps anywhere.
+  localOnly: integer('local_only', { mode: 'boolean' }).notNull().default(false),
+  createdAt: ts('created_at'),
+  updatedAt: tsUpdatable('updated_at'),
+});
+
 export const metrics = sqliteTable(
   'metrics',
   {
@@ -1596,6 +1625,7 @@ export type AlertRule = typeof alertRules.$inferSelect;
 export type AlertState = typeof alertState.$inferSelect;
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 export type BackupDestination = typeof backupDestinations.$inferSelect;
+export type DatabaseBackupPolicy = typeof databaseBackupPolicies.$inferSelect;
 export type ScheduledJob = typeof scheduledJobs.$inferSelect;
 export type JobRun = typeof jobRuns.$inferSelect;
 export type ServerRow = typeof servers.$inferSelect;

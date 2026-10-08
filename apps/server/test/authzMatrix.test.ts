@@ -62,6 +62,7 @@ vi.mock('../src/plugins/autoUpdateScheduler.js', () => noop('authz-autoupdate'))
 vi.mock('../src/plugins/housekeeping.js', () => noop('authz-housekeeping'));
 vi.mock('../src/plugins/logShipper.js', () => noop('authz-logshipper'));
 vi.mock('../src/plugins/jobScheduler.js', () => noop('authz-jobs'));
+vi.mock('../src/plugins/panelBackupScheduler.js', () => noop('authz-panel-backup'));
 vi.mock('../src/plugins/staticFiles.js', () => noop('authz-static'));
 // The limiter is not under test, and ~4k requests from one address trip it.
 vi.mock('../src/plugins/rateLimit.js', () => noop('authz-ratelimit'));
@@ -754,6 +755,9 @@ export const MATRIX: Record<string, Rule> = {
     note: 'member may drill (restore into a scratch container) a backup only an admin may take or download',
   }),
   'GET /v1/databases/:id/drills': R('viewer'),
+  // 0.12 per-database backup policy: read follows the backups list, write the backup routes.
+  'GET /v1/databases/:id/backup-policy': R('viewer'),
+  'PUT /v1/databases/:id/backup-policy': R('admin', { body: () => ({ enabled: true, cron: '0 3 * * *', retainCount: 7 }) }),
   'GET /v1/databases/:id/pgbouncer': R('member'),
   'POST /v1/databases/:id/pgbouncer/enable': OP,
   'POST /v1/databases/:id/pgbouncer/disable': OP,
@@ -894,6 +898,11 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/system/update-check': OP,
   'POST /v1/system/update-start': OP,
   'GET /v1/system/update-status': OP,
+  'GET /v1/system/panel-backup': OP,
+  'PUT /v1/system/panel-backup': OP,
+  'POST /v1/system/panel-backup/run': OP,
+  'GET /v1/system/panel-backup/remote': OP,
+  'POST /v1/system/panel-backup/restore': OP,
   'DELETE /v1/templates/community/:id': OP,
   'POST /v1/templates/community/import': OP,
   'POST /v1/traefik/backup-certs': OP,

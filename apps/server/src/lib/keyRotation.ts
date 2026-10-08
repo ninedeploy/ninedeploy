@@ -191,6 +191,7 @@ export const SETTINGS_ENCRYPTED_KEYS = [
   'namecheap_api_key_encrypted', // lib/namecheap.ts (KEY_API_KEY)
   'dns_token_encrypted', // /settings /dns route (encryptDnsToken)
   'dns_records_token_encrypted', // lib/cloudflare.ts
+  'panel_backup_passphrase_encrypted', // lib/panelBackup.ts (recovery passphrase)
 ] as const;
 
 async function rotateKeyedStoreSecrets(db: DB): Promise<number> {

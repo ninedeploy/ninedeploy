@@ -31,7 +31,10 @@ const EXEMPT: Record<string, string> = {
   'templates.ts POST /:id/deploy': 'shared `queue` handler, audited as template.deploy',
 };
 
-const HELPERS = /\baudit\(|\bdeactivateUser\(|\bregisterAccount\(|\bcreateFirstAdmin\(/;
+// importSystemArchive (lib/systemArchive.ts) audits `system.import`; the panel
+// backup helpers (lib/panelBackup.ts) audit every run and restore outcome.
+const HELPERS =
+  /\baudit\(|\bdeactivateUser\(|\bregisterAccount\(|\bcreateFirstAdmin\(|\bimportSystemArchive\(|\bstartPanelBackup\(|\brestorePanelBackup\(/;
 const ROUTE = /\b(?:app|scope|api|r|instance|protectedScope|admin)\.(post|put|patch|delete)\b(?:<[\s\S]*?>)?\(\s*'([^']*)'/g;
 
 describe('audit coverage (r222)', () => {

@@ -11,6 +11,7 @@ import { environmentRoutes } from './environments.js';
 import { aiRoutes } from './ai.js';
 import { studioProxyRoutes } from './studioProxy.js';
 import { backupRoutes, databaseBackupRoutes } from './backups.js';
+import { databaseBackupPolicyRoutes } from './backupPolicy.js';
 import { pgbouncerRoutes } from './pgbouncer.js';
 import { logSearchRoutes } from './logSearch.js';
 import { backupDestinationRoutes } from './backupDestinations.js';
@@ -46,6 +47,7 @@ import { pluginRoutes } from './plugins.js';
 import { menuRoutes } from './menus.js';
 import { sourcesRoutes } from './sources.js';
 import { systemRoutes } from './resources.js';
+import { panelBackupRoutes } from './panelBackup.js';
 import { templateRoutes } from './templates.js';
 import { topologyRoutes } from './topology.js';
 import { tunnelRoutes } from './tunnels.js';
@@ -103,6 +105,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(notificationRoutes, { prefix: '/notifications' });
   await app.register(databasesRoutes, { prefix: '/databases' });
   await app.register(databaseBackupRoutes, { prefix: '/databases' });
+  // Per-database backup schedule + retention + destination (0.12).
+  await app.register(databaseBackupPolicyRoutes, { prefix: '/databases' });
   // Deployment lanes (production / staging / development) per workspace.
   await app.register(environmentRoutes, { prefix: '/environments' });
   await app.register(aiRoutes, { prefix: '/ai' });
@@ -131,6 +135,7 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(statsRoutes, { prefix: '/stats' });
   await app.register(dashboardRoutes, { prefix: '/dashboard' });
   await app.register(systemRoutes, { prefix: '/system' });
+  await app.register(panelBackupRoutes, { prefix: '/system/panel-backup' });
   await app.register(sourcesRoutes, { prefix: '/sources' });
   await app.register(insightsRoutes, { prefix: '/insights' });
   await app.register(settingsRoutes, { prefix: '/settings' });
