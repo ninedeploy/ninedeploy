@@ -6,6 +6,10 @@
 // cover each hop; this proves they still compose on the artifact a user
 // actually pulls (it has caught image-layer drift before — r468's sandbox
 // was proven exactly this way).
+// 0.12: the managed postgres also gets a backup policy (built-in schedule
+// first, then an explicit one read back), and the web service gets a
+// preview-only env var that is listed and removed without touching its
+// production env. An image older than 0.12 fails at those steps by design.
 //
 // Topology: privileged docker:28-dind sidecar (the validated DinD pattern —
 // the panel gets plain DOCKER_HOST=tcp://..., NOT NINEDEPLOY_DOCKER_HOST)
@@ -226,10 +230,44 @@ async function main() {
     const running = docker(['exec', DIND, 'docker', '-H', `tcp://127.0.0.1:${DIND_PORT}`, 'ps', '--filter', 'status=running', '--format', '{{.Names}}']);
     // The API names the container as `host` (the address apps dial).
     if (!db.host || !running.split(/\r?\n/).includes(db.host)) fail(`${engine} container ${db?.host} is not running in the daemon`);
+    if (engine === 'postgres') {
+      // 0.12: a per-database backup policy on a fresh database — built-in
+      // schedule first, then an explicit one that reads back as written.
+      const policyPath = `/v1/databases/${db.id}/backup-policy`;
+      const initial = await api(policyPath, { token });
+      if (initial.status !== 200 || initial.json?.configured !== false) fail(`fresh postgres backup policy: ${initial.status} ${initial.text.slice(0, 200)}`);
+      const want = { enabled: true, cron: '15 2 * * *', retainCount: 5, localOnly: true };
+      const put = await api(policyPath, { method: 'PUT', token, body: want });
+      if (put.status !== 200) fail(`backup policy PUT failed: ${put.status} ${put.text.slice(0, 200)}`);
+      const got = (await api(policyPath, { token })).json;
+      if (got?.configured !== true || got.cron !== want.cron || got.retainCount !== want.retainCount || got.localOnly !== true) {
+        fail(`backup policy did not read back as written: ${JSON.stringify(got)}`);
+      }
+      step(`postgres backup policy set (${want.cron}, keep ${want.retainCount}, local only)`);
+    }
     const del = await api(`/v1/databases/${db.id}`, { method: 'DELETE', token });
     if (del.status !== 200 && del.status !== 204) fail(`${engine} database delete failed: ${del.status}`);
     step(`managed ${engine} started, ran and was deleted`);
   }
+
+  // ── 0.12 preview-only env: add, list, remove; production env untouched ─
+  const prodKeys = async () => {
+    const r = await api(`/v1/services/${serviceId}/env`, { token });
+    if (r.status !== 200 || !Array.isArray(r.json)) fail(`service env read failed: ${r.status}`);
+    return r.json.map((e) => e.key).sort().join(',');
+  };
+  const prodBefore = await prodKeys();
+  const previewPath = `/v1/services/${serviceId}/env/preview`;
+  const pv = await api(previewPath, { method: 'POST', token, body: { key: 'JOURNEY_PREVIEW', value: `preview-${suffix}` } });
+  if (pv.status !== 200 && pv.status !== 201) fail(`preview env create failed: ${pv.status} ${pv.text.slice(0, 200)}`);
+  const listed = (await api(previewPath, { token })).json;
+  if (!Array.isArray(listed) || !listed.some((e) => e.id === pv.json?.id && e.key === 'JOURNEY_PREVIEW')) fail(`preview env not listed: ${JSON.stringify(listed)}`);
+  if ((await prodKeys()) !== prodBefore) fail('a preview-only variable showed up in the production env');
+  const pvDel = await api(`${previewPath}/${pv.json.id}`, { method: 'DELETE', token });
+  if (pvDel.status !== 200 && pvDel.status !== 204) fail(`preview env delete failed: ${pvDel.status} ${pvDel.text.slice(0, 200)}`);
+  const afterDel = (await api(previewPath, { token })).json;
+  if (!Array.isArray(afterDel) || afterDel.length !== 0) fail(`preview env not empty after delete: ${JSON.stringify(afterDel)}`);
+  step('preview-only env var added, listed and removed (production env untouched)');
 
   // ── teardown ────────────────────────────────────────────────────────────
   const delCompose = await api(`/v1/services/${composeId}`, { method: 'DELETE', token });
@@ -243,7 +281,7 @@ async function main() {
   }
   step('service deleted');
 
-  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → signed webhook redeploy → compose stack → managed postgres + redis → teardown');
+  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → signed webhook redeploy → compose stack → managed postgres (+ backup policy) + redis → preview-only env → teardown');
 }
 
 main()

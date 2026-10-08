@@ -16,6 +16,17 @@
 //   - a fresh deploy goes green on the upgraded panel;
 //   - every journal migration is recorded, and none twice.
 //
+// 0.12 features, exercised on the upgraded panel against FROM-era data (the
+// seed uses only routes every supported FROM has — /databases, service env,
+// /alerts — so --from=v0.10.45 and --from=v0.11.2 both work):
+//   - the managed postgres seeded on FROM reports `configured: false` (the
+//     built-in daily/7 schedule), and a policy PUT round-trips through GET;
+//   - preview-only env create/list works on the upgraded service, and its
+//     production env reads back exactly as it did on FROM, before and after;
+//   - a `disk` alert rule is created and listed next to the FROM cpu rule;
+//   - panel self-backup reports disabled defaults and PUT rejects bad input
+//     (no S3 here: nothing is ever run against a destination).
+//
 // Topology: the user-journey smoke's validated DinD pattern — the panel gets
 // DOCKER_HOST=tcp://<dind>:2375, so its Traefik/runtime work lands inside the
 // sidecar, never on the host daemon.
@@ -122,6 +133,16 @@ const deploysOf = async (token, id) => {
   return Array.isArray(r.json) ? r.json : (r.json?.deploys ?? []);
 };
 
+/** A service's production env as GET /env serializes it (secrets masked), in a stable order. */
+const prodEnvOf = async (token, id) => {
+  const r = await api(`/v1/services/${id}/env`, { token });
+  if (r.status !== 200 || !Array.isArray(r.json)) fail(`service #${id} env read failed: ${r.status} ${r.text.slice(0, 200)}`);
+  return r.json
+    .map(({ id: varId, key, value, isSecret }) => ({ id: varId, key, value, isSecret }))
+    .sort((a, b) => a.key.localeCompare(b.key));
+};
+const sameEnv = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
 async function waitDeploy(token, serviceId, pick, label) {
   const TERMINAL = new Set(['running', 'failed', 'cancelled', 'superseded']);
   let last = null;
@@ -216,6 +237,26 @@ async function main() {
   if (dom.status !== 200 && dom.status !== 201) fail(`${FROM}: domain create failed: ${dom.status}`);
   step(`service #${serviceId} deployed (#${first.id}) with a domain`);
 
+  // 0.12 seed — FROM-era state the new features must read correctly. Only
+  // routes that exist on every supported FROM (checked against v0.10.45).
+  for (const body of [
+    { key: 'UPGRADE_PLAIN', value: `plain-${suffix}` },
+    { key: 'UPGRADE_SECRET', value: `secret-${suffix}`, isSecret: true },
+  ]) {
+    const r = await api(`/v1/services/${serviceId}/env`, { method: 'POST', token, body });
+    if (r.status !== 200 && r.status !== 201) fail(`${FROM}: service env ${body.key} create failed: ${r.status} ${r.text.slice(0, 200)}`);
+  }
+  const envBefore = await prodEnvOf(token, serviceId);
+  if (envBefore.length !== 2) fail(`${FROM}: expected 2 service env vars, read ${envBefore.length}`);
+  const pg = await api('/v1/databases', { method: 'POST', token, body: { name: `upgrade-pg-${suffix}`, engine: 'postgres' } });
+  if (pg.status !== 200 && pg.status !== 201) fail(`${FROM}: postgres create failed: ${pg.status} ${pg.text.slice(0, 300)}`);
+  const databaseId = pg.json?.id;
+  if (!databaseId || pg.json?.status !== 'running') fail(`${FROM}: postgres #${databaseId} reported '${pg.json?.status}' (wanted running)`);
+  const cpuRule = await api('/v1/alerts', { method: 'POST', token, body: { name: `upgrade-cpu-${suffix}`, metric: 'cpu', operator: '>', threshold: 95 } });
+  if (cpuRule.status !== 200 && cpuRule.status !== 201) fail(`${FROM}: cpu alert rule create failed: ${cpuRule.status} ${cpuRule.text.slice(0, 200)}`);
+  const cpuRuleId = cpuRule.json?.id;
+  step(`seeded 2 service env vars, managed postgres #${databaseId} (no backup policy) and cpu alert rule #${cpuRuleId}`);
+
   // The 0.10.35 project-delete left project-scoped secrets behind; r541's
   // migration must clean exactly these up.
   const proj = await api('/v1/projects', { method: 'POST', token, body: { name: `orphan-${suffix}` } });
@@ -288,6 +329,72 @@ async function main() {
   }
   step(`interrupted deploy #${interrupted.id} settled as '${after.status}'`);
 
+  // ── 0.12 features on FROM-era data ──────────────────────────────────────
+  // Per-database backup policy: no row yet → the built-in schedule, unchanged.
+  const policyPath = `/v1/databases/${databaseId}/backup-policy`;
+  const policy0 = await api(policyPath, { token });
+  if (policy0.status !== 200) fail(`backup-policy GET on postgres #${databaseId} answered ${policy0.status} ${policy0.text.slice(0, 200)}`);
+  if (policy0.json?.configured !== false || policy0.json?.enabled !== true || policy0.json?.cron !== null || policy0.json?.retainCount !== 7) {
+    fail(`postgres #${databaseId} seeded on ${FROM} should keep the built-in daily/7 schedule, got ${policy0.text.slice(0, 300)}`);
+  }
+  step(`postgres #${databaseId} from ${FROM} reports configured:false (built-in daily, keep 7)`);
+  const badCron = await api(policyPath, { method: 'PUT', token, body: { cron: 'not a cron', retainCount: 3, localOnly: true } });
+  if (badCron.status !== 400) fail(`backup-policy PUT with an invalid cron answered ${badCron.status} (wanted 400)`);
+  const wantPolicy = { enabled: true, cron: '30 3 * * *', retainCount: 3, localOnly: true };
+  const put = await api(policyPath, { method: 'PUT', token, body: wantPolicy });
+  if (put.status !== 200) fail(`backup-policy PUT answered ${put.status} ${put.text.slice(0, 300)}`);
+  const policy1 = (await api(policyPath, { token })).json;
+  for (const [k, v] of Object.entries({ ...wantPolicy, configured: true, destinationId: null })) {
+    if (policy1?.[k] !== v) fail(`backup-policy GET after PUT: ${k} is ${JSON.stringify(policy1?.[k])}, wanted ${JSON.stringify(v)}`);
+  }
+  if (!policy1.nextRunAt) fail('backup-policy GET after PUT: an enabled policy has no nextRunAt');
+  step(`backup policy round-trips (${wantPolicy.cron}, keep ${wantPolicy.retainCount}, local only; next ${policy1.nextRunAt}); an invalid cron is refused`);
+
+  // Preview-only env: production env must read back exactly as on FROM.
+  const envAfter = await prodEnvOf(token, serviceId);
+  if (!sameEnv(envAfter, envBefore)) fail(`production env changed across the upgrade: ${JSON.stringify(envBefore)} → ${JSON.stringify(envAfter)}`);
+  const previewPath = `/v1/services/${serviceId}/env/preview`;
+  const preview0 = await api(previewPath, { token });
+  if (preview0.status !== 200 || !Array.isArray(preview0.json) || preview0.json.length !== 0) {
+    fail(`preview env of an upgraded service should start empty: ${preview0.status} ${preview0.text.slice(0, 200)}`);
+  }
+  const pv = await api(previewPath, { method: 'POST', token, body: { key: 'PREVIEW_ONLY', value: `preview-${suffix}` } });
+  if (pv.status !== 200 && pv.status !== 201) fail(`preview env create failed: ${pv.status} ${pv.text.slice(0, 200)}`);
+  const previews = (await api(previewPath, { token })).json;
+  if (!Array.isArray(previews) || previews.length !== 1 || previews[0].key !== 'PREVIEW_ONLY' || previews[0].value !== `preview-${suffix}`) {
+    fail(`preview env list after create: ${JSON.stringify(previews)}`);
+  }
+  if (!sameEnv(await prodEnvOf(token, serviceId), envBefore)) fail('a preview-only variable leaked into the production env');
+  step(`service #${serviceId} production env unchanged from ${FROM} (${envBefore.length} vars); preview-only var created and listed without touching it`);
+
+  // Alert metrics: a `disk` rule next to the FROM-era cpu rule.
+  const disk = await api('/v1/alerts', { method: 'POST', token, body: { name: `upgrade-disk-${suffix}`, metric: 'disk', operator: '>', threshold: 90 } });
+  if (disk.status !== 200 && disk.status !== 201) fail(`disk alert rule create failed: ${disk.status} ${disk.text.slice(0, 200)}`);
+  const rules = await api('/v1/alerts', { token });
+  const ruleList = Array.isArray(rules.json) ? rules.json : [];
+  if (!ruleList.some((r) => r.id === disk.json?.id && r.metric === 'disk')) fail(`the disk alert rule #${disk.json?.id} is not listed`);
+  if (!ruleList.some((r) => r.id === cpuRuleId && r.metric === 'cpu')) fail(`the ${FROM} cpu alert rule #${cpuRuleId} is gone from the list`);
+  step(`disk alert rule #${disk.json.id} created and listed next to the ${FROM} cpu rule #${cpuRuleId}`);
+
+  // Panel self-backup: off by default after an upgrade; bad input refused.
+  // No S3 destination exists here, so nothing is ever run or enabled.
+  const pb = await api('/v1/system/panel-backup', { token });
+  if (pb.status !== 200) fail(`panel-backup GET answered ${pb.status} ${pb.text.slice(0, 200)}`);
+  const pbs = pb.json?.settings;
+  if (pbs?.enabled !== false || pbs?.destinationId !== null || pbs?.hasPassphrase !== false || pb.json?.lastRun !== null) {
+    fail(`panel-backup should report disabled defaults after the upgrade, got ${pb.text.slice(0, 300)}`);
+  }
+  for (const [label, body] of [
+    ['enabling without a destination', { enabled: true }],
+    ['an invalid cron', { cron: 'not a cron' }],
+    ['retain 0', { retain: 0 }],
+  ]) {
+    const r = await api('/v1/system/panel-backup', { method: 'PUT', token, body });
+    if (r.status !== 400) fail(`panel-backup PUT with ${label} answered ${r.status} (wanted 400)`);
+  }
+  if ((await api('/v1/system/panel-backup', { token })).json?.settings?.enabled !== false) fail('a refused panel-backup PUT changed the settings');
+  step('panel self-backup reports enabled:false; PUT refuses a missing destination, a bad cron and retain 0');
+
   await api(`/v1/services/${serviceId}/deploys`, { method: 'POST', token, body: {} });
   const redeploy = await waitDeploy(token, serviceId, (all) => all.find((d) => d.id !== first.id), TO);
   if (redeploy.status !== 'running') fail(`${TO}: redeploy ended as '${redeploy.status}'`);
@@ -300,7 +407,7 @@ async function main() {
   if (post.orphanProjectEnv !== 0) fail(`${post.orphanProjectEnv} orphaned project secret(s) survived the upgrade (r541)`);
   step(`${TO} db: all ${post.migrations} journal migrations recorded once, orphaned project secrets removed`);
 
-  console.log(`\n✓ Upgrade green: ${FROM} → ${TO} keeps users, services, history, domains and running apps; migrates; recovers the interrupted deploy; deploys again`);
+  console.log(`\n✓ Upgrade green: ${FROM} → ${TO} keeps users, services, history, domains and running apps; migrates; recovers the interrupted deploy; deploys again; 0.12 backup policy, preview env, disk alert and panel-backup defaults work on the upgraded data`);
 }
 
 main()
