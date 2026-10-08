@@ -147,6 +147,9 @@ docker stop ninedeploy && docker rm ninedeploy
 ```
 Migrations apply automatically upon server boot.
 
+### Rolling Back:
+Running the previous release again on the same data is supported: migrations only add, and an older release ignores what it does not know. What each release leaves behind after a rollback (for 0.14: Traefik back on one dynamic file, public-database sidecars still running, import staging files, literal Vault/AWS references) and how to clean it up is in [ROLLBACK.md](./ROLLBACK.md).
+
 ### One-Click Self-Update (Bare-Metal Panels):
 On systemd bare-metal installations an operator can upgrade the panel from the dashboard itself — an amber banner appears under the header when a new release is available (and the same button lives on **About**). Confirming it runs this install's own installer for the pinned release tag: snapshot of `.data`, source swap, rebuild, migrations, service restart. The panel is briefly offline mid-run (~5–15 minutes) while deployed services keep running; progress survives the restart and reports success or failure with the installer output tail. The update refuses to start while a deployment is building or rolling out (it would be interrupted by the restart) and lists them; wait for them, or send `"force": true` to `POST /v1/system/update-start` to update anyway. Container-mode installs don't offer self-update — re-run the installer with `--docker` (installer-managed) or pull the new image (see *Docker Upgrade* above).
 

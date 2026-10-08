@@ -34,18 +34,21 @@ Shipped in 0.13.0; see [GITHUB_APP.md](./GITHUB_APP.md).
 - **Gitea:** repository listing and token test.
 - **Why this comes before multi-node work:** short-lived tokens let remote nodes clone private repositories without holding a long-lived credential.
 
-## 0.14 — Network and data access
+## 0.14 — Network and data access (done)
+
+Shipped in 0.14.0; see [TRAEFIK_INGRESS.md](./TRAEFIK_INGRESS.md) (directory provider, custom config, certificates, public database access), [DATABASES_BACKUPS.md](./DATABASES_BACKUPS.md) (dump import), [SECRET_MANAGERS.md](./SECRET_MANAGERS.md) and [ROLLBACK.md](./ROLLBACK.md).
 
 - **Public database access:**
-  - routed through a Traefik TCP/HostSNI router;
-  - off by default;
+  - a per-database Traefik TCP sidecar (`HostSNI(*)`) on a port of its own, so the main ingress is never touched;
+  - off by default, operator-only;
   - an IP allow-list is required;
-  - TLS is optional.
+  - TLS termination is optional (not for mysql/mariadb).
 - **Proxy management:**
-  - an editable, validated custom Traefik dynamic-config file;
+  - the panel's Traefik reads a dynamic-config directory (one recreate on the first 0.14 boot); this also fixes remote-node proxies, which loaded no routes before;
+  - an editable custom Traefik dynamic-config file, validated and preflighted in a throwaway Traefik;
   - custom certificate upload.
-- **Database dump import:** import a dump from an upload or from S3.
-- **Secret managers:** HashiCorp Vault / OpenBao and AWS Secrets Manager, alongside the existing Infisical and Doppler.
+- **Database dump import:** chunked, resumable upload or an S3 object, behind a `pre-import` safety backup.
+- **Secret managers:** HashiCorp Vault / OpenBao (KV v2) and AWS Secrets Manager, alongside the existing Infisical and Doppler.
 
 ## 0.15 — Operations and API
 

@@ -298,6 +298,10 @@ Watch paths, `[skip ci]` handling, cancellation and PR previews: [**docs/DEPLOYM
   fed into the alert evaluator.
 - Per-domain middlewares: www→apex redirect, custom response headers, basic auth, IP allowlists, rate
   limits.
+- **Custom dynamic config** (0.14): your own `custom-*` routers, middlewares and services next to the
+  generated ones, validated and loaded by a throwaway Traefik before the live one sees them.
+- **Uploaded certificates** (0.14): bring a commercial, internal-CA or wildcard certificate; a domain it
+  fully covers stops using the ACME resolver, and it feeds the expiry alert like ACME ones.
 - **Cloudflare Tunnels** for hosts with no inbound ports.
 - Non-operators must **prove control of a hostname** before attaching it.
 
@@ -308,6 +312,10 @@ Watch paths, `[skip ci]` handling, cancellation and PR previews: [**docs/DEPLOYM
 - Attach a database to a service and its connection string is injected as environment on every
   deploy — resolved fresh from the vault rather than pasted into a `.env` once and forgotten.
 - Database Studio (binds a host port, operator-only), topology view, per-database resource limits.
+- **Public database access** (0.14, operator-only): a per-database Traefik TCP sidecar on its own
+  host port, with a required IP allow-list and optional TLS termination.
+- **Dump import** (0.14): chunked, resumable upload or an S3 object, with format detection and a
+  `pre-import` safety backup first.
 
 ### Backups
 
@@ -338,9 +346,14 @@ Watch paths, `[skip ci]` handling, cancellation and PR previews: [**docs/DEPLOYM
   notification channels, log drains, push delivery, git remotes, OAuth token exchange, the
   marketplace catalog and `templates_source`. Private, loopback and link-local targets are refused,
   closing the `169.254.169.254` metadata path. It is deliberately **not** applied to the OIDC issuer,
-  the S3 endpoint, Vault, the log-search backend or the telemetry endpoint — self-hosted Keycloak,
+  the S3 endpoint, the log-search backend or the telemetry endpoint — self-hosted Keycloak,
   MinIO and Loki normally *are* on a private address, so guarding those would break working installs.
   Those settings are operator-only, and an operator can already run host commands through a service.
+  The 0.14 secret managers are guarded; a Vault on a private address needs
+  `NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1`.
+- **Secret managers:** `${{infisical:…}}` / `${{doppler:…}}`, and from 0.14 HashiCorp Vault / OpenBao
+  (`${{vault:path#field}}`) and AWS Secrets Manager (`${{aws:id#key}}`), resolved at deploy time,
+  never stored, and withheld from PR previews.
 - Subprocesses inherit a whitelisted environment (never `NINEDEPLOY_*`), and the panel refuses to boot
   in production with a known-insecure JWT secret or a weak master key.
 - **SSO and 2FA:** OpenID Connect (Google, GitHub, Keycloak, Okta), WebAuthn passkeys, TOTP with
@@ -600,8 +613,10 @@ build, and the integration job.
 | [Deployments & pipelines](./docs/DEPLOYMENTS.md) | Blue-green, cancellation, watch paths, PR preview environments |
 | [Workspaces & RBAC](./docs/WORKSPACES_RBAC.md) | Tenancy, invitations, the role matrix, the instance-operator flag |
 | [Security & SSO](./docs/SECURITY_SSO.md) | Vault design, OIDC, passkeys, TOTP, session handling |
-| [Databases & backups](./docs/DATABASES_BACKUPS.md) | Engines, injected connection strings, encryption, S3 destinations, restores |
-| [Ingress & tunnels](./docs/TRAEFIK_INGRESS.md) | Dynamic routing, ACME HTTP-01/DNS-01, middlewares, Cloudflare Tunnels |
+| [Databases & backups](./docs/DATABASES_BACKUPS.md) | Engines, injected connection strings, encryption, S3 destinations, restores, dump import |
+| [Ingress & tunnels](./docs/TRAEFIK_INGRESS.md) | Dynamic routing, ACME HTTP-01/DNS-01, middlewares, Cloudflare Tunnels, custom config, uploaded certificates, public database access |
+| [Secret managers](./docs/SECRET_MANAGERS.md) | HashiCorp Vault / OpenBao and AWS Secrets Manager references, setup, limits |
+| [Rolling back](./docs/ROLLBACK.md) | What a rollback to the previous release leaves behind, and how to clean it up |
 | [Plugins & microkernel](./docs/PLUGINS_MICROKERNEL.md) | Lifecycle hooks, dynamic menus, driver registries |
 | [AI, MCP, CLI & SDK](./docs/AI_MCP_CLI.md) | Tool reference, CLI reference, SDK usage |
 | [Troubleshooting](./docs/TROUBLESHOOTING.md) | Socket permissions, database locking, healthcheck tuning |
