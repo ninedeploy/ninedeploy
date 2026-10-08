@@ -1220,6 +1220,17 @@ describe('service', () => {
       ok(oidcProviderUpdate, { enabled: false, autoEnroll: false, defaultRole: 'admin' });
       bad(oidcProviderUpdate, {});
     });
+
+    it('F1014: the deprecated OIDC defaultRole is still accepted (old clients, stored rows)', () => {
+      // Deprecated, not removed: it has no effect on OIDC sign-ins since D1/F146,
+      // but a client that still sends it must keep working.
+      const base = { name: 'Okta', slug: 'okta', clientId: 'c', clientSecret: ['s', 'x'].join('-') };
+      expect(ok(oidcProviderCreate, base)?.defaultRole).toBe('member');
+      expect(ok(oidcProviderCreate, { ...base, defaultRole: 'admin' })?.defaultRole).toBe('admin');
+      expect(ok(oidcProviderUpdate, { defaultRole: 'member' })?.defaultRole).toBe('member');
+      bad(oidcProviderCreate, { ...base, defaultRole: 'viewer' });
+      bad(oidcProviderUpdate, { defaultRole: 'owner' });
+    });
   });
 
   describe('labels', () => {

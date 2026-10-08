@@ -1,6 +1,6 @@
 ﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { screen, fireEvent, waitFor } from '@testing-library/react';
-import { parseAllowedDomains, SsoSection } from '../src/routes/settings/SsoSection.js';
+import { screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { OIDC_DEFAULT_ROLE_NOTE, parseAllowedDomains, SsoSection } from '../src/routes/settings/SsoSection.js';
 import { api } from '../src/lib/api.js';
 import { renderWithProviders, mockOf } from './helpers.js';
 
@@ -234,9 +234,6 @@ describe('SsoSection', () => {
     fireEvent.change(screen.getByPlaceholderText('••••••••••••'), { target: { value: 's3cret' } });
     fireEvent.click(screen.getByLabelText('Enable SSO on login page'));
     fireEvent.click(screen.getByLabelText('Auto-enroll new users on first login'));
-    // Field labels are spans, not <label>s: target the modal's select (the
-    // SCIM card's workspace select lives outside the modal).
-    fireEvent.change(screen.getAllByRole('combobox')[1]!, { target: { value: 'admin' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create Provider' }));
 
     await waitFor(() => {
@@ -245,9 +242,10 @@ describe('SsoSection', () => {
         slug: 'myidp',
         enabled: false,
         autoEnroll: false,
-        defaultRole: 'admin',
       }));
     });
+    // F1014: the deprecated OIDC defaultRole is no longer sent.
+    expect('defaultRole' in (mockOf(api.auth.oidc.create).mock.calls[0]![0] as object)).toBe(false);
     // The modal closes after a successful save.
     await waitFor(() =>
       expect(screen.queryByText('Configure SSO / OIDC Provider')).not.toBeInTheDocument());
@@ -376,5 +374,64 @@ describe('SsoSection', () => {
       expect(parseAllowedDomains(' @A.com,b.io;  a.com   c.dev ')).toEqual(['a.com', 'b.io', 'c.dev']);
       expect(parseAllowedDomains('')).toEqual([]);
     });
+  });
+});
+
+// F1014: an OIDC provider's defaultRole has no effect since D1/F146 (a user it
+// enrolls always owns their personal workspace; OIDC maps into no team
+// workspace). The form replaces the role picker with one explanatory line and
+// stops sending the field; the API still accepts it and stored values stay.
+describe('SsoSection — deprecated OIDC default role (F1014)', () => {
+  const stored = {
+    id: 9,
+    name: 'Okta',
+    slug: 'okta',
+    issuerUrl: 'https://corp.okta.com',
+    clientId: 'okta-cid',
+    scopes: 'openid profile email',
+    enabled: true,
+    autoEnroll: true,
+    defaultRole: 'admin' as const,
+    allowedDomains: ['corp.com'],
+    createdAt: '2026-01-01',
+    updatedAt: '2026-01-01',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOf(api.auth.oidc.list).mockResolvedValue([stored] as never);
+  });
+
+  it('the create form shows the note instead of a role picker', async () => {
+    renderWithProviders(<SsoSection />);
+    await screen.findByText('Okta');
+    fireEvent.click(screen.getByText('Add Provider'));
+    const form = screen.getByPlaceholderText('OAuth Client ID').closest('form')!;
+    expect(form.textContent).toContain(OIDC_DEFAULT_ROLE_NOTE);
+    expect(OIDC_DEFAULT_ROLE_NOTE).toMatch(/Not used for OIDC sign-ins/);
+    expect(within(form).queryByRole('combobox')).toBeNull();
+    expect(within(form).queryByText(/Default User Role/i)).toBeNull();
+    expect(within(form).queryByText(/instance management/i)).toBeNull();
+  });
+
+  it('the provider list no longer shows the stored role', async () => {
+    renderWithProviders(<SsoSection />);
+    await screen.findByText('Okta');
+    expect(screen.getByText(/slug: okta/)).toBeInTheDocument();
+    expect(screen.queryByText(/role: admin/)).toBeNull();
+  });
+
+  it('editing a provider with a stored role leaves that field out of the PATCH', async () => {
+    mockOf(api.auth.oidc.update).mockResolvedValueOnce(stored as never);
+    renderWithProviders(<SsoSection />);
+    fireEvent.click(await screen.findByRole('button', { name: /edit/i }));
+    const form = screen.getByPlaceholderText('OAuth Client ID').closest('form')!;
+    expect(form.textContent).toContain(OIDC_DEFAULT_ROLE_NOTE);
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await waitFor(() => expect(api.auth.oidc.update).toHaveBeenCalled());
+    const [id, sent] = mockOf(api.auth.oidc.update).mock.calls[0]! as [number, Record<string, unknown>];
+    expect(id).toBe(9);
+    expect(sent).toEqual(expect.objectContaining({ name: 'Okta', autoEnroll: true, allowedDomains: ['corp.com'] }));
+    expect('defaultRole' in sent).toBe(false);
   });
 });

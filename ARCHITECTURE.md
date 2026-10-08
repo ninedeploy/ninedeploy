@@ -226,7 +226,8 @@ workspace_members      id, workspace_id, user_id, role(owner|admin|member|viewer
 workspace_invitations  id, workspace_id, email, role, token, expires_at, accepted_at
 oidc_providers         id, name, slug, issuer_url, client_id,
                        client_secret_encrypted, scopes, enabled, auto_enroll,
-                       default_role
+                       default_role (deprecated, read by nothing: an enrolled
+                       user always owns their personal workspace — F1014)
 ```
 
 ### 4.2 Scoping (N-N, replaces the old single `services.project_id`)

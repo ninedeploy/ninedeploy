@@ -151,12 +151,24 @@ export const oidcProviderCreate = z.object({
   scopes: z.string().trim().default('openid profile email'),
   enabled: z.boolean().default(true),
   autoEnroll: z.boolean().default(true),
+  /**
+   * @deprecated F1014: IGNORED for OIDC sign-ins. Since D1/F146 a user an OIDC
+   * provider enrolls always owns their own personal workspace, and an OIDC
+   * provider maps users into no team workspace, so nothing reads this role.
+   * Team seats come from invitations (which carry their own role) or SCIM.
+   * Still accepted and stored so existing clients and rows keep working.
+   */
   defaultRole: z.enum(['admin', 'member']).default('member'),
   /** r507: empty (the default) = any verified email the IdP vouches for. */
   allowedDomains: oidcAllowedDomains.optional(),
 });
 export type OidcProviderCreate = z.infer<typeof oidcProviderCreate>;
-export type OidcProviderCreateInput = OidcProviderCreate;
+/**
+ * What a client sends: fields with a server-side default are optional (F1014:
+ * so a caller never has to send the deprecated `defaultRole`). Same shape as
+ * the other `*Input` aliases (`z.input`).
+ */
+export type OidcProviderCreateInput = z.input<typeof oidcProviderCreate>;
 
 export const oidcProviderUpdate = z
   .object({
@@ -167,6 +179,7 @@ export const oidcProviderUpdate = z
     scopes: z.string().trim().optional(),
     enabled: z.boolean().optional(),
     autoEnroll: z.boolean().optional(),
+    /** @deprecated F1014: ignored for OIDC sign-ins; see oidcProviderCreate.defaultRole. */
     defaultRole: z.enum(['admin', 'member']).optional(),
     allowedDomains: oidcAllowedDomains.optional(),
   })
@@ -183,6 +196,10 @@ export interface OidcProviderEntry {
   scopes: string;
   enabled: boolean;
   autoEnroll: boolean;
+  /**
+   * @deprecated F1014: the stored value, echoed for compatibility. It has no
+   * effect on OIDC sign-ins; see oidcProviderCreate.defaultRole.
+   */
   defaultRole: 'admin' | 'member';
   /** r507: email domains allowed to sign in / enroll; empty = unrestricted. */
   allowedDomains: string[];

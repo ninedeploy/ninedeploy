@@ -15,7 +15,6 @@ import {
   Modal,
   Field,
   Input,
-  Select,
 } from '../../components/ui.js';
 import type { OidcProviderCreateInput, OidcProviderEntry } from '@ninedeploy/sdk';
 import { ScimTokensCard } from './ScimTokensCard.js';
@@ -24,6 +23,15 @@ import { ScimTokensCard } from './ScimTokensCard.js';
 export function parseAllowedDomains(raw: string): string[] {
   return [...new Set(raw.split(/[\s,;]+/).map((d) => d.trim().toLowerCase().replace(/^@/, '')).filter(Boolean))];
 }
+
+/**
+ * F1014: an OIDC provider's defaultRole is deprecated. Since D1/F146 a user it
+ * enrolls always owns their own personal workspace, and an OIDC provider maps
+ * users into no team workspace, so the role had no effect. The form no longer
+ * offers or sends it (the API still accepts it; a stored value is left as is).
+ */
+export const OIDC_DEFAULT_ROLE_NOTE =
+  'Not used for OIDC sign-ins: users always own their personal workspace; add them to team workspaces with invitations or SCIM.';
 
 /** r507: auto-enroll with no domain list lets ANY account at the IdP sign up. */
 function OpenEnrollmentWarning() {
@@ -53,7 +61,6 @@ export function SsoSection() {
   const [scopes, setScopes] = useState('openid profile email');
   const [enabled, setEnabled] = useState(true);
   const [autoEnroll, setAutoEnroll] = useState(true);
-  const [defaultRole, setDefaultRole] = useState<'admin' | 'member'>('member');
   const [allowedDomains, setAllowedDomains] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -107,7 +114,6 @@ export function SsoSection() {
     setScopes('openid profile email');
     setEnabled(true);
     setAutoEnroll(true);
-    setDefaultRole('member');
     setAllowedDomains('');
     setError(null);
   };
@@ -143,7 +149,6 @@ export function SsoSection() {
     setScopes(p.scopes);
     setEnabled(p.enabled);
     setAutoEnroll(p.autoEnroll);
-    setDefaultRole(p.defaultRole);
     setAllowedDomains((p.allowedDomains ?? []).join(', '));
     setError(null);
   };
@@ -166,7 +171,6 @@ export function SsoSection() {
             scopes: scopes.trim(),
             enabled,
             autoEnroll,
-            defaultRole,
             allowedDomains: parseAllowedDomains(allowedDomains),
           },
         });
@@ -185,7 +189,6 @@ export function SsoSection() {
           scopes: scopes.trim(),
           enabled,
           autoEnroll,
-          defaultRole,
           allowedDomains: parseAllowedDomains(allowedDomains),
         });
       }
@@ -278,7 +281,6 @@ export function SsoSection() {
                   <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 font-mono">
                     <span>slug: {p.slug}</span>
                     {p.issuerUrl && <span>issuer: {p.issuerUrl}</span>}
-                    <span>role: {p.defaultRole}</span>
                     {(p.allowedDomains ?? []).length > 0 && <span>domains: {(p.allowedDomains ?? []).join(', ')}</span>}
                   </div>
                   {p.autoEnroll && (p.allowedDomains ?? []).length === 0 && <OpenEnrollmentWarning />}
@@ -388,14 +390,8 @@ export function SsoSection() {
             </Field>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-white/5">
-              <Field label="Default User Role">
-                <Select
-                  value={defaultRole}
-                  onChange={(e) => setDefaultRole(e.target.value as 'admin' | 'member')}
-                >
-                  <option value="member">Member — standard access</option>
-                  <option value="admin">Admin — instance management</option>
-                </Select>
+              <Field label="Workspace role">
+                <p className="pt-1 text-xs text-slate-400">{OIDC_DEFAULT_ROLE_NOTE}</p>
               </Field>
 
               <div className="space-y-3 pt-6">
