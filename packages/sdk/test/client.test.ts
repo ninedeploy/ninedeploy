@@ -1221,6 +1221,17 @@ describe('createClient', () => {
       expect(await client.sources.reposWithDiagnostics(1)).toEqual({ repos: rows, warning: null });
       headers = undefined; // a fetch stand-in without `headers`
       expect(await client.sources.reposWithDiagnostics(1)).toEqual({ repos: rows, warning: null });
+
+      // A non-array body (an older or proxied server) degrades to an empty list, keeping the warning.
+      const odd = vi.fn(async (url: string) => ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ unexpected: true }),
+        headers: { get: (n: string) => (n.toLowerCase() === 'x-nd-source-error' ? 'GitHub API 502' : null) },
+        url,
+      }));
+      const oddClient = createClient({ baseUrl: 'http://api.test', fetch: odd });
+      expect(await oddClient.sources.reposWithDiagnostics(1)).toEqual({ repos: [], warning: 'GitHub API 502' });
     });
   });
 
