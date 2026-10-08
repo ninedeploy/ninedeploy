@@ -62,6 +62,13 @@ function fakeClient(): NineDeployClient {
     housekeeping: {
       runPrune: vi.fn(async () => 'PRUNE_RUN'),
     },
+    githubApps: {
+      list: vi.fn(async () => [
+        { id: 1, name: 'App one', appId: 11, webBaseUrl: 'https://github.com' },
+        { id: 2, name: 'GHES', appId: 22, webBaseUrl: 'https://ghe.example' },
+      ]),
+      installations: vi.fn(async (id: number) => [{ id: id * 10, accountLogin: 'acme', sourceId: 7 }]),
+    },
   } as unknown as NineDeployClient;
 }
 
@@ -72,9 +79,9 @@ const byName = (name: string) => {
 };
 
 describe('MCP tools', () => {
-  it('exposes 38 unique tools with descriptions', () => {
-    expect(TOOLS).toHaveLength(38);
-    expect(new Set(TOOLS.map((t) => t.name)).size).toBe(38);
+  it('exposes 39 unique tools with descriptions', () => {
+    expect(TOOLS).toHaveLength(39);
+    expect(new Set(TOOLS.map((t) => t.name)).size).toBe(39);
     for (const t of TOOLS) expect(t.description.length).toBeGreaterThan(10);
   });
 
@@ -253,5 +260,28 @@ describe('MCP tools', () => {
     expect(byName('get_container_compose').input.safeParse({}).success).toBe(false);
     expect(byName('list_log_drains').input.safeParse({ serviceId: 1 }).success).toBe(true);
     expect(byName('system_autoprune').input.safeParse({}).success).toBe(true);
+  });
+
+  // 0.13: read-only GitHub App installation listing (operator, coarse tokens only).
+  describe('list_github_installations', () => {
+    it('lists every App with its installations, or one App by id', async () => {
+      const c = fakeClient();
+      const tool = byName('list_github_installations');
+      expect(tool.coarseTokenOnly).toBe(true);
+      expect(tool.requiredScopes).toEqual(['operator']);
+      expect(await tool.handler(c, {})).toEqual([
+        { githubAppId: 1, name: 'App one', appId: 11, webBaseUrl: 'https://github.com', installations: [{ id: 10, accountLogin: 'acme', sourceId: 7 }] },
+        { githubAppId: 2, name: 'GHES', appId: 22, webBaseUrl: 'https://ghe.example', installations: [{ id: 20, accountLogin: 'acme', sourceId: 7 }] },
+      ]);
+      const one = (await tool.handler(c, { githubAppId: 2 })) as Array<{ githubAppId: number }>;
+      expect(one.map((a) => a.githubAppId)).toEqual([2]);
+      expect(tool.input.safeParse({ githubAppId: 0 }).success).toBe(false);
+    });
+
+    it('tolerates a non-array App list', async () => {
+      const c = fakeClient();
+      (c.githubApps.list as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({});
+      expect(await byName('list_github_installations').handler(c, {})).toEqual([]);
+    });
   });
 });

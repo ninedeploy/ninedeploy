@@ -10,6 +10,9 @@
 // first, then an explicit one read back), and the web service gets a
 // preview-only env var that is listed and removed without touching its
 // production env. An image older than 0.12 fails at those steps by design.
+// 0.13: the GitHub App and Gitea surfaces that need no real GitHub — no App
+// listed, bad keys refused, the manifest flow refused on a localhost origin,
+// an unknown App hook 404, and a Gitea base URL round-trip.
 //
 // Topology: privileged docker:28-dind sidecar (the validated DinD pattern —
 // the panel gets plain DOCKER_HOST=tcp://..., NOT NINEDEPLOY_DOCKER_HOST)
@@ -65,6 +68,70 @@ async function api(path, { method = 'GET', token, body } = {}) {
 
 const fail = (msg) => { console.error(`\n✗ ${msg}`); process.exitCode = 1; throw new Error(msg); };
 const step = (s) => console.log(`  ${s}`);
+
+// 0.13: the GitHub App and Gitea surfaces, checked without a real GitHub.
+// Every call here either answers from the panel's own validation or never
+// leaves it (`.invalid` hosts are reserved and never resolve), so the smoke
+// stays offline-safe. Shared verbatim by smoke-upgrade.mjs and
+// smoke-user-journey.mjs.
+const errorCode = (r) => r.json?.error?.code ?? r.json?.code ?? null;
+async function githubSurfaceChecks(token) {
+  const apps = await api('/v1/github-apps', { token });
+  if (apps.status !== 200 || !Array.isArray(apps.json) || apps.json.length !== 0) {
+    fail(`GET /v1/github-apps should answer [] on a panel with no App, got ${apps.status} ${apps.text.slice(0, 200)}`);
+  }
+  // A malformed key is refused by the schema; a PEM-shaped key that is not
+  // a key is refused before anything is sent to GitHub (the webhook secret
+  // skips the public-origin check, so this reaches the key parser).
+  const notPem = await api('/v1/github-apps', { method: 'POST', token, body: { name: `smoke-${suffix}`, appId: 1, privateKey: 'not a pem' } });
+  if (notPem.status !== 400) fail(`a manual GitHub App with a non-PEM key answered ${notPem.status} (wanted 400): ${notPem.text.slice(0, 200)}`);
+  const badPem = await api('/v1/github-apps', {
+    method: 'POST',
+    token,
+    body: {
+      name: `smoke-${suffix}`,
+      appId: 1,
+      webhookSecret: `whsec-${suffix}`,
+      privateKey: '-----BEGIN RSA PRIVATE KEY-----\nbm90IGEga2V5\n-----END RSA PRIVATE KEY-----',
+    },
+  });
+  if (badPem.status !== 400 || errorCode(badPem) !== 'github_app_bad_key') {
+    fail(`a manual GitHub App with an unreadable PEM answered ${badPem.status} ${badPem.text.slice(0, 200)} (wanted 400 github_app_bad_key)`);
+  }
+  if ((await api('/v1/github-apps', { token })).json?.length !== 0) fail('a refused GitHub App create left a row behind');
+  // GitHub cannot reach a localhost panel, so the one-click setup refuses to start.
+  const manifest = await api('/v1/github-apps/manifest', { method: 'POST', token, body: { target: 'user' } });
+  if (manifest.status !== 400 || errorCode(manifest) !== 'panel_origin_local') {
+    fail(`the manifest flow on a localhost panel answered ${manifest.status} ${manifest.text.slice(0, 200)} (wanted 400 panel_origin_local)`);
+  }
+  // An unknown App webhook key is a 404, never a deploy.
+  const hook = await api(`/v1/hooks/github-app/${'0'.repeat(32)}`, { method: 'POST', body: { zen: 'smoke' } });
+  if (hook.status !== 404) fail(`an unknown GitHub App webhook key answered ${hook.status} (wanted 404)`);
+  step('GitHub Apps: none listed; a non-PEM and an unreadable PEM key are refused (400); manifest refused on a localhost origin; unknown App hook 404');
+
+  // Gitea base URL: create, list, change, refuse http and non-Gitea, clear.
+  const base = `https://gitea-${suffix}.invalid`;
+  const gt = await api('/v1/sources', { method: 'POST', token, body: { name: `smoke-gitea-${suffix}`, type: 'gitea', token: `gitea-${suffix}`, baseUrl: base } });
+  if (gt.status !== 200 || gt.json?.baseUrl !== base) fail(`Gitea source create with baseUrl answered ${gt.status} ${gt.text.slice(0, 200)}`);
+  const giteaId = gt.json.id;
+  const listedGitea = (await api('/v1/sources', { token })).json?.find((s) => s.id === giteaId);
+  if (listedGitea?.baseUrl !== base) fail(`Gitea source #${giteaId} lists baseUrl ${listedGitea?.baseUrl} (wanted ${base})`);
+  const moved = await api(`/v1/sources/${giteaId}`, { method: 'PATCH', token, body: { baseUrl: `${base}/git/` } });
+  if (moved.status !== 200 || moved.json?.baseUrl !== `${base}/git`) fail(`Gitea baseUrl PATCH answered ${moved.status} ${moved.text.slice(0, 200)}`);
+  const insecure = await api(`/v1/sources/${giteaId}`, { method: 'PATCH', token, body: { baseUrl: `http://gitea-${suffix}.invalid` } });
+  if (insecure.status !== 400) fail(`an http Gitea baseUrl answered ${insecure.status} (wanted 400 without NINEDEPLOY_ALLOW_PRIVATE_EGRESS)`);
+  const notGitea = await api('/v1/sources', { method: 'POST', token, body: { name: `smoke-gh-${suffix}`, type: 'github', token: 'x', baseUrl: base } });
+  if (notGitea.status !== 400) fail(`a baseUrl on a github source answered ${notGitea.status} (wanted 400)`);
+  const cleared = await api(`/v1/sources/${giteaId}`, { method: 'PATCH', token, body: { baseUrl: null } });
+  if (cleared.status !== 200 || cleared.json?.baseUrl !== null) fail(`clearing the Gitea baseUrl answered ${cleared.status} ${cleared.text.slice(0, 200)}`);
+  const giteaTest = await api(`/v1/sources/${giteaId}/test`, { token });
+  if (giteaTest.status !== 200 || giteaTest.json?.ok !== false || !/base URL/.test(giteaTest.json?.error ?? '')) {
+    fail(`the Gitea test without a base URL answered ${giteaTest.status} ${giteaTest.text.slice(0, 200)}`);
+  }
+  const giteaDel = await api(`/v1/sources/${giteaId}`, { method: 'DELETE', token });
+  if (giteaDel.status !== 200 && giteaDel.status !== 204) fail(`Gitea source delete answered ${giteaDel.status}`);
+  step('Gitea source: baseUrl round-trips through create, list and PATCH; http and non-Gitea refused; cleared baseUrl tests ok:false');
+}
 
 async function main() {
   console.log(`User-journey smoke against ${IMAGE}`);
@@ -269,6 +336,9 @@ async function main() {
   if (!Array.isArray(afterDel) || afterDel.length !== 0) fail(`preview env not empty after delete: ${JSON.stringify(afterDel)}`);
   step('preview-only env var added, listed and removed (production env untouched)');
 
+  // ── 0.13 GitHub App + Gitea surfaces (no real GitHub) ──────────────────
+  await githubSurfaceChecks(token);
+
   // ── teardown ────────────────────────────────────────────────────────────
   const delCompose = await api(`/v1/services/${composeId}`, { method: 'DELETE', token });
   if (delCompose.status !== 200 && delCompose.status !== 204) fail(`compose delete failed: ${delCompose.status}`);
@@ -281,7 +351,7 @@ async function main() {
   }
   step('service deleted');
 
-  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → signed webhook redeploy → compose stack → managed postgres (+ backup policy) + redis → preview-only env → teardown');
+  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → signed webhook redeploy → compose stack → managed postgres (+ backup policy) + redis → preview-only env → GitHub App/Gitea surfaces → teardown');
 }
 
 main()

@@ -28,6 +28,22 @@ export async function sourcesList(client: NineDeployClient): Promise<void> {
 }
 
 /**
+ * 0.13: a Gitea base URL from `--base-url`. Shape only (http(s), no
+ * credentials, query or fragment); the server re-checks it and refuses
+ * `http:` unless private egress is allowed.
+ */
+function parseBaseUrl(raw: string): string | null {
+  const trimmed = raw.trim().replace(/\/+$/, '');
+  try {
+    const url = new URL(trimmed);
+    if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.username || url.password || url.search || url.hash) return null;
+    return trimmed;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Resolve a credential with a strict, documented precedence:
  *   1. explicit CLI flag (already handled by the caller)
  *   2. NINEDEPLOY_GITHUB_TOKEN / NINEDEPLOY_GITLAB_TOKEN / NINEDEPLOY_SOURCE_TOKEN env var
@@ -71,9 +87,15 @@ function parseSourceId(raw: string): number {
   return /^[1-9]\d*$/.test(t) && Number.isSafeInteger(Number(t)) ? Number(t) : 0;
 }
 
-/** `ninedeploy sources add [name]` */
-export async function sourcesAdd(client: NineDeployClient, nameArg?: string): Promise<void> {
+/** `ninedeploy sources add [name] [--base-url <url>]` */
+export async function sourcesAdd(client: NineDeployClient, nameArg?: string, opts: { baseUrl?: string } = {}): Promise<void> {
   header('Add Source');
+  let baseUrl: string | undefined;
+  if (opts.baseUrl !== undefined) {
+    const parsed = parseBaseUrl(opts.baseUrl);
+    if (!parsed) return error(`Invalid --base-url: ${opts.baseUrl} (expected https://host[/path])`);
+    baseUrl = parsed;
+  }
   const name = nameArg ?? (await prompt('Display name (e.g. github-personal)'));
   /* v8 ignore next -- the dedicated "rejects when no name" test covers the truthy/falsy split, but
    * v8 counts the early-return as a separate branch that the existing test only ticks on one side. */
@@ -82,6 +104,7 @@ export async function sourcesAdd(client: NineDeployClient, nameArg?: string): Pr
   if (!PROVIDERS.includes(type)) {
     return error(`Unknown provider: ${type}. Choose one of: ${PROVIDERS.join(', ')}`);
   }
+  if (baseUrl && type !== 'gitea') return error('--base-url applies to gitea sources only');
   const defaultBranch = (await prompt('Default branch (used as suggestion only)', 'main')) || 'main';
 
   let token: string | undefined;
@@ -92,6 +115,14 @@ export async function sourcesAdd(client: NineDeployClient, nameArg?: string): Pr
     registryUsername = (await prompt('Registry username (e.g. ci-bot)')) || undefined;
     token = await resolveSecret(SOURCE_TOKEN_ENV, 'Registry password / access token (PAT)');
   } else if (type === 'gitea') {
+    if (!baseUrl) {
+      const typed = (await prompt('Gitea base URL (e.g. https://git.example.com; empty = no live test or repo list)')).trim();
+      if (typed) {
+        const parsed = parseBaseUrl(typed);
+        if (!parsed) return error(`Invalid Gitea base URL: ${typed}`);
+        baseUrl = parsed;
+      }
+    }
     token = await resolveSecret(SOURCE_TOKEN_ENV, 'Gitea access token');
   } else if (type === 'custom') {
     // Custom source: token or SSH key, your choice
@@ -125,11 +156,12 @@ export async function sourcesAdd(client: NineDeployClient, nameArg?: string): Pr
         deployKey: deployKey || undefined,
         registryUsername,
         defaultBranch,
+        ...(baseUrl ? { baseUrl } : {}),
       }),
     );
     success(`Source "${created.name}" created (id: ${created.id})`);
     // Live validation right away — saves the user a DeployWizard round-trip.
-    if ((type === 'github' || type === 'gitlab') && token) {
+    if ((type === 'github' || type === 'gitlab' || (type === 'gitea' && baseUrl)) && token) {
       await sourcesTest(client, String(created.id));
     }
   } catch (err) {
@@ -155,7 +187,7 @@ const PROVIDER_TEXT_CONTROL = new RegExp(
     '|[\\u0000-\\u001f\\u007f-\\u009f]',
   'g',
 );
-const plain = (value: unknown): string => String(value).replace(PROVIDER_TEXT_CONTROL, '');
+export const plain = (value: unknown): string => String(value).replace(PROVIDER_TEXT_CONTROL, '');
 
 /**
  * `ninedeploy sources test [id]` — verify the stored token still authenticates.
@@ -185,6 +217,8 @@ export async function sourcesTest(client: NineDeployClient, idArg?: string): Pro
     success(`${plain(result.provider)} token authenticates as ${plain(result.login)}${result.name ? ` (${plain(result.name)})` : ''}`);
     if (result.tokenKind) kv('Token type', plain(result.tokenKind));
     if (Array.isArray(result.scopes)) kv('Scopes', result.scopes.length > 0 ? result.scopes.map(plain).join(', ') : c.gray('none'));
+    // 0.13: a GitHub App source reports its installation's repository selection.
+    if (result.repositorySelection) kv('Repositories', plain(result.repositorySelection));
     for (const warning of result.warnings ?? []) {
       console.log(`  ${c.yellow('!')} ${c.yellow(`warning: ${plain(warning)}`)}`);
     }
@@ -276,6 +310,7 @@ export async function sourcesShow(client: NineDeployClient, idArg: string): Prom
   kv('Token', s.hasToken ? c.green('✓ set') : c.gray('—'));
   kv('Deploy key', s.hasDeployKey ? c.green('✓ set') : c.gray('—'));
   kv('Registry user', s.registryUsername ?? '—');
+  if (s.type === 'gitea') kv('Base URL', s.baseUrl ?? c.gray('not set (no live test or repo list)'));
   kv('Default branch', s.defaultBranch ?? 'main');
   kv('Created', s.createdAt);
   kv('Updated', s.updatedAt);

@@ -162,6 +162,8 @@ export const READ_ONLY_TOOL_NAMES = new Set([
   'activity_log', 'system_stats', 'topology', 'health',
   'list_plugins', 'marketplace_plugins', 'list_menus',
   'list_workspaces', 'get_workspace', 'list_log_drains',
+  // 0.13: App and installation metadata; the API never returns a secret.
+  'list_github_installations',
 ]);
 
 /** A getToken closure that always returns the configured static token. */

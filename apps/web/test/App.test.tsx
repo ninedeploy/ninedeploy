@@ -224,4 +224,35 @@ describe('App', () => {
     renderWithProviders(<App />, { route: '/login' });
     expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
   });
+  // 0.13: GitHub sends the browser to these SPA pages during App setup.
+  it('mounts the GitHub App setup pages inside the authenticated layout', async () => {
+    authState({ id: 1, email: 'a@b.c', isOperator: true } as never);
+    mockOf(api.githubApps.completeManifest).mockResolvedValue({ id: 1, name: 'NineDeploy x', installUrl: null } as never);
+    const first = renderWithProviders(<App />, { route: '/github-apps/callback?code=c0de&state=s.t' });
+    await screen.findByTestId('layout');
+    expect(await screen.findByTestId('github-app-registered')).toBeInTheDocument();
+    expect(api.githubApps.completeManifest).toHaveBeenCalledWith({ code: 'c0de', state: 's.t' });
+    first.unmount();
+    renderWithProviders(<App />, { route: '/github-apps/installed?installation_id=1' });
+    expect(await screen.findByTestId('github-app-synced')).toBeInTheDocument();
+  });
+
+  it('keeps the GitHub callback query string across the login redirect', async () => {
+    authState(null);
+    mockOf(api.auth.status).mockResolvedValue({ initialized: true } as never);
+    function StateProbe() {
+      const loc = useLocation();
+      return <div data-testid="from">{(loc.state as { from?: string } | null)?.from ?? ''}</div>;
+    }
+    renderWithProviders(
+      <>
+        <App />
+        <LocationProbe />
+        <StateProbe />
+      </>,
+      { route: '/github-apps/callback?code=c0de&state=s.t' },
+    );
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/login'));
+    expect(screen.getByTestId('from')).toHaveTextContent('/github-apps/callback?code=c0de&state=s.t');
+  });
 });

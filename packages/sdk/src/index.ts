@@ -131,6 +131,16 @@ import type {
   PanelBackupRestore,
   PanelBackupSettingsPatch,
   PanelBackupStatus,
+  GithubApp,
+  GithubAppCreate,
+  GithubAppInstallation,
+  GithubAppManifestRequest,
+  GithubAppManifestResponse,
+  GithubAppPatch,
+  ServiceGithubFeedbackPatch,
+  ServiceGithubLink,
+  ServiceGithubLinkPut,
+  ServiceGithubStatus,
 } from '@ninedeploy/schemas';
 import { NineDeployError } from './errors.js';
 
@@ -574,6 +584,30 @@ export interface NineDeployClientOptions {
   fetch?: FetchLike;
 }
 
+/** `POST /v1/github-apps/:id/installations/sync` (0.13). */
+export interface GithubAppInstallationSync {
+  created: number;
+  updated: number;
+  removed: number;
+  sourcesCreated: number;
+  /** The installation list hit the page cap; nothing was marked removed. */
+  truncated: boolean;
+  installations: GithubAppInstallation[];
+}
+
+/** A repository row from `sources.repos` (`repoId` only for GitHub App sources, 0.13). */
+export interface SourceRepo {
+  name: string;
+  fullName: string;
+  url: string;
+  defaultBranch: string;
+  isPrivate: boolean;
+  repoId?: number;
+}
+
+/** `sources.update` input: create fields, plus `baseUrl: null` to clear a Gitea base URL (0.13). */
+export type SourceUpdateInput = Omit<Partial<CreateSourceInput>, 'baseUrl'> & { baseUrl?: string | null };
+
 export interface NineDeployClient {
   auth: {
     status: () => Promise<{ initialized: boolean }>;
@@ -721,6 +755,20 @@ export interface NineDeployClient {
        * render a one-shot summary without a follow-up GET.
        */
       apply: (serviceId: number, input: ApplyManifestInput) => Promise<ApplyManifestResult>;
+    };
+    /**
+     * The service's GitHub App link (0.13). `get` is viewer; `feedback` is
+     * service admin; `link`, `migrate`, `finalize` and `unlink` are operator.
+     * `unlink` answers 409 when the service clones through the App source
+     * itself (attach another source first, or disable the link).
+     */
+    github: {
+      get: (id: number) => Promise<ServiceGithubStatus>;
+      link: (id: number, input: ServiceGithubLinkPut) => Promise<{ link: ServiceGithubLink }>;
+      feedback: (id: number, input: ServiceGithubFeedbackPatch) => Promise<{ link: ServiceGithubLink }>;
+      migrate: (id: number, sourceId: number) => Promise<{ link: ServiceGithubLink }>;
+      finalize: (id: number) => Promise<{ link: ServiceGithubLink; webhooksDeactivated: number }>;
+      unlink: (id: number) => Promise<{ ok: boolean; sourceId: number | null; webhooksReactivated: number }>;
     };
   };
   labels: {
@@ -1248,9 +1296,9 @@ export interface NineDeployClient {
   sources: {
     list: () => Promise<Source[]>;
     create: (input: CreateSourceInput) => Promise<Source>;
-    update: (id: number, input: Partial<CreateSourceInput>) => Promise<Source>;
+    update: (id: number, input: SourceUpdateInput) => Promise<Source>;
     remove: (id: number) => Promise<void>;
-    repos: (id: number) => Promise<Array<{ name: string; fullName: string; url: string; defaultBranch: string; isPrivate: boolean }>>;
+    repos: (id: number) => Promise<SourceRepo[]>;
     /**
      * `repos` plus the server's diagnostic for the list (F1010): a list capped
      * at the page limit, a later page that failed, a classic token without the
@@ -1278,6 +1326,10 @@ export interface NineDeployClient {
       tokenKind?: 'classic' | 'fine-grained' | 'oauth' | 'unknown';
       scopes?: string[];
       warnings?: string[];
+      /** GitHub App sources (0.13): the installation's repository selection, permissions and state. */
+      repositorySelection?: string;
+      permissions?: Record<string, string>;
+      suspended?: boolean;
     }>;
     /**
      * Server-side generation of an ed25519 deploy key pair. The private key
@@ -1286,6 +1338,34 @@ export interface NineDeployClient {
      * key into the Git provider's "Deploy keys" UI).
      */
     generateDeployKey: (id: number) => Promise<{ publicKey: string; fingerprint: string }>;
+  };
+  /**
+   * GitHub App registration and installations (0.13). Operator-only. No
+   * response carries the private key, webhook secret or client secret.
+   */
+  githubApps: {
+    list: () => Promise<GithubApp[]>;
+    get: (id: number) => Promise<GithubApp>;
+    /** Manual entry (GitHub Enterprise Server, or an existing App). Omit both base URLs for github.com. */
+    create: (input: GithubAppCreate) => Promise<GithubApp>;
+    /**
+     * Start the one-click manifest flow. Submit `manifest` (JSON-encoded) as
+     * the `manifest` field of a form POSTed to `postUrl`; GitHub then sends
+     * the browser to `/github-apps/callback?code&state`.
+     */
+    manifest: (input: GithubAppManifestRequest) => Promise<GithubAppManifestResponse>;
+    /** Finish the manifest flow with the `code` and `state` GitHub returned. Same user only, single use. */
+    completeManifest: (input: { code: string; state: string }) => Promise<GithubApp>;
+    patch: (id: number, input: GithubAppPatch) => Promise<GithubApp>;
+    /** Replace the private key; the server proves it with `GET /app` first. */
+    rotateKey: (id: number, privateKey: string) => Promise<GithubApp>;
+    /** Re-point the App's webhook at this panel (after a panel domain change). */
+    webhookSync: (id: number) => Promise<GithubApp>;
+    rotateWebhookSecret: (id: number) => Promise<GithubApp>;
+    /** Forget the App; its generated sources stay and their clones fail closed. */
+    remove: (id: number) => Promise<void>;
+    syncInstallations: (id: number) => Promise<GithubAppInstallationSync>;
+    installations: (id: number) => Promise<GithubAppInstallation[]>;
   };
   insights: {
     /** Pre-deploy repository inspection (DeployWizard): clone + framework detection. */
@@ -1840,6 +1920,14 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
         apply: (serviceId, input) =>
           send<ApplyManifestResult>('POST', `/v1/services/${serviceId}/manifest/apply`, input),
       },
+      github: {
+        get: (id) => get<ServiceGithubStatus>(`/v1/services/${id}/github`),
+        link: (id, input) => send<{ link: ServiceGithubLink }>('PUT', `/v1/services/${id}/github`, input),
+        feedback: (id, input) => send<{ link: ServiceGithubLink }>('PATCH', `/v1/services/${id}/github/feedback`, input),
+        migrate: (id, sourceId) => send<{ link: ServiceGithubLink }>('POST', `/v1/services/${id}/github/migrate`, { sourceId }),
+        finalize: (id) => send<{ link: ServiceGithubLink; webhooksDeactivated: number }>('POST', `/v1/services/${id}/github/finalize`),
+        unlink: (id) => send<{ ok: boolean; sourceId: number | null; webhooksReactivated: number }>('DELETE', `/v1/services/${id}/github`),
+      },
     },
     labels: {
       list: (query) => get<Label[]>(`/v1/labels${query ?? ''}`),
@@ -2248,7 +2336,7 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       remove: async (id) => {
         await request(`/v1/sources/${id}`, { method: 'DELETE' });
       },
-      repos: (id) => get<Array<{ name: string; fullName: string; url: string; defaultBranch: string; isPrivate: boolean }>>(`/v1/sources/${id}/repos`),
+      repos: (id) => get<SourceRepo[]>(`/v1/sources/${id}/repos`),
       reposWithDiagnostics: async (id) => {
         const { data, header } = await requestWithHeaders<Awaited<ReturnType<NineDeployClient['sources']['repos']>>>(`/v1/sources/${id}/repos`);
         const warning = header('x-nd-source-error')?.trim();
@@ -2257,6 +2345,22 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       branches: (id, repo) => get<string[]>(`/v1/sources/${id}/branches?repo=${encodeURIComponent(repo)}`),
       test: (id) => get<Awaited<ReturnType<NineDeployClient['sources']['test']>>>(`/v1/sources/${id}/test`),
       generateDeployKey: (id) => send<{ publicKey: string; fingerprint: string }>('POST', `/v1/sources/${id}/generate-deploy-key`),
+    },
+    githubApps: {
+      list: () => get<GithubApp[]>('/v1/github-apps'),
+      get: (id) => get<GithubApp>(`/v1/github-apps/${id}`),
+      create: (input) => send<GithubApp>('POST', '/v1/github-apps', input),
+      manifest: (input) => send<GithubAppManifestResponse>('POST', '/v1/github-apps/manifest', input),
+      completeManifest: (input) => send<GithubApp>('POST', '/v1/github-apps/manifest/complete', input),
+      patch: (id, input) => send<GithubApp>('PATCH', `/v1/github-apps/${id}`, input),
+      rotateKey: (id, privateKey) => send<GithubApp>('PUT', `/v1/github-apps/${id}/private-key`, { privateKey }),
+      webhookSync: (id) => send<GithubApp>('POST', `/v1/github-apps/${id}/webhook/sync`),
+      rotateWebhookSecret: (id) => send<GithubApp>('POST', `/v1/github-apps/${id}/webhook-secret/rotate`),
+      remove: async (id) => {
+        await request(`/v1/github-apps/${id}`, { method: 'DELETE' });
+      },
+      syncInstallations: (id) => send<GithubAppInstallationSync>('POST', `/v1/github-apps/${id}/installations/sync`),
+      installations: (id) => get<GithubAppInstallation[]>(`/v1/github-apps/${id}/installations`),
     },
     insights: {
       analyze: (input) => send<RepoInsights>('POST', '/v1/insights', input),

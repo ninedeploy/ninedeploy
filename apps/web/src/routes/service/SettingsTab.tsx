@@ -8,12 +8,14 @@ import { toInt } from '../../lib/format.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, cn, ErrorCard, Field, Input, Select, Skeleton, Switch } from '../../components/ui.js';
 import { ServiceTagsCard } from './ServiceTagsCard.js';
+import { GithubCard } from './GithubCard.js';
 
 /** Service fields, build configuration, lifecycle hooks, PR previews, and resource limits. */
 export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: Service }) {
   return (
     <div className="mt-5 space-y-5">
       <SettingsCard serviceId={serviceId} />
+      <GithubCard svc={svc} />
       <TagsCard serviceId={serviceId} svc={svc} />
       <PreviewEnvironmentsCard svc={svc} />
       <TargetNodeCard svc={svc} />

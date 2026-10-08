@@ -27,6 +27,14 @@
 //   - panel self-backup reports disabled defaults and PUT rejects bad input
 //     (no S3 here: nothing is ever run against a destination).
 //
+// 0.13 (only when TO is 0.13 or later), still without a real GitHub:
+//   - GET /v1/github-apps answers [] on the upgraded data;
+//   - the PAT source seeded on FROM (dummy token, POST /v1/sources exists on
+//     v0.10.45) still lists unchanged and its live test answers ok:false,
+//     never a 500;
+//   - a Gitea source's baseUrl round-trips; a malformed or unreadable App
+//     key is refused with 400; the manifest flow refuses the localhost origin.
+//
 // Topology: the user-journey smoke's validated DinD pattern — the panel gets
 // DOCKER_HOST=tcp://<dind>:2375, so its Traefik/runtime work lands inside the
 // sidecar, never on the host daemon.
@@ -87,6 +95,8 @@ const dind = (args) => docker(['exec', DIND, 'docker', '-H', 'tcp://127.0.0.1:23
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fail = (msg) => { console.error(`\n✗ ${msg}`); process.exitCode = 1; throw new Error(msg); };
 const step = (s) => console.log(`  ${s}`);
+/** 0.13 GitHub App / Gitea checks run only against a TO that has them. */
+const GITHUB_APP_IN = [0, 13, 0];
 
 async function api(p, { method = 'GET', token, body } = {}) {
   const r = await fetch(`http://127.0.0.1:${PANEL_PORT}${p}`, {
@@ -197,6 +207,70 @@ function pullOrFail(tag, role) {
     : `the TO image ${image(tag)} cannot be pulled (${why}) — it was not pushed, or not under this tag.`);
 }
 
+// 0.13: the GitHub App and Gitea surfaces, checked without a real GitHub.
+// Every call here either answers from the panel's own validation or never
+// leaves it (`.invalid` hosts are reserved and never resolve), so the smoke
+// stays offline-safe. Shared verbatim by smoke-upgrade.mjs and
+// smoke-user-journey.mjs.
+const errorCode = (r) => r.json?.error?.code ?? r.json?.code ?? null;
+async function githubSurfaceChecks(token) {
+  const apps = await api('/v1/github-apps', { token });
+  if (apps.status !== 200 || !Array.isArray(apps.json) || apps.json.length !== 0) {
+    fail(`GET /v1/github-apps should answer [] on a panel with no App, got ${apps.status} ${apps.text.slice(0, 200)}`);
+  }
+  // A malformed key is refused by the schema; a PEM-shaped key that is not
+  // a key is refused before anything is sent to GitHub (the webhook secret
+  // skips the public-origin check, so this reaches the key parser).
+  const notPem = await api('/v1/github-apps', { method: 'POST', token, body: { name: `smoke-${suffix}`, appId: 1, privateKey: 'not a pem' } });
+  if (notPem.status !== 400) fail(`a manual GitHub App with a non-PEM key answered ${notPem.status} (wanted 400): ${notPem.text.slice(0, 200)}`);
+  const badPem = await api('/v1/github-apps', {
+    method: 'POST',
+    token,
+    body: {
+      name: `smoke-${suffix}`,
+      appId: 1,
+      webhookSecret: `whsec-${suffix}`,
+      privateKey: '-----BEGIN RSA PRIVATE KEY-----\nbm90IGEga2V5\n-----END RSA PRIVATE KEY-----',
+    },
+  });
+  if (badPem.status !== 400 || errorCode(badPem) !== 'github_app_bad_key') {
+    fail(`a manual GitHub App with an unreadable PEM answered ${badPem.status} ${badPem.text.slice(0, 200)} (wanted 400 github_app_bad_key)`);
+  }
+  if ((await api('/v1/github-apps', { token })).json?.length !== 0) fail('a refused GitHub App create left a row behind');
+  // GitHub cannot reach a localhost panel, so the one-click setup refuses to start.
+  const manifest = await api('/v1/github-apps/manifest', { method: 'POST', token, body: { target: 'user' } });
+  if (manifest.status !== 400 || errorCode(manifest) !== 'panel_origin_local') {
+    fail(`the manifest flow on a localhost panel answered ${manifest.status} ${manifest.text.slice(0, 200)} (wanted 400 panel_origin_local)`);
+  }
+  // An unknown App webhook key is a 404, never a deploy.
+  const hook = await api(`/v1/hooks/github-app/${'0'.repeat(32)}`, { method: 'POST', body: { zen: 'smoke' } });
+  if (hook.status !== 404) fail(`an unknown GitHub App webhook key answered ${hook.status} (wanted 404)`);
+  step('GitHub Apps: none listed; a non-PEM and an unreadable PEM key are refused (400); manifest refused on a localhost origin; unknown App hook 404');
+
+  // Gitea base URL: create, list, change, refuse http and non-Gitea, clear.
+  const base = `https://gitea-${suffix}.invalid`;
+  const gt = await api('/v1/sources', { method: 'POST', token, body: { name: `smoke-gitea-${suffix}`, type: 'gitea', token: `gitea-${suffix}`, baseUrl: base } });
+  if (gt.status !== 200 || gt.json?.baseUrl !== base) fail(`Gitea source create with baseUrl answered ${gt.status} ${gt.text.slice(0, 200)}`);
+  const giteaId = gt.json.id;
+  const listedGitea = (await api('/v1/sources', { token })).json?.find((s) => s.id === giteaId);
+  if (listedGitea?.baseUrl !== base) fail(`Gitea source #${giteaId} lists baseUrl ${listedGitea?.baseUrl} (wanted ${base})`);
+  const moved = await api(`/v1/sources/${giteaId}`, { method: 'PATCH', token, body: { baseUrl: `${base}/git/` } });
+  if (moved.status !== 200 || moved.json?.baseUrl !== `${base}/git`) fail(`Gitea baseUrl PATCH answered ${moved.status} ${moved.text.slice(0, 200)}`);
+  const insecure = await api(`/v1/sources/${giteaId}`, { method: 'PATCH', token, body: { baseUrl: `http://gitea-${suffix}.invalid` } });
+  if (insecure.status !== 400) fail(`an http Gitea baseUrl answered ${insecure.status} (wanted 400 without NINEDEPLOY_ALLOW_PRIVATE_EGRESS)`);
+  const notGitea = await api('/v1/sources', { method: 'POST', token, body: { name: `smoke-gh-${suffix}`, type: 'github', token: 'x', baseUrl: base } });
+  if (notGitea.status !== 400) fail(`a baseUrl on a github source answered ${notGitea.status} (wanted 400)`);
+  const cleared = await api(`/v1/sources/${giteaId}`, { method: 'PATCH', token, body: { baseUrl: null } });
+  if (cleared.status !== 200 || cleared.json?.baseUrl !== null) fail(`clearing the Gitea baseUrl answered ${cleared.status} ${cleared.text.slice(0, 200)}`);
+  const giteaTest = await api(`/v1/sources/${giteaId}/test`, { token });
+  if (giteaTest.status !== 200 || giteaTest.json?.ok !== false || !/base URL/.test(giteaTest.json?.error ?? '')) {
+    fail(`the Gitea test without a base URL answered ${giteaTest.status} ${giteaTest.text.slice(0, 200)}`);
+  }
+  const giteaDel = await api(`/v1/sources/${giteaId}`, { method: 'DELETE', token });
+  if (giteaDel.status !== 200 && giteaDel.status !== 204) fail(`Gitea source delete answered ${giteaDel.status}`);
+  step('Gitea source: baseUrl round-trips through create, list and PATCH; http and non-Gitea refused; cleared baseUrl tests ok:false');
+}
+
 async function main() {
   console.log(`Upgrade smoke: ${image(FROM)} → ${image(TO)}`);
   step(`topology: network ${NET}, dind ${DIND}, panel ${PANEL} (:${PANEL_PORT}), volume ${VOLUME}`);
@@ -256,6 +330,14 @@ async function main() {
   if (cpuRule.status !== 200 && cpuRule.status !== 201) fail(`${FROM}: cpu alert rule create failed: ${cpuRule.status} ${cpuRule.text.slice(0, 200)}`);
   const cpuRuleId = cpuRule.json?.id;
   step(`seeded 2 service env vars, managed postgres #${databaseId} (no backup policy) and cpu alert rule #${cpuRuleId}`);
+
+  // 0.13 seed: a PAT source with a dummy token (POST /v1/sources and its
+  // test route exist on v0.10.45). It must list and test the same afterwards.
+  const pat = await api('/v1/sources', { method: 'POST', token, body: { name: `upgrade-pat-${suffix}`, type: 'github', token: `ghp_upgrade${suffix}dummy`, defaultBranch: 'main' } });
+  if (pat.status !== 200 && pat.status !== 201) fail(`${FROM}: PAT source create failed: ${pat.status} ${pat.text.slice(0, 200)}`);
+  const patSourceId = pat.json?.id;
+  if (!patSourceId || pat.json?.hasToken !== true) fail(`${FROM}: PAT source create returned ${pat.text.slice(0, 200)}`);
+  step(`seeded PAT source #${patSourceId} (dummy token)`);
 
   // The 0.10.35 project-delete left project-scoped secrets behind; r541's
   // migration must clean exactly these up.
@@ -395,6 +477,22 @@ async function main() {
   if ((await api('/v1/system/panel-backup', { token })).json?.settings?.enabled !== false) fail('a refused panel-backup PUT changed the settings');
   step('panel self-backup reports enabled:false; PUT refuses a missing destination, a bad cron and retain 0');
 
+  // ── 0.13 GitHub App + Gitea on FROM-era data (no real GitHub) ──────────
+  if (olderThan(TO, GITHUB_APP_IN)) {
+    step(`${TO} predates the GitHub App (0.13): GitHub checks skipped`);
+  } else {
+    const patAfter = (await api('/v1/sources', { token })).json?.find((s) => s.id === patSourceId);
+    if (!patAfter || patAfter.type !== 'github' || patAfter.hasToken !== true || patAfter.name !== `upgrade-pat-${suffix}`) {
+      fail(`the ${FROM} PAT source #${patSourceId} did not survive the upgrade: ${JSON.stringify(patAfter)}`);
+    }
+    if (patAfter.baseUrl != null) fail(`the ${FROM} PAT source #${patSourceId} gained a baseUrl: ${patAfter.baseUrl}`);
+    // The dummy token is refused by GitHub (or GitHub is unreachable): either way ok:false, never a 500.
+    const patTest = await api(`/v1/sources/${patSourceId}/test`, { token });
+    if (patTest.status !== 200 || patTest.json?.ok !== false) fail(`the ${FROM} PAT source test answered ${patTest.status} ${patTest.text.slice(0, 200)} (wanted 200 ok:false)`);
+    step(`${FROM} PAT source #${patSourceId} lists unchanged; its test answers ok:false (${patTest.json?.status ?? 'unreachable'}) without a 500`);
+    await githubSurfaceChecks(token);
+  }
+
   await api(`/v1/services/${serviceId}/deploys`, { method: 'POST', token, body: {} });
   const redeploy = await waitDeploy(token, serviceId, (all) => all.find((d) => d.id !== first.id), TO);
   if (redeploy.status !== 'running') fail(`${TO}: redeploy ended as '${redeploy.status}'`);
@@ -407,7 +505,7 @@ async function main() {
   if (post.orphanProjectEnv !== 0) fail(`${post.orphanProjectEnv} orphaned project secret(s) survived the upgrade (r541)`);
   step(`${TO} db: all ${post.migrations} journal migrations recorded once, orphaned project secrets removed`);
 
-  console.log(`\n✓ Upgrade green: ${FROM} → ${TO} keeps users, services, history, domains and running apps; migrates; recovers the interrupted deploy; deploys again; 0.12 backup policy, preview env, disk alert and panel-backup defaults work on the upgraded data`);
+  console.log(`\n✓ Upgrade green: ${FROM} → ${TO} keeps users, services, history, domains and running apps; migrates; recovers the interrupted deploy; deploys again; 0.12 backup policy, preview env, disk alert and panel-backup defaults work on the upgraded data; 0.13 GitHub App/Gitea surfaces answer without GitHub`);
 }
 
 main()

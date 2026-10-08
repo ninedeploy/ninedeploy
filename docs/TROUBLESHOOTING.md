@@ -199,7 +199,8 @@ For exit code 137 or kernel OOM records, add swap or memory separately; the inst
 3. **For GitHub org repos**, the PAT must be issued by a user who has access to the org, OR you must enable "Allow access via fine-grained personal access tokens" in the org's third-party application settings.
 4. **For SSH**: ensure the **public** key is added as a *Deploy key* on the repo with **read** access; the matching **private** key is what you paste into the Source.
 5. **If the repo was renamed or transferred**, the Source still works (it stores only the token), but the service's `repoUrl` is stale — update it under **Service → Settings → Repository URL** and re-trigger a deploy.
-6. **If the credential passes the test but the clone still fails**, the panel server cannot reach `github.com` (or your self-hosted Gitea/GitLab host). From the host:
+6. **GitHub App source (`gh-app:<account>`, 0.13+):** the fix is the installation, not a token. Add the repository to the installation's repository access (GitHub → Settings → Installed GitHub Apps → Configure) and check that the installation is not suspended; for a submodule in a sibling repository set the service's token scope to `installation`. See [GITHUB_APP.md §8](./GITHUB_APP.md#8-troubleshooting).
+7. **If the credential passes the test but the clone still fails**, the panel server cannot reach `github.com` (or your self-hosted Gitea/GitLab host). From the host:
    ```bash
    curl -fsS -I https://github.com
    ```
@@ -235,6 +236,7 @@ See [PRIVATE_REPO_GUIDE.md](./PRIVATE_REPO_GUIDE.md) for a full step-by-step.
    ```
 3. **Make sure the URL is reachable from GitHub** (i.e. your panel has a public HTTPS address). If you are testing locally, GitHub cannot reach `http://localhost:3000` — use a tunnel (`ngrok`, `cloudflared`) or test with the curl above.
 4. **Re-save the secret**: if the original secret in NineDeploy was lost, the only recovery is delete + re-add on both sides. The new secret is shown exactly once.
+5. **Service linked to a GitHub App (0.13+)?** Its per-service webhook answers `{"ok":"skipped","reason":"github_app_linked"}` on purpose — the App webhook deploys it. Check the App's **Advanced → Recent deliveries** on GitHub instead; for a `401` there, run **Sources → GitHub Apps → Webhook sync**. See [GITHUB_APP.md §4](./GITHUB_APP.md#4-coexistence-with-per-service-webhooks).
 
 ---
 

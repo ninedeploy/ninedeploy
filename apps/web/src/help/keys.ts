@@ -39,6 +39,8 @@ const PATH_KEYS: Array<[prefix: string, key: string]> = [
   ['/backups', 'backups'],
   ['/volumes', 'volumes'],
   ['/sources', 'sources'],
+  // 0.13: GitHub App setup redirects land here; they belong to Sources.
+  ['/github-apps', 'sources'],
   ['/servers', 'servers'],
   ['/traefik', 'traefik'],
   ['/settings', 'settings.account'],
@@ -79,6 +81,8 @@ export const HELP_ROUTE_TABLE: Array<{ path: string; search?: string; key: strin
   { path: '/monitoring', key: 'monitoring' },
   { path: '/docker', key: 'docker' },
   { path: '/sources', key: 'sources' },
+  { path: '/github-apps/callback', key: 'sources' },
+  { path: '/github-apps/installed', key: 'sources' },
   { path: '/servers', key: 'servers' },
   { path: '/users', key: 'users' },
   { path: '/about', key: 'about' },

@@ -105,7 +105,7 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
   // r208: what a failed repo deploy already created. The create → env → trigger
   // sequence is not atomic; a retry after a failed env row or trigger used to
   // re-POST the service and die on `slug_taken`, stranding a half-made service.
-  const createdRef = useRef<{ serviceId: number; envDone: Set<string> } | null>(null);
+  const createdRef = useRef<{ serviceId: number; envDone: Set<string>; githubLinked?: boolean } | null>(null);
   const onCloseRef = useRef(onClose);
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -140,6 +140,12 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
   // later page failed, a classic token without `repo`) in a response header
   // the plain `repos` call drops; the picker shows it next to the list.
   const repoList = remoteRepos.data?.repos;
+  /** 0.13: `{sourceId, repoId}` when a GitHub App source and one of its listed repositories are picked. */
+  const githubAppRepo = (): { sourceId: number; repoId?: number } | null => {
+    if (mode !== 'repo' || !sourceId || sources.data?.find((s) => String(s.id) === sourceId)?.type !== 'github_app') return null;
+    const repoId = repoList?.find((r) => r.url === repoUrl)?.repoId;
+    return { sourceId: Number(sourceId), ...(repoId ? { repoId } : {}) };
+  };
   const repoListWarning = remoteRepos.data?.warning ?? null;
   const remoteBranches = useQuery({
     queryKey: ['source-branches', sourceId, repoUrl],
@@ -399,6 +405,19 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
       });
       createdRef.current ??= { serviceId: svc.id, envDone: new Set() };
       const progress = createdRef.current;
+      // 0.13: a GitHub App source links the service to the picked repository
+      // by its numeric id, so App webhooks route to it from the first push.
+      // Best effort: the first clone links it lazily anyway, so a refusal
+      // here (installation lost the repo, operator-only route) is a warning.
+      const appRepo = githubAppRepo();
+      if (appRepo && !progress.githubLinked) {
+        try {
+          await api.services.github.link(svc.id, appRepo);
+        } catch (err) {
+          toast(`GitHub App link skipped: ${err instanceof Error ? err.message : String(err)}`, 'error');
+        }
+        progress.githubLinked = true;
+      }
       for (const e of effectiveEnvRows) {
         if (e.key.trim() && !progress.envDone.has(e.key)) {
           await api.env.create(svc.id, {
@@ -661,6 +680,12 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
                     <p className="-mt-1 text-[11px] leading-relaxed text-slate-500" data-testid="repo-list-hint">
                       Missing a repository? Fine-grained tokens only list the repositories selected for them; organization
                       repositories may need the token approved or SSO-authorized. You can also paste the URL below.
+                    </p>
+                  )}
+                  {remoteRepos.isSuccess && sources.data?.find((s) => String(s.id) === sourceId)?.type === 'github_app' && (
+                    <p className="-mt-1 text-[11px] leading-relaxed text-slate-500" data-testid="repo-list-hint-app">
+                      These are the repositories the GitHub App installation can see. Missing one? Add it to the
+                      installation&apos;s selected repositories on GitHub; the service is linked to the repository by its id.
                     </p>
                   )}
 

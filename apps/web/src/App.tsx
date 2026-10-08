@@ -48,11 +48,15 @@ const Projects = lazy(() => import('./routes/Projects.js').then((m) => ({ defaul
 const Labels = lazy(() => import('./routes/Labels.js').then((m) => ({ default: m.Labels })));
 const Deploys = lazy(() => import('./routes/Deploys.js').then((m) => ({ default: m.Deploys })));
 const Doctor = lazy(() => import('./routes/Doctor.js').then((m) => ({ default: m.Doctor })));
+const GithubAppCallback = lazy(() => import('./routes/githubApps/GithubAppPages.js').then((m) => ({ default: m.GithubAppCallback })));
+const GithubAppInstalled = lazy(() => import('./routes/githubApps/GithubAppPages.js').then((m) => ({ default: m.GithubAppInstalled })));
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const location = useLocation();
-  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  // 0.13: the query string travels too — GitHub's redirect to
+  // /github-apps/callback carries its single-use `code` and `state` there.
+  if (!user) return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />;
   return <>{children}</>;
 }
 
@@ -136,6 +140,9 @@ export default function App() {
           <Route path="topology" element={<Topology />} />
           <Route path="backups" element={<Backups />} />
           <Route path="sources" element={<Sources />} />
+          {/* 0.13: GitHub App setup redirects (manifest callback, post-install). */}
+          <Route path="github-apps/callback" element={<GithubAppCallback />} />
+          <Route path="github-apps/installed" element={<GithubAppInstalled />} />
           <Route path="servers" element={<Servers />} />
           <Route path="settings" element={<Settings />} />
           <Route path="about" element={<About />} />

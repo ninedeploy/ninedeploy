@@ -234,6 +234,54 @@ describe('Sources', () => {
     expect(screen.getByTestId('source-test-result')).not.toHaveTextContent('Scopes');
   });
 
+  // 0.13: Gitea base URL on create and edit; Gitea is live-testable.
+  it('sends a Gitea base URL on create, and edits or clears it on the card', async () => {
+    const user = userEvent.setup();
+    mockOf(api.sources.list).mockResolvedValue([{ id: 3, name: 'gitea', type: 'gitea', hasToken: true, hasDeployKey: false, baseUrl: null }] as never);
+    mockOf(api.sources.create).mockResolvedValue({ id: 4 } as never);
+    mockOf(api.sources.update).mockRejectedValueOnce(new Error('insecure_base_url') as never).mockResolvedValue({ id: 3 } as never);
+    const test = vi.fn().mockResolvedValue({ ok: false, provider: 'gitea', error: 'Set the Gitea base URL to enable the live test' });
+    (api.sources as unknown as { test: typeof test }).test = test;
+    renderWithProviders(<Sources />);
+    expect(await screen.findByText('not set (live test disabled)')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Test token/ }));
+    expect(await screen.findByTestId('source-test-result')).toHaveTextContent('Set the Gitea base URL');
+
+    await user.click(screen.getByRole('button', { name: /Base URL:/ }));
+    const field = screen.getByLabelText('Gitea base URL');
+    await user.type(field, 'http://git.lan');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.sources.update).toHaveBeenCalledWith(3, { baseUrl: 'http://git.lan' }));
+    expect(await screen.findByText('Could not save the base URL: insecure_base_url')).toBeInTheDocument();
+    await user.clear(screen.getByLabelText('Gitea base URL'));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.sources.update).toHaveBeenLastCalledWith(3, { baseUrl: null }));
+    expect(await screen.findByText('Base URL saved')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /New source/ }));
+    await user.type(screen.getByPlaceholderText('github-personal'), 'gt');
+    await user.selectOptions(screen.getByRole('combobox'), 'gitea');
+    await user.type(screen.getByPlaceholderText('access token'), 'tok');
+    await user.type(screen.getByPlaceholderText('https://git.example.com'), 'https://git.example.com');
+    await user.click(screen.getByRole('button', { name: /Save source/ }));
+    await waitFor(() => expect(api.sources.create).toHaveBeenCalledWith(expect.objectContaining({ type: 'gitea', baseUrl: 'https://git.example.com' })));
+  });
+
+  it('shows a generated GitHub App source with an installation test and no deploy-key controls', async () => {
+    const user = userEvent.setup();
+    mockOf(api.sources.list).mockResolvedValue([{ id: 7, name: 'gh-app:acme', type: 'github_app', hasToken: false, hasDeployKey: false }] as never);
+    const test = vi.fn().mockResolvedValue({ ok: true, provider: 'github_app', login: 'acme', repositorySelection: 'all', permissions: {}, suspended: false });
+    (api.sources as unknown as { test: typeof test }).test = test;
+    renderWithProviders(<Sources />);
+    expect(await screen.findByText('gh-app:acme')).toBeInTheDocument();
+    expect(screen.getByText('GitHub App')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /deploy key/ })).toBeNull();
+    await user.click(screen.getByRole('button', { name: /Test installation/ }));
+    const result = await screen.findByTestId('source-test-result');
+    expect(result).toHaveTextContent('Authenticates as acme');
+    expect(result).toHaveTextContent('Repositories: all');
+  });
+
   it('r473: a member gets the operators-only one-liner and no listing call', async () => {
     authState.user = { id: 7, isOperator: false };
     renderWithProviders(<Sources />);

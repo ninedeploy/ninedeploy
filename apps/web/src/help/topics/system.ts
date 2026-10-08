@@ -99,6 +99,15 @@ export const SYSTEM_TOPICS: Record<string, HelpTopic> = {
         ],
       },
       {
+        heading: 'GitHub App (recommended for GitHub)',
+        steps: [
+          'Under GitHub Apps, press "Create GitHub App" (personal account or organization) and confirm on GitHub; GitHub Enterprise Server uses "Add manually".',
+          'Install the App on the repositories you deploy. Each installation becomes a "gh-app:<account>" source.',
+          'Pick that source in the Deploy Wizard, or migrate an existing service from its Settings tab. One App webhook then deploys every linked service.',
+        ],
+        tip: 'Clone tokens are minted per deploy, scoped to one repository and expire within an hour. Commit statuses and PR comments are opt-in per service.',
+      },
+      {
         heading: 'Auto-deploy webhooks',
         steps: [
           'Create a webhook from the service\'s Environment tab (watch-path globs; the service branch by default — a different branch via the CLI).',

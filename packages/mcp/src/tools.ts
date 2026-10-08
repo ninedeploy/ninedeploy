@@ -406,6 +406,30 @@ export const TOOLS: ToolDef[] = [
     requiredScopes: ['operator'],
     handler: (c, input) => c.logDrains.list(input as { serviceId?: number }),
   },
+  // ── GitHub App (0.13) ──────────────────────────────────────────────────
+  {
+    name: 'list_github_installations',
+    description:
+      'List registered GitHub Apps and their installations: account, repository selection, suspended/removed state and the generated source id. Metadata only, never a key or secret.',
+    input: z.object({ githubAppId: z.number().int().positive().optional() }),
+    // GET /v1/github-apps: unmapped prefix, operator-only (requireOperator).
+    coarseTokenOnly: true,
+    requiredScopes: ['operator'],
+    handler: async (c, input) => {
+      const { githubAppId } = input as { githubAppId?: number };
+      const apps = await c.githubApps.list();
+      const picked = (Array.isArray(apps) ? apps : []).filter((a) => githubAppId === undefined || a.id === githubAppId);
+      return Promise.all(
+        picked.map(async (a) => ({
+          githubAppId: a.id,
+          name: a.name,
+          appId: a.appId,
+          webBaseUrl: a.webBaseUrl,
+          installations: await c.githubApps.installations(a.id),
+        })),
+      );
+    },
+  },
   // ── Housekeeping & Maintenance ─────────────────────────────────────────
   {
     name: 'system_autoprune',

@@ -37,6 +37,7 @@ every MCP call through the configured token.
 - `list_container_files`, `inspect_container`, `get_container_compose`
 - `list_plugins`, `install_plugin`, `enable_plugin`, `disable_plugin`
 - `system_stats`, `topology`, `health`, `system_autoprune`
+- `list_github_installations` (0.13, read-only): registered GitHub Apps and their installations — metadata only, never a key or secret
 
 ---
 
@@ -76,6 +77,16 @@ ninedeploy deploys rm <service-id> <deploy-id>        # drop it from history, wi
 ninedeploy databases list
 ninedeploy templates list
 
+# Git credentials and GitHub Apps (0.13) — see docs/GITHUB_APP.md
+ninedeploy sources add gitea-home --base-url https://git.example.com
+ninedeploy github-app list                                  # one-click setup runs in the panel
+ninedeploy github-app add-manual --name ghes --app-id 12 --key-file app.pem \
+  --web-base-url https://github.example.com --api-base-url https://github.example.com/api/v3
+ninedeploy github-app sync <app-id>
+ninedeploy services github <service-id> --migrate <gh-app-source-id>
+ninedeploy services github <service-id> --status on --pr-comment on
+ninedeploy services github <service-id> --finalize          # or --unlink to revert
+
 # Secrets
 ninedeploy system rotate-keys      # re-encrypt onto the newest master-key version
 ```
@@ -105,4 +116,10 @@ console.log(`Found ${services.length} active services`);
 // Trigger deployment
 const deploy = await client.deploys.trigger(serviceId);
 console.log(`Deployment ${deploy.deploymentId} started`);
+
+// 0.13: GitHub Apps and a service's App link
+const apps = await client.githubApps.list();
+await client.githubApps.syncInstallations(apps[0].id);
+await client.services.github.link(serviceId, { sourceId: 7, repoId: 123456 });
+await client.services.github.feedback(serviceId, { reportStatus: true });
 ```

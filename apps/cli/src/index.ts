@@ -74,6 +74,9 @@ import {
   sourcesAdd, sourcesKeygen, sourcesList, sourcesRemove, sourcesShow, sourcesTest,
 } from './commands/sources.js';
 import {
+  githubAppAddManual, githubAppList, githubAppRemove, githubAppRotateKey, githubAppShow, githubAppSync, serviceGithub,
+} from './commands/githubApps.js';
+import {
   webhooksAdd, webhooksList, webhooksRemove, webhooksShow,
 } from './commands/webhooks.js';
 import { deployFromGithub } from './commands/deploy.js';
@@ -208,7 +211,7 @@ program
   });
 
 // ── Services ──────────────────────────────────────────────────────────────
-const services = program.command('services').description('Manage services');
+const services = program.command('services').alias('service').description('Manage services');
 
 services.command('list').description('List all services').action(() => servicesList(getClient()));
 
@@ -239,6 +242,17 @@ services.command('sticky <id>')
   .option('--enable', 'Route every request to the same backend container')
   .option('--disable', 'Remove the sticky-cookie middleware')
   .action((id: string, opts: { enable?: boolean; disable?: boolean }) => servicesStickyAction(getClient(), id, opts));
+
+// 0.13: the service's GitHub App link (show, feedback, migrate/finalize/revert).
+services.command('github <id>')
+  .description('Show or change the GitHub App link (commit statuses, PR comments, migrate, finalize, unlink)')
+  .option('--status <onOff>', 'Commit statuses for deploys: on | off')
+  .option('--pr-comment <onOff>', 'PR preview comments: on | off')
+  .option('--migrate <sourceId>', 'Link to the GitHub App installation behind this gh-app source')
+  .option('--finalize', 'Detach the previous source and switch the per-service webhooks off')
+  .option('--unlink', 'Revert: restore the previous source and webhooks, remove the link')
+  .action((id: string, opts: { status?: string; prComment?: string; migrate?: string; finalize?: boolean; unlink?: boolean }) =>
+    serviceGithub(getClient(), id, opts));
 
 // ── Databases ────────────────────────────────────────────────────────────
 const databases = program.command('databases').description('Manage databases');
@@ -815,10 +829,38 @@ const sources = program.command('sources').alias('creds').description('Manage pr
  * the implementation is exercised end-to-end by test/sources.test.ts. */
 sources.command('list').description('List configured sources').action(() => sourcesList(getClient()));
 sources.command('show <id>').description('Show one source in detail').action((id: string) => sourcesShow(getClient(), id));
-sources.command('add [name]').description('Add a new source (interactive; PAT/SSH key from env or masked prompt)').action((name?: string) => sourcesAdd(getClient(), name));
+sources.command('add [name]')
+  .description('Add a new source (interactive; PAT/SSH key from env or masked prompt)')
+  .option('--base-url <url>', 'Gitea base URL, e.g. https://git.example.com (enables the live test and repo list)')
+  .action((name: string | undefined, opts: { baseUrl?: string }) => sourcesAdd(getClient(), name, opts));
 sources.command('test [id]').description('Verify that a stored source token still authenticates').action((id?: string) => sourcesTest(getClient(), id));
 sources.command('keygen [id]').description('Generate an ed25519 deploy-key pair on the panel and print the public key').action((id?: string) => sourcesKeygen(getClient(), id));
 sources.command('remove [id]').description('Remove a source (with confirmation)').alias('rm').action((id?: string) => sourcesRemove(getClient(), id));
+/* v8 ignore stop */
+
+// ── GitHub Apps (0.13) ─────────────────────────────────────────────────────
+const githubApp = program.command('github-app').description('Manage GitHub Apps (one-click setup runs in the panel: Sources → GitHub Apps)');
+/* v8 ignore start -- see sources.ts note above; exercised by test/githubApps.test.ts. */
+githubApp.command('list').description('List registered GitHub Apps').action(() => githubAppList(getClient()));
+githubApp.command('show <id>').description('Show a GitHub App and its installations').action((id: string) => githubAppShow(getClient(), id));
+githubApp.command('add-manual')
+  .description('Register an existing GitHub App or one on GitHub Enterprise Server (key from --key-file or NINEDEPLOY_GITHUB_APP_KEY)')
+  .option('--name <name>', 'Display name')
+  .option('--app-id <id>', 'GitHub App ID')
+  .option('--key-file <path>', 'Path to the App private key (.pem)')
+  .option('--web-base-url <url>', 'GHES web URL, e.g. https://github.example.com (with --api-base-url)')
+  .option('--api-base-url <url>', 'GHES API URL, e.g. https://github.example.com/api/v3 (with --web-base-url)')
+  .action((opts: { name?: string; appId?: string; keyFile?: string; webBaseUrl?: string; apiBaseUrl?: string }) => githubAppAddManual(getClient(), opts));
+githubApp.command('sync <id>').description('Sync installations from GitHub (creates their gh-app sources)').action((id: string) => githubAppSync(getClient(), id));
+githubApp.command('rotate-key <id>')
+  .description('Replace the App private key (verified with GitHub first)')
+  .option('--key-file <path>', 'Path to the new private key (.pem)')
+  .action((id: string, opts: { keyFile?: string }) => githubAppRotateKey(getClient(), id, opts));
+githubApp.command('remove <id>')
+  .description('Forget a GitHub App (its installation sources stay)')
+  .alias('rm')
+  .option('-y, --yes', 'Skip the confirmation prompt')
+  .action((id: string, opts: { yes?: boolean }) => githubAppRemove(getClient(), id, opts));
 /* v8 ignore stop */
 
 // ── Deploy (one-shot private GitHub deploy) ────────────────────────────────

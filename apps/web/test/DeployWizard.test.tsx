@@ -24,7 +24,7 @@ const apiMock = vi.hoisted(() => ({
   api: {
     sources: sourcesMock,
     servers: { list: vi.fn() },
-    services: { create: vi.fn(), composePreview: vi.fn() },
+    services: { create: vi.fn(), composePreview: vi.fn(), github: { link: vi.fn() } },
     env: { create: vi.fn() },
     deploys: { trigger: vi.fn() },
     databases: { create: vi.fn(), get: vi.fn() },
@@ -591,6 +591,83 @@ describe('DeployWizard', () => {
         }),
       ),
     );
+  });
+});
+
+// 0.13: a GitHub App source lists the installation's repositories with their
+// numeric ids; after the service is created the wizard links it by that id.
+describe('DeployWizard — GitHub App sources', () => {
+  const appRepo = { name: 'y', fullName: 'x/y', url: 'https://github.com/x/y.git', defaultBranch: 'trunk', isPrivate: true, repoId: 77 };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authMock.user = { id: 1, isOperator: true, email: 'a@test', name: 'A' };
+    localStorage.setItem('ninedeploy:experience_mode', 'advanced');
+    apiMock.api.sources.list.mockResolvedValue([{ id: 8, name: 'gh-app:acme', type: 'github_app' }]);
+    apiMock.api.sources.repos.mockResolvedValue([appRepo]);
+    apiMock.api.sources.branches.mockResolvedValue([]);
+    apiMock.api.insights.analyze.mockResolvedValue(null);
+    apiMock.api.servers.list.mockResolvedValue([]);
+    apiMock.api.services.create.mockResolvedValue({ id: 42, name: 'app' });
+    apiMock.api.services.github.link.mockResolvedValue({ link: { id: 1 } });
+    apiMock.api.deploys.trigger.mockResolvedValue({ deploymentId: 7 });
+  });
+
+  async function deployThroughSteps(user: ReturnType<typeof userEvent.setup>) {
+    for (let i = 0; i < 4; i++) await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.click(screen.getByRole('button', { name: /deploy/i }));
+  }
+
+  it('links the new service to the picked repository by id before the first deploy', async () => {
+    const user = userEvent.setup();
+    renderWizard();
+    await screen.findByRole('option', { name: 'gh-app:acme (github_app)' });
+    await user.selectOptions(screen.getAllByRole('combobox')[1]!, '8');
+    expect(await screen.findByTestId('repo-list-hint-app')).toHaveTextContent(/installation can see/);
+    expect(screen.queryByTestId('repo-list-hint')).not.toBeInTheDocument();
+    await user.selectOptions(screen.getAllByRole('combobox')[2]!, appRepo.url);
+    await user.clear(screen.getByPlaceholderText('my-app'));
+    await user.type(screen.getByPlaceholderText('my-app'), 'app');
+    await deployThroughSteps(user);
+    await waitFor(() => expect(apiMock.api.services.create).toHaveBeenCalledWith(expect.objectContaining({ sourceId: 8, repoUrl: appRepo.url, branch: 'trunk' })));
+    await waitFor(() => expect(apiMock.api.services.github.link).toHaveBeenCalledWith(42, { sourceId: 8, repoId: 77 }));
+    await waitFor(() => expect(apiMock.api.deploys.trigger).toHaveBeenCalledWith(42));
+    expect(apiMock.api.services.github.link.mock.invocationCallOrder[0]!).toBeLessThan(apiMock.api.deploys.trigger.mock.invocationCallOrder[0]!);
+  });
+
+  it('a refused link is a warning: the deploy still runs, and a pasted URL links without a repoId', async () => {
+    const user = userEvent.setup();
+    apiMock.api.services.github.link.mockRejectedValueOnce(new Error('installation cannot see x/z'));
+    renderWizard();
+    await screen.findByRole('option', { name: 'gh-app:acme (github_app)' });
+    await user.selectOptions(screen.getAllByRole('combobox')[1]!, '8');
+    await screen.findByRole('option', { name: /Choose a repo/ });
+    await user.type(screen.getByPlaceholderText('my-app'), 'app');
+    await user.type(screen.getByPlaceholderText('https://github.com/you/repo'), 'https://github.com/x/z');
+    await deployThroughSteps(user);
+    await waitFor(() => expect(apiMock.api.services.github.link).toHaveBeenCalledWith(42, { sourceId: 8 }));
+    expect(await screen.findByText('GitHub App link skipped: installation cannot see x/z')).toBeInTheDocument();
+    await waitFor(() => expect(apiMock.api.deploys.trigger).toHaveBeenCalledWith(42));
+  });
+
+  it('a non-Error refusal is stringified, and a retry after a failed trigger does not link twice', async () => {
+    const user = userEvent.setup();
+    apiMock.api.services.github.link.mockRejectedValueOnce('nope');
+    apiMock.api.deploys.trigger.mockRejectedValueOnce(new Error('queue down'));
+    renderWizard();
+    await screen.findByRole('option', { name: 'gh-app:acme (github_app)' });
+    await user.selectOptions(screen.getAllByRole('combobox')[1]!, '8');
+    await screen.findByRole('option', { name: /Choose a repo/ });
+    await user.selectOptions(screen.getAllByRole('combobox')[2]!, appRepo.url);
+    await user.clear(screen.getByPlaceholderText('my-app'));
+    await user.type(screen.getByPlaceholderText('my-app'), 'app');
+    await deployThroughSteps(user);
+    expect(await screen.findByText('GitHub App link skipped: nope')).toBeInTheDocument();
+    await waitFor(() => expect(apiMock.api.deploys.trigger).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: /deploy/i }));
+    await waitFor(() => expect(apiMock.api.deploys.trigger).toHaveBeenCalledTimes(2));
+    expect(apiMock.api.services.create).toHaveBeenCalledTimes(1);
+    expect(apiMock.api.services.github.link).toHaveBeenCalledTimes(1);
   });
 });
 

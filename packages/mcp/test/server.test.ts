@@ -38,7 +38,7 @@ describe('buildServer', () => {
   it('lists all tools with schemas', async () => {
     const mcp = await connected(fake());
     const tools = await mcp.listTools();
-    expect(tools.tools).toHaveLength(38);
+    expect(tools.tools).toHaveLength(39);
     expect(tools.tools.map((t) => t.name)).toContain('deploy_service');
     // An agent that can start a build must be able to stop one.
     expect(tools.tools.map((t) => t.name)).toContain('cancel_deploy');
@@ -72,7 +72,7 @@ describe('buildServer', () => {
     // a shared pending-scope filter would silently drop all scoped tools.
     for (const tokenScopes of [[], ['session']]) {
       const mcp = await connected(fake(), { tokenScopes });
-      expect((await mcp.listTools()).tools).toHaveLength(38);
+      expect((await mcp.listTools()).tools).toHaveLength(39);
     }
   });
 

@@ -15,14 +15,16 @@ This plan was drawn up on 2026-10-08 from a feature-gap analysis against Dokploy
   - `pnpm smoke:user-journey` on a locally built image;
   - signed publishing.
 
-## 0.12 — Backups and previews
+## 0.12 — Backups and previews (done)
 
 - **Per-database backup policy:** a cron schedule, retention count and S3 destination for each database. This replaces today's single daily run with a fixed retention of 7.
 - **Panel self-backup:** the panel's own export (database and settings) is written to S3 on a schedule, encrypted and kept for a set retention. A documented restore procedure ships with it.
 - **Preview-only environment:** an environment set that applies only to PR previews. Previews deliberately receive no production secrets, so this set fills that gap.
 - **Disk and server-offline alerts:** two new alert metrics, `disk` and `server_offline`, next to cpu, memory and certificate expiry.
 
-## 0.13 — Git integration
+## 0.13 — Git integration (in progress)
+
+Status: the GitHub App (setup, installations, clone tokens, App webhooks, service links, feedback, remote-node job tokens) and the Gitea base URL are implemented on `release/0.13`; see [GITHUB_APP.md](./GITHUB_APP.md). The release is pending its upgrade smoke.
 
 - **GitHub App:**
   - one-click setup through the manifest flow;

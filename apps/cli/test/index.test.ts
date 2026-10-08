@@ -371,10 +371,11 @@ describe('program registration', () => {
       'images', 'demo', 'server',
       'logs', 'email-templates', 'certificates',
       'doctor',
-      'sources', 'deploy', 'webhooks', 'firewall', 'manifest',
+      'sources', 'github-app', 'deploy', 'webhooks', 'firewall', 'manifest',
     ]);
     expect(findCommand('server').children).toHaveLength(4);
-    expect(findCommand('services').children).toHaveLength(13);
+    // 0.13: + `services github <id>`.
+    expect(findCommand('services').children).toHaveLength(14);
     expect(findCommand('databases').children).toHaveLength(4);
     expect(findCommand('templates').children).toHaveLength(4);
     expect(findCommand('deploys').children).toHaveLength(6);
@@ -399,7 +400,9 @@ describe('program registration', () => {
     expect(findCommand('egress').children).toHaveLength(3);
     expect(findCommand('sso').children).toHaveLength(3);
     // 0.12 panel backup: `system panel-backup` + 5 subcommands.
-    expect(h.FakeCommand.instances).toHaveLength(196);
+    // 0.13: + `services github` and `github-app` with 6 subcommands.
+    expect(h.FakeCommand.instances).toHaveLength(204);
+    expect(findCommand('github-app').children).toHaveLength(6);
     // sanity: every new command we added has at least the subcommands it owns
     expect(findCommand('sources').children.length).toBeGreaterThanOrEqual(6);
     expect(findCommand('deploy').children.length).toBeGreaterThanOrEqual(1);

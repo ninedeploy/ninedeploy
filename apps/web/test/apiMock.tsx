@@ -92,6 +92,15 @@ export function createFakeApiModule() {
       logs: vi.fn(),
       exportUrl: vi.fn(),
       importBundle: vi.fn(),
+      // 0.13: the GitHub App link (SettingsTab GitHub card).
+      github: {
+        get: vi.fn().mockResolvedValue({ link: null }),
+        link: vi.fn(),
+        feedback: vi.fn(),
+        migrate: vi.fn(),
+        finalize: vi.fn(),
+        unlink: vi.fn(),
+      },
     },
     environments: {
       list: vi.fn().mockResolvedValue([]),
@@ -172,6 +181,21 @@ export function createFakeApiModule() {
       log: vi.fn(),
     },
     sources: { list: vi.fn().mockResolvedValue([]), create: vi.fn(), update: vi.fn(), remove: vi.fn() },
+    // 0.13: GitHub App registration (Sources page panel, setup redirect pages).
+    githubApps: {
+      list: vi.fn().mockResolvedValue([]),
+      get: vi.fn(),
+      create: vi.fn(),
+      manifest: vi.fn(),
+      completeManifest: vi.fn(),
+      patch: vi.fn(),
+      rotateKey: vi.fn(),
+      webhookSync: vi.fn(),
+      rotateWebhookSecret: vi.fn(),
+      remove: vi.fn(),
+      syncInstallations: vi.fn(),
+      installations: vi.fn().mockResolvedValue([]),
+    },
     insights: { analyze: vi.fn(), get: vi.fn().mockResolvedValue(null), refresh: vi.fn() },
     projects: { list: vi.fn().mockResolvedValue([]), create: vi.fn(), update: vi.fn(), remove: vi.fn() },
     labels: { list: vi.fn().mockResolvedValue([]), create: vi.fn(), update: vi.fn(), remove: vi.fn() },

@@ -238,6 +238,44 @@ describe('sourcesAdd', () => {
   });
 });
 
+// 0.13: Gitea base URL (`sources add --base-url`, or the interactive prompt).
+describe('sourcesAdd — Gitea base URL', () => {
+  it('sends --base-url and runs the live test right away', async () => {
+    const create = vi.fn().mockResolvedValue({ id: 4, name: 'gt' });
+    const test = vi.fn().mockResolvedValue({ ok: true, provider: 'gitea', login: 'me', name: null });
+    h.prompt.mockResolvedValueOnce('gitea').mockResolvedValueOnce('main');
+    h.promptHidden.mockResolvedValueOnce('gtoken');
+    await sourcesAdd(makeClient({ sources: { create, test } }), 'gt', { baseUrl: 'https://git.example.com/' });
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ type: 'gitea', token: 'gtoken', baseUrl: 'https://git.example.com' }));
+    expect(test).toHaveBeenCalledWith(4);
+  });
+
+  it('asks for the base URL interactively and validates it', async () => {
+    const create = vi.fn().mockResolvedValue({ id: 4, name: 'gt' });
+    h.prompt.mockResolvedValueOnce('gitea').mockResolvedValueOnce('main').mockResolvedValueOnce(' https://git.example.com ');
+    h.promptHidden.mockResolvedValueOnce('gtoken');
+    await sourcesAdd(makeClient({ sources: { create, test: vi.fn().mockResolvedValue({ ok: true }) } }), 'gt');
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: 'https://git.example.com' }));
+
+    h.prompt.mockResolvedValueOnce('gitea').mockResolvedValueOnce('main').mockResolvedValueOnce('ftp://git.example.com');
+    await sourcesAdd(makeClient({ sources: { create, test: vi.fn() } }), 'gt');
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Invalid Gitea base URL: ftp://git.example.com'));
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a malformed --base-url, or one on a non-Gitea provider', async () => {
+    const create = vi.fn();
+    for (const bad of ['not a url', 'https://user:pw@git.example.com', 'https://git.example.com/?x=1']) {
+      await sourcesAdd(makeClient({ sources: { create } }), 'gt', { baseUrl: bad });
+      expect(errorSpy).toHaveBeenLastCalledWith(expect.stringContaining('Invalid --base-url'));
+    }
+    h.prompt.mockResolvedValueOnce('github');
+    await sourcesAdd(makeClient({ sources: { create } }), 'gh', { baseUrl: 'https://git.example.com' });
+    expect(errorSpy).toHaveBeenLastCalledWith(expect.stringContaining('--base-url applies to gitea sources only'));
+    expect(create).not.toHaveBeenCalled();
+  });
+});
+
 describe('sourcesTest', () => {
   it('prints a success message when the credential is good', async () => {
     const test = vi.fn().mockResolvedValue({ ok: true, provider: 'github', login: 'me', name: 'Me' });
@@ -382,6 +420,26 @@ describe('sourcesShow', () => {
     const list = vi.fn().mockResolvedValue([{ id: 1, name: 'other', type: 'github', hasToken: true, hasDeployKey: false, defaultBranch: 'main' }]);
     await sourcesShow(makeClient({ sources: { list } }), '999');
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('not found'));
+  });
+
+  it('shows a Gitea base URL, or that it is unset (0.13)', async () => {
+    const list = vi.fn().mockResolvedValue([
+      { id: 4, name: 'gt', type: 'gitea', hasToken: true, hasDeployKey: false, baseUrl: 'https://git.example.com', defaultBranch: 'main', createdAt: '', updatedAt: '' },
+      { id: 5, name: 'gt2', type: 'gitea', hasToken: true, hasDeployKey: false, baseUrl: null, defaultBranch: 'main', createdAt: '', updatedAt: '' },
+    ]);
+    await sourcesShow(makeClient({ sources: { list } }), '4');
+    await sourcesShow(makeClient({ sources: { list } }), '5');
+    const out = logSpy.mock.calls.map((c) => c[0]).join('\n');
+    expect(out).toContain('https://git.example.com');
+    expect(out).toContain('not set (no live test or repo list)');
+  });
+
+  it('prints a GitHub App source test with its repository selection (0.13)', async () => {
+    const test = vi.fn().mockResolvedValue({ ok: true, provider: 'github_app', login: 'acme', repositorySelection: 'all', permissions: {}, suspended: false });
+    await sourcesTest(makeClient({ sources: { test } }), '7');
+    const out = logSpy.mock.calls.map((c) => c[0]).join('\n');
+    expect(out).toContain('github_app token authenticates as acme');
+    expect(out).toContain('all');
   });
 
   it('requires a numeric id', async () => {
