@@ -20,6 +20,17 @@
 // refused); public access on the managed postgres (refusals, an nd-dbpub
 // sidecar on :15432, DELETE, a recorded TLS-terminate attempt); a one-chunk
 // plain-SQL import behind a pre-import backup; the secret managers.
+// 0.15 (only when /health reports 0.15 or later): a compose service refused as
+// a terminal target (422 use_container_target); terminals (host shell refused
+// while disabled, a protocol-v1 round trip over the global WebSocket with a
+// resize, the ended row and its audits, a reused ticket 4401, no shell left
+// after a dropped socket); a host shell enabled with a password re-check (or
+// the 422 recorded) and disabled again; traffic analytics (one recreate on
+// enable, 20 requests counted per service and instance-wide, a raw log line
+// without client or request data, disable back to the identical static
+// config); the OpenAPI document (401, 3.1.x, ETag/304); and a viewer grant for
+// a seatless guest (read 200, write 403, no workspace rights, suspended → 404,
+// reinstated → 200, revoked → 404).
 //
 // Topology: privileged docker:28-dind sidecar (the validated DinD pattern —
 // the panel gets plain DOCKER_HOST=tcp://..., NOT NINEDEPLOY_DOCKER_HOST)
@@ -398,6 +409,495 @@ async function secretProviderChecks(token) {
   step(`secret managers: both unconfigured; Vault on vault.invalid saved and tests ok:false (${String(test.json.detail).slice(0, 80)}); a bad AWS region refused (400); /v1/settings/vault unchanged; Vault deleted`);
 }
 
+// 0.15: operations and API — terminals, traffic analytics, the OpenAPI
+// document and project access grants. Offline-safe like the 0.14 block: the
+// shell runs in the smoke's own nginx container, the host shell (if it can be
+// enabled) enters the DinD sidecar's namespaces, the HTTP requests go from the
+// panel container to Traefik inside DinD, and the guest is a local account.
+// The terminal client is Node's global WebSocket (Node 22+), offering the v1
+// subprotocol and the single-use ticket exactly as lib/terminalProtocol.ts
+// expects. Shared verbatim by smoke-upgrade.mjs and smoke-user-journey.mjs.
+const OPERATIONS_IN = [0, 15, 0];
+const TERMINAL_PROTOCOL = 'ninedeploy.terminal.v1';
+const TERMINAL_TICKET_PREFIX = 'ninedeploy.ticket.';
+/** Where the panel's Traefik writes the analytics access log (engine/proxy.ts TRAFFIC_LOG_CONTAINER_DIR). */
+const TRAFFIC_MOUNT = '/var/log/ninedeploy-traffic';
+/** Label on every host-shell helper container (lib/dockerTty.ts TERMINAL_SESSION_LABEL). */
+const TERMINAL_HELPER_LABEL = 'ninedeploy.terminal.session';
+/** The default host-shell helper image: the Traefik image the panel already pulled. */
+const HELPER_IMAGE = 'traefik:3';
+/** Access-log fields that would carry client or request data (T3: none may reach the file). */
+const TRAFFIC_FORBIDDEN_FIELDS = ['ClientAddr', 'ClientHost', 'ClientPort', 'ClientUsername', 'RequestAddr', 'RequestPath'];
+
+const rnd = () => 100 + Math.floor(Math.random() * 9000);
+async function waitFor(pred, ms) {
+  const end = Date.now() + ms;
+  for (;;) {
+    if (pred()) return true;
+    if (Date.now() > end) return false;
+    await sleep(100);
+  }
+}
+
+/** A command inside the panel container (it has curl and can reach DinD by name). */
+function panelRun(args) {
+  const r = spawnSync('docker', ['exec', PANEL, ...args], { encoding: 'utf8', timeout: 120_000, maxBuffer: 32 << 20 });
+  return { status: r.status, stdout: (r.stdout ?? '').trim(), all: `${r.stdout ?? ''}\n${r.stderr ?? ''}`.trim() };
+}
+
+/** The panel's Traefik container as the DinD daemon sees it. */
+function traefikState() {
+  const r = dindRun(['inspect', TRAEFIK, '--format', '{{.Id}}|{{.State.StartedAt}}|{{.State.Running}}|{{range .Mounts}}{{.Destination}},{{end}}']);
+  const [id = '', startedAt = '', running = '', mounts = ''] = r.status === 0 ? r.stdout.split('|') : [];
+  return { id, startedAt, running: running === 'true', mounts: mounts.split(',').filter(Boolean) };
+}
+
+/** HTTP status codes of `n` requests for `hostname` through the panel's Traefik (curl does not follow redirects). */
+function routeStatuses(hostname, n) {
+  const r = panelRun(['sh', '-c', `for i in $(seq 1 ${n}); do curl -s -o /dev/null -m 5 -w '%{http_code}\\n' -H 'Host: ${hostname}' http://${DIND}:80/; done`]);
+  return r.stdout.split(/\s+/).filter(Boolean);
+}
+const served = (code) => /^[23]\d\d$/.test(code);
+
+/** Audit rows of one action (GET /v1/activity), meta parsed. */
+async function auditEntries(token, action) {
+  const r = await api(`/v1/activity?action=${encodeURIComponent(action)}`, { token });
+  if (r.status !== 200) fail(`GET /v1/activity?action=${action} answered ${r.status} ${r.text.slice(0, 200)}`);
+  return (r.json?.entries ?? []).map((e) => {
+    let meta = e.meta;
+    if (typeof meta === 'string') {
+      try { meta = JSON.parse(meta); } catch { meta = {}; }
+    }
+    return { ...e, meta: meta ?? {} };
+  });
+}
+async function waitAudit(token, action, sessionId) {
+  let hit = null;
+  for (let i = 0; i < 20 && !hit; i++) {
+    hit = (await auditEntries(token, action)).find((e) => e.meta?.sessionId === sessionId) ?? null;
+    if (!hit) await sleep(500);
+  }
+  if (!hit) fail(`no ${action} audit row for terminal session #${sessionId}`);
+  return hit;
+}
+
+/**
+ * Attach to a terminal session over protocol v1: binary frames are stdin and
+ * output, text frames are JSON control messages (`ready`, `notice`, `exit`).
+ */
+function terminalAttach(created) {
+  if (typeof WebSocket !== 'function') fail('the 0.15 terminal checks need Node 22+ (global WebSocket)');
+  const ws = new WebSocket(`ws://127.0.0.1:${PANEL_PORT}${created.attachPath}`, [TERMINAL_PROTOCOL, `${TERMINAL_TICKET_PREFIX}${created.ticket}`]);
+  ws.binaryType = 'arraybuffer';
+  const state = { out: '', ready: null, exit: null, close: null, notices: [] };
+  ws.onmessage = (ev) => {
+    if (typeof ev.data === 'string') {
+      let msg = null;
+      try { msg = JSON.parse(ev.data); } catch { /* not ours */ }
+      if (msg?.t === 'ready') state.ready = msg;
+      else if (msg?.t === 'exit') state.exit = msg;
+      else if (msg?.t === 'notice') state.notices.push(msg.message);
+    } else {
+      state.out += Buffer.from(ev.data).toString('utf8');
+    }
+  };
+  ws.onclose = (ev) => { state.close = { code: ev.code, reason: ev.reason }; };
+  ws.onerror = () => { /* surfaced through onclose */ };
+  return {
+    ws,
+    state,
+    type: (text) => ws.send(Buffer.from(text, 'utf8')),
+    control: (msg) => ws.send(JSON.stringify(msg)),
+    /** Wait for `ready`; fail with the close code and notices otherwise. */
+    async ready(label) {
+      await waitFor(() => state.ready || state.close, 30_000);
+      if (!state.ready) fail(`${label}: no ready frame (close ${state.close?.code ?? 'none'} ${state.close?.reason ?? ''}; notices: ${state.notices.join(' | ') || 'none'})`);
+      if (ws.protocol !== TERMINAL_PROTOCOL) fail(`${label}: the server selected subprotocol "${ws.protocol}" (wanted ${TERMINAL_PROTOCOL}; the ticket must never be echoed)`);
+    },
+  };
+}
+
+/** POST /v1/terminals → 201 with a pending session and a single-use ticket. */
+async function openTerminal(token, body, label) {
+  const r = await api('/v1/terminals', { method: 'POST', token, body });
+  if (r.status !== 201 || !r.json?.ticket || r.json.session?.status !== 'pending' || r.json.attachPath !== `/v1/terminals/${r.json.session.id}/attach`) {
+    fail(`${label}: POST /v1/terminals answered ${r.status} ${r.text.slice(0, 300)} (wanted 201 with a pending session and a ticket)`);
+  }
+  return r.json;
+}
+
+/** GET /v1/terminals/:id until the session left pending/active. */
+async function endedSession(token, id) {
+  let row = null;
+  for (let i = 0; i < 30; i++) {
+    row = (await api(`/v1/terminals/${id}`, { token })).json;
+    if (row && row.status !== 'pending' && row.status !== 'active') return row;
+    await sleep(500);
+  }
+  return fail(`terminal session #${id} is still ${row?.status} after the socket closed`);
+}
+
+/** The state letter of `pid` inside `container` ('gone' when it no longer exists). */
+function pidState(container, pid) {
+  const r = dindRun(['exec', container, 'sh', '-c', `grep '^State' /proc/${pid}/status 2>/dev/null || echo gone`]);
+  if (r.status !== 0) return `unknown (${r.all.slice(0, 120)})`;
+  return /gone/.test(r.stdout) ? 'gone' : (/State:\s*(\S)/.exec(r.stdout)?.[1] ?? r.stdout);
+}
+const pidLive = (s) => s !== 'gone' && s !== 'Z' && s !== 'X' && !s.startsWith('unknown');
+
+/** Echo a computed marker plus the shell's PID; returns the PID. */
+async function echoPid(t, label) {
+  const a = rnd();
+  const b = rnd();
+  const want = new RegExp(`nd-smoke-${a + b} nd-pid-(\\d+)`);
+  t.type(`echo nd-smoke-$((${a}+${b})) nd-pid-$\r`);
+  if (!(await waitFor(() => want.test(t.state.out), 15_000))) fail(`${label}: the echo never came back (output tail: ${JSON.stringify(t.state.out.slice(-300))})`);
+  return { marker: `nd-smoke-${a + b}`, pid: Number(want.exec(t.state.out)[1]) };
+}
+
+/**
+ * Terminals on a running docker service: settings defaults, the host shell
+ * refused while disabled, a v1 round trip with a resize, the ended row and its
+ * three audits, a reused ticket refused, and the shell gone after the socket
+ * drops (the HUP/KILL cleanup, T2a's open risk).
+ */
+async function terminalChecks(token, serviceId) {
+  const s0 = await api('/v1/terminals/settings', { token });
+  if (s0.status !== 200 || s0.json?.hostTerminalEnabled !== false || s0.json.hostTerminalForbiddenByEnv !== false) {
+    fail(`GET /v1/terminals/settings should report host shells off, got ${s0.status} ${s0.text.slice(0, 300)}`);
+  }
+  const host0 = await api('/v1/terminals', { method: 'POST', token, body: { target: { kind: 'host', serverId: null } } });
+  if (host0.status !== 403 || errorCode(host0) !== 'host_terminal_disabled') {
+    fail(`a host shell with host shells disabled answered ${host0.status} ${host0.text.slice(0, 200)} (wanted 403 host_terminal_disabled)`);
+  }
+  step(`terminals: settings default (host shells off, idle ${s0.json.idleTimeoutMinutes} min, max ${s0.json.maxSessionMinutes} min); a host shell is refused (403 host_terminal_disabled)`);
+
+  const svc = (await api(`/v1/services/${serviceId}`, { token })).json;
+  const container = svc?.runtimeId;
+  if (!container) fail(`service #${serviceId} has no runtimeId: ${JSON.stringify(svc).slice(0, 200)}`);
+
+  // 1. Round trip, resize, exit.
+  const created = await openTerminal(token, { target: { kind: 'service', serviceId }, cols: 120, rows: 32 }, 'service shell');
+  const id = created.session.id;
+  const t = terminalAttach(created);
+  await t.ready('service shell');
+  if (t.state.ready.sessionId !== id || t.state.ready.target?.kind !== 'service') fail(`ready frame: ${JSON.stringify(t.state.ready)}`);
+  const { marker, pid } = await echoPid(t, 'service shell');
+  t.control({ t: 'resize', cols: 100, rows: 30 });
+  await sleep(800);
+  const mark = t.state.out.length;
+  t.type('stty size\r');
+  await waitFor(() => /\b\d+ \d+\r?\n/.test(t.state.out.slice(mark)), 5000);
+  const size = /\b(\d+) (\d+)\r?\n/.exec(t.state.out.slice(mark));
+  if (size && `${size[1]} ${size[2]}` !== '30 100') fail(`after a 100x30 resize the shell reports \`stty size\` ${size[1]} ${size[2]} (wanted 30 100)`);
+  t.type('exit\r');
+  await waitFor(() => t.state.close, 15_000);
+  if (t.state.close?.code !== 1000 || t.state.exit?.reason !== 'shell_exited') {
+    fail(`after \`exit\` the socket closed with ${JSON.stringify(t.state.close)} and exit frame ${JSON.stringify(t.state.exit)} (wanted 1000, shell_exited)`);
+  }
+  const row = await endedSession(token, id);
+  if (row.status !== 'ended' || row.endReason !== 'shell_exited' || !(row.bytesIn > 0) || !(row.bytesOut > 0) || !(row.durationMs > 0)) {
+    fail(`terminal session #${id} ended as ${JSON.stringify(row).slice(0, 400)} (wanted ended, shell_exited, bytes in/out and a duration)`);
+  }
+  for (const action of ['terminal.session.create', 'terminal.session.start', 'terminal.session.end']) await waitAudit(token, action, id);
+  step(`terminal #${id} on ${container}: ready over ${TERMINAL_PROTOCOL}; ${marker} echoed back (shell pid ${pid}); resize → stty ${size ? `${size[1]} ${size[2]}` : 'not answered (recorded)'}; exit → close 1000; row ended/shell_exited, ${row.bytesIn} B in, ${row.bytesOut} B out, ${row.durationMs} ms, exit ${row.exitCode}; create/start/end audited`);
+
+  // 2. The ticket is single use.
+  const replay = terminalAttach(created);
+  await waitFor(() => replay.state.close, 10_000);
+  if (replay.state.close?.code !== 4401 || replay.state.ready) fail(`a reused ticket closed with ${JSON.stringify(replay.state.close)} (wanted 4401, no ready)`);
+  step('terminal: the used ticket is refused on a second attach (close 4401)');
+
+  // 3. The socket drops: the shell must not keep running in the container.
+  const dropped = await openTerminal(token, { target: { kind: 'service', serviceId } }, 'dropped shell');
+  const d = terminalAttach(dropped);
+  await d.ready('dropped shell');
+  const { pid: dropPid } = await echoPid(d, 'dropped shell');
+  const alive = pidState(container, dropPid);
+  if (!pidLive(alive)) fail(`the dropped-shell probe cannot see pid ${dropPid} in ${container} before the drop (${alive})`);
+  const droppedAt = Date.now();
+  d.ws.close();
+  const dropRow = await endedSession(token, dropped.session.id);
+  if (dropRow.status !== 'ended' || dropRow.endReason !== 'client_closed' || !(dropRow.bytesIn > 0)) {
+    fail(`the dropped session #${dropped.session.id} ended as ${JSON.stringify(dropRow).slice(0, 300)} (wanted ended, client_closed)`);
+  }
+  await waitAudit(token, 'terminal.session.end', dropped.session.id);
+  let after = alive;
+  for (let i = 0; i < 40 && pidLive(after); i++) {
+    await sleep(500);
+    after = pidState(container, dropPid);
+  }
+  if (pidLive(after)) fail(`shell pid ${dropPid} is still running in ${container} (${after}) ${Math.round((Date.now() - droppedAt) / 1000)} s after its socket dropped — the HUP/KILL cleanup did not reach it`);
+  step(`terminal #${dropped.session.id}: socket dropped → row ended/client_closed; shell pid ${dropPid} gone from ${container} after ${((Date.now() - droppedAt) / 1000).toFixed(1)} s (${after})`);
+}
+
+/**
+ * Host shells: refused with a wrong password, enabled with the smoke user's
+ * password (step-up), one host shell through the nsenter helper (inside DinD
+ * the "host" is the sidecar), the helper removed afterwards, then disabled
+ * again. Anything that keeps a host shell from opening is recorded, not
+ * failed: it is the documented 422 for an image without nsenter.
+ */
+async function hostShellChecks(token, password) {
+  const nsenter = dindRun(['run', '--rm', '--entrypoint', 'nsenter', HELPER_IMAGE, '--help']);
+  step(`recorded: \`nsenter --help\` in ${HELPER_IMAGE} exits ${nsenter.status} (${nsenter.all.split(/\r?\n/)[0]?.slice(0, 80) ?? ''}); the probe treats only 126/127 as "no nsenter"`);
+  const p = '/v1/terminals/settings';
+  const wrong = await api(p, { method: 'PUT', token, body: { hostTerminalEnabled: true, password: `wrong-${suffix}` } });
+  if (wrong.status !== 403 || errorCode(wrong) !== 'invalid_password') fail(`enabling host shells with a wrong password answered ${wrong.status} ${wrong.text.slice(0, 200)} (wanted 403 invalid_password)`);
+  const on = await api(p, { method: 'PUT', token, body: { hostTerminalEnabled: true, password } });
+  if (on.status !== 200 || on.json?.hostTerminalEnabled !== true) {
+    step(`recorded: host shells could not be enabled (${on.status} ${on.text.slice(0, 160)}): host shell NOT exercised`);
+    return;
+  }
+  try {
+    const r = await api('/v1/terminals', { method: 'POST', token, body: { target: { kind: 'host', serverId: null }, password } });
+    if (r.status === 422) {
+      step(`recorded: host shell refused with 422 ${errorCode(r)} (${r.json?.error?.message ?? r.json?.message ?? r.text.slice(0, 160)}): host shell NOT exercised`);
+      return;
+    }
+    if (r.status !== 201) fail(`a host shell with host shells enabled answered ${r.status} ${r.text.slice(0, 300)}`);
+    const t = terminalAttach(r.json);
+    await t.ready('host shell');
+    const a = rnd();
+    const b = rnd();
+    t.type(`echo nd-host-$((${a}+${b})) uid-$(id -u)\r`);
+    const want = new RegExp(`nd-host-${a + b} uid-(\\d+)`);
+    if (!(await waitFor(() => want.test(t.state.out), 15_000))) fail(`host shell: the echo never came back (output tail: ${JSON.stringify(t.state.out.slice(-300))})`);
+    const uid = want.exec(t.state.out)[1];
+    const helpers = dindRun(['ps', '-q', '--filter', `label=${TERMINAL_HELPER_LABEL}=${r.json.session.id}`]).stdout;
+    t.type('exit\r');
+    await waitFor(() => t.state.close, 15_000);
+    if (t.state.close?.code !== 1000) fail(`host shell: \`exit\` closed the socket with ${JSON.stringify(t.state.close)} (wanted 1000)`);
+    const row = await endedSession(token, r.json.session.id);
+    if (row.status !== 'ended' || row.targetKind !== 'host' || row.endReason !== 'shell_exited') fail(`host session #${row.id} ended as ${JSON.stringify(row).slice(0, 300)}`);
+    await waitAudit(token, 'security.host_terminal', row.id);
+    let left = 'x';
+    for (let i = 0; i < 30 && left; i++) {
+      left = dindRun(['ps', '-aq', '--filter', `label=${TERMINAL_HELPER_LABEL}`]).stdout;
+      if (left) await sleep(500);
+    }
+    if (left) fail(`host-shell helper container(s) still exist after the session ended: ${left}`);
+    step(`host shell #${row.id}: enabled with a password re-check (a wrong one 403); nsenter helper ${helpers ? 'ran' : 'not listed while open'}; nd-host marker echoed as uid ${uid}; exit → close 1000; security.host_terminal audited; helper removed`);
+  } finally {
+    const off = await api(p, { method: 'PUT', token, body: { hostTerminalEnabled: false } });
+    if (off.status !== 200 || off.json?.hostTerminalEnabled !== false) fail(`disabling host shells answered ${off.status} ${off.text.slice(0, 200)}`);
+    step('host shells disabled again');
+  }
+}
+
+/**
+ * Traffic analytics: off by default with the 0.14 static config, one
+ * recreate on enable with the access-log mount, N requests counted by the
+ * tailer per service and instance-wide, a raw log line without client or
+ * request data, then disable recreates Traefik on the byte-identical
+ * pre-enable static config. USR1 reopen is recorded (the tailer falls back
+ * to truncate-after-read without it).
+ */
+async function trafficChecks(token, serviceId, hostname) {
+  const s0 = await api('/v1/traffic/settings', { token });
+  if (s0.status !== 200 || s0.json?.enabled !== false || s0.json.status !== 'off') fail(`GET /v1/traffic/settings should report analytics off, got ${s0.status} ${s0.text.slice(0, 300)}`);
+  const before = traefikState();
+  const staticBefore = traefikFile('traefik.yml');
+  if (!/^accessLog: \{\}$/m.test(staticBefore) || /^\s*filePath:/m.test(staticBefore)) fail(`with analytics off traefik.yml should hold the 0.14 \`accessLog: {}\`: ${staticBefore.slice(0, 400) || '(unreadable)'}`);
+  if (before.mounts.includes(TRAFFIC_MOUNT)) fail(`with analytics off Traefik mounts ${TRAFFIC_MOUNT}`);
+  step(`traffic: off by default (docker log driver ${s0.json.dockerLogDriver ?? 'unknown'}); traefik.yml has \`accessLog: {}\` and no ${TRAFFIC_MOUNT} mount`);
+
+  const on = await api('/v1/traffic/settings', { method: 'PUT', token, body: { enabled: true } });
+  if (on.status !== 200 || on.json?.enabled !== true) fail(`PUT /v1/traffic/settings {enabled:true} answered ${on.status} ${on.text.slice(0, 300)}`);
+  const enabled = traefikState();
+  const staticOn = traefikFile('traefik.yml');
+  if (!enabled.running || !enabled.id || enabled.id === before.id) fail(`enabling analytics did not recreate Traefik (${before.id.slice(0, 12)} → ${enabled.id.slice(0, 12)}, running ${enabled.running})`);
+  if (!enabled.mounts.includes(TRAFFIC_MOUNT)) fail(`the recreated Traefik does not mount ${TRAFFIC_MOUNT}: ${enabled.mounts.join(', ')}`);
+  if (!staticOn.includes(`filePath: ${TRAFFIC_MOUNT}/access.log`)) fail(`traefik.yml after enable has no access-log filePath: ${staticOn.slice(0, 600)}`);
+  step(`traffic enabled: Traefik recreated (${before.id.slice(0, 12)} → ${enabled.id.slice(0, 12)}) with ${TRAFFIC_MOUNT} mounted and the JSON file access log`);
+
+  let first = '';
+  for (let i = 0; i < 30 && !served(first); i++) {
+    first = routeStatuses(hostname, 1)[0] ?? '';
+    if (!served(first)) await sleep(1000);
+  }
+  if (!served(first)) fail(`${hostname} is not routed by the recreated Traefik (last status ${first || 'none'})`);
+  const N = 20;
+  const codes = routeStatuses(hostname, N);
+  if (codes.length !== N || !codes.every(served)) fail(`${N} requests for ${hostname} answered ${codes.join(',')}`);
+  const counted = (j) => (j?.totals?.requests ?? 0) >= N && (j?.totals?.status2xx ?? 0) + (j?.totals?.status3xx ?? 0) >= N;
+  const t0 = Date.now();
+  let svcTraffic = null;
+  while (Date.now() - t0 < 30_000) {
+    svcTraffic = (await api(`/v1/services/${serviceId}/traffic?range=1h`, { token })).json;
+    if (counted(svcTraffic)) break;
+    await sleep(2000);
+  }
+  if (!counted(svcTraffic)) fail(`GET /v1/services/${serviceId}/traffic?range=1h did not count ${N} requests within 30 s: ${JSON.stringify(svcTraffic?.totals ?? svcTraffic).slice(0, 300)}`);
+  const ingestS = ((Date.now() - t0) / 1000).toFixed(1);
+  if (svcTraffic.enabled !== true || svcTraffic.granularity !== 60 || !svcTraffic.domains?.some((dm) => dm.host === hostname)) {
+    fail(`service traffic: ${JSON.stringify({ enabled: svcTraffic.enabled, granularity: svcTraffic.granularity, domains: svcTraffic.domains }).slice(0, 300)}`);
+  }
+  const summary = (await api('/v1/traffic/summary?range=1h', { token })).json;
+  const top = summary?.topDomains?.find((dm) => dm.serviceId === serviceId);
+  if (!(summary?.totals?.requests >= N) || !(top?.requests >= N)) fail(`GET /v1/traffic/summary?range=1h: ${JSON.stringify({ totals: summary?.totals, top }).slice(0, 300)}`);
+  const tt = svcTraffic.totals;
+  step(`traffic: ${N} requests (${[...new Set(codes)].join('/')}) counted within ${ingestS} s — service ${tt.requests} req (2xx ${tt.status2xx}, 3xx ${tt.status3xx}, 4xx ${tt.status4xx}, 5xx ${tt.status5xx}, p95 ${tt.p95Ms} ms); summary totals ${summary.totals.requests}, top domain ${top.host} ${top.requests}`);
+
+  // T3 open risk: a raw line carries the router and status, never client or request data.
+  const raw = panelRun(['sh', '-c', 'head -c 65536 /data/traffic-logs/access.log']);
+  const line = raw.stdout.split(/\r?\n/).find((l) => {
+    try { return 'RouterName' in JSON.parse(l); } catch { return false; }
+  });
+  if (!line) fail(`no JSON access-log line with RouterName in /data/traffic-logs/access.log: ${raw.all.slice(0, 300)}`);
+  const fields = JSON.parse(line);
+  const missing = ['RouterName', 'DownstreamStatus'].filter((k) => !(k in fields));
+  const leaked = Object.keys(fields).filter((k) => TRAFFIC_FORBIDDEN_FIELDS.includes(k) || /^(request|downstream|origin)_/.test(k));
+  if (missing.length || leaked.length) fail(`access-log line ${line.slice(0, 400)}: missing ${missing.join(',') || '-'}, must not carry ${leaked.join(',') || '-'}`);
+  step(`traffic: a raw access-log line keeps ${Object.keys(fields).sort().join(', ')} — no client address, path or headers (RequestHost is kept by design)`);
+
+  // Rotation relies on USR1 reopening the file: recorded, not failed.
+  const moved = `access.log.smoke-${suffix}`;
+  if (panelRun(['mv', '/data/traffic-logs/access.log', `/data/traffic-logs/${moved}`]).status === 0) {
+    dindRun(['kill', '--signal', 'USR1', TRAEFIK]);
+    await sleep(1500);
+    routeStatuses(hostname, 2);
+    await sleep(1000);
+    const reopened = panelRun(['sh', '-c', 'wc -l < /data/traffic-logs/access.log']);
+    step(`recorded: after rename + USR1, Traefik ${reopened.status === 0 && Number(reopened.stdout) > 0 ? `reopened access.log (${reopened.stdout.trim()} new line(s))` : `did NOT reopen access.log (${reopened.all.slice(0, 120)}) — rotation falls back to truncate-after-read`}`);
+    panelRun(['rm', '-f', `/data/traffic-logs/${moved}`]);
+  } else {
+    step('recorded: access.log could not be renamed from the panel container; USR1 reopen not exercised');
+  }
+  const stable = traefikState();
+  if (stable.id !== enabled.id) fail(`Traefik was recreated again while analytics stayed on (${enabled.id.slice(0, 12)} → ${stable.id.slice(0, 12)})`);
+
+  const off = await api('/v1/traffic/settings', { method: 'PUT', token, body: { enabled: false } });
+  if (off.status !== 200 || off.json?.enabled !== false) fail(`PUT /v1/traffic/settings {enabled:false} answered ${off.status} ${off.text.slice(0, 300)}`);
+  const disabled = traefikState();
+  const staticAfter = traefikFile('traefik.yml');
+  if (!disabled.running || disabled.id === enabled.id) fail(`disabling analytics did not recreate Traefik (${enabled.id.slice(0, 12)} → ${disabled.id.slice(0, 12)})`);
+  if (disabled.mounts.includes(TRAFFIC_MOUNT)) fail(`Traefik still mounts ${TRAFFIC_MOUNT} after disable`);
+  if (staticAfter !== staticBefore) fail(`traefik.yml after disable differs from the pre-enable file:\n--- before\n${staticBefore}\n--- after\n${staticAfter}`);
+  let routed = '';
+  for (let i = 0; i < 30 && !served(routed); i++) {
+    routed = routeStatuses(hostname, 1)[0] ?? '';
+    if (!served(routed)) await sleep(1000);
+  }
+  if (!served(routed)) fail(`${hostname} is not routed after analytics was disabled (last status ${routed || 'none'})`);
+  const s1 = (await api('/v1/traffic/settings', { token })).json;
+  if (s1?.enabled !== false || s1.status !== 'off') fail(`GET /v1/traffic/settings after disable: ${JSON.stringify(s1).slice(0, 300)}`);
+  const leftover = panelRun(['sh', '-c', 'ls -A /data/traffic-logs 2>&1']).stdout.replace(/\s+/g, ' ').trim();
+  step(`traffic disabled: Traefik recreated (${enabled.id.slice(0, 12)} → ${disabled.id.slice(0, 12)}) without the mount; traefik.yml byte-identical to the pre-enable file; ${hostname} routes (${routed}); <data>/traffic-logs now holds: ${leftover || '(nothing)'}`);
+}
+
+/** OpenAPI 3.1: 401 without auth, the document with auth, an ETag/304 round trip. */
+async function openapiChecks(token) {
+  const url = `http://127.0.0.1:${PANEL_PORT}/v1/openapi.json`;
+  const anon = await fetch(url);
+  if (anon.status !== 401) fail(`GET /v1/openapi.json without auth answered ${anon.status} (wanted 401)`);
+  const r = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+  const etag = r.headers.get('etag');
+  const text = await r.text();
+  if (r.status !== 200 || !etag) fail(`GET /v1/openapi.json answered ${r.status} (etag ${etag}): ${text.slice(0, 200)}`);
+  let doc = null;
+  try { doc = JSON.parse(text); } catch { fail('GET /v1/openapi.json is not JSON'); }
+  if (!/^3\.1\.\d+$/.test(String(doc.openapi))) fail(`openapi is ${doc.openapi} (wanted 3.1.x)`);
+  const METHODS = ['get', 'put', 'post', 'delete', 'patch', 'head', 'options', 'trace'];
+  const paths = Object.entries(doc.paths ?? {});
+  if (paths.length === 0) fail('the OpenAPI document has no paths');
+  const empty = paths.filter(([, item]) => !METHODS.some((m) => item && typeof item[m] === 'object')).map(([p]) => p);
+  if (empty.length) fail(`OpenAPI paths without an operation: ${empty.slice(0, 10).join(', ')}`);
+  for (const want of ['/v1/terminals', '/v1/traffic/settings', '/v1/openapi.json']) {
+    if (!doc.paths[want]) fail(`the OpenAPI document has no ${want}`);
+  }
+  const ops = paths.reduce((n, [, item]) => n + METHODS.filter((m) => item[m]).length, 0);
+  const undocumented = paths.reduce((n, [, item]) => n + METHODS.filter((m) => item[m]?.['x-ninedeploy-undocumented']).length, 0);
+  const again = await fetch(url, { headers: { authorization: `Bearer ${token}`, 'if-none-match': etag } });
+  await again.text();
+  if (again.status !== 304) fail(`GET /v1/openapi.json with If-None-Match answered ${again.status} (wanted 304)`);
+  step(`OpenAPI: 401 without auth; ${doc.openapi} with ${paths.length} paths / ${ops} operations (version ${doc.info?.version}, ${undocumented} undocumented), every path has an operation; ETag → 304`);
+}
+
+/** A local account with no seat anywhere, signed in. */
+async function createGuest(token, label) {
+  const email = `guest-${label}-${suffix}@nd.local`;
+  const password = `Guest-${suffix}-0123!`;
+  const u = await api('/v1/users', { method: 'POST', token, body: { email, password, name: `Guest ${label}` } });
+  if (u.status !== 200 || !u.json?.id) fail(`POST /v1/users for the guest answered ${u.status} ${u.text.slice(0, 200)}`);
+  const login = await api('/v1/auth/login', { method: 'POST', body: { email, password } });
+  if (login.status !== 200 || !login.json?.tokens?.accessToken) fail(`guest login failed: ${login.status} ${login.text.slice(0, 200)}`);
+  return { id: u.json.id, email, password, token: login.json.tokens.accessToken };
+}
+
+/** A project in the service's workspace, linked to the service (the grant rule: linked AND tagged into the workspace). */
+async function grantProject(token, serviceId, label) {
+  const tags = await api(`/v1/services/${serviceId}/tags`, { token });
+  if (tags.status !== 200) fail(`GET /v1/services/${serviceId}/tags answered ${tags.status} ${tags.text.slice(0, 200)}`);
+  const workspaceId = tags.json.workspaces?.[0]?.id ?? (await api('/v1/workspaces', { token })).json?.[0]?.id;
+  if (!workspaceId) fail('the operator has no workspace to grant in');
+  const proj = await api('/v1/projects', { method: 'POST', token, body: { name: `smoke-grants-${label}-${suffix}`, workspaceId } });
+  const projectId = proj.json?.id ?? proj.json?.project?.id;
+  if (!projectId) fail(`project create in workspace #${workspaceId} failed: ${proj.status} ${proj.text.slice(0, 200)}`);
+  const ids = (list) => (list ?? []).map((x) => x.id);
+  const put = await api(`/v1/services/${serviceId}/tags`, {
+    method: 'PUT',
+    token,
+    body: {
+      projectIds: [...new Set([...ids(tags.json.projects), projectId])],
+      workspaceIds: [...new Set([...ids(tags.json.workspaces), workspaceId])],
+      labelIds: ids(tags.json.labels),
+    },
+  });
+  if (put.status !== 200 || !ids(put.json?.projects).includes(projectId) || !ids(put.json?.workspaces).includes(workspaceId)) {
+    fail(`linking service #${serviceId} to project #${projectId} answered ${put.status} ${put.text.slice(0, 300)}`);
+  }
+  return { workspaceId, projectId };
+}
+
+/**
+ * Access grants: a guest with no seat sees nothing; a viewer grant on the
+ * project lets them read the service, not write it, and gives no
+ * workspace-level right; revoking it takes the read away again.
+ */
+async function grantChecks(token, serviceId) {
+  const { workspaceId, projectId } = await grantProject(token, serviceId, 'to');
+  const guest = await createGuest(token, 'to');
+  const g0 = await api(`/v1/services/${serviceId}`, { token: guest.token });
+  if (g0.status !== 404) fail(`a seatless account read service #${serviceId} before any grant: ${g0.status}`);
+  const base = `/v1/workspaces/${workspaceId}/access-grants`;
+  const created = await api(base, { method: 'POST', token, body: { userId: guest.id, projectId, role: 'viewer' } });
+  if (created.status !== 201 || created.json?.role !== 'viewer' || created.json.isGuest !== true || created.json.project?.id !== projectId) {
+    fail(`POST ${base} answered ${created.status} ${created.text.slice(0, 300)} (wanted 201, viewer, isGuest)`);
+  }
+  const grantId = created.json.id;
+  const listed = (await api(base, { token })).json;
+  if (!Array.isArray(listed) || !listed.some((g) => g.id === grantId)) fail(`grant #${grantId} is not listed: ${JSON.stringify(listed).slice(0, 200)}`);
+  const read = await api(`/v1/services/${serviceId}`, { token: guest.token });
+  if (read.status !== 200 || read.json?.id !== serviceId) fail(`the viewer guest cannot read service #${serviceId}: ${read.status} ${read.text.slice(0, 200)}`);
+  const write = await api(`/v1/services/${serviceId}/env`, { method: 'POST', token: guest.token, body: { key: 'GUEST_WRITE', value: 'x' } });
+  if (write.status !== 403) fail(`the viewer guest wrote service #${serviceId} env: ${write.status} ${write.text.slice(0, 200)} (wanted 403)`);
+  const wsLevel = [
+    ['GET workspace', await api(`/v1/workspaces/${workspaceId}`, { token: guest.token })],
+    ['GET its grants', await api(base, { token: guest.token })],
+    ['create a project in it', await api('/v1/projects', { method: 'POST', token: guest.token, body: { name: `guest-${suffix}`, workspaceId } })],
+  ];
+  for (const [label, r] of wsLevel) {
+    if (r.status !== 403 && r.status !== 404) fail(`the guest could ${label} #${workspaceId}: ${r.status} ${r.text.slice(0, 200)} (wanted 403/404)`);
+  }
+  // Suspend keeps the grant listed but stops it counting; reinstate brings it back.
+  const suspended = await api(`${base}/${grantId}`, { method: 'PATCH', token, body: { suspended: true } });
+  if (suspended.status !== 200 || suspended.json?.suspended !== true) fail(`PATCH ${base}/${grantId} {suspended:true} answered ${suspended.status} ${suspended.text.slice(0, 200)}`);
+  const held = await api(`/v1/services/${serviceId}`, { token: guest.token });
+  if (held.status !== 404) fail(`with grant #${grantId} suspended the guest still reads service #${serviceId}: ${held.status}`);
+  const reinstated = await api(`${base}/${grantId}`, { method: 'PATCH', token, body: { suspended: false } });
+  if (reinstated.status !== 200 || reinstated.json?.suspended !== false) fail(`PATCH ${base}/${grantId} {suspended:false} answered ${reinstated.status} ${reinstated.text.slice(0, 200)}`);
+  const back = await api(`/v1/services/${serviceId}`, { token: guest.token });
+  if (back.status !== 200) fail(`after reinstating grant #${grantId} the guest cannot read service #${serviceId}: ${back.status}`);
+  const me = (await api('/v1/access/me', { token: guest.token })).json;
+  if (!me?.guestWorkspaces?.some((w) => w.id === workspaceId) || !me.grants?.some((g) => g.id === grantId)) fail(`GET /v1/access/me for the guest: ${JSON.stringify(me).slice(0, 300)}`);
+  const del = await api(`${base}/${grantId}`, { method: 'DELETE', token });
+  if (del.status !== 200 || del.json?.ok !== true) fail(`DELETE ${base}/${grantId} answered ${del.status} ${del.text.slice(0, 200)}`);
+  const gone = await api(`/v1/services/${serviceId}`, { token: guest.token });
+  if (gone.status !== 404) fail(`after the revoke the guest still reads service #${serviceId}: ${gone.status}`);
+  step(`grants: seatless guest 404 → viewer grant #${grantId} on project #${projectId} (workspace #${workspaceId}, isGuest) → reads the service (200), env write 403, workspace-level ${wsLevel.map(([, r]) => r.status).join('/')}, /access/me lists it → suspended 404 → reinstated 200 → revoked → 404`);
+}
+
 async function main() {
   console.log(`User-journey smoke against ${IMAGE}`);
   step(`topology: network ${NET}, dind ${DIND}, panel ${PANEL} (:${PANEL_PORT})`);
@@ -453,10 +953,13 @@ async function main() {
   step(`/health ok — version ${health.version}, db ${health.db}`);
   /** 0.14 network and data access checks run only on an image that has them. */
   const has014 = !olderThan(String(health.version), NETWORK_DATA_IN);
+  /** 0.15 operations and API checks run only on an image that has them. */
+  const has015 = !olderThan(String(health.version), OPERATIONS_IN);
 
   // ── register the first admin ────────────────────────────────────────────
   const email = `journey-${suffix}@nd.local`;
-  const reg = await api('/v1/auth/register', { method: 'POST', body: { email, password: 'Journey-0123456!', name: 'Journey' } });
+  const password = 'Journey-0123456!';
+  const reg = await api('/v1/auth/register', { method: 'POST', body: { email, password, name: 'Journey' } });
   if (reg.status !== 200 || !reg.json?.tokens?.accessToken) fail(`register failed: ${reg.status} ${reg.text.slice(0, 200)}`);
   const token = reg.json.tokens.accessToken;
   step('first admin registered (operator)');
@@ -622,6 +1125,22 @@ async function main() {
     step(`${health.version} predates network and data access (0.14): 0.14 checks skipped`);
   }
 
+  // ── 0.15 terminals, traffic analytics, OpenAPI, access grants ──────────
+  if (has015) {
+    const composeShell = await api('/v1/terminals', { method: 'POST', token, body: { target: { kind: 'service', serviceId: composeId } } });
+    if (composeShell.status !== 422 || errorCode(composeShell) !== 'use_container_target') {
+      fail(`a terminal on compose service #${composeId} answered ${composeShell.status} ${composeShell.text.slice(0, 200)} (wanted 422 use_container_target)`);
+    }
+    step(`terminals: compose service #${composeId} refused as a service target (422 use_container_target)`);
+    await terminalChecks(token, serviceId);
+    await hostShellChecks(token, password);
+    await trafficChecks(token, serviceId, `journey-${suffix}.test`);
+    await openapiChecks(token);
+    await grantChecks(token, serviceId);
+  } else {
+    step(`${health.version} predates operations and API (0.15): 0.15 checks skipped`);
+  }
+
   // ── teardown ────────────────────────────────────────────────────────────
   const delCompose = await api(`/v1/services/${composeId}`, { method: 'DELETE', token });
   if (delCompose.status !== 200 && delCompose.status !== 204) fail(`compose delete failed: ${delCompose.status}`);
@@ -634,7 +1153,7 @@ async function main() {
   }
   step('service deleted');
 
-  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → signed webhook redeploy → compose stack → managed postgres (+ backup policy) + redis → preview-only env → GitHub App/Gitea surfaces → 0.14 Traefik directory, custom config, certificates, public access, import, secret managers (≥0.14) → teardown');
+  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → signed webhook redeploy → compose stack → managed postgres (+ backup policy) + redis → preview-only env → GitHub App/Gitea surfaces → 0.14 Traefik directory, custom config, certificates, public access, import, secret managers (≥0.14) → 0.15 terminals, host shell, traffic analytics, OpenAPI, access grants (≥0.15) → teardown');
 }
 
 main()
