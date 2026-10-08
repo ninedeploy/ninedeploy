@@ -457,6 +457,12 @@ function paramValue(url: string, param: string, r: Res): string {
       return 'zz.key';
     case 'stack':
       return 'zz-stack';
+    // ── 0.14 T4 database import ── (no import row is seeded: every import id is unknown)
+    case 'importId':
+      return '999999';
+    case 'index':
+      return '0';
+    // ── end 0.14 T4 ──
     case '*':
       return '';
     case 'id': {
@@ -992,6 +998,20 @@ export const MATRIX: Record<string, Rule> = {
   // ── 0.14 T3 public access ──
   // ── end 0.14 T3 ──
   // ── 0.14 T4 database import ──
+  'GET /v1/databases/:id/imports': R('admin'),
+  'POST /v1/databases/:id/imports': R('operator', {
+    body: () => ({ source: 's3', destinationId: 999999, key: 'ninedeploy/app.dump' }),
+    note: 'an UPLOAD body needs only admin on the database (covered by test/modules/databaseImports.test.ts); this entry pins the S3 body, which is operator-only — an owner or admin sending it gets 403',
+  }),
+  'GET /v1/databases/:id/imports/:importId': R('admin', { allow404: 'no import row is seeded' }),
+  'DELETE /v1/databases/:id/imports/:importId': R('admin', { allow404: 'no import row is seeded' }),
+  'PUT /v1/databases/:id/imports/:importId/chunks/:index': R('admin', {
+    allow404: 'no import row is seeded; chunk order, size and the creator check are covered by test/modules/databaseImports.test.ts',
+  }),
+  'POST /v1/databases/:id/imports/:importId/start': R('admin', {
+    allow404: 'no import row is seeded; the creator check and refusals are covered by test/modules/databaseImports.test.ts',
+  }),
+  'GET /v1/backup-destinations/:id/objects': OP,
   // ── end 0.14 T4 ──
   // ── 0.14 T5 secret providers ──
   // Operator only (own authenticate + requireAdmin hooks). The at-floor PUT

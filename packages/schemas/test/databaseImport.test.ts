@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DATABASE_IMPORT_CHUNK_SIZE,
+  DATABASE_IMPORT_ENGINE_OPTIONS,
   backupDestinationObject,
   backupDestinationObjectsQuery,
   databaseImport,
@@ -44,6 +45,15 @@ describe('databaseImportOptions (strict)', () => {
     const all = { clean: true, singleTransaction: false, drop: true, confirmReplace: true, skipSafetyBackup: false };
     expect(databaseImportOptions.parse(all)).toEqual(all);
     expect(databaseImportOptions.parse({})).toEqual({});
+  });
+
+  it('names, per importable engine, only option keys the strict schema knows', () => {
+    expect(Object.keys(DATABASE_IMPORT_ENGINE_OPTIONS)).toEqual(['postgres', 'mysql', 'mariadb', 'mongo', 'redis', 'valkey']);
+    for (const keys of Object.values(DATABASE_IMPORT_ENGINE_OPTIONS)) {
+      expect(databaseImportOptions.parse(Object.fromEntries(keys.map((k) => [k, true])))).toBeDefined();
+      expect(keys).toContain('skipSafetyBackup');
+    }
+    expect(DATABASE_IMPORT_ENGINE_OPTIONS.redis).toContain('confirmReplace');
   });
 
   it('refuses unknown keys instead of dropping them', () => {

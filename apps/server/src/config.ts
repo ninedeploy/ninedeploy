@@ -36,6 +36,21 @@ const dockerConfigDir = path.join(dataDir, 'docker-config');
 const pm2Home = path.join(dataDir, 'pm2');
 for (const dir of [reposDir, logsDir, backupsDir, dockerConfigDir, pm2Home]) mkdirSync(dir, { recursive: true });
 
+/** 10 GiB: the default ceiling for one database dump import (0.14). */
+export const DEFAULT_IMPORT_MAX_BYTES = 10 * 1024 * 1024 * 1024;
+
+/**
+ * `NINEDEPLOY_IMPORT_MAX_BYTES`: a positive whole number of bytes. Anything
+ * else (unset, empty, `0`, `10G`, a fraction) keeps the 10 GiB default rather
+ * than failing the boot over an optional knob.
+ */
+export function parseImportMaxBytes(raw: string | undefined): number {
+  const value = raw?.trim() ?? '';
+  if (!/^[1-9]\d*$/.test(value)) return DEFAULT_IMPORT_MAX_BYTES;
+  const n = Number(value);
+  return Number.isSafeInteger(n) ? n : DEFAULT_IMPORT_MAX_BYTES;
+}
+
 export const config = {
   env: env.NODE_ENV,
   isProd: env.NODE_ENV === 'production',
@@ -89,4 +104,6 @@ export const config = {
   updateCheckUrl: env.NINEDEPLOY_UPDATE_CHECK_URL ?? 'https://api.github.com/repos/NineDeploy/NineDeploy/releases/latest',
   /** How many volume backups to keep per volume (1-100). */
   volumeBackupRetainCount: env.NINEDEPLOY_BACKUP_VOLUME_RETAIN_COUNT,
+  /** Largest database dump an import accepts (0.14), in bytes. */
+  importMaxBytes: parseImportMaxBytes(process.env['NINEDEPLOY_IMPORT_MAX_BYTES']),
 } as const;

@@ -1,11 +1,11 @@
 import { eq } from 'drizzle-orm';
 import { backupDestinations } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
-import { backupDestinationCreate, backupDestinationPatch } from '@ninedeploy/schemas';
+import { backupDestinationCreate, backupDestinationObjectsQuery, backupDestinationPatch } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
 import { decrypt, encrypt } from '../lib/crypto.js';
-import { badRequest, notFound, parseId } from '../lib/errors.js';
-import { s3Test } from '../lib/s3.js';
+import { badRequest, HttpError, notFound, parseId } from '../lib/errors.js';
+import { s3List, s3Test } from '../lib/s3.js';
 
 /**
  * S3-compatible backup destinations (admin only). The secret key is encrypted
@@ -81,6 +81,37 @@ export const backupDestinationRoutes: FastifyPluginAsync = async (app) => {
     await app.db.delete(backupDestinations).where(eq(backupDestinations.id, id));
     void audit(app.db, req.user!.id, 'backup.destination.delete', `#${id}`);
     return { ok: true };
+  });
+
+  // Object listing for the dump-import picker (0.14, DESIGN §3.3). The prefix
+  // defaults to the destination's own and must stay inside it — an import
+  // only accepts keys under that prefix anyway.
+  app.get('/:id/objects', async (req) => {
+    const id = parseId((req.params as { id: string }).id);
+    const query = backupDestinationObjectsQuery.parse(req.query ?? {});
+    const row = await app.db.query.backupDestinations.findFirst({ where: eq(backupDestinations.id, id) });
+    if (!row) throw notFound('Destination not found');
+    const base = row.prefix.replace(/^\/+|\/+$/g, '');
+    const prefix = query.prefix ?? (base ? `${base}/` : '');
+    if (base && !prefix.startsWith(base)) throw badRequest(`The prefix must start with the destination prefix "${base}"`);
+    let objects: Awaited<ReturnType<typeof s3List>>;
+    try {
+      objects = await s3List(
+        {
+          endpoint: row.endpoint,
+          region: row.region,
+          bucket: row.bucket,
+          accessKeyId: row.accessKeyId,
+          secretAccessKey: decrypt(row.secretKeyEncrypted),
+        },
+        prefix,
+      );
+    } catch (err) {
+      // The S3 error body is logged, not returned: it can name the access key.
+      req.log.warn({ err }, 'backup destination listing failed');
+      throw new HttpError(502, 'destination_unreachable', 'The backup destination could not be listed');
+    }
+    return objects.map((o) => ({ key: o.key, sizeBytes: o.sizeBytes, lastModified: o.lastModified || null }));
   });
 
   // Connectivity + credentials probe: PUT + DELETE a tiny marker object.

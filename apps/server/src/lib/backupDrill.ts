@@ -292,7 +292,7 @@ async function fileExists(p: string): Promise<boolean> {
  * image not present locally, the tool missing from it, a timeout). It used to
  * be reported as `failed`, which told the operator a good backup was broken.
  */
-type ValidationResult =
+export type ValidationResult =
   | { outcome: 'passed'; details: Record<string, unknown> }
   | { outcome: 'failed'; error: string; details?: Record<string, unknown> }
   | { outcome: 'unverifiable'; error: string; details?: Record<string, unknown> };
@@ -365,6 +365,17 @@ async function validateDump(ctx: DrillContext, image: string | null): Promise<Va
     default:
       return failed(`Drill not supported for engine "${ctx.engine}"`);
   }
+}
+
+/**
+ * 0.14 (dump import): the drill's engine validators for a plaintext dump that
+ * is not a backup row — the import path checks an uploaded RDB with the same
+ * `redis-check-rdb` / `valkey-check-rdb`, inside the database's own image,
+ * before it replaces the dataset. No row is written and nothing is cleaned up:
+ * the caller owns `file`.
+ */
+export function validateDumpFile(engine: string, file: string, image: string | null): Promise<ValidationResult> {
+  return validateDump({ file, engine, cleanup: async () => undefined }, image);
 }
 
 // ── r356: engine tools run in the database's own image ────────────────────

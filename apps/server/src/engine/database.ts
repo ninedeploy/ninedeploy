@@ -8,7 +8,7 @@ import type { Database } from '@ninedeploy/db';
 import { config } from '../config.js';
 import { createBackupCipher, createBackupDecipher, decrypt } from '../lib/crypto.js';
 import { ensureDockerImage, pullDockerImage } from '../lib/dockerPull.js';
-import { capture, run } from '../lib/exec.js';
+import { capture, run, sleep } from '../lib/exec.js';
 import { HELPER_IMAGE } from '../lib/inventory.js';
 import { connectContainerToServiceBridge, ensureServiceBridge } from '../lib/serviceBridge.js';
 import { writeSecretFile } from '../lib/secretFile.js';
@@ -160,7 +160,7 @@ export function readBackupBytes(file: string): Buffer {
  * sibling temp file; legacy plaintext files are used as-is. Returns the path to
  * feed to `docker cp` and a cleanup function.
  */
-async function stageForRestore(file: string): Promise<{ path: string; cleanup: () => void }> {
+export async function stageForRestore(file: string): Promise<{ path: string; cleanup: () => void }> {
   const layout = await streamBackupLayout(file);
   if (layout) {
     const dec = `${file}.${randomUUID()}.dec`;
@@ -1156,4 +1156,230 @@ export async function databaseLogs(d: Database, lines = 100): Promise<string[]> 
   } catch {
     return [];
   }
+}
+
+// ── dump import (0.14, DESIGN §3) ─────────────────────────────────────────
+//
+// The import counterpart of `restoreDatabase`: same locks, same `docker cp`
+// staging and argv-only execution (never a host shell), but for dumps that
+// came from OUTSIDE NineDeploy. Format detection, the non-operator refusals
+// and the job bookkeeping live in `lib/databaseImport.ts`; this file only
+// knows how to run one engine's restore tool against a staged file.
+
+/** The formats `importDatabase` can run (mirrors `databaseImportFormat`). */
+export type DatabaseImportFormat = 'pg_custom' | 'pg_plain' | 'mysql_sql' | 'mongo_archive' | 'rdb';
+
+export interface DatabaseImportPlan {
+  format: DatabaseImportFormat;
+  /** mongo only: the archive is gzip-compressed (`--gzip`). Every other
+   *  engine is handed an already-decompressed file. */
+  gzip?: boolean;
+  /** postgres custom format: `--clean --if-exists`. */
+  clean?: boolean;
+  /** postgres: `--single-transaction`. */
+  singleTransaction?: boolean;
+  /** mongo: `--drop`. */
+  drop?: boolean;
+  /** mysql/mariadb: the client's sandbox flag (`probeMysqlSandboxFlag`), or
+   *  null to run without one — the caller allows that for operators only. */
+  sandboxFlag?: string | null;
+  /**
+   * The pre-import safety backup: dumped with `backupDatabase`'s own code
+   * INSIDE the same lock as the import, so no other backup or restore can
+   * slip between the two. `onDone` / `onFailed` record the outcome on the
+   * caller's rows; a failed safety backup aborts the import.
+   */
+  safetyBackup?: {
+    file: string;
+    onDone: () => Promise<void>;
+    onFailed: (err: unknown) => Promise<void>;
+  };
+}
+
+/** A multi-GB restore legitimately runs for hours; `run`'s 30-minute default would kill it. */
+export const IMPORT_TIMEOUT_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * mysql/mariadb: feed the staged dump on stdin. `sh -c` takes the file and the
+ * client argv POSITIONALLY ("$1", "$@") — nothing is interpolated into the
+ * script, so no password or path can break out of it. stdin rather than the
+ * client's `source` command because mariadb's `--sandbox` disables `source`
+ * along with `system`, `tee` and `pager`.
+ */
+const MYSQL_STDIN_SCRIPT = 'f="$1"; shift; exec "$@" < "$f"';
+
+/** `docker exec -e` value for plain-SQL postgres imports. */
+export const PSQL_IMPORT_PGOPTIONS = 'PGOPTIONS=-c standard_conforming_strings=on';
+
+/**
+ * The `docker` argv that restores the dump staged at `tmp` inside container
+ * `cn`. Pure (exported for the argv tests); `rdb` has no single command — it
+ * is a stop / copy / start sequence in `importDatabase`.
+ */
+export function importCommand(
+  engine: string,
+  cn: string,
+  tmp: string,
+  plan: DatabaseImportPlan,
+  password: string,
+): string[] {
+  if (engine === 'postgres' && plan.format === 'pg_custom') {
+    return [
+      'exec', cn, 'pg_restore', '--no-owner', '--no-acl', '--exit-on-error',
+      ...(plan.singleTransaction ? ['--single-transaction'] : []),
+      ...(plan.clean ? ['--clean', '--if-exists'] : []),
+      '-U', 'nine', '-d', 'app', tmp,
+    ];
+  }
+  if (engine === 'postgres' && plan.format === 'pg_plain') {
+    // standard_conforming_strings is forced on at connect time (over any
+    // ALTER ROLE / ALTER DATABASE default): the meta-command filter in
+    // lib/databaseImport.ts lexes string literals under that assumption.
+    // ON_ERROR_STOP: a failed `COPY … FROM stdin` stops psql instead of
+    // letting it read the COPY data that follows as commands.
+    return [
+      'exec', '-e', PSQL_IMPORT_PGOPTIONS, cn, 'psql', '-X', '-v', 'ON_ERROR_STOP=1',
+      ...(plan.singleTransaction ? ['--single-transaction'] : []),
+      '-U', 'nine', '-d', 'app', '-f', tmp,
+    ];
+  }
+  if ((engine === 'mysql' || engine === 'mariadb') && plan.format === 'mysql_sql') {
+    const client = engine === 'mysql' ? 'mysql' : 'mariadb';
+    return [
+      'exec', cn, 'sh', '-c', MYSQL_STDIN_SCRIPT, 'sh', tmp,
+      client, '-uroot', `--password=${password}`,
+      ...(plan.sandboxFlag ? [plan.sandboxFlag] : []),
+      '--local-infile=0', 'app',
+    ];
+  }
+  if (engine === 'mongo' && plan.format === 'mongo_archive') {
+    return [
+      'exec', cn, 'mongorestore',
+      '-u', 'nine', '-p', password, '--authenticationDatabase', 'admin',
+      `--archive=${tmp}`,
+      ...(plan.gzip ? ['--gzip'] : []),
+      ...(plan.drop ? ['--drop'] : []),
+      '--nsExclude=admin.*', '--nsExclude=config.*', '--nsExclude=local.*',
+    ];
+  }
+  throw new Error(`import of ${plan.format} is not supported for ${engine}`);
+}
+
+/**
+ * Import a dump into a managed database. Serialized with backups and restores
+ * of the same database (the in-process queue plus the cross-process lock),
+ * and preceded — under that same lock — by the plan's safety backup.
+ */
+export function importDatabase(d: Database, file: string, plan: DatabaseImportPlan, log: (line: string) => void): Promise<void> {
+  return withDatabaseBackupOperation(d.id, () =>
+    withExclusiveOperation(`database-${d.containerName ?? d.id}`, log, async () => {
+      if (plan.safetyBackup) {
+        log('Taking the pre-import safety backup');
+        try {
+          await backupDatabaseUnlocked(d, plan.safetyBackup.file, log);
+        } catch (err) {
+          await plan.safetyBackup.onFailed(err);
+          throw err;
+        }
+        await plan.safetyBackup.onDone();
+      }
+      await importDatabaseUnlocked(d, file, plan, log);
+    }));
+}
+
+async function importDatabaseUnlocked(d: Database, file: string, plan: DatabaseImportPlan, log: (line: string) => void): Promise<void> {
+  if (!ENGINES[d.engine] || !d.containerName) throw new Error('database not runnable');
+  const cn = d.containerName;
+  if (plan.format === 'rdb') {
+    if (d.engine !== 'redis' && d.engine !== 'valkey') throw new Error(`import of rdb is not supported for ${d.engine}`);
+    // The restore sequence: stop first (a graceful shutdown SAVEs over the
+    // file we are about to place), copy, and always start again (r232).
+    await run('docker', ['stop', cn], {}, log);
+    try {
+      await run('docker', ['cp', file, `${cn}:/data/dump.rdb`], { timeoutMs: IMPORT_TIMEOUT_MS }, log);
+    } finally {
+      await run('docker', ['start', cn], {}, log);
+    }
+    return;
+  }
+  const password = decrypt(d.passwordEncrypted);
+  // Build (and so validate) the command before anything is copied.
+  const tmp = `/tmp/ninedeploy-import-${randomUUID()}`;
+  const argv = importCommand(d.engine, cn, tmp, plan, password);
+  try {
+    await run('docker', ['cp', file, `${cn}:${tmp}`], { timeoutMs: IMPORT_TIMEOUT_MS }, log);
+    await run('docker', argv, { timeoutMs: IMPORT_TIMEOUT_MS, heartbeatMs: 60_000, heartbeatLabel: 'import' }, log);
+  } finally {
+    await run('docker', ['exec', cn, 'rm', '-f', tmp], {}, swallow).catch(() => {
+      log(`⚠ could not remove the staged dump ${tmp} from ${cn} — delete it by hand`);
+    });
+  }
+}
+
+/**
+ * The mysql/mariadb client's sandbox flag, probed through `--help` in the
+ * database's own container: mariadb's `--sandbox` (10.5.25+, 11.x) or mysql's
+ * `--system-command=OFF` (8.0.40+ / 8.4.3+ / 9.1+). Null when the client has
+ * neither, or the probe could not run — the caller then refuses non-operators.
+ */
+export async function probeMysqlSandboxFlag(d: Database): Promise<string | null> {
+  if ((d.engine !== 'mysql' && d.engine !== 'mariadb') || !d.containerName) return null;
+  const client = d.engine === 'mysql' ? 'mysql' : 'mariadb';
+  let help: string;
+  try {
+    help = await capture('docker', ['exec', d.containerName, client, '--help'], { timeoutMs: 30_000 });
+  } catch {
+    return null;
+  }
+  if (d.engine === 'mariadb') return /(^|\s)--sandbox\b/m.test(help) ? '--sandbox' : null;
+  return /(^|\s)--system-command\b/m.test(help) ? '--system-command=OFF' : null;
+}
+
+/**
+ * After an import: can NineDeploy still sign in with the credentials it
+ * holds? A dump can carry `ALTER USER`, `mysql.user` rows or an admin-db user
+ * that change them. Every probe authenticates for real (postgres over TCP —
+ * the image's local socket is `trust` and would prove nothing). A few
+ * attempts, because redis/valkey come back from the restart still loading.
+ */
+export async function probeDatabaseCredentials(d: Database, attempts = 5, delayMs = 2_000): Promise<boolean> {
+  const cfg = ENGINES[d.engine];
+  if (!cfg || !d.containerName) return false;
+  const cn = d.containerName;
+  const password = decrypt(d.passwordEncrypted);
+  const once = async (): Promise<boolean> => {
+    if (d.engine === 'postgres') {
+      const out = await capture('docker', [
+        'exec', '-e', `PGPASSWORD=${password}`, cn,
+        'psql', '-h', '127.0.0.1', '-U', cfg.username()!, '-d', cfg.dbName()!, '-tAc', 'SELECT 1',
+      ]);
+      return out.trim() === '1';
+    }
+    if (d.engine === 'mysql' || d.engine === 'mariadb') {
+      const client = d.engine === 'mysql' ? 'mysql' : 'mariadb';
+      const out = await capture('docker', ['exec', cn, client, '-uroot', `--password=${password}`, '-N', '-e', 'SELECT 1']);
+      return out.trim() === '1';
+    }
+    if (d.engine === 'mongo') {
+      const out = await capture('docker', [
+        'exec', cn, 'mongosh', '-u', cfg.username()!, '-p', password, '--authenticationDatabase', 'admin',
+        '--quiet', '--eval', 'db.getSiblingDB("app").runCommand({ ping: 1 }).ok',
+      ]);
+      return out.trim() === '1';
+    }
+    if (d.engine === 'redis' || d.engine === 'valkey') {
+      const out = await capture('docker', ['exec', cn, 'redis-cli', '-a', password, '--no-auth-warning', 'PING']);
+      return out.trim() === 'PONG';
+    }
+    return false;
+  };
+  for (let i = 0; i < attempts; i++) {
+    try {
+      if (await once()) return true;
+    } catch {
+      /* not ready yet, or the credentials were refused */
+    }
+    if (i < attempts - 1) await sleep(delayMs);
+  }
+  return false;
 }

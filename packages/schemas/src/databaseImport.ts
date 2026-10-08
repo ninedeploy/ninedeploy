@@ -53,6 +53,21 @@ export const databaseImportOptions = z
   .strict();
 export type DatabaseImportOptions = z.infer<typeof databaseImportOptions>;
 
+/**
+ * The engines an import accepts, and the option keys each one applies. The
+ * server refuses (422) any other engine, and any key not listed for the
+ * database's engine. clickhouse, meilisearch and rabbitmq have no import.
+ */
+export const DATABASE_IMPORT_ENGINE_OPTIONS = {
+  postgres: ['clean', 'singleTransaction', 'skipSafetyBackup'],
+  mysql: ['skipSafetyBackup'],
+  mariadb: ['skipSafetyBackup'],
+  mongo: ['drop', 'skipSafetyBackup'],
+  redis: ['confirmReplace', 'skipSafetyBackup'],
+  valkey: ['confirmReplace', 'skipSafetyBackup'],
+} as const satisfies Record<string, ReadonlyArray<keyof DatabaseImportOptions>>;
+export type DatabaseImportEngine = keyof typeof DATABASE_IMPORT_ENGINE_OPTIONS;
+
 const sha256Hex = z
   .string()
   .trim()
