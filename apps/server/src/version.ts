@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.11.1';
+export const VERSION = '0.11.2';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.11.2',
+    date: '2026-10-08',
+    title: 'Security Release — Clone Errors No Longer Leak the Git Token',
+    changes: [
+      'Security: when a repository\'s submodule could not be cloned, git printed the submodule URL including the source\'s access token, and NineDeploy copied that text into the deploy log, the deploy-failure audit entry and every notification sent from it (Slack, Telegram, webhooks, email). Clone errors are now redacted. If a deploy of a repository with submodules has failed before, rotate that Git source\'s token.',
+      'Deploys name the reason a clone failed — authentication failed, HTTP 403, not found or no access, could not connect, or missing branch — with advice for GitHub tokens.',
+      'The Deploy Wizard explains a short repository list (token without the repo scope, list capped, a later page failed), also for dashboards on a separate origin, and `ninedeploy sources test` prints the token type, scopes and warnings.',
+      'Deprecated: an OIDC provider\'s default role has had no effect since 0.11.0, so the SSO settings no longer show it; the API still accepts it.',
+    ],
+  },
+{
     version: '0.11.1',
     date: '2026-10-07',
     title: 'Private Repositories — Full Repo Lists and Clear Clone Errors',

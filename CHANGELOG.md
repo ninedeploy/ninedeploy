@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-10-08
+
+> Security release: a failed submodule clone could put the Git source's access token into deploy logs, the audit log and notifications.
+
+### Upgrade notes
+
+- **Rotate Git source tokens that may have leaked.** Before this release, a deploy whose repository had a submodule the token could not clone wrote the token into:
+  - the deploy log (live stream and `logs/<id>.log`);
+  - the `deploy.failed` audit entry;
+  - every notification sent from that entry: Slack, Telegram, webhook, email, the activity feed and plugins.
+
+  If such a deploy ever failed on your instance, revoke the token at the provider and update the source. Existing log files and audit entries are not rewritten.
+- No database migrations or new configuration fields.
+- The OIDC provider `defaultRole` field is deprecated. The API still accepts and returns it, but it has had no effect since 0.11.0.
+
+### Security
+
+- A failed clone's git output is now redacted before it is logged or stored. git rebuilds a submodule's URL from the tokenized origin and prints it on failure; that text was passed through unchanged (F1013).
+
+### Fixed
+
+- A failed deploy clone names its reason in the deploy log and the failure message: authentication failed, HTTP 403, not found or no access, could not resolve/connect, TLS/host-key failure, or missing branch. It adds advice for GitHub tokens and says when a submodule's repository needs access too (F1012).
+- The Deploy Wizard shows why a repository list is short: the classic token lacks `repo`, the list was capped, a later page failed, or the provider returned an error. The SDK gains `sources.reposWithDiagnostics` (F1010).
+- Dashboards served from a separate origin can read that diagnostic, because CORS now exposes `x-nd-source-error` (F1016).
+- `ninedeploy sources test` prints the token type, scopes and warnings. Provider-supplied text is stripped of terminal control sequences (F1011).
+
+### Deprecated
+
+- OIDC provider `defaultRole`. OIDC users always own their personal workspace; add them to team workspaces with invitations or SCIM. The SSO settings form no longer shows the field (F1014).
+
 ## [0.11.1] - 2026-10-08
 
 > Private repositories: complete repository lists, clone errors that say why, and a token check.
