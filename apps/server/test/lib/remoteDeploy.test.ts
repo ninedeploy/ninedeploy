@@ -7,6 +7,7 @@ import {
   remoteDeployUnsupportedReason,
   remoteHookRefusal,
   remoteServiceRefusal,
+  sourceHasGitCredential,
 } from '../../src/lib/remoteDeploy.js';
 
 /**
@@ -164,6 +165,21 @@ describe('remoteServiceRefusal (r266)', () => {
         composeContent: 'services: {}',
       }),
     ).toBeNull();
+  });
+
+  it('0.13: a GitHub App source counts as a Git credential although it stores no token', async () => {
+    const withSource = (src: Record<string, unknown> | undefined) =>
+      ({
+        select: () => ({ from: () => ({ where: async () => [] }) }),
+        query: { sources: { findFirst: async () => src } },
+      }) as never;
+    const repoSvc = { id: 1, serverId: 4, type: 'docker', sourceId: 3, repoUrl: 'https://github.com/acme/private.git' };
+    const appSource = { type: 'github_app', tokenEncrypted: null, deployKeyEncrypted: null };
+    expect(await sourceHasGitCredential(withSource(appSource), 3)).toBe(true);
+    // Still refused on a node (T5 relaxes it for sealed agents with git.credential).
+    expect(await remoteServiceRefusal(withSource(appSource), repoSvc)).toMatch(/node clones anonymously/);
+    expect(await sourceHasGitCredential(withSource(undefined), 3)).toBe(false);
+    expect(await sourceHasGitCredential(withSource(appSource), null)).toBe(false);
   });
 
   it('assertRemoteServiceSupported throws the 400 the panel switches on', async () => {

@@ -97,15 +97,23 @@ export function classifyCloneFailure(err: unknown, branch: string, creds: CloneC
         : reason === 'HTTP 403 (permission denied)'
           ? 'the selected credential was accepted but denied access to this repository.'
           : 'the repository was not found or the selected credential has no access to it.';
+    // 0.13: a GitHub App installation token is not a PAT — its fix is the
+    // installation's repository selection, not a token's scopes.
+    const githubApp = creds.type === 'github_app' && !!creds.token && reason !== 'authentication failed';
     const github =
-      !!creds.token && reason !== 'authentication failed' && (creds.type === 'github' || /^https?:\/\/(www\.)?github\.com\//i.test(displayRepoUrl(repoUrl)));
+      !githubApp &&
+      !!creds.token &&
+      reason !== 'authentication failed' &&
+      (creds.type === 'github' || /^https?:\/\/(www\.)?github\.com\//i.test(displayRepoUrl(repoUrl)));
     return {
       code: 'repo_unreachable',
       reason,
       advice: `${detail}${
         github
           ? " For a fine-grained GitHub token, add this repository to the token's repository access; fine-grained tokens also need Contents: Read-only (organization repositories may also need the token approved or SSO-authorized). A classic token needs the repo scope."
-          : ''
+          : githubApp
+            ? " For a GitHub App source, add this repository to the installation's repository access (Installed GitHub Apps → Configure) and check that the installation is not suspended."
+            : ''
       }`,
       submodule,
     };

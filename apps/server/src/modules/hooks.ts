@@ -2,7 +2,6 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { buildConfigs, deployments, domains, envVars, services, webhooks, type DB } from '@ninedeploy/db';
 import type { FastifyBaseLogger, FastifyPluginAsync } from 'fastify';
 import { gitBranch, gitRepoUrl, webhookCreate } from '@ninedeploy/schemas';
-import { config } from '../config.js';
 import { decrypt, encrypt, randomToken } from '../lib/crypto.js';
 import { matchesAny, parseWatchPaths } from '../lib/glob.js';
 import { isUniqueViolation, parseId, notFound, unauthorized } from '../lib/errors.js';
@@ -20,8 +19,8 @@ import { pm2Builder } from '../engine/builders/pm2.js';
 import { composeBuilder } from '../engine/builders/compose.js';
 import { deleteLog } from '../engine/logs.js';
 import { removeServiceBridgeIfEmpty } from '../lib/serviceBridge.js';
-import { writeDynamicConfig, getAcmeEmail } from '../engine/proxy.js';
-import { getSettingString } from '../lib/settings.js';
+import { writeDynamicConfig } from '../engine/proxy.js';
+import { panelOrigin } from '../lib/panelOrigin.js';
 import { getServiceTags, replaceServiceTags } from './serviceTags.js';
 import { DEFAULT_PREVIEW_DOMAIN_PATTERN, previewHostSkipReason, renderPreviewHost } from '../lib/previewDomain.js';
 import { ownZoneClaimRefusal } from '../lib/domainVerification.js';
@@ -541,28 +540,6 @@ export const webhookMgmtRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true };
   });
 };
-
-/**
- * Webhook URLs are pasted into GitHub/GitLab by the operator, so they must
- * point at the address the panel is actually reachable on. The
- * Settings→Security "panel domain" (or NINEDEPLOY_DOMAIN) is that runtime
- * truth; NINEDEPLOY_PUBLIC_URL defaults to http://localhost:3000 and would
- * otherwise leak a localhost URL into every copied hook. Scheme mirrors the
- * Traefik panel router: TLS only when an ACME email is configured.
- */
-async function panelOrigin(db: DB): Promise<string> {
-  let host = '';
-  try {
-    host = String((await getSettingString(db, 'panel_domain', null)) ?? process.env['NINEDEPLOY_DOMAIN'] ?? '')
-      .replace(/[^A-Za-z0-9.\-*]/g, '')
-      .replace(/^\.+|\.+$/g, '');
-  } catch {
-    host = '';
-  }
-  if (!host || host === '*' || host.startsWith('.')) return config.publicUrl;
-  const tls = await getAcmeEmail(db).catch(() => config.acmeEmail);
-  return `${tls ? 'https' : 'http'}://${host}`;
-}
 
 async function webhookUrl(db: DB, id: number): Promise<string> {
   return `${await panelOrigin(db)}/v1/hooks/${id}`;

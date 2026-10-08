@@ -5,6 +5,8 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 import { auditLog, deployments, domains, services, serviceTargets } from '@ninedeploy/db';
 import { logBus } from '../src/engine/logs.js';
 import { filterTrustworthyProjectLinks, runDeployment, splitHookCommand } from '../src/engine/pipeline.js';
+import { GithubAppError } from '../src/lib/githubApp.js';
+import { githubAppCloneHint } from '../src/lib/sourceCreds.js';
 
 const h = vi.hoisted(() => {
   // Loose `...args: any[]` signatures: individual tests install impls with
@@ -30,7 +32,11 @@ const h = vi.hoisted(() => {
   const agentOp = vi.fn<(...args: any[]) => Promise<{ exitCode: number; lines: string[] }>>(async () => ({ exitCode: 0, lines: [] }));
   const reconcileTemplateDependencies = vi.fn(async () => null as null | { database: { slug: string }; alreadyAttached: boolean });
   const railpackUnavailableReason = vi.fn(async () => null as string | null);
-  return { builder, checkoutCommit, decrypt, connectionString, ENGINES, writeDynamicConfig, getAcmeEmail, config, agentOp, reconcileTemplateDependencies, railpackUnavailableReason };
+  // 0.13: only the GitHub App tests mint a token; anything else reaching it is a bug.
+  const installationToken = vi.fn<(...args: any[]) => Promise<string>>(async () => {
+    throw new Error('installationToken was not expected in this test');
+  });
+  return { builder, checkoutCommit, decrypt, connectionString, ENGINES, writeDynamicConfig, getAcmeEmail, config, agentOp, reconcileTemplateDependencies, railpackUnavailableReason, installationToken };
 });
 
 vi.mock('../src/config.js', () => ({ config: h.config }));
@@ -43,6 +49,10 @@ const sleepMock = execMock;
 vi.mock('../src/lib/exec.js', () => execMock);
 vi.mock('../src/lib/crypto.js', () => ({ decrypt: h.decrypt }));
 vi.mock('../src/lib/git.js', () => ({ checkoutCommit: h.checkoutCommit }));
+vi.mock('../src/lib/githubApp.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/githubApp.js')>()),
+  installationToken: h.installationToken,
+}));
 vi.mock('../src/lib/agentClient.js', () => ({ agentOp: h.agentOp }));
 vi.mock('../src/engine/database.js', () => ({ connectionString: h.connectionString, ENGINES: h.ENGINES }));
 vi.mock('../src/engine/builders/docker.js', () => ({ dockerBuilder: h.builder, railpackUnavailableReason: h.railpackUnavailableReason }));
@@ -109,6 +119,9 @@ interface FakeDb {
     services: { findFirst: ReturnType<typeof vi.fn> };
     buildConfigs: { findFirst: ReturnType<typeof vi.fn> };
     sources: { findFirst: ReturnType<typeof vi.fn> };
+    serviceGithubLinks: { findFirst: ReturnType<typeof vi.fn> };
+    githubAppInstallations: { findFirst: ReturnType<typeof vi.fn> };
+    githubApps: { findFirst: ReturnType<typeof vi.fn> };
     envVars: { findMany: ReturnType<typeof vi.fn> };
     previewEnvVars: { findMany: ReturnType<typeof vi.fn> };
     databaseAttachments: { findMany: ReturnType<typeof vi.fn> };
@@ -137,6 +150,10 @@ function makeDb(): { db: FakeDb; updates: { table: unknown; values: Record<strin
       services: { findFirst: vi.fn() },
       buildConfigs: { findFirst: vi.fn() },
       sources: { findFirst: vi.fn() },
+      // 0.13: clone credentials look for a GitHub App link first (none here).
+      serviceGithubLinks: { findFirst: vi.fn().mockResolvedValue(undefined) },
+      githubAppInstallations: { findFirst: vi.fn().mockResolvedValue(undefined) },
+      githubApps: { findFirst: vi.fn().mockResolvedValue(undefined) },
       envVars: { findMany: vi.fn().mockResolvedValue([]) },
       // 0.12: the parent's preview-only set — read for PR previews only.
       previewEnvVars: { findMany: vi.fn().mockResolvedValue([]) },
@@ -2771,5 +2788,112 @@ describe('F1012/F1013: a failed clone names its reason and never repeats the cre
     h.checkoutCommit.mockRejectedValueOnce(new Error('auth failed'));
     await runDeployment(second.db as never, 1);
     expect(failedReason(second.inserts)).toBe('auth failed');
+  });
+});
+
+describe('0.13: a GitHub App clone', () => {
+  const OWNER = 42;
+  const APP_TOKEN = 'ghs_PIPELINESECRET0123';
+  const userinfo = `x-access-token:${APP_TOKEN}@`;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    logBus.removeAllListeners();
+    h.builder.buildAndRun.mockImplementation(async () => ({ runtimeId: 'c-1', port: 3000, healthPath: '/' }));
+    h.builder.isHealthy.mockImplementation(async () => true);
+    h.writeDynamicConfig.mockImplementation(async () => undefined);
+  });
+
+  afterEach(() => {
+    logBus.removeAllListeners();
+    h.checkoutCommit.mockImplementation(async () => 'sha-1234567');
+    h.installationToken.mockImplementation(async () => {
+      throw new Error('installationToken was not expected in this test');
+    });
+  });
+
+  function failedReason(inserts: { table: unknown; values: Record<string, unknown> }[]): string | undefined {
+    const row = inserts.find((i) => i.table === auditLog && i.values.action === 'deploy.failed');
+    return (row?.values.meta as { reason?: string } | undefined)?.reason;
+  }
+
+  /** Service #5 linked to installation row #3 of App #2 (github.com), repository id 31337. */
+  function linkedDb() {
+    const made = makeDb();
+    baseSetup(made.db, { ownerUserId: OWNER });
+    made.db.query.serviceGithubLinks.findFirst.mockResolvedValue({
+      id: 1,
+      serviceId: 5,
+      installationRowId: 3,
+      repoId: 31337,
+      repoFullName: 'a/b',
+      enabled: true,
+      tokenScope: 'repository',
+    });
+    made.db.query.githubAppInstallations.findFirst.mockResolvedValue({
+      id: 3,
+      githubAppId: 2,
+      installationId: 9001,
+      accountLogin: 'a',
+      suspendedAt: null,
+      removedAt: null,
+    });
+    made.db.query.githubApps.findFirst.mockResolvedValue({ id: 2, webBaseUrl: 'https://github.com', apiBaseUrl: 'https://api.github.com' });
+    return made;
+  }
+
+  it('clones with a repo-scoped token, prints the App hint, and never repeats the token', async () => {
+    const { db, inserts } = linkedDb();
+    h.installationToken.mockResolvedValue(APP_TOKEN);
+    h.checkoutCommit.mockRejectedValue(
+      new Error(
+        "Cloning into '/srv/repos/5/lib/shared'...\nremote: Repository not found.\nfatal: repository 'https://github.com/a/shared.git/' not found\n" +
+          `fatal: clone of 'https://${userinfo}github.com/a/shared.git' into submodule path '/srv/repos/5/lib/shared' failed\n`,
+      ),
+    );
+    const lines = collectLogs(1);
+
+    await runDeployment(db as never, 1);
+
+    expect(h.installationToken.mock.calls[0]![3]).toEqual({ repositoryIds: [31337], permissions: { contents: 'read' } });
+    expect(h.checkoutCommit.mock.calls[0]![5]).toStrictEqual({ type: 'github_app', token: APP_TOKEN });
+    expect(lines).toContain(githubAppCloneHint());
+    expect(githubAppCloneHint()).toMatch(/selected repositories/);
+    expect(githubAppCloneHint()).toMatch(/suspended nor uninstalled/);
+    expect(githubAppCloneHint()).toMatch(/token scope to "installation"/);
+    // The App advice replaces the fine-grained PAT advice.
+    expect(failedReason(inserts)).toContain("add this repository to the installation's repository access");
+    expect(failedReason(inserts)).not.toContain('fine-grained');
+    expect(lines.some((l) => l.startsWith('hint: cloning used the source'))).toBe(false);
+    const onDisk = readFileSync(path.join(logsDir, '1.log'), 'utf8');
+    for (const text of [lines.join('\n'), onDisk, failedReason(inserts) ?? '']) {
+      expect(text).not.toContain(APP_TOKEN);
+      expect(text).not.toContain('x-access-token:');
+    }
+  });
+
+  it('a token that cannot be minted fails the deploy before the checkout, with the hint', async () => {
+    const { db, inserts } = linkedDb();
+    const why =
+      "The GitHub App installation on a (installation 9001) cannot access the requested repository: it is not among the installation's selected repositories, or it was deleted.";
+    h.installationToken.mockRejectedValue(new GithubAppError(why, 'not_accessible', 422));
+    const lines = collectLogs(1);
+
+    await runDeployment(db as never, 1);
+
+    expect(h.checkoutCommit).not.toHaveBeenCalled();
+    expect(lines).toContain(githubAppCloneHint());
+    expect(failedReason(inserts)).toBe(why);
+  });
+
+  it('refuses a repository URL on another host without minting a token', async () => {
+    const { db, inserts } = linkedDb();
+    db.query.services.findFirst.mockResolvedValue({ ...service, ownerUserId: OWNER, repoUrl: 'https://gitlab.com/a/b.git' });
+
+    await runDeployment(db as never, 1);
+
+    expect(h.installationToken).not.toHaveBeenCalled();
+    expect(h.checkoutCommit).not.toHaveBeenCalled();
+    expect(failedReason(inserts)).toBe('Refusing to send a GitHub App token to gitlab.com: the App belongs to github.com');
   });
 });

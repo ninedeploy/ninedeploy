@@ -9,6 +9,7 @@ import { badRequest, notFound, parseId } from '../lib/errors.js';
 // rest of the panel's webhooks/API clients — the hosts are hardcoded today,
 // the guard keeps that invariant from silently drifting.
 import { guardedFetch } from '../lib/egressGuard.js';
+import { providerErrorText } from '../lib/redactSecret.js';
 import { ensureRegistryBindingsInitialised, setBoundRegistryHosts, type RegistryBindings } from '../lib/registryBinding.js';
 
 function serialize(s: Source, bindings: RegistryBindings) {
@@ -25,20 +26,6 @@ function serialize(s: Source, bindings: RegistryBindings) {
     createdAt: s.createdAt.toISOString(),
     updatedAt: s.updatedAt.toISOString(),
   };
-}
-
-/**
- * F568: a failed provider call as diagnostic text that never carries the
- * decrypted token. fetch's header validation rejects a token holding CR/LF/NUL
- * with a message that embeds the whole header value, and the token is
- * write-only everywhere else in this module.
- */
-function providerErrorText(err: unknown, token: string): string {
-  let text = err instanceof Error ? err.message : String(err);
-  const lines = token.split(/[\r\n\0]+/).filter((p) => p.trim().length >= 4);
-  const pieces = [token, token.trim(), ...lines].filter((p) => p.length > 0);
-  for (const piece of pieces.sort((a, b) => b.length - a.length)) text = text.split(piece).join('[redacted]');
-  return text;
 }
 
 /**

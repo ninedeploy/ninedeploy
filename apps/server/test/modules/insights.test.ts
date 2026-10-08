@@ -414,3 +414,34 @@ describe('clone failures answer a classified 400 (F1006)', () => {
     expect(res.json().error.message).toMatch(/select a Git credential/);
   });
 });
+
+// 0.13: a GitHub App source resolves through lib/sourceCreds.ts; a credential
+// it refuses to mint answers a 400 that says why, before any clone runs.
+describe('GitHub App sources (0.13)', () => {
+  it('refuses to send an App token to a host other than the App’s → 400 github_app, no clone', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: {
+          services: baseService,
+          sources: { id: 7, type: 'github_app', tokenEncrypted: null, deployKeyEncrypted: null },
+          githubAppInstallations: { id: 3, githubAppId: 2, installationId: 9001, sourceId: 7, suspendedAt: null, removedAt: null },
+          githubApps: { id: 2, webBaseUrl: 'https://github.com', apiBaseUrl: 'https://api.github.com' },
+        },
+      }),
+    });
+    await app.register(insightsRoutes);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/',
+      headers: asUser(),
+      payload: { repoUrl: 'https://gitlab.com/acme/web.git', branch: 'main', sourceId: 7 },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatchObject({
+      code: 'github_app',
+      message: 'Refusing to send a GitHub App token to gitlab.com: the App belongs to github.com',
+    });
+    expect(gitMocks.checkoutCommit).not.toHaveBeenCalled();
+    await app.close();
+  });
+});

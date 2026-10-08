@@ -86,7 +86,11 @@ export async function remoteDatabaseRefusal(
 export async function sourceHasGitCredential(db: DB, sourceId: number | null | undefined): Promise<boolean> {
   if (sourceId == null) return false;
   const src = await db.query.sources.findFirst({ where: eq(sources.id, sourceId) });
-  return Boolean(src && src.type !== 'registry' && (src.tokenEncrypted || src.deployKeyEncrypted));
+  if (!src) return false;
+  // 0.13: a GitHub App source stores no token — it mints one per clone — so a
+  // node must never be left to clone its (typically private) repo anonymously.
+  if (src.type === 'github_app') return true;
+  return Boolean(src.type !== 'registry' && (src.tokenEncrypted || src.deployKeyEncrypted));
 }
 
 /**

@@ -3,22 +3,26 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { FastifyBaseLogger, FastifyPluginAsync } from 'fastify';
-import { buildConfigs, repoInsights, sources, type DB } from '@ninedeploy/db';
+import { buildConfigs, repoInsights } from '@ninedeploy/db';
 import { analyzeRepoInput } from '@ninedeploy/schemas';
 import { analyzeRepo } from '../lib/frameworks.js';
 import { checkoutCommit, type CloneCreds } from '../lib/git.js';
-import { decrypt } from '../lib/crypto.js';
 import { config } from '../config.js';
 import { HttpError, badRequest, forbidden, notFound, parseId } from '../lib/errors.js';
 import { assertServiceRole, maxRole, roleAtLeast, userWorkspaceMemberships } from '../lib/resourceAccess.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { EgressBlockedError } from '../lib/egressGuard.js';
+import { GithubAppError } from '../lib/githubApp.js';
+import { resolveCloneCreds } from '../lib/sourceCreds.js';
 import { classifyCloneFailure, displayRepoUrl, redactGitOutput, UNNAMED_IN_ANALYSIS } from '../lib/cloneFailure.js';
 import { serializeInsights, upsertInsights } from '../engine/repoInsights.js';
 
 /** Map an egress-gate refusal onto a client-comprehensible 400. */
 function toApiError(err: unknown): unknown {
   if (err instanceof EgressBlockedError) return badRequest(err.message, 'egress_blocked');
+  // 0.13: a GitHub App credential that cannot be minted (host mismatch, removed
+  // or suspended installation, repository outside the selection) says why.
+  if (err instanceof GithubAppError) return badRequest(err.message, 'github_app');
   return err;
 }
 
@@ -143,18 +147,6 @@ async function inspectionCheckout(
   }
 }
 
-/** Resolve clone credentials for a source id — same contract as the pipeline. */
-async function resolveCreds(db: DB, sourceId: number | null | undefined): Promise<CloneCreds | undefined> {
-  if (!sourceId) return undefined;
-  const src = await db.query.sources.findFirst({ where: eq(sources.id, sourceId) });
-  if (!src) return undefined;
-  return {
-    type: src.type,
-    token: src.tokenEncrypted ? decrypt(src.tokenEncrypted) : undefined,
-    deployKey: src.deployKeyEncrypted ? decrypt(src.deployKeyEncrypted) : undefined,
-  };
-}
-
 /**
  * Pre-deploy repository inspection (DeployWizard). Clones the repo into a
  * throwaway directory under the server's repos dir and runs framework
@@ -189,7 +181,9 @@ export const insightsRoutes: FastifyPluginAsync = async (app) => {
       if (input.sourceId != null && !req.user!.isOperator) {
         throw forbidden('Only operators may analyze a repository with a managed source');
       }
-      const creds = await resolveCreds(app.db, input.sourceId);
+      const creds = await resolveCloneCreds(app.db, { sourceId: input.sourceId, repoUrl: input.repoUrl }).catch((err: unknown) => {
+        throw toApiError(err);
+      });
       const dir = path.join(config.paths.reposDir, '_inspections', randomUUID());
       try {
         await inspectionCheckout(input.repoUrl, input.branch, dir, creds, req.log);
@@ -236,7 +230,9 @@ export const serviceInsightsRoutes: FastifyPluginAsync = async (app) => {
     // commit X checked the branch tip out underneath the running build, and
     // the deployment recorded X while building different code.
     const workDir = path.join(config.paths.reposDir, '_inspections', randomUUID());
-    const creds = await resolveCreds(app.db, svc.sourceId);
+    const creds = await resolveCloneCreds(app.db, svc).catch((err: unknown) => {
+      throw toApiError(err);
+    });
     try {
       let sha: string;
       try {

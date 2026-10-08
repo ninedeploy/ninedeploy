@@ -2,10 +2,12 @@ import path from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { and, desc, eq, inArray, isNotNull, lt, ne } from 'drizzle-orm';
-import { buildConfigs, databaseAttachments, databases, type DB, deployments, domains, envVars, previewEnvVars, projects, services, serviceProjects, serviceVolumeAttachments, sources, workspaceMembers } from '@ninedeploy/db';
+import { buildConfigs, databaseAttachments, databases, type DB, deployments, domains, envVars, previewEnvVars, projects, services, serviceProjects, serviceVolumeAttachments, workspaceMembers } from '@ninedeploy/db';
 import { config } from '../config.js';
 import { decrypt } from '../lib/crypto.js';
 import { checkoutCommit, type CloneCreds } from '../lib/git.js';
+import { GithubAppError } from '../lib/githubApp.js';
+import { githubAppCloneHint, resolveCloneCreds } from '../lib/sourceCreds.js';
 import { classifyCloneFailure, redactGitOutput } from '../lib/cloneFailure.js';
 import { detectDeployHints } from '../lib/deployHints.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
@@ -791,16 +793,15 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     } else if (service.image) {
       log(`Image deploy from ${service.image}`);
     } else {
+      // 0.13: one resolver for the pipeline and the insights routes — a
+      // GitHub App link/source mints a repo-scoped installation token; every
+      // other source resolves exactly as before.
       let creds: CloneCreds | undefined;
-      if (service.sourceId) {
-        const src = await db.query.sources.findFirst({ where: eq(sources.id, service.sourceId) });
-        if (src) {
-          creds = {
-            type: src.type,
-            token: src.tokenEncrypted ? decrypt(src.tokenEncrypted) : undefined,
-            deployKey: src.deployKeyEncrypted ? decrypt(src.deployKeyEncrypted) : undefined,
-          };
-        }
+      try {
+        creds = await resolveCloneCreds(db, service);
+      } catch (err) {
+        if (err instanceof GithubAppError) log(githubAppCloneHint());
+        throw err;
       }
       try {
         sha = await checkoutCommit(service.repoUrl ?? '', service.branch, dep.commitSha ?? undefined, workDir, log, creds);
@@ -828,6 +829,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
         }
         if (!creds) {
           log('hint: no Git credential is attached to this service. If the repository is PRIVATE, attach one: System → Sources (PAT or generate a deploy key), then select it under Service → Settings → Git credential and redeploy. Public repos need no credential.');
+        } else if (creds.type === 'github_app') {
+          log(githubAppCloneHint());
         } else if (creds.deployKey && !creds.token) {
           log('hint: cloning used this source\u2019s SSH deploy key. Confirm the PUBLIC key is registered as a deploy key on the provider (repo → Settings → Deploy keys, read access is enough) and that the repo URL is reachable over SSH.');
         } else if (creds.token) {
