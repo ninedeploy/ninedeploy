@@ -1198,6 +1198,139 @@ export const secretProviders = sqliteTable(
   }),
 );
 
+// ─── operations and API (0.15) ────────────────────────────────────────────
+// Three new tables (migration 0071, additive only: CREATE TABLE / CREATE
+// INDEX, no column on an existing table). Every one starts empty and every new
+// behaviour is opt-in: a terminal session exists only once an operator opens
+// one, rollups only once traffic analytics is enabled, and a grant only once a
+// workspace admin creates one. With `access_grants` empty every permission is
+// exactly 0.14's (grants only ever raise a role). Design:
+// .temp_files/run_0.15/DESIGN.md §5.
+export const terminalTargetKind = ['service', 'database', 'container', 'host'] as const;
+export const terminalSessionStatus = ['pending', 'active', 'ended', 'failed', 'expired'] as const;
+export const terminalAuthKind = ['session', 'api_token'] as const;
+/** `owner` is never grantable; a grant only ever raises a seat role. */
+export const accessGrantRole = ['viewer', 'member', 'admin'] as const;
+
+// One row per interactive shell (container, database, service replica or
+// host). Metadata only — no transcript is ever stored (owner decision O2).
+// `ticket_hash` is the sha256 of the single-use attach ticket and is cleared
+// on attach; the plaintext ticket and the creating bearer never touch a table.
+// `server_id` NULL means the panel host.
+export const terminalSessions = sqliteTable(
+  'terminal_sessions',
+  {
+    id: id(),
+    userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
+    targetKind: text('target_kind', { enum: terminalTargetKind }).notNull(),
+    serviceId: integer('service_id').references(() => services.id, { onDelete: 'set null' }),
+    databaseId: integer('database_id').references(() => databases.id, { onDelete: 'set null' }),
+    serverId: integer('server_id').references(() => servers.id, { onDelete: 'set null' }),
+    containerName: text('container_name'),
+    /** Human label kept for history after the target is deleted. */
+    targetLabel: text('target_label').notNull(),
+    status: text('status', { enum: terminalSessionStatus }).notNull().default('pending'),
+    ticketHash: text('ticket_hash'),
+    ticketExpiresAt: integer('ticket_expires_at', { mode: 'timestamp' }),
+    authKind: text('auth_kind', { enum: terminalAuthKind }),
+    clientIp: text('client_ip'),
+    userAgent: text('user_agent'),
+    cols: integer('cols'),
+    rows: integer('rows'),
+    createdAt: ts('created_at'),
+    startedAt: integer('started_at', { mode: 'timestamp' }),
+    endedAt: integer('ended_at', { mode: 'timestamp' }),
+    durationMs: integer('duration_ms'),
+    bytesIn: integer('bytes_in').notNull().default(0),
+    bytesOut: integer('bytes_out').notNull().default(0),
+    endReason: text('end_reason'),
+    exitCode: integer('exit_code'),
+    error: text('error'),
+    terminatedByUserId: integer('terminated_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  },
+  (t) => ({
+    ticketHashIdx: uniqueIndex('terminal_sessions_ticket_hash_idx').on(t.ticketHash),
+    createdIdx: index('terminal_sessions_created_idx').on(t.createdAt),
+    statusIdx: index('terminal_sessions_status_idx').on(t.status),
+    userCreatedIdx: index('terminal_sessions_user_created_idx').on(t.userId, t.createdAt),
+  }),
+);
+
+// Traffic analytics rollups (opt-in). One row per (granularity, bucket,
+// scope): minute rows (60) and hour rows (3600) are both written at ingest.
+// `bucket_start` is plain unix seconds (not a Date) so the ingest upsert can
+// add counters in SQL. `domain_id` / `service_id` carry no FK on purpose: a
+// row outlives its domain until retention, and `host` keeps the label. No
+// client IP, path, query string or header is ever stored.
+export const trafficRollups = sqliteTable(
+  'traffic_rollups',
+  {
+    id: id(),
+    granularity: integer('granularity').notNull(),
+    bucketStart: integer('bucket_start').notNull(),
+    /** `d:<domainId>` | `panel` | `custom` | `other`. */
+    scopeKey: text('scope_key').notNull(),
+    domainId: integer('domain_id'),
+    serviceId: integer('service_id'),
+    host: text('host'),
+    requests: integer('requests').notNull().default(0),
+    status1xx: integer('status_1xx').notNull().default(0),
+    status2xx: integer('status_2xx').notNull().default(0),
+    status3xx: integer('status_3xx').notNull().default(0),
+    status4xx: integer('status_4xx').notNull().default(0),
+    status5xx: integer('status_5xx').notNull().default(0),
+    statusOther: integer('status_other').notNull().default(0),
+    bytesOut: integer('bytes_out').notNull().default(0),
+    durationSumMs: integer('duration_sum_ms').notNull().default(0),
+    durationMaxMs: integer('duration_max_ms').notNull().default(0),
+    /** 12 latency buckets (edges 5…10000 ms plus overflow). */
+    latencyHist: text('latency_hist', { mode: 'json' })
+      .$type<number[]>()
+      .notNull()
+      .default(sql`'[]'`),
+  },
+  (t) => ({
+    bucketScopeIdx: uniqueIndex('traffic_rollups_bucket_scope_idx').on(t.granularity, t.bucketStart, t.scopeKey),
+    serviceIdx: index('traffic_rollups_service_idx').on(t.serviceId, t.granularity, t.bucketStart),
+    bucketIdx: index('traffic_rollups_bucket_idx').on(t.granularity, t.bucketStart),
+  }),
+);
+
+// Project- and environment-level access grants (raise-only, owner decision
+// O5). Effective role = max(seat role, matching non-suspended grants); a grant
+// never lowers a role and `owner` is never granted. At least one of
+// project / environment is set — enforced by the API and the zod contract, not
+// a CHECK (a CHECK would make drizzle rebuild the table). `target_key`
+// (`p:<id>` | `e:<id>` | `pe:<p>:<e>`) carries the uniqueness, because SQLite
+// unique indexes treat NULLs as distinct. Grants cascade with their user,
+// workspace, project and environment.
+export const accessGrants = sqliteTable(
+  'access_grants',
+  {
+    id: id(),
+    workspaceId: integer('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    environmentId: integer('environment_id').references(() => environments.id, { onDelete: 'cascade' }),
+    targetKey: text('target_key').notNull(),
+    role: text('role', { enum: accessGrantRole }).notNull(),
+    suspendedAt: integer('suspended_at', { mode: 'timestamp' }),
+    createdByUserId: integer('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: ts('created_at'),
+    updatedAt: tsUpdatable('updated_at'),
+  },
+  (t) => ({
+    userTargetIdx: uniqueIndex('access_grants_user_target_idx').on(t.userId, t.targetKey),
+    workspaceIdx: index('access_grants_workspace_idx').on(t.workspaceId),
+    projectIdx: index('access_grants_project_idx').on(t.projectId),
+    environmentIdx: index('access_grants_environment_idx').on(t.environmentId),
+  }),
+);
+
 export const metrics = sqliteTable(
   'metrics',
   {
@@ -1958,6 +2091,12 @@ export type DatabaseImport = typeof databaseImports.$inferSelect;
 export type NewDatabaseImport = typeof databaseImports.$inferInsert;
 export type SecretProvider = typeof secretProviders.$inferSelect;
 export type NewSecretProvider = typeof secretProviders.$inferInsert;
+export type TerminalSession = typeof terminalSessions.$inferSelect;
+export type NewTerminalSession = typeof terminalSessions.$inferInsert;
+export type TrafficRollup = typeof trafficRollups.$inferSelect;
+export type NewTrafficRollup = typeof trafficRollups.$inferInsert;
+export type AccessGrant = typeof accessGrants.$inferSelect;
+export type NewAccessGrant = typeof accessGrants.$inferInsert;
 export type ScheduledJob = typeof scheduledJobs.$inferSelect;
 export type JobRun = typeof jobRuns.$inferSelect;
 export type ServerRow = typeof servers.$inferSelect;

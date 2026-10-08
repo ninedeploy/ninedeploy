@@ -18,6 +18,9 @@ vi.mock('../src/plugins/traefik.js', () => ({ default: infra.traefik }));
 // 0.14 background plugins: inert here, so booting the app never reaches the host's Docker (public-DB sidecars) or staging files (imports).
 vi.mock('../src/plugins/publicDatabaseAccess.js', () => ({ default: vi.fn(async () => undefined) }));
 vi.mock('../src/plugins/databaseImports.js', () => ({ default: vi.fn(async () => undefined) }));
+// 0.15 background plugins: terminal boot recovery / reaper (removes helper containers) and the traffic log tailer.
+vi.mock('../src/plugins/terminals.js', () => ({ default: vi.fn(async () => undefined) }));
+vi.mock('../src/plugins/trafficAnalytics.js', () => ({ default: vi.fn(async () => undefined) }));
 vi.mock('../src/plugins/collector.js', () => ({ default: infra.collector }));
 vi.mock('../src/plugins/backupScheduler.js', () => ({ default: infra.backups }));
 

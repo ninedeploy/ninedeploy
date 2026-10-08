@@ -18,6 +18,7 @@ import { STUDIO_EPOCH_KEY } from './studioProxy.js';
 import { generateSecret, otpauthUri } from '../lib/totp.js';
 import { consumeTotpCode } from '../lib/totpReplay.js';
 import { audit } from '../lib/audit.js';
+import { assertStepUp } from '../lib/stepUp.js';
 import { getSetting } from '../lib/settings.js';
 import { findLiveSession, issueSessionTokens, refreshSessionTokens, revokeAllSessions, revokeApiTokens } from '../lib/sessions.js';
 import { beginAuthentication, beginRegistration, finishAuthentication, finishRegistration, legacyCredentialId } from '../lib/webauthn.js';
@@ -140,40 +141,8 @@ function verifyOidcStateCookie(req: { protocol?: string; headers: Record<string,
 }
 
 // ── Step-up (r502) ─────────────────────────────────────────────────────────
-// Registering a passkey or turning TOTP on plants a DURABLE credential: one
-// that outlives the session that created it (and, for passkeys, a password
-// change). A briefly stolen access token used to be enough to do either, so
-// the thief kept a way back in after the victim logged out everywhere. These
-// routes now need proof that the account holder is present: the current
-// password, or — for an account that has no usable password (SSO-only) — a
-// sign-in fresh enough that it happened just now.
-const STEP_UP_FRESH_MS = 10 * 60 * 1000;
-const REAUTH_REQUIRED_MESSAGE =
-  'Confirm your current password to continue. Accounts that sign in only through SSO: sign in again, then retry within 10 minutes.';
-
-async function assertStepUp(
-  db: DB,
-  req: { headers: { authorization?: string } },
-  user: Pick<User, 'id' | 'passwordHash'>,
-  password: string | undefined,
-): Promise<void> {
-  if (password !== undefined) {
-    if (await verifyPassword(user.passwordHash, password)) return;
-    // 403 (not 401): the session itself is fine — a 401 would send the web
-    // client into a pointless refresh-and-retry.
-    throw new HttpError(403, 'invalid_password', 'Invalid password');
-  }
-  const header = req.headers.authorization ?? '';
-  const bearer = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
-  try {
-    const payload = await verifyJwt(bearer);
-    const session = payload.type === 'access' && payload.jti ? await findLiveSession(db, payload.jti) : null;
-    // `createdAt` is the sign-in time: refresh rotation keeps the row (and
-    // its createdAt), so a stolen refresh token cannot make itself "fresh".
-    if (session && session.userId === user.id && Date.now() - session.createdAt.getTime() <= STEP_UP_FRESH_MS) return;
-  } catch { /* not a verifiable session token — fall through */ }
-  throw new HttpError(403, 'reauth_required', REAUTH_REQUIRED_MESSAGE);
-}
+// `assertStepUp` (current password, or a sign-in less than 10 minutes old)
+// lives in lib/stepUp.ts since 0.15 so the terminal routes can share it.
 
 /** Count existing users (used to decide first-user-is-admin). */
 async function userCount(db: Pick<DB, 'select'>): Promise<number> {

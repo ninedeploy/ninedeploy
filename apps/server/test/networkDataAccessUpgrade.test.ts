@@ -48,6 +48,8 @@ const TAG = '0070_network_data_access';
 // biome-ignore lint/suspicious/noTemplateCurlyInString: a literal secret reference, not a template
 const VAULT_REF_LITERAL = '${{vault:app/prod#password}}';
 const NEW_TABLES = ['database_public_access', 'database_imports', 'secret_providers', 'tls_certificates'];
+/** Tables later migrations add (0071, 0.15): not 0070's concern, so out of the byte-identity diff. */
+const LATER_TABLES = ['access_grants', 'terminal_sessions', 'traffic_rollups'];
 
 afterAll(() => {
   vi.unstubAllEnvs();
@@ -63,7 +65,7 @@ function folderBefore0070(): string {
   const at = journal.entries.findIndex((e) => e.tag === TAG);
   expect(at).toBeGreaterThan(0);
   expect(journal.entries[at - 1]!.tag).toBe('0069_github_app');
-  expect(at).toBe(journal.entries.length - 1);
+  // 0.15 appended 0071 after it; slicing here also drops every later entry.
   journal.entries = journal.entries.slice(0, at);
   writeFileSync(journalPath, JSON.stringify(journal));
   return dir;
@@ -157,7 +159,7 @@ describe('migration 0070 upgrade compatibility', () => {
 
     await runMigrations(db, migrationsFolder);
 
-    const after = await snapshot(client, ['__drizzle_migrations', ...NEW_TABLES]);
+    const after = await snapshot(client, ['__drizzle_migrations', ...NEW_TABLES, ...LATER_TABLES]);
     expect(after).toEqual(before);
     for (const t of NEW_TABLES) {
       expect((await client.execute(`SELECT COUNT(*) AS n FROM ${t}`)).rows[0]!['n'], t).toBe(0);

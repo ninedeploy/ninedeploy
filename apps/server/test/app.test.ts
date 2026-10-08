@@ -19,6 +19,9 @@ vi.mock('../src/plugins/traefik.js', () => ({ default: infra.traefik }));
 // 0.14 background plugins: inert here, so booting the app never reaches the host's Docker (public-DB sidecars) or staging files (imports).
 vi.mock('../src/plugins/publicDatabaseAccess.js', () => ({ default: vi.fn(async () => undefined) }));
 vi.mock('../src/plugins/databaseImports.js', () => ({ default: vi.fn(async () => undefined) }));
+// 0.15 background plugins: terminal boot recovery / reaper (removes helper containers) and the traffic log tailer.
+vi.mock('../src/plugins/terminals.js', () => ({ default: vi.fn(async () => undefined) }));
+vi.mock('../src/plugins/trafficAnalytics.js', () => ({ default: vi.fn(async () => undefined) }));
 vi.mock('../src/plugins/collector.js', () => ({ default: infra.collector }));
 vi.mock('../src/plugins/backupScheduler.js', () => ({ default: infra.backups }));
 
@@ -87,6 +90,28 @@ describe('buildApp', () => {
     const app = await buildApp();
     await app.ready();
     expect(app.hasPlugin('ninedeploy-log-shipper')).toBe(true);
+    await app.close();
+  });
+  it('0.15 D6: the WebSocket server caps frames at 1 MiB and prefers a non-credential subprotocol', async () => {
+    const app = await buildApp();
+    await app.ready();
+    const options = (app as unknown as { websocketServer: { options: { maxPayload: number; handleProtocols: (p: Set<string>) => string | false } } })
+      .websocketServer.options;
+    expect(options.maxPayload).toBe(1024 * 1024);
+    expect(options.handleProtocols(new Set(['ninedeploy.bearer.t', 'ninedeploy']))).toBe('ninedeploy');
+    // Bearer-only clients (web app, CLI) keep the 0.14 echo.
+    expect(options.handleProtocols(new Set(['ninedeploy.bearer.t']))).toBe('ninedeploy.bearer.t');
+    await app.close();
+  });
+
+  it('0.15: the route registry records the live route table from the first plugin on', async () => {
+    const app = await buildApp();
+    await app.ready();
+    const keys = new Map(app.routeRegistry.list().map((r) => [r.key, r]));
+    expect(keys.get('GET /health')).toMatchObject({ websocket: false });
+    expect(keys.get('GET /v1/events')).toMatchObject({ websocket: true });
+    expect(keys.get('GET /v1/services/:id/exec')).toMatchObject({ websocket: true });
+    expect(keys.has('POST /scim/v2/Users')).toBe(true);
     await app.close();
   });
 

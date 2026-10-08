@@ -74,6 +74,10 @@ import { firewallRoutes } from './firewall.js';
 import { acceptInvitationRoutes, invitationRoutes, publicInvitationRoutes } from './invitations.js';
 import { labelRoutes } from './labels.js';
 import { serviceTagRoutes } from './serviceTags.js';
+import { terminalRoutes } from './terminals.js';
+import { serviceTrafficRoutes, trafficRoutes } from './traffic.js';
+import { openapiRoutes } from './openapi.js';
+import { accessGrantRoutes, accessMeRoutes, projectAccessRoutes } from './accessGrants.js';
 
 /** All versioned API routes, mounted under /v1. */
 export const apiRoutes: FastifyPluginAsync = async (app) => {
@@ -105,13 +109,22 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   // Workspace-scoped invitation management (auth required) piggy-backs on the
   // workspaces prefix so callers see a single /v1/workspaces/:id/invitations.
   await app.register(invitationRoutes, { prefix: '/workspaces' });
+  // Project / environment access grants under /workspaces/:wid/access-grants
+  // (0.15, DESIGN §4.4); workspace admin.
+  await app.register(accessGrantRoutes, { prefix: '/workspaces' });
+  // The caller's own grants and guest workspaces (0.15).
+  await app.register(accessMeRoutes, { prefix: '/access' });
   await app.register(userRoutes, { prefix: '/users' });
   await app.register(demoRoutes, { prefix: '/demo' });
   await app.register(projectRoutes, { prefix: '/projects' });
   await app.register(projectEnvRoutes, { prefix: '/projects' });
+  // Who reaches a project, and through what (0.15, DESIGN §4.4).
+  await app.register(projectAccessRoutes, { prefix: '/projects' });
   await app.register(activityRoutes, { prefix: '/activity' });
   await app.register(alertRoutes, { prefix: '/alerts' });
   await app.register(aboutRoutes, { prefix: '/about' });
+  // The OpenAPI 3.1 document at /v1/openapi.json, behind login (0.15, DESIGN §3.1).
+  await app.register(openapiRoutes);
   await app.register(notificationRoutes, { prefix: '/notifications' });
   await app.register(databasesRoutes, { prefix: '/databases' });
   await app.register(databaseBackupRoutes, { prefix: '/databases' });
@@ -146,6 +159,9 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(volumeRoutes, { prefix: '/volumes' });
   await app.register(volumeBackupRoutes, { prefix: '/volumes' });
   await app.register(containerRoutes, { prefix: '/containers' });
+  // Interactive shells: sessions, the attach socket, history and settings
+  // (0.15, DESIGN §1.6); operator only.
+  await app.register(terminalRoutes, { prefix: '/terminals' });
   await app.register(statsRoutes, { prefix: '/stats' });
   await app.register(dashboardRoutes, { prefix: '/dashboard' });
   await app.register(systemRoutes, { prefix: '/system' });
@@ -189,6 +205,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   // 404'd, so the charts on Monitoring and the service Overview tab had nothing
   // to read while the collector kept writing a row every 30 seconds.
   await app.register(metricRoutes, { prefix: '/services' });
+  // Per-service request analytics, GET /services/:id/traffic (0.15, DESIGN §2.4).
+  await app.register(serviceTrafficRoutes, { prefix: '/services' });
   await app.register(metricHistoryRoutes, { prefix: '/metric-history' });
   await app.register(envSearchRoutes, { prefix: '/env' });
   await app.register(jobRoutes, { prefix: '/services' });
@@ -219,4 +237,7 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   // Custom dynamic config and custom certificates (0.14, DESIGN §2.5),
   // operator-only. `traefikRoutes` above owns the other /traefik paths.
   await app.register(traefikCustomRoutes, { prefix: '/traefik' });
+  // Instance-wide traffic analytics: settings and summary (0.15, DESIGN §2.4);
+  // operator only, opt-in.
+  await app.register(trafficRoutes, { prefix: '/traffic' });
 };

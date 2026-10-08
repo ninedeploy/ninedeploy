@@ -491,6 +491,13 @@
       "when": 1791457234345,
       "tag": "0070_network_data_access",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "6",
+      "when": 1791481215473,
+      "tag": "0071_operations_api",
+      "breakpoints": true
     }
   ]
 }

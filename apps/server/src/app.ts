@@ -8,6 +8,9 @@ import { apiRoutes } from './modules/api.js';
 import { scimRoutes } from './modules/scim.js';
 import { eventRoutes } from './modules/events.js';
 import { healthRoutes } from './modules/health.js';
+import { panelAllowedOrigins } from './lib/allowedOrigins.js';
+import { attachRouteRegistry } from './lib/routeRegistry.js';
+import { websocketServerOptions } from './lib/websocketOptions.js';
 import authPlugin from './plugins/auth.js';
 import backupSchedulerPlugin from './plugins/backupScheduler.js';
 import autoUpdateSchedulerPlugin from './plugins/autoUpdateScheduler.js';
@@ -27,6 +30,8 @@ import staticFilesPlugin from './plugins/staticFiles.js';
 import traefikPlugin from './plugins/traefik.js';
 import publicDatabaseAccessPlugin from './plugins/publicDatabaseAccess.js';
 import databaseImportsPlugin from './plugins/databaseImports.js';
+import terminalsPlugin from './plugins/terminals.js';
+import trafficAnalyticsPlugin from './plugins/trafficAnalytics.js';
 import workerPlugin from './plugins/worker.js';
 
 /** Translate thrown ZodErrors into a consistent 400 envelope. */
@@ -66,25 +71,19 @@ export async function buildApp(): Promise<FastifyInstance> {
     bodyLimit: 1024 * 1024,
   });
 
+  // The live route table for the OpenAPI document (0.15, DESIGN §3.1). The
+  // onRoute hook must exist before ANY plugin or module registers a route.
+  attachRouteRegistry(app);
+
   // Restrict CORS to a known allowlist instead of reflecting any origin
-  // (`origin: true`). The dashboard is same-origin in production; localhost
-  // origins are available only during development, while explicitly configured
-  // origins remain available in every environment.
-  const extraOrigins = (process.env['NINEDEPLOY_CORS_ORIGINS'] ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const allowedOrigins = [
-    ...new Set([
-      config.publicUrl,
-      ...(config.isProd ? [] : ['http://localhost:5173', 'http://localhost:3000']),
-      ...extraOrigins,
-    ]),
-  ];
+  // (`origin: true`); see lib/allowedOrigins.ts.
+  const allowedOrigins = panelAllowedOrigins();
   // F1016: a dashboard on another origin (VITE_API_URL) must be able to read
   // the repo-list diagnostic; browsers hide non-safelisted headers otherwise.
   await app.register(cors, { origin: allowedOrigins, credentials: true, exposedHeaders: ['x-nd-source-error'] });
-  await app.register(websocket);
+  // D6 (0.15, owner decision O6): 1 MiB frame cap, and a non-credential
+  // subprotocol is preferred over `ninedeploy.bearer.*` in the 101 echo.
+  await app.register(websocket, { options: websocketServerOptions });
   await app.register(securityHeadersPlugin);
   await app.register(rateLimitPlugin);
   await app.register(rawBodyPlugin);
@@ -125,6 +124,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(publicDatabaseAccessPlugin);
   // Database dump imports: boot recovery + hourly expiry sweep (0.14)
   await app.register(databaseImportsPlugin);
+  // Terminal sessions: boot recovery + 60s reaper (0.15)
+  await app.register(terminalsPlugin);
+  // Traffic analytics access-log tailer, idle unless enabled (0.15)
+  await app.register(trafficAnalyticsPlugin);
   // Runtime-state reconciliation (panel status vs live containers/processes)
   await app.register(runtimeStatePlugin);
   // Resource metrics collector

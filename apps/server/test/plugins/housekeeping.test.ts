@@ -40,6 +40,14 @@ vi.mock('../../src/engine/autoPrune.js', () => ({
   executeAutoPrune: autoPruneMock.executeAutoPrune,
 }));
 
+// 0.15 retention entry points (DESIGN §5, mount point M5): the steps must call them.
+const retention015 = vi.hoisted(() => ({
+  pruneTerminalSessions: vi.fn(async () => 0),
+  pruneTrafficRollups: vi.fn(async () => 0),
+}));
+vi.mock('../../src/lib/terminalSessions.js', () => ({ pruneTerminalSessions: retention015.pruneTerminalSessions }));
+vi.mock('../../src/lib/trafficAnalytics.js', () => ({ pruneTrafficRollups: retention015.pruneTrafficRollups }));
+
 const housekeepingPlugin = (await import('../../src/plugins/housekeeping.js')).default;
 
 /**
@@ -299,6 +307,38 @@ describe('housekeeping plugin', () => {
     // The prune rejection is caught (fire-and-forget); the rest of the tick still ran.
     expect(logsMock.pruneOldLogs).toHaveBeenCalledTimes(1);
     expect(execMock.run).toHaveBeenCalledWith('docker', ['image', 'prune', '-f'], {}, expect.any(Function));
+    await app.close();
+  });
+
+  it('runs the 0.15 terminal-session and traffic-rollup retention steps each tick (M5)', async () => {
+    retention015.pruneTerminalSessions.mockClear();
+    retention015.pruneTrafficRollups.mockClear();
+    const { db } = makeDb();
+    const app = await buildApp(db);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(retention015.pruneTerminalSessions).toHaveBeenCalledTimes(1);
+    expect(retention015.pruneTerminalSessions).toHaveBeenCalledWith(db, expect.any(Number));
+    expect(retention015.pruneTrafficRollups).toHaveBeenCalledTimes(1);
+    expect(retention015.pruneTrafficRollups).toHaveBeenCalledWith(db, expect.any(Number));
+    await app.close();
+  });
+
+  it('isolates a failing 0.15 retention step (r544)', async () => {
+    retention015.pruneTerminalSessions.mockRejectedValueOnce(new Error('terminal sweep failed'));
+    retention015.pruneTrafficRollups.mockClear();
+    const { db } = makeDb();
+    const app = await buildApp(db);
+    const error = vi.spyOn(app.log, 'error');
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(error).toHaveBeenCalledWith(
+      { err: expect.objectContaining({ message: 'terminal sweep failed' }), step: 'terminal-sessions' },
+      'housekeeping step failed: terminal-sessions',
+    );
+    expect(retention015.pruneTrafficRollups).toHaveBeenCalledTimes(1);
     await app.close();
   });
 });

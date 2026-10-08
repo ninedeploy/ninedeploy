@@ -68,6 +68,9 @@ vi.mock('../src/plugins/githubFeedback.js', () => noop('authz-github-feedback'))
 // 0.14: public-database sidecar reconcile (docker) and import boot recovery / expiry sweep (timers).
 vi.mock('../src/plugins/publicDatabaseAccess.js', () => noop('authz-public-db-access'));
 vi.mock('../src/plugins/databaseImports.js', () => noop('authz-database-imports'));
+// 0.15: terminal boot recovery / reaper (docker: helper containers) and the traffic log tailer (timers, files).
+vi.mock('../src/plugins/terminals.js', () => noop('authz-terminals'));
+vi.mock('../src/plugins/trafficAnalytics.js', () => noop('authz-traffic-analytics'));
 vi.mock('../src/plugins/staticFiles.js', () => noop('authz-static'));
 // The limiter is not under test, and ~4k requests from one address trip it.
 vi.mock('../src/plugins/rateLimit.js', () => noop('authz-ratelimit'));
@@ -194,7 +197,14 @@ vi.mock('fastify', async (importOriginal) => {
 // ── identities ───────────────────────────────────────────────────────────
 const ROLES = ['owner', 'admin', 'member', 'viewer'] as const;
 type Role = (typeof ROLES)[number];
-type Who = `${Role}A` | `${Role}B` | 'outsider' | 'leaverA' | 'operator' | 'anon';
+// ── 0.15 T5 access grants: extra identities ──
+// Grant-only identities (a user with grants and no seat, e.g. `guestA`). Each
+// is created in beforeAll, after the seated ones; `seedGrants` below gives it
+// its grants in every freshly seeded workspace.
+const EXTRA_IDENTITIES = [] as const;
+// ── end 0.15 T5 ──
+type ExtraIdentity = (typeof EXTRA_IDENTITIES)[number];
+type Who = `${Role}A` | `${Role}B` | 'outsider' | 'leaverA' | 'operator' | 'anon' | ExtraIdentity;
 type Named = Exclude<Who, 'anon'>;
 /**
  * Everyone who must get nothing from workspace A: every B role, a user with
@@ -260,6 +270,13 @@ let signAccessToken: typeof import('../src/lib/jwt.js').signAccessToken;
 let seq = 0;
 /** Workspace B's fixture — shared: nothing any case does may change it. */
 let B: Res;
+
+// ── 0.15 T5 access grants: per-seed hook ──
+/** Extra rows for each freshly seeded workspace (`id` is its id block, see `seed`). */
+async function seedGrants(_side: 'A' | 'B', _id: number): Promise<void> {
+  // No grants until T5: with `access_grants` empty every role is 0.14's.
+}
+// ── end 0.15 T5 ──
 
 /**
  * Seed one workspace with one of everything, in ONE batch (one transaction).
@@ -375,6 +392,7 @@ async function seed(side: 'A' | 'B'): Promise<Res> {
       expiresAt: future.getTime(),
     }),
   ]);
+  await seedGrants(side, id);
   return {
     n,
     ws: id,
@@ -463,6 +481,10 @@ function paramValue(url: string, param: string, r: Res): string {
     case 'index':
       return '0';
     // ── end 0.14 T4 ──
+    // ── 0.15 T2a terminals ── (no session row is seeded: `:id` under /v1/terminals is unknown)
+    // ── end 0.15 T2a ──
+    // ── 0.15 T5 access grants ── (e.g. `:grantId`)
+    // ── end 0.15 T5 ──
     case '*':
       return '';
     case 'id': {
@@ -1032,6 +1054,38 @@ export const MATRIX: Record<string, Rule> = {
   'POST /v1/settings/secret-providers/vault/test': OP,
   'POST /v1/settings/secret-providers/aws/test': OP,
   // ── end 0.14 T5 ──
+  // 0.15 (DESIGN §1.8, §2.7, §3.1, §4.7): each task uncomments or adds its
+  // entries in the same change that registers the route — a stale entry (no
+  // such route) fails `classifies every registered route`.
+  // ── 0.15 T2a terminals ──
+  // Operator only, no PREFIX_SCOPES entry (fine-grained tokens refused).
+  // 'POST /v1/terminals': R('operator', { noPositive: 'opens a shell' }),
+  // 'GET /v1/terminals': OP,
+  // 'GET /v1/terminals/:id': OP,
+  // 'DELETE /v1/terminals/:id': OP,
+  // 'GET /v1/terminals/settings': OP,
+  // 'PUT /v1/terminals/settings': OP,
+  // 'GET /v1/terminals/:id/attach': R('operator', { skip: 'WebSocket — covered by test/terminalsWs.test.ts' }),
+  // ── end 0.15 T2a ──
+  // ── 0.15 T2b node terminals ──
+  // ── end 0.15 T2b ──
+  // ── 0.15 T3 traffic ──
+  // 'GET /v1/traffic/settings': OP,
+  // 'PUT /v1/traffic/settings': OP,
+  // 'GET /v1/traffic/summary': OP,
+  // 'GET /v1/services/:id/traffic': R('viewer'),
+  // ── end 0.15 T3 ──
+  // ── 0.15 T4 openapi ──
+  // 'GET /v1/openapi.json': R('authed'),
+  // ── end 0.15 T4 ──
+  // ── 0.15 T5 access grants ──
+  // 'GET /v1/workspaces/:wid/access-grants': R('admin'),
+  // 'POST /v1/workspaces/:wid/access-grants': R('admin'),
+  // 'PATCH /v1/workspaces/:wid/access-grants/:grantId': R('admin'),
+  // 'DELETE /v1/workspaces/:wid/access-grants/:grantId': R('admin'),
+  // 'GET /v1/projects/:id/access': R('admin'),
+  // 'GET /v1/access/me': R('self'),
+  // ── end 0.15 T5 ──
 };
 
 // ── harness ──────────────────────────────────────────────────────────────
@@ -1162,6 +1216,8 @@ beforeAll(async () => {
   for (const side of ['A', 'B'] as const) for (const role of ROLES) await user(`${role}${side}`);
   await user('outsider');
   await user('leaverA');
+  // 0.15 T5: grant-only identities (none until T5 adds them above).
+  for (const key of EXTRA_IDENTITIES) await user(key);
   const rows = (await db.all(
     S.sql.raw(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__drizzle%'`),
   )) as Array<{ name: string }>;
@@ -1201,7 +1257,8 @@ describe('authorization matrix (r690)', () => {
 
   it('keeps the skip list short and justified', () => {
     const skipped = Object.values(MATRIX).filter((r) => r.skip);
-    expect(skipped.length).toBeLessThanOrEqual(3);
+    // Three 0.14 sockets, plus the 0.15 terminal attach socket (block 0.15 T2a).
+    expect(skipped.length).toBeLessThanOrEqual(4);
     for (const r of skipped) expect(r.skip).toMatch(/covered by/);
   });
 
@@ -1347,3 +1404,52 @@ describe('authorization matrix (r690)', () => {
     expect(problems, `${key}\n  ${problems.join('\n  ')}`).toEqual([]);
   });
 });
+
+// ── 0.15 T4 openapi ──
+/**
+ * T4 flips this to `true` once every route that predates 0.15 has its
+ * ROUTE_SPECS entry. Until then only the 0.15 routes (`NEW_015_ROUTE`) must
+ * carry one.
+ */
+const ROUTE_SPECS_ENFORCED = false;
+// ── end 0.15 T4 ──
+
+// ── 0.15 T1 openapi coverage (DESIGN §3.2) ──
+/** Routes added in 0.15: each needs its ROUTE_SPECS entry from day one. */
+const NEW_015_ROUTE =
+  /^[A-Z]+ \/v1\/(?:terminals(?:\/|$)|traffic(?:\/|$)|access(?:\/|$)|openapi\.json$|services\/:id\/traffic$|workspaces\/:wid\/access-grants|projects\/:id\/access$)/;
+
+describe('OpenAPI route coverage (0.15)', () => {
+  it('the route registry sees every route the app registers (its onRoute hook precedes every module)', () => {
+    const registry = app.routeRegistry.list().map((r) => r.key);
+    expect(registry).toEqual(liveRoutes().map((r) => r.key));
+  });
+
+  it('every ROUTE_SPECS entry names a live route', async () => {
+    const { ROUTE_SPECS } = await import('../src/openapi/specs/index.js');
+    const live = new Set(liveRoutes().map((r) => r.key));
+    expect(Object.keys(ROUTE_SPECS).filter((k) => !live.has(k)), 'ROUTE_SPECS entries for routes that do not exist').toEqual([]);
+  });
+
+  it('every 0.15 route has a ROUTE_SPECS entry', async () => {
+    const { ROUTE_SPECS } = await import('../src/openapi/specs/index.js');
+    const missing = liveRoutes()
+      .map((r) => r.key)
+      .filter((k) => NEW_015_ROUTE.test(k) && !(k in ROUTE_SPECS));
+    expect(missing, 'undocumented 0.15 routes').toEqual([]);
+  });
+
+  it.skipIf(!ROUTE_SPECS_ENFORCED)('every live route has a ROUTE_SPECS entry', async () => {
+    const { ROUTE_SPECS } = await import('../src/openapi/specs/index.js');
+    const missing = liveRoutes()
+      .map((r) => r.key)
+      .filter((k) => !(k in ROUTE_SPECS));
+    expect(missing, 'routes without a ROUTE_SPECS entry').toEqual([]);
+  });
+});
+// ── end 0.15 T1 ──
+
+// ── 0.15 T5 access grants: guest cases ──
+// A grant-only identity reaches A's covered resources at its granted role and
+// nothing workspace-level, nor anything of B's (DESIGN §4.7).
+// ── end 0.15 T5 ──

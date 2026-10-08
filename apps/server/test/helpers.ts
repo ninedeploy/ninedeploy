@@ -6,6 +6,7 @@ import { ZodError } from 'zod';
 import type { DB } from '@ninedeploy/db';
 import { forbidden, unauthorized } from '../src/lib/errors.js';
 import rawBodyPlugin from '../src/plugins/rawBody.js';
+import { websocketServerOptions } from '../src/lib/websocketOptions.js';
 import { NineDeployKernel } from '../src/kernel/kernel.js';
 import { config } from '../src/config.js';
 
@@ -419,7 +420,9 @@ export async function buildTestApp(opts: TestAppOpts = {}): Promise<FastifyInsta
   // and flaked suites (observed on oidc.test.ts during parallel runs).
   const app = Fastify({ logger: false, pluginTimeout: 30_000 });
   if (opts.rawBody) await app.register(rawBodyPlugin);
-  if (opts.websocket) await app.register(websocket);
+  // The production options (0.15 D6: 1 MiB frames, non-credential subprotocol
+  // preferred), so every WebSocket route test runs against what app.ts mounts.
+  if (opts.websocket) await app.register(websocket, { options: websocketServerOptions });
 
   app.decorateRequest('user', null);
   app.decorate('authenticate', async (req: FastifyRequest, reply: FastifyReply) => {

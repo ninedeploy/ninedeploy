@@ -24,3 +24,6 @@ export * from './publicAccess.js';
 export * from './proxyConfig.js';
 export * from './databaseImport.js';
 export * from './secretProviders.js';
+export * from './terminals.js';
+export * from './traffic.js';
+export * from './accessGrants.js';

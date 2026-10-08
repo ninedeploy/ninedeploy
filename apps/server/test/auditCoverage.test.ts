@@ -43,6 +43,22 @@ const EXEMPT: Record<string, string> = {
   'secretProviders.ts POST /vault/test': 'connectivity probe; updates last_tested_* only',
   'secretProviders.ts POST /aws/test': 'connectivity probe; updates last_tested_* only',
   // ── end 0.14 T5 ──
+  // 0.15 (DESIGN §1.6, §2.4, §4.4): every new mutation route audits — session
+  // create / terminate, both settings PUTs, every grant write — so none is
+  // exempt. The terminal attach WebSocket (GET /:id/attach) audits start and
+  // end in its handler; the ROUTE matcher only sees POST/PUT/PATCH/DELETE, so
+  // it needs no entry. A task that does add an exemption puts it in its block
+  // in the same change that adds the route (a stale entry fails below).
+  // ── 0.15 T2a terminals ──
+  // ── end 0.15 T2a ──
+  // ── 0.15 T2b node terminals ──
+  // ── end 0.15 T2b ──
+  // ── 0.15 T3 traffic ──
+  // ── end 0.15 T3 ──
+  // ── 0.15 T4 openapi ──
+  // ── end 0.15 T4 ──
+  // ── 0.15 T5 access grants ──
+  // ── end 0.15 T5 ──
 };
 
 // importSystemArchive (lib/systemArchive.ts) audits `system.import`; the panel
