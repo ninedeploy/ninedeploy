@@ -1,6 +1,6 @@
 ﻿
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { _resetSealedSupportCache, agentOp, agentPing, generateAgentToken, tokenMatches } from '../../src/lib/agentClient.js';
+import { _resetSealedSupportCache, agentOp, agentPing, agentTransportSealed, generateAgentToken, tokenMatches } from '../../src/lib/agentClient.js';
 import { open as openSealed, seal } from '../../src/lib/agentSeal.js';
 import { runOp } from '../../src/agent.js';
 import { createFakeDb } from '../helpers.js';
@@ -128,6 +128,41 @@ describe('agentOp', () => {
     await expect(
       agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'docker.pull', {}, () => {}),
     ).rejects.toThrow(/does not support the encrypted transport/);
+  });
+
+  it('0.13 (T5): never sends a Git credential in clear, even with the cleartext fallback opted in', async () => {
+    process.env['NINEDEPLOY_AGENT_ALLOW_CLEARTEXT'] = '1';
+    routeFetch({ sealed: false, exec: { lines: [], exitCode: 0 } });
+    const credential = { username: 'x-access-token', password: 'ghs_cleartextNever' };
+    await expect(
+      agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'git.fetch', { workspace: 'web', credential }, () => {}),
+    ).rejects.toThrow(/refusing to send a Git credential over the unencrypted transport/);
+    // Only the capability probe went out — no exec request carried the token.
+    expect(fetchMock.mock.calls.every(([u]) => String(u).endsWith('/agent/ping'))).toBe(true);
+    // The same op without a credential still takes the operator's fallback.
+    await expect(
+      agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'git.fetch', { workspace: 'web' }, () => {}),
+    ).resolves.toMatchObject({ exitCode: 0 });
+  });
+
+  it('0.13 (T5): a credential rides inside the sealed envelope only', async () => {
+    honestSealedAgent();
+    const credential = { username: 'x-access-token', password: 'ghs_sealedOnly' };
+    await agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'git.fetch', { workspace: 'web', credential }, () => {});
+    const body = String((fetchMock.mock.calls.at(-1) as [string, RequestInit])[1].body);
+    expect(body).not.toContain('ghs_sealedOnly');
+    expect(openSealed<{ params: unknown }>(SHARED, JSON.parse(body).sealed).params).toEqual({ workspace: 'web', credential });
+  });
+
+  it('0.13 (T5): agentTransportSealed reports the transport an op would use', async () => {
+    honestSealedAgent();
+    expect(await agentTransportSealed(createFakeDb({ findFirst: { servers: serverRow } }), 1)).toBe(true);
+    _resetSealedSupportCache();
+    routeFetch({ sealed: false, exec: {} });
+    expect(await agentTransportSealed(createFakeDb({ findFirst: { servers: serverRow } }), 1)).toBe(false);
+    routeFetch({ sealed: true, exec: {}, pingOk: false });
+    expect(await agentTransportSealed(createFakeDb({ findFirst: { servers: serverRow } }), 1)).toBe(false);
+    expect(await agentTransportSealed(createFakeDb({ findFirst: { servers: undefined } }), 1)).toBe(false);
   });
 
   it('NINEDEPLOY_AGENT_REQUIRE_SEALED=1 wins even when the fallback is allowed', async () => {

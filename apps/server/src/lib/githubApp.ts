@@ -271,6 +271,13 @@ export interface InstallationTokenOptions {
   repositoryIds?: readonly number[];
   /** Narrow the token's permissions (e.g. `{ contents: 'read' }`); omitted = everything granted. */
   permissions?: Readonly<Record<string, string>>;
+  /**
+   * Mint a token of its own: the cache is neither read nor written. For a
+   * token that will be REVOKED after one job (a node clone, 0.13 T5) — a
+   * cached token is shared with every concurrent caller of the same scope,
+   * and revoking it would cut their clones off mid-transfer.
+   */
+  fresh?: boolean;
   /** Clock override for tests. */
   now?: number;
 }
@@ -340,9 +347,9 @@ export async function installationToken(
   }
   const now = opts.now ?? Date.now();
   const key = tokenCacheKey(inst, opts);
-  const hit = tokenCache.get(key);
+  const hit = opts.fresh ? undefined : tokenCache.get(key);
   if (hit && hit.expiresAt - TOKEN_REFRESH_MARGIN_MS > now) return hit.token;
-  tokenCache.delete(key);
+  if (!opts.fresh) tokenCache.delete(key);
 
   const jwt = appJwt(app, now);
   const body: Record<string, unknown> = {};
@@ -387,7 +394,7 @@ export async function installationToken(
     throw new GithubAppError(`GitHub did not return an access token for ${who}`, 'http', res.status);
   }
   const expiresAt = typeof res.data.expires_at === 'string' ? Date.parse(res.data.expires_at) : Number.NaN;
-  if (Number.isFinite(expiresAt)) tokenCache.set(key, { token, expiresAt, installationRowId: inst.id });
+  if (Number.isFinite(expiresAt) && !opts.fresh) tokenCache.set(key, { token, expiresAt, installationRowId: inst.id });
   return token;
 }
 

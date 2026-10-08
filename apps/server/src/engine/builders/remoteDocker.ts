@@ -2,6 +2,7 @@ import type { Builder, BuildContext, DeployRuntime } from '../types.js';
 import { assertCloneTargetAllowed } from '../../lib/gitEgress.js';
 import { acquireRegistryLock, registryLockKey } from '../../lib/registryLock.js';
 import { assertAgentGuardsBuildPaths } from '../../lib/agentCapabilities.js';
+import type { NodeGitCredentialSource } from '../../lib/nodeGitCredential.js';
 
 /**
  * Remote Docker builder — deploys a service onto a registered node through the
@@ -98,7 +99,15 @@ export function envForAgent(env: Record<string, string>): Record<string, string>
   return Object.fromEntries(Object.entries(env).map(([k, v]) => [k, v.replace(/\r\n?|\n/g, '\\n')]));
 }
 
-export function createRemoteDockerBuilder(agent: AgentCall, opts: { pollMs?: number; nodeLabel?: string } = {}): Builder {
+export function createRemoteDockerBuilder(
+  agent: AgentCall,
+  opts: {
+    pollMs?: number;
+    nodeLabel?: string;
+    /** 0.13 (T5): the service's per-job Git credential (a GitHub App token); absent = anonymous clone. */
+    gitCredential?: NodeGitCredentialSource;
+  } = {},
+): Builder {
   const pollMs = opts.pollMs ?? 2000;
   /** Parse the `health` inspect format: `<status>|<health>|<failingStreak>|<restartCount>`. */
   const parseHealth = (
@@ -198,15 +207,26 @@ export function createRemoteDockerBuilder(agent: AgentCall, opts: { pollMs?: num
         await assertCloneTargetAllowed(service.repoUrl);
         // r660: only an agent that symlink-walks the build paths may build
         // the repository — asked before anything is cloned onto the node.
-        await assertAgentGuardsBuildPaths(agent, opts.nodeLabel ?? `#${service.serverId ?? '?'}`);
-        log(`Fetching ${service.repoUrl} into the node workspace "${workspace}" …`);
-        await agent('git.ensure', { workspace, url: service.repoUrl, depth: '1' }, sink);
-        if (service.branch) {
-          await agent('git.fetch', { workspace }, sink);
-          await agent('git.checkout', { workspace, ref: service.branch }, sink);
-        }
-        if (commitSha) {
-          await agent('git.reset', { workspace, sha: commitSha }, sink);
+        const label = opts.nodeLabel ?? `#${service.serverId ?? '?'}`;
+        await assertAgentGuardsBuildPaths(agent, label);
+        // 0.13 (T5): a GitHub App repository gets a repository-scoped token for
+        // this checkout only — refused for an agent that cannot take it, and
+        // revoked below whatever happens. Anything else clones as before.
+        const git = opts.gitCredential
+          ? await opts.gitCredential(agent, { label, serverId: service.serverId ?? null })
+          : { git: agent, release: async () => undefined };
+        try {
+          log(`Fetching ${service.repoUrl} into the node workspace "${workspace}" …`);
+          await git.git('git.ensure', { workspace, url: service.repoUrl, depth: '1' }, sink);
+          if (service.branch) {
+            await git.git('git.fetch', { workspace }, sink);
+            await git.git('git.checkout', { workspace, ref: service.branch }, sink);
+          }
+          if (commitSha) {
+            await git.git('git.reset', { workspace, sha: commitSha }, sink);
+          }
+        } finally {
+          await git.release();
         }
 
         target = `ninedeploy/${service.slug}:${commitSha.slice(0, 7) || 'latest'}`;

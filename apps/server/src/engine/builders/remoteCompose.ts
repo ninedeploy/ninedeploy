@@ -7,6 +7,7 @@ import { composeScalar, parseComposePs } from './compose.js';
 import { INLINE_COMPOSE_FILE } from '../../lib/composeWorkspace.js';
 import { assertCloneTargetAllowed } from '../../lib/gitEgress.js';
 import { assertAgentGuardsBuildPaths } from '../../lib/agentCapabilities.js';
+import type { NodeGitCredentialSource } from '../../lib/nodeGitCredential.js';
 
 /**
  * Remote Compose builder — brings a compose stack up on a registered node
@@ -109,7 +110,14 @@ function readRepoDotEnv(workDir: string): string | null {
   return readFileSync(file, 'utf8');
 }
 
-export function createRemoteComposeBuilder(agent: AgentCall, opts: { nodeLabel?: string } = {}): Builder {
+export function createRemoteComposeBuilder(
+  agent: AgentCall,
+  opts: {
+    nodeLabel?: string;
+    /** 0.13 (T5): the service's per-job Git credential (a GitHub App token); absent = anonymous clone. */
+    gitCredential?: NodeGitCredentialSource;
+  } = {},
+): Builder {
   // Recorded at buildAndRun time: the project this builder MINTED for the
   // runtimeId it MINTED. The Builder interface only hands `stop()` the
   // runtimeId, so a string-surgery recovery from `<project>-<service>-1`
@@ -153,14 +161,24 @@ export function createRemoteComposeBuilder(agent: AgentCall, opts: { nodeLabel?:
         await assertCloneTargetAllowed(service.repoUrl);
         // r660: a repository compose file (and the build contexts it names)
         // is a repo path like a Dockerfile — same agent requirement.
-        await assertAgentGuardsBuildPaths(agent, opts.nodeLabel ?? `#${service.serverId ?? '?'}`);
-        log(`Fetching ${service.repoUrl} into the node workspace "${workspace}" …`);
-        await agent('git.ensure', { workspace, url: service.repoUrl, depth: '1' }, sink);
-        if (service.branch) {
-          await agent('git.fetch', { workspace }, sink);
-          await agent('git.checkout', { workspace, ref: service.branch }, sink);
+        const label = opts.nodeLabel ?? `#${service.serverId ?? '?'}`;
+        await assertAgentGuardsBuildPaths(agent, label);
+        // 0.13 (T5): per-job GitHub App token, revoked once the checkout is
+        // done — see remoteDocker.ts.
+        const git = opts.gitCredential
+          ? await opts.gitCredential(agent, { label, serverId: service.serverId ?? null })
+          : { git: agent, release: async () => undefined };
+        try {
+          log(`Fetching ${service.repoUrl} into the node workspace "${workspace}" …`);
+          await git.git('git.ensure', { workspace, url: service.repoUrl, depth: '1' }, sink);
+          if (service.branch) {
+            await git.git('git.fetch', { workspace }, sink);
+            await git.git('git.checkout', { workspace, ref: service.branch }, sink);
+          }
+          if (ctx.commitSha) await git.git('git.reset', { workspace, sha: ctx.commitSha }, sink);
+        } finally {
+          await git.release();
         }
-        if (ctx.commitSha) await agent('git.reset', { workspace, sha: ctx.commitSha }, sink);
         // Re-anchored: a leading slash means "repo root" in the panel's field,
         // but on the node it would be the filesystem root.
         composeFile =

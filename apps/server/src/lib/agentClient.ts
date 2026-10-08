@@ -188,6 +188,18 @@ async function supportsSealed(serverId: number, host: string, port: number): Pro
 }
 
 /**
+ * 0.13 (T5): whether operations to this node travel inside the sealed
+ * envelope. A per-job Git credential is only ever offered to a node that
+ * answers yes — and {@link agentOp} refuses to send one in clear regardless.
+ * Unknown server or an unreachable probe reads as "not sealed".
+ */
+export async function agentTransportSealed(db: DB, serverId: number): Promise<boolean> {
+  const row = await db.query.servers.findFirst({ where: eq(servers.id, serverId) });
+  if (!row) return false;
+  return supportsSealed(serverId, row.host, row.port);
+}
+
+/**
  * Run one typed operation on a remote agent. `sink` receives output lines;
  * non-zero exit codes throw (callers treat remote failures like local ones).
  * The exceptions are ops whose RESULT is the exit code — `docker.volumeInspect`
@@ -218,6 +230,14 @@ export async function agentOp(
 
   const sealedOk = await supportsSealed(serverId, row.host, row.port);
   if (!sealedOk) {
+    // 0.13 (T5): a per-job Git credential never travels in clear — not even
+    // when the operator opened the cleartext fallback for the rest.
+    if (params['credential'] !== undefined) {
+      throw new Error(
+        `agent ${op} on ${row.host}:${row.port}: refusing to send a Git credential over the unencrypted transport — ` +
+          'update the node agent to use GitHub App repositories on this node',
+      );
+    }
     if (!cleartextFallbackAllowed()) {
       throw new Error(
         `agent ${row.host}:${row.port} does not support the encrypted transport. The cleartext ` +

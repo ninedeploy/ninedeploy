@@ -140,7 +140,7 @@ describe('remoteServiceRefusal (r266)', () => {
     const withSource = (src: Record<string, unknown> | undefined) =>
       ({
         select: () => ({ from: () => ({ where: async () => [] }) }),
-        query: { sources: { findFirst: async () => src } },
+        query: { sources: { findFirst: async () => src }, serviceGithubLinks: { findFirst: async () => undefined } },
       }) as never;
     const repoSvc = { id: 1, serverId: 4, type: 'docker', sourceId: 3, repoUrl: 'https://github.com/acme/private.git' };
     // The panel clones with the token; the node's git.ensure has no credential
@@ -171,13 +171,21 @@ describe('remoteServiceRefusal (r266)', () => {
     const withSource = (src: Record<string, unknown> | undefined) =>
       ({
         select: () => ({ from: () => ({ where: async () => [] }) }),
-        query: { sources: { findFirst: async () => src } },
+        query: { sources: { findFirst: async () => src }, serviceGithubLinks: { findFirst: async () => undefined } },
       }) as never;
     const repoSvc = { id: 1, serverId: 4, type: 'docker', sourceId: 3, repoUrl: 'https://github.com/acme/private.git' };
     const appSource = { type: 'github_app', tokenEncrypted: null, deployKeyEncrypted: null };
     expect(await sourceHasGitCredential(withSource(appSource), 3)).toBe(true);
-    // Still refused on a node (T5 relaxes it for sealed agents with git.credential).
-    expect(await remoteServiceRefusal(withSource(appSource), repoSvc)).toMatch(/node clones anonymously/);
+    // Refused on a node whose agent cannot take a per-job token (T5 relaxes
+    // it for sealed agents advertising git.credential — see the matrix below).
+    const oldAgent = async () => ({
+      agent: async () => ({ exitCode: 0, lines: [] }),
+      nodeLabel: '"edge-1" (#4)',
+      sealed: true,
+    });
+    expect(await remoteServiceRefusal(withSource(appSource), repoSvc, { probe: oldAgent })).toMatch(
+      /update the node agent to use GitHub App repositories on this node/i,
+    );
     expect(await sourceHasGitCredential(withSource(undefined), 3)).toBe(false);
     expect(await sourceHasGitCredential(withSource(appSource), null)).toBe(false);
   });

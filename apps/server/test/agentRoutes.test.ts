@@ -229,7 +229,7 @@ describe('agent /agent/exec sealed transport', () => {
     // r660: the answer names the agent's version and capabilities.
     const body = openSealed<{ lines: string[] }>(TOKEN_HASH, res.json().sealed);
     expect(body).toEqual({
-      lines: [expect.stringMatching(/^ND-AGENT \{"version":"[^"]+","caps":\["build-path-guard","workspace\.remove"\]\}$/)],
+      lines: [expect.stringMatching(/^ND-AGENT \{"version":"[^"]+","caps":\["build-path-guard","workspace\.remove","git\.credential"\]\}$/)],
       exitCode: 0, envFile: null, nonce: 'probe-123',
     });
     expect(spawnMock).not.toHaveBeenCalled();

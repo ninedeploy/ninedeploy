@@ -12,7 +12,7 @@ import {
 import { audit } from './audit.js';
 import { decrypt } from './crypto.js';
 import type { CloneCreds } from './git.js';
-import { GithubAppError, githubApi, installationToken } from './githubApp.js';
+import { GithubAppError, githubApi, installationToken, revokeInstallationToken } from './githubApp.js';
 
 /**
  * Clone credentials for a service (0.13). Replaces the credential blocks the
@@ -39,6 +39,21 @@ export interface CloneCredsTarget {
   repoUrl?: string | null;
   previewParentServiceId?: number | null;
 }
+
+/**
+ * 0.13 (T5): `perJob` mints a token for ONE remote-node job — never from or
+ * into the token cache (it is revoked when the job ends, see
+ * `revokeInstallationToken`), and always scoped to the one repository: the
+ * node clones no submodules, so the `installation` token scope buys nothing
+ * there. The App path then also returns `revoke`. Without it, the output is
+ * exactly what it was.
+ */
+export interface CloneCredsOptions {
+  perJob?: boolean;
+}
+
+/** {@link resolveCloneCreds}' answer; `revoke` is set only for a `perJob` App token. */
+export type ResolvedCloneCreds = CloneCreds & { revoke?: () => Promise<boolean> };
 
 const CLONE_PERMISSIONS = { contents: 'read' } as const;
 const LOOKUP_PERMISSIONS = { metadata: 'read' } as const;
@@ -133,7 +148,12 @@ async function mintCloneToken(
   inst: GithubAppInstallation,
   repoId: number,
   tokenScope: ServiceGithubLink['tokenScope'],
-): Promise<CloneCreds> {
+  opts: CloneCredsOptions = {},
+): Promise<ResolvedCloneCreds> {
+  if (opts.perJob) {
+    const token = await installationToken(db, app, inst, { repositoryIds: [repoId], permissions: CLONE_PERMISSIONS, fresh: true });
+    return { type: 'github_app', token, revoke: () => revokeInstallationToken(app, token) };
+  }
   const token = await installationToken(db, app, inst, {
     ...(tokenScope === 'installation' ? {} : { repositoryIds: [repoId] }),
     permissions: CLONE_PERMISSIONS,
@@ -170,7 +190,12 @@ async function lookupRepo(db: DB, app: GithubApp, inst: GithubAppInstallation, f
 }
 
 /** Step 2: a `github_app` source clones through its own installation. */
-async function viaSourceInstallation(db: DB, target: CloneCredsTarget, sourceId: number): Promise<CloneCreds> {
+async function viaSourceInstallation(
+  db: DB,
+  target: CloneCredsTarget,
+  sourceId: number,
+  opts: CloneCredsOptions = {},
+): Promise<ResolvedCloneCreds> {
   const inst = await db.query.githubAppInstallations.findFirst({ where: eq(githubAppInstallations.sourceId, sourceId) });
   if (!inst) throw new GithubAppError(`Source #${sourceId} is a GitHub App source with no installation behind it`, 'no_installation');
   assertLive(inst);
@@ -184,7 +209,7 @@ async function viaSourceInstallation(db: DB, target: CloneCredsTarget, sourceId:
       ? await db.query.serviceGithubLinks.findFirst({ where: eq(serviceGithubLinks.serviceId, target.id) })
       : undefined;
   if (own && own.installationRowId === inst.id && own.repoFullName.toLowerCase() === fullName.toLowerCase()) {
-    return mintCloneToken(db, app, inst, own.repoId, own.tokenScope);
+    return mintCloneToken(db, app, inst, own.repoId, own.tokenScope, opts);
   }
 
   const found = await lookupRepo(db, app, inst, fullName, owner, repo);
@@ -218,20 +243,24 @@ async function viaSourceInstallation(db: DB, target: CloneCredsTarget, sourceId:
       /* best effort: the clone does not depend on the remembered link */
     }
   }
-  return mintCloneToken(db, app, inst, found.id, 'repository');
+  return mintCloneToken(db, app, inst, found.id, 'repository', opts);
 }
 
-export async function resolveCloneCreds(db: DB, target: CloneCredsTarget): Promise<CloneCreds | undefined> {
+export async function resolveCloneCreds(
+  db: DB,
+  target: CloneCredsTarget,
+  opts: CloneCredsOptions = {},
+): Promise<ResolvedCloneCreds | undefined> {
   const linked = await activeLink(db, target);
   if (linked) {
     const app = await loadApp(db, linked.inst);
     githubRepoFromUrl(target.repoUrl ?? '', app.webBaseUrl); // host check before any token is minted
-    return mintCloneToken(db, app, linked.inst, linked.link.repoId, linked.link.tokenScope);
+    return mintCloneToken(db, app, linked.inst, linked.link.repoId, linked.link.tokenScope, opts);
   }
   if (!target.sourceId) return undefined;
   const src = await db.query.sources.findFirst({ where: eq(sources.id, target.sourceId) });
   if (!src) return undefined;
-  if (src.type === 'github_app') return viaSourceInstallation(db, target, target.sourceId);
+  if (src.type === 'github_app') return viaSourceInstallation(db, target, target.sourceId, opts);
   return {
     type: src.type,
     token: src.tokenEncrypted ? decrypt(src.tokenEncrypted) : undefined,

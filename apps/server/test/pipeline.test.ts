@@ -36,7 +36,11 @@ const h = vi.hoisted(() => {
   const installationToken = vi.fn<(...args: any[]) => Promise<string>>(async () => {
     throw new Error('installationToken was not expected in this test');
   });
-  return { builder, checkoutCommit, decrypt, connectionString, ENGINES, writeDynamicConfig, getAcmeEmail, config, agentOp, reconcileTemplateDependencies, railpackUnavailableReason, installationToken };
+  // 0.13 (T5): the node transport is sealed unless a test says otherwise; a
+  // per-job node token is revoked through this (never the network).
+  const agentTransportSealed = vi.fn(async () => true);
+  const revokeInstallationToken = vi.fn(async (..._args: unknown[]) => true);
+  return { builder, checkoutCommit, decrypt, connectionString, ENGINES, writeDynamicConfig, getAcmeEmail, config, agentOp, reconcileTemplateDependencies, railpackUnavailableReason, installationToken, agentTransportSealed, revokeInstallationToken };
 });
 
 vi.mock('../src/config.js', () => ({ config: h.config }));
@@ -52,8 +56,9 @@ vi.mock('../src/lib/git.js', () => ({ checkoutCommit: h.checkoutCommit }));
 vi.mock('../src/lib/githubApp.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/githubApp.js')>()),
   installationToken: h.installationToken,
+  revokeInstallationToken: h.revokeInstallationToken,
 }));
-vi.mock('../src/lib/agentClient.js', () => ({ agentOp: h.agentOp }));
+vi.mock('../src/lib/agentClient.js', () => ({ agentOp: h.agentOp, agentTransportSealed: h.agentTransportSealed }));
 vi.mock('../src/engine/database.js', () => ({ connectionString: h.connectionString, ENGINES: h.ENGINES }));
 vi.mock('../src/engine/builders/docker.js', () => ({ dockerBuilder: h.builder, railpackUnavailableReason: h.railpackUnavailableReason }));
 vi.mock('../src/engine/builders/pm2.js', () => ({ pm2Builder: h.builder }));
@@ -2895,5 +2900,139 @@ describe('0.13: a GitHub App clone', () => {
     expect(h.installationToken).not.toHaveBeenCalled();
     expect(h.checkoutCommit).not.toHaveBeenCalled();
     expect(failedReason(inserts)).toBe('Refusing to send a GitHub App token to gitlab.com: the App belongs to github.com');
+  });
+});
+
+describe('0.13 (T5): GitHub App repositories on nodes — pipeline wiring', () => {
+  const PANEL_TOKEN = 'ghs_PANELCLONE0123';
+  const NODE_TOKEN = 'ghs_NODEJOB4567';
+  const CAPS = 'ND-AGENT {"version":"0.13.0","caps":["build-path-guard","workspace.remove","git.credential"]}';
+  let egressEnv: string | undefined;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    logBus.removeAllListeners();
+    h.builder.buildAndRun.mockImplementation(async () => ({ runtimeId: 'c-1', port: 3000, healthPath: '/' }));
+    h.builder.isHealthy.mockImplementation(async () => true);
+    h.checkoutCommit.mockImplementation(async () => 'sha-1234567');
+    h.writeDynamicConfig.mockImplementation(async () => undefined);
+    h.agentTransportSealed.mockResolvedValue(true);
+    // A fresh (per-job) mint is the node's token; the cached one is the panel's.
+    h.installationToken.mockImplementation(async (...args: unknown[]) =>
+      (args[3] as { fresh?: boolean } | undefined)?.fresh ? NODE_TOKEN : PANEL_TOKEN,
+    );
+    h.agentOp.mockImplementation(async (...args: unknown[]) =>
+      args[2] === 'docker.inspect'
+        ? { exitCode: 0, lines: ['running|none|0|0'] }
+        : args[2] === 'agent.ping'
+          ? { exitCode: 0, lines: [CAPS] }
+          : args[2] === 'file.writeEnv'
+            ? { exitCode: 0, lines: ['wrote .agent-env/x.env'] }
+            : { exitCode: 0, lines: [] },
+    );
+    egressEnv = process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'];
+    process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'] = '1';
+  });
+  afterEach(() => {
+    logBus.removeAllListeners();
+    if (egressEnv === undefined) delete process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'];
+    else process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'] = egressEnv;
+    h.installationToken.mockImplementation(async () => {
+      throw new Error('installationToken was not expected in this test');
+    });
+  });
+
+  /** Service #5 linked to installation row #3 of App #2 (github.com), repository id 31337. */
+  function linkedDb(over: Record<string, unknown> = {}) {
+    const made = makeDb();
+    baseSetup(made.db, { ownerUserId: 42, ...over });
+    made.db.query.serviceGithubLinks.findFirst.mockResolvedValue({
+      id: 1,
+      serviceId: 5,
+      installationRowId: 3,
+      repoId: 31337,
+      repoFullName: 'a/b',
+      enabled: true,
+      tokenScope: 'repository',
+    });
+    made.db.query.githubAppInstallations.findFirst.mockResolvedValue({
+      id: 3,
+      githubAppId: 2,
+      installationId: 9001,
+      accountLogin: 'a',
+      suspendedAt: null,
+      removedAt: null,
+    });
+    made.db.query.githubApps.findFirst.mockResolvedValue({ id: 2, webBaseUrl: 'https://github.com', apiBaseUrl: 'https://api.github.com' });
+    return made;
+  }
+  const gitCalls = () =>
+    h.agentOp.mock.calls
+      .filter((c) => String(c[2]).startsWith('git.'))
+      .map((c) => ({
+        server: c[1] as number,
+        op: c[2] as string,
+        credential: (c[3] as { credential?: { password: string } }).credential?.password,
+      }));
+  const freshMints = () => h.installationToken.mock.calls.filter((c) => (c[3] as { fresh?: boolean } | undefined)?.fresh);
+
+  it('a node-pinned App service is checked out with a fresh per-job token, revoked after the checkout', async () => {
+    const { db } = linkedDb({ serverId: 4 });
+    const lines = collectLogs(1);
+
+    await runDeployment(db as never, 1);
+
+    expect(gitCalls().filter((c) => c.server === 4).map((c) => [c.op, c.credential])).toEqual([
+      ['git.ensure', NODE_TOKEN],
+      ['git.fetch', NODE_TOKEN],
+      ['git.checkout', undefined],
+      ['git.reset', NODE_TOKEN],
+    ]);
+    expect(freshMints().map((c) => c[3])).toEqual([{ repositoryIds: [31337], permissions: { contents: 'read' }, fresh: true }]);
+    expect(h.revokeInstallationToken).toHaveBeenCalledTimes(1);
+    expect(h.revokeInstallationToken.mock.calls[0]![1]).toBe(NODE_TOKEN);
+    expect(lines.join('\n')).not.toContain(NODE_TOKEN);
+    expect(lines.some((l) => /clones anonymously/.test(l))).toBe(false);
+  });
+
+  it('an older node agent refuses the deploy with the update message and nothing is minted for it', async () => {
+    const { db } = linkedDb({ serverId: 4 });
+    h.agentOp.mockImplementation(async (...args: unknown[]) =>
+      args[2] === 'agent.ping'
+        ? { exitCode: 0, lines: ['ND-AGENT {"version":"0.12.0","caps":["build-path-guard","workspace.remove"]}'] }
+        : { exitCode: 0, lines: [] },
+    );
+    const lines = collectLogs(1);
+
+    await runDeployment(db as never, 1);
+
+    expect(lines.join(' ')).toMatch(/update the node agent to use GitHub App repositories on this node/i);
+    expect(gitCalls()).toHaveLength(0);
+    expect(freshMints()).toHaveLength(0);
+  });
+
+  it('an App source build fans out to an extra node with its own per-job token', async () => {
+    const { db } = linkedDb();
+    db.select.mockImplementation(() => ({
+      from: vi.fn((table: unknown) => {
+        const rows = table === serviceTargets ? [{ serverId: 9, runtimeId: null }] : [];
+        return {
+          where: vi.fn(() => Object.assign(Promise.resolve(rows), { limit: vi.fn(() => Promise.resolve(rows)) })),
+          leftJoin: vi.fn(() => Promise.resolve([])),
+          innerJoin: vi.fn(() => Promise.resolve([])),
+          orderBy: vi.fn(() => Promise.resolve([])),
+          // biome-ignore lint/suspicious/noThenProperty: intentional thenable — the fake DB query result must be awaitable by the code under test.
+          then: (ok: (v: unknown) => unknown) => ok(rows),
+        };
+      }),
+    }));
+    const lines = collectLogs(1);
+
+    await runDeployment(db as never, 1);
+
+    expect(lines.some((l) => l.startsWith('Fan-out skipped'))).toBe(false);
+    expect(gitCalls().find((c) => c.server === 9 && c.op === 'git.ensure')?.credential).toBe(NODE_TOKEN);
+    expect(h.revokeInstallationToken).toHaveBeenCalledWith(expect.anything(), NODE_TOKEN);
+    expect(lines.join('\n')).not.toContain(NODE_TOKEN);
   });
 });

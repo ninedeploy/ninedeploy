@@ -4,6 +4,7 @@ import { agentOp } from '../lib/agentClient.js';
 import { assertAgentGuardsBuildPaths, nodeLabel } from '../lib/agentCapabilities.js';
 import { acquireRegistryLock, registryLockKey } from '../lib/registryLock.js';
 import { assertCloneTargetAllowed } from '../lib/gitEgress.js';
+import type { NodeGitCredentialSource } from '../lib/nodeGitCredential.js';
 import { createRemoteDockerBuilder, envForAgent } from './builders/remoteDocker.js';
 
 /**
@@ -91,6 +92,13 @@ export interface FanoutContext {
     dockerfilePath: string;
     baseDir: string;
   };
+  /**
+   * 0.13 (T5): the service's per-job Git credential for a source build — a
+   * GitHub App token minted per TARGET, refused for a target whose agent
+   * cannot take it (that target fails, the others proceed), and revoked once
+   * its checkout is done. Absent = anonymous clone.
+   */
+  gitCredential?: NodeGitCredentialSource;
 }
 
 /**
@@ -161,13 +169,21 @@ export async function deployToTargets(
             await assertCloneTargetAllowed(repoUrl);
             // r660: refuse the source build on a target whose agent cannot
             // symlink-walk the build paths (an image release still fans out).
-            await assertAgentGuardsBuildPaths(agent, await nodeLabel(db, target.serverId));
-            await agent('git.ensure', { workspace: ctx.service.slug, url: repoUrl, depth: '1' }, log);
-            if (branch) {
-              await agent('git.fetch', { workspace: ctx.service.slug }, log);
-              await agent('git.checkout', { workspace: ctx.service.slug, ref: branch }, log);
+            const label = await nodeLabel(db, target.serverId);
+            await assertAgentGuardsBuildPaths(agent, label);
+            const git = ctx.gitCredential
+              ? await ctx.gitCredential(agent, { label, serverId: target.serverId })
+              : { git: agent, release: async () => undefined };
+            try {
+              await git.git('git.ensure', { workspace: ctx.service.slug, url: repoUrl, depth: '1' }, log);
+              if (branch) {
+                await git.git('git.fetch', { workspace: ctx.service.slug }, log);
+                await git.git('git.checkout', { workspace: ctx.service.slug, ref: branch }, log);
+              }
+              if (commitSha) await git.git('git.reset', { workspace: ctx.service.slug, sha: commitSha }, log);
+            } finally {
+              await git.release();
             }
-            if (commitSha) await agent('git.reset', { workspace: ctx.service.slug, sha: commitSha }, log);
             release = `ninedeploy/${ctx.service.slug}:t${target.serverId}-${commitSha.slice(0, 7) || 'latest'}`;
             await agent('docker.build', { workspace: ctx.service.slug, tag: release, dockerfile: dockerfilePath, context: baseDir }, log);
           }

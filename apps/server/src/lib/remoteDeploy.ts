@@ -1,5 +1,15 @@
 import { eq } from 'drizzle-orm';
-import { buildConfigs, databaseAttachments, type DB, serviceVolumeAttachments, sources } from '@ninedeploy/db';
+import {
+  buildConfigs,
+  databaseAttachments,
+  type DB,
+  githubAppInstallations,
+  serviceGithubLinks,
+  serviceVolumeAttachments,
+  sources,
+} from '@ninedeploy/db';
+import { agentOp, agentTransportSealed } from './agentClient.js';
+import { type AgentCaller, gitCredentialRefusal, nodeLabel } from './agentCapabilities.js';
 import { badRequest } from './errors.js';
 
 /**
@@ -20,7 +30,9 @@ import { badRequest } from './errors.js';
  *   - A docker service whose container needs a command, the Docker socket or
  *     extra volume attachments (r266, {@link remoteServiceRefusal}).
  *   - A repository cloned with a Git credential: the node clones anonymously
- *     (r268, same function).
+ *     (r268, same function). 0.13 (T5): except a GitHub App repository, which
+ *     reaches an agent advertising `git.credential` over the sealed transport
+ *     as a per-job, repository-scoped token (lib/nodeGitCredential.ts).
  *   - Deploy hooks: they run on the panel host (r522, {@link remoteHookRefusal}).
  *
  * Compose stacks DO run on a node now (`engine/builders/remoteCompose.ts`):
@@ -94,6 +106,60 @@ export async function sourceHasGitCredential(db: DB, sourceId: number | null | u
 }
 
 /**
+ * 0.13 (T5): which credential the panel would clone this service's repository
+ * with — the decision `resolveCloneCreds` (lib/sourceCreds.ts) makes, read
+ * without minting or decrypting anything:
+ *
+ *   - `github_app`: an enabled GitHub link on a live installation (the
+ *     service's own, else a preview's parent's), or a `github_app` source;
+ *   - `static`: the attached source's token or deploy key (never `registry`,
+ *     which is image-pull auth — the r268 rule);
+ *   - `none`: an anonymous clone.
+ *
+ * Only `github_app` can reach a node (as a per-job token); `static` stays on
+ * the panel. The builders re-resolve at job time and refuse a `static`
+ * answer again, so a link changed in between cannot leak a PAT.
+ */
+export type CloneCredentialKind = 'none' | 'github_app' | 'static';
+
+export async function cloneCredentialKind(
+  db: DB,
+  service: { id?: number | null; sourceId?: number | null; previewParentServiceId?: number | null },
+): Promise<CloneCredentialKind> {
+  for (const serviceId of [service.id, service.previewParentServiceId]) {
+    if (typeof serviceId !== 'number') continue;
+    const link = await db.query.serviceGithubLinks.findFirst({ where: eq(serviceGithubLinks.serviceId, serviceId) });
+    if (!link?.enabled) continue;
+    const inst = await db.query.githubAppInstallations.findFirst({ where: eq(githubAppInstallations.id, link.installationRowId) });
+    if (inst && !inst.suspendedAt && !inst.removedAt) return 'github_app';
+  }
+  if (service.sourceId == null) return 'none';
+  const src = await db.query.sources.findFirst({ where: eq(sources.id, service.sourceId) });
+  if (!src) return 'none';
+  if (src.type === 'github_app') return 'github_app';
+  return src.type !== 'registry' && (src.tokenEncrypted || src.deployKeyEncrypted) ? 'static' : 'none';
+}
+
+/** The r268 refusal: a static credential (PAT / deploy key) never leaves the panel. */
+export const STATIC_CREDENTIAL_REFUSAL =
+  'Deployments to a remote server are not available for this service: its repository is cloned with a Git credential, and the node clones anonymously — the credential never leaves the panel. Detach the credential if the repository is public, or clear the target server to deploy it on the panel host.';
+
+/** How {@link remoteServiceRefusal} reaches the node to ask about a per-job token (tests inject it). */
+export interface RemoteAgentProbe {
+  agent: AgentCaller;
+  nodeLabel: string;
+  sealed: boolean;
+}
+
+async function defaultAgentProbe(db: DB, serverId: number): Promise<RemoteAgentProbe> {
+  return {
+    agent: (op, params, sink) => agentOp(db, serverId, op, params, sink),
+    nodeLabel: await nodeLabel(db, serverId),
+    sealed: await agentTransportSealed(db, serverId),
+  };
+}
+
+/**
  * r266: why the node cannot run this service the way the panel would, or null.
  *
  * The agent's `docker.runEnv` has no slot for a container command, a Docker
@@ -122,15 +188,25 @@ export async function remoteServiceRefusal(
     repoUrl?: string | null;
     image?: string | null;
     composeContent?: string | null;
+    previewParentServiceId?: number | null;
   },
+  opts: { probe?: (serverId: number) => Promise<RemoteAgentProbe> } = {},
 ): Promise<string | null> {
   if (service.serverId == null) return null;
   const type = service.type ?? 'docker';
   // Only a service the NODE clones: an image deploy never clones, and an
   // inline compose stack is shipped from the panel.
   if (service.repoUrl && !service.image && !service.composeContent) {
-    if (await sourceHasGitCredential(db, service.sourceId)) {
-      return 'Deployments to a remote server are not available for this service: its repository is cloned with a Git credential, and the node clones anonymously — the credential never leaves the panel. Detach the credential if the repository is public, or clear the target server to deploy it on the panel host.';
+    const kind = await cloneCredentialKind(db, service);
+    if (kind === 'static') return STATIC_CREDENTIAL_REFUSAL;
+    // 0.13 (T5): a GitHub App repository reaches the node as a short-lived,
+    // repository-scoped token per job — only for an agent that advertises
+    // `git.credential` over the sealed transport. Anything else keeps the
+    // r268 refusal, with the fix named.
+    if (kind === 'github_app') {
+      const probe = await (opts.probe ?? ((id: number) => defaultAgentProbe(db, id)))(service.serverId);
+      const why = await gitCredentialRefusal(probe.agent, probe.nodeLabel, probe.sealed);
+      if (why) return `Deployments to a remote server are not available for this service yet: ${why}`;
     }
   }
   if (type !== 'docker') return null;

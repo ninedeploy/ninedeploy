@@ -66,6 +66,12 @@ export interface SpawnValidatedOptions {
   stdin?: string;
   /** Hard-kill the child (tree) after this many ms. Default {@link OP_TIMEOUT_MS}. */
   timeoutMs?: number;
+  /**
+   * 0.13: variables added on top of the scrubbed environment. Used for a
+   * per-job Git credential (`GIT_CONFIG_COUNT`/`KEY`/`VALUE`), which must
+   * reach git without ever being an argv element or a `.git/config` line.
+   */
+  env?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -90,7 +96,7 @@ export function spawnValidated(
   // libuv job object already tears descendants down with the child.
   const spawnOpts: SpawnOptions = {
     detached: process.platform !== 'win32',
-    env: scrubbedEnv(),
+    env: opts.env ? { ...scrubbedEnv(), ...opts.env } : scrubbedEnv(),
   };
   if (opts.cwd) spawnOpts.cwd = opts.cwd;
   const child: ChildProcess = spawn(BINARIES[executable], argv, spawnOpts);

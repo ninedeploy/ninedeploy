@@ -11,7 +11,8 @@ import { githubAppCloneHint, resolveCloneCreds } from '../lib/sourceCreds.js';
 import { classifyCloneFailure, redactGitOutput } from '../lib/cloneFailure.js';
 import { detectDeployHints } from '../lib/deployHints.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
-import { remoteDatabaseRefusal, remoteDeploySupported, remoteDeployUnsupportedReason, remoteHookRefusal, remoteServiceRefusal, sourceHasGitCredential } from '../lib/remoteDeploy.js';
+import { cloneCredentialKind, remoteDatabaseRefusal, remoteDeploySupported, remoteDeployUnsupportedReason, remoteHookRefusal, remoteServiceRefusal } from '../lib/remoteDeploy.js';
+import { nodeGitCredentialSource } from '../lib/nodeGitCredential.js';
 import { agentOp } from '../lib/agentClient.js';
 import { nodeLabel } from '../lib/agentCapabilities.js';
 import { createRemoteDockerBuilder } from './builders/remoteDocker.js';
@@ -731,9 +732,12 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       agentOp(db, serverId, op, params, sink);
     // r660: the node's name goes into the "update this agent" refusal.
     const label = await nodeLabel(db, serverId);
+    // 0.13 (T5): a GitHub App repository is checked out on the node with a
+    // per-job token (minted, sent sealed, revoked by the builder).
+    const gitCredential = nodeGitCredentialSource(db, service);
     builder = service.type === 'compose'
-      ? createRemoteComposeBuilder(call, { nodeLabel: label })
-      : createRemoteDockerBuilder(call, { nodeLabel: label });
+      ? createRemoteComposeBuilder(call, { nodeLabel: label, gitCredential })
+      : createRemoteDockerBuilder(call, { nodeLabel: label, gitCredential });
   }
   if (!builder) {
     log(`✗ Unknown service type: ${service.type}`);
@@ -1411,7 +1415,9 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     // Nixpacks has no agent operation on a node — the local builder ran it on
     // the panel; a target node could not reproduce it.
     (buildConfig?.buildPack ?? 'auto') !== 'nixpacks';
-  const credentialedSource = Boolean(sourceCandidate) && (await sourceHasGitCredential(db, service.sourceId));
+  // 0.13 (T5): only a STATIC credential (PAT / deploy key) stays on the
+  // panel; a GitHub App repository fans out with a per-job token per target.
+  const credentialedSource = Boolean(sourceCandidate) && (await cloneCredentialKind(db, service)) === 'static';
   const buildableSource =
     sourceCandidate && !credentialedSource && service.repoUrl
       ? {
@@ -1460,6 +1466,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
             : await registryCredentialForSourceBuild(db, service, log),
           primaryServerId: service.serverId ?? null,
           source: buildableSource,
+          gitCredential: buildableSource ? nodeGitCredentialSource(db, service) : undefined,
         },
         log,
       );

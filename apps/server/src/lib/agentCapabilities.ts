@@ -83,6 +83,49 @@ export async function assertAgentGuardsBuildPaths(agent: AgentCaller, nodeLabel:
   );
 }
 
+/** 0.13 (T5): the capability an agent advertises when its git ops accept a per-job credential. */
+export const AGENT_CAP_GIT_CREDENTIAL = 'git.credential';
+/** 0.13 (T5): the first agent release that advertises {@link AGENT_CAP_GIT_CREDENTIAL}. */
+export const AGENT_GIT_CREDENTIAL_VERSION = '0.13.0';
+
+/** 0.13 (T5): whether a parsed `agent.ping` answer advertises the per-job Git credential. */
+export function agentAcceptsGitCredential(info: { caps: ReadonlySet<string> }): boolean {
+  return info.caps.has(AGENT_CAP_GIT_CREDENTIAL);
+}
+
+/**
+ * 0.13 (T5): why this node cannot be handed a per-job GitHub App token, or
+ * null when it can. Both must hold: the agent advertises `git.credential`
+ * inside its SEALED `agent.ping` answer, and the panel reaches it over the
+ * sealed transport (`sealed`, from `agentTransportSealed`). An older agent
+ * ignores an operand it does not know and would clone anonymously, so a
+ * missing capability is a refusal — never a send. Asked on every job: agents
+ * are updated separately from the panel.
+ */
+export async function gitCredentialRefusal(agent: AgentCaller, nodeLabel: string, sealed: boolean): Promise<string | null> {
+  const update =
+    `Update the node agent to use GitHub App repositories on this node (v${AGENT_GIT_CREDENTIAL_VERSION} or newer: ` +
+    "re-run the node's bootstrap from the Servers page, or pull and restart the matching ninedeploy agent image on the node).";
+  if (!sealed) {
+    return (
+      `The panel reaches the agent on node ${nodeLabel} only over the unencrypted transport, and a GitHub App token is ` +
+      `never sent in clear, so this repository cannot be cloned there. ${update}`
+    );
+  }
+  let lines: string[];
+  try {
+    ({ lines } = await agent('agent.ping', {}, () => undefined));
+  } catch (err) {
+    return `Could not confirm that the agent on node ${nodeLabel} can receive a GitHub App token: ${err instanceof Error ? err.message : String(err)}`;
+  }
+  const info = parseAgentCapabilities(lines);
+  if (agentAcceptsGitCredential(info)) return null;
+  return (
+    `The agent on node ${nodeLabel} (${info.version ? `version ${info.version}` : 'an older release'}) cannot receive a ` +
+    `per-job GitHub App token, so this repository cannot be cloned there. ${update}`
+  );
+}
+
 /**
  * r662: delete a service's checkout (`.agent-work/<slug>`) on a node it no
  * longer runs on — after a delete, a move away, or a fan-out target removal.
