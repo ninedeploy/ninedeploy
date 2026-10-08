@@ -537,7 +537,7 @@ const alertsCmd = program.command('alerts').description('Manage alert rules');
 alertsCmd.command('list').description('List alert rules').action(() => alertsList(getClient()));
 
 alertsCmd.command('create <name> <metric> <operator> <threshold>')
-  .description('Create an alert rule (metric: cpu|memory|cert-expiry, operator: > or <)')
+  .description('Create an alert rule (metric: cpu|memory|cert-expiry|disk|server_offline, operator: > or <)')
   .option('-w, --windows <n>', 'Consecutive 30s samples before firing', '1')
   .option('-s, --service <id>', 'Scope to a service (default: host-wide)')
   .action((name: string, metric: string, op: string, threshold: string, opts: { windows?: string; service?: string }) => alertsCreate(getClient(), name, metric, op, threshold, opts));

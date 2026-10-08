@@ -399,6 +399,46 @@ describe('Monitoring', () => {
     );
   });
 
+  it('0.12: offers disk and server_offline with sensible defaults, host-wide', async () => {
+    apiMock.api.alerts.create.mockResolvedValue({ id: 6 } as never);
+    apiMock.api.services.list.mockResolvedValue([{ id: 9, name: 'api' }] as never);
+    renderWithProviders(<Monitoring />);
+    await screen.findByPlaceholderText('rule name');
+    // Coming from cert-expiry ('<') a metric switch restores its own operator.
+    await userEvent.selectOptions(screen.getByDisplayValue('cpu %'), 'cert-expiry');
+    await userEvent.selectOptions(screen.getByDisplayValue('cert-expiry days'), 'disk');
+    expect(screen.getByPlaceholderText(/threshold/)).toHaveValue(85);
+    expect(screen.getByDisplayValue('>')).toBeInTheDocument();
+    expect(screen.getByTitle('disk rules are host-wide')).toBeDisabled();
+    await userEvent.type(screen.getByPlaceholderText('rule name'), 'disk-full');
+    fireEvent.submit(screen.getByPlaceholderText('rule name').closest('form')!);
+    await waitFor(() =>
+      expect(apiMock.api.alerts.create).toHaveBeenCalledWith({ name: 'disk-full', metric: 'disk', operator: '>', threshold: 85, serviceId: null, durationWindows: 2 }),
+    );
+
+    await userEvent.selectOptions(screen.getByDisplayValue('disk % used'), 'server_offline');
+    expect(screen.getByPlaceholderText(/threshold/)).toHaveValue(5);
+    expect(screen.getByTitle('server_offline rules are host-wide')).toBeDisabled();
+    await userEvent.type(screen.getByPlaceholderText('rule name'), 'node-down');
+    fireEvent.submit(screen.getByPlaceholderText('rule name').closest('form')!);
+    await waitFor(() =>
+      expect(apiMock.api.alerts.create).toHaveBeenLastCalledWith({ name: 'node-down', metric: 'server_offline', operator: '>', threshold: 5, serviceId: null, durationWindows: 2 }),
+    );
+  });
+
+  it('0.12: renders disk and server_offline rules with their units', async () => {
+    apiMock.api.alerts.list.mockResolvedValue([
+      { id: 7, serviceId: null, name: 'disk-full', metric: 'disk', operator: '>', threshold: 85, durationWindows: 1, enabled: true, status: 'firing', lastValue: 91, firedAt: new Date().toISOString(), lastEvaluatedAt: null, createdAt: 'x' },
+      { id: 8, serviceId: null, name: 'node-down', metric: 'server_offline', operator: '>', threshold: 5, durationWindows: 1, enabled: true, status: 'ok', lastValue: 0, firedAt: null, lastEvaluatedAt: null, createdAt: 'x' },
+    ] as never);
+    renderWithProviders(<Monitoring />);
+    await screen.findByText('disk-full');
+    expect(screen.getByText('disk > 85%')).toBeInTheDocument();
+    expect(screen.getByText('server offline > 5 min')).toBeInTheDocument();
+    expect(screen.getByTitle('Evaluated across the panel host and every remote node')).toBeInTheDocument();
+    expect(screen.getByTitle('Evaluated across every connected remote node')).toBeInTheDocument();
+  });
+
   it('covers breaching status, missing current values, and load errors', async () => {
     apiMock.api.stats.snapshot.mockResolvedValue(snapshot as never);
     apiMock.api.alerts.list.mockResolvedValue([

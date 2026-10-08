@@ -8,11 +8,20 @@ export const SAMPLE_INTERVAL_MS = 30_000;
 /** Minimum time between repeated notifications for the same rule. */
 export const NOTIFY_COOLDOWN_MS = 30 * 60_000;
 
-/** Metric snapshot in rule units: cpu %, memory MiB, cert-expiry days. Null serviceId = host. */
+/**
+ * Metric snapshot in rule units: cpu %, memory MiB, cert-expiry days, disk %
+ * used, server_offline minutes unseen. Null serviceId = host-wide.
+ *
+ * A rule whose metric no snapshot carries is skipped and its state left
+ * untouched — which is also what keeps a rule written by a NEWER panel (a
+ * metric this build does not know, after a rollback) inert instead of fatal.
+ */
 export interface MetricSnapshot {
   serviceId: number | null;
   kind: string;
   value: number;
+  /** Fleet-wide metrics (disk, server_offline): which hosts the value came from, named in the fired notification. */
+  detail?: string;
 }
 
 interface RuleRow {
@@ -117,7 +126,7 @@ export async function evaluateAlerts(db: DB, snapshots: MetricSnapshot[], now = 
           db,
           null,
           'alert.fired',
-          `${rule.name} (${rule.metric}=${snap.value}, threshold ${rule.operator} ${rule.threshold})`,
+          `${rule.name} (${rule.metric}=${snap.value}, threshold ${rule.operator} ${rule.threshold})${snap.detail ? ` — ${snap.detail}` : ''}`,
           rule.serviceId != null ? { serviceId: rule.serviceId } : undefined,
         );
       } else {

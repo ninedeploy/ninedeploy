@@ -217,6 +217,36 @@ describe('evaluateAlerts', () => {
     expect(states[0]).toMatchObject({ status: 'firing', lastValue: 90 });
   });
 
+  it('0.12: a disk rule fires with the per-host breakdown in the notification', async () => {
+    const { db, auditInserts } = makeDb(
+      [rule({ name: 'disk-full', metric: 'disk', threshold: 85, durationWindows: 1 })],
+      [{ ruleId: 1, status: 'ok', breachSince: null, firedAt: null, lastNotifiedAt: null, lastValue: 40 }],
+    );
+    await evaluateAlerts(db, [snap({ kind: 'disk', value: 91, detail: 'node-a 91%, panel /data 40%' })], T0);
+    await new Promise((r) => setImmediate(r));
+    expect(auditInserts[0]).toMatchObject({ action: 'alert.fired' });
+    expect(JSON.stringify(auditInserts[0])).toContain('disk-full (disk=91, threshold > 85) — node-a 91%, panel /data 40%');
+  });
+
+  it('0.12: a server_offline rule recovers when the node is seen again (or deleted: value 0)', async () => {
+    const { db, auditInserts, states } = makeDb(
+      [rule({ name: 'node-down', metric: 'server_offline', threshold: 5, durationWindows: 1 })],
+      [{ ruleId: 1, status: 'firing', breachSince: T0, firedAt: T0, lastNotifiedAt: T0, lastValue: 7 }],
+    );
+    await evaluateAlerts(db, [snap({ kind: 'server_offline', value: 0 })], T0);
+    await new Promise((r) => setImmediate(r));
+    expect(auditInserts[0]).toMatchObject({ action: 'alert.recovered' });
+    expect(states[0]).toMatchObject({ status: 'ok', lastValue: 0 });
+  });
+
+  it('a rule whose metric this build does not sample is left untouched (rollback safety)', async () => {
+    const firing = { ruleId: 1, status: 'firing', breachSince: T0, firedAt: T0, lastNotifiedAt: T0, lastValue: 7 };
+    const { db, updates, auditInserts } = makeDb([rule({ metric: 'some-future-metric' })], [firing]);
+    await expect(evaluateAlerts(db, [snap(), snap({ kind: 'disk', value: 99 })], T0)).resolves.toBeUndefined();
+    expect(updates).toHaveLength(0);
+    expect(auditInserts).toHaveLength(0);
+  });
+
   it('honors the < operator and per-service matching', async () => {
     const { db, updates } = makeDb([rule({ serviceId: 7, metric: 'memory', operator: '<', threshold: 100 })], []);
     await evaluateAlerts(db, [snap({ serviceId: 7, kind: 'memory', value: 50 }), snap()], T0);

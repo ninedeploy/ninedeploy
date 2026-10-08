@@ -149,7 +149,20 @@ export const notificationChannelPatch = z.object({
 });
 export type NotificationChannelPatch = z.infer<typeof notificationChannelPatch>;
 
-export const alertMetricEnum = z.enum(['cpu', 'memory', 'cert-expiry']);
+/**
+ * cpu %, memory MiB, cert-expiry days remaining, disk % used (panel host and
+ * nodes, worst wins), server_offline minutes a node has gone unseen (0.12).
+ * `alert_rules.metric` is a free-text column, so new values need no migration.
+ */
+export const alertMetricEnum = z.enum(['cpu', 'memory', 'cert-expiry', 'disk', 'server_offline']);
+export type AlertMetric = z.infer<typeof alertMetricEnum>;
+/** Metrics sampled host-wide only — a service-scoped rule could never fire. */
+export const HOST_ONLY_ALERT_METRICS: readonly AlertMetric[] = ['cert-expiry', 'disk', 'server_offline'];
+const hostOnlyAlertRule = (r: { metric?: AlertMetric; serviceId?: number | null }, ctx: z.RefinementCtx) => {
+  if (r.metric && HOST_ONLY_ALERT_METRICS.includes(r.metric) && r.serviceId) {
+    ctx.addIssue({ code: 'custom', message: `${r.metric} rules are host-wide (omit serviceId)`, path: ['serviceId'] });
+  }
+};
 export const alertOperatorEnum = z.enum(['>', '<']);
 
 export const alertRuleCreate = z
@@ -162,12 +175,9 @@ export const alertRuleCreate = z
     durationWindows: z.number().int().min(1).max(120).default(1),
     enabled: z.boolean().default(true),
   })
-  // Certificate expiry is tracked per HOST (the collector samples the ACME
-  // store), so a service-scoped rule could never evaluate.
-  .refine((r) => r.metric !== 'cert-expiry' || !r.serviceId, {
-    message: 'cert-expiry rules are host-wide (omit serviceId)',
-    path: ['serviceId'],
-  });
+  // Certificate expiry (the ACME store), disk and node liveness are tracked
+  // per HOST, so a service-scoped rule could never evaluate.
+  .superRefine(hostOnlyAlertRule);
 export type AlertRuleCreate = z.infer<typeof alertRuleCreate>;
 
 export const alertRulePatch = z
@@ -180,10 +190,7 @@ export const alertRulePatch = z
     durationWindows: z.number().int().min(1).max(120).optional(),
     enabled: z.boolean().optional(),
   })
-  .refine((r) => r.metric !== 'cert-expiry' || !r.serviceId, {
-    message: 'cert-expiry rules are host-wide (omit serviceId)',
-    path: ['serviceId'],
-  });
+  .superRefine(hostOnlyAlertRule);
 export type AlertRulePatch = z.infer<typeof alertRulePatch>;
 
 // ── Backup destinations (admin) ────────────────────────────────────────────
@@ -410,7 +417,7 @@ export interface AlertRule {
   id: number;
   serviceId: number | null;
   name: string;
-  metric: 'cpu' | 'memory' | 'cert-expiry';
+  metric: AlertMetric;
   operator: '>' | '<';
   threshold: number;
   durationWindows: number;

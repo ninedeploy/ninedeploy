@@ -520,14 +520,23 @@ export function Monitoring() {
   );
 }
 
-type AlertMetric = 'cpu' | 'memory' | 'cert-expiry';
+type AlertMetric = 'cpu' | 'memory' | 'cert-expiry' | 'disk' | 'server_offline';
 
-/** Display metadata per rule metric: label, value unit, sane default threshold. */
-const METRIC_META: Record<AlertMetric, { label: string; unit: string; threshold: number }> = {
-  cpu: { label: 'CPU', unit: '%', threshold: 80 },
-  memory: { label: 'Memory', unit: 'MiB', threshold: 512 },
-  'cert-expiry': { label: 'Cert expiry', unit: 'days', threshold: 14 },
+/**
+ * Display metadata per rule metric: label, value unit, sane default threshold
+ * and operator, and whether the server only samples it host-wide.
+ */
+const METRIC_META: Record<AlertMetric, { label: string; option: string; unit: string; threshold: number; operator: '>' | '<'; hostOnly: boolean }> = {
+  cpu: { label: 'CPU', option: 'cpu %', unit: '%', threshold: 80, operator: '>', hostOnly: false },
+  memory: { label: 'Memory', option: 'memory MiB', unit: 'MiB', threshold: 512, operator: '>', hostOnly: false },
+  // fewer days remaining is the danger
+  'cert-expiry': { label: 'Cert expiry', option: 'cert-expiry days', unit: 'days', threshold: 14, operator: '<', hostOnly: true },
+  // Worst of the panel host and every node that reports disk.
+  disk: { label: 'Disk', option: 'disk % used', unit: '%', threshold: 85, operator: '>', hostOnly: true },
+  // Minutes the longest-unseen remote node has gone without contact.
+  server_offline: { label: 'Server offline', option: 'server offline min', unit: 'min', threshold: 5, operator: '>', hostOnly: true },
 };
+const METRICS = Object.keys(METRIC_META) as AlertMetric[];
 
 const ALERT_STATUS_UI: Record<string, { label: string; cls: string }> = {
   ok: { label: 'OK', cls: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/20' },
@@ -550,7 +559,8 @@ function AlertRulesCard({ isAdmin }: { isAdmin: boolean }) {
   const [metric, setMetric] = useState<AlertMetric>('cpu');
   const [operator, setOperator] = useState<'>' | '<'>('>');
   const [threshold, setThreshold] = useState(String(METRIC_META.cpu.threshold));
-  // cert-expiry is host-wide — the server rejects service-scoped rules for it.
+  // cert-expiry, disk and server_offline are host-wide — the server rejects
+  // service-scoped rules for them.
   const services = useQuery({ queryKey: ['services'], queryFn: () => api.services.list(), staleTime: 60_000 });
   const [serviceId, setServiceId] = useState('');
   const [windows, setWindows] = useState('2');
@@ -562,7 +572,7 @@ function AlertRulesCard({ isAdmin }: { isAdmin: boolean }) {
         metric,
         operator,
         threshold: toInt(threshold) ?? 0,
-        serviceId: metric === 'cert-expiry' ? null : serviceId ? Number(serviceId) : null,
+        serviceId: METRIC_META[metric].hostOnly ? null : serviceId ? Number(serviceId) : null,
         durationWindows: Math.min(Math.max(toInt(windows, 1)!, 1), 120),
       }),
     onSuccess: () => {
@@ -600,7 +610,7 @@ function AlertRulesCard({ isAdmin }: { isAdmin: boolean }) {
   const pickMetric = (next: AlertMetric) => {
     setMetric(next);
     setThreshold(String(METRIC_META[next].threshold));
-    if (next === 'cert-expiry') setOperator('<'); // fewer days remaining is the danger
+    setOperator(METRIC_META[next].operator);
   };
 
   const parsedThreshold = toInt(threshold);
@@ -671,7 +681,15 @@ function AlertRulesCard({ isAdmin }: { isAdmin: boolean }) {
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={cn('text-sm font-medium text-slate-200', r.status === 'firing' && r.enabled && 'font-semibold')}>{r.name}</span>
                       <span
-                        title={r.serviceId ? 'Scoped to one service' : 'Evaluated against host metrics'}
+                        title={
+                          r.serviceId
+                            ? 'Scoped to one service'
+                            : r.metric === 'disk'
+                              ? 'Evaluated across the panel host and every remote node'
+                              : r.metric === 'server_offline'
+                                ? 'Evaluated across every connected remote node'
+                                : 'Evaluated against host metrics'
+                        }
                         className={cn(
                           'rounded px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset',
                           r.serviceId ? 'bg-indigo-500/10 text-indigo-300 ring-indigo-500/20' : 'bg-white/[0.04] text-slate-400 ring-white/10',
@@ -735,9 +753,9 @@ function AlertRulesCard({ isAdmin }: { isAdmin: boolean }) {
               <label className="block">
                 <span className="mb-0.5 block text-[10px] uppercase tracking-wide text-slate-500">Metric</span>
                 <Select value={metric} onChange={(e) => pickMetric(e.target.value as AlertMetric)} className="h-8 text-xs">
-                  <option value="cpu">cpu %</option>
-                  <option value="memory">memory MiB</option>
-                  <option value="cert-expiry">cert-expiry days</option>
+                  {METRICS.map((m) => (
+                    <option key={m} value={m}>{METRIC_META[m].option}</option>
+                  ))}
                 </Select>
               </label>
               <label className="block">
@@ -759,11 +777,11 @@ function AlertRulesCard({ isAdmin }: { isAdmin: boolean }) {
                 />
               </label>
               <Select
-                value={metric === 'cert-expiry' ? '' : serviceId}
+                value={METRIC_META[metric].hostOnly ? '' : serviceId}
                 onChange={(e) => setServiceId(e.target.value)}
-                disabled={metric === 'cert-expiry'}
+                disabled={METRIC_META[metric].hostOnly}
                 className="mt-auto h-8 text-xs"
-                title={metric === 'cert-expiry' ? 'cert-expiry rules are host-wide' : 'Scope (empty = host-wide)'}
+                title={METRIC_META[metric].hostOnly ? `${metric} rules are host-wide` : 'Scope (empty = host-wide)'}
               >
                 <option value="">host-wide</option>
                 {(services.data ?? []).map((svc) => (

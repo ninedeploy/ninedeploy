@@ -4,6 +4,7 @@ import { metrics, services } from '@ninedeploy/db';
 import fp from 'fastify-plugin';
 import { collectContainerStats, collectHostStats, type ContainerStat, type HostStat } from '../lib/stats.js';
 import { evaluateAlerts, type MetricSnapshot } from '../lib/alerting.js';
+import { createNodeHealthWatch } from '../lib/nodeHealth.js';
 import { readCertificates } from '../engine/proxy.js';
 
 const INTERVAL_MS = 30_000;
@@ -44,6 +45,7 @@ export default fp(
     let running = true;
     let timer: NodeJS.Timeout | undefined;
     let prevCpu: ReturnType<typeof cpus> | null = null;
+    const nodeHealth = createNodeHealthWatch();
 
     const tick = async () => {
       try {
@@ -85,6 +87,14 @@ export default fp(
         if (certExpiries.length) {
           const minDays = Math.floor((Math.min(...certExpiries.map((d) => d.getTime())) - now.getTime()) / 86_400_000);
           snapshots.push({ serviceId: null, kind: 'cert-expiry', value: minDays });
+        }
+
+        // disk % (panel host + nodes) and server_offline minutes (0.12). Its
+        // own guard: a node probe failure must not cost the local samples.
+        try {
+          snapshots.push(...(await nodeHealth.cycle(fastify.db, now)));
+        } catch (err) {
+          fastify.log.warn({ err }, 'node health probe failed');
         }
 
         await evaluateAlerts(fastify.db, snapshots);

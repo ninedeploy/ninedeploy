@@ -299,7 +299,8 @@ notification_channels  id, name, type(telegram|webhook|discord|slack|ntfy|email)
                        target_encrypted, event_filter, active
 notification_log       id, channel_id, event, entity, status, attempts, error, ts
 alert_rules            id, service_id (null = host-wide),
-                       metric(cpu|memory|cert-expiry), operator, threshold,
+                       metric(cpu|memory|cert-expiry|disk|server_offline),
+                       operator, threshold,
                        duration_windows, enabled
 alert_state            rule_id (unique), status(ok|breaching|firing),
                        breach_since, fired_at, last_notified_at, last_value
@@ -421,7 +422,7 @@ envelopes; 5xx messages are suppressed in production.
 | worker | Polls queued deployments (2 s) and runs the pipeline. Claims are atomic (`queued→building` verified via rowsAffected) and skip services already `building`. Concurrency is **partitioned per target server**, each partition getting `NINEDEPLOY_DEPLOY_CONCURRENCY` slots (default 1, max 8). Sweeps `building` rows older than 45 min back to `queued` on boot; 60 s stop grace |
 | traefik | Ensures `ninedeploy` network + Traefik v3.3 container (config **directory** bind mount) + writes dynamic config atomically; DNS-01 when a provider+token are configured, else HTTP-01 |
 | runtimeState | Reconciles panel status against live containers/processes |
-| collector | Samples container + host stats every 30 s → metrics table; prunes metrics older than 24 h; feeds the alert evaluator (cpu %, memory MiB, host, cert-expiry days) |
+| collector | Samples container + host stats every 30 s → metrics table; prunes metrics older than 24 h; feeds the alert evaluator (cpu %, memory MiB, host, cert-expiry days, disk %, server_offline minutes); pings every registered node each tick and stamps `last_seen_at` on success |
 | backupScheduler | Daily database backups (`scheduled` scope), keeps last 7 per DB — never prunes manual backups; pushes to S3-compatible destinations via the dependency-free SigV4 client |
 | housekeeping | Hourly retention: deploy logs (30 d), audit log (90 d), notification log (30 d), expired reset tokens (24 h), dangling Docker images |
 | jobScheduler | Cron-scheduled per-service jobs via croner; re-reads the jobs table every 5 min; run history in `job_runs` |
@@ -703,7 +704,32 @@ ok → breaching (first breach, breach_since = now)
 ```
 
 - Metrics: `cpu` (% per container or host), `memory` (MiB), `cert-expiry` (days
-  remaining across issued Let's Encrypt certificates)
+  remaining across issued Let's Encrypt certificates), `disk` and
+  `server_offline` (0.12, below). `cert-expiry`, `disk` and `server_offline`
+  are host-wide only; the API refuses a `serviceId` for them.
+- `disk`: percent used (df's Use%, rounded up) of the worst filesystem across
+  the panel host and the remote nodes. On the panel host the data dir is
+  measured, plus Docker's data root (`docker info`, 10 s timeout, cached
+  10 min) when it is a different, locally visible path. In the container
+  install the data dir is a named volume on Docker's data-root filesystem, so
+  it stands in for it. Each reachable node's disk comes from its `agent.stats`
+  `ND-DF` line, sampled every 5 min (30 s timeout); a node reading older than
+  15 min is dropped. Default threshold in the panel: `> 85`.
+- `server_offline`: whole minutes (rounded up) that the longest-unseen
+  registered node has gone without contact, so `> 5` means "unseen for more
+  than 5 minutes" (the panel default). Contact is the node's heartbeat
+  announce (auto-join nodes, every 60 s) or the panel's own sealed
+  `agent.ping`, sent to every non-pending node on each collector tick; a
+  successful ping stamps `servers.last_seen_at`. Pending nodes and nodes that
+  have never connected are not watched. Unseen time counts from the panel's
+  first completed ping cycle at the earliest, so a panel that was itself down
+  (upgrade, reboot) does not fire for that gap. The snapshot is emitted even
+  with no nodes, so deleting the node an alert fired for recovers the rule.
+- Both are fleet-wide rules with one state row each: the value is the worst
+  host, and the fired notification names every host involved
+  (`… — panel /data 91%, node-a 88%`).
+- A rule whose metric this build does not sample (for example a `disk` rule
+  after a rollback to 0.11) is skipped and its state left untouched.
 - Notifications ride the existing channels via `audit()` → `notifyEvent`
   (`alert.fired` / `alert.recovered`, filterable per channel)
 - Anti-spam: 30-minute cooldown before re-notifying; state reset on rule edits

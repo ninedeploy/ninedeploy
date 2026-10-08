@@ -12,6 +12,15 @@ vi.mock('../../src/lib/stats.js', () => statsMock);
 const proxyMock = vi.hoisted(() => ({ readCertificates: vi.fn(() => []) }));
 vi.mock('../../src/engine/proxy.js', () => proxyMock);
 
+// 0.12: the node-health watcher shells out to `docker info` and pings agents;
+// neither may run here. Each test sees one fake watcher per collector.
+const nodeHealthMock = vi.hoisted(() => ({
+  cycle: vi.fn(async (): Promise<Array<{ serviceId: number | null; kind: string; value: number }>> => []),
+}));
+vi.mock('../../src/lib/nodeHealth.js', () => ({ createNodeHealthWatch: () => ({ cycle: nodeHealthMock.cycle }) }));
+const alertingMock = vi.hoisted(() => ({ evaluateAlerts: vi.fn(async () => undefined) }));
+vi.mock('../../src/lib/alerting.js', () => alertingMock);
+
 const collectorPlugin = (await import('../../src/plugins/collector.js')).default;
 
 const containerA: ContainerStat = { name: 'nd-web', cpuPct: 2.5, memBytes: 100, memLimitBytes: 200 };
@@ -43,6 +52,9 @@ afterEach(() => {
   vi.restoreAllMocks();
   statsMock.collectContainerStats.mockReset();
   statsMock.collectHostStats.mockReset();
+  nodeHealthMock.cycle.mockReset();
+  nodeHealthMock.cycle.mockResolvedValue([]);
+  alertingMock.evaluateAlerts.mockClear();
 });
 
 describe('collector plugin', () => {
@@ -196,6 +208,42 @@ describe('collector plugin', () => {
     const { db } = makeDb([]);
     const app = await buildApp(db);
     await vi.advanceTimersByTimeAsync(5000);
+    await app.close();
+  });
+
+  it('0.12: feeds the disk and server_offline snapshots to the alert evaluator', async () => {
+    vi.useFakeTimers();
+    statsMock.collectContainerStats.mockResolvedValue(new Map());
+    statsMock.collectHostStats.mockResolvedValue(host);
+    nodeHealthMock.cycle.mockResolvedValue([
+      { serviceId: null, kind: 'disk', value: 91 },
+      { serviceId: null, kind: 'server_offline', value: 0 },
+    ]);
+
+    const { db } = makeDb([]);
+    const app = await buildApp(db);
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(nodeHealthMock.cycle).toHaveBeenCalledWith(db, expect.any(Date));
+    const snaps = (alertingMock.evaluateAlerts.mock.calls[0] as unknown as [unknown, Array<{ kind: string }>])[1];
+    expect(snaps.map((s) => s.kind)).toEqual(expect.arrayContaining(['cpu', 'memory', 'disk', 'server_offline']));
+    await app.close();
+  });
+
+  it('0.12: a node-health failure is logged and the local samples are still evaluated', async () => {
+    vi.useFakeTimers();
+    statsMock.collectContainerStats.mockResolvedValue(new Map());
+    statsMock.collectHostStats.mockResolvedValue(host);
+    nodeHealthMock.cycle.mockRejectedValue(new Error('probe broke'));
+
+    const { db, del } = makeDb([]);
+    const app = await buildApp(db);
+    const warnSpy = vi.spyOn(app.log, 'warn');
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(warnSpy).toHaveBeenCalledWith({ err: expect.objectContaining({ message: 'probe broke' }) }, 'node health probe failed');
+    expect(alertingMock.evaluateAlerts).toHaveBeenCalledTimes(1);
+    expect(del).toHaveBeenCalledTimes(1);
     await app.close();
   });
 

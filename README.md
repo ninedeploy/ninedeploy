@@ -376,8 +376,9 @@ Watch paths, `[skip ci]` handling, cancellation and PR previews: [**docs/DEPLOYM
 
 - Live deploy logs and a container **exec terminal** over WebSocket, plus a container file browser and
   a volume browser.
-- 30-second metric samples feeding threshold **alert rules** (CPU, memory, certificate expiry) with a
-  breaching → firing → recovered state machine and a 30-minute anti-spam cooldown.
+- 30-second metric samples feeding threshold **alert rules** (CPU, memory, certificate expiry, disk
+  usage across the panel host and nodes, and remote servers gone offline) with a breaching → firing →
+  recovered state machine and a 30-minute anti-spam cooldown.
 - **Log drains** to syslog, Loki, Vector, Datadog or plain HTTP.
 - An audit trail with a global event stream, and per-repository framework insights.
 

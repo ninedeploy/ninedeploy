@@ -111,7 +111,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'list_alerts',
-    description: 'Configured alert rules (cpu, memory, cert-expiry).',
+    description: 'Configured alert rules (cpu, memory, cert-expiry, disk, server_offline).',
     input: z.object({}),
     requiredScopes: ['nd://scope/read/alerts'],
     handler: (c) => c.alerts.list(),

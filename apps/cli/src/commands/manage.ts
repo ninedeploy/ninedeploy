@@ -435,7 +435,7 @@ export async function alertsList(client: NineDeployClient): Promise<void> {
 /** `ninedeploy alerts create <name> <metric> <operator> <threshold> [--windows n] [--service id]` */
 export async function alertsCreate(client: NineDeployClient, name: string, metric: string, operator: string, thresholdStr: string, opts: { windows?: string; service?: string }): Promise<void> {
   if (!name || !metric || !operator || !thresholdStr) {
-    return error('Usage: ninedeploy alerts create <name> <cpu|memory|cert-expiry> <|<> <threshold>');
+    return error('Usage: ninedeploy alerts create <name> <cpu|memory|cert-expiry|disk|server_offline> <|<> <threshold>');
   }
   const threshold = Number(thresholdStr);
   // F536: 0 is a valid threshold; only a non-number (or blank) is refused.
@@ -446,7 +446,7 @@ export async function alertsCreate(client: NineDeployClient, name: string, metri
   try {
     const rule = await client.alerts.create({
       name,
-      metric: metric as 'cpu' | 'memory' | 'cert-expiry',
+      metric: metric as Parameters<NineDeployClient['alerts']['create']>[0]['metric'],
       operator: operator as '>' | '<',
       threshold,
       serviceId: opts.service !== undefined ? Number(opts.service) : null,

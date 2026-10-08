@@ -1,11 +1,19 @@
 import { desc, eq } from 'drizzle-orm';
 import { alertRules, type alertState } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
-import { alertRuleCreate, alertRulePatch } from '@ninedeploy/schemas';
+import { HOST_ONLY_ALERT_METRICS, alertRuleCreate, alertRulePatch, type AlertMetric } from '@ninedeploy/schemas';
 import { ensureAlertState, resetAlertState } from '../lib/alerting.js';
-import { notFound, parseId } from '../lib/errors.js';
+import { badRequest, notFound, parseId } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
 import { visibleServiceIdSet } from '../lib/resourceAccess.js';
+
+/**
+ * `alert_rules.metric` is a free-text SQLite column; the drizzle `enum` on it is
+ * a TypeScript-only annotation that still lists the pre-0.12 metrics. The zod
+ * schema is the real gate, so the wider value is written through as-is.
+ */
+type StoredMetric = typeof alertRules.$inferInsert.metric;
+const storedMetric = (m: AlertMetric) => m as StoredMetric;
 
 function serialize(rule: typeof alertRules.$inferSelect, state?: typeof alertState.$inferSelect) {
   return {
@@ -53,7 +61,7 @@ export const alertRoutes: FastifyPluginAsync = async (app) => {
       .values({
         name: input.name,
         serviceId: input.serviceId ?? null,
-        metric: input.metric,
+        metric: storedMetric(input.metric),
         operator: input.operator,
         threshold: input.threshold,
         durationWindows: input.durationWindows,
@@ -68,10 +76,23 @@ export const alertRoutes: FastifyPluginAsync = async (app) => {
   app.patch('/:id', { preHandler: [app.requireAdmin] }, async (req) => {
     const id = parseId((req.params as { id: string }).id);
     const input = alertRulePatch.parse(req.body ?? {});
+    // The schema rejects a host-only metric + service in ONE body; a patch that
+    // supplies only one half is checked against the stored other half.
+    const scoping = input.serviceId != null || (input.metric !== undefined && HOST_ONLY_ALERT_METRICS.includes(input.metric));
+    if (scoping && !(input.metric !== undefined && input.serviceId !== undefined)) {
+      const current = await app.db.query.alertRules.findFirst({ where: eq(alertRules.id, id) });
+      if (current) {
+        const metric = (input.metric ?? current.metric) as AlertMetric;
+        const serviceId = input.serviceId !== undefined ? input.serviceId : current.serviceId;
+        if (HOST_ONLY_ALERT_METRICS.includes(metric) && serviceId != null) {
+          throw badRequest(`${metric} rules are host-wide (omit serviceId)`);
+        }
+      }
+    }
     const patch: Partial<typeof alertRules.$inferInsert> = {};
     if (input.name !== undefined) patch.name = input.name;
     if (input.serviceId !== undefined) patch.serviceId = input.serviceId;
-    if (input.metric !== undefined) patch.metric = input.metric;
+    if (input.metric !== undefined) patch.metric = storedMetric(input.metric);
     if (input.operator !== undefined) patch.operator = input.operator;
     if (input.threshold !== undefined) patch.threshold = input.threshold;
     if (input.durationWindows !== undefined) patch.durationWindows = input.durationWindows;

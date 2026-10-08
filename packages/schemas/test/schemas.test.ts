@@ -953,6 +953,17 @@ describe('service', () => {
       bad(alertRulePatch, { metric: 'cert-expiry', serviceId: 2 });
     });
 
+    it('0.12: disk and server_offline are host-wide metrics', () => {
+      for (const metric of ['disk', 'server_offline']) {
+        ok(alertRuleCreate, { name: metric, metric, threshold: 5 });
+        bad(alertRuleCreate, { name: metric, metric, threshold: 5, serviceId: 3 });
+        ok(alertRulePatch, { metric });
+        bad(alertRulePatch, { metric, serviceId: 3 });
+        ok(alertRulePatch, { metric, serviceId: null });
+      }
+      bad(alertRuleCreate, { name: 'x', metric: 'inodes', threshold: 5 });
+    });
+
     it('notificationType accepts every channel type', () => {
       for (const type of ['telegram', 'webhook', 'discord', 'slack', 'ntfy', 'email']) {
         ok(notificationChannelCreate, { name: 'n', type, target: 't' });

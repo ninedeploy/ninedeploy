@@ -139,6 +139,62 @@ describe('alert routes', () => {
     expect(okRes.statusCode).toBe(200);
   });
 
+  it('0.12: accepts host-wide disk and server_offline rules and refuses service-scoped ones', async () => {
+    let inserted: Record<string, unknown> | null = null;
+    const app = await buildTestApp({
+      db: createFakeDb({
+        insert: {
+          alert_rules: (values: unknown) => {
+            inserted = values as Record<string, unknown>;
+            return [ruleRow({ id: 11, ...(values as Record<string, unknown>) })];
+          },
+        },
+      }),
+    });
+    await app.register(alertRoutes);
+    for (const metric of ['disk', 'server_offline']) {
+      const scoped = await app.inject({
+        method: 'POST',
+        url: '/',
+        headers: asUser(),
+        payload: { name: `${metric}-svc`, metric, threshold: 5, serviceId: 3 },
+      });
+      expect(scoped.statusCode).toBe(400);
+      expect(scoped.body).toContain(`${metric} rules are host-wide`);
+      const ok = await app.inject({ method: 'POST', url: '/', headers: asUser(), payload: { name: metric, metric, threshold: 5 } });
+      expect(ok.statusCode).toBe(200);
+      expect(inserted).toMatchObject({ metric, serviceId: null });
+      expect(ok.json()).toMatchObject({ metric });
+    }
+  });
+
+  it('0.12: a patch cannot scope an existing host-only rule to a service, or switch a scoped rule to a host-only metric', async () => {
+    let updated = false;
+    let current = ruleRow({ id: 7, metric: 'disk' });
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { alertRules: () => current },
+        update: {
+          alert_rules: () => {
+            updated = true;
+            return [ruleRow({ id: 7, metric: 'disk' })];
+          },
+        },
+      }),
+    });
+    await app.register(alertRoutes);
+    const scope = await app.inject({ method: 'PATCH', url: '/7', headers: asUser(), payload: { serviceId: 3 } });
+    expect(scope.statusCode).toBe(400);
+    expect(scope.body).toContain('disk rules are host-wide');
+    current = ruleRow({ id: 8, metric: 'cpu', serviceId: 3 });
+    const toHostOnly = await app.inject({ method: 'PATCH', url: '/8', headers: asUser(), payload: { metric: 'server_offline' } });
+    expect(toHostOnly.statusCode).toBe(400);
+    expect(updated).toBe(false);
+    // Clearing the scope together with the metric switch is fine.
+    const both = await app.inject({ method: 'PATCH', url: '/8', headers: asUser(), payload: { metric: 'disk', serviceId: null } });
+    expect(both.statusCode).toBe(200);
+  });
+
   it('forbids members from creating rules', async () => {
     const app = await buildTestApp({ db: createFakeDb() });
     await app.register(alertRoutes);
