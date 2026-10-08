@@ -11,9 +11,16 @@ const proxyMock = vi.hoisted(() => ({
   writeDynamicConfig: vi.fn(async () => undefined),
   getAcmeEmail: vi.fn(async () => null),
   getDnsConfig: vi.fn(async () => ({ provider: '', token: null, wildcardApex: null })),
+  // 0.14 (M12): the uploaded certificates are re-written from the database at boot.
+  materialiseCertificatesFile: vi.fn(async () => undefined),
+}));
+const customConfigMock = vi.hoisted(() => ({
+  // 0.14 (M12): the operator's custom dynamic config is re-written from its last good version.
+  materialiseCustomConfig: vi.fn(async () => undefined),
 }));
 
 vi.mock('../../src/engine/proxy.js', () => proxyMock);
+vi.mock('../../src/lib/traefikCustomConfig.js', () => customConfigMock);
 
 const traefikPlugin = (await import('../../src/plugins/traefik.js')).default;
 
@@ -38,6 +45,12 @@ describe('traefik plugin', () => {
 
     expect(proxyMock.ensureNetwork).toHaveBeenCalledTimes(1);
     expect(proxyMock.ensureTraefik).toHaveBeenCalledTimes(1);
+    // Custom config and certificates are on disk before the proxy is healed.
+    expect(customConfigMock.materialiseCustomConfig).toHaveBeenCalledWith(db, expect.any(Function));
+    expect(proxyMock.materialiseCertificatesFile).toHaveBeenCalledWith(db);
+    expect(proxyMock.materialiseCertificatesFile.mock.invocationCallOrder[0]).toBeLessThan(
+      proxyMock.ensureTraefik.mock.invocationCallOrder[0],
+    );
     expect(proxyMock.writeDynamicConfig).toHaveBeenCalledWith(db);
     // the plugin logs each infra step through fastify.log.info({component:'infra'}, line)
     expect(infoSpy).toHaveBeenCalledWith({ component: 'infra' }, expect.any(String));
