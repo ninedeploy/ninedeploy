@@ -48,7 +48,17 @@ export const deploymentStatus = [
 ] as const;
 export const deploymentTrigger = ['user', 'webhook', 'cli', 'schedule'] as const;
 export const domainStatus = ['pending', 'active', 'error'] as const;
-export const sourceType = ['github', 'gitlab', 'gitea', 'bitbucket', 'custom', 'registry'] as const;
+// `github_app` (0.13) is created only by installation sync — never by the
+// public create-source route. TypeScript-only: `sources.type` has no SQL CHECK.
+export const sourceType = [
+  'github',
+  'gitlab',
+  'gitea',
+  'bitbucket',
+  'custom',
+  'registry',
+  'github_app',
+] as const;
 export const backupScope = ['db', 'scheduled', 'volumes', 'full'] as const;
 export const backupStatus = ['pending', 'running', 'completed', 'failed'] as const;
 export const jobKind = ['deploy', 'exec', 'backup'] as const;
@@ -672,6 +682,10 @@ export const sources = sqliteTable('sources', {
   defaultBranch: text('default_branch').default('main'),
   createdAt: ts('created_at'),
   updatedAt: tsUpdatable('updated_at'),
+  // 0.13: self-hosted provider base (Gitea today), e.g. https://git.example.com.
+  // NULL = unknown — every pre-0.13 row, whose behaviour does not change.
+  // Nullable with no default so 0069 is a plain ADD COLUMN (no table rebuild).
+  baseUrl: text('base_url'),
 });
 
 export const domains = sqliteTable(
@@ -785,6 +799,131 @@ export const webhooks = sqliteTable('webhooks', {
   // the service.
   serviceIdx: index('webhooks_service_idx').on(t.serviceId),
 }));
+
+// ─── GitHub App (0.13) ────────────────────────────────────────────────────
+// Four new tables (migration 0069, additive only). Nothing here changes how an
+// existing source, service or webhook behaves: every new path needs a
+// `github_apps` row and a `service_github_links` row, and only an operator can
+// create either. Installation rows are never hard-deleted (`removed_at`).
+export const githubTokenScope = ['repository', 'installation'] as const;
+export const githubRepositorySelection = ['all', 'selected'] as const;
+
+export const githubApps = sqliteTable(
+  'github_apps',
+  {
+    id: id(),
+    name: text('name').notNull(),
+    /** GitHub's numeric App id (the JWT `iss`). */
+    appId: integer('app_id').notNull(),
+    slug: text('slug'),
+    clientId: text('client_id'),
+    // Secrets — always encrypted at rest, registered in ENCRYPTED_COLUMNS and
+    // never returned by a route.
+    clientSecretEncrypted: text('client_secret_encrypted'),
+    privateKeyEncrypted: text('private_key_encrypted').notNull(),
+    webhookSecretEncrypted: text('webhook_secret_encrypted').notNull(),
+    /** Random 32-hex path segment of the App's webhook URL. */
+    hookKey: text('hook_key').notNull(),
+    ownerLogin: text('owner_login'),
+    ownerType: text('owner_type'),
+    webBaseUrl: text('web_base_url').notNull().default('https://github.com'),
+    apiBaseUrl: text('api_base_url').notNull().default('https://api.github.com'),
+    htmlUrl: text('html_url'),
+    permissions: text('permissions', { mode: 'json' }).$type<Record<string, string>>(),
+    events: text('events', { mode: 'json' }).$type<string[]>(),
+    createdByUserId: integer('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: ts('created_at'),
+    updatedAt: tsUpdatable('updated_at'),
+  },
+  (t) => ({
+    hookKeyIdx: uniqueIndex('github_apps_hook_key_idx').on(t.hookKey),
+    apiAppIdx: uniqueIndex('github_apps_api_app_idx').on(t.apiBaseUrl, t.appId),
+  }),
+);
+
+export const githubAppInstallations = sqliteTable(
+  'github_app_installations',
+  {
+    id: id(),
+    githubAppId: integer('github_app_id')
+      .notNull()
+      .references(() => githubApps.id, { onDelete: 'cascade' }),
+    /** GitHub's numeric installation id. */
+    installationId: integer('installation_id').notNull(),
+    accountLogin: text('account_login'),
+    accountType: text('account_type'),
+    accountId: integer('account_id'),
+    repositorySelection: text('repository_selection', { enum: githubRepositorySelection })
+      .notNull()
+      .default('selected'),
+    // Permissions the installation granted, refreshed on sync and on
+    // `installation.new_permissions_accepted`.
+    permissions: text('permissions', { mode: 'json' }).$type<Record<string, string>>(),
+    /** The generated `type:'github_app'` source for this installation. */
+    sourceId: integer('source_id').references(() => sources.id, { onDelete: 'set null' }),
+    suspendedAt: integer('suspended_at', { mode: 'timestamp' }),
+    removedAt: integer('removed_at', { mode: 'timestamp' }),
+    createdAt: ts('created_at'),
+    updatedAt: tsUpdatable('updated_at'),
+  },
+  (t) => ({
+    appInstallationIdx: uniqueIndex('github_app_installations_app_inst_idx').on(
+      t.githubAppId,
+      t.installationId,
+    ),
+    // SQLite UNIQUE admits many NULLs, so rows whose source was deleted do not collide.
+    sourceIdx: uniqueIndex('github_app_installations_source_idx').on(t.sourceId),
+  }),
+);
+
+export const serviceGithubLinks = sqliteTable(
+  'service_github_links',
+  {
+    id: id(),
+    serviceId: integer('service_id')
+      .notNull()
+      .references(() => services.id, { onDelete: 'cascade' }),
+    installationRowId: integer('installation_row_id')
+      .notNull()
+      .references(() => githubAppInstallations.id, { onDelete: 'cascade' }),
+    /** GitHub's numeric repository id — webhooks route on this, not the URL. */
+    repoId: integer('repo_id').notNull(),
+    repoFullName: text('repo_full_name').notNull(),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    // 'repository' = clone tokens scoped to this repo only (default);
+    // 'installation' = opt-in, for sibling-repo submodules.
+    tokenScope: text('token_scope', { enum: githubTokenScope }).notNull().default('repository'),
+    watchPaths: text('watch_paths'),
+    reportStatus: integer('report_status', { mode: 'boolean' }).notNull().default(false),
+    prComment: integer('pr_comment', { mode: 'boolean' }).notNull().default(false),
+    /** `services.source_id` at migrate time, so a revert can restore it. */
+    previousSourceId: integer('previous_source_id').references(() => sources.id, { onDelete: 'set null' }),
+    createdAt: ts('created_at'),
+    updatedAt: tsUpdatable('updated_at'),
+  },
+  (t) => ({
+    serviceIdx: uniqueIndex('service_github_links_service_idx').on(t.serviceId),
+    installationRepoIdx: index('service_github_links_inst_repo_idx').on(t.installationRowId, t.repoId),
+  }),
+);
+
+export const githubPrComments = sqliteTable(
+  'github_pr_comments',
+  {
+    id: id(),
+    /** The PARENT (production) service whose preview the comment describes. */
+    serviceId: integer('service_id')
+      .notNull()
+      .references(() => services.id, { onDelete: 'cascade' }),
+    prNumber: integer('pr_number').notNull(),
+    commentId: integer('comment_id').notNull(),
+    headSha: text('head_sha'),
+    updatedAt: tsUpdatable('updated_at'),
+  },
+  (t) => ({
+    servicePrIdx: uniqueIndex('github_pr_comments_service_pr_idx').on(t.serviceId, t.prNumber),
+  }),
+);
 
 // ─── backups & monitoring ─────────────────────────────────────────────────
 export const backups = sqliteTable(
@@ -1635,6 +1774,14 @@ export type Deployment = typeof deployments.$inferSelect;
 export type EnvVar = typeof envVars.$inferSelect;
 export type PreviewEnvVar = typeof previewEnvVars.$inferSelect;
 export type Source = typeof sources.$inferSelect;
+export type GithubApp = typeof githubApps.$inferSelect;
+export type NewGithubApp = typeof githubApps.$inferInsert;
+export type GithubAppInstallation = typeof githubAppInstallations.$inferSelect;
+export type NewGithubAppInstallation = typeof githubAppInstallations.$inferInsert;
+export type ServiceGithubLink = typeof serviceGithubLinks.$inferSelect;
+export type NewServiceGithubLink = typeof serviceGithubLinks.$inferInsert;
+export type GithubPrComment = typeof githubPrComments.$inferSelect;
+export type NewGithubPrComment = typeof githubPrComments.$inferInsert;
 export type Domain = typeof domains.$inferSelect;
 export type Webhook = typeof webhooks.$inferSelect;
 export type Backup = typeof backups.$inferSelect;

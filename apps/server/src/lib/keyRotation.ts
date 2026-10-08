@@ -5,6 +5,7 @@ import {
   configEntries,
   databases,
   envVars,
+  githubApps,
   logDrains,
   notificationChannels,
   oidcProviders,
@@ -87,6 +88,22 @@ const ENCRYPTED_COLUMNS = [
     pick: (r: { id: number; t: string | null; k: string | null }) => ({
       tokenEncrypted: r.t === null ? null : reencrypt(r.t),
       deployKeyEncrypted: r.k === null ? null : reencrypt(r.k),
+    }),
+  },
+  // 0.13: a GitHub App carries three secrets. The private key and webhook
+  // secret are NOT NULL; the OAuth client secret is optional (manual entry).
+  {
+    table: githubApps,
+    select: {
+      id: githubApps.id,
+      k: githubApps.privateKeyEncrypted,
+      w: githubApps.webhookSecretEncrypted,
+      c: githubApps.clientSecretEncrypted,
+    },
+    pick: (r: { id: number; k: string; w: string; c: string | null }) => ({
+      privateKeyEncrypted: reencrypt(r.k),
+      webhookSecretEncrypted: reencrypt(r.w),
+      clientSecretEncrypted: r.c === null ? null : reencrypt(r.c),
     }),
   },
   {

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { gitBranch } from './common.js';
+import { gitBranch, providerBaseUrl } from './common.js';
 import { registryHost } from './service.js';
 
 /**
@@ -88,6 +88,8 @@ export const sourcePatch = z.object({
   /** r512: replace the registry hosts this credential may be sent to. */
   registryHosts: z.array(registryHost).max(20).optional(),
   defaultBranch: z.string().max(255).optional(),
+  /** 0.13: set the self-hosted provider base URL (Gitea); null clears it. */
+  baseUrl: providerBaseUrl.nullable().optional(),
 });
 export type SourcePatch = z.infer<typeof sourcePatch>;
 

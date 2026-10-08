@@ -130,6 +130,36 @@ describe('rotateSecrets', () => {
     expect(updates).toEqual([{ table: previewEnvVars, values: { valueEncrypted: 're:pev-enc' } }]);
   });
 
+  it('0.13: rotates all three GitHub App secrets and keeps a null client secret null', async () => {
+    const { githubApps } = await import('@ninedeploy/db');
+    const updates: Array<{ table: unknown; values: Record<string, unknown> }> = [];
+    const db = makeDb(
+      new Map([
+        [
+          githubApps,
+          [
+            { id: 1, k: 'pem-enc', w: 'whs-enc', c: 'cs-enc' },
+            { id: 2, k: 'pem2-enc', w: 'whs2-enc', c: null },
+          ],
+        ],
+      ]),
+      updates,
+    );
+
+    expect(await rotateSecrets(db as never)).toBe(2);
+    expect(updates).toEqual([
+      {
+        table: githubApps,
+        values: { privateKeyEncrypted: 're:pem-enc', webhookSecretEncrypted: 're:whs-enc', clientSecretEncrypted: 're:cs-enc' },
+      },
+      {
+        table: githubApps,
+        values: { privateKeyEncrypted: 're:pem2-enc', webhookSecretEncrypted: 're:whs2-enc', clientSecretEncrypted: null },
+      },
+    ]);
+    expect(cryptoMock.reencrypt).not.toHaveBeenCalledWith(null);
+  });
+
   it('reports zero when there is nothing to rotate', async () => {
     const updates: Array<{ table: unknown; values: Record<string, unknown> }> = [];
     const db = makeDb(new Map(), updates);

@@ -57,6 +57,30 @@ export const gitRepoUrl = z
   });
 
 /**
+ * 0.13: the base URL of an operator-supplied git provider API or web UI
+ * (a Gitea instance, GitHub Enterprise Server, `https://github.com`).
+ *
+ * `http:` is accepted HERE on purpose: whether plain http is allowed depends on
+ * the server's `NINEDEPLOY_ALLOW_PRIVATE_EGRESS` escape hatch, which this
+ * package cannot see. The server refuses `http:` unless that flag is set, and
+ * every call still goes through its egress guard. Rejecting http in the schema
+ * would make the documented escape hatch (an internal http-only Gitea)
+ * unusable. Userinfo, query and fragment are refused — a base URL never needs
+ * them, and userinfo would smuggle credentials into a URL that gets logged.
+ * Trailing slashes are dropped so `${base}/api/v1/…` joins cleanly.
+ */
+export const providerBaseUrl = z
+  .string()
+  .trim()
+  .max(2048)
+  .pipe(z.url({ protocol: /^https?$/, message: 'must be an http(s) URL' }))
+  // Everything after the scheme: no `@` (userinfo), `?` or `#`.
+  .refine((value) => !/[@?#]/.test(value.slice(value.indexOf(':') + 3)), {
+    message: 'must be a base URL without credentials, query or fragment',
+  })
+  .transform((value) => value.replace(/\/+$/, ''));
+
+/**
  * A git branch/ref name. Reaches `git checkout` / `git pull` as an argv
  * element, so a value starting with `-` would be read as an option rather
  * than a ref; the allowlist also rules out the `..` and whitespace forms git

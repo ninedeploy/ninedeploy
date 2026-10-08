@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { containerPath, dockerVolumeName, envVarName, gitBranch, gitRepoUrl, httpPath, repoBaseDir, repoRelativePath, slug } from './common.js';
+import { containerPath, dockerVolumeName, envVarName, gitBranch, gitRepoUrl, httpPath, providerBaseUrl, repoBaseDir, repoRelativePath, slug } from './common.js';
 
 export const serviceType = z.enum(['pm2', 'docker', 'compose']);
 export const buildPack = z.enum(['auto', 'nixpacks', 'dockerfile', 'railpack', 'static']);
@@ -265,6 +265,12 @@ export const createSource = z.object({
   /** r512: registry hosts this credential may be sent to (Docker Hub = docker.io). */
   registryHosts: z.array(registryHost).max(20).optional(),
   defaultBranch: z.string().optional(),
+  /**
+   * 0.13: self-hosted provider base (Gitea), e.g. `https://git.example.com`.
+   * The server refuses `http:` unless private egress is allowed.
+   * `github_app` is deliberately NOT in `type`: only installation sync creates those sources.
+   */
+  baseUrl: providerBaseUrl.optional(),
 });
 export type CreateSourceInput = z.input<typeof createSource>;
 
@@ -278,6 +284,8 @@ export const source = z.object({
   /** r512: hosts a registry credential is bound to (registry sources only). */
   registryHosts: z.array(z.string()).optional(),
   defaultBranch: z.string().nullable(),
+  /** 0.13: self-hosted provider base URL (Gitea); null/absent = not set. */
+  baseUrl: z.string().nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime().optional(),
 });

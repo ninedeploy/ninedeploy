@@ -19,3 +19,4 @@ export * from './agentCommand.js';
 
 export * from './backupPolicy.js';
 export * from './panelBackup.js';
+export * from './githubApp.js';
