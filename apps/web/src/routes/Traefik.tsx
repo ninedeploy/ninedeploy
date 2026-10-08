@@ -6,6 +6,8 @@ import { api, authedFetch } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
 import { useToast } from '../components/Toast.js';
 import { Button, Card, ErrorCard, PageHeader, Skeleton, StatusBadge, Tabs, cn } from '../components/ui.js';
+import { CertificatesCard } from './traefik/CertificatesCard.js';
+import { CustomConfigCard } from './traefik/CustomConfigCard.js';
 
 export function Traefik() {
   const { user: me } = useAuth();
@@ -56,12 +58,20 @@ export function Traefik() {
           { id: 'certificates', label: `Certificates${info.data?.certificates?.length ? ` (${info.data.certificates.length})` : ''}` },
           { id: 'routers', label: `Routers${info.data?.routers?.length ? ` (${info.data.routers.length})` : ''}` },
           { id: 'logs', label: 'Logs' },
+          // 0.14: the custom dynamic config is operator-only (as are its routes).
+          ...(isAdmin ? [{ id: 'custom', label: 'Custom config' }] : []),
         ]}
       />
 
       <div className="mt-6">
         {activeTab === 'overview' && <OverviewTab data={info.data} isLoading={info.isLoading} />}
-        {activeTab === 'certificates' && info.data && <CertificatesTab certificates={info.data.certificates} />}
+        {activeTab === 'certificates' && info.data && (
+          <div className="space-y-6">
+            <CertificatesTab certificates={info.data.certificates} />
+            {/* 0.14: uploaded certificates — operator-only routes. */}
+            {isAdmin && <CertificatesCard />}
+          </div>
+        )}
         {activeTab === 'routers' && info.data && <RoutersTab data={info.data} />}
         {activeTab === 'logs' &&
           (!isAdmin ? (
@@ -73,6 +83,7 @@ export function Traefik() {
           ) : (
             <LogsTab logs={logs.data?.logs ?? []} isLoading={logs.isLoading} />
           ))}
+        {activeTab === 'custom' && isAdmin && <CustomConfigCard />}
       </div>
     </div>
   );

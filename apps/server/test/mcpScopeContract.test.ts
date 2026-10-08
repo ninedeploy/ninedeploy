@@ -15,7 +15,7 @@ import { TOOLS } from '../../../packages/mcp/src/tools.js';
 import { requiredFineGrainedScope } from '../src/plugins/auth.js';
 
 /** One argument bag every tool's schema can be satisfied from (unknown keys are stripped). */
-const SAMPLE = { serviceId: 1, deploymentId: 2, container: 'c1', key: 'k1', target: 't1', value: 'v' };
+const SAMPLE = { serviceId: 1, deploymentId: 2, databaseId: 3, container: 'c1', key: 'k1', target: 't1', value: 'v' };
 
 async function callsOf(tool: (typeof TOOLS)[number]): Promise<Array<{ url: string; method: string }>> {
   const calls: Array<{ url: string; method: string }> = [];

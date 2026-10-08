@@ -51,6 +51,7 @@ export interface ToolDef {
 }
 
 const serviceId = z.object({ serviceId: z.number().int().positive() });
+const databaseId = z.object({ databaseId: z.number().int().positive() });
 const entityOpt = z.object({ entity: z.string().optional() });
 
 export const TOOLS: ToolDef[] = [
@@ -429,6 +430,25 @@ export const TOOLS: ToolDef[] = [
         })),
       );
     },
+  },
+  // ── Database network and data access (0.14) ────────────────────────────
+  {
+    name: 'get_database_public_access',
+    description:
+      'Public access state of a managed database: whether its TCP sidecar is configured and running, the host port, the IP allow-list, the TLS mode and the host clients connect to. Needs admin on the database. Read-only; never a credential.',
+    input: databaseId,
+    // GET /v1/databases/:id/public-access: read/databases (db admin enforced by the route).
+    requiredScopes: ['nd://scope/read/databases'],
+    handler: (c, input) => c.databases.publicAccess.get((input as { databaseId: number }).databaseId),
+  },
+  {
+    name: 'list_database_imports',
+    description:
+      'Recent dump imports into a managed database (newest first, up to 50): status, source (upload or S3 object), detected format, size and upload progress, the pre-import safety backup id and any error. Needs admin on the database. Read-only.',
+    input: databaseId,
+    // GET /v1/databases/:id/imports: read/databases (db admin enforced by the route).
+    requiredScopes: ['nd://scope/read/databases'],
+    handler: (c, input) => c.databases.imports.list((input as { databaseId: number }).databaseId),
   },
   // ── Housekeeping & Maintenance ─────────────────────────────────────────
   {

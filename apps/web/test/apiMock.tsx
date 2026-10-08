@@ -214,6 +214,20 @@ export function createFakeApiModule() {
       setLimits: vi.fn(),
       startStudio: vi.fn(),
       stopStudio: vi.fn(),
+      // 0.14: an unconfigured public endpoint and an empty import history.
+      publicAccess: {
+        get: vi.fn().mockResolvedValue({
+          supported: true, configured: false, enabled: false, port: null, tlsMode: 'none', tlsHostname: null,
+          ipAllowlist: [], status: 'off', lastError: null, appliedAt: null, publicHost: null,
+        }),
+        set: vi.fn(),
+        disable: vi.fn(),
+      },
+      imports: {
+        create: vi.fn(), uploadChunk: vi.fn(), start: vi.fn(), list: vi.fn().mockResolvedValue([]),
+        get: vi.fn(), cancel: vi.fn(), wait: vi.fn(),
+      },
+      importFile: vi.fn(),
     },
     attachments: { list: vi.fn(), create: vi.fn(), remove: vi.fn() },
     env: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() },
@@ -245,7 +259,7 @@ export function createFakeApiModule() {
       setPolicy: vi.fn(),
     },
     limits: { setService: vi.fn(), setDatabase: vi.fn() },
-    backupDestinations: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), test: vi.fn() },
+    backupDestinations: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), test: vi.fn(), objects: vi.fn().mockResolvedValue([]) },
     jobs: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), run: vi.fn(), runs: vi.fn() },
     servers: {
       list: vi.fn().mockResolvedValue([]),

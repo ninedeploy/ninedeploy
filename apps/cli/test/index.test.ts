@@ -369,14 +369,15 @@ describe('program registration', () => {
       'notifications', 'users',
       'reset-link <idOrEmail>', 'activity', 'plugins', 'config-center', 'workspaces',
       'images', 'demo', 'server',
-      'logs', 'email-templates', 'certificates',
+      'logs', 'email-templates', 'certificates', 'proxy', 'secrets',
       'doctor',
       'sources', 'github-app', 'deploy', 'webhooks', 'firewall', 'manifest',
     ]);
     expect(findCommand('server').children).toHaveLength(4);
     // 0.13: + `services github <id>`.
     expect(findCommand('services').children).toHaveLength(14);
-    expect(findCommand('databases').children).toHaveLength(4);
+    // 0.14: + public-access, import, imports.
+    expect(findCommand('databases').children).toHaveLength(7);
     expect(findCommand('templates').children).toHaveLength(4);
     expect(findCommand('deploys').children).toHaveLength(6);
     expect(findCommand('token').children).toHaveLength(2);
@@ -401,7 +402,11 @@ describe('program registration', () => {
     expect(findCommand('sso').children).toHaveLength(3);
     // 0.12 panel backup: `system panel-backup` + 5 subcommands.
     // 0.13: + `services github` and `github-app` with 6 subcommands.
-    expect(h.FakeCommand.instances).toHaveLength(204);
+    // 0.14: + 3 database commands, `certificates custom` (5), `proxy config` (6), `secrets providers` (7).
+    expect(h.FakeCommand.instances).toHaveLength(225);
+    expect(findCommand('certificates').children).toHaveLength(3);
+    expect(findCommand('proxy').children).toHaveLength(1);
+    expect(findCommand('secrets').children).toHaveLength(1);
     expect(findCommand('github-app').children).toHaveLength(6);
     // sanity: every new command we added has at least the subcommands it owns
     expect(findCommand('sources').children.length).toBeGreaterThanOrEqual(6);

@@ -126,6 +126,7 @@ export const DATABASE_TAB_TOPICS: Record<string, HelpTopic> = {
       },
     ],
     related: [
+      { label: 'Importing a dump', helpId: 'database.import' },
       { label: 'Backups centre (destinations)', helpId: 'backups' },
       { label: 'Database · Overview', helpId: 'database.overview' },
     ],
@@ -168,8 +169,86 @@ export const DATABASE_TAB_TOPICS: Record<string, HelpTopic> = {
       },
     ],
     related: [
+      { label: 'Public access', helpId: 'database.public-access' },
       { label: 'Database · Backups', helpId: 'database.backups' },
       { label: 'Database · Overview', helpId: 'database.overview' },
+    ],
+  },
+
+  'database.public-access': {
+    title: 'Database · Public access',
+    summary:
+      'Expose this database on one host port for clients outside the panel, through a small Traefik sidecar that only admits the addresses on its allow-list.',
+    sections: [
+      {
+        heading: 'Turning it on (operators)',
+        steps: [
+          'Open the Settings tab and switch on Public access.',
+          'Pick a free host port between 1024 and 65535 — not one the panel or a service already uses.',
+          'List the client addresses or CIDR ranges allowed to connect. At least one is required; an empty list never means everyone, and a /0 range is refused.',
+          'Choose the TLS mode, then Enable. The sidecar starts at once; the card shows its status and any error.',
+        ],
+      },
+      {
+        heading: 'TLS',
+        bullets: [
+          'None passes the connection straight through. MySQL and MariaDB still negotiate their own TLS end to end, so termination is not offered for them.',
+          'Terminate makes the sidecar handle TLS, with an uploaded certificate covering the TLS hostname, or Traefik’s default self-signed certificate (sslmode=require works, verify-full does not).',
+        ],
+      },
+      {
+        heading: 'Security',
+        bullets: [
+          'The connection uses the database’s ROOT credentials. Create a limited user for outside clients.',
+          'Keep the allow-list narrow. The card warns about very broad ranges (shorter than /16 IPv4 or /48 IPv6) and about private ranges, because Docker’s userland proxy can rewrite the client address to the bridge gateway.',
+          'Database admins can read the settings; only instance operators can change them.',
+          'ClickHouse and Meilisearch are HTTP engines and are reached through a domain instead; RabbitMQ is not supported yet.',
+        ],
+        tip: 'Disabling removes the sidecar but keeps the settings, so it can be turned back on later.',
+      },
+    ],
+    related: [
+      { label: 'Database · Settings', helpId: 'database.settings' },
+      { label: 'Database · Overview', helpId: 'database.overview' },
+    ],
+  },
+
+  'database.import': {
+    title: 'Database · Importing a dump',
+    summary:
+      'Load an existing dump into this database from your computer or, for operators, from a backup destination. The upload goes in resumable chunks and a safety backup is taken first.',
+    sections: [
+      {
+        heading: 'Accepted files',
+        bullets: [
+          'PostgreSQL: a pg_dump custom-format archive (-Fc) or plain SQL, optionally gzipped. Tar and directory formats are refused.',
+          'MySQL / MariaDB: a plain SQL dump, optionally gzipped.',
+          'MongoDB: a mongodump --archive file, optionally gzipped.',
+          'Redis / Valkey: an RDB snapshot. It replaces the whole dataset, so you must confirm that first.',
+          'ClickHouse, Meilisearch and RabbitMQ have no dump import.',
+        ],
+      },
+      {
+        heading: 'Importing',
+        steps: [
+          'Open the Backups tab and choose the options that apply to the engine.',
+          'Pick the dump file and press Upload and import. Progress is shown as the chunks go up.',
+          'If the upload is interrupted, press Resume on it in Recent imports and choose the same file again; only the missing part is sent.',
+          'Operators can instead choose a backup destination, list its objects and import one directly.',
+        ],
+      },
+      {
+        heading: 'Safety and results',
+        bullets: [
+          'A pre-import safety backup is taken first and listed with the snapshots; restore it to undo the import. Only operators can skip it.',
+          '“Completed with warnings” means the import changed credentials the panel holds — restore the safety backup if apps can no longer connect.',
+          'Unfinished uploads expire after 24 hours; an import can be cancelled while it is uploading or pending.',
+        ],
+      },
+    ],
+    related: [
+      { label: 'Database · Backups', helpId: 'database.backups' },
+      { label: 'Backups centre (destinations)', helpId: 'backups' },
     ],
   },
 };

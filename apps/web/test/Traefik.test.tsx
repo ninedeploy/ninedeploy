@@ -31,6 +31,8 @@ vi.mock('../src/lib/api.js', () => ({
       logs: (lines = 50) => viaFetch(`/v1/traefik/logs?lines=${lines}`),
       restart: () => viaFetch('/v1/traefik/restart', { method: 'POST' }),
       backupCerts: () => viaFetch('/v1/traefik/backup-certs', { method: 'POST' }),
+      customConfig: { get: () => Promise.resolve({ content: null, sha256: null, updatedAt: null, updatedBy: null, status: 'none', lastError: null }) },
+      customCertificates: { list: () => Promise.resolve([]) },
     },
   },
 }));
@@ -399,5 +401,24 @@ describe('Traefik route', () => {
     const updateBtn = await screen.findByRole('button', { name: /Update to v3.1.0/ });
     fireEvent.click(updateBtn);
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Failed to update Traefik: Failed to update Traefik', 'error'));
+  });
+
+  it('0.14: operators get the uploaded-certificates card and the Custom config tab', async () => {
+    renderWithProviders(<Traefik />);
+    await screen.findByText('Traefik Running');
+    fireEvent.click(screen.getByRole('tab', { name: /Certificates/ }));
+    expect(await screen.findByText('Uploaded certificates')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Custom config' }));
+    expect(await screen.findByText('Custom dynamic config')).toBeInTheDocument();
+  });
+
+  it('0.14: members see neither the custom config tab nor the uploaded certificates', async () => {
+    userState.user = { id: 2, email: 'user@nine.local', isOperator: false };
+    renderWithProviders(<Traefik />);
+    await screen.findByText('Traefik Running');
+    expect(screen.queryByRole('tab', { name: 'Custom config' })).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: /Certificates/ }));
+    await screen.findByText('app.example.com');
+    expect(screen.queryByText('Uploaded certificates')).toBeNull();
   });
 });

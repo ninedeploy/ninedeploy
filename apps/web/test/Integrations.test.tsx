@@ -351,4 +351,22 @@ describe('IntegrationsSection', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[2]!);
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('IP not whitelisted', 'error'));
   });
+
+  it('0.14: mounts the secret managers card beside the vault provider', async () => {
+    const settings = api.settings as unknown as Record<string, unknown>;
+    const list = vi.fn().mockResolvedValue([
+      { kind: 'vault', configured: false, enabled: false, config: {}, hasCredential: false, lastTestedAt: null, lastTestError: null },
+      { kind: 'aws', configured: false, enabled: false, config: {}, hasCredential: false, lastTestedAt: null, lastTestError: null },
+    ]);
+    settings['secretProviders'] = { list, set: vi.fn(), delete: vi.fn(), test: vi.fn() };
+    try {
+      renderWithProviders(<IntegrationsSection />);
+      expect(await screen.findByText('Secret managers')).toBeInTheDocument();
+      expect(await screen.findByTestId('secret-provider-vault')).toBeInTheDocument();
+      expect(screen.getByTestId('secret-provider-aws')).toBeInTheDocument();
+      expect(list).toHaveBeenCalled();
+    } finally {
+      delete settings['secretProviders'];
+    }
+  });
 });

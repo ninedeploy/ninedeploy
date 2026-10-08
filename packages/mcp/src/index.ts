@@ -164,6 +164,8 @@ export const READ_ONLY_TOOL_NAMES = new Set([
   'list_workspaces', 'get_workspace', 'list_log_drains',
   // 0.13: App and installation metadata; the API never returns a secret.
   'list_github_installations',
+  // 0.14: database public-access state and import history; neither carries a credential.
+  'get_database_public_access', 'list_database_imports',
 ]);
 
 /** A getToken closure that always returns the configured static token. */

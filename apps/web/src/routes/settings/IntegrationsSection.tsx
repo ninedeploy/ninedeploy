@@ -4,16 +4,18 @@ import { Cloud, KeyRound, Server } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, ErrorCard } from '../../components/ui.js';
+import { SecretManagersCard } from './SecretManagersCard.js';
 
 // Vault reference examples (escaped so linters don't read them as template placeholders).
 const REF_INFISICAL = '\u0024\u007B\u007Binfisical:KEY\u007D\u007D';
 const REF_DOPPLER = '\u0024\u007B\u007Bdoppler:KEY\u007D\u007D';
 
-/** Integrations: vault providers (deploy-time secrets) + Cloudflare + Namecheap DNS records. */
+/** Integrations: vault providers and secret managers (deploy-time secrets) + Cloudflare + Namecheap DNS records. */
 export function IntegrationsSection() {
   return (
     <>
       <VaultCard />
+      <SecretManagersCard />
       <CloudflareCard />
       <NamecheapCard />
     </>
@@ -169,8 +171,8 @@ function VaultAllowlist() {
     <div className="mt-5 max-w-md border-t border-slate-800 pt-4">
       <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Allowed workspaces</h3>
       <p className="mb-3 text-xs text-slate-500">
-        Vault references resolve with this instance-wide token, so only services owned by an operator — or tagged into a
-        workspace ticked here — may use them.
+        Secret references (Infisical, Doppler, Vault and AWS Secrets Manager) resolve with instance-wide credentials, so only
+        services owned by an operator — or tagged into a workspace ticked here — may use them.
       </p>
       {(vault.data?.workspaces ?? []).length === 0 ? (
         <p className="text-xs text-slate-500">No workspaces yet.</p>

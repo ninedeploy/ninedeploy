@@ -46,6 +46,8 @@ import { downloadBlob, formatBytes, formatDateTime, useCopy } from '../lib/forma
 import { ContainerFileBrowser } from '../components/ContainerFileBrowser.js';
 import { DatabaseTopologyTab } from './database/DatabaseTopologyTab.js';
 import { BackupScheduleCard } from './database/BackupScheduleCard.js';
+import { ImportCard } from './database/ImportCard.js';
+import { PublicAccessCard } from './database/PublicAccessCard.js';
 import { ManifestTab } from './service/ManifestTab.js';
 
 const ENGINE_LABEL: Record<string, string> = {
@@ -294,6 +296,7 @@ export function DatabaseDetail() {
       {activeTab === 'backups' && (
         <div className="space-y-4">
           <BackupScheduleCard dbId={db.id} />
+          <ImportCard db={db} />
           <BackupsPanel dbId={db.id} dbName={db.name} />
         </div>
       )}
@@ -895,6 +898,8 @@ function SettingsPanel({ db, onDeleted }: { db: IDatabaseDetail; onDeleted: () =
           </Button>
         </div>
       </Card>
+
+      <PublicAccessCard db={db} />
 
       {/* Danger Zone */}
       <Card className="p-5 border-rose-500/20 bg-rose-500/[0.02] space-y-4">

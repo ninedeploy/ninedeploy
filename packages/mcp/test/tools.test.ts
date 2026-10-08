@@ -22,7 +22,11 @@ function fakeClient(): NineDeployClient {
       queue: vi.fn(async () => 'QUEUE'),
     },
     domains: { all: vi.fn(async () => 'DOMAINS') },
-    databases: { list: vi.fn(async () => 'DBS') },
+    databases: {
+      list: vi.fn(async () => 'DBS'),
+      publicAccess: { get: vi.fn(async () => 'PUBLIC_ACCESS') },
+      imports: { list: vi.fn(async () => 'IMPORTS') },
+    },
     projects: { list: vi.fn(async () => 'PROJECTS') },
     alerts: { list: vi.fn(async () => 'ALERTS') },
     activity: { list: vi.fn(async () => 'ACTIVITY') },
@@ -79,9 +83,9 @@ const byName = (name: string) => {
 };
 
 describe('MCP tools', () => {
-  it('exposes 39 unique tools with descriptions', () => {
-    expect(TOOLS).toHaveLength(39);
-    expect(new Set(TOOLS.map((t) => t.name)).size).toBe(39);
+  it('exposes 41 unique tools with descriptions', () => {
+    expect(TOOLS).toHaveLength(41);
+    expect(new Set(TOOLS.map((t) => t.name)).size).toBe(41);
     for (const t of TOOLS) expect(t.description.length).toBeGreaterThan(10);
   });
 
@@ -282,6 +286,23 @@ describe('MCP tools', () => {
       const c = fakeClient();
       (c.githubApps.list as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({});
       expect(await byName('list_github_installations').handler(c, {})).toEqual([]);
+    });
+  });
+
+  // 0.14: read-only database public access and import history (read/databases).
+  describe('database network and data access', () => {
+    it('maps get_database_public_access and list_database_imports onto the SDK', async () => {
+      const c = fakeClient();
+      expect(await byName('get_database_public_access').handler(c, { databaseId: 4 })).toBe('PUBLIC_ACCESS');
+      expect(c.databases.publicAccess.get).toHaveBeenCalledWith(4);
+      expect(await byName('list_database_imports').handler(c, { databaseId: 4 })).toBe('IMPORTS');
+      expect(c.databases.imports.list).toHaveBeenCalledWith(4);
+      for (const name of ['get_database_public_access', 'list_database_imports']) {
+        expect(byName(name).requiredScopes).toEqual(['nd://scope/read/databases']);
+        expect(byName(name).coarseTokenOnly).toBeUndefined();
+        expect(byName(name).input.safeParse({}).success).toBe(false);
+        expect(byName(name).input.safeParse({ databaseId: 0 }).success).toBe(false);
+      }
     });
   });
 });

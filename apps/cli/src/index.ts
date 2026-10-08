@@ -42,9 +42,21 @@ import {
   emailTemplatesSet,
 } from './commands/emailTemplates.js';
 import {
+  certificatesCustomDelete,
+  certificatesCustomList,
+  certificatesCustomReplace,
+  certificatesCustomUpload,
   certificatesExpiring,
   certificatesList,
 } from './commands/certificates.js';
+import {
+  databaseImport, databaseImports, databasePublicAccess, type ImportCliOptions, type PublicAccessOptions,
+} from './commands/databaseAccess.js';
+import { proxyConfigClear, proxyConfigGet, proxyConfigSet, proxyConfigValidate } from './commands/proxyConfig.js';
+import {
+  secretProvidersDelete, secretProvidersList, secretProvidersSetAws, secretProvidersSetVault, secretProvidersTest,
+  type AwsCliOptions, type VaultCliOptions,
+} from './commands/secretProviders.js';
 import {
   communityTemplatesImport,
   communityTemplatesList,
@@ -291,6 +303,40 @@ backupPolicyCmd
   .action((dbId: string, opts: { cron?: string; preset?: string; keep?: string; keepRemote?: string; destination?: string; enable?: boolean; disable?: boolean }) =>
     backupPolicySet(getClient(), dbId, opts),
   );
+
+// ── Public access and dump import (0.14) ────────────────────────────────
+/* v8 ignore start -- the FakeCommand in test/index.test.ts records but never invokes the action;
+ * the implementations are exercised by test/databaseAccess.test.ts. */
+databases
+  .command('public-access <id>')
+  .description('Show, enable/update (--enable) or disable (--disable) public access through a TCP sidecar (operator)')
+  .option('--enable', 'Enable or update public access; unset flags keep their current value')
+  .option('--disable', 'Remove the sidecar (the settings are kept)')
+  .option('--port <port>', 'Host port, 1024-65535')
+  .option('--allow <cidr...>', 'Allowed source addresses or CIDRs (replaces the allow-list)')
+  .option('--tls <mode>', 'none | terminate (not for mysql/mariadb)')
+  .option('--tls-host <host>', 'Hostname clients connect to (and the TLS name in terminate mode)')
+  .action((id: string, opts: PublicAccessOptions) => databasePublicAccess(getClient(), id, opts));
+databases
+  .command('import <id>')
+  .description('Import a dump from a local file (chunked, resumable) or a backup destination object (operator)')
+  .option('--file <path>', 'Dump file to upload')
+  .option('--from-s3 <destinationId>', 'Backup destination to read the object from (operator)')
+  .option('--key <key>', 'Object key inside the destination prefix (with --from-s3)')
+  .option('--clean', 'postgres custom format: drop objects before recreating them')
+  .option('--no-single-transaction', 'postgres: do not wrap the restore in one transaction')
+  .option('--drop', 'mongo: drop each collection before restoring it')
+  .option('--confirm-replace', 'redis/valkey: required, the RDB replaces the whole dataset')
+  .option('--no-safety-backup', 'Skip the pre-import backup (operator, or a database created in the last 10 minutes)')
+  .option('--resume <importId>', 'Continue an interrupted upload of the same file')
+  .option('--no-wait', 'Return once the import has started')
+  .action((id: string, opts: ImportCliOptions) => databaseImport(getClient(), id, opts));
+databases
+  .command('imports <id>')
+  .description('List a database\'s imports')
+  .option('--watch', 'Keep polling until no import is uploading, pending or running')
+  .action((id: string, opts: { watch?: boolean }) => databaseImports(getClient(), id, opts));
+/* v8 ignore stop */
 
 // ── Templates ─────────────────────────────────────────────────────────────
 const templates = program.command('templates').description('Browse the template hub and scaffold starter manifests from it');
@@ -813,6 +859,91 @@ certificates
   .description('Focused list of certificates expiring within N days')
   .option('--days <days>', 'Window in days (default 30)')
   .action((opts: { days?: string }) => certificatesExpiring(getClient(), opts));
+// 0.14: uploaded certificates (operator).
+const customCerts = certificates.command('custom').description('Uploaded TLS certificates (operator)');
+/* v8 ignore start -- exercised by test/certificates.test.ts. */
+customCerts.command('list').description('List uploaded certificates, their hostnames, expiry and covered domains')
+  .action(() => certificatesCustomList(getClient()));
+customCerts.command('upload')
+  .description('Upload a certificate chain and its unencrypted private key')
+  .option('--name <name>', 'Display name')
+  .option('--cert <path>', 'PEM certificate chain, leaf first')
+  .option('--key <path>', 'PEM private key (unencrypted)')
+  .action((opts: { name?: string; cert?: string; key?: string }) => certificatesCustomUpload(getClient(), opts));
+customCerts.command('replace <id>')
+  .description('Replace a certificate (e.g. after renewal)')
+  .option('--name <name>', 'New display name')
+  .option('--cert <path>', 'PEM certificate chain, leaf first')
+  .option('--key <path>', 'PEM private key (unencrypted)')
+  .action((id: string, opts: { name?: string; cert?: string; key?: string }) => certificatesCustomReplace(getClient(), id, opts));
+customCerts.command('delete <id>')
+  .description('Delete a certificate (covered domains fall back to ACME)')
+  .alias('rm')
+  .option('-y, --yes', 'Skip the confirmation prompt')
+  .action((id: string, opts: { yes?: boolean }) => certificatesCustomDelete(getClient(), id, opts));
+/* v8 ignore stop */
+
+// ── Proxy custom config (0.14) ──────────────────────────────────────────────
+const proxyCmd = program.command('proxy').description('Traefik proxy management (operator)');
+const proxyConfigCmd = proxyCmd.command('config').description('Custom Traefik dynamic config (custom.yml)');
+/* v8 ignore start -- exercised by test/proxyConfig.test.ts. */
+proxyConfigCmd.command('get').description('Show the custom config, its status and the last error').action(() => proxyConfigGet(getClient()));
+proxyConfigCmd.command('validate')
+  .description('Validate a YAML file without applying it')
+  .option('--file <path>', 'YAML file')
+  .action((opts: { file?: string }) => proxyConfigValidate(getClient(), opts));
+proxyConfigCmd.command('set')
+  .description('Validate and apply a YAML file')
+  .option('--file <path>', 'YAML file')
+  .action((opts: { file?: string }) => proxyConfigSet(getClient(), opts));
+proxyConfigCmd.command('clear')
+  .description('Remove the custom config')
+  .option('-y, --yes', 'Skip the confirmation prompt')
+  .action((opts: { yes?: boolean }) => proxyConfigClear(getClient(), opts));
+/* v8 ignore stop */
+
+// ── Secret managers (0.14) ──────────────────────────────────────────────────
+const secretsCmd = program.command('secrets').description('Deploy-time secret references');
+const providersCmd = secretsCmd.command('providers').description('HashiCorp Vault / OpenBao and AWS Secrets Manager (operator)');
+/* v8 ignore start -- exercised by test/secretProviders.test.ts. */
+providersCmd.command('list').description('List the secret managers and their last test').action(() => secretProvidersList(getClient()));
+providersCmd.command('set-vault')
+  .description('Configure Vault / OpenBao (KV v2); token from --token-file or NINEDEPLOY_VAULT_TOKEN')
+  .option('--address <url>', 'Vault address (https)')
+  .option('--namespace <ns>', 'Vault Enterprise / OpenBao namespace')
+  .option('--mount <path>', 'KV v2 mount (default secret)')
+  .option('--auth <method>', 'token | approle (default token)')
+  .option('--approle-mount <path>', 'AppRole auth mount (default approle)')
+  .option('--token-file <path>', 'File holding the token (or NINEDEPLOY_VAULT_TOKEN)')
+  .option('--role-id-file <path>', 'File holding the AppRole role id (or NINEDEPLOY_VAULT_ROLE_ID)')
+  .option('--secret-id-file <path>', 'File holding the AppRole secret id (or NINEDEPLOY_VAULT_SECRET_ID)')
+  .option('--enable', 'Enable the provider')
+  .option('--disable', 'Disable the provider (references stay literal)')
+  .action((opts: VaultCliOptions) => secretProvidersSetVault(getClient(), opts));
+providersCmd.command('set-aws')
+  .description('Configure AWS Secrets Manager; secret key from --secret-access-key-file or NINEDEPLOY_AWS_SECRET_ACCESS_KEY')
+  .option('--region <region>', 'AWS region, e.g. eu-west-1')
+  .option('--endpoint <url>', 'VPC endpoint or compatible service (https)')
+  .option('--role-arn <arn>', 'IAM role to assume')
+  .option('--external-id <id>', 'External id for the role (with --role-arn)')
+  .option('--role-session-name <name>', 'Session name (default ninedeploy)')
+  .option('--access-key-id <id>', 'Access key id (or NINEDEPLOY_AWS_ACCESS_KEY_ID)')
+  .option('--secret-access-key-file <path>', 'File holding the secret access key (or NINEDEPLOY_AWS_SECRET_ACCESS_KEY)')
+  .option('--session-token-file <path>', 'File holding a session token (or NINEDEPLOY_AWS_SESSION_TOKEN)')
+  .option('--enable', 'Enable the provider')
+  .option('--disable', 'Disable the provider (references stay literal)')
+  .action((opts: AwsCliOptions) => secretProvidersSetAws(getClient(), opts));
+providersCmd.command('test <kind>')
+  .description('Test a provider (vault | aws), optionally reading one secret')
+  .option('--probe-path <path>', 'vault: also read this path (relative to the mount)')
+  .option('--probe-secret-id <id>', 'aws: also read this secret')
+  .action((kind: string, opts: { probePath?: string; probeSecretId?: string }) => secretProvidersTest(getClient(), kind, opts));
+providersCmd.command('delete <kind>')
+  .description('Remove a provider (vault | aws); its references stay literal at deploy')
+  .alias('rm')
+  .option('-y, --yes', 'Skip the confirmation prompt')
+  .action((kind: string, opts: { yes?: boolean }) => secretProvidersDelete(getClient(), kind, opts));
+/* v8 ignore stop */
 
 deploys.command('watch <serviceId> <deployId>').description('Stream a deployment\'s build logs live').action((svcId: string, depId: string) => deploysWatch(svcId, depId));
 

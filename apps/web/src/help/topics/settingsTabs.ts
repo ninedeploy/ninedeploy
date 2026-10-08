@@ -3,6 +3,9 @@ import type { HelpTopic } from '../types.js';
 // Unicode escapes per repo convention (see EnvCard.tsx) for the literal `${{…}}` syntax.
 const REF_INFISICAL = '\u0024\u007B\u007Binfisical:KEY\u007D\u007D';
 const REF_DOPPLER = '\u0024\u007B\u007Bdoppler:KEY\u007D\u007D';
+const REF_VAULT = '\u0024\u007B\u007Bvault:path/to/secret#field\u007D\u007D';
+const REF_AWS = '\u0024\u007B\u007Baws:secret-id\u007D\u007D';
+const REF_AWS_KEY = '\u0024\u007B\u007Baws:secret-id#jsonKey\u007D\u007D';
 
 /** Help topics for the 14 sections of the Settings page (/settings?section=…). */
 export const SETTINGS_TAB_TOPICS: Record<string, HelpTopic> = {
@@ -104,7 +107,7 @@ export const SETTINGS_TAB_TOPICS: Record<string, HelpTopic> = {
   'settings.integrations': {
     title: 'Settings · Integrations',
     summary:
-      'The external services NineDeploy talks to: secret vaults (Infisical/Doppler), Cloudflare DNS for automatic records and wildcard certificates, and template registry overrides.',
+      'The external services NineDeploy talks to: secret vaults (Infisical/Doppler) and secret managers (Vault/OpenBao, AWS Secrets Manager), Cloudflare DNS for automatic records and wildcard certificates, and template registry overrides.',
     sections: [
       {
         heading: 'Vault providers',
@@ -131,6 +134,43 @@ export const SETTINGS_TAB_TOPICS: Record<string, HelpTopic> = {
       { label: 'Service · Environment (vault refs)', helpId: 'service.environment' },
       { label: 'Service · Network & domains', helpId: 'service.network' },
       { label: 'Hub (templates)', helpId: 'hub' },
+      { label: 'Secret managers (Vault, AWS)', helpId: 'settings.secret-managers' },
+    ],
+  },
+
+  'settings.secret-managers': {
+    title: 'Settings · Secret managers',
+    summary:
+      'HashiCorp Vault / OpenBao (KV v2) and AWS Secrets Manager, configured by an operator under Integrations. They run beside the Infisical / Doppler provider and resolve references at deploy time.',
+    sections: [
+      {
+        heading: 'Reference syntax',
+        bullets: [
+          `${REF_VAULT}: a field of a KV v2 secret; the path is relative to the configured mount.`,
+          `${REF_AWS}: the whole SecretString of a secret (a name or a full ARN).`,
+          `${REF_AWS_KEY}: one key of a JSON SecretString.`,
+        ],
+        tip: 'While a provider is not configured or is disabled, its references stay literal and the deploy log warns, so the container receives the reference text rather than a secret.',
+      },
+      {
+        heading: 'Credentials',
+        bullets: [
+          'Vault: a token (use a periodic token; it is not renewed) or an AppRole role id and secret id. Enterprise / OpenBao namespaces are supported.',
+          'AWS: an access key id and secret access key, optionally assuming a role (with an external id). Instance and ECS roles are not supported.',
+          'Credentials are write-only: leave a field blank to keep the stored value. Test connection proves them, optionally reading a probe path or secret.',
+          'Addresses must be https; an internal Vault needs NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1.',
+        ],
+      },
+      {
+        heading: 'Who may use references',
+        body: [
+          'The "Allowed workspaces" list on the same page governs every provider: only services owned by an operator, or tagged into an allowed workspace, may resolve references.',
+        ],
+      },
+    ],
+    related: [
+      { label: 'Settings · Integrations', helpId: 'settings.integrations' },
+      { label: 'Service · Environment (vault refs)', helpId: 'service.environment' },
     ],
   },
 

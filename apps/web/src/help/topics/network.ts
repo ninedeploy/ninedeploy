@@ -55,6 +55,69 @@ export const NETWORK_TOPICS: Record<string, HelpTopic> = {
       { label: 'Domains', helpId: 'domains' },
       { label: 'Service · Network & domains', helpId: 'service.network' },
       { label: 'Tunnels (Cloudflare)', helpId: 'tunnels' },
+      { label: 'Traefik · Custom config', helpId: 'traefik.custom-config' },
+      { label: 'Traefik · Uploaded certificates', helpId: 'traefik.certificates' },
+    ],
+  },
+
+  'traefik.custom-config': {
+    title: 'Traefik · Custom config',
+    summary:
+      'Operator-only extra Traefik dynamic config (routers, services, middlewares, TLS options) kept in custom.yml beside the generated routes. The panel never edits it, and it survives restarts and upgrades.',
+    sections: [
+      {
+        heading: 'Rules a custom config must follow',
+        bullets: [
+          'Top level: http (routers, middlewares, services, serversTransports), tcp (routers, services, middlewares) and tls.options only.',
+          'Every name you define starts with custom- or custom_, so it can never collide with a generated route.',
+          'HTTP routers use the web / websecure entry points; TCP routers must list websecure. Priorities stay below the panel router.',
+          'The only certificate resolver is letsencrypt, and it needs an ACME email.',
+          'Refused: udp, tls.certificates and tls.stores (upload certificates instead), plugins, file paths (certFile, keyFile, CA files), YAML aliases and merge keys.',
+          'Node proxies do not receive the custom config.',
+        ],
+      },
+      {
+        heading: 'Validate, save and revert',
+        steps: [
+          'Validate checks the panel rules without changing anything.',
+          'Save runs the rules again, test-loads the file in a throwaway Traefik, then writes it and watches the live proxy.',
+          'If the live Traefik rejects the file, the last good version is restored (or the file removed) and the status shows "rejected" with the error.',
+        ],
+        tip: 'Referencing a generated name (a router or service the panel made for a domain) works but warns: it changes or disappears when that domain does.',
+      },
+    ],
+    related: [
+      { label: 'Traefik', helpId: 'traefik' },
+      { label: 'Traefik · Uploaded certificates', helpId: 'traefik.certificates' },
+    ],
+  },
+
+  'traefik.certificates': {
+    title: 'Traefik · Uploaded certificates',
+    summary:
+      "Operator-only TLS certificates you upload (a purchased wildcard, an internal CA). An SSL domain fully covered by a valid uploaded certificate is served with it instead of Let's Encrypt.",
+    sections: [
+      {
+        heading: 'Uploading',
+        bullets: [
+          'Paste or pick the PEM chain (leaf first) and the unencrypted private key. RSA 2048 or larger, ECDSA P-256/P-384 or Ed25519.',
+          'Hostnames come from the certificate SAN list; a wildcard matches one label (*.example.com covers app.example.com, not a.b.example.com).',
+          'The private key is stored encrypted and is never shown again, by the panel or the API.',
+        ],
+      },
+      {
+        heading: 'Coverage and expiry',
+        bullets: [
+          "A www pair needs both names covered; otherwise the domain keeps Let's Encrypt.",
+          "Expired certificates stop matching and their domains fall back to Let's Encrypt. Uploaded certificates are not renewed: replace them before they expire.",
+          "Deleting a certificate sends its domains back to Let's Encrypt.",
+        ],
+        tip: 'Public database access in TLS-terminate mode also uses an uploaded certificate covering its hostname.',
+      },
+    ],
+    related: [
+      { label: 'Traefik', helpId: 'traefik' },
+      { label: 'Domains', helpId: 'domains' },
     ],
   },
 

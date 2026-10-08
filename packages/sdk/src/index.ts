@@ -141,6 +141,25 @@ import type {
   ServiceGithubLink,
   ServiceGithubLinkPut,
   ServiceGithubStatus,
+  PublicAccessPut,
+  PublicAccessStatus,
+  DatabaseImport,
+  DatabaseImportCreate,
+  DatabaseImportOptions,
+  BackupDestinationObject,
+  TraefikCustomConfig,
+  TraefikCustomConfigApplied,
+  TraefikCustomConfigValidation,
+  CustomCertificate,
+  CustomCertificateReplace,
+  CustomCertificateSaved,
+  CustomCertificateUpload,
+  SecretProviderKind,
+  SecretProviderTestRequest,
+  SecretProviderTestResult,
+  SecretProviderView,
+  VaultProviderPut,
+  AwsProviderPut,
 } from '@ninedeploy/schemas';
 import { NineDeployError } from './errors.js';
 
@@ -567,6 +586,63 @@ export interface AcceptDomainTransferResult {
   domainId: number;
   serviceId: number;
   hostname: string;
+}
+
+/** 0.14: the credentials route adds the public endpoint while public access is on. */
+export type DatabaseCredentialsWithPublic = DatabaseCredentials & {
+  /** Present when public access is enabled; `?sslmode=require` (postgres) in terminate mode. */
+  publicConnectionString?: string | null;
+};
+
+/** 0.14: an import that no longer changes (`DatabaseImport['status']`). */
+export const DATABASE_IMPORT_FINISHED_STATUSES: ReadonlyArray<DatabaseImport['status']> = [
+  'completed',
+  'completed_with_warnings',
+  'failed',
+  'cancelled',
+  'expired',
+];
+
+/** 0.14: `databases.imports.wait` polling options. */
+export interface ImportWaitOptions {
+  /**
+   * `finished` (default) waits for a final status; `uploaded` returns as soon
+   * as the import leaves `uploading` (an S3 download landing in `pending`).
+   */
+  until?: 'finished' | 'uploaded';
+  /** Poll interval, default 2000 ms. */
+  intervalMs?: number;
+  /** Give up after this long (default: never). Throws `import_wait_timeout`. */
+  timeoutMs?: number;
+  /** Called with every polled row. */
+  onStatus?: (row: DatabaseImport) => void;
+}
+
+/**
+ * 0.14: the bytes `databases.importFile` uploads. A factory receives the byte
+ * offset to resume from, so a seekable source (a browser `File`, a file
+ * handle) skips what the server already holds without re-reading it.
+ */
+export type ImportFileData = Uint8Array | AsyncIterable<Uint8Array> | ((offset: number) => AsyncIterable<Uint8Array>);
+
+/** 0.14: `databases.importFile` options. */
+export interface ImportFileOptions {
+  /** Required unless `data` is a Uint8Array (or `resumeImportId` is given). */
+  sizeBytes?: number;
+  filename?: string;
+  /** Hex sha256 of the whole file; the server checks it before starting. */
+  sha256?: string;
+  options?: DatabaseImportOptions;
+  /** Continue an `uploading` (or start a `pending`) import from where the server stands. */
+  resumeImportId?: number;
+  /** Start the import once uploaded (default true). */
+  start?: boolean;
+  /** Poll after starting until the import finishes. */
+  poll?: boolean | Omit<ImportWaitOptions, 'until'>;
+  /** Called once with the new import row (persist its id to resume later). */
+  onCreated?: (row: DatabaseImport) => void;
+  /** Called after every accepted chunk. */
+  onProgress?: (progress: { receivedBytes: number; sizeBytes: number; row: DatabaseImport }) => void;
 }
 
 export interface NineDeployClientOptions {
@@ -1214,6 +1290,17 @@ export interface NineDeployClient {
       rotate: () => Promise<{ ok: boolean; enabled: boolean; token: string }>;
       disable: () => Promise<{ ok: boolean; enabled: boolean }>;
     };
+    /**
+     * 0.14: HashiCorp Vault / OpenBao and AWS Secrets Manager (operator-only).
+     * Credentials are write-only: `list` never returns them, and an omitted
+     * credential field on `set` keeps the stored value.
+     */
+    secretProviders: {
+      list: () => Promise<SecretProviderView[]>;
+      set: <K extends SecretProviderKind>(kind: K, input: K extends 'vault' ? VaultProviderPut : AwsProviderPut) => Promise<SecretProviderView>;
+      delete: (kind: SecretProviderKind) => Promise<{ ok: boolean; deleted: boolean }>;
+      test: (kind: SecretProviderKind, probe?: SecretProviderTestRequest) => Promise<SecretProviderTestResult>;
+    };
   };
   firewall: {
     status: () => Promise<{
@@ -1390,7 +1477,7 @@ export interface NineDeployClient {
     stop: (id: number) => Promise<void>;
     start: (id: number) => Promise<void>;
     logs: (id: number, lines?: number) => Promise<{ logs: string[] }>;
-    credentials: (id: number) => Promise<DatabaseCredentials>;
+    credentials: (id: number) => Promise<DatabaseCredentialsWithPublic>;
     setLimits: (id: number, input: SetLimitsInput) => Promise<{ cpuShares: number | null; memLimitMb: number | null }>;
     startStudio: (id: number, port?: number) => Promise<{ ok: boolean; port: number; url: string }>;
     stopStudio: (id: number) => Promise<{ ok: boolean }>;
@@ -1423,6 +1510,41 @@ export interface NineDeployClient {
     drillBackup: (id: number, input: { backupId: number }) => Promise<BackupDrillResult>;
     /** List the most recent drills for a database, newest first. */
     drills: (id: number) => Promise<BackupDrillEntry[]>;
+    /**
+     * 0.14: public access through a per-database Traefik TCP sidecar. Reading
+     * needs `admin` on the database; `set` and `disable` are operator-only.
+     * Public access exposes the database's ROOT credentials.
+     */
+    publicAccess: {
+      get: (id: number) => Promise<PublicAccessStatus>;
+      /** Applies synchronously; answers the GET shape. */
+      set: (id: number, input: PublicAccessPut) => Promise<PublicAccessStatus>;
+      disable: (id: number) => Promise<{ ok: boolean }>;
+    };
+    /**
+     * 0.14: dump imports. Uploads are chunked at the server-advertised
+     * `chunkSize`; an S3 source (operator-only) downloads in the background
+     * (`uploading` → `pending`) and is then started like an upload.
+     */
+    imports: {
+      create: (id: number, input: DatabaseImportCreate) => Promise<DatabaseImport>;
+      /** Chunk `index` must be the next one (`receivedBytes / chunkSize`). */
+      uploadChunk: (id: number, importId: number, index: number, chunk: Uint8Array) => Promise<DatabaseImport>;
+      /** 202: the job runs in the background; poll `get` or use `wait`. */
+      start: (id: number, importId: number) => Promise<DatabaseImport>;
+      list: (id: number) => Promise<DatabaseImport[]>;
+      get: (id: number, importId: number) => Promise<DatabaseImport>;
+      /** Cancels an `uploading` or `pending` import. */
+      cancel: (id: number, importId: number) => Promise<DatabaseImport>;
+      /** Poll until the import finishes (or, with `until: 'uploaded'`, leaves `uploading`). */
+      wait: (id: number, importId: number, opts?: ImportWaitOptions) => Promise<DatabaseImport>;
+    };
+    /**
+     * 0.14: upload a dump in chunks (resuming from the server's
+     * `receivedBytes` when `resumeImportId` is given), start it, and
+     * optionally poll until it finishes.
+     */
+    importFile: (id: number, data: ImportFileData, opts?: ImportFileOptions) => Promise<DatabaseImport>;
   };
   attachments: {
     list: (serviceId: number) => Promise<Attachment[]>;
@@ -1523,6 +1645,8 @@ export interface NineDeployClient {
     update: (id: number, input: Partial<{ name: string; endpoint: string; region: string; bucket: string; prefix: string; active: boolean; accessKeyId: string; secretAccessKey: string }>) => Promise<{ ok: boolean }>;
     remove: (id: number) => Promise<{ ok: boolean }>;
     test: (id: number) => Promise<{ ok: boolean }>;
+    /** 0.14: list objects (operator-only); `prefix` defaults to the destination prefix. */
+    objects: (id: number, prefix?: string) => Promise<BackupDestinationObject[]>;
   };
   /**
    * r552: aligned with apps/server/src/modules/jobs.ts — `kind` includes
@@ -1611,6 +1735,24 @@ export interface NineDeployClient {
      * this call allows up to 10 minutes unless the client disabled timeouts.
      */
     update: () => Promise<{ ok: boolean; newVersion: string | null }>;
+    /**
+     * 0.14: the operator's custom dynamic config (`custom.yml`). `set` throws
+     * a NineDeployError whose `details` is `{ errors, warnings }` on a refusal.
+     */
+    customConfig: {
+      get: () => Promise<TraefikCustomConfig>;
+      /** No state change. */
+      validate: (content: string) => Promise<TraefikCustomConfigValidation>;
+      set: (content: string) => Promise<TraefikCustomConfigApplied>;
+      clear: () => Promise<{ ok: boolean; cleared: boolean }>;
+    };
+    /** 0.14: uploaded TLS certificates (operator-only). No response carries a private key. */
+    customCertificates: {
+      list: () => Promise<CustomCertificate[]>;
+      upload: (input: CustomCertificateUpload) => Promise<CustomCertificateSaved>;
+      replace: (id: number, input: CustomCertificateReplace) => Promise<CustomCertificateSaved>;
+      delete: (id: number) => Promise<{ ok: boolean }>;
+    };
   };
   config: {
     list: (query?: { category?: string; pluginId?: string; reveal?: boolean }) => Promise<ConfigListResponse>;
@@ -1731,10 +1873,56 @@ interface RequestInit {
    * DOM lib types, and only `AbortSignal.timeout()` ever produces one here.
    */
   signal?: unknown;
+  /** 0.14: a binary body, sent as-is (`application/octet-stream`). */
+  raw?: Uint8Array;
+  /** 0.14: keep a refusal's top-level `errors` / `warnings` as the error's `details`. */
+  findings?: boolean;
 }
 
 const NO_FETCH = (): Promise<never> =>
   Promise.reject(new NineDeployError(0, 'no_fetch', 'No fetch implementation is available'));
+
+/** 0.14: the import bytes from `offset` on (a factory seeks; the rest skip). */
+async function* sourceFrom(data: ImportFileData, offset: number): AsyncIterable<Uint8Array> {
+  if (data instanceof Uint8Array) {
+    yield data.subarray(offset);
+    return;
+  }
+  if (typeof data === 'function') {
+    yield* data(offset);
+    return;
+  }
+  let skip = offset;
+  for await (const piece of data) {
+    if (skip >= piece.length) {
+      skip -= piece.length;
+      continue;
+    }
+    yield skip > 0 ? piece.subarray(skip) : piece;
+    skip = 0;
+  }
+}
+
+/** 0.14: re-cut a byte stream into `size`-byte chunks (the last one shorter). */
+async function* rechunk(source: AsyncIterable<Uint8Array>, size: number): AsyncIterable<Uint8Array> {
+  let buf = new Uint8Array(size);
+  let len = 0;
+  for await (const piece of source) {
+    let at = 0;
+    while (at < piece.length) {
+      const take = Math.min(size - len, piece.length - at);
+      buf.set(piece.subarray(at, at + take), len);
+      len += take;
+      at += take;
+      if (len === size) {
+        yield buf;
+        buf = new Uint8Array(size);
+        len = 0;
+      }
+    }
+  }
+  if (len > 0) yield buf.subarray(0, len);
+}
 
 /**
  * Create a typed NineDeploy API client. Used by both the web dashboard and the CLI.
@@ -1776,6 +1964,11 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       body,
     };
     if (init.credentials !== undefined) out.credentials = init.credentials;
+    if (init.raw !== undefined) {
+      // Attached opaquely, like the signal: FetchLike's `body` stays `string`.
+      headers['Content-Type'] = 'application/octet-stream';
+      (out as { body?: unknown }).body = init.raw;
+    }
     if (timeoutMs > 0) {
       const abort = (globalThis as { AbortSignal?: { timeout: (ms: number) => unknown } }).AbortSignal;
       if (abort) (out as { signal?: unknown }).signal = abort.timeout(timeoutMs);
@@ -1795,7 +1988,15 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
 
     if (!res.ok) {
       if (parsed === undefined) throw new NineDeployError(res.status, 'http_error', `Request failed (${res.status})`);
-      throw NineDeployError.fromBody(res.status, parsed);
+      const failure = NineDeployError.fromBody(res.status, parsed);
+      const findings = parsed as { errors?: unknown; warnings?: unknown };
+      if (init.findings && Array.isArray(findings.errors)) {
+        throw new NineDeployError(failure.status, failure.code, failure.message, {
+          errors: findings.errors,
+          warnings: Array.isArray(findings.warnings) ? findings.warnings : [],
+        });
+      }
+      throw failure;
     }
     // An ok response with an empty/unparseable body (204s, HTML pages from a
     // misconfigured proxy) must never resolve to `undefined` — query functions
@@ -1815,6 +2016,71 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
 
   const get = <T>(path: string) => request<T>(path);
   const send = <T>(method: string, path: string, body?: unknown) => request<T>(path, { method, body });
+
+  // ── 0.14 dump import helpers ─────────────────────────────────────────────
+  const importPath = (id: number, importId?: number) => `/v1/databases/${id}/imports${importId === undefined ? '' : `/${importId}`}`;
+  const getImport = (id: number, importId: number) => get<DatabaseImport>(importPath(id, importId));
+  /** An 8 MiB chunk over a slow uplink outlasts the default 30 s budget. */
+  const CHUNK_TIMEOUT_MS = 10 * 60_000;
+  const uploadChunk = (id: number, importId: number, index: number, chunk: Uint8Array) =>
+    request<DatabaseImport>(`${importPath(id, importId)}/chunks/${index}`, { method: 'PUT', raw: chunk }, CHUNK_TIMEOUT_MS);
+  const startImport = (id: number, importId: number) => send<DatabaseImport>('POST', `${importPath(id, importId)}/start`);
+  const sleep = (ms: number) =>
+    new Promise<void>((resolve) => {
+      (globalThis as unknown as { setTimeout: (fn: () => void, ms: number) => unknown }).setTimeout(resolve, ms);
+    });
+
+  async function waitForImport(id: number, importId: number, o: ImportWaitOptions = {}): Promise<DatabaseImport> {
+    const interval = o.intervalMs ?? 2000;
+    const deadline = o.timeoutMs === undefined ? Number.POSITIVE_INFINITY : Date.now() + o.timeoutMs;
+    for (;;) {
+      const row = await getImport(id, importId);
+      o.onStatus?.(row);
+      const done = o.until === 'uploaded' ? row.status !== 'uploading' : DATABASE_IMPORT_FINISHED_STATUSES.includes(row.status);
+      if (done) return row;
+      if (Date.now() + interval > deadline) {
+        throw new NineDeployError(0, 'import_wait_timeout', `Import ${importId} is still ${row.status}`);
+      }
+      await sleep(interval);
+    }
+  }
+
+  async function importFile(id: number, data: ImportFileData, opts: ImportFileOptions = {}): Promise<DatabaseImport> {
+    const declared = data instanceof Uint8Array ? data.length : opts.sizeBytes;
+    let row: DatabaseImport;
+    if (opts.resumeImportId !== undefined) {
+      row = await getImport(id, opts.resumeImportId);
+    } else {
+      if (declared === undefined) throw new NineDeployError(0, 'import_size_required', 'sizeBytes is required for a streamed import');
+      const input: DatabaseImportCreate = { source: 'upload', sizeBytes: declared };
+      if (opts.sha256 !== undefined) input.sha256 = opts.sha256;
+      if (opts.filename !== undefined) input.filename = opts.filename;
+      if (opts.options !== undefined) input.options = opts.options;
+      row = await send<DatabaseImport>('POST', importPath(id), input);
+      opts.onCreated?.(row);
+    }
+    const size = row.sizeBytes;
+    const mismatch = (what: string) =>
+      new NineDeployError(0, 'import_size_mismatch', `The data is ${what} than the import's declared ${size} bytes`);
+    if (declared !== undefined && declared !== size) throw mismatch(declared > size ? 'larger' : 'smaller');
+
+    if (row.status === 'uploading') {
+      let index = row.receivedBytes / row.chunkSize;
+      for await (const chunk of rechunk(sourceFrom(data, row.receivedBytes), row.chunkSize)) {
+        if (row.receivedBytes + chunk.length > size) throw mismatch('larger');
+        row = await uploadChunk(id, row.id, index, chunk);
+        index += 1;
+        opts.onProgress?.({ receivedBytes: row.receivedBytes, sizeBytes: size, row });
+      }
+      if (row.receivedBytes < size) throw mismatch('smaller');
+    } else if (row.status !== 'pending') {
+      throw new NineDeployError(409, 'import_not_resumable', `Import ${row.id} is ${row.status}; only an uploading or pending import can continue`);
+    }
+    if (opts.start === false) return row;
+    row = await startImport(id, row.id);
+    if (!opts.poll) return row;
+    return waitForImport(id, row.id, opts.poll === true ? {} : opts.poll);
+  }
 
   return {
     auth: {
@@ -2291,6 +2557,13 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
         rotate: () => send<{ ok: boolean; enabled: boolean; token: string }>('POST', '/v1/settings/enrolment/rotate'),
         disable: () => send<{ ok: boolean; enabled: boolean }>('DELETE', '/v1/settings/enrolment'),
       },
+      secretProviders: {
+        list: () => get<SecretProviderView[]>('/v1/settings/secret-providers'),
+        set: (kind, input) => send<SecretProviderView>('PUT', `/v1/settings/secret-providers/${kind}`, input),
+        delete: (kind) => send<{ ok: boolean; deleted: boolean }>('DELETE', `/v1/settings/secret-providers/${kind}`),
+        test: (kind, probe) =>
+          send<SecretProviderTestResult>('POST', `/v1/settings/secret-providers/${kind}/test`, probe ?? {}),
+      },
     },
     firewall: {
       status: () => get<any>('/v1/firewall'),
@@ -2391,7 +2664,7 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
         await request(`/v1/databases/${id}/start`, { method: 'POST' });
       },
       logs: (id, lines) => get<{ logs: string[] }>(`/v1/databases/${id}/logs${lines ? `?lines=${lines}` : ''}`),
-      credentials: (id) => get<DatabaseCredentials>(`/v1/databases/${id}/credentials`),
+      credentials: (id) => get<DatabaseCredentialsWithPublic>(`/v1/databases/${id}/credentials`),
       setLimits: (id, input) => send<{ cpuShares: number | null; cpuLimitMilli: number | null; memLimitMb: number | null }>('PATCH', `/v1/databases/${id}/limits`, input),
       startStudio: (id, port) => send<{ ok: boolean; port: number; url: string }>('POST', `/v1/databases/${id}/studio`, { port }),
       stopStudio: async (id) => {
@@ -2406,6 +2679,21 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
         send<PgbouncerStatus>('POST', `/v1/databases/${id}/pgbouncer/enable`, input ?? {}),
       disablePgbouncer: (id) =>
         send<PgbouncerStatus>('POST', `/v1/databases/${id}/pgbouncer/disable`, {}),
+      publicAccess: {
+        get: (id) => get<PublicAccessStatus>(`/v1/databases/${id}/public-access`),
+        set: (id, input) => send<PublicAccessStatus>('PUT', `/v1/databases/${id}/public-access`, input),
+        disable: (id) => send<{ ok: boolean }>('DELETE', `/v1/databases/${id}/public-access`),
+      },
+      imports: {
+        create: (id, input) => send<DatabaseImport>('POST', importPath(id), input),
+        uploadChunk,
+        start: startImport,
+        list: (id) => get<DatabaseImport[]>(importPath(id)),
+        get: getImport,
+        cancel: (id, importId) => send<DatabaseImport>('DELETE', importPath(id, importId)),
+        wait: waitForImport,
+      },
+      importFile,
     },
     attachments: {
       list: (serviceId) => get<Attachment[]>(`/v1/services/${serviceId}/attachments`),
@@ -2526,6 +2814,10 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       update: (id, input) => send<{ ok: boolean }>('PATCH', `/v1/backup-destinations/${id}`, input),
       remove: (id) => send<{ ok: boolean }>('DELETE', `/v1/backup-destinations/${id}`),
       test: (id) => send<{ ok: boolean }>('POST', `/v1/backup-destinations/${id}/test`),
+      objects: (id, prefix) =>
+        get<BackupDestinationObject[]>(
+          `/v1/backup-destinations/${id}/objects${prefix === undefined ? '' : `?prefix=${encodeURIComponent(prefix)}`}`,
+        ),
     },
     jobs: {
       list: (serviceId) => get(`/v1/services/${serviceId}/jobs`),
@@ -2574,6 +2866,19 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       config: () => get<TraefikRoutingConfig>('/v1/traefik/config'),
       version: () => get<TraefikVersionInfo>('/v1/traefik/version'),
       update: () => request<{ ok: boolean; newVersion: string | null }>('/v1/traefik/update', { method: 'POST' }, 10 * 60_000),
+      customConfig: {
+        get: () => get<TraefikCustomConfig>('/v1/traefik/custom-config'),
+        validate: (content) => send<TraefikCustomConfigValidation>('POST', '/v1/traefik/custom-config/validate', { content }),
+        set: (content) =>
+          request<TraefikCustomConfigApplied>('/v1/traefik/custom-config', { method: 'PUT', body: { content }, findings: true }),
+        clear: () => send<{ ok: boolean; cleared: boolean }>('DELETE', '/v1/traefik/custom-config'),
+      },
+      customCertificates: {
+        list: () => get<CustomCertificate[]>('/v1/traefik/certificates/custom'),
+        upload: (input) => send<CustomCertificateSaved>('POST', '/v1/traefik/certificates/custom', input),
+        replace: (id, input) => send<CustomCertificateSaved>('PUT', `/v1/traefik/certificates/custom/${id}`, input),
+        delete: (id) => send<{ ok: boolean }>('DELETE', `/v1/traefik/certificates/custom/${id}`),
+      },
     },
     config: {
       list: (query) => {
