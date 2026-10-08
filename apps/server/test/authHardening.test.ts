@@ -12,6 +12,9 @@ import { sha256 } from '../src/lib/crypto.js';
 // on ready; the worker/collector/backup schedulers would start real timers and
 // docker calls. Same stubs as app.test.ts / oidc.test.ts.
 vi.mock('../src/plugins/traefik.js', () => ({ default: vi.fn(async () => undefined) }));
+// 0.14 background plugins: inert here, so booting the app never reaches the host's Docker (public-DB sidecars) or staging files (imports).
+vi.mock('../src/plugins/publicDatabaseAccess.js', () => ({ default: vi.fn(async () => undefined) }));
+vi.mock('../src/plugins/databaseImports.js', () => ({ default: vi.fn(async () => undefined) }));
 vi.mock('../src/plugins/worker.js', () => ({ default: vi.fn(async () => undefined) }));
 vi.mock('../src/plugins/collector.js', () => ({ default: vi.fn(async () => undefined) }));
 vi.mock('../src/plugins/backupScheduler.js', () => ({ default: vi.fn(async () => undefined) }));

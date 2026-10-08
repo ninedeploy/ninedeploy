@@ -33,6 +33,9 @@ import { issueSessionTokens } from '../src/lib/sessions.js';
 // on ready, pointed at this test's data dir — a test run on a developer box
 // would silently re-plumb their local proxy. Same stub as app.test.ts.
 vi.mock('../src/plugins/traefik.js', () => ({ default: vi.fn(async () => undefined) }));
+// 0.14 background plugins: inert here, so booting the app never reaches the host's Docker (public-DB sidecars) or staging files (imports).
+vi.mock('../src/plugins/publicDatabaseAccess.js', () => ({ default: vi.fn(async () => undefined) }));
+vi.mock('../src/plugins/databaseImports.js', () => ({ default: vi.fn(async () => undefined) }));
 
 const MIGRATIONS = fileURLToPath(
   new URL('../../../packages/db/src/migrations', import.meta.url),

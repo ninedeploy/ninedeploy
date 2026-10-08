@@ -64,3 +64,15 @@ export function deploymentLabels(deploymentId: number, serviceId: number | undef
   if (typeof serviceId === 'number') out.push([SERVICE_LABEL, String(serviceId)]);
   return out;
 }
+
+/**
+ * 0.14: the per-database public-access sidecar (`nd-dbpub-<slug>`), a Traefik
+ * TCP proxy that publishes one host port in front of a managed database
+ * (`lib/publicDatabaseAccess.ts`). The label carries the database id so the
+ * watchdog can find (and remove) orphans without guessing from names; the
+ * config label is the sha256 over the static config, the host port and the
+ * image, so a port or image change is never mistaken for "already running".
+ */
+export const DBPUB_CONTAINER_PREFIX = 'nd-dbpub-';
+export const PUBLIC_DB_LABEL = 'ninedeploy.public-db';
+export const DBPUB_CONFIG_LABEL = 'ninedeploy.dbpub.config-sha';

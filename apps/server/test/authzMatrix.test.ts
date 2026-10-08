@@ -996,6 +996,13 @@ export const MATRIX: Record<string, Rule> = {
   'DELETE /v1/traefik/certificates/custom/:id': OP,
   // ── end 0.14 T2 ──
   // ── 0.14 T3 public access ──
+  // Reading needs admin on the database (it names the port and the
+  // allow-list). Changing it is operator-only: it spends a host port and puts
+  // root credentials within reach of the internet. The at-floor PUT sends
+  // `{}` (a 400 before anything runs); DELETE without a row is a no-op.
+  'GET /v1/databases/:id/public-access': R('admin'),
+  'PUT /v1/databases/:id/public-access': OP,
+  'DELETE /v1/databases/:id/public-access': OP,
   // ── end 0.14 T3 ──
   // ── 0.14 T4 database import ──
   'GET /v1/databases/:id/imports': R('admin'),

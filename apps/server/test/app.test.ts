@@ -16,6 +16,9 @@ const infra = vi.hoisted(() => ({
 // mock them as no-ops so the app under test stays hermetic.
 vi.mock('../src/plugins/worker.js', () => ({ default: infra.worker }));
 vi.mock('../src/plugins/traefik.js', () => ({ default: infra.traefik }));
+// 0.14 background plugins: inert here, so booting the app never reaches the host's Docker (public-DB sidecars) or staging files (imports).
+vi.mock('../src/plugins/publicDatabaseAccess.js', () => ({ default: vi.fn(async () => undefined) }));
+vi.mock('../src/plugins/databaseImports.js', () => ({ default: vi.fn(async () => undefined) }));
 vi.mock('../src/plugins/collector.js', () => ({ default: infra.collector }));
 vi.mock('../src/plugins/backupScheduler.js', () => ({ default: infra.backups }));
 

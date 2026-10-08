@@ -20,6 +20,12 @@ import {
 } from '../engine/database.js';
 import { decrypt, encrypt, randomToken } from '../lib/crypto.js';
 import { disablePgbouncer } from '../lib/pgbouncer.js';
+import {
+  getPublicAccessRow,
+  publicAccessSummaries,
+  removePublicAccessSidecar,
+  resolvePublicHost,
+} from '../lib/publicDatabaseAccess.js';
 import { capture } from '../lib/exec.js';
 import { serviceBridgeName } from '../lib/serviceBridge.js';
 import { deleteRemoteBackupForRetention } from '../lib/backupRemote.js';
@@ -67,7 +73,7 @@ function serialize(
       service?: { id: number; name: string; slug: string } | null;
     }>;
   },
-  opts: { isAdmin: boolean } = { isAdmin: true },
+  opts: { isAdmin: boolean; publicAccess?: { enabled: boolean; port: number } | null } = { isAdmin: true },
 ) {
   const cfg = ENGINES[d.engine];
   const attachedServices =
@@ -99,6 +105,8 @@ function serialize(
     webGuiPort: d.webGuiPort,
     extensions: d.extensions,
     attachedServices,
+    // 0.14 (M7): `{ enabled, port }` when public access was ever configured.
+    publicAccess: opts.publicAccess ?? null,
     createdAt: d.createdAt.toISOString(),
     updatedAt: d.updatedAt.toISOString(),
   };
@@ -129,7 +137,10 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
       ...(scoped != null && { where: (d, { eq }) => eq(d.projectId, scoped) }),
     });
     const scopedRows = visible === null ? rows : rows.filter((d) => visible.includes(d.id));
-    return scopedRows.map((d) => serialize(d, { isAdmin: isAdminUser }));
+    const publicAccess = await publicAccessSummaries(app.db, scopedRows.map((d) => d.id));
+    return scopedRows.map((d) =>
+      serialize(d, { isAdmin: isAdminUser, publicAccess: publicAccess.get(d.id) ?? null }),
+    );
   });
 
   app.post('/', async (req) => {
@@ -214,7 +225,11 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
               })
               .where(eq(databases.id, existing.id));
             void audit(app.db, req.user!.id, 'database.reuse', existing.name);
-            return { kind: 'reused' as const, payload: serialize(resumed, { isAdmin: req.user?.isOperator === true }) };
+            const publicAccess = (await publicAccessSummaries(app.db, [existing.id])).get(existing.id) ?? null;
+            return {
+              kind: 'reused' as const,
+              payload: serialize(resumed, { isAdmin: req.user?.isOperator === true, publicAccess }),
+            };
           } catch (err) {
             await app.db.update(databases).set({ status: 'error' }).where(eq(databases.id, existing.id));
             throw badRequest(`Failed to start database: ${err instanceof Error ? err.message : err}`);
@@ -299,7 +314,8 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
       with: { attachments: { with: { service: true } } },
     });
     if (!d) throw notFound('Database not found');
-    return serialize(d, { isAdmin: req.user?.isOperator === true });
+    const publicAccess = (await publicAccessSummaries(app.db, [d.id])).get(d.id) ?? null;
+    return serialize(d, { isAdmin: req.user?.isOperator === true, publicAccess });
   });
 
   // Start Web Studio (Adminer / Redis Commander GUI) for this database.
@@ -390,6 +406,10 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
     await disablePgbouncer(app.db, d, dbLog).catch((err: unknown) =>
       req.log.warn({ err }, 'failed to remove the PgBouncer sidecar after database delete'),
     );
+    // 0.14 (M6): the public-access proxy goes before the row transaction (the
+    // FK cascade then drops its row). It never throws; a leftover container
+    // is an orphan the watchdog removes.
+    await removePublicAccessSidecar(app.db, d, dbLog);
     // Capture the dump paths BEFORE the transaction deletes the rows.
     const backupRows = await app.db.query.backups.findMany({ where: eq(backups.databaseId, d.id) });
     // Atomic row removal (attachments + backups + the database itself commit
@@ -547,9 +567,38 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
       internalHost: d.internalHost,
       internalPort: d.internalPort,
       connectionString: connStr,
+      // 0.14 (M7): the URI through the public-access proxy, while it is enabled.
+      publicConnectionString: await publicConnectionString(app.db, d, password),
     };
   });
 };
+
+/**
+ * 0.14 (M7): the connection URI through the public-access sidecar, or null
+ * while public access is off. Postgres in terminate mode gets
+ * `?sslmode=require` (Traefik's default certificate cannot pass verify-full
+ * unless an uploaded certificate covers the host); redis/valkey get the TLS
+ * scheme and mongo `tls=true`. Never throws: the credentials reveal must not
+ * fail because the public-access table is unreadable.
+ */
+async function publicConnectionString(db: Parameters<typeof getPublicAccessRow>[0], d: Database, password: string) {
+  try {
+    const row = await getPublicAccessRow(db, d.id);
+    const cfg = ENGINES[d.engine];
+    if (!row?.enabled || !cfg) return null;
+    const host = await resolvePublicHost(db, row.tlsHostname);
+    if (!host) return null;
+    const uri = cfg.connectionString(host, row.publicPort, cfg.username() ?? '', password, cfg.dbName());
+    if (row.tlsMode !== 'terminate') return uri;
+    if (d.engine === 'postgres') return `${uri}?sslmode=require`;
+    if (d.engine === 'redis') return uri.replace(/^redis:\/\//, 'rediss://');
+    if (d.engine === 'valkey') return uri.replace(/^valkey:\/\//, 'valkeys://');
+    if (d.engine === 'mongo') return `${uri}/?tls=true`;
+    return uri;
+  } catch {
+    return null;
+  }
+}
 
 // ── Service ↔ database attachments ────────────────────────────────────────
 function aliasFor(engine: string): string {
