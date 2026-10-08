@@ -16,7 +16,14 @@ const apiMock = vi.hoisted(() => ({
 
 vi.mock('../src/lib/api.js', () => apiMock);
 
+const formatMock = vi.hoisted(() => ({ downloadBlob: vi.fn() }));
+vi.mock('../src/lib/format.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/format.js')>()),
+  downloadBlob: formatMock.downloadBlob,
+}));
+
 import { EnvCard } from '../src/components/EnvCard.js';
+import { ToastProvider } from '../src/components/Toast.js';
 import { EnvironmentTab } from '../src/routes/service/EnvironmentTab.js';
 
 beforeEach(() => {
@@ -80,5 +87,34 @@ describe('Environment tab — preview deployments section (0.12)', () => {
     expect(apiMock.api.env.list).not.toHaveBeenCalled();
     expect(apiMock.api.env.create).not.toHaveBeenCalled();
     expect(apiMock.api.env.remove).not.toHaveBeenCalled();
+  });
+
+  it('downloads only non-secret preview values as .env.preview', async () => {
+    apiMock.api.previewEnv.list.mockResolvedValue([
+      { id: 9, key: 'STRIPE_KEY', value: '', isSecret: true },
+      { id: 11, key: 'API_URL', value: 'https://staging.example.com', isSecret: false },
+    ]);
+    renderWithProviders(<EnvCard serviceId={7} variant="preview" />, { queryClient: createQueryClient() });
+    await screen.findByText('API_URL');
+    fireEvent.click(screen.getByTitle('Download non-secret env vars as a .env file'));
+    expect(formatMock.downloadBlob).toHaveBeenCalledWith('API_URL=https://staging.example.com\n', '.env.preview', 'text/plain');
+  });
+
+  it('leaves the raw editor with Cancel and reports a failed delete', async () => {
+    apiMock.api.previewEnv.remove.mockRejectedValue(new Error('boom'));
+    renderWithProviders(<EnvCard serviceId={7} variant="preview" />, {
+      queryClient: createQueryClient(),
+      wrapper: (c) => <ToastProvider>{c}</ToastProvider>,
+    });
+    await screen.findByText('STRIPE_KEY');
+
+    fireEvent.click(screen.getByTitle('Paste or edit the whole .env file as text'));
+    expect(screen.getByLabelText('Raw .env content')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByLabelText('Raw .env content')).toBeNull();
+
+    fireEvent.click(screen.getByTitle('Delete'));
+    expect(await screen.findByText('Could not delete the variable')).toBeInTheDocument();
+    expect(apiMock.api.previewEnv.remove).toHaveBeenCalledWith(7, 9);
   });
 });
