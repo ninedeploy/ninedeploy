@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-10-09
+
+> Security patch: patched releases of two dependencies of the MCP server.
+
+### Upgrade notes
+
+- No migration and no configuration change. Upgrading from 0.15.0 changes nothing except the bundled dependencies.
+
+### Security
+
+- `@modelcontextprotocol/sdk` is now 1.32.1. Versions before 1.31.0 had an OAuth client that could send credentials to an authorization server an attacker steered it to (GHSA-6qxp-vccf-f47h, high).
+- `proxy-addr` is now 2.0.8. Earlier versions could be fooled by IPv4-mapped addresses when deciding a client's IP (critical). It came in through the MCP SDK's HTTP server.
+- NineDeploy's MCP server talks over stdio and uses neither code path, so these were not reachable in practice. Both now resolve to fixed releases anyway.
+- One audit finding remains: `braces`, which pm2 depends on. No fixed release exists yet.
+
+### Changed
+
+- MCP: a tool whose inputs are all optional now runs when called with no arguments, as the MCP specification allows. Tools with a required input still refuse such a call.
+
 ## [0.15.0] - 2026-10-09
 
 > Operations and API: browser and CLI terminals with a real TTY (also on remote nodes), opt-in traffic analytics, an OpenAPI 3.1 document for every route with generated MCP tools, and project- and environment-level access grants. See [docs/TERMINALS.md](docs/TERMINALS.md), [docs/TRAEFIK_INGRESS.md](docs/TRAEFIK_INGRESS.md), [docs/WORKSPACES_RBAC.md](docs/WORKSPACES_RBAC.md) and [docs/AI_MCP_CLI.md](docs/AI_MCP_CLI.md).

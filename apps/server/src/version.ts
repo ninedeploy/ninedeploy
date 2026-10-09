@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.15.0';
+export const VERSION = '0.15.1';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.15.1',
+    date: '2026-10-09',
+    title: 'Security Patch — MCP Dependencies',
+    changes: [
+      'Security patch: the MCP server\'s SDK and its proxy-addr dependency move to fixed releases (an OAuth credential-leak advisory and an IP-spoofing advisory). NineDeploy\'s MCP server runs over stdio and never used either code path; nothing else changes.',
+    ],
+  },
+{
     version: '0.15.0',
     date: '2026-10-09',
     title: 'Operations and API',
