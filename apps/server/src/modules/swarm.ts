@@ -10,8 +10,8 @@ import { capture, run, sleep } from '../lib/exec.js';
 import { assertStepUp } from '../lib/stepUp.js';
 import {
   encryptedOverlayRefusal,
+  exactSwarmNode,
   isLocalInterfaceAddr,
-  joinedNodeRefusal,
   localSwarmInfo,
   parseSwarmInfo,
   RE_SWARM_NODE_ID,
@@ -24,6 +24,7 @@ import {
   swarmManagerAddr,
   swarmStatusView,
   updateNodeLabel,
+  verifyJoinedNode,
   workerJoinToken,
 } from '../lib/swarm.js';
 
@@ -49,6 +50,8 @@ const READ_TIMEOUT_MS = 30_000;
 export const SWARM_DRAIN_WAIT_MS = 5 * 60_000;
 const NODE_DOWN_WAIT_MS = 30_000;
 const POLL_MS = 5000;
+/** GET /v1/swarm asks each linked node for its swarm state; a node that does not answer in time gets no warning. */
+const NODE_INFO_TIMEOUT_MS = 5000;
 /** The agent's opt-in (review M2): unset, the node never joins a swarm. */
 export const AGENT_SWARM_MANAGER_VAR = 'NINEDEPLOY_AGENT_SWARM_MANAGER';
 const msg = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -65,7 +68,41 @@ const ROTATION_WARNING =
 export const swarmRoutes: FastifyPluginAsync = async (app) => {
   const operator = { onRequest: [app.authenticate], preHandler: app.requireOperator };
 
-  app.get('/', operator, async (): Promise<SwarmStatus> => swarmStatusView(app.db));
+  app.get('/', operator, async (): Promise<SwarmStatus> => {
+    const status = await swarmStatusView(app.db);
+    // Review M2: ask each linked node's agent (sealed, best effort, bounded) whether its owner switched
+    // the Docker socket off while the node is still in the swarm. Shown as a warning; nothing leaves.
+    const nodes = await Promise.all(
+      status.nodes.map(async (n) => {
+        if (n.serverId == null) return n;
+        const warning = await socketOffWarning(n.serverId, n.hostname);
+        return warning ? { ...n, warnings: [warning] } : n;
+      }),
+    );
+    return { ...status, nodes };
+  });
+
+  async function socketOffWarning(serverId: number, hostname: string): Promise<string | null> {
+    const lines: string[] = [];
+    const ask = agentOp(app.db, serverId, 'swarm.info', {}, (l) => lines.push(l)).then(
+      () => true,
+      () => false,
+    );
+    let timer: NodeJS.Timeout | undefined;
+    const answered = await Promise.race([ask, new Promise<false>((resolve) => (timer = setTimeout(() => resolve(false), NODE_INFO_TIMEOUT_MS)))]);
+    clearTimeout(timer);
+    if (!answered) return null;
+    const line = lines.map((l) => l.trim()).filter((l) => l.startsWith('{')).at(-1);
+    try {
+      if ((JSON.parse(line ?? '') as { NdDockerSocketOff?: unknown }).NdDockerSocketOff !== true) return null;
+    } catch {
+      return null;
+    }
+    return (
+      `The agent on node ${hostname || `#${serverId}`} has NINEDEPLOY_AGENT_DOCKER_SOCKET=off, but the node is still in the swarm, ` +
+      `where the manager can still schedule tasks on it. Make it leave (POST /v1/servers/${serverId}/swarm/leave), or switch the socket back on.`
+    );
+  }
 
   app.post('/init', { onRequest: [app.authenticate], preHandler: [app.requireOperator, app.requireInteractive] }, async (req): Promise<SwarmStatus> => {
     const input = swarmInit.parse(req.body ?? {});
@@ -220,8 +257,9 @@ export const serverSwarmRoutes: FastifyPluginAsync = async (app) => {
     const warnings = rotated ? [] : [ROTATION_WARNING];
     const nodeInfo = parseSwarmInfo((await nodeOp(agent, 'swarm.info', {}, 'Reading the node’s swarm state')).join('\n'));
     // Review M3: the reported id is a claim; the manager confirms it before anything links or labels it.
-    const refusal = await joinedNodeRefusal(app.db, { id, host: node.host }, nodeInfo.nodeId);
-    if (refusal) {
+    const verified = await verifyJoinedNode(app.db, { id, host: node.host }, nodeInfo.nodeId);
+    if ('refusal' in verified) {
+      const refusal = verified.refusal;
       void audit(app.db, req.user!.id, 'server.swarm.join_refused', node.name, { serverId: id, reason: refusal, tokenRotated: rotated }, { ip: req.ip, userAgent: req.headers['user-agent'] });
       throw new HttpError(
         502,
@@ -229,7 +267,8 @@ export const serverSwarmRoutes: FastifyPluginAsync = async (app) => {
         `Node "${node.name}" was not linked: ${refusal}. It runs no NineDeploy task (it carries no ${SWARM_MEMBER_LABEL} label); check docker node ls on the panel host and remove the node there if it is not yours.`,
       );
     }
-    const nodeId = nodeInfo.nodeId as string;
+    // The manager's full id, never the reported string, from here on.
+    const nodeId = verified.nodeId;
     const labelled = await updateNodeLabel(nodeId, '--label-add', `${SWARM_MEMBER_LABEL}=1`);
     if (!labelled) warnings.push(`The node joined but could not be labelled ${SWARM_MEMBER_LABEL}=1, so it runs no Swarm task yet; leave and join again.`);
     await app.db.update(servers).set({ swarmNodeId: nodeId, swarmRole: 'worker' }).where(eq(servers.id, id));
@@ -253,14 +292,22 @@ export const serverSwarmRoutes: FastifyPluginAsync = async (app) => {
     if (!nodeId) throw new HttpError(409, 'swarm_not_joined', `Node "${existing.name}" is not in the swarm.`);
     if (!RE_SWARM_NODE_ID.test(nodeId)) throw new HttpError(409, 'swarm_not_joined', `Node "${existing.name}" carries an invalid swarm node id; clear it by hand.`);
     const { node, agent } = await swarmNode(id, 'leave the Swarm');
-    // Review M1c: no longer a member first (no new task lands there), then drain (design §7.2).
-    await updateNodeLabel(nodeId, '--label-rm', SWARM_MEMBER_LABEL);
-    await run('docker', ['node', 'update', '--availability', 'drain', '--', nodeId], { timeoutMs: READ_TIMEOUT_MS }, () => undefined).catch((err: unknown) => {
-      if (!/not found|no such node/i.test(msg(err))) throw new HttpError(502, 'swarm_drain_failed', `Could not drain node ${nodeId}: ${msg(err)}`);
-    });
-    const drainDeadline = Date.now() + SWARM_DRAIN_WAIT_MS;
+    // Review M3: Docker also resolves a node by its hostname or an id prefix. Every
+    // docker node command below acts only while the manager knows THIS full id, so a
+    // node gone from the swarm is never confused with another whose name is that id.
+    const known = await exactSwarmNode(nodeId);
     let drained = false;
-    while (Date.now() < drainDeadline) {
+    if (known) {
+      // Review M1c: no longer a member first (no new task lands there), then drain (design §7.2).
+      await updateNodeLabel(nodeId, '--label-rm', SWARM_MEMBER_LABEL);
+      await run('docker', ['node', 'update', '--availability', 'drain', '--', nodeId], { timeoutMs: READ_TIMEOUT_MS }, () => undefined).catch((err: unknown) => {
+        if (!/not found|no such node/i.test(msg(err))) throw new HttpError(502, 'swarm_drain_failed', `Could not drain node ${nodeId}: ${msg(err)}`);
+      });
+    } else {
+      drained = true;
+    }
+    const drainDeadline = Date.now() + SWARM_DRAIN_WAIT_MS;
+    while (known && Date.now() < drainDeadline) {
       const left = await capture('docker', ['node', 'ps', '--filter', 'desired-state=running', '-q', '--', nodeId], { timeoutMs: READ_TIMEOUT_MS }).catch(() => '');
       if (left.trim() === '') {
         drained = true;
@@ -271,15 +318,17 @@ export const serverSwarmRoutes: FastifyPluginAsync = async (app) => {
     await nodeOp(agent, 'swarm.leave', {}, 'Leaving the swarm');
     const downDeadline = Date.now() + NODE_DOWN_WAIT_MS;
     let down = false;
-    while (Date.now() < downDeadline) {
-      const state = await capture('docker', ['node', 'inspect', '--format', '{{.Status.State}}', '--', nodeId], { timeoutMs: READ_TIMEOUT_MS }).catch(() => 'down');
-      if (state.trim() === 'down') {
+    let present = known !== null;
+    while (present && Date.now() < downDeadline) {
+      const view = await exactSwarmNode(nodeId);
+      present = view !== null;
+      if (!view || view.state === 'down') {
         down = true;
         break;
       }
       await sleep(POLL_MS);
     }
-    await run('docker', ['node', 'rm', ...(down ? [] : ['--force']), '--', nodeId], { timeoutMs: READ_TIMEOUT_MS }, () => undefined).catch(() => undefined);
+    if (present) await run('docker', ['node', 'rm', ...(down ? [] : ['--force']), '--', nodeId], { timeoutMs: READ_TIMEOUT_MS }, () => undefined).catch(() => undefined);
     await app.db.update(servers).set({ swarmNodeId: null, swarmRole: null }).where(eq(servers.id, id));
     // Review M1a: rotate after a leave too.
     const rotated = await rotateWorkerJoinToken();

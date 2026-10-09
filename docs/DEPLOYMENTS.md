@@ -127,10 +127,12 @@ Swarm on its own.
    refuses a daemon that is already in a swarm, and checks that the swarm can
    create an encrypted overlay network. When the advertise address is one of
    the panel host's own interface addresses, the management port binds there
-   only (`--listen-addr <addr>:2377`). Otherwise, as in a Docker install, where
-   the panel sees only its container's interfaces, Docker's default bind stays.
-   The response then carries a warning: firewall 2377/tcp to the cluster's
-   hosts. The panel host's node is labelled `nd.member=1`.
+   only (`--listen-addr <addr>:2377`). Otherwise Docker's default bind stays,
+   and the response carries a warning. **In a Docker install this is the usual
+   case:** the panel sees only its container's interfaces, so the management
+   port listens on every interface of the panel host, and you must firewall
+   2377/tcp to the cluster's own hosts. The panel host's node is labelled
+   `nd.member=1`.
 2. `PUT /v1/swarm/settings` with `{enabled: true}` (step-up) allows Swarm deploys.
 3. **On each node that should join**, its owner opts in by setting
    `NINEDEPLOY_AGENT_SWARM_MANAGER=<the panel's advertise address>:2377` in the
@@ -139,17 +141,31 @@ Swarm on its own.
    `node_swarm_not_enabled`, naming the variable and the value to set. The agent
    joins only that manager address, and refuses to join while
    `NINEDEPLOY_AGENT_DOCKER_SOCKET=off`, because a swarm manager can start a
-   task that mounts the Docker socket.
+   task that mounts the Docker socket. It also refuses a TLS Docker daemon
+   (`DOCKER_TLS_VERIFY`, `DOCKER_TLS` or `DOCKER_CERT_PATH` set to anything,
+   or an `https://` `DOCKER_HOST`) and a non-default Docker context
+   (`DOCKER_CONTEXT`, or `currentContext` in the agent user's Docker config),
+   so the join and the agent's other Docker calls reach the same daemon. If the
+   socket is switched off on a node that is already a member, `GET /v1/swarm`
+   shows a warning on that node; the node is not made to leave on its own.
 4. `POST /v1/servers/:id/swarm/join` joins the node as a worker through its
    agent (sealed transport only). The join token is read on the panel and sent
    to the node only. It is never stored, logged or returned, and the agent hands
    it to its Docker daemon through the Engine API, never on a command line. The
    panel rotates the worker token after every join and every leave. Before it
    links the node to the server, the panel checks with the manager that the
-   reported node id is a worker, is not the panel host itself, is not linked to
-   another server, and connects from the server's host address. Only then is
-   the node labelled `nd.member=1`. `POST /v1/servers/:id/swarm/leave` removes
-   the label, drains the node, has it leave, and removes it.
+   reported node id is a node's full id (not another node's hostname or an id
+   prefix, which Docker would also accept), is a worker, is not the panel host
+   itself, is not linked to another server, and connects from the server's
+   host address. When the server's host is a hostname, it matches if it
+   resolves to that address, so **this check trusts the DNS of the server's
+   host name**; register nodes by IP address where you can. Only then is the
+   node labelled `nd.member=1`, under the id the manager confirmed.
+   `POST /v1/servers/:id/swarm/leave` removes the label, drains the node, has
+   it leave, and removes it; it touches only the node with exactly that id.
+   **A member server cannot be deleted** (409 `server_swarm_member`, even with
+   `?force=true`): make it leave first, or it would stay in the swarm, labelled
+   a member, still receiving tasks and their secrets.
 5. `PUT /v1/services/:id/placement` with `{orchestrator: "swarm"}`, then deploy.
 
 **How a Swarm service runs:** one stack `nd-<slug>` with one service
@@ -170,10 +186,14 @@ example with a leaked token, never runs a NineDeploy task.
   host included) are labelled `nd.preload.<slug>=<image id>`. The service
   requires that label, so no task lands on a node without the image.
 - **Registry credentials:** each Swarm deploy gets its own temporary Docker
-  client config (0700, under the data directory). It logs in there only when
-  the service has a registry credential, passes `--with-registry-auth` only
-  then, and removes the config as soon as the stack is submitted. The panel's
-  shared Docker config is never forwarded to the workers.
+  client config (0700, under the data directory). When the service has a
+  registry credential, the panel writes it there as a 0600 `config.json`
+  (`auths` only) and passes `--with-registry-auth`; otherwise the config stays
+  empty and nothing is forwarded. It never runs `docker login`, which against
+  an empty config would store the password in the host's credential helper
+  (wincred, osxkeychain, pass, secretservice) for every later Docker call. The
+  config is removed as soon as the stack is submitted. The panel's shared
+  Docker config is never forwarded to the workers.
 - **Environment** reaches Swarm through a temporary 0600 env file, created
   fresh and removed after the deploy, never a command line. Left-over env files
   are swept at boot. Docker keeps the values in the service spec, which `docker

@@ -250,6 +250,8 @@ export const swarmNode = z.object({
   availability: z.string(),
   state: z.string(),
   serverId: id.nullable(),
+  /** T7 (review M2): e.g. the node's agent switched the Docker socket off while the node is still in the swarm. */
+  warnings: z.array(z.string()).optional(),
 });
 export type SwarmNode = z.infer<typeof swarmNode>;
 

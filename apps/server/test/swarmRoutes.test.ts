@@ -18,6 +18,9 @@ const TOKEN = `SWMTKN-1-${'c3'.repeat(25)}-${'d4'.repeat(12)}q`;
 const PASSWORD = 'correct horse battery';
 const MGR = 'mgr0000000000000000000001';
 const WRK = 'wrk0000000000000000000001';
+/** Another, unlinked worker V and a 25-character hostname that Docker resolves to it. */
+const VICTIM = 'xyz0000000000000000000007';
+const VICTIM_NAME = 'vic0000000000000000000009';
 
 const h = vi.hoisted(() => ({
   swarm: { LocalNodeState: 'inactive', ControlAvailable: false, NodeID: '', NodeAddr: '' } as Record<string, unknown>,
@@ -32,6 +35,8 @@ const h = vi.hoisted(() => ({
   agentOps: [] as Array<{ op: string; params: Record<string, unknown> }>,
   ping: '',
   sealed: true,
+  /** The node's agent reports NINEDEPLOY_AGENT_DOCKER_SOCKET=off while in the swarm. */
+  socketOff: false,
   audits: [] as Array<{ action: string; entity: string; meta: unknown }>,
 }));
 
@@ -72,10 +77,11 @@ vi.mock('../src/lib/agentClient.js', async (importOriginal) => ({
     h.agentOps.push({ op, params });
     if (op === 'agent.ping') return { exitCode: 0, lines: [h.ping] };
     if (op === 'swarm.info') {
-      sink(`{"LocalNodeState":"active","NodeID":"${h.reported}","ControlAvailable":false}`);
+      sink(`{"LocalNodeState":"active","NodeID":"${h.reported}","ControlAvailable":false${h.socketOff ? ',"NdDockerSocketOff":true' : ''}}`);
       return { exitCode: 0, lines: [] };
     }
     if (op === 'swarm.join' && fails(['swarm.join'])) throw new Error(`agent swarm.join failed (500): invalid token ${TOKEN}`);
+    if (op === 'swarm.leave') for (const n of h.nodes.values()) (n as { Status: { State: string } }).Status.State = 'down';
     return { exitCode: 0, lines: [] };
   },
 }));
@@ -94,7 +100,7 @@ const { asUser, buildTestApp } = await import('./helpers.js');
 
 const CAPS_015_LIST = ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'terminal.host'];
 const pingLine = (version: string, list: string[]) => `ND-AGENT ${JSON.stringify({ version, caps: list })}`;
-const worker = (id: string, addr: string, role = 'worker') => ({ ID: id, Spec: { Role: role, Labels: {} }, Status: { Addr: addr } });
+const worker = (id: string, addr: string, role = 'worker') => ({ ID: id, Spec: { Role: role, Labels: {} }, Status: { Addr: addr, State: 'ready' } });
 
 let db: DB;
 let serverId: number;
@@ -109,6 +115,7 @@ beforeEach(async () => {
   h.agentOps = [];
   h.audits = [];
   h.sealed = true;
+  h.socketOff = false;
   h.ping = pingLine('0.15.4', [...CAPS_015_LIST, ...MULTI_NODE_CAPABILITIES]);
   caps.resetNodeCapabilityCache();
   ({ db } = createDb({ url: ':memory:' }));
@@ -143,6 +150,18 @@ describe('GET /v1/swarm', () => {
     expect(res.managerAddr).toBe('10.0.0.1:2377');
     expect(res.nodes).toEqual([{ id: MGR, hostname: 'panel', role: 'manager', availability: 'active', state: 'ready', serverId }]);
     expect(JSON.stringify(res)).not.toContain('SWMTKN');
+  });
+
+  it('review M2: a linked node whose agent switched the Docker socket off while still in the swarm carries a warning; nothing leaves', async () => {
+    h.swarm = { LocalNodeState: 'active', ControlAvailable: true, NodeID: MGR, NodeAddr: '10.0.0.1' };
+    await db.update(servers).set({ swarmNodeId: MGR, swarmRole: 'worker' });
+    const a = await app();
+    expect((await a.inject({ method: 'GET', url: '/swarm', headers: asUser() })).json().nodes[0].warnings).toBeUndefined();
+    h.socketOff = true;
+    const res = (await a.inject({ method: 'GET', url: '/swarm', headers: asUser() })).json();
+    expect(res.nodes[0].warnings).toEqual([expect.stringMatching(/NINEDEPLOY_AGENT_DOCKER_SOCKET=off, but the node is still in the swarm.*swarm\/leave/)]);
+    expect(h.agentOps.map((o) => o.op)).toEqual(['swarm.info', 'swarm.info']);
+    expect(h.docker.filter((x) => x[0] === 'node' && x[1] !== 'ls')).toEqual([]);
   });
 
   it('is operator only', async () => {
@@ -273,7 +292,21 @@ describe('POST /v1/servers/:id/swarm/join and /leave', () => {
   it('M3: a reported id the manager cannot confirm is never linked or labelled', async () => {
     const cases: Array<[() => void, RegExp]> = [
       [() => (h.reported = 'not-a-node-id'), /malformed swarm node id/],
-      [() => (h.reported = MGR), /panel host's own swarm node id/],
+      // A node may NAME itself like another node's id: Docker resolves the name too. Never that node.
+      [
+        () => {
+          h.reported = VICTIM_NAME;
+          h.nodes.set(VICTIM_NAME, worker(VICTIM, '10.0.0.5'));
+        },
+        /resolves vic0000000000000000000009 to another node \(xyz0000000000000000000007\), by name or prefix/,
+      ],
+      [
+        () => {
+          h.reported = MGR;
+          h.nodes.set(MGR, worker(MGR, '10.0.0.5', 'manager'));
+        },
+        /panel host's own swarm node id/,
+      ],
       [() => (h.reported = 'zzz0000000000000000000009'), /manager does not know swarm node/],
       [() => h.nodes.set(WRK, worker(WRK, '10.0.0.5', 'manager')), /is a manager, not a worker/],
       [() => h.nodes.set(WRK, worker(WRK, '203.0.113.9')), /reaches the manager from 203\.0\.113\.9, not from the server's host 10\.0\.0\.5/],
@@ -306,9 +339,17 @@ describe('POST /v1/servers/:id/swarm/join and /leave', () => {
   it('M3: a hostname host matches when it resolves to the address the manager sees', async () => {
     h.swarm = { LocalNodeState: 'active', ControlAvailable: true, NodeID: MGR };
     const resolve = vi.fn(async () => ['10.0.0.5']);
-    expect(await swarmLib.joinedNodeRefusal(db, { id: serverId, host: 'edge.example.com' }, WRK, { resolve })).toBeNull();
+    expect(await swarmLib.verifyJoinedNode(db, { id: serverId, host: 'edge.example.com' }, WRK, { resolve })).toEqual({ nodeId: WRK });
     expect(resolve).toHaveBeenCalledWith('edge.example.com');
-    expect(await swarmLib.joinedNodeRefusal(db, { id: serverId, host: 'edge.example.com' }, WRK, { resolve: async () => ['10.9.9.9'] })).toMatch(/not from the server's host/);
+    expect(await swarmLib.verifyJoinedNode(db, { id: serverId, host: 'edge.example.com' }, WRK, { resolve: async () => ['10.9.9.9'] })).toEqual({
+      refusal: expect.stringMatching(/not from the server's host/),
+    });
+    // Review M3 (verification): the host name resolves to V's address (its owner controls DNS), but the
+    // reported string is V's HOSTNAME, not an id: refused, so V is never linked or labelled.
+    h.nodes.set(VICTIM_NAME, worker(VICTIM, '10.0.0.5'));
+    expect(await swarmLib.verifyJoinedNode(db, { id: serverId, host: 'edge.example.com' }, VICTIM_NAME, { resolve })).toEqual({
+      refusal: expect.stringMatching(/to another node \(xyz0000000000000000000007\), by name or prefix, not by id/),
+    });
   });
 
   it('join refuses the unencrypted transport, a node already joined, and a panel that is not a manager — sending nothing', async () => {
@@ -352,18 +393,31 @@ describe('POST /v1/servers/:id/swarm/join and /leave', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ serverId, nodeId: WRK, drained: true });
     expect(nodeCmds()).toEqual([
+      // Review M3: only while the manager knows exactly this id.
+      `node inspect --format {{json .}} -- ${WRK}`,
       `node update --label-rm nd.member -- ${WRK}`,
       `node update --availability drain -- ${WRK}`,
       `node ps --filter desired-state=running -q -- ${WRK}`,
       `node ps --filter desired-state=running -q -- ${WRK}`,
       `node ps --filter desired-state=running -q -- ${WRK}`,
-      `node inspect --format {{.Status.State}} -- ${WRK}`,
+      `node inspect --format {{json .}} -- ${WRK}`,
       `node rm -- ${WRK}`,
     ]);
     expect(h.agentOps.map((o) => o.op)).toEqual(['agent.ping', 'swarm.leave']);
     expect(h.docker).toContainEqual(['swarm', 'join-token', '--rotate', '-q', 'worker']);
     expect(await db.query.servers.findFirst()).toMatchObject({ swarmNodeId: null, swarmRole: null });
     expect(h.audits).toEqual([{ action: 'server.swarm.leave', entity: 'edge-1', meta: { serverId, nodeId: WRK, drained: true, tokenRotated: true } }]);
+  });
+
+  it('review M3: leave of a node the manager no longer knows by that id never touches the node that has it as a NAME', async () => {
+    await db.update(servers).set({ swarmNodeId: WRK, swarmRole: 'worker' });
+    // WRK is gone from the swarm; another node V is named "WRK", so Docker would resolve the string to V.
+    h.nodes = new Map([[WRK, worker(VICTIM, '10.0.0.9')]]);
+    const res = await (await app()).inject({ method: 'POST', url: `/servers/${serverId}/swarm/leave`, headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(nodeCmds()).toEqual([`node inspect --format {{json .}} -- ${WRK}`]);
+    expect(h.agentOps.map((o) => o.op)).toEqual(['agent.ping', 'swarm.leave']);
+    expect(await db.query.servers.findFirst()).toMatchObject({ swarmNodeId: null });
   });
 
   it('leave refuses a node that never joined, and an older agent before touching anything', async () => {

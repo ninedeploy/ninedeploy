@@ -26,7 +26,7 @@ vi.mock('../src/lib/spawnValidated.js', async (importOriginal) => ({
 
 const registry = await import('../src/agentOps/index.js');
 const swarmMod = await import('../src/agentOps/swarm.js');
-const { swarmOps, setEngineRequester, engineEndpoint } = swarmMod;
+const { swarmOps, setEngineRequester, engineEndpoint, dockerContextRefusal } = swarmMod;
 const agent = await import('../src/agent.js');
 
 const engine = vi.fn(async (_m: string, _p: string, _b: unknown) => ({ status: 200, body: '' }));
@@ -42,6 +42,9 @@ beforeEach(() => {
   setEngineRequester(engine);
   vi.stubEnv('NINEDEPLOY_AGENT_SWARM_MANAGER', MANAGER);
   vi.stubEnv('NINEDEPLOY_AGENT_DOCKER_SOCKET', '');
+  for (const name of ['DOCKER_HOST', 'DOCKER_TLS_VERIFY', 'DOCKER_TLS', 'DOCKER_CERT_PATH', 'DOCKER_CONTEXT']) vi.stubEnv(name, '');
+  // No Docker client config of the test user's own: the default context.
+  vi.stubEnv('DOCKER_CONFIG', 'Z:/nd-no-such-docker-config');
 });
 afterEach(() => {
   setEngineRequester(null);
@@ -148,10 +151,53 @@ describe('swarm.info / swarm.join / swarm.leave', () => {
     expect(h.calls).toHaveLength(2);
   });
 
-  it('the Engine API endpoint follows DOCKER_HOST (socket or plain tcp); a TLS DOCKER_HOST is refused', () => {
+  it('the Engine API endpoint follows DOCKER_HOST (socket or plain tcp); a TLS daemon is refused however the CLI would see it (review M2a)', () => {
     expect(engineEndpoint({ DOCKER_HOST: 'unix:///run/docker.sock' })).toEqual({ socketPath: '/run/docker.sock' });
     expect(engineEndpoint({ DOCKER_HOST: 'tcp://dind:2375' })).toEqual({ host: 'dind', port: 2375 });
-    expect(() => engineEndpoint({ DOCKER_HOST: 'tcp://dind:2376', DOCKER_TLS_VERIFY: '1' })).toThrow(/does not support a TLS DOCKER_HOST/);
+    expect(engineEndpoint({ DOCKER_HOST: 'tcp://dind:2375', DOCKER_TLS_VERIFY: '' })).toEqual({ host: 'dind', port: 2375 });
+    for (const env of [
+      { DOCKER_HOST: 'tcp://dind:2376', DOCKER_TLS_VERIFY: '1' },
+      // The CLI turns TLS on for any non-empty DOCKER_TLS_VERIFY, "0" included.
+      { DOCKER_HOST: 'tcp://dind:2376', DOCKER_TLS_VERIFY: '0' },
+      { DOCKER_HOST: 'tcp://dind:2376', DOCKER_TLS: '1' },
+      { DOCKER_HOST: 'tcp://dind:2376', DOCKER_CERT_PATH: '/certs' },
+      { DOCKER_HOST: 'https://dind:2376' },
+      { DOCKER_TLS_VERIFY: 'false' },
+    ]) {
+      expect(() => engineEndpoint(env), JSON.stringify(env)).toThrow(/does not support a TLS Docker daemon/);
+    }
     expect(() => engineEndpoint({ DOCKER_HOST: 'ssh://x' })).toThrow(/Unsupported DOCKER_HOST/);
+  });
+
+  it('swarm.join is refused against a TLS daemon before anything is sent', async () => {
+    vi.stubEnv('DOCKER_TLS_VERIFY', '0');
+    await expect(run('swarm.join', { token: TOKEN, managerAddr: MANAGER })).rejects.toThrow(/does not support a TLS Docker daemon/);
+    expect(engine).not.toHaveBeenCalled();
+  });
+
+  it('review M2b: a non-default Docker context (DOCKER_CONTEXT, or currentContext in the Docker config) refuses the join', async () => {
+    const noConfig = () => {
+      throw new Error('ENOENT');
+    };
+    expect(dockerContextRefusal({}, noConfig)).toBeNull();
+    expect(dockerContextRefusal({ DOCKER_CONTEXT: 'default' }, noConfig)).toBeNull();
+    expect(dockerContextRefusal({ DOCKER_CONTEXT: 'remote' }, noConfig)).toMatch(/DOCKER_CONTEXT=remote selects a non-default Docker context/);
+    const config = (body: unknown) => (path: string) => {
+      expect(path.replace(/\\/g, '/')).toBe('/home/nd/.docker/config.json');
+      return JSON.stringify(body);
+    };
+    expect(dockerContextRefusal({ DOCKER_CONFIG: '/home/nd/.docker' }, config({ currentContext: 'remote' }))).toMatch(/selects the context "remote"/);
+    expect(dockerContextRefusal({ DOCKER_CONFIG: '/home/nd/.docker' }, config({ currentContext: 'default' }))).toBeNull();
+    expect(dockerContextRefusal({ DOCKER_CONFIG: '/home/nd/.docker' }, config({ auths: {} }))).toBeNull();
+    vi.stubEnv('DOCKER_CONTEXT', 'remote');
+    await expect(run('swarm.join', { token: TOKEN, managerAddr: MANAGER })).rejects.toThrow(/Refusing to join a swarm: DOCKER_CONTEXT=remote/);
+    expect(engine).not.toHaveBeenCalled();
+  });
+
+  it('review M2c: swarm.info reports a node still in a swarm while its socket is switched off; nothing leaves', async () => {
+    vi.stubEnv('NINEDEPLOY_AGENT_DOCKER_SOCKET', 'off');
+    const res = await run('swarm.info', {});
+    expect(res.lines).toEqual(['{"LocalNodeState":"active","NodeID":"node-abc","ControlAvailable":false,"NdDockerSocketOff":true}']);
+    expect(h.calls).toEqual([['info', '--format', '{{json .Swarm}}']]);
   });
 });

@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { isIP } from 'node:net';
 import { type NetworkInterfaceInfo, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
@@ -229,56 +229,79 @@ export interface ManagerNodeView {
   id: string;
   role: string;
   addr: string;
+  /** `Status.State`: ready, down, unknown, disconnected. */
+  state: string;
   labels: Record<string, string>;
 }
 
+/**
+ * `docker node inspect` of `nodeId`. Docker resolves the argument by full id,
+ * then by node NAME (the hostname), then by id prefix, so the node this
+ * answers for need not be `nodeId` — callers compare `view.id` (or use
+ * {@link exactSwarmNode}). Null when the manager knows no such node.
+ */
 export async function inspectSwarmNode(nodeId: string): Promise<ManagerNodeView | null> {
   if (!RE_SWARM_NODE_ID.test(nodeId)) return null;
   try {
     const raw = await capture('docker', ['node', 'inspect', '--format', '{{json .}}', '--', nodeId], { timeoutMs: READ_TIMEOUT_MS });
-    const j = JSON.parse(raw.trim()) as { ID?: string; Spec?: { Role?: string; Labels?: Record<string, string> }; Status?: { Addr?: string } };
+    const j = JSON.parse(raw.trim()) as { ID?: string; Spec?: { Role?: string; Labels?: Record<string, string> }; Status?: { Addr?: string; State?: string } };
     if (!j.ID) return null;
-    return { id: j.ID, role: j.Spec?.Role ?? '', addr: j.Status?.Addr ?? '', labels: j.Spec?.Labels ?? {} };
+    return { id: j.ID, role: j.Spec?.Role ?? '', addr: j.Status?.Addr ?? '', state: j.Status?.State ?? '', labels: j.Spec?.Labels ?? {} };
   } catch {
     return null;
   }
 }
 
-/** Refuse a swarm node id already linked to another server row (there is no unique index; this is the guard). */
+/**
+ * Review M3 (verification): the node whose FULL id is `nodeId`, or null. A
+ * name or prefix match (another node whose hostname is that string) is never
+ * it, so no docker node command acts on a node the panel did not link.
+ */
+export async function exactSwarmNode(nodeId: string): Promise<ManagerNodeView | null> {
+  const view = await inspectSwarmNode(nodeId);
+  return view && view.id === nodeId ? view : null;
+}
+
+/** Refuse a swarm node id already linked to another server row (there is no unique index; this is the guard). Exact, full-id comparison. */
 export async function swarmNodeLinkedElsewhere(db: DB, nodeId: string, serverId: number): Promise<{ id: number; name: string } | null> {
-  const rows = await db.select({ id: servers.id, name: servers.name }).from(servers).where(eq(servers.swarmNodeId, nodeId));
-  return rows.find((r) => r.id !== serverId) ?? null;
+  const rows = await db.select({ id: servers.id, name: servers.name, swarmNodeId: servers.swarmNodeId }).from(servers).where(eq(servers.swarmNodeId, nodeId));
+  return rows.find((r) => r.id !== serverId && r.swarmNodeId === nodeId) ?? null;
 }
 
 /**
  * Security review M3: the node id an agent reports is a claim. Before it is
  * linked to a server row (and labelled a member), the manager must confirm it:
- * a well-formed id, a worker, not the panel's own node, not linked to another
- * server, and the address the manager sees is the server's host (a hostname
- * host matches when it resolves to that address). Null when it holds, else why not.
+ * a well-formed id that the manager knows AS AN ID (Docker would also resolve
+ * a node's hostname, so a node naming itself after another node's id is
+ * refused), a worker, not the panel's own node, not linked to another server,
+ * and the address the manager sees is the server's host (a hostname host
+ * matches when it resolves to that address — this trusts that host's DNS).
+ * The confirmed id is the manager's `view.id`, the only id used from then on.
  */
-export async function joinedNodeRefusal(
+export async function verifyJoinedNode(
   db: DB,
   server: { id: number; host: string },
-  nodeId: string | null,
+  reported: string | null,
   deps: { resolve?: (host: string) => Promise<string[]> } = {},
-): Promise<string | null> {
-  if (!nodeId || !RE_SWARM_NODE_ID.test(nodeId)) return `the node reported a malformed swarm node id (${JSON.stringify(nodeId ?? '').slice(0, 60)})`;
+): Promise<{ nodeId: string } | { refusal: string }> {
+  if (!reported || !RE_SWARM_NODE_ID.test(reported)) return { refusal: `the node reported a malformed swarm node id (${JSON.stringify(reported ?? '').slice(0, 60)})` };
+  const view = await inspectSwarmNode(reported);
+  if (!view) return { refusal: `the manager does not know swarm node ${reported}` };
+  if (view.id !== reported) return { refusal: `the manager resolves ${reported} to another node (${view.id}), by name or prefix, not by id` };
+  const nodeId = view.id;
   const local = await localSwarmInfo();
-  if (nodeId === local.nodeId) return "the node reported the panel host's own swarm node id";
+  if (nodeId === local.nodeId) return { refusal: "the node reported the panel host's own swarm node id" };
   const other = await swarmNodeLinkedElsewhere(db, nodeId, server.id);
-  if (other) return `swarm node ${nodeId} is already linked to server "${other.name}" (#${other.id})`;
-  const view = await inspectSwarmNode(nodeId);
-  if (!view) return `the manager does not know swarm node ${nodeId}`;
-  if (view.role !== 'worker') return `swarm node ${nodeId} is a ${view.role || 'node of unknown role'}, not a worker`;
+  if (other) return { refusal: `swarm node ${nodeId} is already linked to server "${other.name}" (#${other.id})` };
+  if (view.role !== 'worker') return { refusal: `swarm node ${nodeId} is a ${view.role || 'node of unknown role'}, not a worker` };
   const host = server.host.replace(/^\[|\]$/g, '').toLowerCase();
   const addr = view.addr.toLowerCase();
-  if (addr && addr === host) return null;
+  if (addr && addr === host) return { nodeId };
   const resolve =
     deps.resolve ??
     (async (h: string) => (await lookup(h, { all: true }).catch(() => [] as Array<{ address: string }>)).map((r) => r.address.toLowerCase()));
-  if (addr && isIP(host) === 0 && (await resolve(host)).includes(addr)) return null;
-  return `swarm node ${nodeId} reaches the manager from ${view.addr || 'an unknown address'}, not from the server's host ${server.host}`;
+  if (addr && isIP(host) === 0 && (await resolve(host)).includes(addr)) return { nodeId };
+  return { refusal: `swarm node ${nodeId} reaches the manager from ${view.addr || 'an unknown address'}, not from the server's host ${server.host}` };
 }
 
 /**
@@ -450,17 +473,41 @@ export async function serviceSwarmView(svc: { runtimeId: string | null; slug: st
   return { stack, desired, running, tasks };
 }
 
-// ── registry login for `--with-registry-auth` ──────────────────────────────
+// ── registry credentials for `--with-registry-auth` ────────────────────────
+
+const DOCKER_HUB_AUTH_KEY = 'https://index.docker.io/v1/';
+
+/**
+ * The `auths` key the Docker CLI looks a registry up by: Docker Hub (any of
+ * its names, or none) is `https://index.docker.io/v1/`; anything else is the
+ * bare `host[:port]`, without scheme or path, lowercased.
+ */
+export function dockerAuthKey(server: string | undefined): string {
+  const host = (server ?? '')
+    .trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/.*$/, '')
+    .toLowerCase();
+  if (host === '' || host === 'docker.io' || host === 'index.docker.io' || host === 'registry-1.docker.io') return DOCKER_HUB_AUTH_KEY;
+  return host;
+}
 
 /**
  * Security review M4: run `fn` with a Docker client config directory of its
  * own (0700, under the data directory, removed in `finally`), so a Swarm
- * deploy never reads or forwards the panel's shared Docker config. With
- * registry auth it logs in there first, and `fn` passes `--config <dir>` and
- * `--with-registry-auth`; without, the directory stays empty and `fn` forwards
- * nothing. Nothing is shared between deploys, so no registry lock is needed.
- * `fn` should return as soon as `stack deploy` has submitted the spec: the
- * credential then leaves the panel's disk while the update converges.
+ * deploy never reads or forwards the panel's shared Docker config. Nothing is
+ * shared between deploys, so no registry lock is needed. `fn` should return
+ * as soon as `stack deploy` has submitted the spec: the credential then leaves
+ * the panel's disk while the update converges.
+ *
+ * With registry auth the panel WRITES `<dir>/config.json` itself (0600,
+ * exclusive create) as `{"auths": {"<key>": {"auth": base64(user:pass)}}}`
+ * and never runs `docker login`: against an empty config, `login` detects the
+ * platform's default credential helper (wincred, osxkeychain, desktop, pass,
+ * secretservice) and stores the password system-wide, where deleting the
+ * directory does not reach it. A config that already holds `auths` makes the
+ * CLI skip that detection. Without auth the directory stays empty and `fn`
+ * forwards nothing.
  */
 export async function withDeployDockerConfig<T>(
   auth: { username: string; password: string; server?: string } | undefined,
@@ -473,14 +520,10 @@ export async function withDeployDockerConfig<T>(
   const dir = mkdtempSync(join(parent, '.docker-'));
   try {
     if (auth) {
-      log(`Logging in to ${auth.server ?? 'docker.io'} for this Swarm deploy only (a private client config, removed once the deploy is submitted) …`);
-      await run(
-        'docker',
-        ['--config', dir, 'login', '--username', auth.username, '--password-stdin', ...(auth.server ? [auth.server] : [])],
-        { timeoutMs: 120_000 },
-        log,
-        Buffer.from(`${auth.password}\n`),
-      );
+      const key = dockerAuthKey(auth.server);
+      log(`Using the registry credential for ${key} in a private client config for this Swarm deploy only (removed once the deploy is submitted)`);
+      const body = { auths: { [key]: { auth: Buffer.from(`${auth.username}:${auth.password}`).toString('base64') } } };
+      writeFileSync(join(dir, 'config.json'), `${JSON.stringify(body)}\n`, { flag: 'wx', mode: 0o600 });
     }
     return await fn(dir);
   } finally {

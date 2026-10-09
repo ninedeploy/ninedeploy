@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { request, type RequestOptions } from 'node:http';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { spawnValidated } from '../lib/spawnValidated.js';
 import type { AgentOpModule } from './index.js';
 import { type Params, switchedOff } from './operands.js';
@@ -18,12 +21,20 @@ import { type Params, switchedOff } from './operands.js';
  * All three are SEALED only:
  *
  *  - `swarm.info {}`: `docker info --format '{{json .Swarm}}'`, one JSON line
- *    (LocalNodeState, NodeID, …).
+ *    (LocalNodeState, NodeID, …). While `NINEDEPLOY_AGENT_DOCKER_SOCKET=off`
+ *    and the node is still in a swarm, the line also carries
+ *    `"NdDockerSocketOff": true`, which the panel shows as a warning (the
+ *    node is never made to leave on its own).
  *  - `swarm.join {token, managerAddr}`: through the Docker Engine API
  *    (`POST /swarm/join` on the agent's daemon socket), NOT the CLI — `docker
  *    swarm join` takes the token only as an argv element (there is no
  *    `--token-file`), where the node's process list would show it. The token
- *    is never echoed; errors are masked.
+ *    is never echoed; errors are masked. Refused against a TLS daemon (any of
+ *    DOCKER_TLS_VERIFY, DOCKER_TLS, DOCKER_CERT_PATH set, or an https://
+ *    DOCKER_HOST) and while a non-default Docker context is selected
+ *    (DOCKER_CONTEXT, or `currentContext` in the agent user's Docker config):
+ *    the Engine API call and the CLI calls of info / leave must reach the same
+ *    daemon.
  *  - `swarm.leave {}`: `docker swarm leave`, never `--force` (a worker leaves
  *    without it; forcing would let a manager break its cluster).
  */
@@ -56,22 +67,48 @@ export function managerAddrOperand(value: unknown): string {
 
 export type EngineRequester = (method: string, path: string, body: unknown) => Promise<{ status: number; body: string }>;
 
-/** Where the agent's Docker daemon listens: `DOCKER_HOST` (unix:// or plain tcp://), else the default socket. */
+/** Set as the Docker CLI reads it: present and non-empty (`DOCKER_TLS_VERIFY=0` still means TLS). */
+const isSet = (v: string | undefined): boolean => (v ?? '') !== '';
+
+/**
+ * Where the agent's Docker daemon listens: `DOCKER_HOST` (unix:// or plain
+ * tcp://), else the default socket. A TLS daemon is refused — the CLI turns
+ * TLS on whenever DOCKER_TLS_VERIFY (any value, `0` included), DOCKER_TLS or
+ * DOCKER_CERT_PATH is set, and an https:// host is TLS by definition — since
+ * this plain request could otherwise reach a different endpoint than the CLI.
+ */
 export function engineEndpoint(env: NodeJS.ProcessEnv = process.env): RequestOptions {
   const host = (env['DOCKER_HOST'] ?? '').trim();
+  if (isSet(env['DOCKER_TLS_VERIFY']) || isSet(env['DOCKER_TLS']) || isSet(env['DOCKER_CERT_PATH']) || /^https:\/\//i.test(host)) {
+    throw new Error('swarm.join talks to the Docker daemon directly and does not support a TLS Docker daemon (DOCKER_TLS_VERIFY / DOCKER_TLS / DOCKER_CERT_PATH / https:// DOCKER_HOST); use the daemon socket');
+  }
   if (host === '') return { socketPath: process.platform === 'win32' ? '\\\\.\\pipe\\docker_engine' : '/var/run/docker.sock' };
   if (host.startsWith('unix://')) return { socketPath: host.slice('unix://'.length) };
   if (host.startsWith('npipe://')) return { socketPath: host.slice('npipe://'.length).replace(/\//g, '\\') };
   if (host.startsWith('tcp://')) {
-    if (switchedOn(env['DOCKER_TLS_VERIFY']) || (env['DOCKER_CERT_PATH'] ?? '') !== '') {
-      throw new Error('swarm.join talks to the Docker daemon directly and does not support a TLS DOCKER_HOST; use the daemon socket');
-    }
     const url = new URL(`http://${host.slice('tcp://'.length)}`);
     return { host: url.hostname, port: Number(url.port || 2375) };
   }
   throw new Error(`Unsupported DOCKER_HOST for swarm.join: ${host.split('://')[0]}://`);
 }
-const switchedOn = (v: string | undefined) => /^(1|true|yes|on)$/i.test((v ?? '').trim());
+
+/**
+ * Review M2: a non-default Docker context points the CLI (info, leave) at a
+ * daemon the Engine API call would not reach. Why join is refused, or null.
+ */
+export function dockerContextRefusal(env: NodeJS.ProcessEnv = process.env, readConfig: (path: string) => string = (p) => readFileSync(p, 'utf8')): string | null {
+  const named = (env['DOCKER_CONTEXT'] ?? '').trim();
+  if (named !== '' && named !== 'default') return `DOCKER_CONTEXT=${named} selects a non-default Docker context`;
+  const configDir = (env['DOCKER_CONFIG'] ?? '').trim() || join(homedir(), '.docker');
+  let current = '';
+  try {
+    current = String((JSON.parse(readConfig(join(configDir, 'config.json'))) as { currentContext?: unknown }).currentContext ?? '').trim();
+  } catch {
+    return null; // no (readable) config: the default context
+  }
+  if (current !== '' && current !== 'default') return `the Docker config (${join(configDir, 'config.json')}) selects the context "${current}"`;
+  return null;
+}
 
 const defaultRequester: EngineRequester = (method, path, body) =>
   new Promise((resolve, reject) => {
@@ -100,7 +137,28 @@ export function setEngineRequester(r: EngineRequester | null): void {
 
 async function infoOp(params: Params, onLine: (line: string) => void): Promise<number> {
   knownKeys(params, []);
-  return spawnValidated('docker', ['info', '--format', '{{json .Swarm}}'], onLine, { timeoutMs: SWARM_TIMEOUT_MS });
+  const socketOff = switchedOff(process.env['NINEDEPLOY_AGENT_DOCKER_SOCKET']);
+  return spawnValidated(
+    'docker',
+    ['info', '--format', '{{json .Swarm}}'],
+    (line) => {
+      // Review M2: the owner switched the socket off, yet the node is still in a swarm (its manager can
+      // still schedule tasks here). Report it; the panel warns. The node does not leave on its own.
+      if (socketOff && line.trim().startsWith('{')) {
+        try {
+          const j = JSON.parse(line) as Record<string, unknown>;
+          if (typeof j['LocalNodeState'] === 'string' && j['LocalNodeState'] !== '' && j['LocalNodeState'] !== 'inactive') {
+            onLine(JSON.stringify({ ...j, NdDockerSocketOff: true }));
+            return;
+          }
+        } catch {
+          /* not JSON: pass it on */
+        }
+      }
+      onLine(line);
+    },
+    { timeoutMs: SWARM_TIMEOUT_MS },
+  );
 }
 
 async function joinOp(params: Params, onLine: (line: string) => void): Promise<number> {
@@ -114,6 +172,10 @@ async function joinOp(params: Params, onLine: (line: string) => void): Promise<n
   if (switchedOff(process.env['NINEDEPLOY_AGENT_DOCKER_SOCKET'])) {
     throw new Error('Refusing to join a swarm while NINEDEPLOY_AGENT_DOCKER_SOCKET=off: a swarm manager can schedule a task that mounts the Docker socket');
   }
+  const context = dockerContextRefusal();
+  if (context) throw new Error(`Refusing to join a swarm: ${context}; the join and the node's docker CLI calls must reach the same daemon (unset it, or select the default context)`);
+  // A TLS daemon is refused here, before anything is sent.
+  engineEndpoint();
   let res: { status: number; body: string };
   try {
     res = await engine('POST', '/swarm/join', { ListenAddr: '0.0.0.0:2377', AdvertiseAddr: '', DataPathAddr: '', RemoteAddrs: [managerAddr], JoinToken: token });

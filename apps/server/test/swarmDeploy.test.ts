@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -109,15 +109,20 @@ const fakeDriver = (status: { error?: string } = {}) => {
   const opts: ApplyOpts[] = [];
   /** Whether the deploy's config dir still existed while the spec was submitted. */
   const configLive: boolean[] = [];
+  /** `<dockerConfig>/config.json` as the apply saw it (null: none). */
+  const configJson: Array<{ body: unknown; mode: number } | null> = [];
   return {
     specs,
     opts,
     configLive,
+    configJson,
     driver: {
       deployStack: vi.fn(async (spec: Spec, o: ApplyOpts = {}) => {
         specs.push(spec);
         opts.push(o);
         configLive.push(o.dockerConfig ? existsSync(o.dockerConfig) : false);
+        const file = o.dockerConfig ? join(o.dockerConfig, 'config.json') : '';
+        configJson.push(file && existsSync(file) ? { body: JSON.parse(readFileSync(file, 'utf8')), mode: statSync(file).mode & 0o777 } : null);
         return { name: spec.name, services: [], appliedAt: '', ...status };
       }),
     },
@@ -127,7 +132,13 @@ const ctxFor = (service: Record<string, any>, over: Record<string, unknown> = {}
   ({ deploymentId: 9, service, workDir: '/w', commitSha: 'abc1234def', env: { A: '1' }, log: vi.fn(), ...over }) as never;
 const lines = (ctx: { log: ReturnType<typeof vi.fn> }) => ctx.log.mock.calls.map((c) => String(c[0])).join('\n');
 const nodeUpdates = () => h.docker.filter((a) => a[0] === 'node' && a[1] === 'update').map((a) => a.slice(2).join(' '));
-const logins = () => h.docker.filter((a) => a[0] === '--config' && a[2] === 'login');
+/** Review M4: `docker login` would park the password in the host's credential helper; it never runs. */
+const logins = () => h.docker.filter((a) => a.includes('login'));
+const b64 = (s: string) => Buffer.from(s).toString('base64');
+/** POSIX only: Windows reports no owner-only mode bits. */
+const expectOwnerOnly = (mode: number) => {
+  if (process.platform !== 'win32') expect(mode).toBe(0o600);
+};
 
 describe('isSwarmService / refusals (design §7.1)', () => {
   it('only an opted-in, non-preview service is a Swarm service; NULL is 0.15', () => {
@@ -174,7 +185,7 @@ describe('isSwarmService / refusals (design §7.1)', () => {
 describe('the Swarm builder (design §7.4)', () => {
   it('an image release: encrypted overlay + Traefik, one stack spec with the member constraint, registry auth in a private config, runtime nd-<slug>_web', async () => {
     const svc = await svcRow({ cmd: ['nginx', '-g', 'daemon off;'], memLimitMb: 256 });
-    const { driver, specs, opts, configLive } = fakeDriver();
+    const { driver, specs, opts, configLive, configJson } = fakeDriver();
     const ctx = ctxFor(svc, { registryAuth: { username: 'u', password: 'p', server: 'reg.example.com' } });
     const runtime = await createSwarmBuilder(db, 'web', { driver }).buildAndRun(ctx);
     expect(runtime).toEqual({ runtimeId: 'nd-web_web', port: 80, healthPath: '/', replicas: 1, imageDigest: `nginx:1.27@sha256:${'e'.repeat(64)}` });
@@ -203,10 +214,12 @@ describe('the Swarm builder (design §7.4)', () => {
     expect(specs[0]!.resolveImage).toBeUndefined();
     // The panel's node is (re)labelled a member.
     expect(nodeUpdates()).toEqual([`--label-add nd.member=1 -- ${MGR}`]);
-    // M4: logged in into this deploy's own config, forwarded with --with-registry-auth, submitted detached.
+    // M4: the credential written into this deploy's own config (never `docker login`), forwarded with
+    // --with-registry-auth, submitted detached.
     expect(opts[0]).toMatchObject({ wait: false, withRegistryAuth: true, dockerConfig: expect.stringContaining(join(DATA_DIR, 'swarm', '.docker-')) });
-    expect(logins()).toEqual([['--config', opts[0]!.dockerConfig, 'login', '--username', 'u', '--password-stdin', 'reg.example.com']]);
-    expect(h.docker.some((a) => a.includes('logout'))).toBe(false);
+    expect(logins()).toEqual([]);
+    expect(configJson[0]!.body).toEqual({ auths: { 'reg.example.com': { auth: b64('u:p') } } });
+    expectOwnerOnly(configJson[0]!.mode);
     expect(configLive).toEqual([true]);
     expect(existsSync(opts[0]!.dockerConfig!)).toBe(false);
     // The panel waits for convergence itself.
@@ -215,7 +228,7 @@ describe('the Swarm builder (design §7.4)', () => {
 
   it('M4: two deploys never share a client config; a service without registry auth logs in nowhere and forwards nothing', async () => {
     const svc = await svcRow();
-    const { driver, opts } = fakeDriver();
+    const { driver, opts, configJson } = fakeDriver();
     const builder = createSwarmBuilder(db, 'web', { driver });
     await builder.buildAndRun(ctxFor(svc));
     await builder.buildAndRun(ctxFor(svc, { registryAuth: { username: 'u', password: 'p' } }));
@@ -225,7 +238,10 @@ describe('the Swarm builder (design §7.4)', () => {
     expect(first!.dockerConfig).not.toBe(second!.dockerConfig);
     expect(first!.withRegistryAuth).toBe(false);
     expect(second!.withRegistryAuth).toBe(true);
-    expect(logins().map((a) => a[1])).toEqual([second!.dockerConfig]);
+    expect(logins()).toEqual([]);
+    // No credential: an empty config. Docker Hub (no server): the key the CLI looks Hub up by.
+    expect(configJson[0]).toBeNull();
+    expect(configJson[1]!.body).toEqual({ auths: { 'https://index.docker.io/v1/': { auth: b64('u:p') } } });
     for (const o of opts) {
       expect(o.dockerConfig!.startsWith(join(DATA_DIR, 'swarm'))).toBe(true);
       expect(existsSync(o.dockerConfig!)).toBe(false);
@@ -291,12 +307,13 @@ describe('the Swarm builder (design §7.4)', () => {
       registry: { target: { repository: 'reg.example.com/acme/web', host: 'reg.example.com', username: 'ru', password: 'rp', server: 'reg.example.com' }, digest: `sha256:${'b'.repeat(64)}` },
     }));
     const ship = vi.fn();
-    const { driver, specs, opts } = fakeDriver();
+    const { driver, specs, opts, configJson } = fakeDriver();
     await createSwarmBuilder(db, 'web', { driver, buildOnPanel: buildOnPanel as never, ship: ship as never }).buildAndRun(ctxFor(svc));
     expect(ship).not.toHaveBeenCalled();
     expect(specs[0]).toMatchObject({ services: [{ image: `reg.example.com/acme/web@sha256:${'b'.repeat(64)}`, constraints: ['node.labels.nd.member==1'] }] });
     expect(specs[0]!.resolveImage).toBeUndefined();
-    expect(logins()).toEqual([['--config', opts[0]!.dockerConfig, 'login', '--username', 'ru', '--password-stdin', 'reg.example.com']]);
+    expect(logins()).toEqual([]);
+    expect(configJson[0]!.body).toEqual({ auths: { 'reg.example.com': { auth: b64('ru:rp') } } });
     expect(opts[0]!.withRegistryAuth).toBe(true);
     expect(nodeUpdates()).toEqual([`--label-add nd.member=1 -- ${MGR}`]);
   });
@@ -338,6 +355,18 @@ describe('the Swarm builder (design §7.4)', () => {
     h.updateState = 'paused';
     await expect(createSwarmBuilder(db, 'web', { driver: fakeDriver({ error: 'x' }).driver }).buildAndRun(ctxFor(svc))).rejects.toThrow();
     expect(h.docker).toContainEqual(['service', 'rollback', '--detach', 'nd-web_web']);
+  });
+});
+
+describe('dockerAuthKey (review M4)', () => {
+  it('normalises the registry the way the Docker CLI looks it up', async () => {
+    const { dockerAuthKey } = await import('../src/lib/swarm.js');
+    for (const hub of [undefined, '', 'docker.io', 'index.docker.io', 'registry-1.docker.io', 'https://index.docker.io/v1/', 'DOCKER.IO']) {
+      expect(dockerAuthKey(hub), String(hub)).toBe('https://index.docker.io/v1/');
+    }
+    expect(dockerAuthKey('reg.example.com')).toBe('reg.example.com');
+    expect(dockerAuthKey('https://Reg.Example.com:5000/v2/')).toBe('reg.example.com:5000');
+    expect(dockerAuthKey('ghcr.io')).toBe('ghcr.io');
   });
 });
 

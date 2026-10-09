@@ -218,7 +218,7 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
 
       // ── 0.16 T6 server delete guard (M7) ──
       // Dependents a delete must never orphan, even with ?force=true (node
-      // databases, design §5.7). The T1 stub reports none, so the route
+      // databases, design §5.7; a Swarm member, T7). The T1 stub reported none, so the route
       // behaves exactly as before.
       const blockers = await serverDeleteBlockers(authed.db, id);
       if (blockers.length > 0) {

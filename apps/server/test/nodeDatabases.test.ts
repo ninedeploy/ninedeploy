@@ -607,6 +607,21 @@ describe('server delete guard (M7) and the servers list', () => {
     const list = (await app.inject({ method: 'GET', url: '/servers', headers: asUser() })).json() as Array<{ id: number; databases: number }>;
     expect(list.find((s) => s.id === serverId)!.databases).toBe(1);
   });
+
+  it('0.16 T7: DELETE /v1/servers/:id answers 409 server_swarm_member for a Swarm member, even with ?force=true; after leave it deletes', async () => {
+    const memberId = 'wrk0000000000000000000001';
+    await db.update(servers).set({ swarmNodeId: memberId, swarmRole: 'worker' }).where(eq(servers.id, otherServerId));
+    const app = await appWith([serverRoutes, '/servers']);
+    for (const url of [`/servers/${otherServerId}`, `/servers/${otherServerId}?force=true`]) {
+      const res = await app.inject({ method: 'DELETE', url, headers: asUser() });
+      expect([res.statusCode, res.json().error.code]).toEqual([409, 'server_swarm_member']);
+      expect(res.json().error.message).toMatch(new RegExp(`member of the panel's Docker Swarm \\(node ${memberId}\\).*POST /v1/servers/${otherServerId}/swarm/leave`));
+    }
+    expect((await db.select().from(servers).where(eq(servers.id, otherServerId))).length).toBe(1);
+    // What leave leaves behind: no swarm node id, so the delete goes through.
+    await db.update(servers).set({ swarmNodeId: null, swarmRole: null }).where(eq(servers.id, otherServerId));
+    expect((await app.inject({ method: 'DELETE', url: `/servers/${otherServerId}`, headers: asUser() })).statusCode).toBe(200);
+  });
 });
 
 describe('status sweep (plugins/nodeDatabases.ts, design §5.6)', () => {
