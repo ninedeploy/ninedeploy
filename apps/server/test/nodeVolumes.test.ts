@@ -440,6 +440,55 @@ async function volumesApp() {
   return app;
 }
 
+describe('0.16: attaching an existing volume by name to a node service (POST /services/:id/volumes)', () => {
+  const attach = async (serviceId: number, volumeName: string) => {
+    const { serviceVolumesRoutes } = await import('../src/modules/serviceVolumes.js');
+    const app = await buildTestApp({ db });
+    await app.register(serviceVolumesRoutes, { prefix: '/services' });
+    const res = await app.inject({ method: 'POST', url: `/services/${serviceId}/volumes`, headers: asUser(), payload: { volumeName, containerPath: '/media' } });
+    await app.close();
+    return res;
+  };
+  const attached = async (serviceId: number) =>
+    (await db.select().from(serviceVolumeAttachments)).filter((a) => a.serviceId === serviceId).map((a) => a.volumeName);
+
+  it('a volume that exists only on the node is found there, not looked up on the panel host', async () => {
+    h.volumes.set('nd-svc-web-media', {});
+    const res = await attach(web, 'nd-svc-web-media');
+    expect(res.statusCode).toBe(200);
+    expect(ops()).toEqual(['agent.ping', 'docker.volumeInspect']);
+    expect(h.ops[1]!.params).toEqual({ name: 'nd-svc-web-media' });
+    expect(await attached(web)).toEqual(['nd-svc-web-media']);
+  });
+
+  it('a panel-host namesake does not count: 404 naming the node', async () => {
+    engine.panelVolumes.add('nd-svc-web-media');
+    const res = await attach(web, 'nd-svc-web-media');
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.message).toMatch(/does not exist on node "edge-1"/);
+    expect(await attached(web)).toEqual([]);
+  });
+
+  it('a 0.15 agent: 422 node_agent_outdated after agent.ping only, no row, no panel-host lookup', async () => {
+    h.ping = CAPS_015;
+    engine.panelVolumes.add('nd-svc-web-media');
+    const res = await attach(web, 'nd-svc-web-media');
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.code).toBe('node_agent_outdated');
+    expect(ops()).toEqual(['agent.ping']);
+    expect(await attached(web)).toEqual([]);
+  });
+
+  it('a panel-host service keeps today’s behaviour: the panel host is asked, the node never', async () => {
+    h.volumes.set('nd-svc-api-media', {});
+    expect((await attach(api, 'nd-svc-api-media')).statusCode).toBe(404);
+    engine.panelVolumes.add('nd-svc-api-media');
+    expect((await attach(api, 'nd-svc-api-media')).statusCode).toBe(200);
+    expect(ops()).toEqual([]);
+    expect(await attached(api)).toEqual(['nd-svc-api-media']);
+  });
+});
+
 describe('node volumes on the Volumes routes (design §4.3)', () => {
   it('GET ?serverId= lists the node volumes: owners on that node only, inUse from the node, sizes, provenance', async () => {
     h.volumes.set('nd-svc-web-data', { 'ninedeploy.managed': 'volume' });

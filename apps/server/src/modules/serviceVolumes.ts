@@ -21,7 +21,9 @@ import {
   visibleServiceIdSet,
   type AuthedUser,
 } from '../lib/resourceAccess.js';
-import { badRequest, conflict, forbidden, isUniqueViolation, notFound, parseId as num } from '../lib/errors.js';
+import { badRequest, conflict, forbidden, HttpError, isUniqueViolation, notFound, parseId as num } from '../lib/errors.js';
+import { assertNodeCapability, nodeLabel } from '../lib/agentCapabilities.js';
+import { nodeVolumeExists } from '../lib/nodeVolumes.js';
 import { containerRunning, listManagedVolumeNames, HELPER_IMAGE } from '../lib/inventory.js';
 import type { DB } from '@ninedeploy/db';
 
@@ -326,7 +328,19 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
     // provision it on the next deploy. For an existing-volume attach, the
     // volume MUST already exist on this host (a typo from the operator
     // should not silently create a fresh empty volume).
-    if (input.volumeName) {
+    // 0.16: a node service mounts the volume of its node, so that is where it
+    // must exist — a panel-host namesake is a different volume. Asked through
+    // the agent's `volume.manage` (an older agent gets the standard refusal).
+    if (input.volumeName && svc.serverId != null) {
+      await assertNodeCapability(app.db, svc.serverId, { cap: 'volume.manage', feature: 'attach node volumes', sealedRequired: false });
+      let known: boolean;
+      try {
+        known = await nodeVolumeExists(app.db, svc.serverId, volumeName);
+      } catch (err) {
+        throw new HttpError(502, 'node_unreachable', `Could not ask node #${svc.serverId} for volume '${volumeName}': ${err instanceof Error ? err.message : String(err)}`);
+      }
+      if (!known) throw notFound(`Volume '${volumeName}' does not exist on node ${await nodeLabel(app.db, svc.serverId)}`);
+    } else if (input.volumeName) {
       const known = (await listManagedVolumeNames().catch(() => [] as string[])).includes(volumeName);
       if (!known) throw notFound(`Volume '${volumeName}' does not exist on this host`);
     }

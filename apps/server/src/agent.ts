@@ -1167,6 +1167,9 @@ export function _resetAgentTerminals(): void {
  * The route consults this alongside `OPS` so a new handler cannot be reachable
  * without being listed here (or unreachable after being added).
  */
+/** 0.16: git's refusal of `--depth` by a server without shallow support (dumb HTTP, some self-hosted servers). */
+const SHALLOW_UNSUPPORTED = /does not support shallow|dumb http transport/i;
+
 const HANDLED_OPS = new Set([
   'agent.ping',
   'workspace.remove',
@@ -1296,7 +1299,7 @@ export async function runOp(
     // `onLine`. Any other failure is returned as is.
     let shallowUnsupported = false;
     const watch = (line: string) => {
-      if (/does not support shallow|dumb http transport/i.test(line)) shallowUnsupported = true;
+      if (SHALLOW_UNSUPPORTED.test(line)) shallowUnsupported = true;
       onLine(line);
     };
     const shallow = await spawnValidated('git', argv, watch, { cwd: dir, ...credentialOpts });
@@ -1329,7 +1332,18 @@ export async function runOp(
     if (sha !== 'HEAD') {
       const present = await spawnValidated('git', ['cat-file', '-e', `${sha}^{commit}`], () => undefined, opts);
       if (present !== 0) {
-        await spawnValidated('git', [...GIT_EGRESS_FLAGS, 'fetch', '--depth', '1', 'origin', sha], onLine, { ...opts, ...credentialOpts });
+        // 0.16: as in git.ensure, a server without shallow support refuses
+        // `--depth`; fetch the commit once more without it on that refusal only.
+        let shallowUnsupported = false;
+        const watch = (line: string) => {
+          if (SHALLOW_UNSUPPORTED.test(line)) shallowUnsupported = true;
+          onLine(line);
+        };
+        const fetched = await spawnValidated('git', [...GIT_EGRESS_FLAGS, 'fetch', '--depth', '1', 'origin', sha], watch, { ...opts, ...credentialOpts });
+        if (fetched !== 0 && shallowUnsupported) {
+          onLine('the git server does not support shallow fetches (dumb HTTP transport) — retrying with a full fetch');
+          await spawnValidated('git', [...GIT_EGRESS_FLAGS, 'fetch', 'origin', sha], onLine, { ...opts, ...credentialOpts });
+        }
       }
     }
     return spawnValidated('git', ['reset', '--hard', sha], onLine, opts);

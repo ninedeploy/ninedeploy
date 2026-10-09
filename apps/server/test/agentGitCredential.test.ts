@@ -154,6 +154,45 @@ describe('runOp: the credential reaches only the network git children, through e
     expect(calls().filter(([, argv]) => argv.includes('clone'))).toHaveLength(1);
   });
 
+  it('0.16: git.reset of a missing commit on a dumb-HTTP server retries the fetch once without --depth', async () => {
+    const EGRESS = ['-c', 'http.followRedirects=false', '-c', 'protocol.file.allow=never', '-c', 'protocol.ext.allow=never'];
+    const dumb = 'http://192.168.176.4/dockerfile.git';
+    spawnMock.mockImplementation((async (_e: string, argv: string[], onLine: (l: string) => void) => {
+      if (argv[0] === 'cat-file') return 1; // the pinned commit is missing
+      if (argv.includes('fetch') && argv.includes('--depth')) {
+        onLine(`fatal: dumb http transport does not support shallow capabilities (${TOKEN})`);
+        return 128;
+      }
+      return 0;
+    }) as never);
+    const lines: string[] = [];
+    await expect(runOp('git.reset', { workspace: 'web', sha: 'abcdef1234', url: dumb, credential: CRED }, (l) => lines.push(l), SEALED)).resolves.toBe(0);
+    expect(calls().map(([, argv]) => argv)).toEqual([
+      ['cat-file', '-e', 'abcdef1234^{commit}'],
+      [...EGRESS, 'fetch', '--depth', '1', 'origin', 'abcdef1234'],
+      [...EGRESS, 'fetch', 'origin', 'abcdef1234'],
+      ['reset', '--hard', 'abcdef1234'],
+    ]);
+    // Both fetches carry the credential through env; cat-file and reset never do.
+    expect(calls().map(([, , , opts]) => opts?.env?.['GIT_CONFIG_VALUE_0'])).toEqual([undefined, `AUTHORIZATION: basic ${BASIC}`, `AUTHORIZATION: basic ${BASIC}`, undefined]);
+    expect(lines.some((l) => /does not support shallow fetches .* retrying with a full fetch/.test(l))).toBe(true);
+    expect(lines.join('\n')).not.toContain(TOKEN);
+    expectNoSecretOutsideEnv();
+
+    // Control: any other fetch failure is not retried.
+    spawnMock.mockReset();
+    spawnMock.mockImplementation((async (_e: string, argv: string[], onLine: (l: string) => void) => {
+      if (argv[0] === 'cat-file') return 1;
+      if (argv.includes('fetch')) {
+        onLine('fatal: Authentication failed for the repository');
+        return 128;
+      }
+      return 0;
+    }) as never);
+    await runOp('git.reset', { workspace: 'web', sha: 'abcdef1234', url: dumb, credential: CRED }, () => {}, SEALED);
+    expect(calls().filter(([, argv]) => argv.includes('fetch'))).toHaveLength(1);
+  });
+
   it('git.ensure on an existing checkout: only the fetch gets it — config and set-url never do', async () => {
     const dir = await resolveWorkspace('cred-existing');
     mkdirSync(path.join(dir, '.git'), { recursive: true });
