@@ -1014,6 +1014,26 @@ async function openapiChecks(token) {
   step(`OpenAPI: 401 without auth; ${doc.openapi} with ${paths.length} paths / ${ops} operations (version ${doc.info?.version}, ${undocumented} undocumented), every path has an operation; ETag → 304`);
 }
 
+// 0.15.4: Docker Swarm, opt-in. An upgrade must not put the host in Swarm
+// mode or move an existing service onto a stack; nothing touches Swarm until
+// an operator runs init and enables it.
+const SWARM_IN = [0, 15, 4];
+
+async function swarmChecks(token, serviceId) {
+  const state = dind(['info', '--format', '{{.Swarm.LocalNodeState}}']);
+  if (state !== 'inactive') fail(`the Docker host is in Swarm state '${state}' after the upgrade (wanted inactive)`);
+  const s = await api('/v1/swarm', { token });
+  if (s.status !== 200) fail(`GET /v1/swarm answered ${s.status}: ${s.text.slice(0, 200)}`);
+  if (s.json.enabled !== false || s.json.localState !== 'inactive' || s.json.managerAddr !== null) {
+    fail(`GET /v1/swarm after the upgrade: ${s.text.slice(0, 200)} (wanted not enabled, inactive)`);
+  }
+  const v = await api(`/v1/services/${serviceId}/swarm`, { token });
+  if (v.status !== 200 || v.json.stack !== null) fail(`GET /v1/services/${serviceId}/swarm: ${v.status} ${v.text.slice(0, 200)} (wanted no stack)`);
+  const anon = await api('/v1/swarm');
+  if (anon.status !== 401) fail(`GET /v1/swarm without auth answered ${anon.status} (wanted 401)`);
+  step('0.15.4 Swarm: the Docker host stays out of Swarm mode, Swarm is not enabled, the redeployed service is not a stack; 401 without auth');
+}
+
 /** A local account with no seat anywhere, signed in. */
 async function createGuest(token, label) {
   const email = `guest-${label}-${suffix}@nd.local`;
@@ -1528,6 +1548,7 @@ async function main() {
   const redeploy = await waitDeploy(token, serviceId, (all) => all.find((d) => d.id !== first.id), TO);
   if (redeploy.status !== 'running') fail(`${TO}: redeploy ended as '${redeploy.status}'`);
   step(`redeploy #${redeploy.id} green on ${TO}`);
+  if (!olderThan(TO, SWARM_IN)) await swarmChecks(token, serviceId);
 
   docker(['stop', PANEL]);
   const post = await inspectDb(TO);
