@@ -550,7 +550,7 @@ async function echoPid(t, label) {
   const a = rnd();
   const b = rnd();
   const want = new RegExp(`nd-smoke-${a + b} nd-pid-(\\d+)`);
-  t.type(`echo nd-smoke-$((${a}+${b})) nd-pid-$\r`);
+  t.type(`echo nd-smoke-$((${a}+${b})) nd-pid-$$\r`);
   if (!(await waitFor(() => want.test(t.state.out), 15_000))) fail(`${label}: the echo never came back (output tail: ${JSON.stringify(t.state.out.slice(-300))})`);
   return { marker: `nd-smoke-${a + b}`, pid: Number(want.exec(t.state.out)[1]) };
 }
