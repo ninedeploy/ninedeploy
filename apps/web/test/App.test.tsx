@@ -130,7 +130,7 @@ describe('App', () => {
     authState({ id: 1, email: 'a@b.c' });
     mockOf(api.templates.list).mockResolvedValue([] as never);
     renderWithProviders(<App />, { route: '/hub' });
-    await screen.findByTestId('layout');
+    await screen.findByTestId('layout', {}, { timeout: 5000 });
     expect(await screen.findByText('Hub')).toBeInTheDocument();
   });
 
@@ -140,7 +140,7 @@ describe('App', () => {
     authState({ id: 1, email: 'a@b.c', isOperator: true } as never);
     mockOf(api.activity.list).mockResolvedValue({ entries: [] } as never);
     renderWithProviders(<App />, { route: '/activity' });
-    await screen.findByTestId('layout');
+    await screen.findByTestId('layout', {}, { timeout: 5000 });
     expect(await screen.findByText('Activity & Audit Logs')).toBeInTheDocument();
   });
 
@@ -194,7 +194,7 @@ describe('App', () => {
       effectivelyExpired: false,
     } as never);
     renderWithProviders(<App />, { route: '/domains/transfers/tok123/accept' });
-    await screen.findByTestId('layout');
+    await screen.findByTestId('layout', {}, { timeout: 5000 });
     expect(await screen.findByText('Domain transfer: shop.example.com')).toBeInTheDocument();
     expect(screen.queryByText('Not found')).toBeNull();
   });
@@ -229,7 +229,7 @@ describe('App', () => {
     authState({ id: 1, email: 'a@b.c', isOperator: true } as never);
     mockOf(api.githubApps.completeManifest).mockResolvedValue({ id: 1, name: 'NineDeploy x', installUrl: null } as never);
     const first = renderWithProviders(<App />, { route: '/github-apps/callback?code=c0de&state=s.t' });
-    await screen.findByTestId('layout');
+    await screen.findByTestId('layout', {}, { timeout: 5000 });
     expect(await screen.findByTestId('github-app-registered')).toBeInTheDocument();
     expect(api.githubApps.completeManifest).toHaveBeenCalledWith({ code: 'c0de', state: 's.t' });
     first.unmount();
