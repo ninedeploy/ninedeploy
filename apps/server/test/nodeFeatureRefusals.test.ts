@@ -248,10 +248,114 @@ describe('the regression baseline: an image deploy to a 0.15 agent is unchanged'
 // Feature-route refusal cases with CAPS_015 (design §1.7): each task adds its
 // own, asserting 422 node_agent_outdated, only `agent.ping`, no row written.
 // ── 0.16 T3 node builds and private clones ── (Nixpacks, Railpack, PAT, deploy key)
+describe('T3: node builds and private clones against a 0.15 agent', () => {
+  const T3_KEY = '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ==\n-----END OPENSSH PRIVATE KEY-----';
+
+  async function t3Service(values: Record<string, unknown>, build?: Record<string, unknown>) {
+    const { buildConfigs } = await import('@ninedeploy/db');
+    const [svc] = await db
+      .insert(services)
+      .values({ name: 'web', slug: 'web', type: 'docker', repoUrl: 'https://github.com/acme/web.git', branch: 'main', serverId, ...values })
+      .returning();
+    if (build) await db.insert(buildConfigs).values({ serviceId: svc!.id, ...build });
+    return svc!;
+  }
+  async function t3Source(values: Record<string, unknown>) {
+    const { sources } = await import('@ninedeploy/db');
+    return (await db.insert(sources).values({ type: 'github', name: 'src', allowOnNodes: true, ...values } as never).returning())[0]!.id;
+  }
+  const rowCounts = async () => {
+    const { deployments } = await import('@ninedeploy/db');
+    return { deployments: (await db.select().from(deployments)).length, transfers: (await db.select().from(imageTransfers)).length };
+  };
+
+  for (const [name, setup, feature] of [
+    ['Nixpacks', async () => t3Service({}, { buildPack: 'nixpacks' }), 'build with Nixpacks'],
+    ['a PAT (allowed on nodes)', async () => t3Service({ sourceId: await t3Source({ tokenEncrypted: encrypt('ghp_x') }) }), 'clone with a personal access token'],
+    ['a deploy key (allowed on nodes)', async () => t3Service({ sourceId: await t3Source({ deployKeyEncrypted: encrypt(T3_KEY) }) }), 'clone with a deploy key'],
+  ] as const) {
+    it(`${name}: queue time answers 422 node_agent_outdated, asks only agent.ping, writes no row`, async () => {
+      const { assertRemoteServiceSupported } = await import('../src/lib/remoteDeploy.js');
+      const svc = await setup();
+      const before = await rowCounts();
+      h.ops = [];
+      const err = await assertRemoteServiceSupported(db, svc).catch((e: unknown) => e);
+      expect(err).toMatchObject({
+        statusCode: 422,
+        code: 'node_agent_outdated',
+        message: expect.stringMatching(new RegExp(`\\(version 0\\.15\\.1\\) cannot ${feature}\\. Update the node agent to v0\\.15\\.2 or newer`)),
+      });
+      expect(h.ops).toEqual(['agent.ping']);
+      expect(await rowCounts()).toEqual(before);
+    });
+  }
+
+  it('Railpack is not refused: a 0.15 agent keeps the r520 Dockerfile build, and Nixpacks fails the job before any clone', async () => {
+    const { assertRemoteServiceSupported } = await import('../src/lib/remoteDeploy.js');
+    await expect(assertRemoteServiceSupported(db, await t3Service({}, { buildPack: 'railpack' }))).resolves.toBeUndefined();
+    const sent: string[] = [];
+    const agent015 = async (op: string) => {
+      sent.push(op);
+      return { exitCode: 0, lines: op === 'agent.ping' ? [CAPS_015] : [] };
+    };
+    const err = await createRemoteDockerBuilder(agent015, { nodeLabel: '"edge-1" (#1)' })
+      .buildAndRun({
+        deploymentId: 7,
+        service: { id: 1, name: 'web', slug: 'web', type: 'docker', image: null, repoUrl: 'https://github.com/acme/web.git', branch: null, port: 80, healthPath: '/', cpuShares: 0, cpuLimitMilli: 0, memLimitMb: 0, volumeMount: null, publishedPort: null, serverId },
+        buildConfig: { buildPack: 'nixpacks' },
+        workDir: '/nonexistent/x',
+        commitSha: 'deadbeefcafe',
+        env: {},
+        log: () => undefined,
+      } as never)
+      .catch((e: unknown) => e);
+    expect((err as Error).message).toMatch(/cannot build with Nixpacks\. Update the node agent to v0\.15\.2/);
+    expect(sent.filter((op) => op.startsWith('git.') || op.startsWith('build.') || op === 'docker.build')).toEqual([]);
+  });
+});
 // ── end 0.16 T3 ──
 // ── 0.16 T4 build placement ── (image transfer to the node)
 // ── end 0.16 T4 ──
 // ── 0.16 T5 node volumes ── (attachments / cmd / socket, volume create)
+describe('T5 node volumes against a 0.15 agent (CAPS_015)', () => {
+  it('attachments, a command or the socket on a node docker service: 422, only agent.ping, nothing written', async () => {
+    const { assertRemoteVolumeSupported, remoteVolumeRefusal } = await import('../src/lib/remoteVolumes.js');
+    const { serviceVolumeAttachments } = await import('@ninedeploy/db');
+    const [svc] = await db.insert(services).values({ name: 'minio', slug: 'minio', type: 'docker', serverId }).returning();
+    await db.insert(serviceVolumeAttachments).values({ serviceId: svc!.id, volumeName: 'nd-svc-minio-cache', containerPath: '/cache' });
+    for (const shape of [{}, { cmd: ['server', '/data'] }, { dockerSocket: true }]) {
+      h.ops = [];
+      const err = await assertRemoteVolumeSupported(db, { ...svc!, ...shape }).catch((e: unknown) => e);
+      expect(err).toMatchObject({
+        statusCode: 422,
+        code: 'node_agent_outdated',
+        message: expect.stringMatching(/cannot run a service with volume attachments, a command or the Docker socket\. Update the node agent to v0\.15\.2 or newer/),
+      });
+      expect(h.ops).toEqual(['agent.ping']);
+    }
+    expect((await db.select().from(serviceVolumeAttachments)).length).toBe(1);
+    // The baseline: the same service with nothing new needed asks the node nothing.
+    await db.delete(serviceVolumeAttachments);
+    h.ops = [];
+    expect(await remoteVolumeRefusal(db, svc!)).toBeNull();
+    expect(h.ops).toEqual([]);
+  });
+
+  it('POST /v1/volumes on the node: 422 node_agent_outdated, only agent.ping, no volume created', async () => {
+    const { volumeRoutes } = await import('../src/modules/volumes.js');
+    const app = await buildTestApp({ db });
+    await app.register(volumeRoutes, { prefix: '/volumes' });
+    const res = await app.inject({ method: 'POST', url: '/volumes', headers: asUser(), payload: { name: 'nd-svc-cache', serverId } });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error).toMatchObject({ code: 'node_agent_outdated', message: expect.stringMatching(/cannot create node volumes\. Update the node agent to v0\.15\.2/) });
+    expect(h.ops).toEqual(['agent.ping']);
+    // Listing a node's volumes is refused the same way.
+    h.ops = [];
+    expect((await app.inject({ method: 'GET', url: `/volumes?serverId=${serverId}`, headers: asUser() })).json().error.code).toBe('node_agent_outdated');
+    expect(h.ops).toEqual(['agent.ping']);
+    await app.close();
+  });
+});
 // ── end 0.16 T5 ──
 // ── 0.16 T6 node databases ── (node database create)
 // ── end 0.16 T6 ──

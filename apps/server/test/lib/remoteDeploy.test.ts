@@ -94,30 +94,48 @@ describe('remoteDatabaseRefusal (r269)', () => {
 });
 
 /** A db whose volume-attachment select answers `rows`. */
+/**
+ * `rows` are the service's attachments (`.where`); a whole-table read (the
+ * node-volume host check, lib/remoteVolumes.ts) answers no rows.
+ */
 const attachmentsDb = (rows: unknown[] = []) =>
-  ({ select: () => ({ from: () => ({ where: async () => rows }) }) }) as never;
+  ({
+    select: () => ({ from: () => Object.assign(Promise.resolve([] as unknown[]), { where: async () => rows }) }),
+    query: { buildConfigs: { findFirst: async () => undefined } },
+  }) as never;
+
+/**
+ * Multi-node (T5 integration): the r266 shapes are refused only when the
+ * node's agent cannot run them (`docker.runSpec`, `volume.manage`, sealed).
+ * These probes stand in for a 0.15 agent and a current one.
+ */
+const pingProbe = (caps: string[], version = '0.15.1') => async () => ({
+  agent: async () => ({ exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version, caps })}`] }),
+  nodeLabel: '"edge-1" (#4)',
+  sealed: true,
+});
+const AGENT_015 = pingProbe(['build-path-guard', 'workspace.remove', 'git.credential', 'terminal']);
+const AGENT_CURRENT = pingProbe(['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'docker.runSpec', 'volume.manage'], '0.15.2');
 
 describe('remoteServiceRefusal (r266)', () => {
   it('refuses a docker service whose container needs a command on a node', async () => {
     // minio's bare entrypoint prints help and exits: without `server /data`
     // it "deployed" and was never up.
-    const reason = await remoteServiceRefusal(attachmentsDb(), {
-      id: 1,
-      serverId: 4,
-      type: 'docker',
-      cmd: ['server', '/data'],
-    });
-    expect(reason).toMatch(/container command/);
-    expect(reason).toMatch(/Clear the target server/);
+    const svc = { id: 1, serverId: 4, type: 'docker', cmd: ['server', '/data'] };
+    const reason = await remoteServiceRefusal(attachmentsDb(), svc, { probe: AGENT_015 });
+    expect(reason).toMatch(/cannot run a service with volume attachments, a command or the Docker socket/);
+    expect(reason).toMatch(/Update the node agent/);
+    // An agent that can run it (docker.runSpec): no refusal.
+    expect(await remoteServiceRefusal(attachmentsDb(), svc, { probe: AGENT_CURRENT })).toBeNull();
   });
 
   it('refuses the Docker socket mount and extra volume attachments', async () => {
-    expect(await remoteServiceRefusal(attachmentsDb(), { id: 1, serverId: 4, dockerSocket: true })).toMatch(
+    expect(await remoteServiceRefusal(attachmentsDb(), { id: 1, serverId: 4, dockerSocket: true }, { probe: AGENT_015 })).toMatch(
       /Docker socket/,
     );
     expect(
-      await remoteServiceRefusal(attachmentsDb([{ id: 9 }]), { id: 1, serverId: 4, type: 'docker' }),
-    ).toMatch(/attached volumes/);
+      await remoteServiceRefusal(attachmentsDb([{ volumeName: 'nd-svc-data-data', containerPath: '/data' }]), { id: 1, serverId: 4, type: 'docker' }, { probe: AGENT_015 }),
+    ).toMatch(/volume attachments/);
   });
 
   it('passes a plain docker service, a compose service and any panel-host service', async () => {
@@ -140,7 +158,11 @@ describe('remoteServiceRefusal (r266)', () => {
     const withSource = (src: Record<string, unknown> | undefined) =>
       ({
         select: () => ({ from: () => ({ where: async () => [] }) }),
-        query: { sources: { findFirst: async () => src }, serviceGithubLinks: { findFirst: async () => undefined } },
+        query: {
+          sources: { findFirst: async () => src },
+          serviceGithubLinks: { findFirst: async () => undefined },
+          buildConfigs: { findFirst: async () => undefined },
+        },
       }) as never;
     const repoSvc = { id: 1, serverId: 4, type: 'docker', sourceId: 3, repoUrl: 'https://github.com/acme/private.git' };
     // The panel clones with the token; the node's git.ensure has no credential
@@ -191,8 +213,17 @@ describe('remoteServiceRefusal (r266)', () => {
   });
 
   it('assertRemoteServiceSupported throws the 400 the panel switches on', async () => {
+    // A PAT whose source does not allow nodes: refused before the node is asked anything.
+    const patDb = {
+      select: () => ({ from: () => ({ where: async () => [] }) }),
+      query: {
+        sources: { findFirst: async () => ({ type: 'github', tokenEncrypted: 'x', allowOnNodes: false }) },
+        serviceGithubLinks: { findFirst: async () => undefined },
+        buildConfigs: { findFirst: async () => undefined },
+      },
+    } as never;
     await expect(
-      assertRemoteServiceSupported(attachmentsDb(), { id: 1, serverId: 4, dockerSocket: true }),
+      assertRemoteServiceSupported(patDb, { id: 1, serverId: 4, type: 'docker', sourceId: 3, repoUrl: 'https://github.com/acme/private.git' }),
     ).rejects.toMatchObject({ statusCode: 400, code: 'remote_deploy_unsupported' });
   });
 });

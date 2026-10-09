@@ -1,3 +1,4 @@
+import { volumeCreate } from '@ninedeploy/schemas';
 import type { RouteSpecMap } from '../types.js';
 
 /**
@@ -18,6 +19,14 @@ export const multiNodeSpecs: RouteSpecMap = {
   // ── 0.16 T4 build placement ──
   // ── end 0.16 T4 ──
   // ── 0.16 T5 node volumes ──
+  'POST /v1/volumes': {
+    summary: 'Create a managed volume on the panel host or a node',
+    tag: 'volumes',
+    floor: 'operator',
+    body: volumeCreate,
+    responseType: '{ ok: boolean; name: string; serverId: number | null }',
+    validation: 'zod',
+  },
   // ── end 0.16 T5 ──
   // ── 0.16 T6 node databases ──
   // ── end 0.16 T6 ──

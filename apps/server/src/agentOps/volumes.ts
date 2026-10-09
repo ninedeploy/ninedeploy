@@ -155,3 +155,50 @@ export const volumeImportKind: StreamKindHandler = {
     } satisfies PreparedStream;
   },
 };
+
+// ── 0.16 T5 node volumes ─────────────────────────────────────────────────────
+// The Volumes page for a node (design §4.2, §4.3) needs two answers
+// `docker.volumeList` does not give: which containers mount each volume (the
+// `inUse` flag, and the restore guard's "stop the service first"), and how
+// big a volume is. Both are read-only, on `volume.manage` (advertised since
+// the same release), and take only literal formats or a managed name.
+
+/** Separator of a `docker.volumeUsage` line: `<container>\t<state>\t<mounts>`. */
+export const VOLUME_USAGE_FORMAT = '{{.Names}}\t{{.State}}\t{{.Mounts}}';
+
+/**
+ * `docker.volumeUsage`: one line per container on the node (running or not)
+ * with the names of the volumes it mounts — the panel keeps the managed ones.
+ * A literal format string, never the caller's.
+ */
+async function volumeUsageOp(onLine: (line: string) => void): Promise<number> {
+  return spawnValidated('docker', ['ps', '-a', '--no-trunc', '--format', VOLUME_USAGE_FORMAT], onLine);
+}
+
+/** Exit code `docker.volumeSize` answers for a volume that does not exist (it is never created). */
+export const VOLUME_MISSING_EXIT = 4;
+
+/**
+ * `docker.volumeSize {name}`: `du -sb` of the volume through the pinned helper
+ * image, read-only and without a network — the panel host's own size probe
+ * (modules/volumes.ts). The existence check comes first: `docker run -v`
+ * would CREATE a missing volume.
+ */
+async function volumeSizeOp(params: Params, onLine: (line: string) => void): Promise<number> {
+  const name = managedVolume(str(params, 'name'));
+  if (!(await volumeExists(name))) {
+    onLine(`ND-VOLUME-MISSING ${name}`);
+    return VOLUME_MISSING_EXIT;
+  }
+  return spawnValidated('docker', ['run', '--rm', '--network', 'none', '-v', `${name}:/v:ro`, HELPER_IMAGE, 'du', '-sb', '/v'], onLine);
+}
+
+export const nodeVolumeOps: AgentOpModule = {
+  name: 'agentOps/volumes.ts (node volumes)',
+  caps: ['volume.manage'],
+  ops: {
+    'docker.volumeUsage': { cap: 'volume.manage', sealedOnly: false, run: (_p, onLine) => volumeUsageOp(onLine) },
+    'docker.volumeSize': { cap: 'volume.manage', sealedOnly: false, run: (p, onLine) => volumeSizeOp(p, onLine) },
+  },
+};
+// ── end 0.16 T5 ──

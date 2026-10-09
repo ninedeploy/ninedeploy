@@ -51,6 +51,10 @@ export const multiNodeErrorCode = z.enum([
   'attachment_host_mismatch',
   'fanout_database_host',
   'remote_database',
+  // T5: a volume backup taken on another host (restore needs `?acrossHosts=true`).
+  'backup_host_mismatch',
+  // T5: the volume file manager works on panel-host volumes only.
+  'node_volume_files_unsupported',
 ]);
 export type MultiNodeErrorCode = z.infer<typeof multiNodeErrorCode>;
 

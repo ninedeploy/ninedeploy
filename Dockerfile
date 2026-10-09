@@ -72,8 +72,13 @@ ARG TARGETARCH
 # Debian trixie split the CLI out of docker.io into its own docker-cli package —
 # docker.io alone no longer provides /usr/bin/docker.
 # git: repo checkouts. tini: proper signal handling / zombie reaping as PID 1.
+# openssh-client (D3): deploy-key clones run `ssh -i <key>` (lib/git.ts, and on
+# a node agent `git.withKey`), and with --no-install-recommends git does NOT
+# pull it in (ssh-client is only a Recommends of Debian's git), so every
+# deploy-key clone in a docker install — and on every node agent, which runs
+# this image — failed with "cannot run ssh".
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl docker-cli git tini \
+  && apt-get install -y --no-install-recommends ca-certificates curl docker-cli git openssh-client tini \
   && case "$TARGETARCH" in \
        amd64) NIXPACKS_TARGET="x86_64-unknown-linux-musl"; NIXPACKS_SHA256="0f55de7874507b9cf7502113120bd96f2ab6979f78d10eaf2eb2ade9207b3af6" ;; \
        arm64) NIXPACKS_TARGET="aarch64-unknown-linux-musl"; NIXPACKS_SHA256="912bd02dd2bb6f9c3a9ed965fe8a68b4aa318dc7a2546e2eca6f2806a894ba39" ;; \

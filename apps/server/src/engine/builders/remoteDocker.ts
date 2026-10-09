@@ -1,8 +1,13 @@
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import type { NinedeployManifest } from '@ninedeploy/schemas';
 import type { Builder, BuildContext, DeployRuntime } from '../types.js';
 import { assertCloneTargetAllowed } from '../../lib/gitEgress.js';
 import { acquireRegistryLock, registryLockKey } from '../../lib/registryLock.js';
-import { assertAgentGuardsBuildPaths } from '../../lib/agentCapabilities.js';
+import { AGENT_CAPABILITY_VERSION, assertAgentGuardsBuildPaths, capabilityRefusalFor, parseAgentCapabilities } from '../../lib/agentCapabilities.js';
 import type { NodeGitCredentialSource } from '../../lib/nodeGitCredential.js';
+import { generateNixpacksToml } from '../../lib/ninedeployToNixpacks.js';
+import { repoRelative, resolveInRepo } from '../../lib/repoPath.js';
 import { runRemoteContainer } from './remoteRun.js';
 
 // r267: moved to remoteRun.ts with the run phase (multi-node T1); re-exported
@@ -36,14 +41,19 @@ export { envForAgent } from './remoteRun.js';
  *
  * What this covers, and what it refuses
  * -------------------------------------
- * Covered: `docker` services that run a pre-built IMAGE, and those that build a
- * Dockerfile from a git repository.
+ * Covered: `docker` services that run a pre-built IMAGE, and those that build
+ * from a git repository — a Dockerfile, or (multi-node, design §2) Nixpacks
+ * and Railpack through the agent's `build.nixpacks` / `build.railpack` ops.
+ * The PANEL resolves the build pack on its own checkout (PREPARE already holds
+ * it at the pinned commit) with the local builder's rules, so a node never
+ * decides; {@link resolveNodeBuildPlan}.
  *
  * Refused, loudly, rather than silently mishandled:
- *   - Nixpacks (Dockerfile-less source). Nixpacks is not installed on a node
- *     and the agent has no op for it; the honest fix is either an agent-side
- *     nixpacks or a panel-side build pushed to a registry, and neither is a
- *     thing this builder should fake.
+ *   - Nixpacks on an agent without `build.nixpacks` (an older agent): the
+ *     deploy fails with "update the node agent" before anything is cloned.
+ *     Railpack on such an agent keeps r520's Dockerfile substitution, so a
+ *     service that builds today keeps building identically until its agent
+ *     is updated (owner decision O10: then it really builds with Railpack).
  *   - PM2 and Compose services. The agent has no PM2 op at all, and a Compose
  *     stack needs its file materialised on the node first.
  * Each refusal throws with a message naming the reason, so the deployment fails
@@ -99,6 +109,97 @@ export interface PrebuiltImage {
   tag: string;
   imageId: string;
 }
+
+// ── 0.16 T3 node builds (design §2.2) ──
+
+/** What the node builds: the panel's decision, sent as operands. */
+export type NodeBuildPlan =
+  | { pack: 'dockerfile'; dockerfile: string; context: string }
+  | { pack: 'nixpacks'; baseDir: string }
+  | { pack: 'railpack'; baseDir: string };
+
+type PackConfig = { buildPack?: string | null; dockerfilePath?: string | null; baseDir?: string | null } | undefined;
+
+/** The `docker.build` operands every release before this one sent (the agent resolves them, r660/r666). */
+function legacyDockerfilePlan(buildConfig: PackConfig): { pack: 'dockerfile'; dockerfile: string; context: string } {
+  const dockerfile = (buildConfig?.dockerfilePath || 'Dockerfile').replace(/^\/+/, '') || 'Dockerfile';
+  const context = (buildConfig?.baseDir || '.').replace(/^\/+/, '') || '.';
+  return { pack: 'dockerfile', dockerfile, context };
+}
+
+/** True when the agent's own r666 resolution of `plan` finds a file in the panel's checkout. */
+function legacyDockerfileExists(workDir: string, plan: { dockerfile: string; context: string }): boolean {
+  try {
+    return existsSync(resolveInRepo(workDir, plan.dockerfile)) || existsSync(resolveInRepo(workDir, plan.context, plan.dockerfile));
+  } catch {
+    // A symlinked path: the agent's own walk refuses it with the message the operator needs.
+    return true;
+  }
+}
+
+/**
+ * Design §2.2: the build pack a node uses, resolved on the PANEL's checkout
+ * of the pinned commit with the local builder's rules (engine/builders/
+ * docker.ts) — Dockerfile at the configured path, else a discovered one
+ * (`findDockerfileInRepo`, two levels deep), else Nixpacks.
+ *
+ * Upgrade-safe: whenever today's node build would find its Dockerfile (or
+ * the path is pinned, or there is no panel checkout to look at), the operands
+ * are exactly the ones every earlier release sent. Only the case that could
+ * never build on a node before — `auto` with no Dockerfile where the agent
+ * looks — changes: it builds the discovered Dockerfile, or with Nixpacks.
+ */
+export async function resolveNodeBuildPlan(workDir: string, buildConfig: PackConfig, log: (line: string) => void): Promise<NodeBuildPlan> {
+  const pack = buildConfig?.buildPack ?? 'auto';
+  const legacy = legacyDockerfilePlan(buildConfig);
+  const checkout = existsSync(path.join(workDir, '.git'));
+  const baseDir = checkout ? repoRelative(workDir, buildConfig?.baseDir ?? undefined) : legacy.context;
+  if (pack === 'nixpacks') return { pack: 'nixpacks', baseDir };
+  if (pack === 'railpack') return { pack: 'railpack', baseDir };
+  if (pack !== 'auto' || !checkout || buildConfig?.dockerfilePath?.trim() || legacyDockerfileExists(workDir, legacy)) return legacy;
+  // docker.ts is loaded lazily: it imports fan-out, which imports this module.
+  const { findDockerfileInRepo } = await import('./docker.js');
+  const discovered = findDockerfileInRepo(workDir, log);
+  if (discovered) return { pack: 'dockerfile', dockerfile: discovered.dockerfilePath, context: discovered.baseDir };
+  log('No Dockerfile in the repository — building with Nixpacks on the node, as the panel host would.');
+  return { pack: 'nixpacks', baseDir };
+}
+
+/** The agent's build-env name rule (agentOps/builds.ts). */
+const RE_BUILD_ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]{0,255}$/;
+const MAX_BUILD_ENV_VALUE = 32 * 1024;
+const MAX_BUILD_ENV_KEYS = 512;
+
+/** The runtime env as a node build takes it; a variable the agent would refuse is left out of the BUILD (never the run) and named. */
+export function nodeBuildEnv(env: Record<string, string>, log: (line: string) => void): Record<string, string> {
+  const kept: Record<string, string> = {};
+  const skipped: string[] = [];
+  for (const [key, value] of Object.entries(env)) {
+    if (RE_BUILD_ENV_KEY.test(key) && value.length <= MAX_BUILD_ENV_VALUE && !value.includes('\0') && Object.keys(kept).length < MAX_BUILD_ENV_KEYS) {
+      kept[key] = value;
+    } else {
+      skipped.push(key.slice(0, 64));
+    }
+  }
+  if (skipped.length > 0) {
+    log(`⚠ ${skipped.length} environment variable(s) not passed to the node build (name, size or count a build cannot take): ${skipped.slice(0, 10).join(', ')}`);
+  }
+  return kept;
+}
+
+/** The panel-generated nixpacks.toml (with its marker line), or undefined; warnings go to the log. */
+async function nodeNixpacksToml(manifest: NinedeployManifest | undefined, log: (line: string) => void): Promise<string | undefined> {
+  if (!manifest) return undefined;
+  const generated = generateNixpacksToml(manifest);
+  for (const w of generated.warnings) log(`⚠ .ninedeploy nixpacks: ${w}`);
+  if (!generated.toml) return undefined;
+  const { GENERATED_NIXPACKS_MARKER } = await import('./docker.js');
+  return `${GENERATED_NIXPACKS_MARKER}\n${generated.toml}`;
+}
+
+/** Nixpacks apps follow the buildpack $PORT convention (docker.ts `DEFAULT_NIXPACKS_PORT`). */
+const DEFAULT_NIXPACKS_PORT = 3000;
+// ── end 0.16 T3 ──
 
 export function createRemoteDockerBuilder(
   agent: AgentCall,
@@ -157,6 +258,9 @@ export function createRemoteDockerBuilder(
       await agent('docker.networkCreate', { name: 'ninedeploy', driver: 'bridge' }, sink).catch(() => undefined);
 
       let target: string;
+      // 0.16 T3: what a source build runs on the node (resolved below).
+      let plan: NodeBuildPlan = legacyDockerfilePlan(buildConfig);
+      let builtWithNixpacks = false;
       // ── 0.16 T4 prebuilt image (M6) ──
       // Built on the panel or a build server and shipped to this node before
       // the run phase (design §6.3 step 5). Unset by every caller until build
@@ -203,14 +307,6 @@ export function createRemoteDockerBuilder(
           releaseRegistry?.();
         }
       } else {
-        const pack = buildConfig?.buildPack ?? 'auto';
-        if (pack === 'nixpacks') {
-          throw new RemoteDeployUnsupportedError(
-            'Nixpacks builds are not available on a remote node yet — the node has no nixpacks and the ' +
-              'agent has no operation for it. Add a Dockerfile to the repository, or clear the target ' +
-              'server to build on the panel host.',
-          );
-        }
         if (!service.repoUrl) {
           throw new RemoteDeployUnsupportedError(
             `"${service.name}" has neither an image nor a repository URL, so there is nothing to deploy on the node.`,
@@ -225,6 +321,31 @@ export function createRemoteDockerBuilder(
         // the repository — asked before anything is cloned onto the node.
         const label = opts.nodeLabel ?? `#${service.serverId ?? '?'}`;
         await assertAgentGuardsBuildPaths(agent, label);
+        // ── 0.16 T3 node builds (design §2.2) ──
+        // The pack is resolved on the panel's checkout and checked against
+        // the agent's capabilities BEFORE anything is cloned onto the node.
+        plan = await resolveNodeBuildPlan(ctx.workDir, buildConfig, log);
+        if (plan.pack !== 'dockerfile') {
+          const { lines } = await agent('agent.ping', {}, () => undefined);
+          const info = parseAgentCapabilities(lines);
+          if (plan.pack === 'nixpacks') {
+            const refusal = capabilityRefusalFor(info, label, { cap: 'build.nixpacks', feature: 'build with Nixpacks' });
+            if (refusal) {
+              throw new RemoteDeployUnsupportedError(
+                `${refusal.message} Until then, add a Dockerfile to the repository, or clear the target server to build on the panel host.`,
+              );
+            }
+          } else if (!info.caps.has('build.railpack')) {
+            // r520, kept for agents without `build.railpack` only: say so
+            // instead of pretending, and build the repository's Dockerfile.
+            log(
+              'Railpack is not available on a remote node — building the repository Dockerfile instead. ' +
+                `(Update the node agent to v${AGENT_CAPABILITY_VERSION['build.railpack']} or newer to build with Railpack on the node.)`,
+            );
+            plan = legacyDockerfilePlan(buildConfig);
+          }
+        }
+        // ── end 0.16 T3 ──
         // 0.13 (T5): a GitHub App repository gets a repository-scoped token for
         // this checkout only — refused for an agent that cannot take it, and
         // revoked below whatever happens. Anything else clones as before.
@@ -246,30 +367,57 @@ export function createRemoteDockerBuilder(
         }
 
         target = `ninedeploy/${service.slug}:${commitSha.slice(0, 7) || 'latest'}`;
-        if (pack === 'railpack') {
-          // r520: say so instead of pretending — a node has no Railpack, and
-          // the build below is the repository's own Dockerfile.
-          log('Railpack is not available on a remote node — building the repository Dockerfile instead.');
+        if (plan.pack === 'nixpacks') {
+          const buildEnv = nodeBuildEnv(env, log);
+          const toml = await nodeNixpacksToml(ctx.manifest, log);
+          const params: Record<string, unknown> = { workspace, baseDir: plan.baseDir, tag: target };
+          if (buildConfig?.installCmd) params['installCmd'] = buildConfig.installCmd;
+          if (buildConfig?.buildCmd) params['buildCmd'] = buildConfig.buildCmd;
+          if (buildConfig?.startCmd) params['startCmd'] = buildConfig.startCmd;
+          if (Object.keys(buildEnv).length > 0) params['env'] = buildEnv;
+          if (toml !== undefined) params['nixpacksToml'] = toml;
+          log(`Building ${target} with Nixpacks on the node …`);
+          await agent('build.nixpacks', params, sink);
+          builtWithNixpacks = true;
+        } else if (plan.pack === 'railpack') {
+          const buildEnv = nodeBuildEnv(env, log);
+          const params: Record<string, unknown> = { workspace, baseDir: plan.baseDir, tag: target };
+          if (Object.keys(buildEnv).length > 0) params['env'] = buildEnv;
+          log(`Building ${target} with Railpack on the node …`);
+          await agent('build.railpack', params, sink);
+        } else {
+          log(`Building ${target} from ${plan.dockerfile} on the node …`);
+          await agent('docker.build', { workspace, tag: target, dockerfile: plan.dockerfile, context: plan.context }, sink);
         }
-        const dockerfile = (buildConfig?.dockerfilePath || 'Dockerfile').replace(/^\/+/, '') || 'Dockerfile';
-        const baseDir = (buildConfig?.baseDir || '.').replace(/^\/+/, '') || '.';
-        log(
-          'Remote builds require a Dockerfile — the node has no Nixpacks. ' +
-            `Building ${target} from ${dockerfile} …`,
-        );
-        await agent('docker.build', { workspace, tag: target, dockerfile, context: baseDir }, sink);
+      }
+
+      // Nixpacks apps follow the buildpack $PORT convention: the same 3000
+      // default and PORT the panel host gives them (docker.ts), so a
+      // Dockerfile-less source deploy gets a port and therefore a route.
+      let runService = service;
+      let runEnv = env;
+      if (builtWithNixpacks) {
+        const port = service.port ?? DEFAULT_NIXPACKS_PORT;
+        if (service.port == null) {
+          log(`No container port configured; using Nixpacks default ${port}/tcp for runtime and Traefik`);
+          runService = { ...service, port };
+        }
+        if (env['PORT'] === undefined) runEnv = { ...env, PORT: String(port) };
       }
 
       // The run phase (env-file, `docker.runEnv`, cleanup) lives in
       // remoteRun.ts, unchanged.
       const { port: resolvedPort } = await runRemoteContainer(agent, {
-        service,
+        service: runService,
         deploymentId,
-        env,
+        env: runEnv,
         name,
         image: target,
         previous,
         log,
+        // 0.16 T5 integration (node volumes): the attachments `docker.runSpec` mounts.
+        volumeAttachments: ctx.volumeAttachments ?? [],
+        nodeLabel: opts.nodeLabel ?? `#${service.serverId ?? '?'}`,
       });
 
       return {

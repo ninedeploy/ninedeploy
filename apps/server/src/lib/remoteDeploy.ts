@@ -4,13 +4,13 @@ import {
   type DB,
   githubAppInstallations,
   serviceGithubLinks,
-  serviceVolumeAttachments,
   sources,
 } from '@ninedeploy/db';
 import { agentOp, agentTransportSealed } from './agentClient.js';
-import { type AgentCaller, gitCredentialRefusal, nodeLabel } from './agentCapabilities.js';
-import { badRequest } from './errors.js';
+import { type AgentCaller, capabilityRefusal, gitCredentialRefusal, nodeLabel } from './agentCapabilities.js';
+import { badRequest, HttpError } from './errors.js';
 import { remoteDatabaseRefusal } from './remoteDatabaseRefusal.js';
+import { remoteVolumeRefusal } from './remoteVolumes.js';
 
 // r229/r269: moved to its own file (multi-node T1, a pure move) so node
 // databases relax it there; re-exported so every caller keeps this path.
@@ -117,9 +117,88 @@ export async function cloneCredentialKind(
   return src.type !== 'registry' && (src.tokenEncrypted || src.deployKeyEncrypted) ? 'static' : 'none';
 }
 
-/** The r268 refusal: a static credential (PAT / deploy key) never leaves the panel. */
+/**
+ * The r268 refusal: a static credential (PAT / deploy key) never leaves the
+ * panel — unless its source allows it on nodes (multi-node, design §3.2), and
+ * the message now names both ways forward, the recommended one first.
+ */
 export const STATIC_CREDENTIAL_REFUSAL =
-  'Deployments to a remote server are not available for this service: its repository is cloned with a Git credential, and the node clones anonymously — the credential never leaves the panel. Detach the credential if the repository is public, or clear the target server to deploy it on the panel host.';
+  'Deployments to a remote server are not available for this service: its repository is cloned with a Git credential, and the node clones anonymously — the credential never leaves the panel. Detach the credential if the repository is public, or clear the target server to deploy it on the panel host. ' +
+  'To deploy it on the node, build it on the panel (Service → Settings → Build → Build on; recommended: the credential stays on the panel and only the image travels), ' +
+  'or allow this credential on nodes (System → Sources → Allow on nodes) so the node receives it for one clone at a time.';
+
+// ── static credentials on nodes (multi-node, design §3.2, owner decision O5) ──
+
+/** The host a source's credential belongs to (`baseUrl` first), or null when nothing names one (custom, Gitea without a base URL). */
+const PROVIDER_HOSTS: Readonly<Record<string, string>> = { github: 'github.com', gitlab: 'gitlab.com', bitbucket: 'bitbucket.org' };
+
+function isSshUrl(url: string): boolean {
+  return url.startsWith('git@') || url.startsWith('ssh://') || url.startsWith('ssh+git://');
+}
+
+/** lib/git.ts `toSshUrl`: the SSH form a deploy-key clone uses for an https URL (an SSH URL is unchanged). */
+export function deployKeyCloneUrl(url: string): string {
+  const m = /^https?:\/\/([^/]+)\/(.+?)(?:\.git)?\/?$/.exec(url);
+  return m ? `git@${m[1]}:${m[2]}.git` : url;
+}
+
+/** The host a clone URL reaches (https, `ssh://`, or scp-like `git@host:path`), lower-cased; null when unparsable. */
+export function cloneUrlHost(url: string): string | null {
+  const scp = /^[^@/:]+@([A-Za-z0-9.-]+):(?!\/\/)/.exec(url);
+  if (scp) return (scp[1] as string).toLowerCase();
+  try {
+    return new URL(url.replace(/^ssh\+git:/, 'ssh:')).hostname.toLowerCase() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** How a node clones with a static credential: the panel's own choice (lib/git.ts `useKey`), and the URL it uses. */
+export type StaticClonePlan = { mode: 'token' | 'key'; url: string } | { refusal: string };
+
+/**
+ * The node twin of `checkoutCommit`'s credential choice, read without
+ * decrypting anything: a deploy key wins for an SSH URL or when there is no
+ * token (and clones the SSH form of the URL); otherwise the token, over
+ * https only. Host check, like `resolveCloneCreds` does for a GitHub App: a
+ * source that names its provider (github/gitlab/bitbucket, or a base URL) is
+ * never sent to a repository on another host.
+ */
+export function staticClonePlan(
+  src: { name?: string | null; type: string; tokenEncrypted?: string | null; deployKeyEncrypted?: string | null; baseUrl?: string | null },
+  repoUrl: string,
+): StaticClonePlan {
+  const useKey = !!src.deployKeyEncrypted && (isSshUrl(repoUrl) || !src.tokenEncrypted);
+  const mode: 'token' | 'key' = useKey ? 'key' : 'token';
+  const url = useKey ? deployKeyCloneUrl(repoUrl) : repoUrl;
+  if (mode === 'token' && !/^https?:\/\//.test(url)) {
+    return { refusal: 'Deployments to a remote server are not available for this service: its access token clones over http(s), and the repository URL is not an http(s) URL.' };
+  }
+  if (mode === 'key' && !/^(?:ssh:\/\/|git@[A-Za-z0-9.-]+:)/.test(url)) {
+    return { refusal: 'Deployments to a remote server are not available for this service: its deploy key clones over SSH, and the repository URL has no ssh:// or git@host:path form the node can use.' };
+  }
+  let expected: string | null = PROVIDER_HOSTS[src.type] ?? null;
+  if (src.baseUrl) {
+    try {
+      expected = new URL(src.baseUrl).hostname.toLowerCase();
+    } catch {
+      /* an unparsable base URL names no host */
+    }
+  }
+  const host = cloneUrlHost(url);
+  if (expected !== null && host !== expected) {
+    return {
+      refusal:
+        `Deployments to a remote server are not available for this service: refusing to send the ${src.type} credential${src.name ? ` "${src.name}"` : ''} ` +
+        `to ${host ?? 'that URL'} — it belongs to ${expected}. Use a source for the repository's own host.`,
+    };
+  }
+  return { mode, url };
+}
+
+/** What a static credential is called in a refusal ("cannot clone with …"). */
+export const staticCredentialFeature = (mode: 'token' | 'key'): string =>
+  mode === 'key' ? 'clone with a deploy key' : 'clone with a personal access token';
 
 /** How {@link remoteServiceRefusal} reaches the node to ask about a per-job token (tests inject it). */
 export interface RemoteAgentProbe {
@@ -136,6 +215,103 @@ async function defaultAgentProbe(db: DB, serverId: number): Promise<RemoteAgentP
   };
 }
 
+/** A refusal with the HTTP status and code the queue-time check answers. */
+export interface RemoteServiceRefusal {
+  status: number;
+  code: string;
+  message: string;
+}
+
+/** The service fields the refusals read. */
+export type RemoteServiceShape = {
+  id: number;
+  serverId?: number | null;
+  type?: string | null;
+  cmd?: string[] | null;
+  dockerSocket?: boolean | null;
+  sourceId?: number | null;
+  repoUrl?: string | null;
+  image?: string | null;
+  composeContent?: string | null;
+  previewParentServiceId?: number | null;
+  volumeMount?: string | null;
+};
+
+const unsupported = (message: string): RemoteServiceRefusal => ({ status: 400, code: 'remote_deploy_unsupported', message });
+
+/**
+ * {@link remoteServiceRefusal} with the status and code: the r266/r268/0.13
+ * refusals stay 400 `remote_deploy_unsupported`; a node feature the agent
+ * lacks is the multi-node 422 `node_agent_outdated` (or 403
+ * `node_feature_disabled`, 422 `node_transport_unsealed`, 502
+ * `node_unreachable`). The node is asked nothing but `agent.ping`.
+ */
+export async function remoteServiceRefusalDetail(
+  db: DB,
+  service: RemoteServiceShape,
+  opts: { probe?: (serverId: number) => Promise<RemoteAgentProbe> } = {},
+): Promise<RemoteServiceRefusal | null> {
+  if (service.serverId == null) return null;
+  const serverId = service.serverId;
+  const type = service.type ?? 'docker';
+  let probed: RemoteAgentProbe | undefined;
+  const probe = async (): Promise<RemoteAgentProbe> => {
+    probed ??= await (opts.probe ?? ((id: number) => defaultAgentProbe(db, id)))(serverId);
+    return probed;
+  };
+  // Only a service the NODE clones: an image deploy never clones, and an
+  // inline compose stack is shipped from the panel.
+  if (service.repoUrl && !service.image && !service.composeContent) {
+    const kind = await cloneCredentialKind(db, service);
+    if (kind === 'static') {
+      // Multi-node (design §3.2): a PAT or deploy key reaches a node only
+      // when its source allows it (off for every existing source, which keeps
+      // the r268 refusal), and only to an agent that takes it over the sealed
+      // transport — whose owner can still refuse static credentials.
+      const src = service.sourceId == null ? undefined : await db.query.sources.findFirst({ where: eq(sources.id, service.sourceId) });
+      if (!src?.allowOnNodes) return unsupported(STATIC_CREDENTIAL_REFUSAL);
+      const plan = staticClonePlan(src, service.repoUrl);
+      if ('refusal' in plan) return unsupported(plan.refusal);
+      const p = await probe();
+      const why = await capabilityRefusal(p.agent, p.nodeLabel, p.sealed, {
+        cap: 'git.sshkey',
+        feature: staticCredentialFeature(plan.mode),
+        sealedRequired: true,
+      });
+      if (why) return { ...why, message: `Deployments to a remote server are not available for this service yet: ${why.message}` };
+    }
+    // 0.13 (T5): a GitHub App repository reaches the node as a short-lived,
+    // repository-scoped token per job — only for an agent that advertises
+    // `git.credential` over the sealed transport. Anything else keeps the
+    // r268 refusal, with the fix named.
+    if (kind === 'github_app') {
+      const p = await probe();
+      const why = await gitCredentialRefusal(p.agent, p.nodeLabel, p.sealed);
+      if (why) return unsupported(`Deployments to a remote server are not available for this service yet: ${why}`);
+    }
+    // Multi-node (design §2.2): an explicit Nixpacks build needs an agent
+    // with `build.nixpacks`. Railpack never refuses here (an older agent keeps
+    // the r520 Dockerfile substitution), and `auto` is resolved at job time
+    // from the panel's own checkout.
+    if (type === 'docker') {
+      const build = await db.query.buildConfigs.findFirst({ where: eq(buildConfigs.serviceId, service.id) });
+      if ((build?.buildPack ?? 'auto') === 'nixpacks') {
+        const p = await probe();
+        const why = await capabilityRefusal(p.agent, p.nodeLabel, p.sealed, { cap: 'build.nixpacks', feature: 'build with Nixpacks', sealedRequired: false });
+        if (why) return { ...why, message: `Deployments to a remote server are not available for this service yet: ${why.message}` };
+      }
+    }
+  }
+  // ── 0.16 T5 integration (node volumes, design §4.2) ──
+  // The r266 clause (a command, the Docker socket, volume attachments) is
+  // now lib/remoteVolumes.ts: null when the agent can run them
+  // (`docker.runSpec`, `volume.manage`, sealed) and no attachment crosses
+  // hosts; otherwise the capability refusal or 409 attachment_host_mismatch.
+  // Same probe, so the node is asked at most once.
+  return remoteVolumeRefusal(db, service, { probe });
+  // ── end 0.16 T5 integration ──
+}
+
 /**
  * r266: why the node cannot run this service the way the panel would, or null.
  *
@@ -149,54 +325,17 @@ async function defaultAgentProbe(db: DB, serverId: number): Promise<RemoteAgentP
  *
  * r268: the same goes for a repository behind a Git credential. The panel
  * clones with the attached source's token / deploy key, but the node's
- * `git.ensure` has no credential operand and clones anonymously — a private
- * repository failed on the node with git's ambiguous "repository not found"
- * after the panel-side checkout had succeeded.
+ * `git.ensure` used to have no credential operand and cloned anonymously — a
+ * private repository failed on the node with git's ambiguous "repository not
+ * found" after the panel-side checkout had succeeded. Multi-node: unless the
+ * source allows its credential on nodes ({@link remoteServiceRefusalDetail}).
  */
 export async function remoteServiceRefusal(
   db: DB,
-  service: {
-    id: number;
-    serverId?: number | null;
-    type?: string | null;
-    cmd?: string[] | null;
-    dockerSocket?: boolean | null;
-    sourceId?: number | null;
-    repoUrl?: string | null;
-    image?: string | null;
-    composeContent?: string | null;
-    previewParentServiceId?: number | null;
-  },
+  service: RemoteServiceShape,
   opts: { probe?: (serverId: number) => Promise<RemoteAgentProbe> } = {},
 ): Promise<string | null> {
-  if (service.serverId == null) return null;
-  const type = service.type ?? 'docker';
-  // Only a service the NODE clones: an image deploy never clones, and an
-  // inline compose stack is shipped from the panel.
-  if (service.repoUrl && !service.image && !service.composeContent) {
-    const kind = await cloneCredentialKind(db, service);
-    if (kind === 'static') return STATIC_CREDENTIAL_REFUSAL;
-    // 0.13 (T5): a GitHub App repository reaches the node as a short-lived,
-    // repository-scoped token per job — only for an agent that advertises
-    // `git.credential` over the sealed transport. Anything else keeps the
-    // r268 refusal, with the fix named.
-    if (kind === 'github_app') {
-      const probe = await (opts.probe ?? ((id: number) => defaultAgentProbe(db, id)))(service.serverId);
-      const why = await gitCredentialRefusal(probe.agent, probe.nodeLabel, probe.sealed);
-      if (why) return `Deployments to a remote server are not available for this service yet: ${why}`;
-    }
-  }
-  if (type !== 'docker') return null;
-  const missing: string[] = [];
-  if (service.cmd?.length) missing.push('a container command (this template starts its image with arguments)');
-  if (service.dockerSocket) missing.push('the Docker socket mount');
-  const attachments = await db
-    .select({ id: serviceVolumeAttachments.id })
-    .from(serviceVolumeAttachments)
-    .where(eq(serviceVolumeAttachments.serviceId, service.id));
-  if (attachments.length > 0) missing.push('attached volumes (they live on the panel host)');
-  if (missing.length === 0) return null;
-  return `Deployments to a remote server are not available for this service: the node agent cannot give the container ${missing.join(', ')}, so it would start without ${missing.length > 1 ? 'them' : 'it'}. Clear the target server to deploy it on the panel host.`;
+  return (await remoteServiceRefusalDetail(db, service, opts))?.message ?? null;
 }
 
 /** The three lifecycle hooks a build config can carry. */
@@ -242,8 +381,10 @@ export async function assertRemoteServiceSupported(
   db: DB,
   service: Parameters<typeof remoteServiceRefusal>[1],
 ): Promise<void> {
-  const reason = await remoteServiceRefusal(db, service);
-  if (reason) throw badRequest(reason, 'remote_deploy_unsupported');
+  const refusal = await remoteServiceRefusalDetail(db, service);
+  if (refusal) {
+    throw refusal.status === 400 ? badRequest(refusal.message, refusal.code) : new HttpError(refusal.status, refusal.code, refusal.message);
+  }
   if (service.serverId == null) return;
   const build = await db.query.buildConfigs.findFirst({ where: eq(buildConfigs.serviceId, service.id) });
   const hookReason = remoteHookRefusal(build);

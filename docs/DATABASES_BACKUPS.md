@@ -74,6 +74,18 @@ Each managed Docker volume can be snapshotted (`tar.gz`), restored or downloaded
 - **Scheduling**: a recurring job can sweep multiple volumes in one pass, reusing the backup destination for off-site copies.
 - **Safe restore**: restores refuse to run while a service is still live on that volume.
 
+### Volumes on nodes
+
+A volume lives on the host of the service that uses it. Volumes of a service placed on a node live on that node, and the volume routes take `?serverId=<node>` to work with them (without it they act on the panel host, exactly as before). These features need the node agent v0.15.2 or newer, which advertises `volume.manage`, `docker.runSpec` and `stream`. An older agent gets `422 node_agent_outdated` with an "update the node agent" message, and nothing else is sent to it.
+
+- **List and create:** `GET /v1/volumes?serverId=` lists the node's managed volumes. `inUse` is true while a running container on the node mounts the volume. `POST /v1/volumes {name, serverId?}` creates a managed volume (`nd-svc-*` / `nd-db-*`) labelled `ninedeploy.managed=volume`. An existing volume answers `409 node_volume_exists`. `DELETE /v1/volumes/:name?serverId=` is unchanged.
+- **Attachments, commands and the Docker socket on node docker services:** these now deploy through the agent's structured `docker.runSpec`. Any missing managed volume is created on the node first. An attached volume that a service or database on another host also uses is refused with `409 attachment_host_mismatch`, because each host has its own volume of that name. A database volume is never created by a service that attaches it. Bind mounts stay unattachable everywhere.
+- **Compose stacks on nodes:** missing attached volumes are now created before `compose up`. Before this, a stack failed at `compose up` with "external volume not found" unless someone had created the volume on the node by hand. With an older agent nothing is created, and the volumes must already exist, as before.
+- **Backups:** `POST /v1/volumes/:name/backups?serverId=` streams the volume from the node over the sealed stream channel. The backup lands in the same backups directory, with the same file name and format as a panel-host snapshot, encrypted at rest. The plaintext archive is never written to the panel's disk. It is uploaded off-site like any other backup. The row records `serverId`. Retention is counted per host, so node copies never push panel-host copies out. Scheduled backup jobs of a node service back its volumes up from the node.
+- **Restore:** `POST …/backups/:bid/restore?serverId=` restores on the node through the same staging script, and refuses while any running container on the node mounts the volume. A backup taken on another host restores only with `?acrossHosts=true`.
+- **Files:** the file manager works on panel-host volumes only. With `?serverId=` it answers `422 node_volume_files_unsupported` rather than touching the panel host's volume of the same name.
+- **Rollback to 0.15:** node volumes stay on the node (`docker volume ls --filter label=ninedeploy.managed=volume`). Node volume backups stay on the panel and can be downloaded, but a 0.15 restore writes into the panel host's volume of the same name, not into the node. Restore node volumes only after upgrading again.
+
 ---
 
 ## 🛡️ 5. Restore Safety

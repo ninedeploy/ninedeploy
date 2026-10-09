@@ -1136,6 +1136,9 @@ export const MATRIX: Record<string, Rule> = {
   // ── 0.16 T4 build placement ──
   // ── end 0.16 T4 ──
   // ── 0.16 T5 node volumes ──
+  // An instance resource, like every /v1/volumes mutation: operator only. The
+  // positive call creates on the panel host, whose docker is disabled here.
+  'POST /v1/volumes': R('operator', { body: (r) => ({ name: `nd-svc-${uniq(r, 'vol')}` }) }),
   // ── end 0.16 T5 ──
   // ── 0.16 T6 node databases ──
   // ── end 0.16 T6 ──

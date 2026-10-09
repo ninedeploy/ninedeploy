@@ -30,7 +30,7 @@ import { acquireRegistryLock, registryLockKey } from '../../lib/registryLock.js'
  * and the relative baseDir (e.g. `apps/api`) it lives in. Both are returned
  * as repo-relative POSIX paths for direct use with `docker build -f`.
  */
-function findDockerfileInRepo(
+export function findDockerfileInRepo(
   workDir: string,
   log: (line: string) => void,
 ): { dockerfilePath: string; baseDir: string } | null {

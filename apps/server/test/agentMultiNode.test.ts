@@ -200,8 +200,10 @@ describe('the op registry and its wiring (M8)', () => {
     expect(tail).toEqual(registry.registeredCapabilities());
     expect(tail).toEqual(MULTI_NODE_CAPABILITIES.filter((c) => tail.includes(c)));
     for (const cap of ['stream', 'docker.runSpec', 'volume.manage', 'image.manage']) expect(tail, cap).toContain(cap);
-    // Not before their ops exist (T3, T6, T7).
-    for (const cap of ['build.nixpacks', 'build.railpack', 'git.sshkey', 'db.manage', 'swarm']) expect(tail, cap).not.toContain(cap);
+    // T3's ops exist (agentOps/builds.ts, git.withKey in agentOps/gitCredential.ts).
+    for (const cap of ['build.nixpacks', 'build.railpack', 'git.sshkey']) expect(tail, cap).toContain(cap);
+    // Not before their ops exist (T6, T7).
+    for (const cap of ['db.manage', 'swarm']) expect(tail, cap).not.toContain(cap);
     for (const def of registry.AGENT_OPS.values()) expect(tail).toContain(def.cap);
   });
 

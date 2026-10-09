@@ -1,10 +1,12 @@
 import { MULTI_NODE_CAPABILITIES, type MultiNodeCapability } from '@ninedeploy/schemas';
+import { buildOps } from './builds.js';
+import { gitKeyOps } from './gitCredential.js';
 import { imageOps } from './images.js';
 import type { Params } from './operands.js';
 import { switchedOff } from './operands.js';
 import { runSpecOps } from './runSpec.js';
 import { streamOps } from './stream.js';
-import { volumeOps } from './volumes.js';
+import { nodeVolumeOps, volumeOps } from './volumes.js';
 
 /**
  * The multi-node op registry (design §1, §9 M8).
@@ -54,8 +56,11 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
   imageOps,
   // ── end 0.16 T2 ──
   // ── 0.16 T3 node builds and private clones ── (agentOps/builds.ts; `git.sshkey` from agentOps/gitCredential.ts)
+  buildOps,
+  gitKeyOps,
   // ── end 0.16 T3 ──
   // ── 0.16 T5 node volumes ── (more ops on `volume.manage`, if any, in agentOps/volumes.ts)
+  nodeVolumeOps,
   // ── end 0.16 T5 ──
   // ── 0.16 T6 node databases ── (agentOps/databases.ts; the db stream kinds are in agentOps/stream.ts)
   // ── end 0.16 T6 ──

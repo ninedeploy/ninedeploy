@@ -327,13 +327,13 @@ describe('remote builder hooks and the run-phase move (M6)', () => {
     const runtime = await createRemoteDockerBuilder(agent, {
       prebuiltImage: { tag: 'ninedeploy/web:abc1234-b7', imageId: `sha256:${'b'.repeat(64)}` },
     }).buildAndRun(ctx({ log }));
-    // Even a Nixpacks service (refused on a node) runs: the build happened elsewhere.
+    // Even a Nixpacks service (refused by an agent without build.nixpacks) runs: the build happened elsewhere.
     expect(ops()).toEqual(['docker.networkCreate', 'file.writeEnv', 'docker.runEnv', 'file.deleteEnv']);
     expect(calls.find((c) => c.op === 'docker.runEnv')!.params).toMatchObject({ name: 'web-7', image: 'ninedeploy/web:abc1234-b7' });
     expect(runtime).toMatchObject({ runtimeId: 'web-7', port: 3000, imageDigest: undefined });
     expect(log).toHaveBeenCalledWith(expect.stringContaining('built elsewhere and shipped to the node'));
     // Without it, the same service is refused exactly as before.
-    await expect(createRemoteDockerBuilder(fakeAgent().agent).buildAndRun(ctx())).rejects.toThrow(/Nixpacks builds are not available on a remote node/);
+    await expect(createRemoteDockerBuilder(fakeAgent().agent).buildAndRun(ctx())).rejects.toThrow(/source builds on it are blocked|cannot build with Nixpacks/);
   });
 
   it('remoteCompose takes the same option and carries the T3, T4 and T5 blocks', () => {

@@ -2030,6 +2030,9 @@ describe('runDeployment on a remote-server target', () => {
   });
 
   it('r266: refuses a template container the agent cannot start as the panel would (cmd / docker socket)', async () => {
+    // Multi-node (T5, via remoteServiceRefusal): refused only for an agent
+    // without `docker.runSpec` — an older agent answers the ping with no
+    // capabilities, so it is asked that and nothing else.
     for (const shape of [{ cmd: ['server', '/data'] }, { dockerSocket: true }]) {
       const { db, inserts } = makeDb();
       baseSetup(db, { ownerUserId: 42, image: 'minio/minio:latest', serverId: 4, ...shape });
@@ -2039,12 +2042,36 @@ describe('runDeployment on a remote-server target', () => {
 
       await runDeployment(db as never, 1);
 
-      // Nothing reaches the node: the container would have started without
+      // Nothing runs on the node: the container would have started without
       // its command / socket and "deployed" broken.
-      expect(h.agentOp).not.toHaveBeenCalled();
-      expect(lines.join(' ')).toMatch(/node agent cannot give the container/);
+      expect(h.agentOp.mock.calls.map((c) => c[2])).toEqual(['agent.ping']);
+      expect(lines.join(' ')).toMatch(/cannot run a service with volume attachments, a command or the Docker socket/);
       const audits = inserts.filter((i) => i.table === auditLog).map((i) => i.values);
       expect(audits[0]).toMatchObject({ action: 'deploy.failed' });
+      logBus.removeAllListeners();
+    }
+  });
+
+  it('r266 relaxed: an agent advertising docker.runSpec (sealed) runs the same container as the panel would', async () => {
+    for (const shape of [{ cmd: ['server', '/data'] }, { dockerSocket: true }]) {
+      const { db } = makeDb();
+      baseSetup(db, { ownerUserId: 42, image: 'minio/minio:latest', serverId: 4, ...shape });
+      const lines = collectLogs(1);
+      h.agentTransportSealed.mockResolvedValue(true);
+      h.agentOp.mockImplementation(async (_db: unknown, _serverId: unknown, op: string) =>
+        op === 'agent.ping'
+          ? { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.15.2', caps: ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'docker.runSpec', 'volume.manage'] })}`] }
+          : op === 'docker.inspect'
+            ? { exitCode: 0, lines: ['running|none|0|0'] }
+            : { exitCode: 0, lines: [] },
+      );
+      h.agentOp.mockClear();
+
+      await runDeployment(db as never, 1);
+
+      expect(lines.join(' ')).not.toMatch(/cannot run a service with volume attachments, a command or the Docker socket/);
+      // Past the refusal: the node pulls and starts the release.
+      expect(h.agentOp.mock.calls.map((c) => c[2])).toContain('docker.pull');
       logBus.removeAllListeners();
     }
   });

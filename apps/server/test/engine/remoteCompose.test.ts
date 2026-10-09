@@ -511,3 +511,84 @@ describe('r660: repository compose stacks need an agent that guards build paths'
     expect(inline.ops()).toContain('docker.composeUp');
   });
 });
+
+// ── 0.16 T5 volume pre-create (D9) ──
+/**
+ * D9 (design §0.2, §4.2): a node compose stack with volume attachments
+ * renders them `external: true`, and compose refuses to start a project whose
+ * external volume does not exist — so the stack failed at `compose up` unless
+ * someone had run `docker volume create` on the node by hand. The fake node
+ * below behaves like Docker: `compose up` fails for a missing external volume,
+ * `docker.volumeInspect` exits 1 for an unknown volume, `docker.volumeCreate`
+ * adds one.
+ */
+function nodeWithVolumes(opts: { caps: string[]; existing?: string[] }) {
+  const volumes = new Set(opts.existing ?? []);
+  const calls: Array<{ op: string; params: Record<string, unknown> }> = [];
+  const lines: string[] = [];
+  const agent: AgentCall = async (op, params) => {
+    calls.push({ op, params });
+    if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.15.2', caps: opts.caps })}`] };
+    if (op === 'docker.volumeInspect') {
+      if (volumes.has(params['name'] as string)) return { exitCode: 0, lines: [] };
+      throw new Error(`agent docker.volumeInspect exited with 1: Error: No such volume: ${String(params['name'])}`);
+    }
+    if (op === 'docker.volumeCreate') {
+      volumes.add(params['name'] as string);
+      return { exitCode: 0, lines: [String(params['name'])] };
+    }
+    if (op === 'docker.composeUp') {
+      for (const c of calls) {
+        if (c.params['kind'] !== 'compose-override') continue;
+        for (const m of (c.params['content'] as string).matchAll(/^ {2}(nd-[a-z0-9_.-]+):\n {4}external: true$/gm)) {
+          if (!volumes.has(m[1]!)) throw new Error(`agent docker.composeUp exited with 1: external volume "${m[1]}" not found`);
+        }
+      }
+    }
+    if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|healthy|0|0'] };
+    return { exitCode: 0, lines: [] };
+  };
+  return { agent, calls, volumes, lines, ops: () => calls.map((c) => c.op) };
+}
+
+const CURRENT_CAPS = ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'stream', 'docker.runSpec', 'volume.manage'];
+const attached = [
+  { volumeName: 'nd-svc-ghost-data', containerPath: '/var/lib/ghost/content', readOnly: false },
+  { volumeName: 'nd-svc-shared-cfg', containerPath: '/cfg', readOnly: true },
+];
+
+describe('D9: node compose stacks with volume attachments', () => {
+  it('a missing managed volume is created on the node before compose up (current agent)', async () => {
+    const node = nodeWithVolumes({ caps: CURRENT_CAPS, existing: ['nd-svc-shared-cfg'] });
+    const log: string[] = [];
+    await createRemoteComposeBuilder(node.agent, { nodeLabel: '"edge-1" (#4)' }).buildAndRun(
+      ctx({ volumeAttachments: attached as never, log: (l) => log.push(l) }),
+    );
+    const ops = node.ops();
+    const create = node.calls.filter((c) => c.op === 'docker.volumeCreate');
+    // Only the missing one is created; the existing one is left alone.
+    expect(create.map((c) => c.params['name'])).toEqual(['nd-svc-ghost-data']);
+    expect(create[0]!.params['labels']).toEqual({ 'ninedeploy.managed': 'volume', 'ninedeploy.service': '1' });
+    expect(ops.indexOf('docker.volumeCreate')).toBeLessThan(ops.indexOf('docker.composeConfig'));
+    expect(ops.indexOf('docker.volumeCreate')).toBeLessThan(ops.indexOf('docker.composeUp'));
+    expect(node.volumes.has('nd-svc-ghost-data')).toBe(true);
+    expect(log.join('\n')).toMatch(/Created volume nd-svc-ghost-data on the node/);
+  });
+
+  it('a 0.15 agent keeps the 0.15 behaviour: nothing created, the volumes must exist, one log line', async () => {
+    const node = nodeWithVolumes({ caps: ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal'], existing: ['nd-svc-ghost-data', 'nd-svc-shared-cfg'] });
+    const log: string[] = [];
+    await createRemoteComposeBuilder(node.agent).buildAndRun(ctx({ volumeAttachments: attached as never, log: (l) => log.push(l) }));
+    expect(node.ops()).not.toContain('docker.volumeCreate');
+    expect(node.ops()).not.toContain('docker.volumeInspect');
+    expect(node.ops()).toContain('docker.composeUp');
+    expect(log.join('\n')).toMatch(/Volumes are not pre-created on node #4: .*Update the node agent to v0\.15\.2 or newer/);
+  });
+
+  it('a stack without attachments asks the node nothing new (no ping, no volume op)', async () => {
+    const node = nodeWithVolumes({ caps: CURRENT_CAPS });
+    await createRemoteComposeBuilder(node.agent).buildAndRun(ctx());
+    expect(node.ops().filter((op) => op === 'agent.ping' || op.startsWith('docker.volume'))).toEqual([]);
+  });
+});
+// ── end 0.16 T5 ──

@@ -8,6 +8,9 @@ import { INLINE_COMPOSE_FILE } from '../../lib/composeWorkspace.js';
 import { assertCloneTargetAllowed } from '../../lib/gitEgress.js';
 import { assertAgentGuardsBuildPaths } from '../../lib/agentCapabilities.js';
 import type { NodeGitCredentialSource } from '../../lib/nodeGitCredential.js';
+// ── 0.16 T5 volume pre-create (D9) ──
+import { precreateComposeVolumes } from '../../lib/remoteVolumes.js';
+// ── end 0.16 T5 ──
 
 /**
  * Remote Compose builder — brings a compose stack up on a registered node
@@ -171,7 +174,9 @@ export function createRemoteComposeBuilder(
         await assertAgentGuardsBuildPaths(agent, label);
         // ── 0.16 T3 clone credential ──
         // 0.13 (T5): per-job GitHub App token, revoked once the checkout is
-        // done — see remoteDocker.ts.
+        // done — see remoteDocker.ts. Multi-node: a PAT or deploy key whose
+        // source allows nodes rides the same session (lib/nodeGitCredential.ts:
+        // the PAT as a sealed env-only credential, the key via `git.withKey`).
         const git = opts.gitCredential
           ? await opts.gitCredential(agent, { label, serverId: service.serverId ?? null })
           : { git: agent, release: async () => undefined };
@@ -253,7 +258,18 @@ export function createRemoteComposeBuilder(
         // ── end 0.16 T4 ──
         // ── 0.16 T5 volume pre-create (D9) ──
         // Missing managed volumes are created on the node before `compose up`
-        // (design §4.2). Empty until node volumes land.
+        // (design §4.2): the override declares them `external: true`, and
+        // compose refuses to start a project whose external volume is missing.
+        // An agent without `volume.manage` keeps the 0.15 behaviour (nothing
+        // is created; the volumes must already exist), with a log line.
+        if (attachments.length > 0) {
+          await precreateComposeVolumes(agent, {
+            nodeLabel: opts.nodeLabel ?? `#${service.serverId ?? '?'}`,
+            service,
+            attachments,
+            log,
+          });
+        }
         // ── end 0.16 T5 ──
 
         // Preflight, in this order, BEFORE anything touches the running stack.

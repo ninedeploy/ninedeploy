@@ -1,13 +1,17 @@
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { databases, services, serviceVolumeAttachments } from '@ninedeploy/db';
-import { volumeFileWrite, volumePathCreate } from '@ninedeploy/schemas';
+import { volumeCreate, volumeFileWrite, volumePathCreate } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
-import { removeVolume, volumeExists, volumeLabels } from '../engine/database.js';
+import { createDockerVolume, removeVolume, volumeExists, volumeLabels } from '../engine/database.js';
 import { capture } from '../lib/exec.js';
 import { agentOp } from '../lib/agentClient.js';
 import { ensureDockerImage } from '../lib/dockerPull.js';
 import { containerRunning, resolveVolumeOwner, HELPER_IMAGE } from '../lib/inventory.js';
-import { badRequest, conflict } from '../lib/errors.js';
+import { badRequest, conflict, HttpError } from '../lib/errors.js';
+// ── 0.16 T5 node volumes ──
+import { createNodeVolume, listNodeVolumes, volumeHostId } from '../lib/nodeVolumes.js';
+import { nodeVolumeLabels } from '../lib/remoteVolumes.js';
+// ── end 0.16 T5 ──
 import {
   deleteVolumePath,
   isManagedVolume,
@@ -98,7 +102,13 @@ export const volumeRoutes: FastifyPluginAsync = async (app) => {
   // L-12: the instance-wide volume inventory (names, sizes, owning service)
   // is infrastructure metadata about every tenant. Mutating volume routes were
   // already admin-only; the listing had been left open.
-  app.get('/', { preHandler: [app.requireAdmin] }, async () => {
+  app.get('/', { preHandler: [app.requireAdmin] }, async (req) => {
+    // ── 0.16 T5 node volumes ──
+    // `?serverId=` lists that node's managed volumes through its agent
+    // (design §4.3); absent = the panel host, today's response unchanged.
+    const host = volumeHostId(req.query);
+    if (host !== null) return listNodeVolumes(app.db, host);
+    // ── end 0.16 T5 ──
     let raw = '';
     try {
       raw = await capture('docker', ['volume', 'ls', '--format', '{{.Name}}']);
@@ -128,6 +138,30 @@ export const volumeRoutes: FastifyPluginAsync = async (app) => {
     }
     return out;
   });
+
+  // ── 0.16 T5 node volumes ──
+  // Create a managed volume on the panel host or, with `serverId`, on a node
+  // (design §4.3). An existing volume is refused (409 `node_volume_exists`),
+  // never adopted silently; a node whose agent predates `volume.manage` is
+  // refused with 422 `node_agent_outdated` after `agent.ping` only.
+  app.post('/', { preHandler: [app.requireAdmin] }, async (req, reply) => {
+    const input = volumeCreate.parse(req.body);
+    const labels = nodeVolumeLabels({ userId: req.user!.id });
+    const serverId = input.serverId ?? null;
+    if (serverId !== null) {
+      await createNodeVolume(app.db, serverId, input.name, labels);
+      void audit(app.db, req.user!.id, 'volume.create', `${input.name} on node #${serverId}`);
+    } else {
+      if (await volumeExists(input.name)) {
+        throw new HttpError(409, 'node_volume_exists', `Volume ${input.name} already exists on the panel host`);
+      }
+      await createDockerVolume(input.name, (line) => req.log.info(line), labels);
+      void audit(app.db, req.user!.id, 'volume.create', input.name);
+    }
+    reply.code(201);
+    return { ok: true, name: input.name, serverId };
+  });
+  // ── end 0.16 T5 ──
 
   // Permanently delete all unattached / retained volumes (bulk cleanup).
   app.post('/prune', { preHandler: [app.requireAdmin] }, async (req) => {
@@ -220,8 +254,21 @@ export const volumeRoutes: FastifyPluginAsync = async (app) => {
   // ── File manager inside a volume ─────────────────────────────────────────
   // All routes are admin-only + audited: this is full read/write access to
   // the volume's data (same power as the exec terminal, so same guard).
-  const guardVolume = (name: string): string => {
+  const guardVolume = (name: string, query?: unknown): string => {
     if (!isManagedVolume(name)) throw badRequest('not a managed volume');
+    // ── 0.16 T5 node volumes ──
+    // The file manager works on the panel host's volumes only (design §4.3
+    // offers no node file routes). It used to ignore `?serverId=`, so a
+    // request for a node volume read or wrote the panel host's NAMESAKE; it
+    // now says so instead.
+    if ((query as { serverId?: unknown } | undefined)?.serverId !== undefined) {
+      throw new HttpError(
+        422,
+        'node_volume_files_unsupported',
+        'Browsing and editing files is available for panel-host volumes only. For a node volume, open a terminal in a container on that node, or back the volume up and download the archive.',
+      );
+    }
+    // ── end 0.16 T5 ──
     return name;
   };
   const guardPath = (raw: unknown): string => {
@@ -231,13 +278,13 @@ export const volumeRoutes: FastifyPluginAsync = async (app) => {
   };
 
   app.get('/:name/files', { preHandler: [app.requireAdmin] }, async (req) => {
-    const name = guardVolume((req.params as { name: string }).name);
+    const name = guardVolume((req.params as { name: string }).name, req.query);
     const rel = guardPath((req.query as { path?: string }).path);
     return { path: rel, entries: await listVolumeDir(name, rel) };
   });
 
   app.get('/:name/files/content', { preHandler: [app.requireAdmin] }, async (req, reply) => {
-    const name = guardVolume((req.params as { name: string }).name);
+    const name = guardVolume((req.params as { name: string }).name, req.query);
     const rel = guardPath((req.query as { path?: string }).path);
     if (!rel) throw badRequest('a path inside the volume is required');
     void audit(app.db, req.user!.id, 'volume.file.read', `${name}:${rel}`);
@@ -247,7 +294,7 @@ export const volumeRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.put('/:name/files', { preHandler: [app.requireAdmin] }, async (req) => {
-    const name = guardVolume((req.params as { name: string }).name);
+    const name = guardVolume((req.params as { name: string }).name, req.query);
     const input = volumeFileWrite.parse(req.body);
     const rel = guardPath(input.path);
     if (!rel) throw badRequest('a path inside the volume is required');
@@ -257,7 +304,7 @@ export const volumeRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post('/:name/files/dir', { preHandler: [app.requireAdmin] }, async (req) => {
-    const name = guardVolume((req.params as { name: string }).name);
+    const name = guardVolume((req.params as { name: string }).name, req.query);
     const input = volumePathCreate.parse(req.body);
     const rel = guardPath(input.path);
     void audit(app.db, req.user!.id, 'volume.file.mkdir', `${name}:${rel}`);
@@ -266,7 +313,7 @@ export const volumeRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.delete('/:name/files', { preHandler: [app.requireAdmin] }, async (req) => {
-    const name = guardVolume((req.params as { name: string }).name);
+    const name = guardVolume((req.params as { name: string }).name, req.query);
     const rel = guardPath((req.query as { path?: string }).path);
     if (!rel) throw badRequest('a path inside the volume is required');
     void audit(app.db, req.user!.id, 'volume.file.delete', `${name}:${rel}`);

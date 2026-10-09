@@ -381,6 +381,7 @@ POST /v1/traefik/update operator -
 POST /v1/tunnels operator -
 POST /v1/users operator nd://scope/write/users
 POST /v1/users/:id/reset-link operator nd://scope/write/users
+POST /v1/volumes operator nd://scope/write/volumes
 POST /v1/volumes/:name/backups operator nd://scope/write/volumes
 POST /v1/volumes/:name/backups/:bid/restore operator nd://scope/write/volumes
 POST /v1/volumes/:name/files/dir operator nd://scope/write/volumes

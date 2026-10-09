@@ -1,10 +1,10 @@
 import { eq } from 'drizzle-orm';
 import { audit } from '../lib/audit.js';
-import { githubAppInstallations, githubApps, sources, type DB, type GithubApp, type GithubAppInstallation, type Source } from '@ninedeploy/db';
+import { githubAppInstallations, githubApps, sources, users, type DB, type GithubApp, type GithubAppInstallation, type Source } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import { createSource, sourcePatch } from '@ninedeploy/schemas';
 import { decrypt, encrypt } from '../lib/crypto.js';
-import { badRequest, notFound, parseId } from '../lib/errors.js';
+import { badRequest, HttpError, notFound, parseId } from '../lib/errors.js';
 // Every outbound provider call below rides the egress SSRF guard like the
 // rest of the panel's webhooks/API clients. The github/gitlab/bitbucket hosts
 // are hardcoded; since 0.13 a Gitea base URL and a GitHub App's (GHES) API base
@@ -15,6 +15,7 @@ import { apiBase, appJwt, GithubAppError, githubApi, installationToken } from '.
 import { providerErrorText } from '../lib/redactSecret.js';
 import { githubRepoFromUrl } from '../lib/sourceCreds.js';
 import { ensureRegistryBindingsInitialised, setBoundRegistryHosts, type RegistryBindings } from '../lib/registryBinding.js';
+import { assertStepUp } from '../lib/stepUp.js';
 
 function serialize(s: Source, bindings: RegistryBindings) {
   return {
@@ -29,6 +30,8 @@ function serialize(s: Source, bindings: RegistryBindings) {
     defaultBranch: s.defaultBranch,
     // 0.13: self-hosted provider base (Gitea); additive field, null when unset.
     baseUrl: s.baseUrl ?? null,
+    // Multi-node (additive): this static credential may be sent to a node for one clone.
+    allowOnNodes: !!s.allowOnNodes,
     createdAt: s.createdAt.toISOString(),
     updatedAt: s.updatedAt.toISOString(),
   };
@@ -257,6 +260,34 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
       }
       patch.baseUrl = input.baseUrl;
     }
+    // Multi-node (design §3.2, owner decision O5): turning `allowOnNodes` on
+    // sends this long-lived PAT or deploy key to a node for each clone there,
+    // so it takes an interactive session and a password re-check (step-up),
+    // like enabling host shells. Turning it off never does.
+    let allowOnNodesBefore: boolean | undefined;
+    if (input.allowOnNodes !== undefined) {
+      const current = await app.db.query.sources.findFirst({ where: eq(sources.id, id) });
+      if (!current) throw notFound('Source not found');
+      allowOnNodesBefore = !!current.allowOnNodes;
+      if (input.allowOnNodes && !allowOnNodesBefore) {
+        if (current.type === 'registry' || current.type === 'github_app') {
+          throw badRequest(
+            current.type === 'registry'
+              ? 'A registry credential is never used to clone a repository; nothing to allow on nodes'
+              : 'A GitHub App reaches nodes as a short-lived per-job token already; nothing to allow',
+            'allow_on_nodes_unsupported',
+          );
+        }
+        const user = req.user!;
+        if (user.viaApiToken) {
+          throw new HttpError(403, 'forbidden', 'Allowing a credential on nodes requires an interactive session, not an API token');
+        }
+        const row = await app.db.query.users.findFirst({ where: eq(users.id, user.id) });
+        if (!row) throw new HttpError(401, 'unauthorized', 'Unauthorized');
+        await assertStepUp(app.db, req, row, input.password);
+      }
+      if (input.allowOnNodes !== allowOnNodesBefore) patch.allowOnNodes = input.allowOnNodes;
+    }
     // A hosts-only PATCH (r512) changes no column — read the row instead of
     // issuing an empty UPDATE.
     const [updated] =
@@ -270,6 +301,13 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
     // Which credential fields changed — never their values.
     const changed = (['token', 'deployKey', 'registryUsername', 'registryHosts', 'name', 'defaultBranch', 'baseUrl'] as const).filter((k) => input[k] !== undefined);
     void audit(app.db, req.user!.id, 'source.update', `${updated.name}: ${changed.join(',') || 'no-op'}`);
+    if (allowOnNodesBefore !== undefined && input.allowOnNodes !== allowOnNodesBefore) {
+      void audit(app.db, req.user!.id, 'source.allow_on_nodes', updated.name, {
+        sourceId: updated.id,
+        previous: allowOnNodesBefore,
+        allowOnNodes: input.allowOnNodes,
+      }, { ip: req.ip, userAgent: req.headers['user-agent'] });
+    }
     return serialize(updated, await ensureRegistryBindingsInitialised(app.db));
   });
 
