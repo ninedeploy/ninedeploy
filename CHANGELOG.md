@@ -9,6 +9,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.4] - 2026-10-09
+
+> Remote nodes, part 3: Docker Swarm as an opt-in orchestrator. Nothing changes until an operator turns it on.
+
+### Upgrade notes
+
+- No migration (0072 from 0.15.2 already has the columns this release uses).
+- **Swarm is off until an operator enables it.** The upgrade does not put Docker in Swarm mode or move any service onto a stack. Services with no orchestrator set, or set to `container`, deploy exactly as before.
+- **Joining a node to Swarm needs node agent v0.15.4, and the node's owner must opt in.** Set `NINEDEPLOY_AGENT_SWARM_MANAGER=<panel advertise address>:2377` in the agent's environment and restart the agent. The agent joins only that manager, and never while `NINEDEPLOY_AGENT_DOCKER_SOCKET=off`. Older agents keep working for everything else and refuse join and leave with "update the node agent".
+- **Swarm runs NineDeploy services only on nodes joined through the panel** (labelled `nd.member=1`). A node that joined the swarm another way gets no NineDeploy task.
+- **Node owners:** a join is also refused while TLS Docker variables (`DOCKER_TLS_VERIFY`, `DOCKER_TLS`, `DOCKER_CERT_PATH`, an `https://` `DOCKER_HOST`) or a non-default Docker context are set on the node.
+- **A server that is a Swarm member cannot be deleted** (409 `server_swarm_member`). Make it leave first.
+- **Firewall:** Swarm overlay networks are always encrypted (IPsec). Between all Swarm hosts, allow 2377/tcp, 7946/tcp and udp, 4789/udp, and **ESP (IP protocol 50)**, restricted to the cluster's own hosts. Encrypted overlays do not work on Windows nodes.
+- **Deploy-key clones on the panel now check SSH host keys.** They used to accept any host key; now a key that changes within one checkout is refused. Keys are not kept between deploys, so a server that rotates its host key does not block the next deploy.
+- **Rolling back to 0.15.3 is supported.** Swarm services keep serving until Traefik restarts or the service is redeployed. The redeploy runs as plain containers and leaves the stack running without a route. `docs/ROLLBACK.md` lists the clean-up commands.
+- Verified before release: in-place upgrades from 0.15.3 and from 0.10.45 leave Docker out of Swarm mode, and a rehearsed rollback to 0.15.3.
+
+### Added
+
+- **Docker Swarm (opt-in per service).**
+  - **Turning it on:** an operator initialises Swarm on the panel host (an interactive session and a password re-check are required) and enables it. Nodes join and leave through their agents; leave drains the node first. Set a service's orchestrator to `swarm` and deploy.
+  - **How a service runs:** one stack per service, applied with `docker stack deploy` on every deploy, so env, replicas and limits all take effect. Updates are rolling and start-first. If the panel's probe through Traefik fails, the panel rolls the service back.
+  - **Images:** built on the panel or a build server. With a push registry every node pulls by digest. Without one, the image is copied to each joined node, and a node that cannot receive it gets no tasks.
+  - **Security:** Traefik is the only way in; no port is published on the Swarm ingress mesh. Env reaches Swarm through a temporary 0600 file, never a command line.
+  - **Join tokens:** never stored, logged, returned or put on a command line, and rotated after every join and leave.
+  - **Node checks:** a node is checked on the manager before it is linked. It must have exactly the id it reported, be a worker, be at the server's address (by IP, or the DNS of its host name), and not be linked to any other server. `GET /v1/swarm` warns about a node still in the swarm after its owner turned the Docker socket switch off.
+  - **Registry logins:** each deploy writes its own temporary Docker config with only that service's registry auth, and never runs `docker login`, so credentials never reach a shared config or the host's credential store.
+  - **Management port:** `swarm init` binds it to the advertise address when that is a local interface; otherwise the response says to firewall 2377/tcp.
+  - **Existing networks:** an existing `nd-swarm-<slug>` network that is unencrypted, or not an overlay, is refused instead of reused.
+  - **Resource limits:** Swarm tasks get no memory-swap cap and no CPU shares; a stack file cannot express them.
+  - **Refused on Swarm:** compose, PM2, a service pinned to a node, volumes, the Docker socket, a published host port, managed databases, fan-out targets, and env values spanning several lines. A PR preview of a Swarm service runs as a normal container.
+  - **Day-to-day:** logs, rolling restart, stop/start (scale to 0 and back), the terminal (a task on the panel host) and stats all work for Swarm services.
+
+### Fixed
+
+- **The old, unreachable Swarm driver is replaced.** Its redeploys changed only the image. It put env on the command line and published ports past Traefik. It wrote state to a directory a Docker install cannot write. It never applied rotated secrets. Images built locally could not reach other nodes.
+- Deploy-key clones on the panel host no longer accept any SSH host key.
+
 ## [0.15.3] - 2026-10-09
 
 > Remote nodes, part 2: a build server, image transfer between hosts, and managed databases on nodes. Single-host installs keep working as before, apart from the two fixes below.

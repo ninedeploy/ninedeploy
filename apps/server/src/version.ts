@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.15.3';
+export const VERSION = '0.15.4';
 
 export interface ChangelogEntry {
   version: string;
@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.15.4',
+    date: '2026-10-09',
+    title: 'Remote Nodes: Docker Swarm',
+    changes: [
+      'Remote nodes, part 3: Docker Swarm as an opt-in orchestrator. Nothing changes until an operator initialises and enables it; services keep running as plain containers.',
+      'Nodes join Swarm only when their owner sets NINEDEPLOY_AGENT_SWARM_MANAGER (agent v0.15.4). Overlays are encrypted, so allow ESP (IP protocol 50) and the Swarm ports between hosts.',
+      'Security: deploy-key clones on the panel now check SSH host keys. Rolling back to 0.15.3 is supported.',
+    ],
+  },
   {
     version: '0.15.3',
     date: '2026-10-09',
