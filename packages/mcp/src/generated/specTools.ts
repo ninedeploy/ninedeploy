@@ -160,7 +160,7 @@ export const SPEC_TOOLS: ToolDef[] = [
   },
   {
     name: 'list_servers',
-    description: 'Registered server nodes with host, port and online status. Operator only.',
+    description: 'Registered server nodes: host, port, online status, agent version and features, build-server role, hosted databases and Swarm membership. Operator only.',
     input: z.object({}),
     // GET /v1/servers
     coarseTokenOnly: true,

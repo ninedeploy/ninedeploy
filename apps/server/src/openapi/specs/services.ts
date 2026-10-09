@@ -39,8 +39,10 @@ export const servicesSpecs: RouteSpecMap = {
   'GET /v1/services/:id': {
     summary: 'Get a service',
     tag: 'services',
+    description:
+      'Detail only: `composeContent` (null for non-operators), `build` and `placement`, the same view as GET /v1/services/:id/placement (absent on older panels; null values are the 0.15 defaults).',
     floor: 'viewer',
-    responseType: 'Service',
+    responseType: 'Service & { placement?: ServicePlacementView }',
   },
   'PATCH /v1/services/:id': {
     summary: 'Update a service',

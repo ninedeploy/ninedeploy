@@ -6,10 +6,12 @@ import {
   serverAnnounce,
   serverCreate,
   serverSshBootstrap,
+  serverListItem,
   serverSshTest,
   volumeFileWrite,
   volumePathCreate,
 } from '@ninedeploy/schemas';
+import { z } from 'zod';
 import type { RouteSpecMap } from '../types.js';
 
 /**
@@ -21,8 +23,15 @@ export const infrastructureSpecs: RouteSpecMap = {
   'GET /v1/servers': {
     summary: 'List server nodes',
     tag: 'servers',
+    description:
+      'Never the agent token. Additive fields, absent on older panels: `terminal` (0.15), the agent capability cache (`agent`) and what the node can do (`features`, with the update-the-agent `reason`), the build-server role, the hosted database count and the Swarm membership recorded on join (`swarmNodeId`, `swarmRole`).',
     floor: 'operator',
-    mcp: { name: 'list_servers', description: 'Registered server nodes with host, port and online status. Operator only.', readOnly: true },
+    response: z.array(serverListItem),
+    mcp: {
+      name: 'list_servers',
+      description: 'Registered server nodes: host, port, online status, agent version and features, build-server role, hosted databases and Swarm membership. Operator only.',
+      readOnly: true,
+    },
   },
   'POST /v1/servers': {
     summary: 'Add a server node',

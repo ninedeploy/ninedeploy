@@ -64,6 +64,27 @@ export const multiNodeErrorCode = z.enum([
   'swarm_overlay_unavailable',
   // 409: DELETE /v1/servers/:id of a node still in the swarm (lib/serverDependents.ts).
   'server_swarm_member',
+  // Swarm cluster routes (modules/swarm.ts).
+  // 409: POST /v1/swarm/init on a daemon already in a swarm.
+  'swarm_already_active',
+  // 409: enable or join while the panel host is not an active manager (or has no join address).
+  'swarm_not_manager',
+  // 409: join of a node already linked; leave of a node not in the swarm.
+  'swarm_already_joined',
+  'swarm_not_joined',
+  // 502: a swarm op failed on the node's agent; `docker swarm init` or the drain failed on the panel host.
+  'node_swarm_failed',
+  'swarm_init_failed',
+  'swarm_drain_failed',
+  // 502: the panel host's daemon did not answer `docker info`. Only POST /v1/swarm/init answers it
+  // today (no general error enum exists), so it lives here with the route that emits it.
+  'docker_unreachable',
+  // Placement (modules/servicePlacement.ts).
+  // 422: switching to Swarm for a service Swarm cannot run, or while Swarm is disabled.
+  'swarm_unsupported',
+  'swarm_disabled',
+  // 400: a placement the service or the chosen nodes cannot take.
+  'placement_unsupported',
   // ── end 0.16 T8 ──
 ]);
 export type MultiNodeErrorCode = z.infer<typeof multiNodeErrorCode>;
@@ -76,6 +97,14 @@ export const serverAgentInfo = z.object({
   checkedAt: z.string().datetime().nullable(),
 });
 export type ServerAgentInfo = z.infer<typeof serverAgentInfo>;
+
+/** `GET /v1/servers` → `terminal` (0.15): what the node's agent offers terminals. */
+export const serverTerminalCapability = z.object({
+  host: z.boolean(),
+  container: z.boolean(),
+  /** Why a capability is missing (an older agent, an unreachable node). */
+  reason: z.string().optional(),
+});
 
 /** `GET /v1/servers` → `features`: what the node can do today, and why not. */
 export const serverFeatures = z.object({
@@ -292,3 +321,34 @@ export const serviceSwarmStatus = z.object({
   ),
 });
 export type ServiceSwarmStatus = z.infer<typeof serviceSwarmStatus>;
+
+// ── 0.16 T8 surfaces: response shapes for the OpenAPI document ─────────────
+
+/**
+ * One `GET /v1/servers` entry (operator). Every field after `createdAt` is
+ * additive and absent on older panels: `terminal` (0.15), then the agent
+ * capability cache and features, the build-server role, the hosted database
+ * count and the Swarm membership recorded on join. Never the agent token.
+ */
+export const serverListItem = z.object({
+  id,
+  name: z.string(),
+  host: z.string(),
+  port: z.number().int(),
+  /** `online` turns into `offline` at read time when the node was not seen for 5 minutes. */
+  status: z.string(),
+  lastSeenAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  terminal: serverTerminalCapability.optional(),
+  /** null until a sealed `agent.ping` answered. */
+  agent: serverAgentInfo.nullable().optional(),
+  features: serverFeatures.optional(),
+  isBuildServer: z.boolean().optional(),
+  buildConcurrency: z.number().int().min(BUILD_CONCURRENCY_MIN).max(BUILD_CONCURRENCY_MAX).optional(),
+  /** Managed databases hosted on the node. */
+  databases: z.number().int().nonnegative().optional(),
+  /** The node's swarm id once it joined; null = not in the swarm. */
+  swarmNodeId: z.string().nullable().optional(),
+  swarmRole: swarmNodeRole.nullable().optional(),
+});
+export type ServerListItem = z.infer<typeof serverListItem>;

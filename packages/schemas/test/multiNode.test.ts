@@ -18,6 +18,7 @@ import {
   pushRepository,
   serverAgentInfo,
   serverFeatures,
+  serverListItem,
   serverRoles,
   servicePlacement,
   servicePlacementView,
@@ -57,6 +58,22 @@ describe('agent capabilities (multi-node §1.1)', () => {
     expect(multiNodeErrorCode.parse('node_volume_files_unsupported')).toBe('node_volume_files_unsupported');
     // T8: the Swarm codes the 0.15.4 routes answer with.
     for (const code of ['node_swarm_not_enabled', 'swarm_node_unverified', 'swarm_overlay_unavailable', 'server_swarm_member']) {
+      expect(multiNodeErrorCode.parse(code)).toBe(code);
+    }
+    // T8: the Swarm cluster and placement codes, and the panel daemon's docker_unreachable.
+    for (const code of [
+      'swarm_already_active',
+      'swarm_not_manager',
+      'swarm_already_joined',
+      'swarm_not_joined',
+      'node_swarm_failed',
+      'swarm_init_failed',
+      'swarm_drain_failed',
+      'docker_unreachable',
+      'swarm_unsupported',
+      'swarm_disabled',
+      'placement_unsupported',
+    ]) {
       expect(multiNodeErrorCode.parse(code)).toBe(code);
     }
     expect(multiNodeErrorCode.safeParse('nope').success).toBe(false);
@@ -270,6 +287,28 @@ describe('additive fields on existing contracts (multi-node)', () => {
     expect(source.parse(row)).not.toHaveProperty('allowOnNodes');
     expect(source.parse({ ...row, allowOnNodes: true }).allowOnNodes).toBe(true);
     expect(source.safeParse({ ...row, allowOnNodes: 1 }).success).toBe(false);
+  });
+
+  it('serverListItem reads a 0.14 entry, a 0.15 entry and a full multi-node entry', () => {
+    const base = { id: 2, name: 'edge-1', host: '10.0.0.5', port: 4600, status: 'online', lastSeenAt: null, createdAt: '2026-01-01T00:00:00Z' };
+    expect(serverListItem.parse(base)).toEqual(base);
+    expect(serverListItem.parse({ ...base, terminal: { host: false, container: true, reason: 'off' } }).terminal).toEqual({ host: false, container: true, reason: 'off' });
+    const full = {
+      ...base,
+      terminal: { host: true, container: true },
+      agent: null,
+      features: { nixpacks: false, railpack: false, privateClones: false, volumes: false, databases: false, imageTransfer: false, swarm: false, reason: 'The node agent has not been reached yet.' },
+      isBuildServer: false,
+      buildConcurrency: 1,
+      databases: 0,
+      swarmNodeId: null,
+      swarmRole: null,
+    };
+    expect(serverListItem.parse(full)).toEqual(full);
+    expect(serverListItem.parse({ ...full, agent: { version: '0.15.4', capabilities: ['swarm'], checkedAt: null }, swarmNodeId: 'abc', swarmRole: 'worker' }).swarmRole).toBe('worker');
+    expect(serverListItem.safeParse({ ...full, buildConcurrency: 9 }).success).toBe(false);
+    expect(serverListItem.safeParse({ ...full, swarmRole: 'leader' }).success).toBe(false);
+    expect(serverListItem.safeParse({ ...base, terminal: { host: true } }).success).toBe(false);
   });
   // ── end 0.16 T8 ──
 });
