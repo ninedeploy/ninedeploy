@@ -71,6 +71,8 @@ vi.mock('../src/plugins/databaseImports.js', () => noop('authz-database-imports'
 // 0.15: terminal boot recovery / reaper (docker: helper containers) and the traffic log tailer (timers, files).
 vi.mock('../src/plugins/terminals.js', () => noop('authz-terminals'));
 vi.mock('../src/plugins/trafficAnalytics.js', () => noop('authz-traffic-analytics'));
+// Multi-node: the node database status loop (agent calls, timers).
+vi.mock('../src/plugins/nodeDatabases.js', () => noop('authz-node-databases'));
 vi.mock('../src/plugins/staticFiles.js', () => noop('authz-static'));
 // The limiter is not under test, and ~4k requests from one address trip it.
 vi.mock('../src/plugins/rateLimit.js', () => noop('authz-ratelimit'));
@@ -497,6 +499,20 @@ function paramValue(url: string, param: string, r: Res): string {
       // seedGrants gives each workspace's grant its id block, like every other row.
       return String(r.ws);
     // ── end 0.15 T5 ──
+    // 0.16 multi-node: each task maps its new path parameters in its block.
+    // (`:id` under /v1/deployments is mapped in the `id` table below.)
+    // ── 0.16 T2 agent transport ──
+    // ── end 0.16 T2 ──
+    // ── 0.16 T3 node builds and private clones ──
+    // ── end 0.16 T3 ──
+    // ── 0.16 T4 build placement ──
+    // ── end 0.16 T4 ──
+    // ── 0.16 T5 node volumes ──
+    // ── end 0.16 T5 ──
+    // ── 0.16 T6 node databases ──
+    // ── end 0.16 T6 ──
+    // ── 0.16 T7 swarm ──
+    // ── end 0.16 T7 ──
     case '*':
       return '';
     case 'id': {
@@ -521,6 +537,8 @@ function paramValue(url: string, param: string, r: Res): string {
         ['/v1/templates/community', '=zz-template'],
         ['/v1/templates', '=pocketbase'],
         ['/v1/plugins', '=notifications-dispatcher'],
+        // 0.16 T4: GET /v1/deployments/:id/image-transfers names a deployment.
+        ['/v1/deployments', 'deployment'],
       ];
       for (const [prefix, key] of table) {
         if (!at(prefix)) continue;
@@ -1106,6 +1124,23 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/projects/:id/access': R('admin'),
   'GET /v1/access/me': R('self'),
   // ── end 0.15 T5 ──
+  // 0.16 multi-node (design §9 M3): each task adds its entries in its block in
+  // the same change that registers the route — a stale entry (no such route)
+  // fails `classifies every registered route`. Node placement, server roles
+  // and Swarm are operator; transfer history and Swarm status of one service
+  // are `viewer` (design §6.4, §7.5).
+  // ── 0.16 T2 agent transport ──
+  // ── end 0.16 T2 ──
+  // ── 0.16 T3 node builds and private clones ──
+  // ── end 0.16 T3 ──
+  // ── 0.16 T4 build placement ──
+  // ── end 0.16 T4 ──
+  // ── 0.16 T5 node volumes ──
+  // ── end 0.16 T5 ──
+  // ── 0.16 T6 node databases ──
+  // ── end 0.16 T6 ──
+  // ── 0.16 T7 swarm ──
+  // ── end 0.16 T7 ──
 };
 
 // ── harness ──────────────────────────────────────────────────────────────
@@ -1488,6 +1523,40 @@ describe('OpenAPI route coverage (0.15)', () => {
   });
 });
 // ── end 0.15 T1 ──
+
+// ── 0.16 T1 openapi coverage (design §9 M3) ──
+/** Routes the multi-node work adds under new paths: each needs its ROUTE_SPECS entry from day one. */
+const NEW_016_ROUTE =
+  /^[A-Z]+ \/v1\/(?:swarm(?:\/|$)|deployments\/|servers\/:id\/swarm\/|services\/:id\/(?:placement|image-transfers|swarm)$)/;
+
+describe('OpenAPI route coverage (0.16 multi-node)', () => {
+  it('every multi-node route has a ROUTE_SPECS entry, documented in the multiNode fragment', async () => {
+    const { ROUTE_SPECS, SPEC_FRAGMENTS } = await import('../src/openapi/specs/index.js');
+    const keys = liveRoutes()
+      .map((r) => r.key)
+      .filter((k) => NEW_016_ROUTE.test(k));
+    expect(keys.filter((k) => !(k in ROUTE_SPECS)), 'undocumented multi-node routes').toEqual([]);
+    expect(keys.filter((k) => !(k in SPEC_FRAGMENTS['multiNode']!)), 'multi-node routes documented outside specs/multiNode.ts').toEqual([]);
+  });
+
+  it('matches the multi-node paths and nothing older (keeps the check non-vacuous)', () => {
+    for (const k of [
+      'GET /v1/swarm',
+      'POST /v1/swarm/init',
+      'POST /v1/servers/:id/swarm/join',
+      'PUT /v1/services/:id/placement',
+      'GET /v1/services/:id/image-transfers',
+      'GET /v1/deployments/:id/image-transfers',
+      'GET /v1/services/:id/swarm',
+    ]) {
+      expect(NEW_016_ROUTE.test(k), k).toBe(true);
+    }
+    for (const k of ['GET /v1/servers', 'DELETE /v1/servers/:id', 'GET /v1/services/:id', 'GET /v1/orchestrators', 'GET /v1/volumes']) {
+      expect(NEW_016_ROUTE.test(k), k).toBe(false);
+    }
+  });
+});
+// ── end 0.16 T1 ──
 
 // ── 0.15 T5 access grants: guest cases ──
 // A grant-only identity reaches A's covered resources at its granted role and

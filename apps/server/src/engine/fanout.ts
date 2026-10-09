@@ -99,6 +99,13 @@ export interface FanoutContext {
    * its checkout is done. Absent = anonymous clone.
    */
   gitCredential?: NodeGitCredentialSource;
+  /**
+   * Multi-node (M5; T4 fills it for D1): why this target must not receive the
+   * release, or null. Asked before anything is sent to the target; a refused
+   * target is recorded as failed with the reason, its previous runtime keeps
+   * serving, and the other targets proceed. Absent = no refusal (0.15).
+   */
+  targetRefusal?: (target: FanoutTarget) => Promise<string | null>;
 }
 
 /**
@@ -118,6 +125,14 @@ export async function deployToTargets(
 
   for (const target of rows) {
     if (ctx.primaryServerId !== null && target.serverId === ctx.primaryServerId) continue;
+    // ── 0.16 T4 per-target refusal (M5, D1) ──
+    const refusal = ctx.targetRefusal ? await ctx.targetRefusal(target) : null;
+    if (refusal) {
+      results.push({ serverId: target.serverId, runtimeId: target.runtimeId, ok: false, error: refusal });
+      log(`✗ target node #${target.serverId}: ${refusal} — the primary release is unaffected`);
+      continue;
+    }
+    // ── end 0.16 T4 ──
     const name = `${ctx.service.slug}-t${target.serverId}-${ctx.deploymentId}`;
     const agent: AgentCaller = (op, params, sink) => agentOp(db, target.serverId, op, params, sink);
     try {

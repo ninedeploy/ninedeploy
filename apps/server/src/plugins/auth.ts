@@ -65,6 +65,9 @@ const PREFIX_SCOPES: Record<string, readonly [string, string]> = {
   housekeeping: ['nd://scope/read/housekeeping', 'nd://scope/write/housekeeping'],
   system: ['nd://scope/read/health', 'nd://scope/write/health'],
   env: ['nd://scope/read/env', 'nd://scope/write/env'],
+  // Multi-node: GET /v1/deployments/:id/image-transfers reads deploy history,
+  // like /services/:id/deploys.
+  deployments: ['nd://scope/read/deploys', 'nd://scope/write/deploys'],
 };
 
 /**

@@ -32,6 +32,7 @@ import {
   serviceGithubLinks,
   sources,
 } from '@ninedeploy/db';
+import { migrationsThrough } from './fixtures/migrationsThrough.js';
 
 const scratch = mkdtempSync(path.join(os.tmpdir(), 'nd-0069-'));
 vi.stubEnv('NINEDEPLOY_DATA_DIR', scratch);
@@ -154,7 +155,8 @@ describe('migration 0069 upgrade compatibility', () => {
       }),
     );
 
-    await migrate(db, { migrationsFolder });
+    // Through 0069 only: 0072 later adds `sources.allow_on_nodes`.
+    await migrate(db, { migrationsFolder: migrationsThrough(TAG, scratch) });
 
     const sourcesAfter = (await client.execute('SELECT * FROM sources ORDER BY id')).rows;
     expect(sourcesAfter).toHaveLength(2);
@@ -173,7 +175,8 @@ describe('migration 0069 upgrade compatibility', () => {
     }
 
     // The 0.13 schema reads the migrated rows and the pipeline's credential
-    // block yields exactly the 0.12 strings.
+    // block yields exactly the 0.12 strings (today's schema: the whole chain).
+    await migrate(db, { migrationsFolder });
     const rows = await db.select().from(sources).orderBy(sources.id);
     expect(rows.map((r) => r.baseUrl)).toEqual([null, null]);
     expect(rows.map(credsFor)).toEqual(credsBefore);

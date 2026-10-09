@@ -64,6 +64,11 @@ export const backupStatus = ['pending', 'running', 'completed', 'failed'] as con
 export const jobKind = ['deploy', 'exec', 'backup'] as const;
 export const jobRunStatus = ['running', 'completed', 'failed'] as const;
 export const serverStatus = ['offline', 'online', 'error', 'pending'] as const;
+// 0.16 multi-node. Plain TEXT with no CHECK (a CHECK would rebuild the table).
+export const serviceBuildOn = ['target', 'panel', 'server'] as const;
+export const serviceOrchestrator = ['container', 'swarm'] as const;
+export const imageTransferMethod = ['stream', 'registry', 'preload'] as const;
+export const imageTransferStatus = ['running', 'completed', 'failed'] as const;
 
 // ─── users & auth ─────────────────────────────────────────────────────────
 export const users = sqliteTable('users', {
@@ -508,6 +513,18 @@ export const services = sqliteTable(
     prNumber: integer('pr_number'),
     /** Deployment lane (production / staging / …). Null = ungrouped. */
     environmentId: integer('environment_id').references((): AnySQLiteColumn => environments.id, { onDelete: 'set null' }),
+    // ── 0.16 multi-node (migration 0072). Every column is NULL on pre-0072
+    // rows, and NULL reproduces 0.15 exactly: build where the service runs,
+    // no image push, plain containers (design §6.2, §7).
+    /** `target` | `panel` | `server`. NULL = `target` (build where it runs). */
+    buildOn: text('build_on', { enum: serviceBuildOn }),
+    /** The build server for `build_on = 'server'`. NULL after its server is deleted (the deploy then fails, never falls back). */
+    buildServerId: integer('build_server_id').references((): AnySQLiteColumn => servers.id, { onDelete: 'set null' }),
+    /** Opt-in registry transfer: a `type='registry'` source. NULL = stream relay. */
+    pushRegistrySourceId: integer('push_registry_source_id').references((): AnySQLiteColumn => sources.id, { onDelete: 'set null' }),
+    pushRepository: text('push_repository'),
+    /** `container` | `swarm`. NULL = `container` (today). */
+    orchestrator: text('orchestrator', { enum: serviceOrchestrator }),
     createdAt: ts('created_at'),
     updatedAt: tsUpdatable('updated_at'),
   },
@@ -522,6 +539,7 @@ export const services = sqliteTable(
     // SQLite does not auto-index FK columns; multi-server installs filter the
     // services list by the remote server on every panel page.
     serverIdx: index('services_server_idx').on(t.serverId),
+    buildServerIdx: index('services_build_server_idx').on(t.buildServerId),
   }),
 );
 
@@ -595,6 +613,10 @@ export const deployments = sqliteTable(
     // JSON snapshot of the effective build config + env key fingerprint at
     // deploy start — powers the config diff against the previous deployment.
     configSnapshot: text('config_snapshot'),
+    // 0.16 (0072): where the image was built (`panel` | `node:<id>`) and its
+    // local image id. NULL on every pre-0072 row.
+    buildHost: text('build_host'),
+    imageId: text('image_id'),
     startedAt: integer('started_at', { mode: 'timestamp' }),
     finishedAt: integer('finished_at', { mode: 'timestamp' }),
     createdAt: ts('created_at'),
@@ -686,6 +708,9 @@ export const sources = sqliteTable('sources', {
   // NULL = unknown — every pre-0.13 row, whose behaviour does not change.
   // Nullable with no default so 0069 is a plain ADD COLUMN (no table rebuild).
   baseUrl: text('base_url'),
+  // 0.16 (0072): a static credential (PAT, deploy key) may be sent to a node
+  // for one clone. Off for every existing row, which keeps the r268 refusal.
+  allowOnNodes: integer('allow_on_nodes', { mode: 'boolean' }).notNull().default(false),
 });
 
 export const domains = sqliteTable(
@@ -954,6 +979,9 @@ export const backups = sqliteTable(
     // deleted (those fall back to the active destination).
     destinationId: integer('destination_id').references(() => backupDestinations.id, { onDelete: 'set null' }),
     sizeBytes: integer('size_bytes').notNull().default(0),
+    // 0.16 (0072): the node the volume or node database lived on when the
+    // backup was taken. NULL = the panel host (every pre-0072 row).
+    serverId: integer('server_id').references((): AnySQLiteColumn => servers.id, { onDelete: 'set null' }),
     createdAt: ts('created_at'),
   },
   (t) => ({
@@ -1331,6 +1359,39 @@ export const accessGrants = sqliteTable(
   }),
 );
 
+// 0.16 multi-node: one row per image shipped to a host (design §6.3). An event
+// table, swept by the `image-transfers` housekeeping step after
+// `image_transfer_retention_days` (default 30). Source and target servers are
+// snapshots with no FK: a row outlives its servers until retention. NULL means
+// the panel host.
+export const imageTransfers = sqliteTable(
+  'image_transfers',
+  {
+    id: id(),
+    deploymentId: integer('deployment_id').references(() => deployments.id, { onDelete: 'set null' }),
+    serviceId: integer('service_id')
+      .notNull()
+      .references(() => services.id, { onDelete: 'cascade' }),
+    sourceServerId: integer('source_server_id'),
+    targetServerId: integer('target_server_id'),
+    method: text('method', { enum: imageTransferMethod }).notNull(),
+    imageRef: text('image_ref').notNull(),
+    imageId: text('image_id'),
+    bytes: integer('bytes').notNull().default(0),
+    sha256: text('sha256'),
+    status: text('status', { enum: imageTransferStatus }).notNull().default('running'),
+    error: text('error'),
+    startedAt: ts('started_at'),
+    finishedAt: integer('finished_at', { mode: 'timestamp' }),
+    durationMs: integer('duration_ms'),
+  },
+  (t) => ({
+    serviceStartedIdx: index('image_transfers_service_started_idx').on(t.serviceId, t.startedAt),
+    deploymentIdx: index('image_transfers_deployment_idx').on(t.deploymentId),
+    startedIdx: index('image_transfers_started_idx').on(t.startedAt),
+  }),
+);
+
 export const metrics = sqliteTable(
   'metrics',
   {
@@ -1556,6 +1617,18 @@ export const databases = sqliteTable(
     // first attempt retries the adoption on the next deploy instead of
     // booting the deleted installation's credentials.
     initializedAt: integer('initialized_at', { mode: 'timestamp' }),
+    // ── 0.16 multi-node (migration 0072). NULL = the panel host (every
+    // pre-0072 row). No ON DELETE action on purpose: with foreign_keys=ON a
+    // server that hosts a database cannot be deleted.
+    //
+    // ROLLBACK MARKER (design §5.8, owner decision O6): a node row stores
+    // `container_name` and `volume_name` as NULL and its real names in the two
+    // columns below. 0.15 does not know these columns, sees NULL local names,
+    // and refuses every local action ("no container/volume name", "not
+    // runnable") instead of running anything on the panel host.
+    serverId: integer('server_id').references((): AnySQLiteColumn => servers.id),
+    nodeContainerName: text('node_container_name'),
+    nodeVolumeName: text('node_volume_name'),
     createdAt: ts('created_at'),
     updatedAt: tsUpdatable('updated_at'),
   },
@@ -1563,6 +1636,7 @@ export const databases = sqliteTable(
     slugIdx: uniqueIndex('databases_slug_idx').on(t.slug),
     // SQLite does not auto-index FK columns; project listings join on it.
     projectIdx: index('databases_project_idx').on(t.projectId),
+    serverIdx: index('databases_server_idx').on(t.serverId),
   }),
 );
 
@@ -1804,6 +1878,18 @@ export const servers = sqliteTable(
     // the core can use it for exec calls; sha256 hash would be one-way.
     tokenEncrypted: text('token_encrypted').notNull(),
     lastSeenAt: integer('last_seen_at', { mode: 'timestamp' }),
+    // ── 0.16 multi-node (migration 0072).
+    // The capability cache, written on every successful sealed ping. Advisory
+    // only: a deploy never trusts it alone (design §1.3).
+    agentVersion: text('agent_version'),
+    agentCaps: text('agent_caps', { mode: 'json' }).$type<string[]>(),
+    agentCheckedAt: integer('agent_checked_at', { mode: 'timestamp' }),
+    // Build-server role (design §6.2). Off for every existing row.
+    isBuildServer: integer('is_build_server', { mode: 'boolean' }).notNull().default(false),
+    buildConcurrency: integer('build_concurrency').notNull().default(1),
+    // Swarm membership recorded on join (design §7.2).
+    swarmNodeId: text('swarm_node_id'),
+    swarmRole: text('swarm_role'),
     createdAt: ts('created_at'),
     updatedAt: tsUpdatable('updated_at'),
   },
@@ -2097,6 +2183,8 @@ export type TrafficRollup = typeof trafficRollups.$inferSelect;
 export type NewTrafficRollup = typeof trafficRollups.$inferInsert;
 export type AccessGrant = typeof accessGrants.$inferSelect;
 export type NewAccessGrant = typeof accessGrants.$inferInsert;
+export type ImageTransfer = typeof imageTransfers.$inferSelect;
+export type NewImageTransfer = typeof imageTransfers.$inferInsert;
 export type ScheduledJob = typeof scheduledJobs.$inferSelect;
 export type JobRun = typeof jobRuns.$inferSelect;
 export type ServerRow = typeof servers.$inferSelect;

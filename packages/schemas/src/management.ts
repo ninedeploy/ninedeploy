@@ -90,6 +90,13 @@ export const sourcePatch = z.object({
   defaultBranch: z.string().max(255).optional(),
   /** 0.13: set the self-hosted provider base URL (Gitea); null clears it. */
   baseUrl: providerBaseUrl.nullable().optional(),
+  /**
+   * Multi-node (additive): allow this static credential (PAT, deploy key) to
+   * be sent to a node for one clone. Off for every existing source.
+   */
+  allowOnNodes: z.boolean().optional(),
+  /** Step-up password, required by the server when `allowOnNodes` turns on. */
+  password: z.string().min(1).max(1024).optional(),
 });
 export type SourcePatch = z.infer<typeof sourcePatch>;
 

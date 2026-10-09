@@ -18,6 +18,8 @@ import { nodeLabel } from '../lib/agentCapabilities.js';
 import { createRemoteDockerBuilder } from './builders/remoteDocker.js';
 import { deployToTargets, pullableReleaseRef, recordFanoutResults, targetsForService } from './fanout.js';
 import { createRemoteComposeBuilder } from './builders/remoteCompose.js';
+import { resolveBuildPlacement } from './buildPlacement.js';
+import { isSwarmService } from './swarmDeploy.js';
 import { analyzeRepo, summarizeInsights } from '../lib/frameworks.js';
 import { upsertInsights } from './repoInsights.js';
 import { connectionString, ENGINES } from './database.js';
@@ -692,6 +694,19 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   // previews, rollbacks, scheduled jobs and the panel button all end up here —
   // so the decision lives here rather than in each queue path (the routes add a
   // friendlier upfront 400 on top).
+  // ── 0.16 T7 swarm (M5) ──
+  // A service on the Swarm orchestrator deploys through engine/swarmDeploy.ts
+  // (design §7.4). The T1 stub answers false for every service, so no deploy
+  // takes this branch and every service runs plain containers as before.
+  if (isSwarmService(service)) {
+    const reason = 'Swarm deployments are not available in this release';
+    log(`✗ ${reason}`);
+    await safeFail(db, deploymentId, service.id, service.runtimeId);
+    await auditOutcome(db, service, deploymentId, 'failed', reason);
+    return;
+  }
+  // ── end 0.16 T7 ──
+
   let builder = builders[service.type];
   if (service.serverId != null) {
     const serverId = service.serverId;
@@ -786,6 +801,16 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   try {
     // Cancel checkpoint: the route may have flipped the row between claim and here.
     if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled();
+
+    // ── 0.16 T4 build placement (M5) ──
+    // Where the image is built (design §6.3). The T1 stub answers `target`
+    // for every service, so every deploy builds where it runs, exactly as
+    // before; T4 replaces this block with the build-host branch and shipping.
+    const placement = await resolveBuildPlacement(db, service);
+    if (placement.kind !== 'target') {
+      throw new Error(`Building on ${placement.kind === 'panel' ? 'the panel host' : 'a build server'} is not available in this release`);
+    }
+    // ── end 0.16 T4 ──
 
     // r520/r582: a railpack build that cannot run here (no Railpack CLI, or
     // no BuildKit daemon via BUILDKIT_HOST) is refused before the checkout,
@@ -1479,6 +1504,13 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
           primaryServerId: service.serverId ?? null,
           source: buildableSource,
           gitCredential: buildableSource ? nodeGitCredentialSource(db, service) : undefined,
+          // ── 0.16 T4 per-target refusal (M5, D1) ──
+          // The checks a remote primary passes (remoteServiceRefusal,
+          // remoteHookRefusal, the database host rule, capabilities), per
+          // target, before anything is sent to it. The T1 hook refuses no
+          // target, so every target deploys as before.
+          targetRefusal: async () => null,
+          // ── end 0.16 T4 ──
         },
         log,
       );

@@ -78,6 +78,10 @@ import { terminalRoutes } from './terminals.js';
 import { serviceTrafficRoutes, trafficRoutes } from './traffic.js';
 import { openapiRoutes } from './openapi.js';
 import { accessGrantRoutes, accessMeRoutes, projectAccessRoutes } from './accessGrants.js';
+import { serverSwarmRoutes, swarmRoutes } from './swarm.js';
+import { serverRolesRoutes } from './serverRoles.js';
+import { servicePlacementRoutes } from './servicePlacement.js';
+import { deploymentTransferRoutes, imageTransferRoutes } from './imageTransfers.js';
 
 /** All versioned API routes, mounted under /v1. */
 export const apiRoutes: FastifyPluginAsync = async (app) => {
@@ -207,10 +211,18 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(metricRoutes, { prefix: '/services' });
   // Per-service request analytics, GET /services/:id/traffic (0.15, DESIGN §2.4).
   await app.register(serviceTrafficRoutes, { prefix: '/services' });
+  // Multi-node (mount point M1): build placement and the image transfer
+  // history per service, under the `services` scope.
+  await app.register(servicePlacementRoutes, { prefix: '/services' });
+  await app.register(imageTransferRoutes, { prefix: '/services' });
   await app.register(metricHistoryRoutes, { prefix: '/metric-history' });
   await app.register(envSearchRoutes, { prefix: '/env' });
   await app.register(jobRoutes, { prefix: '/services' });
   await app.register(serverRoutes, { prefix: '/servers' });
+  // Multi-node (M1): build-server roles (PATCH /servers/:id) and Swarm
+  // join / leave per node; operator only.
+  await app.register(serverRolesRoutes, { prefix: '/servers' });
+  await app.register(serverSwarmRoutes, { prefix: '/servers' });
   await app.register(logDrainRoutes, { prefix: '/log-drains' });
   // Cluster log search (G-16) — round-trips to the
   // configured Loki drain. Sits next to the log-drain
@@ -240,4 +252,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   // Instance-wide traffic analytics: settings and summary (0.15, DESIGN §2.4);
   // operator only, opt-in.
   await app.register(trafficRoutes, { prefix: '/traffic' });
+  // Multi-node (M1): the image transfers of one deployment, and the Swarm
+  // cluster (operator only, opt-in).
+  await app.register(deploymentTransferRoutes, { prefix: '/deployments' });
+  await app.register(swarmRoutes, { prefix: '/swarm' });
 };

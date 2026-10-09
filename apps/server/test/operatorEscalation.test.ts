@@ -39,6 +39,8 @@ vi.mock('../src/plugins/databaseImports.js', () => ({ default: vi.fn(async () =>
 // 0.15 background plugins: terminal boot recovery / reaper (removes helper containers) and the traffic log tailer.
 vi.mock('../src/plugins/terminals.js', () => ({ default: vi.fn(async () => undefined) }));
 vi.mock('../src/plugins/trafficAnalytics.js', () => ({ default: vi.fn(async () => undefined) }));
+// Multi-node: the node database status loop (agent calls, timers).
+vi.mock('../src/plugins/nodeDatabases.js', () => ({ default: vi.fn(async () => undefined) }));
 
 const MIGRATIONS = fileURLToPath(
   new URL('../../../packages/db/src/migrations', import.meta.url),

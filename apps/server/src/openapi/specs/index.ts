@@ -19,6 +19,7 @@ import { workspacesSpecs } from './workspaces.js';
 import { accessGrantSpecs } from './accessGrants.js';
 import { terminalSpecs } from './terminals.js';
 import { trafficSpecs } from './traffic.js';
+import { multiNodeSpecs } from './multiNode.js';
 
 /**
  * `ROUTE_SPECS`: every route's OpenAPI description, aggregated from one
@@ -67,6 +68,8 @@ export const SPEC_FRAGMENTS: Record<string, RouteSpecMap> = {
   terminals: terminalSpecs,
   traffic: trafficSpecs,
   accessGrants: accessGrantSpecs,
+  // Multi-node routes (design §9 M3); one labelled block per task inside.
+  multiNode: multiNodeSpecs,
 };
 
 export const ROUTE_SPECS: RouteSpecMap = mergeSpecFragments(SPEC_FRAGMENTS);

@@ -26,6 +26,7 @@ import { audit } from '../lib/audit.js';
 import { getDomainPolicy } from '../lib/domainPolicy.js';
 import { pruneTerminalSessions } from '../lib/terminalSessions.js';
 import { pruneTrafficRollups } from '../lib/trafficAnalytics.js';
+import { pruneImageTransfers } from '../lib/imageTransferRetention.js';
 
 const swallow = () => {};
 const INTERVAL_MS = 60 * 60 * 1000; // hourly
@@ -509,6 +510,8 @@ export default fp(
         // sweep here or a `config:` reason in test/retentionCoverage.test.ts.
         await step('terminal-sessions', () => pruneTerminalSessions(fastify.db, now));
         await step('traffic-rollups', () => pruneTrafficRollups(fastify.db, now));
+        // Multi-node event table (design §8, mount point M4).
+        await step('image-transfers', () => pruneImageTransfers(fastify.db, now));
         await step('dangling-images', () => pruneDanglingImages());
 
         await step('disk-auto-prune', async () => {

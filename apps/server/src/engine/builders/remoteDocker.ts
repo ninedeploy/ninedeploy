@@ -3,6 +3,11 @@ import { assertCloneTargetAllowed } from '../../lib/gitEgress.js';
 import { acquireRegistryLock, registryLockKey } from '../../lib/registryLock.js';
 import { assertAgentGuardsBuildPaths } from '../../lib/agentCapabilities.js';
 import type { NodeGitCredentialSource } from '../../lib/nodeGitCredential.js';
+import { runRemoteContainer } from './remoteRun.js';
+
+// r267: moved to remoteRun.ts with the run phase (multi-node T1); re-exported
+// so every importer keeps its path.
+export { envForAgent } from './remoteRun.js';
 
 /**
  * Remote Docker builder — deploys a service onto a registered node through the
@@ -86,17 +91,13 @@ const STABLE_SAMPLES = 3;
 const CRASH_LOOP_RESTARTS = 3;
 
 /**
- * r267: the env map as it must travel to an agent's `file.writeEnv`. The
- * agent refuses any value containing a newline (a physical newline would let
- * the rest of the value be parsed as further env-file keys), while the panel
- * accepts multi-line values and the local builder (`writeEnvFile` in
- * docker.ts) stores them as literal `\n` escapes — so a service with a PEM
- * key or a multi-line JSON secret deployed locally and failed on every node.
- * Escaping here, panel-side, applies the local convention and works with
- * agents already in the field.
+ * Multi-node (M6): an image built elsewhere (the panel host or a build
+ * server) and already loaded on this node under `tag`, with its content
+ * address `imageId`. The deploy then neither pulls nor clones nor builds.
  */
-export function envForAgent(env: Record<string, string>): Record<string, string> {
-  return Object.fromEntries(Object.entries(env).map(([k, v]) => [k, v.replace(/\r\n?|\n/g, '\\n')]));
+export interface PrebuiltImage {
+  tag: string;
+  imageId: string;
 }
 
 export function createRemoteDockerBuilder(
@@ -106,6 +107,12 @@ export function createRemoteDockerBuilder(
     nodeLabel?: string;
     /** 0.13 (T5): the service's per-job Git credential (a GitHub App token); absent = anonymous clone. */
     gitCredential?: NodeGitCredentialSource;
+    /**
+     * Multi-node (M6, set by build placement): the image was built elsewhere
+     * and shipped here. Absent = today's behaviour (pull, or clone and build
+     * on the node). No caller sets it yet.
+     */
+    prebuiltImage?: PrebuiltImage;
   } = {},
 ): Builder {
   const pollMs = opts.pollMs ?? 2000;
@@ -150,6 +157,15 @@ export function createRemoteDockerBuilder(
       await agent('docker.networkCreate', { name: 'ninedeploy', driver: 'bridge' }, sink).catch(() => undefined);
 
       let target: string;
+      // ── 0.16 T4 prebuilt image (M6) ──
+      // Built on the panel or a build server and shipped to this node before
+      // the run phase (design §6.3 step 5). Unset by every caller until build
+      // placement lands, so every deploy takes the branches below as before.
+      if (opts.prebuiltImage) {
+        target = opts.prebuiltImage.tag;
+        log(`Running ${target} (${opts.prebuiltImage.imageId.slice(0, 19)}), built elsewhere and shipped to the node …`);
+      } else
+      // ── end 0.16 T4 ──
       if (service.image) {
         // Pre-built image (template / one-click). On rollback the deployment
         // row pins the exact digest, same as the local builder.
@@ -244,63 +260,17 @@ export function createRemoteDockerBuilder(
         await agent('docker.build', { workspace, tag: target, dockerfile, context: baseDir }, sink);
       }
 
-      // Environment reaches the node as a 0600 env-file written by the agent,
-      // never as argv: `docker.runEnv` mounts it with --env-file, so no secret
-      // is visible in the node's process table.
-      const envFileName = `${service.slug}-${deploymentId}`;
-      const wrote = await agent('file.writeEnv', { name: envFileName, env: envForAgent(env) }, sink);
-      const envFile =
-        wrote.lines.find((l) => l.startsWith('wrote '))?.slice('wrote '.length) ??
-        `.agent-env/${envFileName}.env`;
-
-      const resolvedPort = service.port ?? null;
-      const runParams: Record<string, unknown> = { name, image: target, envFile };
-      if (service.cpuShares > 0) runParams['cpuShares'] = String(service.cpuShares);
-      if (service.cpuLimitMilli > 0) runParams['cpuLimitMilli'] = String(service.cpuLimitMilli);
-      if (service.memLimitMb > 0) runParams['memLimitMb'] = String(service.memLimitMb);
-      if (service.volumeMount) {
-        runParams['volume'] = `nd-svc-${service.slug}-data`;
-        runParams['mount'] = service.volumeMount;
-      }
-      // A published port is only needed for direct, domain-less access. Domain
-      // traffic goes through the NODE's Traefik over the shared network, so the
-      // common case publishes nothing.
-      if (service.publishedPort && resolvedPort) {
-        runParams['publish'] = `${service.publishedPort}:${resolvedPort}`;
-      }
-
-      // r264: a host-published port cannot run blue-green — Docker refuses to
-      // bind the same host port twice, so every redeploy after the first died
-      // on "port is already allocated" (leaving a Created container behind)
-      // while the old generation kept the port. Same rule as the local builder
-      // (docker.ts) and the fan-out (fanout.ts): retire the previous runtime
-      // FIRST and deploy sequentially.
-      if (runParams['publish'] !== undefined && previous?.runtimeId && previous.runtimeId !== name) {
-        log(
-          `Host port ${service.publishedPort} is published — retiring previous runtime ${previous.runtimeId} on the node before start (sequential deploy, no blue-green)`,
-        );
-        await agent('docker.rm', { name: previous.runtimeId }, sink).catch((err: unknown) =>
-          log(
-            `warning: could not remove ${previous.runtimeId}: ${err instanceof Error ? err.message : String(err)}`,
-          ),
-        );
-      }
-
-      log(`Starting ${name} on the node …`);
-      try {
-        await agent('docker.runEnv', runParams, sink);
-      } catch (err) {
-        // r264: `docker run -d` that fails after create (a port conflict, a bad
-        // mount) leaves a Created container under this deployment's name, and
-        // the pipeline has no runtime to stop. Remove it; the run error is
-        // still what fails the deployment.
-        await agent('docker.rm', { name }, () => undefined).catch(() => undefined);
-        throw err;
-      } finally {
-        // The env-file has been consumed by `docker run`; leaving decrypted
-        // secrets on the node's disk after that is pure exposure.
-        await agent('file.deleteEnv', { name: envFileName }, sink).catch(() => undefined);
-      }
+      // The run phase (env-file, `docker.runEnv`, cleanup) lives in
+      // remoteRun.ts, unchanged.
+      const { port: resolvedPort } = await runRemoteContainer(agent, {
+        service,
+        deploymentId,
+        env,
+        name,
+        image: target,
+        previous,
+        log,
+      });
 
       return {
         runtimeId: name,

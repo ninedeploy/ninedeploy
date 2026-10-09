@@ -4,13 +4,14 @@ import { serverAnnounce, serverCreate, serverSshBootstrap, serverSshTest } from 
 import type { FastifyPluginAsync } from 'fastify';
 import { audit } from '../lib/audit.js';
 import { decrypt, encrypt, secretEquals } from '../lib/crypto.js';
-import { badRequest, conflict, notFound, parseId, unauthorized } from '../lib/errors.js';
+import { badRequest, conflict, HttpError, notFound, parseId, unauthorized } from '../lib/errors.js';
 import { agentOp, agentPing, generateAgentToken } from '../lib/agentClient.js';
 import { nodeTerminalCapability } from '../lib/agentCapabilities.js';
 import { ENROLMENT_HEADER, assertEnrolmentAllowed } from '../lib/enrolment.js';
 import { bootstrapServer, getBootstrapLogs, testSshConnection } from '../engine/serverProvisioner.js';
 import { agentDockerRunCommand } from '@ninedeploy/schemas';
 import { VERSION } from '../version.js';
+import { serverDeleteBlockers } from '../lib/serverDependents.js';
 
 /** r421: an endpoint's identity is (host, port) — but the announce/create
  *  schema accepts `host:port` spellings and DNS-vs-IP aliases. Strip a
@@ -195,6 +196,16 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
       const id = parseId((req.params as { id: string }).id);
       const row = await authed.db.query.servers.findFirst({ where: eq(servers.id, id) });
       if (!row) throw notFound('Server not found');
+
+      // ── 0.16 T6 server delete guard (M7) ──
+      // Dependents a delete must never orphan, even with ?force=true (node
+      // databases, design §5.7). The T1 stub reports none, so the route
+      // behaves exactly as before.
+      const blockers = await serverDeleteBlockers(authed.db, id);
+      if (blockers.length > 0) {
+        throw new HttpError(409, blockers[0]!.code, blockers.map((b) => b.message).join(' '));
+      }
+      // ── end 0.16 T6 ──
 
       const hosted = await hostedOn(authed.db, id);
       const hostedServices = hosted.primary;

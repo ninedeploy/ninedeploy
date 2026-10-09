@@ -18,10 +18,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Client } from '@libsql/client';
-import { eq } from 'drizzle-orm';
+import { eq, getTableColumns } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import { createDb, type DB, services } from '@ninedeploy/db';
+import { createDb, type DB, type Service, services } from '@ninedeploy/db';
+import { migrationsThrough } from './fixtures/migrationsThrough.js';
 
 // The pipeline module is imported for its env assembly only — nothing here
 // may reach Docker, PM2, git, the proxy or the notifier.
@@ -90,7 +91,13 @@ async function populated011(): Promise<{ db: DB; client: Client }> {
   return { db, client: client! };
 }
 
-const serviceRow = async (db: DB, id: number) => (await db.query.services.findFirst({ where: eq(services.id, id) }))!;
+// The service row as the 0.11-0.15 schema reads it: the 0.16 placement
+// columns (0072) do not exist before that migration and play no part in env
+// assembly, so this works on a 0.11 database and on a fully migrated one.
+const { buildOn: _b, buildServerId: _bs, pushRegistrySourceId: _pr, pushRepository: _rp, orchestrator: _o, ...SERVICE_COLUMNS_015 } =
+  getTableColumns(services);
+const serviceRow = async (db: DB, id: number) =>
+  (await db.select(SERVICE_COLUMNS_015).from(services).where(eq(services.id, id)))[0]! as Service;
 
 describe('migration 0068 upgrade compatibility', () => {
   it('is purely additive: one new table and its index, nothing rebuilt', () => {
@@ -110,12 +117,15 @@ describe('migration 0068 upgrade compatibility', () => {
     // 0.11 schema too — the reference for "byte-identical".
     const prodBefore = await loadRuntimeEnv(db, await serviceRow(db, 1));
 
-    await migrate(db, { migrationsFolder });
+    // Through 0068 only for the row comparison: 0072 later adds nullable
+    // columns to `services`. The env reads below run on the whole chain.
+    await migrate(db, { migrationsFolder: migrationsThrough(TAG, scratch) });
 
     expect((await client.execute('SELECT * FROM env_vars ORDER BY id')).rows).toEqual(envRowsBefore);
     expect((await client.execute('SELECT * FROM services ORDER BY id')).rows).toEqual(serviceRowsBefore);
     expect((await client.execute('SELECT COUNT(*) AS n FROM preview_env_vars')).rows[0]!['n']).toBe(0);
 
+    await migrate(db, { migrationsFolder });
     const prodAfter = await loadRuntimeEnv(db, await serviceRow(db, 1));
     expect(JSON.stringify(prodAfter)).toBe(JSON.stringify(prodBefore));
     expect(prodAfter.values).toEqual({

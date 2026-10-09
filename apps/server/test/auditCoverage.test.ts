@@ -59,6 +59,23 @@ const EXEMPT: Record<string, string> = {
   // ── end 0.15 T4 ──
   // ── 0.15 T5 access grants ──
   // ── end 0.15 T5 ──
+  // 0.16 multi-node (design §9): every new mutation audits — placement,
+  // server roles, Swarm init / settings / join / leave, node volume create /
+  // delete, the source `allowOnNodes` toggle, node database create — so none
+  // is exempt by design. A task that does add an exemption puts it in its
+  // block in the same change that adds the route (a stale entry fails below).
+  // ── 0.16 T2 agent transport ──
+  // ── end 0.16 T2 ──
+  // ── 0.16 T3 node builds and private clones ──
+  // ── end 0.16 T3 ──
+  // ── 0.16 T4 build placement ──
+  // ── end 0.16 T4 ──
+  // ── 0.16 T5 node volumes ──
+  // ── end 0.16 T5 ──
+  // ── 0.16 T6 node databases ──
+  // ── end 0.16 T6 ──
+  // ── 0.16 T7 swarm ──
+  // ── end 0.16 T7 ──
 };
 
 // importSystemArchive (lib/systemArchive.ts) audits `system.import`; the panel

@@ -1,7 +1,7 @@
 import { lstatSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Builder, BuildContext, DeployRuntime } from '../types.js';
-import type { AgentCall } from './remoteDocker.js';
+import type { AgentCall, PrebuiltImage } from './remoteDocker.js';
 import { RemoteDeployUnsupportedError } from './remoteDocker.js';
 import { composeScalar, parseComposePs } from './compose.js';
 import { INLINE_COMPOSE_FILE } from '../../lib/composeWorkspace.js';
@@ -116,6 +116,12 @@ export function createRemoteComposeBuilder(
     nodeLabel?: string;
     /** 0.13 (T5): the service's per-job Git credential (a GitHub App token); absent = anonymous clone. */
     gitCredential?: NodeGitCredentialSource;
+    /**
+     * Multi-node (M6, set by build placement): the stack's image was built
+     * elsewhere and shipped here. Absent = today's behaviour. No caller sets
+     * it yet, and nothing below reads it until build placement lands.
+     */
+    prebuiltImage?: PrebuiltImage;
   } = {},
 ): Builder {
   // Recorded at buildAndRun time: the project this builder MINTED for the
@@ -163,11 +169,13 @@ export function createRemoteComposeBuilder(
         // is a repo path like a Dockerfile — same agent requirement.
         const label = opts.nodeLabel ?? `#${service.serverId ?? '?'}`;
         await assertAgentGuardsBuildPaths(agent, label);
+        // ── 0.16 T3 clone credential ──
         // 0.13 (T5): per-job GitHub App token, revoked once the checkout is
         // done — see remoteDocker.ts.
         const git = opts.gitCredential
           ? await opts.gitCredential(agent, { label, serverId: service.serverId ?? null })
           : { git: agent, release: async () => undefined };
+        // ── end 0.16 T3 ──
         try {
           log(`Fetching ${service.repoUrl} into the node workspace "${workspace}" …`);
           await git.git('git.ensure', { workspace, url: service.repoUrl, depth: '1' }, sink);
@@ -237,6 +245,16 @@ export function createRemoteComposeBuilder(
             sink,
           );
         }
+
+        // ── 0.16 T4 prebuilt image (M6) ──
+        // A stack whose image was built elsewhere and shipped to this node
+        // (design §6.3) is pointed at it here. Empty until build placement
+        // lands: `opts.prebuiltImage` is never set, so nothing changes.
+        // ── end 0.16 T4 ──
+        // ── 0.16 T5 volume pre-create (D9) ──
+        // Missing managed volumes are created on the node before `compose up`
+        // (design §4.2). Empty until node volumes land.
+        // ── end 0.16 T5 ──
 
         // Preflight, in this order, BEFORE anything touches the running stack.
         log(`Validating compose project ${project} on the node …`);

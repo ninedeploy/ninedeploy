@@ -440,6 +440,12 @@ export const createDatabase = z.object({
   existingVolume: z.string().optional(),
   extensions: z.array(z.string()).optional(),
   webGuiEnabled: z.boolean().optional(),
+  /**
+   * Multi-node (additive): the node to run the database on. null or absent =
+   * the panel host (today). Operator only when non-null; placement is fixed
+   * at create time.
+   */
+  serverId: z.number().int().positive().nullable().optional(),
 });
 export type CreateDatabaseInput = z.input<typeof createDatabase>;
 

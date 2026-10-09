@@ -60,6 +60,10 @@ describe('databases table — schema/migration drift guard', () => {
       'pgbouncer_container_name',
       'pgbouncer_port',
       'initialized_at',
+      // multi-node (0072): NULL = the panel host; a node row keeps its names here (design §5.8).
+      'server_id',
+      'node_container_name',
+      'node_volume_name',
       'created_at',
       'updated_at',
     ];

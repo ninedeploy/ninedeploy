@@ -33,6 +33,7 @@ import {
   settings,
   tlsCertificates,
 } from '@ninedeploy/db';
+import { migrationsThrough } from './fixtures/migrationsThrough.js';
 
 const OLD_KEY = 'ab'.repeat(32);
 const NEW_KEY = 'cd'.repeat(32);
@@ -157,14 +158,16 @@ describe('migration 0070 upgrade compatibility', () => {
     const { db, client } = await populated013();
     const before = await snapshot(client, ['__drizzle_migrations']);
 
-    await runMigrations(db, migrationsFolder);
+    // Through 0070 only: 0072 later adds nullable columns to existing tables.
+    await runMigrations(db, migrationsThrough(TAG, scratch));
 
     const after = await snapshot(client, ['__drizzle_migrations', ...NEW_TABLES, ...LATER_TABLES]);
     expect(after).toEqual(before);
     for (const t of NEW_TABLES) {
       expect((await client.execute(`SELECT COUNT(*) AS n FROM ${t}`)).rows[0]!['n'], t).toBe(0);
     }
-    // The 0.13 rows still read through the 0.14 schema, secrets intact.
+    // The 0.13 rows still read through the 0.14 schema, secrets intact (today's schema: the whole chain).
+    await runMigrations(db, migrationsFolder);
     const pg = await db.query.databases.findFirst({ where: (d, { eq: e }) => e(d.id, 1) });
     expect(pg).toMatchObject({ slug: 'app', engine: 'postgres', status: 'running' });
     expect(decrypt(pg!.passwordEncrypted)).toBe('pg-secret');

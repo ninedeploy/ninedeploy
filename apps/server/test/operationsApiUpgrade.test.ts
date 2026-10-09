@@ -27,6 +27,7 @@ import { eq } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { accessGrants, createDb, type DB, runMigrations, terminalSessions, trafficRollups } from '@ninedeploy/db';
+import { migrationsThrough } from './fixtures/migrationsThrough.js';
 
 const scratch = mkdtempSync(path.join(os.tmpdir(), 'nd-0071-'));
 vi.stubEnv('NINEDEPLOY_DATA_DIR', scratch);
@@ -166,7 +167,8 @@ describe('migration 0071 upgrade compatibility', () => {
     const { db, client } = await populated014();
     const before = await snapshot(client, ['__drizzle_migrations']);
 
-    await runMigrations(db, migrationsFolder);
+    // Through 0071 only: 0072 later adds nullable columns to existing tables.
+    await runMigrations(db, migrationsThrough(TAG, scratch));
 
     const after = await snapshot(client, ['__drizzle_migrations', ...NEW_TABLES]);
     expect(after).toEqual(before);
@@ -176,7 +178,8 @@ describe('migration 0071 upgrade compatibility', () => {
     // No 0.15 settings key appears: host shells off and analytics off by absence (O1, O3).
     const keys = (await client.execute(`SELECT key FROM settings WHERE key LIKE 'terminal_%' OR key LIKE 'traffic_%'`)).rows;
     expect(keys).toEqual([]);
-    // The 0.14 rows still read through the 0.15 schema, secrets intact.
+    // The 0.14 rows still read through the 0.15 schema, secrets intact (today's schema: the whole chain).
+    await runMigrations(db, migrationsFolder);
     const pg = await db.query.databases.findFirst({ where: (d, { eq: e }) => e(d.id, 1) });
     expect(pg).toMatchObject({ slug: 'app', engine: 'postgres', status: 'running', projectId: 1 });
     expect(decrypt(pg!.passwordEncrypted)).toBe('pg-secret');

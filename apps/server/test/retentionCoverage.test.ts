@@ -29,6 +29,8 @@ const RETENTION: Record<string, Retention> = {
   terminal_sessions: { swept: 'terminal-sessions' },
   traffic_rollups: { swept: 'traffic-rollups' },
   access_grants: { config: 'bounded by users × projects/environments; rows cascade with their user, workspace, project and environment' },
+  // multi-node (migration 0072)
+  image_transfers: { swept: 'image-transfers' },
 };
 
 /** The tables of v0.14.0 (migrations through 0070), frozen. */

@@ -32,6 +32,7 @@ import publicDatabaseAccessPlugin from './plugins/publicDatabaseAccess.js';
 import databaseImportsPlugin from './plugins/databaseImports.js';
 import terminalsPlugin from './plugins/terminals.js';
 import trafficAnalyticsPlugin from './plugins/trafficAnalytics.js';
+import nodeDatabasesPlugin from './plugins/nodeDatabases.js';
 import workerPlugin from './plugins/worker.js';
 
 /** Translate thrown ZodErrors into a consistent 400 envelope. */
@@ -128,6 +129,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(terminalsPlugin);
   // Traffic analytics access-log tailer, idle unless enabled (0.15)
   await app.register(trafficAnalyticsPlugin);
+  // Node database status loop (multi-node, mount point M2); after kernelPlugin
+  await app.register(nodeDatabasesPlugin);
   // Runtime-state reconciliation (panel status vs live containers/processes)
   await app.register(runtimeStatePlugin);
   // Resource metrics collector

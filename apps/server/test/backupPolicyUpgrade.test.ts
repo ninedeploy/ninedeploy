@@ -34,6 +34,7 @@ const remoteMock = vi.hoisted(() => ({
   deleteRemoteBackupForRetention: vi.fn(async (): Promise<'deleted' | 'unknown-destination'> => 'deleted'),
 }));
 vi.mock('../src/lib/backupRemote.js', () => remoteMock);
+import { migrationsThrough } from './fixtures/migrationsThrough.js';
 
 const scratch = mkdtempSync(path.join(os.tmpdir(), 'nd-0067-'));
 mkdirSync(path.join(scratch, 'backups'), { recursive: true });
@@ -101,7 +102,8 @@ describe('migration 0067 upgrade compatibility', () => {
     const before = (await client.execute('SELECT * FROM databases')).rows;
     const backupsBefore = (await client.execute('SELECT * FROM backups ORDER BY id')).rows;
 
-    await migrate(db, { migrationsFolder });
+    // Through 0067 only: 0072 later adds nullable columns to both tables.
+    await migrate(db, { migrationsFolder: migrationsThrough(TAG, scratch) });
 
     expect((await client.execute('SELECT * FROM databases')).rows).toEqual(before);
     expect((await client.execute('SELECT * FROM backups ORDER BY id')).rows).toEqual(backupsBefore);
