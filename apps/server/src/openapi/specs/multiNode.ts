@@ -117,17 +117,17 @@ export const multiNodeSpecs: RouteSpecMap = {
     summary: 'Join a node to the swarm as a worker',
     tag: 'servers',
     description:
-      "Operator only. Reads the worker join token on the panel and sends it to the node's agent over the sealed transport only (capability `swarm`; 422 node_agent_outdated for an older agent, 403 node_feature_disabled when the node's owner switched it off). The token is never stored, logged or returned. Records the node's swarm id. Audited server.swarm.join.",
+      "Operator only. Reads the worker join token on the panel and sends it to the node's agent over the sealed transport only (capability `swarm`; 422 node_agent_outdated for an older agent, 422 node_swarm_not_enabled when the node's owner has not set NINEDEPLOY_AGENT_SWARM_MANAGER). The token is never stored, logged or returned, and is rotated after the join. The manager confirms the reported node (a worker, from the server's host, not linked elsewhere) before it is linked and labelled nd.member=1. Audited server.swarm.join.",
     floor: 'operator',
-    responseType: "{ serverId: number; nodeId: string; role: 'worker' }",
+    responseType: "{ serverId: number; nodeId: string; role: 'worker'; warnings?: string[] }",
   },
   'POST /v1/servers/:id/swarm/leave': {
     summary: 'Drain a node and take it out of the swarm',
     tag: 'servers',
     description:
-      'Operator only. Drains the node, waits up to 5 minutes for its tasks to move, runs `docker swarm leave` on the node through its agent, then removes the node from the swarm. Audited server.swarm.leave.',
+      'Operator only. Removes the nd.member label, drains the node, waits up to 5 minutes for its tasks to move, runs `docker swarm leave` on the node through its agent, removes the node from the swarm and rotates the join token. Audited server.swarm.leave.',
     floor: 'operator',
-    responseType: '{ serverId: number; nodeId: string; drained: boolean }',
+    responseType: '{ serverId: number; nodeId: string; drained: boolean; warnings?: string[] }',
   },
   'GET /v1/services/:id/swarm': {
     summary: 'Swarm tasks of a service',

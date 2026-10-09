@@ -66,6 +66,33 @@ describe('Swarm runtime ids', () => {
   });
 });
 
+describe('the managed namespace covers Swarm (review L3)', () => {
+  it('nd-swarm-<slug> overlays and nd-<slug>_web.<slot>.<task> task containers are NineDeploy’s', async () => {
+    const { isManagedContainer, isManagedNetwork } = await import('../src/lib/managedNamespace.js');
+    expect(isManagedNetwork('nd-swarm-web')).toBe(true);
+    expect(isManagedNetwork('nd-swarm-probe-0a1b2c3d')).toBe(true);
+    expect(isManagedNetwork('my-swarm-web')).toBe(false);
+    expect(isManagedContainer('nd-web_web.1.abcdef0123456789')).toBe(true);
+    expect(isManagedContainer('nd-my-app_web.12.x')).toBe(true);
+    expect(isManagedContainer('nd-web_web')).toBe(false);
+    expect(isManagedContainer('web_web.1.x')).toBe(false);
+  });
+});
+
+describe('swarmRuntimeOf: the one place that decides a row runs on Swarm (review L1)', () => {
+  it('a compose service whose container_name is nd-victim_web is never Swarm, so nothing of nd-victim is touched', () => {
+    // The compose service's runtime id is its first container's name, which the compose file sets.
+    expect(swarm.swarmRuntimeOf({ runtimeId: 'nd-victim_web', slug: 'attacker', type: 'compose', orchestrator: null })).toBeNull();
+    expect(swarm.swarmRuntimeOf({ runtimeId: 'nd-victim_web', slug: 'victim', type: 'compose', orchestrator: null })).toBeNull();
+    // Any other type: the runtime id must name the service's own stack.
+    expect(swarm.swarmRuntimeOf({ runtimeId: 'nd-victim_web', slug: 'attacker', type: 'docker', orchestrator: 'swarm' })).toBeNull();
+    expect(swarm.swarmRuntimeOf({ runtimeId: 'web-12', slug: 'web', orchestrator: 'swarm' })).toBeNull();
+    // Its own stack: Swarm, also after switching back to containers (until the next deploy retires the stack).
+    expect(swarm.swarmRuntimeOf({ runtimeId: 'nd-victim_web', slug: 'victim', type: 'docker', orchestrator: 'swarm' })).toBe('nd-victim_web');
+    expect(swarm.swarmRuntimeOf({ runtimeId: 'nd-victim_web', slug: 'victim', type: 'docker', orchestrator: null })).toBe('nd-victim_web');
+  });
+});
+
 describe('the runtime helpers (lib/swarm.ts)', () => {
   it('scale / restart / logs', async () => {
     await swarm.scaleSwarmService('nd-web_web', 0);
@@ -101,14 +128,16 @@ describe('the runtime helpers (lib/swarm.ts)', () => {
   });
 
   it('GET /v1/services/:id/swarm view: null stack off Swarm; counts and tasks on it', async () => {
-    expect(await swarm.serviceSwarmView({ runtimeId: 'web-12' })).toEqual({ stack: null, desired: 0, running: 0, tasks: [] });
+    expect(await swarm.serviceSwarmView({ runtimeId: 'web-12', slug: 'web' })).toEqual({ stack: null, desired: 0, running: 0, tasks: [] });
+    // Review L1: a runtime id naming another service's stack is never that stack.
+    expect(await swarm.serviceSwarmView({ runtimeId: 'nd-victim_web', slug: 'web', type: 'compose' })).toEqual({ stack: null, desired: 0, running: 0, tasks: [] });
     expect(h.docker).toEqual([]);
     h.answers.set('service ls', 'nd-web_web 1/2');
     h.answers.set(
       'service ps',
       '{"Node":"panel","CurrentState":"Running 2 minutes ago","Error":"","Image":"nginx:1.27"}\n{"Node":"edge","CurrentState":"Rejected 1 minute ago","Error":"No such image: ninedeploy/web:x","Image":"ninedeploy/web:x"}',
     );
-    expect(await swarm.serviceSwarmView({ runtimeId: 'nd-web_web' })).toEqual({
+    expect(await swarm.serviceSwarmView({ runtimeId: 'nd-web_web', slug: 'web', orchestrator: 'swarm' })).toEqual({
       stack: 'nd-web',
       desired: 2,
       running: 1,
@@ -143,6 +172,14 @@ describe('service routes on a Swarm runtime (modules/services.ts)', () => {
     ]);
     // Never the container CLI against a name no container has.
     expect(h.docker.some((a) => ['stop', 'start', 'restart', 'logs'].includes(a[0]!))).toBe(false);
+  });
+
+  it('review L1: a compose service whose container_name is nd-victim_web never drives the nd-victim stack', async () => {
+    const app = await appFor(svcRow({ id: 1, slug: 'attacker', type: 'compose', runtimeId: 'nd-victim_web', status: 'running', orchestrator: null }));
+    await app.inject({ method: 'POST', url: '/1/stop', headers: asUser() });
+    await app.inject({ method: 'POST', url: '/1/restart', headers: asUser() });
+    await app.inject({ method: 'GET', url: '/1/logs', headers: asUser() });
+    expect(h.docker.filter((a) => a[0] === 'service' || a[0] === 'stack')).toEqual([]);
   });
 
   it('limits apply at the next deploy (the stack is redeployed), never by docker update', async () => {
@@ -221,7 +258,7 @@ describe('every runtimeId reader has a Swarm branch or an exemption (static)', (
     for (const [file, rule] of Object.entries(READERS)) {
       if (!('branch' in rule)) continue;
       const src = readFileSync(path.join(SRC, file), 'utf8');
-      expect(src, file).toMatch(/\bisSwarmRuntimeId\(|\bisSwarmService\(|\bswarmSlugOf\(/);
+      expect(src, file).toMatch(/\bswarmRuntimeOf\(|\bisSwarmRuntimeId\(|\bisSwarmService\(|\bswarmSlugOf\(/);
     }
   });
 

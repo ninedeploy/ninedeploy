@@ -28,11 +28,14 @@ import { NETWORK, TRAEFIK_CONTAINER } from '../engine/proxy.js';
  */
 export const MANAGED_NETWORKS: ReadonlySet<string> = new Set([NETWORK]);
 const PER_SERVICE_BRIDGE_PREFIX = /^nd-svc-/;
+/** 0.16 T7 (security review L3): each Swarm service's encrypted overlay `nd-swarm-<slug>`. */
+const SWARM_OVERLAY_PREFIX = /^nd-swarm-/;
 
 /** Container-name prefixes NineDeploy reserves for its own fleet. */
 const MANAGED_CONTAINER_PREFIXES: readonly RegExp[] = [
   /^nd-svc-/, // service app containers (engine/builders/docker.ts, modules/databases.ts)
   /^nd-db-/, // database containers (modules/databases.ts, engine/database.ts)
+  /^nd-[a-z0-9][a-z0-9-]*_web\.\d+\./, // 0.16 T7: Swarm task containers `nd-<slug>_web.<slot>.<task>` (Swarm owns them)
 ];
 
 /** Container-name literals that are managed but don't follow a prefix. */
@@ -45,6 +48,7 @@ const MANAGED_CONTAINER_LITERALS: ReadonlySet<string> = new Set([
 export function isManagedNetwork(name: string): boolean {
   if (MANAGED_NETWORKS.has(name)) return true;
   if (PER_SERVICE_BRIDGE_PREFIX.test(name)) return true;
+  if (SWARM_OVERLAY_PREFIX.test(name)) return true;
   return false;
 }
 

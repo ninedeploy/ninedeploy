@@ -55,6 +55,8 @@ export const multiNodeErrorCode = z.enum([
   'backup_host_mismatch',
   // T5: the volume file manager works on panel-host volumes only.
   'node_volume_files_unsupported',
+  // T7 (review M2): a current agent whose owner has not opted in to Swarm (NINEDEPLOY_AGENT_SWARM_MANAGER unset).
+  'node_swarm_not_enabled',
 ]);
 export type MultiNodeErrorCode = z.infer<typeof multiNodeErrorCode>;
 
@@ -259,6 +261,8 @@ export const swarmStatus = z.object({
   controlAvailable: z.boolean(),
   managerAddr: z.string().nullable(),
   nodes: z.array(swarmNode),
+  /** T7 (review M1b): things the operator must do, e.g. firewall 2377/tcp when the management port binds every interface. */
+  warnings: z.array(z.string()).optional(),
 });
 export type SwarmStatus = z.infer<typeof swarmStatus>;
 

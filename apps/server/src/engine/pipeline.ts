@@ -33,7 +33,7 @@ import type { BuildSlots } from './buildSlots.js';
 import { shipImageByStream } from '../lib/imageTransfer.js';
 import { remoteVolumeRefusal } from '../lib/remoteVolumes.js';
 import { createSwarmBuilder, isSwarmService, swarmDeployRefusal, withSwarmRetirement } from './swarmDeploy.js';
-import { isSwarmRuntimeId } from '../lib/swarm.js';
+import { swarmRuntimeOf } from '../lib/swarm.js';
 import { analyzeRepo, summarizeInsights } from '../lib/frameworks.js';
 import { upsertInsights } from './repoInsights.js';
 import { connectionString, ENGINES } from './database.js';
@@ -843,8 +843,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   // stack as the previous runtime until the new container is live and routed;
   // the wrapper routes that one retirement to the stack. A runtime id that is
   // not a Swarm service (every non-Swarm row) leaves the builder untouched.
-  if (onSwarm) builder = createSwarmBuilder(db);
-  else if (builder && isSwarmRuntimeId(service.runtimeId)) builder = withSwarmRetirement(db, builder);
+  if (onSwarm) builder = createSwarmBuilder(db, service.slug);
+  else if (builder && swarmRuntimeOf(service)) builder = withSwarmRetirement(db, builder, service.slug);
   // ── end 0.16 T7 ──
   if (!builder) {
     log(`✗ Unknown service type: ${service.type}`);

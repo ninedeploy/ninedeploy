@@ -356,8 +356,13 @@ export const CAPABILITY_SWITCH: Readonly<Partial<Record<MultiNodeCapability, str
   'build.railpack': 'NINEDEPLOY_AGENT_BUILDS',
   'git.sshkey': 'NINEDEPLOY_AGENT_STATIC_CREDENTIALS',
   'db.manage': 'NINEDEPLOY_AGENT_DATABASES',
-  swarm: 'NINEDEPLOY_AGENT_SWARM',
+  // ── 0.16 T7 swarm ── opt-in (security review M2): unset means off.
+  swarm: 'NINEDEPLOY_AGENT_SWARM_MANAGER',
+  // ── end 0.16 T7 ──
 };
+
+/** Switches that are opt-in variables (off while unset), mirrored from agentOps/index.ts `AGENT_OPT_IN`. */
+export const CAPABILITY_OPT_IN: ReadonlySet<string> = new Set(['NINEDEPLOY_AGENT_SWARM_MANAGER']);
 
 /** Why a multi-node feature cannot run on a node: the status and code the route answers. */
 export interface CapabilityRefusal {
@@ -404,7 +409,9 @@ export function capabilityRefusalFor(
     return {
       status: 403,
       code: 'node_feature_disabled',
-      message: `The agent on node ${nodeLabel} (version ${info.version}) cannot ${opts.feature}: the node's owner turned it off (${switched}=off on the agent).`,
+      message: CAPABILITY_OPT_IN.has(switched)
+        ? `The agent on node ${nodeLabel} (version ${info.version}) cannot ${opts.feature}: it is opt-in on the node, and ${switched} is not set on the agent.`
+        : `The agent on node ${nodeLabel} (version ${info.version}) cannot ${opts.feature}: the node's owner turned it off (${switched}=off on the agent).`,
     };
   }
   return {

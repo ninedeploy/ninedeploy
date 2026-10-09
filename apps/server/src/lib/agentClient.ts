@@ -199,6 +199,15 @@ async function supportsSealed(serverId: number, host: string, port: number): Pro
 }
 
 /**
+ * 0.16 T7 (security review L4): ops the panel sends only inside a sealed
+ * envelope, refused in {@link agentOp} on any other transport — the agent
+ * refuses them too, but the panel must not send the join token in clear in
+ * the first place.
+ */
+export const SEALED_ONLY_AGENT_OPS: ReadonlySet<string> = new Set(['swarm.info', 'swarm.join', 'swarm.leave']);
+export const isSealedOnlyAgentOp = (op: string): boolean => SEALED_ONLY_AGENT_OPS.has(op) || op.startsWith('swarm.');
+
+/**
  * 0.13 (T5): whether operations to this node travel inside the sealed
  * envelope. A per-job Git credential is only ever offered to a node that
  * answers yes — and {@link agentOp} refuses to send one in clear regardless.
@@ -248,6 +257,11 @@ export async function agentOp(
         `agent ${op} on ${row.host}:${row.port}: refusing to send a Git credential over the unencrypted transport — ` +
           'update the node agent to use GitHub App repositories on this node',
       );
+    }
+    // 0.16 T7 (security review L4): Swarm membership ops (the join token) never travel in clear,
+    // whatever the agent or the cleartext fallback says.
+    if (isSealedOnlyAgentOp(op)) {
+      throw new Error(`agent ${op} on ${row.host}:${row.port}: refusing to send it over the unencrypted transport; it is sealed only`);
     }
     if (!cleartextFallbackAllowed()) {
       throw new Error(

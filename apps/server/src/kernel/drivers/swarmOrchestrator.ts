@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { swarmStacks, type DB } from '@ninedeploy/db';
@@ -152,14 +152,25 @@ function renderService(
   return out;
 }
 
-/** The `docker stack deploy` argv for one apply (design §7.3). */
-export function stackDeployArgs(stack: Pick<StackSpec, 'name' | 'resolveImage'>, file: string, opts: { detach?: boolean } = {}): string[] {
+/**
+ * The `docker stack deploy` argv for one apply (design §7.3). `dockerConfig`
+ * is the CLI's `--config` directory for this apply alone (the security review
+ * M4: never the panel's shared Docker config), and `--with-registry-auth`
+ * forwards a registry credential to the workers only when the deploy logged
+ * in to one there.
+ */
+export function stackDeployArgs(
+  stack: Pick<StackSpec, 'name' | 'resolveImage'>,
+  file: string,
+  opts: { detach?: boolean; withRegistryAuth?: boolean; dockerConfig?: string } = {},
+): string[] {
   return [
+    ...(opts.dockerConfig ? ['--config', opts.dockerConfig] : []),
     'stack',
     'deploy',
     '--prune',
-    '--with-registry-auth',
-    ...(opts.detach === false ? ['--detach=false'] : []),
+    ...(opts.withRegistryAuth ? ['--with-registry-auth'] : []),
+    ...(opts.detach === false ? ['--detach=false'] : opts.detach === true ? ['--detach=true'] : []),
     ...(stack.resolveImage ? ['--resolve-image', stack.resolveImage] : []),
     '-c',
     file,
@@ -168,6 +179,75 @@ export function stackDeployArgs(stack: Pick<StackSpec, 'name' | 'resolveImage'>,
 }
 
 const msg = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+export interface DeployStackOptions {
+  log?: (line: string) => void;
+  timeoutMs?: number;
+  /**
+   * true (the default): `--detach=false`, the CLI waits for convergence.
+   * false: `--detach=true`, the apply returns once Swarm accepted it and the
+   * caller waits (the Swarm deploy flow does, so the per-deploy registry
+   * config is dropped as soon as the spec is submitted — review M4).
+   */
+  wait?: boolean;
+  /** The `--config` directory for this apply (review M4). */
+  dockerConfig?: string;
+  /** Forward the registry credential logged in to `dockerConfig` (only then). */
+  withRegistryAuth?: boolean;
+}
+
+/**
+ * L2: a secret-bearing file is written fresh — never through a path someone
+ * could have planted (a symlink, a hard link to another file): unlink first,
+ * then create exclusively with 0600.
+ */
+function writePrivateFile(path: string, body: string): void {
+  rmSync(path, { force: true });
+  writeFileSync(path, body, { flag: 'wx', mode: 0o600 });
+}
+
+/**
+ * L2: env files left by an apply that died mid-way (a panel crash between
+ * write and removal), swept at boot: `<root>/<stack>/*.env`. Returns how many.
+ */
+export function sweepSwarmEnvFiles(root: string = swarmStackRoot()): number {
+  let removed = 0;
+  let stacks: string[];
+  try {
+    stacks = readdirSync(root);
+  } catch {
+    return 0;
+  }
+  for (const stack of stacks) {
+    // A per-deploy client config (review M4) left by a deploy that died: it may hold a registry login.
+    if (stack.startsWith('.docker-')) {
+      try {
+        rmSync(join(root, stack), { recursive: true, force: true });
+        removed++;
+      } catch {
+        /* next one */
+      }
+      continue;
+    }
+    if (!STACK_NAME_RE.test(stack)) continue;
+    let files: string[];
+    try {
+      files = readdirSync(join(root, stack));
+    } catch {
+      continue;
+    }
+    for (const f of files) {
+      if (!f.endsWith('.env') && !f.endsWith('.tmp')) continue;
+      try {
+        rmSync(join(root, stack, f), { force: true });
+        removed++;
+      } catch {
+        /* next one */
+      }
+    }
+  }
+  return removed;
+}
 
 export class SwarmOrchestrator implements IOrchestrator {
   readonly name = 'swarm';
@@ -185,11 +265,13 @@ export class SwarmOrchestrator implements IOrchestrator {
    * CLI refused the file) resolves with `error` set and the state recorded,
    * so removeStack can still find what was created.
    */
-  async deployStack(stack: StackSpec, opts: { log?: (line: string) => void; timeoutMs?: number } = {}): Promise<StackStatus> {
+  async deployStack(stack: StackSpec, opts: DeployStackOptions = {}): Promise<StackStatus> {
     assertStackName(stack.name);
     const log = opts.log ?? (() => undefined);
     const dir = join(this.root(), stack.name);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
+    // L2: an existing directory keeps whatever mode it had; tighten it every time.
+    chmodSync(dir, 0o700);
 
     for (const n of stack.networks) await ensureNetwork(n.name, n.driver, n.attachable, log);
 
@@ -206,11 +288,11 @@ export class SwarmOrchestrator implements IOrchestrator {
         const body = renderEnvFile(svc.env);
         if (!body) continue;
         const path = join(dir, `${svc.name}.env`);
-        writeFileSync(path, body, { mode: 0o600 });
+        writePrivateFile(path, body);
         envFiles[svc.name] = path;
       }
       writeFileSync(file, renderStackFile(stack, { envFiles, secrets: secretNames, configs: configNames }), { mode: 0o600 });
-      await applyStack(stack, file, opts.timeoutMs ?? STACK_DEPLOY_TIMEOUT_MS, log);
+      await applyStack(stack, file, opts, log);
     } catch (err) {
       error = msg(err);
     } finally {
@@ -357,20 +439,24 @@ function assertStackName(name: string): void {
  * the caller's convergence poll does the waiting. Output goes to `log` (it
  * names services and tasks, never env values: those are in the env file).
  */
-async function applyStack(stack: StackSpec, file: string, timeoutMs: number, log: (line: string) => void): Promise<void> {
+async function applyStack(stack: StackSpec, file: string, opts: DeployStackOptions, log: (line: string) => void): Promise<void> {
+  const timeoutMs = opts.timeoutMs ?? STACK_DEPLOY_TIMEOUT_MS;
+  const base = { withRegistryAuth: opts.withRegistryAuth === true, ...(opts.dockerConfig ? { dockerConfig: opts.dockerConfig } : {}) };
   const lines: string[] = [];
   const sink = (line: string) => {
     lines.push(line);
     log(line);
   };
+  const execOpts = { timeoutMs, heartbeatMs: 30_000, heartbeatLabel: `swarm stack deploy ${stack.name}` };
   try {
-    await run('docker', stackDeployArgs(stack, file, { detach: false }), { timeoutMs, heartbeatMs: 30_000, heartbeatLabel: `swarm stack deploy ${stack.name}` }, sink);
+    await run('docker', stackDeployArgs(stack, file, { ...base, detach: opts.wait === false }), execOpts, sink);
   } catch (err) {
     if (!lines.some((l) => /unknown flag: --detach/.test(l)) && !/unknown flag: --detach/.test(msg(err))) {
       throw new Error(`docker stack deploy ${stack.name} failed: ${lines.slice(-5).join(' ').slice(-800) || msg(err)}`);
     }
+    // A CLI older than `stack deploy --detach` never waits: the same apply without the flag.
     log('this Docker CLI has no `stack deploy --detach`; applying without waiting, then polling for convergence');
-    await run('docker', stackDeployArgs(stack, file), { timeoutMs, heartbeatMs: 30_000, heartbeatLabel: `swarm stack deploy ${stack.name}` }, log);
+    await run('docker', stackDeployArgs(stack, file, base), execOpts, log);
   }
 }
 
@@ -383,16 +469,23 @@ async function applyStack(stack: StackSpec, file: string, timeoutMs: number, log
  */
 export const ENCRYPTED_OVERLAY_ARGS = ['--driver', 'overlay', '--opt', 'encrypted'] as const;
 
-/** `missing`, or whether an existing network carries the `encrypted` option (whose value is empty when set). */
-export async function overlayNetworkState(name: string): Promise<'missing' | 'encrypted' | 'unencrypted'> {
+/**
+ * What an existing network is: `missing`; an `encrypted` overlay (the
+ * `encrypted` option is present, its value empty); an `unencrypted` overlay;
+ * or `not-overlay` (any other driver).
+ */
+export async function overlayNetworkState(name: string): Promise<'missing' | 'encrypted' | 'unencrypted' | 'not-overlay'> {
   let raw: string;
   try {
-    raw = await capture('docker', ['network', 'inspect', '--format', '{{json .Options}}', name], { timeoutMs: READ_TIMEOUT_MS });
+    raw = await capture('docker', ['network', 'inspect', '--format', '{{.Driver}}|{{json .Options}}', name], { timeoutMs: READ_TIMEOUT_MS });
   } catch {
     return 'missing';
   }
+  const cut = raw.trim().indexOf('|');
+  const driver = cut < 0 ? raw.trim() : raw.trim().slice(0, cut);
+  if (driver !== 'overlay') return 'not-overlay';
   try {
-    const options = JSON.parse(raw.trim() || 'null') as Record<string, string> | null;
+    const options = JSON.parse(raw.trim().slice(cut + 1) || 'null') as Record<string, string> | null;
     return options && Object.hasOwn(options, 'encrypted') ? 'encrypted' : 'unencrypted';
   } catch {
     return 'unencrypted';
@@ -401,21 +494,18 @@ export async function overlayNetworkState(name: string): Promise<'missing' | 'en
 
 /**
  * Create the encrypted overlay unless it exists; a create that fails is
- * re-checked (a concurrent create won the race), never swallowed. An existing
- * overlay WITHOUT encryption is reported on `log` and reused — recreating it
- * would cut every running task off the network — so the operator can move the
- * service off it deliberately.
+ * re-checked (a concurrent create won the race), never swallowed.
+ *
+ * L3 (security review): an existing network of this name that is NOT an
+ * encrypted overlay is refused, never reused: no NineDeploy release before
+ * Swarm support ever created one, so it was made by someone else (by hand,
+ * another tool) and would carry the service's traffic in clear or on the
+ * wrong driver. NineDeploy does not remove it either — it may be in use.
  */
 export async function ensureEncryptedOverlay(name: string, attachable: boolean, log: (line: string) => void): Promise<void> {
   const state = await overlayNetworkState(name);
-  if (state === 'unencrypted') {
-    log(
-      `⚠ The overlay network ${name} exists WITHOUT data-plane encryption; its traffic between nodes is not encrypted. ` +
-        'NineDeploy does not recreate it (that would disconnect the running tasks): remove the stack and the network during a maintenance window, then redeploy to get an encrypted one.',
-    );
-    return;
-  }
   if (state === 'encrypted') return;
+  if (state !== 'missing') throw foreignNetworkError(name, state);
   log(`creating the encrypted overlay network ${name}`);
   try {
     await run(
@@ -425,12 +515,21 @@ export async function ensureEncryptedOverlay(name: string, attachable: boolean, 
       log,
     );
   } catch (err) {
-    if ((await overlayNetworkState(name)) === 'missing') {
-      throw new Error(
-        `Could not create the encrypted overlay network ${name}: ${msg(err)} (encrypted overlays need IPsec — ESP, IP protocol 50 — between the nodes, and do not work on Windows nodes)`,
-      );
-    }
+    const now = await overlayNetworkState(name);
+    if (now === 'encrypted') return;
+    if (now !== 'missing') throw foreignNetworkError(name, now);
+    throw new Error(
+      `Could not create the encrypted overlay network ${name}: ${msg(err)} (encrypted overlays need IPsec — ESP, IP protocol 50 — between the nodes, and do not work on Windows nodes)`,
+    );
   }
+}
+
+function foreignNetworkError(name: string, state: 'unencrypted' | 'not-overlay'): Error {
+  return new Error(
+    `A network named ${name} already exists and is ${state === 'unencrypted' ? 'an overlay WITHOUT data-plane encryption' : 'not an overlay network'}. ` +
+      'NineDeploy did not create it and will not route a Swarm service over it. Remove it (docker network rm ' +
+      `${name}, after checking nothing else uses it), then deploy again.`,
+  );
 }
 
 /** One stack network: overlays are always encrypted; anything else (never used for a Swarm stack) is created as asked. */
@@ -456,7 +555,7 @@ async function ensureObject(kind: 'secret' | 'config', stack: string, name: stri
     .catch(() => false);
   if (present) return objectName;
   const tmp = join(dir, `${objectName}.${kind}.tmp`);
-  writeFileSync(tmp, data, { mode: 0o600 });
+  writePrivateFile(tmp, data);
   try {
     await run('docker', [kind, 'create', '--label', `${STACK_LABEL}=${stack}`, objectName, tmp], { timeoutMs: READ_TIMEOUT_MS }, () => undefined);
   } finally {

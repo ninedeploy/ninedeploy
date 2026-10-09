@@ -7,7 +7,7 @@ import { containerIp } from '../engine/builders/docker.js';
 import { TRAEFIK_CONTAINER } from '../engine/proxy.js';
 import { buildProbeUrl, safeProbePath } from '../lib/probeUrl.js';
 import { ensureDockerImage } from '../lib/dockerPull.js';
-import { isSwarmRuntimeId } from '../lib/swarm.js';
+import { swarmRuntimeOf } from '../lib/swarm.js';
 
 // Pinned, never `:latest` — this image runs with the target's network
 // namespace on every probe (lib/inventory.ts pins helper images for the same
@@ -121,6 +121,8 @@ async function probeService(svc: {
   runtimeId: string | null;
   port: number;
   healthPath: string;
+  slug?: string;
+  orchestrator?: string | null;
 }): Promise<{ healthy: boolean | null; responseMs: number | null }> {
   // Never concatenate a stored healthPath onto an origin — see lib/probeUrl.ts.
   const path = safeProbePath(svc.healthPath);
@@ -132,7 +134,8 @@ async function probeService(svc: {
   // The node's own agent health-checked the deploy; report "unknown" here.
   if (svc.serverId != null) return { healthy: null, responseMs: null };
   // ── 0.16 T7 swarm ── a Swarm service has no container of its own name; Traefik reaches its VIP on the overlay.
-  if (isSwarmRuntimeId(runtimeId)) return { healthy: await probeViaMesh(runtimeId, svc.port, path), responseMs: null };
+  const swarmRuntime = swarmRuntimeOf(svc);
+  if (swarmRuntime) return { healthy: await probeViaMesh(swarmRuntime, svc.port, path), responseMs: null };
   // ── end 0.16 T7 ──
   const ip = await containerIp(runtimeId);
   if (!ip) return { healthy: false, responseMs: null }; // container not running
@@ -262,6 +265,8 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
               runtimeId: svc.runtimeId,
               port: svc.port,
               healthPath: svc.healthPath,
+              slug: svc.slug,
+              orchestrator: svc.orchestrator,
             }),
             PROBE_DEADLINE_MS,
             { healthy: false, responseMs: null },

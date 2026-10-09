@@ -1,6 +1,6 @@
 ﻿
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { _resetSealedSupportCache, agentOp, agentPing, agentTransportSealed, generateAgentToken, tokenMatches } from '../../src/lib/agentClient.js';
+import { _resetSealedSupportCache, agentOp, agentPing, agentTransportSealed, generateAgentToken, isSealedOnlyAgentOp, tokenMatches } from '../../src/lib/agentClient.js';
 import { open as openSealed, seal } from '../../src/lib/agentSeal.js';
 import { runOp } from '../../src/agent.js';
 import { createFakeDb } from '../helpers.js';
@@ -143,6 +143,30 @@ describe('agentOp', () => {
     await expect(
       agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'git.fetch', { workspace: 'web' }, () => {}),
     ).resolves.toMatchObject({ exitCode: 0 });
+  });
+
+  it('0.16 T7 (review L4): never sends a swarm.* op in clear, even with the cleartext fallback opted in', async () => {
+    process.env['NINEDEPLOY_AGENT_ALLOW_CLEARTEXT'] = '1';
+    routeFetch({ sealed: false, exec: { lines: [], exitCode: 0 } });
+    const token = `SWMTKN-1-${'a1'.repeat(25)}-${'b2'.repeat(12)}z`;
+    for (const [op, params] of [
+      ['swarm.join', { token, managerAddr: '10.0.0.1:2377' }],
+      ['swarm.leave', {}],
+      ['swarm.info', {}],
+      ['swarm.future', {}],
+    ] as const) {
+      await expect(agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, op, params, () => {}), op).rejects.toThrow(
+        /refusing to send it over the unencrypted transport; it is sealed only/,
+      );
+    }
+    expect(isSealedOnlyAgentOp('swarm.join')).toBe(true);
+    expect(isSealedOnlyAgentOp('docker.pull')).toBe(false);
+    // Only the capability probe went out — no exec request carried the token.
+    expect(fetchMock.mock.calls.every(([u]) => String(u).endsWith('/agent/ping'))).toBe(true);
+    // Sealed, the same op goes through.
+    _resetSealedSupportCache();
+    honestSealedAgent();
+    await expect(agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'swarm.info', {}, () => {})).resolves.toMatchObject({ exitCode: 0 });
   });
 
   it('0.13 (T5): a credential rides inside the sealed envelope only', async () => {

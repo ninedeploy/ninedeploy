@@ -1,11 +1,15 @@
 import { randomBytes } from 'node:crypto';
+import { lookup } from 'node:dns/promises';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { isIP } from 'node:net';
+import { type NetworkInterfaceInfo, networkInterfaces } from 'node:os';
+import { join } from 'node:path';
 import { eq, isNotNull } from 'drizzle-orm';
 import { type DB, servers } from '@ninedeploy/db';
 import type { ServiceSwarmStatus, SwarmNode, SwarmStatus } from '@ninedeploy/schemas';
 import { MAX_REPLICAS, TRAEFIK_CONTAINER } from '../engine/dockerNames.js';
-import { ENCRYPTED_OVERLAY_ARGS, ensureEncryptedOverlay, SwarmOrchestrator } from '../kernel/drivers/swarmOrchestrator.js';
+import { ENCRYPTED_OVERLAY_ARGS, ensureEncryptedOverlay, SwarmOrchestrator, swarmStackRoot } from '../kernel/drivers/swarmOrchestrator.js';
 import { capture, run } from './exec.js';
-import { acquireRegistryLock, registryLockKey } from './registryLock.js';
 import { getSetting, getSettingString, setSetting, setSettingString } from './settings.js';
 import type { ContainerStat } from './stats.js';
 
@@ -43,8 +47,24 @@ export const swarmStackName = (slug: string): string => `nd-${slug}`;
 export const swarmServiceName = (slug: string): string => `${swarmStackName(slug)}_web`;
 /** Its attachable overlay network, which Traefik joins. */
 export const swarmNetworkName = (slug: string): string => `nd-swarm-${slug}`;
-/** The node label that keeps tasks off a node lacking a preloaded image (`=0`). */
+/**
+ * The node label that marks a node holding this service's preloaded image:
+ * `nd.preload.<slug>=<image id prefix>` on the nodes that received it, and a
+ * constraint that requires it (security review M1d: positive, so a node the
+ * panel never sent the image to can never qualify).
+ */
 export const swarmPreloadLabel = (slug: string): string => `nd.preload.${slug}`;
+/** The label value of one image: the first 12 hex of its id or digest. */
+export const swarmImageTag = (imageIdOrDigest: string): string => imageIdOrDigest.replace(/^.*sha256:/, '').slice(0, 12);
+/**
+ * Security review M1c: the panel's own node (at init) and every node joined
+ * through the panel carry `nd.member=1`, and every Swarm service requires it,
+ * so a node that joined the swarm any other way (a leaked token) never runs a task.
+ */
+export const SWARM_MEMBER_LABEL = 'nd.member';
+export const SWARM_MEMBER_CONSTRAINT = `node.labels.${SWARM_MEMBER_LABEL}==1`;
+/** A Swarm node id as Docker prints it (security review M3). */
+export const RE_SWARM_NODE_ID = /^[a-z0-9]{25}$/;
 
 /**
  * A Swarm runtime id is `nd-<slug>_web`. No other runtime can look like one:
@@ -58,6 +78,20 @@ export function isSwarmRuntimeId(runtimeId: string | null | undefined): runtimeI
 /** The slug of a Swarm runtime id, or null. */
 export function swarmSlugOf(runtimeId: string | null | undefined): string | null {
   return typeof runtimeId === 'string' ? (RE_SWARM_RUNTIME.exec(runtimeId)?.[1] ?? null) : null;
+}
+
+/**
+ * Security review L1: the ONE test every reader of `services.runtimeId` uses.
+ * A runtime is a Swarm service only when its id is `nd-<slug>_web` for THIS
+ * row's own slug, and the row is a Swarm service or a non-compose service that
+ * left Swarm; never a compose service whose `container_name` happens to look
+ * like one (`nd-victim_web`). Returns the Swarm service name, or null.
+ */
+export function swarmRuntimeOf(svc: { runtimeId?: string | null; slug?: string | null; orchestrator?: string | null; type?: string | null }): string | null {
+  const runtimeId = svc.runtimeId;
+  if (!isSwarmRuntimeId(runtimeId) || !svc.slug || swarmSlugOf(runtimeId) !== svc.slug) return null;
+  if (svc.orchestrator !== 'swarm' && svc.type === 'compose') return null;
+  return runtimeId;
 }
 
 const READ_TIMEOUT_MS = 30_000;
@@ -161,6 +195,93 @@ export async function workerJoinToken(): Promise<string> {
 }
 
 /**
+ * Security review M1a: rotate the worker join token after every join and
+ * leave, so a token that left the panel (sent to a node, visible there) is
+ * dead once used. The new token is discarded. True when it rotated.
+ */
+export async function rotateWorkerJoinToken(): Promise<boolean> {
+  return capture('docker', ['swarm', 'join-token', '--rotate', '-q', 'worker'], { timeoutMs: READ_TIMEOUT_MS })
+    .then(() => true)
+    .catch(() => false);
+}
+
+/** `docker node update <flag> <value> -- <node>`; best effort, true when Docker accepted it. */
+export async function updateNodeLabel(nodeId: string, flag: '--label-add' | '--label-rm', value: string): Promise<boolean> {
+  if (!RE_SWARM_NODE_ID.test(nodeId)) return false;
+  return run('docker', ['node', 'update', flag, value, '--', nodeId], { timeoutMs: READ_TIMEOUT_MS }, () => undefined)
+    .then(() => true)
+    .catch(() => false);
+}
+
+/**
+ * Security review M1b: is `addr` one of this host's own interface addresses?
+ * Then `swarm init` binds the management port there only (`--listen-addr`).
+ * In a docker install the panel sees its container's interfaces, not the
+ * host's, so this answers false and the default bind stays, with a warning.
+ */
+export function isLocalInterfaceAddr(addr: string, interfaces: NodeJS.Dict<NetworkInterfaceInfo[]> = networkInterfaces()): boolean {
+  const want = addr.toLowerCase();
+  return Object.values(interfaces).some((list) => (list ?? []).some((i) => i.address.toLowerCase() === want));
+}
+
+/** What the manager knows about a node (`docker node inspect`), for the join check (M3). */
+export interface ManagerNodeView {
+  id: string;
+  role: string;
+  addr: string;
+  labels: Record<string, string>;
+}
+
+export async function inspectSwarmNode(nodeId: string): Promise<ManagerNodeView | null> {
+  if (!RE_SWARM_NODE_ID.test(nodeId)) return null;
+  try {
+    const raw = await capture('docker', ['node', 'inspect', '--format', '{{json .}}', '--', nodeId], { timeoutMs: READ_TIMEOUT_MS });
+    const j = JSON.parse(raw.trim()) as { ID?: string; Spec?: { Role?: string; Labels?: Record<string, string> }; Status?: { Addr?: string } };
+    if (!j.ID) return null;
+    return { id: j.ID, role: j.Spec?.Role ?? '', addr: j.Status?.Addr ?? '', labels: j.Spec?.Labels ?? {} };
+  } catch {
+    return null;
+  }
+}
+
+/** Refuse a swarm node id already linked to another server row (there is no unique index; this is the guard). */
+export async function swarmNodeLinkedElsewhere(db: DB, nodeId: string, serverId: number): Promise<{ id: number; name: string } | null> {
+  const rows = await db.select({ id: servers.id, name: servers.name }).from(servers).where(eq(servers.swarmNodeId, nodeId));
+  return rows.find((r) => r.id !== serverId) ?? null;
+}
+
+/**
+ * Security review M3: the node id an agent reports is a claim. Before it is
+ * linked to a server row (and labelled a member), the manager must confirm it:
+ * a well-formed id, a worker, not the panel's own node, not linked to another
+ * server, and the address the manager sees is the server's host (a hostname
+ * host matches when it resolves to that address). Null when it holds, else why not.
+ */
+export async function joinedNodeRefusal(
+  db: DB,
+  server: { id: number; host: string },
+  nodeId: string | null,
+  deps: { resolve?: (host: string) => Promise<string[]> } = {},
+): Promise<string | null> {
+  if (!nodeId || !RE_SWARM_NODE_ID.test(nodeId)) return `the node reported a malformed swarm node id (${JSON.stringify(nodeId ?? '').slice(0, 60)})`;
+  const local = await localSwarmInfo();
+  if (nodeId === local.nodeId) return "the node reported the panel host's own swarm node id";
+  const other = await swarmNodeLinkedElsewhere(db, nodeId, server.id);
+  if (other) return `swarm node ${nodeId} is already linked to server "${other.name}" (#${other.id})`;
+  const view = await inspectSwarmNode(nodeId);
+  if (!view) return `the manager does not know swarm node ${nodeId}`;
+  if (view.role !== 'worker') return `swarm node ${nodeId} is a ${view.role || 'node of unknown role'}, not a worker`;
+  const host = server.host.replace(/^\[|\]$/g, '').toLowerCase();
+  const addr = view.addr.toLowerCase();
+  if (addr && addr === host) return null;
+  const resolve =
+    deps.resolve ??
+    (async (h: string) => (await lookup(h, { all: true }).catch(() => [] as Array<{ address: string }>)).map((r) => r.address.toLowerCase()));
+  if (addr && isIP(host) === 0 && (await resolve(host)).includes(addr)) return null;
+  return `swarm node ${nodeId} reaches the manager from ${view.addr || 'an unknown address'}, not from the server's host ${server.host}`;
+}
+
+/**
  * Why a Swarm service cannot deploy now (design §7.4 step 1), or null:
  * Swarm enabled, the panel host an active manager, and its own node ready.
  */
@@ -173,7 +294,7 @@ export async function swarmClusterRefusal(db: DB): Promise<string | null> {
     return `The panel host is not an active Swarm manager (state: ${info.localState}); Swarm services deploy only from the manager.`;
   }
   if (info.nodeId) {
-    const state = await capture('docker', ['node', 'inspect', '--format', '{{.Status.State}}', info.nodeId], { timeoutMs: READ_TIMEOUT_MS }).catch(() => '');
+    const state = await capture('docker', ['node', 'inspect', '--format', '{{.Status.State}}', '--', info.nodeId], { timeoutMs: READ_TIMEOUT_MS }).catch(() => '');
     if (state.trim() && state.trim() !== 'ready') return `The panel host's Swarm node is ${state.trim()}, not ready.`;
   }
   return null;
@@ -185,9 +306,8 @@ export async function swarmClusterRefusal(db: DB): Promise<string | null> {
  * Join Traefik to the service's overlay (the Swarm twin of
  * `ensureServiceBridge`), creating the attachable, ENCRYPTED overlay first
  * (IPsec data plane: Swarm nodes are usually separate hosts, often across the
- * public internet; there is no switch to turn it off). An existing overlay
- * without encryption — created by hand or by an earlier tool — is reported on
- * the deploy log, never recreated: that would cut every running task off.
+ * public internet; there is no switch to turn it off). An existing network of
+ * that name that is not an encrypted overlay is refused (security review L3).
  * Idempotent.
  */
 export async function ensureSwarmNetwork(slug: string, log: (line: string) => void): Promise<string> {
@@ -302,9 +422,9 @@ export function swarmContainerStat(containers: ReadonlyMap<string, ContainerStat
 }
 
 /** `GET /v1/services/:id/swarm` (design §7.5). A service not on Swarm has no stack. */
-export async function serviceSwarmView(svc: { runtimeId: string | null }): Promise<ServiceSwarmStatus> {
-  if (!isSwarmRuntimeId(svc.runtimeId)) return { stack: null, desired: 0, running: 0, tasks: [] };
-  const runtimeId = svc.runtimeId;
+export async function serviceSwarmView(svc: { runtimeId: string | null; slug: string; orchestrator?: string | null; type?: string }): Promise<ServiceSwarmStatus> {
+  const runtimeId = swarmRuntimeOf(svc);
+  if (!runtimeId) return { stack: null, desired: 0, running: 0, tasks: [] };
   const stack = runtimeId.slice(0, -'_web'.length);
   let desired = 0;
   let running = 0;
@@ -333,27 +453,38 @@ export async function serviceSwarmView(svc: { runtimeId: string | null }): Promi
 // ── registry login for `--with-registry-auth` ──────────────────────────────
 
 /**
- * Log the panel host's Docker in for the duration of `fn`, so
- * `stack deploy --with-registry-auth` hands the credential to the workers
- * that pull the image; always logs out. Serialised per registry (r230).
+ * Security review M4: run `fn` with a Docker client config directory of its
+ * own (0700, under the data directory, removed in `finally`), so a Swarm
+ * deploy never reads or forwards the panel's shared Docker config. With
+ * registry auth it logs in there first, and `fn` passes `--config <dir>` and
+ * `--with-registry-auth`; without, the directory stays empty and `fn` forwards
+ * nothing. Nothing is shared between deploys, so no registry lock is needed.
+ * `fn` should return as soon as `stack deploy` has submitted the spec: the
+ * credential then leaves the panel's disk while the update converges.
  */
-export async function withPanelRegistryLogin<T>(
+export async function withDeployDockerConfig<T>(
   auth: { username: string; password: string; server?: string } | undefined,
   log: (line: string) => void,
-  fn: () => Promise<T>,
+  fn: (dockerConfig: string) => Promise<T>,
 ): Promise<T> {
-  if (!auth) return fn();
-  const release = await acquireRegistryLock(registryLockKey(null, auth.server));
+  const parent = swarmStackRoot();
+  mkdirSync(parent, { recursive: true, mode: 0o700 });
+  // mkdtemp creates the directory 0700 and fails if the path exists.
+  const dir = mkdtempSync(join(parent, '.docker-'));
   try {
-    log(`Logging in to ${auth.server ?? 'docker.io'} on the panel host for the Swarm deploy …`);
-    await run('docker', ['login', '--username', auth.username, '--password-stdin', ...(auth.server ? [auth.server] : [])], { timeoutMs: 120_000 }, log, Buffer.from(`${auth.password}\n`));
-    try {
-      return await fn();
-    } finally {
-      await run('docker', ['logout', ...(auth.server ? [auth.server] : [])], {}, () => undefined).catch(() => undefined);
+    if (auth) {
+      log(`Logging in to ${auth.server ?? 'docker.io'} for this Swarm deploy only (a private client config, removed once the deploy is submitted) …`);
+      await run(
+        'docker',
+        ['--config', dir, 'login', '--username', auth.username, '--password-stdin', ...(auth.server ? [auth.server] : [])],
+        { timeoutMs: 120_000 },
+        log,
+        Buffer.from(`${auth.password}\n`),
+      );
     }
+    return await fn(dir);
   } finally {
-    release();
+    rmSync(dir, { recursive: true, force: true });
   }
 }
 

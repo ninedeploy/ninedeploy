@@ -125,13 +125,32 @@ Swarm on its own.
 1. `POST /v1/swarm/init` with `{advertiseAddr}` runs `docker swarm init` on the
    panel host. It needs an interactive session and your password (step-up),
    refuses a daemon that is already in a swarm, and checks that the swarm can
-   create an encrypted overlay network.
+   create an encrypted overlay network. When the advertise address is one of
+   the panel host's own interface addresses, the management port binds there
+   only (`--listen-addr <addr>:2377`). Otherwise, as in a Docker install, where
+   the panel sees only its container's interfaces, Docker's default bind stays.
+   The response then carries a warning: firewall 2377/tcp to the cluster's
+   hosts. The panel host's node is labelled `nd.member=1`.
 2. `PUT /v1/swarm/settings` with `{enabled: true}` (step-up) allows Swarm deploys.
-3. `POST /v1/servers/:id/swarm/join` joins a node as a worker through its agent
-   (agent v0.15.4 or newer, sealed transport). The join token is read on the
-   panel and sent to the node only; it is never stored, logged or returned.
-   `POST /v1/servers/:id/swarm/leave` drains the node first.
-4. `PUT /v1/services/:id/placement` with `{orchestrator: "swarm"}`, then deploy.
+3. **On each node that should join**, its owner opts in by setting
+   `NINEDEPLOY_AGENT_SWARM_MANAGER=<the panel's advertise address>:2377` in the
+   agent's environment and restarting the agent (agent v0.15.4 or newer). Without
+   it the agent does not offer Swarm, and the panel's join answers 422
+   `node_swarm_not_enabled`, naming the variable and the value to set. The agent
+   joins only that manager address, and refuses to join while
+   `NINEDEPLOY_AGENT_DOCKER_SOCKET=off`, because a swarm manager can start a
+   task that mounts the Docker socket.
+4. `POST /v1/servers/:id/swarm/join` joins the node as a worker through its
+   agent (sealed transport only). The join token is read on the panel and sent
+   to the node only. It is never stored, logged or returned, and the agent hands
+   it to its Docker daemon through the Engine API, never on a command line. The
+   panel rotates the worker token after every join and every leave. Before it
+   links the node to the server, the panel checks with the manager that the
+   reported node id is a worker, is not the panel host itself, is not linked to
+   another server, and connects from the server's host address. Only then is
+   the node labelled `nd.member=1`. `POST /v1/servers/:id/swarm/leave` removes
+   the label, drains the node, has it leave, and removes it.
+5. `PUT /v1/services/:id/placement` with `{orchestrator: "swarm"}`, then deploy.
 
 **How a Swarm service runs:** one stack `nd-<slug>` with one service
 `nd-<slug>_web`, applied with `docker stack deploy` on every deploy (env,
@@ -140,17 +159,29 @@ and Swarm rolls a failed update back; if the panel's probe through Traefik fails
 after the update, the panel rolls the service back to its previous spec and the
 deployment is marked failed. Traefik is the only ingress: it joins the
 service's overlay `nd-swarm-<slug>` and routes to the service's virtual IP. No
-port is published on the Swarm ingress mesh.
+port is published on the Swarm ingress mesh. Every Swarm service requires
+`node.labels.nd.member==1`, so a node that joined the swarm any other way, for
+example with a leaked token, never runs a NineDeploy task.
 
-- **Images:** an image release is pulled by every node (`--with-registry-auth`).
-  A repository is built on the panel (or on a build server). With a push
-  registry (Service → Settings → Build) every node pulls it by digest; without
-  one the image is copied to each NineDeploy node in the swarm, and any node that
-  cannot receive it is labelled `nd.preload.<slug>=0` so no task lands there.
-- **Environment** reaches Swarm through a temporary 0600 env file, never a
-  command line. Docker keeps it in the service spec, which `docker service
-  inspect` shows to anyone with access to the daemon, the same people who can
-  inspect a container. A value that spans several lines is refused.
+- **Images:** an image release is pulled by every member node. A repository is
+  built on the panel (or on a build server). With a push registry (Service →
+  Settings → Build), every node pulls it by digest. Without one, the image is
+  copied to each member node, and exactly the nodes that received it (the panel
+  host included) are labelled `nd.preload.<slug>=<image id>`. The service
+  requires that label, so no task lands on a node without the image.
+- **Registry credentials:** each Swarm deploy gets its own temporary Docker
+  client config (0700, under the data directory). It logs in there only when
+  the service has a registry credential, passes `--with-registry-auth` only
+  then, and removes the config as soon as the stack is submitted. The panel's
+  shared Docker config is never forwarded to the workers.
+- **Environment** reaches Swarm through a temporary 0600 env file, created
+  fresh and removed after the deploy, never a command line. Left-over env files
+  are swept at boot. Docker keeps the values in the service spec, which `docker
+  service inspect` shows to anyone with access to the daemon, the same people
+  who can inspect a container. A value that spans several lines is refused.
+- **Limits:** the memory and CPU limits apply to each task. A Swarm task gets
+  **no memory-swap cap** (a container's `--memory-swap` equals its memory
+  limit) and **no CPU shares**: neither can be expressed in a stack file.
 - **Refused on Swarm:** compose stacks, PM2, a service pinned to a node, the
   persistent volume and volume attachments (named volumes are per node), the
   Docker socket, a published host port, managed databases, and fan-out targets.
@@ -164,11 +195,12 @@ port is published on the Swarm ingress mesh.
 (IPsec), and there is no setting to turn that off. Between all swarm hosts
 allow: 2377/tcp (management), 7946/tcp and 7946/udp (gossip), 4789/udp (overlay
 traffic) and **ESP, IP protocol 50** (the encryption). Restrict these to the
-cluster's own hosts. Encrypted overlays do not work on Windows nodes. An
-overlay `nd-swarm-<slug>` created without encryption before is reported on
-the deploy log and left in place, because recreating it would cut off the
-running tasks. Remove the stack and the network during a maintenance window
-to get an encrypted one.
+cluster's own hosts. Encrypted overlays do not work on Windows nodes. A deploy
+refuses to use an existing network named `nd-swarm-<slug>` that is not an
+encrypted overlay. No NineDeploy release before Swarm support created such a
+network, so one that exists was made by hand or by another tool. Check that
+nothing else uses it, remove it (`docker network rm nd-swarm-<slug>`) and deploy
+again.
 
 **Leaving Swarm:** set the orchestrator back to `container` and redeploy. The
 container goes live first; then the stack and its overlay are removed.

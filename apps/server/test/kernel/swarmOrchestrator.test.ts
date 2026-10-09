@@ -48,6 +48,12 @@ vi.mock('node:fs', async () => {
       h.files.set(p, { data: text, mode: opts?.mode });
       h.log.set(p, [...(h.log.get(p) ?? []), text]);
     },
+    chmodSync: () => undefined,
+    readdirSync: (p: string) => {
+      const kids = [...h.files.keys()].filter((k) => k.startsWith(p) && k !== p).map((k) => k.slice(p.length + 1).split(/[\\/]/)[0] as string);
+      if (kids.length === 0 && !h.files.has(p)) throw Object.assign(new Error(`ENOENT: ${p}`), { code: 'ENOENT' });
+      return [...new Set(kids)];
+    },
     rmSync: (p: string) => {
       h.files.delete(p);
     },
@@ -129,25 +135,30 @@ describe('SwarmOrchestrator', () => {
       expect(calls('network create')).toEqual([['network', 'create', '--driver', 'overlay', '--opt', 'encrypted', '--attachable=false', 'backend']]);
     });
 
-    it('an existing UNENCRYPTED overlay is reported on the log and reused, never silently and never recreated', async () => {
-      captureMock.mockImplementation(async (_cmd: string, args: string[]) => (args[0] === 'network' && args[1] === 'inspect' ? '{"com.docker.network.driver.overlay.vxlanid_list":"4097"}' : ''));
-      const lines: string[] = [];
-      await newOrchestrator().deployStack(stack({ networks: [{ name: 'frontend', driver: 'overlay', attachable: true }] }), { log: (l) => lines.push(l) });
-      expect(calls('network create')).toEqual([]);
-      expect(calls('network rm')).toEqual([]);
-      expect(lines.join(' ')).toMatch(/frontend exists WITHOUT data-plane encryption/);
-      expect(captureMock.mock.calls.find((c) => c[1][1] === 'inspect')?.[1]).toEqual(['network', 'inspect', '--format', '{{json .Options}}', 'frontend']);
+    it('L3: an existing network of that name that is not an ENCRYPTED overlay is refused (never reused, never removed)', async () => {
+      for (const [answer, what] of [
+        ['overlay|{"com.docker.network.driver.overlay.vxlanid_list":"4097"}', /an overlay WITHOUT data-plane encryption/],
+        ['bridge|{}', /not an overlay network/],
+      ] as const) {
+        runMock.mockClear();
+        captureMock.mockImplementation(async (_cmd: string, args: string[]) => (args[0] === 'network' && args[1] === 'inspect' ? answer : ''));
+        await expect(newOrchestrator().deployStack(stack({ networks: [{ name: 'frontend', driver: 'overlay', attachable: true }] }))).rejects.toThrow(what);
+        expect(calls('network create')).toEqual([]);
+        expect(calls('network rm')).toEqual([]);
+        expect(calls('stack deploy')).toEqual([]);
+      }
+      expect(captureMock.mock.calls.find((c) => c[1][1] === 'inspect')?.[1]).toEqual(['network', 'inspect', '--format', '{{.Driver}}|{{json .Options}}', 'frontend']);
     });
 
     it('tolerates a network that already exists (inspected first; a lost create race re-checks)', async () => {
-      captureMock.mockImplementation(async (_cmd: string, args: string[]) => (args[0] === 'network' ? '{"encrypted":""}' : ''));
+      captureMock.mockImplementation(async (_cmd: string, args: string[]) => (args[0] === 'network' ? 'overlay|{"encrypted":""}' : ''));
       await newOrchestrator().deployStack(stack({ networks: [{ name: 'frontend', driver: 'overlay', attachable: true }] }));
       expect(calls('network create')).toEqual([]);
-      // Missing at the first look, created by someone else in between.
+      // Missing at the first look, created (encrypted) by someone else in between.
       let looks = 0;
       captureMock.mockImplementation(async (_cmd: string, args: string[]) => {
         if (args[0] === 'network' && args[1] === 'inspect' && looks++ === 0) throw new Error('No such network');
-        return '';
+        return args[0] === 'network' ? 'overlay|{"encrypted":""}' : '';
       });
       runMock.mockImplementation(async (_cmd: string, args: string[]) => {
         if (args[1] === 'create') throw new Error('network with name frontend already exists');
@@ -236,12 +247,49 @@ describe('SwarmOrchestrator', () => {
       expect(runMock.mock.calls.flatMap((c) => c[1])).not.toContain('--publish');
     });
 
-    it('applies with one `stack deploy --prune --with-registry-auth --detach=false -c <file> <stack>`', async () => {
+    it('applies with one `stack deploy --prune --detach=false -c <file> <stack>`; no registry auth is forwarded by default', async () => {
       await newOrchestrator().deployStack(stack({ services: [svc()] }));
-      expect(calls('stack deploy')).toEqual([
-        ['stack', 'deploy', '--prune', '--with-registry-auth', '--detach=false', '-c', stackPath('demo', 'stack.yml'), 'demo'],
+      expect(calls('stack deploy')).toEqual([['stack', 'deploy', '--prune', '--detach=false', '-c', stackPath('demo', 'stack.yml'), 'demo']]);
+      expect(stackDeployArgs({ name: 'x', resolveImage: 'never' }, 'f')).toEqual(['stack', 'deploy', '--prune', '--resolve-image', 'never', '-c', 'f', 'x']);
+    });
+
+    it('M4: a detached apply with a private client config forwards registry auth only when asked', async () => {
+      await newOrchestrator().deployStack(stack({ services: [svc()] }), { wait: false, dockerConfig: '/cfg/one', withRegistryAuth: true });
+      await newOrchestrator().deployStack(stack({ services: [svc()] }), { wait: false, dockerConfig: '/cfg/two' });
+      const applies = runMock.mock.calls.map((c) => c[1] as string[]).filter((a) => a.includes('deploy'));
+      expect(applies).toEqual([
+        ['--config', '/cfg/one', 'stack', 'deploy', '--prune', '--with-registry-auth', '--detach=true', '-c', stackPath('demo', 'stack.yml'), 'demo'],
+        ['--config', '/cfg/two', 'stack', 'deploy', '--prune', '--detach=true', '-c', stackPath('demo', 'stack.yml'), 'demo'],
       ]);
-      expect(stackDeployArgs({ name: 'x', resolveImage: 'never' }, 'f')).toEqual(['stack', 'deploy', '--prune', '--with-registry-auth', '--resolve-image', 'never', '-c', 'f', 'x']);
+    });
+
+    it('L2: the env file is unlinked first, then created exclusively (wx, 0600); the directory is chmodded 0700 every time', async () => {
+      const fs = await import('node:fs');
+      const write = vi.spyOn(fs, 'writeFileSync');
+      const chmod = vi.spyOn(fs, 'chmodSync');
+      h.files.set(stackPath('demo', 'api.env'), { data: 'planted' });
+      await newOrchestrator().deployStack(stack({ services: [svc({ env: { A: '1' } })] }));
+      const envWrite = write.mock.calls.find((c) => c[0] === stackPath('demo', 'api.env'));
+      expect(envWrite?.[2]).toEqual({ flag: 'wx', mode: 0o600 });
+      expect(h.log.get(stackPath('demo', 'api.env'))?.at(-1)).toBe('A=1\n');
+      expect(chmod).toHaveBeenCalledWith(stackPath('demo'), 0o700);
+      write.mockRestore();
+      chmod.mockRestore();
+    });
+
+    it('L2: the boot sweep removes left-over env and temp files and per-deploy client configs, nothing else', async () => {
+      const { sweepSwarmEnvFiles } = await import('../../src/kernel/drivers/swarmOrchestrator.js');
+      h.files.set(ROOT, { dir: true });
+      h.files.set(stackPath('demo', 'api.env'), { data: 'A=1' });
+      h.files.set(stackPath('demo', 'x.secret.tmp'), { data: 's' });
+      h.files.set(stackPath('demo', 'stack.json'), { data: '{}' });
+      h.files.set(join(ROOT, '.docker-abc123'), { dir: true });
+      expect(sweepSwarmEnvFiles(ROOT)).toBe(3);
+      expect(h.files.has(stackPath('demo', 'api.env'))).toBe(false);
+      expect(h.files.has(stackPath('demo', 'x.secret.tmp'))).toBe(false);
+      expect(h.files.has(join(ROOT, '.docker-abc123'))).toBe(false);
+      expect(h.files.has(stackPath('demo', 'stack.json'))).toBe(true);
+      expect(sweepSwarmEnvFiles(join(ROOT, 'missing'))).toBe(0);
     });
 
     it('a redeploy is the same create-or-update apply: env, replicas and labels change with it (D7a)', async () => {

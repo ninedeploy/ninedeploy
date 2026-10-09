@@ -109,7 +109,7 @@ describe('the pipeline and Swarm (M5)', () => {
   it("orchestrator 'swarm' deploys through the Swarm builder and routes to nd-<slug>_web with one backend", async () => {
     const { service, deployment } = await deploy({ orchestrator: 'swarm', replicas: 3 });
     expect(swarmDeploy.swarmDeployRefusal).toHaveBeenCalledTimes(1);
-    expect(swarmDeploy.createSwarmBuilder).toHaveBeenCalledWith(db);
+    expect(swarmDeploy.createSwarmBuilder).toHaveBeenCalledWith(db, 'web');
     expect(h.swarm.buildAndRun).toHaveBeenCalledTimes(1);
     expect(h.swarm.isHealthy).toHaveBeenCalledTimes(1);
     expect(h.container.buildAndRun).not.toHaveBeenCalled();

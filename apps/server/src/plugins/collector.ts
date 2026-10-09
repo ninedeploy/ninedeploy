@@ -6,7 +6,7 @@ import { collectContainerStats, collectHostStats, type ContainerStat, type HostS
 import { evaluateAlerts, type MetricSnapshot } from '../lib/alerting.js';
 import { createNodeHealthWatch } from '../lib/nodeHealth.js';
 import { readCertificates } from '../engine/proxy.js';
-import { isSwarmRuntimeId, swarmContainerStat } from '../lib/swarm.js';
+import { swarmContainerStat, swarmRuntimeOf } from '../lib/swarm.js';
 
 const INTERVAL_MS = 30_000;
 const RETENTION_MS = 24 * 60 * 60 * 1000;
@@ -58,8 +58,9 @@ export default fp(
         const rows: Array<{ serviceId: number; kind: string; value: number; ts: Date }> = [];
         for (const s of all) {
           // 0.16 T7: a Swarm service's metrics are its local tasks summed (design §7.4).
-          const st = isSwarmRuntimeId(s.runtimeId)
-            ? swarmContainerStat(containers, s.runtimeId)
+          const swarmRuntime = swarmRuntimeOf(s);
+          const st = swarmRuntime
+            ? swarmContainerStat(containers, swarmRuntime)
             : ((s.runtimeId ? containers.get(s.runtimeId) : undefined) ?? containers.get(`nd-app-${s.slug}`));
           if (!st) continue;
           rows.push({ serviceId: s.id, kind: 'cpu', value: Math.round(st.cpuPct * 100), ts: now });

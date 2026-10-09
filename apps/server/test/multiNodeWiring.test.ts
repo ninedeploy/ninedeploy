@@ -216,7 +216,7 @@ describe('pipeline hooks (M5)', () => {
     expect(swarmAt).toBeGreaterThan(0);
     expect(swarmAt).toBeLessThan(src.indexOf('let builder = builders[service.type];'));
     // The Swarm builder replaces the container builder, before the unknown-type check.
-    const pick = src.indexOf('if (onSwarm) builder = createSwarmBuilder(db);');
+    const pick = src.indexOf('if (onSwarm) builder = createSwarmBuilder(db, service.slug);');
     expect(pick).toBeGreaterThan(src.indexOf('let builder = builders[service.type];'));
     expect(pick).toBeLessThan(src.indexOf('if (!builder) {'));
     expect(isSwarmService({ orchestrator: 'swarm' })).toBe(true);

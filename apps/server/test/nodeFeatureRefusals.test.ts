@@ -466,13 +466,13 @@ describe('T7 Swarm against a 0.15 agent (CAPS_015)', () => {
     expect([older.statusCode, older.json().error.code]).toEqual([422, 'node_agent_outdated']);
     expect(h.ops).toEqual(['agent.ping']);
     // Leave, for a node recorded as a member: refused before anything is drained.
-    await db.update(servers).set({ swarmNodeId: 'wrk1', swarmRole: 'worker' });
+    await db.update(servers).set({ swarmNodeId: 'wrk0000000000000000000001', swarmRole: 'worker' });
     h.ops = [];
     h.ping = CAPS_015;
     const leave = await app.inject({ method: 'POST', url: `/servers/${serverId}/swarm/leave`, headers: asUser() });
     expect([leave.statusCode, leave.json().error.code]).toEqual([422, 'node_agent_outdated']);
     expect(h.ops).toEqual(['agent.ping']);
-    expect(await db.query.servers.findFirst()).toMatchObject({ swarmNodeId: 'wrk1' });
+    expect(await db.query.servers.findFirst()).toMatchObject({ swarmNodeId: 'wrk0000000000000000000001' });
     await app.close();
   });
 });

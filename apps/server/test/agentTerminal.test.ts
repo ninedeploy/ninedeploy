@@ -257,7 +257,10 @@ describe('terminal.open', () => {
     const ping = await sealedOp('agent.ping', {});
     delete process.env['NINEDEPLOY_AGENT_HOST_TERMINAL'];
     // Multi-node: the 0.15 answer stays the prefix; new capabilities follow it.
-    const added = agent.AGENT_CAPABILITIES.slice(agent.AGENT_CAPABILITIES_015.length);
+    // An opt-in capability (0.16 T7 `swarm`) is advertised only once its owner set its variable.
+    const { AGENT_OPT_IN } = await import('../src/agentOps/index.js');
+    const added = agent.AGENT_CAPABILITIES.slice(agent.AGENT_CAPABILITIES_015.length).filter((c) => !Object.hasOwn(AGENT_OPT_IN, c));
+    expect(added.length).toBe(agent.AGENT_CAPABILITIES.length - agent.AGENT_CAPABILITIES_015.length - Object.keys(AGENT_OPT_IN).length);
     expect([...parseAgentCapabilities(ping.lines).caps]).toEqual([...agent.AGENT_CAPABILITIES_015, ...added]);
     expect([...parseAgentCapabilities((await sealedOp('agent.ping', {})).lines).caps]).toEqual([
       ...agent.AGENT_CAPABILITIES_015,

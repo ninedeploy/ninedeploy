@@ -33,7 +33,7 @@ import { getSettingString } from '../lib/settings.js';
 import { config } from '../config.js';
 import { SandboxPlugin } from '../kernel/sandbox/sandboxPlugin.js';
 import { storedInsightsLeakSuspected } from './repoInsights.js';
-import { isSwarmRuntimeId } from '../lib/swarm.js';
+import { swarmRuntimeOf } from '../lib/swarm.js';
 import {
   containerRunning,
   listManagedVolumeNames,
@@ -44,9 +44,9 @@ import {
 } from '../lib/inventory.js';
 
 /** r228: runtimes this host's `docker ps` can see (not PM2, not a remote node). */
-function isLocalContainerRuntime(s: { type: string; serverId?: number | null; runtimeId?: string | null }): boolean {
+function isLocalContainerRuntime(s: { type: string; serverId?: number | null; runtimeId?: string | null; slug?: string | null; orchestrator?: string | null }): boolean {
   // ── 0.16 T7 swarm ── a Swarm service has no container of its own name; Swarm keeps its tasks running (design §7.4: the doctor skips Swarm rows).
-  if (isSwarmRuntimeId(s.runtimeId)) return false;
+  if (swarmRuntimeOf(s)) return false;
   // ── end 0.16 T7 ──
   return s.type !== 'pm2' && (s.serverId ?? null) === null;
 }
@@ -307,7 +307,7 @@ export async function scanDoctor(db: DB): Promise<DoctorReport> {
   // siblings are `ndcmp-<slug>-<service>-<n>`. A prefix can over-claim (slug
   // `web` vs `web-api`) — the safe side for a removal offer.
   const composePrefixes = svcs.filter((s) => s.slug).map((s) => `ndcmp-${s.slug}-`);
-  const swarmTaskPrefixes = svcs.filter((s) => isSwarmRuntimeId(s.runtimeId)).map((s) => `${s.runtimeId}.`);
+  const swarmTaskPrefixes = svcs.flatMap((s) => { const rt = swarmRuntimeOf(s); return rt ? [`${rt}.`] : []; });
 
   // ── containers: dead Hub junk + rows that lie about reality ─────────────
   for (const c of allContainers) {

@@ -22,6 +22,7 @@ Swarm services **keep serving** after the rollback (they degrade instead of bein
 - **The next deploy of such a service runs it as plain containers** on the panel host (`services.replicas` round-robin clones, no Swarm). The route moves to the new container, and **the stack keeps running without a route**. The image is pullable from the registry or already on the panel host, so that deploy works.
 - **Clean up** once the local deploy is live: `docker stack ls`, then `docker stack rm nd-<slug>` and `docker network rm nd-swarm-<slug>` for each NineDeploy stack. Run `docker swarm leave --force` on the nodes, and then on the panel host, only if you are giving up Swarm.
 - `/v1/orchestrators` still lists the stacks. A downgraded node agent refuses join and leave, but the node stays in the swarm, because membership lives in the node's Docker daemon.
+- **Node labels stay:** `nd.member=1` and `nd.preload.<slug>=<image id prefix>` remain on the nodes, and a running stack keeps requiring them, so its tasks stay where they are. They are harmless once the stacks are gone; remove them with `docker node update --label-rm nd.member <node>` (and the same for each `nd.preload.<slug>`) when you clean up. The per-deploy registry config directories under `<dataDir>/swarm/.docker-*` are removed after each deploy; a crash can leave one behind, which only the newer release sweeps at boot, so delete any you find there.
 
 ## 0.15 → 0.14
 

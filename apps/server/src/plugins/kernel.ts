@@ -9,7 +9,7 @@ import { InlineBuildCache } from '../kernel/drivers/inlineBuildCache.js';
 import { RegistryBuildCache } from '../kernel/drivers/registryBuildCache.js';
 import { S3BuildCache } from '../kernel/drivers/s3BuildCache.js';
 import { LocalOrchestrator } from '../kernel/drivers/localOrchestrator.js';
-import { SwarmOrchestrator } from '../kernel/drivers/swarmOrchestrator.js';
+import { SwarmOrchestrator, sweepSwarmEnvFiles } from '../kernel/drivers/swarmOrchestrator.js';
 import { IptablesEgressDriver } from '../kernel/drivers/iptablesEgressDriver.js';
 import { NineDeployKernel } from '../kernel/kernel.js';
 import { bridgeAuditEvents } from '../kernel/auditBridge.js';
@@ -123,6 +123,13 @@ export default fp(
       kernel.registry.registerOrchestrator(new LocalOrchestrator());
       if (fastify.db) {
         kernel.registry.registerOrchestrator(new SwarmOrchestrator(fastify.db));
+      }
+      // 0.16 T7 (security review L2): Swarm env files and per-deploy client
+      // configs a crashed apply left under <dataDir>/swarm go at boot.
+      try {
+        sweepSwarmEnvFiles();
+      } catch {
+        /* best effort: nothing there, or not readable */
       }
       // Default egress IP driver — iptables. Reused by the
       // StickyIpPlugin when a project has a `sticky_ip.ip` config

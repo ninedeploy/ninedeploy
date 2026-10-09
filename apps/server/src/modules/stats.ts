@@ -4,7 +4,7 @@ import { metricQuery } from '@ninedeploy/schemas';
 import type { FastifyPluginAsync } from 'fastify';
 import { parseId as num } from '../lib/errors.js';
 import { loadServiceForUser, visibleDatabaseIds, visibleServiceIdSet } from '../lib/resourceAccess.js';
-import { isSwarmRuntimeId, swarmContainerStat } from '../lib/swarm.js';
+import { swarmContainerStat, swarmRuntimeOf } from '../lib/swarm.js';
 
 const MB = 1024 * 1024;
 
@@ -43,8 +43,9 @@ export const statsRoutes: FastifyPluginAsync = async (app) => {
     for (const s of svcs) {
       const cname = s.runtimeId ?? `nd-app-${s.slug}`;
       // 0.16 T7: a Swarm service's figure is its local tasks summed (design §7.4).
-      const st = isSwarmRuntimeId(s.runtimeId)
-        ? swarmContainerStat(containers, s.runtimeId)
+      const swarmRuntime = swarmRuntimeOf(s);
+      const st = swarmRuntime
+        ? swarmContainerStat(containers, swarmRuntime)
         : ((s.runtimeId ? containers.get(s.runtimeId) : undefined) ?? containers.get(`nd-app-${s.slug}`));
       if (!st) continue;
       out.push({
@@ -107,8 +108,9 @@ export const metricRoutes: FastifyPluginAsync = async (app) => {
       const svc = await app.db.query.services.findFirst({ where: eq(services.id, id) });
       if (svc) {
         // 0.16 T7: a Swarm service's figure is its local tasks summed.
-        const st = isSwarmRuntimeId(svc.runtimeId)
-          ? swarmContainerStat(containers, svc.runtimeId)
+        const swarmRuntime = swarmRuntimeOf(svc);
+        const st = swarmRuntime
+          ? swarmContainerStat(containers, swarmRuntime)
           : ((svc.runtimeId ? containers.get(svc.runtimeId) : undefined) ?? containers.get(`nd-app-${svc.slug}`));
         if (st) {
           points = [

@@ -8,16 +8,18 @@ import { resolvePushTarget, shipImageByStream } from '../lib/imageTransfer.js';
 import { safeProbePath } from '../lib/probeUrl.js';
 import {
   ensureSwarmNetwork,
-  isSwarmRuntimeId,
   listSwarmNodes,
   localSwarmInfo,
   removeSwarmStack,
+  SWARM_MEMBER_CONSTRAINT,
+  SWARM_MEMBER_LABEL,
   swarmClusterRefusal,
+  swarmImageTag,
   swarmPreloadLabel,
   swarmServiceName,
-  swarmSlugOf,
   swarmStackName,
-  withPanelRegistryLogin,
+  updateNodeLabel,
+  withDeployDockerConfig,
 } from '../lib/swarm.js';
 import { buildElsewhere, recordBuildHost } from './buildPlacement.js';
 import { dockerBuilder } from './builders/docker.js';
@@ -118,13 +120,16 @@ const READ_TIMEOUT_MS = 30_000;
 const msg = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 /**
- * The pipeline's builder for a Swarm service. A runtime id that is not a
- * Swarm service (the previous generation of a service switched from plain
- * containers) is handed to the local docker builder, so its health probe and
- * its retirement after the switch work as before.
+ * The pipeline's builder for the Swarm service `slug`. A runtime id that is
+ * not THIS service's Swarm service (the previous generation of a service
+ * switched from plain containers) is handed to the local docker builder, so
+ * its health probe and its retirement after the switch work as before. The
+ * stack it removes is always named from `slug`, never parsed out of a runtime
+ * id (security review L1).
  */
-export function createSwarmBuilder(db: DB, deps: SwarmBuilderDeps = {}): Builder {
+export function createSwarmBuilder(db: DB, slug: string, deps: SwarmBuilderDeps = {}): Builder {
   const local = dockerBuilder;
+  const own = swarmServiceName(slug);
   /** Set when this deploy updated an existing Swarm service in place: its previous spec is what a failed probe rolls back to. */
   let rollbackTarget: string | null = null;
 
@@ -132,12 +137,15 @@ export function createSwarmBuilder(db: DB, deps: SwarmBuilderDeps = {}): Builder
     async buildAndRun(ctx: BuildContext, previous?: DeployRuntime): Promise<DeployRuntime> {
       void previous;
       const { service, log } = ctx;
-      const slug = service.slug;
-      const runtimeId = swarmServiceName(slug);
+      if (service.slug !== slug) throw new Error(`Swarm builder for ${slug} handed service ${service.slug}`);
+      const runtimeId = own;
       log(`Swarm: deploying "${service.name}" as the Swarm service ${runtimeId} (${clampReplicas(service.replicas)} replica${clampReplicas(service.replicas) === 1 ? '' : 's'})`);
 
       const image = await resolveImage(db, ctx, deps);
-      const constraints = image.local ? await preloadImage(db, ctx, image, deps) : [];
+      // M1c: the panel's own node is a member (labelled at init; re-asserted here, idempotent).
+      const info = await localSwarmInfo();
+      if (info.nodeId) await updateNodeLabel(info.nodeId, '--label-add', `${SWARM_MEMBER_LABEL}=1`);
+      const constraints = [SWARM_MEMBER_CONSTRAINT, ...(image.local ? await preloadImage(db, ctx, image, deps, info.nodeId) : [])];
       const network = await ensureSwarmNetwork(slug, log);
 
       const spec: StackSpec = {
@@ -177,12 +185,19 @@ export function createSwarmBuilder(db: DB, deps: SwarmBuilderDeps = {}): Builder
       const driver = deps.driver ?? new SwarmOrchestrator(db);
       log(`Swarm: docker stack deploy ${spec.name} (rolling, start-first; waits up to ${STACK_DEPLOY_TIMEOUT_MS / 60_000} minutes for convergence)`);
       let error: string | undefined;
+      const submittedAt = Date.now();
       try {
-        const status = await withPanelRegistryLogin(image.auth, log, () => driver.deployStack(spec, { log, timeoutMs: STACK_DEPLOY_TIMEOUT_MS }));
+        // M4: a private client config per deploy, logged in only for a
+        // registry service, forwarded only then, and gone once the spec is
+        // submitted — the convergence wait runs without it.
+        const status = await withDeployDockerConfig(image.auth, log, (dockerConfig) =>
+          driver.deployStack(spec, { log, timeoutMs: STACK_DEPLOY_TIMEOUT_MS, wait: false, dockerConfig, withRegistryAuth: image.auth !== undefined }),
+        );
         error = status.error;
       } catch (err) {
         error = msg(err);
       }
+      if (!error) error = (await waitForConvergence(runtimeId, submittedAt, STACK_DEPLOY_TIMEOUT_MS, log)) ?? undefined;
       if (error) {
         await logTaskErrors(runtimeId, log);
         if (existed) {
@@ -206,7 +221,7 @@ export function createSwarmBuilder(db: DB, deps: SwarmBuilderDeps = {}): Builder
     },
 
     async isHealthy(runtime, timeoutMs = 300_000, directGraceMs = 10_000, log: (line: string) => void = () => undefined) {
-      if (!isSwarmRuntimeId(runtime.runtimeId)) return local.isHealthy(runtime, timeoutMs, directGraceMs, log);
+      if (runtime.runtimeId !== own) return local.isHealthy(runtime, timeoutMs, directGraceMs, log);
       const healthy = await swarmHealthy(runtime, timeoutMs, log);
       if (!healthy && rollbackTarget === runtime.runtimeId) {
         rollbackTarget = null;
@@ -217,8 +232,7 @@ export function createSwarmBuilder(db: DB, deps: SwarmBuilderDeps = {}): Builder
     },
 
     async stop(runtimeId, opts) {
-      const slug = swarmSlugOf(runtimeId);
-      if (slug === null) return local.stop(runtimeId, opts);
+      if (runtimeId !== own) return local.stop(runtimeId, opts);
       await removeSwarmStack(db, slug, () => undefined);
     },
   };
@@ -229,18 +243,19 @@ export function createSwarmBuilder(db: DB, deps: SwarmBuilderDeps = {}): Builder
  * to plain containers) is its stack. The pipeline retires the previous
  * runtime only after the new container is live and routed (design §7.5), so
  * this wrapper routes that one retirement — and the failure-path probe of the
- * previous version — to the stack; everything else is the wrapped builder's.
+ * previous version — to the stack of `slug`; everything else is the wrapped
+ * builder's.
  */
-export function withSwarmRetirement(db: DB, builder: Builder): Builder {
+export function withSwarmRetirement(db: DB, builder: Builder, slug: string): Builder {
+  const own = swarmServiceName(slug);
   return {
     buildAndRun: (ctx, previous) => builder.buildAndRun(ctx, previous),
     async isHealthy(runtime, timeoutMs, directGraceMs, log) {
-      if (!isSwarmRuntimeId(runtime.runtimeId)) return builder.isHealthy(runtime, timeoutMs, directGraceMs, log);
+      if (runtime.runtimeId !== own) return builder.isHealthy(runtime, timeoutMs, directGraceMs, log);
       return swarmHealthy(runtime, timeoutMs ?? 3000, log ?? (() => undefined));
     },
     async stop(runtimeId, opts) {
-      const slug = swarmSlugOf(runtimeId);
-      if (slug === null) return builder.stop(runtimeId, opts);
+      if (runtimeId !== own) return builder.stop(runtimeId, opts);
       await removeSwarmStack(db, slug, () => undefined);
     },
   };
@@ -289,57 +304,96 @@ function applyPackPorts(ctx: BuildContext, nixpacks: boolean, staticPack: boolea
 
 /**
  * Design §7.4 step 3 (fixes D7f), without a registry: preload the image onto
- * every Swarm node that is a NineDeploy node able to receive it (stream relay,
- * like build placement), and label every other node `nd.preload.<slug>=0` so
- * the service's constraint keeps its tasks off nodes that lack the image.
+ * every member node the panel can send it to (stream relay, like build
+ * placement), and label exactly the nodes that hold it —
+ * `nd.preload.<slug>=<image id prefix>`, the panel host included — with a
+ * constraint that requires that value (security review M1d: positive, so a
+ * node the image never reached can never qualify, and a stale label from an
+ * earlier image does not match the new one).
  */
-async function preloadImage(db: DB, ctx: BuildContext, image: SwarmImage, deps: SwarmBuilderDeps): Promise<string[]> {
+async function preloadImage(db: DB, ctx: BuildContext, image: SwarmImage, deps: SwarmBuilderDeps, panelNodeId: string | null): Promise<string[]> {
   const { service, log } = ctx;
   const label = swarmPreloadLabel(service.slug);
-  const info = await localSwarmInfo();
+  const tag = swarmImageTag(image.imageId ?? image.ref);
+  if (panelNodeId) await updateNodeLabel(panelNodeId, '--label-add', `${label}=${tag}`);
   const nodes = await listSwarmNodes(db);
   for (const node of nodes) {
-    if (node.id === info.nodeId) {
-      await nodeLabel(node.id, ['--label-rm', label]);
-      continue;
-    }
-    let reason = 'it is not a NineDeploy node, so the panel cannot send it the image';
-    if (node.serverId != null) {
-      if (node.state !== 'ready' || node.availability !== 'active') {
-        reason = `it is ${node.state}/${node.availability}`;
-      } else if (!image.imageId) {
-        reason = 'the image id is unknown';
-      } else {
-        try {
-          await (deps.ship ?? shipImageByStream)(
-            db,
-            {
-              deploymentId: ctx.deploymentId,
-              serviceId: service.id,
-              source: null,
-              target: node.serverId,
-              tag: image.ref,
-              imageId: image.imageId,
-              ...(image.sizeBytes ? { sizeBytes: image.sizeBytes } : {}),
-            },
-            log,
-          );
-          await nodeLabel(node.id, ['--label-rm', label]);
-          continue;
-        } catch (err) {
-          reason = msg(err);
-        }
+    if (node.id === panelNodeId) continue;
+    // Only nodes joined through the panel can run a task at all (M1c); the rest are never sent anything.
+    if (node.serverId == null) continue;
+    let reason: string;
+    if (node.state !== 'ready' || node.availability !== 'active') {
+      reason = `it is ${node.state}/${node.availability}`;
+    } else if (!image.imageId) {
+      reason = 'the image id is unknown';
+    } else {
+      try {
+        await (deps.ship ?? shipImageByStream)(
+          db,
+          {
+            deploymentId: ctx.deploymentId,
+            serviceId: service.id,
+            source: null,
+            target: node.serverId,
+            tag: image.ref,
+            imageId: image.imageId,
+            ...(image.sizeBytes ? { sizeBytes: image.sizeBytes } : {}),
+          },
+          log,
+        );
+        await updateNodeLabel(node.id, '--label-add', `${label}=${tag}`);
+        continue;
+      } catch (err) {
+        reason = msg(err);
       }
     }
-    await nodeLabel(node.id, ['--label-add', `${label}=0`]);
     log(`⚠ Swarm: node ${node.hostname || node.id} will run no task of this service: ${reason}. Set a push registry (Service → Settings → Build) to let every node pull the image.`);
   }
-  return [`node.labels.${label}!=0`];
+  return [`node.labels.${label}==${tag}`];
 }
 
-/** `docker node update <label flag> <node>`; removing an absent label is not an error worth stopping for. */
-async function nodeLabel(nodeId: string, flag: [string, string]): Promise<void> {
-  await run('docker', ['node', 'update', ...flag, nodeId], { timeoutMs: READ_TIMEOUT_MS }, () => undefined).catch(() => undefined);
+/**
+ * Review M4: the spec is submitted detached, so the convergence wait is the
+ * panel's. The service's UpdateStatus says an update is running, completed or
+ * rolled back; one older than this apply (an unchanged spec) is ignored and
+ * the replica counts decide. Null once converged, else why not.
+ */
+async function waitForConvergence(runtimeId: string, submittedAt: number, timeoutMs: number, log: (line: string) => void): Promise<string | null> {
+  const deadline = Date.now() + timeoutMs;
+  let noted = '';
+  do {
+    const status = await updateStatus(runtimeId);
+    const fresh = status !== null && status.startedAt >= submittedAt - 5000;
+    if (fresh && /^rollback|^paused$/.test(status.state)) {
+      return `the rolling update was ${status.state.replace(/_/g, ' ')}${status.message ? `: ${status.message}` : ''}`;
+    }
+    if (!(fresh && status.state === 'updating')) {
+      const counts = await replicaCounts(runtimeId);
+      if (counts && counts.desired > 0 && counts.running >= counts.desired) return null;
+      if (counts && noted !== `${counts.running}/${counts.desired}`) {
+        noted = `${counts.running}/${counts.desired}`;
+        log(`Swarm: ${noted} replicas running …`);
+      }
+    } else if (noted !== 'updating') {
+      noted = 'updating';
+      log('Swarm: rolling update in progress …');
+    }
+    if (Date.now() + HEALTH_POLL_MS >= deadline) break;
+    await sleep(HEALTH_POLL_MS);
+  } while (Date.now() < deadline);
+  return `the service did not converge within ${Math.round(timeoutMs / 60_000)} minutes`;
+}
+
+async function updateStatus(runtimeId: string): Promise<{ state: string; message: string; startedAt: number } | null> {
+  const raw = await capture('docker', ['service', 'inspect', '--format', '{{json .UpdateStatus}}', runtimeId], { timeoutMs: READ_TIMEOUT_MS }).catch(() => '');
+  try {
+    const j = JSON.parse(raw.trim() || 'null') as { State?: string; Message?: string; StartedAt?: string } | null;
+    if (!j?.State) return null;
+    const startedAt = j.StartedAt ? Date.parse(j.StartedAt) : Number.NaN;
+    return { state: j.State, message: j.Message ?? '', startedAt: Number.isNaN(startedAt) ? 0 : startedAt };
+  } catch {
+    return null;
+  }
 }
 
 async function serviceExists(runtimeId: string): Promise<boolean> {

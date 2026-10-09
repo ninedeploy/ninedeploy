@@ -84,11 +84,21 @@ export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, r
   'build.railpack': ['NINEDEPLOY_AGENT_BUILDS'],
   'git.sshkey': ['NINEDEPLOY_AGENT_STATIC_CREDENTIALS'],
   'db.manage': ['NINEDEPLOY_AGENT_DATABASES'],
-  swarm: ['NINEDEPLOY_AGENT_SWARM'],
 };
 
-/** The switch that turned `cap` off on this node, or null. */
+/**
+ * Capabilities the node's owner must OPT IN to (security review M2): off
+ * until the variable is set. `swarm`: `NINEDEPLOY_AGENT_SWARM_MANAGER=<host:port>`
+ * names the one manager the node may join (agentOps/swarm.ts enforces it).
+ */
+export const AGENT_OPT_IN: Readonly<Partial<Record<MultiNodeCapability, string>>> = {
+  swarm: 'NINEDEPLOY_AGENT_SWARM_MANAGER',
+};
+
+/** The switch that turned `cap` off on this node (or the opt-in variable left unset), or null. */
 export function capabilityKillSwitch(cap: MultiNodeCapability, env: NodeJS.ProcessEnv = process.env): string | null {
+  const optIn = AGENT_OPT_IN[cap];
+  if (optIn !== undefined && (env[optIn] ?? '').trim() === '') return optIn;
   return (AGENT_KILL_SWITCHES[cap] ?? []).find((name) => switchedOff(env[name])) ?? null;
 }
 
@@ -133,7 +143,13 @@ export async function runRegisteredOp(
   const def = AGENT_OPS.get(op);
   if (!def) return null;
   const killed = capabilityKillSwitch(def.cap, env);
-  if (killed !== null) throw new Error(`${op} is disabled on this node by its owner (${killed}=off)`);
+  if (killed !== null) {
+    throw new Error(
+      Object.values(AGENT_OPT_IN).includes(killed)
+        ? `${op} is not enabled on this node: its owner has not opted in (${killed} is not set)`
+        : `${op} is disabled on this node by its owner (${killed}=off)`,
+    );
+  }
   const sealedOnly = typeof def.sealedOnly === 'function' ? def.sealedOnly(params) : def.sealedOnly;
   if (sealedOnly && !ctx.sealed) {
     throw new Error(`Refusing ${op} over the unencrypted transport: it is accepted only inside a sealed request`);

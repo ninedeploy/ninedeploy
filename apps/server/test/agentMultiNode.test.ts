@@ -230,8 +230,9 @@ describe('the op registry and its wiring (M8)', () => {
     expect(registry.capabilityKillSwitch('build.railpack', { NINEDEPLOY_AGENT_BUILDS: 'disabled' })).toBe('NINEDEPLOY_AGENT_BUILDS');
     expect(registry.capabilityKillSwitch('git.sshkey', { NINEDEPLOY_AGENT_STATIC_CREDENTIALS: '0' })).toBe('NINEDEPLOY_AGENT_STATIC_CREDENTIALS');
     expect(registry.capabilityKillSwitch('db.manage', { NINEDEPLOY_AGENT_DATABASES: 'no' })).toBe('NINEDEPLOY_AGENT_DATABASES');
-    expect(registry.capabilityKillSwitch('swarm', { NINEDEPLOY_AGENT_SWARM: 'false' })).toBe('NINEDEPLOY_AGENT_SWARM');
-    expect(registry.capabilityKillSwitch('swarm', { NINEDEPLOY_AGENT_SWARM: 'on' })).toBeNull();
+    // T7 (security review M2): `swarm` is opt-in — off until NINEDEPLOY_AGENT_SWARM_MANAGER names the manager.
+    expect(registry.capabilityKillSwitch('swarm', {})).toBe('NINEDEPLOY_AGENT_SWARM_MANAGER');
+    expect(registry.capabilityKillSwitch('swarm', { NINEDEPLOY_AGENT_SWARM_MANAGER: '10.0.0.1:2377' })).toBeNull();
     expect(registry.capabilityKillSwitch('stream', { NINEDEPLOY_AGENT_BUILDS: 'off' })).toBeNull();
   });
 

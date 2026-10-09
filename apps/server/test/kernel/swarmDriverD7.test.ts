@@ -67,6 +67,7 @@ vi.mock('node:fs', async () => {
       h.files.set(norm(p), text);
       h.writes.push({ path: norm(p), data: text });
     },
+    chmodSync: () => undefined,
     rmSync: (p: string) => {
       const key = norm(p);
       h.files.delete(key);
@@ -123,7 +124,7 @@ async function fakeCapture(_cmd: string, args: string[]): Promise<string> {
   }
   if (a === 'network' && b === 'inspect') {
     if (!h.docker.networks.has(args.at(-1)!)) throw new Error(`Error: No such network: ${args.at(-1)}`);
-    return '[]';
+    return 'overlay|{"encrypted":""}';
   }
   if ((a === 'secret' || a === 'config') && b === 'inspect') {
     const store = a === 'secret' ? h.docker.secrets : h.docker.configs;

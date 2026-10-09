@@ -6,7 +6,7 @@ import { MAX_QUEUED_PER_SERVICE } from './deployQueue.js';
 import { assertMayDeployStoredService } from './hostPrivilege.js';
 import { isOperator } from './resourceAccess.js';
 import { backupServiceVolumes } from '../modules/volumeBackups.js';
-import { isSwarmRuntimeId, localSwarmTaskFor } from './swarm.js';
+import { localSwarmTaskFor, swarmRuntimeOf } from './swarm.js';
 
 const MAX_OUTPUT = 60_000; // ~60 KB of captured output per run
 
@@ -159,8 +159,9 @@ async function runJobInner(db: DB, jobId: number, opts: RunJobOptions): Promise<
   let unsupported = execJobUnsupportedReason(svc);
   // ── 0.16 T7 swarm ── a Swarm service runs the job in one of its tasks on the panel host (design §7.4), or records why not.
   let execContainer = svc.runtimeId;
-  if (!unsupported && job.command && isSwarmRuntimeId(svc.runtimeId)) {
-    const task = await localSwarmTaskFor(svc.runtimeId);
+  const swarmRuntime = swarmRuntimeOf(svc);
+  if (!unsupported && job.command && swarmRuntime) {
+    const task = await localSwarmTaskFor(swarmRuntime);
     if ('refusal' in task) unsupported = task.refusal;
     else execContainer = task.container;
   }
