@@ -48,7 +48,7 @@ import { DatabaseTopologyTab } from './database/DatabaseTopologyTab.js';
 import { BackupScheduleCard } from './database/BackupScheduleCard.js';
 import { ImportCard } from './database/ImportCard.js';
 import { PublicAccessCard } from './database/PublicAccessCard.js';
-import { type DatabasePlacement, isNodeDatabase, NodeDatabaseBadge, NodeUnavailableCard } from '../components/NodeDatabaseBadge.js';
+import { isNodeDatabase, NodeDatabaseBadge, NodeUnavailableCard } from '../components/NodeDatabaseBadge.js';
 import { ManifestTab } from './service/ManifestTab.js';
 import { TerminalPanel } from '../components/terminal/TerminalPanel.js';
 import { useAuth } from '../lib/auth.js';
@@ -210,7 +210,7 @@ export function DatabaseDetail() {
                 <h1 className="text-xl font-bold tracking-tight text-white">{db.name}</h1>
                 <StatusBadge status={db.status} />
                 {/* Multi-node: the node and its reachability (the detail response carries them since 0.15.3). */}
-                <NodeDatabaseBadge db={db as IDatabaseDetail & DatabasePlacement} />
+                <NodeDatabaseBadge db={db} />
               </div>
               <p className="font-mono text-xs text-slate-400">
                 {ENGINE_LABEL[db.engine] ?? db.engine}
@@ -507,8 +507,8 @@ function OverviewPanel({
         )}
 
         {/* Web Studio (GUI) card. Multi-node: a node database has none (refused, `remote_database`). */}
-        {isNodeDatabase(db as IDatabaseDetail & DatabasePlacement) ? (
-          <NodeUnavailableCard title="Database Web Studio" db={db as IDatabaseDetail & DatabasePlacement} />
+        {isNodeDatabase(db) ? (
+          <NodeUnavailableCard title="Database Web Studio" db={db} />
         ) : (
         <Card className="p-5 space-y-4">
           <div className="flex items-center justify-between">
@@ -939,10 +939,10 @@ function SettingsPanel({ db, onDeleted }: { db: IDatabaseDetail; onDeleted: () =
       </Card>
 
       {/* Multi-node: public access and PgBouncer need a port on the panel host; a node database has neither yet. */}
-      {isNodeDatabase(db as IDatabaseDetail & DatabasePlacement) ? (
+      {isNodeDatabase(db) ? (
         <>
-          <NodeUnavailableCard title="Public access" db={db as IDatabaseDetail & DatabasePlacement} />
-          <NodeUnavailableCard title="PgBouncer connection pooling" db={db as IDatabaseDetail & DatabasePlacement} />
+          <NodeUnavailableCard title="Public access" db={db} />
+          <NodeUnavailableCard title="PgBouncer connection pooling" db={db} />
         </>
       ) : (
         <PublicAccessCard db={db} />

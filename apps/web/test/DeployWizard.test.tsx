@@ -929,29 +929,130 @@ describe('DeployWizard — repository analysis & Git credential guidance', () =>
     await waitFor(() => expect(apiMock.api.deploys.trigger).toHaveBeenCalledWith(42));
   });
 
-  it('cannot target a remote server node — deploying to one is not implemented', async () => {
-    // Every builder shells out locally, so a service pinned to a node would
-    // deploy on THIS host while the panel claimed otherwise. The API refuses
-    // such a deployment, and the wizard must not create one to begin with.
+  // Remote-node deploys (0.7.0, extended in the 0.15.x series): an operator
+  // picks a node on the Runtime step; the create and deploy routes re-check it.
+  const NODE_FEATURES = { nixpacks: true, railpack: true, privateClones: true, volumes: true, databases: true, imageTransfer: true, swarm: true };
+  const nodeA = { id: 2, name: 'node-a', host: '10.0.0.2', port: 4600, status: 'online', lastSeenAt: null, features: NODE_FEATURES };
+
+  it('deploys to the node an operator picks: serverId is sent and the review names it', async () => {
     const user = userEvent.setup();
-    apiMock.api.servers.list.mockResolvedValue([
-      { id: 2, name: 'node-a', host: '10.0.0.2', port: 2375, status: 'online' },
-    ]);
+    apiMock.api.servers.list.mockResolvedValue([nodeA, { id: 9, name: 'waiting', host: '10.0.0.9', port: 4600, status: 'pending', lastSeenAt: null }]);
     renderWizard();
 
     await fillRepo(user);
     await user.click(screen.getByRole('button', { name: /continue/i }));
 
-    expect(await screen.findByText(/not implemented yet/)).toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: /node-a/ })).not.toBeInTheDocument();
+    const target = await screen.findByRole('combobox', { name: 'Target Server Node' });
+    // An announced node still waiting for approval is not offered.
+    expect(screen.queryByRole('option', { name: /waiting/ })).not.toBeInTheDocument();
+    await user.selectOptions(target, '2');
+    expect(screen.queryByText(/not implemented/)).not.toBeInTheDocument();
 
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    expect(screen.getByText('Host')).toBeInTheDocument();
+    expect(screen.getByText('node-a')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /deploy/i }));
+
+    await waitFor(() => expect(apiMock.api.services.create).toHaveBeenCalledWith(expect.objectContaining({ serverId: 2 })));
+    await waitFor(() => expect(apiMock.api.deploys.trigger).toHaveBeenCalledWith(42));
+  });
+
+  it('greys out a node that cannot run the service, with the reason, and blocks continuing on it', async () => {
+    const user = userEvent.setup();
+    apiMock.api.sources.list.mockResolvedValue([
+      { id: 3, name: 'pat', type: 'github', hasToken: true, hasDeployKey: false, allowOnNodes: false },
+      { id: 4, name: 'pat-nodes', type: 'github', hasToken: true, hasDeployKey: false, allowOnNodes: true },
+    ]);
+    apiMock.api.servers.list.mockResolvedValue([
+      nodeA,
+      { ...nodeA, id: 5, name: 'node-old', host: '10.0.0.5', features: { ...NODE_FEATURES, privateClones: false } },
+      { id: 6, name: 'node-down', host: '10.0.0.6', port: 4600, status: 'offline', lastSeenAt: null },
+      // An older panel sends no `features`: nothing to grey out.
+      { id: 7, name: 'node-legacy', host: '10.0.0.7', port: 4600, status: 'online', lastSeenAt: null },
+    ]);
+    renderWizard();
+
+    await fillRepo(user);
+    await user.selectOptions(screen.getAllByRole('combobox')[1]!, '3');
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+
+    // A PAT that is not allowed on nodes: every node is refused, with the fix.
+    await screen.findByRole('combobox', { name: 'Target Server Node' });
+    const option = (name: RegExp) => screen.getByRole('option', { name }) as HTMLOptionElement;
+    expect(option(/node-a .*credential "pat" is not allowed on nodes/).disabled).toBe(true);
+    expect(option(/node-down .*the node is offline/).disabled).toBe(true);
+    expect(option(/This panel host/).disabled).toBe(false);
+
+    // Allowed on nodes: only the agent that cannot take a PAT is refused.
+    await user.click(screen.getByRole('button', { name: /back/i }));
+    await user.selectOptions(screen.getAllByRole('combobox')[1]!, '4');
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    expect(option(/node-a/).disabled).toBe(false);
+    expect(option(/node-legacy/).disabled).toBe(false);
+    expect(option(/node-old .*cannot clone with a token or deploy key/).disabled).toBe(true);
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Target Server Node' }), '2');
+
+    // Back to a credential that is not allowed: the chosen node is refused and Continue is blocked.
+    await user.click(screen.getByRole('button', { name: /back/i }));
+    await user.selectOptions(screen.getAllByRole('combobox')[1]!, '3');
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('node-a cannot run this service: credential "pat" is not allowed on nodes');
+    expect(screen.getByRole('button', { name: /continue/i })).toBeDisabled();
+  });
+
+  it('no node row without registered nodes', async () => {
+    const user = userEvent.setup();
+    renderWizard();
+    await fillRepo(user);
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await screen.findByText('Healthcheck Path');
+    expect(screen.queryByRole('combobox', { name: 'Target Server Node' })).not.toBeInTheDocument();
+  });
+
+  it('no node row for a PM2 service', async () => {
+    const user = userEvent.setup();
+    apiMock.api.servers.list.mockResolvedValue([nodeA]);
+    renderWizard();
+    await user.selectOptions(screen.getAllByRole('combobox')[0]!, 'pm2');
+    await fillRepo(user);
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await screen.findByText('Healthcheck Path');
+    expect(screen.queryByRole('combobox', { name: 'Target Server Node' })).not.toBeInTheDocument();
+  });
+
+  it('no node row for a member, and the node list is never asked for', async () => {
+    const user = userEvent.setup();
+    authMock.user = { id: 5, isOperator: false, email: 'm@test', name: 'M' };
+    apiMock.api.servers.list.mockResolvedValue([nodeA]);
+    renderWizard();
+    await fillRepo(user);
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await screen.findByText('Healthcheck Path');
+    expect(screen.queryByRole('combobox', { name: 'Target Server Node' })).not.toBeInTheDocument();
+    expect(apiMock.api.servers.list).not.toHaveBeenCalled();
+  });
+
+  it("surfaces the server's refusal when the node cannot deploy the service", async () => {
+    const user = userEvent.setup();
+    apiMock.api.servers.list.mockResolvedValue([nodeA]);
+    apiMock.api.deploys.trigger.mockRejectedValue(
+      Object.assign(new Error('Deployments to a remote server are not available for this service yet: the agent on node-a cannot build with Nixpacks.'), {
+        status: 422,
+        code: 'node_agent_outdated',
+      }),
+    );
+    renderWizard();
+    await fillRepo(user);
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Target Server Node' }), '2');
     await user.click(screen.getByRole('button', { name: /continue/i }));
     await user.click(screen.getByRole('button', { name: /continue/i }));
     await user.click(screen.getByRole('button', { name: /continue/i }));
     await user.click(screen.getByRole('button', { name: /deploy/i }));
-
-    await waitFor(() => expect(apiMock.api.services.create).toHaveBeenCalled());
-    expect(apiMock.api.services.create.mock.calls[0]![0]).not.toHaveProperty('serverId');
+    expect(await screen.findByText(/cannot build with Nixpacks/)).toBeInTheDocument();
+    expect(apiMock.api.services.create).toHaveBeenCalledWith(expect.objectContaining({ serverId: 2 }));
   });
 
   it('scopes a monorepo sub-app via the package picker and re-analyzes', async () => {    const user = userEvent.setup();

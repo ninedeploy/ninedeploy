@@ -2,11 +2,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Download, GitBranch, Globe, Hammer, HeartPulse, Play, Plus, Rocket, Sparkles, Terminal, Wand2, X, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router';
-import type { ComposePreviewResponse, RepoInsights, Template } from '@ninedeploy/sdk';
+import type { ComposePreviewResponse, RepoInsights, ServerListEntry, Template } from '@ninedeploy/sdk';
 import { api } from '../lib/api.js';
 import { copyText, toInt } from '../lib/format.js';
 import { useAuth } from '../lib/auth.js';
 import { useExperienceMode } from '../lib/mode.js';
+import { registeredNodes } from '../lib/multiNode.js';
 import { useToast } from './Toast.js';
 import { Button, Input, Select, Textarea, cn } from './ui.js';
 
@@ -175,6 +176,30 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
   // compose template deploy refuses them (400, F904). Not offered, not sent.
   const composeDeploy = template ? !!template.composeContent : type === 'compose';
   const [provisionStatus, setProvisionStatus] = useState<string | null>(null);
+
+  // ── Target node (remote-node deploys, operators only) ─────────────────
+  // '' = the panel host. A node runs docker and compose services (PM2 is a
+  // host process the agent has no operation for); the create and deploy
+  // routes re-check everything and their refusal is toasted. The checks here
+  // only grey out a node that certainly cannot run the service, from the
+  // node's `features` (absent on an older panel: then nothing is greyed).
+  const [targetNode, setTargetNode] = useState('');
+  const nodes = registeredNodes(servers.data);
+  const nodeChoice = isAdmin && !template && type !== 'pm2' && nodes.length > 0;
+  const selectedSource = mode === 'repo' ? sources.data?.find((s) => String(s.id) === sourceId) : undefined;
+  // A PAT or deploy key (not a GitHub App, whose per-job token reaches nodes).
+  const staticCredential =
+    selectedSource != null && selectedSource.type !== 'github_app' && selectedSource.type !== 'registry' && (selectedSource.hasToken || selectedSource.hasDeployKey);
+  const nodeRefusal = (n: ServerListEntry): string | null => {
+    if (n.status !== 'online') return `the node is ${n.status}`;
+    if (staticCredential && selectedSource?.allowOnNodes !== true) {
+      return `credential "${selectedSource?.name}" is not allowed on nodes (Sources → Allow on nodes)`;
+    }
+    if (staticCredential && n.features?.privateClones === false) return 'its agent cannot clone with a token or deploy key: update it';
+    return null;
+  };
+  const chosenNode = nodeChoice && targetNode ? nodes.find((n) => String(n.id) === targetNode) : undefined;
+  const chosenNodeRefusal = chosenNode ? nodeRefusal(chosenNode) : null;
 
   // ── Repository analysis (framework detection) ─────────────────────────────
   // Auto-runs (debounced) once a valid repo URL + branch are present, so the
@@ -387,6 +412,7 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
           : {}),
         branch,
         sourceId: toInt(sourceId),
+        ...(chosenNode ? { serverId: chosenNode.id } : {}),
         port: effectivePort,
         // F960: a value typed before switching the type to compose stays unsent.
         ...(composeDeploy ? {} : { publishedPort: toInt(publishedPort), cpuShares: toInt(cpuShares), memLimitMb: toInt(memLimitMb) }),
@@ -464,7 +490,10 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
               ? !!composeContent.trim() && composePreview?.ok === true && !!composeService
               : !!repoUrl.trim()
         )
-      : true;
+      // A node that certainly cannot run the service is not a place to deploy to.
+      : step === 1
+        ? !chosenNodeRefusal
+        : true;
 
   // H-3: a template that mounts the Docker socket is admin-only server-side —
   // and so is a compose stack, because a compose file can bind-mount host paths
@@ -1177,20 +1206,30 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
               <L label={template ? 'Registry-managed volume mount' : 'Persistent Volume Mount'}><Input value={volumeMount} disabled={!!template} onChange={(e) => setVolumeMount(e.target.value)} placeholder="/app/data" className="font-mono text-xs" /></L>
               <L label="Healthcheck Path"><Input value={healthPath} onChange={(e) => setHealthPath(e.target.value)} placeholder="/" className="font-mono text-xs" /></L>
 
-              {/* Deploying to a remote node is not implemented: every builder
-                  shells out locally, so the API refuses such a deployment
-                  rather than running it on the panel host. The row stays
-                  visible (the nodes are real, and networks do use them) but
-                  cannot be armed for a deploy. */}
-              {servers.data && servers.data.length > 0 && (
-                <L label="Target Server Node (Cluster Deployment)">
-                  <Select value="" disabled title="Remote-node deployments are not implemented yet">
-                    <option value="">Local Server (Primary / Master Node)</option>
+              {/* Remote-node deploys (operators only, like `serverId` on create). */}
+              {nodeChoice && (
+                <L label="Target Server Node">
+                  <Select aria-label="Target Server Node" value={targetNode} onChange={(e) => setTargetNode(e.target.value)}>
+                    <option value="">This panel host</option>
+                    {nodes.map((n) => {
+                      const why = nodeRefusal(n);
+                      return (
+                        <option key={n.id} value={String(n.id)} disabled={why != null}>
+                          {n.name} ({n.host}){why ? ` — ${why}` : ''}
+                        </option>
+                      );
+                    })}
                   </Select>
-                  <p className="mt-1.5 text-[11px] leading-relaxed text-amber-200/80">
-                    {servers.data.length} remote node{servers.data.length === 1 ? '' : 's'} registered, but deploying to
-                    one is not implemented yet — the build would run on this host. Services stay on the primary node.
-                  </p>
+                  {chosenNodeRefusal ? (
+                    <p role="alert" className="mt-1.5 text-[11px] leading-relaxed text-rose-300">
+                      {chosenNode?.name} cannot run this service: {chosenNodeRefusal}. Pick another host.
+                    </p>
+                  ) : (
+                    <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+                      A node builds and runs the service itself and serves its domains, so point their DNS at the node. The panel
+                      re-checks the node when you deploy and says why if it cannot.
+                    </p>
+                  )}
                 </L>
               )}
             </div>
@@ -1286,6 +1325,7 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
             <div className="space-y-2 text-sm">
               <Row label="Name" value={name} />
               <Row label="Type" value={type} />
+              {nodeChoice && <Row label="Host" value={chosenNode ? chosenNode.name : 'This panel host'} />}
               <Row label={mode === 'repo' ? 'Repository' : 'Image'} value={mode === 'repo' ? repoUrl : image} />
               {/* The review step is repo-mode only (templates finish one step
                   earlier), so the image arms are type-level only. */}
