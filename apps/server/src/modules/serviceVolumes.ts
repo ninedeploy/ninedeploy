@@ -359,7 +359,10 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
 
     // For create-on-attach, provision the named volume now so subsequent
     // /volumes inventory reads (and the user-facing file manager) see it.
-    if (input.create?.label) {
+    // 0.16 (T5, D9): only for a panel-host service. A node service's volume
+    // exists only on its node; ensureNodeVolumes creates it there before the
+    // container of the redeploy queued below starts.
+    if (input.create?.label && svc.serverId == null) {
       try {
         await createDockerVolume(volumeName, (line) => req.log.info(line));
       } catch (err) {

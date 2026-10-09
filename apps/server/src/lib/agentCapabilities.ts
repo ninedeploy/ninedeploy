@@ -261,6 +261,23 @@ function rememberNodeCapabilities(serverId: number, info: { version: string | nu
   nodeCapabilities.set(serverId, { at: now, info, error: null });
 }
 
+/**
+ * A successful sealed ping made outside this module (`POST /v1/servers/:id/test`)
+ * refreshes the node's capability cache exactly like the periodic refresh:
+ * memory first (what `GET /v1/servers` and the queue-time refusals read for
+ * {@link NODE_CAPABILITY_TTL_MS}), then the `servers.agent_*` columns. Only
+ * call it with an answer: a failed ping keeps the last good one.
+ */
+export async function refreshNodeCapabilities(
+  db: DB,
+  serverId: number,
+  info: { version: string | null; caps: ReadonlySet<string> },
+  at: Date = new Date(),
+): Promise<void> {
+  rememberNodeCapabilities(serverId, info, at.getTime());
+  await persistAgentCapabilities(db, serverId, info, at);
+}
+
 /** Test hook. */
 export function resetNodeCapabilityCache(): void {
   nodeCapabilities.clear();

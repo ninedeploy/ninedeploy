@@ -10,7 +10,7 @@ import {
   nodeAgentInfo,
   nodeTerminalCapability,
   parseAgentCapabilities,
-  persistAgentCapabilities,
+  refreshNodeCapabilities,
   serverFeatures,
 } from '../lib/agentCapabilities.js';
 import { ENROLMENT_HEADER, assertEnrolmentAllowed } from '../lib/enrolment.js';
@@ -273,8 +273,10 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
         throw badRequest(`Agent unreachable: ${err instanceof Error ? err.message : err}`);
       }
       await authed.db.update(servers).set({ status: 'online', lastSeenAt: new Date() }).where(eq(servers.id, id));
-      // Multi-node (design §1.3): a successful sealed ping refreshes the cache.
-      if (ping?.lines) await persistAgentCapabilities(authed.db, id, parseAgentCapabilities(ping.lines));
+      // Multi-node (design §1.3): a successful sealed ping refreshes the cache —
+      // the in-memory answer too, so an agent upgrade shows at once instead of
+      // after the 5-minute TTL. A failed ping (above) keeps the last answer.
+      if (ping?.lines) await refreshNodeCapabilities(authed.db, id, parseAgentCapabilities(ping.lines));
       void audit(authed.db, req.user!.id, 'server.test', row.name);
       return { ok: true, status: 'online' };
     });

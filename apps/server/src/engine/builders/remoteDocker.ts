@@ -77,6 +77,28 @@ export type AgentCall = (
   sink: (line: string) => void,
 ) => Promise<{ exitCode: number; lines: string[] }>;
 
+/**
+ * r415: make sure the node has the shared `ninedeploy` network every container
+ * joins. `docker network create` on an existing network exits 1 with "Error
+ * response from daemon: network with name ninedeploy already exists" — the
+ * normal case on every deploy but a node's first — so that answer is silent.
+ * Any other failure goes to the deploy log and the deploy carries on as before
+ * (the container start then names the missing network).
+ */
+export async function ensureNodeNetwork(agent: AgentCall, log: (line: string) => void): Promise<void> {
+  const lines: string[] = [];
+  let failure: string | null = null;
+  try {
+    const res = await agent('docker.networkCreate', { name: 'ninedeploy', driver: 'bridge' }, (line) => lines.push(line));
+    if (res.exitCode !== 0) failure = `exit ${res.exitCode}`;
+  } catch (err) {
+    failure = err instanceof Error ? err.message : String(err);
+  }
+  if (failure !== null && [...lines, failure].some((line) => /already exists/i.test(line))) return;
+  for (const line of lines) log(line);
+  if (failure !== null) log(`Could not create the "ninedeploy" network on the node: ${failure}`);
+}
+
 /** Thrown for a service shape this builder deliberately does not handle. */
 export class RemoteDeployUnsupportedError extends Error {
   readonly code = 'remote_deploy_unsupported';
@@ -357,8 +379,8 @@ export function createRemoteDockerBuilder(
       // deploy's proxy sync — a chicken-and-egg that made a fresh node's
       // every deploy fail with "network ninedeploy not found" (and the
       // failure path never syncs the proxy, so it never self-healed).
-      // networkCreate is idempotent: an existing network is a logged no-op.
-      await agent('docker.networkCreate', { name: 'ninedeploy', driver: 'bridge' }, sink).catch(() => undefined);
+      // An existing network is a silent no-op (ensureNodeNetwork).
+      await ensureNodeNetwork(agent, log);
 
       let target: string;
       let builtWithNixpacks = false;

@@ -592,3 +592,22 @@ describe('D9: node compose stacks with volume attachments', () => {
   });
 });
 // ── end 0.16 T5 ──
+
+describe('0.16: the shared ninedeploy network on the node', () => {
+  it('an existing network is a silent no-op; any other failure reaches the deploy log', async () => {
+    const run = async (reason: string) => {
+      const base = fakeAgent();
+      const agent: AgentCall = async (op, params, sink) => {
+        if (op !== 'docker.networkCreate') return base.agent(op, params, sink);
+        sink(`Error response from daemon: ${reason}`);
+        throw new Error('agent docker.networkCreate exited with 1');
+      };
+      const lines: string[] = [];
+      await createRemoteComposeBuilder(agent).buildAndRun(ctx({ log: (l) => lines.push(l) }));
+      expect(base.ops()).toContain('docker.composeUp');
+      return lines.join('\n');
+    };
+    expect(await run('network with name ninedeploy already exists')).not.toMatch(/Error response from daemon|already exists/);
+    expect(await run('permission denied')).toMatch(/Error response from daemon: permission denied[\s\S]*Could not create the "ninedeploy" network on the node/);
+  });
+});

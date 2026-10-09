@@ -31,7 +31,10 @@ vi.mock('../src/lib/agentClient.js', async (importOriginal) => ({
     }
     throw new Error(`agent ${op} failed (400): {"error":{"code":"unknown_op"}}`);
   },
-  agentPingLines: async () => ({ lines: h.ping ? [h.ping] : [] }),
+  agentPingLines: async () => {
+    if (h.pingThrows) throw h.pingThrows;
+    return { lines: h.ping ? [h.ping] : [] };
+  },
 }));
 vi.mock('../src/lib/audit.js', () => ({ audit: vi.fn(async () => undefined) }));
 
@@ -203,6 +206,33 @@ describe('the queue-time check (assertNodeCapability) and the persisted cache (Â
     expect(cached!.agent).toMatchObject({ version: '0.15.1' });
     h.ping = CAPS_ALL;
     expect((await app.inject({ method: 'POST', url: `/servers/${serverId}/test`, headers: asUser() })).statusCode).toBe(200);
+    expect((await db.query.servers.findFirst())!.agentVersion).toBe('0.15.2');
+    await app.close();
+  });
+
+  it('POST /:id/test after an agent upgrade refreshes the in-memory cache too; a failed test keeps it', async () => {
+    const app = await buildTestApp({ db });
+    await app.register(serverRoutes, { prefix: '/servers' });
+    await db.update(servers).set({ lastSeenAt: new Date() });
+    // The listing caches the 0.15.1 answer in memory (TTL 5 minutes).
+    const listed = async () => ((await app.inject({ method: 'GET', url: '/servers', headers: asUser() })).json() as Array<Record<string, any>>)[0]!;
+    expect((await listed()).agent).toMatchObject({ version: '0.15.1' });
+    // The agent is upgraded; the operator presses "Test".
+    h.ping = CAPS_ALL;
+    h.ops = [];
+    expect((await app.inject({ method: 'POST', url: `/servers/${serverId}/test`, headers: asUser() })).statusCode).toBe(200);
+    const after = await listed();
+    expect(after.agent).toMatchObject({ version: '0.15.2', capabilities: expect.arrayContaining(['stream', 'swarm']) });
+    expect(after.features).toMatchObject({ imageTransfer: true, swarm: true });
+    // Within the TTL the listing answered from memory: no extra ping was needed to see the upgrade.
+    expect(h.ops).toEqual([]);
+    // A capability check answers from the refreshed cache without asking the node again.
+    await caps.assertNodeCapability(db, serverId, { cap: 'stream', feature: 'x', sealedRequired: true });
+    expect(h.ops).toEqual([]);
+    // A failed test marks the server errored but leaves the last good answer in place.
+    h.pingThrows = new Error('connect ECONNREFUSED');
+    expect((await app.inject({ method: 'POST', url: `/servers/${serverId}/test`, headers: asUser() })).statusCode).toBe(400);
+    expect(caps.nodeAgentInfo({ id: serverId })).toMatchObject({ version: '0.15.2' });
     expect((await db.query.servers.findFirst())!.agentVersion).toBe('0.15.2');
     await app.close();
   });

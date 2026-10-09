@@ -1288,7 +1288,23 @@ export async function runOp(
     // the default then failed `git checkout <branch>` on the node.
     if (depth !== undefined) argv.push('--depth', /^\d{1,3}$/.test(depth) ? depth : '1', '--no-single-branch');
     argv.push(url, '.');
-    return spawnValidated('git', argv, onLine, { cwd: dir, ...credentialOpts });
+    if (depth === undefined) return spawnValidated('git', argv, onLine, { cwd: dir, ...credentialOpts });
+    // 0.16: a server without shallow support (git's dumb HTTP transport, some
+    // self-hosted servers) refuses `--depth` outright, while a full clone of
+    // the same repository works. Retry ONCE without it on that refusal only;
+    // the retry keeps the egress flags, the credential env and the redacting
+    // `onLine`. Any other failure is returned as is.
+    let shallowUnsupported = false;
+    const watch = (line: string) => {
+      if (/does not support shallow|dumb http transport/i.test(line)) shallowUnsupported = true;
+      onLine(line);
+    };
+    const shallow = await spawnValidated('git', argv, watch, { cwd: dir, ...credentialOpts });
+    if (shallow === 0 || !shallowUnsupported) return shallow;
+    onLine('the git server does not support shallow clones (dumb HTTP transport) — retrying with a full clone');
+    // A failed `clone .` may leave a partial checkout behind; `clone .` needs an empty directory.
+    for (const entry of readdirSync(dir)) rmSync(pathmod.join(dir, entry), { recursive: true, force: true });
+    return spawnValidated('git', [...GIT_EGRESS_FLAGS, 'clone', url, '.'], onLine, { cwd: dir, ...credentialOpts });
   }
   if (op === 'proxy.writeConfig') {
     const { path, changed } = await writeProxyConfigOp(params);

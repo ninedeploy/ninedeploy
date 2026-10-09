@@ -563,3 +563,34 @@ describe('r660: source builds need an agent that guards build paths', () => {
     expect(ops()).toContain('docker.runEnv');
   });
 });
+
+describe('0.16: the shared ninedeploy network on the node', () => {
+  /** An agent whose `docker network create` fails like the daemon does (exit 1, the reason on stderr). */
+  function networkFails(reason: string) {
+    const base = fakeAgent();
+    const agent: AgentCall = async (op, params, sink) => {
+      if (op !== 'docker.networkCreate') return base.agent(op, params, sink);
+      base.calls.push({ op, params });
+      sink(`Error response from daemon: ${reason}`);
+      throw new Error('agent docker.networkCreate exited with 1');
+    };
+    return { ...base, agent };
+  }
+
+  it('an existing network is a silent no-op: no daemon error in the deploy log, the deploy goes on', async () => {
+    const { agent, ops } = networkFails('network with name ninedeploy already exists');
+    const lines: string[] = [];
+    const runtime = await createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1.27' }), log: (l) => lines.push(l) }));
+    expect(runtime).toMatchObject({ runtimeId: 'web-7' });
+    expect(ops()).toEqual(['docker.networkCreate', 'docker.pull', 'file.writeEnv', 'docker.runEnv', 'file.deleteEnv']);
+    expect(lines.join('\n')).not.toMatch(/Error response from daemon|already exists/);
+  });
+
+  it('any other failure still reaches the deploy log', async () => {
+    const { agent } = networkFails('permission denied while trying to connect to the Docker daemon socket');
+    const lines: string[] = [];
+    await createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1.27' }), log: (l) => lines.push(l) }));
+    expect(lines.join('\n')).toContain('Error response from daemon: permission denied');
+    expect(lines.join('\n')).toMatch(/Could not create the "ninedeploy" network on the node: agent docker.networkCreate exited with 1/);
+  });
+});

@@ -118,6 +118,42 @@ describe('runOp: the credential reaches only the network git children, through e
     expectNoSecretOutsideEnv();
   });
 
+  it('0.16: a server without shallow support (dumb HTTP) gets one full clone retry, with the same credential and egress flags', async () => {
+    const EGRESS = ['-c', 'http.followRedirects=false', '-c', 'protocol.file.allow=never', '-c', 'protocol.ext.allow=never'];
+    const dumb = 'http://192.168.176.4/dockerfile.git';
+    spawnMock.mockImplementation((async (_e: string, argv: string[], onLine: (l: string) => void) => {
+      if (!argv.includes('clone')) return 0;
+      if (argv.includes('--depth')) {
+        onLine("Cloning into '.'...");
+        onLine(`fatal: dumb http transport does not support shallow capabilities (${TOKEN})`);
+        return 128;
+      }
+      return 0;
+    }) as never);
+    const lines: string[] = [];
+    await expect(runOp('git.ensure', { workspace: 'dumb-fresh', url: dumb, depth: '1', credential: CRED }, (l) => lines.push(l), SEALED)).resolves.toBe(0);
+    const clones = calls().filter(([, argv]) => argv.includes('clone'));
+    expect(clones.map(([, argv]) => argv)).toEqual([
+      [...EGRESS, 'clone', '--depth', '1', '--no-single-branch', dumb, '.'],
+      [...EGRESS, 'clone', dumb, '.'],
+    ]);
+    // The retry carries the same per-job credential, only through env.
+    for (const [, , , opts] of clones) expect(opts?.env?.['GIT_CONFIG_VALUE_0']).toBe(`AUTHORIZATION: basic ${BASIC}`);
+    expect(lines.some((l) => /does not support shallow clones .* retrying with a full clone/.test(l))).toBe(true);
+    expect(lines.join('\n')).not.toContain(TOKEN);
+    expectNoSecretOutsideEnv();
+
+    // Control: any other clone failure is returned as is, with no retry.
+    spawnMock.mockReset();
+    spawnMock.mockImplementation((async (_e: string, argv: string[], onLine: (l: string) => void) => {
+      if (!argv.includes('clone')) return 0;
+      onLine('fatal: Authentication failed for the repository');
+      return 128;
+    }) as never);
+    await expect(runOp('git.ensure', { workspace: 'auth-fail', url: URL_, depth: '1', credential: CRED }, () => {}, SEALED)).resolves.toBe(128);
+    expect(calls().filter(([, argv]) => argv.includes('clone'))).toHaveLength(1);
+  });
+
   it('git.ensure on an existing checkout: only the fetch gets it — config and set-url never do', async () => {
     const dir = await resolveWorkspace('cred-existing');
     mkdirSync(path.join(dir, '.git'), { recursive: true });

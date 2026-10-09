@@ -2,7 +2,7 @@ import { lstatSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Builder, BuildContext, DeployRuntime } from '../types.js';
 import type { AgentCall, PrebuiltImage } from './remoteDocker.js';
-import { RemoteDeployUnsupportedError } from './remoteDocker.js';
+import { ensureNodeNetwork, RemoteDeployUnsupportedError } from './remoteDocker.js';
 import { composeScalar, parseComposePs } from './compose.js';
 import { INLINE_COMPOSE_FILE } from '../../lib/composeWorkspace.js';
 import { assertCloneTargetAllowed } from '../../lib/gitEgress.js';
@@ -148,7 +148,7 @@ export function createRemoteComposeBuilder(
       // r415: the shared mesh must exist before anything connects to it —
       // on a fresh node nothing else creates it until the first successful
       // deploy's proxy sync (see remoteDocker's identical guard).
-      await agent('docker.networkCreate', { name: 'ninedeploy', driver: 'bridge' }, sink).catch(() => undefined);
+      await ensureNodeNetwork(agent, log);
 
       // An inline stack is shipped from the panel; a repository stack is
       // checked out on the node. A service with neither has nothing to bring up.
