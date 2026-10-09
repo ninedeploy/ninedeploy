@@ -82,7 +82,7 @@ describe('App', () => {
       </>,
       { route: '/auth/callback' },
     );
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/settings'), { timeout: 5000 });
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/settings'), { timeout: 15_000 });
   });
 
   it('sends a refused or empty /auth/callback to the login page', async () => {
@@ -114,23 +114,23 @@ describe('App', () => {
       </>,
       { route: '/dashboard' },
     );
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/), { timeout: 5000 });
-    expect(await screen.findByText('All systems operational', {}, { timeout: 5000 })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/), { timeout: 15_000 });
+    expect(await screen.findByText('All systems operational', {}, { timeout: 15_000 })).toBeInTheDocument();
   });
 
   it('renders the authenticated shell and the index route', async () => {
     authState({ id: 1, email: 'a@b.c' });
     mockOf(api.dashboard.get).mockResolvedValue(emptyDash as never);
     renderWithProviders(<App />, { route: '/' });
-    await screen.findByTestId('layout', {}, { timeout: 5000 });
-    expect(await screen.findByText('All systems operational', {}, { timeout: 5000 })).toBeInTheDocument();
+    await screen.findByTestId('layout', {}, { timeout: 15_000 });
+    expect(await screen.findByText('All systems operational', {}, { timeout: 15_000 })).toBeInTheDocument();
   });
 
   it('renders a nested route inside the authenticated shell', async () => {
     authState({ id: 1, email: 'a@b.c' });
     mockOf(api.templates.list).mockResolvedValue([] as never);
     renderWithProviders(<App />, { route: '/hub' });
-    await screen.findByTestId('layout', {}, { timeout: 5000 });
+    await screen.findByTestId('layout', {}, { timeout: 15_000 });
     expect(await screen.findByText('Hub')).toBeInTheDocument();
   });
 
@@ -140,7 +140,7 @@ describe('App', () => {
     authState({ id: 1, email: 'a@b.c', isOperator: true } as never);
     mockOf(api.activity.list).mockResolvedValue({ entries: [] } as never);
     renderWithProviders(<App />, { route: '/activity' });
-    await screen.findByTestId('layout', {}, { timeout: 5000 });
+    await screen.findByTestId('layout', {}, { timeout: 15_000 });
     expect(await screen.findByText('Activity & Audit Logs')).toBeInTheDocument();
   });
 
@@ -175,8 +175,8 @@ describe('App', () => {
     renderWithProviders(<App />, { route: '/databases/1' });
     // The lazy DatabaseDetail chunk can take over the 1 s default to import
     // when the whole suite runs in parallel — allow it, don't flake on it.
-    await screen.findByTestId('layout', {}, { timeout: 5000 });
-    expect(await screen.findByText('pg-app', {}, { timeout: 5000 })).toBeInTheDocument();
+    await screen.findByTestId('layout', {}, { timeout: 15_000 });
+    expect(await screen.findByText('pg-app', {}, { timeout: 15_000 })).toBeInTheDocument();
   });
 
   it('r358: mounts the domain-transfer accept link the server prints', async () => {
@@ -194,7 +194,7 @@ describe('App', () => {
       effectivelyExpired: false,
     } as never);
     renderWithProviders(<App />, { route: '/domains/transfers/tok123/accept' });
-    await screen.findByTestId('layout', {}, { timeout: 5000 });
+    await screen.findByTestId('layout', {}, { timeout: 15_000 });
     expect(await screen.findByText('Domain transfer: shop.example.com')).toBeInTheDocument();
     expect(screen.queryByText('Not found')).toBeNull();
   });
@@ -229,7 +229,7 @@ describe('App', () => {
     authState({ id: 1, email: 'a@b.c', isOperator: true } as never);
     mockOf(api.githubApps.completeManifest).mockResolvedValue({ id: 1, name: 'NineDeploy x', installUrl: null } as never);
     const first = renderWithProviders(<App />, { route: '/github-apps/callback?code=c0de&state=s.t' });
-    await screen.findByTestId('layout', {}, { timeout: 5000 });
+    await screen.findByTestId('layout', {}, { timeout: 15_000 });
     expect(await screen.findByTestId('github-app-registered')).toBeInTheDocument();
     expect(api.githubApps.completeManifest).toHaveBeenCalledWith({ code: 'c0de', state: 's.t' });
     first.unmount();

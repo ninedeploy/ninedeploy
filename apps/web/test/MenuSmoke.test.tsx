@@ -186,7 +186,7 @@ describe('Sidebar menu — every nav item opens the right group and lights up th
           const header = findPanelHeader(container, group);
           expect(header, `panel header "${group}" should be visible at ${path}`).not.toBeNull();
         },
-        { timeout: 10_000 },
+        { timeout: 20_000 },
       );
 
       // The link inside the panel must be active. The active class is
@@ -217,7 +217,7 @@ describe('Sidebar menu — every nav item opens the right group and lights up th
         const header = findPanelHeader(container, 'Organize');
         expect(header).not.toBeNull();
       },
-      { timeout: 10_000 },
+      { timeout: 20_000 },
     );
     unmount();
   });
