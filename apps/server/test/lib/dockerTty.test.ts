@@ -106,21 +106,17 @@ async function fakeDaemon(): Promise<FakeDaemon> {
     s.on('close', () => sockets.delete(s));
   });
   server.on('upgrade', async (req: http.IncomingMessage, socket: Socket, head: Buffer) => {
-    // `head` holds only the bytes that arrived with the headers; on a slow
-    // runner the body comes in a later packet, so read up to Content-Length.
+    // Where the request body lands differs by Node version: up to Node 24 it
+    // arrives in `head`; from Node 26 the parser consumes it and hands it to
+    // `req` as ordinary request data (head is empty). Accept either.
     const want = Number(req.headers['content-length'] ?? 0);
     let raw = head;
-    while (raw.length < want) {
-      const more = await new Promise<Buffer | null>((resolve) => {
-        socket.once('data', (c: Buffer) => resolve(c));
-        socket.once('end', () => resolve(null));
-      });
-      if (!more) break;
-      raw = Buffer.concat([raw, more]);
+    if (raw.length < want) {
+      const chunks: Buffer[] = [raw];
+      for await (const c of req) chunks.push(c as Buffer);
+      raw = Buffer.concat(chunks);
     }
     const bodyBytes = want > 0 ? raw.subarray(0, want) : raw;
-    const rest = want > 0 ? raw.subarray(want) : Buffer.alloc(0);
-    if (rest.length) socket.unshift(rest);
     const body = bodyBytes.length ? JSON.parse(bodyBytes.toString()) : undefined;
     const entry = { method: req.method ?? '', url: req.url ?? '', body, headers: req.headers };
     seen.push(entry);
