@@ -15,6 +15,7 @@ import {
   terminalSettings,
 } from '@ninedeploy/schemas';
 import { replicaNames } from '../engine/dockerNames.js';
+import { isSwarmRuntimeId, localSwarmTaskFor } from '../lib/swarm.js';
 import { ENGINES } from '../engine/database.js';
 import { type AgentCaller, terminalRefusal } from '../lib/agentCapabilities.js';
 import { agentOp, agentTransportSealed } from '../lib/agentClient.js';
@@ -221,6 +222,12 @@ export const terminalRoutes: FastifyPluginAsync = async (app) => {
           if (!fanout.runtimeId) throw err(409, 'not_running', `"${svc.name}" has no running container on node #${target.serverId}.`);
           serverId = target.serverId;
           container = fanout.runtimeId;
+        } else if (isSwarmRuntimeId(svc.runtimeId)) {
+          // ── 0.16 T7 swarm ── a task of the Swarm service on the panel host, else where the replica runs.
+          const task = await localSwarmTaskFor(svc.runtimeId, target.replica ?? 1);
+          if ('refusal' in task) throw err(422, 'swarm_task_elsewhere', task.refusal);
+          container = task.container;
+          // ── end 0.16 T7 ──
         } else {
           container = serviceContainer(svc, target.replica);
         }

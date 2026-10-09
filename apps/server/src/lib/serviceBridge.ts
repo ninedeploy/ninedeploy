@@ -96,7 +96,10 @@ export async function reapTraefikNetworks(log: (line: string) => void): Promise<
   // (none in practice), so the filter silently returned zero bridges and
   // Traefik was never re-attached after a restart. Strip the anchors and
   // match the real bridge shapes NineDeploy creates.
-  const nameFilters = ['nd-svc-', 'ndcmp-'];
+  // ── 0.16 T7 swarm ── and each Swarm service's attachable overlay
+  // (`nd-swarm-<slug>`), or its routes 502 after a Traefik restart.
+  const nameFilters = ['nd-svc-', 'ndcmp-', 'nd-swarm-'];
+  // ── end 0.16 T7 ──
   const bridges: string[] = [];
   for (const filter of nameFilters) {
     const ls = await capture('docker', [

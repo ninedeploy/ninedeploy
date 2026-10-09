@@ -112,3 +112,63 @@ optionally redeploys. The service row is the source of truth: the workspace
 copy is rewritten from it before every deploy, so a deleted or hand-edited
 `docker-compose.yml` in the workspace repairs itself on the next run, and an
 exported service carries its stack to another host.
+
+## 🐝 7. Docker Swarm (opt-in per service)
+
+Swarm spreads a docker service's replicas across the panel host and the
+NineDeploy nodes that joined it. Nothing changes until an operator opts in:
+every service keeps running plain containers, and the panel never touches
+Swarm on its own.
+
+**Turning it on (operator):**
+
+1. `POST /v1/swarm/init` with `{advertiseAddr}` runs `docker swarm init` on the
+   panel host. It needs an interactive session and your password (step-up),
+   refuses a daemon that is already in a swarm, and checks that the swarm can
+   create an encrypted overlay network.
+2. `PUT /v1/swarm/settings` with `{enabled: true}` (step-up) allows Swarm deploys.
+3. `POST /v1/servers/:id/swarm/join` joins a node as a worker through its agent
+   (agent v0.15.4 or newer, sealed transport). The join token is read on the
+   panel and sent to the node only; it is never stored, logged or returned.
+   `POST /v1/servers/:id/swarm/leave` drains the node first.
+4. `PUT /v1/services/:id/placement` with `{orchestrator: "swarm"}`, then deploy.
+
+**How a Swarm service runs:** one stack `nd-<slug>` with one service
+`nd-<slug>_web`, applied with `docker stack deploy` on every deploy (env,
+replicas and limits all apply). Updates roll one task at a time, start-first,
+and Swarm rolls a failed update back; if the panel's probe through Traefik fails
+after the update, the panel rolls the service back to its previous spec and the
+deployment is marked failed. Traefik is the only ingress: it joins the
+service's overlay `nd-swarm-<slug>` and routes to the service's virtual IP. No
+port is published on the Swarm ingress mesh.
+
+- **Images:** an image release is pulled by every node (`--with-registry-auth`).
+  A repository is built on the panel (or on a build server). With a push
+  registry (Service → Settings → Build) every node pulls it by digest; without
+  one the image is copied to each NineDeploy node in the swarm, and any node that
+  cannot receive it is labelled `nd.preload.<slug>=0` so no task lands there.
+- **Environment** reaches Swarm through a temporary 0600 env file, never a
+  command line. Docker keeps it in the service spec, which `docker service
+  inspect` shows to anyone with access to the daemon, the same people who can
+  inspect a container. A value that spans several lines is refused.
+- **Refused on Swarm:** compose stacks, PM2, a service pinned to a node, the
+  persistent volume and volume attachments (named volumes are per node), the
+  Docker socket, a published host port, managed databases, and fan-out targets.
+  A PR preview of a Swarm service runs as a normal container.
+- **Logs** come from `docker service logs`; **restart** is a rolling restart;
+  **stop/start** scale the service to 0 and back; the **terminal** opens a task
+  on the panel host, or says which node runs the replica; **stats** cover the
+  tasks on the panel host.
+
+**Network and firewall.** NineDeploy's overlays always encrypt their traffic
+(IPsec), and there is no setting to turn that off. Between all swarm hosts
+allow: 2377/tcp (management), 7946/tcp and 7946/udp (gossip), 4789/udp (overlay
+traffic) and **ESP, IP protocol 50** (the encryption). Restrict these to the
+cluster's own hosts. Encrypted overlays do not work on Windows nodes. An
+overlay `nd-swarm-<slug>` created without encryption before is reported on
+the deploy log and left in place, because recreating it would cut off the
+running tasks. Remove the stack and the network during a maintenance window
+to get an encrypted one.
+
+**Leaving Swarm:** set the orchestrator back to `container` and redeploy. The
+container goes live first; then the stack and its overlay are removed.

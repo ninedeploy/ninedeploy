@@ -180,8 +180,8 @@ describe('the queue-time check (assertNodeCapability) and the persisted cache (�
     expect(serverAgentInfoSchema.parse(old)).toEqual({ version: '0.15.1', capabilities: CAPS_015_LIST, checkedAt: '1970-01-01T00:00:00.000Z' });
     const f = serverFeaturesSchema.parse(caps.serverFeatures(old));
     expect(f).toMatchObject({ nixpacks: false, railpack: false, privateClones: false, volumes: false, databases: false, imageTransfer: false, swarm: false });
-    // The newest release any missing capability needs: `db.manage` ships after 0.15.2 (0.16 T6).
-    expect(f.reason).toMatch(/version 0\.15\.1\) cannot do Nixpacks builds, .*Swarm\. Update the node agent to v0\.15\.3 or newer/);
+    // The newest release any missing capability needs: `swarm` ships after 0.15.3 (0.16 T7; `db.manage` after 0.15.2, T6).
+    expect(f.reason).toMatch(/version 0\.15\.1\) cannot do Nixpacks builds, .*Swarm\. Update the node agent to v0\.15\.4 or newer/);
     expect(caps.serverFeatures(null).reason).toMatch(/not been reached/);
     const all = caps.serverFeatures({ version: '0.15.2', capabilities: [...MULTI_NODE_CAPABILITIES], checkedAt: null });
     expect(all).toEqual({ nixpacks: true, railpack: true, privateClones: true, volumes: true, databases: true, imageTransfer: true, swarm: true });
@@ -194,7 +194,7 @@ describe('the queue-time check (assertNodeCapability) and the persisted cache (�
     await db.update(servers).set({ lastSeenAt: new Date() });
     const [first] = (await app.inject({ method: 'GET', url: '/servers', headers: asUser() })).json() as Array<Record<string, any>>;
     expect(first!.agent).toMatchObject({ version: '0.15.1', capabilities: CAPS_015_LIST });
-    expect(first!.features).toMatchObject({ imageTransfer: false, reason: expect.stringMatching(/v0\.15\.3/) }); // db.manage (0.16 T6) is the newest missing
+    expect(first!.features).toMatchObject({ imageTransfer: false, reason: expect.stringMatching(/v0\.15\.4/) }); // swarm (0.16 T7) is the newest missing
     expect(first!.terminal).toEqual({ host: true, container: true }); // the 0.15 field is unchanged
     // From the persisted columns once the in-memory answer is gone (an offline node is not asked).
     caps.resetNodeCapabilityCache();
@@ -445,4 +445,35 @@ describe('T6 node databases against a 0.15 agent (CAPS_015)', () => {
 });
 // ── end 0.16 T6 ──
 // ── 0.16 T7 swarm ── (swarm join)
+describe('T7 Swarm against a 0.15 agent (CAPS_015)', () => {
+  it('POST /v1/servers/:id/swarm/join and /leave: 422 node_agent_outdated naming v0.15.4, only agent.ping, nothing recorded, the panel host asked nothing', async () => {
+    const { serverSwarmRoutes } = await import('../src/modules/swarm.js');
+    const app = await buildTestApp({ db });
+    await app.register(serverSwarmRoutes, { prefix: '/servers' });
+    const join = await app.inject({ method: 'POST', url: `/servers/${serverId}/swarm/join`, headers: asUser() });
+    expect(join.statusCode).toBe(422);
+    expect(join.json().error).toMatchObject({
+      code: 'node_agent_outdated',
+      message: expect.stringMatching(/\(version 0\.15\.1\) cannot join the Swarm\. Update the node agent to v0\.15\.4 or newer/),
+    });
+    expect(h.ops).toEqual(['agent.ping']);
+    expect(await db.query.servers.findFirst()).toMatchObject({ swarmNodeId: null, swarmRole: null });
+    // A 0.15.3 agent (node databases, but before `swarm`) is "update", never "switched off by the owner".
+    h.ops = [];
+    caps.resetNodeCapabilityCache();
+    h.ping = pingLine('0.15.3', [...CAPS_015_LIST, 'stream', 'docker.runSpec', 'volume.manage', 'image.manage', 'db.manage']);
+    const older = await app.inject({ method: 'POST', url: `/servers/${serverId}/swarm/join`, headers: asUser() });
+    expect([older.statusCode, older.json().error.code]).toEqual([422, 'node_agent_outdated']);
+    expect(h.ops).toEqual(['agent.ping']);
+    // Leave, for a node recorded as a member: refused before anything is drained.
+    await db.update(servers).set({ swarmNodeId: 'wrk1', swarmRole: 'worker' });
+    h.ops = [];
+    h.ping = CAPS_015;
+    const leave = await app.inject({ method: 'POST', url: `/servers/${serverId}/swarm/leave`, headers: asUser() });
+    expect([leave.statusCode, leave.json().error.code]).toEqual([422, 'node_agent_outdated']);
+    expect(h.ops).toEqual(['agent.ping']);
+    expect(await db.query.servers.findFirst()).toMatchObject({ swarmNodeId: 'wrk1' });
+    await app.close();
+  });
+});
 // ── end 0.16 T7 ──

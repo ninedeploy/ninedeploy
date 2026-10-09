@@ -159,6 +159,7 @@ GET /v1/services/:id/jobs/:jobId/runs viewer nd://scope/read/services
 GET /v1/services/:id/logs viewer nd://scope/read/services
 GET /v1/services/:id/metrics viewer nd://scope/read/services
 GET /v1/services/:id/placement viewer nd://scope/read/services
+GET /v1/services/:id/swarm viewer nd://scope/read/services
 GET /v1/services/:id/tags viewer nd://scope/read/services
 GET /v1/services/:id/targets viewer nd://scope/read/services
 GET /v1/services/:id/volumes viewer nd://scope/read/volumes
@@ -180,6 +181,7 @@ GET /v1/sso/:name/callback authed nd://scope/read/sso
 GET /v1/sso/:name/login authed nd://scope/read/sso
 GET /v1/sso/providers operator nd://scope/read/sso
 GET /v1/stats authed -
+GET /v1/swarm operator -
 GET /v1/system/docker-events operator nd://scope/read/health
 GET /v1/system/export operator nd://scope/read/health
 GET /v1/system/panel-backup operator nd://scope/read/health
@@ -327,6 +329,8 @@ POST /v1/scim/tokens operator -
 POST /v1/servers operator -
 POST /v1/servers/:id/approve operator -
 POST /v1/servers/:id/reject operator -
+POST /v1/servers/:id/swarm/join operator -
+POST /v1/servers/:id/swarm/leave operator -
 POST /v1/servers/:id/test operator -
 POST /v1/servers/announce token -
 POST /v1/servers/ssh-bootstrap operator -
@@ -369,6 +373,7 @@ POST /v1/sources operator -
 POST /v1/sources/:id/generate-deploy-key operator -
 POST /v1/sso/:name/saml-callback authed nd://scope/write/sso
 POST /v1/sso/providers operator nd://scope/write/sso
+POST /v1/swarm/init operator -
 POST /v1/system/import operator nd://scope/write/health
 POST /v1/system/panel-backup/restore operator nd://scope/write/health
 POST /v1/system/panel-backup/run operator nd://scope/write/health
@@ -417,6 +422,7 @@ PUT /v1/settings/secret-providers/vault operator nd://scope/write/settings
 PUT /v1/settings/templates-source operator nd://scope/write/settings
 PUT /v1/settings/vault operator nd://scope/write/settings
 PUT /v1/settings/vault/allowlist operator nd://scope/write/settings
+PUT /v1/swarm/settings operator -
 PUT /v1/system/panel-backup operator nd://scope/write/health
 PUT /v1/traefik/certificates/custom/:id operator -
 PUT /v1/traefik/custom-config operator -

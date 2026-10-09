@@ -378,6 +378,12 @@ export interface StackSpec {
   configs: StackConfigSpec[];
   /** Optional volumes shared across services in the stack. */
   volumes: StackVolumeSpec[];
+  /**
+   * 0.16 (multi-node T7): how Swarm resolves image references at deploy.
+   * `never` for an image preloaded onto the nodes (no registry knows it);
+   * absent = Docker's default. Other drivers ignore it.
+   */
+  resolveImage?: 'always' | 'changed' | 'never';
 }
 
 export interface StackServiceSpec {
@@ -401,6 +407,16 @@ export interface StackServiceSpec {
   healthPath?: string;
   /** Optional Docker labels — used by the local driver for Traefik routing. */
   labels: Record<string, string>;
+  // ── 0.16 multi-node T7 (Swarm): optional, every other driver ignores them ──
+  /** Swarm placement constraints (`node.labels.nd.preload.<slug>!=0`). */
+  constraints?: string[];
+  /** The container command (argv, no shell), when the service sets one. */
+  command?: string[];
+  /** Per-task ceilings: CPU in thousandths of a core, memory in MiB (0 = none). */
+  cpuLimitMilli?: number;
+  memLimitMb?: number;
+  /** Seconds a task gets between SIGTERM and SIGKILL. */
+  stopGraceSeconds?: number;
 }
 
 export interface StackNetworkSpec {
@@ -427,9 +443,11 @@ export interface StackStatus {
   name: string;
   /** Per-service snapshot. The local driver reports a single "running" /
    *  "stopped" line; Swarm reports the per-replica count. */
-  services: Array<{ name: string; state: 'running' | 'stopped' | 'partial' | 'unknown'; replicas: number }>;
+  services: Array<{ name: string; state: 'running' | 'stopped' | 'partial' | 'unknown'; replicas: number; desired?: number }>;
   /** When the stack was last applied. ISO 8601. */
   appliedAt: string;
+  /** 0.16 (T7): why the last apply failed, when it did (Swarm). */
+  error?: string;
 }
 
 // ─── Egress IP Driver (G-15) ────────────────────────────────────────────

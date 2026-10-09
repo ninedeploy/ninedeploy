@@ -6,6 +6,7 @@ import { MAX_QUEUED_PER_SERVICE } from './deployQueue.js';
 import { assertMayDeployStoredService } from './hostPrivilege.js';
 import { isOperator } from './resourceAccess.js';
 import { backupServiceVolumes } from '../modules/volumeBackups.js';
+import { isSwarmRuntimeId, localSwarmTaskFor } from './swarm.js';
 
 const MAX_OUTPUT = 60_000; // ~60 KB of captured output per run
 
@@ -155,7 +156,15 @@ async function runJobInner(db: DB, jobId: number, opts: RunJobOptions): Promise<
   // exec: run inside the runtime container — output + exit code recorded.
   // r523: a service the panel cannot exec into records a FAILED run that says
   // why, instead of a docker error (or nothing at all).
-  const unsupported = execJobUnsupportedReason(svc);
+  let unsupported = execJobUnsupportedReason(svc);
+  // ── 0.16 T7 swarm ── a Swarm service runs the job in one of its tasks on the panel host (design §7.4), or records why not.
+  let execContainer = svc.runtimeId;
+  if (!unsupported && job.command && isSwarmRuntimeId(svc.runtimeId)) {
+    const task = await localSwarmTaskFor(svc.runtimeId);
+    if ('refusal' in task) unsupported = task.refusal;
+    else execContainer = task.container;
+  }
+  // ── end 0.16 T7 ──
   if (unsupported && job.command) {
     const now = new Date();
     await db
@@ -164,7 +173,7 @@ async function runJobInner(db: DB, jobId: number, opts: RunJobOptions): Promise<
     void audit(db, null, 'job.exec_failed', `${job.name}: ${unsupported}`);
     return;
   }
-  if (!svc.runtimeId || !job.command) return;
+  if (!svc.runtimeId || !execContainer || !job.command) return;
   const [runRow] = await db
     .insert(jobRuns)
     .values({ jobId: job.id, status: 'running', startedAt: new Date() })
@@ -190,7 +199,7 @@ async function runJobInner(db: DB, jobId: number, opts: RunJobOptions): Promise<
   try {
     // `--` before the container name: a runtimeId starting with `-` must be
     // treated as an operand, not a flag (same hardening as the exec WS route).
-    await run('docker', ['exec', '--', svc.runtimeId, 'sh', '-lc', job.command], {}, sink);
+    await run('docker', ['exec', '--', execContainer, 'sh', '-lc', job.command], {}, sink);
   } catch (err) {
     // The exec layer reports success/failure only (not the command's exit
     // status) — recorded coarsely as 0/1.

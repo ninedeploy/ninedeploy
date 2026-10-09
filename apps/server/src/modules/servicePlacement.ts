@@ -1,11 +1,13 @@
 import { eq } from 'drizzle-orm';
 import { servers, services, sources, type DB } from '@ninedeploy/db';
-import { type ServicePlacementView, servicePlacement } from '@ninedeploy/schemas';
+import { type ServicePlacementView, type ServiceSwarmStatus, servicePlacement } from '@ninedeploy/schemas';
 import type { FastifyPluginAsync } from 'fastify';
 import { assertNodeCapability } from '../lib/agentCapabilities.js';
 import { audit } from '../lib/audit.js';
 import { badRequest, notFound, parseId, unprocessable } from '../lib/errors.js';
 import { loadServiceForUser } from '../lib/resourceAccess.js';
+import { serviceSwarmView, swarmEnabled } from '../lib/swarm.js';
+import { swarmServiceRefusal } from '../engine/swarmDeploy.js';
 
 /**
  * Service placement: where a service's image is built, how it travels, and
@@ -79,10 +81,17 @@ async function assertPlacementAllowed(db: DB, svc: ServiceRow, next: ServicePlac
     if (src.type !== 'registry') throw badRequest('The push registry must be a registry credential (a source of type registry).', 'placement_unsupported');
   }
   // ── 0.16 T7 swarm ──
-  // The orchestrator is validated with the Swarm rules (design §7.5); until
-  // the Swarm deploy lands, only the 0.15 default can be chosen.
-  if (next.orchestrator === 'swarm') {
-    throw unprocessable('Swarm deployments are not available in this release; the service keeps running plain containers.', 'swarm_unavailable');
+  // Switching to Swarm (design §7.1, §7.5) needs a service Swarm can run and
+  // Swarm enabled on this panel; the deploy re-checks both and the cluster.
+  // Nothing is deployed here: the next deploy runs the service on Swarm.
+  // Switching back to containers is always allowed: the next deploy starts
+  // the container, and the stack is removed once it is live and routed.
+  if (next.orchestrator === 'swarm' && svc.orchestrator !== 'swarm') {
+    const reason = await swarmServiceRefusal(db, svc);
+    if (reason) throw unprocessable(reason, 'swarm_unsupported');
+    if (!(await swarmEnabled(db))) {
+      throw unprocessable('Swarm is not enabled on this panel: an operator initialises and enables it first (Settings → Swarm).', 'swarm_disabled');
+    }
   }
   // ── end 0.16 T7 ──
 
@@ -108,6 +117,15 @@ export const servicePlacementRoutes: FastifyPluginAsync = async (app) => {
     const id = parseId((req.params as { id: string }).id);
     return placementView(await loadServiceForUser(app.db, id, req.user!));
   });
+
+  // ── 0.16 T7 swarm ──
+  // The Swarm tasks of one service (design §7.5): anyone who can see the
+  // service. A service not on Swarm answers `stack: null`.
+  app.get('/:id/swarm', { onRequest: [app.authenticate] }, async (req): Promise<ServiceSwarmStatus> => {
+    const id = parseId((req.params as { id: string }).id);
+    return serviceSwarmView(await loadServiceForUser(app.db, id, req.user!));
+  });
+  // ── end 0.16 T7 ──
 
   app.put('/:id/placement', { onRequest: [app.authenticate], preHandler: app.requireOperator }, async (req): Promise<ServicePlacementView> => {
     const id = parseId((req.params as { id: string }).id);

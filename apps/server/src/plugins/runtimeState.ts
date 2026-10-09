@@ -7,6 +7,7 @@ import { capture } from '../lib/exec.js';
 import { replicaNames } from '../engine/dockerNames.js';
 import { agentOp } from '../lib/agentClient.js';
 import { serviceTargets } from '@ninedeploy/db';
+import { isSwarmRuntimeId } from '../lib/swarm.js';
 
 // A tight loop matters for the boot promise ("everything comes back on its
 // own"): the first pass runs at startup, and anything it cannot fix — e.g. a
@@ -389,6 +390,9 @@ export default fp(
         for (const svc of rows) {
           const runtimeId = svc.runtimeId;
           if (!runtimeId) continue;
+          // ── 0.16 T7 swarm ── Swarm restarts its own tasks; a Swarm service has no container to inspect or revive here.
+          if (isSwarmRuntimeId(runtimeId)) continue;
+          // ── end 0.16 T7 ──
           try {
             if (svc.type === 'pm2') {
               let live = await pm2Status(runtimeId);

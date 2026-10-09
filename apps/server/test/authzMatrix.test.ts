@@ -1153,6 +1153,20 @@ export const MATRIX: Record<string, Rule> = {
   // ── 0.16 T6 node databases ──
   // ── end 0.16 T6 ──
   // ── 0.16 T7 swarm ──
+  // Swarm is an instance resource on the panel host's daemon: operator only.
+  // `init` mutates the host daemon (and needs an interactive session with
+  // step-up), so its at-floor call is not made here. The settings call
+  // disables (no step-up); join/leave have no server row seeded. A service's
+  // Swarm tasks are readable with any seat on the service.
+  'GET /v1/swarm': OP,
+  'POST /v1/swarm/init': R('operator', {
+    body: () => ({ advertiseAddr: '10.0.0.1' }),
+    noPositive: 'runs `docker swarm init` on the panel host from an interactive session with step-up; covered by test/swarmRoutes.test.ts',
+  }),
+  'PUT /v1/swarm/settings': R('operator', { body: () => ({ enabled: false }) }),
+  'POST /v1/servers/:id/swarm/join': R('operator', { allow404: 'no server row is seeded' }),
+  'POST /v1/servers/:id/swarm/leave': R('operator', { allow404: 'no server row is seeded' }),
+  'GET /v1/services/:id/swarm': R('viewer'),
   // ── end 0.16 T7 ──
 };
 

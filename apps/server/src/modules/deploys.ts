@@ -21,6 +21,7 @@ import { badRequest, notFound, parseId as num } from '../lib/errors.js';
 import { websocketBearerToken } from '../lib/websocketAuth.js';
 import { dockerTransport, isEngineTransport, openExecTty, SHELL_CMD } from '../lib/dockerTty.js';
 import { reserveLive, runTerminalSession, startLegacyExecRecord, type TerminalSocket } from '../lib/terminalSessions.js';
+import { isSwarmRuntimeId, localSwarmTaskFor } from '../lib/swarm.js';
 
 /**
  * Statuses that mean the worker or the pipeline may still write to the row.
@@ -585,7 +586,18 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
       socket.close(1008, 'service runs on a remote node');
       return;
     }
-    const targetContainer = svc.runtimeId;
+    let targetContainer = svc.runtimeId;
+    // ── 0.16 T7 swarm ── a Swarm service has no container of its own name: open a task on the panel host, or say where it runs.
+    if (isSwarmRuntimeId(targetContainer)) {
+      const task = await localSwarmTaskFor(targetContainer);
+      if ('refusal' in task) {
+        socket.send(`\x1b[33m✕ ${task.refusal}\x1b[0m\r\n`);
+        socket.close(1008, 'no swarm task on the panel host');
+        return;
+      }
+      targetContainer = task.container;
+    }
+    // ── end 0.16 T7 ──
     void audit(app.db, user.id, 'service.exec', svc.name);
     const recorder = await startLegacyExecRecord(app.db, {
       userId: user.id,

@@ -7,6 +7,7 @@ import { containerIp } from '../engine/builders/docker.js';
 import { TRAEFIK_CONTAINER } from '../engine/proxy.js';
 import { buildProbeUrl, safeProbePath } from '../lib/probeUrl.js';
 import { ensureDockerImage } from '../lib/dockerPull.js';
+import { isSwarmRuntimeId } from '../lib/swarm.js';
 
 // Pinned, never `:latest` — this image runs with the target's network
 // namespace on every probe (lib/inventory.ts pins helper images for the same
@@ -130,6 +131,9 @@ async function probeService(svc: {
   // the local one answers null and used to paint every remote service red.
   // The node's own agent health-checked the deploy; report "unknown" here.
   if (svc.serverId != null) return { healthy: null, responseMs: null };
+  // ── 0.16 T7 swarm ── a Swarm service has no container of its own name; Traefik reaches its VIP on the overlay.
+  if (isSwarmRuntimeId(runtimeId)) return { healthy: await probeViaMesh(runtimeId, svc.port, path), responseMs: null };
+  // ── end 0.16 T7 ──
   const ip = await containerIp(runtimeId);
   if (!ip) return { healthy: false, responseMs: null }; // container not running
   // Race the transports: the direct fetch and the mesh probe run CONCURRENTLY

@@ -32,7 +32,8 @@ import {
 import type { BuildSlots } from './buildSlots.js';
 import { shipImageByStream } from '../lib/imageTransfer.js';
 import { remoteVolumeRefusal } from '../lib/remoteVolumes.js';
-import { isSwarmService } from './swarmDeploy.js';
+import { createSwarmBuilder, isSwarmService, swarmDeployRefusal, withSwarmRetirement } from './swarmDeploy.js';
+import { isSwarmRuntimeId } from '../lib/swarm.js';
 import { analyzeRepo, summarizeInsights } from '../lib/frameworks.js';
 import { upsertInsights } from './repoInsights.js';
 import { connectionString, ENGINES } from './database.js';
@@ -723,15 +724,21 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   // so the decision lives here rather than in each queue path (the routes add a
   // friendlier upfront 400 on top).
   // ── 0.16 T7 swarm (M5) ──
-  // A service on the Swarm orchestrator deploys through engine/swarmDeploy.ts
-  // (design §7.4). The T1 stub answers false for every service, so no deploy
-  // takes this branch and every service runs plain containers as before.
-  if (isSwarmService(service)) {
-    const reason = 'Swarm deployments are not available in this release';
-    log(`✗ ${reason}`);
-    await safeFail(db, deploymentId, service.id, service.runtimeId);
-    await auditOutcome(db, service, deploymentId, 'failed', reason);
-    return;
+  // A service on the Swarm orchestrator (`orchestrator = 'swarm'`, opt-in per
+  // service) deploys through engine/swarmDeploy.ts (design §7.4): what Swarm
+  // cannot run (§7.1) or a cluster that is not ready is refused here, before
+  // anything is built; the Swarm builder chosen below then builds on the
+  // panel, distributes the image and runs `docker stack deploy`. A NULL
+  // orchestrator — every service until an operator opts one in — skips this.
+  const onSwarm = isSwarmService(service);
+  if (onSwarm) {
+    const reason = await swarmDeployRefusal(db, service);
+    if (reason) {
+      log(`✗ ${reason}`);
+      await safeFail(db, deploymentId, service.id, service.runtimeId);
+      await auditOutcome(db, service, deploymentId, 'failed', reason);
+      return;
+    }
   }
   // ── end 0.16 T7 ──
 
@@ -831,6 +838,14 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
         : createRemoteDockerBuilder(call, { nodeLabel: label, gitCredential, ...(prebuiltImage ? { prebuiltImage } : {}) });
     builder = remoteBuilderFor();
   }
+  // ── 0.16 T7 swarm: the builder (design §7.4, §7.5) ──
+  // The Swarm builder for a Swarm service. A service that left Swarm keeps its
+  // stack as the previous runtime until the new container is live and routed;
+  // the wrapper routes that one retirement to the stack. A runtime id that is
+  // not a Swarm service (every non-Swarm row) leaves the builder untouched.
+  if (onSwarm) builder = createSwarmBuilder(db);
+  else if (builder && isSwarmRuntimeId(service.runtimeId)) builder = withSwarmRetirement(db, builder);
+  // ── end 0.16 T7 ──
   if (!builder) {
     log(`✗ Unknown service type: ${service.type}`);
     await safeFail(db, deploymentId, service.id, service.runtimeId);

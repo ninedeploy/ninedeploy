@@ -55,6 +55,7 @@ import { pm2Builder, pm2Logs, pm2Restart, pm2Start, pm2Stop } from '../engine/bu
 import { deleteLog } from '../engine/logs.js';
 import { writeDynamicConfig } from '../engine/proxy.js';
 import { removeServiceBridgeIfEmpty, serviceBridgeName } from '../lib/serviceBridge.js';
+import { isSwarmRuntimeId, removeSwarmStack, restartSwarmService, scaleSwarmService, swarmServiceLogs, swarmSlugOf } from '../lib/swarm.js';
 import { applyDefaultTags, replaceServiceTags } from './serviceTags.js';
 import { analyseComposeContent, stackEnvSeeds, stackPublicUrl } from './composeStacks.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
@@ -886,6 +887,12 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     log: (msg: string) => void,
   ): Promise<void> => {
     if (!svc.runtimeId) return;
+    // ── 0.16 T7 swarm ── a Swarm runtime is its stack (and overlay) on the panel host's swarm.
+    if (isSwarmRuntimeId(svc.runtimeId)) {
+      await removeSwarmStack(app.db, swarmSlugOf(svc.runtimeId) as string, log);
+      return;
+    }
+    // ── end 0.16 T7 ──
     if (svc.serverId != null) {
       const serverId = svc.serverId;
       if (svc.type === 'compose') {
@@ -1022,7 +1029,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     const [svc] = await app.db.update(services).set(updateData).where(eq(services.id, id)).returning();
     if (!svc) throw notFound('Service not found');
     let liveApplied = false;
-    if (svc.type === 'docker' && svc.status === 'running' && svc.runtimeId) {
+    // 0.16 T7: a Swarm service takes new limits at its next deploy (the stack is redeployed), never by `docker update`.
+    if (svc.type === 'docker' && svc.status === 'running' && svc.runtimeId && !isSwarmRuntimeId(svc.runtimeId)) {
       const argv = ['update'];
       if (svc.cpuShares > 0) argv.push('--cpu-shares', String(svc.cpuShares));
       if (svc.cpuLimitMilli > 0) argv.push('--cpus', String(svc.cpuLimitMilli / 1000));
@@ -1186,7 +1194,15 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // status, unless something else has moved the row since.
     await app.db.update(services).set({ status: 'stopped' }).where(eq(services.id, svc.id));
     try {
-      if (svc.type === 'pm2') {
+      // ── 0.16 T7 swarm ── stop = scale to 0 tasks (the stack and its spec stay).
+      if (isSwarmRuntimeId(svc.runtimeId)) {
+        await scaleSwarmService(svc.runtimeId, 0).catch((err: unknown) => {
+          if (isDaemonDown(err)) throw daemonUnavailable(err);
+          if (!isMissingRuntime(err)) throw err;
+          req.log.warn({ err, runtimeId: svc.runtimeId }, 'Swarm service already gone; stop is idempotent');
+        });
+      } else if (svc.type === 'pm2') {
+        // ── end 0.16 T7 ──
         // Stopping a process that is already gone is success, not failure.
         await pm2Stop(svc.runtimeId).catch((err: unknown) => {
           if (!isMissingRuntime(err)) throw err;
@@ -1235,7 +1251,19 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     const svc = await loadServiceForUser(app.db, num((req.params as { id: string }).id), req.user!);
     await assertServiceRole(app.db, svc, req.user!, 'member');
     if (!svc?.runtimeId) throw notFound('Service not found or not deployed');
-    if (svc.type === 'pm2') {
+    // ── 0.16 T7 swarm ── start = scale back to the service's replicas.
+    if (isSwarmRuntimeId(svc.runtimeId)) {
+      const swarmId = svc.runtimeId;
+      await scaleSwarmService(swarmId, svc.replicas ?? 1).catch(async (err: unknown) => {
+        if (isDaemonDown(err)) throw daemonUnavailable(err);
+        if (isMissingRuntime(err)) {
+          await app.db.update(services).set({ status: 'error' }).where(eq(services.id, svc.id));
+          throw runtimeGone('Swarm service', swarmId);
+        }
+        throw err;
+      });
+    } else if (svc.type === 'pm2') {
+      // ── end 0.16 T7 ──
       await pm2Start(svc.runtimeId).catch(async (err: unknown) => {
         if (isMissingRuntime(err)) {
           await app.db.update(services).set({ status: 'error' }).where(eq(services.id, svc.id));
@@ -1282,7 +1310,19 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     const svc = await loadServiceForUser(app.db, num((req.params as { id: string }).id), req.user!);
     await assertServiceRole(app.db, svc, req.user!, 'member');
     if (!svc?.runtimeId) throw notFound('Service not found or not deployed');
-    if (svc.type === 'pm2') {
+    // ── 0.16 T7 swarm ── restart = `docker service update --force` (a rolling restart of every task).
+    if (isSwarmRuntimeId(svc.runtimeId)) {
+      const swarmId = svc.runtimeId;
+      await restartSwarmService(swarmId).catch(async (err: unknown) => {
+        if (isDaemonDown(err)) throw daemonUnavailable(err);
+        if (isMissingRuntime(err)) {
+          await app.db.update(services).set({ status: 'error' }).where(eq(services.id, svc.id));
+          throw runtimeGone('Swarm service', swarmId);
+        }
+        throw err;
+      });
+    } else if (svc.type === 'pm2') {
+      // ── end 0.16 T7 ──
       await pm2Restart(svc.runtimeId).catch(async (err: unknown) => {
         if (isMissingRuntime(err)) {
           await app.db.update(services).set({ status: 'error' }).where(eq(services.id, svc.id));
@@ -1344,6 +1384,9 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       }
     }
     try {
+      // ── 0.16 T7 swarm ── every task's logs, wherever it runs.
+      if (isSwarmRuntimeId(svc.runtimeId)) return { lines: await swarmServiceLogs(svc.runtimeId) };
+      // ── end 0.16 T7 ──
       if (svc.serverId != null) {
         return { lines: await remoteDocker(svc.serverId, 'docker.logs', { name: svc.runtimeId }) };
       }

@@ -204,8 +204,8 @@ describe('the op registry and its wiring (M8)', () => {
     for (const cap of ['build.nixpacks', 'build.railpack', 'git.sshkey']) expect(tail, cap).toContain(cap);
     // T6's ops exist (agentOps/databases.ts).
     expect(tail, 'db.manage').toContain('db.manage');
-    // Not before their ops exist (T7).
-    for (const cap of ['swarm']) expect(tail, cap).not.toContain(cap);
+    // T7's ops exist (agentOps/swarm.ts).
+    expect(tail, 'swarm').toContain('swarm');
     for (const def of registry.AGENT_OPS.values()) expect(tail).toContain(def.cap);
   });
 

@@ -7,6 +7,7 @@ import type { Params } from './operands.js';
 import { switchedOff } from './operands.js';
 import { runSpecOps } from './runSpec.js';
 import { streamOps } from './stream.js';
+import { swarmOps } from './swarm.js';
 import { nodeVolumeOps, volumeOps } from './volumes.js';
 
 /**
@@ -67,6 +68,7 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
   databaseOps,
   // ── end 0.16 T6 ──
   // ── 0.16 T7 swarm ── (agentOps/swarm.ts)
+  swarmOps,
   // ── end 0.16 T7 ──
 ];
 

@@ -14,6 +14,15 @@ To rehearse the 0.15 → 0.14 rollback on throwaway containers, run `node script
 
 ---
 
+## Swarm services → a release before Swarm (0.15.3 or earlier)
+
+Swarm services **keep serving** after the rollback (they degrade instead of being refused). Every other multi-node feature makes the older release refuse to act.
+
+- **Routes keep working:** the older release routes to `runtimeId` (`nd-<slug>_web`) like any container, and Traefik stays attached to the service's overlay, as long as the Traefik container is not recreated. The older release does not re-attach Traefik to `nd-swarm-*` overlays after Traefik restarts, so after such a restart those routes return 502 until the service is redeployed.
+- **The next deploy of such a service runs it as plain containers** on the panel host (`services.replicas` round-robin clones, no Swarm). The route moves to the new container, and **the stack keeps running without a route**. The image is pullable from the registry or already on the panel host, so that deploy works.
+- **Clean up** once the local deploy is live: `docker stack ls`, then `docker stack rm nd-<slug>` and `docker network rm nd-swarm-<slug>` for each NineDeploy stack. Run `docker swarm leave --force` on the nodes, and then on the panel host, only if you are giving up Swarm.
+- `/v1/orchestrators` still lists the stacks. A downgraded node agent refuses join and leave, but the node stays in the swarm, because membership lives in the node's Docker daemon.
+
 ## 0.15 → 0.14
 
 0.14 boots on 0.15 data. Migration 0071 stays recorded, and its three tables (`access_grants`, `terminal_sessions`, `traffic_rollups`) are left untouched and ignored, as are the 0.15 settings keys. Upgrading to 0.15 again picks everything up where it was. Every effect below is a **loss** of access or of a feature, never a gain.

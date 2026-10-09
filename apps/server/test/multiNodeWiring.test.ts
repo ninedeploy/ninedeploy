@@ -210,13 +210,19 @@ describe('pipeline hooks (M5)', () => {
     expect(await resolveBuildPlacement({} as never, { id: 1, serverId: 4 })).toEqual({ kind: 'target' });
   });
 
-  it('branches on Swarm before the builder is chosen, and the T1 stub never takes it', () => {
-    expect(src).toMatch(/import \{ isSwarmService \} from '\.\/swarmDeploy\.js';/);
-    const swarmAt = src.indexOf('if (isSwarmService(service))');
+  it('branches on Swarm before the builder is chosen; only an opted-in service takes it (0.16 T7 filled the stub)', () => {
+    expect(src).toMatch(/import \{[^}]*\bisSwarmService\b[^}]*\} from '\.\/swarmDeploy\.js';/);
+    const swarmAt = src.indexOf('const onSwarm = isSwarmService(service);');
     expect(swarmAt).toBeGreaterThan(0);
     expect(swarmAt).toBeLessThan(src.indexOf('let builder = builders[service.type];'));
-    expect(isSwarmService({ orchestrator: 'swarm' })).toBe(false);
+    // The Swarm builder replaces the container builder, before the unknown-type check.
+    const pick = src.indexOf('if (onSwarm) builder = createSwarmBuilder(db);');
+    expect(pick).toBeGreaterThan(src.indexOf('let builder = builders[service.type];'));
+    expect(pick).toBeLessThan(src.indexOf('if (!builder) {'));
+    expect(isSwarmService({ orchestrator: 'swarm' })).toBe(true);
     expect(isSwarmService({ orchestrator: null })).toBe(false);
+    expect(isSwarmService({ orchestrator: 'container' })).toBe(false);
+    expect(isSwarmService({ orchestrator: 'swarm', isEphemeralPreview: true })).toBe(false);
   });
 
   it('hands the fan-out a per-target refusal hook (T4 filled it: the database host rule, volumes / cmd / socket; hooks only warn)', () => {
