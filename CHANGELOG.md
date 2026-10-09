@@ -9,6 +9,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-10-09
+
+> Remote nodes, part 1: builds, private clones and volumes on nodes. Everything new is off until a node runs the updated agent; nothing changes for single-host installs.
+
+### Upgrade notes
+
+- One additive migration, `0072_multi_node`: a new `image_transfers` table and nullable or defaulted columns on databases, services, servers, sources, backups and deployments. No existing row changes behaviour.
+- **The new node features need node agent v0.15.2.** Re-run a node's bootstrap from the Servers page to update it. An older agent keeps working exactly as before. Anything that needs the new agent is refused with "update the node agent to v0.15.2", and nothing else is sent to it.
+- **The runtime image now includes `openssh-client`** (about 5–6 MB). Without it, deploy-key clones could not run in Docker installs or on nodes.
+- **Railpack on nodes:** after the node agent is updated, a Railpack service placed on a node builds with Railpack itself instead of the Dockerfile stopgap. The resulting image can differ.
+- **Scheduled backups of a service on a node** now back up its volume on that node. Before, they skipped it or copied a stale volume of the same name from the panel host.
+- **Private repositories on nodes:** a source's personal access token or deploy key is sent to a node only after you turn on "Allow on nodes" for that source (this asks for your password). With the updated agent, a personal access token on a node needs that agent too, so the node owner's switch (`NINEDEPLOY_AGENT_STATIC_CREDENTIALS=off`) can refuse it. GitHub App sources are unaffected. Building on the panel and shipping the image (coming next) keeps credentials off nodes entirely.
+- **Rolling back to 0.15.1 is supported.** The new columns and table are ignored. Node volumes and backups stay where they are. Services that use the new node features are refused by 0.15.1 as before.
+- Verified before release: in-place upgrades from 0.15.1 and from 0.10.45, a rehearsed rollback to 0.15.1, and compatibility tests in both directions between panel and agent versions. The node features themselves are covered by unit tests. A two-host smoke arrives with the next part of this series.
+
+### Added
+
+- **Builds on nodes.** Nixpacks and Railpack run on the node. The panel works out the build pack on its own checkout with the same rules as a local build, so services that already build on a node send the same build inputs.
+- **Private clones on nodes.** A personal access token or deploy key is sent only for one job, over the sealed agent transport. A deploy key is kept in memory-backed storage on the node and removed afterwards, even when the job fails. The node checks the Git host's SSH key: it records the key on first use and refuses a different one later.
+- **Volumes on nodes.**
+  - Create, list, back up and restore volumes on a node. Backups are encrypted like the panel's; the node's data never touches the panel's disk unencrypted.
+  - Docker services on a node can use volume attachments, a command override and the Docker socket.
+  - An attachment shared with a service or database on another host is refused.
+- **Node agent.**
+  - A sealed, checksum-verified data channel for images and volumes.
+  - A structured run operation that accepts a validated spec, never a raw command line.
+  - Image archives are checked before and after `docker load`, so an archive cannot replace the proxy's or NineDeploy's own image tags.
+  - The Servers API shows each node's agent version and features.
+
+### Fixed
+
+- Compose stacks on a node with attached volumes failed at `compose up` ("external volume not found"). Missing service volumes are now created first.
+- With a node selected, the volume file manager opened the panel host's volume of the same name. It now refuses.
+- Deploy-key clones failed in Docker installs because the image had no SSH client.
+
 ## [0.15.1] - 2026-10-09
 
 > Security patch: patched releases of two dependencies of the MCP server.

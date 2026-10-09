@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.15.1';
+export const VERSION = '0.15.2';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.15.2',
+    date: '2026-10-09',
+    title: 'Remote Nodes: Builds, Clones and Volumes',
+    changes: [
+      'Remote nodes, part 1: nodes build with Nixpacks and Railpack, can clone private repositories (opt in per source under Sources, with a password check), and get volumes with backups and restore. Update each node agent to v0.15.2 to use them; older agents keep working as before.',
+      'The image now includes an SSH client, so deploy-key clones work in Docker installs. Compose stacks with volumes on nodes no longer fail to start. Rolling back to 0.15.1 is supported.',
+    ],
+  },
+{
     version: '0.15.1',
     date: '2026-10-09',
     title: 'Security Patch — MCP Dependencies',
