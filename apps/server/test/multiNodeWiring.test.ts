@@ -202,8 +202,9 @@ describe('pipeline hooks (M5)', () => {
   const src = read('../src/engine/pipeline.ts');
   const labelled = raw('../src/engine/pipeline.ts');
 
-  it('asks for the build placement inside the deploy, and the T1 stub answers `target` (build where it runs)', async () => {
-    expect(src).toMatch(/import \{ resolveBuildPlacement \} from '\.\/buildPlacement\.js';/);
+  it('asks for the build placement inside the deploy, and a NULL build_on answers `target` (build where it runs) without a read', async () => {
+    // 0.16 T4 filled the stub: the import now names more of the module.
+    expect(src).toMatch(/import \{[^}]*resolveBuildPlacement[^}]*\} from '\.\/buildPlacement\.js';/);
     expect(src.match(/await resolveBuildPlacement\(db, service\)/g)).toHaveLength(1);
     expect(labelled).toContain('// ── 0.16 T4 build placement (M5) ──');
     expect(await resolveBuildPlacement({} as never, { id: 1, serverId: 4 })).toEqual({ kind: 'target' });
@@ -218,8 +219,11 @@ describe('pipeline hooks (M5)', () => {
     expect(isSwarmService({ orchestrator: null })).toBe(false);
   });
 
-  it('hands the fan-out a per-target refusal hook that refuses no target yet', () => {
-    expect(src).toMatch(/targetRefusal: async \(\) => null,/);
+  it('hands the fan-out a per-target refusal hook (T4 filled it: the database host rule, volumes / cmd / socket; hooks only warn)', () => {
+    const hook = src.slice(src.indexOf('targetRefusal: async (target) =>'), src.indexOf('// ── end 0.16 T4 ──', src.indexOf('targetRefusal: async (target) =>')));
+    expect(hook.length).toBeGreaterThan(0);
+    for (const check of ['remoteDatabaseRefusal(db, onTarget)', 'remoteVolumeRefusal(db, onTarget)', 'deploy hooks run on the primary only']) expect(hook).toContain(check);
+    expect(hook).not.toContain('if (hook) return hook');
     expect(read('../src/engine/fanout.ts')).toMatch(/const refusal = ctx\.targetRefusal \? await ctx\.targetRefusal\(target\) : null;/);
   });
 

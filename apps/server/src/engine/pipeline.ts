@@ -16,9 +16,22 @@ import { nodeGitCredentialSource } from '../lib/nodeGitCredential.js';
 import { agentOp } from '../lib/agentClient.js';
 import { nodeLabel } from '../lib/agentCapabilities.js';
 import { createRemoteDockerBuilder } from './builders/remoteDocker.js';
-import { deployToTargets, pullableReleaseRef, recordFanoutResults, targetsForService } from './fanout.js';
+import { deployToTargets, type FanoutContext, pullableReleaseRef, recordFanoutResults, targetsForService } from './fanout.js';
 import { createRemoteComposeBuilder } from './builders/remoteCompose.js';
-import { resolveBuildPlacement } from './buildPlacement.js';
+import {
+  resolveBuildPlacement,
+  type BuildPlacement,
+  buildElsewhere,
+  type PlacedBuild,
+  primaryBuildPack,
+  primaryImage,
+  recordBuildHost,
+  retainBuildHostTags,
+  shipPlacedBuild,
+} from './buildPlacement.js';
+import type { BuildSlots } from './buildSlots.js';
+import { shipImageByStream } from '../lib/imageTransfer.js';
+import { remoteVolumeRefusal } from '../lib/remoteVolumes.js';
 import { isSwarmService } from './swarmDeploy.js';
 import { analyzeRepo, summarizeInsights } from '../lib/frameworks.js';
 import { upsertInsights } from './repoInsights.js';
@@ -565,6 +578,12 @@ type PipelineKernelCtx = {
    * emitted by nothing.
    */
   events?: import('../kernel/types.js').IEventBus;
+  /**
+   * Multi-node (design §6.3, M2): the worker's build slots per build host. A
+   * build on the panel or a build server waits for one; absent (direct
+   * callers) a module-level default is used.
+   */
+  buildSlots?: BuildSlots;
 };
 
 /** Run the full deploy pipeline for one deployment row. */
@@ -685,8 +704,10 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   }
 
   // Remote-server deploys route through the node's agent (r037). Everything
-  // this builder cannot honestly do on a node — PM2, Compose, and Nixpacks
-  // source builds — is refused here with a reason naming the limit, because a
+  // a node cannot honestly do — PM2, the static pack built on the node, deploy
+  // hooks, panel-host databases, and what its agent is too old for — is
+  // refused here (D8: this used to name Compose and Nixpacks, which nodes now
+  // run) with a reason naming the limit, because a
   // deploy that lands on the panel host while the panel reports the node is
   // strictly worse than a failed deployment you can read.
   //
@@ -707,7 +728,41 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   }
   // ── end 0.16 T7 ──
 
+  // ── 0.16 T4 build placement (M5) ──
+  // Where the image is built (design §6.2, §6.3), decided before the builder
+  // and its refusals. A NULL `build_on` (every pre-0072 row) answers `target`
+  // without a read, and the deploy builds where it runs exactly as before. A
+  // placement that cannot be honoured (its build server was removed) fails
+  // the deploy; it never falls back to another host.
+  let placement: BuildPlacement;
+  try {
+    placement = await resolveBuildPlacement(db, service);
+  } catch (err) {
+    const reason = msg(err);
+    log(`✗ ${reason}`);
+    await safeFail(db, deploymentId, service.id, service.runtimeId);
+    await auditOutcome(db, service, deploymentId, 'failed', reason);
+    return;
+  }
+  if (placement.kind !== 'target' && service.type !== 'docker') {
+    const reason = `Building on ${placement.kind === 'panel' ? 'the panel host' : 'a build server'} applies to docker services; a ${service.type} service builds where it runs. Set Build on: target.`;
+    log(`✗ ${reason}`);
+    await safeFail(db, deploymentId, service.id, service.runtimeId);
+    await auditOutcome(db, service, deploymentId, 'failed', reason);
+    return;
+  }
+  if (placement.kind !== 'target' && (service.image || !service.repoUrl)) {
+    log('Build placement: this service runs a prebuilt image, so there is nothing to build — it is pulled where it runs.');
+    placement = { kind: 'target' };
+  }
+  /** The placement of a build that runs away from where the service runs. */
+  const buildAway = placement.kind === 'target' ? null : placement;
+  // ── end 0.16 T4 ──
+
   let builder = builders[service.type];
+  // 0.16 T4: lifted so a build placed elsewhere can rebind the node builder
+  // with the shipped image.
+  let remoteBuilderFor: ((prebuiltImage?: { tag: string; imageId: string }) => Builder) | null = null;
   if (service.serverId != null) {
     const serverId = service.serverId;
     if (!remoteDeploySupported(service.type)) {
@@ -719,8 +774,9 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     }
     // The static build pack executes npm on the host that runs the panel —
     // there is no remote operation for it. Refuse loudly rather than letting
-    // the remote builder fail on the missing Dockerfile.
-    if ((buildConfig?.buildPack ?? 'auto') === 'static') {
+    // the remote builder fail on the missing Dockerfile. (0.16 T4: built on
+    // the panel and shipped, it is fine; a build server refuses it itself.)
+    if ((buildConfig?.buildPack ?? 'auto') === 'static' && buildAway === null) {
       const reason =
         'the static build pack runs its build commands on the panel host and has no remote implementation';
       log(`✗ ${reason}`);
@@ -762,9 +818,11 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     // 0.13 (T5): a GitHub App repository is checked out on the node with a
     // per-job token (minted, sent sealed, revoked by the builder).
     const gitCredential = nodeGitCredentialSource(db, service);
-    builder = service.type === 'compose'
-      ? createRemoteComposeBuilder(call, { nodeLabel: label, gitCredential })
-      : createRemoteDockerBuilder(call, { nodeLabel: label, gitCredential });
+    remoteBuilderFor = (prebuiltImage) =>
+      service.type === 'compose'
+        ? createRemoteComposeBuilder(call, { nodeLabel: label, gitCredential })
+        : createRemoteDockerBuilder(call, { nodeLabel: label, gitCredential, ...(prebuiltImage ? { prebuiltImage } : {}) });
+    builder = remoteBuilderFor();
   }
   if (!builder) {
     log(`✗ Unknown service type: ${service.type}`);
@@ -798,25 +856,21 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   // F860: the template's own database (from the reconcile) — the only
   // attachment the template's env contract applies to.
   let templateDatabaseId: number | undefined;
+  // 0.16 T4: lifted for the fan-out — the image built away from the hosts
+  // (when placed), the effective build config and the volume attachments.
+  let placed: PlacedBuild | undefined;
+  let fanoutBuildConfig: typeof buildConfig = buildConfig;
+  let fanoutAttachments: Array<{ volumeName: string; containerPath: string; readOnly?: boolean | null }> = [];
   try {
     // Cancel checkpoint: the route may have flipped the row between claim and here.
     if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled();
 
-    // ── 0.16 T4 build placement (M5) ──
-    // Where the image is built (design §6.3). The T1 stub answers `target`
-    // for every service, so every deploy builds where it runs, exactly as
-    // before; T4 replaces this block with the build-host branch and shipping.
-    const placement = await resolveBuildPlacement(db, service);
-    if (placement.kind !== 'target') {
-      throw new Error(`Building on ${placement.kind === 'panel' ? 'the panel host' : 'a build server'} is not available in this release`);
-    }
-    // ── end 0.16 T4 ──
-
     // r520/r582: a railpack build that cannot run here (no Railpack CLI, or
     // no BuildKit daemon via BUILDKIT_HOST) is refused before the checkout,
     // not after it — and on the panel host only: a node builds through its
-    // agent, never railpack.
-    if (service.serverId == null && service.type === 'docker' && !service.image && buildConfig?.buildPack === 'railpack') {
+    // agent, never railpack. (0.16 T4: a build placed elsewhere checks the
+    // host that builds it, in buildElsewhere.)
+    if (service.serverId == null && buildAway === null && service.type === 'docker' && !service.image && buildConfig?.buildPack === 'railpack') {
       const railpackRefusal = await railpackUnavailableReason();
       if (railpackRefusal) throw new Error(railpackRefusal);
     }
@@ -986,6 +1040,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       }
       effectiveBuildConfig = merged;
     }
+    fanoutBuildConfig = effectiveBuildConfig;
 
     // `env.required` is a contract the repo declares, not something the panel
     // can know. A missing key is the classic "container boots, then crashes"
@@ -1061,11 +1116,9 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       env: runtimeEnvironment.values,
       // Registry-type sources provide private-image credentials.
       registryAuth: await loadRegistryAuth(db, service, log),
-      // No serverId / agentCall: a service pinned to a remote node never
-      // reaches this point (the refusal above), and binding a caller no
-      // builder reads is what made remote deploys look implemented in the
-      // first place. Wire them back in the same change that teaches a builder
-      // to use them — see lib/remoteDeploy.ts.
+      // No serverId / agentCall: a node-pinned service gets the remote
+      // builders above, which bind their own agent caller (D8: this used to
+      // say a node service never reached this point).
       // Additional named-volume attachments. Loaded fresh on every deploy so
       // a mid-flight attach (before this deployment claims its slot) is
       // reflected in the next run, but NOT in any already-queued deployment
@@ -1089,7 +1142,32 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       await runHook(buildConfig.preDeployCmd, workDir, ctx.env, log);
     }
 
+    fanoutAttachments = ctx.volumeAttachments ?? [];
     log('##[stage:BUILD:running] Building image and compiling dependencies');
+    // ── 0.16 T4 build placement: build away, ship, then run (design §6.3) ──
+    // A build failure fails the deploy before any host that runs the service
+    // is touched; a transfer failure (retried once) fails it before the
+    // primary is switched — the previous runtime keeps serving.
+    if (buildAway !== null) {
+      placed = await buildElsewhere(db, buildAway, ctx, { slots: kernelCtx?.buildSlots });
+      await recordBuildHost(db, deploymentId, placed);
+      if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled();
+      const shipped = await shipPlacedBuild(db, placed, service.serverId ?? null, { deploymentId, serviceId: service.id }, log);
+      if (service.serverId != null && remoteBuilderFor) {
+        // The run phase's port conventions of the pack that built it (the
+        // node builder applies them only to builds it ran itself).
+        const port = ctx.service.port ?? (placed.builtWithNixpacks ? 3000 : placed.builtStatic ? 80 : null);
+        if (port !== ctx.service.port) {
+          log(`No container port configured; using the ${placed.builtStatic ? 'static image' : 'Nixpacks'} default ${port}/tcp for runtime and Traefik`);
+          ctx.service = { ...ctx.service, port };
+        }
+        if (placed.builtWithNixpacks && ctx.env['PORT'] === undefined && port != null) ctx.env['PORT'] = String(port);
+        builder = remoteBuilderFor(shipped);
+      } else {
+        ctx.prebuiltImage = { ...shipped, builtWithNixpacks: placed.builtWithNixpacks, builtStatic: placed.builtStatic };
+      }
+    }
+    // ── end 0.16 T4 ──
     runtime = await builder.buildAndRun(ctx, previous);
     log('##[stage:BUILD:success]');
     log('##[stage:BOOT:success] Container runtime launched in isolated sandbox');
@@ -1434,95 +1512,137 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   // ── Multi-server fan-out ──────────────────────────────────────────────────
   // Docker releases are pushed to every extra target node AFTER the primary
   // is live — additive, best-effort, never blocking the success. An image
-  // release is pulled on each node; a source build (phase 2) is REBUILT on
-  // each node from the same pinned commit through git.* + docker.build, since
-  // the image exists only where the build ran (see engine/fanout.ts).
+  // release is pulled on each node. A source build whose primary built a
+  // Dockerfile is REBUILT on each node from the same pinned commit through
+  // git.* + docker.build (see engine/fanout.ts). Every other source build —
+  // placed on the panel or a build server (design §6), or a pack a target
+  // cannot reproduce (Nixpacks, Railpack, static; D2) — is SHIPPED: the very
+  // image the primary runs, never a different build.
   //
-  // r353: this comment used to claim source builds were excluded while the
-  // code fanned them out — including repositories behind a Git credential,
-  // which every node then tried to clone anonymously (the agent's git.ensure
-  // has no credential operand, and the credential never leaves the panel).
-  // Those are skipped with a deploy-log line, the rule remoteServiceRefusal
-  // applies to a remote PRIMARY (r268).
-  const sourceCandidate =
-    service.type === 'docker' &&
-    !service.image &&
-    service.repoUrl &&
-    sha &&
-    // Nixpacks has no agent operation on a node — the local builder ran it on
-    // the panel; a target node could not reproduce it.
-    (buildConfig?.buildPack ?? 'auto') !== 'nixpacks';
-  // 0.13 (T5): only a STATIC credential (PAT / deploy key) stays on the
-  // panel; a GitHub App repository fans out with a per-job token per target.
-  const credentialedSource = Boolean(sourceCandidate) && (await cloneCredentialKind(db, service)) === 'static';
-  const buildableSource =
-    sourceCandidate && !credentialedSource && service.repoUrl
-      ? {
-          repoUrl: service.repoUrl,
-          branch: service.branch,
-          commitSha: sha,
-          // Nixpacks has no agent op — the gate below refuses it per target.
-          dockerfilePath: (buildConfig?.dockerfilePath || 'Dockerfile').replace(/^\/+/, '') || 'Dockerfile',
-          baseDir: (buildConfig?.baseDir || '.').replace(/^\/+/, '') || '.',
+  // r353: a Dockerfile rebuild of a repository behind a static Git credential
+  // is skipped with a deploy-log line (the target would clone it); a shipped
+  // image needs no clone, so the credential never matters there.
+  // ── 0.16 T4 fan-out (design §6.5; D1, D2, D8) ──
+  const sourceBuild = service.type === 'docker' && !service.image && !!service.repoUrl && !!sha;
+  const extra = service.type === 'docker' && (service.image || sourceBuild) ? await targetsForService(db, service.id) : [];
+  let buildableSource: FanoutContext['source'];
+  let prebuilt: FanoutContext['prebuilt'];
+  if (sourceBuild && extra.length > 0) {
+    const ids = { deploymentId, serviceId: service.id };
+    if (placed) {
+      const build = placed;
+      prebuilt = { ship: (target, l) => shipPlacedBuild(db, build, target.serverId, ids, l) };
+    } else {
+      const primary = await primaryBuildPack(workDir, fanoutBuildConfig ?? undefined);
+      if (primary.pack === 'dockerfile') {
+        // 0.13 (T5): only a STATIC credential (PAT / deploy key) stays on the
+        // panel; a GitHub App repository fans out with a per-job token per target.
+        if ((await cloneCredentialKind(db, service)) === 'static') {
+          log(
+            'Fan-out skipped: this repository is cloned with a Git credential, and target nodes clone anonymously — ' +
+              'the credential never leaves the panel. Detach the credential if the repository is public, or deploy an image ' +
+              'release to fan it out. The panel-hosted release is live.',
+          );
+        } else {
+          buildableSource = {
+            repoUrl: service.repoUrl!,
+            branch: service.branch,
+            commitSha: sha,
+            dockerfilePath: primary.dockerfile,
+            baseDir: primary.context,
+          };
         }
-      : undefined;
-  if (credentialedSource && (await targetsForService(db, service.id)).length > 0) {
-    log(
-      'Fan-out skipped: this repository is cloned with a Git credential, and target nodes clone anonymously — ' +
-        'the credential never leaves the panel. Detach the credential if the repository is public, or deploy an image ' +
-        'release to fan it out. The panel-hosted release is live.',
-    );
-  }
-  if (service.type === 'docker' && (service.image || buildableSource)) {
-    const extra = await targetsForService(db, service.id);
-    if (extra.length > 0) {
-      log(`Fanning out to ${extra.length} additional node${extra.length === 1 ? '' : 's'} …`);
-      const results = await deployToTargets(
-        db,
-        {
-          service: {
-            id: service.id,
-            slug: service.slug,
-            type: service.type,
-            image: service.image,
-            port: service.port,
-            healthPath: service.healthPath,
-            cpuShares: service.cpuShares,
-            cpuLimitMilli: service.cpuLimitMilli,
-            memLimitMb: service.memLimitMb,
-            volumeMount: service.volumeMount,
-            publishedPort: service.publishedPort,
+      } else {
+        // D2: the primary built with Nixpacks, Railpack or the static pack; a
+        // target rebuilding the repository's Dockerfile would run a different
+        // artifact (or fail). Ship the primary's own image instead.
+        const primaryHost = service.serverId ?? null;
+        let source: Promise<{ tag: string; imageId: string; sizeBytes: number }> | null = null;
+        prebuilt = {
+          ship: async (target, l) => {
+            source ??= primaryImage(db, primaryHost, service.slug, sha);
+            const img = await source.catch((err: unknown) => {
+              throw new Error(`the primary's ${primary.pack} build cannot be sent to other nodes: ${msg(err)}`);
+            });
+            await shipImageByStream(db, { ...ids, source: primaryHost, target: target.serverId, tag: img.tag, imageId: img.imageId, sizeBytes: img.sizeBytes || undefined }, l);
+            return { tag: img.tag, imageId: img.imageId };
           },
-          deploymentId,
-          image: service.image ? await pullableReleaseRef(service.image, runtime!.imageDigest) : undefined,
-          env: fanoutEnv,
-          // r592: a source build logs each node in too — to the credential's
-          // single bound host (r512) — so private base images pull there.
-          registryAuth: service.image
-            ? await loadRegistryAuth(db, service, log)
-            : await registryCredentialForSourceBuild(db, service, log),
-          primaryServerId: service.serverId ?? null,
-          source: buildableSource,
-          gitCredential: buildableSource ? nodeGitCredentialSource(db, service) : undefined,
-          // ── 0.16 T4 per-target refusal (M5, D1) ──
-          // The checks a remote primary passes (remoteServiceRefusal,
-          // remoteHookRefusal, the database host rule, capabilities), per
-          // target, before anything is sent to it. The T1 hook refuses no
-          // target, so every target deploys as before.
-          targetRefusal: async () => null,
-          // ── end 0.16 T4 ──
-        },
-        log,
-      );
-      await recordFanoutResults(db, service.id, results);
-      const failed = results.filter((r) => !r.ok).length;
-      log(
-        failed === 0
-          ? `Fan-out complete: ${results.length}/${results.length} target nodes healthy`
-          : `Fan-out partially applied: ${results.length - failed}/${results.length} target nodes healthy`,
-      );
+        };
+      }
     }
   }
+  if (extra.length > 0 && (service.image || buildableSource || prebuilt)) {
+    log(`Fanning out to ${extra.length} additional node${extra.length === 1 ? '' : 's'} …`);
+    const results = await deployToTargets(
+      db,
+      {
+        service: {
+          id: service.id,
+          slug: service.slug,
+          type: service.type,
+          image: service.image,
+          port: service.port,
+          healthPath: service.healthPath,
+          cpuShares: service.cpuShares,
+          cpuLimitMilli: service.cpuLimitMilli,
+          memLimitMb: service.memLimitMb,
+          volumeMount: service.volumeMount,
+          publishedPort: service.publishedPort,
+          cmd: service.cmd,
+          dockerSocket: service.dockerSocket,
+          ownerUserId: service.ownerUserId,
+        },
+        deploymentId,
+        image: service.image ? await pullableReleaseRef(service.image, runtime!.imageDigest) : undefined,
+        env: fanoutEnv,
+        // r592: a source build logs each node in too — to the credential's
+        // single bound host (r512) — so private base images pull there.
+        registryAuth: service.image
+          ? await loadRegistryAuth(db, service, log)
+          : buildableSource
+            ? await registryCredentialForSourceBuild(db, service, log)
+            : undefined,
+        primaryServerId: service.serverId ?? null,
+        source: buildableSource,
+        gitCredential: buildableSource ? nodeGitCredentialSource(db, service) : undefined,
+        prebuilt,
+        volumeAttachments: fanoutAttachments,
+        // ── 0.16 T4 per-target refusal (M5, D1) ──
+        // The checks a remote primary passes, per target, before anything is
+        // sent to it: the database host rule, and volume attachments / a
+        // command / the socket (host and capability) — a target used to start
+        // without them. A refused target is recorded failed with the reason;
+        // the primary and the other targets are unaffected.
+        //
+        // Deploy hooks are NOT a refusal here (upgrade safety): they run once,
+        // on the panel, for the primary, as in 0.15, and a target still
+        // deploys — the log says it ran without them.
+        targetRefusal: async (target) => {
+          const onTarget = { ...service, serverId: target.serverId };
+          const dbRefusal = await remoteDatabaseRefusal(db, onTarget);
+          if (dbRefusal) return dbRefusal;
+          const volume = await remoteVolumeRefusal(db, onTarget);
+          if (volume) return volume.message;
+          if (remoteHookRefusal(buildConfig)) {
+            log(`⚠ deploy hooks run on the primary only; target ${await nodeLabel(db, target.serverId)} was deployed without them`);
+          }
+          return null;
+        },
+        // ── end 0.16 T4 ──
+      },
+      log,
+    );
+    await recordFanoutResults(db, service.id, results);
+    const failed = results.filter((r) => !r.ok).length;
+    log(
+      failed === 0
+        ? `Fan-out complete: ${results.length}/${results.length} target nodes healthy`
+        : `Fan-out partially applied: ${results.length - failed}/${results.length} target nodes healthy`,
+    );
+  }
+  // Retention on a build node, once every host has the image (design §6.3 step 6).
+  if (placed) await retainBuildHostTags(db, placed, service, deploymentId, log);
+  // ── end 0.16 T4 ──
 
   log('✓ Deployment successful');
   await auditOutcome(db, service, deploymentId, 'success');

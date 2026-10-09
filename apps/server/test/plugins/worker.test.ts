@@ -248,6 +248,30 @@ describe('worker plugin', () => {
   // `listBuildCaches()[0]` unconditionally, so an operator who selected the
   // registry or S3 backend in the panel still built against the in-memory
   // LRU — the setting was accepted and silently ignored.
+  // ── 0.16 T4 build placement ──
+  // M2: the worker registers the build slots per build host and hands them
+  // to every run; the panel's slot count is the deploy concurrency.
+  it('registers the build slots (sized by the deploy concurrency for the panel) and hands them to the pipeline', async () => {
+    vi.useFakeTimers();
+    const { db } = makeDb({ queued: [{ id: 5 }] });
+    pipelineMock.runDeployment.mockResolvedValue(undefined);
+    const app = await buildApp(db);
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+    const slots = pipelineMock.runDeployment.mock.calls[0]?.[2]?.buildSlots as import('../../src/engine/buildSlots.js').BuildSlots;
+    expect(typeof slots?.acquire).toBe('function');
+    const release = await slots.acquire('build:panel');
+    const onWait = vi.fn();
+    void slots.acquire('build:panel', onWait);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onWait).toHaveBeenCalledWith(1);
+    expect(slots.usage('build:panel')).toEqual({ active: 1, waiting: 1 });
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(slots.usage('build:panel')).toEqual({ active: 1, waiting: 0 });
+    await app.close();
+  });
+  // ── end 0.16 T4 ──
+
   it('forwards the build cache the operator selected, not merely the first registered', async () => {
     vi.useFakeTimers();
     const { db } = makeDb({ queued: [{ id: 5 }] });

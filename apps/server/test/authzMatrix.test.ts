@@ -1134,6 +1134,16 @@ export const MATRIX: Record<string, Rule> = {
   // ── 0.16 T3 node builds and private clones ──
   // ── end 0.16 T3 ──
   // ── 0.16 T4 build placement ──
+  // Reading a service's placement and its transfer history needs any seat on
+  // the service. Setting the placement is operator-only (an instance resource
+  // decision, like serverId; a push registry is an operator credential): the
+  // at-floor PUT sends {} (nothing changes). PATCH /v1/servers/:id is
+  // operator-only like every /v1/servers route; no server row is seeded.
+  'GET /v1/services/:id/placement': R('viewer'),
+  'PUT /v1/services/:id/placement': R('operator', { body: () => ({}) }),
+  'GET /v1/services/:id/image-transfers': R('viewer'),
+  'GET /v1/deployments/:id/image-transfers': R('viewer'),
+  'PATCH /v1/servers/:id': R('operator', { body: () => ({ buildConcurrency: 2 }), allow404: 'no server row is seeded' }),
   // ── end 0.16 T4 ──
   // ── 0.16 T5 node volumes ──
   // An instance resource, like every /v1/volumes mutation: operator only. The

@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import type { Builder } from '../types.js';
+import type { BuildContext, Builder } from '../types.js';
 import type { BuildConfig } from '@ninedeploy/db';
 import type { NinedeployManifest } from '@ninedeploy/schemas';
 import { generateNixpacksToml } from '../../lib/ninedeployToNixpacks.js';
@@ -656,10 +656,124 @@ async function buildWithNixpacks(
   }
 }
 
+// ── 0.16 T4 build placement: the build half ──
+/**
+ * The source-build half of {@link dockerBuilder}'s `buildAndRun`, moved out
+ * unchanged (multi-node T4) so build placement can build on the panel host
+ * and ship the image to the host that runs the service (design §6.3). Builds
+ * `target` with the service's pack (static, Railpack, Nixpacks, a Dockerfile,
+ * BuildKit) and says which pack produced it, for the port rules of the run.
+ */
+export async function buildSourceImage(
+  ctx: BuildContext,
+  target: string,
+): Promise<{ builtWithNixpacks: boolean; builtStatic: boolean }> {
+  const { service, buildConfig, workDir, commitSha, env, imageDigest, log } = ctx;
+  let builtWithNixpacks = false;
+  let builtStatic = false;
+  // r520: set by every build pack that produces the image ITSELF (static,
+  // railpack). The Dockerfile / Nixpacks dispatch below runs only when no
+  // pack did — railpack used to fall through to a plain `docker build` that
+  // failed on the Dockerfile-less repo railpack exists for, or silently
+  // replaced the railpack image when the repo happened to ship one.
+  let builtByPack = false;
+  // Both fields are user-supplied and use a leading slash to mean "repo
+  // root". `path.resolve` would read that as the FILESYSTEM root, so
+  // `baseDir: "/etc"` used to make the host's /etc the build context —
+  // re-anchor and containment-check them instead (lib/repoPath.ts).
+  const pack = buildConfig?.buildPack ?? 'auto';
+  // 'auto' resolves per-repo: an existing Dockerfile wins, otherwise fall
+  // through to Nixpacks so Dockerfile-less repos (plain Next.js etc.) build
+  // without any repo-side changes.
+  //
+  // Monorepo handling: when the user kept the defaults (`baseDir: '/'`,
+  // no `dockerfilePath`), the previous logic only checked the repo root
+  // and silently dropped to Nixpacks for repos whose Dockerfile lives in
+  // a subdir. Auto-discover a Dockerfile up to 2 levels deep so private
+  // monorepos "just work" without forcing the user to learn the fields.
+  let baseDir = repoRelative(workDir, buildConfig?.baseDir);
+  let dockerfile = resolveBuildDockerfile(workDir, buildConfig?.baseDir, buildConfig?.dockerfilePath || 'Dockerfile', log); // r666
+  const explicitDockerfilePath = !!buildConfig?.dockerfilePath?.trim();
+  const hasDockerfile = existsSync(resolveInRepo(workDir, buildConfig?.baseDir, buildConfig?.dockerfilePath || 'Dockerfile'));
+  let useNixpacks = pack === 'nixpacks' || (pack === 'auto' && !hasDockerfile);
+  if (pack === 'static') {
+    // Static build pack: host-executed build commands, then the output
+    // dir ships inside nginx:alpine. The runtime/health/routing phases
+    // below run unchanged — only the build differs.
+    await buildStaticSite(
+      { workDir, baseDir: path.join(workDir, baseDir), buildConfig, env, log },
+      target,
+    );
+    builtStatic = true;
+    builtByPack = true;
+  } else if (pack === 'railpack') {
+    // Railpack auto-detects the stack and builds via its own BuildKit
+    // connection — no host install/build commands run for it, so the
+    // dispatch order places it before the nixpacks/Dockerfile checks.
+    await buildWithRailpack(target, baseDir, workDir, env, log);
+    builtByPack = true;
+  } else if (pack === 'auto' && !hasDockerfile && !explicitDockerfilePath) {
+    // Only auto-discover when the user did not already pin a path. A
+    // pinned `dockerfilePath` is a deliberate choice and overrides.
+    const discovered = findDockerfileInRepo(workDir, log);
+    if (discovered) {
+      baseDir = discovered.baseDir;
+      dockerfile = discovered.dockerfilePath;
+      useNixpacks = false;
+    }
+  }
+  // The static and railpack packs already built their own image above —
+  // the Dockerfile / Nixpacks strategies below apply to everything else.
+  if (!builtByPack) {
+    log(`Building image ${target} …`);
+    if (useNixpacks) {
+      builtWithNixpacks = true;
+      await buildWithNixpacks(target, baseDir, buildConfig, workDir, log, ctx.manifest, env);
+    } else {
+      // Sprint 4 G-01 PR-B: when the `engine.use_buildkit` config flag
+      // is on (default off), route the Dockerfile build through the
+      // BuildKit driver so the build can consult / populate the
+      // `IBuildCache` registered on the kernel. The legacy
+      // `docker build` path stays the default until an operator
+      // opts in, because the BuildKit invocation is incompatible
+      // with hosts that ship the legacy builder only.
+      if (ctx.useBuildKit) {
+        const result = await buildWithBuildKit({
+          workDir,
+          dockerfilePath: dockerfile,
+          baseDir,
+          target,
+          commitSha,
+          lastBuildDigest: imageDigest,
+          serviceId: service.id,
+          cache: ctx.buildCache,
+          onCacheEvent: ctx.onBuildCacheEvent,
+          log,
+        });
+        log(`BuildKit finished: ${result.imageDigest}${result.cacheHit ? ' (cache hit)' : ''}`);
+      } else {
+        await run(
+          'docker',
+          ['build', '-t', target, '-f', dockerfile, baseDir],
+          {
+            cwd: workDir,
+            env: { DOCKER_BUILDKIT: '1' },
+            heartbeatMs: DEPLOY_HEARTBEAT_MS,
+            heartbeatLabel: `Building Docker image ${target}`,
+          },
+          log,
+        );
+      }
+    }
+  }
+  return { builtWithNixpacks, builtStatic };
+}
+// ── end 0.16 T4 ──
+
 /** Docker builder: BuildKit image build + container run/stop via the docker CLI. */
 export const dockerBuilder: Builder = {
   async buildAndRun(ctx, previous) {
-    const { service, buildConfig, workDir, deploymentId, commitSha, env, imageDigest, registryAuth, log } = ctx;
+    const { service, buildConfig, deploymentId, commitSha, env, imageDigest, registryAuth, log } = ctx;
     const name = `${service.slug}-${deploymentId}`;
     void previous;
 
@@ -719,14 +833,19 @@ export const dockerBuilder: Builder = {
     let target: string;
     let builtWithNixpacks = false;
     let builtStatic = false;
-    // r520: set by every build pack that produces the image ITSELF (static,
-    // railpack). The Dockerfile / Nixpacks dispatch below runs only when no
-    // pack did — railpack used to fall through to a plain `docker build` that
-    // failed on the Dockerfile-less repo railpack exists for, or silently
-    // replaced the railpack image when the repo happened to ship one.
-    let builtByPack = false;
     let resolvedPort: number | null = service.port ?? validPort(env.PORT);
     try {
+    // ── 0.16 T4 prebuilt image ──
+    // Built on a build server and shipped to the panel host (design §6.2,
+    // §6.3 step 5): run it as shipped — no pull, no build. Unset for every
+    // service that builds where it runs, so they take the branches below.
+    if (ctx.prebuiltImage) {
+      target = ctx.prebuiltImage.tag;
+      builtWithNixpacks = ctx.prebuiltImage.builtWithNixpacks === true;
+      builtStatic = ctx.prebuiltImage.builtStatic === true;
+      log(`Running ${target} (${ctx.prebuiltImage.imageId.slice(0, 19)}), built on a build server and shipped to the panel host …`);
+    } else
+    // ── end 0.16 T4 ──
     if (service.image) {
       // On rollback, pin the exact image by digest instead of the mutable
       // tag. r397: a stored imageDigest on OLD rows is the LOCAL image id —
@@ -757,95 +876,9 @@ export const dockerBuilder: Builder = {
       }
     } else {
       target = `ninedeploy/${service.slug}:${commitSha.slice(0, 7) || 'latest'}`;
-      // Both fields are user-supplied and use a leading slash to mean "repo
-      // root". `path.resolve` would read that as the FILESYSTEM root, so
-      // `baseDir: "/etc"` used to make the host's /etc the build context —
-      // re-anchor and containment-check them instead (lib/repoPath.ts).
-      const pack = buildConfig?.buildPack ?? 'auto';
-      // 'auto' resolves per-repo: an existing Dockerfile wins, otherwise fall
-      // through to Nixpacks so Dockerfile-less repos (plain Next.js etc.) build
-      // without any repo-side changes.
-      //
-      // Monorepo handling: when the user kept the defaults (`baseDir: '/'`,
-      // no `dockerfilePath`), the previous logic only checked the repo root
-      // and silently dropped to Nixpacks for repos whose Dockerfile lives in
-      // a subdir. Auto-discover a Dockerfile up to 2 levels deep so private
-      // monorepos "just work" without forcing the user to learn the fields.
-      let baseDir = repoRelative(workDir, buildConfig?.baseDir);
-      let dockerfile = resolveBuildDockerfile(workDir, buildConfig?.baseDir, buildConfig?.dockerfilePath || 'Dockerfile', log); // r666
-      const explicitDockerfilePath = !!buildConfig?.dockerfilePath?.trim();
-      const hasDockerfile = existsSync(resolveInRepo(workDir, buildConfig?.baseDir, buildConfig?.dockerfilePath || 'Dockerfile'));
-      let useNixpacks = pack === 'nixpacks' || (pack === 'auto' && !hasDockerfile);
-      if (pack === 'static') {
-        // Static build pack: host-executed build commands, then the output
-        // dir ships inside nginx:alpine. The runtime/health/routing phases
-        // below run unchanged — only the build differs.
-        await buildStaticSite(
-          { workDir, baseDir: path.join(workDir, baseDir), buildConfig, env, log },
-          target,
-        );
-        builtStatic = true;
-        builtByPack = true;
-      } else if (pack === 'railpack') {
-        // Railpack auto-detects the stack and builds via its own BuildKit
-        // connection — no host install/build commands run for it, so the
-        // dispatch order places it before the nixpacks/Dockerfile checks.
-        await buildWithRailpack(target, baseDir, workDir, env, log);
-        builtByPack = true;
-      } else if (pack === 'auto' && !hasDockerfile && !explicitDockerfilePath) {
-        // Only auto-discover when the user did not already pin a path. A
-        // pinned `dockerfilePath` is a deliberate choice and overrides.
-        const discovered = findDockerfileInRepo(workDir, log);
-        if (discovered) {
-          baseDir = discovered.baseDir;
-          dockerfile = discovered.dockerfilePath;
-          useNixpacks = false;
-        }
-      }
-      // The static and railpack packs already built their own image above —
-      // the Dockerfile / Nixpacks strategies below apply to everything else.
-      if (!builtByPack) {
-        log(`Building image ${target} …`);
-        if (useNixpacks) {
-          builtWithNixpacks = true;
-          await buildWithNixpacks(target, baseDir, buildConfig, workDir, log, ctx.manifest, env);
-        } else {
-          // Sprint 4 G-01 PR-B: when the `engine.use_buildkit` config flag
-          // is on (default off), route the Dockerfile build through the
-          // BuildKit driver so the build can consult / populate the
-          // `IBuildCache` registered on the kernel. The legacy
-          // `docker build` path stays the default until an operator
-          // opts in, because the BuildKit invocation is incompatible
-          // with hosts that ship the legacy builder only.
-          if (ctx.useBuildKit) {
-            const result = await buildWithBuildKit({
-              workDir,
-              dockerfilePath: dockerfile,
-              baseDir,
-              target,
-              commitSha,
-              lastBuildDigest: imageDigest,
-              serviceId: service.id,
-              cache: ctx.buildCache,
-              onCacheEvent: ctx.onBuildCacheEvent,
-              log,
-            });
-            log(`BuildKit finished: ${result.imageDigest}${result.cacheHit ? ' (cache hit)' : ''}`);
-          } else {
-            await run(
-              'docker',
-              ['build', '-t', target, '-f', dockerfile, baseDir],
-              {
-                cwd: workDir,
-                env: { DOCKER_BUILDKIT: '1' },
-                heartbeatMs: DEPLOY_HEARTBEAT_MS,
-                heartbeatLabel: `Building Docker image ${target}`,
-              },
-              log,
-            );
-          }
-        }
-      }
+      // 0.16 T4: the build itself is buildSourceImage (a pure move), shared
+      // with build placement's panel-host builds.
+      ({ builtWithNixpacks, builtStatic } = await buildSourceImage(ctx, target));
     }
 
     // One canonical internal port drives the process, healthcheck and Traefik.

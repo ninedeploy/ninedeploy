@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, notInArray, sql } from 'drizzle-orm';
-import { deployments, services } from '@ninedeploy/db';
+import { deployments, servers, services } from '@ninedeploy/db';
 import fp from 'fastify-plugin';
 import type { FastifyInstance } from 'fastify';
 import { config } from '../config.js';
@@ -8,6 +8,7 @@ import { logBus } from '../engine/logs.js';
 import { removeInterruptedCandidates } from '../engine/interruptedRuntime.js';
 import { audit } from '../lib/audit.js';
 import { AGENT_LONG_OP_TIMEOUT_MS } from '../lib/agentClient.js';
+import { createBuildSlots } from '../engine/buildSlots.js';
 
 /**
  * The `IBuildCache` the deploy pipeline should use, per the operator's
@@ -135,6 +136,19 @@ export default fp(
     let generation = 0;
     let closed = false;
     const live = (gen: number): boolean => running && gen === generation;
+
+    // ── 0.16 T4 build slots (M2, design §6.3) ──
+    // A build placed on the panel or a build server takes a slot keyed by its
+    // build host: the panel's sized by the deploy concurrency, a node's by its
+    // `build_concurrency` (read at every acquire, so a change applies to the
+    // next build). A deploy waiting for one is in `inFlight` like any running
+    // deploy, so the stale sweep never requeues it.
+    const buildSlots = createBuildSlots(async (key) => {
+      if (key === 'build:panel') return config.deployConcurrency;
+      const row = await fastify.db.query.servers.findFirst({ where: eq(servers.id, Number(key.slice('build:'.length))) });
+      return row?.buildConcurrency ?? 1;
+    });
+    // ── end 0.16 T4 ──
 
     /** Queue the next poll, self-removing so the set only holds live timers. */
     const schedule = (delayMs: number): void => {
@@ -441,6 +455,7 @@ export default fp(
               buildCache,
               hooks: fastify.kernel?.hooks,
               events: kernelEvents,
+              buildSlots,
               // Publish the build's REAL cache observation. Best-effort: a
               // bus that throws must not fail the deploy.
               onBuildCacheEvent: kernelEvents

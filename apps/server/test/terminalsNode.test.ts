@@ -423,8 +423,9 @@ describe('GET /v1/servers: the terminal capability field', () => {
     expect(byName(first, 'edge-1').terminal).toEqual({ host: false, container: true, reason: expect.stringMatching(/NINEDEPLOY_AGENT_HOST_TERMINAL=off/) });
     expect(byName(first, 'old').terminal).toMatchObject({ host: false, container: false, reason: expect.stringMatching(/version 0\.14\.0.*v0\.15\.0/) });
     expect(byName(first, 'off').terminal).toMatchObject({ host: false, container: false, reason: expect.stringMatching(/not been reached/) });
-    // Multi-node (additive): `agent` and `features` follow `terminal`.
-    expect(Object.keys(byName(first, 'edge-1'))).toEqual(['id', 'name', 'host', 'port', 'status', 'lastSeenAt', 'createdAt', 'terminal', 'agent', 'features']);
+    // Multi-node (additive): `agent` and `features` follow `terminal`, then
+    // the build-server role (0.16 T4).
+    expect(Object.keys(byName(first, 'edge-1'))).toEqual(['id', 'name', 'host', 'port', 'status', 'lastSeenAt', 'createdAt', 'terminal', 'agent', 'features', 'isBuildServer', 'buildConcurrency']);
     expect(h.ops.filter((o) => o === 'agent.ping')).toHaveLength(2); // the offline node is not asked
     await list();
     expect(h.ops.filter((o) => o === 'agent.ping')).toHaveLength(2); // cached

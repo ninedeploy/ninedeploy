@@ -2,7 +2,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { auditLog, deployments, domains, services, serviceTargets } from '@ninedeploy/db';
+import { auditLog, deployments, domains, services, serviceTargets, serviceVolumeAttachments } from '@ninedeploy/db';
 import { logBus } from '../src/engine/logs.js';
 import { filterTrustworthyProjectLinks, runDeployment, splitHookCommand } from '../src/engine/pipeline.js';
 import { GithubAppError } from '../src/lib/githubApp.js';
@@ -40,7 +40,12 @@ const h = vi.hoisted(() => {
   // per-job node token is revoked through this (never the network).
   const agentTransportSealed = vi.fn(async () => true);
   const revokeInstallationToken = vi.fn(async (..._args: unknown[]) => true);
-  return { builder, checkoutCommit, decrypt, connectionString, ENGINES, writeDynamicConfig, getAcmeEmail, config, agentOp, reconcileTemplateDependencies, railpackUnavailableReason, installationToken, agentTransportSealed, revokeInstallationToken };
+  // 0.16 T4: build placement — the panel's build half and the transfer are
+  // stubbed (no docker, no stream); everything else is the real code.
+  const buildSourceImage = vi.fn<(...args: any[]) => Promise<{ builtWithNixpacks: boolean; builtStatic: boolean }>>(async () => ({ builtWithNixpacks: false, builtStatic: false }));
+  const shipImageByStream = vi.fn<(...args: any[]) => Promise<unknown>>(async (_db: unknown, spec: { tag: string }) => ({ method: 'stream', ref: spec.tag, bytes: 10, sha256: 'ab', durationMs: 1 }));
+  const panelImageInfo = vi.fn(async (_ref: string) => ({ id: `sha256:${'a'.repeat(64)}`, size: 1000 }));
+  return { builder, checkoutCommit, decrypt, connectionString, ENGINES, writeDynamicConfig, getAcmeEmail, config, agentOp, reconcileTemplateDependencies, railpackUnavailableReason, installationToken, agentTransportSealed, revokeInstallationToken, buildSourceImage, shipImageByStream, panelImageInfo };
 });
 
 vi.mock('../src/config.js', () => ({ config: h.config }));
@@ -60,7 +65,12 @@ vi.mock('../src/lib/githubApp.js', async (importOriginal) => ({
 }));
 vi.mock('../src/lib/agentClient.js', () => ({ agentOp: h.agentOp, agentTransportSealed: h.agentTransportSealed }));
 vi.mock('../src/engine/database.js', () => ({ connectionString: h.connectionString, ENGINES: h.ENGINES }));
-vi.mock('../src/engine/builders/docker.js', () => ({ dockerBuilder: h.builder, railpackUnavailableReason: h.railpackUnavailableReason }));
+vi.mock('../src/engine/builders/docker.js', () => ({ dockerBuilder: h.builder, railpackUnavailableReason: h.railpackUnavailableReason, findDockerfileInRepo: () => null, buildSourceImage: h.buildSourceImage }));
+vi.mock('../src/lib/imageTransfer.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/imageTransfer.js')>()),
+  shipImageByStream: h.shipImageByStream,
+  panelImageInfo: h.panelImageInfo,
+}));
 vi.mock('../src/engine/builders/pm2.js', () => ({ pm2Builder: h.builder }));
 vi.mock('../src/engine/builders/compose.js', () => ({ composeBuilder: h.builder }));
 vi.mock('../src/engine/proxy.js', () => ({
@@ -3073,3 +3083,294 @@ describe('0.13 (T5): GitHub App repositories on nodes — pipeline wiring', () =
     expect(lines.join('\n')).not.toContain(NODE_TOKEN);
   });
 });
+
+// ── 0.16 T4 build placement ──
+// D1 / D2 (design §0.2, §6.5): proofs written against the unfixed fan-out.
+describe('0.16 T4: fan-out targets get the primary’s rules and never a different build (D1, D2)', () => {
+  const CAPS_015 = 'ND-AGENT {"version":"0.15.1","caps":["build-path-guard","workspace.remove","git.credential","terminal","terminal.host"]}';
+  let egressEnv: string | undefined;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    logBus.removeAllListeners();
+    h.builder.buildAndRun.mockImplementation(async () => ({ runtimeId: 'c-1', port: 3000, healthPath: '/' }));
+    h.builder.isHealthy.mockImplementation(async () => true);
+    h.builder.stop.mockImplementation(async () => undefined);
+    h.checkoutCommit.mockImplementation(async () => 'sha-1234567');
+    h.writeDynamicConfig.mockImplementation(async () => undefined);
+    h.agentOp.mockImplementation(async (...args: unknown[]) =>
+      args[2] === 'docker.inspect'
+        ? { exitCode: 0, lines: ['running|none|0|0'] }
+        : args[2] === 'agent.ping'
+          ? { exitCode: 0, lines: [CAPS_015] }
+          : { exitCode: 0, lines: [] },
+    );
+    egressEnv = process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'];
+    process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'] = '1';
+  });
+  afterEach(() => {
+    logBus.removeAllListeners();
+    if (egressEnv === undefined) delete process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'];
+    else process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'] = egressEnv;
+    rmSync(path.join(reposDir, '5'), { recursive: true, force: true });
+  });
+
+  /** One extra fan-out node (#9), plus the given volume attachments of the service. */
+  const withTarget = (db: FakeDb, attachments: Array<Record<string, unknown>> = []) => {
+    db.select.mockImplementation(() => ({
+      from: vi.fn((table: unknown) => {
+        const rows = table === serviceTargets ? [{ serverId: 9, runtimeId: null }] : table === serviceVolumeAttachments ? attachments : [];
+        return {
+          where: vi.fn(() => Object.assign(Promise.resolve(rows), { limit: vi.fn(() => Promise.resolve(rows)) })),
+          leftJoin: vi.fn(() => Promise.resolve([])),
+          innerJoin: vi.fn(() => Promise.resolve([])),
+          orderBy: vi.fn(() => Promise.resolve([])),
+          // biome-ignore lint/suspicious/noThenProperty: intentional thenable — the fake DB query result must be awaitable by the code under test.
+          then: (ok: (v: unknown) => unknown) => ok(rows),
+        };
+      }),
+    }));
+  };
+  const targetOps = () => h.agentOp.mock.calls.filter((c) => c[1] === 9).map((c) => c[2] as string);
+  const targetRow = (updates: { table: unknown; values: Record<string, unknown> }[]) =>
+    updates.filter((u) => u.table === serviceTargets).at(-1)?.values;
+
+  it('D1: a container command is never silently dropped on a target (refused by an agent without docker.runSpec)', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { image: 'minio/minio:latest', cmd: ['server', '/data'] });
+    withTarget(db);
+    await runDeployment(db as never, 1);
+    expect(targetOps()).not.toContain('docker.runEnv');
+    expect(targetOps()).not.toContain('docker.pull');
+    expect(targetRow(updates)).toMatchObject({ status: 'error' });
+  });
+
+  it('D1: a volume attachment is never silently dropped on a target', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { image: 'minio/minio:latest' });
+    withTarget(db, [{ serviceId: 5, volumeName: 'nd-svc-minio-cache', containerPath: '/cache', readOnly: false }]);
+    await runDeployment(db as never, 1);
+    expect(targetOps()).not.toContain('docker.runEnv');
+    expect(targetRow(updates)).toMatchObject({ status: 'error' });
+  });
+
+  it('D1: a target never receives the panel host’s database hostname', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { image: 'ghost:5' });
+    db.query.databaseAttachments.findMany.mockResolvedValue([{ id: 1, serviceId: 5, databaseId: 9, envAlias: 'DATABASE_URL' }]);
+    db.query.databases.findFirst.mockResolvedValue({ id: 9, name: 'pg', engine: 'postgres', status: 'running', ownerUserId: 7, projectId: null });
+    withTarget(db);
+    await runDeployment(db as never, 1);
+    expect(targetOps()).not.toContain('file.writeEnv');
+    expect(targetRow(updates)).toMatchObject({ status: 'error' });
+  });
+
+  for (const pack of ['static', 'railpack'] as const) {
+    it(`D2: a ${pack} primary is never rebuilt on a target from the repository Dockerfile`, async () => {
+      const { db } = makeDb();
+      baseSetup(db);
+      db.query.buildConfigs.findFirst.mockResolvedValue({ buildPack: pack, baseDir: '/' });
+      withTarget(db);
+      await runDeployment(db as never, 1);
+      expect(targetOps()).not.toContain('docker.build');
+    });
+  }
+
+  it('D2: an `auto` primary that resolved to Nixpacks (no Dockerfile) is never rebuilt from a Dockerfile', async () => {
+    const { db } = makeDb();
+    baseSetup(db);
+    mkdirSync(path.join(reposDir, '5', '.git'), { recursive: true });
+    withTarget(db);
+    await runDeployment(db as never, 1);
+    expect(targetOps()).not.toContain('docker.build');
+  });
+
+  it('control: a Dockerfile primary still rebuilds the same commit on the target, exactly as before', async () => {
+    const { db } = makeDb();
+    baseSetup(db);
+    withTarget(db);
+    await runDeployment(db as never, 1);
+    expect(targetOps()).toEqual(expect.arrayContaining(['git.ensure', 'git.reset', 'docker.build', 'docker.runEnv']));
+    const build = h.agentOp.mock.calls.find((c) => c[1] === 9 && c[2] === 'docker.build')![3];
+    expect(build).toEqual({ workspace: 'web', tag: 'ninedeploy/web:t9-sha-123', dockerfile: 'Dockerfile', context: '.' });
+  });
+
+  it('upgrade safety: deploy hooks never refuse a target — it still deploys, and the log says it ran without them', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { image: 'nginx:1.27' });
+    db.query.buildConfigs.findFirst.mockResolvedValue({ postDeployCmd: 'echo migrated', baseDir: '/' });
+    withTarget(db);
+    const lines = collectLogs(1);
+    await runDeployment(db as never, 1);
+    expect(targetOps()).toEqual(expect.arrayContaining(['docker.pull', 'docker.runEnv']));
+    expect(targetRow(updates)).toMatchObject({ status: 'running' });
+    expect(lines).toContain('⚠ deploy hooks run on the primary only; target #9 was deployed without them');
+    expect(lines).toContain('✓ Deployment successful');
+  });
+
+  it('control: a plain image service still fans out with docker.runEnv and nothing new is asked', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { image: 'nginx:1.27' });
+    withTarget(db);
+    await runDeployment(db as never, 1);
+    expect(targetOps()).toEqual(['docker.pull', 'file.writeEnv', 'docker.runEnv', 'file.deleteEnv', 'docker.inspect', 'docker.inspect', 'docker.inspect']);
+    expect(targetRow(updates)).toMatchObject({ status: 'running' });
+  });
+});
+describe('0.16 T4: build placement in the pipeline (design §6.3)', () => {
+  const IMG = `sha256:${'a'.repeat(64)}`;
+  const CAPS_ALL = 'ND-AGENT {"version":"0.15.2","caps":["build-path-guard","workspace.remove","git.credential","terminal","terminal.host","stream","docker.runSpec","volume.manage","image.manage","build.nixpacks","build.railpack","git.sshkey","db.manage","swarm"]}';
+  let egressEnv: string | undefined;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    logBus.removeAllListeners();
+    h.builder.buildAndRun.mockImplementation(async () => ({ runtimeId: 'c-1', port: 3000, healthPath: '/' }));
+    h.builder.isHealthy.mockImplementation(async () => true);
+    h.builder.stop.mockImplementation(async () => undefined);
+    h.checkoutCommit.mockImplementation(async () => 'sha-1234567');
+    h.writeDynamicConfig.mockImplementation(async () => undefined);
+    h.agentOp.mockImplementation(async (...args: unknown[]) =>
+      args[2] === 'docker.inspect'
+        ? { exitCode: 0, lines: ['running|none|0|0'] }
+        : args[2] === 'agent.ping'
+          ? { exitCode: 0, lines: [CAPS_ALL] }
+          : args[2] === 'docker.imageInspect'
+            ? { exitCode: 0, lines: [`${IMG}|2048`] }
+            : args[2] === 'file.writeEnv'
+              ? { exitCode: 0, lines: [`wrote .agent-env/${String((args[3] as { name: string }).name)}.env`] }
+              : { exitCode: 0, lines: [] },
+    );
+    egressEnv = process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'];
+    process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'] = '1';
+  });
+  afterEach(() => {
+    logBus.removeAllListeners();
+    if (egressEnv === undefined) delete process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'];
+    else process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'] = egressEnv;
+  });
+  const withServers = (db: FakeDb, rows: Array<Record<string, unknown>>) => {
+    (db.query as Record<string, unknown>)['servers'] = { findFirst: vi.fn(async () => rows[0]) };
+  };
+  const opsOn = (id: number) => h.agentOp.mock.calls.filter((c) => c[1] === id).map((c) => c[2] as string);
+  const buildHostWrite = (updates: { table: unknown; values: Record<string, unknown> }[]) => updates.find((u) => u.table === deployments && 'buildHost' in u.values)?.values;
+
+  it('pinned: a NULL build_on node service builds on its node exactly as before — nothing built on the panel, nothing shipped, no build_host', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { serverId: 4, buildOn: null });
+    await runDeployment(db as never, 1);
+    expect(h.buildSourceImage).not.toHaveBeenCalled();
+    expect(h.shipImageByStream).not.toHaveBeenCalled();
+    expect(opsOn(4)).toEqual(expect.arrayContaining(['git.ensure', 'docker.build', 'docker.runEnv']));
+    expect(buildHostWrite(updates)).toBeUndefined();
+  });
+
+  it('build_on = panel: built on the panel, shipped to the node, run there as shipped (no clone, no build on the node)', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { serverId: 4, buildOn: 'panel' });
+    const lines = collectLogs(1);
+    await runDeployment(db as never, 1);
+    expect(lines).toContain('✓ Deployment successful');
+    expect(h.buildSourceImage).toHaveBeenCalledTimes(1);
+    expect(h.buildSourceImage.mock.calls[0]![1]).toBe('ninedeploy/web:sha-123-b1');
+    expect(h.shipImageByStream.mock.calls[0]![1]).toMatchObject({ source: null, target: 4, tag: 'ninedeploy/web:sha-123-b1', imageId: IMG, deploymentId: 1, serviceId: 5 });
+    expect(opsOn(4)).not.toContain('git.ensure');
+    expect(opsOn(4)).not.toContain('docker.build');
+    const run = h.agentOp.mock.calls.find((c) => c[1] === 4 && c[2] === 'docker.runEnv')![3];
+    expect(run).toMatchObject({ name: 'web-1', image: 'ninedeploy/web:sha-123-b1' });
+    expect(buildHostWrite(updates)).toEqual({ buildHost: 'panel', imageId: IMG });
+  });
+
+  it('build_on = panel keeps a PAT on the panel: a static credential is no refusal, the node never clones', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { serverId: 4, buildOn: 'panel', sourceId: 7 });
+    db.query.sources.findFirst.mockResolvedValue({ id: 7, type: 'github', tokenEncrypted: 'tok', deployKeyEncrypted: null, allowOnNodes: false });
+    const lines = collectLogs(1);
+    await runDeployment(db as never, 1);
+    expect(lines).toContain('✓ Deployment successful');
+    expect(opsOn(4).filter((op) => op.startsWith('git.'))).toEqual([]);
+  });
+
+  it('build_on = server with its server removed fails the deploy before anything is built — never a fallback', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { serverId: 4, buildOn: 'server', buildServerId: null, runtimeId: 'web-old' });
+    const lines = collectLogs(1);
+    await runDeployment(db as never, 1);
+    expect(lines.join(' ')).toMatch(/build server of this service was removed; choose another or build on the target/);
+    expect(h.checkoutCommit).not.toHaveBeenCalled();
+    expect(h.agentOp).not.toHaveBeenCalled();
+    expect(updates.some((u) => u.table === deployments && u.values.status === 'failed')).toBe(true);
+  });
+
+  it('a transfer failure fails the deploy cleanly: the node never starts the release, the previous runtime keeps serving', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { serverId: 4, buildOn: 'panel', runtimeId: 'web-old' });
+    h.shipImageByStream.mockRejectedValueOnce(new Error('the stream from node #4 was truncated or altered'));
+    const lines = collectLogs(1);
+    await runDeployment(db as never, 1);
+    expect(lines.join(' ')).toMatch(/truncated or altered/);
+    expect(opsOn(4)).not.toContain('docker.runEnv');
+    expect(updates.some((u) => u.table === services && u.values.runtimeId === 'web-1')).toBe(false);
+  });
+
+  it('build_on = server for a panel-host service: built on the build server, shipped to the panel, run by the local builder as shipped', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { serverId: null, buildOn: 'server', buildServerId: 6 });
+    withServers(db, [{ id: 6, name: 'builder', isBuildServer: true, buildConcurrency: 2 }]);
+    await runDeployment(db as never, 1);
+    expect(opsOn(6)).toEqual(expect.arrayContaining(['git.ensure', 'docker.build', 'docker.imageInspect']));
+    const build = h.agentOp.mock.calls.find((c) => c[1] === 6 && c[2] === 'docker.build')![3];
+    expect(build).toMatchObject({ workspace: 'web', tag: 'ninedeploy/web:sha-123-b1' });
+    expect(h.shipImageByStream.mock.calls[0]![1]).toMatchObject({ source: 6, target: null, tag: 'ninedeploy/web:sha-123-b1', imageId: IMG });
+    const ctx = h.builder.buildAndRun.mock.calls.at(-1)![0] as { prebuiltImage?: unknown };
+    expect(ctx.prebuiltImage).toEqual({ tag: 'ninedeploy/web:sha-123-b1', imageId: IMG, builtWithNixpacks: false, builtStatic: false });
+    expect(buildHostWrite(updates)).toEqual({ buildHost: 'node:6', imageId: IMG });
+    // Retention on the build node ran once every host had the image (nothing older to remove here).
+    expect(opsOn(6)).not.toContain('docker.imageRm');
+  });
+
+  it('build_on = panel with a fan-out target: build once, ship many (the target never clones or builds)', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { serverId: 4, buildOn: 'panel' });
+    db.select.mockImplementation(() => ({
+      from: vi.fn((table: unknown) => {
+        const rows = table === serviceTargets ? [{ serverId: 9, runtimeId: null }] : [];
+        return {
+          where: vi.fn(() => Object.assign(Promise.resolve(rows), { limit: vi.fn(() => Promise.resolve(rows)) })),
+          leftJoin: vi.fn(() => Promise.resolve([])),
+          innerJoin: vi.fn(() => Promise.resolve([])),
+          orderBy: vi.fn(() => Object.assign(Promise.resolve([]), { limit: vi.fn(() => Promise.resolve([])) })),
+          // biome-ignore lint/suspicious/noThenProperty: intentional thenable — the fake DB query result must be awaitable by the code under test.
+          then: (ok: (v: unknown) => unknown) => ok(rows),
+        };
+      }),
+    }));
+    await runDeployment(db as never, 1);
+    expect(h.buildSourceImage).toHaveBeenCalledTimes(1);
+    expect(h.shipImageByStream.mock.calls.map((c) => (c[1] as { target: number }).target)).toEqual([4, 9]);
+    expect(opsOn(9).filter((op) => op.startsWith('git.') || op === 'docker.build')).toEqual([]);
+    expect(h.agentOp.mock.calls.find((c) => c[1] === 9 && c[2] === 'docker.runEnv')![3]).toMatchObject({ image: 'ninedeploy/web:sha-123-b1' });
+  });
+
+  it('D2 fixed: a static primary’s own image is shipped to the target (never a Dockerfile rebuild)', async () => {
+    const { db } = makeDb();
+    baseSetup(db);
+    db.query.buildConfigs.findFirst.mockResolvedValue({ buildPack: 'static', baseDir: '/' });
+    db.select.mockImplementation(() => ({
+      from: vi.fn((table: unknown) => {
+        const rows = table === serviceTargets ? [{ serverId: 9, runtimeId: null }] : [];
+        return {
+          where: vi.fn(() => Object.assign(Promise.resolve(rows), { limit: vi.fn(() => Promise.resolve(rows)) })),
+          leftJoin: vi.fn(() => Promise.resolve([])),
+          innerJoin: vi.fn(() => Promise.resolve([])),
+          orderBy: vi.fn(() => Promise.resolve([])),
+          // biome-ignore lint/suspicious/noThenProperty: intentional thenable — the fake DB query result must be awaitable by the code under test.
+          then: (ok: (v: unknown) => unknown) => ok(rows),
+        };
+      }),
+    }));
+    await runDeployment(db as never, 1);
+    expect(h.shipImageByStream.mock.calls[0]![1]).toMatchObject({ source: null, target: 9, tag: 'ninedeploy/web:sha-123', imageId: IMG });
+    expect(opsOn(9)).not.toContain('docker.build');
+    expect(h.agentOp.mock.calls.find((c) => c[1] === 9 && c[2] === 'docker.runEnv')![3]).toMatchObject({ image: 'ninedeploy/web:sha-123' });
+  });
+});
+// ── end 0.16 T4 ──

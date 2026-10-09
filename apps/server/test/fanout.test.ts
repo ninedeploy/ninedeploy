@@ -3,7 +3,7 @@ import { deployToTargets as deployToTargetsNow, listFanoutCandidates, pullableRe
 import { createFakeDb } from './helpers.js';
 
 const agentMocks = vi.hoisted(() => ({ agentOp: vi.fn() }));
-vi.mock('../src/lib/agentClient.js', () => ({ agentOp: agentMocks.agentOp }));
+vi.mock('../src/lib/agentClient.js', () => ({ agentOp: agentMocks.agentOp, agentTransportSealed: async () => true }));
 
 /** r660: what a current agent answers to the sealed agent.ping. */
 const PING_CURRENT = { exitCode: 0, lines: ['ND-AGENT {"version":"0.10.42","caps":["build-path-guard","workspace.remove"]}'] };
@@ -401,3 +401,71 @@ describe('multi-server fan-out (phase 1)', () => {
   });
 });
 
+// ── 0.16 T4 build placement ──
+describe('0.16 T4: fan-out runs what the primary runs (D1) and ships what it built (D2, design §6.5)', () => {
+  const CAPS_ALL = 'ND-AGENT {"version":"0.15.2","caps":["build-path-guard","workspace.remove","git.credential","terminal","terminal.host","stream","docker.runSpec","volume.manage","image.manage"]}';
+  const CAPS_015 = 'ND-AGENT {"version":"0.15.1","caps":["build-path-guard","workspace.remove","git.credential","terminal","terminal.host"]}';
+  const answer = (caps: string) =>
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string, params: Record<string, unknown>) => {
+      if (op === 'agent.ping') return { exitCode: 0, lines: [caps] };
+      if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|none|0|0'] };
+      if (op === 'docker.volumeInspect') throw new Error('agent docker.volumeInspect exited with 1');
+      if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] };
+      return { exitCode: 0, lines: [] };
+    });
+  beforeEach(() => vi.clearAllMocks());
+  const ops = () => agentMocks.agentOp.mock.calls.map((c) => c[2] as string);
+
+  it('D1: a command and an attachment reach the target through docker.runSpec (volume created first), never dropped', async () => {
+    answer(CAPS_ALL);
+    const db = dbWithTargets([{ serverId: 5, runtimeId: null }]);
+    const results = await deployToTargets(
+      db as never,
+      {
+        service: { ...svc, image: 'minio/minio:latest', cmd: ['server', '/data'] },
+        volumeAttachments: [{ volumeName: 'nd-svc-web-cache', containerPath: '/cache', readOnly: true }],
+        deploymentId: 9,
+        image: 'minio/minio:latest',
+        env: {},
+        primaryServerId: null,
+      },
+      vi.fn(),
+    );
+    expect(results).toEqual([{ serverId: 5, runtimeId: 'web-t5-9', ok: true, error: undefined }]);
+    expect(ops()).not.toContain('docker.runEnv');
+    expect(ops().indexOf('docker.volumeCreate')).toBeLessThan(ops().indexOf('docker.runSpec'));
+    const spec = agentMocks.agentOp.mock.calls.find((c) => c[2] === 'docker.runSpec')![3] as Record<string, unknown>;
+    expect(spec).toMatchObject({ name: 'web-t5-9', image: 'minio/minio:latest', cmd: ['server', '/data'], volumes: [{ name: 'nd-svc-web-cache', mount: '/cache', readOnly: true }] });
+  });
+
+  it('D1: an agent without docker.runSpec is refused before anything is sent; the target is recorded failed', async () => {
+    answer(CAPS_015);
+    const db = dbWithTargets([{ serverId: 5, runtimeId: 'web-t5-8' }]);
+    const results = await deployToTargets(
+      db as never,
+      { service: { ...svc, dockerSocket: true }, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null },
+      vi.fn(),
+    );
+    expect(results).toEqual([{ serverId: 5, runtimeId: 'web-t5-8', ok: false, error: expect.stringMatching(/cannot run a service with volume attachments, a command or the Docker socket/) }]);
+    expect(ops()).toEqual(['agent.ping']);
+  });
+
+  it('a shipped release: the target receives it through `prebuilt.ship` — no pull, no clone, no build — and runs it', async () => {
+    answer(CAPS_ALL);
+    const db = dbWithTargets([{ serverId: 5, runtimeId: null }, { serverId: 6, runtimeId: null }]);
+    const ship = vi.fn(async (t: { serverId: number }) => {
+      if (t.serverId === 6) throw new Error('The agent on node #6 (version 0.15.1) cannot receive an image. Update the node agent to v0.15.2 or newer');
+      return { tag: 'ninedeploy/web:abc1234-b9', imageId: `sha256:${'a'.repeat(64)}` };
+    });
+    const results = await deployToTargets(
+      db as never,
+      { service: { ...svc, image: null }, deploymentId: 9, env: {}, primaryServerId: null, prebuilt: { ship } },
+      vi.fn(),
+    );
+    expect(results[0]).toEqual({ serverId: 5, runtimeId: 'web-t5-9', ok: true, error: undefined });
+    expect(results[1]).toMatchObject({ serverId: 6, ok: false, error: expect.stringMatching(/cannot receive an image/) });
+    expect(ops().filter((op) => op === 'docker.pull' || op === 'docker.build' || op.startsWith('git.'))).toEqual([]);
+    expect(agentMocks.agentOp.mock.calls.find((c) => c[1] === 5 && c[2] === 'docker.runEnv')![3]).toMatchObject({ image: 'ninedeploy/web:abc1234-b9' });
+  });
+});
+// ── end 0.16 T4 ──

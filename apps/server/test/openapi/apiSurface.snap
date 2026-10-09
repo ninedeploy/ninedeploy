@@ -99,6 +99,7 @@ GET /v1/databases/:id/logs viewer nd://scope/read/databases
 GET /v1/databases/:id/pgbouncer member nd://scope/read/databases
 GET /v1/databases/:id/public-access admin nd://scope/read/databases
 GET /v1/databases/:id/storage viewer nd://scope/read/databases
+GET /v1/deployments/:id/image-transfers viewer nd://scope/read/deploys
 GET /v1/doctor operator -
 GET /v1/domain-presets authed nd://scope/read/domains
 GET /v1/domain-transfers/:token token nd://scope/read/domains_transfer
@@ -151,11 +152,13 @@ GET /v1/services/:id/env/preview viewer nd://scope/read/env
 GET /v1/services/:id/exec operator nd://scope/read/services
 GET /v1/services/:id/export operator nd://scope/read/services
 GET /v1/services/:id/github viewer nd://scope/read/services
+GET /v1/services/:id/image-transfers viewer nd://scope/read/services
 GET /v1/services/:id/insights viewer nd://scope/read/manifests
 GET /v1/services/:id/jobs viewer nd://scope/read/services
 GET /v1/services/:id/jobs/:jobId/runs viewer nd://scope/read/services
 GET /v1/services/:id/logs viewer nd://scope/read/services
 GET /v1/services/:id/metrics viewer nd://scope/read/services
+GET /v1/services/:id/placement viewer nd://scope/read/services
 GET /v1/services/:id/tags viewer nd://scope/read/services
 GET /v1/services/:id/targets viewer nd://scope/read/services
 GET /v1/services/:id/volumes viewer nd://scope/read/volumes
@@ -224,6 +227,7 @@ PATCH /v1/log-drains/:id operator -
 PATCH /v1/notifications/channels/:id operator nd://scope/write/notifications
 PATCH /v1/projects/:id admin nd://scope/write/projects
 PATCH /v1/projects/:id/env/:varId member nd://scope/write/env
+PATCH /v1/servers/:id operator -
 PATCH /v1/services/:id member nd://scope/write/services
 PATCH /v1/services/:id/domains/:domainId member nd://scope/write/domains
 PATCH /v1/services/:id/env/:varId member nd://scope/write/env
@@ -399,6 +403,7 @@ PUT /v1/databases/:id/imports/:importId/chunks/:index admin nd://scope/write/dat
 PUT /v1/databases/:id/public-access operator nd://scope/write/databases
 PUT /v1/github-apps/:id/private-key operator -
 PUT /v1/services/:id/github operator nd://scope/write/services
+PUT /v1/services/:id/placement operator nd://scope/write/services
 PUT /v1/services/:id/tags admin nd://scope/write/services
 PUT /v1/settings/acme-email operator nd://scope/write/settings
 PUT /v1/settings/allow-registration operator nd://scope/write/settings

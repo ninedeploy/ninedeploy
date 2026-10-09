@@ -171,7 +171,10 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
           const base = serialize(row);
           const terminal = await nodeTerminalCapability(authed.db, row.id, { online: base.status === 'online' });
           const agent = nodeAgentInfo(row);
-          return { ...base, terminal, agent, features: serverFeatures(agent) };
+          // ── 0.16 T4 build placement ── the build-server role (additive; PATCH /:id in serverRoles.ts)
+          const roles = { isBuildServer: row.isBuildServer === true, buildConcurrency: row.buildConcurrency ?? 1 };
+          // ── end 0.16 T4 ──
+          return { ...base, terminal, agent, features: serverFeatures(agent), ...roles };
         }),
       );
     });

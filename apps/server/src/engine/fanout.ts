@@ -1,20 +1,37 @@
 import { and, eq } from 'drizzle-orm';
 import { serviceTargets, servers, type DB } from '@ninedeploy/db';
 import { agentOp } from '../lib/agentClient.js';
-import { assertAgentGuardsBuildPaths, nodeLabel } from '../lib/agentCapabilities.js';
+import { assertAgentGuardsBuildPaths, capabilityRefusal, nodeLabel } from '../lib/agentCapabilities.js';
+import { agentTransportSealed } from '../lib/agentClient.js';
+import { ensureNodeVolumes, NODE_RUN_SPEC_FEATURE, type NodeVolumeAttachment, nodeRunCapabilities, nodeRunNeeds, nodeVolumeLabels } from '../lib/remoteVolumes.js';
 import { acquireRegistryLock, registryLockKey } from '../lib/registryLock.js';
 import { assertCloneTargetAllowed } from '../lib/gitEgress.js';
 import type { NodeGitCredentialSource } from '../lib/nodeGitCredential.js';
 import { createRemoteDockerBuilder, envForAgent } from './builders/remoteDocker.js';
+import { runSpecParams } from './builders/remoteRun.js';
 
 /**
- * Multi-server fan-out (phase 1): push an IMAGE-based release to additional
- * nodes after the primary deployment succeeds.
+ * Multi-server fan-out: push a docker release to additional nodes after the
+ * primary deployment succeeds.
+ *
+ * How a target obtains the release (D8: this header used to say "image
+ * services only" while source builds fanned out too):
+ *   - an IMAGE release is pulled on the target;
+ *   - a SOURCE build whose primary built a Dockerfile is rebuilt on the target
+ *     from the same pinned commit (`git.*` + `docker.build`), as since phase 2;
+ *   - every other source build — built on the panel or a build server (design
+ *     §6), or a primary pack a Dockerfile cannot reproduce (Nixpacks,
+ *     Railpack, static: D2) — is SHIPPED: the primary's very image travels
+ *     to the target (`ctx.prebuilt`), never a different build. A target that
+ *     cannot receive it is refused with the reason.
+ *
+ * Per target, before anything is sent (D1): the caller's `targetRefusal`
+ * (deploy hooks, the database host rule, volume attachments across hosts and
+ * the agent's capabilities), and here the `docker.runSpec` capability for a
+ * container command, the Docker socket or volume attachments — which a target
+ * then runs with, instead of silently dropping them.
  *
  * Scope, stated honestly:
- *   - docker services with a pre-built IMAGE only. A source build's image
- *     exists solely in the building node's docker cache — fanning those out
- *     needs the build-server/registry story, which is a separate feature.
  *   - Additive, never blocking: a node that fails to pull or start keeps the
  *     primary release serving everywhere; the per-target row records the
  *     error for the panel.
@@ -74,7 +91,33 @@ async function waitRunning(
 }
 
 export interface FanoutContext {
-  service: { id: number; slug: string; type: string; image: string | null; port: number | null; healthPath?: string | null; cpuShares: number; cpuLimitMilli: number; memLimitMb: number; volumeMount: string | null; publishedPort: number | null };
+  service: {
+    id: number;
+    slug: string;
+    type: string;
+    image: string | null;
+    port: number | null;
+    healthPath?: string | null;
+    cpuShares: number;
+    cpuLimitMilli: number;
+    memLimitMb: number;
+    volumeMount: string | null;
+    publishedPort: number | null;
+    // ── 0.16 T4 (D1): what a target runs with, instead of dropping it ──
+    cmd?: string[] | null;
+    dockerSocket?: boolean | null;
+    ownerUserId?: number | null;
+  };
+  /** 0.16 T4 (D1): the service's volume attachments; a target mounts them through `docker.runSpec`. */
+  volumeAttachments?: readonly NodeVolumeAttachment[];
+  /**
+   * 0.16 T4 (design §6.5, D2): the release is SHIPPED to each target rather
+   * than pulled or rebuilt — the image the panel or a build server built, or
+   * the primary's own build of a pack a target cannot reproduce. `ship`
+   * transfers it (recording its `image_transfers` row) and answers what the
+   * target runs; it throws with the reason for a target that cannot receive it.
+   */
+  prebuilt?: { ship: (target: FanoutTarget, log: (line: string) => void) => Promise<{ tag: string; imageId: string }> };
   deploymentId: number;
   /** Image services: the resolved release (digest-pinned on rollback), already pulled on the primary. */
   image?: string;
@@ -82,9 +125,9 @@ export interface FanoutContext {
   registryAuth?: { username: string; password: string; server?: string };
   /** The PRIMARY placement — targets equal to it are skipped. */
   primaryServerId: number | null;
-  /** Source builds (phase 2): each target node builds the SAME commit itself
-   * through git.* + docker.build — the image never has to travel. Nixpacks
-   * stays refused (no agent op). */
+  /** Source builds (phase 2) whose primary built a Dockerfile: each target
+   * node builds the SAME commit itself through git.* + docker.build. Any other
+   * pack is shipped instead (`prebuilt`, D2). */
   source?: {
     repoUrl: string;
     branch: string | null;
@@ -135,11 +178,34 @@ export async function deployToTargets(
     // ── end 0.16 T4 ──
     const name = `${ctx.service.slug}-t${target.serverId}-${ctx.deploymentId}`;
     const agent: AgentCaller = (op, params, sink) => agentOp(db, target.serverId, op, params, sink);
+    // ── 0.16 T4 run shape (D1) ──
+    // A command, the Docker socket or volume attachments need the target's
+    // `docker.runSpec` (sealed); asked before anything is sent, never dropped.
+    const attachments = ctx.volumeAttachments ?? [];
+    const runSpec = nodeRunNeeds(ctx.service, attachments).length > 0;
+    if (runSpec) {
+      const why = await capabilityRefusal(agent, await nodeLabel(db, target.serverId), await agentTransportSealed(db, target.serverId), {
+        cap: nodeRunCapabilities(ctx.service, attachments),
+        feature: NODE_RUN_SPEC_FEATURE,
+        sealedRequired: true,
+      }).catch((err: unknown) => ({ message: err instanceof Error ? err.message : String(err) }));
+      if (why) {
+        results.push({ serverId: target.serverId, runtimeId: target.runtimeId, ok: false, error: why.message });
+        log(`✗ target node #${target.serverId}: ${why.message} — the primary release is unaffected`);
+        continue;
+      }
+    }
+    // ── end 0.16 T4 ──
     try {
       let release: string;
-      if (!ctx.image && !ctx.source) {
+      if (!ctx.image && !ctx.source && !ctx.prebuilt) {
         throw new Error('fan-out context has neither an image nor a buildable source');
       }
+      // ── 0.16 T4 shipped release (design §6.5) ──
+      if (ctx.prebuilt) {
+        release = (await ctx.prebuilt.ship(target, log)).tag;
+      } else {
+      // ── end 0.16 T4 ──
       // r526: one registry session around BOTH ways a target obtains the
       // release. The login used to happen after the source build, so a
       // Dockerfile whose base image lives in a private registry was pulled
@@ -210,6 +276,7 @@ export async function deployToTargets(
       } finally {
         releaseRegistry?.();
       }
+      } // 0.16 T4: end of the pull / rebuild branch
       // r226: the previous generation keeps serving until the new one is
       // proven. It used to be removed FIRST ("a duplicate name" — but the new
       // name carries the deployment id, so it never collides): a failed run or
@@ -238,7 +305,40 @@ export async function deployToTargets(
         runParams['publish'] = `${ctx.service.publishedPort}:${ctx.service.port}`;
       }
       try {
-        await agent('docker.runEnv', runParams, log);
+        // ── 0.16 T4 run shape (D1) ──
+        if (runSpec) {
+          const volumes = [
+            ...(ctx.service.volumeMount ? [{ name: `nd-svc-${ctx.service.slug}-data`, mount: ctx.service.volumeMount, readOnly: false }] : []),
+            ...attachments.map((a) => ({ name: a.volumeName, mount: a.containerPath, readOnly: a.readOnly === true })),
+          ];
+          if (volumes.length > 0) {
+            const { missingDatabaseVolumes } = await ensureNodeVolumes(
+              agent,
+              volumes.map((v) => v.name),
+              nodeVolumeLabels({ serviceId: ctx.service.id, userId: ctx.service.ownerUserId ?? null }),
+              log,
+            );
+            if (missingDatabaseVolumes.length > 0) {
+              throw new Error(`Database volume ${missingDatabaseVolumes.join(', ')} does not exist on node #${target.serverId}`);
+            }
+          }
+          await agent(
+            'docker.runSpec',
+            runSpecParams(ctx.service as never, {
+              name,
+              image: release,
+              envFile,
+              envFileName: envName,
+              deploymentId: ctx.deploymentId,
+              volumes,
+              publish: runParams['publish'] as string | undefined,
+            }),
+            log,
+          );
+        } else {
+          await agent('docker.runEnv', runParams, log);
+        }
+        // ── end 0.16 T4 ──
       } catch (err) {
         // F116: `docker run -d` that fails after create leaves a Created
         // container under this name, and the catch below records the OLD

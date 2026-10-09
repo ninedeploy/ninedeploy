@@ -305,7 +305,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       const hookRefusal = remoteHookRefusal(input.build);
       if (hookRefusal) throw badRequest(hookRefusal, 'remote_deploy_unsupported');
     }
-    if (input.build.buildPack === 'railpack') {
+    // 0.16 T4: not when a node whose agent builds Railpack itself builds it.
+    if (input.build.buildPack === 'railpack' && !(await (await import('../engine/buildPlacement.js')).railpackBuildsOnCapableNode(app.db, { serverId: input.serverId ?? null }))) {
       const railpackRefusal = railpackRefusedForInstall();
       if (railpackRefusal) throw badRequest(railpackRefusal, 'railpack_unavailable');
     }
@@ -717,7 +718,12 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       if (hookRefusal) throw badRequest(hookRefusal, 'remote_deploy_unsupported');
     }
     // r520/r582: switching TO railpack on an install that cannot run it.
-    if (build?.buildPack === 'railpack' && currentBuild?.buildPack !== 'railpack') {
+    // 0.16 T4: not when a node whose agent builds Railpack itself builds it.
+    if (
+      build?.buildPack === 'railpack' &&
+      currentBuild?.buildPack !== 'railpack' &&
+      !(await (await import('../engine/buildPlacement.js')).railpackBuildsOnCapableNode(app.db, { serverId: mergedServerId, buildOn: existing.buildOn, buildServerId: existing.buildServerId }))
+    ) {
       const railpackRefusal = railpackRefusedForInstall();
       if (railpackRefusal) throw badRequest(railpackRefusal, 'railpack_unavailable');
     }

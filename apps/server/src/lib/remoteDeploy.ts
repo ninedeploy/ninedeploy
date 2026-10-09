@@ -235,6 +235,9 @@ export type RemoteServiceShape = {
   composeContent?: string | null;
   previewParentServiceId?: number | null;
   volumeMount?: string | null;
+  // 0.16 T4: where the image is built (NULL = where it runs, as before).
+  buildOn?: string | null;
+  buildServerId?: number | null;
 };
 
 const unsupported = (message: string): RemoteServiceRefusal => ({ status: 400, code: 'remote_deploy_unsupported', message });
@@ -254,14 +257,28 @@ export async function remoteServiceRefusalDetail(
   if (service.serverId == null) return null;
   const serverId = service.serverId;
   const type = service.type ?? 'docker';
-  let probed: RemoteAgentProbe | undefined;
-  const probe = async (): Promise<RemoteAgentProbe> => {
-    probed ??= await (opts.probe ?? ((id: number) => defaultAgentProbe(db, id)))(serverId);
-    return probed;
+  const probes = new Map<number, Promise<RemoteAgentProbe>>();
+  const probeOf = (id: number): Promise<RemoteAgentProbe> => {
+    let p = probes.get(id);
+    if (!p) {
+      p = (opts.probe ?? ((n: number) => defaultAgentProbe(db, n)))(id);
+      probes.set(id, p);
+    }
+    return p;
   };
+  const probe = (): Promise<RemoteAgentProbe> => probeOf(serverId);
+  // ── 0.16 T4 build placement (design §6.3) ──
+  // The node that CLONES and BUILDS: the target itself (NULL `build_on`, as
+  // before), the build server (`server`: the §2/§3 rules apply to it), or
+  // none (`panel` — the credential stays on the panel, only the image
+  // travels). A docker service only; compose stacks build where they run.
+  const buildOn = type === 'docker' ? (service.buildOn ?? 'target') : 'target';
+  const buildNode = buildOn === 'panel' ? null : buildOn === 'server' ? (service.buildServerId ?? null) : serverId;
+  const cloneProbe = (): Promise<RemoteAgentProbe> => probeOf(buildNode as number);
+  // ── end 0.16 T4 ──
   // Only a service the NODE clones: an image deploy never clones, and an
   // inline compose stack is shipped from the panel.
-  if (service.repoUrl && !service.image && !service.composeContent) {
+  if (buildNode != null && service.repoUrl && !service.image && !service.composeContent) {
     const kind = await cloneCredentialKind(db, service);
     if (kind === 'static') {
       // Multi-node (design §3.2): a PAT or deploy key reaches a node only
@@ -272,7 +289,7 @@ export async function remoteServiceRefusalDetail(
       if (!src?.allowOnNodes) return unsupported(STATIC_CREDENTIAL_REFUSAL);
       const plan = staticClonePlan(src, service.repoUrl);
       if ('refusal' in plan) return unsupported(plan.refusal);
-      const p = await probe();
+      const p = await cloneProbe();
       const why = await capabilityRefusal(p.agent, p.nodeLabel, p.sealed, {
         cap: 'git.sshkey',
         feature: staticCredentialFeature(plan.mode),
@@ -285,7 +302,7 @@ export async function remoteServiceRefusalDetail(
     // `git.credential` over the sealed transport. Anything else keeps the
     // r268 refusal, with the fix named.
     if (kind === 'github_app') {
-      const p = await probe();
+      const p = await cloneProbe();
       const why = await gitCredentialRefusal(p.agent, p.nodeLabel, p.sealed);
       if (why) return unsupported(`Deployments to a remote server are not available for this service yet: ${why}`);
     }
@@ -296,7 +313,7 @@ export async function remoteServiceRefusalDetail(
     if (type === 'docker') {
       const build = await db.query.buildConfigs.findFirst({ where: eq(buildConfigs.serviceId, service.id) });
       if ((build?.buildPack ?? 'auto') === 'nixpacks') {
-        const p = await probe();
+        const p = await cloneProbe();
         const why = await capabilityRefusal(p.agent, p.nodeLabel, p.sealed, { cap: 'build.nixpacks', feature: 'build with Nixpacks', sealedRequired: false });
         if (why) return { ...why, message: `Deployments to a remote server are not available for this service yet: ${why.message}` };
       }

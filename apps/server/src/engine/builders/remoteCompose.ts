@@ -252,9 +252,14 @@ export function createRemoteComposeBuilder(
         }
 
         // ── 0.16 T4 prebuilt image (M6) ──
-        // A stack whose image was built elsewhere and shipped to this node
-        // (design §6.3) is pointed at it here. Empty until build placement
-        // lands: `opts.prebuiltImage` is never set, so nothing changes.
+        // Build placement applies to docker services only: a compose stack
+        // builds (`build:`) or pulls its images where it runs, and one shipped
+        // image cannot stand for a stack. The pipeline refuses the placement
+        // before this builder is reached; this guard keeps a stray caller from
+        // silently ignoring the option.
+        if (opts.prebuiltImage) {
+          throw new RemoteDeployUnsupportedError('A compose stack builds where it runs; build placement applies to docker services only.');
+        }
         // ── end 0.16 T4 ──
         // ── 0.16 T5 volume pre-create (D9) ──
         // Missing managed volumes are created on the node before `compose up`

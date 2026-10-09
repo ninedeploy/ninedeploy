@@ -57,6 +57,13 @@ export interface BuildContext {
    * Docker builder renders into a `nixpacks.toml`.
    */
   manifest?: NinedeployManifest;
+  /**
+   * Multi-node build placement (0.16 T4, design §6.3 step 5): the image was
+   * built on a build server and shipped to this host as `tag` (content
+   * address `imageId`). The local docker builder runs it as shipped — no
+   * pull, no build. Absent for every service that builds where it runs.
+   */
+  prebuiltImage?: { tag: string; imageId: string; builtWithNixpacks?: boolean; builtStatic?: boolean };
   /** Append a log line (persisted + broadcast to subscribers). */
   log: (line: string) => void;
   /**

@@ -201,6 +201,112 @@ async function nodeNixpacksToml(manifest: NinedeployManifest | undefined, log: (
 const DEFAULT_NIXPACKS_PORT = 3000;
 // ── end 0.16 T3 ──
 
+// ── 0.16 T4 build placement: the build half ──
+/**
+ * The source-build half of the remote builder's `buildAndRun`, moved out
+ * unchanged (multi-node T4) so build placement can build on a BUILD SERVER
+ * and ship the image to the hosts that run the service (design §6.3): the
+ * egress gate, the r660 path guard, the T3 pack resolution and capability
+ * checks, the per-job Git credential, the clone at the pinned commit and the
+ * build. `opts.tag` names the image (default `ninedeploy/<slug>:<sha7>`).
+ */
+export async function buildSourceOnNode(
+  agent: AgentCall,
+  ctx: BuildContext,
+  opts: { nodeLabel?: string; gitCredential?: NodeGitCredentialSource; tag?: string } = {},
+): Promise<{ target: string; builtWithNixpacks: boolean }> {
+  const { service, buildConfig, commitSha, env, log } = ctx;
+  const workspace = service.slug;
+  const sink = (line: string) => log(line);
+  let target: string;
+  let plan: NodeBuildPlan = legacyDockerfilePlan(buildConfig);
+  let builtWithNixpacks = false;
+  if (!service.repoUrl) {
+    throw new RemoteDeployUnsupportedError(
+      `"${service.name}" has neither an image nor a repository URL, so there is nothing to deploy on the node.`,
+    );
+  }
+
+  // Same egress gate as a panel-side checkout (r099): the clone runs from
+  // the NODE's network position — a cloud VM with its own metadata
+  // service, or a LAN — and used to skip the check entirely.
+  await assertCloneTargetAllowed(service.repoUrl);
+  // r660: only an agent that symlink-walks the build paths may build
+  // the repository — asked before anything is cloned onto the node.
+  const label = opts.nodeLabel ?? `#${service.serverId ?? '?'}`;
+  await assertAgentGuardsBuildPaths(agent, label);
+  // ── 0.16 T3 node builds (design §2.2) ──
+  // The pack is resolved on the panel's checkout and checked against
+  // the agent's capabilities BEFORE anything is cloned onto the node.
+  plan = await resolveNodeBuildPlan(ctx.workDir, buildConfig, log);
+  if (plan.pack !== 'dockerfile') {
+    const { lines } = await agent('agent.ping', {}, () => undefined);
+    const info = parseAgentCapabilities(lines);
+    if (plan.pack === 'nixpacks') {
+      const refusal = capabilityRefusalFor(info, label, { cap: 'build.nixpacks', feature: 'build with Nixpacks' });
+      if (refusal) {
+        throw new RemoteDeployUnsupportedError(
+          `${refusal.message} Until then, add a Dockerfile to the repository, or clear the target server to build on the panel host.`,
+        );
+      }
+    } else if (!info.caps.has('build.railpack')) {
+      // r520, kept for agents without `build.railpack` only: say so
+      // instead of pretending, and build the repository's Dockerfile.
+      log(
+        'Railpack is not available on a remote node — building the repository Dockerfile instead. ' +
+          `(Update the node agent to v${AGENT_CAPABILITY_VERSION['build.railpack']} or newer to build with Railpack on the node.)`,
+      );
+      plan = legacyDockerfilePlan(buildConfig);
+    }
+  }
+  // ── end 0.16 T3 ──
+  // 0.13 (T5): a GitHub App repository gets a repository-scoped token for
+  // this checkout only — refused for an agent that cannot take it, and
+  // revoked below whatever happens. Anything else clones as before.
+  const git = opts.gitCredential
+    ? await opts.gitCredential(agent, { label, serverId: service.serverId ?? null })
+    : { git: agent, release: async () => undefined };
+  try {
+    log(`Fetching ${service.repoUrl} into the node workspace "${workspace}" …`);
+    await git.git('git.ensure', { workspace, url: service.repoUrl, depth: '1' }, sink);
+    if (service.branch) {
+      await git.git('git.fetch', { workspace }, sink);
+      await git.git('git.checkout', { workspace, ref: service.branch }, sink);
+    }
+    if (commitSha) {
+      await git.git('git.reset', { workspace, sha: commitSha }, sink);
+    }
+  } finally {
+    await git.release();
+  }
+
+  target = opts.tag ?? `ninedeploy/${service.slug}:${commitSha.slice(0, 7) || 'latest'}`;
+  if (plan.pack === 'nixpacks') {
+    const buildEnv = nodeBuildEnv(env, log);
+    const toml = await nodeNixpacksToml(ctx.manifest, log);
+    const params: Record<string, unknown> = { workspace, baseDir: plan.baseDir, tag: target };
+    if (buildConfig?.installCmd) params['installCmd'] = buildConfig.installCmd;
+    if (buildConfig?.buildCmd) params['buildCmd'] = buildConfig.buildCmd;
+    if (buildConfig?.startCmd) params['startCmd'] = buildConfig.startCmd;
+    if (Object.keys(buildEnv).length > 0) params['env'] = buildEnv;
+    if (toml !== undefined) params['nixpacksToml'] = toml;
+    log(`Building ${target} with Nixpacks on the node …`);
+    await agent('build.nixpacks', params, sink);
+    builtWithNixpacks = true;
+  } else if (plan.pack === 'railpack') {
+    const buildEnv = nodeBuildEnv(env, log);
+    const params: Record<string, unknown> = { workspace, baseDir: plan.baseDir, tag: target };
+    if (Object.keys(buildEnv).length > 0) params['env'] = buildEnv;
+    log(`Building ${target} with Railpack on the node …`);
+    await agent('build.railpack', params, sink);
+  } else {
+    log(`Building ${target} from ${plan.dockerfile} on the node …`);
+    await agent('docker.build', { workspace, tag: target, dockerfile: plan.dockerfile, context: plan.context }, sink);
+  }
+  return { target, builtWithNixpacks };
+}
+// ── end 0.16 T4 ──
+
 export function createRemoteDockerBuilder(
   agent: AgentCall,
   opts: {
@@ -233,7 +339,7 @@ export function createRemoteDockerBuilder(
 
   return {
     async buildAndRun(ctx: BuildContext, previous?: DeployRuntime): Promise<DeployRuntime> {
-      const { service, buildConfig, deploymentId, commitSha, env, imageDigest, registryAuth, log } = ctx;
+      const { service, deploymentId, env, imageDigest, registryAuth, log } = ctx;
 
       if (service.type !== 'docker') {
         throw new RemoteDeployUnsupportedError(
@@ -242,10 +348,7 @@ export function createRemoteDockerBuilder(
         );
       }
 
-      // The workspace name becomes a directory on the node and is validated
-      // there too (`resolveWorkspace`), but failing here gives the operator a
-      // message naming the service instead of an agent-side rejection.
-      const workspace = service.slug;
+      // (The node workspace is the service slug: see buildSourceOnNode.)
       const name = `${service.slug}-${deploymentId}`;
       const sink = (line: string) => log(line);
 
@@ -258,8 +361,6 @@ export function createRemoteDockerBuilder(
       await agent('docker.networkCreate', { name: 'ninedeploy', driver: 'bridge' }, sink).catch(() => undefined);
 
       let target: string;
-      // 0.16 T3: what a source build runs on the node (resolved below).
-      let plan: NodeBuildPlan = legacyDockerfilePlan(buildConfig);
       let builtWithNixpacks = false;
       // ── 0.16 T4 prebuilt image (M6) ──
       // Built on the panel or a build server and shipped to this node before
@@ -307,88 +408,9 @@ export function createRemoteDockerBuilder(
           releaseRegistry?.();
         }
       } else {
-        if (!service.repoUrl) {
-          throw new RemoteDeployUnsupportedError(
-            `"${service.name}" has neither an image nor a repository URL, so there is nothing to deploy on the node.`,
-          );
-        }
-
-        // Same egress gate as a panel-side checkout (r099): the clone runs from
-        // the NODE's network position — a cloud VM with its own metadata
-        // service, or a LAN — and used to skip the check entirely.
-        await assertCloneTargetAllowed(service.repoUrl);
-        // r660: only an agent that symlink-walks the build paths may build
-        // the repository — asked before anything is cloned onto the node.
-        const label = opts.nodeLabel ?? `#${service.serverId ?? '?'}`;
-        await assertAgentGuardsBuildPaths(agent, label);
-        // ── 0.16 T3 node builds (design §2.2) ──
-        // The pack is resolved on the panel's checkout and checked against
-        // the agent's capabilities BEFORE anything is cloned onto the node.
-        plan = await resolveNodeBuildPlan(ctx.workDir, buildConfig, log);
-        if (plan.pack !== 'dockerfile') {
-          const { lines } = await agent('agent.ping', {}, () => undefined);
-          const info = parseAgentCapabilities(lines);
-          if (plan.pack === 'nixpacks') {
-            const refusal = capabilityRefusalFor(info, label, { cap: 'build.nixpacks', feature: 'build with Nixpacks' });
-            if (refusal) {
-              throw new RemoteDeployUnsupportedError(
-                `${refusal.message} Until then, add a Dockerfile to the repository, or clear the target server to build on the panel host.`,
-              );
-            }
-          } else if (!info.caps.has('build.railpack')) {
-            // r520, kept for agents without `build.railpack` only: say so
-            // instead of pretending, and build the repository's Dockerfile.
-            log(
-              'Railpack is not available on a remote node — building the repository Dockerfile instead. ' +
-                `(Update the node agent to v${AGENT_CAPABILITY_VERSION['build.railpack']} or newer to build with Railpack on the node.)`,
-            );
-            plan = legacyDockerfilePlan(buildConfig);
-          }
-        }
-        // ── end 0.16 T3 ──
-        // 0.13 (T5): a GitHub App repository gets a repository-scoped token for
-        // this checkout only — refused for an agent that cannot take it, and
-        // revoked below whatever happens. Anything else clones as before.
-        const git = opts.gitCredential
-          ? await opts.gitCredential(agent, { label, serverId: service.serverId ?? null })
-          : { git: agent, release: async () => undefined };
-        try {
-          log(`Fetching ${service.repoUrl} into the node workspace "${workspace}" …`);
-          await git.git('git.ensure', { workspace, url: service.repoUrl, depth: '1' }, sink);
-          if (service.branch) {
-            await git.git('git.fetch', { workspace }, sink);
-            await git.git('git.checkout', { workspace, ref: service.branch }, sink);
-          }
-          if (commitSha) {
-            await git.git('git.reset', { workspace, sha: commitSha }, sink);
-          }
-        } finally {
-          await git.release();
-        }
-
-        target = `ninedeploy/${service.slug}:${commitSha.slice(0, 7) || 'latest'}`;
-        if (plan.pack === 'nixpacks') {
-          const buildEnv = nodeBuildEnv(env, log);
-          const toml = await nodeNixpacksToml(ctx.manifest, log);
-          const params: Record<string, unknown> = { workspace, baseDir: plan.baseDir, tag: target };
-          if (buildConfig?.installCmd) params['installCmd'] = buildConfig.installCmd;
-          if (buildConfig?.buildCmd) params['buildCmd'] = buildConfig.buildCmd;
-          if (buildConfig?.startCmd) params['startCmd'] = buildConfig.startCmd;
-          if (Object.keys(buildEnv).length > 0) params['env'] = buildEnv;
-          if (toml !== undefined) params['nixpacksToml'] = toml;
-          log(`Building ${target} with Nixpacks on the node …`);
-          await agent('build.nixpacks', params, sink);
-          builtWithNixpacks = true;
-        } else if (plan.pack === 'railpack') {
-          const buildEnv = nodeBuildEnv(env, log);
-          const params: Record<string, unknown> = { workspace, baseDir: plan.baseDir, tag: target };
-          if (Object.keys(buildEnv).length > 0) params['env'] = buildEnv;
-          log(`Building ${target} with Railpack on the node …`);
-          await agent('build.railpack', params, sink);
-        } else {
-          log(`Building ${target} from ${plan.dockerfile} on the node …`);
-          await agent('docker.build', { workspace, tag: target, dockerfile: plan.dockerfile, context: plan.context }, sink);
-        }
+        // 0.16 T4: the build itself is buildSourceOnNode (a pure move), shared
+        // with build placement's build-server builds.
+        ({ target, builtWithNixpacks } = await buildSourceOnNode(agent, ctx, opts));
       }
 
       // Nixpacks apps follow the buildpack $PORT convention: the same 3000

@@ -315,6 +315,55 @@ describe('T3: node builds and private clones against a 0.15 agent', () => {
 });
 // ── end 0.16 T3 ──
 // ── 0.16 T4 build placement ── (image transfer to the node)
+describe('T4: build placement and image transfer against a 0.15 agent (CAPS_015)', () => {
+  const t4Service = async (values: Record<string, unknown>) =>
+    (await db.insert(services).values({ name: 'web', slug: 'web', type: 'docker', repoUrl: 'https://github.com/acme/web.git', branch: 'main', serverId, ...values } as never).returning())[0]!;
+
+  it('PUT /v1/services/:id/placement (build on the panel, ship to the node): 422, only agent.ping, nothing stored', async () => {
+    const { servicePlacementRoutes } = await import('../src/modules/servicePlacement.js');
+    const svc = await t4Service({});
+    const app = await buildTestApp({ db });
+    await app.register(servicePlacementRoutes, { prefix: '/services' });
+    const res = await app.inject({ method: 'PUT', url: `/services/${svc.id}/placement`, headers: asUser(), payload: { buildOn: 'panel' } });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error).toMatchObject({ code: 'node_agent_outdated', message: expect.stringMatching(/cannot receive an image\. Update the node agent to v0\.15\.2/) });
+    expect(h.ops).toEqual(['agent.ping']);
+    expect((await db.query.services.findFirst())!.buildOn).toBeNull();
+    await app.close();
+  });
+
+  it('shipping to the node: 422 before any stream, not retried, the transfer row is failed', async () => {
+    const { shipImageByStream } = await import('../src/lib/imageTransfer.js');
+    const svc = await t4Service({});
+    const socketFactory = vi.fn();
+    const err = await shipImageByStream(
+      db,
+      { deploymentId: null, serviceId: svc.id, source: null, target: serverId, tag: 'ninedeploy/web:abc1234-b1', imageId: `sha256:${'a'.repeat(64)}` },
+      () => undefined,
+      {
+        openStream: (dbArg, id, kind, params) => openAgentStream(dbArg, id, kind, params, { socketFactory }),
+        panelSave: () => ({ stream: (async function* () {})() as never, done: Promise.resolve(), kill: () => undefined }),
+      },
+    ).catch((e: unknown) => e);
+    expect(err).toMatchObject({ statusCode: 422, code: 'node_agent_outdated' });
+    expect(h.ops).toEqual(['agent.ping']);
+    expect(socketFactory).not.toHaveBeenCalled();
+    expect(await db.select().from(imageTransfers)).toEqual([expect.objectContaining({ status: 'failed' })]);
+  });
+
+  it('a build server on an older agent: refused before anything is cloned or built on it', async () => {
+    const { buildElsewhere } = await import('../src/engine/buildPlacement.js');
+    await db.update(servers).set({ isBuildServer: true });
+    const svc = await t4Service({ serverId: null, buildOn: 'server', buildServerId: serverId });
+    const buildOnNode = vi.fn();
+    const err = await buildElsewhere(db, { kind: 'server', serverId }, {
+      deploymentId: 1, service: svc, workDir: '/nonexistent', commitSha: 'abc1234', env: {}, log: () => undefined,
+    } as never, { deps: { buildOnNode } }).catch((e: unknown) => e);
+    expect(err).toMatchObject({ statusCode: 422, code: 'node_agent_outdated', message: expect.stringMatching(/cannot hand a built image over as a build server/) });
+    expect(buildOnNode).not.toHaveBeenCalled();
+    expect(h.ops).toEqual(['agent.ping']);
+  });
+});
 // ── end 0.16 T4 ──
 // ── 0.16 T5 node volumes ── (attachments / cmd / socket, volume create)
 describe('T5 node volumes against a 0.15 agent (CAPS_015)', () => {
