@@ -64,6 +64,17 @@ export interface BuildContext {
    * pull, no build. Absent for every service that builds where it runs.
    */
   prebuiltImage?: { tag: string; imageId: string; builtWithNixpacks?: boolean; builtStatic?: boolean };
+  // ── 0.16 T6 node databases (D4) ──
+  /**
+   * Containers of the PANEL-HOST managed databases attached to this service
+   * and running (their connection strings are in `env`). The local docker
+   * builder connects each to the service's `nd-svc-<slug>` bridge before the
+   * container starts: under Model B the service sits on that bridge only, so
+   * `nd-db-<slug>` did not resolve from it (D4). Absent or empty: nothing to
+   * connect (every non-docker builder ignores it).
+   */
+  databaseContainers?: string[];
+  // ── end 0.16 T6 ──
   /** Append a log line (persisted + broadcast to subscribers). */
   log: (line: string) => void;
   /**

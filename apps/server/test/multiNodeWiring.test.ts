@@ -367,9 +367,11 @@ describe('the server delete guard (M7)', () => {
     expect(ask).toBeLessThan(src.indexOf('const hosted = await hostedOn(authed.db, id);'));
   });
 
-  it('the T1 stub reports no blocker, so the delete behaves as before', async () => {
+  it('a server that hosts no database has no blocker, so the delete behaves as before', async () => {
     const actual = await vi.importActual<typeof import('../src/lib/serverDependents.js')>('../src/lib/serverDependents.js');
-    expect(await actual.serverDeleteBlockers({} as never, 1)).toEqual([]);
+    // 0.16 T6 filled the T1 stub: it lists the databases placed on the server (none here).
+    const noDatabases = { select: () => ({ from: () => ({ where: async () => [] }) }) };
+    expect(await actual.serverDeleteBlockers(noDatabases as never, 1)).toEqual([]);
     const app = await appWith({ findFirst: { servers: node }, findMany: { services: [] }, select: { serviceTargets: [] } });
     const res = await app.inject({ method: 'DELETE', url: '/servers/1', headers: asUser() });
     expect(res.statusCode).toBe(200);

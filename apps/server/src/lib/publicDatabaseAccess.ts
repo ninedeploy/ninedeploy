@@ -97,15 +97,20 @@ export function assertPublicAccessEngine(engine: string, tlsMode: PublicAccessTl
 }
 
 /**
- * Databases always run on the panel host today. The sidecar can only reach a
- * database on the panel's own `ninedeploy` network, so a row placed on a
- * remote node (a future placement column) must be refused, never proxied to
- * whatever happens to answer locally under that name.
+ * The sidecar can only reach a database on the panel's own `ninedeploy`
+ * network, so a row placed on a node (`databases.server_id`, multi-node) is
+ * refused, never proxied to whatever answers locally under that name.
+ *
+ * D6 (multi-node T6): this guard used to read `serverId` through a cast,
+ * before the column existed in the drizzle schema. drizzle selects declared
+ * columns only, so on 0.14/0.15 the property is ALWAYS undefined — even with
+ * the column present after a rollback — and the guard is inert there. 0.16
+ * reads the declared column; what protects a node database after a rollback
+ * to 0.15 is the NULL-name marker (design §5.8), not this function.
  */
 export function assertOnPanelHost(d: Database): void {
-  const serverId = (d as Database & { serverId?: number | null }).serverId;
-  if (serverId !== undefined && serverId !== null) {
-    throw unprocessable('Public access is only available for databases on the panel host', 'remote_database');
+  if (d.serverId != null) {
+    throw unprocessable('Public access is not available for a database on a node yet; it runs on the panel host only.', 'remote_database');
   }
 }
 

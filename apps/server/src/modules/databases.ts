@@ -1,18 +1,16 @@
 import { existsSync, unlinkSync } from 'node:fs';
 import { and, eq } from 'drizzle-orm';
 import { audit } from '../lib/audit.js';
-import { backups, databaseAttachments, databases, projects, users, type Database } from '@ninedeploy/db';
+import { backups, databaseAttachments, databases, type DB, projects, servers, serviceTargets, users, type Database } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import { createAttachment, createDatabase, setLimits } from '@ninedeploy/schemas';
 import {
   adoptRetainedVolume,
   volumeExists,
   connectionString,
-  databaseLogs,
   defaultPort,
   ENGINES,
   needsVolumeAdoption,
-  restartDatabase,
   startDatabase,
   startDatabaseStudio,
   stopDatabase,
@@ -39,8 +37,14 @@ import {
   visibleDatabaseIds,
 } from '../lib/resourceAccess.js';
 import { studioCookieEpoch, studioCookieName, studioCookieSetHeader, studioProxyPathFor } from './studioProxy.js';
-import { badRequest, conflict, forbidden, notFound, parseId as num, unauthorized } from '../lib/errors.js';
+import { badRequest, conflict, forbidden, HttpError, notFound, parseId as num, unauthorized, unprocessable } from '../lib/errors.js';
 import { slugify } from '../lib/slug.js';
+// ── 0.16 T6 node databases ──
+import { databaseRuntime, isNodeDatabase } from '../lib/databaseRuntime.js';
+import { assertNodeDatabaseCapable, nodeDatabaseRuntime, nodeReachability } from '../lib/nodeDatabase.js';
+import { nodeVolumeExists } from '../lib/nodeVolumes.js';
+import { attachmentHostMismatch, fanoutDatabaseHostRefusal } from '../lib/remoteDatabaseRefusal.js';
+// ── end 0.16 T6 ──
 
 /** Docker volume names only: prevents `existingVolume` from becoming a bind
  *  mount operand (`/etc`, `/:/x`) in `docker run -v <name>:<path>`. */
@@ -74,7 +78,12 @@ function serialize(
       service?: { id: number; name: string; slug: string } | null;
     }>;
   },
-  opts: { isAdmin: boolean; publicAccess?: { enabled: boolean; port: number } | null } = { isAdmin: true },
+  opts: {
+    isAdmin: boolean;
+    publicAccess?: { enabled: boolean; port: number } | null;
+    /** 0.16 T6: the node a database runs on (name, last reachability), keyed by server id. */
+    nodes?: ReadonlyMap<number, { name: string; reachable: boolean | null }>;
+  } = { isAdmin: true },
 ) {
   const cfg = ENGINES[d.engine];
   const attachedServices =
@@ -97,8 +106,10 @@ function serialize(
     // The password-embedded URI is admin-only; members reveal credentials via
     // the dedicated /credentials endpoint (also admin-gated).
     connectionString: opts.isAdmin && d.status === 'running' ? connectionString(d) : null,
-    containerName: d.containerName,
-    volumeName: d.volumeName,
+    // 0.16 T6: a node row keeps NULL local names (the rollback marker); the
+    // field keeps its meaning — the container (volume) the database runs under.
+    containerName: d.containerName ?? d.nodeContainerName ?? null,
+    volumeName: d.volumeName ?? d.nodeVolumeName ?? null,
     cpuShares: d.cpuShares,
     cpuLimitMilli: d.cpuLimitMilli,
     memLimitMb: d.memLimitMb,
@@ -108,10 +119,35 @@ function serialize(
     attachedServices,
     // 0.14 (M7): `{ enabled, port }` when public access was ever configured.
     publicAccess: opts.publicAccess ?? null,
+    // ── 0.16 T6 node databases (additive) ── null for a panel-host database.
+    serverId: d.serverId ?? null,
+    serverName: d.serverId == null ? null : (opts.nodes?.get(d.serverId)?.name ?? null),
+    reachable: d.serverId == null ? null : (opts.nodes?.get(d.serverId)?.reachable ?? null),
+    // ── end 0.16 T6 ──
     createdAt: d.createdAt.toISOString(),
     updatedAt: d.updatedAt.toISOString(),
   };
 }
+
+// ── 0.16 T6 node databases ──
+/** The nodes of `rows` (name, last reachability from plugins/nodeDatabases.ts); empty for panel rows. */
+async function nodesOf(db: DB, rows: ReadonlyArray<{ serverId?: number | null }>): Promise<Map<number, { name: string; reachable: boolean | null }>> {
+  const ids = [...new Set(rows.map((r) => r.serverId).filter((id): id is number => id != null))];
+  const out = new Map<number, { name: string; reachable: boolean | null }>();
+  for (const id of ids) {
+    const row = await db.query.servers.findFirst({ where: eq(servers.id, id) });
+    out.set(id, { name: row?.name ?? `#${id}`, reachable: nodeReachability(id)?.reachable ?? null });
+  }
+  return out;
+}
+
+/** Refuse a panel-host-only feature for a node database (design §5.7, §12). */
+function refuseOnNode(d: Database, feature: string): void {
+  if (isNodeDatabase(d)) {
+    throw unprocessable(`${feature} is not available for a database on a node yet; it runs on the panel host only.`, 'remote_database');
+  }
+}
+// ── end 0.16 T6 ──
 
 /** Managed database CRUD. Mounted under /databases. */
 export const databasesRoutes: FastifyPluginAsync = async (app) => {
@@ -139,8 +175,9 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
     });
     const scopedRows = visible === null ? rows : rows.filter((d) => visible.includes(d.id));
     const publicAccess = await publicAccessSummaries(app.db, scopedRows.map((d) => d.id));
+    const nodes = await nodesOf(app.db, scopedRows);
     return scopedRows.map((d) =>
-      serialize(d, { isAdmin: isAdminUser, publicAccess: publicAccess.get(d.id) ?? null }),
+      serialize(d, { isAdmin: isAdminUser, publicAccess: publicAccess.get(d.id) ?? null, nodes }),
     );
   });
 
@@ -179,6 +216,101 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
     const volumeName = existingVolume || `nd-db-${slug}-data`;
     const version = input.extensions?.includes('pgvector') && input.engine === 'postgres' ? 'vector' : (input.version ?? null);
 
+    // ── 0.16 T6 node databases (design §5.2, §5.7) ──
+    // `serverId` places the database on a node, fixed for its life. The row
+    // keeps container_name / volume_name NULL — the marker 0.15 refuses to act
+    // on after a rollback (§5.8) — and its real names in node_*.
+    if (input.serverId != null) {
+      const serverId = input.serverId;
+      if (!req.user!.isOperator) {
+        throw new HttpError(403, 'node_placement_operator_only', 'Placing a database on a node is operator-only: a node is an instance resource.');
+      }
+      if (existingVolume) {
+        throw unprocessable(
+          'A database on a node never adopts an existing volume: omit existingVolume and a fresh volume is created on the node.',
+          'node_volume_adoption_refused',
+        );
+      }
+      const node = await app.db.query.servers.findFirst({ where: eq(servers.id, serverId) });
+      if (!node) throw notFound(`Server #${serverId} not found`);
+      if (node.status !== 'online') {
+        throw new HttpError(409, 'server_not_online', `Node "${node.name}" is ${node.status}; a database can be placed only on an online node.`);
+      }
+      // 422 node_agent_outdated (after `agent.ping` only) for an agent that cannot host databases.
+      await assertNodeDatabaseCapable(app.db, serverId);
+      const log = (line: string) => app.log.info({ component: 'database', serverId }, line);
+      const existing = await app.db.query.databases.findFirst({ where: eq(databases.slug, slug) });
+      let row: Database;
+      if (existing) {
+        // The Hub retry resumes the caller's own row on the same node.
+        const sameRequest =
+          input.reuseExisting === true &&
+          existing.ownerUserId === req.user!.id &&
+          existing.engine === input.engine &&
+          existing.projectId === (input.projectId ?? null) &&
+          existing.version === version &&
+          existing.serverId === serverId;
+        if (!sameRequest) throw badRequest('A different database already uses this name');
+        row = existing;
+      } else {
+        const nodeVolume = `nd-db-${slug}-data`;
+        if (await nodeVolumeExists(app.db, serverId, nodeVolume)) {
+          throw new HttpError(
+            409,
+            'node_volume_exists',
+            `Volume ${nodeVolume} already exists on node "${node.name}"; a database on a node never adopts a retained volume. Remove it on the node, or pick another name.`,
+          );
+        }
+        const [created] = await app.db
+          .insert(databases)
+          .values({
+            projectId: input.projectId ?? null,
+            ownerUserId: req.user!.id,
+            name: input.name,
+            slug,
+            engine: input.engine,
+            version,
+            status: 'creating',
+            containerName: null,
+            volumeName: null,
+            serverId,
+            nodeContainerName: containerName,
+            nodeVolumeName: nodeVolume,
+            username: cfg.username() ?? null,
+            passwordEncrypted: encrypt(password),
+            dbName: cfg.dbName() ?? null,
+            extensions: input.extensions ?? [],
+            webGuiEnabled: false,
+          })
+          .returning();
+        if (!created) throw badRequest('Could not create database');
+        row = created;
+      }
+      const runtime = nodeDatabaseRuntime(app.db, row);
+      try {
+        if (needsVolumeAdoption(row)) await runtime.adoptRetainedVolume(log);
+        await runtime.start(log);
+        await app.db
+          .update(databases)
+          .set({ status: 'running', internalHost: containerName, internalPort: defaultPort(input.engine), initializedAt: row.initializedAt ?? new Date() })
+          .where(eq(databases.id, row.id));
+      } catch (err) {
+        await app.db.update(databases).set({ status: 'error' }).where(eq(databases.id, row.id));
+        if (err instanceof HttpError) throw err;
+        throw badRequest(`Failed to start database: ${err instanceof Error ? err.message : err}`);
+      }
+      const placed = await app.db.query.databases.findFirst({
+        where: eq(databases.id, row.id),
+        with: { attachments: { with: { service: true } } },
+      });
+      void audit(app.db, req.user!.id, existing ? 'database.reuse' : 'database.create', input.name, { serverId });
+      if (!existing) {
+        app.kernel?.events.emit('database.created', { databaseId: row.id, projectId: row.projectId ?? 0, name: row.name, engine: row.engine });
+      }
+      return serialize(placed!, { isAdmin: req.user?.isOperator === true, nodes: await nodesOf(app.db, [placed!]) });
+    }
+    // ── end 0.16 T6 ──
+
     // A volume name can only belong to one database row: two rows mounting the
     // same data directory would fight over the engine's lock and (worse) a new
     // row would re-key the other database's credentials out from under it.
@@ -206,7 +338,9 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
             existing.ownerUserId === req.user!.id &&
             existing.engine === input.engine &&
             existing.projectId === (input.projectId ?? null) &&
-            existing.version === version;
+            existing.version === version &&
+            // 0.16 T6: a node row is never resumed by a panel-host request.
+            existing.serverId == null;
           if (!sameRequest) throw badRequest('A different database already uses this name');
 
           try {
@@ -323,7 +457,7 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!d) throw notFound('Database not found');
     const publicAccess = (await publicAccessSummaries(app.db, [d.id])).get(d.id) ?? null;
-    return serialize(d, { isAdmin: req.user?.isOperator === true, publicAccess });
+    return serialize(d, { isAdmin: req.user?.isOperator === true, publicAccess, nodes: await nodesOf(app.db, [d]) });
   });
 
   // Start Web Studio (Adminer / Redis Commander GUI) for this database.
@@ -336,6 +470,7 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
   app.post('/:id/studio', { preHandler: [app.requireAdmin] }, async (req, reply) => {
     const id = num((req.params as { id: string }).id);
     const d = await loadDatabaseForUser(app.db, id, req.user!);
+    refuseOnNode(d, 'Web Studio'); // 0.16 T6 (design §5.7)
     const bodyPort = (req.body as { port?: number } | undefined)?.port;
     if (bodyPort !== undefined && (!Number.isInteger(bodyPort) || bodyPort < 1024 || bodyPort > 65535)) {
       throw badRequest('port must be an integer between 1024 and 65535');
@@ -356,7 +491,8 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
   app.delete('/:id/studio', { preHandler: [app.requireAdmin] }, async (req, reply) => {
     const id = num((req.params as { id: string }).id);
     const d = await loadDatabaseForUser(app.db, id, req.user!);
-    await stopDatabaseStudio(d, (line) => app.log.info({ component: 'database-studio' }, line));
+    // 0.16 T6: a node database never had a Studio (refused); nothing runs on the panel host for it.
+    if (!isNodeDatabase(d)) await stopDatabaseStudio(d, (line) => app.log.info({ component: 'database-studio' }, line));
     await app.db.update(databases).set({ webGuiEnabled: false }).where(eq(databases.id, d.id));
     void audit(app.db, req.user!.id, 'database.studio.stop', d.name);
     reply.header('set-cookie', `${studioCookieName(id)}=; Path=/v1/databases/${id}/studio-proxy/; HttpOnly; SameSite=Strict; Max-Age=0`);
@@ -405,19 +541,44 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const dbLog = (line: string) => app.log.info({ component: 'database' }, line);
-    await stopDatabase(d, dbLog);
-    // r183: the sidecars go with it. Only `nd-db-<slug>` used to be removed:
-    // the studio (which holds the credentials) and PgBouncer kept running
-    // with the old password, and a later database reusing the slug found
-    // `nd-studio-<slug>` "already running" and inherited the stale one.
-    await stopDatabaseStudio(d, dbLog);
-    await disablePgbouncer(app.db, d, dbLog).catch((err: unknown) =>
-      req.log.warn({ err }, 'failed to remove the PgBouncer sidecar after database delete'),
-    );
-    // 0.14 (M6): the public-access proxy goes before the row transaction (the
-    // FK cascade then drops its row). It never throws; a leftover container
-    // is an orphan the watchdog removes.
-    await removePublicAccessSidecar(app.db, d, dbLog);
+    // ── 0.16 T6 node databases (design §5.4 "Delete") ──
+    // The container and its bridge go on the node; the volume (the data) only
+    // with ?purgeVolume=true. Studio, PgBouncer and public access never ran
+    // for a node database, so nothing runs on the panel host. An unreachable
+    // node keeps the row (502) unless ?force=true, which deletes the record
+    // and says what was left running on the node.
+    let orphanedOnNode: string | null = null;
+    if (isNodeDatabase(d)) {
+      const runtime = nodeDatabaseRuntime(app.db, d);
+      try {
+        await runtime.remove({ purgeVolume: (req.query as { purgeVolume?: string }).purgeVolume === 'true' }, dbLog);
+      } catch (err) {
+        const why = err instanceof Error ? err.message : String(err);
+        if (!force) {
+          throw new HttpError(
+            502,
+            'node_unreachable',
+            `Could not remove database "${d.name}" from node #${d.serverId}: ${why}. Retry when the node is back, or pass ?force=true to delete the record and leave ${runtime.container} and ${runtime.volume} on the node.`,
+          );
+        }
+        orphanedOnNode = `${runtime.container} (volume ${runtime.volume}, network ${runtime.network}) may still run on node #${d.serverId}: remove it there with docker rm -f ${runtime.container}.`;
+      }
+    } else {
+      await stopDatabase(d, dbLog);
+      // r183: the sidecars go with it. Only `nd-db-<slug>` used to be removed:
+      // the studio (which holds the credentials) and PgBouncer kept running
+      // with the old password, and a later database reusing the slug found
+      // `nd-studio-<slug>` "already running" and inherited the stale one.
+      await stopDatabaseStudio(d, dbLog);
+      await disablePgbouncer(app.db, d, dbLog).catch((err: unknown) =>
+        req.log.warn({ err }, 'failed to remove the PgBouncer sidecar after database delete'),
+      );
+      // 0.14 (M6): the public-access proxy goes before the row transaction (the
+      // FK cascade then drops its row). It never throws; a leftover container
+      // is an orphan the watchdog removes.
+      await removePublicAccessSidecar(app.db, d, dbLog);
+    }
+    // ── end 0.16 T6 ──
     // Capture the dump paths BEFORE the transaction deletes the rows.
     const backupRows = await app.db.query.backups.findMany({ where: eq(backups.databaseId, d.id) });
     // Atomic row removal (attachments + backups + the database itself commit
@@ -457,9 +618,9 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
     app.kernel?.events.emit('database.deleted', {
       databaseId: d.id,
       name: d.name,
-      volumeRetained: true,
+      volumeRetained: !(isNodeDatabase(d) && (req.query as { purgeVolume?: string }).purgeVolume === 'true' && orphanedOnNode === null),
     });
-    return { ok: true };
+    return orphanedOnNode ? { ok: true, note: orphanedOnNode } : { ok: true };
   });
 
   // Resource limits — recreates the container if running so they take effect.
@@ -482,9 +643,11 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
       void audit(app.db, req.user!.id, 'database.limits', `${updated.name}: cpu=${updated.cpuShares} cpus=${updated.cpuLimitMilli / 1000} mem=${updated.memLimitMb}MB`);
     }
     if (updated && updated.status === 'running') {
-      await stopDatabase(updated, () => undefined);
+      // 0.16 T6: through the runtime (the engine functions on the panel host, the agent on a node).
+      const runtime = databaseRuntime(app.db, updated);
+      await runtime.stop(() => undefined);
       try {
-        await startDatabase(updated, (line) => app.log.info({ component: 'database' }, line));
+        await runtime.start((line) => app.log.info({ component: 'database' }, line));
       } catch (err) {
         // A failed restart must not leave the row claiming `running` with no
         // container — every attached service's healthcheck would then fail
@@ -500,7 +663,7 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
     const id = num((req.params as { id: string }).id);
     const d = await loadDatabaseForUser(app.db, id, req.user!);
     await assertDatabaseRole(app.db, d, req.user!, 'member');
-    await restartDatabase(d, (line) => app.log.info({ component: 'database' }, line));
+    await databaseRuntime(app.db, d).restart((line) => app.log.info({ component: 'database' }, line));
     await app.db.update(databases).set({ status: 'running' }).where(eq(databases.id, d.id));
     void audit(app.db, req.user!.id, 'database.restart', d.name);
     return { ok: true };
@@ -510,7 +673,7 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
     const id = num((req.params as { id: string }).id);
     const d = await loadDatabaseForUser(app.db, id, req.user!);
     await assertDatabaseRole(app.db, d, req.user!, 'member');
-    await stopDatabase(d, (line) => app.log.info({ component: 'database' }, line));
+    await databaseRuntime(app.db, d).stop((line) => app.log.info({ component: 'database' }, line));
     await app.db.update(databases).set({ status: 'stopped' }).where(eq(databases.id, d.id));
     void audit(app.db, req.user!.id, 'database.stop', d.name);
     app.kernel?.events.emit('database.stopped', {
@@ -525,10 +688,11 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
     await assertDatabaseRole(app.db, d, req.user!, 'member');
     // A row can sit in 'error' with a NULL marker (failed first attempt) —
     // starting it must clear the same retained-volume gate as a create/retry.
+    const runtime = databaseRuntime(app.db, d);
     if (needsVolumeAdoption(d)) {
-      await adoptRetainedVolume(d, (line) => app.log.info({ component: 'database' }, line));
+      await runtime.adoptRetainedVolume((line) => app.log.info({ component: 'database' }, line));
     }
-    await startDatabase(d, (line) => app.log.info({ component: 'database' }, line));
+    await runtime.start((line) => app.log.info({ component: 'database' }, line));
     await app.db
       .update(databases)
       .set({ status: 'running', initializedAt: d.initializedAt ?? new Date() })
@@ -548,7 +712,7 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
     // capture buffer.
     const requested = Math.trunc(Number((req.query as { lines?: string }).lines));
     const lines = Number.isFinite(requested) && requested > 0 ? Math.min(requested, 5000) : 100;
-    const logs = await databaseLogs(d, lines);
+    const logs = await databaseRuntime(app.db, d).logs(lines);
     return { logs };
   });
 
@@ -670,6 +834,17 @@ export const attachmentRoutes: FastifyPluginAsync = async (app) => {
     // a viewer-or-member seat on the database's workspace is not consent to
     // hand its password to a container.
     await assertDatabaseRole(app.db, d, req.user!, 'admin');
+    // ── 0.16 T6 node databases (design §5.5, O2) ── same host only: a
+    // database's hostname resolves only where it runs (both NULL = the panel
+    // host, every 0.15 attachment). Fan-out targets would run the service on
+    // other nodes, which never reach a node database.
+    const hostRefusal =
+      (await attachmentHostMismatch(app.db, svc, d)) ??
+      (d.serverId != null
+        ? await fanoutDatabaseHostRefusal(app.db, { ...svc, id }, (await app.db.query.serviceTargets.findMany({ where: eq(serviceTargets.serviceId, id) })).map((t) => t.serverId), d)
+        : null);
+    if (hostRefusal) throw hostRefusal;
+    // ── end 0.16 T6 ──
     const envAlias = input.envAlias ?? aliasFor(d.engine);
     if (input.reuseExisting) {
       const existing = await app.db.query.databaseAttachments.findFirst({
@@ -723,8 +898,13 @@ export const attachmentRoutes: FastifyPluginAsync = async (app) => {
     // disconnect) the service, reaching whoever takes the slug next.
     // Best-effort, like F843: the row is gone either way.
     const detached = await app.db.query.databases
-      .findFirst({ where: eq(databases.id, deleted[0]!.databaseId), columns: { containerName: true } })
+      .findFirst({ where: eq(databases.id, deleted[0]!.databaseId), columns: { containerName: true, serverId: true, slug: true, nodeContainerName: true } })
       .catch(() => undefined);
+    // ── 0.16 T6 node databases (O7) ── the service's container leaves the database's bridge on the node.
+    if (detached?.serverId != null && svc.runtimeId && svc.serverId === detached.serverId) {
+      await nodeDatabaseRuntime(app.db, { ...(detached as Database), id: deleted[0]!.databaseId }).disconnect(svc.runtimeId);
+    }
+    // ── end 0.16 T6 ──
     if (detached?.containerName) {
       const container = detached.containerName;
       await capture('docker', ['network', 'disconnect', serviceBridgeName(svc.slug), container]).catch((err: unknown) =>

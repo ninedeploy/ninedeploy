@@ -78,6 +78,8 @@ export const AGENT_STREAM_KINDS = {
   'volume.import': { direction: 'panel-to-agent', cap: 'volume.manage' },
   // ── end 0.16 T2 ──
   // ── 0.16 T6 node databases ── (db.dump: agent-to-panel, db.restore: panel-to-agent; cap db.manage)
+  'db.dump': { direction: 'agent-to-panel', cap: 'db.manage' },
+  'db.restore': { direction: 'panel-to-agent', cap: 'db.manage' },
   // ── end 0.16 T6 ──
 } as const satisfies Record<string, { direction: StreamDirection; cap: MultiNodeCapability }>;
 export type AgentStreamKind = keyof typeof AGENT_STREAM_KINDS;
@@ -88,6 +90,10 @@ const KIND_FEATURE: Record<AgentStreamKind, string> = {
   'image.load': 'receive an image',
   'volume.export': 'export a volume',
   'volume.import': 'restore a volume',
+  // ── 0.16 T6 node databases ──
+  'db.dump': 'back up a node database',
+  'db.restore': 'restore into a node database',
+  // ── end 0.16 T6 ──
 };
 
 /** `NINEDEPLOY_STREAM_MAX_BYTES`, else 50 GiB; never above 1 TiB. */

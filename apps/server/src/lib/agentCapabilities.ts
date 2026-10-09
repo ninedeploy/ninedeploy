@@ -321,6 +321,8 @@ export async function nodeTerminalCapability(
  * quotes this version. Each task sets its own capabilities' release.
  */
 export const AGENT_MULTI_NODE_VERSION = '0.15.2';
+/** 0.16 T6: `db.manage` (node databases) ships in the release after 0.15.2; a 0.15.2 agent lacks it and must be told to update, not that its owner switched it off. */
+export const AGENT_DB_MANAGE_VERSION = '0.15.3';
 export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, string>> = {
   // ── 0.16 T2 agent transport ──
   stream: AGENT_MULTI_NODE_VERSION,
@@ -333,8 +335,8 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
   'build.railpack': AGENT_MULTI_NODE_VERSION,
   'git.sshkey': AGENT_MULTI_NODE_VERSION,
   // ── end 0.16 T3 ──
-  // ── 0.16 T6 node databases ──
-  'db.manage': AGENT_MULTI_NODE_VERSION,
+  // ── 0.16 T6 node databases ── (first advertised by the release after 0.15.2)
+  'db.manage': AGENT_DB_MANAGE_VERSION,
   // ── end 0.16 T6 ──
   // ── 0.16 T7 swarm ──
   swarm: AGENT_MULTI_NODE_VERSION,

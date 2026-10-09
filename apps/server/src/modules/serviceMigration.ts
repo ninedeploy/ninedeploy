@@ -305,7 +305,10 @@ export const serviceMigrationRoutes: FastifyPluginAsync = async (app) => {
             eq(databases.engine, a.databaseEngine as (typeof dbEngine)[number]),
           ),
         });
-        if (match) {
+        // 0.16 T6 (design §5.5): a database on a node is reachable only from
+        // services on that node, so it is not attached elsewhere. Panel-host
+        // databases keep the 0.15 behaviour.
+        if (match && (match.serverId == null || match.serverId === (created.serverId ?? null))) {
           await tx.insert(databaseAttachments).values({
             serviceId: created.id,
             databaseId: match.id,

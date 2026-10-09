@@ -29,10 +29,9 @@ import { config } from '../config.js';
 import {
   type DatabaseImportPlan,
   ENGINES,
-  importDatabase,
-  probeDatabaseCredentials,
   stageForRestore,
 } from '../engine/database.js';
+import { databaseRuntime } from './databaseRuntime.js';
 import { audit } from './audit.js';
 import { validateDumpFile } from './backupDrill.js';
 import { forbidden, HttpError, unprocessable } from './errors.js';
@@ -925,7 +924,8 @@ export async function runImportJob(db: DB, importId: number, ctx: ImportJobConte
       const backupFile = path.join(config.paths.backupsDir, `${d.slug}-${stamp}-pre-import.dump`);
       const [b] = await db
         .insert(backups)
-        .values({ databaseId: d.id, scope: 'db', label: 'pre-import', status: 'running', path: backupFile })
+        // 0.16 T6: a node database's safety backup records its node (NULL = the panel host).
+        .values({ databaseId: d.id, scope: 'db', label: 'pre-import', status: 'running', path: backupFile, ...(d.serverId != null ? { serverId: d.serverId } : {}) })
         .returning({ id: backups.id });
       plan.safetyBackup = {
         file: backupFile,
@@ -943,14 +943,15 @@ export async function runImportJob(db: DB, importId: number, ctx: ImportJobConte
 
     log(`Importing ${format} into ${d.name}`);
     try {
-      await importDatabase(d, file, plan, log);
+      // 0.16 T6: the runtime dispatch — the engine on the panel host, the stream channel on a node.
+      await databaseRuntime(db, d).import(file, plan, log);
     } catch (err) {
       const lines = tail.slice(-5).join(' | ');
       const hint = format === 'mysql_sql' && /DEFINER|SET_USER_ID|SUPER privilege|SYSTEM_USER/i.test(lines) ? ` ${DEFINER_HINT}` : '';
       throw new Error(`${err instanceof Error ? err.message : String(err)}${lines ? ` — ${lines}` : ''}${hint}`);
     }
 
-    const credentialsOk = await probeDatabaseCredentials(d);
+    const credentialsOk = await databaseRuntime(db, d).probeCredentials();
     const status = credentialsOk ? 'completed' : 'completed_with_warnings';
     await db
       .update(databaseImports)

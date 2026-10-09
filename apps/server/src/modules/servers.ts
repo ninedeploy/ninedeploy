@@ -18,6 +18,7 @@ import { bootstrapServer, getBootstrapLogs, testSshConnection } from '../engine/
 import { agentDockerRunCommand } from '@ninedeploy/schemas';
 import { VERSION } from '../version.js';
 import { serverDeleteBlockers } from '../lib/serverDependents.js';
+import { databasesPerServer } from '../lib/nodeDatabase.js';
 
 /** r421: an endpoint's identity is (host, port) — but the announce/create
  *  schema accepts `host:port` spellings and DNS-vs-IP aliases. Strip a
@@ -158,6 +159,9 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
 
     authed.get('/', async () => {
       const rows = await authed.db.query.servers.findMany();
+      // ── 0.16 T6 node databases ── `databases` (additive): how many managed databases each node hosts.
+      const hostedDatabases = await databasesPerServer(authed.db);
+      // ── end 0.16 T6 ──
       // 0.15 (T2b): `terminal` (additive) says what the node's agent offers
       // terminals — from its last sealed `agent.ping`, refreshed at most every
       // 5 minutes and only for an online node. `host` is the node's own
@@ -174,7 +178,7 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
           // ── 0.16 T4 build placement ── the build-server role (additive; PATCH /:id in serverRoles.ts)
           const roles = { isBuildServer: row.isBuildServer === true, buildConcurrency: row.buildConcurrency ?? 1 };
           // ── end 0.16 T4 ──
-          return { ...base, terminal, agent, features: serverFeatures(agent), ...roles };
+          return { ...base, terminal, agent, features: serverFeatures(agent), ...roles, databases: hostedDatabases.get(row.id) ?? 0 };
         }),
       );
     });

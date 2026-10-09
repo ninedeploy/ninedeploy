@@ -2106,7 +2106,10 @@ describe('runDeployment on a remote-server target', () => {
     // the reconcile below the refusal — so r229's attachment check passed and
     // the node deployed green against a panel-local database host.
     expect(h.reconcileTemplateDependencies).not.toHaveBeenCalled();
-    expect(h.agentOp).not.toHaveBeenCalled();
+    // 0.16 T6: an agent that can host databases gets the template database
+    // on the node itself; this one (no capabilities in its ping) is asked
+    // that and nothing else.
+    expect(h.agentOp.mock.calls.map((c) => (c as unknown[])[2])).toEqual(['agent.ping']);
     expect(lines.join(' ')).toMatch(/provisions a managed database/);
   });
 
@@ -3374,3 +3377,51 @@ describe('0.16 T4: build placement in the pipeline (design §6.3)', () => {
   });
 });
 // ── end 0.16 T4 ──
+// ── 0.16 T6 node databases ──
+describe('0.16 T6: attached databases are reachable from the service (D4, O7)', () => {
+  const CAPS_ALL_T6 = `ND-AGENT ${JSON.stringify({ version: '0.15.3', caps: ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'stream', 'docker.runSpec', 'volume.manage', 'image.manage', 'db.manage'] })}`;
+
+  it('D4: a panel-host docker service gets its running panel-host databases on ctx.databaseContainers', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { image: 'nginx:latest' });
+    db.query.databaseAttachments.findMany.mockResolvedValue([{ serviceId: 5, databaseId: 9, envAlias: 'DATABASE_URL' }]);
+    db.query.databases.findFirst.mockResolvedValue({ id: 9, slug: 'pg', name: 'pg', engine: 'postgres', status: 'running', containerName: 'nd-db-pg', serverId: null });
+    h.builder.buildAndRun.mockClear();
+    await runDeployment(db as never, 1);
+    const ctx = h.builder.buildAndRun.mock.calls.at(-1)![0] as { databaseContainers?: string[]; env: Record<string, string> };
+    expect(ctx.databaseContainers).toEqual(['nd-db-pg']);
+    expect(ctx.env['DATABASE_URL']).toBe('postgres://db/app');
+  });
+
+  it('D4: a service with no attachment gets an empty list (the builder connects nothing)', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { image: 'nginx:latest' });
+    h.builder.buildAndRun.mockClear();
+    await runDeployment(db as never, 1);
+    expect((h.builder.buildAndRun.mock.calls.at(-1)![0] as { databaseContainers?: string[] }).databaseContainers).toEqual([]);
+  });
+
+  it('O7: a node service joins its same-node database bridge after the container starts and before the healthcheck', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { image: 'nginx:latest', serverId: 4 });
+    db.query.databaseAttachments.findMany.mockResolvedValue([{ serviceId: 5, databaseId: 9, envAlias: 'DATABASE_URL' }]);
+    db.query.databases.findFirst.mockResolvedValue({ id: 9, slug: 'orders', name: 'orders', engine: 'postgres', status: 'running', containerName: null, nodeContainerName: 'nd-db-orders', serverId: 4 });
+    collectLogs(1);
+    h.agentOp.mockReset().mockImplementation(async (_db: unknown, _serverId: unknown, op: string) =>
+      op === 'agent.ping'
+        ? { exitCode: 0, lines: [CAPS_ALL_T6] }
+        : op === 'docker.inspect'
+          ? { exitCode: 0, lines: ['running|none|0|0'] }
+          : { exitCode: 0, lines: op === 'file.writeEnv' ? ['wrote .agent-env/web-1.env'] : [] },
+    );
+    await runDeployment(db as never, 1);
+    const calls = h.agentOp.mock.calls as unknown as Array<[unknown, unknown, string, Record<string, unknown>]>;
+    const ops = calls.map((c) => c[2]);
+    const connect = ops.indexOf('docker.networkConnect');
+    expect(connect).toBeGreaterThan(ops.indexOf('docker.runEnv'));
+    expect(calls[connect]![3]).toEqual({ network: 'nd-dbnet-orders', container: 'web-1' });
+    expect(ops.lastIndexOf('docker.inspect')).toBeGreaterThan(connect);
+    expect(h.builder.buildAndRun).not.toHaveBeenCalledWith(expect.objectContaining({ databaseContainers: ['nd-db-orders'] }), expect.anything());
+  });
+});
+// ── end 0.16 T6 ──

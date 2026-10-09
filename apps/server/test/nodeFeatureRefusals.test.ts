@@ -86,13 +86,15 @@ const scripted = async (op: string) => {
 
 describe('capabilityRefusal against a 0.15 agent (CAPS_015)', () => {
   for (const cap of MULTI_NODE_CAPABILITIES) {
-    it(`${cap}: 422 node_agent_outdated, "update the node agent to v0.15.2", only agent.ping asked`, async () => {
+    // The release each capability first shipped in: 0.15.2, `db.manage` the one after (0.16 T6).
+    const minimum = caps.AGENT_CAPABILITY_VERSION[cap];
+    it(`${cap}: 422 node_agent_outdated, "update the node agent to v${minimum}", only agent.ping asked`, async () => {
       const refusal = await caps.capabilityRefusal(scripted, '"edge-1" (#1)', true, { cap, feature: FEATURES[cap], sealedRequired: true });
       expect(refusal).toEqual({
         status: 422,
         code: 'node_agent_outdated',
         message: expect.stringMatching(
-          new RegExp(`^The agent on node "edge-1" \\(#1\\) \\(version 0\\.15\\.1\\) cannot ${FEATURES[cap].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\. Update the node agent to v0\\.15\\.2 or newer`),
+          new RegExp(`^The agent on node "edge-1" \\(#1\\) \\(version 0\\.15\\.1\\) cannot ${FEATURES[cap].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\. Update the node agent to v${minimum.replace(/\./g, '\\.')} or newer`),
         ),
       });
       expect(h.ops).toEqual(['agent.ping']);
@@ -178,7 +180,8 @@ describe('the queue-time check (assertNodeCapability) and the persisted cache (�
     expect(serverAgentInfoSchema.parse(old)).toEqual({ version: '0.15.1', capabilities: CAPS_015_LIST, checkedAt: '1970-01-01T00:00:00.000Z' });
     const f = serverFeaturesSchema.parse(caps.serverFeatures(old));
     expect(f).toMatchObject({ nixpacks: false, railpack: false, privateClones: false, volumes: false, databases: false, imageTransfer: false, swarm: false });
-    expect(f.reason).toMatch(/version 0\.15\.1\) cannot do Nixpacks builds, .*Swarm\. Update the node agent to v0\.15\.2 or newer/);
+    // The newest release any missing capability needs: `db.manage` ships after 0.15.2 (0.16 T6).
+    expect(f.reason).toMatch(/version 0\.15\.1\) cannot do Nixpacks builds, .*Swarm\. Update the node agent to v0\.15\.3 or newer/);
     expect(caps.serverFeatures(null).reason).toMatch(/not been reached/);
     const all = caps.serverFeatures({ version: '0.15.2', capabilities: [...MULTI_NODE_CAPABILITIES], checkedAt: null });
     expect(all).toEqual({ nixpacks: true, railpack: true, privateClones: true, volumes: true, databases: true, imageTransfer: true, swarm: true });
@@ -191,7 +194,7 @@ describe('the queue-time check (assertNodeCapability) and the persisted cache (�
     await db.update(servers).set({ lastSeenAt: new Date() });
     const [first] = (await app.inject({ method: 'GET', url: '/servers', headers: asUser() })).json() as Array<Record<string, any>>;
     expect(first!.agent).toMatchObject({ version: '0.15.1', capabilities: CAPS_015_LIST });
-    expect(first!.features).toMatchObject({ imageTransfer: false, reason: expect.stringMatching(/v0\.15\.2/) });
+    expect(first!.features).toMatchObject({ imageTransfer: false, reason: expect.stringMatching(/v0\.15\.3/) }); // db.manage (0.16 T6) is the newest missing
     expect(first!.terminal).toEqual({ host: true, container: true }); // the 0.15 field is unchanged
     // From the persisted columns once the in-memory answer is gone (an offline node is not asked).
     caps.resetNodeCapabilityCache();
@@ -407,6 +410,39 @@ describe('T5 node volumes against a 0.15 agent (CAPS_015)', () => {
 });
 // ── end 0.16 T5 ──
 // ── 0.16 T6 node databases ── (node database create)
+describe('T6 node databases against a 0.15 agent (CAPS_015)', () => {
+  it('POST /v1/databases with serverId: 422 node_agent_outdated naming v0.15.3, only agent.ping, no row, nothing on the node', async () => {
+    const { databasesRoutes } = await import('../src/modules/databases.js');
+    const { databases } = await import('@ninedeploy/db');
+    const app = await buildTestApp({ db });
+    await app.register(databasesRoutes, { prefix: '/databases' });
+    const res = await app.inject({ method: 'POST', url: '/databases', headers: asUser(), payload: { name: 'orders', engine: 'postgres', serverId } });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error).toMatchObject({
+      code: 'node_agent_outdated',
+      message: expect.stringMatching(/\(version 0\.15\.1\) cannot host a managed database\. Update the node agent to v0\.15\.3 or newer/),
+    });
+    expect(h.ops).toEqual(['agent.ping']);
+    expect(await db.select().from(databases)).toHaveLength(0);
+    // A 0.15.2 agent (multi-node, but before db.manage) is "update", never "switched off by the owner".
+    h.ops = [];
+    caps.resetNodeCapabilityCache();
+    h.ping = pingLine('0.15.2', [...CAPS_015_LIST, 'stream', 'docker.runSpec', 'volume.manage', 'image.manage']);
+    const older = await app.inject({ method: 'POST', url: '/databases', headers: asUser(), payload: { name: 'orders', engine: 'postgres', serverId } });
+    expect([older.statusCode, older.json().error.code]).toEqual([422, 'node_agent_outdated']);
+    expect(h.ops).toEqual(['agent.ping']);
+    await app.close();
+  });
+
+  it('a DB-backed template on a node keeps the r269 refusal with the update hint added', async () => {
+    const { remoteDatabaseRefusal } = await import('../src/lib/remoteDeploy.js');
+    const [svc] = await db.insert(services).values({ name: 'ghost', slug: 'ghost', type: 'docker', image: 'ghost:5', serverId, templateDatabaseEnv: { database__connection__host: 'host' } } as never).returning();
+    expect(await remoteDatabaseRefusal(db, svc!)).toMatch(
+      /^Deployments to a remote server are not available for this service: its template provisions a managed database, which runs on the panel host.*cannot host a managed database\. Update the node agent to v0\.15\.3/,
+    );
+    expect(h.ops).toEqual(['agent.ping']);
+  });
+});
 // ── end 0.16 T6 ──
 // ── 0.16 T7 swarm ── (swarm join)
 // ── end 0.16 T7 ──

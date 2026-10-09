@@ -5,7 +5,8 @@ import { backupDestinations, databaseImports, type Database } from '@ninedeploy/
 import { DATABASE_IMPORT_CHUNK_SIZE, databaseImportCreate } from '@ninedeploy/schemas';
 import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { config } from '../config.js';
-import { probeMysqlSandboxFlag } from '../engine/database.js';
+import { databaseContainerName, databaseRuntime, isNodeDatabase } from '../lib/databaseRuntime.js';
+import { assertNodeDatabaseCapable } from '../lib/nodeDatabase.js';
 import { audit } from '../lib/audit.js';
 import { decrypt } from '../lib/crypto.js';
 import {
@@ -241,7 +242,9 @@ export const databaseImportRoutes: FastifyPluginAsync<DatabaseImportRouteOptions
     if (row.status !== 'pending' || !row.stagingPath) {
       throw conflict(`The import is ${row.status}; only a fully uploaded import can be started`);
     }
-    if (d.status !== 'running' || !d.containerName) throw conflict('The database is not running');
+    // 0.16 T6: a node database runs under its node container name, and its node must be able to take the stream.
+    if (d.status !== 'running' || !databaseContainerName(d)) throw conflict('The database is not running');
+    if (isNodeDatabase(d)) await assertNodeDatabaseCapable(app.db, d.serverId as number);
     const isOperator = req.user!.isOperator;
     const options = resolveImportOptions(d.engine, (row.options ?? {}) as never);
     assertMaySkipSafetyBackup(d, options, isOperator);
@@ -276,7 +279,7 @@ export const databaseImportRoutes: FastifyPluginAsync<DatabaseImportRouteOptions
     }
     let sandboxFlag: string | null = null;
     if (d.engine === 'mysql' || d.engine === 'mariadb') {
-      sandboxFlag = await probeMysqlSandboxFlag(d);
+      sandboxFlag = await databaseRuntime(app.db, d).probeMysqlSandboxFlag();
       if (!sandboxFlag && !isOperator) {
         await refuse(`This ${d.engine} client has no sandbox flag (--sandbox / --system-command), so a dump could run shell commands in the database container; only an instance operator may import into it`);
       }

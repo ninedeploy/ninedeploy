@@ -249,7 +249,8 @@ export async function openNodeTerminalTty(
 ): Promise<TtyProcess> {
   const serverId = target.serverId;
   if (serverId === null) throw new Error('not a node target');
-  if (target.kind !== 'service' && target.kind !== 'host') throw new Error(`${target.kind} targets do not run on nodes`);
+  // 0.16 T6: a database on a node opens as the agent's container shell (its `nd-db-*` container).
+  if (target.kind !== 'service' && target.kind !== 'host' && target.kind !== 'database') throw new Error(`${target.kind} targets do not run on nodes`);
   const row = await db.query.servers.findFirst({ where: eq(servers.id, serverId) });
   if (!row) throw new Error(`node #${serverId} no longer exists`);
   // Defence in depth: create already refused this, but the transport is

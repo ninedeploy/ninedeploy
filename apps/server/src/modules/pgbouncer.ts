@@ -71,6 +71,11 @@ export const pgbouncerRoutes: FastifyPluginAsync = async (app) => {
       async (req) => {
         const id = num((req.params as { id: string }).id);
         const d = await loadDatabaseForUser(app.db, id, req.user!);
+        // ── 0.16 T6 node databases (design §5.7, §12) ── the sidecar runs on the panel host only.
+        if (d.serverId != null) {
+          throw unprocessable('PgBouncer is not available for a database on a node yet; it runs on the panel host only.', 'remote_database');
+        }
+        // ── end 0.16 T6 ──
         const body = enableBody.safeParse(req.body ?? {});
         if (!body.success) throw unprocessable(body.error.issues[0]!.message);
         // Apply the port override to the row before enabling

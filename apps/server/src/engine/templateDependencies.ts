@@ -11,13 +11,12 @@ import { eq } from 'drizzle-orm';
 import { isOperator } from '../lib/resourceAccess.js';
 import { encrypt, randomToken } from '../lib/crypto.js';
 import { findCatalogTemplate } from '../templates/catalog.js';
+import { databaseRuntime } from '../lib/databaseRuntime.js';
+import { nodeVolumeExists } from '../lib/nodeVolumes.js';
 import {
-  adoptRetainedVolume,
-  attachDatabaseToServiceBridges,
   defaultPort,
   ENGINES,
   needsVolumeAdoption,
-  startDatabase,
   volumeExists,
   volumeLabels,
 } from './database.js';
@@ -65,7 +64,14 @@ async function resolveDependencySlug(
     const slug = i === 0 ? base : `${base}-${i + 1}`;
     const row = await db.query.databases.findFirst({ where: eq(databases.slug, slug) });
     if (row) {
-      if (row.ownerUserId === service.ownerUserId && inServiceProjects(row.projectId) && row.engine === engine) {
+      // 0.16 T6: and on the service's host — a same-named database on another
+      // host is someone else's name here (both NULL = the panel host, as before).
+      if (
+        row.ownerUserId === service.ownerUserId &&
+        inServiceProjects(row.projectId) &&
+        row.engine === engine &&
+        (row.serverId ?? null) === (service.serverId ?? null)
+      ) {
         return { kind: 'existing', database: row };
       }
       // r642: someone else's database holds this name — never fail the deploy
@@ -75,8 +81,17 @@ async function resolveDependencySlug(
     }
     // r641: a volume under this name outlived a deleted database. Only adopt
     // it when it is provably this owner's.
-    ownerMayAdopt ??= service.ownerUserId == null || await isOperator(db, { id: service.ownerUserId });
     const volumeName = `nd-db-${slug}-data`;
+    // ── 0.16 T6 node databases ── a node never adopts a retained volume (design §12): skip the name.
+    if (service.serverId != null) {
+      if (await nodeVolumeExists(db, service.serverId, volumeName)) {
+        log(`note: a volume '${volumeName}' already exists on the node — leaving it untouched and provisioning the dependency under the next name`);
+        continue;
+      }
+      return { kind: 'fresh', slug };
+    }
+    // ── end 0.16 T6 ──
+    ownerMayAdopt ??= service.ownerUserId == null || await isOperator(db, { id: service.ownerUserId });
     if (!ownerMayAdopt && await volumeExists(volumeName)) {
       const owner = (await volumeLabels(volumeName))['ninedeploy.owner'];
       if (owner !== String(service.ownerUserId)) {
@@ -161,6 +176,14 @@ export async function reconcileTemplateDependencies(
       database = resolved.database;
     } else {
       const dbSlug = resolved.slug;
+      // ── 0.16 T6 node databases ── a template service on a node gets its
+      // database on the same node (design §5.5): the rollback marker (NULL
+      // local names) and the real names in node_*. Panel rows are unchanged.
+      const placement =
+        service.serverId != null
+          ? { containerName: null, volumeName: null, serverId: service.serverId, nodeContainerName: `nd-db-${dbSlug}`, nodeVolumeName: `nd-db-${dbSlug}-data` }
+          : { containerName: `nd-db-${dbSlug}`, volumeName: `nd-db-${dbSlug}-data` };
+      // ── end 0.16 T6 ──
       const [created] = await db.insert(databases).values({
         projectId: serviceProjectId,
         ownerUserId: service.ownerUserId,
@@ -168,8 +191,7 @@ export async function reconcileTemplateDependencies(
         slug: dbSlug,
         engine: template.dbEngine,
         status: 'creating',
-        containerName: `nd-db-${dbSlug}`,
-        volumeName: `nd-db-${dbSlug}-data`,
+        ...placement,
         username: cfg.username() ?? null,
         passwordEncrypted: encrypt(randomToken(18)),
         dbName: cfg.dbName() ?? null,
@@ -191,14 +213,18 @@ export async function reconcileTemplateDependencies(
     // RETRY must run the adoption again instead of booting stale credentials.
     // Rows whose start already succeeded under their own credentials keep
     // their marker and skip this entirely.
-    if (needsVolumeAdoption(database)) await adoptRetainedVolume(database, log);
-    await startDatabase(database, log, { labels: { 'ninedeploy.template': template.id } });
+    // 0.16 T6: through the runtime dispatch — the engine functions for a
+    // panel-host row (unchanged), the node's agent for a node row.
+    const runtime = databaseRuntime(db, database);
+    if (needsVolumeAdoption(database)) await runtime.adoptRetainedVolume(log);
+    await runtime.start(log, { labels: { 'ninedeploy.template': template.id } });
     // Model B: the DB must also live on the service's per-slug bridge so the
     // app can reach it by name without being able to reach other services.
-    await attachDatabaseToServiceBridges(database, [service.slug], log);
+    // (A node database's bridge is joined by the service after it starts.)
+    await runtime.attachToServiceBridges([service.slug], log);
     await db.update(databases).set({
       status: 'running',
-      internalHost: database.containerName,
+      internalHost: database.containerName ?? database.nodeContainerName,
       internalPort: defaultPort(database.engine),
       initializedAt: database.initializedAt ?? new Date(),
     }).where(eq(databases.id, database.id));
@@ -220,7 +246,7 @@ export async function reconcileTemplateDependencies(
     database: {
       ...database,
       status: 'running',
-      internalHost: database.containerName,
+      internalHost: database.containerName ?? database.nodeContainerName,
       internalPort: defaultPort(database.engine),
     },
     alreadyAttached,

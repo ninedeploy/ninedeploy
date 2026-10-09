@@ -612,6 +612,21 @@ async function attachManagedDatabase(
     );
     return;
   }
+  // ── 0.16 T6 node databases (design §5.5) ── a database on a node resolves
+  // only from services on that node. Only node databases are host-checked
+  // here: a panel-host database keeps the 0.15 path (attached; a node
+  // service's deploy then refuses it, r229), so nothing that deployed or
+  // refused before changes.
+  if (existing.length === 0 && dbRow.serverId != null) {
+    const svc = await db.query.services.findFirst({ where: eq(services.id, serviceId), columns: { serverId: true } });
+    if ((svc?.serverId ?? null) !== dbRow.serverId) {
+      result.warnings.push(
+        `database.ref="${ref.ref}" runs on ${dbRow.serverId == null ? 'the panel host' : `node #${dbRow.serverId}`}, but this service runs on ${svc?.serverId == null ? 'the panel host' : `node #${svc.serverId}`}; a managed database is reachable only from services on its own host — attach skipped.`,
+      );
+      return;
+    }
+  }
+  // ── end 0.16 T6 ──
   // INSERT OR IGNORE — the unique (serviceId, databaseId) index already
   // covers dedup; we only need to set envAlias on first insert.
   if (existing.length === 0) {

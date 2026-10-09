@@ -1,3 +1,15 @@
+// biome-ignore-all lint: verbatim copy of released code, kept byte-for-byte below the banner.
+/**
+ * VENDORED, FROZEN: apps/server/src/engine/database.ts at tag v0.15.0
+ * (1c491830), byte for byte except this header and the import specifiers,
+ * which are rewritten to reach the live modules from test/fixtures/.
+ *
+ * Multi-node T6 (design §5.8, §5.9 "the marker property"): a node database
+ * row stores container_name = NULL and volume_name = NULL. This is the code a
+ * panel ROLLED BACK to 0.15 runs against such a row; test/databaseMarker015
+ * proves every action here refuses or does nothing for it. Never edit this
+ * file to follow later code.
+ */
 import { createReadStream, createWriteStream, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { open } from 'node:fs/promises';
 import path from 'node:path';
@@ -5,17 +17,17 @@ import { randomUUID } from 'node:crypto';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { Database } from '@ninedeploy/db';
-import { config } from '../config.js';
-import { createBackupCipher, createBackupDecipher, decrypt } from '../lib/crypto.js';
-import { ensureDockerImage, pullDockerImage } from '../lib/dockerPull.js';
-import { capture, run, sleep } from '../lib/exec.js';
-import { HELPER_IMAGE } from '../lib/inventory.js';
-import { connectContainerToServiceBridge, ensureServiceBridge } from '../lib/serviceBridge.js';
-import { writeSecretFile } from '../lib/secretFile.js';
-import { createKeyedOperationGuard } from '../lib/keyedOperationGuard.js';
-import { acquireCrossProcessLock, LockUnavailableError, type CrossProcessLock } from '../lib/crossProcessLock.js';
-import { conflict } from '../lib/errors.js';
-import { NETWORK } from './proxy.js';
+import { config } from '../../src/config.js';
+import { createBackupCipher, createBackupDecipher, decrypt } from '../../src/lib/crypto.js';
+import { ensureDockerImage, pullDockerImage } from '../../src/lib/dockerPull.js';
+import { capture, run, sleep } from '../../src/lib/exec.js';
+import { HELPER_IMAGE } from '../../src/lib/inventory.js';
+import { connectContainerToServiceBridge, ensureServiceBridge } from '../../src/lib/serviceBridge.js';
+import { writeSecretFile } from '../../src/lib/secretFile.js';
+import { createKeyedOperationGuard } from '../../src/lib/keyedOperationGuard.js';
+import { acquireCrossProcessLock, LockUnavailableError, type CrossProcessLock } from '../../src/lib/crossProcessLock.js';
+import { conflict } from '../../src/lib/errors.js';
+import { NETWORK } from '../../src/engine/proxy.js';
 
 const swallow = () => {};
 const withDatabaseBackupOperation = createKeyedOperationGuard<number>();
@@ -51,17 +63,6 @@ async function withExclusiveOperation<T>(
   } finally {
     lock.release();
   }
-}
-
-/**
- * Multi-node T6 (design §5.4 "Locks"): the same two serialization layers for
- * a database on a NODE — the in-process queue per database id, then the
- * cross-process lock file on the panel keyed `database-<id>` — so a dump and
- * a restore (or an import) of one node database never overlap. Panel-host
- * databases keep their own calls above, unchanged.
- */
-export function withDatabaseOperationLock<T>(id: number, log: (line: string) => void, op: () => Promise<T>): Promise<T> {
-  return withDatabaseBackupOperation(id, () => withExclusiveOperation(`database-${id}`, log, op));
 }
 
 /** Matches a versioned secret envelope ("v<ver>:…"). Backups written since the
@@ -769,8 +770,8 @@ export async function removeVolume(name: string, log: (line: string) => void): P
  *  tooling already prepares (see lib/inventory HELPER_IMAGE), so the pull is
  *  usually a no-op and the tag cannot float under us. */
 const VOLUME_TAR_IMAGE = HELPER_IMAGE;
-/** Archive path inside the sidecar. Exported for the node agent's `volume.import` stream (multi-node §1.5). */
-export const VOLUME_TMP_ARCHIVE = '/tmp/ninedeploy-volume.tar.gz';
+/** Archive path inside the sidecar. */
+const VOLUME_TMP_ARCHIVE = '/tmp/ninedeploy-volume.tar.gz';
 
 /** Create a named Docker volume. Idempotent: `docker volume create` returns the
  *  existing volume unchanged when the name is already taken (labels are only
@@ -840,7 +841,7 @@ async function backupVolumeUnlocked(
  * fails the restore harmlessly instead of destroying the old data halfway
  * through an in-place extraction.
  */
-export function volumeRestoreScript(suffix: string): string {
+function volumeRestoreScript(suffix: string): string {
   const stage = `/v/.nd-restore-${suffix}`;
   const old = `/v/.nd-restore-old-${suffix}`;
   return [

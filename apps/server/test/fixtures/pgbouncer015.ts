@@ -1,3 +1,15 @@
+// biome-ignore-all lint: verbatim copy of released code, kept byte-for-byte below the banner.
+/**
+ * VENDORED, FROZEN: apps/server/src/lib/pgbouncer.ts at tag v0.15.0
+ * (1c491830), byte for byte except this header and the import specifiers,
+ * which are rewritten to reach the live modules from test/fixtures/.
+ *
+ * Multi-node T6 (design §5.8, §5.9 "the marker property"): a node database
+ * row stores container_name = NULL and volume_name = NULL. This is the code a
+ * panel ROLLED BACK to 0.15 runs against such a row; test/databaseMarker015
+ * proves every action here refuses or does nothing for it. Never edit this
+ * file to follow later code.
+ */
 /**
  * `ninedeploy databases pgbouncer {enable,disable,status}` —
  * G-32 PgBouncer sidecar.
@@ -19,10 +31,10 @@
  */
 import { eq } from 'drizzle-orm';
 import { databases, type DB, type Database } from '@ninedeploy/db';
-import { decrypt } from './crypto.js';
-import { capture, run } from './exec.js';
-import { NETWORK } from '../engine/proxy.js';
-import { writeSecretFile, type SecretFile } from './secretFile.js';
+import { decrypt } from '../../src/lib/crypto.js';
+import { capture, run } from '../../src/lib/exec.js';
+import { NETWORK } from '../../src/engine/proxy.js';
+import { writeSecretFile, type SecretFile } from '../../src/lib/secretFile.js';
 
 /**
  * r243: `bitnami/pgbouncer:1.24.1` no longer exists on Docker Hub (Bitnami
@@ -147,12 +159,7 @@ export async function enablePgbouncer(db: DB, d: Database, log: (line: string) =
       // host port IS published it binds to LOOPBACK — plain MD5/SCRAM
       // credentials reachable from the LAN would be an unnecessary surface,
       // and pgbouncer has no NineDeploy auth in front of it.
-      // D5 (multi-node T6): the column is NOT NULL DEFAULT 6432, so the old
-      // `d.pgbouncerPort != null` guard was always true and every sidecar
-      // published 127.0.0.1:6432 — the second enable failed. "Chosen" now
-      // means "not the default". Existing sidecars are not recreated; this
-      // applies from their next enable (owner decision O8).
-      ...(port !== DEFAULT_PORT ? ['-p', `127.0.0.1:${port}:${port}`] : []),
+      ...(d.pgbouncerPort != null ? ['-p', `127.0.0.1:${port}:${port}`] : []),
       PGBOUNCER_IMAGE,
     ];
     log(`Creating PgBouncer sidecar ${containerName} on port ${port} …`);

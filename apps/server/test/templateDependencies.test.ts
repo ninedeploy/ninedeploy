@@ -41,6 +41,17 @@ vi.mock('../src/engine/database.js', async (importOriginal) => {
   };
 });
 
+// ── 0.16 T6 node databases ── a template service on a node gets its database on that node.
+const nodeMocks = vi.hoisted(() => ({
+  nodeVolumeExists: vi.fn(async (..._a: unknown[]) => false),
+  start: vi.fn(async (..._a: unknown[]) => undefined),
+  adopt: vi.fn(async (..._a: unknown[]) => ({ action: 'fresh' as const })),
+}));
+vi.mock('../src/lib/nodeVolumes.js', () => ({ nodeVolumeExists: nodeMocks.nodeVolumeExists }));
+vi.mock('../src/lib/nodeDatabase.js', () => ({
+  nodeDatabaseRuntime: () => ({ where: 'node', start: nodeMocks.start, adoptRetainedVolume: nodeMocks.adopt, attachToServiceBridges: async () => undefined }),
+}));
+// ── end 0.16 T6 ──
 const { reconcileTemplateDependencies } = await import('../src/engine/templateDependencies.js');
 
 const mysqlTemplate = {
@@ -357,3 +368,69 @@ describe('template dependency recovery', () => {
     expect(attachment).toMatchObject({ envAlias: 'REDIS_URL' });
   });
 });
+
+// ── 0.16 T6 node databases ──
+describe('T6: a DB-backed template placed on a node (design §5.5)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.templates = [mysqlTemplate];
+    mocks.community = [];
+    nodeMocks.nodeVolumeExists.mockReset().mockResolvedValue(false);
+  });
+
+  it('creates the row on the same node with the rollback marker and starts it through the node runtime, never the panel engine', async () => {
+    let insertedDb: Record<string, unknown> | undefined;
+    const updates: Array<Record<string, unknown>> = [];
+    const db = createFakeDb({
+      insert: {
+        databases: (value) => {
+          insertedDb = value as Record<string, unknown>;
+          return [dbRow({ ...(value as Record<string, unknown>), id: 70, status: 'creating', initializedAt: null })];
+        },
+        database_attachments: (value) => [value as Record<string, unknown>],
+      },
+      update: { databases: (value) => { updates.push(value as Record<string, unknown>); return [value as Record<string, unknown>]; } },
+    });
+    const result = await reconcileTemplateDependencies(db, service({ serverId: 4, templateDatabaseEnv: { WORDPRESS_DB_HOST: 'hostPort' } }), vi.fn());
+    expect(insertedDb).toMatchObject({
+      slug: 'wordpress-db', containerName: null, volumeName: null, serverId: 4, nodeContainerName: 'nd-db-wordpress-db', nodeVolumeName: 'nd-db-wordpress-db-data',
+    });
+    expect(nodeMocks.start).toHaveBeenCalledWith(expect.any(Function), { labels: { 'ninedeploy.template': 'wordpress' } });
+    expect(mocks.startDatabase).not.toHaveBeenCalled();
+    expect(mocks.volumeExists).not.toHaveBeenCalled();
+    expect(updates.at(-1)).toMatchObject({ status: 'running', internalHost: 'nd-db-wordpress-db' });
+    expect(result).toMatchObject({ database: { internalHost: 'nd-db-wordpress-db' }, alreadyAttached: false });
+  });
+
+  it('a name whose volume already exists on the node is skipped (a node never adopts a retained volume)', async () => {
+    nodeMocks.nodeVolumeExists.mockImplementation(async (_db: unknown, _id: unknown, name: unknown) => name === 'nd-db-wordpress-db-data');
+    let insertedDb: Record<string, unknown> | undefined;
+    const db = createFakeDb({
+      findFirst: { databases: undefined },
+      insert: {
+        databases: (value) => { insertedDb = value as Record<string, unknown>; return [dbRow({ ...(value as Record<string, unknown>), id: 71, status: 'creating', initializedAt: null })]; },
+        database_attachments: (value) => [value as Record<string, unknown>],
+      },
+      update: { databases: (value) => [value as Record<string, unknown>] },
+    });
+    await reconcileTemplateDependencies(db, service({ serverId: 4, templateDatabaseEnv: { WORDPRESS_DB_HOST: 'hostPort' } }), vi.fn());
+    expect(insertedDb).toMatchObject({ slug: 'wordpress-db-2', serverId: 4 });
+  });
+
+  it("a same-owner database on ANOTHER host is never this service's dependency (a panel service never attaches a node database)", async () => {
+    const nodeDb = dbRow({ id: 72, slug: 'wordpress-db', engine: 'mysql', ownerUserId: 1, projectId: null, serverId: 4, containerName: null });
+    const reconcile = (over: Record<string, unknown>) =>
+      reconcileTemplateDependencies(
+        createFakeDb({ findFirst: { databases: nodeDb }, update: { databases: (value) => [value as Record<string, unknown>] } }),
+        service({ templateDatabaseEnv: { WORDPRESS_DB_HOST: 'hostPort' }, ...over }),
+        vi.fn(),
+      );
+    // Every candidate name answers with the node row: on the panel host none is usable.
+    await expect(reconcile({ serverId: null })).rejects.toThrow('No free name');
+    expect(mocks.startDatabase).not.toHaveBeenCalled();
+    // On its own node it is the service's dependency (reused, started through the node runtime).
+    await expect(reconcile({ serverId: 4 })).resolves.toMatchObject({ database: { id: 72 }, alreadyAttached: false });
+    expect(nodeMocks.start).toHaveBeenCalled();
+  });
+});
+// ── end 0.16 T6 ──

@@ -9,7 +9,7 @@ import { composeScalar, dotenvValue } from './compose.js';
 import { ensureDockerImage, pullDockerImage } from '../../lib/dockerPull.js';
 import { NETWORK } from '../proxy.js';
 import { MAX_REPLICAS, deploymentLabels, replicaNames } from '../dockerNames.js';
-import { ensureServiceBridge } from '../../lib/serviceBridge.js';
+import { connectContainerToServiceBridge, ensureServiceBridge } from '../../lib/serviceBridge.js';
 import { buildWithBuildKit } from './buildkit.js';
 import { buildStaticSite } from './staticSite.js';
 import { buildProbeUrl, safeProbePath } from '../../lib/probeUrl.js';
@@ -963,6 +963,19 @@ export const dockerBuilder: Builder = {
     // this bridge. The shared `ninedeploy` mesh is no longer a fan-in point
     // for app traffic — only Traefik + the probe container still live there.
     const bridge = await ensureServiceBridge(service.slug, log);
+    // ── 0.16 T6 node databases (D4) ──
+    // Every attached, running panel-host database joins this bridge before
+    // the container starts, so `nd-db-<slug>` resolves from the app. Model B
+    // put the service on its bridge only, and nothing but the template
+    // reconcile ever connected a database to it. Idempotent; the detach
+    // route takes it off again. A failed join is logged, never fatal: the
+    // deploy behaves as before rather than failing on an upgrade.
+    for (const container of ctx.databaseContainers ?? []) {
+      await connectContainerToServiceBridge(container, service.slug, log).catch((err: unknown) =>
+        log(`⚠ could not connect database ${container} to ${bridge}: ${err instanceof Error ? err.message : String(err)}`),
+      );
+    }
+    // ── end 0.16 T6 ──
     // r465: multi-line env values cannot ride docker's --env-file (they would
     // arrive as a literal "\n"). Such services start through a one-service
     // compose file whose dotenv parser decodes the escapes into REAL

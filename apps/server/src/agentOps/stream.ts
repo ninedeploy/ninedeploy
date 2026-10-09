@@ -25,6 +25,7 @@ import {
   STREAM_MAX_BYTES_CEILING,
   type StreamDirection,
 } from '../lib/agentStream.js';
+import { dbDumpKind, dbRestoreKind } from './databases.js';
 import { imageLoadKind, imageSaveKind } from './images.js';
 import type { AgentOpModule } from './index.js';
 import { intOperand, type Params, str, TRANSFER_DIR } from './operands.js';
@@ -96,6 +97,8 @@ export const STREAM_KIND_HANDLERS: Readonly<Record<AgentStreamKind, StreamKindHa
   'volume.import': volumeImportKind,
   // ── end 0.16 T2 ──
   // ── 0.16 T6 node databases ── (db.dump, db.restore: agentOps/databases.ts)
+  'db.dump': dbDumpKind,
+  'db.restore': dbRestoreKind,
   // ── end 0.16 T6 ──
 };
 

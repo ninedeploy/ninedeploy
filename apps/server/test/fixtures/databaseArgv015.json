@@ -1,0 +1,6529 @@
+{
+  "postgres start (fresh volume)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-postgres",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "postgres:18"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-postgres-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "create",
+          "--label",
+          "ninedeploy.managed=database",
+          "--label",
+          "ninedeploy.database.slug=postgres",
+          "--label",
+          "ninedeploy.database.name=My postgres",
+          "--label",
+          "ninedeploy.database.engine=postgres",
+          "--label",
+          "ninedeploy.database.image=postgres:18",
+          "--label",
+          "ninedeploy.database.container=nd-db-postgres",
+          "--label",
+          "ninedeploy.owner=3",
+          "nd-db-postgres-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-postgres"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "writeSecretFile",
+        "prefix": "nd-db",
+        "name": "database.env",
+        "contents": "POSTGRES_USER=nine\nPOSTGRES_PASSWORD=pw-secret\nPOSTGRES_DB=app\n"
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-postgres",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "-v",
+          "nd-db-postgres-data:/var/lib/postgresql",
+          "--env-file",
+          "/tmp/nd-db-FIXED/database.env",
+          "postgres:18"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "secretFile.cleanup"
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres start (retained volume, template label)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-postgres",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "postgres:18"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-postgres-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-postgres"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "writeSecretFile",
+        "prefix": "nd-db",
+        "name": "database.env",
+        "contents": "POSTGRES_USER=nine\nPOSTGRES_PASSWORD=pw-secret\nPOSTGRES_DB=app\n"
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-postgres",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "-v",
+          "nd-db-postgres-data:/var/lib/postgresql",
+          "--env-file",
+          "/tmp/nd-db-FIXED/database.env",
+          "postgres:18"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "secretFile.cleanup"
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres start (already running)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-postgres",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres stop": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-postgres"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres restart": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "restart",
+          "nd-db-postgres"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres logs": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "logs",
+          "--tail",
+          "50",
+          "nd-db-postgres"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": [
+        "l1",
+        "l2"
+      ]
+    }
+  },
+  "postgres size": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres",
+          "psql",
+          "-U",
+          "nine",
+          "-d",
+          "app",
+          "-tAc",
+          "SELECT pg_database_size(current_database())"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": 4242
+    }
+  },
+  "postgres backup": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres",
+          "pg_dump",
+          "-U",
+          "nine",
+          "-d",
+          "app",
+          "--clean",
+          "--if-exists",
+          "--file=/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "nd-db-postgres:/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000",
+          "<scratch>/postgres-ts.dump"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres restore": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "<scratch>/postgres-restore.dump",
+          "nd-db-postgres:/tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres",
+          "psql",
+          "-v",
+          "ON_ERROR_STOP=1",
+          "--single-transaction",
+          "-U",
+          "nine",
+          "-d",
+          "app",
+          "-f",
+          "/tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres probe credentials": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "-e",
+          "PGPASSWORD=pw-secret",
+          "nd-db-postgres",
+          "psql",
+          "-h",
+          "127.0.0.1",
+          "-U",
+          "nine",
+          "-d",
+          "app",
+          "-tAc",
+          "SELECT 1"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": true
+    }
+  },
+  "postgres probe sandbox": {
+    "events": [],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres attach to service bridges": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-web$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-web"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-postgres",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "nd-db-postgres"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-api$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-api"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-postgres",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "nd-db-postgres"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres adopt retained volume": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-postgres-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "--format",
+          "{{json .Labels}}",
+          "nd-db-postgres-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "ensureDockerImage",
+        "image": "postgres:17"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "--rm",
+          "-i",
+          "-v",
+          "nd-db-postgres-data:/var/lib/postgresql/data",
+          "postgres:17",
+          "postgres",
+          "--single",
+          "-D",
+          "/var/lib/postgresql/data",
+          "postgres"
+        ],
+        "opts": {
+          "timeoutMs": 300000,
+          "heartbeatMs": 20000,
+          "heartbeatLabel": "Re-keying retained volume nd-db-postgres-data"
+        },
+        "stdin": "ALTER ROLE nine WITH PASSWORD 'pw-secret' VALID UNTIL 'infinity';\nSELECT 'NINEDEPLOY_REKEY_OK' FROM pg_roles WHERE rolname = 'nine' AND rolvaliduntil = 'infinity'::timestamptz;\n/q\n"
+      }
+    ],
+    "outcome": {
+      "ok": {
+        "action": "rekeyed"
+      }
+    }
+  },
+  "postgres import #0 pg_custom": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "<scratch>/postgres-import-0.dump",
+          "nd-db-postgres:/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {
+          "timeoutMs": 21600000
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres",
+          "pg_restore",
+          "--no-owner",
+          "--no-acl",
+          "--exit-on-error",
+          "--single-transaction",
+          "--clean",
+          "--if-exists",
+          "-U",
+          "nine",
+          "-d",
+          "app",
+          "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {
+          "timeoutMs": 21600000,
+          "heartbeatMs": 60000,
+          "heartbeatLabel": "import"
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres import #1 pg_plain": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "<scratch>/postgres-import-1.dump",
+          "nd-db-postgres:/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {
+          "timeoutMs": 21600000
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "-e",
+          "PGOPTIONS=-c standard_conforming_strings=on",
+          "nd-db-postgres",
+          "psql",
+          "-X",
+          "-v",
+          "ON_ERROR_STOP=1",
+          "--single-transaction",
+          "-U",
+          "nine",
+          "-d",
+          "app",
+          "-f",
+          "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {
+          "timeoutMs": 21600000,
+          "heartbeatMs": 60000,
+          "heartbeatLabel": "import"
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:16 start (fresh volume)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-postgres-16",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "postgres:16"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-postgres-16-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "create",
+          "--label",
+          "ninedeploy.managed=database",
+          "--label",
+          "ninedeploy.database.slug=postgres-16",
+          "--label",
+          "ninedeploy.database.name=My postgres",
+          "--label",
+          "ninedeploy.database.engine=postgres",
+          "--label",
+          "ninedeploy.database.image=postgres:16",
+          "--label",
+          "ninedeploy.database.container=nd-db-postgres-16",
+          "--label",
+          "ninedeploy.owner=3",
+          "nd-db-postgres-16-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-postgres-16"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "writeSecretFile",
+        "prefix": "nd-db",
+        "name": "database.env",
+        "contents": "POSTGRES_USER=nine\nPOSTGRES_PASSWORD=pw-secret\nPOSTGRES_DB=app\n"
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-postgres-16",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "--cpu-shares",
+          "512",
+          "--cpus",
+          "1.5",
+          "--memory",
+          "256m",
+          "--memory-swap",
+          "256m",
+          "-v",
+          "nd-db-postgres-16-data:/var/lib/postgresql/data",
+          "--env-file",
+          "/tmp/nd-db-FIXED/database.env",
+          "postgres:16"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "secretFile.cleanup"
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:16 start (retained volume, template label)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-postgres-16",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "postgres:16"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-postgres-16-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-postgres-16"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "writeSecretFile",
+        "prefix": "nd-db",
+        "name": "database.env",
+        "contents": "POSTGRES_USER=nine\nPOSTGRES_PASSWORD=pw-secret\nPOSTGRES_DB=app\n"
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-postgres-16",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "--cpu-shares",
+          "512",
+          "--cpus",
+          "1.5",
+          "--memory",
+          "256m",
+          "--memory-swap",
+          "256m",
+          "-v",
+          "nd-db-postgres-16-data:/var/lib/postgresql/data",
+          "--env-file",
+          "/tmp/nd-db-FIXED/database.env",
+          "postgres:16"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "secretFile.cleanup"
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:16 start (already running)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-postgres-16",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:16 stop": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-postgres-16"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:16 restart": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "restart",
+          "nd-db-postgres-16"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:16 logs": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "logs",
+          "--tail",
+          "50",
+          "nd-db-postgres-16"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": [
+        "l1",
+        "l2"
+      ]
+    }
+  },
+  "postgres:16 size": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres-16",
+          "psql",
+          "-U",
+          "nine",
+          "-d",
+          "app",
+          "-tAc",
+          "SELECT pg_database_size(current_database())"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": 4242
+    }
+  },
+  "postgres:16 backup": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres-16",
+          "pg_dump",
+          "-U",
+          "nine",
+          "-d",
+          "app",
+          "--clean",
+          "--if-exists",
+          "--file=/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "nd-db-postgres-16:/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000",
+          "<scratch>/postgres-16-ts.dump"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres-16",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:16 restore": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "<scratch>/postgres-16-restore.dump",
+          "nd-db-postgres-16:/tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres-16",
+          "psql",
+          "-v",
+          "ON_ERROR_STOP=1",
+          "--single-transaction",
+          "-U",
+          "nine",
+          "-d",
+          "app",
+          "-f",
+          "/tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres-16",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:16 probe credentials": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "-e",
+          "PGPASSWORD=pw-secret",
+          "nd-db-postgres-16",
+          "psql",
+          "-h",
+          "127.0.0.1",
+          "-U",
+          "nine",
+          "-d",
+          "app",
+          "-tAc",
+          "SELECT 1"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": true
+    }
+  },
+  "postgres:16 probe sandbox": {
+    "events": [],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:16 attach to service bridges": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-web$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-web"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-postgres-16",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "nd-db-postgres-16"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-api$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-api"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-postgres-16",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "nd-db-postgres-16"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:16 adopt retained volume": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-postgres-16-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "--format",
+          "{{json .Labels}}",
+          "nd-db-postgres-16-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "ensureDockerImage",
+        "image": "postgres:17"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "--rm",
+          "-i",
+          "-v",
+          "nd-db-postgres-16-data:/var/lib/postgresql/data",
+          "postgres:17",
+          "postgres",
+          "--single",
+          "-D",
+          "/var/lib/postgresql/data",
+          "postgres"
+        ],
+        "opts": {
+          "timeoutMs": 300000,
+          "heartbeatMs": 20000,
+          "heartbeatLabel": "Re-keying retained volume nd-db-postgres-16-data"
+        },
+        "stdin": "ALTER ROLE nine WITH PASSWORD 'pw-secret' VALID UNTIL 'infinity';\nSELECT 'NINEDEPLOY_REKEY_OK' FROM pg_roles WHERE rolname = 'nine' AND rolvaliduntil = 'infinity'::timestamptz;\n/q\n"
+      }
+    ],
+    "outcome": {
+      "ok": {
+        "action": "rekeyed"
+      }
+    }
+  },
+  "postgres:16 import #0 pg_custom": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "<scratch>/postgres-16-import-0.dump",
+          "nd-db-postgres-16:/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {
+          "timeoutMs": 21600000
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres-16",
+          "pg_restore",
+          "--no-owner",
+          "--no-acl",
+          "--exit-on-error",
+          "--single-transaction",
+          "--clean",
+          "--if-exists",
+          "-U",
+          "nine",
+          "-d",
+          "app",
+          "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {
+          "timeoutMs": 21600000,
+          "heartbeatMs": 60000,
+          "heartbeatLabel": "import"
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres-16",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:16 import #1 pg_plain": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "<scratch>/postgres-16-import-1.dump",
+          "nd-db-postgres-16:/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {
+          "timeoutMs": 21600000
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "-e",
+          "PGOPTIONS=-c standard_conforming_strings=on",
+          "nd-db-postgres-16",
+          "psql",
+          "-X",
+          "-v",
+          "ON_ERROR_STOP=1",
+          "--single-transaction",
+          "-U",
+          "nine",
+          "-d",
+          "app",
+          "-f",
+          "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {
+          "timeoutMs": 21600000,
+          "heartbeatMs": 60000,
+          "heartbeatLabel": "import"
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres-16",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:vector start (fresh volume)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-postgres-vector",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "pgvector/pgvector:pg18"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-postgres-vector-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "create",
+          "--label",
+          "ninedeploy.managed=database",
+          "--label",
+          "ninedeploy.database.slug=postgres-vector",
+          "--label",
+          "ninedeploy.database.name=My postgres",
+          "--label",
+          "ninedeploy.database.engine=postgres",
+          "--label",
+          "ninedeploy.database.image=pgvector/pgvector:pg18",
+          "--label",
+          "ninedeploy.database.container=nd-db-postgres-vector",
+          "--label",
+          "ninedeploy.owner=3",
+          "nd-db-postgres-vector-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-postgres-vector"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "writeSecretFile",
+        "prefix": "nd-db",
+        "name": "database.env",
+        "contents": "POSTGRES_USER=nine\nPOSTGRES_PASSWORD=pw-secret\nPOSTGRES_DB=app\n"
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-postgres-vector",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "-v",
+          "nd-db-postgres-vector-data:/var/lib/postgresql",
+          "--env-file",
+          "/tmp/nd-db-FIXED/database.env",
+          "pgvector/pgvector:pg18"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "secretFile.cleanup"
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:vector start (retained volume, template label)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-postgres-vector",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "pgvector/pgvector:pg18"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-postgres-vector-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-postgres-vector"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "writeSecretFile",
+        "prefix": "nd-db",
+        "name": "database.env",
+        "contents": "POSTGRES_USER=nine\nPOSTGRES_PASSWORD=pw-secret\nPOSTGRES_DB=app\n"
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-postgres-vector",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "-v",
+          "nd-db-postgres-vector-data:/var/lib/postgresql",
+          "--env-file",
+          "/tmp/nd-db-FIXED/database.env",
+          "pgvector/pgvector:pg18"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "secretFile.cleanup"
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:vector start (already running)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-postgres-vector",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:vector stop": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-postgres-vector"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:vector restart": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "restart",
+          "nd-db-postgres-vector"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:vector logs": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "logs",
+          "--tail",
+          "50",
+          "nd-db-postgres-vector"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": [
+        "l1",
+        "l2"
+      ]
+    }
+  },
+  "postgres:vector size": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres-vector",
+          "psql",
+          "-U",
+          "nine",
+          "-d",
+          "app",
+          "-tAc",
+          "SELECT pg_database_size(current_database())"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": 4242
+    }
+  },
+  "postgres:vector backup": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres-vector",
+          "pg_dump",
+          "-U",
+          "nine",
+          "-d",
+          "app",
+          "--clean",
+          "--if-exists",
+          "--file=/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "nd-db-postgres-vector:/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000",
+          "<scratch>/postgres-vector-ts.dump"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres-vector",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:vector restore": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "<scratch>/postgres-vector-restore.dump",
+          "nd-db-postgres-vector:/tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres-vector",
+          "psql",
+          "-v",
+          "ON_ERROR_STOP=1",
+          "--single-transaction",
+          "-U",
+          "nine",
+          "-d",
+          "app",
+          "-f",
+          "/tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres-vector",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:vector probe credentials": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "-e",
+          "PGPASSWORD=pw-secret",
+          "nd-db-postgres-vector",
+          "psql",
+          "-h",
+          "127.0.0.1",
+          "-U",
+          "nine",
+          "-d",
+          "app",
+          "-tAc",
+          "SELECT 1"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": true
+    }
+  },
+  "postgres:vector probe sandbox": {
+    "events": [],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:vector attach to service bridges": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-web$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-web"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-postgres-vector",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "nd-db-postgres-vector"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-api$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-api"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-postgres-vector",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "nd-db-postgres-vector"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:vector adopt retained volume": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-postgres-vector-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "--format",
+          "{{json .Labels}}",
+          "nd-db-postgres-vector-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "ensureDockerImage",
+        "image": "postgres:17"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "--rm",
+          "-i",
+          "-v",
+          "nd-db-postgres-vector-data:/var/lib/postgresql/data",
+          "postgres:17",
+          "postgres",
+          "--single",
+          "-D",
+          "/var/lib/postgresql/data",
+          "postgres"
+        ],
+        "opts": {
+          "timeoutMs": 300000,
+          "heartbeatMs": 20000,
+          "heartbeatLabel": "Re-keying retained volume nd-db-postgres-vector-data"
+        },
+        "stdin": "ALTER ROLE nine WITH PASSWORD 'pw-secret' VALID UNTIL 'infinity';\nSELECT 'NINEDEPLOY_REKEY_OK' FROM pg_roles WHERE rolname = 'nine' AND rolvaliduntil = 'infinity'::timestamptz;\n/q\n"
+      }
+    ],
+    "outcome": {
+      "ok": {
+        "action": "rekeyed"
+      }
+    }
+  },
+  "postgres:vector import #0 pg_custom": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "<scratch>/postgres-vector-import-0.dump",
+          "nd-db-postgres-vector:/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {
+          "timeoutMs": 21600000
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres-vector",
+          "pg_restore",
+          "--no-owner",
+          "--no-acl",
+          "--exit-on-error",
+          "--single-transaction",
+          "--clean",
+          "--if-exists",
+          "-U",
+          "nine",
+          "-d",
+          "app",
+          "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {
+          "timeoutMs": 21600000,
+          "heartbeatMs": 60000,
+          "heartbeatLabel": "import"
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres-vector",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "postgres:vector import #1 pg_plain": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "<scratch>/postgres-vector-import-1.dump",
+          "nd-db-postgres-vector:/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {
+          "timeoutMs": 21600000
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "-e",
+          "PGOPTIONS=-c standard_conforming_strings=on",
+          "nd-db-postgres-vector",
+          "psql",
+          "-X",
+          "-v",
+          "ON_ERROR_STOP=1",
+          "--single-transaction",
+          "-U",
+          "nine",
+          "-d",
+          "app",
+          "-f",
+          "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {
+          "timeoutMs": 21600000,
+          "heartbeatMs": 60000,
+          "heartbeatLabel": "import"
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres-vector",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mysql start (fresh volume)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-mysql",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "mysql:9.7"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-mysql-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "create",
+          "--label",
+          "ninedeploy.managed=database",
+          "--label",
+          "ninedeploy.database.slug=mysql",
+          "--label",
+          "ninedeploy.database.name=My mysql",
+          "--label",
+          "ninedeploy.database.engine=mysql",
+          "--label",
+          "ninedeploy.database.image=mysql:9.7",
+          "--label",
+          "ninedeploy.database.container=nd-db-mysql",
+          "--label",
+          "ninedeploy.owner=3",
+          "nd-db-mysql-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-mysql"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "writeSecretFile",
+        "prefix": "nd-db",
+        "name": "database.env",
+        "contents": "MYSQL_ROOT_PASSWORD=pw-secret\nMYSQL_DATABASE=app\n"
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-mysql",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "-v",
+          "nd-db-mysql-data:/var/lib/mysql",
+          "--env-file",
+          "/tmp/nd-db-FIXED/database.env",
+          "mysql:9.7"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "secretFile.cleanup"
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mysql start (retained volume, template label)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-mysql",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "mysql:9.7"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-mysql-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-mysql"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "writeSecretFile",
+        "prefix": "nd-db",
+        "name": "database.env",
+        "contents": "MYSQL_ROOT_PASSWORD=pw-secret\nMYSQL_DATABASE=app\n"
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-mysql",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "-v",
+          "nd-db-mysql-data:/var/lib/mysql",
+          "--env-file",
+          "/tmp/nd-db-FIXED/database.env",
+          "mysql:9.7"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "secretFile.cleanup"
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mysql start (already running)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-mysql",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mysql stop": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-mysql"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mysql restart": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "restart",
+          "nd-db-mysql"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mysql logs": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "logs",
+          "--tail",
+          "50",
+          "nd-db-mysql"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": [
+        "l1",
+        "l2"
+      ]
+    }
+  },
+  "mysql size": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mysql",
+          "mysql",
+          "-uroot",
+          "--password=pw-secret",
+          "-N",
+          "-e",
+          "SELECT IFNULL(SUM(data_length+index_length),0) FROM information_schema.tables"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": 9001
+    }
+  },
+  "mysql backup": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mysql",
+          "mysqldump",
+          "-uroot",
+          "--password=pw-secret",
+          "--single-transaction",
+          "--quick",
+          "--all-databases",
+          "--result-file=/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "nd-db-mysql:/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000",
+          "<scratch>/mysql-ts.dump"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mysql",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mysql restore": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "<scratch>/mysql-restore.dump",
+          "nd-db-mysql:/tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mysql",
+          "mysql",
+          "-uroot",
+          "--password=pw-secret",
+          "-e",
+          "source /tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mysql",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mysql probe credentials": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mysql",
+          "mysql",
+          "-uroot",
+          "--password=pw-secret",
+          "-N",
+          "-e",
+          "SELECT 1"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": true
+    }
+  },
+  "mysql probe sandbox": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mysql",
+          "mysql",
+          "--help"
+        ],
+        "opts": {
+          "timeoutMs": 30000
+        }
+      }
+    ],
+    "outcome": {
+      "ok": "--system-command=OFF"
+    }
+  },
+  "mysql attach to service bridges": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-web$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-web"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-mysql",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "nd-db-mysql"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-api$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-api"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-mysql",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "nd-db-mysql"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mysql adopt retained volume": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-mysql-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "--format",
+          "{{json .Labels}}",
+          "nd-db-mysql-data"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "error": "Retained volume \"nd-db-mysql-data\" still holds mysql data (previously a NineDeploy database, mysql) whose credentials NineDeploy cannot re-key automatically. Starting it would boot a server no app can authenticate to. Delete the volume to start fresh (Volumes panel, or `docker volume rm nd-db-mysql-data`), or point this database at a different volume"
+    }
+  },
+  "mysql import #0 mysql_sql": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "<scratch>/mysql-import-0.dump",
+          "nd-db-mysql:/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {
+          "timeoutMs": 21600000
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mysql",
+          "sh",
+          "-c",
+          "f=\"$1\"; shift; exec \"$@\" < \"$f\"",
+          "sh",
+          "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000",
+          "mysql",
+          "-uroot",
+          "--password=pw-secret",
+          "--system-command=OFF",
+          "--local-infile=0",
+          "app"
+        ],
+        "opts": {
+          "timeoutMs": 21600000,
+          "heartbeatMs": 60000,
+          "heartbeatLabel": "import"
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mysql",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mariadb start (fresh volume)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-mariadb",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "mariadb:12.3"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-mariadb-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "create",
+          "--label",
+          "ninedeploy.managed=database",
+          "--label",
+          "ninedeploy.database.slug=mariadb",
+          "--label",
+          "ninedeploy.database.name=My mariadb",
+          "--label",
+          "ninedeploy.database.engine=mariadb",
+          "--label",
+          "ninedeploy.database.image=mariadb:12.3",
+          "--label",
+          "ninedeploy.database.container=nd-db-mariadb",
+          "--label",
+          "ninedeploy.owner=3",
+          "nd-db-mariadb-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-mariadb"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "writeSecretFile",
+        "prefix": "nd-db",
+        "name": "database.env",
+        "contents": "MARIADB_ROOT_PASSWORD=pw-secret\nMARIADB_DATABASE=app\n"
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-mariadb",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "--memory",
+          "512m",
+          "--memory-swap",
+          "512m",
+          "-v",
+          "nd-db-mariadb-data:/var/lib/mysql",
+          "--env-file",
+          "/tmp/nd-db-FIXED/database.env",
+          "mariadb:12.3"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "secretFile.cleanup"
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mariadb start (retained volume, template label)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-mariadb",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "mariadb:12.3"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-mariadb-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-mariadb"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "writeSecretFile",
+        "prefix": "nd-db",
+        "name": "database.env",
+        "contents": "MARIADB_ROOT_PASSWORD=pw-secret\nMARIADB_DATABASE=app\n"
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-mariadb",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "--memory",
+          "512m",
+          "--memory-swap",
+          "512m",
+          "-v",
+          "nd-db-mariadb-data:/var/lib/mysql",
+          "--env-file",
+          "/tmp/nd-db-FIXED/database.env",
+          "mariadb:12.3"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "secretFile.cleanup"
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mariadb start (already running)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-mariadb",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mariadb stop": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-mariadb"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mariadb restart": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "restart",
+          "nd-db-mariadb"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mariadb logs": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "logs",
+          "--tail",
+          "50",
+          "nd-db-mariadb"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": [
+        "l1",
+        "l2"
+      ]
+    }
+  },
+  "mariadb size": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mariadb",
+          "mariadb",
+          "-uroot",
+          "--password=pw-secret",
+          "-N",
+          "-e",
+          "SELECT IFNULL(SUM(data_length+index_length),0) FROM information_schema.tables"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": 9001
+    }
+  },
+  "mariadb backup": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mariadb",
+          "mariadb-dump",
+          "-uroot",
+          "--password=pw-secret",
+          "--single-transaction",
+          "--quick",
+          "--all-databases",
+          "--result-file=/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "nd-db-mariadb:/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000",
+          "<scratch>/mariadb-ts.dump"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mariadb",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mariadb restore": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "<scratch>/mariadb-restore.dump",
+          "nd-db-mariadb:/tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mariadb",
+          "mariadb",
+          "-uroot",
+          "--password=pw-secret",
+          "-e",
+          "source /tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mariadb",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mariadb probe credentials": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mariadb",
+          "mariadb",
+          "-uroot",
+          "--password=pw-secret",
+          "-N",
+          "-e",
+          "SELECT 1"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": true
+    }
+  },
+  "mariadb probe sandbox": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mariadb",
+          "mariadb",
+          "--help"
+        ],
+        "opts": {
+          "timeoutMs": 30000
+        }
+      }
+    ],
+    "outcome": {
+      "ok": "--sandbox"
+    }
+  },
+  "mariadb attach to service bridges": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-web$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-web"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-mariadb",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "nd-db-mariadb"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-api$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-api"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-mariadb",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "nd-db-mariadb"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mariadb adopt retained volume": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-mariadb-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "--format",
+          "{{json .Labels}}",
+          "nd-db-mariadb-data"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "error": "Retained volume \"nd-db-mariadb-data\" still holds mariadb data (previously a NineDeploy database, mariadb) whose credentials NineDeploy cannot re-key automatically. Starting it would boot a server no app can authenticate to. Delete the volume to start fresh (Volumes panel, or `docker volume rm nd-db-mariadb-data`), or point this database at a different volume"
+    }
+  },
+  "mariadb import #0 mysql_sql": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "<scratch>/mariadb-import-0.dump",
+          "nd-db-mariadb:/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {
+          "timeoutMs": 21600000
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mariadb",
+          "sh",
+          "-c",
+          "f=\"$1\"; shift; exec \"$@\" < \"$f\"",
+          "sh",
+          "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000",
+          "mariadb",
+          "-uroot",
+          "--password=pw-secret",
+          "--sandbox",
+          "--local-infile=0",
+          "app"
+        ],
+        "opts": {
+          "timeoutMs": 21600000,
+          "heartbeatMs": 60000,
+          "heartbeatLabel": "import"
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mariadb",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mariadb import #1 mysql_sql": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "<scratch>/mariadb-import-1.dump",
+          "nd-db-mariadb:/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {
+          "timeoutMs": 21600000
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mariadb",
+          "sh",
+          "-c",
+          "f=\"$1\"; shift; exec \"$@\" < \"$f\"",
+          "sh",
+          "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000",
+          "mariadb",
+          "-uroot",
+          "--password=pw-secret",
+          "--local-infile=0",
+          "app"
+        ],
+        "opts": {
+          "timeoutMs": 21600000,
+          "heartbeatMs": 60000,
+          "heartbeatLabel": "import"
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mariadb",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "redis start (fresh volume)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-redis",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "redis:8.8"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-redis-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "create",
+          "--label",
+          "ninedeploy.managed=database",
+          "--label",
+          "ninedeploy.database.slug=redis",
+          "--label",
+          "ninedeploy.database.name=My redis",
+          "--label",
+          "ninedeploy.database.engine=redis",
+          "--label",
+          "ninedeploy.database.image=redis:8.8",
+          "--label",
+          "ninedeploy.database.container=nd-db-redis",
+          "--label",
+          "ninedeploy.owner=3",
+          "nd-db-redis-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-redis"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-redis",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "-v",
+          "nd-db-redis-data:/data",
+          "redis:8.8",
+          "--requirepass",
+          "pw-secret"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "redis start (retained volume, template label)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-redis",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "redis:8.8"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-redis-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-redis"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-redis",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "-v",
+          "nd-db-redis-data:/data",
+          "redis:8.8",
+          "--requirepass",
+          "pw-secret"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "redis start (already running)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-redis",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "redis stop": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-redis"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "redis restart": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "restart",
+          "nd-db-redis"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "redis logs": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "logs",
+          "--tail",
+          "50",
+          "nd-db-redis"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": [
+        "l1",
+        "l2"
+      ]
+    }
+  },
+  "redis size": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-redis",
+          "redis-cli",
+          "-a",
+          "pw-secret",
+          "--no-auth-warning",
+          "INFO",
+          "memory"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": 777
+    }
+  },
+  "redis backup": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-redis",
+          "redis-cli",
+          "-a",
+          "pw-secret",
+          "--no-auth-warning",
+          "SAVE"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "nd-db-redis:/data/dump.rdb",
+          "<scratch>/redis-ts.dump"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "redis restore": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "stop",
+          "nd-db-redis"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "<scratch>/redis-restore.dump",
+          "nd-db-redis:/data/dump.rdb"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "start",
+          "nd-db-redis"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "redis probe credentials": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-redis",
+          "redis-cli",
+          "-a",
+          "pw-secret",
+          "--no-auth-warning",
+          "PING"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": true
+    }
+  },
+  "redis probe sandbox": {
+    "events": [],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "redis attach to service bridges": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-web$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-web"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-redis",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "nd-db-redis"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-api$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-api"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-redis",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "nd-db-redis"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "redis adopt retained volume": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-redis-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "--format",
+          "{{json .Labels}}",
+          "nd-db-redis-data"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": {
+        "action": "no-rekey-needed"
+      }
+    }
+  },
+  "redis import #0 rdb": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "stop",
+          "nd-db-redis"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "<scratch>/redis-import-0.dump",
+          "nd-db-redis:/data/dump.rdb"
+        ],
+        "opts": {
+          "timeoutMs": 21600000
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "start",
+          "nd-db-redis"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "valkey start (fresh volume)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-valkey",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "valkey/valkey:9.1"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-valkey-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "create",
+          "--label",
+          "ninedeploy.managed=database",
+          "--label",
+          "ninedeploy.database.slug=valkey",
+          "--label",
+          "ninedeploy.database.name=My valkey",
+          "--label",
+          "ninedeploy.database.engine=valkey",
+          "--label",
+          "ninedeploy.database.image=valkey/valkey:9.1",
+          "--label",
+          "ninedeploy.database.container=nd-db-valkey",
+          "--label",
+          "ninedeploy.owner=3",
+          "nd-db-valkey-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-valkey"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-valkey",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "-v",
+          "nd-db-valkey-data:/data",
+          "valkey/valkey:9.1",
+          "--requirepass",
+          "pw-secret"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "valkey start (retained volume, template label)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-valkey",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "valkey/valkey:9.1"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-valkey-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-valkey"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-valkey",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "-v",
+          "nd-db-valkey-data:/data",
+          "valkey/valkey:9.1",
+          "--requirepass",
+          "pw-secret"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "valkey start (already running)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-valkey",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "valkey stop": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-valkey"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "valkey restart": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "restart",
+          "nd-db-valkey"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "valkey logs": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "logs",
+          "--tail",
+          "50",
+          "nd-db-valkey"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": [
+        "l1",
+        "l2"
+      ]
+    }
+  },
+  "valkey size": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-valkey",
+          "redis-cli",
+          "-a",
+          "pw-secret",
+          "--no-auth-warning",
+          "INFO",
+          "memory"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": 777
+    }
+  },
+  "valkey backup": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-valkey",
+          "redis-cli",
+          "-a",
+          "pw-secret",
+          "--no-auth-warning",
+          "SAVE"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "nd-db-valkey:/data/dump.rdb",
+          "<scratch>/valkey-ts.dump"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "valkey restore": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "stop",
+          "nd-db-valkey"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "<scratch>/valkey-restore.dump",
+          "nd-db-valkey:/data/dump.rdb"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "start",
+          "nd-db-valkey"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "valkey probe credentials": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-valkey",
+          "redis-cli",
+          "-a",
+          "pw-secret",
+          "--no-auth-warning",
+          "PING"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": true
+    }
+  },
+  "valkey probe sandbox": {
+    "events": [],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "valkey attach to service bridges": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-web$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-web"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-valkey",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "nd-db-valkey"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-api$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-api"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-valkey",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "nd-db-valkey"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "valkey adopt retained volume": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-valkey-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "--format",
+          "{{json .Labels}}",
+          "nd-db-valkey-data"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": {
+        "action": "no-rekey-needed"
+      }
+    }
+  },
+  "valkey import #0 rdb": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "stop",
+          "nd-db-valkey"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "<scratch>/valkey-import-0.dump",
+          "nd-db-valkey:/data/dump.rdb"
+        ],
+        "opts": {
+          "timeoutMs": 21600000
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "start",
+          "nd-db-valkey"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mongo start (fresh volume)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-mongo",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "mongo:8.0"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-mongo-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "create",
+          "--label",
+          "ninedeploy.managed=database",
+          "--label",
+          "ninedeploy.database.slug=mongo",
+          "--label",
+          "ninedeploy.database.name=My mongo",
+          "--label",
+          "ninedeploy.database.engine=mongo",
+          "--label",
+          "ninedeploy.database.image=mongo:8.0",
+          "--label",
+          "ninedeploy.database.container=nd-db-mongo",
+          "--label",
+          "ninedeploy.owner=3",
+          "nd-db-mongo-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-mongo"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "writeSecretFile",
+        "prefix": "nd-db",
+        "name": "database.env",
+        "contents": "MONGO_INITDB_ROOT_USERNAME=nine\nMONGO_INITDB_ROOT_PASSWORD=pw-secret\n"
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-mongo",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "-v",
+          "nd-db-mongo-data:/data/db",
+          "--env-file",
+          "/tmp/nd-db-FIXED/database.env",
+          "mongo:8.0"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "secretFile.cleanup"
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mongo start (retained volume, template label)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-mongo",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "mongo:8.0"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-mongo-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-mongo"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "writeSecretFile",
+        "prefix": "nd-db",
+        "name": "database.env",
+        "contents": "MONGO_INITDB_ROOT_USERNAME=nine\nMONGO_INITDB_ROOT_PASSWORD=pw-secret\n"
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-mongo",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "-v",
+          "nd-db-mongo-data:/data/db",
+          "--env-file",
+          "/tmp/nd-db-FIXED/database.env",
+          "mongo:8.0"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "secretFile.cleanup"
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mongo start (already running)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-mongo",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mongo stop": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-mongo"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mongo restart": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "restart",
+          "nd-db-mongo"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mongo logs": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "logs",
+          "--tail",
+          "50",
+          "nd-db-mongo"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": [
+        "l1",
+        "l2"
+      ]
+    }
+  },
+  "mongo size": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mongo",
+          "mongosh",
+          "-u",
+          "nine",
+          "-p",
+          "pw-secret",
+          "--authenticationDatabase",
+          "admin",
+          "--quiet",
+          "--eval",
+          "db.getSiblingDB(\"app\").stats().dataSize"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": 31337
+    }
+  },
+  "mongo backup": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mongo",
+          "mongodump",
+          "-u",
+          "nine",
+          "-p",
+          "pw-secret",
+          "--authenticationDatabase",
+          "admin",
+          "--archive=/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000",
+          "--gzip"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "nd-db-mongo:/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000",
+          "<scratch>/mongo-ts.dump"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mongo",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mongo restore": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "<scratch>/mongo-restore.dump",
+          "nd-db-mongo:/tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mongo",
+          "mongorestore",
+          "-u",
+          "nine",
+          "-p",
+          "pw-secret",
+          "--authenticationDatabase",
+          "admin",
+          "--archive=/tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000",
+          "--gzip",
+          "--drop"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mongo",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mongo probe credentials": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mongo",
+          "mongosh",
+          "-u",
+          "nine",
+          "-p",
+          "pw-secret",
+          "--authenticationDatabase",
+          "admin",
+          "--quiet",
+          "--eval",
+          "db.getSiblingDB(\"app\").runCommand({ ping: 1 }).ok"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": true
+    }
+  },
+  "mongo probe sandbox": {
+    "events": [],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mongo attach to service bridges": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-web$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-web"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-mongo",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "nd-db-mongo"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-api$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-api"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-mongo",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "nd-db-mongo"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "mongo adopt retained volume": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-mongo-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "--format",
+          "{{json .Labels}}",
+          "nd-db-mongo-data"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "error": "Retained volume \"nd-db-mongo-data\" still holds mongo data (previously a NineDeploy database, mongo) whose credentials NineDeploy cannot re-key automatically. Starting it would boot a server no app can authenticate to. Delete the volume to start fresh (Volumes panel, or `docker volume rm nd-db-mongo-data`), or point this database at a different volume"
+    }
+  },
+  "mongo import #0 mongo_archive": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "<scratch>/mongo-import-0.dump",
+          "nd-db-mongo:/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {
+          "timeoutMs": 21600000
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mongo",
+          "mongorestore",
+          "-u",
+          "nine",
+          "-p",
+          "pw-secret",
+          "--authenticationDatabase",
+          "admin",
+          "--archive=/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000",
+          "--gzip",
+          "--drop",
+          "--nsExclude=admin.*",
+          "--nsExclude=config.*",
+          "--nsExclude=local.*"
+        ],
+        "opts": {
+          "timeoutMs": 21600000,
+          "heartbeatMs": 60000,
+          "heartbeatLabel": "import"
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-mongo",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "clickhouse start (fresh volume)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-clickhouse",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "clickhouse/clickhouse-server:25.8"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-clickhouse-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "create",
+          "--label",
+          "ninedeploy.managed=database",
+          "--label",
+          "ninedeploy.database.slug=clickhouse",
+          "--label",
+          "ninedeploy.database.name=My clickhouse",
+          "--label",
+          "ninedeploy.database.engine=clickhouse",
+          "--label",
+          "ninedeploy.database.image=clickhouse/clickhouse-server:25.8",
+          "--label",
+          "ninedeploy.database.container=nd-db-clickhouse",
+          "--label",
+          "ninedeploy.owner=3",
+          "nd-db-clickhouse-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-clickhouse"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "writeSecretFile",
+        "prefix": "nd-db",
+        "name": "database.env",
+        "contents": "CLICKHOUSE_USER=nine\nCLICKHOUSE_PASSWORD=pw-secret\nCLICKHOUSE_DB=app\n"
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-clickhouse",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "-v",
+          "nd-db-clickhouse-data:/var/lib/clickhouse",
+          "--env-file",
+          "/tmp/nd-db-FIXED/database.env",
+          "clickhouse/clickhouse-server:25.8"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "secretFile.cleanup"
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "clickhouse start (retained volume, template label)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-clickhouse",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "clickhouse/clickhouse-server:25.8"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-clickhouse-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-clickhouse"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "writeSecretFile",
+        "prefix": "nd-db",
+        "name": "database.env",
+        "contents": "CLICKHOUSE_USER=nine\nCLICKHOUSE_PASSWORD=pw-secret\nCLICKHOUSE_DB=app\n"
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-clickhouse",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "-v",
+          "nd-db-clickhouse-data:/var/lib/clickhouse",
+          "--env-file",
+          "/tmp/nd-db-FIXED/database.env",
+          "clickhouse/clickhouse-server:25.8"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "secretFile.cleanup"
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "clickhouse start (already running)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-clickhouse",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "clickhouse stop": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-clickhouse"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "clickhouse restart": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "restart",
+          "nd-db-clickhouse"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "clickhouse logs": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "logs",
+          "--tail",
+          "50",
+          "nd-db-clickhouse"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": [
+        "l1",
+        "l2"
+      ]
+    }
+  },
+  "clickhouse size": {
+    "events": [],
+    "outcome": {
+      "ok": 0
+    }
+  },
+  "clickhouse backup": {
+    "events": [],
+    "outcome": {
+      "error": "backup not supported for clickhouse"
+    }
+  },
+  "clickhouse restore": {
+    "events": [],
+    "outcome": {
+      "error": "restore not supported for clickhouse"
+    }
+  },
+  "clickhouse probe credentials": {
+    "events": [],
+    "outcome": {
+      "ok": false
+    }
+  },
+  "clickhouse probe sandbox": {
+    "events": [],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "clickhouse attach to service bridges": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-web$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-web"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-clickhouse",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "nd-db-clickhouse"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-api$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-api"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-clickhouse",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "nd-db-clickhouse"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "clickhouse adopt retained volume": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-clickhouse-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "--format",
+          "{{json .Labels}}",
+          "nd-db-clickhouse-data"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "error": "Retained volume \"nd-db-clickhouse-data\" still holds clickhouse data (previously a NineDeploy database, clickhouse) whose credentials NineDeploy cannot re-key automatically. Starting it would boot a server no app can authenticate to. Delete the volume to start fresh (Volumes panel, or `docker volume rm nd-db-clickhouse-data`), or point this database at a different volume"
+    }
+  },
+  "meilisearch start (fresh volume)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-meilisearch",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "getmeili/meilisearch:v1.53"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-meilisearch-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "create",
+          "--label",
+          "ninedeploy.managed=database",
+          "--label",
+          "ninedeploy.database.slug=meilisearch",
+          "--label",
+          "ninedeploy.database.name=My meilisearch",
+          "--label",
+          "ninedeploy.database.engine=meilisearch",
+          "--label",
+          "ninedeploy.database.image=getmeili/meilisearch:v1.53",
+          "--label",
+          "ninedeploy.database.container=nd-db-meilisearch",
+          "--label",
+          "ninedeploy.owner=3",
+          "nd-db-meilisearch-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-meilisearch"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "writeSecretFile",
+        "prefix": "nd-db",
+        "name": "database.env",
+        "contents": "MEILI_MASTER_KEY=pw-secret\nMEILI_NO_ANALYTICS=true\n"
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-meilisearch",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "-v",
+          "nd-db-meilisearch-data:/meili_data",
+          "--env-file",
+          "/tmp/nd-db-FIXED/database.env",
+          "getmeili/meilisearch:v1.53"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "secretFile.cleanup"
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "meilisearch start (retained volume, template label)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-meilisearch",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "getmeili/meilisearch:v1.53"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-meilisearch-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-meilisearch"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "writeSecretFile",
+        "prefix": "nd-db",
+        "name": "database.env",
+        "contents": "MEILI_MASTER_KEY=pw-secret\nMEILI_NO_ANALYTICS=true\n"
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-meilisearch",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "-v",
+          "nd-db-meilisearch-data:/meili_data",
+          "--env-file",
+          "/tmp/nd-db-FIXED/database.env",
+          "getmeili/meilisearch:v1.53"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "secretFile.cleanup"
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "meilisearch start (already running)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-meilisearch",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "meilisearch stop": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-meilisearch"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "meilisearch restart": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "restart",
+          "nd-db-meilisearch"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "meilisearch logs": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "logs",
+          "--tail",
+          "50",
+          "nd-db-meilisearch"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": [
+        "l1",
+        "l2"
+      ]
+    }
+  },
+  "meilisearch size": {
+    "events": [],
+    "outcome": {
+      "ok": 0
+    }
+  },
+  "meilisearch backup": {
+    "events": [],
+    "outcome": {
+      "error": "backup not supported for meilisearch"
+    }
+  },
+  "meilisearch restore": {
+    "events": [],
+    "outcome": {
+      "error": "restore not supported for meilisearch"
+    }
+  },
+  "meilisearch probe credentials": {
+    "events": [],
+    "outcome": {
+      "ok": false
+    }
+  },
+  "meilisearch probe sandbox": {
+    "events": [],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "meilisearch attach to service bridges": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-web$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-web"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-meilisearch",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "nd-db-meilisearch"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-api$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-api"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-meilisearch",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "nd-db-meilisearch"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "meilisearch adopt retained volume": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-meilisearch-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "--format",
+          "{{json .Labels}}",
+          "nd-db-meilisearch-data"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "error": "Retained volume \"nd-db-meilisearch-data\" still holds meilisearch data (previously a NineDeploy database, meilisearch) whose credentials NineDeploy cannot re-key automatically. Starting it would boot a server no app can authenticate to. Delete the volume to start fresh (Volumes panel, or `docker volume rm nd-db-meilisearch-data`), or point this database at a different volume"
+    }
+  },
+  "rabbitmq start (fresh volume)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-rabbitmq",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "rabbitmq:4-management"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-rabbitmq-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "create",
+          "--label",
+          "ninedeploy.managed=database",
+          "--label",
+          "ninedeploy.database.slug=rabbitmq",
+          "--label",
+          "ninedeploy.database.name=My rabbitmq",
+          "--label",
+          "ninedeploy.database.engine=rabbitmq",
+          "--label",
+          "ninedeploy.database.image=rabbitmq:4-management",
+          "--label",
+          "ninedeploy.database.container=nd-db-rabbitmq",
+          "--label",
+          "ninedeploy.owner=3",
+          "nd-db-rabbitmq-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-rabbitmq"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "writeSecretFile",
+        "prefix": "nd-db",
+        "name": "database.env",
+        "contents": "RABBITMQ_DEFAULT_USER=nine\nRABBITMQ_DEFAULT_PASS=pw-secret\n"
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-rabbitmq",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "-v",
+          "nd-db-rabbitmq-data:/var/lib/rabbitmq",
+          "--env-file",
+          "/tmp/nd-db-FIXED/database.env",
+          "rabbitmq:4-management"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "secretFile.cleanup"
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "rabbitmq start (retained volume, template label)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-rabbitmq",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "pullDockerImage",
+        "image": "rabbitmq:4-management"
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-rabbitmq-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-rabbitmq"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "writeSecretFile",
+        "prefix": "nd-db",
+        "name": "database.env",
+        "contents": "RABBITMQ_DEFAULT_USER=nine\nRABBITMQ_DEFAULT_PASS=pw-secret\n"
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "run",
+          "-d",
+          "--name",
+          "nd-db-rabbitmq",
+          "--network",
+          "ninedeploy",
+          "--restart",
+          "unless-stopped",
+          "-v",
+          "nd-db-rabbitmq-data:/var/lib/rabbitmq",
+          "--env-file",
+          "/tmp/nd-db-FIXED/database.env",
+          "rabbitmq:4-management"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "secretFile.cleanup"
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "rabbitmq start (already running)": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-rabbitmq",
+          "--format",
+          "{{.State.Status}}"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "rabbitmq stop": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "rm",
+          "-f",
+          "nd-db-rabbitmq"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "rabbitmq restart": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "restart",
+          "nd-db-rabbitmq"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "rabbitmq logs": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "logs",
+          "--tail",
+          "50",
+          "nd-db-rabbitmq"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": [
+        "l1",
+        "l2"
+      ]
+    }
+  },
+  "rabbitmq size": {
+    "events": [],
+    "outcome": {
+      "ok": 0
+    }
+  },
+  "rabbitmq backup": {
+    "events": [],
+    "outcome": {
+      "error": "backup not supported for rabbitmq"
+    }
+  },
+  "rabbitmq restore": {
+    "events": [],
+    "outcome": {
+      "error": "restore not supported for rabbitmq"
+    }
+  },
+  "rabbitmq probe credentials": {
+    "events": [],
+    "outcome": {
+      "ok": false
+    }
+  },
+  "rabbitmq probe sandbox": {
+    "events": [],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "rabbitmq attach to service bridges": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-web$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-web"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-rabbitmq",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-web",
+          "nd-db-rabbitmq"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "ls",
+          "--filter",
+          "name=^nd-svc-api$",
+          "--format",
+          "{{.Name}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "create",
+          "nd-svc-api"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "ninedeploy-traefik",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "ninedeploy-traefik"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "inspect",
+          "nd-db-rabbitmq",
+          "--format",
+          "{{json .NetworkSettings.Networks}}"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "network",
+          "connect",
+          "nd-svc-api",
+          "nd-db-rabbitmq"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  },
+  "rabbitmq adopt retained volume": {
+    "events": [
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "nd-db-rabbitmq-data"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "capture",
+        "cmd": "docker",
+        "args": [
+          "volume",
+          "inspect",
+          "--format",
+          "{{json .Labels}}",
+          "nd-db-rabbitmq-data"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "error": "Retained volume \"nd-db-rabbitmq-data\" still holds rabbitmq data (previously a NineDeploy database, rabbitmq) whose credentials NineDeploy cannot re-key automatically. Starting it would boot a server no app can authenticate to. Delete the volume to start fresh (Volumes panel, or `docker volume rm nd-db-rabbitmq-data`), or point this database at a different volume"
+    }
+  },
+  "postgres import with the safety backup": {
+    "events": [
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres",
+          "pg_dump",
+          "-U",
+          "nine",
+          "-d",
+          "app",
+          "--clean",
+          "--if-exists",
+          "--file=/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "nd-db-postgres:/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000",
+          "<scratch>/pg-pre-import.dump"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      },
+      {
+        "fn": "safetyBackup.onDone"
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "cp",
+          "<scratch>/pg-safety-import.dump",
+          "nd-db-postgres:/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {
+          "timeoutMs": 21600000
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "-e",
+          "PGOPTIONS=-c standard_conforming_strings=on",
+          "nd-db-postgres",
+          "psql",
+          "-X",
+          "-v",
+          "ON_ERROR_STOP=1",
+          "--single-transaction",
+          "-U",
+          "nine",
+          "-d",
+          "app",
+          "-f",
+          "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {
+          "timeoutMs": 21600000,
+          "heartbeatMs": 60000,
+          "heartbeatLabel": "import"
+        }
+      },
+      {
+        "fn": "run",
+        "cmd": "docker",
+        "args": [
+          "exec",
+          "nd-db-postgres",
+          "rm",
+          "-f",
+          "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000"
+        ],
+        "opts": {}
+      }
+    ],
+    "outcome": {
+      "ok": null
+    }
+  }
+}

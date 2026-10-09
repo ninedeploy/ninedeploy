@@ -424,8 +424,8 @@ describe('GET /v1/servers: the terminal capability field', () => {
     expect(byName(first, 'old').terminal).toMatchObject({ host: false, container: false, reason: expect.stringMatching(/version 0\.14\.0.*v0\.15\.0/) });
     expect(byName(first, 'off').terminal).toMatchObject({ host: false, container: false, reason: expect.stringMatching(/not been reached/) });
     // Multi-node (additive): `agent` and `features` follow `terminal`, then
-    // the build-server role (0.16 T4).
-    expect(Object.keys(byName(first, 'edge-1'))).toEqual(['id', 'name', 'host', 'port', 'status', 'lastSeenAt', 'createdAt', 'terminal', 'agent', 'features', 'isBuildServer', 'buildConcurrency']);
+    // the build-server role (0.16 T4), then the hosted database count (0.16 T6).
+    expect(Object.keys(byName(first, 'edge-1'))).toEqual(['id', 'name', 'host', 'port', 'status', 'lastSeenAt', 'createdAt', 'terminal', 'agent', 'features', 'isBuildServer', 'buildConcurrency', 'databases']);
     expect(h.ops.filter((o) => o === 'agent.ping')).toHaveLength(2); // the offline node is not asked
     await list();
     expect(h.ops.filter((o) => o === 'agent.ping')).toHaveLength(2); // cached
@@ -437,3 +437,59 @@ describe('GET /v1/servers: the terminal capability field', () => {
     expect(off).toBeDefined();
   });
 });
+
+// ── 0.16 T6 node databases ── (the database terminal on a node, design §5.4)
+describe('T6: a database on a node opens its shell through the node agent', () => {
+  const nodeDatabase = async (status: 'running' | 'stopped' = 'running') => {
+    const { databases } = await import('@ninedeploy/db');
+    const [d] = await db
+      .insert(databases)
+      .values({
+        name: 'orders',
+        slug: 'orders',
+        engine: 'postgres',
+        status,
+        containerName: null,
+        volumeName: null,
+        serverId: ids.server,
+        nodeContainerName: 'nd-db-orders',
+        nodeVolumeName: 'nd-db-orders-data',
+        internalHost: 'nd-db-orders',
+        passwordEncrypted: encrypt('pw'),
+        ownerUserId: 1,
+      })
+      .returning();
+    return d!.id;
+  };
+
+  it('shell mode: 201 naming the node; attach opens the nd-db-* container on the node (never the panel host)', async () => {
+    const databaseId = await nodeDatabase();
+    const s = await create({ kind: 'database', databaseId });
+    expect(s.status).toBe(201);
+    expect(s.body.session).toMatchObject({ targetKind: 'database', targetLabel: 'orders', serverId: ids.server });
+    expect((await row(s.body.session.id)).containerName).toBe('nd-db-orders');
+    const c = attach(s.body as { attachPath: string; ticket: string });
+    await waitFor(() => c.texts.length > 0);
+    expect(c.texts[0]).toEqual({ t: 'ready', sessionId: s.body.session.id, target: { kind: 'database', label: 'orders', serverId: ids.server } });
+    // The REAL agent opened the exec in the database container on the node.
+    expect(fakes.openExec).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ container: 'nd-db-orders' }));
+    await waitFor(() => fakes.ttys[0]?.resizes.length === 1);
+    const del = await fetch(`http://127.0.0.1:${panelPort}/v1/terminals/${s.body.session.id}`, { method: 'DELETE', headers: headers() });
+    expect(await del.json()).toEqual({ ok: true, wasLive: true });
+    await c.closed;
+  });
+
+  it('client mode is refused on a node (the agent opens shells only); a stopped database is 409; a 0.14 agent 422', async () => {
+    const databaseId = await nodeDatabase();
+    const client = await create({ kind: 'database', databaseId, mode: 'client' });
+    expect([client.status, client.body.error.code]).toEqual([422, 'client_mode_unsupported']);
+    expect(client.body.error.message).toMatch(/runs on a node/);
+    scripted(CAPS_014);
+    expect((await create({ kind: 'database', databaseId })).body.error.code).toBe('node_terminal_unsupported');
+    const { databases } = await import('@ninedeploy/db');
+    await db.update(databases).set({ status: 'stopped' }).where(eq(databases.id, databaseId));
+    expect((await create({ kind: 'database', databaseId })).body.error.code).toBe('not_running');
+    expect(await db.select().from(terminalSessions)).toHaveLength(0);
+  });
+});
+// ── end 0.16 T6 ──

@@ -236,6 +236,26 @@ export const terminalRoutes: FastifyPluginAsync = async (app) => {
       }
       case 'database': {
         const d = await loadDatabaseForUser(app.db, target.databaseId, user);
+        // ── 0.16 T6 node databases (design §5.4 "Terminal") ──
+        // A node database's shell opens through the node's agent (the 0.15
+        // node terminal: sealed `terminal.open` + the encrypted channel). The
+        // agent's container terminal runs a shell only — it carries no exec
+        // command or env — so the client mode stays panel-host only.
+        if (d.serverId != null) {
+          const container = d.nodeContainerName ?? `nd-db-${d.slug}`;
+          if (d.status !== 'running') throw err(409, 'not_running', `Database "${d.name}" is not running.`);
+          if (target.mode === 'client') {
+            throw err(
+              422,
+              'client_mode_unsupported',
+              `Database "${d.name}" runs on a node, whose agent opens shells only: open a shell (mode "shell") and run the client there (the connection string is under Credentials).`,
+            );
+          }
+          const node = await assertNodeTerminal(d.serverId, false);
+          await assertRunningOnNode(d.serverId, node.name, container);
+          return { ...base, kind: 'database', label: d.name, serverId: d.serverId, databaseId: d.id, containerName: container };
+        }
+        // ── end 0.16 T6 ──
         if (!d.containerName || d.status !== 'running') throw err(409, 'not_running', `Database "${d.name}" is not running.`);
         const client = target.mode === 'client' ? databaseClient(d) : null;
         await assertRunningLocal(transport, d.containerName);

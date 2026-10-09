@@ -6,7 +6,8 @@ import { desc, eq } from 'drizzle-orm';
 import { backups, databases } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import { config } from '../config.js';
-import { backupDatabase, createBackupReadStream, databaseSize, restoreDatabase } from '../engine/database.js';
+import { createBackupReadStream } from '../engine/database.js';
+import { databaseRuntime, isNodeDatabase } from '../lib/databaseRuntime.js';
 import { deleteRemoteBackup, deleteRemoteBackupForRetention, fetchRemoteBackup, uploadBackup } from '../lib/backupRemote.js';
 import { listBackupDrills, runBackupDrill } from '../lib/backupDrill.js';
 import { assertDatabaseRole, type AuthedUser, loadDatabaseForUser, visibleDatabaseIds } from '../lib/resourceAccess.js';
@@ -71,7 +72,8 @@ export const databaseBackupRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/:id/storage', async (req) => {
     const d = await getDb(app, num((req.params as { id: string }).id), req.user!);
-    return { sizeBytes: await databaseSize(d) };
+    // 0.16 T6: the runtime dispatch (the engine function on the panel host, the agent on a node).
+    return { sizeBytes: await databaseRuntime(app.db, d).size() };
   });
 
   app.get('/:id/backups', async (req) => {
@@ -94,16 +96,22 @@ export const databaseBackupRoutes: FastifyPluginAsync = async (app) => {
     const file = path.join(config.paths.backupsDir, `${d.slug}-${ts}.dump`);
     const log = (line: string) => app.log.info({ component: 'backup' }, line);
 
-    const [row] = await app.db.insert(backups).values({ databaseId: id, scope: 'db', status: 'running', path: file }).returning();
+    // 0.16 T6: a node database's dump records the node it was taken on (backups.server_id; NULL = the panel host).
+    const [row] = await app.db
+      .insert(backups)
+      .values({ databaseId: id, scope: 'db', status: 'running', path: file, ...(isNodeDatabase(d) ? { serverId: d.serverId } : {}) })
+      .returning();
     try {
       log(`Backing up ${d.name} → ${path.basename(file)}`);
-      await backupDatabase(d, file, log);
+      await databaseRuntime(app.db, d).backup(file, log);
       const sizeBytes = existsSync(file) ? statSync(file).size : 0;
       await app.db.update(backups).set({ status: 'completed', sizeBytes }).where(eq(backups.id, row!.id));
       // Remote copy (best-effort — never fails the local backup).
       await uploadBackup(app.db, row!.id, file, log);
     } catch (err) {
       await app.db.update(backups).set({ status: 'failed' }).where(eq(backups.id, row!.id));
+      // 0.16 T6: a node's refusal keeps its status and code (422 node_agent_outdated, 502 node_unreachable).
+      if (isNodeDatabase(d) && err instanceof HttpError) throw err;
       throw badRequest(`Backup failed: ${err instanceof Error ? err.message : err}`);
     }
     const updated = await app.db.query.backups.findFirst({ where: eq(backups.id, row!.id) });
@@ -136,8 +144,9 @@ export const databaseBackupRoutes: FastifyPluginAsync = async (app) => {
     }
     try {
       log(`Restoring ${d.name} from ${path.basename(restorePath)}`);
-      await restoreDatabase(d, restorePath, log);
+      await databaseRuntime(app.db, d).restore(restorePath, log);
     } catch (err) {
+      if (isNodeDatabase(d) && err instanceof HttpError) throw err;
       throw badRequest(`Restore failed: ${err instanceof Error ? err.message : err}`);
     } finally {
       // The fetched temp copy is not tracked in the DB — always remove it.

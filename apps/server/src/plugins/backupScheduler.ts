@@ -5,7 +5,7 @@ import { desc, eq } from 'drizzle-orm';
 import { backups, type DatabaseBackupPolicy, databases } from '@ninedeploy/db';
 import fp from 'fastify-plugin';
 import { config } from '../config.js';
-import { backupDatabase } from '../engine/database.js';
+import { databaseRuntime } from '../lib/databaseRuntime.js';
 import { deleteRemoteBackupForRetention, uploadBackup } from '../lib/backupRemote.js';
 import { audit } from '../lib/audit.js';
 import { backupPolicyEvents, cronPeriodMs, loadBackupPolicies, planRetention } from '../lib/backupPolicy.js';
@@ -137,8 +137,12 @@ export default fp(
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
       const file = path.join(config.paths.backupsDir, `${d.slug}-${ts}.dump`);
       const log = (line: string) => fastify.log.info({ component: 'backup' }, line);
+      // 0.16 T6: a node database is dumped on its node (no local fallback:
+      // an unreachable node records a failed backup) and its rows record the
+      // node (backups.server_id; NULL = the panel host, as every 0.15 row).
+      const onNode = d.serverId != null ? { serverId: d.serverId } : {};
       try {
-        await backupDatabase(d, file, log);
+        await databaseRuntime(fastify.db, d).backup(file, log);
         const [row] = await fastify.db
           .insert(backups)
           .values({
@@ -147,6 +151,7 @@ export default fp(
             status: 'completed',
             path: file,
             sizeBytes: existsSync(file) ? statSync(file).size : 0,
+            ...onNode,
           })
           .returning({ id: backups.id });
         // Remote copy (best-effort, same as manual backups). F97: the dump
@@ -185,6 +190,7 @@ export default fp(
             status: 'failed',
             path: file,
             sizeBytes: 0,
+            ...onNode,
           });
         } catch {
           /* the failure row is cosmetic; the audit below still fires */

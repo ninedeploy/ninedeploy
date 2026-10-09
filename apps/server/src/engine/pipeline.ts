@@ -216,6 +216,10 @@ type RuntimeEnvironment = {
   managedDatabaseKeys: string[];
   /** r651: what a PR preview was NOT given (names only, never values). */
   withheldFromPreview: string[];
+  // ── 0.16 T6 node databases ──
+  /** The running attached databases whose connection strings `values` carries, and where they run (D4, O7). */
+  attachedDatabases: Array<{ id: number; slug: string; serverId: number | null; container: string | null }>;
+  // ── end 0.16 T6 ──
 };
 
 /**
@@ -377,6 +381,7 @@ export async function loadRuntimeEnv(
     attaches.push(a);
   }
   let readyAttachmentCount = 0;
+  const attachedDatabases: RuntimeEnvironment['attachedDatabases'] = [];
   // F860: the template contract describes ONE database — the template's own
   // (the one the reconcile returned; without that, the first ready attachment
   // it fits). Applied to every attachment, a second database (a Redis cache
@@ -386,6 +391,7 @@ export async function loadRuntimeEnv(
     const d = await db.query.databases.findFirst({ where: eq(databases.id, a.databaseId) });
     if (d && d.status === 'running') {
       readyAttachmentCount++;
+      attachedDatabases.push({ id: d.id, slug: d.slug, serverId: d.serverId ?? null, container: d.containerName ?? d.nodeContainerName ?? null });
       // Services created by an older or interrupted Hub flow may have a valid
       // attachment but a missing persisted mapping. Recover the trusted
       // built-in contract from the exact image/port/volume/database signature
@@ -446,6 +452,7 @@ export async function loadRuntimeEnv(
     readyAttachmentCount,
     managedDatabaseKeys: [...managedDatabaseKeys].sort(),
     withheldFromPreview,
+    attachedDatabases,
   };
 }
 
@@ -1135,6 +1142,12 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       useBuildKit: kernelCtx?.useBuildKit,
       buildCache: kernelCtx?.buildCache,
       onBuildCacheEvent: kernelCtx?.onBuildCacheEvent,
+      // ── 0.16 T6 node databases (D4) ── panel-host databases the docker builder puts on the service's bridge
+      databaseContainers:
+        service.serverId == null
+          ? runtimeEnvironment.attachedDatabases.filter((a) => a.serverId == null && a.container).map((a) => a.container as string)
+          : [],
+      // ── end 0.16 T6 ──
     };
 
     if (buildConfig?.preDeployCmd) {
@@ -1169,6 +1182,19 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     }
     // ── end 0.16 T4 ──
     runtime = await builder.buildAndRun(ctx, previous);
+    // ── 0.16 T6 node databases (O7) ──
+    // A node database sits on its own `nd-dbnet-<slug>` bridge on the node;
+    // the service reaches it once its new container joins that bridge —
+    // before the healthcheck, so an app that connects at boot finds it. A
+    // failure fails the deploy; the previous runtime keeps serving.
+    if (service.serverId != null && runtime) {
+      const onNode = runtimeEnvironment.attachedDatabases.filter((a) => a.serverId === service.serverId);
+      if (onNode.length > 0) {
+        const { connectServiceToNodeDatabases } = await import('../lib/nodeDatabase.js');
+        await connectServiceToNodeDatabases(db, service.serverId, runtime.runtimeId, onNode, log);
+      }
+    }
+    // ── end 0.16 T6 ──
     log('##[stage:BUILD:success]');
     log('##[stage:BOOT:success] Container runtime launched in isolated sandbox');
 

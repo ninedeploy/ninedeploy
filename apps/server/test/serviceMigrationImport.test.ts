@@ -139,3 +139,26 @@ describe('POST /services/import (r656)', () => {
     expect(hooks.map((w) => w.watchPaths)).toEqual(['apps/web/**', 'apps/web/**']);
   });
 });
+
+// ── 0.16 T6 node databases ──
+describe('T6: an imported service attaches only databases on its own host (design §5.5)', () => {
+  it('a same-named database on a node is not attached to the (panel-host) imported service; a panel one is', async () => {
+    const { servers } = await import('@ninedeploy/db');
+    const { encrypt } = await import('../src/lib/crypto.js');
+    const [node] = await db.insert(servers).values({ name: 'edge-1', host: '10.0.0.5', port: 4600, tokenEncrypted: encrypt('t'), status: 'online' }).returning();
+    await db.insert(databases).values({ name: 'orders', slug: 'orders', engine: 'postgres', status: 'running', passwordEncrypted: 'x', ownerUserId: opId, serverId: node!.id, nodeContainerName: 'nd-db-orders' });
+    await db.insert(databases).values({ name: 'pg', slug: 'pg', engine: 'postgres', status: 'running', passwordEncrypted: 'x', ownerUserId: opId, containerName: 'nd-db-pg' });
+    const res = await importBundle(
+      bundle({
+        domains: [],
+        attachments: [
+          { envAlias: 'ORDERS_URL', databaseName: 'orders', databaseEngine: 'postgres' },
+          { envAlias: 'DATABASE_URL', databaseName: 'pg', databaseEngine: 'postgres' },
+        ],
+      }),
+    );
+    expect(res.statusCode).toBe(200);
+    expect((await db.select().from(databaseAttachments)).map((a) => a.envAlias)).toEqual(['DATABASE_URL']);
+  });
+});
+// ── end 0.16 T6 ──

@@ -768,6 +768,15 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // `nd-svc-<slug>-data` the destination held — a deleted service's data on
     // that node or host. Checked before anything is retired; the service's
     // own volume from an earlier placement there is told apart by its age.
+    // ── 0.16 T6 node databases (design §5.5) ── a service never moves away
+    // from a node database it is attached to: the database resolves only on
+    // its own host. Checked before anything is retired.
+    if (moving) {
+      const { attachedDatabasesHostMismatch } = await import('../lib/remoteDatabaseRefusal.js');
+      const hostRefusal = await attachedDatabasesHostMismatch(app.db, existing, patch.serverId ?? null);
+      if (hostRefusal) throw hostRefusal;
+    }
+    // ── end 0.16 T6 ──
     if (moving) {
       await assertSlugVolumeNotRetained(existing.slug, patch.type ?? existing.type, {
         db: app.db,
@@ -1043,6 +1052,13 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     }
     const input = setTargets.parse(req.body ?? {});
     const requested = [...new Set(input.serverIds)];
+    // ── 0.16 T6 node databases (design §5.5) ── targets on other nodes never reach a node database.
+    {
+      const { fanoutDatabaseHostRefusal } = await import('../lib/remoteDatabaseRefusal.js');
+      const hostRefusal = await fanoutDatabaseHostRefusal(app.db, svc, requested);
+      if (hostRefusal) throw hostRefusal;
+    }
+    // ── end 0.16 T6 ──
     const existing = await app.db.select().from(serviceTargets).where(eq(serviceTargets.serviceId, id));
     // F840: a NEW target node mounts `nd-svc-<slug>-data` there (fanout.ts) —
     // ask that node the same retained-volume question a move asks (r662),

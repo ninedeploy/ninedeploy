@@ -1,5 +1,6 @@
 import { MULTI_NODE_CAPABILITIES, type MultiNodeCapability } from '@ninedeploy/schemas';
 import { buildOps } from './builds.js';
+import { databaseOps } from './databases.js';
 import { gitKeyOps } from './gitCredential.js';
 import { imageOps } from './images.js';
 import type { Params } from './operands.js';
@@ -63,6 +64,7 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
   nodeVolumeOps,
   // ── end 0.16 T5 ──
   // ── 0.16 T6 node databases ── (agentOps/databases.ts; the db stream kinds are in agentOps/stream.ts)
+  databaseOps,
   // ── end 0.16 T6 ──
   // ── 0.16 T7 swarm ── (agentOps/swarm.ts)
   // ── end 0.16 T7 ──

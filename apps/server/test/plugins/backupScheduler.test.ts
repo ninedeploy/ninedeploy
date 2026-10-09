@@ -10,6 +10,10 @@ const engineMock = vi.hoisted(() => ({
 }));
 
 vi.mock('../../src/engine/database.js', () => engineMock);
+// ── 0.16 T6 node databases ── a node row is dumped through its node's runtime, never the engine.
+const nodeRuntimeMock = vi.hoisted(() => ({ backup: vi.fn(async (..._a: unknown[]) => undefined) }));
+vi.mock('../../src/lib/nodeDatabase.js', () => ({ nodeDatabaseRuntime: () => nodeRuntimeMock }));
+// ── end 0.16 T6 ──
 const auditMock = vi.hoisted(() => ({ audit: vi.fn(async () => undefined) }));
 vi.mock('../../src/lib/audit.js', () => auditMock);
 
@@ -400,3 +404,28 @@ describe('backup scheduler plugin', () => {
     await app.close();
   });
 });
+
+// ── 0.16 T6 node databases ──
+describe('T6: scheduled backups of a node database', () => {
+  it('dump on the node (not the panel engine), rows record the node; an unreachable node is a failed row, no fallback', async () => {
+    vi.useFakeTimers();
+    const { db, insert } = makeDb({ dbs: [{ id: 2, slug: 'orders', name: 'Orders', status: 'running', serverId: 4 } as DbRow] });
+    nodeRuntimeMock.backup.mockReset().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('Could not reach the agent on node "edge-1"'));
+    const app = await buildApp(db);
+    try {
+      await vi.advanceTimersByTimeAsync(DAY_MS);
+      await vi.advanceTimersByTimeAsync(DAY_MS);
+      expect(engineMock.backupDatabase).not.toHaveBeenCalled();
+      expect(nodeRuntimeMock.backup).toHaveBeenCalledTimes(2);
+      const rows = insert.mock.results.map((r) => (r.value as { values: { mock: { calls: unknown[][] } } }).values.mock.calls[0]![0] as Record<string, unknown>);
+      expect(rows).toEqual([
+        expect.objectContaining({ databaseId: 2, scope: 'scheduled', status: 'completed', serverId: 4 }),
+        expect.objectContaining({ databaseId: 2, scope: 'scheduled', status: 'failed', serverId: 4 }),
+      ]);
+      expect(auditMock.audit).toHaveBeenCalledWith(db, null, 'backup.schedule_failed', expect.stringMatching(/Orders: Could not reach the agent/));
+    } finally {
+      await app.close();
+    }
+  });
+});
+// ── end 0.16 T6 ──
