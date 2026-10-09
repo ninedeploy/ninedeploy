@@ -181,6 +181,20 @@ import type {
   TrafficSettingsUpdate,
   TrafficSettingsView,
   TrafficSummary,
+  // 0.16 T8: multi-node surfaces
+  ImageTransfer,
+  ServerAgentInfo,
+  ServerFeatures,
+  ServerRolesInput,
+  ServicePlacementInput,
+  ServicePlacementView,
+  ServiceSwarmStatus,
+  SourcePatch,
+  SwarmInitInput,
+  SwarmNodeRole,
+  SwarmSettingsInput,
+  SwarmStatus,
+  VolumeCreateInput,
 } from '@ninedeploy/schemas';
 import { NineDeployError } from './errors.js';
 
@@ -703,7 +717,12 @@ export interface SourceRepo {
 }
 
 /** `sources.update` input: create fields, plus `baseUrl: null` to clear a Gitea base URL (0.13). */
-export type SourceUpdateInput = Omit<Partial<CreateSourceInput>, 'baseUrl'> & { baseUrl?: string | null };
+/**
+ * `PATCH /v1/sources/:id`. 0.16 T8: `allowOnNodes` (multi-node) lets a PAT or
+ * deploy key be sent to a node for one clone; turning it on needs an
+ * interactive session and `password` (step-up). Turning it off never does.
+ */
+export type SourceUpdateInput = Omit<Partial<CreateSourceInput>, 'baseUrl'> & { baseUrl?: string | null } & Pick<SourcePatch, 'allowOnNodes' | 'password'>;
 
 export interface NineDeployClient {
   auth: {
@@ -819,7 +838,8 @@ export interface NineDeployClient {
      * dimension OR). The legacy `?projectId=` query is no longer accepted.
      */
     list: (query?: string) => Promise<Service[]>;
-    get: (id: number) => Promise<Service>;
+    /** 0.16 T8: the detail response also carries `placement` (absent on older panels). */
+    get: (id: number) => Promise<ServiceDetail>;
     create: (input: CreateServiceInput) => Promise<Service>;
     update: (id: number, input: UpdateServiceInput) => Promise<Service>;
     /**
@@ -867,6 +887,24 @@ export interface NineDeployClient {
       finalize: (id: number) => Promise<{ link: ServiceGithubLink; webhooksDeactivated: number }>;
       unlink: (id: number) => Promise<{ ok: boolean; sourceId: number | null; webhooksReactivated: number }>;
     };
+    // ── 0.16 T8 surfaces ──
+    /**
+     * Build placement (multi-node): where the image is built, how it travels
+     * and which orchestrator runs it. `get` is any seat on the service; `set`
+     * is operator only and partial (only the named keys change; `null`
+     * restores the 0.15 default). An older node agent answers 422
+     * `node_agent_outdated`; switching to Swarm answers 422 `swarm_unsupported`
+     * or `swarm_disabled`.
+     */
+    placement: {
+      get: (id: number) => Promise<ServicePlacementView>;
+      set: (id: number, input: ServicePlacementInput) => Promise<ServicePlacementView>;
+    };
+    /** Image transfers of the service, newest first (`limit` 1-100, default 20). */
+    imageTransfers: (id: number, query?: { limit?: number }) => Promise<ImageTransfer[]>;
+    /** Swarm tasks of the service; `stack: null` when it is not on Swarm. */
+    swarm: (id: number) => Promise<ServiceSwarmStatus>;
+    // ── end 0.16 T8 ──
   };
   labels: {
     /** `query` is appended verbatim, e.g. `?workspaceId=1`. */
@@ -932,6 +970,10 @@ export interface NineDeployClient {
      * track the same repository and the caller needs `member` on both.
      */
     promote: (serviceId: number, targetServiceId: number) => Promise<{ ok: boolean; deploymentId: number; commitSha: string; promotedFrom: string }>;
+    // ── 0.16 T8 surfaces ──
+    /** Image transfers of one deployment (`GET /v1/deployments/:id/image-transfers`, any seat on its service). */
+    imageTransfers: (deploymentId: number) => Promise<ImageTransfer[]>;
+    // ── end 0.16 T8 ──
   };
   domains: {
     list: (serviceId: number) => Promise<Domain[]>;
@@ -1160,8 +1202,20 @@ export interface NineDeployClient {
     removeProvider: (id: number) => Promise<{ ok: boolean }>;
   };
   volumes: {
-    list: () => Promise<VolumeEntry[]>;
-    remove: (name: string) => Promise<void>;
+    /**
+     * Managed volumes on the panel host or (0.16 T8) with `serverId` on a
+     * node, through its agent; node entries carry `serverId`. An older agent
+     * answers 422 `node_agent_outdated`.
+     */
+    list: (options?: { serverId?: number }) => Promise<VolumeListEntry[]>;
+    /** Delete a retained volume; with `serverId` (r466) on that node. */
+    remove: (name: string, options?: { serverId?: number }) => Promise<void>;
+    /**
+     * 0.16 T8: create a managed volume (`nd-svc-*` / `nd-db-*`) on the panel
+     * host or, with `serverId`, on a node. An existing volume answers 409
+     * `node_volume_exists`.
+     */
+    create: (input: VolumeCreateInput) => Promise<VolumeCreateResult>;
     prune: () => Promise<{ ok: boolean; deleted: number; freedBytes: number }>;
     /** File manager: list a directory inside the volume. */
     listFiles: (name: string, path?: string) => Promise<{ path: string; entries: VolumeFileEntry[] }>;
@@ -1688,7 +1742,7 @@ export interface NineDeployClient {
      * a 0.14 panel). `container: false` with a `reason` usually means the
      * agent predates v0.15.0.
      */
-    list: () => Promise<Array<{ id: number; name: string; host: string; port: number; status: string; lastSeenAt: string | null; terminal?: NodeTerminalCapability }>>;
+    list: () => Promise<ServerListEntry[]>;
     /** Register a server — the agent token + its sha256 are returned exactly once. */
     create: (input: { name: string; host: string; port?: number }) => Promise<{ id: number; token: string; tokenSha256: string; agentCommand: string }>;
     remove: (id: number, options?: { force?: boolean }) => Promise<{ ok: boolean }>;
@@ -1704,6 +1758,20 @@ export interface NineDeployClient {
       disk: { totalBytes: number; usedBytes: number };
       containers: Array<{ name: string; kind: 'service'; refId: number; refName: string; cpuPct: number; memMb: number; memLimitMb: number }>;
     }>;
+    // ── 0.16 T8 surfaces ──
+    /** The build-server role (`PATCH /v1/servers/:id`, operator). Partial. */
+    update: (id: number, input: ServerRolesInput) => Promise<ServerRolesResult>;
+    /**
+     * Join the node to the panel host's swarm as a worker (operator). 422
+     * `node_agent_outdated` for an older agent, 422 `node_swarm_not_enabled`
+     * until the node's owner sets {@link AGENT_SWARM_MANAGER_VAR}, 409
+     * `swarm_already_joined` / `swarm_not_manager`, 502
+     * `swarm_overlay_unavailable` / `swarm_node_unverified`.
+     */
+    swarmJoin: (id: number) => Promise<SwarmJoinResult>;
+    /** Drain the node and take it out of the swarm (operator; can take minutes). 409 `swarm_not_joined`. */
+    swarmLeave: (id: number) => Promise<SwarmLeaveResult>;
+    // ── end 0.16 T8 ──
   };
   templates: {
     list: () => Promise<TemplateSummary[]>;
@@ -1929,6 +1997,20 @@ export interface NineDeployClient {
     project: (projectId: number) => Promise<ProjectAccessEntry[]>;
   };
   // ── end 0.15 T6 ──
+  // ── 0.16 T8 surfaces ──
+  /**
+   * Swarm on the panel host (operator only). `init`, and enabling through
+   * `settings`, need step-up: an interactive session plus the account
+   * `password` (or a sign-in within 10 minutes). Join tokens are never returned.
+   */
+  swarm: {
+    get: () => Promise<SwarmStatus>;
+    /** `docker swarm init` on the panel host. 409 `swarm_already_active`; 502 `swarm_overlay_unavailable`. */
+    init: (input: SwarmInitInput) => Promise<SwarmStatus>;
+    /** Enable (step-up; 409 `swarm_not_manager`) or disable Swarm deploys. */
+    settings: (input: SwarmSettingsInput) => Promise<SwarmStatus>;
+  };
+  // ── end 0.16 T8 ──
 }
 
 // ── 0.15 T4 api ──
@@ -1950,6 +2032,81 @@ export function apiGetUrl(path: string, query?: ApiQuery): string {
   return qs ? `${path}?${qs}` : path;
 }
 // ── end 0.15 T4 ──
+
+// ── 0.16 T8 surfaces ──
+/** The node agent's Swarm opt-in: unset, `servers.swarmJoin` answers 422 `node_swarm_not_enabled`. */
+export const AGENT_SWARM_MANAGER_VAR = 'NINEDEPLOY_AGENT_SWARM_MANAGER';
+
+/** Long Swarm calls: a leave drains for up to 5 minutes; init and join run Docker on two hosts. */
+const SWARM_CALL_TIMEOUT_MS = 10 * 60_000;
+
+/**
+ * One `GET /v1/servers` entry. Every field after `lastSeenAt` is additive and
+ * absent on older panels: `terminal` (0.15), `agent`, `features`, the build
+ * role and `databases` (multi-node), the Swarm membership (0.16 T8).
+ */
+export interface ServerListEntry {
+  id: number;
+  name: string;
+  host: string;
+  port: number;
+  status: string;
+  lastSeenAt: string | null;
+  createdAt?: string;
+  terminal?: NodeTerminalCapability;
+  /** The persisted capability cache; null until a sealed `agent.ping` answered. */
+  agent?: ServerAgentInfo | null;
+  /** What the node can do today; `reason` is the "update the node agent" hint. */
+  features?: ServerFeatures;
+  isBuildServer?: boolean;
+  buildConcurrency?: number;
+  /** Managed databases hosted on the node. */
+  databases?: number;
+  /** The node's swarm id once it joined; null = not in the swarm. */
+  swarmNodeId?: string | null;
+  swarmRole?: SwarmNodeRole | null;
+}
+
+/** `PATCH /v1/servers/:id`: the role after the change and the services that build there. */
+export interface ServerRolesResult {
+  id: number;
+  name: string;
+  isBuildServer: boolean;
+  buildConcurrency: number;
+  buildServiceIds: number[];
+}
+
+/** `POST /v1/servers/:id/swarm/join`. */
+export interface SwarmJoinResult {
+  serverId: number;
+  nodeId: string;
+  role: 'worker';
+  /** e.g. the join token could not be rotated, or the member label could not be set. */
+  warnings?: string[];
+}
+
+/** `POST /v1/servers/:id/swarm/leave`. */
+export interface SwarmLeaveResult {
+  serverId: number;
+  nodeId: string;
+  /** false when its tasks had not moved within 5 minutes. */
+  drained: boolean;
+  warnings?: string[];
+}
+
+/** `GET /v1/volumes` entry: node entries (`?serverId=`) carry `serverId`. */
+export type VolumeListEntry = VolumeEntry & { serverId?: number | null };
+
+/** `POST /v1/volumes`. */
+export interface VolumeCreateResult {
+  ok: boolean;
+  name: string;
+  serverId: number | null;
+}
+
+/** `GET /v1/services/:id`: the service plus `placement` (additive). */
+export type ServiceDetail = Service & { placement?: ServicePlacementView };
+// ── end 0.16 T8 ──
 
 // ── 0.15 T6 surfaces ──
 /** `GET /v1/servers` per node (0.15): what the node's agent offers terminals. */
@@ -2559,7 +2716,7 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
     },
     services: {
       list: (query) => get<Service[]>(`/v1/services${query ?? ''}`),
-      get: (id) => get<Service>(`/v1/services/${id}`),
+      get: (id) => get<ServiceDetail>(`/v1/services/${id}`),
       create: (input) => send<Service>('POST', '/v1/services', input),
       update: (id, input) => send<Service>('PATCH', `/v1/services/${id}`, input),
       composePreview: (input) => send<ComposePreviewResponse>('POST', '/v1/services/compose/preview', input),
@@ -2585,6 +2742,14 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
         finalize: (id) => send<{ link: ServiceGithubLink; webhooksDeactivated: number }>('POST', `/v1/services/${id}/github/finalize`),
         unlink: (id) => send<{ ok: boolean; sourceId: number | null; webhooksReactivated: number }>('DELETE', `/v1/services/${id}/github`),
       },
+      // ── 0.16 T8 surfaces ──
+      placement: {
+        get: (id) => get<ServicePlacementView>(`/v1/services/${id}/placement`),
+        set: (id, input) => send<ServicePlacementView>('PUT', `/v1/services/${id}/placement`, input),
+      },
+      imageTransfers: (id, query) => get<ImageTransfer[]>(apiGetUrl(`/v1/services/${id}/image-transfers`, { ...query })),
+      swarm: (id) => get<ServiceSwarmStatus>(`/v1/services/${id}/swarm`),
+      // ── end 0.16 T8 ──
     },
     labels: {
       list: (query) => get<Label[]>(`/v1/labels${query ?? ''}`),
@@ -2637,6 +2802,9 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
         ),
       logDownloadUrl: (serviceId, deploymentId) =>
         `/v1/services/${serviceId}/deploys/${deploymentId}/logs/download`,
+      // ── 0.16 T8 surfaces ──
+      imageTransfers: (deploymentId) => get<ImageTransfer[]>(`/v1/deployments/${deploymentId}/image-transfers`),
+      // ── end 0.16 T8 ──
     },
     domains: {
       list: (serviceId) => get<Domain[]>(`/v1/services/${serviceId}/domains`),
@@ -2817,7 +2985,8 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       revokeToken: (id) => send<{ ok: boolean }>('DELETE', `/v1/scim/tokens/${id}`),
     },
     volumes: {
-      list: () => get<VolumeEntry[]>('/v1/volumes'),
+      list: (options) => get<VolumeListEntry[]>(apiGetUrl('/v1/volumes', { serverId: options?.serverId })),
+      create: (input) => send<VolumeCreateResult>('POST', '/v1/volumes', input),
       listFiles: (name, path = '') =>
         get<{ path: string; entries: VolumeFileEntry[] }>(`/v1/volumes/${encodeURIComponent(name)}/files?path=${encodeURIComponent(path)}`),
       readFile: (name, path) =>
@@ -2827,8 +2996,9 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       deleteFile: async (name, path) => {
         await request(`/v1/volumes/${encodeURIComponent(name)}/files?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
       },
-      remove: async (name) => {
-        await request(`/v1/volumes/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      remove: async (name, options) => {
+        const node = options?.serverId === undefined ? '' : `?serverId=${options.serverId}`;
+        await request(`/v1/volumes/${encodeURIComponent(name)}${node}`, { method: 'DELETE' });
       },
       prune: () => send<{ ok: boolean; deleted: number; freedBytes: number }>('POST', '/v1/volumes/prune'),
     },
@@ -3229,6 +3399,11 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       sshBootstrap: (input) => send<ServerBootstrapResult>('POST', '/v1/servers/ssh-bootstrap', input),
       bootstrapLogs: (id) => get<{ logs: string[] }>(`/v1/servers/${id}/bootstrap-logs`),
       stats: (id) => get(`/v1/servers/${id}/stats`),
+      // ── 0.16 T8 surfaces ──
+      update: (id, input) => send<ServerRolesResult>('PATCH', `/v1/servers/${id}`, input),
+      swarmJoin: (id) => request<SwarmJoinResult>(`/v1/servers/${id}/swarm/join`, { method: 'POST' }, SWARM_CALL_TIMEOUT_MS),
+      swarmLeave: (id) => request<SwarmLeaveResult>(`/v1/servers/${id}/swarm/leave`, { method: 'POST' }, SWARM_CALL_TIMEOUT_MS),
+      // ── end 0.16 T8 ──
     },
     limits: {
       setService: (serviceId, input) =>
@@ -3399,5 +3574,12 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
       project: (projectId) => get<ProjectAccessEntry[]>(`/v1/projects/${projectId}/access`),
     },
     // ── end 0.15 T6 ──
+    // ── 0.16 T8 surfaces ──
+    swarm: {
+      get: () => get<SwarmStatus>('/v1/swarm'),
+      init: (input) => request<SwarmStatus>('/v1/swarm/init', { method: 'POST', body: input }, SWARM_CALL_TIMEOUT_MS),
+      settings: (input) => send<SwarmStatus>('PUT', '/v1/swarm/settings', input),
+    },
+    // ── end 0.16 T8 ──
   };
 }

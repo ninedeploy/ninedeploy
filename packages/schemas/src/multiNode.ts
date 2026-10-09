@@ -57,6 +57,14 @@ export const multiNodeErrorCode = z.enum([
   'node_volume_files_unsupported',
   // T7 (review M2): a current agent whose owner has not opted in to Swarm (NINEDEPLOY_AGENT_SWARM_MANAGER unset).
   'node_swarm_not_enabled',
+  // ── 0.16 T8 surfaces ── codes the 0.15.4 Swarm routes already answer with.
+  // 502: the manager could not confirm the node a join reported (modules/swarm.ts).
+  'swarm_node_unverified',
+  // 502: the panel host's daemon cannot create an encrypted overlay (init, join).
+  'swarm_overlay_unavailable',
+  // 409: DELETE /v1/servers/:id of a node still in the swarm (lib/serverDependents.ts).
+  'server_swarm_member',
+  // ── end 0.16 T8 ──
 ]);
 export type MultiNodeErrorCode = z.infer<typeof multiNodeErrorCode>;
 

@@ -371,12 +371,15 @@ describe('program registration', () => {
       'images', 'demo', 'server',
       'logs', 'email-templates', 'certificates', 'proxy', 'secrets',
       'terminals', 'terminal', 'traffic', 'access',
+      // 0.16 T8: remote nodes and Swarm.
+      'servers', 'swarm',
       'doctor',
       'sources', 'github-app', 'deploy', 'webhooks', 'firewall', 'manifest',
     ]);
     expect(findCommand('server').children).toHaveLength(4);
     // 0.13: + `services github <id>`.
-    expect(findCommand('services').children).toHaveLength(14);
+    // 0.16 T8: + `services placement|transfers|swarm <id>`.
+    expect(findCommand('services').children).toHaveLength(17);
     // 0.14: + public-access, import, imports.
     expect(findCommand('databases').children).toHaveLength(7);
     expect(findCommand('templates').children).toHaveLength(4);
@@ -387,7 +390,8 @@ describe('program registration', () => {
     expect(findCommand('workspaces').children).toHaveLength(4);
     expect(findCommand('env').children).toHaveLength(3);
     expect(findCommand('domains').children).toHaveLength(9);
-    expect(findCommand('volumes').children).toHaveLength(2);
+    // 0.16 T8: + `volumes create <name>`.
+    expect(findCommand('volumes').children).toHaveLength(3);
     expect(findCommand('backups').children).toHaveLength(5);
     expect(findCommand('alerts').children).toHaveLength(3);
     expect(findCommand('plugins').children).toHaveLength(9);
@@ -405,7 +409,10 @@ describe('program registration', () => {
     // 0.13: + `services github` and `github-app` with 6 subcommands.
     // 0.14: + 3 database commands, `certificates custom` (5), `proxy config` (6), `secrets providers` (7).
     // 0.15: + `terminals` (3), `terminal` (4), `traffic` (3), `access` (grants 4 + me).
-    expect(h.FakeCommand.instances).toHaveLength(245);
+    // 0.16 T8: + 3 service commands, `volumes create`, `servers` (2), `swarm` (6), `sources allow-on-nodes`.
+    expect(h.FakeCommand.instances).toHaveLength(260);
+    expect(findCommand('servers').children).toHaveLength(2);
+    expect(findCommand('swarm').children).toHaveLength(6);
     expect(findCommand('terminals').children).toHaveLength(3);
     expect(findCommand('terminal').children).toHaveLength(4);
     expect(findCommand('traffic').children).toHaveLength(3);
@@ -826,8 +833,14 @@ describe('delegating actions', () => {
     await sub('domains', 'rm').actionFn!('1', '2');
     await sub('domains', 'verify').actionFn!('1', '2');
     expect(h.domainsVerify).toHaveBeenCalledWith(client, '1', '2');
-    await sub('volumes', 'list').actionFn!();
-    await sub('volumes', 'rm').actionFn!('v');
+    await sub('volumes', 'list').actionFn!({});
+    expect(h.volumesList).toHaveBeenLastCalledWith(client, {});
+    await sub('volumes', 'list').actionFn!({ server: '2' });
+    expect(h.volumesList).toHaveBeenLastCalledWith(client, { server: '2' });
+    await sub('volumes', 'rm').actionFn!('v', {});
+    expect(h.volumesRemove).toHaveBeenLastCalledWith(client, 'v', {});
+    await sub('volumes', 'rm').actionFn!('v', { server: '2' });
+    expect(h.volumesRemove).toHaveBeenLastCalledWith(client, 'v', { server: '2' });
     await sub('backups', 'list').actionFn!('1');
     await sub('backups', 'create').actionFn!('1');
     await sub('backups', 'restore').actionFn!('1', '2');
@@ -871,8 +884,11 @@ describe('delegating actions', () => {
     const databases = findCommand('databases');
     await databases.children.find((c) => c.cmdName === 'list')!.actionFn!();
     expect(h.dbList).toHaveBeenCalledWith(client);
-    await databases.children.find((c) => c.cmdName === 'create')!.actionFn!();
-    expect(h.dbCreate).toHaveBeenCalledWith(client);
+    await databases.children.find((c) => c.cmdName === 'create')!.actionFn!({});
+    expect(h.dbCreate).toHaveBeenCalledWith(client, {});
+    // 0.16 T8: `--server` reaches the command.
+    await databases.children.find((c) => c.cmdName === 'create')!.actionFn!({ server: '2' });
+    expect(h.dbCreate).toHaveBeenLastCalledWith(client, { server: '2' });
 
     const templates = findCommand('templates');
     await templates.children.find((c) => c.cmdName === 'list')!.actionFn!();

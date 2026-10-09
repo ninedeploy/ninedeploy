@@ -242,24 +242,27 @@ export async function domainsCancelTransfer(
 
 // ── volumes ────────────────────────────────────────────────────────────────
 
-/** `ninedeploy volumes list` */
-export async function volumesList(client: NineDeployClient): Promise<void> {
-  header('Volumes');
+/** `ninedeploy volumes list [--server <id>]` (0.16 T8: `--server` lists a node's volumes through its agent) */
+export async function volumesList(client: NineDeployClient, opts: { server?: string } = {}): Promise<void> {
+  const serverId = opts.server === undefined ? undefined : num(opts.server, 'Usage: ninedeploy volumes list [--server <id>]');
+  header(serverId === undefined ? 'Volumes' : `Volumes on server #${serverId}`);
   await spinner('Fetching', async () => {
-    const rows = await client.volumes.list();
+    const rows = await client.volumes.list(serverId === undefined ? undefined : { serverId });
     if (rows.length === 0) { info('No volumes.'); return; }
     table(rows.map((v) => ({ name: v.name, owner: v.owner ? `${v.owner.kind}: ${v.owner.name}` : '—', size: v.sizeBytes })), ['name', 'owner', 'size']);
   });
 }
 
-/** `ninedeploy volumes rm <name>` */
-export async function volumesRemove(client: NineDeployClient, name: string): Promise<void> {
-  if (!name) return error('Usage: ninedeploy volumes rm <name>');
-  const confirm = await prompt(`Type the volume name (${name}) to confirm deletion`);
+/** `ninedeploy volumes rm <name> [--server <id>]` (0.16 T8: `--server` deletes it on that node) */
+export async function volumesRemove(client: NineDeployClient, name: string, opts: { server?: string } = {}): Promise<void> {
+  if (!name) return error('Usage: ninedeploy volumes rm <name> [--server <id>]');
+  const serverId = opts.server === undefined ? undefined : num(opts.server, 'Usage: ninedeploy volumes rm <name> [--server <id>]');
+  const where = serverId === undefined ? '' : ` on server #${serverId}`;
+  const confirm = await prompt(`Type the volume name (${name}) to confirm deletion${where}`);
   if (confirm !== name) return error('Cancelled.');
   try {
-    await spinner('Removing volume', () => client.volumes.remove(name));
-    success(`Volume ${c.cyan(name)} removed.`);
+    await spinner('Removing volume', () => (serverId === undefined ? client.volumes.remove(name) : client.volumes.remove(name, { serverId })));
+    success(`Volume ${c.cyan(name)} removed${where}.`);
   } catch (err) { fail(err); }
 }
 

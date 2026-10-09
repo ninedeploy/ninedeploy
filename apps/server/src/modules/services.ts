@@ -63,6 +63,9 @@ import { reconcileEnvironment } from './templates.js';
 import { resolveStackEnvironment } from '../engine/magicVars.js';
 import { previewPatternError } from '../lib/previewDomain.js';
 import { bindRegistryHostForImage, boundRegistryHosts, registryHostOf } from '../lib/registryBinding.js';
+// ── 0.16 T8 surfaces ──
+import { placementView } from './servicePlacement.js';
+// ── end 0.16 T8 ──
 
 /** The three tag id lists a service row is serialized with. */
 interface TagIds {
@@ -579,6 +582,11 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       // everywhere else.
       composeContent: req.user!.isOperator ? svc.composeContent ?? null : null,
       build: build ? serializeBuild(build) : null,
+      // ── 0.16 T8 surfaces ── multi-node (design §6.6, additive): the same
+      // view as GET /:id/placement; every null is the 0.15 default. Detail
+      // only, like `build`.
+      placement: placementView(svc),
+      // ── end 0.16 T8 ──
     };
   });
 

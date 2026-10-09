@@ -286,6 +286,10 @@ export const source = z.object({
   defaultBranch: z.string().nullable(),
   /** 0.13: self-hosted provider base URL (Gitea); null/absent = not set. */
   baseUrl: z.string().nullable().optional(),
+  // ── 0.16 T8 surfaces ── multi-node (0.15.2, additive): this PAT or deploy key
+  // may be sent to a node for one clone. Absent on older panels.
+  allowOnNodes: z.boolean().optional(),
+  // ── end 0.16 T8 ──
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime().optional(),
 });
@@ -466,6 +470,14 @@ export const managedDatabase = z.object({
   webGuiPort: z.number().int().nullable().optional(),
   extensions: z.array(z.string()).optional().default([]),
   attachedServices: z.array(z.object({ id: z.number().int(), name: z.string(), slug: z.string() })).optional().default([]),
+  // ── 0.16 T8 surfaces: the node fields the 0.15.3 routes return (additive) ──
+  /** The node the database runs on; null = the panel host. Absent before 0.15.3. */
+  serverId: z.number().int().nullable().optional(),
+  /** That node's name; null for a panel-host database. */
+  serverName: z.string().nullable().optional(),
+  /** The node's last reachability probe; null for a panel-host database or a node not probed yet. */
+  reachable: z.boolean().nullable().optional(),
+  // ── end 0.16 T8 ──
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

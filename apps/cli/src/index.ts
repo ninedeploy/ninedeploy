@@ -127,6 +127,13 @@ import {
   panelBackupDecryptAction, panelBackupListAction, panelBackupNowAction, panelBackupSetAction, panelBackupStatusAction,
   type PanelBackupSetOptions,
 } from './commands/panelBackup.js';
+// ── 0.16 T8 surfaces ──
+import {
+  serversList, serversRoles, servicesPlacement, servicesSwarm, servicesTransfers, sourcesAllowOnNodes,
+  swarmInit, swarmJoin, swarmLeave, swarmSetEnabled, swarmStatus, volumesCreate,
+  type PlacementOptions,
+} from './commands/multiNode.js';
+// ── end 0.16 T8 ──
 
 const program = new Command();
 
@@ -271,12 +278,33 @@ services.command('github <id>')
   .action((id: string, opts: { status?: string; prComment?: string; migrate?: string; finalize?: boolean; unlink?: boolean }) =>
     serviceGithub(getClient(), id, opts));
 
+// ── 0.16 T8: build placement, image transfers and Swarm tasks (multi-node) ──
+/* v8 ignore start -- the FakeCommand in test/index.test.ts records but never invokes the action;
+ * the implementations are exercised by test/multiNode.test.ts. */
+services.command('placement <id>')
+  .description('Show or (operator) change where the image is built and which orchestrator runs it')
+  .option('--build-on <where>', 'target (where it runs) | panel | server')
+  .option('--build-server <id>', 'The build server for --build-on server (none clears it)')
+  .option('--push-registry <sourceId>', 'Ship the image through this registry credential (none = stream relay)')
+  .option('--push-repo <repo>', 'Repository for --push-registry, e.g. team/app')
+  .option('--orchestrator <name>', 'container | swarm')
+  .action((id: string, opts: PlacementOptions) => servicesPlacement(getClient(), id, opts));
+services.command('transfers <id>')
+  .description('Image transfers of a service, newest first')
+  .option('--limit <n>', 'How many (1-100, default 20)')
+  .action((id: string, opts: { limit?: string }) => servicesTransfers(getClient(), id, opts));
+services.command('swarm <id>').description('Swarm tasks of a service').action((id: string) => servicesSwarm(getClient(), id));
+/* v8 ignore stop */
+
 // ── Databases ────────────────────────────────────────────────────────────
 const databases = program.command('databases').description('Manage databases');
 
 databases.command('list').description('List all databases').action(() => dbList(getClient()));
 
-databases.command('create').description('Create a database (interactive)').action(() => dbCreate(getClient()));
+databases.command('create')
+  .description('Create a database (interactive)')
+  .option('--server <id>', 'Run it on this node (operator; fixed for its life)')
+  .action((opts: { server?: string }) => dbCreate(getClient(), opts));
 
 // ── PgBouncer sidecar (G-32) ─────────────────────────────────────────────
 databases
@@ -594,9 +622,22 @@ ssoCmd.command('remove <id>').description('Remove a provider by id').action((id:
 // ── Volumes ────────────────────────────────────────────────────────────────
 const volumesCmd = program.command('volumes').description('Manage Docker volumes');
 
-volumesCmd.command('list').description('List all volumes').action(() => volumesList(getClient()));
+volumesCmd.command('list')
+  .description('List all volumes')
+  .option('--server <id>', 'A node\'s volumes instead of the panel host\'s')
+  .action((opts: { server?: string }) => volumesList(getClient(), opts));
 
-volumesCmd.command('rm <name>').description('Delete a volume (with confirmation)').action((name: string) => volumesRemove(getClient(), name));
+volumesCmd.command('rm <name>')
+  .description('Delete a volume (with confirmation)')
+  .option('--server <id>', 'Delete it on this node')
+  .action((name: string, opts: { server?: string }) => volumesRemove(getClient(), name, opts));
+
+/* v8 ignore start -- exercised by test/multiNode.test.ts. */
+volumesCmd.command('create <name>')
+  .description('Create a managed volume (nd-svc-* / nd-db-*) on the panel host or a node')
+  .option('--server <id>', 'Create it on this node')
+  .action((name: string, opts: { server?: string }) => volumesCreate(getClient(), name, opts));
+/* v8 ignore stop */
 
 // ── Networks ───────────────────────────────────────────────────────────────
 const networksCmd = program.command('networks').description('Manage Docker networks');
@@ -1042,6 +1083,32 @@ grantsCmd.command('remove <grantId>')
 accessCmd.command('me').description('Your own grants and guest workspaces').action(() => accessMe(getClient()));
 /* v8 ignore stop */
 
+// ── 0.16 T8: remote nodes and Swarm (operator) ───────────────────────────
+const serversCmd = program.command('servers').description('Remote nodes: agent capabilities, build-server role (operator)');
+/* v8 ignore start -- exercised by test/multiNode.test.ts. */
+serversCmd.command('list').description('List nodes with their agent version, build role, databases and Swarm membership').action(() => serversList(getClient()));
+serversCmd.command('roles <id>')
+  .description('Set the build-server role of a node')
+  .option('--build-server <onOff>', 'on | off')
+  .option('--build-concurrency <n>', 'Builds at once on this node (1-8)')
+  .action((id: string, opts: { buildServer?: string; buildConcurrency?: string }) => serversRoles(getClient(), id, opts));
+/* v8 ignore stop */
+const swarmCmd = program.command('swarm').description('Docker Swarm on the panel host (operator, opt-in per service)');
+/* v8 ignore start -- exercised by test/multiNode.test.ts. */
+swarmCmd.command('status').description('Swarm state, the join address and the nodes').action(() => swarmStatus(getClient()));
+swarmCmd.command('init')
+  .description('Initialise Swarm on the panel host (asks for your password)')
+  .option('--advertise-addr <ip>', 'The address nodes reach the panel host on')
+  .action((opts: { advertiseAddr?: string }) => swarmInit(getClient(), opts));
+swarmCmd.command('enable').description('Allow Swarm deploys (asks for your password)').action(() => swarmSetEnabled(getClient(), true));
+swarmCmd.command('disable').description('Refuse new Swarm deploys; running stacks keep running').action(() => swarmSetEnabled(getClient(), false));
+swarmCmd.command('join <serverId>').description('Join a node to the swarm as a worker').action((serverId: string) => swarmJoin(getClient(), serverId));
+swarmCmd.command('leave <serverId>')
+  .description('Drain a node and take it out of the swarm')
+  .option('-y, --yes', 'Skip the confirmation prompt')
+  .action((serverId: string, opts: { yes?: boolean }) => swarmLeave(getClient(), serverId, opts));
+/* v8 ignore stop */
+
 deploys.command('watch <serviceId> <deployId>').description('Stream a deployment\'s build logs live').action((svcId: string, depId: string) => deploysWatch(svcId, depId));
 
 // ── Diagnostics ───────────────────────────────────────────────────────────
@@ -1064,6 +1131,10 @@ sources.command('add [name]')
 sources.command('test [id]').description('Verify that a stored source token still authenticates').action((id?: string) => sourcesTest(getClient(), id));
 sources.command('keygen [id]').description('Generate an ed25519 deploy-key pair on the panel and print the public key').action((id?: string) => sourcesKeygen(getClient(), id));
 sources.command('remove [id]').description('Remove a source (with confirmation)').alias('rm').action((id?: string) => sourcesRemove(getClient(), id));
+// 0.16 T8 (multi-node): send this PAT or deploy key to nodes for clones there.
+sources.command('allow-on-nodes <id> <onOff>')
+  .description('Allow (on, asks for your password) or stop (off) sending this credential to nodes for clones')
+  .action((id: string, onOff: string) => sourcesAllowOnNodes(getClient(), id, onOff));
 /* v8 ignore stop */
 
 // ── GitHub Apps (0.13) ─────────────────────────────────────────────────────

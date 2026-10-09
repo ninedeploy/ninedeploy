@@ -36,6 +36,12 @@ export const multiNodeSpecs: RouteSpecMap = {
       'Where the image is built (`buildOn`: null = target, where the service runs), the build server, the opt-in push registry and the orchestrator. Null values are the 0.15 defaults.',
     floor: 'viewer',
     response: servicePlacementView,
+    // 0.16 T8: generated read-only MCP tool.
+    mcp: {
+      name: 'get_service_placement',
+      description: 'Build placement of one service: where its image is built (null = where it runs), the build server, the push registry and the orchestrator (null = plain containers).',
+      readOnly: true,
+    },
   },
   'PUT /v1/services/:id/placement': {
     summary: "Set a service's build placement",
@@ -55,6 +61,12 @@ export const multiNodeSpecs: RouteSpecMap = {
     query: imageTransfersQuery,
     response: z.array(imageTransfer),
     validation: 'zod',
+    // 0.16 T8: generated read-only MCP tool.
+    mcp: {
+      name: 'list_image_transfers',
+      description: 'Image transfers of one service, newest first: method, source and target host (null = the panel host), bytes, sha256, duration and outcome.',
+      readOnly: true,
+    },
   },
   'GET /v1/deployments/:id/image-transfers': {
     summary: 'Image transfers of a deployment',
@@ -92,6 +104,12 @@ export const multiNodeSpecs: RouteSpecMap = {
       "Operator only. Whether Swarm is enabled, the panel host daemon's swarm state (`docker info` LocalNodeState; `unreachable` when the daemon did not answer), whether it is a manager, the address nodes join, and the nodes (linked to their NineDeploy server when they joined through their agent). Join tokens are never returned.",
     floor: 'operator',
     response: swarmStatus,
+    // 0.16 T8: generated read-only MCP tool (operator, coarse token only). Join tokens are never returned.
+    mcp: {
+      name: 'get_swarm_status',
+      description: "Swarm status of the panel host: whether Swarm deploys are enabled, the daemon's swarm state, the manager address, the nodes and any warnings. Never a join token. Operator only.",
+      readOnly: true,
+    },
   },
   'POST /v1/swarm/init': {
     summary: 'Initialise Swarm on the panel host',
@@ -135,6 +153,12 @@ export const multiNodeSpecs: RouteSpecMap = {
     description: 'The stack, the desired and running replica counts and the tasks (node, state, error, image). `stack: null` for a service that is not on Swarm.',
     floor: 'viewer',
     response: serviceSwarmStatus,
+    // 0.16 T8: generated read-only MCP tool.
+    mcp: {
+      name: 'get_service_swarm',
+      description: 'Swarm tasks of one service: the stack, desired and running replicas, and each task (node, state, error, image). stack is null when the service is not on Swarm.',
+      readOnly: true,
+    },
   },
   // ── end 0.16 T7 ──
 };

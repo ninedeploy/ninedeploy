@@ -47,6 +47,37 @@ export const SPEC_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'get_service_placement',
+    description: 'Build placement of one service: where its image is built (null = where it runs), the build server, the push registry and the orchestrator (null = plain containers).',
+    input: z.object({ serviceId: z.number().int().positive() }),
+    // GET /v1/services/:id/placement
+    requiredScopes: ['nd://scope/read/services'],
+    handler: (c, input) => {
+      const i = input as { serviceId: number };
+      return c.api.get(`/v1/services/${i.serviceId}/placement`);
+    },
+  },
+  {
+    name: 'get_service_swarm',
+    description: 'Swarm tasks of one service: the stack, desired and running replicas, and each task (node, state, error, image). stack is null when the service is not on Swarm.',
+    input: z.object({ serviceId: z.number().int().positive() }),
+    // GET /v1/services/:id/swarm
+    requiredScopes: ['nd://scope/read/services'],
+    handler: (c, input) => {
+      const i = input as { serviceId: number };
+      return c.api.get(`/v1/services/${i.serviceId}/swarm`);
+    },
+  },
+  {
+    name: 'get_swarm_status',
+    description: "Swarm status of the panel host: whether Swarm deploys are enabled, the daemon's swarm state, the manager address, the nodes and any warnings. Never a join token. Operator only.",
+    input: z.object({}),
+    // GET /v1/swarm
+    coarseTokenOnly: true,
+    requiredScopes: ['operator'],
+    handler: (c) => c.api.get('/v1/swarm'),
+  },
+  {
     name: 'instance_traffic_summary',
     description: 'Instance-wide request counts, status classes, bytes and latency percentiles over a range (operator).',
     input: z.object({ range: z.enum(['1h', '24h', '7d', '30d']).optional(), top: z.number().int().optional() }),
@@ -87,6 +118,17 @@ export const SPEC_TOOLS: ToolDef[] = [
     // GET /v1/environments
     coarseTokenOnly: true,
     handler: (c) => c.api.get('/v1/environments'),
+  },
+  {
+    name: 'list_image_transfers',
+    description: 'Image transfers of one service, newest first: method, source and target host (null = the panel host), bytes, sha256, duration and outcome.',
+    input: z.object({ serviceId: z.number().int().positive(), limit: z.number().int().optional() }),
+    // GET /v1/services/:id/image-transfers
+    requiredScopes: ['nd://scope/read/services'],
+    handler: (c, input) => {
+      const i = input as { serviceId: number; limit?: number };
+      return c.api.get(`/v1/services/${i.serviceId}/image-transfers`, { limit: i.limit });
+    },
   },
   {
     name: 'list_jobs',
@@ -172,10 +214,14 @@ export const SPEC_READ_ONLY_TOOL_NAMES: readonly string[] = [
   'doctor_report',
   'get_backup_policy',
   'get_database',
+  'get_service_placement',
+  'get_service_swarm',
+  'get_swarm_status',
   'instance_traffic_summary',
   'list_access_grants',
   'list_backups',
   'list_environments',
+  'list_image_transfers',
   'list_jobs',
   'list_labels',
   'list_networks',

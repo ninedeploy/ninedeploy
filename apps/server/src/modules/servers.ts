@@ -178,7 +178,10 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
           // ── 0.16 T4 build placement ── the build-server role (additive; PATCH /:id in serverRoles.ts)
           const roles = { isBuildServer: row.isBuildServer === true, buildConcurrency: row.buildConcurrency ?? 1 };
           // ── end 0.16 T4 ──
-          return { ...base, terminal, agent, features: serverFeatures(agent), ...roles, databases: hostedDatabases.get(row.id) ?? 0 };
+          // ── 0.16 T8 surfaces ── Swarm membership as recorded on join (additive; null = not in the swarm).
+          const swarm = { swarmNodeId: row.swarmNodeId ?? null, swarmRole: row.swarmRole ?? null };
+          // ── end 0.16 T8 ──
+          return { ...base, terminal, agent, features: serverFeatures(agent), ...roles, databases: hostedDatabases.get(row.id) ?? 0, ...swarm };
         }),
       );
     });

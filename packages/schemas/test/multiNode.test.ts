@@ -10,6 +10,7 @@ import {
   IMAGE_TRANSFERS_LIMIT_MAX,
   imageTransfer,
   imageTransfersQuery,
+  managedDatabase,
   managedVolumeName,
   MULTI_NODE_CAPABILITIES,
   multiNodeCapability,
@@ -21,6 +22,7 @@ import {
   servicePlacement,
   servicePlacementView,
   serviceSwarmStatus,
+  source,
   sourcePatch,
   swarmInit,
   swarmSettings,
@@ -53,6 +55,10 @@ describe('agent capabilities (multi-node §1.1)', () => {
     // T5: node volume backups across hosts, and the panel-only file manager.
     expect(multiNodeErrorCode.parse('backup_host_mismatch')).toBe('backup_host_mismatch');
     expect(multiNodeErrorCode.parse('node_volume_files_unsupported')).toBe('node_volume_files_unsupported');
+    // T8: the Swarm codes the 0.15.4 routes answer with.
+    for (const code of ['node_swarm_not_enabled', 'swarm_node_unverified', 'swarm_overlay_unavailable', 'server_swarm_member']) {
+      expect(multiNodeErrorCode.parse(code)).toBe(code);
+    }
     expect(multiNodeErrorCode.safeParse('nope').success).toBe(false);
   });
 
@@ -243,4 +249,27 @@ describe('additive fields on existing contracts (multi-node)', () => {
     expect(sourcePatch.safeParse({ password: '' }).success).toBe(false);
     expect(sourcePatch.safeParse({ password: 'x'.repeat(1025) }).success).toBe(false);
   });
+
+  // ── 0.16 T8 surfaces ──
+  const dbRow = {
+    id: 1, projectId: null, name: 'db', slug: 'db', engine: 'postgres', version: '16', status: 'running',
+    host: 'nd-db-db', port: 5432, username: 'u', database: 'd', connectionString: null,
+    createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+  };
+
+  it('managedDatabase reads the node fields and still reads a 0.15.2 row without them', () => {
+    expect(managedDatabase.parse(dbRow)).not.toHaveProperty('serverId');
+    expect(managedDatabase.parse({ ...dbRow, serverId: null, serverName: null, reachable: null })).toMatchObject({ serverId: null, serverName: null, reachable: null });
+    expect(managedDatabase.parse({ ...dbRow, serverId: 2, serverName: 'edge-1', reachable: false })).toMatchObject({ serverId: 2, serverName: 'edge-1', reachable: false });
+    expect(managedDatabase.safeParse({ ...dbRow, serverId: '2' }).success).toBe(false);
+    expect(managedDatabase.safeParse({ ...dbRow, reachable: 'yes' }).success).toBe(false);
+  });
+
+  it('source reads allowOnNodes and still reads a row without it', () => {
+    const row = { id: 1, name: 'gh', type: 'github', hasToken: true, hasDeployKey: false, defaultBranch: null, createdAt: '2026-01-01T00:00:00Z' };
+    expect(source.parse(row)).not.toHaveProperty('allowOnNodes');
+    expect(source.parse({ ...row, allowOnNodes: true }).allowOnNodes).toBe(true);
+    expect(source.safeParse({ ...row, allowOnNodes: 1 }).success).toBe(false);
+  });
+  // ── end 0.16 T8 ──
 });

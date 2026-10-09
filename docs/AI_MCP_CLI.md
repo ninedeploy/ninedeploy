@@ -66,6 +66,8 @@ so there is no generated write tool and no "call any endpoint" tool.
 | `list_terminal_sessions` | `GET /v1/terminals` | operator, coarse token only. Session metadata only (no transcript exists), but it **includes each session's client IP** |
 | `list_access_grants` | `GET /v1/workspaces/:wid/access-grants` | workspace admin or operator, coarse token only |
 | `my_access` | `GET /v1/access/me` | the caller (their own grants and guest workspaces), coarse token only |
+| `get_service_placement`, `list_image_transfers`, `get_service_swarm` | `GET /v1/services/:id/placement`, `…/image-transfers`, `…/swarm` | seat on the service (`read/services`) |
+| `get_swarm_status` | `GET /v1/swarm` | operator, coarse token only. Never a join token |
 
 All of them stay available with `NINEDEPLOY_MCP_READONLY=1`. `search_api`
 (hand-written, coarse token) searches the OpenAPI document by free text and
@@ -74,7 +76,8 @@ API-token scope. It lists operations; it never calls them.
 
 Terminals, access grants and the traffic settings have no MCP tools: opening a
 shell, granting access and recreating Traefik stay with the panel, the CLI and
-the SDK.
+the SDK. The same goes for every multi-node change (placement, server roles,
+Swarm init/join/leave, node volumes): the MCP server only reads them.
 
 ---
 
@@ -199,7 +202,32 @@ ninedeploy access grants update <grant-id> --workspace <id> --role viewer
 ninedeploy access grants update <grant-id> --workspace <id> --suspend    # stays listed, stops counting; --reinstate undoes it
 ninedeploy access grants remove <grant-id> --workspace <id> [-y]
 ninedeploy access me
+
+# Remote nodes (multi-node, operator): roles, build placement, node volumes and databases
+ninedeploy servers list                              # agent version, build role, hosted databases, Swarm membership
+ninedeploy servers roles <server-id> --build-server on|off [--build-concurrency 1-8]
+ninedeploy services placement <service-id>           # show (any seat on the service)
+ninedeploy services placement <service-id> [--build-on target|panel|server] [--build-server <id>|none] \
+  [--push-registry <source-id>|none --push-repo team/app] [--orchestrator container|swarm]
+ninedeploy services transfers <service-id> [--limit 20]   # image transfers, newest first
+ninedeploy volumes list|rm <name> --server <server-id>
+ninedeploy volumes create nd-svc-web-data [--server <server-id>]
+ninedeploy databases create --server <server-id>     # the node is fixed for the database's life
+ninedeploy sources allow-on-nodes <source-id> on|off # on prompts for your password
+
+# Swarm (operator, opt-in per service)
+ninedeploy swarm status
+ninedeploy swarm init --advertise-addr <ip>          # prompts for your password
+ninedeploy swarm enable                              # prompts for your password; `disable` does not
+ninedeploy swarm join <server-id>                    # the node's agent needs NINEDEPLOY_AGENT_SWARM_MANAGER set
+ninedeploy swarm leave <server-id> [-y]              # drains first (up to 5 minutes)
+ninedeploy services swarm <service-id>               # the service's Swarm tasks
 ```
+
+`swarm join` answers `node_swarm_not_enabled` until the node's owner sets
+`NINEDEPLOY_AGENT_SWARM_MANAGER=<panel advertise address>:2377` in the agent's
+environment and restarts it; the CLI prints that hint. Every node feature
+answers `node_agent_outdated` (422) while the node runs an older agent.
 
 `ninedeploy terminal` (alias `shell`) needs a TTY: it puts the local terminal
 in raw mode, forwards window resizes, and exits with the shell's exit code (1
@@ -308,10 +336,34 @@ const mine = await client.access.me();                // { grants, guestWorkspac
 // 0.15: read-only access to any documented route
 const spec = await client.api.get('/v1/openapi.json');
 const backups = await client.api.get('/v1/databases/3/backups', { limit: 5 });
+
+// Multi-node (operator unless noted). An older node agent answers 422 node_agent_outdated.
+const nodes = await client.servers.list();            // + agent, features, isBuildServer, buildConcurrency, databases, swarmNodeId, swarmRole
+await client.servers.update(nodeId, { isBuildServer: true, buildConcurrency: 2 });
+await client.services.placement.set(serviceId, { buildOn: 'server', buildServerId: nodeId });   // null restores the default
+const placement = await client.services.placement.get(serviceId);                               // any seat; also on services.get(id).placement
+const transfers = await client.services.imageTransfers(serviceId, { limit: 20 });                // any seat
+const shipped = await client.deploys.imageTransfers(deploymentId);
+await client.volumes.create({ name: 'nd-svc-web-data', serverId: nodeId });
+const nodeVolumes = await client.volumes.list({ serverId: nodeId });
+await client.volumes.remove('nd-svc-web-data', { serverId: nodeId });
+await client.databases.create({ name: 'db', engine: 'postgres', serverId: nodeId });             // + serverId, serverName, reachable on reads
+await client.sources.update(sourceId, { allowOnNodes: true, password });                         // step-up
+
+// Swarm: init and enable need step-up; join/leave run through the node's agent
+await client.swarm.init({ advertiseAddr: '10.0.0.1', password });
+await client.swarm.settings({ enabled: true, password });
+const swarm = await client.swarm.get();               // { enabled, localState, controlAvailable, managerAddr, nodes, warnings? }
+await client.servers.swarmJoin(nodeId);               // 422 node_swarm_not_enabled: set AGENT_SWARM_MANAGER_VAR on the node
+await client.servers.swarmLeave(nodeId);              // drains first; { drained, warnings? }
+const tasks = await client.services.swarm(serviceId); // any seat; { stack: null } when not on Swarm
 ```
 
 `GET /v1/servers` now carries `terminal: { host, container, reason? }` per node
-(absent on older panels): a node needs agent v0.15.0 for terminals.
+(absent on older panels): a node needs agent v0.15.0 for terminals. Multi-node
+panels add `agent`, `features` (with the "update the node agent" `reason`), the
+build-server role, `databases` and the Swarm membership (`swarmNodeId`,
+`swarmRole`); `GET /v1/services/:id` adds `placement`.
 
 ---
 

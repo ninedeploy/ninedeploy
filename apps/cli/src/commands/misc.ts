@@ -14,9 +14,14 @@ export async function dbList(client: NineDeployClient): Promise<void> {
   });
 }
 
-/** `ninedeploy databases create` */
-export async function dbCreate(client: NineDeployClient): Promise<void> {
-  header('Create Database');
+/** `ninedeploy databases create [--server <id>]` (0.16 T8: `--server` runs it on a node; operator) */
+export async function dbCreate(client: NineDeployClient, opts: { server?: string } = {}): Promise<void> {
+  let serverId: number | undefined;
+  if (opts.server !== undefined) {
+    if (!/^[1-9]\d*$/.test(opts.server)) return error('--server must be a positive integer (a server id from `ninedeploy servers list`)');
+    serverId = Number(opts.server);
+  }
+  header(serverId === undefined ? 'Create Database' : `Create Database on server #${serverId}`);
   const name = await prompt('Database name');
   if (!name) return error('Name required');
   console.log('  Engines: 1=PostgreSQL  2=MySQL  3=MariaDB  4=Redis  5=MongoDB  6=Valkey  7=ClickHouse  8=Meilisearch  9=RabbitMQ');
@@ -31,7 +36,7 @@ export async function dbCreate(client: NineDeployClient): Promise<void> {
   // instead of guessing.
   if (!engine) return error(`Unknown engine selection: ${choice}`);
   try {
-    const db = await spinner('Creating database', () => client.databases.create({ name, engine }));
+    const db = await spinner('Creating database', () => client.databases.create({ name, engine, ...(serverId !== undefined ? { serverId } : {}) }));
     success(`Database "${db.name}" created (id: ${db.id})`);
     if (db.connectionString) { info(`Connection: ${c.cyan(db.connectionString)}`); }
   } catch (err) { error(err instanceof Error ? err.message : String(err)); }
