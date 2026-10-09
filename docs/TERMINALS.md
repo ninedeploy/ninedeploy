@@ -94,6 +94,7 @@ Service shells on a node and node host shells run through that node's agent:
 - **Encrypted end to end.** The panel asks the agent to open the shell with a sealed `terminal.open` request, then connects to the agent's `/agent/terminal` WebSocket with a single-use channel id (valid 30 seconds). Every frame is AES-256-GCM encrypted with a key derived per channel, and counters must increase by exactly one, so a captured stream can be neither replayed nor spliced. Terminal bytes never cross the network in clear.
 - **The node owner's switch.** A node advertises host shells (`terminal.host`) unless its agent runs with `NINEDEPLOY_AGENT_HOST_TERMINAL=off` (`NINEDEPLOY_HOST_TERMINAL=off` is honoured on the node too). A node that refuses answers 403 `host_terminal_disabled`. The panel's own gates (section 3) apply as well.
 - **Agent limits:** at most 8 open terminals per node and a hard 24-hour cap per session. The agent only opens containers the panel names, and refuses its own container, the proxy and terminal helpers.
+- **Databases on nodes (0.15.3).** A database placed on a node opens a **shell** in its `nd-db-<slug>` container through the node's agent, like a service shell (the same `terminal` capability and sealed transport), once the database is running. Client mode answers 422 `client_mode_unsupported`: the agent's terminal runs a shell only, so open a shell and run the client there (`psql -U nine app` for postgres). See [DATABASES_BACKUPS.md §8](./DATABASES_BACKUPS.md).
 
 ---
 

@@ -296,8 +296,12 @@ If you ever need to override:
   BuildKit daemon: start one (`docker run -d --name buildkit --restart unless-stopped --privileged
   moby/buildkit`) and set `BUILDKIT_HOST=docker-container://buildkit` in the panel's environment
   (the install directory's `.env` on bare metal, `-e`/compose `environment:` for the container),
-  then restart the panel. Until then the panel refuses the build pack with that fix named. Railpack
-  is not available on remote nodes (they build the repository Dockerfile instead).
+  then restart the panel. Until then the panel refuses the build pack with that fix named. On a
+  remote node with agent v0.15.2 or newer, Railpack builds on the node itself, through the node's
+  own BuildKit, and the panel needs no `BUILDKIT_HOST` for it. That needs the node's Docker to
+  use the containerd image store, or `NINEDEPLOY_AGENT_BUILDKIT_HOST` on the agent; otherwise
+  build it on the panel. An older agent builds the repository Dockerfile instead
+  ([MULTI_NODE.md §4](./MULTI_NODE.md)).
 
 The CLI's `deploy create-from-github` shows the analysis result and lets you override the choice interactively; the wizard does the same.
 
@@ -392,3 +396,18 @@ If the deploy never queues, the most common cause is **wrong secret on the GitHu
 - "Nixpacks CLI unavailable" at build time → see [TROUBLESHOOTING.md → Nixpacks CLI not found](./TROUBLESHOOTING.md#nixpacks-cli-not-found).
 - Auto-deploy never fires after a push → see [TROUBLESHOOTING.md → Webhook signature rejected](./TROUBLESHOOTING.md#webhook-signature-rejected-401).
 - The wizard detected no Dockerfile but there is one in a subdirectory → `buildPack: "auto"` walks two levels deep; for deeper structures set `baseDir` or `dockerfilePath` explicitly.
+
+---
+
+## 10. Private repositories on remote nodes
+
+A service placed on a remote node clones its repository on that node. A PAT or deploy key never leaves the panel unless you allow it, so a deploy of such a service answers `400 remote_deploy_unsupported` with two ways forward:
+
+1. **Build on the panel (recommended).** Service → Settings → Build → Build on: panel, or `PUT /v1/services/:id/placement {"buildOn": "panel"}` (operator, panel 0.15.3). The panel clones and builds with the credential exactly as for a panel-host service, and only the built image travels to the node.
+2. **Allow the credential on nodes.** System → Sources → Allow on nodes, `ninedeploy sources allow-on-nodes <id> on`, or `PATCH /v1/sources/:id {"allowOnNodes": true, "password": "…"}`. It needs an interactive session and your password, and it is audited (`source.allow_on_nodes`). The node then receives the credential for one clone at a time:
+   - it needs agent v0.15.2 or newer over the sealed transport (`422 node_agent_outdated` otherwise), and the node's owner can refuse every PAT and deploy key with `NINEDEPLOY_AGENT_STATIC_CREDENTIALS=off` on the agent;
+   - a PAT goes into the git process's environment, never into a command line or `.git/config`, and is redacted from the log;
+   - a deploy key is written to a temporary directory in memory (`/dev/shm`) for that one clone and removed afterwards; host keys are accepted on first use for that clone;
+   - a `github`, `gitlab` or `bitbucket` source, or one with a base URL, is never sent to a repository on another host.
+
+While the clone runs, the PAT or key is on the node, and a PAT stays valid afterwards. Prefer option 1 for nodes you trust less than the panel. GitHub App repositories need neither: each node clone gets a short-lived token ([GITHUB_APP.md §6](./GITHUB_APP.md)). Turning the toggle off needs no password. See [MULTI_NODE.md §6](./MULTI_NODE.md) for the details.

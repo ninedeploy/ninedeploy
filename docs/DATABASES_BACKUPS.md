@@ -144,3 +144,23 @@ An import moves through `uploading` → `pending` (every byte is staged) → `ru
 A managed postgres, mysql, mariadb, redis, valkey or mongo database can be reached from outside the host on a port of its own, behind a required IP allow-list and with optional TLS termination (**Database → Settings → Public access**, `ninedeploy databases public-access`, `GET`/`PUT`/`DELETE /v1/databases/:id/public-access`). Reading the settings needs `admin` on the database; turning access on, changing it or turning it off is operator-only. `GET /v1/databases/:id/credentials` then also returns `publicConnectionString`, and the database list shows `publicAccess: {enabled, port}`.
 
 Public access exposes the database's **root (superuser) account**: create a limited user inside the database before you hand out an endpoint. The mechanism, the allow-list and port rules, the TLS modes and the rollback cleanup are described in [TRAEFIK_INGRESS.md §9](./TRAEFIK_INGRESS.md).
+
+---
+
+## 🛰️ 8. Databases on nodes (0.15.3)
+
+A managed database can run on a remote node instead of the panel host. Choose the node when you create it (Databases → New → host, `POST /v1/databases {…, serverId}`, `ninedeploy databases create --server <id>`). The node is fixed for the database's life. Without `serverId` nothing changes: every existing database stays on the panel host.
+
+- **Who and where:** placing a database on a node is operator-only (`403 node_placement_operator_only`). The node must be online (`409 server_not_online`) and run agent v0.15.3 or newer with `db.manage` (`422 node_agent_outdated` otherwise, before anything is written; `403 node_feature_disabled` when its owner set `NINEDEPLOY_AGENT_DATABASES=off`). A database on a node never adopts an existing volume: `existingVolume` is refused, and an existing `nd-db-<slug>-data` on the node answers `409 node_volume_exists`.
+- **On the node** it runs as `nd-db-<slug>` with the volume `nd-db-<slug>-data`, on its own network `nd-dbnet-<slug>`, not on the node's shared `ninedeploy` network. A service on the **same node** that attaches it is connected to that network at its next deploy, so the injected `DATABASE_URL` (or the engine's variable) resolves there. Detaching disconnects it.
+- **Responses** gain `serverId`, `serverName` and `reachable` (`null` for panel-host databases); `containerName` and `volumeName` keep naming the container and volume. `GET /v1/servers` counts each node's databases.
+- **Status:** every 60 seconds the panel asks each node for its databases' state. A node that does not answer never changes a database's status; the database reports `reachable: false` instead.
+- **Backups:** manual and scheduled backups, policies, off-site upload, restore, drills and dump imports work as for panel-host databases. The dump streams from the node over the agent's sealed stream channel into the panel's backups directory, in the same format and encrypted at rest; the backup records the node. A scheduled backup of a database whose node does not answer is recorded as failed; nothing falls back to the panel host.
+- **Terminal:** a shell in the database container opens through the node's agent. Client mode answers `422 client_mode_unsupported`; open a shell and run the client there.
+- **Refused:** attaching it to a service on another host, the panel host included (`409 attachment_host_mismatch`), fan-out targets of a service that uses it (`409 fanout_database_host`), Studio, PgBouncer and public access (`422 remote_database`), and moving it to another host. To move one, back it up, create a database on the other host, and restore there.
+- **The node** cannot be deleted while it hosts databases, even with `?force=true` (`409 server_hosts_databases`).
+- **Rolling back** to a release before 0.15.3: the database keeps running on its node, but the older panel refuses to start, back up or restore it. See [ROLLBACK.md, "0.15.x multi-node rollback runbook"](./ROLLBACK.md) before you roll back.
+
+**Panel-host attachments (0.15.3):** a panel-host database attached to a service (the attach route, a `.ninedeploy` manifest or a migration bundle) is now connected to the service's own network at the service's next deploy, so its `nd-db-<slug>` name resolves from the app. Before, only template databases were connected.
+
+See [MULTI_NODE.md](./MULTI_NODE.md) for nodes, agent versions and the other node features.

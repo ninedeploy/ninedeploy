@@ -155,7 +155,9 @@ An App repository can be deployed to a remote node (docker services) when:
 
 Per job, the panel mints a repository-scoped `contents: read` token and sends it inside the sealed `git.ensure` / fetch / reset operands. The agent applies it only through the git child process environment (`http.<origin>/.extraheader`): never in argv, never in `.git/config`, and redacted from every output line. When the job finishes the panel revokes the token (`DELETE /installation/token`).
 
-An older agent, or an unsealed transport, gets today's refusal with an instruction to update the agent; nothing is minted. PAT and deploy-key sources stay refused on nodes as before.
+An older agent, or an unsealed transport, gets today's refusal with an instruction to update the agent; nothing is minted.
+
+**PATs and deploy keys on nodes (0.15.2).** A PAT or deploy-key source is still refused on nodes by default. Two ways forward: build the service on the panel and ship the image (`buildOn: panel`, panel 0.15.3), or allow that source on nodes (`allowOnNodes`, with your password), which sends the PAT or key to the node for one clone at a time and needs node agent v0.15.2. Unlike an App token, a PAT is not revoked after the clone. See [PRIVATE_REPO_GUIDE.md §10](./PRIVATE_REPO_GUIDE.md) and [MULTI_NODE.md §6](./MULTI_NODE.md).
 
 ---
 

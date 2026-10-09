@@ -224,3 +224,42 @@ again.
 
 **Leaving Swarm:** set the orchestrator back to `container` and redeploy. The
 container goes live first; then the stack and its overlay are removed.
+
+## 🛰️ 8. Deploying to remote nodes
+
+A `docker` or `compose` service with a `serverId` deploys to that node through
+its agent, and the node's own Traefik routes it. What a node can do depends on
+its agent version; an older agent answers `422 node_agent_outdated` with the
+version to install, and nothing else changes. The full reference is
+[MULTI_NODE.md](./MULTI_NODE.md). For deployments:
+
+- **Build packs on a node** (agent v0.15.2): the panel picks the pack on its own
+  checkout with the panel host's rules (a Dockerfile, a Dockerfile found in the
+  repository, else Nixpacks), and the node builds it. Nixpacks and Railpack
+  build on the node; Railpack's env values travel as BuildKit secrets. Railpack
+  through the node's own Docker needs Docker's containerd image store (or
+  `NINEDEPLOY_AGENT_BUILDKIT_HOST` on the agent); on a classic-store daemon
+  the build stops with the fix, see [MULTI_NODE.md §4](./MULTI_NODE.md). The
+  static pack is refused on a node.
+- **Build placement** (0.15.3, operator): `PUT /v1/services/:id/placement`
+  with `buildOn: panel` builds on the panel host and ships the image to the
+  node; `buildOn: server` with `buildServerId` builds on a node that has the
+  build-server role and ships it to wherever the service runs, the panel host
+  included. The image travels over the agent's sealed stream channel, checked
+  by size and sha256, or through a registry you set. Every shipment is listed
+  under `GET /v1/services/:id/image-transfers`. A `null` placement builds where
+  the service runs, as before.
+- **Private repositories** reach a node only when the source allows it on
+  nodes (step-up), or are built on the panel and shipped as an image. See
+  [PRIVATE_REPO_GUIDE.md §10](./PRIVATE_REPO_GUIDE.md).
+- **Volume attachments, a container command and the Docker socket** work on
+  node docker services (agent v0.15.2); a missing managed volume is created on
+  the node before the container starts, and before `compose up` for a stack.
+- **Deploy hooks** still run on the panel host only, so a node service with a
+  pre-deploy, post-deploy or pre-stop hook is refused.
+- **Fan-out targets** receive the primary's image when it was built with
+  Nixpacks, Railpack, the static pack or on another host, instead of a
+  different build. Each target is checked on its own before anything runs
+  there; a refused target is recorded with the reason and the primary is not
+  affected.
+- **Health** on a node is container state, not an HTTP probe through Traefik.

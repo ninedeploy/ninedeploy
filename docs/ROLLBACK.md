@@ -12,15 +12,64 @@ See [QUICKSTART.md §4](./QUICKSTART.md) for the install modes. Every upgrade fi
 
 To rehearse the 0.15 → 0.14 rollback on throwaway containers, run `node scripts/smoke-upgrade.mjs --from=v0.15.0 --from-image=<candidate image> --to=v0.14.0`. It asserts the behaviour described below: 0.14 boots, migration 0071 stays recorded with its rows, Traefik is recreated without the traffic-log mount and the domain still routes, a guest's grant no longer opens anything, and the terminal-helper runbook command works. It records what `<data>/traffic-logs` still holds and whether a shell left open across the stop is still running. The 0.14 → 0.13 rehearsal is the same command with `--from=v0.14.0 … --to=v0.13.0`.
 
+To rehearse the multi-node rollback below, run `node scripts/smoke-multinode.mjs --from=<candidate tag> --from-image=<candidate image> --to=v0.15.1`. The candidate panel and agent build, clone, ship images, attach volumes, place a database on the node and run a Swarm stack; then 0.15.1 boots on the same data while the candidate agent keeps running, and the smoke asserts the 0.15.1 column of the table below and runs the cleanup commands.
+
+---
+
+## 0.15.x multi-node rollback runbook
+
+The remote-node features arrived in three patch releases: **0.15.2** (migration 0072, Nixpacks and Railpack builds on nodes, PAT and deploy-key clones on nodes, node volumes), **0.15.3** (build placement and image transfer, the build-server role, managed databases on nodes) and **0.15.4** (Swarm). Rolling the panel back past one of them never makes the older release act on the wrong host: what it cannot handle, it refuses or ignores, and the containers already running keep running. Migration 0072 stays recorded, its columns and the `image_transfers` table stay in place and are ignored, and upgrading again picks everything up where it was.
+
+**Keep the node agents you have.** A newer agent under an older panel changes nothing (every older operation is unchanged), and the agent holds no state the older panel needs. Downgrading an agent only takes features away when you upgrade the panel again. The rehearsal above runs 0.15.1 against the candidate agent.
+
+| Feature (on the panel) | Back to 0.15.3 | Back to 0.15.2 | Back to 0.15.1 or 0.15.0 |
+| :--- | :--- | :--- | :--- |
+| Nixpacks and Railpack builds on a node | Unchanged | Unchanged | A node service that builds with Nixpacks fails at its next deploy, with the reason in the log. A Railpack one builds the repository's Dockerfile instead. |
+| PAT and deploy-key clones on a node (`allowOnNodes`) | Unchanged | Unchanged | Refused at the next deploy (400 `remote_deploy_unsupported`); the toggle is ignored. |
+| Volume attachments, a command or the Docker socket on a node service | Unchanged | Unchanged | Refused at the next deploy (400). The volumes stay on the node. |
+| Node volume backups | Unchanged | Unchanged | Listed and downloadable, but **do not restore one**: 0.15.1 restores into the panel host's volume of the same name, not the node's. |
+| Build placement (`buildOn`), build servers, image transfers | Unchanged | Ignored: every service builds where it runs. A node service built on the panel builds on its node again (its PAT or key needs `allowOnNodes`; the static pack is refused); a panel service built on a build server builds on the panel. | Ignored, as for 0.15.2, and a node service that clones with a PAT or key, or builds with Nixpacks or the static pack, is refused or fails at its next deploy. |
+| Managed databases on a node | Unchanged | Refused: start, restart, backup, restore and import fail and nothing runs on the panel host; stop only changes the status; logs, size and the terminal give nothing; public access answers 422. | As for 0.15.2, except that turning public access on starts a sidecar on the panel host that cannot reach the database. |
+| Swarm | Degrades: see the next section | Degrades | Degrades |
+
+In every column, the containers the newer release started keep running, and a refused service keeps its last container until you upgrade again or clear its node.
+
+**Managed databases on nodes** (back to 0.15.2 or earlier). The older release sees a node database as a row without a container name and refuses to act on it. The database keeps running on its node with its data, but the panel can no longer manage or back it up, and the scheduled backup records a failure every day. If the rollback may last, take a backup on the newer release first: backups are ordinary files on the panel, and the older release can still download them, or restore them into a database on the panel host.
+
+```sql
+-- the databases placed on nodes (sqlite3 <data dir>/ninedeploy.db)
+SELECT id, name, server_id, node_container_name FROM databases WHERE server_id IS NOT NULL;
+```
+
+```bash
+# on the node: the database is still there
+docker exec -it nd-db-<slug> psql -U nine app          # postgres; other engines: their own client
+# on the panel host, 0.15.1 or earlier only: a public-access sidecar started for a node database
+docker rm -f nd-dbpub-<slug>
+# on the panel host: a Studio container started for a node database (it cannot reach it)
+docker rm -f nd-studio-<slug>
+```
+
+Do not delete node databases on the older release: it deletes the row and leaves the container and its `nd-db-<slug>-data` volume running on the node, unmanaged. If that happened, run `docker rm -f nd-db-<slug>` on the node, and keep or remove the volume. Deleting the node itself fails while a database is placed on it, even with `?force=true`.
+
+**Node volumes and images** (back to 0.15.1 or earlier):
+
+```bash
+# on each node
+docker volume ls --filter label=ninedeploy.managed=volume     # volumes created for node services
+docker image ls 'ninedeploy/*'                                # builds and shipped images; remove the ones nothing runs
+rm -rf /var/lib/ninedeploy-agent/.agent-work/.transfer        # only if an agent died mid-transfer (a current agent sweeps it)
+```
+
 ---
 
 ## Swarm services → a release before Swarm (0.15.3 or earlier)
 
-Swarm services **keep serving** after the rollback (they degrade instead of being refused). Every other multi-node feature makes the older release refuse to act.
+Swarm services **keep serving** after the rollback (they degrade instead of being refused). The other multi-node features the older release lacks make it refuse to act (see the runbook above).
 
 - **Routes keep working:** the older release routes to `runtimeId` (`nd-<slug>_web`) like any container, and Traefik stays attached to the service's overlay, as long as the Traefik container is not recreated. The older release does not re-attach Traefik to `nd-swarm-*` overlays after Traefik restarts, so after such a restart those routes return 502 until the service is redeployed.
 - **The next deploy of such a service runs it as plain containers** on the panel host (`services.replicas` round-robin clones, no Swarm). The route moves to the new container, and **the stack keeps running without a route**. The image is pullable from the registry or already on the panel host, so that deploy works.
-- **Clean up** once the local deploy is live: `docker stack ls`, then `docker stack rm nd-<slug>` and `docker network rm nd-swarm-<slug>` for each NineDeploy stack. Run `docker swarm leave --force` on the nodes, and then on the panel host, only if you are giving up Swarm.
+- **Clean up** once the local deploy is live: `docker stack ls`, then for each NineDeploy stack `docker stack rm nd-<slug>`, `docker network disconnect nd-swarm-<slug> ninedeploy-traefik` (Traefik is still attached, and Docker refuses to remove a network in use) and `docker network rm nd-swarm-<slug>`; repeat the `rm` if it reports active endpoints while the stack's tasks are still shutting down. Run `docker swarm leave --force` on the nodes, and then on the panel host, only if you are giving up Swarm.
 - `/v1/orchestrators` still lists the stacks. A downgraded node agent refuses join and leave, but the node stays in the swarm, because membership lives in the node's Docker daemon.
 - **Node labels stay:** `nd.member=1` and `nd.preload.<slug>=<image id prefix>` remain on the nodes, and a running stack keeps requiring them, so its tasks stay where they are. They are harmless once the stacks are gone; remove them with `docker node update --label-rm nd.member <node>` (and the same for each `nd.preload.<slug>`) when you clean up. The per-deploy registry config directories under `<dataDir>/swarm/.docker-*` are removed after each deploy; a crash can leave one behind, which only the newer release sweeps at boot, so delete any you find there.
 
