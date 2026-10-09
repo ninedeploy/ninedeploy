@@ -34,6 +34,7 @@ export const DATA_TOPICS: Record<string, HelpTopic> = {
       { label: 'Database detail page', helpId: 'database.overview' },
       { label: 'Backups', helpId: 'backups' },
       { label: 'Service · Environment', helpId: 'service.environment' },
+      { label: 'Databases on nodes', helpId: 'database.on-nodes' },
     ],
   },
 
@@ -62,6 +63,7 @@ export const DATA_TOPICS: Record<string, HelpTopic> = {
     related: [
       { label: 'Service · Volumes tab', helpId: 'service.volumes' },
       { label: 'Backups', helpId: 'backups' },
+      { label: 'Volumes on nodes', helpId: 'volumes.on-nodes' },
     ],
   },
 

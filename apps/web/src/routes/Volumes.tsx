@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Archive, ArrowUpRight, Database, ExternalLink, FolderOpen, HardDrive, Layers, Lock, Package, Server, Trash2 } from 'lucide-react';
+import { Archive, ArrowUpRight, Database, ExternalLink, FolderOpen, HardDrive, Layers, Lock, Package, Plus, Server, Trash2 } from 'lucide-react';
 import { Link } from 'react-router';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
 import { useToast } from '../components/Toast.js';
-import { Button, Card, ConfirmDialog, EmptyState, ErrorCard, PageHeader, Skeleton, cn } from '../components/ui.js';
+import { Button, Card, ConfirmDialog, EmptyState, ErrorCard, Input, PageHeader, Select, Skeleton, cn } from '../components/ui.js';
+import { errorMessage, registeredNodes } from '../lib/multiNode.js';
 import { formatBytes } from '../lib/format.js';
 import { VolumeBrowser } from '../components/VolumeBrowser.js';
 import { VolumeBackupsPanel } from '../components/VolumeBackupsPanel.js';
@@ -14,9 +15,20 @@ export function Volumes() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();
+  // Multi-node host switcher: '' = the panel host (today's inventory, cached
+  // under ['volumes'] as everywhere else); a node id lists that node's
+  // managed volumes through its agent.
+  const [hostId, setHostId] = useState('');
+  const nodeId = hostId === '' ? null : Number(hostId);
+  const servers = useQuery({
+    queryKey: ['servers'],
+    queryFn: () => api.servers.list(),
+    enabled: user?.isOperator === true,
+  });
+  const nodes = registeredNodes(servers.data);
   const list = useQuery({
-    queryKey: ['volumes'],
-    queryFn: () => api.volumes.list(),
+    queryKey: nodeId == null ? ['volumes'] : ['volumes', 'node', nodeId],
+    queryFn: () => (nodeId == null ? api.volumes.list() : api.volumes.list({ serverId: nodeId })),
     // Instance-wide inventory is admin-only (L-12) — a member landing here
     // directly must not fire (and poll) a refused call.
     enabled: user?.isOperator === true,
@@ -30,7 +42,7 @@ export function Volumes() {
   // restore it at all.
   const [snapshotting, setSnapshotting] = useState<string | null>(null);
   const remove = useMutation({
-    mutationFn: (name: string) => api.volumes.remove(name),
+    mutationFn: (name: string) => (nodeId == null ? api.volumes.remove(name) : api.volumes.remove(name, { serverId: nodeId })),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['volumes'] });
       toast('Volume deleted', 'success');
@@ -46,6 +58,18 @@ export function Volumes() {
     },
     onError: (err) => toast(err instanceof Error ? err.message : 'Prune failed', 'error'),
   });
+  const [newName, setNewName] = useState('');
+  const create = useMutation({
+    mutationFn: (name: string) => api.volumes.create(nodeId == null ? { name } : { name, serverId: nodeId }),
+    onSuccess: (res) => {
+      setNewName('');
+      qc.invalidateQueries({ queryKey: ['volumes'] });
+      toast(`Volume ${res.name} created`, 'success');
+    },
+    onError: (err) => toast(errorMessage(err, 'Could not create the volume'), 'error'),
+  });
+  const newNameValid = /^nd-(?:svc|db)-[a-z0-9][a-z0-9_.-]*$/.test(newName.trim());
+  const hostName = nodeId == null ? 'panel host' : (nodes.find((n) => n.id === nodeId)?.name ?? `node #${nodeId}`);
   const total = (list.data ?? []).reduce((s, v) => s + v.sizeBytes, 0);
   const max = Math.max(1, ...(list.data ?? []).map((v) => v.sizeBytes));
   const retainedList = (list.data ?? []).filter((v) => !v.owner);
@@ -63,7 +87,7 @@ export function Volumes() {
         title="Volumes & Storage"
         subtitle={`${(list.data?.length ?? 0)} volumes · ${formatBytes(total)} used${retained > 0 ? ` · ${retained} retained (${formatBytes(retainedBytes)})` : ''}`}
         actions={
-          retained > 0 ? (
+          retained > 0 && nodeId == null ? (
             <Button
               size="sm"
               variant="secondary"
@@ -79,7 +103,55 @@ export function Volumes() {
 
       <DockerResources />
 
-      <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wide text-slate-500">Persistent volumes</h2>
+      <div className="mb-3 mt-8 flex flex-wrap items-end justify-between gap-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Persistent volumes</h2>
+        <div className="flex flex-wrap items-end gap-2">
+          {nodes.length > 0 && (
+            <Select
+              aria-label="Volume host"
+              value={hostId}
+              onChange={(e) => {
+                setHostId(e.target.value);
+                setBrowsing(null);
+                setSnapshotting(null);
+              }}
+              className="h-8 w-56 text-xs"
+            >
+              <option value="">Panel host</option>
+              {nodes.map((n) => (
+                <option key={n.id} value={String(n.id)} disabled={n.features?.volumes === false}>
+                  {n.name}
+                  {n.features?.volumes === false ? ' (update the agent)' : n.status === 'online' ? '' : ` — ${n.status}`}
+                </option>
+              ))}
+            </Select>
+          )}
+          <form
+            className="flex items-end gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (newNameValid) create.mutate(newName.trim());
+            }}
+          >
+            <Input
+              aria-label="New volume name"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="nd-svc-app-data"
+              className="h-8 w-48 font-mono text-xs"
+            />
+            <Button type="submit" size="sm" variant="secondary" disabled={!newNameValid || create.isPending} title={`Create a managed volume on the ${hostName}`}>
+              <Plus size={13} /> Create
+            </Button>
+          </form>
+        </div>
+      </div>
+      {nodeId != null && (
+        <p className="mb-3 text-xs text-slate-500">
+          Volumes on <span className="text-slate-300">{hostName}</span>, through its agent. The file browser and snapshots work on
+          panel-host volumes only.
+        </p>
+      )}
       {list.isLoading ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[0, 1, 2].map((i) => <Card key={i} className="p-5"><Skeleton className="h-12 w-full" /></Card>)}
@@ -149,6 +221,8 @@ export function Volumes() {
                   </div>
 
                   <div className="flex items-center gap-1.5">
+                    {nodeId == null && (
+                    <>
                     <button type="button"
                       onClick={() => setBrowsing(v.name)}
                       className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-[var(--nd-accent)]"
@@ -168,6 +242,8 @@ export function Volumes() {
                     >
                       <Archive size={14} />
                     </button>
+                    </>
+                    )}
                     {!v.inUse && (
                       <button type="button"
                         onClick={() => setPendingDelete(v.name)}

@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useId, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, Database, HardDrive, Sparkles, Terminal, X, Zap } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Database, HardDrive, Server, Sparkles, Terminal, X, Zap } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
 import { formatBytes } from '../lib/format.js';
 import { useExperienceMode } from '../lib/mode.js';
+import { registeredNodes } from '../lib/multiNode.js';
 import { Button, Input, cn, useEscapeToClose } from './ui.js';
 import { useToast } from './Toast.js';
 
@@ -34,6 +35,9 @@ export function DatabaseWizard({ onClose }: { onClose: () => void }) {
   const [version, setVersion] = useState('');
   const [selectedVolume, setSelectedVolume] = useState<string>('');
   const [pgvector, setPgvector] = useState(false);
+  // Multi-node: '' = the panel host (today's default); a node id places the
+  // database there for its whole life (operator only).
+  const [host, setHost] = useState('');
   const titleId = useId();
   useEscapeToClose(onClose);
 
@@ -45,6 +49,16 @@ export function DatabaseWizard({ onClose }: { onClose: () => void }) {
     // swallowed 403 per wizard open.
     enabled: isOperator,
   });
+
+  // Multi-node: nodes whose agent can host a managed database. An older
+  // panel sends no `features`, so the host choice simply does not appear.
+  const servers = useQuery({
+    queryKey: ['servers'],
+    queryFn: () => api.servers.list(),
+    enabled: isOperator,
+  });
+  const dbHosts = registeredNodes(servers.data).filter((s) => s.features?.databases === true);
+  const hostLabel = host === '' ? 'Panel host' : (dbHosts.find((s) => String(s.id) === host)?.name ?? `node #${host}`);
 
   const retainedVolumes = (volumes.data || []).filter(
     (v) => v.owner === null && !v.inUse && v.name.startsWith('nd-db-'),
@@ -62,6 +76,7 @@ export function DatabaseWizard({ onClose }: { onClose: () => void }) {
         version: version || undefined,
         existingVolume: selectedVolume || undefined,
         extensions: pgvector && engine === 'postgres' ? ['pgvector'] : undefined,
+        ...(host === '' ? {} : { serverId: Number(host) }),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['databases'] });
@@ -187,7 +202,39 @@ export function DatabaseWizard({ onClose }: { onClose: () => void }) {
                 </label>
               )}
 
-              {retainedVolumes.length > 0 && (
+              {dbHosts.length > 0 && (
+                <div>
+                  <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">
+                    <Server size={12} /> Host
+                  </span>
+                  <select
+                    aria-label="Database host"
+                    value={host}
+                    onChange={(e) => {
+                      setHost(e.target.value);
+                      // Re-attaching a retained volume works on the panel host only.
+                      if (e.target.value !== '') setSelectedVolume('');
+                    }}
+                    className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
+                  >
+                    <option value="">Panel host</option>
+                    {dbHosts.map((s) => (
+                      <option key={s.id} value={String(s.id)}>
+                        {s.name}
+                        {s.status === 'online' ? '' : ` — ${s.status}`}
+                      </option>
+                    ))}
+                  </select>
+                  {host !== '' && (
+                    <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+                      The database stays on this node for its whole life. Services attach to it from the same node only; Web Studio,
+                      PgBouncer and public access are not available for node databases yet.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {host === '' && retainedVolumes.length > 0 && (
                 <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3.5 space-y-2.5">
                   <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
                     <HardDrive size={14} className="text-indigo-400" />
@@ -244,6 +291,7 @@ export function DatabaseWizard({ onClose }: { onClose: () => void }) {
               <Row label="Engine" value={`${ENGINES.find((e) => e.id === engine)!.emoji} ${ENGINES.find((e) => e.id === engine)!.label}`} />
               <Row label="Name" value={name} />
               <Row label="Version" value={version || 'default'} />
+              {dbHosts.length > 0 && <Row label="Host" value={hostLabel} />}
               <Row label="Volume" value={selectedVolume ? `Re-attach (${selectedVolume})` : `nd-db-${name}-data`} />
               <Row label="Credentials" value="auto-generated, encrypted" />
             </div>

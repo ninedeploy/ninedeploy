@@ -126,6 +126,7 @@ export const SYSTEM_TOPICS: Record<string, HelpTopic> = {
     related: [
       { label: 'Services list', helpId: 'services' },
       { label: 'Service · Deploys', helpId: 'service.deploys' },
+      { label: 'Allowing a credential on nodes', helpId: 'sources.allow-on-nodes' },
     ],
   },
 
@@ -156,6 +157,7 @@ export const SYSTEM_TOPICS: Record<string, HelpTopic> = {
       { label: 'Monitoring', helpId: 'monitoring' },
       { label: 'Settings · System (self-update)', helpId: 'settings.system' },
       { label: 'Terminal sessions', helpId: 'terminals' },
+      { label: 'Nodes: agent, build server, Swarm', helpId: 'servers.multi-node' },
     ],
   },
 

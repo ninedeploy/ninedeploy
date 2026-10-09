@@ -9,6 +9,7 @@ import {
   DatabaseBackup,
   HardDrive,
   KeyRound,
+  Network,
   Palette,
   Puzzle,
   Search,
@@ -35,6 +36,7 @@ import { StorageSection } from './StorageSection.js';
 import { SsoSection } from './SsoSection.js';
 import { FirewallSection } from './FirewallSection.js';
 import { PanelBackupSection } from './PanelBackupSection.js';
+import { SwarmSection } from './SwarmSection.js';
 import { AutofillRejectingInput, PageHeader, cn } from '../../components/ui.js';
 
 type SectionId =
@@ -47,6 +49,7 @@ type SectionId =
   | 'log-drains'
   | 'storage'
   | 'firewall'
+  | 'swarm'
   | 'config'
   | 'plugins'
   | 'system'
@@ -93,6 +96,7 @@ const SETTING_GROUPS: SectionCategory[] = [
     items: [
       { id: 'firewall', label: 'Firewall (UFW)', desc: 'Host ports & inbound packet filter', icon: <Shield size={16} />, operatorOnly: true },
       { id: 'storage', label: 'Storage & Prune', desc: 'Disks, Docker prune & logs', icon: <HardDrive size={16} />, operatorOnly: true },
+      { id: 'swarm', label: 'Swarm', desc: 'Multi-node orchestration & cluster', icon: <Network size={16} />, operatorOnly: true },
       { id: 'config', label: 'Config Center', desc: 'Global key-value configuration', icon: <Sliders size={16} />, operatorOnly: true },
       { id: 'plugins', label: 'Plugins', desc: 'Community plugins & extensions', icon: <Puzzle size={16} /> },
     ],
@@ -254,6 +258,7 @@ export function Settings() {
             {section === 'log-drains' && <LogDrainsSection />}
             {section === 'firewall' && <FirewallSection />}
             {section === 'storage' && <StorageSection />}
+            {section === 'swarm' && <SwarmSection />}
             {section === 'config' && <ConfigCenterSection />}
             {section === 'plugins' && <PluginsSection />}
             {section === 'system' && <SystemSection />}

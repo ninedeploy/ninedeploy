@@ -11,10 +11,11 @@ import { NETWORK_TOPICS } from '../src/help/topics/network.js';
 import { SYSTEM_TOPICS } from '../src/help/topics/system.js';
 import { SETTINGS_TAB_TOPICS } from '../src/help/topics/settingsTabs.js';
 import { OPERATIONS_TOPICS } from '../src/help/topics/operations.js';
+import { MULTI_NODE_TOPICS } from '../src/help/topics/multiNode.js';
 
 const GROUPS = [
   MISC_TOPICS, DEPLOY_TOPICS, SERVICE_TAB_TOPICS, ORGANIZE_TOPICS, DATA_TOPICS,
-  DATABASE_TAB_TOPICS, NETWORK_TOPICS, SYSTEM_TOPICS, SETTINGS_TAB_TOPICS, OPERATIONS_TOPICS,
+  DATABASE_TAB_TOPICS, NETWORK_TOPICS, SYSTEM_TOPICS, SETTINGS_TAB_TOPICS, OPERATIONS_TOPICS, MULTI_NODE_TOPICS,
 ];
 
 describe('helpKeys', () => {
@@ -45,7 +46,7 @@ describe('helpKeys', () => {
     const settingsKeys = new Set(
       HELP_ROUTE_TABLE.filter((e) => e.key.startsWith('settings.')).map((e) => e.key),
     );
-    expect(settingsKeys.size).toBe(15);
+    expect(settingsKeys.size).toBe(16);
   });
 
   it('r343: resolves the Settings AI section and the service Compose tab to their own topics', () => {
@@ -57,6 +58,12 @@ describe('helpKeys', () => {
     expect(helpKeyForLocation('/terminals', '')).toBe('terminals');
     const linked = new Set(Object.values(HELP_TOPICS).flatMap((t) => (t.related ?? []).map((r) => r.helpId)));
     for (const id of ['terminals', 'traffic-analytics', 'access-grants']) expect(linked.has(id), id).toBe(true);
+  });
+
+  it('multi-node: Settings → Swarm has its own topic, and every multi-node topic is linked from a page topic', () => {
+    expect(helpKeyForLocation('/settings', '?section=swarm')).toBe('settings.swarm');
+    const linked = new Set(Object.values(HELP_TOPICS).flatMap((t) => (t.related ?? []).map((r) => r.helpId)));
+    for (const id of Object.keys(MULTI_NODE_TOPICS)) expect(linked.has(id), id).toBe(true);
   });
 
   it('falls back to the general topic for unknown routes', () => {

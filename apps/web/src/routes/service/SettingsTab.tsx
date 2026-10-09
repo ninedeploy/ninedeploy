@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Cpu, GitPullRequest, Layers, Server, Settings, Tag } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { Service } from '@ninedeploy/sdk';
+import type { Service, ServiceDetail } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { useAuth } from '../../lib/auth.js';
 import { toInt } from '../../lib/format.js';
@@ -9,9 +9,10 @@ import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, cn, ErrorCard, Field, Input, Select, Skeleton, Switch } from '../../components/ui.js';
 import { ServiceTagsCard } from './ServiceTagsCard.js';
 import { GithubCard } from './GithubCard.js';
+import { BuildPlacementCard, OrchestratorCard } from './PlacementCards.js';
 
 /** Service fields, build configuration, lifecycle hooks, PR previews, and resource limits. */
-export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: Service }) {
+export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: ServiceDetail }) {
   return (
     <div className="mt-5 space-y-5">
       <SettingsCard serviceId={serviceId} />
@@ -19,6 +20,9 @@ export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: Servic
       <TagsCard serviceId={serviceId} svc={svc} />
       <PreviewEnvironmentsCard svc={svc} />
       <TargetNodeCard svc={svc} />
+      {/* Multi-node: Build → placement and image transfers; Runtime → Swarm. Both hide on an older panel. */}
+      <BuildPlacementCard svc={svc} />
+      <OrchestratorCard svc={svc} />
       <LimitsCard svc={svc} />
       <ScalingCard svc={svc} />
     </div>

@@ -569,6 +569,11 @@ export interface DatabaseDetail {
   webGuiPort?: number | null;
   extensions?: string[];
   attachedServices: Array<{ id: number; name: string; slug: string }>;
+  /** 0.15.3: the node this database runs on; null or absent means the panel host. */
+  serverId?: number | null;
+  serverName?: string | null;
+  /** The node's last reachability probe; null when not probed or on the panel host. */
+  reachable?: boolean | null;
   createdAt: string;
   updatedAt: string;
 }

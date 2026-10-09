@@ -394,6 +394,8 @@ export const SERVICE_TAB_TOPICS: Record<string, HelpTopic> = {
     related: [
       { label: 'Service · Deploys', helpId: 'service.deploys' },
       { label: 'Service · Danger Zone', helpId: 'service.danger' },
+      { label: 'Build placement and image transfers', helpId: 'service.build-placement' },
+      { label: 'Running a service on Swarm', helpId: 'service.swarm' },
     ],
   },
 

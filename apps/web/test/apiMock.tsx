@@ -101,6 +101,10 @@ export function createFakeApiModule() {
         finalize: vi.fn(),
         unlink: vi.fn(),
       },
+      // Multi-node: build placement, image transfers and the Swarm tasks.
+      placement: { get: vi.fn(), set: vi.fn() },
+      imageTransfers: vi.fn().mockResolvedValue([]),
+      swarm: vi.fn(),
     },
     environments: {
       list: vi.fn().mockResolvedValue([]),
@@ -136,7 +140,7 @@ export function createFakeApiModule() {
       acceptTransfer: vi.fn(),
       cancelTransfer: vi.fn(),
     },
-    volumes: { list: vi.fn(), remove: vi.fn(), prune: vi.fn(), listFiles: vi.fn(), readFile: vi.fn(), writeFile: vi.fn(), mkdir: vi.fn(), deleteFile: vi.fn() },
+    volumes: { list: vi.fn(), create: vi.fn(), remove: vi.fn(), prune: vi.fn(), listFiles: vi.fn(), readFile: vi.fn(), writeFile: vi.fn(), mkdir: vi.fn(), deleteFile: vi.fn() },
     serviceVolumes: {
       list: vi.fn().mockResolvedValue([]),
       create: vi.fn(),
@@ -271,7 +275,13 @@ export function createFakeApiModule() {
       sshTest: vi.fn(),
       sshBootstrap: vi.fn(),
       bootstrapLogs: vi.fn(),
+      // Multi-node: the build-server role and Swarm membership.
+      update: vi.fn(),
+      swarmJoin: vi.fn(),
+      swarmLeave: vi.fn(),
     },
+    // Multi-node: Swarm on the panel host (Settings → Swarm).
+    swarm: { get: vi.fn(), init: vi.fn(), settings: vi.fn() },
     traefik: { get: vi.fn(), status: vi.fn(), certificates: vi.fn(), logs: vi.fn(), restart: vi.fn(), backupCerts: vi.fn() },
     config: { list: vi.fn(), get: vi.fn(), set: vi.fn(), delete: vi.fn() },
     plugins: { list: vi.fn(), marketplace: vi.fn(), install: vi.fn(), enable: vi.fn(), disable: vi.fn(), reload: vi.fn(), inspect: vi.fn(), uninstall: vi.fn() },

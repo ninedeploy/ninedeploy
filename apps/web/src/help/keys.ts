@@ -19,7 +19,7 @@ export const DATABASE_TAB_IDS = [
 
 export const SETTINGS_SECTION_IDS = [
   'account', 'appearance', 'security', 'sso', 'integrations', 'ai', 'notifications',
-  'log-drains', 'storage', 'firewall', 'config', 'plugins', 'system', 'panel-backup', 'migration',
+  'log-drains', 'storage', 'firewall', 'swarm', 'config', 'plugins', 'system', 'panel-backup', 'migration',
 ] as const;
 
 /** Plain path prefixes mapped to a help topic; longest prefix wins. */

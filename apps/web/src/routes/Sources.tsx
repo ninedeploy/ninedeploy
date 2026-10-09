@@ -13,7 +13,9 @@ import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
 import { copyText } from '../lib/format.js';
 import { useToast } from '../components/Toast.js';
-import { Button, Card, ConfirmDialog, EmptyState, ErrorCard, Field, Input, PageHeader, Select, Skeleton, Textarea, cn } from '../components/ui.js';
+import { Button, Card, ConfirmDialog, EmptyState, ErrorCard, Field, Input, PageHeader, Select, Skeleton, Switch, Textarea, cn } from '../components/ui.js';
+import { StepUpModal } from '../components/StepUpModal.js';
+import { errorMessage, isStepUpRefusal } from '../lib/multiNode.js';
 import { GithubAppsPanel } from './githubApps/GithubAppsPanel.js';
 
 const TYPES = ['github', 'gitlab', 'gitea', 'bitbucket', 'custom', 'registry'] as const;
@@ -75,6 +77,10 @@ export function Sources() {
   const [generated, setGenerated] = useState<{ publicKey: string; fingerprint: string } | null>(null);
   // F1008: last credential-test result per source card.
   const [testResults, setTestResults] = useState<Record<number, SourceTestResult>>({});
+  // Multi-node: the source whose "Allow on nodes" switch is waiting for the
+  // password re-check, and the server's refusal shown in that prompt.
+  const [allowFor, setAllowFor] = useState<{ id: number; name: string } | null>(null);
+  const [allowError, setAllowError] = useState<string | null>(null);
 
   const list = useQuery({
     queryKey: ['sources'],
@@ -140,6 +146,24 @@ export function Sources() {
     mutationFn: (id: number): Promise<SourceTestResult> => api.sources.test(id),
     onSuccess: (data, id) => setTestResults((prev) => ({ ...prev, [id]: data })),
     onError: (err: Error, id) => setTestResults((prev) => ({ ...prev, [id]: { ok: false, error: err.message } })),
+  });
+  const allowOnNodes = useMutation({
+    mutationFn: ({ id, on, password }: { id: number; on: boolean; password?: string }) =>
+      api.sources.update(id, on ? { allowOnNodes: true, ...(password ? { password } : {}) } : { allowOnNodes: false }),
+    onSuccess: (_res, { on }) => {
+      setAllowFor(null);
+      setAllowError(null);
+      qc.invalidateQueries({ queryKey: ['sources'] });
+      toast(on ? 'This credential may now be sent to nodes for clones' : 'This credential stays on the panel', 'success');
+    },
+    onError: (err, { on }) => {
+      const message = errorMessage(err, 'Could not change the setting');
+      if (on && isStepUpRefusal(err)) setAllowError(message);
+      else {
+        setAllowFor(null);
+        toast(message, 'error');
+      }
+    },
   });
   // Stable callback the JSX onClick can reference — keeps the keygen set-up
   // logic out of the JSX expression.
@@ -414,6 +438,28 @@ export function Sources() {
                   )}
                 </div>
               )}
+              {/* Multi-node (owner decision O5): opt-in per source, off by default. Absent on an older panel. */}
+              {s.allowOnNodes !== undefined && s.type !== 'registry' && s.type !== 'github_app' && (
+                <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/5 pt-3 text-[11px] text-slate-400">
+                  <span>
+                    <span className="text-slate-300">Allow on nodes</span>
+                    <span className="block text-slate-500">
+                      {s.allowOnNodes ? 'Sent to a node for each clone there.' : 'Stays on the panel: a node cannot clone with it.'}
+                    </span>
+                  </span>
+                  <Switch
+                    label={`Allow ${s.name} on nodes`}
+                    checked={s.allowOnNodes}
+                    disabled={allowOnNodes.isPending}
+                    onChange={(on) => {
+                      if (on) {
+                        setAllowError(null);
+                        setAllowFor({ id: s.id, name: s.name });
+                      } else allowOnNodes.mutate({ id: s.id, on: false });
+                    }}
+                  />
+                </div>
+              )}
               {testResults[s.id] && <TestResult result={testResults[s.id]!} />}
             </Card>
           ))}
@@ -497,6 +543,28 @@ export function Sources() {
             </div>
           )}
         </Card>
+      )}
+
+      {allowFor && (
+        <StepUpModal
+          title={`Allow "${allowFor.name}" on nodes?`}
+          confirmLabel="Allow on nodes"
+          pending={allowOnNodes.isPending}
+          error={allowError}
+          onConfirm={(password) => allowOnNodes.mutate({ id: allowFor.id, on: true, password })}
+          onClose={() => {
+            setAllowFor(null);
+            setAllowError(null);
+          }}
+          warning={
+            <p>
+              This long-lived token or deploy key is then sent, sealed, to a node for each clone it runs, and is removed when the
+              clone ends. Anyone with root on that node could read it while the clone runs. Prefer building on the panel host
+              (Service → Settings → Build placement) or a GitHub App, whose tokens are short-lived. A node owner can refuse with
+              NINEDEPLOY_AGENT_STATIC_CREDENTIALS=off.
+            </p>
+          }
+        />
       )}
 
       <ConfirmDialog

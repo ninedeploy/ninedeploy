@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import {
   Activity,
   CheckCircle2,
@@ -27,6 +27,8 @@ import { formatRelative, useCopy } from '../lib/format.js';
 import { agentDockerRunCommand } from '@ninedeploy/schemas';
 import { useAuth } from '../lib/auth.js';
 import { EnrolmentTokenCard, useEnrolmentToken } from '../components/EnrolmentTokenCard.js';
+import { ServerNodePanel, hasNodeDetails, isSwarmMember } from '../components/ServerNodePanel.js';
+import { errorCode, errorMessage } from '../lib/multiNode.js';
 
 /**
  * 0.15: what a node's agent offers terminals (`GET /v1/servers` → `terminal`).
@@ -201,7 +203,10 @@ export function Servers() {
       qc.invalidateQueries({ queryKey: ['servers'] });
       toast('Server removed', 'success');
     },
-    onError: () => toast('Could not remove the server', 'error'),
+    // Multi-node: a node that hosts databases or is in the swarm is refused
+    // (409 `server_hosts_databases` / `server_swarm_member`) even with force;
+    // the server's message says what to do first.
+    onError: (err) => toast(errorCode(err) ? errorMessage(err, 'Could not remove the server') : 'Could not remove the server', 'error'),
   });
 
   const test = useMutation({
@@ -239,6 +244,15 @@ export function Servers() {
 
   const pendingServers = list.data?.filter((s) => s.status === 'pending') ?? [];
   const registeredServers = list.data?.filter((s) => s.status !== 'pending') ?? [];
+  // Multi-node: the swarm status feeds each node's Swarm section (the opt-in
+  // line names the manager address; per-node warnings). Asked only when the
+  // panel reports Swarm fields at all, so an older panel never sees the call.
+  const swarmAware = registeredServers.some((s) => s.swarmNodeId !== undefined || s.features?.swarm !== undefined);
+  const swarm = useQuery({
+    queryKey: ['swarm'],
+    queryFn: () => api.swarm.get(),
+    enabled: isOperator && swarmAware,
+  });
 
   const masterOrigin = window.location.origin;
   // r175: one builder for every agent command (@ninedeploy/schemas).
@@ -288,7 +302,7 @@ export function Servers() {
       <PageHeader
         icon={<ServerIcon size={18} />}
         title="Servers & Cluster"
-        subtitle="Remote edge nodes with SSH auto-onboarding. Nodes serve Docker network management today — deploying a service to one is not implemented yet."
+        subtitle="Remote nodes with SSH auto-onboarding. Services, builds, volumes and databases can run on a node; each feature needs a recent enough node agent."
       />
 
       {/* Cluster Capacity Overview */}
@@ -764,7 +778,8 @@ export function Servers() {
           </thead>
           <tbody>
             {registeredServers.map((s) => (
-              <tr key={s.id} className="border-b border-white/5 last:border-0 hover:bg-white/[0.02]">
+              <Fragment key={s.id}>
+              <tr className={cn('border-b border-white/5 last:border-0 hover:bg-white/[0.02]', hasNodeDetails(s) && 'border-b-0')}>
                 <td className="px-5 py-3 font-medium text-slate-200">{s.name}</td>
                 <td className="px-5 py-3 font-mono text-xs text-slate-400">{s.host}:{s.port}</td>
                 <td className="px-5 py-3">
@@ -812,12 +827,30 @@ export function Servers() {
                     <button type="button" onClick={() => test.mutate(s.id)} className="text-xs text-slate-500 hover:text-indigo-300" title="Test connectivity">
                       test
                     </button>
-                    <button type="button" onClick={() => setPendingDelete({ id: s.id, name: s.name })} className="text-slate-600 transition hover:text-rose-400" title="Remove server">
+                    <button
+                      type="button"
+                      onClick={() => setPendingDelete({ id: s.id, name: s.name })}
+                      disabled={isSwarmMember(s)}
+                      className="text-slate-600 transition hover:text-rose-400 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-slate-600"
+                      title={isSwarmMember(s) ? 'In the swarm: make it leave first' : 'Remove server'}
+                    >
                       <Trash2 size={14} />
                     </button>
                   </div>
                 </td>
               </tr>
+              {hasNodeDetails(s) && (
+                <tr className="border-b border-white/5 last:border-0">
+                  <td colSpan={5} className="px-5 pb-4 pt-1">
+                    <ServerNodePanel
+                      server={s}
+                      managerAddr={swarm.data?.managerAddr}
+                      swarmWarnings={swarm.data?.nodes.find((n) => n.serverId === s.id)?.warnings}
+                    />
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
             </tbody>
           </table>

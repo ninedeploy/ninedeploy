@@ -9,6 +9,7 @@ import { Button, Card, ConfirmDialog, EmptyState, ErrorCard, PageHeader, Skeleto
 import { useCopy } from '../lib/format.js';
 import { StorageGauge } from '../components/StorageGauge.js';
 import { DatabaseWizard } from '../components/DatabaseWizard.js';
+import { NodeDatabaseBadge } from '../components/NodeDatabaseBadge.js';
 
 const ENGINE_LABEL: Record<string, string> = {
   postgres: 'PostgreSQL',
@@ -124,6 +125,9 @@ export function Databases() {
                       )}
                     </div>
                     <div className="font-mono text-[11px] text-slate-500">{ENGINE_LABEL[d.engine] ?? d.engine}{d.version ? ` ${d.version}` : ''}</div>
+                    <div className="mt-1 empty:hidden">
+                      <NodeDatabaseBadge db={d} />
+                    </div>
                   </div>
                 </div>
                 <StatusBadge status={d.status} />
