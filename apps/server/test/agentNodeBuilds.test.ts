@@ -133,8 +133,10 @@ describe('build.railpack', () => {
   it('prepares a plan, then builds through the node daemon’s BuildKit with the pinned frontend; values only as BuildKit secrets', async () => {
     const env = { PATH: '/evil', DATABASE_URL: 'postgres://u:pw@db/x', RAILPACK_NODE_VERSION: '22' };
     await runOp('build.railpack', railpack({ env }), () => undefined, SEALED);
-    expect(calls()).toHaveLength(2);
-    const [prepExe, prepArgv, , prepOpts] = calls()[0]!;
+    expect(calls()).toHaveLength(3);
+    // F1016: the daemon's image store is asked first (an empty answer decides nothing).
+    expect(calls()[0]!.slice(0, 2)).toEqual(['docker', ['info', '--format', '{{.Driver}} {{json .DriverStatus}}']]);
+    const [prepExe, prepArgv, , prepOpts] = calls()[1]!;
     expect(prepExe).toBe('railpack');
     expect(prepArgv).toEqual([
       'prepare', '.', '--plan-out', '.nd-railpack/plan.json', '--info-out', '.nd-railpack/info.json',
@@ -142,7 +144,7 @@ describe('build.railpack', () => {
     ]);
     expect(prepOpts).toMatchObject({ cwd: ws() });
     expect(prepOpts?.env).toBeUndefined();
-    const [exe, argv, , opts] = calls()[1]!;
+    const [exe, argv, , opts] = calls()[2]!;
     expect(exe).toBe('docker');
     expect(argv.slice(0, 7)).toEqual(['buildx', 'build', '--load', '--progress', 'plain', '-t', 'ninedeploy/web:abc1234']);
     expect(argv).toContain(`BUILDKIT_SYNTAX=${builds.RAILPACK_FRONTEND_IMAGE}`);
@@ -157,11 +159,12 @@ describe('build.railpack', () => {
   });
 
   it('a failed prepare stops before the build; the scratch directory is removed on failure too', async () => {
-    spawnMock.mockResolvedValueOnce(2);
+    // The first call is F1016's `docker info` (answering nothing decides nothing).
+    spawnMock.mockResolvedValueOnce(0).mockResolvedValueOnce(2);
     expect(await runOp('build.railpack', railpack(), () => undefined)).toBe(2);
-    expect(calls()).toHaveLength(1);
+    expect(calls()).toHaveLength(2);
     expect(existsSync(join(ws(), '.nd-railpack'))).toBe(false);
-    spawnMock.mockResolvedValueOnce(0).mockRejectedValueOnce(new Error('boom'));
+    spawnMock.mockResolvedValueOnce(0).mockResolvedValueOnce(0).mockRejectedValueOnce(new Error('boom'));
     await expect(runOp('build.railpack', railpack(), () => undefined)).rejects.toThrow('boom');
     expect(existsSync(join(ws(), '.nd-railpack'))).toBe(false);
   });
@@ -178,6 +181,62 @@ describe('build.railpack', () => {
   it('is sealed only with env, like build.nixpacks', async () => {
     await expect(runOp('build.railpack', railpack({ env: { A: '1' } }), () => undefined)).rejects.toThrow(/over the unencrypted transport/);
     expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  // F1016 (smoke run 3): Railpack's frontend needs BuildKit's mergeop, which Docker's
+  // built-in BuildKit enables only with the containerd image store. A classic-store
+  // daemon used to fail deep in the build with "mergeop has been disabled"; it is now
+  // refused before a plan is made, with the fixes named.
+  describe('the containerd image store (F1016)', () => {
+    const answering = (line: string | null, code = 0) =>
+      spawnMock.mockImplementation(async (...args: unknown[]) => {
+        const [exe, argv, onLine] = args as [string, string[], (l: string) => void];
+        if (exe === 'docker' && argv[0] === 'info') {
+          if (line !== null) onLine(line);
+          return code;
+        }
+        return 0;
+      });
+
+    it('refuses a classic-store daemon before railpack runs, naming the three fixes', async () => {
+      answering('overlay2 [["Backing Filesystem","extfs"],["Supports d_type","true"]]');
+      const lines: string[] = [];
+      expect(await runOp('build.railpack', railpack(), (l) => lines.push(l))).toBe(1);
+      expect(calls().map(([exe, argv]) => `${exe} ${argv[0]}`)).toEqual(['docker info']);
+      const text = lines.join('\n');
+      expect(text).toContain('"features": {"containerd-snapshotter": true}');
+      expect(text).toContain('NINEDEPLOY_AGENT_BUILDKIT_HOST');
+      expect(text).toContain('Build on: panel');
+      expect(text).toContain('storage driver overlay2');
+    });
+
+    it('builds as before on the containerd store, or when the answer cannot be read', async () => {
+      for (const [line, code] of [
+        ['overlayfs [["driver-type","io.containerd.snapshotter.v1"]]', 0],
+        ['overlay2 null', 0],
+        ['garbage', 0],
+        [null, 1],
+      ] as Array<[string | null, number]>) {
+        spawnMock.mockReset();
+        answering(line, code);
+        expect(await runOp('build.railpack', railpack(), () => undefined), String(line)).toBe(0);
+        expect(calls().map(([exe, argv]) => `${exe} ${argv[0]}`)).toEqual(['docker info', 'railpack prepare', 'docker buildx']);
+      }
+    });
+
+    it('does not ask the daemon when the operator’s own BuildKit builds (NINEDEPLOY_AGENT_BUILDKIT_HOST)', async () => {
+      answering('overlay2 []');
+      expect(await builds.railpackBuildOp(railpack(), () => undefined, { NINEDEPLOY_AGENT_BUILDKIT_HOST: 'tcp://buildkit:1234' })).toBe(0);
+      expect(calls().map(([exe, argv]) => `${exe} ${argv[0]}`)).toEqual(['railpack build']);
+    });
+
+    it('daemonImageStore reads the driver-type pair only', () => {
+      expect(builds.daemonImageStore(['overlayfs [["driver-type","io.containerd.snapshotter.v1"]]'])).toEqual({ store: 'containerd', driver: 'overlayfs' });
+      expect(builds.daemonImageStore(['overlay2 [["Backing Filesystem","extfs"]]'])).toEqual({ store: 'classic', driver: 'overlay2' });
+      expect(builds.daemonImageStore(['vfs []'])).toEqual({ store: 'classic', driver: 'vfs' });
+      expect(builds.daemonImageStore(['overlay2 null'])).toBeNull();
+      expect(builds.daemonImageStore([])).toBeNull();
+    });
   });
 });
 

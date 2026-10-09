@@ -201,9 +201,65 @@ export function agentBuildkitHost(env: NodeJS.ProcessEnv = process.env): string 
 const isRailpackConfig = (key: string): boolean => key.startsWith('RAILPACK_');
 
 /**
+ * F1016: what `docker info` reports in `DriverStatus` (`driver-type`) when the
+ * daemon uses the containerd image store. Railpack's frontend needs BuildKit's
+ * mergeop, which Docker's built-in BuildKit enables only with that store.
+ */
+export const CONTAINERD_SNAPSHOTTER = 'io.containerd.snapshotter.v1';
+const DOCKER_INFO_TIMEOUT_MS = 60_000;
+
+/**
+ * The daemon's image store from `docker info --format '{{.Driver}} {{json .DriverStatus}}'`:
+ * `containerd` when a `driver-type` pair names the containerd snapshotter,
+ * `classic` when the status is a list without one, null when the answer
+ * cannot be read (then nothing is decided).
+ */
+export function daemonImageStore(lines: readonly string[]): { store: 'containerd' | 'classic'; driver: string } | null {
+  for (const line of lines) {
+    const m = /^(\S*) (\[.*\])\s*$/.exec(line.trim());
+    if (!m) continue;
+    let status: unknown;
+    try {
+      status = JSON.parse(m[2] as string);
+    } catch {
+      return null;
+    }
+    if (!Array.isArray(status)) return null;
+    const containerd = status.some((pair) => Array.isArray(pair) && pair[0] === 'driver-type' && pair[1] === CONTAINERD_SNAPSHOTTER);
+    return { store: containerd ? 'containerd' : 'classic', driver: m[1] as string };
+  }
+  return null;
+}
+
+/** F1016: why the node daemon's built-in BuildKit cannot run Railpack's frontend, as log lines, or null. */
+export function railpackClassicStoreRefusal(driver: string): string[] {
+  return [
+    `✗ Railpack builds on this node need Docker's containerd image store, and this daemon uses the classic one (storage driver ${driver || 'unknown'}): its built-in BuildKit refuses the merge operations Railpack's frontend uses.`,
+    '  Fix it on the node, one of:',
+    '  - enable the containerd image store: add "features": {"containerd-snapshotter": true} to /etc/docker/daemon.json and restart Docker. Images and containers of the classic store are hidden while it is on, so plan this like a migration;',
+    '  - or set NINEDEPLOY_AGENT_BUILDKIT_HOST on the agent to a BuildKit daemon (for example tcp://buildkitd:1234) and restart the agent;',
+    '  - or build this service elsewhere: Service → Settings → Build → Build on: panel, or a build server whose Docker uses the containerd image store.',
+  ];
+}
+
+/** F1016: ask the node daemon which image store it uses; null when it cannot say. */
+async function nodeImageStore(): Promise<{ store: 'containerd' | 'classic'; driver: string } | null> {
+  const lines: string[] = [];
+  try {
+    const code = await spawnValidated('docker', ['info', '--format', '{{.Driver}} {{json .DriverStatus}}'], (l) => lines.push(l), {
+      timeoutMs: DOCKER_INFO_TIMEOUT_MS,
+    });
+    return code === 0 ? daemonImageStore(lines) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * `build.railpack {workspace, baseDir, tag, env?}`. Without
  * `NINEDEPLOY_AGENT_BUILDKIT_HOST` (the default) it uses the node daemon's
  * built-in BuildKit through Railpack's frontend:
+ *   0. `docker info`: a daemon on the classic image store is refused with the fix (F1016);
  *   1. `railpack prepare <baseDir> --plan-out .nd-railpack/plan.json --info-out .nd-railpack/info.json [--env K=…]`
  *   2. `docker buildx build --load -t <tag> --build-arg BUILDKIT_SYNTAX=<frontend> -f .nd-railpack/plan.json
  *       [--secret id=K,env=ND_RAILPACK_SECRET_n …] <baseDir>`, the values in the child's environment only.
@@ -225,6 +281,15 @@ export async function railpackBuildOp(params: Params, onLine: (line: string) => 
       timeoutMs,
       env: { BUILDKIT_HOST: buildkit },
     });
+  }
+
+  // F1016: the frontend path needs the containerd image store; a classic-store
+  // daemon is refused before a plan is made or a frontend pulled. An answer
+  // that cannot be read decides nothing: the build runs as before.
+  const daemon = await nodeImageStore();
+  if (daemon?.store === 'classic') {
+    for (const line of railpackClassicStoreRefusal(daemon.driver)) out(line);
+    return 1;
   }
 
   assertPath(dir, `${RAILPACK_WORK_DIR}/plan.json`, 'railpack plan');
