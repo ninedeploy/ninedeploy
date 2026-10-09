@@ -10,7 +10,7 @@ the databases, certificates, secrets, backups and access rules around it — fro
 terminal CLI, a typed SDK, or an AI agent over MCP.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Release](https://img.shields.io/badge/Release-0.15.4-blue.svg)](./CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Release-0.15.5-blue.svg)](./CHANGELOG.md)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522.13-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7-blue.svg)](https://www.typescriptlang.org)
 [![Docker](https://img.shields.io/badge/Docker-required-blue.svg)](https://docker.com)
@@ -70,12 +70,12 @@ runs the SQLite migrations, and starts a hardened `systemd` unit (`ProtectSystem
 Re-running the same command is the upgrade path; it snapshots `.data` before touching anything.
 
 ```bash
-./install.sh --version v0.15.4     # pin an exact tag
+./install.sh --version v0.15.5     # pin an exact tag
 ./install.sh --channel main       # track edge
 ./install.sh --force              # discard local edits + stale build artifacts, then rebuild
 ```
 
-> **Where `main` stands:** the default channel installs the newest release tag (**0.15.4**).
+> **Where `main` stands:** the default channel installs the newest release tag (**0.15.5**).
 > The newest work (doctor mode, retained-volume re-keying) lands on `main` before it is tagged —
 > see [`CHANGELOG.md`](./CHANGELOG.md) under *Unreleased*, or run `--channel main` to get it today.
 
@@ -387,9 +387,16 @@ Watch paths, `[skip ci]` handling, cancellation and PR previews: [**docs/DEPLOYM
   while the previous revision is still serving, so a broken `${VAR}` or a bad tag fails the deploy
   without ever tearing the live stack down. The platform restart policy is applied afterwards,
   because a compose file with no `restart:` leaves every container dead after a reboot.
-- PM2 and Nixpacks (Dockerfile-less) builds on a node are **refused at queue time** with a reason
-  naming the missing capability — the node agent has no operation for them, and a container on the
-  wrong host is worse than a deployment you can read. See *Known limits*.
+- **Nodes match the panel host** (0.15.2–0.15.4, each feature behind a capability the node's agent
+  advertises): Nixpacks and Railpack builds, private clones with a PAT or deploy key (opt-in per
+  source), volume attachments with backups over an encrypted stream, managed databases with backups
+  and restores, builds on the panel or a dedicated build server with the image shipped and verified,
+  and Docker Swarm, opt-in on the panel and on each node. A node whose agent is too old answers
+  `422 node_agent_outdated` naming the version to install, and nothing else changes. See
+  [MULTI_NODE.md](./docs/MULTI_NODE.md).
+- PM2 services on a node are **refused at queue time** with a reason — the node agent has no
+  operation for them, and a container on the wrong host is worse than a deployment you can read.
+  See *Known limits*.
 
 ### Observability
 
@@ -627,6 +634,7 @@ build, and the integration job.
 | [Deployments & pipelines](./docs/DEPLOYMENTS.md) | Blue-green, cancellation, watch paths, PR preview environments |
 | [Workspaces & RBAC](./docs/WORKSPACES_RBAC.md) | Tenancy, invitations, the role matrix, the instance-operator flag, project and environment access grants |
 | [Terminals](./docs/TERMINALS.md) | Container, database, node and host shells, the protocol, limits, host-shell gates, audit |
+| [Remote nodes](./docs/MULTI_NODE.md) | Enrolment, agent updates, the capability table, builds and private clones on nodes, build placement and image transfer, node volumes and databases, Swarm ports, troubleshooting |
 | [Security & SSO](./docs/SECURITY_SSO.md) | Vault design, OIDC, passkeys, TOTP, session handling |
 | [Databases & backups](./docs/DATABASES_BACKUPS.md) | Engines, injected connection strings, encryption, S3 destinations, restores, dump import |
 | [Ingress & tunnels](./docs/TRAEFIK_INGRESS.md) | Dynamic routing, ACME HTTP-01/DNS-01, middlewares, Cloudflare Tunnels, custom config, uploaded certificates, public database access, traffic analytics |
@@ -650,12 +658,12 @@ Stated plainly, because finding these out during an incident is worse than readi
   `agent.ping` cannot pass connection tests. There is still no TLS on the transport itself, so keep
   worker nodes on a private network or VPN.
 - **Remote deployments cover `docker` and `compose` services.** PM2 (a host process with no agent
-  operation) and Nixpacks source builds (no nixpacks on the node) are refused with a reason rather
-  than silently run on the panel host. Add a Dockerfile, or clear the target server, to deploy
-  those here. A node also refuses a `docker` service whose container needs a template command, the
-  Docker socket or attached volumes, a service whose repository the node would have to clone with a
-  Git credential (the node clones anonymously), and a service backed by a panel-managed database
-  (that hostname only resolves on the panel host).
+  operation) is refused with a reason rather than silently run on the panel host. A node also
+  refuses deploy hooks (they run on the panel host), the static build pack (build it on the panel
+  instead), a database on another host than the service, and, until its agent is updated, every
+  feature its agent predates (`422 node_agent_outdated`). A PAT or deploy key reaches a node only
+  when its source allows it; otherwise build on the panel. Node databases have no Studio, PgBouncer
+  or public access yet. See [MULTI_NODE.md](./docs/MULTI_NODE.md).
 - **Remote health is container state, not an HTTP probe.** The panel sits outside the node's Docker
   network, and publishing a host port purely to be probed would expose every remote service on the
   node's public interface. A remote `docker` deploy is healthy when the container reaches — and

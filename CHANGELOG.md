@@ -9,6 +9,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.5] - 2026-10-10
+
+> Remote nodes, part 4: every multi-node feature is now in the web panel, the CLI, the SDK and MCP. The whole series is verified on two real Docker hosts.
+
+### Upgrade notes
+
+- No migration (0072 from 0.15.2 already has every column this release uses).
+- **Update node agents to v0.15.5** to get the clone fixes and the Railpack check below. Everything else in this release is on the panel and works with the agent versions that 0.15.2–0.15.4 required.
+- **A successful "Test connection" on a node now refreshes what the panel knows about its agent at once.** Before, it took up to 5 minutes after an agent update.
+- Rolling back to 0.15.4 is supported; this release adds no data the older release cannot read. `docs/ROLLBACK.md` now has one consolidated multi-node runbook for rolling back to 0.15.3, 0.15.2 or 0.15.1.
+- **Verified before release:**
+  - in-place upgrades from 0.15.4 and from 0.10.45, and a rehearsed rollback to 0.15.4;
+  - the new two-host smoke: a fresh install, an upgrade from 0.15.1 with an old agent and then an updated one, a rollback to 0.15.1 with the new agent left running, and Nixpacks and Railpack builds on the node.
+
+### Added
+
+- **Web panel:**
+  - **Servers:** each node shows its agent version and features, with an "update the agent" hint naming what is missing. It also has a build-server toggle with concurrency, Swarm join and leave (with the node opt-in hint), and its hosted database count.
+  - **Service → Settings:** build placement (where it runs, the panel, or a build server), a push registry, image-transfer history, an "Orchestrator: Swarm" switch with the server's refusal shown inline, and Swarm tasks.
+  - **Databases:** choose the host when creating one. Node databases show a node badge and their reachability. Studio, PgBouncer and public access are disabled on them, with the reason.
+  - **Volumes:** a host switcher. **Sources:** "Allow on nodes", behind a password re-check.
+  - **Settings → Swarm:** init, enable, the node list and the firewall guide.
+  - **Deploy wizard:** operators can deploy a new docker or compose service to a node again. Nodes that cannot run it are disabled with the reason.
+  - Seven new help topics.
+- **CLI:**
+  - `servers list|roles`;
+  - `services placement|transfers|swarm`;
+  - `swarm status|init|enable|disable|join|leave`;
+  - `volumes create` and `--server` on volume commands;
+  - `databases create --server`;
+  - `sources allow-on-nodes`.
+
+  Step-up actions prompt for your password.
+- **SDK:** placement, image transfers, Swarm, server roles, node volumes and `allowOnNodes`. Existing signatures are unchanged and new response fields are optional.
+- **MCP:** read-only `get_service_placement`, `list_image_transfers`, `get_service_swarm` and `get_swarm_status` (operator).
+- **API:** `GET /v1/services/:id` includes `placement`. `GET /v1/servers` includes `swarmNodeId` and `swarmRole`. The OpenAPI document describes the node fields, and the schema lists every Swarm and placement error code.
+- **Docs:** a new `docs/MULTI_NODE.md`. It covers enrolment, agent updates, a capability table with each feature's minimum agent version, node switch and refusal, build placement, private clones, node volumes and databases, and the Swarm firewall ports. `.env.example` documents every node-agent switch.
+- **Smoke:** `scripts/smoke-multinode.mjs` (`pnpm smoke:multinode`) runs a panel and a node agent on two Docker hosts, in fresh, upgrade and rollback modes. `--with-builds` adds Nixpacks and Railpack on the node.
+
+### Fixed
+
+- A labelled volume attached to a node service was also created on the panel host.
+- Attaching an existing volume by name to a node service checked the panel host. A volume that existed only on the node was refused, and a panel-host volume with the same name was accepted.
+- **Node clones from git servers without shallow-clone support** (plain HTTP hosting, some self-hosted servers) failed, while the panel's own clone worked. The agent now retries once with a full clone or fetch. Needs agent v0.15.5.
+- Every node deploy printed "network with name ninedeploy already exists".
+- **Railpack on a node whose Docker uses the classic image store** now stops before building, with the fix in the deploy log: turn on the containerd image store, set `NINEDEPLOY_AGENT_BUILDKIT_HOST`, or build on the panel or a build server. Before, it failed inside BuildKit with "mergeop has been disabled". Needs agent v0.15.5.
+- **Rollback runbook:** the Swarm clean-up now disconnects Traefik before removing a service's overlay network.
+
 ## [0.15.4] - 2026-10-09
 
 > Remote nodes, part 3: Docker Swarm as an opt-in orchestrator. Nothing changes until an operator turns it on.

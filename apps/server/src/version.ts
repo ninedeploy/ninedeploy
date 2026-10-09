@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.15.4';
+export const VERSION = '0.15.5';
 
 export interface ChangelogEntry {
   version: string;
@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.15.5',
+    date: '2026-10-10',
+    title: 'Remote Nodes: Panel, CLI and SDK',
+    changes: [
+      'Remote nodes, part 4: every multi-node feature is now in the web panel, the CLI, the SDK and MCP, and the deploy wizard can target a node again.',
+      'Fixed: node volumes attached by label or name now live only on the node, node clones fall back to a full clone on git servers without shallow support (agent v0.15.5), and Test connection refreshes a node\'s agent features at once.',
+      'New docs/MULTI_NODE.md and a two-host smoke. Rolling back to 0.15.4 is supported.',
+    ],
+  },
   {
     version: '0.15.4',
     date: '2026-10-09',
