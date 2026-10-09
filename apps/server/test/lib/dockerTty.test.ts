@@ -105,8 +105,23 @@ async function fakeDaemon(): Promise<FakeDaemon> {
     sockets.add(s);
     s.on('close', () => sockets.delete(s));
   });
-  server.on('upgrade', (req: http.IncomingMessage, socket: Socket, head: Buffer) => {
-    const body = head.length ? JSON.parse(head.toString()) : undefined;
+  server.on('upgrade', async (req: http.IncomingMessage, socket: Socket, head: Buffer) => {
+    // `head` holds only the bytes that arrived with the headers; on a slow
+    // runner the body comes in a later packet, so read up to Content-Length.
+    const want = Number(req.headers['content-length'] ?? 0);
+    let raw = head;
+    while (raw.length < want) {
+      const more = await new Promise<Buffer | null>((resolve) => {
+        socket.once('data', (c: Buffer) => resolve(c));
+        socket.once('end', () => resolve(null));
+      });
+      if (!more) break;
+      raw = Buffer.concat([raw, more]);
+    }
+    const bodyBytes = want > 0 ? raw.subarray(0, want) : raw;
+    const rest = want > 0 ? raw.subarray(want) : Buffer.alloc(0);
+    if (rest.length) socket.unshift(rest);
+    const body = bodyBytes.length ? JSON.parse(bodyBytes.toString()) : undefined;
     const entry = { method: req.method ?? '', url: req.url ?? '', body, headers: req.headers };
     seen.push(entry);
     const up = upgrades.find((u) => u.pattern.test(entry.url));
