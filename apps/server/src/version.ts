@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.15.2';
+export const VERSION = '0.15.3';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.15.3',
+    date: '2026-10-09',
+    title: 'Remote Nodes: Build Server and Databases',
+    changes: [
+      'Remote nodes, part 2: build a service on the panel or on a build server and ship the image to its node, and run managed databases on a node with backups, restore, import and a shell. Update node agents to v0.15.3 for databases.',
+      'Fixed: databases attached by hand are now connected to their service\'s network on the next deploy, and a second PgBouncer no longer fails on port 6432. Rolling back to 0.15.2 is supported.',
+    ],
+  },
+{
     version: '0.15.2',
     date: '2026-10-09',
     title: 'Remote Nodes: Builds, Clones and Volumes',

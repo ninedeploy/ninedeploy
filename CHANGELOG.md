@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.3] - 2026-10-09
+
+> Remote nodes, part 2: a build server, image transfer between hosts, and managed databases on nodes. Single-host installs keep working as before, apart from the two fixes below.
+
+### Upgrade notes
+
+- No migration (0072 from 0.15.2 already holds every column this release uses).
+- **Managed databases on nodes need node agent v0.15.3.** Building on the panel or a build server and shipping the image needs v0.15.2. Re-run a node's bootstrap from the Servers page to update it. Older agents keep working as before, and anything new is refused with "update the node agent".
+- **Two fixes reach existing services on their next deploy:**
+  - **Attached databases are now connected to their service's network.** Previously only databases added through a template were, so a database attached any other way could not be reached by name from the app.
+  - **PgBouncer:** a second sidecar no longer fails on port 6432. From the next time PgBouncer is enabled, only a non-default port is published on the host; running sidecars keep their binding until they are re-enabled.
+- **Fan-out (copies of a service on other nodes):**
+  - Copies of a Nixpacks, Railpack or static service now receive the primary's image instead of being rebuilt from a Dockerfile.
+  - A copy that needs a command override, the Docker socket or volumes now needs node agent v0.15.2. Before, it started without them.
+  - Deploy hooks still run on the primary only, and the deploy log now says so for each copy.
+- Attaching a panel-host database to a service on a node now answers 409 instead of creating an attachment that could never deploy.
+- **Rolling back to 0.15.2 is supported.** A database placed on a node keeps running on its node. 0.15.2 cannot manage it, refuses every action on it, and never starts a copy on the panel host.
+- Verified before release: in-place upgrades from 0.15.2 and from 0.10.45, and a rehearsed rollback to 0.15.2. Panel-host databases send byte-identical Docker commands to v0.15.0 for 151 operations across all nine engines.
+
+### Added
+
+- **Build placement.** A service can build where it runs (the default, unchanged), on the panel, or on a build server, and then ship the image to its node. Building on the panel keeps private-repository credentials off your nodes.
+  - **Image transfer:** by default the image goes through the panel over the sealed agent channel, checked end to end. A service can push and pull through a registry instead (operators bind the registry).
+  - **Failures:** a failed build or transfer fails the deploy before anything switches over, so the running version keeps serving.
+  - **Build servers:** mark a node as a build server and set how many builds it runs at once. Transfers are listed per service and per deployment.
+- **Managed databases on nodes.** Operators can place a new database on a node. It runs on its own network, and services on the same node can attach to it.
+  - **What works there:** start, stop, restart, limits, logs, credentials, backups and backup schedules, restore, dump import and the database shell.
+  - **Refused for now:** Studio, PgBouncer, public access, connections across hosts, and moving a database between hosts.
+  - **Server deletion:** a server that hosts databases cannot be deleted.
+
+### Fixed
+
+- Databases attached by hand were never connected to their service's network.
+- A second PgBouncer sidecar failed because every sidecar published port 6432.
+- Fan-out copies silently dropped a service's command override, Docker socket and volumes.
+- Fan-out rebuilt Nixpacks, Railpack and static services from a Dockerfile.
+
 ## [0.15.2] - 2026-10-09
 
 > Remote nodes, part 1: builds, private clones and volumes on nodes. Everything new is off until a node runs the updated agent; nothing changes for single-host installs.
