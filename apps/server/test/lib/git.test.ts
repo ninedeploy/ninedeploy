@@ -174,6 +174,30 @@ describe('checkoutCommit — fresh clone', () => {
     expect(sink).toHaveBeenCalledWith('Cloning git@github.com:org/repo.git (SSH deploy key) …');
   });
 
+  // ── 0.15.4 deploy-key host keys ──
+  it('checks host keys against a per-checkout known_hosts that does not outlive the job', async () => {
+    const dir = gitDir('fresh-key-hostkeys');
+    const keyFile = path.join(path.dirname(dir), `${path.basename(dir)}.sshkey`);
+    const knownHosts = `${keyFile}.known_hosts`;
+    gitState.simpleGit.mockImplementation(() => {
+      const g = makeGit();
+      // ssh records the host key on first connect (accept-new).
+      g.clone.mockImplementation(async () => {
+        writeFileSync(knownHosts, 'github.com ssh-ed25519 AAAA\n');
+      });
+      return g;
+    });
+    await checkoutCommit('https://github.com/org/repo', 'main', undefined, dir, vi.fn(), { deployKey: 'k' });
+
+    const bare = gitState.simpleGit.mock.results[0]!.value;
+    const opt = bare.clone.mock.calls[0]![2][1] as string;
+    expect(opt).toContain('-o StrictHostKeyChecking=accept-new');
+    expect(opt).toContain(`-o UserKnownHostsFile="${knownHosts}"`);
+    expect(opt).not.toContain('StrictHostKeyChecking=no');
+    expect(opt).not.toContain('/dev/null');
+    expect(existsSync(knownHosts)).toBe(false);
+  });
+
   it('leaves a non-convertible url untouched when using a deploy key', async () => {
     const dir = gitDir('fresh-key-ftp');
     await checkoutCommit('ftp://example.com/repo', 'main', undefined, dir, vi.fn(), {

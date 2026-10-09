@@ -241,7 +241,15 @@ export async function checkoutCommit(
     mkdirSync(path.dirname(keyFile), { recursive: true });
     writeFileSync(keyFile, creds!.deployKey!, { mode: 0o600 });
   };
-  const sshCommand = `ssh -i "${keyFile}" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null`;
+  // Host keys: accept-new against this checkout's own known_hosts, removed
+  // with the key below — the same policy as node clones
+  // (agentOps/gitCredential.ts). It used to be `StrictHostKeyChecking=no` +
+  // `/dev/null`, which accepted any key on every connection; now a key that
+  // changes between the clone and its submodule fetches is refused. The file
+  // does not outlive the job, so a legitimately rotated host key never blocks
+  // the next deploy (there is no operator surface to reset a pinned key).
+  const knownHostsFile = `${keyFile}.known_hosts`;
+  const sshCommand = `ssh -i "${keyFile}" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="${knownHostsFile}"`;
 
   let git: SimpleGit | undefined;
   try {
@@ -347,6 +355,7 @@ export async function checkoutCommit(
     }
     if (creds?.deployKey) {
       rmSync(keyFile, { force: true });
+      rmSync(knownHostsFile, { force: true });
     }
   }
 }
