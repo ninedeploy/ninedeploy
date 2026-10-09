@@ -9,6 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-09
+
+> Operations and API: browser and CLI terminals with a real TTY (also on remote nodes), opt-in traffic analytics, an OpenAPI 3.1 document for every route with generated MCP tools, and project- and environment-level access grants. See [docs/TERMINALS.md](docs/TERMINALS.md), [docs/TRAEFIK_INGRESS.md](docs/TRAEFIK_INGRESS.md), [docs/WORKSPACES_RBAC.md](docs/WORKSPACES_RBAC.md) and [docs/AI_MCP_CLI.md](docs/AI_MCP_CLI.md).
+
+### Upgrade notes
+
+- One additive migration, `0071_operations_api`: three new tables (`terminal_sessions`, `traffic_rollups`, `access_grants`). No existing row is changed.
+- **Traefik is not touched by the upgrade.** Traffic analytics is off by default, and with it off Traefik's configuration is byte-identical to 0.14. Turning analytics on recreates Traefik once. On the json-file/local Docker log drivers, Traefik's own container log starts rotating (20 MB × 3) the next time the proxy is recreated for any reason.
+- **Permissions are unchanged.** With no access grants, every access decision is identical to 0.14 (checked over 4839 caller × resource × action cases). Grants only ever raise access.
+- **Terminals:** container shells are available to operators. Host shells (a root shell on the panel host or a node) are off until an operator enables them under Settings → Security, and each one needs a browser session and a password re-check. `NINEDEPLOY_HOST_TERMINAL=off` forbids them on the panel; `NINEDEPLOY_AGENT_HOST_TERMINAL=off` forbids them on a node.
+- **Node terminals need node agent v0.15.0** (re-run the node's bootstrap from the Servers page). Older agents get a clear "update the agent" refusal; nothing else about them changes.
+- **The web terminal in Docker installs gets a real TTY.** The runtime image never had python3, so the old shell always ran in pipe mode.
+- WebSocket frames are capped at 1 MiB.
+- **Rolling back to 0.14 is supported;** see [docs/ROLLBACK.md](docs/ROLLBACK.md). The new tables are ignored, so guests and raised roles lose their grant access (never the reverse). If analytics was on, 0.14 recreates Traefik without the access log; `<data>/traffic-logs` is left behind.
+- Verified before release:
+  - in-place upgrades from 0.14.0 and from 0.10.45, with every new feature exercised against a real Traefik and Docker;
+  - an upgrade that leaves Traefik untouched;
+  - a rehearsed rollback to 0.14.0.
+
+### Added
+
+- **Terminals.** Shells into services, databases and managed containers, on the panel host and on remote nodes.
+  - A real TTY with resize, short-lived single-use tickets, idle and maximum-duration limits, and per-panel and per-user caps.
+  - Every session is recorded (who, target, duration, bytes, IP) and audited at start and end. Operators can list and terminate sessions. Nothing typed or printed is stored.
+  - Node sessions run over an encrypted, authenticated agent channel.
+  - Available in the panel, as `ninedeploy terminal <service|db|container|host>` and through the SDK's `connectTerminal`.
+- **Traffic analytics (opt-in).** Requests, status classes and latency per domain and service, read from a Traefik access log that keeps no client IP, path, query or headers. Rolled up per minute (48 h) and per hour (30 days by default). Turn it on and see the instance summary on the Traefik page; each service's Overview shows its own chart.
+- **OpenAPI 3.1.** `GET /v1/openapi.json` (sign-in required) describes every route (435 operations), built from the same zod contracts the server validates with. A test fails if a route has no description or its access level disagrees with the authorization matrix.
+- **MCP.** The server gains `search_api` and 16 read-only tools generated from the spec, including traffic summaries, access grants and terminal sessions. There are still no write tools.
+- **Access grants.** A workspace admin can raise a user's role on one project, one environment, or a project+environment pair. A grant can also give a user without a workspace seat (a guest) access to just those resources.
+  - Guests never get workspace-level rights and cannot create services or databases.
+  - A grant only covers services in its own workspace.
+  - Grants can be suspended and reinstated. An IdP (SCIM) suspension can only be lifted by the IdP.
+  - Manage them in the Workspaces page and a project's Access view, with `ninedeploy access grants …`, or at `/v1/workspaces/:wid/access-grants`.
+- **SDK and CLI:** `terminals`, `traffic`, `accessGrants`, `access` and `api.get`; `ninedeploy terminal|terminals|traffic|access`.
+
+### Fixed
+
+- The web terminal in Docker installs ran without a TTY (no python3 in the runtime image).
+- The old service shell socket recorded only a start audit entry. It now records the session's end, duration and client too, and operators can terminate it.
+- Terminal resize was never sent to the server.
+- WebSocket frames up to 100 MiB were buffered before authentication. They are now capped at 1 MiB, and a plain subprotocol is preferred over echoing the bearer token.
+- Eight places read a workspace seat directly instead of going through the access check. They now share one access path.
+
 ## [0.14.0] - 2026-10-08
 
 > Network and data access: public database access, editable Traefik configuration with your own certificates, database dump import, and HashiCorp Vault / OpenBao and AWS Secrets Manager. See [docs/TRAEFIK_INGRESS.md](docs/TRAEFIK_INGRESS.md), [docs/DATABASES_BACKUPS.md](docs/DATABASES_BACKUPS.md) and [docs/SECRET_MANAGERS.md](docs/SECRET_MANAGERS.md).

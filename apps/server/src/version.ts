@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.14.0';
+export const VERSION = '0.15.0';
 
 export interface ChangelogEntry {
   version: string;
@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.15.0',
+    date: '2026-10-09',
+    title: 'Operations and API',
+    changes: [
+      'Terminals: open a shell into a service, database or container from the panel or with `ninedeploy terminal`, with a real TTY (also in Docker installs, where the old shell had none) and on remote nodes running agent v0.15.0. Every session is recorded and audited; host shells stay off until an operator enables them, with a password re-check each time.',
+      'Traffic analytics (opt-in, Traefik page): requests, status codes and latency per domain and service, from an access log that keeps no client IP, path or headers. Upgrading does not touch Traefik; turning analytics on restarts it once.',
+      'Access grants: give a user a higher role on one project or environment, or give someone without a workspace seat access to just those resources (Workspaces page, project Access). Grants only ever add access; with none, every permission is exactly as before.',
+      'The API is described by an OpenAPI 3.1 document at /v1/openapi.json (sign-in required), and the MCP server gains search_api plus read-only tools generated from it. One additive migration; rolling back to 0.14 is supported (see docs/ROLLBACK.md).',
+    ],
+  },
+{
     version: '0.14.0',
     date: '2026-10-08',
     title: 'Network and Data Access',
