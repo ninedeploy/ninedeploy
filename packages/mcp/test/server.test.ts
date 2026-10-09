@@ -156,12 +156,17 @@ describe('buildServer', () => {
     expect((res.content as Array<{ type: string; text: string }>)[0]!.text).toBe('plain-failure');
   });
 
-  it('rejects absent arguments at the protocol layer', async () => {
-    const mcp = await connected(fake());
-    const res = await mcp.callTool({ name: 'list_services', arguments: undefined });
+  it('absent arguments: {} for an all-optional tool, refused when a field is required', async () => {
+    // MCP makes `arguments` optional; SDK >=1.31 treats an absent object as {}.
+    const c = fake();
+    const mcp = await connected(c);
+    const ok = await mcp.callTool({ name: 'list_services', arguments: undefined });
+    expect((ok as { isError?: boolean }).isError).toBeFalsy();
+    expect(c.services.list).toHaveBeenCalledWith('');
+    // deploy_service needs serviceId: no arguments is still a validation error.
+    const res = await mcp.callTool({ name: 'deploy_service', arguments: undefined });
     expect((res as { isError?: boolean }).isError).toBe(true);
-    const text = (res.content as Array<{ type: string; text: string }>)[0]?.text ?? '';
-    expect(text).toContain('-32602');
+    expect(c.deploys.trigger).not.toHaveBeenCalled();
   });
 
   it('surfaces handler failures as isError, not crashes', async () => {

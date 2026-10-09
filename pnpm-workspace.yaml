@@ -13,6 +13,9 @@ overrides:
   # version drizzle-kit already uses (0.25.12) — not a bare >= range, which
   # would let the deprecated toolchain ride a newer major than drizzle-kit's own.
   esbuild: "0.25.12"
+  # proxy-addr <2.0.8 (IPv4-mapped IP spoofing, critical) arrives via the MCP
+  # SDK's express; express 5 asks for ^2.0.7, so the patched release fits.
+  proxy-addr: "^2.0.8"
   # The drizzle-kit patch removes @esbuild-kit/esm-loader from its manifest and
   # the archiver-utils patch moves glob to ^13 — but pnpm keeps resolving those
   # edges from the UNPATCHED manifests, so the lockfile (and the installed
