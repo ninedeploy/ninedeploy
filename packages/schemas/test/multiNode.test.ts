@@ -49,6 +49,7 @@ describe('agent capabilities (multi-node §1.1)', () => {
 
   it('names the shared refusal codes', () => {
     expect(multiNodeErrorCode.parse('node_agent_outdated')).toBe('node_agent_outdated');
+    expect(multiNodeErrorCode.parse('node_feature_disabled')).toBe('node_feature_disabled');
     expect(multiNodeErrorCode.safeParse('nope').success).toBe(false);
   });
 

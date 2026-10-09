@@ -1,6 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { servers, type DB } from '@ninedeploy/db';
-import { agentOp } from './agentClient.js';
+import type { MultiNodeCapability, ServerAgentInfo, ServerFeatures } from '@ninedeploy/schemas';
+import { agentOp, agentTransportSealed } from './agentClient.js';
+import { HttpError } from './errors.js';
 
 /**
  * r660/r662: what the panel asks of a node's agent beyond the original op
@@ -282,7 +284,11 @@ export async function nodeTerminalCapability(
     const refresh = (async (): Promise<CachedCapabilities> => {
       try {
         const res = await agentOp(db, serverId, 'agent.ping', {}, () => undefined);
-        return { at: now, info: parseAgentCapabilities(res.lines), error: null };
+        const info = parseAgentCapabilities(res.lines);
+        // Multi-node (design §1.3): every successful sealed ping refreshes the
+        // persisted cache too.
+        await persistAgentCapabilities(db, serverId, info, new Date(now));
+        return { at: now, info, error: null };
       } catch (err) {
         return { at: now, info: null, error: err instanceof Error ? err.message : String(err) };
       }
@@ -303,5 +309,268 @@ export async function nodeTerminalCapability(
     host: false,
     container: false,
     reason: cached?.error ? `The node agent did not answer: ${cached.error.slice(0, 200)}` : 'The node agent has not been reached yet.',
+  };
+}
+
+// ── multi-node (design §1.2, §1.3) ──────────────────────────────────────────
+
+/**
+ * The first agent release that advertises each multi-node capability. A
+ * capability is advertised only once its op exists on the agent, so each
+ * feature names the release that shipped it; the "update the agent" message
+ * quotes this version. Each task sets its own capabilities' release.
+ */
+export const AGENT_MULTI_NODE_VERSION = '0.15.2';
+export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, string>> = {
+  // ── 0.16 T2 agent transport ──
+  stream: AGENT_MULTI_NODE_VERSION,
+  'docker.runSpec': AGENT_MULTI_NODE_VERSION,
+  'volume.manage': AGENT_MULTI_NODE_VERSION,
+  'image.manage': AGENT_MULTI_NODE_VERSION,
+  // ── end 0.16 T2 ──
+  // ── 0.16 T3 node builds and private clones ──
+  'build.nixpacks': AGENT_MULTI_NODE_VERSION,
+  'build.railpack': AGENT_MULTI_NODE_VERSION,
+  'git.sshkey': AGENT_MULTI_NODE_VERSION,
+  // ── end 0.16 T3 ──
+  // ── 0.16 T6 node databases ──
+  'db.manage': AGENT_MULTI_NODE_VERSION,
+  // ── end 0.16 T6 ──
+  // ── 0.16 T7 swarm ──
+  swarm: AGENT_MULTI_NODE_VERSION,
+  // ── end 0.16 T7 ──
+};
+
+/**
+ * The node owner's switch behind a capability (agentOps/index.ts
+ * `AGENT_KILL_SWITCHES`, mirrored here: the panel must not import the agent's
+ * op modules). A current agent that does not advertise one of these was
+ * switched off by the node's owner, not left outdated.
+ */
+export const CAPABILITY_SWITCH: Readonly<Partial<Record<MultiNodeCapability, string>>> = {
+  'build.nixpacks': 'NINEDEPLOY_AGENT_BUILDS',
+  'build.railpack': 'NINEDEPLOY_AGENT_BUILDS',
+  'git.sshkey': 'NINEDEPLOY_AGENT_STATIC_CREDENTIALS',
+  'db.manage': 'NINEDEPLOY_AGENT_DATABASES',
+  swarm: 'NINEDEPLOY_AGENT_SWARM',
+};
+
+/** Why a multi-node feature cannot run on a node: the status and code the route answers. */
+export interface CapabilityRefusal {
+  status: number;
+  code: 'node_transport_unsealed' | 'node_unreachable' | 'node_agent_outdated' | 'node_feature_disabled';
+  message: string;
+}
+
+/** `a.b.c` ≥ `x.y.z`, numerically; an unparsable version is never "new enough". */
+export function agentVersionAtLeast(version: string | null, min: string): boolean {
+  const parse = (v: string) => /^v?(\d+)\.(\d+)\.(\d+)/.exec(v)?.slice(1).map(Number) ?? null;
+  const have = version === null ? null : parse(version);
+  const want = parse(min);
+  if (!have || !want) return false;
+  for (let i = 0; i < 3; i++) {
+    if ((have[i] as number) !== (want[i] as number)) return (have[i] as number) > (want[i] as number);
+  }
+  return true;
+}
+
+/** The newest of the versions the missing capabilities need (what the agent must reach). */
+const newestVersion = (caps: readonly MultiNodeCapability[]): string =>
+  caps.map((cap) => AGENT_CAPABILITY_VERSION[cap]).reduce((a, b) => (agentVersionAtLeast(a, b) ? a : b), AGENT_MULTI_NODE_VERSION);
+
+const agentUpdateHint = (version: string) =>
+  `Update the node agent to v${version} or newer (re-run the node's bootstrap from the Servers page, or pull and restart ` +
+  'the matching ninedeploy agent image on the node).';
+
+/**
+ * Why a parsed `agent.ping` answer cannot do `cap`, or null when it can.
+ * Pure: the shared core of {@link capabilityRefusal} and the queue-time check.
+ */
+export function capabilityRefusalFor(
+  info: { version: string | null; caps: ReadonlySet<string> },
+  nodeLabel: string,
+  opts: { cap: MultiNodeCapability | readonly MultiNodeCapability[]; feature: string },
+): CapabilityRefusal | null {
+  const wanted: readonly MultiNodeCapability[] = typeof opts.cap === 'string' ? [opts.cap] : opts.cap;
+  const missing = wanted.filter((cap) => !info.caps.has(cap));
+  if (missing.length === 0) return null;
+  const min = newestVersion(missing);
+  const switched = missing.map((cap) => CAPABILITY_SWITCH[cap]).find((name) => name !== undefined);
+  if (switched !== undefined && agentVersionAtLeast(info.version, min)) {
+    return {
+      status: 403,
+      code: 'node_feature_disabled',
+      message: `The agent on node ${nodeLabel} (version ${info.version}) cannot ${opts.feature}: the node's owner turned it off (${switched}=off on the agent).`,
+    };
+  }
+  return {
+    status: 422,
+    code: 'node_agent_outdated',
+    message:
+      `The agent on node ${nodeLabel} (${info.version ? `version ${info.version}` : 'an older release'}) cannot ${opts.feature}. ` +
+      agentUpdateHint(min),
+  };
+}
+
+/**
+ * Multi-node (design §1.2): why a feature cannot run on this node, or null
+ * when it can — modelled on {@link terminalRefusal}, which (like
+ * {@link gitCredentialRefusal}) keeps its own messages and codes. Checks, in
+ * order: the sealed transport when the feature needs it (the agent is not
+ * asked anything otherwise), the agent answering its sealed `agent.ping`, and
+ * every capability in `cap`. `feature` completes "cannot …" ("build with
+ * Nixpacks"). With `persist`, the ping refreshes the node's capability cache
+ * (memory and the `servers.agent_*` columns). Job-time checks call this on
+ * every job: agents are updated separately from the panel.
+ */
+export async function capabilityRefusal(
+  agent: AgentCaller,
+  nodeLabel: string,
+  sealed: boolean,
+  opts: {
+    cap: MultiNodeCapability | readonly MultiNodeCapability[];
+    feature: string;
+    sealedRequired: boolean;
+    persist?: { db: DB; serverId: number };
+  },
+): Promise<CapabilityRefusal | null> {
+  if (opts.sealedRequired && !sealed) {
+    return {
+      status: 422,
+      code: 'node_transport_unsealed',
+      message: `The panel reaches node ${nodeLabel} only over the unencrypted transport; ${opts.feature} is never sent in clear.`,
+    };
+  }
+  let lines: string[];
+  try {
+    ({ lines } = await agent('agent.ping', {}, () => undefined));
+  } catch (err) {
+    return {
+      status: 502,
+      code: 'node_unreachable',
+      message: `Could not reach the agent on node ${nodeLabel}: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+  const info = parseAgentCapabilities(lines);
+  if (opts.persist) {
+    rememberNodeCapabilities(opts.persist.serverId, info);
+    await persistAgentCapabilities(opts.persist.db, opts.persist.serverId, info);
+  }
+  return capabilityRefusalFor(info, nodeLabel, opts);
+}
+
+/**
+ * Queue-time form (design §1.2): refuses with an {@link HttpError} (the
+ * route's status and code) before anything is queued or sent. An in-memory
+ * capability answer younger than {@link NODE_CAPABILITY_TTL_MS} that already
+ * shows every capability answers without a ping; anything else asks the
+ * agent (`agent.ping` only). Advisory: the job re-checks with
+ * {@link capabilityRefusal}.
+ */
+export async function assertNodeCapability(
+  db: DB,
+  serverId: number,
+  opts: { cap: MultiNodeCapability | readonly MultiNodeCapability[]; feature: string; sealedRequired: boolean; now?: number },
+): Promise<void> {
+  const label = await nodeLabel(db, serverId);
+  const sealed = await agentTransportSealed(db, serverId);
+  const now = opts.now ?? Date.now();
+  if (!opts.sealedRequired || sealed) {
+    const cached = nodeCapabilities.get(serverId);
+    if (cached?.info && now - cached.at < NODE_CAPABILITY_TTL_MS && capabilityRefusalFor(cached.info, label, opts) === null) return;
+  }
+  const caller: AgentCaller = (op, params, sink) => agentOp(db, serverId, op, params, sink);
+  const refusal = await capabilityRefusal(caller, label, sealed, { ...opts, persist: { db, serverId } });
+  if (refusal) throw new HttpError(refusal.status, refusal.code, refusal.message);
+}
+
+/**
+ * Design §1.3: write a sealed ping's answer into `servers.agent_version`,
+ * `agent_caps` and `agent_checked_at`. Best effort: a failed write keeps the
+ * previous answer, which is advisory anyway.
+ */
+export async function persistAgentCapabilities(
+  db: DB,
+  serverId: number,
+  info: { version: string | null; caps: ReadonlySet<string> },
+  at: Date = new Date(),
+): Promise<void> {
+  try {
+    await db
+      .update(servers)
+      .set({ agentVersion: info.version, agentCaps: [...info.caps], agentCheckedAt: at })
+      .where(eq(servers.id, serverId));
+  } catch {
+    /* advisory cache: keep the previous answer */
+  }
+}
+
+/** The persisted cache of one server row (null: never reached since the upgrade). */
+export function serverAgentInfo(row: {
+  agentVersion?: string | null;
+  agentCaps?: unknown;
+  agentCheckedAt?: Date | null;
+}): ServerAgentInfo | null {
+  if (!(row.agentCheckedAt instanceof Date)) return null;
+  return {
+    version: row.agentVersion ?? null,
+    capabilities: Array.isArray(row.agentCaps) ? row.agentCaps.filter((c): c is string => typeof c === 'string') : [],
+    checkedAt: row.agentCheckedAt.toISOString(),
+  };
+}
+
+/**
+ * `GET /v1/servers` → `agent`: the in-memory answer of the last sealed ping
+ * when one is cached (it is the fresher), else the persisted columns.
+ */
+export function nodeAgentInfo(row: {
+  id: number;
+  agentVersion?: string | null;
+  agentCaps?: unknown;
+  agentCheckedAt?: Date | null;
+}): ServerAgentInfo | null {
+  const cached = nodeCapabilities.get(row.id);
+  if (cached?.info) {
+    return { version: cached.info.version, capabilities: [...cached.info.caps], checkedAt: new Date(cached.at).toISOString() };
+  }
+  return serverAgentInfo(row);
+}
+
+type FeatureName = Exclude<keyof ServerFeatures, 'reason'>;
+
+/** The capabilities each `features` flag needs. */
+export const FEATURE_CAPABILITIES: Readonly<Record<FeatureName, readonly MultiNodeCapability[]>> = {
+  nixpacks: ['build.nixpacks'],
+  railpack: ['build.railpack'],
+  privateClones: ['git.sshkey'],
+  volumes: ['volume.manage', 'docker.runSpec'],
+  databases: ['db.manage', 'stream', 'volume.manage'],
+  imageTransfer: ['stream', 'image.manage'],
+  swarm: ['swarm'],
+};
+const FEATURE_LABEL: Readonly<Record<FeatureName, string>> = {
+  nixpacks: 'Nixpacks builds',
+  railpack: 'Railpack builds',
+  privateClones: 'private clones with a token or deploy key',
+  volumes: 'volumes',
+  databases: 'managed databases',
+  imageTransfer: 'image transfer',
+  swarm: 'Swarm',
+};
+
+/** `GET /v1/servers` → `features`: what the node's agent can do, with the update hint when something is off. */
+export function serverFeatures(agent: ServerAgentInfo | null): ServerFeatures {
+  const caps = new Set(agent?.capabilities ?? []);
+  const names = Object.keys(FEATURE_CAPABILITIES) as FeatureName[];
+  const flags = Object.fromEntries(names.map((name) => [name, FEATURE_CAPABILITIES[name].every((cap) => caps.has(cap))])) as Record<FeatureName, boolean>;
+  const off = names.filter((name) => !flags[name]);
+  if (off.length === 0) return flags;
+  if (!agent) return { ...flags, reason: 'The node agent has not been reached yet.' };
+  const missing = off.flatMap((name) => FEATURE_CAPABILITIES[name]).filter((cap) => !caps.has(cap));
+  return {
+    ...flags,
+    reason:
+      `The agent (${agent.version ? `version ${agent.version}` : 'an older release'}) cannot do ${off.map((n) => FEATURE_LABEL[n]).join(', ')}. ` +
+      agentUpdateHint(newestVersion(missing)),
   };
 }

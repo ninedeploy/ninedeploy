@@ -32,8 +32,19 @@ export interface AgentOpResult {
  * ignores the panel's longer wait; the timeout error says which side gave up.
  *
  * `docker.pull` stays short on purpose (r417: a node pull fails fast).
+ *
+ * Multi-node (design §1.1): node builds with Nixpacks and Railpack and a
+ * registry push take a build's time too. An agent that predates them never
+ * advertises their capability, so the panel never sends them there.
  */
-export const LONG_AGENT_OPS: ReadonlySet<string> = new Set(['docker.build', 'docker.composeUp', 'docker.composePull']);
+export const LONG_AGENT_OPS: ReadonlySet<string> = new Set([
+  'docker.build',
+  'docker.composeUp',
+  'docker.composePull',
+  'build.nixpacks',
+  'build.railpack',
+  'docker.push',
+]);
 /** Node-side child timeout for {@link LONG_AGENT_OPS} — the panel host's exec default. */
 export const AGENT_LONG_OP_TIMEOUT_MS = 30 * 60 * 1000;
 /** Panel-side request budget for every other op (just above the agent's 595 s child cap). */
@@ -336,6 +347,15 @@ export async function agentOp(
 
 /** Probe an agent's reachability + auth (used by the servers routes + UI). */
 export async function agentPing(host: string, port: number, token: string): Promise<void> {
+  await agentPingLines(host, port, token);
+}
+
+/**
+ * Multi-node (design §1.3): {@link agentPing}, resolving the sealed answer's
+ * output lines — the `ND-AGENT {"version","caps"}` line — so the caller can
+ * refresh the node's capability cache.
+ */
+export async function agentPingLines(host: string, port: number, token: string): Promise<{ lines: string[] }> {
   // The public capability endpoint cannot authenticate either party. Prove
   // possession of the shared key with a fresh, side-effect-free challenge.
   // Never fall back to transmitting the token, even for legacy agents.
@@ -350,7 +370,7 @@ export async function agentPing(host: string, port: number, token: string): Prom
   });
   if (!res.ok) throw new Error(`agent unreachable (${res.status})`);
   const raw = (await res.json()) as { sealed?: unknown } | null;
-  let result: { nonce?: unknown; exitCode?: unknown } | null;
+  let result: { nonce?: unknown; exitCode?: unknown; lines?: unknown } | null;
   try {
     result = openSealed(shared, raw?.sealed);
   } catch {
@@ -359,4 +379,5 @@ export async function agentPing(host: string, port: number, token: string): Prom
   if (!result || result.nonce !== nonce || result.exitCode !== 0) {
     throw new Error('agent authentication failed: response does not match this probe');
   }
+  return { lines: Array.isArray(result.lines) ? result.lines.map(String) : [] };
 }

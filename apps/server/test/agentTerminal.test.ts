@@ -256,8 +256,14 @@ describe('terminal.open', () => {
     expect((await sealedOp('terminal.open', OPEN_PARAMS)).status).toBe(200);
     const ping = await sealedOp('agent.ping', {});
     delete process.env['NINEDEPLOY_AGENT_HOST_TERMINAL'];
-    expect([...parseAgentCapabilities(ping.lines).caps]).toEqual([...agent.AGENT_CAPABILITIES]);
-    expect([...parseAgentCapabilities((await sealedOp('agent.ping', {})).lines).caps]).toEqual([...agent.AGENT_CAPABILITIES, 'terminal.host']);
+    // Multi-node: the 0.15 answer stays the prefix; new capabilities follow it.
+    const added = agent.AGENT_CAPABILITIES.slice(agent.AGENT_CAPABILITIES_015.length);
+    expect([...parseAgentCapabilities(ping.lines).caps]).toEqual([...agent.AGENT_CAPABILITIES_015, ...added]);
+    expect([...parseAgentCapabilities((await sealedOp('agent.ping', {})).lines).caps]).toEqual([
+      ...agent.AGENT_CAPABILITIES_015,
+      'terminal.host',
+      ...added,
+    ]);
   });
 
   it('holds at most 8 channels', async () => {
@@ -452,7 +458,10 @@ describe('a 0.14 panel talking to a 0.15 agent sees no behaviour change', () => 
 
   it('the op table is the 0.14 table plus terminal.open, nothing removed or renamed', () => {
     const now = [...new Set([...Object.keys(agent.agentMode.OPS), ...agent.agentMode.HANDLED_OPS])].sort();
-    expect(now.filter((op) => op !== 'terminal.open')).toEqual(OPS_014);
+    // Ops added after 0.14: terminal.open (0.15) and the multi-node registry
+    // (agentOps/index.ts; snapshot OPS_015 in agentMultiNode.test.ts).
+    const added = new Set(['terminal.open', ...agent.agentMode.AGENT_OPS.keys()]);
+    expect(now.filter((op) => !added.has(op))).toEqual(OPS_014);
     expect(now).toContain('terminal.open');
   });
 

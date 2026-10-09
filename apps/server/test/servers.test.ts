@@ -13,7 +13,17 @@ const agentMocks = vi.hoisted(() => ({
 }));
 vi.mock('../src/lib/agentClient.js', async () => {
   const actual = await vi.importActual<typeof import('../src/lib/agentClient.js')>('../src/lib/agentClient.js');
-  return { ...actual, agentPing: agentMocks.agentPing, generateAgentToken: agentMocks.generateAgentToken, agentOp: agentMocks.agentOp };
+  return {
+    ...actual,
+    agentPing: agentMocks.agentPing,
+    // Multi-node: POST /:id/test reads the ping's lines (capability cache); same mock.
+    agentPingLines: async (...a: [string, number, string]) => {
+      const r = (await (agentMocks.agentPing as (...x: unknown[]) => Promise<unknown>)(...a)) as { lines?: string[] } | undefined;
+      return { lines: r?.lines ?? [] };
+    },
+    generateAgentToken: agentMocks.generateAgentToken,
+    agentOp: agentMocks.agentOp,
+  };
 });
 
 const cryptoMocks = vi.hoisted(() => ({ encrypt: vi.fn((s: string) => `enc:${s}`), decrypt: vi.fn((s: string) => s.replace('enc:', '')) }));

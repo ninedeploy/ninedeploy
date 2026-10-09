@@ -1,5 +1,5 @@
 ﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { spawnValidated } from '../../src/lib/spawnValidated.js';
+import { BINARIES, spawnValidated, spawnValidatedStream } from '../../src/lib/spawnValidated.js';
 
 const childMocks = vi.hoisted(() => {
   const make = () => {
@@ -189,5 +189,59 @@ describe('spawnValidated', () => {
     expect(lines).toHaveLength(1);
     expect(lines[0]).toHaveLength(80_000);
     expect(lines[0]).toBe(BIG_LINE);
+  });
+});
+
+describe('spawnValidatedStream (multi-node stream channel)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('nixpacks and railpack join the allowlist, each spawning itself', () => {
+    expect(BINARIES).toEqual({ docker: 'docker', git: 'git', df: 'df', nixpacks: 'nixpacks', railpack: 'railpack' });
+  });
+
+  it('spawns one fixed executable with the scrubbed env and a byte stdout; keeps a bounded stderr tail', async () => {
+    const prev = process.env['NINEDEPLOY_AGENT_TOKEN'];
+    process.env['NINEDEPLOY_AGENT_TOKEN'] = 'sha256-hash';
+    try {
+      const child = spawnValidatedStream('docker', ['save', 'sha256:abc'], { timeoutMs: 60_000, cwd: '/tmp/w' });
+      const [exe, argv, opts] = childMocks.spawn.mock.calls.at(-1)! as unknown as [string, string[], Record<string, unknown>];
+      expect([exe, argv]).toEqual(['docker', ['save', 'sha256:abc']]);
+      expect(opts).toMatchObject({ stdio: ['ignore', 'pipe', 'pipe'], cwd: '/tmp/w', detached: process.platform !== 'win32' });
+      expect((opts['env'] as Record<string, string | undefined>)['NINEDEPLOY_AGENT_TOKEN']).toBeUndefined();
+      expect(child.stdout).toBe(childMocks.current!.child.stdout);
+      childMocks.current!.emit('stderr:data', Buffer.from('x'.repeat(5000)));
+      childMocks.current!.emit('stderr:data', Buffer.from('the end'));
+      childMocks.current!.emit('close', 3);
+      const exit = await child.exit;
+      expect(exit.code).toBe(3);
+      expect(exit.stderr).toHaveLength(4096);
+      expect(exit.stderr.endsWith('the end')).toBe(true);
+    } finally {
+      if (prev === undefined) delete process.env['NINEDEPLOY_AGENT_TOKEN'];
+      else process.env['NINEDEPLOY_AGENT_TOKEN'] = prev;
+    }
+  });
+
+  it('127 when it never started, 1 on a signal death, 124 on the timeout; kill() reaches the child', async () => {
+    const a = spawnValidatedStream('docker', ['load'], { timeoutMs: 60_000, stdin: 'pipe' });
+    childMocks.current!.emit('error', new Error('ENOENT'));
+    expect((await a.exit).code).toBe(127);
+    const b = spawnValidatedStream('docker', ['save', 'x'], { timeoutMs: 60_000 });
+    childMocks.current!.emit('close', null);
+    expect((await b.exit).code).toBe(1);
+    vi.useFakeTimers();
+    try {
+      const c = spawnValidatedStream('docker', ['save', 'x'], { timeoutMs: 1000 });
+      (childMocks.current!.child as unknown as { kill: () => void }).kill = vi.fn();
+      c.kill();
+      vi.advanceTimersByTime(1001);
+      const exit = await c.exit;
+      expect(exit.code).toBe(124);
+      expect(exit.stderr).toMatch(/timed out after 1000ms/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

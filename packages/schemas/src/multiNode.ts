@@ -40,6 +40,8 @@ export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;
  */
 export const multiNodeErrorCode = z.enum([
   'node_agent_outdated',
+  // T2: a current agent whose owner switched the feature off (a node kill switch).
+  'node_feature_disabled',
   'node_transport_unsealed',
   'node_unreachable',
   'node_placement_operator_only',

@@ -1,0 +1,323 @@
+{
+ "$comment": "Recorded from the v0.15.1 agent.ts (commit 0e9d0ae8), before the multi-node transport: each request, its answer and every spawnValidated call. <cwd> is the agent working directory; path separators normalised to /.",
+ "answers": [
+  {
+   "op": "docker.runEnv",
+   "sealed": true,
+   "body": {
+    "status": 200,
+    "lines": [
+     "ran run"
+    ],
+    "exitCode": 0,
+    "envFile": null
+   },
+   "calls": [
+    [
+     "docker",
+     [
+      "run",
+      "-d",
+      "--name",
+      "web-3",
+      "--restart",
+      "unless-stopped",
+      "--network",
+      "ninedeploy",
+      "--cpu-shares",
+      "512",
+      "--cpus",
+      "1.5",
+      "--memory",
+      "256m",
+      "--memory-swap",
+      "256m",
+      "-v",
+      "nd-svc-web-data:/data",
+      "--env-file",
+      ".agent-env/web-3.env",
+      "-p",
+      "8080:3000",
+      "ninedeploy/web:abc1234"
+     ],
+     {}
+    ]
+   ]
+  },
+  {
+   "op": "docker.runEnv",
+   "sealed": false,
+   "body": {
+    "status": 200,
+    "lines": [
+     "ran run"
+    ],
+    "exitCode": 0,
+    "envFile": null
+   },
+   "calls": [
+    [
+     "docker",
+     [
+      "run",
+      "-d",
+      "--name",
+      "web-3",
+      "--restart",
+      "unless-stopped",
+      "--network",
+      "ninedeploy",
+      "--env-file",
+      ".agent-env/web-3.env",
+      "ninedeploy/web:abc1234"
+     ],
+     {}
+    ]
+   ]
+  },
+  {
+   "op": "git.ensure",
+   "sealed": true,
+   "body": {
+    "status": 200,
+    "lines": [
+     "ran -c"
+    ],
+    "exitCode": 0,
+    "envFile": null
+   },
+   "calls": [
+    [
+     "git",
+     [
+      "-c",
+      "http.followRedirects=false",
+      "-c",
+      "protocol.file.allow=never",
+      "-c",
+      "protocol.ext.allow=never",
+      "clone",
+      "--depth",
+      "1",
+      "--no-single-branch",
+      "https://github.com/acme/web.git",
+      "."
+     ],
+     {
+      "cwd": ".agent-work/web"
+     }
+    ]
+   ]
+  },
+  {
+   "op": "git.ensure",
+   "sealed": false,
+   "body": {
+    "status": 200,
+    "lines": [
+     "ran remote",
+     "ran -c"
+    ],
+    "exitCode": 0,
+    "envFile": null
+   },
+   "calls": [
+    [
+     "git",
+     [
+      "config",
+      "remote.origin.fetch",
+      "+refs/heads/*:refs/remotes/origin/*"
+     ],
+     {
+      "cwd": ".agent-work/web"
+     }
+    ],
+    [
+     "git",
+     [
+      "remote",
+      "set-url",
+      "origin",
+      "https://github.com/acme/web.git"
+     ],
+     {
+      "cwd": ".agent-work/web"
+     }
+    ],
+    [
+     "git",
+     [
+      "-c",
+      "http.followRedirects=false",
+      "-c",
+      "protocol.file.allow=never",
+      "-c",
+      "protocol.ext.allow=never",
+      "fetch",
+      "--all",
+      "--prune"
+     ],
+     {
+      "cwd": ".agent-work/web"
+     }
+    ]
+   ]
+  },
+  {
+   "op": "git.ensure",
+   "sealed": true,
+   "body": {
+    "status": 200,
+    "lines": [
+     "ran -c"
+    ],
+    "exitCode": 0,
+    "envFile": null
+   },
+   "calls": [
+    [
+     "git",
+     [
+      "-c",
+      "http.followRedirects=false",
+      "-c",
+      "protocol.file.allow=never",
+      "-c",
+      "protocol.ext.allow=never",
+      "clone",
+      "--depth",
+      "1",
+      "--no-single-branch",
+      "https://github.com/acme/web.git",
+      "."
+     ],
+     {
+      "cwd": ".agent-work/web2",
+      "env": {
+       "GIT_CONFIG_COUNT": "1",
+       "GIT_CONFIG_KEY_0": "http.https://github.com/.extraheader",
+       "GIT_CONFIG_VALUE_0": "AUTHORIZATION: basic eC1hY2Nlc3MtdG9rZW46Z2hzX3NlY3JldDAxMjM="
+      }
+     }
+    ]
+   ]
+  },
+  {
+   "op": "docker.build",
+   "sealed": true,
+   "body": {
+    "status": 200,
+    "lines": [
+     "ran build"
+    ],
+    "exitCode": 0,
+    "envFile": null
+   },
+   "calls": [
+    [
+     "docker",
+     [
+      "build",
+      "-t",
+      "ninedeploy/web:abc1234",
+      "-f",
+      "Dockerfile",
+      "."
+     ],
+     {
+      "cwd": ".agent-work/web",
+      "timeoutMs": 1800000
+     }
+    ]
+   ]
+  },
+  {
+   "op": "file.writeWorkspace",
+   "sealed": true,
+   "body": {
+    "status": 200,
+    "lines": [
+     "workspace-file .agent-work/web/docker-compose.yml"
+    ],
+    "exitCode": 0,
+    "envFile": null
+   },
+   "calls": []
+  },
+  {
+   "op": "proxy.ensure",
+   "sealed": true,
+   "body": {
+    "status": 200,
+    "lines": [
+     "ran run"
+    ],
+    "exitCode": 0,
+    "envFile": null
+   },
+   "calls": [
+    [
+     "docker",
+     [
+      "network",
+      "create",
+      "ninedeploy"
+     ],
+     {}
+    ],
+    [
+     "docker",
+     [
+      "pull",
+      "traefik:v3.1"
+     ],
+     {}
+    ],
+    [
+     "docker",
+     [
+      "info",
+      "--format",
+      "{{.LoggingDriver}}"
+     ],
+     {}
+    ],
+    [
+     "docker",
+     [
+      "rm",
+      "-f",
+      "ninedeploy-proxy"
+     ],
+     {}
+    ],
+    [
+     "docker",
+     [
+      "run",
+      "-d",
+      "--name",
+      "ninedeploy-proxy",
+      "--restart",
+      "unless-stopped",
+      "--network",
+      "ninedeploy",
+      "--add-host",
+      "host.docker.internal:host-gateway",
+      "-p",
+      "80:80",
+      "-p",
+      "443:443",
+      "-v",
+      "<cwd>/.agent-proxy:/etc/traefik:ro",
+      "-v",
+      "<cwd>/.agent-proxy/acme.json:/etc/traefik/acme.json",
+      "traefik:v3.1"
+     ],
+     {}
+    ]
+   ]
+  }
+ ]
+}

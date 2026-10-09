@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
-import { armTimeout, makeLineSplitter } from './exec.js';
+import type { Readable, Writable } from 'node:stream';
+import { armTimeout, killTree, makeLineSplitter } from './exec.js';
 
 /**
  * Default cap for an op's child. The master's request to this agent dies at
@@ -50,7 +51,12 @@ function scrubbedEnv(): NodeJS.ProcessEnv {
  * there is exactly ONE spawn site to audit.
  */
 
-export type AllowedExecutable = 'docker' | 'git' | 'df';
+/**
+ * Multi-node (design §1.1): `nixpacks` and `railpack` join the set for node
+ * builds. Their argv, like docker's and git's, is built only from validated
+ * templates in an agent op module (agentOps/builds.ts) — never passed through.
+ */
+export type AllowedExecutable = 'docker' | 'git' | 'df' | 'nixpacks' | 'railpack';
 
 export interface SpawnValidatedOptions {
   /**
@@ -81,7 +87,13 @@ export interface SpawnValidatedOptions {
  * agent.stats' disk probe exited 129 (`git df -k .` is not a command) and node
  * disk telemetry never worked. A table cannot grow a stale default branch.
  */
-const BINARIES: Record<AllowedExecutable, string> = { docker: 'docker', git: 'git', df: 'df' };
+export const BINARIES: Readonly<Record<AllowedExecutable, string>> = {
+  docker: 'docker',
+  git: 'git',
+  df: 'df',
+  nixpacks: 'nixpacks',
+  railpack: 'railpack',
+};
 
 /** Spawn one of the fixed executables and collect its output lines. */
 export function spawnValidated(
@@ -138,4 +150,68 @@ export function spawnValidated(
       finish(code ?? 1);
     });
   });
+}
+
+/** How much of a streaming child's stderr is kept for its error message. */
+const STREAM_STDERR_TAIL = 4096;
+
+/** A child whose stdout (and, when asked for, stdin) is a byte stream. */
+export interface ValidatedStream {
+  stdout: Readable;
+  /** Present when spawned with `stdin: 'pipe'`. */
+  stdin: Writable | null;
+  /** The exit code (124 on the timeout, 127 when it never started) and the last 4 KiB of stderr. */
+  exit: Promise<{ code: number; stderr: string }>;
+  /** Kill the child's tree (SIGTERM). Idempotent. */
+  kill(): void;
+}
+
+/**
+ * Multi-node (design §1.4): the same choke point as {@link spawnValidated} —
+ * one of the fixed executables, the scrubbed environment, a hard timeout that
+ * kills the tree — for the stream channel's binary data (`docker save`, a
+ * volume `tar`). Its stdout is handed over as bytes, never split into lines;
+ * stderr is kept (bounded) for the error message.
+ */
+export function spawnValidatedStream(
+  executable: AllowedExecutable,
+  argv: string[],
+  opts: { timeoutMs: number; stdin?: 'pipe' | 'ignore'; cwd?: string },
+): ValidatedStream {
+  const child: ChildProcess = spawn(BINARIES[executable], argv, {
+    detached: process.platform !== 'win32',
+    env: scrubbedEnv(),
+    stdio: [opts.stdin ?? 'ignore', 'pipe', 'pipe'],
+    ...(opts.cwd ? { cwd: opts.cwd } : {}),
+  });
+  let stderr = '';
+  child.stderr?.on('data', (d: Buffer) => {
+    stderr = (stderr + d.toString('utf8')).slice(-STREAM_STDERR_TAIL);
+  });
+  child.stdin?.on('error', () => { /* child gone */ });
+  const exit = new Promise<{ code: number; stderr: string }>((resolve) => {
+    let finished = false;
+    const finish = (code: number) => {
+      if (!finished) {
+        finished = true;
+        resolve({ code, stderr });
+      }
+    };
+    const cancelTimeout = armTimeout(child, opts.timeoutMs, () => {
+      stderr = `${stderr}
+Operation timed out after ${opts.timeoutMs}ms — killed`.slice(-STREAM_STDERR_TAIL);
+      finish(TIMEOUT_EXIT);
+    });
+    child.on('error', () => { cancelTimeout(); finish(127); });
+    child.on('close', (code) => {
+      cancelTimeout();
+      finish(code ?? 1);
+    });
+  });
+  return {
+    stdout: child.stdout as Readable,
+    stdin: child.stdin ?? null,
+    exit,
+    kill: () => killTree(child, 'SIGTERM'),
+  };
 }

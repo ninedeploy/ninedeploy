@@ -1,14 +1,17 @@
 import websocket, { type WebsocketPluginOptions } from '@fastify/websocket';
-import Fastify, { type FastifyError, type FastifyReply, type FastifyRequest } from 'fastify';
+import Fastify, { type FastifyError, type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
+import { type AgentStreamSocket, attachStreamChannel } from './agentOps/stream.js';
 import { config } from './config.js';
+import { AGENT_STREAM_PATH } from './lib/agentStream.js';
 import rateLimitPlugin from './plugins/rateLimit.js';
 
 /**
- * 0.15 (T2b): the agent's WebSocket server, used only by the node terminal
- * channel (`GET /agent/terminal`). The panel sends at most 32 KiB of payload
- * per frame, so 256 KiB bounds what an unauthenticated peer can make the
- * agent buffer. The default subprotocol selection (the first offered) echoes
- * the single-use channel id, which is not a credential.
+ * 0.15 (T2b): the agent's WebSocket server, used by the node terminal channel
+ * (`GET /agent/terminal`) and, multi-node, the stream channel
+ * (`GET /agent/stream`). The panel sends at most 32 KiB of payload per frame
+ * on both, so 256 KiB bounds what an unauthenticated peer can make the agent
+ * buffer. The default subprotocol selection (the first offered) echoes the
+ * single-use channel id, which is not a credential.
  */
 export const AGENT_WEBSOCKET_MAX_PAYLOAD = 256 * 1024;
 export const agentWebsocketOptions: WebsocketPluginOptions = { options: { maxPayload: AGENT_WEBSOCKET_MAX_PAYLOAD } };
@@ -16,8 +19,9 @@ export const agentWebsocketOptions: WebsocketPluginOptions = { options: { maxPay
 /**
  * The agent's minimal HTTP surface: rate limiting plus (once the caller
  * registers `agentRoutes`) ONLY the token-gated /agent/exec and /agent/ping
- * routes, and (0.15) the /agent/terminal channel a sealed `terminal.open`
- * hands out. Deliberately NOT buildApp(): an agent host must never expose the
+ * routes, (0.15) the /agent/terminal channel a sealed `terminal.open` hands
+ * out, and (multi-node) the /agent/stream channel a sealed `stream.open`
+ * hands out ({@link agentStreamRoute}). Deliberately NOT buildApp(): an agent host must never expose the
  * API/dashboard/deploy worker, which would run against a fresh local SQLite
  * and turn any reachable agent into a full control plane.
  */
@@ -66,4 +70,20 @@ export async function buildAgentApp() {
   });
 
   return app;
+}
+
+/**
+ * Multi-node (design §1.4): `GET /agent/stream`, the sealed stream channel.
+ * Registered by `agentRoutes` (agent.ts) on an app that already has the
+ * WebSocket server above. No token check here, exactly like the terminal
+ * channel: the channel id comes only from a SEALED `stream.open` reply, is
+ * single use and expires in 30 s, and every frame is encrypted and
+ * authenticated under a key derived from the shared secret (stream-domain
+ * HKDF info) — a peer without it can neither feed nor read a stream.
+ * Anything but a pending channel closes 1008 (agentOps/stream.ts).
+ */
+export async function agentStreamRoute(app: FastifyInstance, opts: { tokenHash: string }): Promise<void> {
+  app.get(AGENT_STREAM_PATH, { websocket: true, config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, (socket, req) => {
+    attachStreamChannel(socket as unknown as AgentStreamSocket, req.headers['sec-websocket-protocol'], opts.tokenHash);
+  });
 }

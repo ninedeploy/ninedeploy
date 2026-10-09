@@ -16,7 +16,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AGENT_CAPABILITIES, agentCapabilities, runOp } from '../src/agent.js';
+import { AGENT_CAPABILITIES_015, agentCapabilities, runOp } from '../src/agent.js';
 
 const spawnMock = vi.hoisted(() => vi.fn(async () => 0));
 vi.mock('../src/lib/spawnValidated.js', () => ({ spawnValidated: spawnMock }));
@@ -132,7 +132,8 @@ describe('r660: node-side build paths', () => {
     const info = JSON.parse((lines[0] as string).replace(/^ND-AGENT /, '')) as { version: string; caps: string[] };
     // 0.15 (T2b): plus `terminal.host` while the node's host-shell switch is not off.
     expect(info.caps).toEqual(agentCapabilities());
-    expect(info.caps.slice(0, AGENT_CAPABILITIES.length)).toEqual([...AGENT_CAPABILITIES]);
+    // Multi-node: the 0.15 list stays first; new capabilities follow it.
+    expect(info.caps.slice(0, AGENT_CAPABILITIES_015.length)).toEqual([...AGENT_CAPABILITIES_015]);
     expect(info.caps).toContain('build-path-guard');
     expect(typeof info.version).toBe('string');
   });

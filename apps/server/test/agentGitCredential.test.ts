@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AGENT_CAPABILITIES, agentRoutes, gitCredentialEnv, resolveWorkspace, runOp } from '../src/agent.js';
+import { AGENT_CAPABILITIES, AGENT_CAPABILITIES_015, agentRoutes, gitCredentialEnv, resolveWorkspace, runOp } from '../src/agent.js';
 import { open as openSealed, seal } from '../src/lib/agentSeal.js';
 import { buildTestApp } from './helpers.js';
 
@@ -55,7 +55,9 @@ function expectNoSecretOutsideEnv() {
 describe('agent capability', () => {
   it('advertises git.credential next to the r660/r662 capabilities', () => {
     // 0.15 (T2b) appended `terminal`; the 0.13 entries keep their order.
-    expect(AGENT_CAPABILITIES).toEqual(['build-path-guard', 'workspace.remove', 'git.credential', 'terminal']);
+    expect(AGENT_CAPABILITIES_015).toEqual(['build-path-guard', 'workspace.remove', 'git.credential', 'terminal']);
+    // Multi-node capabilities are appended after the 0.15 list, never before it.
+    expect(AGENT_CAPABILITIES.slice(0, 4)).toEqual([...AGENT_CAPABILITIES_015]);
   });
 });
 

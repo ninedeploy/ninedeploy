@@ -758,8 +758,8 @@ export async function removeVolume(name: string, log: (line: string) => void): P
  *  tooling already prepares (see lib/inventory HELPER_IMAGE), so the pull is
  *  usually a no-op and the tag cannot float under us. */
 const VOLUME_TAR_IMAGE = HELPER_IMAGE;
-/** Archive path inside the sidecar. */
-const VOLUME_TMP_ARCHIVE = '/tmp/ninedeploy-volume.tar.gz';
+/** Archive path inside the sidecar. Exported for the node agent's `volume.import` stream (multi-node §1.5). */
+export const VOLUME_TMP_ARCHIVE = '/tmp/ninedeploy-volume.tar.gz';
 
 /** Create a named Docker volume. Idempotent: `docker volume create` returns the
  *  existing volume unchanged when the name is already taken (labels are only
@@ -829,7 +829,7 @@ async function backupVolumeUnlocked(
  * fails the restore harmlessly instead of destroying the old data halfway
  * through an in-place extraction.
  */
-function volumeRestoreScript(suffix: string): string {
+export function volumeRestoreScript(suffix: string): string {
   const stage = `/v/.nd-restore-${suffix}`;
   const old = `/v/.nd-restore-old-${suffix}`;
   return [

@@ -5,8 +5,14 @@ import type { FastifyPluginAsync } from 'fastify';
 import { audit } from '../lib/audit.js';
 import { decrypt, encrypt, secretEquals } from '../lib/crypto.js';
 import { badRequest, conflict, HttpError, notFound, parseId, unauthorized } from '../lib/errors.js';
-import { agentOp, agentPing, generateAgentToken } from '../lib/agentClient.js';
-import { nodeTerminalCapability } from '../lib/agentCapabilities.js';
+import { agentOp, agentPing, agentPingLines, generateAgentToken } from '../lib/agentClient.js';
+import {
+  nodeAgentInfo,
+  nodeTerminalCapability,
+  parseAgentCapabilities,
+  persistAgentCapabilities,
+  serverFeatures,
+} from '../lib/agentCapabilities.js';
 import { ENROLMENT_HEADER, assertEnrolmentAllowed } from '../lib/enrolment.js';
 import { bootstrapServer, getBootstrapLogs, testSshConnection } from '../engine/serverProvisioner.js';
 import { agentDockerRunCommand } from '@ninedeploy/schemas';
@@ -156,10 +162,16 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
       // terminals — from its last sealed `agent.ping`, refreshed at most every
       // 5 minutes and only for an online node. `host` is the node's own
       // switch; the panel's host-shell setting applies on top of it.
+      // Multi-node (design §1.3, additive): `agent` is the capability cache
+      // (version, capabilities, when it was checked; null until a sealed ping
+      // answered) and `features` what the node can do, with the "update the
+      // node agent" hint. Same refresh as `terminal` (which also persists it).
       return Promise.all(
         rows.map(async (row) => {
           const base = serialize(row);
-          return { ...base, terminal: await nodeTerminalCapability(authed.db, row.id, { online: base.status === 'online' }) };
+          const terminal = await nodeTerminalCapability(authed.db, row.id, { online: base.status === 'online' });
+          const agent = nodeAgentInfo(row);
+          return { ...base, terminal, agent, features: serverFeatures(agent) };
         }),
       );
     });
@@ -243,13 +255,16 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
       const id = parseId((req.params as { id: string }).id);
       const row = await authed.db.query.servers.findFirst({ where: eq(servers.id, id) });
       if (!row) throw notFound('Server not found');
+      let ping: Awaited<ReturnType<typeof agentPingLines>>;
       try {
-        await agentPing(row.host, row.port, decrypt(row.tokenEncrypted));
+        ping = await agentPingLines(row.host, row.port, decrypt(row.tokenEncrypted));
       } catch (err) {
         await authed.db.update(servers).set({ status: 'error' }).where(eq(servers.id, id));
         throw badRequest(`Agent unreachable: ${err instanceof Error ? err.message : err}`);
       }
       await authed.db.update(servers).set({ status: 'online', lastSeenAt: new Date() }).where(eq(servers.id, id));
+      // Multi-node (design §1.3): a successful sealed ping refreshes the cache.
+      if (ping?.lines) await persistAgentCapabilities(authed.db, id, parseAgentCapabilities(ping.lines));
       void audit(authed.db, req.user!.id, 'server.test', row.name);
       return { ok: true, status: 'online' };
     });

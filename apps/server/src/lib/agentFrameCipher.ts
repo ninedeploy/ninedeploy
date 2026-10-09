@@ -27,10 +27,18 @@ import { createCipheriv, createDecipheriv, hkdfSync } from 'node:crypto';
  *
  * `agentSeal.ts` is deliberately untouched: its envelope (JSON, timestamped,
  * per-message salt) suits one request and one reply, not a byte stream.
+ *
+ * Multi-node (design §1.4): the sealed stream channel (`stream.open`,
+ * `GET /agent/stream`) uses the same frames under a key derived with a
+ * different HKDF `info` ({@link STREAM_HKDF_INFO}), so a terminal key can
+ * never open a stream frame and vice versa. The terminal derivation is
+ * unchanged byte for byte (the default `info`).
  */
 
 /** HKDF context string: domain-separates this key from the sealed envelope's. */
 export const FRAME_HKDF_INFO = 'ninedeploy-agent-terminal-v1';
+/** Multi-node: the stream channel's HKDF context string (never a terminal key). */
+export const STREAM_HKDF_INFO = 'ninedeploy-agent-stream-v1';
 /** Salt length the agent generates per channel. */
 export const FRAME_SALT_BYTES = 32;
 
@@ -54,7 +62,30 @@ export const FRAME_TYPE = {
   resume: 5,
 } as const;
 export type FrameType = (typeof FRAME_TYPE)[keyof typeof FRAME_TYPE];
-const KNOWN_TYPES = new Set<number>(Object.values(FRAME_TYPE));
+const KNOWN_TYPES: ReadonlySet<number> = new Set<number>(Object.values(FRAME_TYPE));
+
+/**
+ * Multi-node: the stream channel's frame types. data, close, pause and resume
+ * keep the terminal's numbers; `end` and `error` are new. A terminal opener
+ * still refuses 6 and 7 (`unknown_type`), as it always did.
+ */
+export const STREAM_FRAME_TYPE = {
+  /** Stream bytes. */
+  data: 0,
+  /** The sender is abandoning the stream; payload: an optional UTF-8 reason. */
+  close: 3,
+  /** Flow control, either way: stop sending data frames. */
+  pause: 4,
+  /** Flow control, either way: send again. The panel's first frame is always one: it authenticates the channel. */
+  resume: 5,
+  /** `{"bytes","sha256","result"?}` JSON: the sender's count and sha256 of every data byte it sent (and the agent's result). */
+  end: 6,
+  /** `{"message"}` JSON (agent→panel): the stream failed; nothing was applied. */
+  error: 7,
+} as const;
+export type StreamFrameType = (typeof STREAM_FRAME_TYPE)[keyof typeof STREAM_FRAME_TYPE];
+/** The types a stream opener accepts. */
+export const STREAM_FRAME_TYPES: ReadonlySet<number> = new Set<number>(Object.values(STREAM_FRAME_TYPE));
 
 /** Largest data payload one frame carries; longer writes are split. */
 export const FRAME_DATA_CHUNK = 32 * 1024;
@@ -74,11 +105,17 @@ export class FrameCipherError extends Error {
   }
 }
 
-/** The channel key. `sharedTokenHash` is the hex sha256 of the agent token (what both ends hold). */
-export function deriveFrameKey(sharedTokenHash: string, salt: Buffer): Buffer {
+/**
+ * The channel key. `sharedTokenHash` is the hex sha256 of the agent token
+ * (what both ends hold). `info` domain-separates the channel kinds: the
+ * default is the terminal's (0.15, unchanged); streams pass
+ * {@link STREAM_HKDF_INFO}.
+ */
+export function deriveFrameKey(sharedTokenHash: string, salt: Buffer, info: string = FRAME_HKDF_INFO): Buffer {
   if (!sharedTokenHash) throw new Error('Cannot derive a terminal key without the shared secret');
   if (salt.length !== FRAME_SALT_BYTES) throw new Error('Invalid terminal channel salt');
-  return Buffer.from(hkdfSync('sha256', Buffer.from(sharedTokenHash, 'utf8'), salt, Buffer.from(FRAME_HKDF_INFO, 'utf8'), 32));
+  if (info !== FRAME_HKDF_INFO && info !== STREAM_HKDF_INFO) throw new Error('Unknown frame key domain');
+  return Buffer.from(hkdfSync('sha256', Buffer.from(sharedTokenHash, 'utf8'), salt, Buffer.from(info, 'utf8'), 32));
 }
 
 /** The 12-byte GCM IV for one frame. */
@@ -98,7 +135,7 @@ export class FrameSealer {
     private readonly dir: FrameDirection,
   ) {}
 
-  seal(type: FrameType, payload: Buffer = Buffer.alloc(0)): Buffer {
+  seal(type: FrameType | StreamFrameType, payload: Buffer = Buffer.alloc(0)): Buffer {
     if (this.counter > MAX_COUNTER) throw new FrameCipherError('exhausted');
     const counter = this.counter;
     this.counter += 1n;
@@ -122,13 +159,18 @@ export class FrameOpener {
   private expected = 0n;
   private poisoned = false;
 
-  /** `from` is the direction of the sender (the agent opens `'panel'` frames). */
+  /**
+   * `from` is the direction of the sender (the agent opens `'panel'` frames).
+   * `types` is the set of frame types the channel speaks: the terminal's by
+   * default, {@link STREAM_FRAME_TYPES} for a stream.
+   */
   constructor(
     private readonly key: Buffer,
     private readonly from: FrameDirection,
+    private readonly types: ReadonlySet<number> = KNOWN_TYPES,
   ) {}
 
-  open(frame: Buffer): { type: FrameType; payload: Buffer } {
+  open(frame: Buffer): { type: FrameType | StreamFrameType; payload: Buffer } {
     if (this.poisoned) throw new FrameCipherError('poisoned');
     try {
       if (frame.length < MIN_FRAME_BYTES) throw new FrameCipherError('malformed');
@@ -143,9 +185,9 @@ export class FrameOpener {
         throw new FrameCipherError('auth');
       }
       const type = pt[0] as number;
-      if (!KNOWN_TYPES.has(type)) throw new FrameCipherError('unknown_type');
+      if (!this.types.has(type)) throw new FrameCipherError('unknown_type');
       this.expected += 1n;
-      return { type: type as FrameType, payload: pt.subarray(1) };
+      return { type: type as FrameType | StreamFrameType, payload: pt.subarray(1) };
     } catch (err) {
       this.poisoned = true;
       throw err instanceof FrameCipherError ? err : new FrameCipherError('malformed');
@@ -183,4 +225,45 @@ export function decodeExit(payload: Buffer): number | null {
   } catch {
     return null;
   }
+}
+
+// ── stream payload codecs (multi-node) ──────────────────────────────────────
+
+/** What an `end` frame carries. `result` is the agent's answer (an image id, a volume name). */
+export interface StreamEnd {
+  bytes: number;
+  sha256: string;
+  result?: Record<string, unknown>;
+}
+
+export const encodeStreamEnd = (end: StreamEnd): Buffer => Buffer.from(JSON.stringify(end), 'utf8');
+
+/** Null when the payload is not a valid `end`. */
+export function decodeStreamEnd(payload: Buffer): StreamEnd | null {
+  try {
+    const v = JSON.parse(payload.toString('utf8')) as { bytes?: unknown; sha256?: unknown; result?: unknown };
+    if (typeof v.bytes !== 'number' || !Number.isSafeInteger(v.bytes) || v.bytes < 0) return null;
+    if (typeof v.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(v.sha256)) return null;
+    if (v.result !== undefined && (typeof v.result !== 'object' || v.result === null || Array.isArray(v.result))) return null;
+    return v.result === undefined ? { bytes: v.bytes, sha256: v.sha256 } : { bytes: v.bytes, sha256: v.sha256, result: v.result as Record<string, unknown> };
+  } catch {
+    return null;
+  }
+}
+
+/** Longest error message a stream carries. */
+const STREAM_ERROR_MAX = 1000;
+
+export const encodeStreamError = (message: string): Buffer =>
+  Buffer.from(JSON.stringify({ message: message.slice(0, STREAM_ERROR_MAX) }), 'utf8');
+
+/** The message of an `error` frame; a malformed one still reads as a failure. */
+export function decodeStreamError(payload: Buffer): string {
+  try {
+    const v = JSON.parse(payload.toString('utf8')) as { message?: unknown };
+    if (typeof v.message === 'string' && v.message !== '') return v.message.slice(0, STREAM_ERROR_MAX);
+  } catch {
+    /* fall through */
+  }
+  return 'the agent reported a stream error';
 }

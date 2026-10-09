@@ -1,6 +1,23 @@
 import { appendFileSync, existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs';
 import { join as joinPath, relative as relativePath, resolve as resolvePath, sep as pathSep } from 'node:path';
-import { agentWebsocketOptions, buildAgentApp } from './agentApp.js';
+import { agentStreamRoute, agentWebsocketOptions, buildAgentApp } from './agentApp.js';
+import { advertisedCapabilities, AGENT_OPS, registeredCapabilities, runRegisteredOp } from './agentOps/index.js';
+import { gitCredentialEnv } from './agentOps/gitCredential.js';
+import {
+  GIT_EGRESS_FLAGS,
+  isRepoUrl,
+  NODE_PROXY_IMAGE,
+  type Params,
+  RE_IMAGE,
+  RE_NAME,
+  RE_PATH,
+  RE_SHA,
+  RE_REF,
+  str,
+  switchedOff,
+  validated,
+} from './agentOps/operands.js';
+import { closeAllStreamChannels, startTransferSweep } from './agentOps/stream.js';
 import { agentChildTimeoutMs, tokenMatches } from './lib/agentClient.js';
 import { MAX_SKEW_MS, open as openSealed, seal as sealResponse } from './lib/agentSeal.js';
 import { spawnValidated } from './lib/spawnValidated.js';
@@ -13,38 +30,17 @@ import { spawnValidated } from './lib/spawnValidated.js';
  * (identifier-like strings, image refs, paths without traversal). Actual
  * process spawning happens exclusively through lib/spawnValidated.ts (one
  * auditable choke point over the two fixed executables).
+ *
+ * Multi-node (0.15.x series, design §1): the operand validators live in
+ * agentOps/operands.ts and the per-job Git credential in
+ * agentOps/gitCredential.ts (both moved unchanged). Ops added after 0.15 are
+ * NOT added here: they live in agentOps/*.ts behind the registry in
+ * agentOps/index.ts, each gated on a capability the sealed `agent.ping`
+ * advertises after the 0.15 list.
  */
 
-// ── operand validators ────────────────────────────────────────────────────
-const RE_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/; // container/volume/project names, slugs
-const RE_IMAGE = /^[A-Za-z0-9][A-Za-z0-9@:/._-]*$/; // image refs incl. digests, registries
-const RE_PATH_RAW = /^[A-Za-z0-9@._][A-Za-z0-9@._/-]*$|^\/[A-Za-z0-9@._/-]*$/; // relative or absolute
-/** Path validator: rejects any `..` segment so operands can never traverse up. */
-const RE_PATH = (value: string): boolean => RE_PATH_RAW.test(value) && !value.split('/').includes('..');
-const RE_SHA = /^(HEAD|[0-9a-f]{6,64})$/;
-const RE_REF = /^[A-Za-z0-9@:/._][A-Za-z0-9@:/._-]*$/; // branches, tags, URLs — first char must not be `-` (git reads a dash-leading argv element as an option)
-/**
- * Repository URL for a clone: RE_REF's charset AND a network scheme (r099).
- * RE_REF alone accepted `file:///etc` or a bare local path — the agent must not
- * rely on the panel's schema to keep a clone off the node's own filesystem.
- */
-const isRepoUrl = (value: string): boolean =>
-  RE_REF.test(value) && /^(?:https?:\/\/|ssh:\/\/|git:\/\/|git@[A-Za-z0-9.-]+:)/.test(value);
-/**
- * `-c` flags for every network git op on the node (r099): no HTTP redirects
- * (a public host bouncing to the node's metadata service / LAN), no `file://`
- * or `ext::` transports.
- */
-const GIT_EGRESS_FLAGS = ['-c', 'http.followRedirects=false', '-c', 'protocol.file.allow=never', '-c', 'protocol.ext.allow=never'];
-
-type Params = Record<string, unknown>;
-
-const str = (p: Params, k: string): string | undefined => (typeof p[k] === 'string' ? (p[k] as string) : undefined);
-
-function validated(value: string | undefined, check: RegExp | ((v: string) => boolean), what: string): string {
-  if (value === undefined || !(typeof check === 'function' ? check(value) : check.test(value))) throw new Error(`Invalid ${what}`);
-  return value;
-}
+/** 0.13 (T5): moved to agentOps/gitCredential.ts; re-exported for its callers. */
+export { gitCredentialEnv, type GitCredentialEnv } from './agentOps/gitCredential.js';
 
 /**
  * Root every remote service checkout and build context lives under, relative
@@ -86,7 +82,16 @@ export async function resolveWorkspace(name: string): Promise<string> {
  * a missing capability as "too old" and refuses what depends on it with a
  * message naming the node — see lib/agentClient.ts `agentCapabilities`.
  */
-export const AGENT_CAPABILITIES = ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal'] as const;
+export const AGENT_CAPABILITIES_015 = ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal'] as const;
+
+/**
+ * Every capability this agent can advertise (kill switches aside): the 0.15
+ * list unchanged and in order, then the multi-node capabilities whose ops are
+ * registered in agentOps/index.ts, in `MULTI_NODE_CAPABILITIES` order. A
+ * capability is never advertised before its op exists, so a newer panel never
+ * trusts an op this agent would answer `unknown_op`.
+ */
+export const AGENT_CAPABILITIES: readonly string[] = [...AGENT_CAPABILITIES_015, ...registeredCapabilities()];
 
 /**
  * 0.15 (T2b): advertised next to {@link AGENT_CAPABILITIES} only while this
@@ -98,97 +103,21 @@ export const AGENT_CAP_TERMINAL_HOST = 'terminal.host';
 
 /** 0.15 (T2b): the node owner's switch. Either variable set to off/false/0/no/disabled forbids host shells. */
 export function nodeHostTerminalForbidden(env: NodeJS.ProcessEnv = process.env): boolean {
-  const off = (v: string | undefined) => /^(off|false|0|no|disabled)$/i.test((v ?? '').trim());
-  return off(env['NINEDEPLOY_AGENT_HOST_TERMINAL']) || off(env['NINEDEPLOY_HOST_TERMINAL']);
+  return switchedOff(env['NINEDEPLOY_AGENT_HOST_TERMINAL']) || switchedOff(env['NINEDEPLOY_HOST_TERMINAL']);
 }
 
-/** 0.15 (T2b): what `agent.ping` advertises right now. */
+/**
+ * What `agent.ping` advertises right now: exactly the 0.15 answer first
+ * (the four 0.15 capabilities, then `terminal.host` unless the node forbids
+ * host shells), so a 0.15 panel reads the same list it always did; then the
+ * multi-node capabilities, minus any the node's owner switched off.
+ */
 export function agentCapabilities(env: NodeJS.ProcessEnv = process.env): string[] {
-  return nodeHostTerminalForbidden(env) ? [...AGENT_CAPABILITIES] : [...AGENT_CAPABILITIES, AGENT_CAP_TERMINAL_HOST];
-}
-
-/**
- * 0.13 (T5): the ops that accept a per-job Git credential — the three that
- * reach the repository's remote. Any other op carrying one is refused, so a
- * credential is never silently dropped (or applied where nobody looked).
- */
-const GIT_CREDENTIAL_OPS: ReadonlySet<string> = new Set(['git.ensure', 'git.fetch', 'git.reset']);
-/** `x-access-token` for a GitHub App token; a basic-auth user name never holds `:`. */
-const RE_CRED_USER = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
-/** Printable ASCII without space: no CR/LF/NUL can reach a header, even before base64. */
-const RE_CRED_SECRET = /^[\x21-\x7e]{1,4096}$/;
-
-/** What a validated credential becomes: child-process env, plus the redactor for its output. */
-export interface GitCredentialEnv {
-  env: Record<string, string>;
-  redact: (line: string) => string;
-}
-
-/**
- * 0.13 (T5): a per-job Git credential, applied ONLY through the child's
- * environment (`GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_n` / `GIT_CONFIG_VALUE_n`,
- * git ≥ 2.31). It never becomes an argv element (the node's process list),
- * a `.git/config` line (the workspace outlives the job) or an output line.
- *
- * The header is scoped with `http.<scheme>://<host>/.extraheader`, so git
- * sends it to the repository's own origin and nowhere else — and every
- * network git op already runs with `http.followRedirects=false`.
- *
- * Refused unless the request arrived SEALED: on the legacy plaintext path the
- * token would have crossed the network in clear. Null when the op carries no
- * credential (today's behaviour, and what every older panel sends).
- */
-export function gitCredentialEnv(
-  op: string,
-  params: Params,
-  sealed: boolean,
-  baseEnv: NodeJS.ProcessEnv = process.env,
-): GitCredentialEnv | null {
-  const raw = params['credential'];
-  if (raw === undefined) return null;
-  if (!GIT_CREDENTIAL_OPS.has(op)) throw new Error(`Invalid params: ${op} takes no Git credential`);
-  if (!sealed) {
-    throw new Error('Refusing a Git credential sent over the unencrypted transport: it is accepted only inside a sealed request');
-  }
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw) || Object.getPrototypeOf(raw) !== Object.prototype) {
-    throw new Error('Invalid git credential');
-  }
-  const keys = Object.keys(raw);
-  if (keys.length !== 2 || !keys.includes('username') || !keys.includes('password')) throw new Error('Invalid git credential');
-  const { username, password } = raw as Record<string, unknown>;
-  if (typeof username !== 'string' || !RE_CRED_USER.test(username) || typeof password !== 'string' || !RE_CRED_SECRET.test(password)) {
-    throw new Error('Invalid git credential');
-  }
-  // The header's scope comes from the repository URL the op names (git.fetch
-  // and git.reset carry it only for this). HTTP(S) only, with no userinfo of
-  // its own — a basic-auth header means nothing to an SSH remote.
-  const url = validated(str(params, 'url'), isRepoUrl, 'repo url');
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new Error('Invalid repo url');
-  }
-  if ((parsed.protocol !== 'https:' && parsed.protocol !== 'http:') || parsed.username || parsed.password || !parsed.host) {
-    throw new Error('Invalid repo url: a Git credential needs a plain http(s) repository URL');
-  }
-  const encoded = Buffer.from(`${username}:${password}`, 'utf8').toString('base64');
-  // Append after any GIT_CONFIG_* entries the node's own environment sets.
-  const prior = Number(baseEnv['GIT_CONFIG_COUNT'] ?? '0');
-  const index = Number.isInteger(prior) && prior >= 0 && prior < 1000 ? prior : 0;
-  const secrets = [...new Set([`basic ${encoded}`, encoded, password, encodeURIComponent(password)])].sort((a, b) => b.length - a.length);
-  return {
-    env: {
-      GIT_CONFIG_COUNT: String(index + 1),
-      [`GIT_CONFIG_KEY_${index}`]: `http.${parsed.protocol}//${parsed.host}/.extraheader`,
-      [`GIT_CONFIG_VALUE_${index}`]: `AUTHORIZATION: basic ${encoded}`,
-    },
-    redact: (line) => {
-      let out = line;
-      for (const secret of secrets) out = out.split(secret).join('[redacted]');
-      return out;
-    },
-  };
+  return [
+    ...AGENT_CAPABILITIES_015,
+    ...(nodeHostTerminalForbidden(env) ? [] : [AGENT_CAP_TERMINAL_HOST]),
+    ...advertisedCapabilities(env),
+  ];
 }
 
 /**
@@ -514,7 +443,7 @@ const OPS: Record<string, { exe: 'docker' | 'git'; build: Op }> = {
  */
 const PROXY_DIR = '.agent-proxy';
 const PROXY_CONTAINER = 'ninedeploy-proxy';
-const PROXY_IMAGE = 'traefik:v3.1';
+const PROXY_IMAGE = NODE_PROXY_IMAGE;
 /** Refuse a config larger than this — the panel renders kilobytes, not megabytes. */
 const MAX_PROXY_CONFIG_BYTES = 1024 * 1024;
 
@@ -1253,6 +1182,10 @@ const HANDLED_OPS = new Set([
   'proxy.ensure',
   // 0.15 (T2b): sealed only; advertised as the `terminal` capability.
   'terminal.open',
+  // Multi-node (design §1, M8): every op registered in agentOps/index.ts,
+  // each gated on its capability. Listed here so the exec route's reachability
+  // check and the op-table snapshot see them like any other handled op.
+  ...AGENT_OPS.keys(),
 ]);
 
 /**
@@ -1396,6 +1329,10 @@ export async function runOp(
     // honestly; the panel surfaces the error and the deploy can be retried.
     return spawnValidated('docker', ['pull', image], onLine);
   }
+  // Multi-node ops (agentOps/*.ts): the registry checks the capability's
+  // kill switch and the sealed-only rule before the op's own validation.
+  const registered = await runRegisteredOp(op, params, onLine, { sealed: ctx.sealed === true });
+  if (registered !== null) return registered;
   const def = OPS[op];
   if (!def) return -1;
   // A `workspace` operand runs the op inside that service's own directory.
@@ -1506,6 +1443,9 @@ async function main(): Promise<void> {
   await app.listen({ host: '0.0.0.0', port });
   // eslint-disable-next-line no-console
   console.log(`NineDeploy agent listening on :${port} (${Object.keys(OPS).length} typed deploy operations)`);
+  // Multi-node (design §1.5): sweep stream transfer files an earlier process
+  // left behind (an agent that died mid-transfer), now and every 10 minutes.
+  startTransferSweep();
 
   if (masterUrl) {
     const { hostname } = await import('node:os');
@@ -1758,6 +1698,7 @@ export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: 
   }
   app.addHook('onClose', async () => {
     await closeAllTerminalChannels();
+    await closeAllStreamChannels();
   });
   app.get(AGENT_TERMINAL_PATH, { websocket: true, config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, (socket, req) => {
     const id = agentTerminalChannelId(req.headers['sec-websocket-protocol']);
@@ -1781,6 +1722,12 @@ export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: 
       void closeTerminalChannel(ch);
     });
   });
+
+  // Multi-node (design §1.4): the sealed stream channel `GET /agent/stream`,
+  // handed out only by a SEALED `stream.open` (agentOps/stream.ts). Same
+  // model as the terminal channel above: single use, 30 s to attach, every
+  // frame encrypted under a per-channel key (stream-domain HKDF info).
+  await agentStreamRoute(app, { tokenHash });
 };
 
 // Boot when the agent flag is set. Tests set NINEDEPLOY_AGENT=1 explicitly
@@ -1800,4 +1747,4 @@ if (process.env['NINEDEPLOY_AGENT'] === '1') {
   });
 }
 
-export const agentMode = { main, OPS, HANDLED_OPS };
+export const agentMode = { main, OPS, HANDLED_OPS, AGENT_OPS };
