@@ -430,6 +430,12 @@ async function checkInEngineImage(image: string, file: string, tool: string, arg
           'create',
           '--network', 'none',
           '--cap-drop', 'ALL',
+          // `docker cp` keeps the owner and mode of the decrypted temp file (the panel's
+          // uid, 0600), and root without capabilities cannot read another user's 0600
+          // file. DAC_READ_SEARCH lifts only that read check (no write), inside a
+          // container with no network. Without it every drill of a container install
+          // failed at offset 0 with a file the checker could not open.
+          '--cap-add', 'DAC_READ_SEARCH',
           '--security-opt', 'no-new-privileges',
           '--user', '0:0',
           '--pull', 'never',

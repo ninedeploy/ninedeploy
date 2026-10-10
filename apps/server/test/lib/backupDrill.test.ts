@@ -326,7 +326,7 @@ describe('lib/backupDrill', () => {
       expect(execState.calls.map((c) => c.cmd)).toEqual(['docker', 'docker', 'docker', 'docker', 'docker']);
       expect(dockerCall('image')!.args).toEqual(['image', 'inspect', '--format', '{{.Id}}', 'postgres:18']);
       expect(dockerCall('create')!.args).toEqual([
-        'create', '--network', 'none', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
+        'create', '--network', 'none', '--cap-drop', 'ALL', '--cap-add', 'DAC_READ_SEARCH', '--security-opt', 'no-new-privileges',
         '--user', '0:0', '--pull', 'never', '--entrypoint', 'pg_restore', 'postgres:18',
         '--list', '/tmp/ninedeploy-drill.dump',
       ]);
