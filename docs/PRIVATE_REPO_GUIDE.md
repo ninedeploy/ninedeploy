@@ -190,6 +190,21 @@ The response is the public key only. The private key lives encrypted on the sour
 
 To rotate, run the same command again — the previous key is replaced and the old one stops working at the next clone.
 
+#### Pin the Git host's SSH keys (0.15.8, optional)
+
+By default every clone accepts the host key it is shown the first time within that deploy, and refuses one that changes while the deploy runs. Nothing is remembered between deploys, so a host that presents a different key next time goes unnoticed. A deploy-key source can instead **pin** the host keys:
+
+```bash
+ninedeploy sources pin-host-keys 3 on        # switching on needs no password
+ninedeploy sources host-keys 3               # the fingerprints it learnt
+ninedeploy sources reset-host-keys 3         # forget them (asks for your password)
+ninedeploy sources pin-host-keys 3 off       # stop pinning (asks for your password)
+```
+
+The same switch is on the source card (Sources → Pin git host keys). The first clone after switching it on learns the keys (after the clone succeeded, which only the holder of the deploy key can do); every later clone refuses a host whose key differs and says so in the deploy log (reason `pinned host key changed`). If the host really rotated its key, reset the pinned keys and deploy again; if you did not expect a change, do not: something may be intercepting the connection.
+
+It applies to clones the **panel** makes with the SSH deploy key. A clone on a remote node keeps its own per-job policy. It is off for every existing source, and the panel shows fingerprints only, never the keys themselves.
+
 ### 4.4 Live credential check
 
 Useful after a token rotation, or to debug "private repo deploys fail with 401":
@@ -387,6 +402,7 @@ If the deploy never queues, the most common cause is **wrong secret on the GitHu
 - The webhook secret is also encrypted at rest, and the **raw secret is only ever returned once** at creation time. If you lose it, delete and recreate the webhook.
 - A PAT is **read-only by default**. NineDeploy never writes to your repo — it only clones, checks out a commit, and runs the build. You can use a `Contents: Read` fine-grained PAT, or a classic PAT with only the `repo` scope (no `workflow`, no `admin:org`).
 - For least-privilege, use a **fine-grained PAT scoped to a single repo** instead of a classic PAT that grants access to everything your user can see.
+- An SSH deploy-key source can **pin the Git host's SSH keys** so a host that later presents a different key is refused ([§4.4](#pin-the-git-hosts-ssh-keys-0158-optional)). It is opt-in; switching it off or resetting the keys needs your password.
 
 ---
 

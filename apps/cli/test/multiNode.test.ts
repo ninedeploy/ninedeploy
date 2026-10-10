@@ -11,6 +11,9 @@ import {
   servicesSwarm,
   servicesTransfers,
   sourcesAllowOnNodes,
+  sourcesHostKeys,
+  sourcesPinHostKeys,
+  sourcesResetHostKeys,
   swarmInit,
   swarmJoin,
   swarmLeave,
@@ -33,7 +36,7 @@ function makeClient() {
     swarm: { get: vi.fn(), init: vi.fn(), settings: vi.fn() },
     volumes: { list: vi.fn(), create: vi.fn(), remove: vi.fn() },
     databases: { create: vi.fn() },
-    sources: { update: vi.fn() },
+    sources: { update: vi.fn(), list: vi.fn() },
   };
 }
 type Client = ReturnType<typeof makeClient>;
@@ -371,6 +374,57 @@ describe('volumes and databases on a node', () => {
     await dbCreate(asClient(c), { server: '1e1' });
     expect(c.databases.create).toHaveBeenCalledTimes(1);
     expect(err()).toContain('--server must be a positive integer');
+  });
+});
+
+describe('sources host key pinning', () => {
+  it('on needs no password; off asks for it', async () => {
+    const c = makeClient();
+    c.sources.update.mockResolvedValue({ id: 3, name: 'gh', pinHostKeys: true });
+    await sourcesPinHostKeys(asClient(c), '3', 'on');
+    expect(h.promptHidden).not.toHaveBeenCalled();
+    expect(c.sources.update).toHaveBeenCalledWith(3, { pinHostKeys: true });
+    expect(out()).toContain('pinning on');
+    h.promptHidden.mockResolvedValue('pw');
+    await sourcesPinHostKeys(asClient(c), '3', 'off');
+    expect(c.sources.update).toHaveBeenLastCalledWith(3, { pinHostKeys: false, password: 'pw' });
+    expect(out()).toContain('pinning off');
+  });
+
+  it('reset asks for the password and says what happens next', async () => {
+    const c = makeClient();
+    c.sources.update.mockResolvedValue({ id: 3, name: 'gh' });
+    h.promptHidden.mockResolvedValue('pw');
+    await sourcesResetHostKeys(asClient(c), '3');
+    expect(c.sources.update).toHaveBeenCalledWith(3, { resetHostKeys: true, password: 'pw' });
+    expect(out()).toContain('next clone');
+  });
+
+  it('lists the pinned fingerprints of a source, and says so when there are none', async () => {
+    const c = makeClient();
+    c.sources.list.mockResolvedValue([
+      { id: 3, name: 'gh', pinHostKeys: true, pinnedHostKeys: [{ host: 'github.com', type: 'ssh-ed25519', fingerprint: 'SHA256:abc' }] },
+      { id: 4, name: 'off', pinHostKeys: false, pinnedHostKeys: [] },
+    ]);
+    await sourcesHostKeys(asClient(c), '3');
+    expect(out()).toContain('github.com');
+    expect(out()).toContain('SHA256:abc');
+    await sourcesHostKeys(asClient(c), '4');
+    expect(out()).toContain('not pinning');
+    await sourcesHostKeys(asClient(c), '9');
+    expect(err()).toContain('No source #9');
+  });
+
+  it('refuses bad input and reports a refused step-up', async () => {
+    const c = makeClient();
+    await sourcesPinHostKeys(asClient(c), 'x', 'on');
+    await sourcesPinHostKeys(asClient(c), '3', 'sometimes');
+    await sourcesResetHostKeys(asClient(c), 'x');
+    expect(c.sources.update).not.toHaveBeenCalled();
+    c.sources.update.mockRejectedValue(new Error('Password required'));
+    h.promptHidden.mockResolvedValue('');
+    await sourcesResetHostKeys(asClient(c), '3');
+    expect(err()).toContain('Password required');
   });
 });
 

@@ -14,6 +14,7 @@ import { plain } from './sources.js';
  *   ninedeploy swarm status | init --advertise-addr <ip> | enable | disable | join <serverId> | leave <serverId> [-y]
  *   ninedeploy volumes create <name> [--server <id>]   (list and rm take --server too)
  *   ninedeploy sources allow-on-nodes <id> on|off
+ *   ninedeploy sources pin-host-keys <id> on|off | reset-host-keys <id> | host-keys <id>
  *
  * Every route here is operator only except the service reads. Step-up
  * passwords (swarm init, swarm enable, allow-on-nodes on) are read with a
@@ -386,6 +387,55 @@ export async function sourcesAllowOnNodes(client: NineDeployClient, idRaw: strin
   try {
     const src = await spinner('Saving', () => client.sources.update(id, { allowOnNodes: allow, ...(password ? { password } : {}) }));
     success(`${plain(src.name)}: ${allow ? 'allowed on nodes' : 'panel host only'}`);
+  } catch (err) {
+    error(message(err));
+  }
+}
+
+// ── source host key pinning (0.15.8) ─────────────────────────────────────
+
+/** `ninedeploy sources pin-host-keys <id> on|off`: off asks for the password (step-up); on only tightens. */
+export async function sourcesPinHostKeys(client: NineDeployClient, idRaw: string, value: string): Promise<void> {
+  const id = positiveInt(idRaw, 'Source id');
+  if (id === null) return;
+  const pin = onOff(value, 'The setting');
+  if (pin === null) return;
+  if (pin) info('The first clone after this learns the git host keys; every later clone refuses a host whose key changed. Applies to clones the panel makes with the SSH deploy key; a node keeps its per-job policy.');
+  const password = pin ? undefined : await stepUpPassword();
+  try {
+    const src = await spinner('Saving', () => client.sources.update(id, { pinHostKeys: pin, ...(password ? { password } : {}) }));
+    success(`${plain(src.name)}: host key pinning ${pin ? 'on' : 'off'}`);
+  } catch (err) {
+    error(message(err));
+  }
+}
+
+/** `ninedeploy sources reset-host-keys <id>`: forget the pinned keys so the next clone learns them again (step-up). */
+export async function sourcesResetHostKeys(client: NineDeployClient, idRaw: string): Promise<void> {
+  const id = positiveInt(idRaw, 'Source id');
+  if (id === null) return;
+  const password = await stepUpPassword();
+  try {
+    const src = await spinner('Resetting', () => client.sources.update(id, { resetHostKeys: true, ...(password ? { password } : {}) }));
+    success(`${plain(src.name)}: pinned host keys forgotten; the next clone learns them again`);
+  } catch (err) {
+    error(message(err));
+  }
+}
+
+/** `ninedeploy sources host-keys <id>`: the fingerprints a source has pinned. */
+export async function sourcesHostKeys(client: NineDeployClient, idRaw: string): Promise<void> {
+  const id = positiveInt(idRaw, 'Source id');
+  if (id === null) return;
+  try {
+    const all = await spinner('Loading sources', () => client.sources.list());
+    const src = all.find((s) => s.id === id);
+    if (!src) return error(`No source #${id}`);
+    header(`${plain(src.name)}: host keys`);
+    if (!src.pinHostKeys) return info('This source is not pinning host keys (sources pin-host-keys <id> on).');
+    const keys = src.pinnedHostKeys ?? [];
+    if (keys.length === 0) return info('Pinning is on; the first clone will learn the host keys.');
+    table(keys.map((k) => ({ host: plain(k.host), type: plain(k.type), fingerprint: plain(k.fingerprint ?? '(unreadable)') })), ['host', 'type', 'fingerprint']);
   } catch (err) {
     error(message(err));
   }

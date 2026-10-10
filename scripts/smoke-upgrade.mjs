@@ -838,6 +838,27 @@ async function terminalChecks(token, serviceId) {
  * again. Anything that keeps a host shell from opening is recorded, not
  * failed: it is the documented 422 for an image without nsenter.
  */
+// 0.15.8: opt-in SSH host key pinning on a source (see the journey smoke).
+const PIN_IN = [0, 15, 8];
+async function pinHostKeyChecks(token, password) {
+  const key = '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk=\n-----END OPENSSH PRIVATE KEY-----';
+  const existing = (await api('/v1/sources', { token })).json ?? [];
+  for (const s of existing) {
+    if (s.pinHostKeys !== false) fail(`${TO}: a source that predates pinning reports pinHostKeys=${s.pinHostKeys} (wanted false: the old per-job policy)`);
+  }
+  const created = await api('/v1/sources', { method: 'POST', token, body: { name: `pin-${suffix}`, type: 'github', deployKey: key } });
+  if (created.status !== 200 && created.status !== 201) fail(`${TO}: source create for host key pinning failed: ${created.status} ${created.text.slice(0, 200)}`);
+  const id = created.json.id;
+  const on = await api(`/v1/sources/${id}`, { method: 'PATCH', token, body: { pinHostKeys: true } });
+  if (on.status !== 200 || on.json?.pinHostKeys !== true) fail(`${TO}: switching pinning on: ${on.status} ${on.text.slice(0, 200)}`);
+  const noPassword = await api(`/v1/sources/${id}`, { method: 'PATCH', token, body: { pinHostKeys: false } });
+  if (noPassword.status !== 403 || errorCode(noPassword) !== 'reauth_required') fail(`${TO}: switching pinning off without the password answered ${noPassword.status} (wanted 403 reauth_required)`);
+  const off = await api(`/v1/sources/${id}`, { method: 'PATCH', token, body: { pinHostKeys: false, password } });
+  if (off.status !== 200 || off.json?.pinHostKeys !== false) fail(`${TO}: switching pinning off: ${off.status} ${off.text.slice(0, 200)}`);
+  await api(`/v1/sources/${id}`, { method: 'DELETE', token });
+  step(`${TO}: ${existing.length} existing source(s) keep the per-job host key policy; pinning switches on freely and off only with the password`);
+}
+
 async function hostShellChecks(token, password) {
   const nsenter = dindRun(['run', '--rm', '--entrypoint', 'nsenter', HELPER_IMAGE, '--help']);
   step(`recorded: \`nsenter --help\` in ${HELPER_IMAGE} exits ${nsenter.status} (${nsenter.all.split(/\r?\n/)[0]?.slice(0, 80) ?? ''}); the probe treats only 126/127 as "no nsenter"`);
@@ -1551,6 +1572,7 @@ async function main() {
     if (seeded015) await seededOperationsChecks(token, serviceId, seeded015);
     await terminalChecks(token, serviceId);
     await hostShellChecks(token, password);
+    if (!olderThan(TO, PIN_IN)) await pinHostKeyChecks(token, password);
     await trafficChecks(token, serviceId, upgradeHost);
     await openapiChecks(token);
     await grantChecks(token, serviceId);

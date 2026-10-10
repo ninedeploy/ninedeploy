@@ -644,6 +644,35 @@ async function terminalChecks(token, serviceId) {
  * again. Anything that keeps a host shell from opening is recorded, not
  * failed: it is the documented 422 for an image without nsenter.
  */
+// 0.15.8: opt-in SSH host key pinning on a source. On only tightens; off and a
+// reset need the password. The clone side is covered by the unit tests
+// (test/lib/git.test.ts); this proves the shipped artifact serves and gates
+// the setting.
+const PIN_IN = [0, 15, 8];
+async function pinHostKeyChecks(token, password) {
+  const key = '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk=\n-----END OPENSSH PRIVATE KEY-----';
+  const created = await api('/v1/sources', { method: 'POST', token, body: { name: `pin-${suffix}`, type: 'github', deployKey: key } });
+  if (created.status !== 200 && created.status !== 201) fail(`source create for host key pinning failed: ${created.status} ${created.text.slice(0, 200)}`);
+  const id = created.json.id;
+  const listed = async () => (await api('/v1/sources', { token })).json?.find((s) => s.id === id);
+  const before = await listed();
+  if (before?.pinHostKeys !== false || (before?.pinnedHostKeys ?? []).length !== 0) fail(`a new source pins host keys by default: ${JSON.stringify(before)}`);
+  const on = await api(`/v1/sources/${id}`, { method: 'PATCH', token, body: { pinHostKeys: true } });
+  if (on.status !== 200 || on.json?.pinHostKeys !== true) fail(`switching pinning on: ${on.status} ${on.text.slice(0, 200)}`);
+  const noPassword = await api(`/v1/sources/${id}`, { method: 'PATCH', token, body: { pinHostKeys: false } });
+  if (noPassword.status !== 403 || errorCode(noPassword) !== 'reauth_required') fail(`switching pinning off without the password answered ${noPassword.status} ${noPassword.text.slice(0, 160)} (wanted 403 reauth_required)`);
+  const wrong = await api(`/v1/sources/${id}`, { method: 'PATCH', token, body: { resetHostKeys: true, password: `wrong-${suffix}` } });
+  if (wrong.status !== 403 || errorCode(wrong) !== 'invalid_password') fail(`resetting host keys with a wrong password answered ${wrong.status} ${wrong.text.slice(0, 160)} (wanted 403 invalid_password)`);
+  if ((await listed())?.pinHostKeys !== true) fail('a refused change turned pinning off');
+  const reset = await api(`/v1/sources/${id}`, { method: 'PATCH', token, body: { resetHostKeys: true, password } });
+  if (reset.status !== 200 || reset.json?.pinHostKeys !== true) fail(`resetting host keys: ${reset.status} ${reset.text.slice(0, 200)}`);
+  const off = await api(`/v1/sources/${id}`, { method: 'PATCH', token, body: { pinHostKeys: false, password } });
+  if (off.status !== 200 || off.json?.pinHostKeys !== false) fail(`switching pinning off: ${off.status} ${off.text.slice(0, 200)}`);
+  const gone = await api(`/v1/sources/${id}`, { method: 'DELETE', token });
+  if (gone.status !== 200 && gone.status !== 204) fail(`deleting the pinning source failed: ${gone.status}`);
+  step('source host key pinning: off by default, on without a password, off and reset gated by it');
+}
+
 async function hostShellChecks(token, password) {
   const nsenter = dindRun(['run', '--rm', '--entrypoint', 'nsenter', HELPER_IMAGE, '--help']);
   step(`recorded: \`nsenter --help\` in ${HELPER_IMAGE} exits ${nsenter.status} (${nsenter.all.split(/\r?\n/)[0]?.slice(0, 80) ?? ''}); the probe treats only 126/127 as "no nsenter"`);
@@ -1225,6 +1254,7 @@ async function main() {
     step(`terminals: compose service #${composeId} refused as a service target (422 use_container_target)`);
     await terminalChecks(token, serviceId);
     await hostShellChecks(token, password);
+    if (!olderThan(String(health.version), PIN_IN)) await pinHostKeyChecks(token, password);
     await trafficChecks(token, serviceId, `journey-${suffix}.test`);
     await openapiChecks(token);
     await grantChecks(token, serviceId);

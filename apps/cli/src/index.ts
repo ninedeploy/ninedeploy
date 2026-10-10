@@ -129,7 +129,7 @@ import {
 } from './commands/panelBackup.js';
 // ── 0.16 T8 surfaces ──
 import {
-  serversList, serversRoles, servicesPlacement, servicesSwarm, servicesTransfers, sourcesAllowOnNodes,
+  serversList, serversRoles, servicesPlacement, servicesSwarm, servicesTransfers, sourcesAllowOnNodes, sourcesHostKeys, sourcesPinHostKeys, sourcesResetHostKeys,
   swarmInit, swarmJoin, swarmLeave, swarmSetEnabled, swarmStatus, volumesCreate,
   type PlacementOptions,
 } from './commands/multiNode.js';
@@ -1135,6 +1135,14 @@ sources.command('remove [id]').description('Remove a source (with confirmation)'
 sources.command('allow-on-nodes <id> <onOff>')
   .description('Allow (on, asks for your password) or stop (off) sending this credential to nodes for clones')
   .action((id: string, onOff: string) => sourcesAllowOnNodes(getClient(), id, onOff));
+// 0.15.8: pin the git host's SSH keys for deploy-key clones the panel makes.
+sources.command('pin-host-keys <id> <onOff>')
+  .description('Pin (on) or stop pinning (off, asks for your password) the git host SSH keys of a deploy-key source')
+  .action((id: string, onOff: string) => sourcesPinHostKeys(getClient(), id, onOff));
+sources.command('reset-host-keys <id>')
+  .description('Forget the pinned git host keys so the next clone learns them again (asks for your password)')
+  .action((id: string) => sourcesResetHostKeys(getClient(), id));
+sources.command('host-keys <id>').description('Show the git host key fingerprints a source has pinned').action((id: string) => sourcesHostKeys(getClient(), id));
 /* v8 ignore stop */
 
 // ── GitHub Apps (0.13) ─────────────────────────────────────────────────────

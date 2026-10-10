@@ -722,7 +722,7 @@ export interface SourceRepo {
  * deploy key be sent to a node for one clone; turning it on needs an
  * interactive session and `password` (step-up). Turning it off never does.
  */
-export type SourceUpdateInput = Omit<Partial<CreateSourceInput>, 'baseUrl'> & { baseUrl?: string | null } & Pick<SourcePatch, 'allowOnNodes' | 'password'>;
+export type SourceUpdateInput = Omit<Partial<CreateSourceInput>, 'baseUrl'> & { baseUrl?: string | null } & Pick<SourcePatch, 'allowOnNodes' | 'pinHostKeys' | 'resetHostKeys' | 'password'>;
 
 export interface NineDeployClient {
   auth: {

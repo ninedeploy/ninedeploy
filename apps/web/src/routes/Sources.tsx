@@ -81,6 +81,9 @@ export function Sources() {
   // password re-check, and the server's refusal shown in that prompt.
   const [allowFor, setAllowFor] = useState<{ id: number; name: string } | null>(null);
   const [allowError, setAllowError] = useState<string | null>(null);
+  // 0.15.8 host key pinning: switching it off and resetting take the password.
+  const [pinStep, setPinStep] = useState<{ id: number; name: string; kind: 'off' | 'reset' } | null>(null);
+  const [pinError, setPinError] = useState<string | null>(null);
 
   const list = useQuery({
     queryKey: ['sources'],
@@ -161,6 +164,32 @@ export function Sources() {
       if (on && isStepUpRefusal(err)) setAllowError(message);
       else {
         setAllowFor(null);
+        toast(message, 'error');
+      }
+    },
+  });
+  const pinHostKeys = useMutation({
+    mutationFn: ({ id, body, password }: { id: number; body: { pinHostKeys: boolean } | { resetHostKeys: true }; password?: string }) =>
+      api.sources.update(id, { ...body, ...(password ? { password } : {}) }),
+    onSuccess: (_res, { body }) => {
+      setPinStep(null);
+      setPinError(null);
+      qc.invalidateQueries({ queryKey: ['sources'] });
+      toast(
+        'resetHostKeys' in body
+          ? 'Pinned host keys forgotten; the next clone learns them again'
+          : body.pinHostKeys
+            ? 'Host keys of this source are now pinned'
+            : 'Host keys of this source are no longer pinned',
+        'success',
+      );
+    },
+    onError: (err, { body }) => {
+      const message = errorMessage(err, 'Could not change the setting');
+      const needsPassword = 'resetHostKeys' in body || !body.pinHostKeys;
+      if (needsPassword && isStepUpRefusal(err)) setPinError(message);
+      else {
+        setPinStep(null);
         toast(message, 'error');
       }
     },
@@ -460,6 +489,62 @@ export function Sources() {
                   />
                 </div>
               )}
+              {/* 0.15.8: opt-in, off by default. Absent on an older panel. */}
+              {s.pinHostKeys !== undefined && s.type !== 'registry' && s.type !== 'github_app' && (
+                <div className="mt-3 border-t border-white/5 pt-3 text-[11px] text-slate-400">
+                  <div className="flex items-center justify-between gap-3">
+                    <span>
+                      <span className="text-slate-300">Pin git host keys</span>
+                      <span className="block text-slate-500">
+                        {s.pinHostKeys
+                          ? 'A clone over SSH is refused if the host presents a different key than the one learnt.'
+                          : 'Off: every deploy accepts the host key it is shown (a changed key is only caught within one deploy).'}
+                      </span>
+                    </span>
+                    <Switch
+                      label={`Pin host keys of ${s.name}`}
+                      checked={s.pinHostKeys}
+                      disabled={pinHostKeys.isPending}
+                      onChange={(on) => {
+                        if (on) pinHostKeys.mutate({ id: s.id, body: { pinHostKeys: true } });
+                        else {
+                          setPinError(null);
+                          setPinStep({ id: s.id, name: s.name, kind: 'off' });
+                        }
+                      }}
+                    />
+                  </div>
+                  {s.pinHostKeys && (
+                    <div className="mt-2">
+                      {(s.pinnedHostKeys ?? []).length === 0 ? (
+                        <p className="text-slate-500">The first clone learns the host keys; nothing is pinned yet.</p>
+                      ) : (
+                        <ul className="space-y-1 font-mono text-[10px]">
+                          {(s.pinnedHostKeys ?? []).map((k) => (
+                            <li key={`${k.host}-${k.type}-${k.fingerprint ?? ''}`} className="flex flex-wrap gap-x-2">
+                              <span className="text-slate-300">{k.host}</span>
+                              <span className="text-slate-500">{k.type}</span>
+                              <span className="break-all text-slate-400">{k.fingerprint ?? '(unreadable)'}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <button
+                        type="button"
+                        aria-label={`Reset pinned keys of ${s.name}`}
+                        className="mt-2 text-[11px] text-amber-300 hover:underline"
+                        onClick={() => {
+                          setPinError(null);
+                          setPinStep({ id: s.id, name: s.name, kind: 'reset' });
+                        }}
+                      >
+                        Reset pinned keys
+                      </button>
+                      <p className="mt-1 text-slate-500">Applies to clones the panel makes with the SSH deploy key. A node clones with its own per-job policy.</p>
+                    </div>
+                  )}
+                </div>
+              )}
               {testResults[s.id] && <TestResult result={testResults[s.id]!} />}
             </Card>
           ))}
@@ -562,6 +647,29 @@ export function Sources() {
               clone ends. Anyone with root on that node could read it while the clone runs. Prefer building on the panel host
               (Service → Settings → Build placement) or a GitHub App, whose tokens are short-lived. A node owner can refuse with
               NINEDEPLOY_AGENT_STATIC_CREDENTIALS=off.
+            </p>
+          }
+        />
+      )}
+
+      {pinStep && (
+        <StepUpModal
+          title={pinStep.kind === 'off' ? `Stop pinning host keys of "${pinStep.name}"?` : `Reset the pinned host keys of "${pinStep.name}"?`}
+          confirmLabel={pinStep.kind === 'off' ? 'Stop pinning' : 'Reset keys'}
+          pending={pinHostKeys.isPending}
+          error={pinError}
+          onConfirm={(password) =>
+            pinHostKeys.mutate({ id: pinStep.id, body: pinStep.kind === 'off' ? { pinHostKeys: false } : { resetHostKeys: true }, password })
+          }
+          onClose={() => {
+            setPinStep(null);
+            setPinError(null);
+          }}
+          warning={
+            <p>
+              The next clone accepts whatever the Git host presents and remembers it from then on
+              {pinStep.kind === 'off' ? ', and without pinning a changed key goes unnoticed between deploys' : ''}. Do this when the host really rotated its
+              key. If you did not expect a change, leave the keys as they are: something may be intercepting the connection.
             </p>
           }
         />
