@@ -1,0 +1,1056 @@
+{
+  "generatedAt": "2026-10-10T00:00:00.000Z",
+  "source": "scripts/smoke-template-runtime.mjs --registry=<Coolify mirror bundle> (scripts/buildTemplateMirror.ts, coollabsio/coolify f55efc8)",
+  "results": [
+    {
+      "id": "coolify-apprise-api",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 30
+    },
+    {
+      "id": "coolify-glances",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 15
+    },
+    {
+      "id": "coolify-gotenberg",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 48
+    },
+    {
+      "id": "coolify-actualbudget",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 9
+    },
+    {
+      "id": "coolify-anythingllm",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 24
+    },
+    {
+      "id": "coolify-changedetection",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 53
+    },
+    {
+      "id": "coolify-dokuwiki",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 15
+    },
+    {
+      "id": "coolify-listmonk",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 25
+    },
+    {
+      "id": "coolify-readeck",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 4
+    },
+    {
+      "id": "coolify-miniflux",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 16
+    },
+    {
+      "id": "coolify-docmost",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 18
+    },
+    {
+      "id": "coolify-9router",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 26
+    },
+    {
+      "id": "coolify-autobase",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 103
+    },
+    {
+      "id": "coolify-babybuddy",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 41
+    },
+    {
+      "id": "coolify-bento-pdf",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 34
+    },
+    {
+      "id": "coolify-browserless",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 46
+    },
+    {
+      "id": "coolify-budibase",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 152
+    },
+    {
+      "id": "coolify-cap-captcha",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 59
+    },
+    {
+      "id": "coolify-castopod",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 120
+    },
+    {
+      "id": "coolify-chatwoot",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 125
+    },
+    {
+      "id": "coolify-classicpress-with-mariadb",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 43
+    },
+    {
+      "id": "coolify-cloudbeaver",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 37
+    },
+    {
+      "id": "coolify-cockpit",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 38
+    },
+    {
+      "id": "coolify-convertx",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 205
+    },
+    {
+      "id": "coolify-cryptgeon",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 27
+    },
+    {
+      "id": "coolify-docling",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 200
+    },
+    {
+      "id": "coolify-dolibarr",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 198
+    },
+    {
+      "id": "coolify-evolution-api",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 78
+    },
+    {
+      "id": "coolify-firefox",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 49
+    },
+    {
+      "id": "coolify-flipt",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 17
+    },
+    {
+      "id": "coolify-freshrss-with-postgresql",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 13
+    },
+    {
+      "id": "coolify-glitchtip",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 69
+    },
+    {
+      "id": "coolify-goatcounter",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 10
+    },
+    {
+      "id": "coolify-grist",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 72
+    },
+    {
+      "id": "coolify-hermes-agent-with-webui",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 209
+    },
+    {
+      "id": "coolify-heyform",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 127
+    },
+    {
+      "id": "coolify-influxdb",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 19
+    },
+    {
+      "id": "coolify-joplin",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 68
+    },
+    {
+      "id": "coolify-labelstudio",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 114
+    },
+    {
+      "id": "coolify-leantime",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 85
+    },
+    {
+      "id": "coolify-librespeed",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 16
+    },
+    {
+      "id": "coolify-linkwarden",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 86
+    },
+    {
+      "id": "coolify-lowcoder",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 116
+    },
+    {
+      "id": "coolify-marimo",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 46
+    },
+    {
+      "id": "coolify-metamcp",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 153
+    },
+    {
+      "id": "coolify-mixpost",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 174
+    },
+    {
+      "id": "coolify-n8n-with-postgres-and-worker",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 163
+    },
+    {
+      "id": "coolify-newapi",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 49
+    },
+    {
+      "id": "coolify-nextcloud-with-mariadb",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 101
+    },
+    {
+      "id": "coolify-nexus-arm",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 93
+    },
+    {
+      "id": "coolify-nitropage",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 39
+    },
+    {
+      "id": "coolify-nodebb",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 94
+    },
+    {
+      "id": "coolify-obsidian",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 231
+    },
+    {
+      "id": "coolify-onetimesecret",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 86
+    },
+    {
+      "id": "coolify-openwa-with-postgresql-and-redis",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 40
+    },
+    {
+      "id": "coolify-orangehrm",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 55
+    },
+    {
+      "id": "coolify-pairdrop",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 17
+    },
+    {
+      "id": "coolify-passbolt",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 55
+    },
+    {
+      "id": "coolify-peertube",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 131
+    },
+    {
+      "id": "coolify-pgadmin",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 86
+    },
+    {
+      "id": "coolify-phpmyadmin",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 37
+    },
+    {
+      "id": "coolify-pocket-id-with-postgresql",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 23
+    },
+    {
+      "id": "coolify-postiz",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 438
+    },
+    {
+      "id": "coolify-proxyscotch",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 22
+    },
+    {
+      "id": "coolify-rallly",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 54
+    },
+    {
+      "id": "coolify-rocketchat",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 102
+    },
+    {
+      "id": "coolify-seafile",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 92
+    },
+    {
+      "id": "coolify-sessy",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 35
+    },
+    {
+      "id": "coolify-slash",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 12
+    },
+    {
+      "id": "coolify-snipe-it",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 74
+    },
+    {
+      "id": "coolify-soketi",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 30
+    },
+    {
+      "id": "coolify-sparkyfitness",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 58
+    },
+    {
+      "id": "coolify-strapi",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 206
+    },
+    {
+      "id": "coolify-supertokens-with-postgresql",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 63
+    },
+    {
+      "id": "coolify-tolgee",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 86
+    },
+    {
+      "id": "coolify-triliumnext",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 23
+    },
+    {
+      "id": "coolify-unleash-with-postgresql",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 21
+    },
+    {
+      "id": "coolify-unstructured",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 854
+    },
+    {
+      "id": "coolify-usesend",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 47
+    },
+    {
+      "id": "coolify-vert",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 19
+    },
+    {
+      "id": "coolify-vvveb-with-mariadb",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 32
+    },
+    {
+      "id": "coolify-wakapi",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 22
+    },
+    {
+      "id": "coolify-weblate",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 58
+    },
+    {
+      "id": "coolify-wordpress-with-mariadb",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 10
+    },
+    {
+      "id": "coolify-yamtrack-with-postgresql",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 36
+    },
+    {
+      "id": "coolify-budge",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 171
+    },
+    {
+      "id": "coolify-bulwark",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 20
+    },
+    {
+      "id": "coolify-calibre-web-automated-book-downloader",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 143
+    },
+    {
+      "id": "coolify-checkmate",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 96
+    },
+    {
+      "id": "coolify-classicpress-without-database",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 8
+    },
+    {
+      "id": "coolify-cloudreve",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 101
+    },
+    {
+      "id": "coolify-codimd",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 104
+    },
+    {
+      "id": "coolify-databasus",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 54
+    },
+    {
+      "id": "coolify-directus-with-postgresql",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 50
+    },
+    {
+      "id": "coolify-docuseal",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 12
+    },
+    {
+      "id": "coolify-drizzle-gateway",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 9
+    },
+    {
+      "id": "coolify-easyappointments",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 37
+    },
+    {
+      "id": "coolify-elasticsearch",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 141
+    },
+    {
+      "id": "coolify-embystat",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 26
+    },
+    {
+      "id": "coolify-espocrm",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 83
+    },
+    {
+      "id": "coolify-fileflows",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 66
+    },
+    {
+      "id": "coolify-fizzy",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 36
+    },
+    {
+      "id": "coolify-freshrss-with-mariadb",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 13
+    },
+    {
+      "id": "coolify-glpi",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 128
+    },
+    {
+      "id": "coolify-gowa",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 25
+    },
+    {
+      "id": "coolify-grimmory",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 77
+    },
+    {
+      "id": "coolify-hermes-agent",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 120
+    },
+    {
+      "id": "coolify-honcho",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 119
+    },
+    {
+      "id": "coolify-imgcompress",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 78
+    },
+    {
+      "id": "coolify-joomla-with-mariadb",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 38
+    },
+    {
+      "id": "coolify-jupyter-notebook-python",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 39
+    },
+    {
+      "id": "coolify-keycloak-with-postgres",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 60
+    },
+    {
+      "id": "coolify-kuzzle",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 104
+    },
+    {
+      "id": "coolify-langflow",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 529
+    },
+    {
+      "id": "coolify-libreoffice",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 128
+    },
+    {
+      "id": "coolify-linkding-plus",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 90
+    },
+    {
+      "id": "coolify-mage-ai",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 150
+    },
+    {
+      "id": "coolify-mediawiki",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 51
+    },
+    {
+      "id": "coolify-mindsdb",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 131
+    },
+    {
+      "id": "coolify-moodle",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 189
+    },
+    {
+      "id": "coolify-n8n-with-postgresql",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 138
+    },
+    {
+      "id": "coolify-next-image-transformation",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 48
+    },
+    {
+      "id": "coolify-nextcloud-with-postgres",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 34
+    },
+    {
+      "id": "coolify-nitropage-with-postgresql",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 26
+    },
+    {
+      "id": "coolify-nocobase",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 61
+    },
+    {
+      "id": "coolify-observium",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 71
+    },
+    {
+      "id": "coolify-odoo",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 106
+    },
+    {
+      "id": "coolify-onedev",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 69
+    },
+    {
+      "id": "coolify-open-archiver",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 86
+    },
+    {
+      "id": "coolify-openobserve",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 30
+    },
+    {
+      "id": "coolify-openwa",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 67
+    },
+    {
+      "id": "coolify-owncloud",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 105
+    },
+    {
+      "id": "coolify-paymenter",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 61
+    },
+    {
+      "id": "coolify-penpot",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 168
+    },
+    {
+      "id": "coolify-plunk",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 78
+    },
+    {
+      "id": "coolify-pocket-id",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 10
+    },
+    {
+      "id": "coolify-portainer",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 26
+    },
+    {
+      "id": "coolify-pydio-cells",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 33
+    },
+    {
+      "id": "coolify-rivet-engine",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 21
+    },
+    {
+      "id": "coolify-siyuan",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 28
+    },
+    {
+      "id": "coolify-snapdrop",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 19
+    },
+    {
+      "id": "coolify-spacebot",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 53
+    },
+    {
+      "id": "coolify-statusnook",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 19
+    },
+    {
+      "id": "coolify-supertokens-with-mysql",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 80
+    },
+    {
+      "id": "coolify-sure",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 86
+    },
+    {
+      "id": "coolify-termix",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 52
+    },
+    {
+      "id": "coolify-trailbase",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 20
+    },
+    {
+      "id": "coolify-uptime-kuma-with-mariadb",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 19
+    },
+    {
+      "id": "coolify-vvveb",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 40
+    },
+    {
+      "id": "coolify-web-check",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 47
+    },
+    {
+      "id": "coolify-wordpress-without-database",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 8
+    },
+    {
+      "id": "coolify-yamtrack",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 66
+    },
+    {
+      "id": "coolify-zipline",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 64
+    },
+    {
+      "id": "coolify-affine",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 27
+    },
+    {
+      "id": "coolify-elasticsearch-with-kibana",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 114
+    },
+    {
+      "id": "coolify-jean",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 23
+    },
+    {
+      "id": "coolify-inngest",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 17
+    },
+    {
+      "id": "coolify-martin",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 18
+    },
+    {
+      "id": "coolify-pgbackweb",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 22
+    },
+    {
+      "id": "coolify-drupal-with-postgresql",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 6
+    },
+    {
+      "id": "coolify-immich",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 74
+    },
+    {
+      "id": "coolify-karakeep",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 13
+    },
+    {
+      "id": "coolify-once-campfire",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 34
+    },
+    {
+      "id": "coolify-redlib",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 4
+    },
+    {
+      "id": "coolify-paperless",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 81
+    },
+    {
+      "id": "coolify-sequin",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 27
+    },
+    {
+      "id": "coolify-vault",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 33
+    },
+    {
+      "id": "coolify-kimai",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 44
+    },
+    {
+      "id": "coolify-matrix-synapse-with-postgresql",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 23
+    },
+    {
+      "id": "coolify-documenso",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 29
+    },
+    {
+      "id": "coolify-matrix-synapse-with-sqlite",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 16
+    },
+    {
+      "id": "coolify-prefect",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 30
+    },
+    {
+      "id": "coolify-bluesky-pds",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 9
+    },
+    {
+      "id": "coolify-authentik",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 14
+    },
+    {
+      "id": "coolify-logto",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 27
+    }
+  ]
+}

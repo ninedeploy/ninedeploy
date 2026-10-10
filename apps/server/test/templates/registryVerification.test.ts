@@ -1,4 +1,4 @@
-﻿import { readFileSync } from 'node:fs';
+﻿import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { template as templateSchema } from '@ninedeploy/schemas';
 import bundledRegistry from '../../src/templates/registry.json' with { type: 'json' };
@@ -102,10 +102,13 @@ describe('bundled Hub template contract', () => {
     // and this contract follows it automatically. The evidence lives with the
     // test fixtures (74d6eab removed it from the repo root, which left this
     // contract reading a file that no longer existed).
-    const run = JSON.parse(
-      readFileSync(new URL('../fixtures/runtime-verify-2026-09-22.json', import.meta.url), 'utf8'),
-    ) as { results: Array<{ id: string; ok: boolean }> };
-    const okIds = new Set(run.results.filter((r) => r.ok).map((r) => r.id));
+    // One file per smoke campaign; the verified set is their union.
+    const fixtures = new URL('../fixtures/', import.meta.url);
+    const okIds = new Set<string>();
+    for (const file of readdirSync(fixtures).filter((name) => /^runtime-verify-.*\.json$/.test(name))) {
+      const run = JSON.parse(readFileSync(new URL(file, fixtures), 'utf8')) as { results: Array<{ id: string; ok: boolean }> };
+      for (const r of run.results) if (r.ok) okIds.add(r.id);
+    }
     const verifiedIds = new Set(templates.filter((t) => t.runtimeVerified).map((t) => t.id));
     // Every smoke-verified template is advertised…
     for (const id of okIds) expect(verifiedIds.has(id), id).toBe(true);

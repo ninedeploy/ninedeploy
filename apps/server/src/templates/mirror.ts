@@ -141,9 +141,30 @@ export function stripCoolifyOnlyKeys(raw: string): string {
   return raw.replace(COOLIFY_ONLY_KEY, '');
 }
 
-/** Shows `image:tag` for an image written `image:${TAG:-tag}`; the stack keeps the variable. */
+/** Shows `image:tag` for an image written `image:${TAG:-tag}` or `${TAG-tag}`; the stack keeps the variable. */
 function displayImage(image: string): string {
-  return image.replace(/\$\{[A-Za-z_][A-Za-z0-9_]*:-([^}$]*)\}/g, '$1');
+  return image.replace(/\$\{[A-Za-z_][A-Za-z0-9_]*:?-([^}$]*)\}/g, '$1');
+}
+
+/**
+ * Coolify gives every reference to a variable the default written for it
+ * anywhere in the file. Docker Compose does not: a bare `$NAME` resolves to ''
+ * while `${NAME:-x}` resolves to 'x', so one deploy gets two values for one
+ * variable. Rewrites the bare references to carry the default too. A default
+ * that itself interpolates is not copied.
+ */
+export function unifyDefaultedPlaceholders(raw: string): string {
+  const defaults = new Map<string, string>();
+  for (const m of raw.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*):-([^}$]*)\}/g)) {
+    if (!m[1]!.startsWith('SERVICE_') && !defaults.has(m[1]!)) defaults.set(m[1]!, m[2]!);
+  }
+  if (defaults.size === 0) return raw;
+  // `$$` is compose's own escape and must stay literal; the lookbehind skips it.
+  return raw.replace(/(?<!\$)\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/g, (whole, braced: string | undefined, bare: string | undefined) => {
+    const name = braced ?? bare!;
+    const fallback = defaults.get(name);
+    return fallback === undefined ? whole : `\${${name}:-${fallback}}`;
+  });
 }
 
 /** A volume source that is a plain name (not a path, not interpolated). */
@@ -289,7 +310,7 @@ export function convertCoolifyComposeFile(fileName: string, raw: string): Mirror
     // from composeContent regardless.
     image: typeof services[main.name]?.image === 'string' ? displayImage(services[main.name]!.image as string) : `docker.io/library/${main.name}`,
     port,
-    composeContent: declareImplicitVolumes(stripCoolifyOnlyKeys(raw)),
+    composeContent: declareImplicitVolumes(unifyDefaultedPlaceholders(stripCoolifyOnlyKeys(raw))),
     composeService: main.name,
     docs: header.documentation,
     requires: `Coolify mirror · routed service: ${main.name} (${main.via}) · not runtime-verified`,

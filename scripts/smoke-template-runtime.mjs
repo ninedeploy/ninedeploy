@@ -218,15 +218,15 @@ async function runComposeTemplate(template, project, workDir) {
   const overrides = smokeEnv[template.id] ?? {};
   const composeFile = join(workDir, 'docker-compose.yml');
   await writeFile(composeFile, template.composeContent, { mode: 0o600 });
-  const tokens = [...new Set([...template.composeContent.matchAll(/\bSERVICE_[A-Z0-9_]+\b/g)].map((m) => m[0]))].sort();
-  // URL_/FQDN_ tokens resolve to the stack's public address at deploy time
-  // (engine/magicVars.ts), so apps that validate BASE_URL need a real one here.
-  const tokenValue = (token) => {
-    const route = token.match(/^SERVICE_(URL|FQDN)_([A-Z0-9_]+?)(?:_\d+)?$/);
-    if (!route) return randomString(32);
-    const host = `${route[2].toLowerCase().replaceAll('_', '-')}.nd-smoke.test`;
-    return route[1] === 'URL' ? `https://${host}` : host;
-  };
+  // The deploy-time resolver itself (built from engine/magicVars.ts), so a
+  // HEX_/BASE64_ token has the shape the app expects and URL_/FQDN_ tokens are
+  // real addresses; hand-rolled values passed apps that never validate them
+  // and failed the ones that do.
+  const { resolveStackEnvironment } = await import('../apps/server/dist/engine/magicVars.js');
+  const resolved = resolveStackEnvironment(template.composeContent, {
+    publicUrl: `https://${template.id.replace(/^coolify-/, '').replaceAll('_', '-')}.nd-smoke.test`,
+  });
+  const generated = Object.entries(resolved.values).filter(([, value]) => value !== '').map(([key, value]) => `${key}=${value}`);
   // `${VAR:?msg}` has no default: the wizard asks the user for it. Give it a
   // plausible value of the right shape so the stack itself is what gets tested.
   const required = [...new Set([...template.composeContent.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*):\?/g)].map((m) => m[1]))]
@@ -236,7 +236,7 @@ async function runComposeTemplate(template, project, workDir) {
   // guess can supply (an enum such as MAIL_DRIVER). promote-templates.mjs ships
   // the same values as the template's env defaults, so what passed is what ships.
   const pinned = Object.entries(overrides).map(([key, value]) => `${key}=${value}`);
-  await writeFile(join(workDir, '.env'), [...tokens.map((t) => `${t}=${tokenValue(t)}`), ...required, ...pinned].join('\n'), { mode: 0o600 });
+  await writeFile(join(workDir, '.env'), [...generated, ...required, ...pinned].join('\n'), { mode: 0o600 });
   await docker(['compose', '-p', project, '-f', composeFile, 'up', '-d', '--quiet-pull'], { timeout: 600_000 });
   const { stdout: net } = await docker(['network', 'ls', '--filter', `label=com.docker.compose.project=${project}`, '--format', '{{.Name}}']);
   const probeNetwork = net.trim().split('\n')[0];
@@ -270,7 +270,8 @@ try {
       if (profile === 'compose') {
         const project = `ndsmoke${suffix}${done}`;
         composeProjects.push(project);
-        await pullIfNeeded(template.image);
+        // An image still holding a ${VAR} cannot be pulled by name; compose pulls it.
+        if (!template.image.includes('$')) await pullIfNeeded(template.image);
         await runComposeTemplate(template, project, workDir);
         composeProjects.splice(composeProjects.indexOf(project), 1);
         await docker(['compose', '-p', project, 'down', '-v', '--remove-orphans', '--timeout', '10']).catch(() => undefined);

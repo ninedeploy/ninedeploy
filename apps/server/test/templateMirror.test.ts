@@ -6,7 +6,10 @@ import {
   extractConfigurableEnv,
   parseHeader,
   pickMainService,
+  stripCoolifyOnlyKeys,
+  unifyDefaultedPlaceholders,
 } from '../src/templates/mirror.js';
+import { getBundledTemplates } from '../src/templates/registry.js';
 
 const UMAMI_LIKE = `# documentation: https://umami.is
 # slogan: Simple analytics with privacy.
@@ -210,10 +213,57 @@ describe('Coolify-only keys and variables', () => {
     expect(convert(raw).composeContent).toContain('${APP_TAG:-2026.5.6}');
   });
 
+  it('also resolves the colon-less default form in an image', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: compose interpolation is the literal under test
+    const raw ='# port: 80\nservices:\n  app:\n    image: svhd/logto:${TAG-latest}\n';
+    expect(convert(raw).image).toBe('svhd/logto:latest');
+  });
+
   it('skips a stack that needs a variable only Coolify provides', () => {
     // biome-ignore lint/suspicious/noTemplateCurlyInString: compose interpolation is the literal under test
     const raw = "# port: 80\nservices:\n  app:\n    image: a:1\n    volumes:\n      - '${COOLIFY_VOLUME_APP}:/data'\n";
     expect(convertCoolifyComposeFile('kv.yaml', raw)).toEqual({ skip: true, reason: 'uses COOLIFY_VOLUME_APP, a variable only Coolify provides' });
+  });
+});
+
+// Coolify gives every reference to a variable the default written for it
+// anywhere in the file. Docker Compose does not: a bare `$NAME` resolves to ''
+// while `${NAME:-x}` resolves to 'x', so one deploy gets two values for one
+// variable (the umami-stack crash loop, deployment #91).
+describe('defaulted placeholders', () => {
+  const convert = (compose: string) => {
+    const result = convertCoolifyComposeFile('x.yaml', `# port: 80\n${compose}`);
+    if (result.skip) throw new Error(`skipped: ${result.reason}`);
+    return result.template.composeContent!.replace(/^# port: 80\n/, '');
+  };
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: compose interpolation is the literal under test
+  const withDefault = '${DB:-kimai}';
+
+  it('gives bare references the default written elsewhere in the file', () => {
+    const out = convert(
+      `services:\n  app:\n    image: a:1\n    environment:\n      - A=$DB\n      - B=\${DB}\n      - C=${withDefault}\n`,
+    );
+    expect(out).toContain(`- A=${withDefault}`);
+    expect(out).toContain(`- B=${withDefault}`);
+    expect(out).toContain(`- C=${withDefault}`);
+  });
+
+  it('leaves a variable without any default, escaped dollars and magic tokens alone', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: compose interpolation is the literal under test
+    const raw = 'services:\n  app:\n    image: a:1\n    environment:\n      - A=$PLAIN\n      - B=$$DB\n      - C=$SERVICE_PASSWORD_X\n      - D=${DB:-kimai}\n';
+    expect(convert(raw)).toBe(raw);
+  });
+
+  it('does not touch a longer name that merely starts with the variable', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: compose interpolation is the literal under test
+    const raw = 'services:\n  app:\n    image: a:1\n    environment:\n      - A=$DB_HOST\n      - D=${DB:-kimai}\n';
+    expect(convert(raw)).toBe(raw);
+  });
+
+  it('skips a default that itself interpolates, which cannot be copied safely', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: compose interpolation is the literal under test
+    const raw = 'services:\n  app:\n    image: a:1\n    environment:\n      - A=$DB\n      - D=${DB:-${OTHER}}\n';
+    expect(convert(raw)).toBe(raw);
   });
 });
 
@@ -293,5 +343,25 @@ describe('implicit named volumes', () => {
     if (result.skip) return;
     expect(Object.keys((yaml.load(result.template.composeContent!) as { volumes: Record<string, unknown> }).volumes)).toEqual(['actual_data']);
     expect(result.template.composeContent!.startsWith('# port: 5006')).toBe(true);
+  });
+});
+
+// The bundled catalog now carries stacks converted from the Coolify catalog.
+// Whatever a converter pass would still change is a defect that shipped.
+describe('bundled compose templates', () => {
+  const stacks = getBundledTemplates().filter((template) => template.composeContent);
+
+  it('are already clean: a converter pass changes nothing', () => {
+    expect(stacks.length).toBeGreaterThan(100);
+    for (const template of stacks) {
+      const content = template.composeContent!;
+      expect(stripCoolifyOnlyKeys(content), `${template.id}: Coolify-only keys`).toBe(content);
+      expect(declareImplicitVolumes(content), `${template.id}: undeclared named volumes`).toBe(content);
+      expect(unifyDefaultedPlaceholders(content), `${template.id}: bare reference to a defaulted variable`).toBe(content);
+    }
+  });
+
+  it('only show an image tag, never an interpolation', () => {
+    for (const template of stacks) expect(template.image, template.id).not.toContain('$');
   });
 });

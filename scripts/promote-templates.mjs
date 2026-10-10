@@ -56,9 +56,17 @@ for (const result of results.results) {
   // Values the smoke had to pin ship as the template's env defaults.
   const pinned = Object.entries(smokeEnv[template.id] ?? {}).filter(([key]) => !(rest.env ?? []).some((e) => e.key === key));
   if (pinned.length > 0) rest.env = [...(rest.env ?? []), ...pinned.map(([key, value]) => ({ key, value, secret: false }))];
+  // Compose stacks are operator-only already; the Hub says what reaches the host.
+  const content = template.composeContent ?? '';
+  const hostAccess = [
+    /docker\.sock/.test(content) && 'the Docker socket',
+    /^\s*privileged:\s*true/m.test(content) && 'privileged mode',
+    /^\s*pid:\s*["']?host/m.test(content) && 'the host PID namespace',
+  ].filter(Boolean);
+  const note = hostAccess.length > 0 ? ` · uses ${hostAccess.join(', ')}` : '';
   registry.templates.push({
     ...rest,
-    ...(requires ? { requires: requires.replace(/\s*·\s*not runtime-verified/, '') } : {}),
+    ...(requires ? { requires: `${requires.replace(/\s*·\s*not runtime-verified/, '')}${note}` } : {}),
     runtimeVerified: true,
     verifiedAt: date,
   });
