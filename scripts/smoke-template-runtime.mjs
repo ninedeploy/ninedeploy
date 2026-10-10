@@ -6,20 +6,25 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 const exec = promisify(execFile);
-const registry = JSON.parse(await readFile(new URL('../apps/server/src/templates/registry.json', import.meta.url), 'utf8'));
-
 const args = process.argv.slice(2);
 const opt = (name, dflt) => {
   const hit = args.find((arg) => arg.startsWith(`--${name}=`));
   return hit ? hit.slice(name.length + 3) : dflt;
 };
+// --registry=<file> smokes a candidate bundle (for example a Coolify mirror
+// from buildTemplateMirror.ts) before its entries are promoted into the
+// bundled registry; the default is the bundled registry itself.
+const registryFile = opt('registry', null);
+const registry = JSON.parse(
+  await readFile(registryFile ?? new URL('../apps/server/src/templates/registry.json', import.meta.url), 'utf8'),
+);
 const has = (name) => args.includes(`--${name}`);
 const requested = opt('ids', '').split(',').filter(Boolean);
 const timeoutSeconds = Number(opt('timeout', 300));
 const outPath = opt('out', null);
 const all = has('all');
 if (!all && requested.length === 0) {
-  process.stderr.write('Usage: node scripts/smoke-template-runtime.mjs --all | --ids=n8n,gitea [--timeout=300] [--out=results.json]\n');
+  process.stderr.write('Usage: node scripts/smoke-template-runtime.mjs --all | --ids=n8n,gitea [--registry=bundle.json] [--timeout=300] [--out=results.json]\n');
   process.exit(2);
 }
 
@@ -51,6 +56,8 @@ function randomString(length) {
   return out;
 }
 
+const smokeEnv = JSON.parse(await readFile(new URL('./template-smoke-env.json', import.meta.url), 'utf8'));
+
 const suffix = randomUUID().replaceAll('-', '').slice(0, 10);
 const network = `nd-template-smoke-${suffix}`;
 const createdContainers = [];
@@ -62,7 +69,7 @@ async function docker(dockerArgs, options = {}) {
   return exec('docker', dockerArgs, { timeout: options.timeout ?? 120_000, maxBuffer: 4 * 1024 * 1024 });
 }
 
-async function cleanup() {
+async function cleanup({ keepNetwork = false } = {}) {
   for (const project of composeProjects.splice(0).reverse()) {
     await docker(['compose', '-p', project, 'down', '-v', '--remove-orphans', '--timeout', '10']).catch(() => undefined);
   }
@@ -72,7 +79,9 @@ async function cleanup() {
   for (const volume of createdVolumes.reverse()) {
     await docker(['volume', 'rm', volume]).catch(() => undefined);
   }
-  await docker(['network', 'rm', network]).catch(() => undefined);
+  createdContainers.length = 0;
+  createdVolumes.length = 0;
+  if (!keepNetwork) await docker(['network', 'rm', network]).catch(() => undefined);
 }
 
 async function pullIfNeeded(image) {
@@ -206,10 +215,28 @@ async function runDbTemplate(template, container) {
 /** Same interpolation semantics as engine/magicVars.ts: SERVICE_* tokens get
  *  generated values, everything else is left to compose (defaults apply). */
 async function runComposeTemplate(template, project, workDir) {
+  const overrides = smokeEnv[template.id] ?? {};
   const composeFile = join(workDir, 'docker-compose.yml');
   await writeFile(composeFile, template.composeContent, { mode: 0o600 });
   const tokens = [...new Set([...template.composeContent.matchAll(/\bSERVICE_[A-Z0-9_]+\b/g)].map((m) => m[0]))].sort();
-  await writeFile(join(workDir, '.env'), tokens.map((t) => `${t}=${randomString(32)}`).join('\n'), { mode: 0o600 });
+  // URL_/FQDN_ tokens resolve to the stack's public address at deploy time
+  // (engine/magicVars.ts), so apps that validate BASE_URL need a real one here.
+  const tokenValue = (token) => {
+    const route = token.match(/^SERVICE_(URL|FQDN)_([A-Z0-9_]+?)(?:_\d+)?$/);
+    if (!route) return randomString(32);
+    const host = `${route[2].toLowerCase().replaceAll('_', '-')}.nd-smoke.test`;
+    return route[1] === 'URL' ? `https://${host}` : host;
+  };
+  // `${VAR:?msg}` has no default: the wizard asks the user for it. Give it a
+  // plausible value of the right shape so the stack itself is what gets tested.
+  const required = [...new Set([...template.composeContent.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*):\?/g)].map((m) => m[1]))]
+    .filter((name) => !name.startsWith('SERVICE_') && !(name in overrides))
+    .map((name) => `${name}=${/MAIL.*(FROM|ADDRESS)|EMAIL/.test(name) ? 'admin@example.com' : /URL/.test(name) ? 'https://smoke.nd-smoke.test' : `smoke${randomString(8)}`}`);
+  // scripts/template-smoke-env.json: values a template needs that no generic
+  // guess can supply (an enum such as MAIL_DRIVER). promote-templates.mjs ships
+  // the same values as the template's env defaults, so what passed is what ships.
+  const pinned = Object.entries(overrides).map(([key, value]) => `${key}=${value}`);
+  await writeFile(join(workDir, '.env'), [...tokens.map((t) => `${t}=${tokenValue(t)}`), ...required, ...pinned].join('\n'), { mode: 0o600 });
   await docker(['compose', '-p', project, '-f', composeFile, 'up', '-d', '--quiet-pull'], { timeout: 600_000 });
   const { stdout: net } = await docker(['network', 'ls', '--filter', `label=com.docker.compose.project=${project}`, '--format', '{{.Name}}']);
   const probeNetwork = net.trim().split('\n')[0];
@@ -226,6 +253,10 @@ await docker(['pull', 'busybox:1.36'], { timeout: 300_000 }).catch(async () => {
 });
 
 let done = 0;
+// Written after every template so an interrupted batch keeps what it proved.
+const saveResults = async () => {
+  if (outPath) await writeFile(outPath, JSON.stringify({ generatedAt: new Date().toISOString(), registryVersion: registry.version, results }, null, 2));
+};
 try {
   await docker(['network', 'create', network]);
   const workDir = await mkdtemp(join(tmpdir(), 'nd-smoke-'));
@@ -261,11 +292,17 @@ try {
       }
       const seconds = Math.round((Date.now() - started) / 1000);
       results.push({ id, profile, ok: true, seconds });
+      await saveResults();
       process.stdout.write(`PASS ${prefix} ${seconds}s\n`);
     } catch (error) {
       const seconds = Math.round((Date.now() - started) / 1000);
-      const message = String(error instanceof Error ? error.message : error).split('\n').slice(0, 25).join('\n');
+      // compose prints one `level=warning` line per unset variable; they bury the error.
+      const message = String(error instanceof Error ? error.message : error)
+        .split('\n').filter((line) => !line.includes('level=warning')).slice(0, 25).join('\n');
       results.push({ id, profile, ok: false, seconds, error: message });
+      await saveResults();
+      // A failed stack must not keep running (holding ports and disk) for the rest of the batch.
+      await cleanup({ keepNetwork: true });
       process.stdout.write(`FAIL ${prefix} ${seconds}s\n  ${message.split('\n')[0]}\n`);
     }
   }

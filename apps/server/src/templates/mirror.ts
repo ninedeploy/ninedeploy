@@ -129,6 +129,84 @@ export function pickMainService(
   return { name: (appCandidates[0] ?? names[0])!, via: 'first-service' };
 }
 
+/** A volume source that is a plain name (not a path, not interpolated). */
+const NAMED_VOLUME = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
+
+function namedVolumeOf(entry: unknown): string | null {
+  if (typeof entry === 'string') {
+    // `name:/path[:mode]`; with no ':' the entry is an anonymous volume.
+    const colon = entry.indexOf(':');
+    if (colon < 0) return null;
+    const source = entry.slice(0, colon);
+    return NAMED_VOLUME.test(source) ? source : null;
+  }
+  if (entry && typeof entry === 'object') {
+    const long = entry as { type?: unknown; source?: unknown };
+    if (long.type === 'volume' && typeof long.source === 'string' && NAMED_VOLUME.test(long.source)) return long.source;
+  }
+  return null;
+}
+
+/** A top-level `volumes:` line that is empty or `{}`, optionally with a comment. */
+const EMPTY_VOLUMES_LINE = /^volumes:[ \t]*(?:\{[ \t]*\}[ \t]*)?(#.*?)?(\r?)$/m;
+
+/**
+ * Coolify creates the named volumes of a stack itself, so an upstream file may
+ * use `data:/x` with no top-level `volumes:` entry. Docker Compose rejects that
+ * ("refers to undefined volume"), which made every such template fail at
+ * deploy. Declares the missing names and keeps the file's own text (comments,
+ * indentation, line endings) as it was.
+ */
+export function declareImplicitVolumes(raw: string): string {
+  let doc: { services?: unknown; volumes?: unknown } | null;
+  try {
+    doc = yaml.load(raw) as typeof doc;
+  } catch {
+    return raw;
+  }
+  if (!doc || typeof doc !== 'object' || !doc.services || typeof doc.services !== 'object') return raw;
+  const existing = doc.volumes && typeof doc.volumes === 'object' ? (doc.volumes as Record<string, unknown>) : {};
+  const missing = new Set<string>();
+  for (const entry of Object.values(doc.services as Record<string, unknown>)) {
+    const volumes = (entry as { volumes?: unknown } | null)?.volumes;
+    if (!Array.isArray(volumes)) continue;
+    for (const volume of volumes) {
+      const name = namedVolumeOf(volume);
+      if (name && !(name in existing)) missing.add(name);
+    }
+  }
+  if (missing.size === 0) return raw;
+
+  const names = [...missing];
+  const eol = raw.includes('\r\n') ? '\r\n' : '\n';
+  const empty = Object.keys(existing).length === 0 ? EMPTY_VOLUMES_LINE.exec(raw) : null;
+  if (empty) {
+    const comment = empty[1] ? ` ${empty[1]}` : '';
+    const lines = names.map((name) => `  ${name}:`).join(eol);
+    return `${raw.slice(0, empty.index)}volumes:${comment}${empty[2]}${eol}${lines}${raw.slice(empty.index + empty[0].length)}`;
+  }
+  if (doc.volumes === undefined || doc.volumes === null) {
+    return `${raw}${raw.endsWith('\n') ? '' : eol}${eol}volumes:${eol}${names.map((name) => `  ${name}:`).join(eol)}${eol}`;
+  }
+  // A populated block: add the names under its first line, indented like its
+  // existing children.
+  const header = /^volumes:[ \t]*(#.*?)?\r?$/m.exec(raw);
+  const children = header ? /^([ \t]+)\S/m.exec(raw.slice(header.index + header[0].length)) : null;
+  if (!header || !children) {
+    // Flow style or another shape this does not recognise: re-serialise.
+    const merged = { ...doc, volumes: { ...existing, ...Object.fromEntries(names.map((name) => [name, {}])) } };
+    const head: string[] = [];
+    for (const line of raw.split(/\r?\n/)) {
+      if (!line.startsWith('#') && line.trim() !== '') break;
+      head.push(line);
+    }
+    return `${head.join(eol)}${eol}${yaml.dump(merged)}`;
+  }
+  const insertAt = header.index + header[0].length;
+  const lines = names.map((name) => `${children[1]}${name}:`).join(eol);
+  return `${raw.slice(0, insertAt)}${eol}${lines}${raw.slice(insertAt)}`;
+}
+
 export function convertCoolifyComposeFile(fileName: string, raw: string): MirrorSkip | MirrorConverted {
   const base = fileName.replace(/\.ya?ml$/i, '');
   const header = parseHeader(raw);
@@ -191,7 +269,7 @@ export function convertCoolifyComposeFile(fileName: string, raw: string): Mirror
     // from composeContent regardless.
     image: typeof services[main.name]?.image === 'string' ? services[main.name]!.image as string : `docker.io/library/${main.name}`,
     port,
-    composeContent: raw,
+    composeContent: declareImplicitVolumes(raw),
     composeService: main.name,
     docs: header.documentation,
     requires: `Coolify mirror · routed service: ${main.name} (${main.via}) · not runtime-verified`,

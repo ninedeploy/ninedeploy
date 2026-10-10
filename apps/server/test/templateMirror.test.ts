@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import yaml from 'js-yaml';
 import {
   convertCoolifyComposeFile,
+  declareImplicitVolumes,
   extractConfigurableEnv,
   parseHeader,
   pickMainService,
@@ -158,5 +159,84 @@ describe('upstream file conversion', () => {
       expect(result).toEqual({ skip: true, reason: "service 'app' uses host networking" });
     }
     expect(convertCoolifyComposeFile('br.yaml', stack('bridge')).skip).toBe(false);
+  });
+});
+
+// Coolify declares the named volumes of a stack itself, so an upstream file may
+// reference `data:/x` with no top-level `volumes:` entry. Docker Compose
+// refuses such a file ("refers to undefined volume"), so the converter must
+// declare them or every one of those templates fails at deploy.
+describe('implicit named volumes', () => {
+  const declared = (raw: string): string[] =>
+    Object.keys((yaml.load(declareImplicitVolumes(raw)) as { volumes?: Record<string, unknown> }).volumes ?? {}).sort();
+  const stack = (...volumes: string[]) => ['services:', '  app:', '    image: a:1', '    volumes:', ...volumes.map((v) => `      - ${v}`), ''].join('\n');
+
+  it('declares a short-syntax named volume when the file has no volumes block', () => {
+    const raw = stack('actual_data:/data');
+    expect(declared(raw)).toEqual(['actual_data']);
+    expect(declareImplicitVolumes(raw).startsWith(raw)).toBe(true);
+  });
+
+  it('declares long-syntax volume sources and leaves bind mounts and anonymous volumes alone', () => {
+    const raw = [
+      'services:',
+      '  app:',
+      '    image: a:1',
+      '    volumes:',
+      '      - type: volume',
+      '        source: long_data',
+      '        target: /a',
+      '      - type: bind',
+      '        source: ./conf',
+      '        target: /b',
+      '      - ./relative:/c',
+      '      - /abs/path:/d',
+      '      - /anonymous',
+      '      - ~/home:/e',
+      '      - named:/f:ro',
+      '',
+    ].join('\n');
+    expect(declared(raw)).toEqual(['long_data', 'named']);
+  });
+
+  it('adds only the missing names to an existing block, in the block’s own indentation', () => {
+    const raw = `${stack('kept:/k', 'missing:/m')}volumes:\n    kept:\n`;
+    const out = declareImplicitVolumes(raw);
+    expect(declared(raw)).toEqual(['kept', 'missing']);
+    expect(out).toContain('\n    missing:');
+  });
+
+  it('handles an empty or inline volumes mapping and keeps a trailing comment', () => {
+    const base = stack('v:/x');
+    expect(declared(`${base}volumes: {}\n`)).toEqual(['v']);
+    expect(declared(`${base}volumes:\n`)).toEqual(['v']);
+    expect(declareImplicitVolumes(`${base}volumes: # data\n`)).toContain('volumes: # data\n  v:');
+  });
+
+  it('keeps CRLF line endings', () => {
+    const out = declareImplicitVolumes(stack('v:/x').replace(/\n/g, '\r\n'));
+    expect(out.replace(/\r\n/g, '')).not.toContain('\n');
+    expect(out).toContain('volumes:\r\n  v:\r\n');
+  });
+
+  it('does not touch a file that already declares everything, external volumes included', () => {
+    const ok = `${stack('v:/x')}volumes:\n  v:\n    external: true\n`;
+    expect(declareImplicitVolumes(ok)).toBe(ok);
+  });
+
+  it('skips sources it cannot name (interpolated) and unparsable files', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: compose interpolation is the literal under test
+    const raw = stack('${DATA_DIR}:/x', '"$OTHER:/y"');
+    expect(declareImplicitVolumes(raw)).toBe(raw);
+    expect(declareImplicitVolumes('services: [')).toBe('services: [');
+  });
+
+  it('is applied by the converter, which keeps the upstream header', () => {
+    const raw = `# port: 5006\nservices:\n  actual:\n    image: a:1\n    environment:\n      - SERVICE_URL_ACTUAL_5006\n    volumes:\n      - actual_data:/data\n`;
+    const result = convertCoolifyComposeFile('actual.yaml', raw);
+    expect(result.skip).toBe(false);
+    if (result.skip) return;
+    expect(Object.keys((yaml.load(result.template.composeContent!) as { volumes: Record<string, unknown> }).volumes)).toEqual(['actual_data']);
+    expect(result.template.composeContent!.startsWith('# port: 5006')).toBe(true);
   });
 });
