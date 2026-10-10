@@ -79,7 +79,8 @@ Shipped as patches, as the owner asked: 0.15.2 (builds, clones, volumes), 0.15.3
 
 - Templates: 305 since 0.15.7 (175 stacks from the Coolify mirror converter, each smoke-deployed). Of the other 114 mirror stacks, about 80 were not attempted (68 duplicate a template we already have, the rest have more than six services or are database variants) and 35 were tried and dropped: private or pull-denied images (ente, formbricks, buzz, freescout), a broken upstream `latest` (hoppscotch's migration, vikunja's volume permissions), stacks that need a licence or an external service (foundryvtt, openclaw, unleash), and a routed port that disagrees with the app (wikijs). Each can come back when its upstream is fixed; `scripts/smoke-template-runtime.mjs --registry=<mirror bundle> --ids=…` retests one.
 - Extra engines and notification channels: done in 0.15.6 (KeyDB, Dragonfly, Microsoft Teams, Resend).
-- The unproven leads in the audit hints list, proven or dropped one by one.
+- SSH host key pinning for deploy-key sources: done in 0.15.8 (opt-in per source, panel clones only; a node keeps its per-job policy).
+- The unproven leads in the audit hints list, proven or dropped one by one. Most that remain need a real compose binary or a live hung daemon to prove.
 
 ## Not planned for now
 

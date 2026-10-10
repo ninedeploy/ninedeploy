@@ -1,9 +1,9 @@
 # NineDeploy — Architecture
 
 > **Doc status.** Originally written against the tree at `v0.3.5`; the hard
-> counts (tables, migrations, route modules, templates, MCP tools, coverage
-> floors, installer size) were re-read out of the source for `v0.10.36`
-> (2026-10). Test-case totals carry the release they were measured at. Where
+> counts (tables, migrations, route modules, templates, MCP tools) were re-read
+> out of the source for `v0.15.8` (2026-10); coverage floors and installer size
+> date from `v0.10.36`. Test-case totals carry the release they were measured at. Where
 > the implementation does not yet match the intent, that is stated in the text
 > rather than smoothed over — see
 > [§16 Known gaps](#16-known-gaps-implementation-vs-intent), which is part of the
@@ -69,7 +69,7 @@ host port publishing (`services.published_port`).
               ┌────────────▼┐  ┌──▼───────────────┐  ┌─────────────────────┐
               │  Traefik v3 │  │ SQLite (.data/)   │  │ Remote agents       │
               │  :80 / :443 │  │ libsql + Drizzle  │  │ (NINEDEPLOY_AGENT=1)│
-              │  auto-HTTPS │  │ 52 tables         │  │ typed ops, plain    │
+              │  auto-HTTPS │  │ 66 tables         │  │ typed ops, plain    │
               │  middlewares│  │ self-migrating    │  │ HTTP transport §7   │
               └──────┬──────┘  └───────────────────┘  └──────────┬──────────┘
                      │
@@ -96,7 +96,7 @@ ninedeploy/                       pnpm 11 workspace + Turborepo
 │   │   │   │               database, proxy, tunnel, logs, containerFiles,
 │   │   │   │               volumeFiles, logDrainManager, autoPrune, magicVars,
 │   │   │   │               repoInsights, templateDependencies, serverProvisioner
-│   │   │   ├── modules/    (~10.8k LOC) 66 route modules + api.ts aggregator — see §5
+│   │   │   ├── modules/    (~10.8k LOC) 83 route modules + api.ts aggregator — see §5
 │   │   │   ├── lib/        (~7.2k LOC) crypto, jwt, sessions, totp(+replay),
 │   │   │   │               webauthn, oauth/OIDC, loginLockout, passwordReset,
 │   │   │   │               keyRotation, resourceAccess (authz choke point),
@@ -108,7 +108,7 @@ ninedeploy/                       pnpm 11 workspace + Turborepo
 │   │   │   │               ServiceRegistry, ConfigCenter, MenuRegistry,
 │   │   │   │               auditBridge, pluginLoader + 3 built-in plugins
 │   │   │   ├── plugins/    (~1.2k LOC) fastify plugins — see §6
-│   │   │   ├── templates/  130-entry registry bundle + Coolify compose mirror
+│   │   │   ├── templates/  305-entry registry bundle (175 stacks converted from the Coolify catalog and smoke-run)
 │   │   │   ├── agent.ts    remote-host agent mode
 │   │   │   └── version.ts  VERSION + changelog
 │   │   ├── scripts/        buildTemplateMirror.ts (compose→template converter)
@@ -134,12 +134,12 @@ ninedeploy/                       pnpm 11 workspace + Turborepo
 │   └── cli/                       `ninedeploy` CLI — 40+ commands (commander 15)
 │
 ├── packages/
-│   ├── db/          Drizzle ORM schema (52 tables) + 65 SQL migrations;
+│   ├── db/          Drizzle ORM schema (66 tables) + 73 SQL migrations;
 │   │                server self-migrates at startup (drizzle-kit is dev-only)
 │   ├── schemas/     Zod v4 DTOs shared by server, web, CLI, SDK, MCP
 │   ├── sdk/         Typed API client over an injectable FetchLike; 40+ namespaces
 │   ├── plugin-sdk/  definePlugin + scopedConfig helpers for kernel plugins
-│   └── mcp/         MCP server (`ninedeploy-mcp`, stdio) — 38 tools
+│   └── mcp/         MCP server (`ninedeploy-mcp`, stdio) — 62 tools
 │
 ├── docs/                          11 operator guides (QUICKSTART, DEPLOYMENTS,
 │                                  WORKSPACES_RBAC, NINEDEPLOY_MANIFEST,
@@ -345,7 +345,7 @@ shutdown. Registration order:
 
 ```
 cors → websocket → securityHeaders → rateLimit → rawBody → db → kernel → auth
-  → error handler → health → events(WS) → /v1 (64 route modules) → /scim/v2
+  → error handler → health → events(WS) → /v1 (route modules) → /scim/v2
   → worker → traefik → runtimeState → collector → backupScheduler
   → housekeeping → jobScheduler → staticFiles (SPA catch-all, LAST)
 ```
@@ -382,7 +382,7 @@ envelopes; 5xx messages are suppressed in production.
 | containers | /containers/:name | inspect, compose, file browser (list/read/write/mkdir/delete) |
 | env | /services/:id/env, /projects/:id/env, /env/search | service + project-scope env CRUD, cross-scope key search |
 | hooks | /hooks, /services | receive (HMAC + branch + watch-path globs + replay dedup + **PR preview create/destroy**), manage CRUD; public, rate-limited |
-| templates | /templates | list, detail, deploy — schema-validated registry (130 entries; bundled JSON, DB/env source override with 6 h cache + offline fallback) |
+| templates | /templates | list, detail, deploy — schema-validated registry (305 entries; bundled JSON, DB/env source override with 6 h cache + offline fallback) |
 | topology | /topology | graph (services + DBs + domains + attachments) |
 | stats | /stats, /services/:id/metrics | live snapshot, time series |
 | dashboard | /dashboard | aggregate stats + health probes + recent |
@@ -940,7 +940,7 @@ Fixed by `kernel/auditBridge.ts`: one subscription to the audit stream that
 already sees every state change, republished as the raw `audit.recorded`
 firehose plus a typed domain event where the action maps unambiguously.
 Bridging at `audit()` rather than sprinkling `kernel.events.emit(...)` through
-66 route modules means a new route is covered the day it is added.
+83 route modules means a new route is covered the day it is added.
 
 **The marketplace pretended to install things.** Nothing in `pluginLoader.ts`
 ever `import()`s code: an npm/git/local "install" became a DB row plus a shell

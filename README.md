@@ -14,7 +14,7 @@ terminal CLI, a typed SDK, or an AI agent over MCP.
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522.13-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7-blue.svg)](https://www.typescriptlang.org)
 [![Docker](https://img.shields.io/badge/Docker-required-blue.svg)](https://docker.com)
-[![Tests](https://img.shields.io/badge/Tests-6%2C460%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/Tests-11%2C685%20passing-brightgreen.svg)](#testing)
 [![CI](https://github.com/NineDeploy/NineDeploy/actions/workflows/ci.yml/badge.svg)](https://github.com/NineDeploy/NineDeploy/actions/workflows/ci.yml)
 
 [Website](https://ninedeploy.com) · [Quickstart](./docs/QUICKSTART.md) · [Architecture](./ARCHITECTURE.md) · [Templates](https://ninedeploy.com/templates) · [Changelog](./CHANGELOG.md)
@@ -76,8 +76,8 @@ Re-running the same command is the upgrade path; it snapshots `.data` before tou
 ```
 
 > **Where `main` stands:** the default channel installs the newest release tag (**0.15.8**).
-> The newest work (doctor mode, retained-volume re-keying) lands on `main` before it is tagged —
-> see [`CHANGELOG.md`](./CHANGELOG.md) under *Unreleased*, or run `--channel main` to get it today.
+> Work lands on `main` before it is tagged — see [`CHANGELOG.md`](./CHANGELOG.md) under *Unreleased*
+> (empty right now), or run `--channel main` to get it today.
 
 ### Docker
 
@@ -214,9 +214,9 @@ Full matrix — environment variables, upgrade paths, systemd internals — in
       ╔═════════════════════════════════════════════════════════════════════╗
       ║  NineDeploy panel — Fastify 5 API + React 19 dashboard, one process ║
       ║ ─────────────────────────────────────────────────────────────────── ║
-      ║  66 route modules (64 on /v1)     deploy engine (queue + worker)    ║
+      ║  83 route modules                 deploy engine (queue + worker)    ║
       ║  microkernel: events · hooks      builders: docker · pm2 · compose  ║
-      ║  SQLite (52 tables, Drizzle)      AES-256-GCM vault + key ring      ║
+      ║  SQLite (66 tables, Drizzle)      AES-256-GCM vault + key ring      ║
       ╚═══╤═══════════════╤═══════════════════╤══════════════════╤══════════╝
           │ docker.sock   │ docker.sock       │ HTTP + token     │ S3 API
           ▼               ▼                   ▼                  ▼
@@ -360,6 +360,9 @@ Watch paths, `[skip ci]` handling, cancellation and PR previews: [**docs/DEPLOYM
 - **Secret managers:** `${{infisical:…}}` / `${{doppler:…}}`, and from 0.14 HashiCorp Vault / OpenBao
   (`${{vault:path#field}}`) and AWS Secrets Manager (`${{aws:id#key}}`), resolved at deploy time,
   never stored, and withheld from PR previews.
+- **Git host key pinning** (0.15.8, opt-in per deploy-key source): the first successful clone learns the
+  host's SSH keys and later clones refuse a host that presents a different one. Off, and resetting,
+  need a password re-check. Off by default, so existing sources behave as before.
 - Subprocesses inherit a whitelisted environment (never `NINEDEPLOY_*`), and the panel refuses to boot
   in production with a known-insecure JWT secret or a weak master key.
 - **SSO and 2FA:** OpenID Connect (Google, GitHub, Keycloak, Okta), WebAuthn passkeys, TOTP with
@@ -544,8 +547,8 @@ with.
 }
 ```
 
-**38 tools** over stdio, each mapping 1:1 onto the typed SDK so the MCP wire can never express
-anything the HTTP API could not: inspection (`list_services`, `service_logs`, `list_deploys`,
+**62 tools** over stdio: 42 hand-written ones, each mapping 1:1 onto the typed SDK so the MCP wire can
+never express anything the HTTP API could not, and 20 read-only ones generated from the OpenAPI document: inspection (`list_services`, `service_logs`, `list_deploys`,
 `inspect_container`, `topology`, `system_stats`, `activity_log`, …), guarded actions
 (`deploy_service`, `restart_service`, `rollback_deploy`, `update_service`, `system_autoprune`), and
 configuration writes (`set_config`, `install_plugin`, `enable_plugin`, …).
@@ -569,7 +572,7 @@ NineDeploy/                    pnpm 11 workspace + Turborepo
 │   ├── server/                Fastify 5 API, deploy engine, microkernel, agent mode
 │   │   ├── src/engine/        pipeline · builders (docker/pm2/compose) · database ·
 │   │   │                      proxy · tunnel · logs · autoPrune · repoInsights
-│   │   ├── src/modules/       66 route modules + one aggregator + a compose helper
+│   │   ├── src/modules/       83 route modules + one aggregator + a compose helper
 │   │   ├── src/lib/           crypto · jwt · sessions · totp · webauthn · oidc ·
 │   │   │                      resourceAccess (the authz choke point) · hostPrivilege ·
 │   │   │                      egressGuard · s3 · cloudflare · manifest apply
@@ -578,12 +581,12 @@ NineDeploy/                    pnpm 11 workspace + Turborepo
 │   ├── web/                   React 19 + Vite 8 + Tailwind v4 dashboard
 │   └── cli/                   `ninedeploy` (commander 15)
 ├── packages/
-│   ├── db/                    Drizzle schema (52 tables) + SQL migrations
+│   ├── db/                    Drizzle schema (66 tables) + 73 SQL migrations
 │   ├── schemas/               Zod v4 DTOs shared by server, web, CLI, SDK and MCP
 │   ├── sdk/                   typed API client over an injectable fetch
-│   ├── mcp/                   Model Context Protocol server (38 tools, stdio)
+│   ├── mcp/                   Model Context Protocol server (62 tools, stdio)
 │   └── plugin-sdk/            definePlugin + scoped config helpers
-├── docs/                      11 operator guides
+├── docs/                      18 operator guides, plus audits and the roadmap
 ├── install.sh                 one-command installer and upgrader
 ├── Dockerfile                 multi-stage, non-root, checksum-pinned Nixpacks
 └── ARCHITECTURE.md            the full internal design spec
@@ -602,15 +605,15 @@ pnpm build && RUN_INTEGRATION=1 pnpm --filter @ninedeploy/server exec vitest run
 
 | Package | Files | Tests | Coverage floor (stmts/branch/func/lines) |
 | :--- | ---: | ---: | :--- |
-| `apps/server` | 328 | 5,003 | 93.25 / 87.3 / 91 / 95.1 |
-| `apps/web` | 106 | 1,747 | 97.5 / 91.5 / 97.5 / 97.5 |
-| `apps/cli` | 35 | 663 | 83 / 80 / 80 / 83 |
-| `packages/schemas` | 6 | 279 | 100 |
-| `packages/sdk` | 5 | 198 | 100 |
-| `packages/mcp` | 2 | 39 | 90 / 80 / 95 / 95 |
+| `apps/server` | 445 | 8,023 | 93.25 / 87.3 / 91 / 95.1 |
+| `apps/web` | 131 | 2,006 | 97.5 / 91.5 / 97.5 / 97.5 |
+| `apps/cli` | 44 | 821 | 83 / 80 / 80 / 83 |
+| `packages/schemas` | 17 | 427 | 100 |
+| `packages/sdk` | 11 | 299 | 100 |
+| `packages/mcp` | 2 | 47 | 90 / 80 / 95 / 95 |
 | `packages/db` | 13 | 55 | 100 |
 | `packages/plugin-sdk` | 1 | 7 | 100 |
-| **Total** | **496** | **7,991** | |
+| **Total** | **664** | **11,685** | |
 
 Unit and route suites only — the server's seven testcontainers integration files (real Postgres,
 MySQL, Redis and MongoDB backup/restore, a deploy end-to-end, a compose-stack deploy and a volume
@@ -629,7 +632,9 @@ build, and the integration job.
 | Guide | What is in it |
 | :--- | :--- |
 | [Quickstart & upgrading](./docs/QUICKSTART.md) | Install modes, environment variables, systemd internals, in-place upgrades |
-| [Private repositories](./docs/PRIVATE_REPO_GUIDE.md) | GitHub PATs, server-generated SSH deploy keys, build-pack choice, auto-deploy webhooks |
+| [Private repositories](./docs/PRIVATE_REPO_GUIDE.md) | GitHub PATs, server-generated SSH deploy keys and git host key pinning, build-pack choice, auto-deploy webhooks |
+| [GitHub App](./docs/GITHUB_APP.md) | One-click App setup, installation tokens, per-service links |
+| [Panel backup](./docs/PANEL_BACKUP.md) | Backing up and restoring the panel's own database and keys |
 | [`.ninedeploy` manifest](./docs/NINEDEPLOY_MANIFEST.md) | Every section, precedence rules, and the `manifest init/validate/show` CLI |
 | [Deployments & pipelines](./docs/DEPLOYMENTS.md) | Blue-green, cancellation, watch paths, PR preview environments |
 | [Workspaces & RBAC](./docs/WORKSPACES_RBAC.md) | Tenancy, invitations, the role matrix, the instance-operator flag, project and environment access grants |
@@ -639,6 +644,7 @@ build, and the integration job.
 | [Databases & backups](./docs/DATABASES_BACKUPS.md) | Engines, injected connection strings, encryption, S3 destinations, restores, dump import |
 | [Ingress & tunnels](./docs/TRAEFIK_INGRESS.md) | Dynamic routing, ACME HTTP-01/DNS-01, middlewares, Cloudflare Tunnels, custom config, uploaded certificates, public database access, traffic analytics |
 | [Secret managers](./docs/SECRET_MANAGERS.md) | HashiCorp Vault / OpenBao and AWS Secrets Manager references, setup, limits |
+| [Roadmap](./docs/ROADMAP.md) | What shipped in each 0.12–0.16 line and what is still open |
 | [Rolling back](./docs/ROLLBACK.md) | What a rollback to the previous release leaves behind, and how to clean it up |
 | [Plugins & microkernel](./docs/PLUGINS_MICROKERNEL.md) | Lifecycle hooks, dynamic menus, driver registries |
 | [AI, MCP, CLI & SDK](./docs/AI_MCP_CLI.md) | Tool reference, CLI reference, SDK usage, the OpenAPI 3.1 document |

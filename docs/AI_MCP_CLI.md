@@ -108,7 +108,7 @@ ninedeploy services logs <service-id>
 
 # Deployment history
 ninedeploy deploys list <service-id>
-ninedeploy deploys watch <service-id> <deploy-id>     # stream the build log
+ninedeploy deploys watch <service-id> <deploy-id>     # stream the build log; exits 1 if the deploy failed or was cancelled (0.15.8)
 ninedeploy deploys cancel <service-id> <deploy-id>    # queued or in-flight
 ninedeploy deploys rollback <service-id> <deploy-id>  # re-deploy that exact commit/digest
 ninedeploy deploys rm <service-id> <deploy-id>        # drop it from history, with its log
@@ -214,6 +214,9 @@ ninedeploy volumes list|rm <name> --server <server-id>
 ninedeploy volumes create nd-svc-web-data [--server <server-id>]
 ninedeploy databases create --server <server-id>     # the node is fixed for the database's life
 ninedeploy sources allow-on-nodes <source-id> on|off # on prompts for your password
+ninedeploy sources pin-host-keys <source-id> on|off   # 0.15.8: pin the git host's SSH keys; off asks for your password
+ninedeploy sources reset-host-keys <source-id>        # forget the pinned keys (password)
+ninedeploy sources host-keys <source-id>              # the pinned fingerprints
 
 # Swarm (operator, opt-in per service)
 ninedeploy swarm status
@@ -349,6 +352,7 @@ const nodeVolumes = await client.volumes.list({ serverId: nodeId });
 await client.volumes.remove('nd-svc-web-data', { serverId: nodeId });
 await client.databases.create({ name: 'db', engine: 'postgres', serverId: nodeId });             // + serverId, serverName, reachable on reads
 await client.sources.update(sourceId, { allowOnNodes: true, password });                         // step-up
+await client.sources.update(sourceId, { pinHostKeys: true });                                    // 0.15.8; off and resetHostKeys: true need `password`
 
 // Swarm: init and enable need step-up; join/leave run through the node's agent
 await client.swarm.init({ advertiseAddr: '10.0.0.1', password });
