@@ -418,6 +418,8 @@ async function secretProviderChecks(token) {
 // subprotocol and the single-use ticket exactly as lib/terminalProtocol.ts
 // expects. Shared verbatim by smoke-upgrade.mjs and smoke-user-journey.mjs.
 const OPERATIONS_IN = [0, 15, 0];
+/** 0.15.6: KeyDB and Dragonfly managed engines. */
+const REDIS_FAMILY_IN = [0, 15, 6];
 const TERMINAL_PROTOCOL = 'ninedeploy.terminal.v1';
 const TERMINAL_TICKET_PREFIX = 'ninedeploy.ticket.';
 /** Where the panel's Traefik writes the analytics access log (engine/proxy.ts TRAFFIC_LOG_CONTAINER_DIR). */
@@ -898,6 +900,55 @@ async function grantChecks(token, serviceId) {
   step(`grants: seatless guest 404 → viewer grant #${grantId} on project #${projectId} (workspace #${workspaceId}, isGuest) → reads the service (200), env write 403, workspace-level ${wsLevel.map(([, r]) => r.status).join('/')}, /access/me lists it → suspended 404 → reinstated 200 → revoked → 404`);
 }
 
+/**
+ * 0.15.6: KeyDB and Dragonfly are real containers that must start, answer to
+ * their password, hold data across a backup and a restore, pass the backup
+ * drill, and be deleted. Data goes through the API's own credentials and the
+ * engine's own client inside the DinD daemon, so this proves the flags and
+ * images the panel picked, not a mock.
+ */
+async function redisFamilyChecks(token) {
+  const dindDocker = (args) => docker(['exec', DIND, 'docker', '-H', `tcp://127.0.0.1:${DIND_PORT}`, ...args]);
+  for (const { engine, cli } of [{ engine: 'keydb', cli: 'keydb-cli' }, { engine: 'dragonfly', cli: 'redis-cli' }]) {
+    const created = await api('/v1/databases', { method: 'POST', token, body: { name: `journey-${engine}`, engine } });
+    if (created.status !== 200 && created.status !== 201) fail(`${engine} database create failed: ${created.status} ${created.text.slice(0, 300)}`);
+    const db = created.json;
+    if (db?.status !== 'running') fail(`${engine} database reported '${db?.status}' (wanted running)`);
+    const creds = await api(`/v1/databases/${db.id}/credentials`, { token });
+    if (creds.status !== 200 || !creds.json?.password) fail(`${engine} credentials: ${creds.status} ${creds.text.slice(0, 200)}`);
+    const run = (...cmd) => dindDocker(['exec', db.host, cli, '-a', creds.json.password, '--no-auth-warning', ...cmd]);
+    // The password is required, and it works.
+    const unauthRun = spawnSync('docker', ['exec', DIND, 'docker', '-H', `tcp://127.0.0.1:${DIND_PORT}`, 'exec', db.host, cli, 'PING'], { encoding: 'utf8', timeout: 60_000 });
+    const unauth = `${unauthRun.stdout ?? ''}${unauthRun.stderr ?? ''}`;
+    if (!/NOAUTH/.test(unauth)) fail(`${engine} answered an unauthenticated PING with "${unauth.slice(0, 80)}" (wanted NOAUTH)`);
+    if (run('PING') !== 'PONG') fail(`${engine} did not answer PONG with its password`);
+    run('SET', 'journey-key', 'before-backup');
+
+    const backup = await api(`/v1/databases/${db.id}/backups`, { method: 'POST', token, body: {} });
+    if (backup.status !== 200 || backup.json?.status !== 'completed' || !(backup.json?.sizeBytes > 0)) {
+      fail(`${engine} backup: ${backup.status} ${backup.text.slice(0, 300)}`);
+    }
+    const drill = await api(`/v1/databases/${db.id}/backups/drill`, { method: 'POST', token, body: { backupId: backup.json.id } });
+    if (drill.status !== 200 || drill.json?.status !== 'passed') fail(`${engine} backup drill: ${drill.status} ${drill.text.slice(0, 400)}`);
+
+    run('SET', 'journey-after', 'after-backup');
+    const restore = await api(`/v1/databases/${db.id}/backups/${backup.json.id}/restore`, { method: 'POST', token, body: {} });
+    if (restore.status !== 200) fail(`${engine} restore: ${restore.status} ${restore.text.slice(0, 300)}`);
+    // The restore restarts the container; wait until it answers again.
+    let back = '';
+    for (let i = 0; i < 30 && back !== 'before-backup'; i++) {
+      await sleep(2000);
+      try { back = dindDocker(['exec', db.host, cli, '-a', creds.json.password, '--no-auth-warning', 'GET', 'journey-key']); } catch { back = ''; }
+    }
+    if (back !== 'before-backup') fail(`${engine} lost its data across a restore: journey-key reads "${back}"`);
+    if (run('GET', 'journey-after') !== '') fail(`${engine} kept a key written after the backup, so the restore did not replace the data`);
+
+    const del = await api(`/v1/databases/${db.id}`, { method: 'DELETE', token });
+    if (del.status !== 200 && del.status !== 204) fail(`${engine} delete failed: ${del.status}`);
+    step(`managed ${engine}: started, password enforced, backup #${backup.json.id} (${backup.json.sizeBytes} B) drilled green, restore replaced the data, deleted`);
+  }
+}
+
 async function main() {
   console.log(`User-journey smoke against ${IMAGE}`);
   step(`topology: network ${NET}, dind ${DIND}, panel ${PANEL} (:${PANEL_PORT})`);
@@ -1092,6 +1143,7 @@ async function main() {
     if (del.status !== 200 && del.status !== 204) fail(`${engine} database delete failed: ${del.status}`);
     step(`managed ${engine} started, ran and was deleted`);
   }
+  if (!olderThan(String(health.version), REDIS_FAMILY_IN)) await redisFamilyChecks(token);
 
   // ── 0.12 preview-only env: add, list, remove; production env untouched ─
   const prodKeys = async () => {
@@ -1153,7 +1205,7 @@ async function main() {
   }
   step('service deleted');
 
-  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → signed webhook redeploy → compose stack → managed postgres (+ backup policy) + redis → preview-only env → GitHub App/Gitea surfaces → 0.14 Traefik directory, custom config, certificates, public access, import, secret managers (≥0.14) → 0.15 terminals, host shell, traffic analytics, OpenAPI, access grants (≥0.15) → teardown');
+  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → signed webhook redeploy → compose stack → managed postgres (+ backup policy) + redis (+ KeyDB and Dragonfly with backup, drill and restore from 0.15.6) → preview-only env → GitHub App/Gitea surfaces → 0.14 Traefik directory, custom config, certificates, public access, import, secret managers (≥0.14) → 0.15 terminals, host shell, traffic analytics, OpenAPI, access grants (≥0.15) → teardown');
 }
 
 main()
