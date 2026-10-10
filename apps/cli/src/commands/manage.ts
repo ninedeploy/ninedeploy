@@ -582,6 +582,20 @@ export async function deploysWatch(serviceIdStr: string, deployIdStr: string, ti
   if (tokenExpiresSoon(loadConfig().token)) await refreshAccessToken();
   let closed = false;
   let ws: InstanceType<typeof WebSocket> | undefined;
+  /** 'failed' / 'cancelled' when this deploy ended badly, else null (also when unreadable). */
+  const finalStatus = async (): Promise<string | null> => {
+    try {
+      const { authedFetch } = await import('../client.js');
+      const res = await authedFetch(`/v1/services/${serviceId}/deploys`);
+      if (!res.ok) return null;
+      const body = (await res.json()) as unknown;
+      const all = (Array.isArray(body) ? body : ((body as { deploys?: unknown } | null)?.deploys ?? [])) as Array<{ id?: number; status?: string }>;
+      const status = all.find((d) => d.id === deployId)?.status;
+      return status === 'failed' || status === 'cancelled' ? status : null;
+    } catch {
+      return null;
+    }
+  };
   const connect = (retryOn401: boolean): void => {
     // L-3: the token travels as a WebSocket subprotocol, not `?token=`. A query
     // string lands in Traefik's access log (`accessLog: {}` is on by default)
@@ -626,8 +640,15 @@ export async function deploysWatch(serviceIdStr: string, deployIdStr: string, ti
         error(code === 1008 ? `Stream rejected (${why || 'policy violation'}).` : `Log stream ended abnormally (${code ?? 'no close code'}${why ? `: ${why}` : ''}).`);
         return;
       }
-      closed = true;
-      info('Log stream closed.');
+      // A normal close only says the stream ended, not how the deploy did.
+      // Read its final status so `deploys watch && next-step` stops after a
+      // failed or cancelled deploy. If the status cannot be read the old
+      // behaviour stands: the stream ended cleanly, exit 0.
+      void finalStatus().then((bad) => {
+        closed = true;
+        if (bad) error(`Deploy #${deployId} ${bad}.`);
+        else info('Log stream closed.');
+      });
     });
     // `close` normally follows `error`, but `unexpected-response` (handshake
     // rejection) never reaches the close event on some ws versions — flag the

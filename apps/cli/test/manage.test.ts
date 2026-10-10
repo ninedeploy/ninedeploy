@@ -689,6 +689,42 @@ describe('deploys watch', () => {
     writeSpy.mockRestore();
   });
 
+  // A clean close only says the stream ended. `deploys watch && next-step`
+  // must not carry on after a deploy that failed or was cancelled.
+  describe('final status after a clean close', () => {
+    const watchUntilClosed = async (deploys: unknown, reject = false) => {
+      if (reject) sys.fetch.mockRejectedValue(new Error('network down'));
+      else sys.fetch.mockResolvedValue({ ok: true, status: 200, json: async () => deploys });
+      const handlers = fakeSocket();
+      vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      const pending = deploysWatch('1', '2');
+      await new Promise((r) => setTimeout(r, 10));
+      handlers['close']?.(1000, Buffer.from('deploy finished'));
+      await pending;
+    };
+
+    it.each(['failed', 'cancelled'])('exits 1 and names the status when the deploy %s', async (status) => {
+      await watchUntilClosed([{ id: 3, status: 'running' }, { id: 2, status }]);
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(status));
+      expect(sys.fetch.mock.calls[0]?.[0]).toContain('/v1/services/1/deploys');
+    });
+
+    it('also reads the { deploys } envelope', async () => {
+      await watchUntilClosed({ deploys: [{ id: 2, status: 'failed' }] });
+      expect(process.exitCode).toBe(1);
+    });
+
+    it('stays 0 when the deploy is running, another deploy failed, or the status is unreadable', async () => {
+      await watchUntilClosed([{ id: 2, status: 'running' }, { id: 3, status: 'failed' }]);
+      expect(process.exitCode).toBe(0);
+      await watchUntilClosed([]);
+      expect(process.exitCode).toBe(0);
+      await watchUntilClosed(null, true);
+      expect(process.exitCode).toBe(0);
+    });
+  });
+
   // F538: build logs are repo-controlled; their frames must not drive the
   // operator's terminal (OSC 52 clipboard write, title, cursor/erase), while
   // SGR colours and ordinary text still print.
