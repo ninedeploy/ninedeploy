@@ -1019,6 +1019,22 @@ async function openapiChecks(token) {
 // an operator runs init and enables it.
 const SWARM_IN = [0, 15, 4];
 
+// 0.15.7: the bundled catalog grew from 130 to 305 templates. An upgrade only
+// ships new data, so this checks the upgraded panel serves it (read-only; the
+// journey smoke deploys one converted stack).
+const CATALOG_IN = [0, 15, 7];
+async function catalogChecks(token) {
+  const list = await api('/v1/templates', { token });
+  if (list.status !== 200 || !Array.isArray(list.json) || list.json.length < 300) {
+    fail(`${TO}: the template catalog has ${Array.isArray(list.json) ? list.json.length : list.status} entries (wanted 300 or more)`);
+  }
+  const detail = await api('/v1/templates/coolify-miniflux', { token });
+  if (detail.status !== 200 || detail.json?.runtimeVerified !== true || !/^volumes:/m.test(detail.json?.composeContent ?? '')) {
+    fail(`${TO}: coolify-miniflux detail: ${detail.status} ${detail.text.slice(0, 200)}`);
+  }
+  step(`${TO}: the catalog lists ${list.json.length} templates and serves a converted stack with its volumes declared`);
+}
+
 async function swarmChecks(token, serviceId) {
   const state = dind(['info', '--format', '{{.Swarm.LocalNodeState}}']);
   if (state !== 'inactive') fail(`the Docker host is in Swarm state '${state}' after the upgrade (wanted inactive)`);
@@ -1549,6 +1565,7 @@ async function main() {
   if (redeploy.status !== 'running') fail(`${TO}: redeploy ended as '${redeploy.status}'`);
   step(`redeploy #${redeploy.id} green on ${TO}`);
   if (!olderThan(TO, SWARM_IN)) await swarmChecks(token, serviceId);
+  if (!olderThan(TO, CATALOG_IN)) await catalogChecks(token);
 
   docker(['stop', PANEL]);
   const post = await inspectDb(TO);
