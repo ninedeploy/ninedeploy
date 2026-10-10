@@ -93,6 +93,17 @@ describe('ToastProvider', () => {
     act(() => vi.advanceTimersByTime(3000));
     expect(screen.getByText('Saved!')).toBeInTheDocument();
   });
+
+  // A toast's auto-dismiss timer must not outlive the provider: in CI it fired
+  // after a test's page was torn down ("window is not defined" from React).
+  it('clears pending auto-dismiss timers on unmount', () => {
+    const { unmount } = renderToast();
+    fireEvent.click(screen.getByText('success'));
+    fireEvent.click(screen.getByText('error'));
+    expect(vi.getTimerCount()).toBe(2);
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });
 
 describe('useToast', () => {

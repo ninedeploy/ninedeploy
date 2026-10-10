@@ -1,4 +1,4 @@
-import { type ReactNode, createContext, useContext, useState, useCallback } from 'react';
+import { type ReactNode, createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2, Info, X } from 'lucide-react';
 import { cn } from './ui.js';
 
@@ -30,6 +30,16 @@ const ICONS: Record<ToastType, typeof CheckCircle2> = {
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
+  // Auto-dismiss timers, cleared on unmount so none fires into a torn-down tree.
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
+
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      for (const t of pending) clearTimeout(t);
+      pending.clear();
+    };
+  }, []);
 
   const dismiss = useCallback((id: number) => {
     setItems((prev) => prev.filter((t) => t.id !== id));
@@ -39,7 +49,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (message: string, type: ToastType = 'info') => {
       const id = Date.now() + Math.random();
       setItems((prev) => [...prev, { id, message, type }]);
-      setTimeout(() => dismiss(id), 4000);
+      const timer = setTimeout(() => {
+        timers.current.delete(timer);
+        dismiss(id);
+      }, 4000);
+      timers.current.add(timer);
     },
     [dismiss],
   );

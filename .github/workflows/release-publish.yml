@@ -73,7 +73,9 @@ permissions:
 jobs:
   publish-image:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The release checks plus the two-platform build took 24 min in v0.15.4;
+    # v0.15.5 hit 30 min mid-build and was cancelled before anything was pushed.
+    timeout-minutes: 60
     permissions:
       # r581: this job only pushes `:vX.Y.Z`; creating the GitHub Release
       # (contents: write) moved to promote-release, behind the smokes.
