@@ -215,6 +215,8 @@ type RuntimeEnvironment = {
   attachmentCount: number;
   readyAttachmentCount: number;
   managedDatabaseKeys: string[];
+  /** Keys of `values` that hold a secret (flagged secret, a database password or URL, a vault reference); names only. */
+  secretKeys: string[];
   /** r651: what a PR preview was NOT given (names only, never values). */
   withheldFromPreview: string[];
   // ── 0.16 T6 node databases ──
@@ -324,6 +326,12 @@ export async function loadRuntimeEnv(
 ): Promise<RuntimeEnvironment> {
   const env: Record<string, string> = {};
   const managedDatabaseKeys = new Set<string>();
+  // Which keys of `env` carry a secret: the last writer of a key decides.
+  const secretKeys = new Set<string>();
+  const track = (key: string, isSecret: boolean | null | undefined) => {
+    if (isSecret) secretKeys.add(key);
+    else secretKeys.delete(key);
+  };
   // r651: a PR preview is built from a branch anyone with push access wrote.
   // The webhook already declines to copy the parent's secret service env;
   // these are the other routes production credentials reached it by.
@@ -355,19 +363,26 @@ export async function loadRuntimeEnv(
         continue;
       }
       env[r.key] = decrypt(r.valueEncrypted);
+      track(r.key, r.isSecret);
     }
   }
 
   // Service-scope env overrides shared values.
   const rows = await db.query.envVars.findMany({ where: eq(envVars.serviceId, service.id) });
-  for (const r of rows) env[r.key] = decrypt(r.valueEncrypted);
+  for (const r of rows) {
+    env[r.key] = decrypt(r.valueEncrypted);
+    track(r.key, r.isSecret);
+  }
 
   // 0.12 preview-only env: the parent's values meant for its previews win
   // over the preview's own rows (the parent's NON-secret values the webhook
   // copied) and over project-shared values. Read at every deploy, so a
   // preview created before the set existed picks it up on its next deploy.
   // Managed-database keys below still win, exactly as over service env.
-  for (const r of await loadPreviewOnlyEnv(db, service)) env[r.key] = decrypt(r.valueEncrypted);
+  for (const r of await loadPreviewOnlyEnv(db, service)) {
+    env[r.key] = decrypt(r.valueEncrypted);
+    track(r.key, r.isSecret);
+  }
 
   const allAttaches = await db.query.databaseAttachments.findMany({ where: eq(databaseAttachments.serviceId, service.id) });
   const attaches: typeof allAttaches = [];
@@ -408,6 +423,7 @@ export async function loadRuntimeEnv(
       if (!mapping || Object.keys(mapping).length === 0 || !isTemplateDatabase) {
         env[a.envAlias] = connectionString(d);
         managedDatabaseKeys.add(a.envAlias);
+        track(a.envAlias, true); // the connection string carries the database password
         continue;
       }
       const cfg = ENGINES[d.engine];
@@ -429,6 +445,7 @@ export async function loadRuntimeEnv(
       for (const [key, source] of Object.entries(mapping)) {
         env[key] = values[source];
         managedDatabaseKeys.add(key);
+        track(key, source === 'url' || source === 'password');
       }
       mappingApplied = true;
     }
@@ -445,6 +462,9 @@ export async function loadRuntimeEnv(
     }
   }
 
+  // A key whose value is a vault reference resolves to a secret.
+  for (const [key, value] of Object.entries(env)) if (hasVaultRef(value)) secretKeys.add(key);
+
   // Vault references resolve last, from the fully-merged map — and only for
   // a service the operator allowed (r510).
   return {
@@ -452,6 +472,7 @@ export async function loadRuntimeEnv(
     attachmentCount: attaches.length,
     readyAttachmentCount,
     managedDatabaseKeys: [...managedDatabaseKeys].sort(),
+    secretKeys: [...secretKeys].filter((key) => key in env).sort(),
     withheldFromPreview,
     attachedDatabases,
   };
@@ -1136,6 +1157,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       // For image rollback, pin the exact image by its stored digest.
       imageDigest: dep.imageDigest ?? undefined,
       env: runtimeEnvironment.values,
+      buildSecretKeys: runtimeEnvironment.secretKeys,
       // Registry-type sources provide private-image credentials.
       registryAuth: await loadRegistryAuth(db, service, log),
       // No serverId / agentCall: a node-pinned service gets the remote

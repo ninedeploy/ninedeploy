@@ -18,6 +18,14 @@ export interface BuildContext {
   /** Environment variables to inject at runtime (service env vars + attached DB connection strings). */
   env: Record<string, string>;
   /**
+   * Names in `env` whose value is a secret: variables flagged secret (service or
+   * project), attached-database connection strings and resolved vault
+   * references. Build placement refuses to bake them into an image that is
+   * pushed to a registry (Nixpacks keeps build env in the image config).
+   * Absent = unknown, nothing is refused.
+   */
+  buildSecretKeys?: string[];
+  /**
    * Private-registry credentials (from a registry-type source): username +
    * password used to `docker login` before pulling the image. Absent for
    * public registries.

@@ -63,7 +63,7 @@ Shipped in 0.15.0; see [TERMINALS.md](./TERMINALS.md), [TRAEFIK_INGRESS.md §10]
 - **OpenAPI 3.1:** `GET /v1/openapi.json` behind login, covering every route, with read-only MCP tools generated from it and a `search_api` tool. Writes stay hand-curated.
 - **Project- and environment-level access grants:** raise-only on top of workspace roles, with grant-only guests, suspend/reinstate and SCIM holds; a rollback to 0.14 only ever removes access.
 
-## 0.16 — Multi-node
+## 0.16 — Multi-node (done, shipped as 0.15.2 to 0.15.5)
 
 - **Remote nodes match the panel host:**
   - Nixpacks and Railpack builds;
@@ -72,6 +72,8 @@ Shipped in 0.15.0; see [TERMINALS.md](./TERMINALS.md), [TRAEFIK_INGRESS.md §10]
   - managed databases on nodes, which needs a `databases.serverId` column (additive).
 - **Dedicated build server:** build on one node and ship the image to the target node.
 - **Swarm:** wire the existing driver into deploys.
+
+Shipped as patches, as the owner asked: 0.15.2 (builds, clones, volumes), 0.15.3 (build server, image transfer, node databases), 0.15.4 (Swarm, opt-in on both the panel and the node) and 0.15.5 (web, CLI, SDK and MCP, plus a two-host smoke). See [MULTI_NODE.md](MULTI_NODE.md).
 
 ## Ongoing, every release
 

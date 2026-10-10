@@ -580,6 +580,77 @@ describe('buildElsewhere / retention (design §6.3 steps 1, 2, 6)', () => {
     expect(slots.usage('build:panel')).toEqual({ active: 0, waiting: 0 });
   });
 
+  // ── push registry vs secrets baked into the image config ──
+  // Nixpacks has no env-file option: the service env travels as `--env K=V` and
+  // Nixpacks bakes it into the image config as ENV. A registry push would hand
+  // those values to everyone with pull access, so the push path refuses it
+  // BEFORE anything is built. Every other combination is untouched.
+  describe('a Nixpacks build pushed to a registry never carries secrets', () => {
+    const DIGEST = `sha256:${'c'.repeat(64)}`;
+    async function pushService(values: Record<string, unknown> = {}) {
+      const [reg] = await db
+        .insert(sources)
+        .values({ type: 'registry', name: 'ghcr-ci', registryUsername: 'ci', tokenEncrypted: encrypt('s3cret-token') } as never)
+        .returning();
+      await setBoundRegistryHosts(db, reg!.id, ['ghcr.io']);
+      return service({ serverId: node, buildOn: 'server', buildServerId: builder, pushRegistrySourceId: reg!.id, pushRepository: 'acme/web', ...values });
+    }
+    const replyOk = () => {
+      h.reply = (_s, op) => {
+        if (op === 'docker.imageInspect') return { exitCode: 0, lines: [`${IMG}|2048`] };
+        if (op === 'docker.push') return { exitCode: 0, lines: [`latest: digest: ${DIGEST} size: 1234`] };
+        return undefined;
+      };
+    };
+    const ctxWith = (svc: Record<string, unknown>, over: Record<string, unknown>) =>
+      ({ deploymentId: 7, service: svc, workDir: '/nonexistent', commitSha: 'abc1234def', env: { DATABASE_URL: 'postgres://u:pw@db/x', PUBLIC_URL: 'https://x' }, log: vi.fn(), ...over }) as never;
+
+    it('refuses push + Nixpacks + a secret-flagged variable before any build, login or push', async () => {
+      const { buildElsewhere, BuildPlacementError } = await import('../src/engine/buildPlacement.js');
+      const svc = await pushService();
+      const buildOnNode = vi.fn(async () => ({ target: 'x', builtWithNixpacks: true }));
+      const err = await buildElsewhere(db, { kind: 'server', serverId: builder }, ctxWith(svc, { buildConfig: { buildPack: 'nixpacks' }, buildSecretKeys: ['DATABASE_URL'] }), { deps: { buildOnNode } }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(BuildPlacementError);
+      expect((err as Error).message).toMatch(/DATABASE_URL/);
+      expect((err as Error).message).toMatch(/registry/i);
+      expect((err as Error).message).not.toContain('postgres://');
+      expect(buildOnNode).not.toHaveBeenCalled();
+      expect(h.ops.filter((o) => o.op === 'docker.login' || o.op === 'docker.push' || o.op === 'docker.build')).toEqual([]);
+    });
+
+    it('names every secret key it found, and offers the ways out', async () => {
+      const { buildElsewhere } = await import('../src/engine/buildPlacement.js');
+      const svc = await pushService();
+      const err = await buildElsewhere(db, { kind: 'server', serverId: builder }, ctxWith(svc, { env: { A: '1', B: '2', C: '3' }, buildConfig: { buildPack: 'nixpacks' }, buildSecretKeys: ['A', 'B'] }), { deps: { buildOnNode: vi.fn() } }).catch((e: unknown) => e);
+      expect((err as Error).message).toMatch(/A, B/);
+      expect((err as Error).message).toMatch(/Dockerfile or Railpack/);
+      expect((err as Error).message).toMatch(/stream relay/);
+    });
+
+    it('control: Dockerfile, Railpack, no secret keys, or no push registry all build as before', async () => {
+      const { buildElsewhere } = await import('../src/engine/buildPlacement.js');
+      replyOk();
+      const pushing = await pushService();
+      for (const [buildPack, keys] of [
+        ['dockerfile', ['DATABASE_URL']],
+        ['railpack', ['DATABASE_URL']],
+        ['nixpacks', []],
+        ['nixpacks', undefined],
+      ] as const) {
+        const buildOnNode = vi.fn(async () => ({ target: 'x', builtWithNixpacks: buildPack === 'nixpacks' }));
+        const built = await buildElsewhere(db, { kind: 'server', serverId: builder }, ctxWith(pushing, { buildConfig: { buildPack }, buildSecretKeys: keys }), { deps: { buildOnNode } });
+        expect(buildOnNode, `${buildPack} ${String(keys)}`).toHaveBeenCalledTimes(1);
+        expect(built.registry?.digest).toBe(DIGEST);
+      }
+      // No push registry: the stream relay keeps the image on hosts that already hold the env.
+      const relay = await service({ serverId: node, buildOn: 'server', buildServerId: builder, slug: 'relay', name: 'relay' });
+      const buildOnNode = vi.fn(async () => ({ target: 'x', builtWithNixpacks: true }));
+      const built = await buildElsewhere(db, { kind: 'server', serverId: builder }, ctxWith(relay, { buildConfig: { buildPack: 'nixpacks' }, buildSecretKeys: ['DATABASE_URL'] }), { deps: { buildOnNode } });
+      expect(buildOnNode).toHaveBeenCalledTimes(1);
+      expect(built.registry).toBeUndefined();
+    });
+  });
+
   it('retention: the build node drops the previous deployment’s build tag of the service, keeps the current one', async () => {
     const { retainBuildHostTags } = await import('../src/engine/buildPlacement.js');
     const { deployments } = await import('@ninedeploy/db');

@@ -121,6 +121,28 @@ export interface PlacedBuildDeps {
 }
 
 /**
+ * Nixpacks has no env-file option, so the service env travels as `--env K=V`
+ * and Nixpacks keeps it in the image config as ENV (and in the build-arg
+ * history). On a registry push that image is readable by everyone with pull
+ * access, so a Nixpacks build with secret variables is refused before anything
+ * is built or logged in. Dockerfile builds get no service env, and Railpack
+ * hands its values to BuildKit as secrets, so neither is affected; a service
+ * that ships by stream relay keeps the image on hosts that hold the env anyway.
+ */
+async function assertNoSecretsInPushedImage(ctx: BuildContext): Promise<void> {
+  const keys = (ctx.buildSecretKeys ?? []).filter((key) => key in ctx.env);
+  if (keys.length === 0) return;
+  const { pack } = await primaryBuildPack(ctx.workDir, ctx.buildConfig);
+  if (pack !== 'nixpacks') return;
+  const shown = keys.slice(0, 10).join(', ') + (keys.length > 10 ? `, … (${keys.length} in all)` : '');
+  throw new BuildPlacementError(
+    `This service builds with Nixpacks, which bakes its environment into the image, and the image would be pushed to a registry where anyone who can pull it could read these secret variables: ${shown}. ` +
+      'Nothing was built or pushed. Build with a Dockerfile or Railpack (Service → Settings → Build → Build pack), take the variables out of the service, ' +
+      'or clear the push registry (Service → Settings → Build) to ship by stream relay.',
+  );
+}
+
+/**
  * Build the service's image on its build host (design §6.3 steps 1–2): the
  * panel's own builder (every pack, every credential kind — the credential
  * never leaves the panel), or the remote builder's build half on a build
@@ -143,6 +165,7 @@ export async function buildElsewhere(
   const host = placementHost(placement);
   const tag = buildTag(service.slug, ctx.commitSha, ctx.deploymentId);
   const pushTarget = await resolvePushTarget(db, service);
+  if (pushTarget) await assertNoSecretsInPushedImage(ctx);
 
   // A build server must be able to hand the image over BEFORE anything is
   // built on it: stream relay needs `stream` + `image.manage` (sealed); a
