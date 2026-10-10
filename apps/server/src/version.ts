@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.15.6';
+export const VERSION = '0.15.7';
 
 export interface ChangelogEntry {
   version: string;
@@ -11,6 +11,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.15.7',
+    date: '2026-10-10',
+    title: 'Templates 130 to 305, Resend system email',
+    changes: [
+      '175 more one-click templates (130 to 305), converted from the Coolify catalog. Each was started in an isolated container and answered on its port before it was listed, and the Hub marks it verified. They are compose stacks, so operators only; five of them mount the Docker socket or run privileged and say so.',
+      'Password-reset and invitation emails can go through a Resend channel when no SMTP channel exists. SMTP is still used first when both do.',
+      'Fixed the Coolify mirror converter: implicit named volumes, Coolify-only compose keys, interpolated image tags and bare references to defaulted variables no longer produce stacks Docker refuses or runs wrongly.',
+      'Rolling back to 0.15.6 is supported; stacks deployed from the new templates keep running.',
+    ],
+  },
   {
     version: '0.15.6',
     date: '2026-10-10',

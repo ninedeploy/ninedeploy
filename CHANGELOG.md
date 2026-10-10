@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.7] - 2026-10-10
+
+> 175 more one-click templates (130 → 305), every one of them started in an isolated container before it was listed, and password-reset and invitation emails through Resend.
+
+### Upgrade notes
+
+- No migration (0072 is still the latest). The catalog is data that ships with the panel; nothing about an existing service changes.
+- **Services you already deployed are untouched.** A template is only read when you deploy from it, and a stack that is already running keeps the compose file it was created with.
+- **New templates need Docker Compose on the host**, like every compose template before them, and are for operators only (compose stacks always were). Five of them mount the Docker socket or run privileged (Portainer, Glances, Authentik, OneDev and Autobase); the Hub says so on each.
+- **Rolling back to 0.15.6 is supported.** Stacks deployed from the new templates keep running. 0.15.6 does not know those template ids, so it cannot show them in the Hub; redeploying such a stack from its service page still works.
+- **Verified before release:** in-place upgrades from 0.15.6 and from 0.10.45, a rehearsed rollback to 0.15.6, and the user-journey smoke, which now also lists the catalog and deploys one converted stack through the panel's own compose pipeline.
+
+### Added
+
+- **175 templates from the Coolify catalog**, each marked verified in the Hub: Actual Budget, AnythingLLM, Authentik, Docmost, Immich, Karakeep, Kimai, Listmonk, Logto, Matrix Synapse, Miniflux, Paperless, Vikunja and many more. Each was started with `docker compose` in an isolated project and had to answer on its routed port. Categories were folded into the ones the Hub already had, so "Ai" and "AI" are one filter.
+- **Password-reset and invitation emails can go through a Resend channel.** They used the SMTP channel only, so an install with just a Resend channel sent nothing. SMTP is still used first when both exist, so nothing changes for installs that already work; the message goes to the account's own address, never to the channel's shared recipients.
+
+### Fixed
+
+- **The Coolify mirror converter produced stacks Docker Compose refuses or runs wrongly.** It now declares the named volumes Coolify creates implicitly ("refers to undefined volume"), drops the Coolify-only `exclude_from_hc` and `is_directory` keys ("additional properties not allowed"), shows the resolved tag for images written `image:${TAG:-x}`, skips stacks that rely on a `COOLIFY_*` variable, and gives a bare `$VAR` the default written for `${VAR:-x}` elsewhere in the file (the mix that crash-looped umami). The converter is a tool for operators who build their own template source; its output for existing bundles is unchanged.
+- The template smoke now generates `SERVICE_*` values with the panel's own resolver (a `HEX_` token is hex, a URL token is a URL), tears down a failed stack at once, and can test a candidate bundle before it is added to the catalog.
+
 ## [0.15.6] - 2026-10-10
 
 > Two new database engines (KeyDB and Dragonfly), two new notification channels (Microsoft Teams and Resend), and a fix for secrets leaking into pushed Nixpacks images.
