@@ -77,7 +77,7 @@ Shipped as patches, as the owner asked: 0.15.2 (builds, clones, volumes), 0.15.3
 
 ## Ongoing, every release
 
-- Templates: grow from 130 to about 300 through the Coolify mirror converter. Each template is smoke-deployed.
+- Templates: 305 since 0.15.7 (175 stacks from the Coolify mirror converter, each smoke-deployed). The mirror has about 110 more stacks that did not start cleanly in the smoke; they are fixed or dropped one at a time.
 - Extra engines and notification channels: done in 0.15.6 (KeyDB, Dragonfly, Microsoft Teams, Resend).
 - The unproven leads in the audit hints list, proven or dropped one by one.
 

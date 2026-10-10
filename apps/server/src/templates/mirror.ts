@@ -78,10 +78,28 @@ function titleFromSlug(slug: string): string {
     .join(' ');
 }
 
+/** Upstream category spellings that already have a home in the catalog. */
+const CATEGORY_ALIAS: Record<string, string> = {
+  ai: 'AI',
+  cms: 'CMS',
+  devtools: 'Developer',
+  'developer-tools': 'Developer',
+  development: 'Developer',
+  git: 'Developer',
+  api: 'Developer',
+  mcp: 'Developer',
+  databases: 'Database',
+  rss: 'Reading',
+  mail: 'Email',
+  storage: 'Files',
+  documentation: 'Productivity',
+  proxy: 'DevOps',
+};
+
 function titleCaseCategory(raw: string | undefined): string {
   if (!raw) return 'Tools';
   const c = raw.trim();
-  return c.charAt(0).toUpperCase() + c.slice(1);
+  return CATEGORY_ALIAS[c.toLowerCase()] ?? c.charAt(0).toUpperCase() + c.slice(1);
 }
 
 /** Non-magic ${VAR:-default} occurrences → wizard-visible env entries. */

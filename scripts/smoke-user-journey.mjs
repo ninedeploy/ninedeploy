@@ -420,6 +420,10 @@ async function secretProviderChecks(token) {
 const OPERATIONS_IN = [0, 15, 0];
 /** 0.15.6: KeyDB and Dragonfly managed engines. */
 const REDIS_FAMILY_IN = [0, 15, 6];
+// 0.15.7: the catalog grew to 305 templates, 175 of them stacks converted from
+// the Coolify catalog. They were started with plain `docker compose` before
+// they were listed; this sends one through the panel's own deploy pipeline.
+const CATALOG_IN = [0, 15, 7];
 const TERMINAL_PROTOCOL = 'ninedeploy.terminal.v1';
 const TERMINAL_TICKET_PREFIX = 'ninedeploy.ticket.';
 /** Where the panel's Traefik writes the analytics access log (engine/proxy.ts TRAFFIC_LOG_CONTAINER_DIR). */
@@ -907,6 +911,40 @@ async function grantChecks(token, serviceId) {
  * engine's own client inside the DinD daemon, so this proves the flags and
  * images the panel picked, not a mock.
  */
+async function catalogChecks(token) {
+  const list = await api('/v1/templates', { token });
+  if (list.status !== 200 || !Array.isArray(list.json)) fail(`template list failed: ${list.status} ${list.text.slice(0, 200)}`);
+  if (list.json.length < 300) fail(`the template catalog has ${list.json.length} entries (wanted 300 or more)`);
+  const converted = list.json.filter((t) => t.id.startsWith('coolify-') && t.runtimeVerified === true);
+  if (converted.length < 150) fail(`only ${converted.length} verified Coolify-converted templates are listed (wanted 150 or more)`);
+  const categories = new Set(list.json.map((t) => t.category));
+  for (const spelling of ['Ai', 'Cms', 'Devtools', 'Databases']) {
+    if (categories.has(spelling)) fail(`the catalog lists the category "${spelling}", which should have been mapped to an existing one`);
+  }
+  step(`catalog lists ${list.json.length} templates (${converted.length} verified stacks from the Coolify catalog)`);
+
+  // A converted stack, through the panel's compose pipeline rather than a bare `docker compose up`.
+  const detail = await api('/v1/templates/coolify-apprise-api', { token });
+  if (detail.status !== 200 || !detail.json?.composeContent || detail.json.runtimeVerified !== true) {
+    fail(`coolify-apprise-api detail: ${detail.status} ${detail.text.slice(0, 200)}`);
+  }
+  const deploy = await api('/v1/templates/coolify-apprise-api/deploy', { method: 'POST', token, body: {} });
+  if (deploy.status !== 200 && deploy.status !== 201) fail(`coolify-apprise-api deploy was refused: ${deploy.status} ${deploy.text.slice(0, 300)}`);
+  const serviceId = deploy.json?.serviceId;
+  let status = null;
+  for (let i = 0; i < 150; i++) {
+    const runs = await api(`/v1/services/${serviceId}/deploys`, { token });
+    const all = Array.isArray(runs.json) ? runs.json : (runs.json?.deploys ?? []);
+    status = all[0]?.status ?? status;
+    if (['running', 'failed', 'cancelled', 'superseded'].includes(status)) break;
+    await sleep(2000);
+  }
+  if (status !== 'running') fail(`the converted stack coolify-apprise-api deployed as '${status}'`);
+  step('a stack converted from the Coolify catalog deployed through the panel');
+  const del = await api(`/v1/services/${serviceId}`, { method: 'DELETE', token });
+  if (del.status !== 200 && del.status !== 204) fail(`deleting the converted stack failed: ${del.status} ${del.text.slice(0, 200)}`);
+}
+
 async function redisFamilyChecks(token) {
   const dindDocker = (args) => docker(['exec', DIND, 'docker', '-H', `tcp://127.0.0.1:${DIND_PORT}`, ...args]);
   for (const { engine, cli } of [{ engine: 'keydb', cli: 'keydb-cli' }, { engine: 'dragonfly', cli: 'redis-cli' }]) {
@@ -1144,6 +1182,7 @@ async function main() {
     step(`managed ${engine} started, ran and was deleted`);
   }
   if (!olderThan(String(health.version), REDIS_FAMILY_IN)) await redisFamilyChecks(token);
+  if (!olderThan(String(health.version), CATALOG_IN)) await catalogChecks(token);
 
   // ── 0.12 preview-only env: add, list, remove; production env untouched ─
   const prodKeys = async () => {

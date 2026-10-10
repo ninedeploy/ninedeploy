@@ -165,6 +165,38 @@ describe('upstream file conversion', () => {
   });
 });
 
+// The Hub filters by category, so upstream spellings must land on the
+// categories the catalog already has instead of adding "Ai" next to "AI".
+describe('category normalisation', () => {
+  const categoryOf = (header: string) => {
+    const result = convertCoolifyComposeFile('x.yaml', `# category: ${header}\n# port: 80\nservices:\n  app:\n    image: a:1\n`);
+    if (result.skip) throw new Error(result.reason);
+    return result.template.category;
+  };
+
+  it.each([
+    ['ai', 'AI'],
+    ['cms', 'CMS'],
+    ['devtools', 'Developer'],
+    ['developer-tools', 'Developer'],
+    ['development', 'Developer'],
+    ['databases', 'Database'],
+    ['rss', 'Reading'],
+    ['mail', 'Email'],
+    ['storage', 'Files'],
+    ['Productivity', 'Productivity'],
+    ['monitoring', 'Monitoring'],
+  ])('maps %s to %s', (raw, expected) => {
+    expect(categoryOf(raw)).toBe(expected);
+  });
+
+  it('title-cases a category it has no mapping for, and falls back to Tools', () => {
+    expect(categoryOf('helpdesk')).toBe('Helpdesk');
+    const none = convertCoolifyComposeFile('x.yaml', '# port: 80\nservices:\n  app:\n    image: a:1\n');
+    expect(none.skip || none.template.category).toBe('Tools');
+  });
+});
+
 // Coolify-only compose keys make Docker Compose reject the whole file
 // ("additional properties 'exclude_from_hc' not allowed"), so they cannot ship.
 describe('Coolify-only keys and variables', () => {

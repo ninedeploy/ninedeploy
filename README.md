@@ -224,7 +224,7 @@ Full matrix — environment variables, upgrade paths, systemd internals — in
     containers       Postgres · MySQL    (typed op calls;   R2 · AWS · MinIO ·
     PM2 processes    MariaDB · Redis     docker + compose   Wasabi — db dumps
     Compose stacks   Valkey · Mongo      deploys, Traefik   and volume tars
-   130 templates     ClickHouse ·        on each node)
+   305 templates     ClickHouse ·        on each node)
                      Meilisearch ·
                      RabbitMQ
 
@@ -415,7 +415,7 @@ Watch paths, `[skip ci]` handling, cancellation and PR previews: [**docs/DEPLOYM
 
 - A **microkernel** with an event bus, waterfall hook pipeline, service registry, config center and
   dynamic menu registry; plugins are written against `@ninedeploy/plugin-sdk`.
-- **130 one-click templates** (n8n, Directus, PocketBase, Ollama, Hasura, …) across twenty categories.
+- **305 one-click templates** (n8n, Directus, PocketBase, Ollama, Hasura, …) across 28 categories. 276 are marked verified in the Hub: each was started in an isolated container and answered on its port, including 175 stacks converted from the Coolify catalog.
 - **One-click panel self-update:** a dashboard banner runs *this install's own* `install.sh` for the
   pinned tag, detached through `systemd-run` so it survives stopping its own unit, and reports the
   installer output tail when it fails.
@@ -574,7 +574,7 @@ NineDeploy/                    pnpm 11 workspace + Turborepo
 │   │   │                      resourceAccess (the authz choke point) · hostPrivilege ·
 │   │   │                      egressGuard · s3 · cloudflare · manifest apply
 │   │   ├── src/kernel/        event bus · hook pipeline · config center · menus
-│   │   └── src/templates/     130-entry template registry
+│   │   └── src/templates/     305-entry template registry
 │   ├── web/                   React 19 + Vite 8 + Tailwind v4 dashboard
 │   └── cli/                   `ninedeploy` (commander 15)
 ├── packages/
