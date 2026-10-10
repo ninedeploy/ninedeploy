@@ -1,7 +1,7 @@
 ﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { decrypt, encrypt } from '../src/lib/crypto.js';
 import { notificationRoutes } from '../src/modules/notifications.js';
-import { asUser, buildTestApp, channelRow, createFakeDb, notifLogRow } from './helpers.js';
+import { asUser, buildTestApp, captureAudits, channelRow, createFakeDb, notifLogRow } from './helpers.js';
 
 describe('notification routes', () => {
   // These tests stub global fetch — no real outbound traffic happens. The
@@ -323,6 +323,115 @@ describe('notification routes', () => {
     const res = await app.inject({ method: 'POST', url: '/channels/5/test', headers: asUser() });
     expect(res.statusCode).toBe(400);
     expect(res.json().error.message).toContain('Lark error 19001');
+  });
+
+  it('tests a teams channel with an Adaptive Card', async () => {
+    const url = 'https://prod-00.westeurope.logic.azure.com:443/workflows/abc/triggers/manual/paths/invoke?sig=s3cr3t';
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 202, text: async () => '' })) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchMock);
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { notificationChannels: channelRow({ id: 5, type: 'teams', targetEncrypted: encrypt(url) }) } }),
+    });
+    await app.register(notificationRoutes);
+    const res = await app.inject({ method: 'POST', url: '/channels/5/test', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(fetchMock).toHaveBeenCalledWith(url, expect.objectContaining({ method: 'POST' }));
+    const body = JSON.parse((vi.mocked(fetchMock).mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.type).toBe('message');
+    expect(body.attachments[0].contentType).toBe('application/vnd.microsoft.card.adaptive');
+  });
+
+  it('fails a teams channel test on a plain-http target without calling fetch', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { notificationChannels: channelRow({ id: 5, type: 'teams', targetEncrypted: encrypt('http://x.webhook.office.com/a') }) } }),
+    });
+    await app.register(notificationRoutes);
+    const res = await app.inject({ method: 'POST', url: '/channels/5/test', headers: asUser() });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toContain('Invalid Teams target');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('fails a teams channel test when Teams rejects the card', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: false, status: 400, text: async () => 'Bad payload' })) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchMock);
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { notificationChannels: channelRow({ id: 5, type: 'teams', targetEncrypted: encrypt('https://x.webhook.office.com/a') }) } }),
+    });
+    await app.register(notificationRoutes);
+    const res = await app.inject({ method: 'POST', url: '/channels/5/test', headers: asUser() });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toContain('Teams 400: Bad payload');
+  });
+
+  it('tests a resend channel through the Resend API', async () => {
+    const target = JSON.stringify({ apiKey: 're_key123', from: 'alerts@example.com', to: 'ops@example.com' });
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ id: 'em_1' }) })) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchMock);
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { notificationChannels: channelRow({ id: 5, type: 'resend', targetEncrypted: encrypt(target) }) } }),
+    });
+    await app.register(notificationRoutes);
+    const res = await app.inject({ method: 'POST', url: '/channels/5/test', headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    const [url, init] = vi.mocked(fetchMock).mock.calls[0]! as [string, RequestInit];
+    expect(url).toBe('https://api.resend.com/emails');
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer re_key123');
+    expect(JSON.parse(init.body as string)).toMatchObject({ from: 'alerts@example.com', to: ['ops@example.com'], subject: 'NineDeploy: notification.test' });
+  });
+
+  it('fails a resend channel test without leaking the API key', async () => {
+    const target = JSON.stringify({ apiKey: 're_key123', from: 'alerts@example.com', to: 'ops@example.com' });
+    const fetchMock = vi.fn(async () => ({ ok: false, status: 401, json: async () => ({ message: 'API key is invalid' }) })) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchMock);
+    const app = await buildTestApp({
+      db: createFakeDb({ findFirst: { notificationChannels: channelRow({ id: 5, type: 'resend', targetEncrypted: encrypt(target) }) } }),
+    });
+    await app.register(notificationRoutes);
+    const res = await app.inject({ method: 'POST', url: '/channels/5/test', headers: asUser() });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toContain('Resend 401: API key is invalid');
+    expect(res.body).not.toContain('re_key123');
+  });
+
+  it('stores a resend channel encrypted, audits it, and never echoes the API key', async () => {
+    const target = JSON.stringify({ apiKey: 're_key123', from: 'alerts@example.com', to: 'ops@example.com' });
+    let inserted: Record<string, unknown> | null = null;
+    const db = createFakeDb({
+      insert: {
+        notification_channels: (v: unknown) => {
+          inserted = v as Record<string, unknown>;
+          return [channelRow({ id: 7, name: 'mail', type: 'resend', targetEncrypted: (v as Record<string, string>).targetEncrypted })];
+        },
+      },
+    });
+    const audits = captureAudits(db);
+    const app = await buildTestApp({ db });
+    await app.register(notificationRoutes);
+    const res = await app.inject({ method: 'POST', url: '/channels', headers: asUser(), payload: { name: 'mail', type: 'resend', target } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ id: 7, type: 'resend', hasTarget: true });
+    expect(res.body).not.toContain('re_key123');
+    expect(inserted).not.toBeNull();
+    const stored = (inserted as unknown as Record<string, string>).targetEncrypted!;
+    expect(stored).not.toContain('re_key123');
+    expect(decrypt(stored)).toBe(target);
+    await vi.waitFor(() => expect(audits.some((a) => a.action === 'notification.channel_create' && a.entity === 'resend:mail')).toBe(true));
+  });
+
+  it('accepts teams and resend as channel types', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({ insert: { notification_channels: [channelRow({ id: 8, type: 'teams' })] } }),
+    });
+    await app.register(notificationRoutes);
+    const res = await app.inject({
+      method: 'POST', url: '/channels', headers: asUser(),
+      payload: { name: 't', type: 'teams', target: 'https://x.webhook.office.com/a' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ id: 8, type: 'teams' });
   });
 
   it('tests a discord channel', async () => {

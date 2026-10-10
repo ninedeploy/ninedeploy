@@ -438,4 +438,47 @@ describe('NotificationWizard', () => {
     );
     await waitFor(() => expect(screen.getByText('Check your inbox for a test message.')).toBeInTheDocument());
   });
+
+  it('shows the Teams connect form and creates a teams channel', async () => {
+    const user = userEvent.setup();
+    renderWizard();
+    await user.click(screen.getByText('Microsoft Teams'));
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    expect(screen.getByText('Microsoft Teams webhook')).toBeInTheDocument();
+    const url = 'https://prod-00.westeurope.logic.azure.com:443/workflows/abc/triggers/manual/paths/invoke';
+    await user.type(screen.getByPlaceholderText('https://prod-00.westeurope.logic.azure.com:443/workflows/…'), url);
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.click(screen.getByRole('button', { name: /send test/i }));
+    await waitFor(() =>
+      expect(apiMock.api.notifications.createChannel).toHaveBeenCalledWith(expect.objectContaining({ type: 'teams', target: url })),
+    );
+    await waitFor(() => expect(screen.getByText('Check your Microsoft Teams for a test message.')).toBeInTheDocument());
+  });
+
+  it('composes a Resend target as JSON and keeps the API key out of the summary', async () => {
+    const user = userEvent.setup();
+    renderWizard();
+    await user.click(screen.getByText('Email (Resend)'));
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    expect(screen.getByText('Resend')).toBeInTheDocument();
+    const key = document.querySelector('input[type="password"]') as HTMLInputElement;
+    await user.type(key, 're_secretkey');
+    await user.type(screen.getByPlaceholderText('ninedeploy@example.com'), 'alerts@example.com');
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'ops@example.com, dev@example.com');
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    expect(screen.getByText('ops@example.com, dev@example.com')).toBeInTheDocument();
+    expect(screen.queryByText(/re_secretkey/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /send test/i }));
+    await waitFor(() =>
+      expect(apiMock.api.notifications.createChannel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'resend',
+          target: JSON.stringify({ apiKey: 're_secretkey', from: 'alerts@example.com', to: 'ops@example.com, dev@example.com' }),
+        }),
+      ),
+    );
+    await waitFor(() => expect(screen.getByText('Check your inbox for a test message.')).toBeInTheDocument());
+  });
 });

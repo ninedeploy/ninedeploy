@@ -18,7 +18,9 @@ const TYPES = [
   { id: 'gotify', label: 'Gotify', emoji: '🔔', color: 'from-fuchsia-500 to-purple-600', icon: Bell },
   { id: 'pushover', label: 'Pushover', emoji: '📲', color: 'from-blue-500 to-indigo-600', icon: Send },
   { id: 'lark', label: 'Lark / Feishu', emoji: '🐦', color: 'from-sky-400 to-cyan-600', icon: MessageCircle },
+  { id: 'teams', label: 'Microsoft Teams', emoji: '👥', color: 'from-violet-500 to-indigo-600', icon: MessageCircle },
   { id: 'email', label: 'Email (SMTP)', emoji: '✉️', color: 'from-cyan-500 to-sky-600', icon: Mail },
+  { id: 'resend', label: 'Email (Resend)', emoji: '📨', color: 'from-slate-500 to-zinc-700', icon: Mail },
 ] as const;
 
 const EVENT_GROUPS = [
@@ -184,6 +186,8 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
                           : t.id === 'gotify' ? 'Self-hosted push'
                           : t.id === 'pushover' ? 'Mobile push'
                           : t.id === 'lark' ? 'Lark / Feishu bot'
+                          : t.id === 'teams' ? 'Teams channel'
+                          : t.id === 'resend' ? 'Resend email API'
                           : 'SMTP email'}
                       </div>
                     </div>
@@ -288,7 +292,20 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
                 </div>
               </>
             )}
+            {type === 'teams' && (
+              <>
+                <div className="rounded-xl bg-violet-500/[0.06] p-3 ring-1 ring-inset ring-violet-500/20">
+                  <p className="mb-1.5 text-xs font-medium text-violet-200">Microsoft Teams webhook</p>
+                  <p className="text-[11px] text-slate-400">In the channel: Workflows → &quot;Post to a channel when a webhook request is received&quot; (or a legacy Incoming Webhook), then paste its URL.</p>
+                </div>
+                <div>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Webhook URL</span>
+                  <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="https://prod-00.westeurope.logic.azure.com:443/workflows/…" className="font-mono text-xs" autoFocus />
+                </div>
+              </>
+            )}
             {type === 'email' && <EmailFields value={target} onChange={setTarget} />}
+            {type === 'resend' && <ResendFields value={target} onChange={setTarget} />}
             {type === 'webhook' && (
               <>
                 <div className="rounded-xl bg-amber-500/[0.06] p-3 ring-1 ring-inset ring-amber-500/20">
@@ -339,7 +356,7 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
             </p>
             <p className="mt-1 text-xs text-slate-500">
               {tested === 'ok'
-                ? `Check your ${type === 'email' ? 'inbox' : selectedType!.label} for a test message.`
+                ? `Check your ${type === 'email' || type === 'resend' ? 'inbox' : selectedType!.label} for a test message.`
                 : 'We\'ll send a test notification to verify your setup.'}
             </p>
 
@@ -347,7 +364,7 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
             <div className="mt-5 w-full space-y-1.5 rounded-xl bg-white/[0.02] p-3 text-left">
               <SummaryRow label="Channel" value={selectedType!.label} />
               <SummaryRow label="Events" value={selectedEvents.size > 0 ? Array.from(selectedEvents).join(', ') : 'all'} />
-              <SummaryRow label="Target" value={target.slice(0, 40) + (target.length > 40 ? '…' : '')} />
+              <SummaryRow label="Target" value={summaryTarget(type, target)} />
             </div>
           </div>
         )}
@@ -395,6 +412,54 @@ function EmailFields({ value, onChange }: { value: string; onChange: (v: string)
         <div>
           <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Password</span>
           <Input type="password" value={cfg['pass'] ?? ''} onChange={(e) => set('pass', e.target.value)} className="h-8 font-mono text-xs" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The Target row of the test summary. A Resend target leads with its API key, so show only the recipients. */
+function summaryTarget(type: string | null, target: string): string {
+  if (type === 'resend') {
+    try {
+      const to = (JSON.parse(target) as { to?: unknown }).to;
+      return typeof to === 'string' ? to : '';
+    } catch {
+      return '';
+    }
+  }
+  return target.slice(0, 40) + (target.length > 40 ? '…' : '');
+}
+
+/** Resend channel target editor — composes the JSON {apiKey, from, to} the server decrypts. */
+function ResendFields({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  let cfg: Record<string, string> = {};
+  try {
+    cfg = JSON.parse(value) as Record<string, string>;
+  } catch {
+    /* empty target */
+  }
+  const set = (key: string, v: string) => onChange(JSON.stringify({ ...cfg, [key]: v }));
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl bg-slate-500/[0.06] p-3 ring-1 ring-inset ring-slate-500/20">
+        <p className="mb-1 text-xs font-medium text-slate-200">Resend</p>
+        <p className="text-[11px] text-slate-400">Create an API key at resend.com/api-keys; the From address must be on a domain you verified there. The key is encrypted at rest.</p>
+      </div>
+      <div className="space-y-2">
+        <div>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">API key</span>
+          <Input type="password" value={cfg['apiKey'] ?? ''} onChange={(e) => set('apiKey', e.target.value)} placeholder="re_…" className="h-8 font-mono text-xs" autoFocus />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">From</span>
+            <Input value={cfg['from'] ?? ''} onChange={(e) => set('from', e.target.value)} placeholder="ninedeploy@example.com" className="h-8 font-mono text-xs" />
+          </div>
+          <div>
+            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">To (comma-separated)</span>
+            <Input value={cfg['to'] ?? ''} onChange={(e) => set('to', e.target.value)} placeholder="you@example.com" className="h-8 font-mono text-xs" />
+          </div>
         </div>
       </div>
     </div>

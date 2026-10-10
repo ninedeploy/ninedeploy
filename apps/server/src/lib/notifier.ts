@@ -322,6 +322,123 @@ async function sendLark(webhookUrl: string, message: string): Promise<void> {
   }
 }
 
+/**
+ * Microsoft Teams. The target is a webhook URL in either flavour: a Power
+ * Automate "Workflows" webhook (`*.logic.azure.com`, the replacement for the
+ * retired Office 365 connectors) or a legacy incoming webhook
+ * (`*.webhook.office.com`). Both accept a `message` carrying an Adaptive Card
+ * attachment, which is the one payload that works on either, so that is all we
+ * send. Workflows answers 202, the legacy connector 200 with a bare body;
+ * anything else — including a redirect, which `guardedFetch` hands back
+ * unfollowed — is a delivery failure. Exported for tests.
+ */
+export function buildTeamsPayload(message: string): Record<string, unknown> {
+  return {
+    type: 'message',
+    attachments: [
+      {
+        contentType: 'application/vnd.microsoft.card.adaptive',
+        contentUrl: null,
+        content: {
+          $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+          type: 'AdaptiveCard',
+          version: '1.2',
+          msteams: { width: 'Full' },
+          body: [
+            { type: 'TextBlock', text: 'NineDeploy', weight: 'Bolder', size: 'Medium' },
+            { type: 'TextBlock', text: message, wrap: true },
+          ],
+        },
+      },
+    ],
+  };
+}
+
+/** Teams webhooks are always https; refuse anything else before dialling. */
+export function parseTeamsTarget(target: string): string {
+  const trimmed = target.trim();
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    throw new Error('Invalid Teams target (expected an https webhook URL)');
+  }
+  if (url.protocol !== 'https:') throw new Error('Invalid Teams target (expected an https webhook URL)');
+  return trimmed;
+}
+
+async function sendTeams(target: string, message: string): Promise<void> {
+  const res = await guardedFetch(parseTeamsTarget(target), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(buildTeamsPayload(message)),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!res.ok) {
+    // The legacy connector explains a rejected card in the body; the URL (the
+    // credential) is never part of it.
+    let detail = '';
+    try {
+      detail = (await res.text()).trim().slice(0, 200);
+    } catch {
+      /* no readable body — the status alone */
+    }
+    throw new Error(detail ? `Teams ${res.status}: ${detail}` : `Teams ${res.status}`);
+  }
+}
+
+export interface ResendTarget {
+  apiKey: string;
+  from: string;
+  /** Comma-separated string (as the email channel's `to`) or an array. */
+  to: string | string[];
+}
+
+/** Parse (and validate the shape of) a Resend channel target: JSON `{apiKey, from, to}`. */
+export function parseResendTarget(target: string): { apiKey: string; from: string; to: string[] } {
+  const invalid = 'Invalid Resend target (expected JSON with apiKey, from, to)';
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(target);
+  } catch {
+    throw new Error(invalid);
+  }
+  const t = (parsed && typeof parsed === 'object' ? parsed : {}) as Partial<ResendTarget>;
+  const apiKey = typeof t.apiKey === 'string' ? t.apiKey.trim() : '';
+  const from = typeof t.from === 'string' ? t.from.trim() : '';
+  const rawTo = Array.isArray(t.to) ? t.to : typeof t.to === 'string' ? t.to.split(',') : [];
+  const to = rawTo.filter((r): r is string => typeof r === 'string').map((r) => r.trim()).filter((r) => r.length > 0);
+  if (!apiKey || !from || to.length === 0) throw new Error(invalid);
+  return { apiKey, from, to };
+}
+
+/** The Resend API `POST /emails` body for one notification — the subject and text the email channel sends. */
+export function buildResendPayload(cfg: { from: string; to: string[] }, subject: string, message: string): Record<string, unknown> {
+  return { from: cfg.from, to: cfg.to, subject, text: message };
+}
+
+/** Send through Resend's HTTPS API (target = JSON config, API key encrypted at rest). */
+async function sendResend(target: string, subject: string, message: string): Promise<void> {
+  const cfg = parseResendTarget(target);
+  const res = await guardedFetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.apiKey}` },
+    body: JSON.stringify(buildResendPayload(cfg, subject, message)),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!res.ok) {
+    // Resend errors are `{ name, message, statusCode }`; the key is never echoed.
+    let detail = '';
+    try {
+      const body = (await res.json()) as { message?: unknown };
+      if (typeof body.message === 'string') detail = body.message.slice(0, 200);
+    } catch {
+      /* non-JSON error body — the status alone */
+    }
+    throw new Error(detail ? `Resend ${res.status}: ${detail}` : `Resend ${res.status}`);
+  }
+}
+
 export interface EmailTarget {
   host: string;
   port: number;
@@ -441,8 +558,12 @@ export async function dispatchChannel(
     await sendPushover(appToken, userKey, message);
   } else if (type === 'lark') {
     await sendLark(target, message);
+  } else if (type === 'teams') {
+    await sendTeams(target, message);
   } else if (type === 'email') {
     await sendEmail(target, `NineDeploy: ${event.action}`, message);
+  } else if (type === 'resend') {
+    await sendResend(target, `NineDeploy: ${event.action}`, message);
   } else if (type === 'fcm') {
     // `target` is the device token; `configJson` carries
     // the service account JSON. The body is the
@@ -476,6 +597,8 @@ export async function dispatchChannel(
  * Webhook/Discord/Slack target format: URL
  * ntfy target format: topic URL
  * Email target format: JSON {host, port, from, to, user?, pass?}
+ * Teams target format: webhook URL (Workflows or legacy incoming webhook)
+ * Resend target format: JSON {apiKey, from, to}
  *
  * Channels are dispatched CONCURRENTLY so a slow target (e.g. a dead SMTP with
  * retries) never stalls the event bus or every other channel behind it.

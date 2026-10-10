@@ -43,7 +43,7 @@ function serializeDiscordConfig(cfg: DiscordChannelConfig): string {
   return JSON.stringify(cleaned);
 }
 
-/** Notifications: delivery channels (Telegram, Discord, Slack, ntfy, Gotify, Pushover, Lark, email, webhook). */
+/** Notifications: delivery channels (Telegram, Discord, Slack, Teams, ntfy, Gotify, Pushover, Lark, email, Resend, webhook). */
 export function NotificationsSection() {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -83,7 +83,7 @@ export function NotificationsSection() {
           <Button size="sm" variant="secondary" onClick={() => setShowChannel(true)}>+ Add channel</Button>
         </div>
         <p className="mb-3 text-xs text-slate-500">
-          Get notified on deploy, alert, database, domain, backup events via Telegram, Discord, Slack, ntfy, Gotify, Pushover, Lark, email, or any webhook.
+          Get notified on deploy, alert, database, domain, backup events via Telegram, Discord, Slack, Microsoft Teams, ntfy, Gotify, Pushover, Lark, email (SMTP or Resend), or any webhook.
         </p>
         {showChannel && <NotificationWizard onClose={() => setShowChannel(false)} />}
         <div className="space-y-1.5">
@@ -91,7 +91,7 @@ export function NotificationsSection() {
             <div key={ch.id}>
               <div className="flex items-center justify-between rounded-lg bg-white/[0.02] px-3 py-2 ring-1 ring-inset ring-white/5">
                 <div className="flex items-center gap-2">
-                  <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-medium uppercase', ch.type === 'telegram' || ch.type === 'lark' ? 'bg-sky-500/15 text-sky-300' : ch.type === 'discord' ? 'bg-indigo-500/15 text-indigo-300' : ch.type === 'gotify' ? 'bg-fuchsia-500/15 text-fuchsia-300' : ch.type === 'pushover' ? 'bg-blue-500/15 text-blue-300' : ch.type === 'ntfy' ? 'bg-rose-500/15 text-rose-300' : 'bg-amber-500/15 text-amber-300')}>{ch.type}</span>
+                  <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-medium uppercase', ch.type === 'telegram' || ch.type === 'lark' ? 'bg-sky-500/15 text-sky-300' : ch.type === 'discord' ? 'bg-indigo-500/15 text-indigo-300' : ch.type === 'teams' ? 'bg-violet-500/15 text-violet-300' : ch.type === 'resend' ? 'bg-slate-500/15 text-slate-300' : ch.type === 'gotify' ? 'bg-fuchsia-500/15 text-fuchsia-300' : ch.type === 'pushover' ? 'bg-blue-500/15 text-blue-300' : ch.type === 'ntfy' ? 'bg-rose-500/15 text-rose-300' : 'bg-amber-500/15 text-amber-300')}>{ch.type}</span>
                   <span className="text-sm text-slate-200">{ch.name}</span>
                   {ch.eventFilter && <span className="font-mono text-[10px] text-slate-500">{ch.eventFilter}</span>}
                   {!ch.active && <span className="rounded bg-slate-500/15 px-1.5 py-0.5 text-[10px] text-slate-400">paused</span>}

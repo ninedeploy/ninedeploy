@@ -204,7 +204,7 @@ export const SETTINGS_TAB_TOPICS: Record<string, HelpTopic> = {
   'settings.notifications': {
     title: 'Settings · Notifications',
     summary:
-      'Where the panel talks to you: delivery channels (Telegram, Discord, Slack, generic webhooks, ntfy, email) and alert rules that watch host and certificate health.',
+      'Where the panel talks to you: delivery channels (Telegram, Discord, Slack, Microsoft Teams, generic webhooks, ntfy, Gotify, Pushover, Lark, email, Resend) and alert rules that watch host and certificate health.',
     sections: [
       {
         heading: 'Adding a channel',

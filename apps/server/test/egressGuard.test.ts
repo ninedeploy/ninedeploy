@@ -147,6 +147,7 @@ describe('the guard is actually wired into the sinks', () => {
     ['discord', 'http://10.0.0.9/webhooks/1/x'],
     ['slack', 'http://127.0.0.1:9000/services/x'],
     ['ntfy', 'http://192.168.1.10/topic'],
+    ['teams', 'https://10.0.0.9/workflows/abc/triggers/manual/paths/invoke'],
   ])('a %s channel pointed inside the network is never sent', async (type, url) => {
     const { db } = dbWith([channel(type, url)]);
     await notifyEvent(db, EVENT);

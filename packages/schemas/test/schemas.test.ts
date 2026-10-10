@@ -965,7 +965,7 @@ describe('service', () => {
     });
 
     it('notificationType accepts every channel type', () => {
-      for (const type of ['telegram', 'webhook', 'discord', 'slack', 'ntfy', 'email']) {
+      for (const type of ['telegram', 'webhook', 'discord', 'slack', 'ntfy', 'gotify', 'pushover', 'lark', 'email', 'fcm', 'teams', 'resend']) {
         ok(notificationChannelCreate, { name: 'n', type, target: 't' });
       }
       bad(notificationChannelCreate, { name: 'n', type: 'pigeon', target: 't' });

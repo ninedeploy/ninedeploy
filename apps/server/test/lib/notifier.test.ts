@@ -1,9 +1,13 @@
 ﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { notificationLog } from '@ninedeploy/db';
 import {
+  buildResendPayload,
+  buildTeamsPayload,
   dispatchChannel,
   notifyEvent,
   parseEmailTarget,
+  parseResendTarget,
+  parseTeamsTarget,
   scopeMatchesAction,
   sendDiscord,
   sendSystemEmail,
@@ -923,5 +927,212 @@ describe('outbound payload injection (r653)', () => {
     const [, init] = fetchMock.mock.calls[0]!;
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body.allowed_mentions).toEqual({ parse: [] });
+  });
+});
+
+describe('Microsoft Teams channel', () => {
+  const appEvent = { id: 3, action: 'deploy.failed', entity: 'web', ts: '2026-01-01T00:00:00.000Z' };
+  const workflowsUrl = 'https://prod-00.westeurope.logic.azure.com:443/workflows/abc/triggers/manual/paths/invoke?sig=s3cr3t';
+
+  beforeEach(() => {
+    vi.stubEnv('NINEDEPLOY_MASTER_KEY', KEY_HEX);
+    fetchMock.mockReset();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  it('builds a message carrying one Adaptive Card attachment', () => {
+    const payload = buildTeamsPayload('🚀 deploy completed: web') as {
+      type: string;
+      attachments: Array<{ contentType: string; content: { type: string; version: string; body: Array<{ text: string }> } }>;
+    };
+    expect(payload.type).toBe('message');
+    expect(payload.attachments).toHaveLength(1);
+    expect(payload.attachments[0]!.contentType).toBe('application/vnd.microsoft.card.adaptive');
+    expect(payload.attachments[0]!.content.type).toBe('AdaptiveCard');
+    expect(payload.attachments[0]!.content.body.map((b) => b.text)).toEqual(['NineDeploy', '🚀 deploy completed: web']);
+  });
+
+  it('posts the card as JSON to the webhook URL', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 202, text: async () => '' });
+    await dispatchChannel('teams', workflowsUrl, appEvent, 'msg');
+    expect(fetchMock).toHaveBeenCalledWith(
+      workflowsUrl,
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildTeamsPayload('msg')),
+      }),
+    );
+  });
+
+  it('accepts a legacy incoming-webhook URL as well', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, text: async () => '1' });
+    await dispatchChannel('teams', 'https://contoso.webhook.office.com/webhookb2/abc/IncomingWebhook/def/ghi', appEvent, 'msg');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('trims the pasted URL', () => {
+    expect(parseTeamsTarget(`  ${workflowsUrl}\n`)).toBe(workflowsUrl);
+  });
+
+  it.each([['not a url'], ['http://contoso.webhook.office.com/x'], ['ftp://example.com/x'], ['']])(
+    'refuses %j before dialling',
+    async (target) => {
+      await expect(dispatchChannel('teams', target, appEvent, 'msg')).rejects.toThrow('Invalid Teams target (expected an https webhook URL)');
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('reports the status and the connector explanation, never the URL', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 400, text: async () => ' Bad payload received by generic incoming webhook. ' });
+    const err = await dispatchChannel('teams', workflowsUrl, appEvent, 'msg').catch((e: Error) => e);
+    expect((err as Error).message).toBe('Teams 400: Bad payload received by generic incoming webhook.');
+    expect((err as Error).message).not.toContain('s3cr3t');
+  });
+
+  it('falls back to the bare status when the body is empty or unreadable', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 429, text: async () => '' });
+    await expect(dispatchChannel('teams', workflowsUrl, appEvent, 'msg')).rejects.toThrow(/^Teams 429$/);
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 502 });
+    await expect(dispatchChannel('teams', workflowsUrl, appEvent, 'msg')).rejects.toThrow(/^Teams 502$/);
+  });
+
+  it('treats an unfollowed redirect as a delivery failure', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 302, text: async () => '' });
+    await expect(dispatchChannel('teams', workflowsUrl, appEvent, 'msg')).rejects.toThrow('Teams 302');
+  });
+
+  it('delivers through notifyEvent and logs it as sent', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 202, text: async () => '' });
+    const { db, lastValues } = makeDb([
+      { id: 31, type: 'teams', targetEncrypted: encrypt(workflowsUrl), eventFilter: '', active: true },
+    ]);
+    await notifyEvent(db, event);
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(JSON.parse((init as RequestInit).body as string).attachments[0].content.body[1].text).toBe('🚀 deploy completed: web');
+    expect(lastValues()).toHaveBeenCalledWith(expect.objectContaining({ status: 'sent', attempts: 1 }));
+  });
+
+  it('records a failure when Teams keeps answering an error', async () => {
+    vi.useFakeTimers();
+    fetchMock.mockResolvedValue({ ok: false, status: 500, text: async () => '' });
+    const { db, lastValues } = makeDb([
+      { id: 32, type: 'teams', targetEncrypted: encrypt(workflowsUrl), eventFilter: '', active: true },
+    ]);
+    const pending = notifyEvent(db, event);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await pending;
+    expect(lastValues()).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed', attempts: 3, error: 'Teams 500' }));
+  });
+});
+
+describe('Resend channel', () => {
+  const appEvent = { id: 4, action: 'backup.failed', entity: 'db', ts: '2026-01-01T00:00:00.000Z' };
+  const target = JSON.stringify({ apiKey: 're_key123', from: 'NineDeploy <alerts@example.com>', to: 'ops@example.com, dev@example.com' });
+
+  beforeEach(() => {
+    vi.stubEnv('NINEDEPLOY_MASTER_KEY', KEY_HEX);
+    fetchMock.mockReset();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  it('parses a comma-separated or array recipient list and trims every field', () => {
+    expect(parseResendTarget(target)).toEqual({
+      apiKey: 're_key123',
+      from: 'NineDeploy <alerts@example.com>',
+      to: ['ops@example.com', 'dev@example.com'],
+    });
+    expect(parseResendTarget(JSON.stringify({ apiKey: ' k ', from: ' f@x.io ', to: [' a@x.io ', '', 7, 'b@x.io'] }))).toEqual({
+      apiKey: 'k',
+      from: 'f@x.io',
+      to: ['a@x.io', 'b@x.io'],
+    });
+  });
+
+  it.each([
+    ['not json'],
+    ['null'],
+    ['[]'],
+    [JSON.stringify({ from: 'a@x.io', to: 'b@x.io' })],
+    [JSON.stringify({ apiKey: 'k', to: 'b@x.io' })],
+    [JSON.stringify({ apiKey: 'k', from: 'a@x.io' })],
+    [JSON.stringify({ apiKey: 'k', from: 'a@x.io', to: ' , ' })],
+    [JSON.stringify({ apiKey: 5, from: 'a@x.io', to: 'b@x.io' })],
+  ])('rejects the malformed target %s', (bad) => {
+    expect(() => parseResendTarget(bad)).toThrow('Invalid Resend target (expected JSON with apiKey, from, to)');
+  });
+
+  it('builds the same subject and text the email channel sends', () => {
+    expect(buildResendPayload({ from: 'a@x.io', to: ['b@x.io'] }, 'NineDeploy: backup.failed', 'msg')).toEqual({
+      from: 'a@x.io',
+      to: ['b@x.io'],
+      subject: 'NineDeploy: backup.failed',
+      text: 'msg',
+    });
+  });
+
+  it('POSTs to the Resend API with the bearer key and never puts the key in the body', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: 'em_1' }) });
+    await dispatchChannel('resend', target, appEvent, '🔔 backup failed: db');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0]! as [string, RequestInit];
+    expect(url).toBe('https://api.resend.com/emails');
+    expect(init.method).toBe('POST');
+    expect(init.headers).toEqual({ 'Content-Type': 'application/json', Authorization: 'Bearer re_key123' });
+    expect(JSON.parse(init.body as string)).toEqual({
+      from: 'NineDeploy <alerts@example.com>',
+      to: ['ops@example.com', 'dev@example.com'],
+      subject: 'NineDeploy: backup.failed',
+      text: '🔔 backup failed: db',
+    });
+    expect(init.body as string).not.toContain('re_key123');
+  });
+
+  it('refuses a malformed target without calling the API', async () => {
+    await expect(dispatchChannel('resend', '{"apiKey":"k"}', appEvent, 'm')).rejects.toThrow('Invalid Resend target');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('surfaces the API error message but never the key', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 403, json: async () => ({ name: 'validation_error', message: 'The example.com domain is not verified.' }) });
+    const err = (await dispatchChannel('resend', target, appEvent, 'm').catch((e: Error) => e)) as Error;
+    expect(err.message).toBe('Resend 403: The example.com domain is not verified.');
+    expect(err.message).not.toContain('re_key123');
+  });
+
+  it('falls back to the bare status for an unreadable or message-less error body', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 401, json: async () => { throw new Error('not json'); } });
+    await expect(dispatchChannel('resend', target, appEvent, 'm')).rejects.toThrow(/^Resend 401$/);
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ message: 5 }) });
+    await expect(dispatchChannel('resend', target, appEvent, 'm')).rejects.toThrow(/^Resend 500$/);
+  });
+
+  it('delivers through notifyEvent and logs it as sent', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: 'em_1' }) });
+    const { db, lastValues } = makeDb([
+      { id: 41, type: 'resend', targetEncrypted: encrypt(target), eventFilter: '', active: true },
+    ]);
+    await notifyEvent(db, event);
+    expect(lastValues()).toHaveBeenCalledWith(expect.objectContaining({ status: 'sent', attempts: 1 }));
+  });
+
+  it('records a failure without leaking the key into the delivery log', async () => {
+    vi.useFakeTimers();
+    fetchMock.mockResolvedValue({ ok: false, status: 429, json: async () => ({ message: 'Too many requests' }) });
+    const { db, lastValues } = makeDb([
+      { id: 42, type: 'resend', targetEncrypted: encrypt(target), eventFilter: '', active: true },
+    ]);
+    const pending = notifyEvent(db, event);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await pending;
+    const row = lastValues().mock.calls[0]![0] as { status: string; error: string };
+    expect(row.status).toBe('failed');
+    expect(row.error).toBe('Resend 429: Too many requests');
   });
 });

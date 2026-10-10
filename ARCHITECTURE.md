@@ -294,7 +294,7 @@ audit_log              id, user_id, action, entity, meta(json), ts
 settings               key, value(json)
 config_entries         key, value, is_secret, category, plugin_id — Config Center
 installed_plugins      id, name, version, enabled, manifest(json), is_official
-notification_channels  id, name, type(telegram|webhook|discord|slack|ntfy|email),
+notification_channels  id, name, type(telegram|webhook|discord|slack|teams|ntfy|gotify|pushover|lark|email|resend|fcm),
                        target_encrypted, event_filter, active
 notification_log       id, channel_id, event, entity, status, attempts, error, ts
 alert_rules            id, service_id (null = host-wide),

@@ -46,7 +46,7 @@ export const SYSTEM_TOPICS: Record<string, HelpTopic> = {
       {
         heading: 'Alerts',
         body: [
-          'Threshold alerts (CPU, memory, certificate expiry) are configured in Settings → Notifications (operators only), together with the channels that receive them (Telegram, Discord, Slack, webhook, ntfy, email). Alerts fire and recover on their own.',
+          'Threshold alerts (CPU, memory, certificate expiry) are configured in Settings → Notifications (operators only), together with the channels that receive them (Telegram, Discord, Slack, Microsoft Teams, webhook, ntfy, Gotify, Pushover, Lark, email, Resend). Alerts fire and recover on their own.',
         ],
         tip: 'This page is per-node. A busy remote agent has its own view once registered on the Servers page.',
       },

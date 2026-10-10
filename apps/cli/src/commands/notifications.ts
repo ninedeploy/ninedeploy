@@ -2,7 +2,7 @@
  * `ninedeploy notifications {list,create-webhook,test,rm}` — operator
  * UI for the notification channel registry. PR #49 (G-06) adds
  * the HMAC + body-template fields for the `webhook` channel type;
- * the other types (slack, discord, telegram, ntfy, email) keep
+ * the other types (slack, discord, telegram, teams, ntfy, email, resend) keep
  * their existing surface and accept an opaque `configJson` blob.
  */
 import type { NineDeployClient } from '../client.js';
