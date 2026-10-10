@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.15.5';
+export const VERSION = '0.15.6';
 
 export interface ChangelogEntry {
   version: string;
@@ -11,6 +11,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.15.6',
+    date: '2026-10-10',
+    title: 'KeyDB, Dragonfly, Teams and Resend',
+    changes: [
+      'New managed databases: KeyDB and Dragonfly, with backup, restore, drill, public access and databases on nodes (agent v0.15.6). New notification channels: Microsoft Teams and Resend.',
+      'Security: a Nixpacks build with secret variables is no longer pushed to a registry, because Nixpacks bakes its build environment into the image. Such a deploy now fails with a message naming the variables; switch to a Dockerfile or Railpack, remove them, or clear the push registry.',
+      'Fixed: the backup drill reported valid backups as failed on Docker installs, because its checker container could not read the backup file.',
+      'Rolling back to 0.15.5 is supported: delete KeyDB and Dragonfly databases first, and expect failed deliveries for Teams and Resend channels until they are removed.',
+    ],
+  },
   {
     version: '0.15.5',
     date: '2026-10-10',

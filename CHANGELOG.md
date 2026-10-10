@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.6] - 2026-10-10
+
+> Two new database engines (KeyDB and Dragonfly), two new notification channels (Microsoft Teams and Resend), and a fix for secrets leaking into pushed Nixpacks images.
+
+### Upgrade notes
+
+- No migration (0072 is still the latest). Database engines and notification channel types are plain text columns.
+- **One deploy can now be refused that was not before.** A service that builds with **Nixpacks**, has a **push registry** set (Service → Settings → Build), and has any secret variable, attached-database credential or vault reference now fails its next deploy with a message naming the variables. Nixpacks bakes its build environment into the image config, so pushing the image would let anyone with pull access read those values. The running version keeps serving. To deploy again, switch the service to a Dockerfile or Railpack, remove those variables from the build, or clear the push registry. Services that don't push to a registry, and Dockerfile and Railpack services, are unchanged.
+- **KeyDB and Dragonfly databases on nodes need node agent v0.15.6.** Creating one on an older agent answers "update the node agent". Everything else in this release is on the panel.
+- **Rolling back to 0.15.5 is supported, with two things to know.** If a KeyDB or Dragonfly database exists, the 0.15.5 database list answers an error for instance operators and its scheduled backups fail; delete or stop those databases before rolling back. If a Teams or Resend channel exists, 0.15.5 lists it but cannot send to it, and logs a failed delivery for every event until it is removed. `docs/ROLLBACK.md` has the details.
+- **Verified before release:** in-place upgrades from 0.15.5 and from 0.10.45, a rehearsed rollback to 0.15.5, and the user-journey smoke, which now creates a KeyDB and a Dragonfly database for real, enforces the password, takes a backup, runs the drill, restores, and deletes it.
+
+### Added
+
+- **KeyDB and Dragonfly databases.** Redis-protocol engines that work like Redis in the panel: a generated password, `redis://` connection strings, backup and restore, RDB import, the backup drill, public access with TLS, the terminal and Studio, attachment to services, and databases on nodes.
+  - **KeyDB:** `eqalpha/keydb`, with the architecture-specific tag (`x86_64_v6.3.4` or `arm64_v6.3.4`).
+  - **Dragonfly:** `ghcr.io/dragonflydb/dragonfly` v1.34.2, started so that it saves the standard Redis dump file. Its dump is zero-padded, and the drill checks it with the image's own `redis-check-rdb`.
+  - Redis and Valkey commands are unchanged.
+- **Notification channels:** Microsoft Teams (a Workflows or legacy Office webhook, sent as an Adaptive Card) and Resend (the transactional email API). Secrets are encrypted at rest like the other channels, and the test button works for both.
+
+### Fixed
+
+- **Secrets in pushed Nixpacks images** (see the upgrade note above).
+- **The backup drill reported valid backups as failed** on Docker installs. The drill copies the decrypted backup into a throwaway checker container, and the checker, running as root with every capability dropped, could not read a file owned by the panel's user. The container now keeps one read-only capability (`DAC_READ_SEARCH`) and still has no network. Found while testing KeyDB; the helper serves every engine, so check any drill that failed on a backup you know is good.
+- The multi-node docs now say that a Nixpacks build on a build server leaves a copy of its build environment in the image on that server until the next deploy.
+
 ## [0.15.5] - 2026-10-10
 
 > Remote nodes, part 4: every multi-node feature is now in the web panel, the CLI, the SDK and MCP. The whole series is verified on two real Docker hosts.
