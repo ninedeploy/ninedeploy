@@ -851,12 +851,13 @@ async function pinHostKeyChecks(token, password) {
   const id = created.json.id;
   const on = await api(`/v1/sources/${id}`, { method: 'PATCH', token, body: { pinHostKeys: true } });
   if (on.status !== 200 || on.json?.pinHostKeys !== true) fail(`${TO}: switching pinning on: ${on.status} ${on.text.slice(0, 200)}`);
-  const noPassword = await api(`/v1/sources/${id}`, { method: 'PATCH', token, body: { pinHostKeys: false } });
-  if (noPassword.status !== 403 || errorCode(noPassword) !== 'reauth_required') fail(`${TO}: switching pinning off without the password answered ${noPassword.status} (wanted 403 reauth_required)`);
+  // A fresh sign-in (under 10 minutes) stands in for the password, as for every step-up; a WRONG password never does.
+  const wrongOff = await api(`/v1/sources/${id}`, { method: 'PATCH', token, body: { pinHostKeys: false, password: `wrong-${suffix}` } });
+  if (wrongOff.status !== 403 || errorCode(wrongOff) !== 'invalid_password') fail(`${TO}: switching pinning off with a wrong password answered ${wrongOff.status} (wanted 403 invalid_password)`);
   const off = await api(`/v1/sources/${id}`, { method: 'PATCH', token, body: { pinHostKeys: false, password } });
   if (off.status !== 200 || off.json?.pinHostKeys !== false) fail(`${TO}: switching pinning off: ${off.status} ${off.text.slice(0, 200)}`);
   await api(`/v1/sources/${id}`, { method: 'DELETE', token });
-  step(`${TO}: ${existing.length} existing source(s) keep the per-job host key policy; pinning switches on freely and off only with the password`);
+  step(`${TO}: ${existing.length} existing source(s) keep the per-job host key policy; pinning switches on freely and off only with a correct password`);
 }
 
 async function hostShellChecks(token, password) {

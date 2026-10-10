@@ -659,8 +659,9 @@ async function pinHostKeyChecks(token, password) {
   if (before?.pinHostKeys !== false || (before?.pinnedHostKeys ?? []).length !== 0) fail(`a new source pins host keys by default: ${JSON.stringify(before)}`);
   const on = await api(`/v1/sources/${id}`, { method: 'PATCH', token, body: { pinHostKeys: true } });
   if (on.status !== 200 || on.json?.pinHostKeys !== true) fail(`switching pinning on: ${on.status} ${on.text.slice(0, 200)}`);
-  const noPassword = await api(`/v1/sources/${id}`, { method: 'PATCH', token, body: { pinHostKeys: false } });
-  if (noPassword.status !== 403 || errorCode(noPassword) !== 'reauth_required') fail(`switching pinning off without the password answered ${noPassword.status} ${noPassword.text.slice(0, 160)} (wanted 403 reauth_required)`);
+  // A fresh sign-in (under 10 minutes) stands in for the password, as for every step-up; a WRONG password never does.
+  const wrongOff = await api(`/v1/sources/${id}`, { method: 'PATCH', token, body: { pinHostKeys: false, password: `wrong-${suffix}` } });
+  if (wrongOff.status !== 403 || errorCode(wrongOff) !== 'invalid_password') fail(`switching pinning off with a wrong password answered ${wrongOff.status} ${wrongOff.text.slice(0, 160)} (wanted 403 invalid_password)`);
   const wrong = await api(`/v1/sources/${id}`, { method: 'PATCH', token, body: { resetHostKeys: true, password: `wrong-${suffix}` } });
   if (wrong.status !== 403 || errorCode(wrong) !== 'invalid_password') fail(`resetting host keys with a wrong password answered ${wrong.status} ${wrong.text.slice(0, 160)} (wanted 403 invalid_password)`);
   if ((await listed())?.pinHostKeys !== true) fail('a refused change turned pinning off');
@@ -670,7 +671,7 @@ async function pinHostKeyChecks(token, password) {
   if (off.status !== 200 || off.json?.pinHostKeys !== false) fail(`switching pinning off: ${off.status} ${off.text.slice(0, 200)}`);
   const gone = await api(`/v1/sources/${id}`, { method: 'DELETE', token });
   if (gone.status !== 200 && gone.status !== 204) fail(`deleting the pinning source failed: ${gone.status}`);
-  step('source host key pinning: off by default, on without a password, off and reset gated by it');
+  step('source host key pinning: off by default, on freely, off and reset gated by the password');
 }
 
 async function hostShellChecks(token, password) {
