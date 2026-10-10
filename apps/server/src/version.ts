@@ -1,7 +1,7 @@
 // Owner policy: 1.0.0 does not exist. The 0.9.x line runs to 0.9.99 and
 // rolls 0.9.99 -> 0.10.0 — bumping to a 1.x major is a positioning decision
 // reserved for the owner, never a release-script accident.
-export const VERSION = '0.15.7';
+export const VERSION = '0.15.8';
 
 export interface ChangelogEntry {
   version: string;
@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.15.8',
+    date: '2026-10-10',
+    title: 'Git host key pinning, deploys watch exit code',
+    changes: [
+      'Optional pinning of a Git host's SSH keys for a deploy-key source (Sources card, or ninedeploy sources pin-host-keys). Off for every existing source. The first clone learns the keys, later clones refuse a host that presents a different one; switching it off or resetting needs your password. Migration 0073 adds two columns.',
+      'ninedeploy deploys watch now exits 1 when the deploy ended failed or cancelled; before, a clean end of the log stream always exited 0.',
+      'Rolling back to 0.15.7 is supported; pinning stops being enforced and the pinned keys are kept.',
+    ],
+  },
   {
     version: '0.15.7',
     date: '2026-10-10',
@@ -62,7 +72,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Fixed: databases attached by hand are now connected to their service\'s network on the next deploy, and a second PgBouncer no longer fails on port 6432. Rolling back to 0.15.2 is supported.',
     ],
   },
-{
+  {
     version: '0.15.2',
     date: '2026-10-09',
     title: 'Remote Nodes: Builds, Clones and Volumes',
@@ -71,7 +81,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'The image now includes an SSH client, so deploy-key clones work in Docker installs. Compose stacks with volumes on nodes no longer fail to start. Rolling back to 0.15.1 is supported.',
     ],
   },
-{
+  {
     version: '0.15.1',
     date: '2026-10-09',
     title: 'Security Patch — MCP Dependencies',
@@ -79,7 +89,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Security patch: the MCP server\'s SDK and its proxy-addr dependency move to fixed releases (an OAuth credential-leak advisory and an IP-spoofing advisory). NineDeploy\'s MCP server runs over stdio and never used either code path; nothing else changes.',
     ],
   },
-{
+  {
     version: '0.15.0',
     date: '2026-10-09',
     title: 'Operations and API',
@@ -90,7 +100,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'The API is described by an OpenAPI 3.1 document at /v1/openapi.json (sign-in required), and the MCP server gains search_api plus read-only tools generated from it. One additive migration; rolling back to 0.14 is supported (see docs/ROLLBACK.md).',
     ],
   },
-{
+  {
     version: '0.14.0',
     date: '2026-10-08',
     title: 'Network and Data Access',
@@ -101,7 +111,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Secret managers: reference HashiCorp Vault / OpenBao and AWS Secrets Manager values in env (${{vault:path#field}}, ${{aws:id#key}}), configured under Settings → Integrations. Nothing changes until you configure one; rolling back to 0.13 is supported (see docs/ROLLBACK.md).',
     ],
   },
-{
+  {
     version: '0.13.0',
     date: '2026-10-08',
     title: 'GitHub App Integration',
@@ -112,7 +122,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Gitea sources take a base URL, which enables the token test and repository listing. Upgrades change nothing until an operator registers an App; the migration only adds tables and one nullable column, and rolling back to 0.12 is safe (see docs/GITHUB_APP.md).',
     ],
   },
-{
+  {
     version: '0.12.0',
     date: '2026-10-08',
     title: 'Backups, Preview Environments and Disk Alerts',
@@ -123,7 +133,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'New alert metrics: disk usage across the panel host and nodes, and remote servers gone offline. The panel now pings nodes, so SSH-bootstrapped nodes stay online while reachable. Upgrades change nothing until you configure these features; the two new database tables are additive.',
     ],
   },
-{
+  {
     version: '0.11.2',
     date: '2026-10-08',
     title: 'Security Release — Clone Errors No Longer Leak the Git Token',
@@ -134,7 +144,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Deprecated: an OIDC provider\'s default role has had no effect since 0.11.0, so the SSO settings no longer show it; the API still accepts it.',
     ],
   },
-{
+  {
     version: '0.11.1',
     date: '2026-10-07',
     title: 'Private Repositories — Full Repo Lists and Clear Clone Errors',
@@ -144,7 +154,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'New: a "Test token" button on Git sources shows the GitHub token type, its scopes and warnings when private repositories cannot be listed or cloned.',
     ],
   },
-{
+  {
     version: '0.11.0',
     date: '2026-10-07',
     title: 'The Evidence Audit Release — 300+ Proven Fixes',
@@ -155,7 +165,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Tenancy: deactivated (SCIM-deprovisioned) accounts cannot be seated or handed ownership, and their team services move to the workspace owner, including a one-shot repair on upgrade; SSO sign-ups always own their personal workspace. Audit events carry correct service and deployment ids, and the Activity tab still lists older entries.',
     ],
   },
-{
+  {
     version: '0.10.45',
     date: '2026-10-05',
     title: 'Deployment Reliability — Evidence-Led Audit Fixes',
@@ -166,7 +176,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Includes the preceding audit repairs across DNS providers, sessions, backup handling, deployment queues, CLI configuration and shared SDK contracts, with permanent lifecycle and concurrency regressions. No database migrations.',
     ],
   },
-{
+  {
     version: '0.10.44',
     date: '2026-10-03',
     title: 'Ownership Follow-Up — Shared Env Restored After SCIM Removals',
@@ -176,7 +186,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Docs: verifying image signatures needs cosign v3, or v2.6+ with --new-bundle-format.',
     ],
   },
-{
+  {
     version: '0.10.43',
     date: '2026-10-02',
     title: 'The Verified-Release Release — Signed, Checksummed, Matrix-Checked',
@@ -186,7 +196,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Releases are signed: images with Sigstore keyless signing plus build provenance, and each release ships its own source archive, install.sh, SHA256SUMS and a signature bundle. The installer verifies the archive against the checksums (and the signature when cosign is installed) and stops on a mismatch; from the next update on, self-update verifies the installer too. See README → Verifying a release (r700–r703).',
     ],
   },
-{
+  {
     version: '0.10.42',
     date: '2026-10-02',
     title: 'The Second-Pass Audit Release — Ingress, Data, Previews and Nodes',
@@ -197,7 +207,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Also: domain caps and rate limits for non-operators, pending domains expire, the www companion is claim-checked, PgBouncer status masks the password, remote restores require encrypted copies, manifest notification subscriptions are operator-only, webhook templates are JSON-escaped, and the release drill now proves a managed Postgres and Redis start. See the changelog for the full list and upgrade notes.',
     ],
   },
-{
+  {
     version: '0.10.41',
     date: '2026-10-02',
     title: 'Security Release — Update Now',
@@ -207,7 +217,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Security: workspace email overrides only apply to workspaces an instance operator owns and must keep {{acceptUrl}} — since 0.10.40 any account could send its own text through the instance mail server (r621). Git never runs hooks from a checkout (r622).',
     ],
   },
-{
+  {
     version: '0.10.40',
     date: '2026-10-02',
     title: 'The Proven-Upgrade Release, Built for arm64 Too',
@@ -216,7 +226,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Fixed: Railpack publishes its arm64 Linux binary as arm64-unknown-linux-musl, not aarch64 (Nixpacks\' spelling) — the arm64 image build 404\'d, and arm64 bare-metal hosts have silently never received railpack since it was introduced (r584). Both archives were re-verified against Railpack\'s published checksums.',
     ],
   },
-{
+  {
     version: '0.10.39',
     date: '2026-10-02',
     title: 'The Proven-Upgrade Release, Published',
@@ -225,7 +235,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Fixed: the r605 pinned-dispatcher test built its Agent from the Node 22/24 undici slot; it now goes through the same lookup guardedFetch uses (Node 26 keeps the Agent elsewhere). The production code was already correct and was verified on Node 22.13, 24 and 26.',
     ],
   },
-{
+  {
     version: '0.10.38',
     date: '2026-10-02',
     title: 'The Proven-Upgrade Release — Smoke-Gated Publication',
@@ -236,7 +246,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Railpack ships in the container image; railpack builds need a BuildKit daemon via BUILDKIT_HOST and are refused up front, with the fix named, until one is set — they never worked before (r582).',
     ],
   },
-{
+  {
     version: '0.10.37',
     date: '2026-10-02',
     title: 'The Tenancy Release — the Deep-Audit Remediation',
@@ -253,7 +263,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Upgrade path: the installer now picks the newest PUBLISHED release, pins the docker image to that tag, keeps the previous compose/.env for a real rollback, and waits up to 300 s for migrations (r570, r571). Self-update refuses while a deploy is building unless forced (r572). Doctor warns when the panel listens on a network address over plain HTTP — the default bind is unchanged (r575).',
     ],
   },
-{
+  {
     version: '0.10.36',
     date: '2026-10-02',
     title: 'The Bounded-Backstop Release',
@@ -264,7 +274,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Wording: the r479 note said guard-rejections; the backstop also counts handler-produced 400s (a request that passes the principal limiter and then fails validation in-handler). Same ceiling, same never-legitimate threshold — the changelog now says what the code does.',
     ],
   },
-{
+  {
     version: '0.10.35',
     date: '2026-10-02',
     title: 'The Backstop Release — the Throttle-Fix Audit',
@@ -275,7 +285,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Hardened: the user-journey smoke derives its default image from the repo version instead of a hardcoded tag — a bare run could happily prove the journey green on a two-releases-old artifact.',
     ],
   },
-{
+  {
     version: '0.10.34',
     date: '2026-10-01',
     title: 'The Owner-Throttle Release — Your Panel Will Not Rate-Limit You',
@@ -284,7 +294,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Verified by test: two authenticated users from the SAME IP draw independent buckets; anonymous traffic draws a third; per-route ceilings still fire. The user-journey smoke now also proves the unthrottled happy path end-to-end on the published image.',
     ],
   },
-{
+  {
     version: '0.10.33',
     date: '2026-10-01',
     title: 'The Journey Release — the Product Proves Itself',
@@ -295,7 +305,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Docs/chain polish (the r475-r476 delta audit, 0 P1 / 0 P2 / 4 P3): backups restore shown with BOTH required args; the createClient token: guard now also sweeps apps/web/src (the in-product help surface); the release scripts share ONE package list (scripts/lib/package-list.mjs) with a coverage test pinning it against the real workspace globs — an 11th package can no longer ship at a stale version with every gate green; the webhook help no longer promises a branch picker the panel UI does not have (Environment tab matches the service branch; override via CLI) and the Sources topic points at the real flow.',
     ],
   },
-{
+  {
     version: '0.10.32',
     date: '2026-10-01',
     title: 'The Truth-in-Docs Release',
@@ -306,7 +316,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Release chain hardening (the r474/r475 diff audit): release:tag now refuses when the commitish is not HEAD — its compile gates certify the working tree, so tagging an older SHA certified the wrong tree (false pass AND false block); provenance checks ALL TEN package.jsons, not just the root; an unresolvable commitish dies with a diagnostic instead of a stack trace; and bump-version treats the --version install-command files (About, QUICKSTART, README) as critical — a silent miss pinned copiers to the previous release.',
     ],
   },
-{
+  {
     version: '0.10.31',
     date: '2026-10-01',
     title: 'The Chain-Guard Release — the Release Chain Audits Itself',
@@ -318,7 +328,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Verified sound under the same audit (no changes needed): CI\'s structure — build-before-checks, checks-before-push, needs-gated edge publish, least-privilege permissions, no pull_request_target/fork-secret exposure. The parked dependency majors stay parked with evidence: drizzle-kit 0.31.11 still depends on the deprecated @esbuild-kit/esm-loader (our patch remains required, the bump buys nothing), and js-yaml 4.3.2 carries no advisory while pm2 blocks 5.',
     ],
   },
-{
+  {
     version: '0.10.30',
     date: '2026-10-01',
     title: 'The Clean-Sweep Release — the Curve Reaches Zero',
@@ -330,7 +340,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Docs/schema hygiene: dockerVolumeName\'s uppercase acceptance is now documented as deliberate (docker accepts it; rejecting would break out-of-band volume attach), and the dead webhooks.events column is marked dead in the schema so nobody builds on it.',
     ],
   },
-{
+  {
     version: '0.10.29',
     date: '2026-10-01',
     title: 'The Contract-Honest SDK + Secrets-at-Rest Release',
@@ -342,7 +352,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'plugin-sdk no longer drags @ninedeploy/schemas (unused) into every author install.',
     ],
   },
-{
+  {
     version: '0.10.28',
     date: '2026-10-01',
     title: 'The Member Posture Release — the UI Catches Up with the API',
@@ -354,7 +364,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'First deep audits of two never-audited surfaces: MCP came back structurally sound (env-only token handling, airtight validation, scope filter pinned by a cross-package contract test); web\'s fundamentals held (no XSS sinks, subprotocol WS auth with 60 s revalidation, single-flight refresh). Verdicts: MCP 0 P1 / 2 P2 / 2 P3, web 0 P1 / 4 P2 / 4 P3 — all shipped here.',
     ],
   },
-{
+  {
     version: '0.10.27',
     date: '2026-10-01',
     title: 'The Override-Escape Patch — the Audit of the Audit of the Audit',
@@ -365,7 +375,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Fixed: the sandbox child\'s stderr splitter flushes its trailing partial line on exit — a crash report killed mid-write was swallowed whole; the honesty-test cleanup no longer races a dead IPC channel (ERR_IPC_CHANNEL_CLOSED) or waits out a pointless 3s tail.',
     ],
   },
-{
+  {
     version: '0.10.26',
     date: '2026-09-30',
     title: 'The Contract-Honesty Patch — the Audit of the Audit',
@@ -380,7 +390,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Dependencies: zod 4.6.5, dotenv 18.0.4, simple-git 4.0.2, @simplewebauthn 14.0.3 (v14 AuthenticatorTransport rename applied), @libsql/client 0.18.0, jsdom 30.1.1, drizzle-orm 0.45.3 (server pin unified), mcp vitest 5.0.1; fast-uri 3.1.8/4.1.5 and brace-expansion 5.0.12 overrides for the new advisories — pnpm audit clean.',
     ],
   },
-{
+  {
     version: '0.10.25',
     date: '2026-09-30',
     title: 'The Telemetry Posture Release — Host Figures Are Operator-Only',
@@ -388,7 +398,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Host-level telemetry is operator-only now (r469). /v1/stats always returned the host card (CPU cores, load, total/used memory, disk) to every caller — but those figures expose machine capacity and the aggregate load of EVERY tenant\'s workloads, information a member has no business need for on a multi-tenant panel. Members still get their own services\' live container stats (the scoping that already existed); the host object comes back null for them and the Monitoring page says so instead of showing misleading dashes. Operators see exactly what they saw before.',
     ],
   },
-{
+  {
     version: '0.10.24',
     date: '2026-09-30',
     title: 'The Real Sandbox Release — Plugin Code Runs Behind Node\'s Permission Model',
@@ -396,7 +406,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Third-party plugin code now runs in a child process under Node\'s permission model (r468). The old sandbox was a worker thread with scrubbed env and memory caps — honest containment, but the docs had to disclaim it as "NOT a security boundary" because the code could still dynamically import node:fs and read everything the panel user could (master key, .env, the database). The production sandbox now forks with --permission and exactly two fs-read allowlist entries (its own bootstrap directory and the package manifest the ESM loader needs): filesystem read/write outside that, child processes, worker threads and native addons are denied by the runtime itself — a plugin that tries gets ERR_ACCESS_DENIED. The classic exfiltration paths (read master.key, fork a shell) are physically closed; memory caps carry over as --max-old-space-size=64/--max-semi-space-size=16, the scrubbed env stays (process.env is not part of the permission model), and a wedged child that ignores SIGTERM is SIGKILLed after 3 s. Tests fork the real compiled bootstrap under the real flags and prove the denials; dev/source checkouts fall back to the legacy worker transport (no loader for a forked child), and the docs state the new trust model: installing a plugin remains a trust decision about what it may do THROUGH the ctx API, no longer about what it can reach around.',
     ],
   },
-{
+  {
     version: '0.10.23',
     date: '2026-09-30',
     title: 'The Node Telemetry Release — Monitoring Finally Sees Every Node',
@@ -404,7 +414,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'The Monitoring page no longer shows the panel host\'s numbers under a node\'s name (r467). Clicking a remote node\'s card now switches the overview cards and workload grid to THAT node\'s live telemetry: a new composite agent.stats operation reports the node\'s own host stats (cores, load, memory from /proc — the host\'s real values even from inside the agent container), per-container CPU/memory via docker stats, and the node\'s disk via df — all through the sealed, nonce-bound agent protocol. The panel joins container names to the service rows pinned to that node, exactly like /v1/stats does for the panel host, and the cards refresh every 8 seconds with an honest "agent unreachable" state instead of silent placeholders. SDK: client.servers.stats(id). Node agents must be >=0.10.23 for the op — older agents answer unknown-op and the route reports the node as unreachable rather than guessing.',
     ],
   },
-{
+  {
     version: '0.10.22',
     date: '2026-09-30',
     title: 'The Node Volumes Release — Retention Guard and Cleanup Finally See the Nodes',
@@ -412,7 +422,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'A remote service\'s data volume finally has a lifecycle (r466). The r351 retention guard only ever asked the PANEL host\'s docker daemon — for a service pinned to a node it probed the wrong machine entirely, so a freed slug silently re-mounted a deleted service\'s NODE data (the panel\'s local volume of the same name is irrelevant, and a node volume is invisible to a local check). Remote creates now probe the node through a new validated docker.volumeInspect agent operation; a retained node volume is refused with a 409 that names the node, an unreachable agent fails CLOSED (treated as retained), and pm2 stays exempt. The Volumes page can finally clean the far side too: DELETE /v1/volumes/:name?serverId=N routes rm+verify through that node\'s agent (docker refuses an in-use volume on the node itself; the post-rm inspect turns that into an honest 409), closing the loop the guard\'s message always promised. Also: a key rotation no longer COUNTS a pre-r435 SSO row it skips — the report had been claiming rotations that never happened.',
     ],
   },
-{
+  {
     version: '0.10.21',
     date: '2026-09-30',
     title: 'The Multi-Line Env Release — PEM Keys and JSON Documents Arrive Intact',
@@ -420,7 +430,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Multi-line environment values finally survive the trip into a docker-type service (r465). docker\'s --env-file parser cannot carry a physical newline, so a PEM key or JSON credential reached the container as a literal "\\n" and apps choked on their own secrets. When any resolved env value spans lines, the container is now started through a one-service compose file whose dotenv parser decodes the escapes into REAL newlines — the same byte-verified format the compose and remote-compose builders have always used. The container NAME, its bridge, volumes, limits, replicas and the whole blue-green/health/routing/stop lifecycle stay byte-identical to the docker run path; every service without multi-line values keeps the exact invocation it has always had. The env editor\'s old "base64-encode it" warning is retired for the fixed path.',
     ],
   },
-{
+  {
     version: '0.10.20',
     date: '2026-09-30',
     title: 'The Integration Round — Honest Container Names on Nodes, an SDK That Speaks Enrolment',
@@ -429,7 +439,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'The SDK speaks enrolment (r463): settings.enrolment.get/rotate/disable wrap the admin routes operators already had — the token an agent\'s NINEDEPLOY_ENROLMENT_TOKEN needs, rotatable and revocable from scripts and the CLI instead of only the dashboard.',
     ],
   },
-{
+  {
     version: '0.10.19',
     date: '2026-09-30',
     title: 'The Edge Sweep — Bounded Caches, One Import at a Time, an Installer That Prunes Its Own Backups',
@@ -439,7 +449,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Coverage note: the log-shipper plugin\'s timer-only lifecycle (tick, onClose) had never been exercised by a test — it is now, with fake timers driving the interval, the partial-failure warning, the throw-survival arm and the post-close stop.',
     ],
   },
-{
+  {
     version: '0.10.18',
     date: '2026-09-29',
     title: 'The Auditors-Audit Patch — the Installer Finally Gets the r087 Treatment',
@@ -450,7 +460,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'A key rotation no longer aborts mid-sweep if a pre-r435 SSO row somehow escaped the boot normalization — the survivor is skipped for the next boot to encrypt (r446).',
     ],
   },
-{
+  {
     version: '0.10.17',
     date: '2026-09-29',
     title: 'The Deferred-Backlog Patch — Secrets Sealed, Sockets Scrubbed, Notifications That Tell the Truth',
@@ -462,7 +472,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Backup notifications tell the truth (r437): the event bridge carries the database NAME instead of an empty payload the dispatcher rendered as "Database #0 backup succeeded (0 bytes)". And the CLI no longer advertises npm/git/local plugin sources the server refuses with a 400 every time (r440) — marketplace and sandbox, the two it can actually load.',
     ],
   },
-{
+  {
     version: '0.10.16',
     date: '2026-09-29',
     title: 'The Deep-Scan Patch — a Sealed Credential Boundary, Leak-Free Sockets and a Zero-Vulnerability Tree',
@@ -474,7 +484,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Supply chain: fast-uri pinned to 3.1.7/4.1.4 (the old pins were the still-vulnerable versions), ip-address forced to >=10.5.1 and nodemailer upgraded 9→10 (GHSA-6vj9-mwq6-2f5v, GHSA-qw65-cvwx-89v3, GHSA-rpw4-54j3-4h4q, GHSA-2vr4-cq9g-mvrc) — pnpm audit reports zero known vulnerabilities for the first time this cycle.',
     ],
   },
-{
+  {
     version: '0.10.15',
     date: '2026-09-29',
     title: 'The Fresh-Audit Patch — Secret-Free Error Labels, a Working First Node Deploy, and Plugins That Actually Stop',
@@ -487,7 +497,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Honest node status via a 60 s agent heartbeat and read-time staleness (r421); inline-stack edits seed new SERVICE_* tokens instead of deploying blank credentials (r424); plus a .env symlink guard (r423), a mapping check for services: (r422), a race-free invitation accept (r425), a uniform 404 for unknown orchestrators (r422) and an honest CLI health banner (r426).',
     ],
   },
-{
+  {
     version: '0.10.14',
     date: '2026-09-28',
     title: 'The Backlog-Clearing Patch — No Resurrected Targets, Surviving Cancels, Honest Alerts and Telemetry',
@@ -498,7 +508,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'The panel got more honest in the small places: live-stat badges stop faking 0.0%, expired certificates say so, volume snapshot times are local, pending domains stop linking to an unrouted host, Safari downloads no longer cancel, and multi-line env values on docker services warn that docker’s env-file cannot carry real newlines (r409).',
     ],
   },
-{
+  {
     version: '0.10.13',
     date: '2026-09-28',
     title: 'The Deferred-Round Patch — Pullable Rollbacks, an Honest Proxy Finalize and Real Endpoint Identity',
@@ -510,7 +520,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Rollback, domain removal, webhook removal, SSO-provider deletion and instance-operator grants now confirm through the app-wide dialog, and several silent-failure mutations surface their errors (r402).',
     ],
   },
-{
+  {
     version: '0.10.12',
     date: '2026-09-27',
     title: 'The Follow-Up Audit Patch — the Static-Pack Gate, Honest Volumes and a Calmer Update Path',
@@ -525,7 +535,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Copy buttons worked only on HTTPS: on a plain-http panel (server IP and port) every copy — including one-time secrets — silently did nothing; a legacy-clipboard fallback restores them (r393).',
     ],
   },
-{
+  {
     version: '0.10.11',
     date: '2026-09-25',
     title: 'The Installer Patch — Updates Run the New Release’s Installer',
@@ -580,7 +590,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'The 130-template catalog was re-certified against live containers: three certified images broken by upstream drift were repaired (flowise re-pinned to 2.2.8, libretranslate gained a per-template smoke timeout, vikunja pins its new Interface port config) and five community templates were fixed (wekan, filestash, fider, limesurvey, wud) with four more documenting their setup requirements.',
     ],
   },
-{
+  {
     version: '0.10.5',
     date: '2026-09-20',
     title: 'The www Patch — Redirects That Reach the Wire',
@@ -588,7 +598,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'A redirectWww domain now routes the whole apex/www pair: the Traefik router claims both hosts so www requests reach the redirect middleware and Traefik orders a certificate for the www form (previously the router matched only the stored hostname — www traffic answered with the default certificate and never redirected). The redirect regex matches only the www form, removing a latent self-redirect loop; certificate orders are split per host so a www host with broken DNS fails alone; and the companion DNS record is created idempotently on create, on toggle, and on verification of domains that started pending.',
     ],
   },
-{
+  {
     version: '0.10.4',
     date: '2026-09-19',
     title: 'The Scaling Fix — Replicas That Actually Run',

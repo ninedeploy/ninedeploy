@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.8] - 2026-10-10
+
+> Optional pinning of a Git host's SSH keys for deploy-key sources, and `deploys watch` that exits non-zero after a failed deploy.
+
+### Upgrade notes
+
+- **One small migration, 0073.** It adds two columns to `sources` (a flag that defaults to off, and a nullable text). No row is rewritten, so the upgrade is instant and a rollback to 0.15.7 boots on the migrated file.
+- **Nothing changes for an existing source.** Pinning is off for every one of them, which keeps today's behaviour: each deploy accepts the host key it is shown and refuses one that changes during that deploy.
+- **`ninedeploy deploys watch` now exits 1 when the deploy ended `failed` or `cancelled`.** Until now a clean end of the log stream exited 0 whatever the outcome, so `deploys watch && next-step` carried on after a failed deploy. If a script relied on the old exit code, check the status itself. When the status cannot be read the command exits 0 as before.
+- **Rolling back to 0.15.7 is supported.** Pinning stops being enforced (clones are back to the per-job policy) and the pinned keys stay in the table for when you upgrade again. `docs/ROLLBACK.md` has the note.
+- **Verified before release:** in-place upgrades from 0.15.7 and from 0.10.45, a rehearsed rollback to 0.15.7, the user-journey smoke (which now also drives the pinning setting), and a clone against a real OpenSSH server: the first clone learns the key, a second one with the same key passes, a server that then presents another key is refused with OpenSSH's own "host identification has changed" message, a source that does not pin still accepts it as before, and after a reset the new key is learnt and pinned.
+
+### Added
+
+- **Pin a Git host's SSH keys (opt-in, per source).** Sources → *Pin git host keys*, or `ninedeploy sources pin-host-keys <id> on|off`. The first clone after switching it on learns the host keys (only after the clone succeeded, which needs the deploy key); every later clone refuses a host that presents a different key, and the deploy log says `pinned host key changed` with what to do. Switching it on needs nothing extra. Switching it off and resetting the pinned keys (`sources reset-host-keys <id>`) let a changed key through, so both need an interactive session and your password, and are audited. The panel shows fingerprints only (`sources host-keys <id>`), never the keys. It applies to clones the panel makes with the SSH deploy key; a clone on a remote node keeps its per-job policy.
+
+### Fixed
+
+- **`deploys watch` exited 0 after a failed or cancelled deploy** (see the upgrade notes).
+
 ## [0.15.7] - 2026-10-10
 
 > 175 more one-click templates (130 → 305), every one of them started in an isolated container before it was listed, and password-reset and invitation emails through Resend.
