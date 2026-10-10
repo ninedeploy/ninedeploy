@@ -38,6 +38,7 @@ import { migrate } from 'drizzle-orm/libsql/migrator';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { createDb, type DB, databases, imageTransfers, runMigrations, servers, services, sources } from '@ninedeploy/db';
 import { effectiveBuildOn, effectiveOrchestrator } from '@ninedeploy/schemas';
+import { migrationsThrough } from './fixtures/migrationsThrough.js';
 import { schema015 } from './fixtures/schema015.js';
 
 const scratch = mkdtempSync(path.join(os.tmpdir(), 'nd-0072-'));
@@ -207,7 +208,7 @@ describe('migration 0072 upgrade compatibility', () => {
     const prior = journal.entries.find((e) => e.tag === '0071_operations_api')!;
     expect(entry.idx).toBe(72);
     expect(entry.when).toBeGreaterThan(prior.when);
-    expect(journal.entries.at(-1)!.tag).toBe(TAG);
+    expect(journal.entries.at(-1)!.idx).toBeGreaterThanOrEqual(72);
     const snap = JSON.parse(readFileSync(path.join(migrationsFolder, 'meta', '0072_snapshot.json'), 'utf8')) as {
       prevId: string;
       tables: Record<string, { columns: Record<string, { notNull: boolean; default?: unknown }> }>;
@@ -269,7 +270,8 @@ describe('migration 0072 upgrade compatibility', () => {
     const { db, client } = await populated015();
     const before = await snapshot(client, ['__drizzle_migrations']);
 
-    await runMigrations(db, migrationsFolder);
+    // Through 0072 only: a later additive migration changes these same rows and DDL.
+    await runMigrations(db, migrationsThrough(TAG, scratch));
 
     const after = await snapshot(client, ['__drizzle_migrations', ...NEW_TABLES]);
     // DDL: untouched objects identical. SQLite splices an added column's
@@ -311,7 +313,8 @@ describe('migration 0072 upgrade compatibility', () => {
     const keys = (await client.execute(`SELECT key FROM settings WHERE key LIKE 'swarm_%' OR key LIKE 'image_transfer_%'`)).rows;
     expect(keys).toEqual([]);
 
-    // Through today's schema: the 0.15 rows, secrets intact, defaults typed.
+    // Through today's schema (the whole chain): the 0.15 rows, secrets intact, defaults typed.
+    await runMigrations(db, migrationsFolder);
     const pg = await db.query.databases.findFirst({ where: eq(databases.id, 1) });
     expect(pg).toMatchObject({ slug: 'app', containerName: 'nd-db-app', volumeName: 'nd-db-app-data', serverId: null, nodeContainerName: null });
     expect(decrypt(pg!.passwordEncrypted)).toBe('pg-secret');

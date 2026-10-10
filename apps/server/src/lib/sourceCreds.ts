@@ -11,7 +11,7 @@ import {
 } from '@ninedeploy/db';
 import { audit } from './audit.js';
 import { decrypt } from './crypto.js';
-import type { CloneCreds } from './git.js';
+import { type CloneCreds, hostKeyLines } from './git.js';
 import { GithubAppError, githubApi, installationToken, revokeInstallationToken } from './githubApp.js';
 
 /**
@@ -261,9 +261,25 @@ export async function resolveCloneCreds(
   const src = await db.query.sources.findFirst({ where: eq(sources.id, target.sourceId) });
   if (!src) return undefined;
   if (src.type === 'github_app') return viaSourceInstallation(db, target, target.sourceId, opts);
-  return {
+  const base = {
     type: src.type,
     token: src.tokenEncrypted ? decrypt(src.tokenEncrypted) : undefined,
     deployKey: src.deployKeyEncrypted ? decrypt(src.deployKeyEncrypted) : undefined,
+  };
+  // 0.15.8: opt-in host key pinning. A source that does not pin resolves to
+  // exactly the block above; a credential sent to a node never pins (the node
+  // keeps its per-job accept-new policy).
+  if (!src.pinHostKeys || opts.perJob) return base;
+  return {
+    ...base,
+    pinHostKeys: true,
+    hostKeys: src.hostKeys,
+    // Merged with what is stored now, so two deploys that each learnt a
+    // different host cannot erase one another's.
+    onHostKeys: async (lines: string) => {
+      const current = await db.query.sources.findFirst({ where: eq(sources.id, src.id) });
+      const merged = hostKeyLines([...hostKeyLines(current?.hostKeys), ...hostKeyLines(lines)].join('\n'));
+      await db.update(sources).set({ hostKeys: `${merged.join('\n')}\n` }).where(eq(sources.id, src.id));
+    },
   };
 }

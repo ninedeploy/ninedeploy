@@ -711,6 +711,12 @@ export const sources = sqliteTable('sources', {
   // 0.16 (0072): a static credential (PAT, deploy key) may be sent to a node
   // for one clone. Off for every existing row, which keeps the r268 refusal.
   allowOnNodes: integer('allow_on_nodes', { mode: 'boolean' }).notNull().default(false),
+  // 0.15.8 (0073): an SSH deploy-key source can pin the git host's SSH keys.
+  // Off for every existing row, which keeps today's per-job accept-new policy.
+  // `hostKeys` holds known_hosts lines (`host type base64`), learnt on the
+  // first clone after pinning is switched on and compared on every later one.
+  pinHostKeys: integer('pin_host_keys', { mode: 'boolean' }).notNull().default(false),
+  hostKeys: text('host_keys'),
 });
 
 export const domains = sqliteTable(

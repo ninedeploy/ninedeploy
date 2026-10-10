@@ -95,7 +95,14 @@ export const sourcePatch = z.object({
    * be sent to a node for one clone. Off for every existing source.
    */
   allowOnNodes: z.boolean().optional(),
-  /** Step-up password, required by the server when `allowOnNodes` turns on. */
+  /**
+   * 0.15.8: pin the git host's SSH keys for deploy-key clones made by the
+   * panel. Switching it on only tightens; switching it off needs the password.
+   */
+  pinHostKeys: z.boolean().optional(),
+  /** 0.15.8: forget the pinned keys so the next clone learns them again (needs the password). */
+  resetHostKeys: z.literal(true).optional(),
+  /** Step-up password, required when `allowOnNodes` turns on, pinning turns off or the keys are reset. */
   password: z.string().min(1).max(1024).optional(),
 });
 export type SourcePatch = z.infer<typeof sourcePatch>;

@@ -198,6 +198,86 @@ describe('checkoutCommit — fresh clone', () => {
     expect(existsSync(knownHosts)).toBe(false);
   });
 
+  // ── 0.15.8 opt-in host key pinning ──
+  describe('host key pinning (a source setting, off by default)', () => {
+    const LINE = 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPINNED';
+    const run = async (dirName: string, creds: Record<string, unknown>, onClone?: (knownHosts: string) => void) => {
+      const dir = gitDir(dirName);
+      const keyFile = path.join(path.dirname(dir), `${path.basename(dir)}.sshkey`);
+      const knownHosts = `${keyFile}.known_hosts`;
+      let seenBefore: string | null = null;
+      gitState.simpleGit.mockImplementation(() => {
+        const g = makeGit();
+        g.clone.mockImplementation(async () => {
+          seenBefore = existsSync(knownHosts) ? readFileSync(knownHosts, 'utf8') : null;
+          onClone?.(knownHosts);
+        });
+        return g;
+      });
+      await checkoutCommit('git@github.com:org/repo.git', 'main', undefined, dir, vi.fn(), { deployKey: 'k', ...creds } as never);
+      const opt = gitState.simpleGit.mock.results[0]!.value.clone.mock.calls[0]![2][1] as string;
+      return { seenBefore, opt, knownHosts };
+    };
+
+    it('does not seed known_hosts and does not report keys while pinning is off', async () => {
+      const onHostKeys = vi.fn();
+      const { seenBefore, opt } = await run('pin-off', { hostKeys: LINE, onHostKeys }, (kh) => writeFileSync(kh, `${LINE}\nother ssh-rsa AAAA\n`));
+      expect(seenBefore).toBeNull();
+      expect(opt).toContain('StrictHostKeyChecking=accept-new');
+      expect(onHostKeys).not.toHaveBeenCalled();
+    });
+
+    it('seeds known_hosts with the pinned lines and keeps accept-new, which refuses a CHANGED key', async () => {
+      const { seenBefore, opt } = await run('pin-seed', { pinHostKeys: true, hostKeys: LINE });
+      expect(seenBefore).toBe(`${LINE}\n`);
+      expect(opt).toContain('-o StrictHostKeyChecking=accept-new');
+      expect(opt).toContain('-o HashKnownHosts=no');
+    });
+
+    it('reports the lines it learnt on the first clone after pinning is switched on', async () => {
+      const onHostKeys = vi.fn();
+      await run('pin-learn', { pinHostKeys: true, hostKeys: null, onHostKeys }, (kh) => writeFileSync(kh, `${LINE}\n`));
+      expect(onHostKeys).toHaveBeenCalledExactlyOnceWith(`${LINE}\n`);
+    });
+
+    it('keeps the pinned line and adds only a host it had not seen', async () => {
+      const onHostKeys = vi.fn();
+      await run('pin-grow', { pinHostKeys: true, hostKeys: LINE, onHostKeys }, (kh) => writeFileSync(kh, `${LINE}\ngitlab.com ssh-ed25519 AAAANEW\n`));
+      expect(onHostKeys).toHaveBeenCalledExactlyOnceWith(`${LINE}\ngitlab.com ssh-ed25519 AAAANEW\n`);
+    });
+
+    it('stays silent when nothing new was learnt', async () => {
+      const onHostKeys = vi.fn();
+      await run('pin-same', { pinHostKeys: true, hostKeys: LINE, onHostKeys }, (kh) => writeFileSync(kh, `${LINE}\n`));
+      expect(onHostKeys).not.toHaveBeenCalled();
+    });
+
+    it('never reports keys from a checkout that failed', async () => {
+      const onHostKeys = vi.fn();
+      const dir = gitDir('pin-failed');
+      const keyFile = path.join(path.dirname(dir), `${path.basename(dir)}.sshkey`);
+      gitState.simpleGit.mockImplementation(() => {
+        const g = makeGit();
+        g.clone.mockImplementation(async () => {
+          writeFileSync(`${keyFile}.known_hosts`, `${LINE}\n`);
+          throw new Error('Permission denied (publickey)');
+        });
+        return g;
+      });
+      await expect(
+        checkoutCommit('git@github.com:org/repo.git', 'main', undefined, dir, vi.fn(), { deployKey: 'k', pinHostKeys: true, onHostKeys }),
+      ).rejects.toThrow('Permission denied');
+      expect(onHostKeys).not.toHaveBeenCalled();
+    });
+
+    it('does nothing for a token-only credential even when the flag is set', async () => {
+      const onHostKeys = vi.fn();
+      const dir = gitDir('pin-token');
+      await checkoutCommit('https://github.com/org/repo.git', 'main', undefined, dir, vi.fn(), { token: 't', pinHostKeys: true, onHostKeys });
+      expect(onHostKeys).not.toHaveBeenCalled();
+    });
+  });
+
   it('leaves a non-convertible url untouched when using a deploy key', async () => {
     const dir = gitDir('fresh-key-ftp');
     await checkoutCommit('ftp://example.com/repo', 'main', undefined, dir, vi.fn(), {

@@ -137,6 +137,36 @@ describe('non-App sources: byte-identical to the pre-0.13 block', () => {
     expect(h.guardedFetch).not.toHaveBeenCalled();
   });
 
+  describe('0.15.8 host key pinning is opt-in', () => {
+    const LINE = 'gitlab.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPIN';
+
+    it('adds nothing for a source that does not pin, even one with stored keys', async () => {
+      const id = await source({ type: 'gitlab', name: 'nopin', deployKeyEncrypted: encrypt(DEPLOY_KEY), hostKeys: LINE });
+      const creds = await resolveCloneCreds(db, { sourceId: id, repoUrl: 'git@gitlab.com:a/b.git' });
+      expect(creds).toStrictEqual({ type: 'gitlab', token: undefined, deployKey: DEPLOY_KEY });
+    });
+
+    it('carries the flag, the stored lines and a callback that remembers new ones, merged with what is stored', async () => {
+      const id = await source({ type: 'gitlab', name: 'pin', deployKeyEncrypted: encrypt(DEPLOY_KEY), pinHostKeys: true });
+      const first = await resolveCloneCreds(db, { sourceId: id, repoUrl: 'git@gitlab.com:a/b.git' });
+      expect(first).toMatchObject({ type: 'gitlab', deployKey: DEPLOY_KEY, pinHostKeys: true, hostKeys: null });
+      await first!.onHostKeys!(`${LINE}\n`);
+      expect((await db.query.sources.findFirst({ where: eq(sources.id, id) }))!.hostKeys).toBe(`${LINE}\n`);
+
+      const second = await resolveCloneCreds(db, { sourceId: id, repoUrl: 'git@gitlab.com:a/b.git' });
+      expect(second).toMatchObject({ pinHostKeys: true, hostKeys: `${LINE}\n` });
+      // A concurrent deploy that learnt a different host must not erase this one.
+      await second!.onHostKeys!('github.com ssh-ed25519 AAAAOTHER\n');
+      expect((await db.query.sources.findFirst({ where: eq(sources.id, id) }))!.hostKeys).toBe(`${LINE}\ngithub.com ssh-ed25519 AAAAOTHER\n`);
+    });
+
+    it('never rides along on a credential sent to a node', async () => {
+      const id = await source({ type: 'gitlab', name: 'pin-node', deployKeyEncrypted: encrypt(DEPLOY_KEY), pinHostKeys: true, hostKeys: LINE });
+      const creds = await resolveCloneCreds(db, { sourceId: id, repoUrl: 'git@gitlab.com:a/b.git' }, { perJob: true });
+      expect(creds).toStrictEqual({ type: 'gitlab', token: undefined, deployKey: DEPLOY_KEY });
+    });
+  });
+
   it('a disabled link, or an enabled one on a suspended or removed installation, leaves the source in charge', async () => {
     const pat = await source({ type: 'github', name: 'pat2', tokenEncrypted: encrypt(PAT) });
     const { inst: suspended } = await seedInstallation(db, app, { installationId: 2001, suspendedAt: new Date() });

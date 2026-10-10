@@ -290,6 +290,10 @@ export const source = z.object({
   // may be sent to a node for one clone. Absent on older panels.
   allowOnNodes: z.boolean().optional(),
   // ── end 0.16 T8 ──
+  /** 0.15.8: the panel pins this source's git host SSH keys (absent on older panels). */
+  pinHostKeys: z.boolean().optional(),
+  /** 0.15.8: what the pin holds, as fingerprints only. */
+  pinnedHostKeys: z.array(z.object({ host: z.string(), type: z.string(), fingerprint: z.string().nullable() })).optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime().optional(),
 });

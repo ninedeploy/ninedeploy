@@ -505,6 +505,13 @@
       "when": 1791538869111,
       "tag": "0072_multi_node",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "6",
+      "when": 1791662724665,
+      "tag": "0073_pin_host_keys",
+      "breakpoints": true
     }
   ]
 }

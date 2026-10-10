@@ -63,6 +63,18 @@ export function classifyCloneFailure(err: unknown, branch: string, creds: CloneC
       submodule,
     };
   }
+  // 0.15.8: a source that pins its git host's SSH keys refused a key that
+  // differs from the pinned one. That is a decision for the operator (the host
+  // rotated its key, or someone is in the way), not a network problem.
+  if (creds?.pinHostKeys && /REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed/i.test(text)) {
+    return {
+      code: 'repo_unreachable',
+      reason: 'pinned host key changed',
+      advice:
+        'the Git host presented an SSH key that differs from the one this source pinned. If the host really rotated its key, reset the pinned host keys on the source (System → Sources) and deploy again; if you did not expect a change, do not deploy: something may be intercepting the connection.',
+      submodule,
+    };
+  }
   if (/returned error: 30[1278]\b/i.test(text)) {
     return {
       code: 'repo_unreachable',

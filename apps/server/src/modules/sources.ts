@@ -16,6 +16,16 @@ import { providerErrorText } from '../lib/redactSecret.js';
 import { githubRepoFromUrl } from '../lib/sourceCreds.js';
 import { ensureRegistryBindingsInitialised, setBoundRegistryHosts, type RegistryBindings } from '../lib/registryBinding.js';
 import { assertStepUp } from '../lib/stepUp.js';
+import { hostKeyLines } from '../lib/git.js';
+import { sshKeyFingerprint } from '../engine/serverProvisioner.js';
+
+/** The known_hosts lines a source pinned, as `{ host, type, fingerprint }` — no key material. */
+function pinnedHostKeys(hostKeys: string | null): Array<{ host: string; type: string; fingerprint: string | null }> {
+  return hostKeyLines(hostKeys).map((line) => {
+    const [host = '', type = '', blob = ''] = line.split(/\s+/);
+    return { host, type, fingerprint: sshKeyFingerprint(`${type} ${blob}`) };
+  });
+}
 
 function serialize(s: Source, bindings: RegistryBindings) {
   return {
@@ -32,6 +42,9 @@ function serialize(s: Source, bindings: RegistryBindings) {
     baseUrl: s.baseUrl ?? null,
     // Multi-node (additive): this static credential may be sent to a node for one clone.
     allowOnNodes: !!s.allowOnNodes,
+    // 0.15.8: opt-in SSH host key pinning; fingerprints only, never the keys.
+    pinHostKeys: !!s.pinHostKeys,
+    pinnedHostKeys: pinnedHostKeys(s.hostKeys),
     createdAt: s.createdAt.toISOString(),
     updatedAt: s.updatedAt.toISOString(),
   };
@@ -288,6 +301,38 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
       }
       if (input.allowOnNodes !== allowOnNodesBefore) patch.allowOnNodes = input.allowOnNodes;
     }
+    // 0.15.8 host key pinning. Switching it ON only tightens the policy. OFF and
+    // a reset let a CHANGED host key through (the next clone learns whatever
+    // the host presents), so they take the same interactive session and
+    // password re-check as allowing a credential on nodes.
+    let pinBefore: boolean | undefined;
+    let forgotten = 0;
+    if (input.pinHostKeys !== undefined || input.resetHostKeys) {
+      const current = await app.db.query.sources.findFirst({ where: eq(sources.id, id) });
+      if (!current) throw notFound('Source not found');
+      pinBefore = !!current.pinHostKeys;
+      if (input.pinHostKeys === true && (current.type === 'registry' || current.type === 'github_app')) {
+        throw badRequest(
+          current.type === 'registry' ? 'A registry credential has no SSH host to pin' : 'A GitHub App clones over HTTPS; there is no SSH host key to pin',
+          'host_key_pinning_unsupported',
+        );
+      }
+      const loosens = (input.pinHostKeys === false && pinBefore) || input.resetHostKeys === true;
+      if (loosens) {
+        const user = req.user!;
+        if (user.viaApiToken) {
+          throw new HttpError(403, 'forbidden', 'Switching off or resetting host key pinning requires an interactive session, not an API token');
+        }
+        const row = await app.db.query.users.findFirst({ where: eq(users.id, user.id) });
+        if (!row) throw new HttpError(401, 'unauthorized', 'Unauthorized');
+        await assertStepUp(app.db, req, row, input.password);
+      }
+      if (input.pinHostKeys !== undefined && input.pinHostKeys !== pinBefore) patch.pinHostKeys = input.pinHostKeys;
+      if ((input.pinHostKeys === false && pinBefore) || input.resetHostKeys === true) {
+        forgotten = hostKeyLines(current.hostKeys).length;
+        patch.hostKeys = null;
+      }
+    }
     // A hosts-only PATCH (r512) changes no column — read the row instead of
     // issuing an empty UPDATE.
     const [updated] =
@@ -307,6 +352,16 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
         previous: allowOnNodesBefore,
         allowOnNodes: input.allowOnNodes,
       }, { ip: req.ip, userAgent: req.headers['user-agent'] });
+    }
+    if (pinBefore !== undefined && input.pinHostKeys !== undefined && input.pinHostKeys !== pinBefore) {
+      void audit(app.db, req.user!.id, 'source.pin_host_keys', updated.name, {
+        sourceId: updated.id,
+        previous: pinBefore,
+        pinHostKeys: input.pinHostKeys,
+      }, { ip: req.ip, userAgent: req.headers['user-agent'] });
+    }
+    if (input.resetHostKeys) {
+      void audit(app.db, req.user!.id, 'source.reset_host_keys', updated.name, { sourceId: updated.id, forgotten }, { ip: req.ip, userAgent: req.headers['user-agent'] });
     }
     return serialize(updated, await ensureRegistryBindingsInitialised(app.db));
   });

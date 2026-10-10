@@ -3,10 +3,37 @@ import path from 'node:path';
 import { simpleGit, type SimpleGit, type SimpleGitOptions } from 'simple-git';
 import { type CloneTargetPin, curlResolveEntry, vetCloneTarget } from './gitEgress.js';
 
+/** Unique, non-empty known_hosts lines, in order. */
+export function hostKeyLines(text: string | null | undefined): string[] {
+  const seen = new Set<string>();
+  for (const raw of (text ?? '').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line && !line.startsWith('#')) seen.add(line);
+  }
+  return [...seen];
+}
+
+function readFileIfExists(file: string): string {
+  try {
+    return readFileSync(file, 'utf8');
+  } catch {
+    return '';
+  }
+}
+
 export interface CloneCreds {
   type?: string; // github | gitlab | gitea | custom
   token?: string; // PAT for HTTPS
   deployKey?: string; // SSH private key
+  /**
+   * The source pins its git host's SSH keys (opt-in). The known_hosts lines
+   * learnt so far seed the checkout's own known_hosts, so ssh refuses a host
+   * whose key changed; a host it has not seen is learnt, and `onHostKeys` is
+   * told after the checkout succeeded. Only meaningful with a deploy key.
+   */
+  pinHostKeys?: boolean;
+  hostKeys?: string | null;
+  onHostKeys?: (lines: string) => Promise<void> | void;
 }
 
 /**
@@ -237,9 +264,14 @@ export async function checkoutCommit(
   };
   const keyFile = path.join(path.dirname(dir), `${path.basename(dir)}.sshkey`);
 
+  const pinning = useKey && creds?.pinHostKeys === true;
+  const pinnedLines = hostKeyLines(creds?.hostKeys);
   const writeKey = () => {
     mkdirSync(path.dirname(keyFile), { recursive: true });
     writeFileSync(keyFile, creds!.deployKey!, { mode: 0o600 });
+    // A pinned source starts from the keys it already trusts. ssh's accept-new
+    // then refuses a CHANGED key for any host in the file and learns a new one.
+    if (pinning && pinnedLines.length > 0) writeFileSync(knownHostsFile, `${pinnedLines.join('\n')}\n`, { mode: 0o600 });
   };
   // Host keys: accept-new against this checkout's own known_hosts, removed
   // with the key below — the same policy as node clones
@@ -249,7 +281,7 @@ export async function checkoutCommit(
   // does not outlive the job, so a legitimately rotated host key never blocks
   // the next deploy (there is no operator surface to reset a pinned key).
   const knownHostsFile = `${keyFile}.known_hosts`;
-  const sshCommand = `ssh -i "${keyFile}" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="${knownHostsFile}"`;
+  const sshCommand = `ssh -i "${keyFile}" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new${pinning ? ' -o HashKnownHosts=no' : ''} -o UserKnownHostsFile="${knownHostsFile}"`;
 
   let git: SimpleGit | undefined;
   try {
@@ -338,6 +370,17 @@ export async function checkoutCommit(
 
     const resolved = (await git.raw(['log', '-1', '--format=%H'])).trim() || sha || '';
     sink(`Checked out ${resolved.slice(0, 7)} on ${branch}`);
+    // Trust on first use, after a clone only the holder of the deploy key could finish.
+    if (pinning && creds?.onHostKeys) {
+      const merged = hostKeyLines([...pinnedLines, ...hostKeyLines(readFileIfExists(knownHostsFile))].join('\n'));
+      if (merged.length > pinnedLines.length) {
+        try {
+          await creds.onHostKeys(`${merged.join('\n')}\n`);
+        } catch {
+          sink('warning: could not remember the git host key; it will be learnt again on the next deploy');
+        }
+      }
+    }
     return resolved;
   } finally {
     // Security cleanup — never leave credentials on disk or in .git/config
