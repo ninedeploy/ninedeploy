@@ -201,9 +201,9 @@ describe('Coolify-only keys and variables', () => {
     expect(convert(raw).composeContent).toBe(raw);
   });
 
-  // biome-ignore lint/suspicious/noTemplateCurlyInString: compose interpolation is the literal under test
   it('shows the default tag of an interpolated image instead of the variable', () => {
-    const raw = '# port: 80\nservices:\n  app:\n    image: ghcr.io/x/server:${APP_TAG:-2026.5.6}\n';
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: compose interpolation is the literal under test
+    const raw ='# port: 80\nservices:\n  app:\n    image: ghcr.io/x/server:${APP_TAG:-2026.5.6}\n';
     expect(convert(raw).image).toBe('ghcr.io/x/server:2026.5.6');
     // the stack itself keeps the variable, so an operator can still pin a tag
     // biome-ignore lint/suspicious/noTemplateCurlyInString: compose interpolation is the literal under test
