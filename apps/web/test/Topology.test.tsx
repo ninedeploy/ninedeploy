@@ -292,6 +292,8 @@ it('shows an error state with retry when the graph query fails', async () => {
           { id: 48, name: 'ms', status: 'running', engine: 'meilisearch', host: 'h' },
           { id: 49, name: 'mq', status: 'running', engine: 'rabbitmq', host: 'h' },
           { id: 50, name: 'weird', status: 'running', engine: 'cockroach', host: 'h' },
+          { id: 51, name: 'kdb', status: 'running', engine: 'keydb', host: 'h' },
+          { id: 52, name: 'dfly', status: 'running', engine: 'dragonfly', host: 'h' },
         ],
         attachments: [],
       } as never);
@@ -299,7 +301,7 @@ it('shows an error state with retry when the graph query fails', async () => {
       const flow = await screen.findByTestId('react-flow');
       // Every engine renders its own database node (plus the service,
       // domain, volume, network and gateway nodes from the fixture).
-      expect(Number(flow.getAttribute('data-nodes'))).toBeGreaterThanOrEqual(11);
+      expect(Number(flow.getAttribute('data-nodes'))).toBeGreaterThanOrEqual(13);
     });
 
     it('tolerates a graph with missing optional collections', async () => {

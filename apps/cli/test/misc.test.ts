@@ -86,6 +86,10 @@ describe('dbCreate', () => {
     ['7', 'clickhouse'],
     ['8', 'meilisearch'],
     ['9', 'rabbitmq'],
+    ['10', 'keydb'],
+    ['11', 'dragonfly'],
+    ['KeyDB', 'keydb'],
+    ['DRAGONFLY', 'dragonfly'],
   ])('creates a %s database from engine choice %s', async (choice, engine) => {
     const create = vi.fn().mockResolvedValue({ id: 9, name: 'db1', connectionString: 'postgres://x' });
     h.prompt.mockResolvedValueOnce('db1').mockResolvedValueOnce(choice);

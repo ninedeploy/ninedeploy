@@ -41,7 +41,8 @@ import { badRequest, conflict, forbidden, HttpError, notFound, parseId as num, u
 import { slugify } from '../lib/slug.js';
 // ── 0.16 T6 node databases ──
 import { databaseRuntime, isNodeDatabase } from '../lib/databaseRuntime.js';
-import { assertNodeDatabaseCapable, nodeDatabaseRuntime, nodeReachability } from '../lib/nodeDatabase.js';
+import { nodeAgentInfo } from '../lib/agentCapabilities.js';
+import { assertNodeAgentKnowsEngine, assertNodeDatabaseCapable, nodeDatabaseRuntime, nodeReachability } from '../lib/nodeDatabase.js';
 import { nodeVolumeExists } from '../lib/nodeVolumes.js';
 import { attachmentHostMismatch, fanoutDatabaseHostRefusal } from '../lib/remoteDatabaseRefusal.js';
 // ── end 0.16 T6 ──
@@ -238,6 +239,8 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
       }
       // 422 node_agent_outdated (after `agent.ping` only) for an agent that cannot host databases.
       await assertNodeDatabaseCapable(app.db, serverId);
+      // 0.15.6: keydb / dragonfly need an agent that knows the engine (the ping above refreshed its version).
+      assertNodeAgentKnowsEngine(input.engine, nodeAgentInfo(node)?.version ?? null, node.name);
       const log = (line: string) => app.log.info({ component: 'database', serverId }, line);
       const existing = await app.db.query.databases.findFirst({ where: eq(databases.slug, slug) });
       let row: Database;
@@ -763,7 +766,7 @@ async function publicConnectionString(db: Parameters<typeof getPublicAccessRow>[
     const uri = cfg.connectionString(host, row.publicPort, cfg.username() ?? '', password, cfg.dbName());
     if (row.tlsMode !== 'terminate') return uri;
     if (d.engine === 'postgres') return `${uri}?sslmode=require`;
-    if (d.engine === 'redis') return uri.replace(/^redis:\/\//, 'rediss://');
+    if (d.engine === 'redis' || d.engine === 'keydb' || d.engine === 'dragonfly') return uri.replace(/^redis:\/\//, 'rediss://');
     if (d.engine === 'valkey') return uri.replace(/^valkey:\/\//, 'valkeys://');
     if (d.engine === 'mongo') return `${uri}/?tls=true`;
     return uri;
@@ -777,6 +780,8 @@ function aliasFor(engine: string): string {
   switch (engine.toLowerCase()) {
     case 'redis':
     case 'valkey':
+    case 'keydb':
+    case 'dragonfly':
       return 'REDIS_URL';
     case 'mongo':
     case 'mongodb':

@@ -32,6 +32,8 @@ describe('ENGINES connectionString — no placeholder literals', () => {
     { engine: 'meilisearch', h: 'mei-host', prt: 7700, u: '',    p: 't3st!',          scheme: 'http://' },
     { engine: 'rabbitmq', h: 'rmq-host',    prt: 5672, u: 'nine', p: 't3st!',          scheme: 'amqp://' },
     { engine: 'mongo',    h: 'mongo-host',  prt: 27017, u: 'nine', p: 't3st!',         scheme: 'mongodb://' },
+    { engine: 'keydb',     h: 'keydb-host',  prt: 6379, u: '',    p: 't3st!',          scheme: 'redis://' },
+    { engine: 'dragonfly', h: 'dfly-host',   prt: 6379, u: '',    p: 't3st!',          scheme: 'redis://' },
   ];
 
   for (const tc of CASES) {

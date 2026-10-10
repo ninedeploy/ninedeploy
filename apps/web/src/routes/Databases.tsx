@@ -17,6 +17,8 @@ const ENGINE_LABEL: Record<string, string> = {
   mariadb: 'MariaDB',
   redis: 'Redis',
   valkey: 'Valkey',
+  keydb: 'KeyDB',
+  dragonfly: 'Dragonfly',
   mongo: 'MongoDB',
   clickhouse: 'ClickHouse',
   meilisearch: 'Meilisearch',

@@ -217,6 +217,8 @@ describe('POST /v1/terminals: database and container targets', () => {
       ['mariadb', { cmd: ['mariadb', '-uroot'], env: ['MYSQL_PWD=pw-secret'] }],
       ['redis', { cmd: ['redis-cli'], env: ['REDISCLI_AUTH=pw-secret'] }],
       ['valkey', { cmd: ['valkey-cli'], env: ['REDISCLI_AUTH=pw-secret', 'VALKEYCLI_AUTH=pw-secret'] }],
+      ['keydb', { cmd: ['keydb-cli'], env: ['REDISCLI_AUTH=pw-secret'] }],
+      ['dragonfly', { cmd: ['redis-cli'], env: ['REDISCLI_AUTH=pw-secret'] }],
     ];
     for (const [engine, expected] of cases) {
       const [row] = await db

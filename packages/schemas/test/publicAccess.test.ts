@@ -85,7 +85,7 @@ describe('public access views', () => {
   });
 
   it('lists the TCP engines and both TLS modes', () => {
-    expect(publicAccessEngines).toEqual(['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'mongo']);
+    expect(publicAccessEngines).toEqual(['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'mongo', 'keydb', 'dragonfly']);
     expect(publicAccessTlsMode.options).toEqual(['none', 'terminate']);
   });
 });

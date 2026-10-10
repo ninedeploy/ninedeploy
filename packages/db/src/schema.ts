@@ -1566,7 +1566,7 @@ export const settings = sqliteTable(
 );
 
 // ─── managed databases ────────────────────────────────────────────────────
-export const dbEngine = ['postgres', 'mysql', 'mariadb', 'redis', 'mongo', 'valkey', 'clickhouse', 'meilisearch', 'rabbitmq'] as const;
+export const dbEngine = ['postgres', 'mysql', 'mariadb', 'redis', 'mongo', 'valkey', 'clickhouse', 'meilisearch', 'rabbitmq', 'keydb', 'dragonfly'] as const;
 export const dbStatus = ['creating', 'running', 'stopped', 'error', 'deleting'] as const;
 
 export const databases = sqliteTable(

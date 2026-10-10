@@ -359,7 +359,7 @@ databases
   .option('--clean', 'postgres custom format: drop objects before recreating them')
   .option('--no-single-transaction', 'postgres: do not wrap the restore in one transaction')
   .option('--drop', 'mongo: drop each collection before restoring it')
-  .option('--confirm-replace', 'redis/valkey: required, the RDB replaces the whole dataset')
+  .option('--confirm-replace', 'redis/valkey/keydb/dragonfly: required, the RDB replaces the whole dataset')
   .option('--no-safety-backup', 'Skip the pre-import backup (operator, or a database created in the last 10 minutes)')
   .option('--resume <importId>', 'Continue an interrupted upload of the same file')
   .option('--no-wait', 'Return once the import has started')

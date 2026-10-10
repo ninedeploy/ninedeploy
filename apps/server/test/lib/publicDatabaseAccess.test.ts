@@ -250,7 +250,7 @@ describe('port validation', () => {
 });
 
 describe('engine and placement rules', () => {
-  it.each(['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'mongo'])('%s is supported', (engine) => {
+  it.each(['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'mongo', 'keydb', 'dragonfly'])('%s is supported', (engine) => {
     expect(lib.publicAccessSupported(engine)).toBe(true);
     expect(() => lib.assertPublicAccessEngine(engine, 'none')).not.toThrow();
   });
@@ -269,7 +269,7 @@ describe('engine and placement rules', () => {
     expect(() => lib.assertPublicAccessEngine(engine, 'terminate')).toThrow(expect.objectContaining({ statusCode: 422 }));
   });
 
-  it.each(['postgres', 'redis', 'valkey', 'mongo'])('allows TLS termination for %s', (engine) => {
+  it.each(['postgres', 'redis', 'valkey', 'mongo', 'keydb', 'dragonfly'])('allows TLS termination for %s', (engine) => {
     expect(() => lib.assertPublicAccessEngine(engine, 'terminate')).not.toThrow();
   });
 

@@ -4,7 +4,7 @@ export const DATA_TOPICS: Record<string, HelpTopic> = {
   databases: {
     title: 'Databases',
     summary:
-      'One-click managed database engines running as first-class workloads on this host: PostgreSQL (with pgvector), MySQL/MariaDB, Redis/Valkey, MongoDB, ClickHouse, Meilisearch and RabbitMQ.',
+      'One-click managed database engines running as first-class workloads on this host: PostgreSQL (with pgvector), MySQL/MariaDB, Redis/Valkey/KeyDB/Dragonfly, MongoDB, ClickHouse, Meilisearch and RabbitMQ.',
     sections: [
       {
         heading: 'Creating a database',

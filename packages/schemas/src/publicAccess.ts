@@ -13,7 +13,7 @@ export const PUBLIC_ACCESS_PORT_MAX = 65535;
 export const PUBLIC_ACCESS_ALLOWLIST_MAX = 100;
 
 /** Engines a TCP sidecar can expose. Every other engine is refused with 422. */
-export const publicAccessEngines = ['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'mongo'] as const;
+export const publicAccessEngines = ['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'mongo', 'keydb', 'dragonfly'] as const;
 
 /** Mirrors `databasePublicTlsMode` in `@ninedeploy/db`. */
 export const publicAccessTlsMode = z.enum(['none', 'terminate']);

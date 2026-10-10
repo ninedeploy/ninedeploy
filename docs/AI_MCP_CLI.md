@@ -140,7 +140,7 @@ ninedeploy databases public-access <db-id> --disable
 # Dump import (0.14) — chunked, resumable upload; a pre-import backup is taken first
 ninedeploy databases import <db-id> --file dump.sql.gz                       # waits for the result
 ninedeploy databases import <db-id> --file app.dump --clean --no-single-transaction
-ninedeploy databases import <db-id> --file dump.rdb --confirm-replace        # redis/valkey replace everything
+ninedeploy databases import <db-id> --file dump.rdb --confirm-replace        # redis/valkey/keydb/dragonfly replace everything
 ninedeploy databases import <db-id> --file dump.sql.gz --resume <import-id>  # continue an interrupted upload
 ninedeploy databases import <db-id> --from-s3 <destination-id> --key backups/app.dump   # operator
 ninedeploy databases imports <db-id> [--watch]

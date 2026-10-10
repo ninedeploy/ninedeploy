@@ -14,12 +14,14 @@ import {
   type RetainedVolumeAdoption,
   withDatabaseOperationLock,
 } from '../engine/database.js';
-import { assertNodeCapability } from './agentCapabilities.js';
+import { agentVersionAtLeast, assertNodeCapability } from './agentCapabilities.js';
 import { agentOp } from './agentClient.js';
 import { type AgentStreamHandle, openAgentStream } from './agentStream.js';
 import { createBackupCipher, decrypt } from './crypto.js';
 import {
+  AGENT_REDIS_FAMILY_VERSION,
   DUMPABLE_ENGINES,
+  NODE_ENGINES_NEEDING_NEWER_AGENT,
   mysqlHelpCommand,
   parseSizeOutput,
   probeCommand,
@@ -80,6 +82,23 @@ const defaultAssert = (db: DB, serverId: number, caps: readonly MultiNodeCapabil
 /** Refuse a node that cannot host databases (422 node_agent_outdated / node_transport_unsealed, 502 node_unreachable). */
 export function assertNodeDatabaseCapable(db: DB, serverId: number, deps: NodeDatabaseDeps = {}): Promise<void> {
   return (deps.assertCapable ?? defaultAssert)(db, serverId, NODE_DATABASE_CAPS, NODE_DATABASE_FEATURE);
+}
+
+/**
+ * 0.15.6: keydb and dragonfly run on a node only when its agent's `db.exec` /
+ * `db.dump` / `db.restore` know them (an older agent refuses the engine name).
+ * Throws 422 `node_agent_outdated` with the usual update hint; every engine
+ * that existed before is accepted whatever the agent's version (its own
+ * capability check already ran).
+ */
+export function assertNodeAgentKnowsEngine(engine: string, agentVersion: string | null, nodeName: string): void {
+  if (!NODE_ENGINES_NEEDING_NEWER_AGENT.has(engine) || agentVersionAtLeast(agentVersion, AGENT_REDIS_FAMILY_VERSION)) return;
+  throw new HttpError(
+    422,
+    'node_agent_outdated',
+    `The agent on node ${nodeName} (${agentVersion ? `version ${agentVersion}` : 'an older release'}) cannot run ${engine} databases. ` +
+      `Update the node agent to v${AGENT_REDIS_FAMILY_VERSION} or newer (re-run the node's bootstrap from the Servers page, or pull and restart the matching ninedeploy agent image on the node).`,
+  );
 }
 
 /** Labels a node database volume carries: the panel host's provenance labels plus the row id (adoption). */
@@ -224,8 +243,8 @@ export function nodeDatabaseRuntime(db: DB, d: Database, deps: NodeDatabaseDeps 
         labels,
         managed: 'database',
         ...(envFile ? { envFile } : {}),
-        // redis/valkey: the password follows the image (r644), as on the panel host.
-        ...(cfg.authViaArg ? { cmd: ['--requirepass', pw] } : {}),
+        // redis/valkey/keydb/dragonfly: the password follows the image (r644), then the engine's own flags, as on the panel host.
+        ...(cfg.authViaArg ? { cmd: ['--requirepass', pw, ...(cfg.extraArgs ?? [])] } : {}),
         ...(d.cpuShares > 0 ? { cpuShares: d.cpuShares } : {}),
         ...(d.cpuLimitMilli > 0 ? { cpuLimitMilli: d.cpuLimitMilli } : {}),
         ...(d.memLimitMb > 0 ? { memLimitMb: d.memLimitMb } : {}),

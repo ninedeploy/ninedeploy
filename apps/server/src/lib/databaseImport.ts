@@ -96,7 +96,7 @@ export function resolveImportOptions(engine: string, options: DatabaseImportOpti
   }
   const out: DatabaseImportOptions = { ...options };
   if (engine === 'postgres' && out.singleTransaction === undefined) out.singleTransaction = true;
-  if ((engine === 'redis' || engine === 'valkey') && out.confirmReplace !== true) {
+  if ((engine === 'redis' || engine === 'valkey' || engine === 'keydb' || engine === 'dragonfly') && out.confirmReplace !== true) {
     throw unprocessable('An RDB import replaces the whole dataset: set options.confirmReplace to true', 'import_confirm_replace');
   }
   return out;

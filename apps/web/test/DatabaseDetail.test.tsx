@@ -1,6 +1,6 @@
 ﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { DatabaseDetail } from '../src/routes/DatabaseDetail.js';
+import { CLIENT_ENGINES, DatabaseDetail } from '../src/routes/DatabaseDetail.js';
 import { api, authedFetch } from '../src/lib/api.js';
 import { mockOf, renderRoute } from './helpers.js';
 
@@ -651,5 +651,12 @@ describe('DatabaseDetail', () => {
     renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/98' });
     fireEvent.click(await screen.findByRole('tab', { name: 'Manifest & Inspect' }));
     expect(await screen.findByText(/image: mariadb:12/)).toBeInTheDocument();
+  });
+});
+
+describe('CLIENT_ENGINES (0.15.6)', () => {
+  it('KeyDB and Dragonfly have an interactive client, like Redis and Valkey', () => {
+    for (const engine of ['redis', 'valkey', 'keydb', 'dragonfly']) expect(CLIENT_ENGINES.has(engine)).toBe(true);
+    expect(CLIENT_ENGINES.has('mongo')).toBe(false);
   });
 });

@@ -45,7 +45,7 @@ export const databaseImportOptions = z
     singleTransaction: z.boolean().optional(),
     /** mongo: `--drop`. */
     drop: z.boolean().optional(),
-    /** redis/valkey: required, the RDB replaces the whole dataset. */
+    /** redis/valkey/keydb/dragonfly: required, the RDB replaces the whole dataset. */
     confirmReplace: z.boolean().optional(),
     /** Operator, or a database initialised in the last 10 minutes, only. */
     skipSafetyBackup: z.boolean().optional(),
@@ -65,6 +65,8 @@ export const DATABASE_IMPORT_ENGINE_OPTIONS = {
   mongo: ['drop', 'skipSafetyBackup'],
   redis: ['confirmReplace', 'skipSafetyBackup'],
   valkey: ['confirmReplace', 'skipSafetyBackup'],
+  keydb: ['confirmReplace', 'skipSafetyBackup'],
+  dragonfly: ['confirmReplace', 'skipSafetyBackup'],
 } as const satisfies Record<string, ReadonlyArray<keyof DatabaseImportOptions>>;
 export type DatabaseImportEngine = keyof typeof DATABASE_IMPORT_ENGINE_OPTIONS;
 

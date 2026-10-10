@@ -54,7 +54,7 @@ import { TerminalPanel } from '../components/terminal/TerminalPanel.js';
 import { useAuth } from '../lib/auth.js';
 
 /** Engines with an interactive client (`mode: 'client'`); the others get a shell only. */
-export const CLIENT_ENGINES = new Set(['postgres', 'mysql', 'mariadb', 'redis', 'valkey']);
+export const CLIENT_ENGINES = new Set(['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'keydb', 'dragonfly']);
 
 const ENGINE_LABEL: Record<string, string> = {
   postgres: 'PostgreSQL',
@@ -62,6 +62,8 @@ const ENGINE_LABEL: Record<string, string> = {
   mariadb: 'MariaDB',
   redis: 'Redis',
   valkey: 'Valkey',
+  keydb: 'KeyDB',
+  dragonfly: 'Dragonfly',
   mongo: 'MongoDB',
   clickhouse: 'ClickHouse',
   meilisearch: 'Meilisearch',

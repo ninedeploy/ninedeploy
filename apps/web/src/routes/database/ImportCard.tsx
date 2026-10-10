@@ -19,6 +19,8 @@ const FORMATS: Record<DatabaseImportEngine, string> = {
   mongo: 'a mongodump --archive file, optionally gzipped',
   redis: 'an RDB snapshot (dump.rdb)',
   valkey: 'an RDB snapshot (dump.rdb)',
+  keydb: 'an RDB snapshot (dump.rdb)',
+  dragonfly: 'an RDB snapshot (dump.rdb; Redis RDB files up to the version Dragonfly can load)',
 };
 
 const OPTION_LABELS: Record<OptionKey, string> = {

@@ -12,6 +12,8 @@ NineDeploy provides provisioning and lifecycle management for databases, encrypt
 | **MySQL** | 8.0 / 8.4 LTS | High throughput, InnoDB storage |
 | **MariaDB** | 11.4 LTS | Community SQL server with columnar support |
 | **Redis / Valkey** | 7.x | Low-latency in-memory caching and message pub/sub |
+| **KeyDB** | 6.3 (`eqalpha/keydb`) | Multithreaded Redis-compatible server (section 9) |
+| **Dragonfly** | 1.x (`ghcr.io/dragonflydb/dragonfly`) | Multi-core Redis-compatible in-memory store (section 9) |
 | **MongoDB** | 7.0 Community | Document-oriented NoSQL database |
 | **ClickHouse** | Latest | High-performance columnar analytics |
 | **Meilisearch** | Latest | Lightning-fast full-text search engine |
@@ -121,7 +123,8 @@ An import moves through `uploading` → `pending` (every byte is staged) → `ru
 | postgres | `pg_dump -Fc` (restored with `pg_restore --no-owner --no-acl`), or plain SQL (`psql -v ON_ERROR_STOP=1`). Tar and directory formats are refused. |
 | mysql / mariadb | Plain SQL, fed to the client with its sandbox flag (`--system-command=OFF` / `--sandbox`). |
 | mongo | A `mongodump --archive` file. `admin.*`, `config.*` and `local.*` are excluded. |
-| redis / valkey | An RDB file, checked first with `redis-check-rdb` / `valkey-check-rdb` from the database's own image. Requires `options.confirmReplace: true`. |
+| redis / valkey / keydb | An RDB file, checked first with `redis-check-rdb` / `valkey-check-rdb` / `keydb-check-rdb` from the database's own image. Requires `options.confirmReplace: true`. |
+| dragonfly | An RDB file, checked with `redis-check-rdb` from the Dragonfly image. Requires `options.confirmReplace: true`. Dragonfly must be able to load that RDB version; if it cannot, the import ends `completed_with_warnings` and the `pre-import` backup is the way back. |
 | clickhouse, meilisearch, rabbitmq | Refused. |
 
 - **Options** (`clean`, `singleTransaction` (postgres; on by default), `drop` (mongo), `confirmReplace`, `skipSafetyBackup`): a key that does not apply to the engine is refused.
@@ -141,7 +144,7 @@ An import moves through `uploading` → `pending` (every byte is staged) → `ru
 
 ## 🌍 7. Public access (0.14)
 
-A managed postgres, mysql, mariadb, redis, valkey or mongo database can be reached from outside the host on a port of its own, behind a required IP allow-list and with optional TLS termination (**Database → Settings → Public access**, `ninedeploy databases public-access`, `GET`/`PUT`/`DELETE /v1/databases/:id/public-access`). Reading the settings needs `admin` on the database; turning access on, changing it or turning it off is operator-only. `GET /v1/databases/:id/credentials` then also returns `publicConnectionString`, and the database list shows `publicAccess: {enabled, port}`.
+A managed postgres, mysql, mariadb, redis, valkey, keydb, dragonfly or mongo database can be reached from outside the host on a port of its own, behind a required IP allow-list and with optional TLS termination (**Database → Settings → Public access**, `ninedeploy databases public-access`, `GET`/`PUT`/`DELETE /v1/databases/:id/public-access`). Reading the settings needs `admin` on the database; turning access on, changing it or turning it off is operator-only. `GET /v1/databases/:id/credentials` then also returns `publicConnectionString`, and the database list shows `publicAccess: {enabled, port}`.
 
 Public access exposes the database's **root (superuser) account**: create a limited user inside the database before you hand out an endpoint. The mechanism, the allow-list and port rules, the TLS modes and the rollback cleanup are described in [TRAEFIK_INGRESS.md §9](./TRAEFIK_INGRESS.md).
 
@@ -164,3 +167,26 @@ A managed database can run on a remote node instead of the panel host. Choose th
 **Panel-host attachments (0.15.3):** a panel-host database attached to a service (the attach route, a `.ninedeploy` manifest or a migration bundle) is now connected to the service's own network at the service's next deploy, so its `nd-db-<slug>` name resolves from the app. Before, only template databases were connected.
 
 See [MULTI_NODE.md](./MULTI_NODE.md) for nodes, agent versions and the other node features.
+
+---
+
+## 🧵 9. KeyDB and Dragonfly (0.15.6)
+
+Two more Redis-protocol engines. Create them like Redis (`POST /v1/databases {name, engine: "keydb" | "dragonfly", version?}`, `ninedeploy databases create`, Databases → New). Everything else about a Redis database holds for them: a generated password (shown under Credentials, encrypted at rest), a `redis://:<password>@<host>:6379` URI (every Redis client accepts it; there is no `keydb://`), the `REDIS_URL` alias when attached to a service, backups, scheduled backups and policies, drills, restore, dump import, public access (with TLS termination: `rediss://`), Web Studio (Redis Commander) and databases on nodes. No migration is involved: an existing install keeps every database exactly as it was.
+
+| | KeyDB | Dragonfly |
+| :--- | :--- | :--- |
+| Image (default) | `eqalpha/keydb:x86_64_v6.3.4` (`arm64_v6.3.4` on an arm64 panel host) | `ghcr.io/dragonflydb/dragonfly:v1.34.2` |
+| Port, volume | 6379, `/data` | 6379, `/data` |
+| Start | `--requirepass <pw> --dir /data` (KeyDB's own thread count) | `--requirepass <pw> --logtostderr --dir=/data --dbfilename=dump --df_snapshot_format=false --snapshot_cron=*/15 * * * *` |
+| Interactive client | `keydb-cli` (Client button, `mode: "client"`) | `redis-cli`, which the Dragonfly image ships (Client button, `mode: "client"`) |
+| In-container commands | `docker exec <db> keydb-cli …` | `docker exec <db> redis-cli …` (as for Redis) |
+| Backup | `SAVE`, then a copy of `/data/dump.rdb` | `SAVE RDB`, then a copy of `/data/dump.rdb` |
+| Drill | `keydb-check-rdb` in the KeyDB image (unverifiable if the image lacks it) | `redis-check-rdb` in the Dragonfly image (unverifiable if the image lacks it) |
+
+- **Versions.** KeyDB publishes architecture-specific tags only; the default follows the panel host's CPU. For a node of the other architecture, or any other release, set `version` (for example `arm64_v6.3.4`). Dragonfly takes its release tag with the `v` (`v1.34.2`). Neither default is `latest`.
+- **Backup and restore are one file.** Both engines persist as `/data/dump.rdb`: a backup is `SAVE` plus a copy of it; a restore stops the container, copies the backup over it and starts the container again (a graceful stop would otherwise write the old dataset over the restored file). Dragonfly is started with `--df_snapshot_format=false --dbfilename=dump` so that its snapshot is an RDB file with that name instead of its own timestamped `.dfs` set. A `SAVE` that answers an error fails the backup instead of copying a stale file. Dragonfly pads its dump with zeros to a multiple of 4096 bytes (a one-key dump is exactly 4096 bytes); that is a valid RDB file, which `redis-check-rdb` accepts and which loads normally, so the drill never judges the file's tail itself. A Dragonfly backup therefore restores only into Dragonfly (a backup belongs to its database), and an RDB written by Redis loads into Dragonfly only up to the RDB version it understands.
+- **Dragonfly and the kernel.** Dragonfly asks for an unlimited locked-memory limit (`ulimit -l`) for its io_uring ring. NineDeploy starts the container with Docker's default limits; a kernel or seccomp profile without io_uring makes Dragonfly log a warning and use epoll, which is fine for a managed instance. If your host logs an error instead, raise the memlock limit for Docker (`default-ulimits` in `daemon.json`).
+- **Periodic snapshots.** Redis saves on its own schedule; Dragonfly does not unless asked, so it runs with `--snapshot_cron` (every 15 minutes) and snapshots again on a graceful stop. A crash loses at most the last quarter hour, as with Redis' default save points.
+- **On a node** the panel starts the container with the same arguments and pulls the same image. The node's agent must be v0.15.6 or newer: an older agent does not know the engine names, so creating a KeyDB or Dragonfly database on it answers `422 node_agent_outdated` before anything is created. Redis and Valkey on a node are unaffected by the agent's version.
+- **Rolling back** to a release before 0.15.6 while a KeyDB or Dragonfly database exists: the older panel does not know the engine. The container keeps running, but while a running row of an engine the older panel does not know exists, the Databases list answers HTTP 500 for instance operators (members still see their databases), scheduled backups of it are recorded as failed, and it can be neither started nor backed up. Delete the row (or its data) before rolling back, or roll forward again. See [ROLLBACK.md](./ROLLBACK.md).

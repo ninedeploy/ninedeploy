@@ -250,6 +250,13 @@ describe('Swarm (multi-node §7)', () => {
 });
 
 describe('additive fields on existing contracts (multi-node)', () => {
+  it('createDatabase accepts the 0.15.6 engines keydb and dragonfly, and still refuses an unknown one', () => {
+    for (const engine of ['keydb', 'dragonfly', 'redis', 'valkey']) {
+      expect(createDatabase.parse({ name: 'db', engine, version: 'v1' })).toMatchObject({ engine });
+    }
+    expect(createDatabase.safeParse({ name: 'db', engine: 'cockroach' }).success).toBe(false);
+  });
+
   it('createDatabase takes an optional, nullable node and keeps every 0.15 body valid', () => {
     expect(createDatabase.parse({ name: 'db', engine: 'postgres' })).not.toHaveProperty('serverId');
     expect(createDatabase.parse({ name: 'db', engine: 'postgres', serverId: null }).serverId).toBeNull();

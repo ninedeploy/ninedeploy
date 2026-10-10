@@ -177,6 +177,8 @@ describe('format detection', () => {
     expect(L.formatFor('mongo', t('mongo_archive', true))).toBe('mongo_archive');
     expect(L.formatFor('redis', t('rdb'))).toBe('rdb');
     expect(L.formatFor('valkey', t('rdb'))).toBe('rdb');
+    expect(L.formatFor('keydb', t('rdb'))).toBe('rdb');
+    expect(L.formatFor('dragonfly', t('rdb', true))).toBe('rdb');
     const refused = (engine: string, kind: string, re: RegExp) => {
       try {
         L.formatFor(engine, t(kind));
@@ -213,6 +215,11 @@ describe('options, engines and the safety-backup rule', () => {
     expect(() => L.resolveImportOptions('redis', {})).toThrow(/confirmReplace/);
     expect(() => L.resolveImportOptions('valkey', { confirmReplace: false })).toThrow(/confirmReplace/);
     expect(L.resolveImportOptions('valkey', { confirmReplace: true })).toEqual({ confirmReplace: true });
+    for (const engine of ['keydb', 'dragonfly']) {
+      expect(() => L.resolveImportOptions(engine, {})).toThrow(/confirmReplace/);
+      expect(L.resolveImportOptions(engine, { confirmReplace: true, skipSafetyBackup: undefined })).toEqual({ confirmReplace: true });
+      expect(() => L.resolveImportOptions(engine, { confirmReplace: true, drop: true })).toThrow(/do not apply to/);
+    }
   });
 
   it('lets only an operator, or a database initialised < 10 minutes ago, skip the safety backup', () => {

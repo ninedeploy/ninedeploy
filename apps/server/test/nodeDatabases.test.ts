@@ -647,3 +647,81 @@ describe('status sweep (plugins/nodeDatabases.ts, design §5.6)', () => {
     expect(h.local).toEqual([]);
   });
 });
+
+describe('0.15.6: keydb and dragonfly on a node', () => {
+  const NEW_AGENT = `ND-AGENT ${JSON.stringify({ version: '0.15.6', caps: ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'terminal.host', ...MULTI_NODE_CAPABILITIES] })}`;
+
+  it('keydb: the spec carries --requirepass then --dir /data (the agent accepts it as sent), no env file, a redis:// URI', async () => {
+    h.ping = NEW_AGENT;
+    const app = await appWith([databasesRoutes, '/databases']);
+    const res = await createOnNode(app, { name: 'kv', engine: 'keydb', version: 'x86_64_v6.3.4' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ engine: 'keydb', port: 6379, serverId, username: null, database: null });
+    expect(res.json().connectionString).toMatch(/^redis:\/\/:.+@nd-db-kv:6379$/);
+    const row = (await db.query.databases.findFirst({ where: eq(databases.slug, 'kv') }))!;
+    const spec = opParams('docker.runSpec')[0]!;
+    expect(spec).toMatchObject({ image: 'eqalpha/keydb:x86_64_v6.3.4', volumes: [{ name: 'nd-db-kv-data', mount: '/data' }], managed: 'database' });
+    expect(spec['cmd']).toEqual(['--requirepass', decrypt(row.passwordEncrypted), '--dir', '/data']);
+    expect(spec['envFile']).toBeUndefined();
+    expect(opParams('docker.pull').map((p) => p['image'])).toEqual(['eqalpha/keydb:x86_64_v6.3.4']);
+    const { parseRunSpec, runSpecArgv } = await import('../src/agentOps/runSpec.js');
+    expect(runSpecArgv(parseRunSpec(spec), 'run').slice(-4)).toEqual(['--requirepass', decrypt(row.passwordEncrypted), '--dir', '/data']);
+    expect(h.local).toEqual([]);
+  });
+
+  it('dragonfly: only its own image is pulled on the node; the flags ride the spec and pass the agent validator', async () => {
+    h.ping = NEW_AGENT;
+    const app = await appWith([databasesRoutes, '/databases']);
+    const res = await createOnNode(app, { name: 'fly', engine: 'dragonfly' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().connectionString).toMatch(/^redis:\/\/:.+@nd-db-fly:6379$/);
+    const row = (await db.query.databases.findFirst({ where: eq(databases.slug, 'fly') }))!;
+    expect(opParams('docker.pull').map((p) => p['image'])).toEqual([expect.stringMatching(/^ghcr\.io\/dragonflydb\/dragonfly:v\d+\.\d+\.\d+$/)]);
+    const spec = opParams('docker.runSpec')[0]!;
+    expect(spec['cmd']).toEqual([
+      '--requirepass', decrypt(row.passwordEncrypted),
+      '--logtostderr', '--dir=/data', '--dbfilename=dump', '--df_snapshot_format=false', '--snapshot_cron=*/15 * * * *',
+    ]);
+    const { parseRunSpec, runSpecArgv } = await import('../src/agentOps/runSpec.js');
+    expect(runSpecArgv(parseRunSpec(spec), 'run')).toContain('--snapshot_cron=*/15 * * * *');
+    expect(h.local).toEqual([]);
+  });
+
+  it('an agent older than 0.15.6 is told to update, before anything is created; redis is unaffected', async () => {
+    const app = await appWith([databasesRoutes, '/databases']);
+    for (const engine of ['keydb', 'dragonfly']) {
+      const res = await createOnNode(app, { name: `n-${engine}`, engine });
+      expect([res.statusCode, res.json().error.code]).toEqual([422, 'node_agent_outdated']);
+      const message = res.json().error.message as string;
+      expect(message).toContain(`(version 0.15.3) cannot run ${engine} databases.`);
+      expect(message).toContain('Update the node agent to v0.15.6 or newer');
+    }
+    expect(await db.select().from(databases)).toEqual([]);
+    expect(ops()).not.toContain('docker.runSpec');
+    expect((await createOnNode(app, { name: 'cache', engine: 'redis' })).statusCode).toBe(200);
+    expect(h.local).toEqual([]);
+  });
+
+  it('backup and restore go over the stream channel with the engine named, in the panel host format', async () => {
+    h.ping = NEW_AGENT;
+    for (const engine of ['keydb', 'dragonfly'] as const) {
+      h.streams = [];
+      h.restored = [];
+      h.dumpBytes = Buffer.from('REDIS0012-rdb-bytes');
+      const d = await nodeRow({ name: engine, slug: engine, engine, internalPort: 6379, nodeContainerName: `nd-db-${engine}`, nodeVolumeName: `nd-db-${engine}-data` });
+      const app = await appWith([databaseBackupRoutes, '/databases']);
+      const res = await app.inject({ method: 'POST', url: `/databases/${d.id}/backups`, headers: asUser() });
+      expect(res.statusCode).toBe(200);
+      const [b] = await db.select().from(backups).where(eq(backups.databaseId, d.id));
+      expect(h.streams[0]).toEqual({ kind: 'db.dump', params: { container: `nd-db-${engine}`, engine, password: 'pw-orders' } });
+      const staged = await stageForRestore(b!.path);
+      expect(await sniffFile(staged.path)).toMatchObject({ kind: 'rdb' });
+      staged.cleanup();
+      const restore = await app.inject({ method: 'POST', url: `/databases/${d.id}/backups/${b!.id}/restore`, headers: asUser() });
+      expect(restore.statusCode).toBe(200);
+      expect(h.streams[1]).toEqual({ kind: 'db.restore', params: { container: `nd-db-${engine}`, engine, password: 'pw-orders', mode: 'restore' } });
+      expect(Buffer.concat(h.restored)).toEqual(h.dumpBytes);
+    }
+    expect(h.local).toEqual([]);
+  });
+});

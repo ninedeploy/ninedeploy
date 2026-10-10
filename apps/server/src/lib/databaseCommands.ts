@@ -20,13 +20,46 @@
  */
 
 /** Engines a managed database can run. */
-export const DATABASE_ENGINES = ['postgres', 'mysql', 'mariadb', 'redis', 'mongo', 'valkey', 'clickhouse', 'meilisearch', 'rabbitmq'] as const;
+export const DATABASE_ENGINES = ['postgres', 'mysql', 'mariadb', 'redis', 'mongo', 'valkey', 'clickhouse', 'meilisearch', 'rabbitmq', 'keydb', 'dragonfly'] as const;
 export type DatabaseEngineName = (typeof DATABASE_ENGINES)[number];
 export const isDatabaseEngine = (value: unknown): value is DatabaseEngineName =>
   typeof value === 'string' && (DATABASE_ENGINES as readonly string[]).includes(value);
 
 /** Engines `backupDatabase` / `restoreDatabase` support (the rest refuse with the same message). */
-export const DUMPABLE_ENGINES: ReadonlySet<string> = new Set(['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'mongo']);
+export const DUMPABLE_ENGINES: ReadonlySet<string> = new Set(['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'mongo', 'keydb', 'dragonfly']);
+
+/**
+ * Engines that speak the Redis protocol and keep their data in ONE RDB file,
+ * `/data/dump.rdb` ({@link REDIS_DUMP_PATH}): backed up with `SAVE` and a copy
+ * of that file, restored by stop / copy over it / start. redis and valkey are
+ * the originals; keydb and dragonfly (0.15.6) follow the same file contract.
+ * Dragonfly is started with `--df_snapshot_format=false --dbfilename=dump`
+ * (engine/database.ts) so that its snapshot IS an RDB file at that path.
+ */
+export const REDIS_FAMILY_ENGINES: ReadonlySet<string> = new Set(['redis', 'valkey', 'keydb', 'dragonfly']);
+export const isRedisFamily = (engine: string): boolean => REDIS_FAMILY_ENGINES.has(engine);
+
+/**
+ * The first agent release whose `db.exec` / `db.dump` / `db.restore` accept
+ * keydb and dragonfly. An older agent's `engineOperand` refuses them with
+ * "Invalid database engine", so the panel asks for an update before placing
+ * one of these on a node (modules/databases.ts).
+ */
+export const AGENT_REDIS_FAMILY_VERSION = '0.15.6';
+/** The engines that need {@link AGENT_REDIS_FAMILY_VERSION} on a node. */
+export const NODE_ENGINES_NEEDING_NEWER_AGENT: ReadonlySet<string> = new Set(['keydb', 'dragonfly']);
+
+/**
+ * The `docker` argv that runs one Redis-protocol command inside a managed
+ * redis-family database's own container with the stored password:
+ * `docker exec <cn> <cli> -a <pw> --no-auth-warning …`, where `<cli>` is
+ * `redis-cli` for redis, valkey and dragonfly (the Dragonfly image ships a
+ * real `/usr/bin/redis-cli`) and `keydb-cli` for keydb. The redis / valkey
+ * argv is unchanged since 0.2.
+ */
+export function redisCliArgv(engine: string, cn: string, password: string, ...command: string[]): string[] {
+  return ['exec', cn, engine === 'keydb' ? 'keydb-cli' : 'redis-cli', '-a', password, '--no-auth-warning', ...command];
+}
 
 const PG_USER = 'nine';
 const PG_DB = 'app';
@@ -35,7 +68,7 @@ const MONGO_USER = 'nine';
 /** `databaseSize`: the engine's size query, or null when the engine has none (size 0). */
 export function sizeCommand(engine: string, cn: string, password: string): string[] | null {
   if (engine === 'postgres') return ['exec', cn, 'psql', '-U', PG_USER, '-d', PG_DB, '-tAc', 'SELECT pg_database_size(current_database())'];
-  if (engine === 'redis' || engine === 'valkey') return ['exec', cn, 'redis-cli', '-a', password, '--no-auth-warning', 'INFO', 'memory'];
+  if (isRedisFamily(engine)) return redisCliArgv(engine, cn, password, 'INFO', 'memory');
   if (engine === 'mysql' || engine === 'mariadb') {
     return [
       'exec', cn, engine === 'mysql' ? 'mysql' : 'mariadb', '-uroot', `--password=${password}`, '-N',
@@ -54,7 +87,7 @@ export function sizeCommand(engine: string, cn: string, password: string): strin
 
 /** The size in bytes `databaseSize` reads from the size query's output (0 when unreadable). */
 export function parseSizeOutput(engine: string, out: string): number {
-  if (engine === 'redis' || engine === 'valkey') {
+  if (isRedisFamily(engine)) {
     const m = /used_memory:(\d+)/.exec(out);
     return m ? Number(m[1]) : 0;
   }
@@ -76,13 +109,13 @@ export function probeCommand(engine: string, cn: string, password: string): stri
       '--quiet', '--eval', 'db.getSiblingDB("app").runCommand({ ping: 1 }).ok',
     ];
   }
-  if (engine === 'redis' || engine === 'valkey') return ['exec', cn, 'redis-cli', '-a', password, '--no-auth-warning', 'PING'];
+  if (isRedisFamily(engine)) return redisCliArgv(engine, cn, password, 'PING');
   return null;
 }
 
 /** Whether a probe's output is a successful sign-in. */
 export function probeSucceeded(engine: string, out: string): boolean {
-  return out.trim() === (engine === 'redis' || engine === 'valkey' ? 'PONG' : '1');
+  return out.trim() === (isRedisFamily(engine) ? 'PONG' : '1');
 }
 
 /** `probeMysqlSandboxFlag`: the client's `--help`, or null for engines without the flag. */
@@ -124,8 +157,11 @@ export function dumpCommands(engine: string, cn: string, tmp: string, password: 
       cleanup: ['exec', cn, 'rm', '-f', tmp],
     };
   }
-  if (engine === 'redis' || engine === 'valkey') {
-    return { dump: ['exec', cn, 'redis-cli', '-a', password, '--no-auth-warning', 'SAVE'], file: '/data/dump.rdb', cleanup: null };
+  if (isRedisFamily(engine)) {
+    // Dragonfly: `SAVE RDB` names the format, so a changed `df_snapshot_format` default cannot turn the dump into a .dfs set.
+    // (Dragonfly pads the file with zeros to a multiple of 4096 bytes; it is still a valid RDB file.)
+    const save = engine === 'dragonfly' ? redisCliArgv(engine, cn, password, 'SAVE', 'RDB') : redisCliArgv(engine, cn, password, 'SAVE');
+    return { dump: save, file: REDIS_DUMP_PATH, cleanup: null };
   }
   if (engine === 'mongo') {
     return {
@@ -153,7 +189,19 @@ export function restoreCommand(engine: string, cn: string, tmp: string, password
   throw new Error(`restore not supported for ${engine}`);
 }
 
-/** The in-container path redis and valkey load their data from. */
+/**
+ * Why a `SAVE` did not take, or null. `redis-cli` exits 0 on an error reply,
+ * and `docker cp` of `/data/dump.rdb` would then copy a STALE file as the
+ * backup. keydb and dragonfly (0.15.6) therefore check the reply; redis and
+ * valkey keep their 0.15.0 behaviour unchanged (no check).
+ */
+export function saveReplyProblem(engine: string, output: string): string | null {
+  if (engine !== 'keydb' && engine !== 'dragonfly') return null;
+  const text = output.trim();
+  return /^OK$/m.test(text) ? null : `SAVE did not answer OK: ${text.slice(0, 300) || 'no reply'}`;
+}
+
+/** The in-container path every redis-family engine loads its data from. */
 export const REDIS_DUMP_PATH = '/data/dump.rdb';
 
 /** The temp paths the panel host uses inside the container (same prefixes on nodes). */

@@ -15,6 +15,8 @@ const ENGINES = [
   { id: 'mariadb', label: 'MariaDB', emoji: '🦭', hint: 'Relational · SQL' },
   { id: 'redis', label: 'Redis', emoji: '⚡', hint: 'Key-value · Cache' },
   { id: 'valkey', label: 'Valkey', emoji: '🚀', hint: 'Fast KV · Redis fork' },
+  { id: 'keydb', label: 'KeyDB', emoji: '🧵', hint: 'Multithreaded · Redis fork' },
+  { id: 'dragonfly', label: 'Dragonfly', emoji: '🐉', hint: 'Multi-core · Redis-compatible' },
   { id: 'mongo', label: 'MongoDB', emoji: '🍃', hint: 'Document · NoSQL' },
   { id: 'clickhouse', label: 'ClickHouse', emoji: '📊', hint: 'Columnar · OLAP' },
   { id: 'meilisearch', label: 'Meilisearch', emoji: '🔍', hint: 'Full-text search' },

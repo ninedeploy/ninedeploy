@@ -310,8 +310,8 @@ Watch paths, `[skip ci]` handling, cancellation and PR previews: [**docs/DEPLOYM
 
 ### Data services
 
-- One-click **Postgres** (with `pgvector`), **MySQL**, **MariaDB**, **Redis**, **Valkey**, **MongoDB**,
-  **ClickHouse**, **Meilisearch** and **RabbitMQ**.
+- One-click **Postgres** (with `pgvector`), **MySQL**, **MariaDB**, **Redis**, **Valkey**, **KeyDB**,
+  **Dragonfly**, **MongoDB**, **ClickHouse**, **Meilisearch** and **RabbitMQ**.
 - Attach a database to a service and its connection string is injected as environment on every
   deploy — resolved fresh from the vault rather than pasted into a `.env` once and forgotten.
 - Database Studio (binds a host port, operator-only), topology view, per-database resource limits.

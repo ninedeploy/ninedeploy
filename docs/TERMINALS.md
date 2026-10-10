@@ -11,7 +11,7 @@ On Docker installs this also fixes the old container terminal, which never had a
 | Target | Where it runs | Default | Notes |
 | :--- | :--- | :--- | :--- |
 | `service` | The service's container on the panel host, or on the node it runs on (its primary placement or a fan-out target) | On | `replica` picks `<runtimeId>-r<n>`. Compose services are refused with 422 `use_container_target`: list their containers with `GET /v1/services/:id/containers` and open one with the `container` target. |
-| `database` | The managed database's container (always on the panel host) | On | `mode: "shell"` opens a shell. `mode: "client"` opens `psql`, `mysql`/`mariadb`, `redis-cli` or `valkey-cli` with the stored credentials passed in the exec environment (`PGPASSWORD`, `MYSQL_PWD`, `REDISCLI_AUTH`), never on the command line. Other engines answer 422 `client_mode_unsupported` for client mode. |
+| `database` | The managed database's container (always on the panel host) | On | `mode: "shell"` opens a shell. `mode: "client"` opens `psql`, `mysql`/`mariadb`, `redis-cli` (Redis and Dragonfly), `valkey-cli` or `keydb-cli` with the stored credentials passed in the exec environment (`PGPASSWORD`, `MYSQL_PWD`, `REDISCLI_AUTH`), never on the command line. Other engines answer 422 `client_mode_unsupported` for client mode. |
 | `container` | Any NineDeploy-managed container on the panel host, by name | On | A container of a node-placed service is refused with 422 `remote_container` (use the `service` target). The panel's own container is refused with 403 `panel_container_refused`: a shell there would expose `master.key` and the database. |
 | `host` | The panel host (`serverId: null`) or a node | **Off** | See section 3. |
 

@@ -48,12 +48,15 @@ describe('databaseImportOptions (strict)', () => {
   });
 
   it('names, per importable engine, only option keys the strict schema knows', () => {
-    expect(Object.keys(DATABASE_IMPORT_ENGINE_OPTIONS)).toEqual(['postgres', 'mysql', 'mariadb', 'mongo', 'redis', 'valkey']);
+    expect(Object.keys(DATABASE_IMPORT_ENGINE_OPTIONS)).toEqual(['postgres', 'mysql', 'mariadb', 'mongo', 'redis', 'valkey', 'keydb', 'dragonfly']);
     for (const keys of Object.values(DATABASE_IMPORT_ENGINE_OPTIONS)) {
       expect(databaseImportOptions.parse(Object.fromEntries(keys.map((k) => [k, true])))).toBeDefined();
       expect(keys).toContain('skipSafetyBackup');
     }
     expect(DATABASE_IMPORT_ENGINE_OPTIONS.redis).toContain('confirmReplace');
+    // 0.15.6: the Redis-protocol engines take exactly redis' options.
+    expect(DATABASE_IMPORT_ENGINE_OPTIONS.keydb).toEqual(DATABASE_IMPORT_ENGINE_OPTIONS.redis);
+    expect(DATABASE_IMPORT_ENGINE_OPTIONS.dragonfly).toEqual(DATABASE_IMPORT_ENGINE_OPTIONS.redis);
   });
 
   it('refuses unknown keys instead of dropping them', () => {

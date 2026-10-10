@@ -359,6 +359,8 @@ async function validateDump(ctx: DrillContext, image: string | null): Promise<Va
       return validateMysql(ctx.file);
     case 'redis':
     case 'valkey':
+    case 'keydb':
+    case 'dragonfly':
       return validateRedis(ctx.file, ctx.engine, image);
     case 'mongo':
       return validateMongo(ctx.file);
@@ -543,16 +545,19 @@ async function validateMysql(file: string): Promise<ValidationResult> {
 }
 
 /**
- * Redis / Valkey RDB validator. `redis-check-rdb` (`valkey-check-rdb` in the
- * valkey image) parses the binary header and every object entry, and exits
- * non-zero on the first malformed byte.
+ * Redis / Valkey / KeyDB / Dragonfly RDB validator. `redis-check-rdb`
+ * (`valkey-check-rdb` in the valkey image, `keydb-check-rdb` in KeyDB's)
+ * parses the binary header and every object entry, and exits non-zero on the
+ * first malformed byte. The Dragonfly image ships `redis-check-rdb` too; it
+ * accepts Dragonfly's dumps, which are zero-padded to a multiple of 4096 bytes
+ * (so the host never judges a dump's last byte).
  *
  * r356: it runs inside the database's own image — the host has no such
  * binary (no installer provides one), and the image's copy understands
  * exactly the RDB version that server wrote.
  */
 async function validateRedis(file: string, engine: string, image: string | null): Promise<ValidationResult> {
-  const tool = engine === 'valkey' ? 'valkey-check-rdb' : 'redis-check-rdb';
+  const tool = engine === 'valkey' ? 'valkey-check-rdb' : engine === 'keydb' ? 'keydb-check-rdb' : 'redis-check-rdb';
   if (!image) return unverifiable(`no ${engine} image is known for this database`);
   const check = await checkInEngineImage(image, file, tool, [DRILL_CONTAINER_DUMP]);
   if (check.kind === 'unavailable') return unverifiable(check.reason, { tool, image });

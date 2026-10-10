@@ -289,6 +289,18 @@ describe('DatabaseWizard', () => {
     );
   });
 
+  it.each([['KeyDB', 'keydb'], ['Dragonfly', 'dragonfly']])('offers %s and creates it with the %s engine id', async (label, engine) => {
+    const user = userEvent.setup();
+    renderWizard();
+    expect(screen.getByText(label)).toBeInTheDocument();
+    await user.click(screen.getByText(label));
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.type(screen.getByPlaceholderText('my-database'), 'kv');
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.click(screen.getByRole('button', { name: /create database/i }));
+    await waitFor(() => expect(apiMock.api.databases.create).toHaveBeenCalledWith({ name: 'kv', engine, version: undefined }));
+  });
+
   it('derives the default name from the engine on quick create', async () => {
     const user = userEvent.setup();
     renderWizard();

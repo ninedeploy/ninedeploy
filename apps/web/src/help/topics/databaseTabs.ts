@@ -226,7 +226,7 @@ export const DATABASE_TAB_TOPICS: Record<string, HelpTopic> = {
           'PostgreSQL: a pg_dump custom-format archive (-Fc) or plain SQL, optionally gzipped. Tar and directory formats are refused.',
           'MySQL / MariaDB: a plain SQL dump, optionally gzipped.',
           'MongoDB: a mongodump --archive file, optionally gzipped.',
-          'Redis / Valkey: an RDB snapshot. It replaces the whole dataset, so you must confirm that first.',
+          'Redis / Valkey / KeyDB / Dragonfly: an RDB snapshot. It replaces the whole dataset, so you must confirm that first.',
           'ClickHouse, Meilisearch and RabbitMQ have no dump import.',
         ],
       },

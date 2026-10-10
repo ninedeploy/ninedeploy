@@ -2,14 +2,22 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ENGINES } from '../src/engine/database.js';
 import {
+  AGENT_REDIS_FAMILY_VERSION,
+  saveReplyProblem,
   DATABASE_ENGINES,
   DUMPABLE_ENGINES,
   dumpCommands,
   dumpTmpPath,
+  isDatabaseEngine,
+  isRedisFamily,
   mysqlHelpCommand,
+  NODE_ENGINES_NEEDING_NEWER_AGENT,
   parseSizeOutput,
   probeCommand,
   probeSucceeded,
+  REDIS_DUMP_PATH,
+  REDIS_FAMILY_ENGINES,
+  redisCliArgv,
   restoreCommand,
   restoreTmpPath,
   sandboxFlagFrom,
@@ -93,5 +101,85 @@ describe('output parsing (what the panel host reads)', () => {
     expect(sandboxFlagFrom('mariadb', '  --sandbox  x')).toBe('--sandbox');
     expect(sandboxFlagFrom('mysql', '  --system-command  x')).toBe('--system-command=OFF');
     expect(sandboxFlagFrom('mysql', 'nothing')).toBeNull();
+  });
+});
+
+describe('0.15.6: keydb and dragonfly share the redis family builders', () => {
+  const NEW = [
+    ['keydb', 'nd-db-keydb', 'keydb-cli'],
+    ['dragonfly', 'nd-db-dragonfly', 'redis-cli'],
+  ] as const;
+
+  it('the engine list gained exactly keydb and dragonfly, after the nine that existed', () => {
+    expect([...DATABASE_ENGINES]).toEqual([
+      'postgres', 'mysql', 'mariadb', 'redis', 'mongo', 'valkey', 'clickhouse', 'meilisearch', 'rabbitmq', 'keydb', 'dragonfly',
+    ]);
+    expect(new Set(DATABASE_ENGINES)).toEqual(new Set(Object.keys(ENGINES)));
+    expect([...REDIS_FAMILY_ENGINES].sort()).toEqual(['dragonfly', 'keydb', 'redis', 'valkey']);
+    for (const engine of ['postgres', 'mysql', 'mariadb', 'mongo', 'clickhouse', 'meilisearch', 'rabbitmq']) expect(isRedisFamily(engine)).toBe(false);
+    for (const [engine] of NEW) {
+      expect(isRedisFamily(engine)).toBe(true);
+      expect(DUMPABLE_ENGINES.has(engine)).toBe(true);
+      expect(isDatabaseEngine(engine)).toBe(true);
+      expect(NODE_ENGINES_NEEDING_NEWER_AGENT.has(engine)).toBe(true);
+    }
+    expect(NODE_ENGINES_NEEDING_NEWER_AGENT.has('redis')).toBe(false);
+    expect(NODE_ENGINES_NEEDING_NEWER_AGENT.has('valkey')).toBe(false);
+    expect(AGENT_REDIS_FAMILY_VERSION).toBe('0.15.6');
+  });
+
+  it('redis and valkey keep their v0.15.0 argv byte for byte', () => {
+    for (const engine of ['redis', 'valkey']) {
+      expect(redisCliArgv(engine, 'c', PW, 'PING')).toEqual(['exec', 'c', 'redis-cli', '-a', PW, '--no-auth-warning', 'PING']);
+      expect(dumpCommands(engine, 'c', dumpTmpPath(UUID), PW)).toEqual({
+        dump: ['exec', 'c', 'redis-cli', '-a', PW, '--no-auth-warning', 'SAVE'],
+        file: '/data/dump.rdb',
+        cleanup: null,
+      });
+    }
+  });
+
+  for (const [engine, cn, cli] of NEW) {
+    it(`${engine}: size, probe and dump`, () => {
+      // Every engine runs its client inside its own container: the Dragonfly image ships a real redis-cli.
+      const run = (...cmd: string[]) => ['exec', cn, cli, '-a', PW, '--no-auth-warning', ...cmd];
+      expect(sizeCommand(engine, cn, PW)).toEqual(run('INFO', 'memory'));
+      expect(probeCommand(engine, cn, PW)).toEqual(run('PING'));
+      expect(mysqlHelpCommand(engine, cn)).toBeNull();
+      const plan = dumpCommands(engine, cn, dumpTmpPath(UUID), PW);
+      expect(plan).toEqual({ dump: run('SAVE', ...(engine === 'dragonfly' ? ['RDB'] : [])), file: REDIS_DUMP_PATH, cleanup: null });
+      expect(REDIS_DUMP_PATH).toBe('/data/dump.rdb');
+      // A restore has no command: it is stop / copy over dump.rdb / start (same as redis).
+      expect(() => restoreCommand(engine, cn, restoreTmpPath(UUID), PW)).toThrow(`restore not supported for ${engine}`);
+    });
+
+    it(`${engine}: output parsing`, () => {
+      expect(parseSizeOutput(engine, '# Memory\r\nused_memory:5150\r\nused_memory_human:5K\r\n')).toBe(5150);
+      expect(parseSizeOutput(engine, 'ERR')).toBe(0);
+      expect(probeSucceeded(engine, 'PONG\n')).toBe(true);
+      expect(probeSucceeded(engine, 'NOAUTH Authentication required.')).toBe(false);
+      expect(probeSucceeded(engine, '1')).toBe(false);
+    });
+  }
+
+  it('a SAVE reply is checked for keydb and dragonfly only', () => {
+    for (const engine of ['keydb', 'dragonfly']) {
+      expect(saveReplyProblem(engine, 'OK\n')).toBeNull();
+      expect(saveReplyProblem(engine, 'warning\nOK')).toBeNull();
+      expect(saveReplyProblem(engine, '(error) ERR nope')).toBe('SAVE did not answer OK: (error) ERR nope');
+      expect(saveReplyProblem(engine, '')).toBe('SAVE did not answer OK: no reply');
+      expect(saveReplyProblem(engine, 'x'.repeat(500))).toBe(`SAVE did not answer OK: ${'x'.repeat(300)}`);
+    }
+    for (const engine of ['redis', 'valkey', 'postgres']) expect(saveReplyProblem(engine, '(error) ERR nope')).toBeNull();
+  });
+
+  it('dragonfly goes through docker exec redis-cli like redis (no client container), keydb through keydb-cli; the password rides after -a', () => {
+    expect(redisCliArgv('dragonfly', 'nd-db-x', PW, 'PING')).toEqual(['exec', 'nd-db-x', 'redis-cli', '-a', PW, '--no-auth-warning', 'PING']);
+    expect(redisCliArgv('dragonfly', 'nd-db-x', PW, 'PING')).toEqual(redisCliArgv('redis', 'nd-db-x', PW, 'PING'));
+    expect(redisCliArgv('keydb', 'nd-db-x', PW, 'PING')).toEqual(['exec', 'nd-db-x', 'keydb-cli', '-a', PW, '--no-auth-warning', 'PING']);
+    for (const argv of [redisCliArgv('dragonfly', 'c', PW, 'PING'), redisCliArgv('keydb', 'c', PW, 'PING')]) {
+      expect(argv.indexOf('-a')).toBe(argv.indexOf(PW) - 1);
+      expect(argv).not.toContain('run');
+    }
   });
 });

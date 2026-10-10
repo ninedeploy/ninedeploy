@@ -12,8 +12,10 @@ const h = vi.hoisted(() => ({
   calls: [] as string[][],
   streams: [] as string[][],
   /** Containers that carry `ninedeploy.managed=database`. */
-  managed: new Set<string>(['nd-db-pg', 'nd-db-cache', 'nd-db-my', 'nd-db-mongo']),
+  managed: new Set<string>(['nd-db-pg', 'nd-db-cache', 'nd-db-my', 'nd-db-mongo', 'nd-db-kdb', 'nd-db-dfly']),
   fail: null as null | ((argv: string[]) => number | null),
+  /** What a `SAVE` answers. */
+  saveReply: 'OK',
 }));
 vi.mock('../src/lib/spawnValidated.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/spawnValidated.js')>()),
@@ -27,6 +29,7 @@ vi.mock('../src/lib/spawnValidated.js', async (importOriginal) => ({
       return 0;
     }
     if (argv.some((a) => a.includes('pg_database_size'))) onLine('4242');
+    if (argv.includes('SAVE')) onLine(h.saveReply);
     return 0;
   }),
   spawnValidatedStream: vi.fn((_exe: string, argv: string[]) => {
@@ -51,6 +54,7 @@ beforeEach(() => {
   h.calls.length = 0;
   h.streams.length = 0;
   h.fail = null;
+  h.saveReply = 'OK';
 });
 
 describe('registration (M18)', () => {
@@ -184,5 +188,69 @@ describe('the db.restore stream kind', () => {
     await expect(bad({ drop: 'yes' })).rejects.toThrow(/drop/);
     await expect(dbRestoreKind.prepare({ container: 'nd-db-pg', engine: 'postgres', password: 'pw', mode: 'restore', format: 'pg_plain' }, { maxBytes: 1 })).rejects.toThrow(/restore param/);
     await expect(dbRestoreKind.prepare({ container: 'nd-db-pg', engine: 'postgres', password: 'pw', mode: 'wipe' }, { maxBytes: 1 })).rejects.toThrow(/mode/);
+  });
+});
+
+describe('0.15.6: keydb and dragonfly on a node (the shared redis-family builders)', () => {
+  const DFLY = (cn: string, ...cmd: string[]) => ['exec', cn, 'redis-cli', '-a', 'pw', '--no-auth-warning', ...cmd];
+
+  it('db.exec: size and probe use keydb-cli in the keydb container and redis-cli in the dragonfly container', async () => {
+    await run('db.exec', { container: 'nd-db-kdb', engine: 'keydb', query: 'size', password: 'pw' });
+    expect(h.calls.at(-1)).toEqual(['exec', 'nd-db-kdb', 'keydb-cli', '-a', 'pw', '--no-auth-warning', 'INFO', 'memory']);
+    await run('db.exec', { container: 'nd-db-kdb', engine: 'keydb', query: 'probe', password: 'pw' });
+    expect(h.calls.at(-1)).toEqual(['exec', 'nd-db-kdb', 'keydb-cli', '-a', 'pw', '--no-auth-warning', 'PING']);
+    await run('db.exec', { container: 'nd-db-dfly', engine: 'dragonfly', query: 'size', password: 'pw' });
+    expect(h.calls.at(-1)).toEqual(DFLY('nd-db-dfly', 'INFO', 'memory'));
+    await run('db.exec', { container: 'nd-db-dfly', engine: 'dragonfly', query: 'probe', password: 'pw' });
+    expect(h.calls.at(-1)).toEqual(DFLY('nd-db-dfly', 'PING'));
+    // The container must still carry the managed-database label.
+    await expect(run('db.exec', { container: 'nd-db-rogue', engine: 'dragonfly', query: 'size', password: 'pw' })).rejects.toThrow(/does not exist/);
+  });
+
+  it('db.dump: the same SAVE and the same /data/dump.rdb as redis', async () => {
+    for (const [cn, engine, save] of [
+      ['nd-db-kdb', 'keydb', ['exec', 'nd-db-kdb', 'keydb-cli', '-a', 'pw', '--no-auth-warning', 'SAVE']],
+      ['nd-db-dfly', 'dragonfly', DFLY('nd-db-dfly', 'SAVE', 'RDB')],
+    ] as const) {
+      h.calls.length = 0;
+      h.streams.length = 0;
+      const prepared = await dbDumpKind.prepare({ container: cn, engine, password: 'pw' }, { maxBytes: 1024 });
+      if (prepared.direction !== 'agent-to-panel') throw new Error('direction');
+      const source = await prepared.start();
+      for await (const _ of source.stream) void _;
+      expect(await source.done).toEqual({ engine });
+      expect(h.calls.slice(1)).toEqual([save]);
+      expect(h.streams).toEqual([['exec', cn, 'cat', '/data/dump.rdb']]);
+    }
+  });
+
+  it('db.dump: an error reply to SAVE fails the dump instead of streaming a stale dump.rdb (redis keeps its unchecked SAVE)', async () => {
+    h.saveReply = '(error) ERR Background save already in progress';
+    for (const [cn, engine] of [['nd-db-kdb', 'keydb'], ['nd-db-dfly', 'dragonfly']] as const) {
+      h.streams.length = 0;
+      const prepared = await dbDumpKind.prepare({ container: cn, engine, password: 'pw' }, { maxBytes: 1024 });
+      if (prepared.direction !== 'agent-to-panel') throw new Error('direction');
+      await expect(prepared.start()).rejects.toThrow('SAVE did not answer OK: (error) ERR Background save already in progress');
+      expect(h.streams).toEqual([]);
+    }
+    const redis = await dbDumpKind.prepare({ container: 'nd-db-cache', engine: 'redis', password: 'pw' }, { maxBytes: 1024 });
+    if (redis.direction !== 'agent-to-panel') throw new Error('direction');
+    const source = await redis.start();
+    for await (const _ of source.stream) void _;
+    await source.done;
+    expect(h.streams).toEqual([['exec', 'nd-db-cache', 'cat', '/data/dump.rdb']]);
+  });
+
+  it('db.restore: stop, copy over dump.rdb, start, in both modes; the import format is rdb only', async () => {
+    for (const [cn, engine] of [['nd-db-kdb', 'keydb'], ['nd-db-dfly', 'dragonfly']] as const) {
+      for (const params of [{ mode: 'restore' }, { mode: 'import', format: 'rdb' }]) {
+        const prepared = await dbRestoreKind.prepare({ container: cn, engine, password: 'pw', ...params }, { maxBytes: 1024 });
+        if (prepared.direction !== 'panel-to-agent') throw new Error('direction');
+        h.calls.length = 0;
+        await prepared.apply('/f');
+        expect(h.calls).toEqual([['stop', cn], ['cp', '/f', `${cn}:/data/dump.rdb`], ['start', cn]]);
+      }
+      await expect(dbRestoreKind.prepare({ container: cn, engine, password: 'pw', mode: 'import', format: 'pg_plain' }, { maxBytes: 1 })).rejects.toThrow(/import format/);
+    }
   });
 });

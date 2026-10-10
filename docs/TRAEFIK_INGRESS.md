@@ -161,7 +161,7 @@ Turning it on spends a host-wide port and puts the database within reach of the 
 - runs with `--cap-drop ALL`, `no-new-privileges`, 128 MB of memory and half a CPU, as the panel's own uid:gid, with its config (`<data>/dbproxy/<slug>/`, mode 0600) mounted read-only;
 - carries the labels `ninedeploy.public-db=<databaseId>` and a config fingerprint.
 
-**Engines.** postgres, mysql, mariadb, redis, valkey and mongo. clickhouse and meilisearch speak HTTP: put a service with a domain in front of them instead. rabbitmq is not supported yet. Both are refused with 422.
+**Engines.** postgres, mysql, mariadb, redis, valkey, keydb, dragonfly and mongo. clickhouse and meilisearch speak HTTP: put a service with a domain in front of them instead. rabbitmq is not supported yet. Both are refused with 422.
 
 **The allow-list is required.**
 

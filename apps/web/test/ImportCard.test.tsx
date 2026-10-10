@@ -217,6 +217,22 @@ describe('ImportCard', () => {
     );
   });
 
+  it.each(['keydb', 'dragonfly'])('%s: an RDB import also needs the replace confirmation', async (engine) => {
+    apiMock.api.databases.importFile.mockResolvedValue(row({ id: 9 }));
+    renderCard({ id: 7, name: 'kv', engine } as never);
+    expect(await screen.findByText(/an RDB snapshot \(dump\.rdb/)).toBeInTheDocument();
+    pick(new File([new Uint8Array(3)], 'dump.rdb'));
+    const upload = await screen.findByRole('button', { name: /Upload and import/ });
+    expect(upload).toBeDisabled();
+    fireEvent.click(screen.getByLabelText(/replaces the whole dataset/));
+    fireEvent.click(upload);
+    await waitFor(() =>
+      expect(apiMock.api.databases.importFile).toHaveBeenCalledWith(7, expect.any(Function), expect.objectContaining({
+        options: { confirmReplace: true },
+      })),
+    );
+  });
+
   it('mysql members get no option checkboxes', async () => {
     renderCard({ id: 7, name: 'm', engine: 'mysql' } as never);
     expect(await screen.findByText(/plain SQL dump \(mysqldump\)/)).toBeInTheDocument();

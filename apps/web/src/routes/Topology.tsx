@@ -188,6 +188,8 @@ function DatabaseNode(props: NodeProps) {
   const engineColors: Record<string, string> = {
     postgres: 'bg-indigo-500/15 text-indigo-300 ring-indigo-500/30 border-indigo-500/40',
     redis: 'bg-rose-500/15 text-rose-300 ring-rose-500/30 border-rose-500/40',
+    keydb: 'bg-rose-500/15 text-rose-300 ring-rose-500/30 border-rose-500/40',
+    dragonfly: 'bg-rose-500/15 text-rose-300 ring-rose-500/30 border-rose-500/40',
     mysql: 'bg-amber-500/15 text-amber-300 ring-amber-500/30 border-amber-500/40',
     mariadb: 'bg-amber-500/15 text-amber-300 ring-amber-500/30 border-amber-500/40',
     mongodb: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/30 border-emerald-500/40',
@@ -520,7 +522,7 @@ function computeTopologyLayout(
       const cStat = containerStats.get(`nd-db-${d.name}`) || containerStats.get(d.name);
       const defaultPort =
         d.engine === 'postgres' ? 5432
-        : d.engine === 'redis' || d.engine === 'valkey' ? 6379
+        : d.engine === 'redis' || d.engine === 'valkey' || d.engine === 'keydb' || d.engine === 'dragonfly' ? 6379
         : d.engine === 'mysql' || d.engine === 'mariadb' ? 3306
         : d.engine === 'mongo' || d.engine === 'mongodb' ? 27017
         : d.engine === 'clickhouse' ? 8123

@@ -24,9 +24,9 @@ export async function dbCreate(client: NineDeployClient, opts: { server?: string
   header(serverId === undefined ? 'Create Database' : `Create Database on server #${serverId}`);
   const name = await prompt('Database name');
   if (!name) return error('Name required');
-  console.log('  Engines: 1=PostgreSQL  2=MySQL  3=MariaDB  4=Redis  5=MongoDB  6=Valkey  7=ClickHouse  8=Meilisearch  9=RabbitMQ');
-  const choice = (await prompt('Select engine (1-9 or name)', '1')).trim();
-  const engines = ['postgres', 'mysql', 'mariadb', 'redis', 'mongo', 'valkey', 'clickhouse', 'meilisearch', 'rabbitmq'] as const;
+  console.log('  Engines: 1=PostgreSQL  2=MySQL  3=MariaDB  4=Redis  5=MongoDB  6=Valkey  7=ClickHouse  8=Meilisearch  9=RabbitMQ  10=KeyDB  11=Dragonfly');
+  const choice = (await prompt('Select engine (1-11 or name)', '1')).trim();
+  const engines = ['postgres', 'mysql', 'mariadb', 'redis', 'mongo', 'valkey', 'clickhouse', 'meilisearch', 'rabbitmq', 'keydb', 'dragonfly'] as const;
   // Accept the menu number OR the engine name (`postgres`, `MYSQL`…) —
   // first-time users type the name they just read in the hint above.
   const engine = /^\d+$/.test(choice)

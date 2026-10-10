@@ -435,7 +435,7 @@ export type CreatedWebhook = z.infer<typeof createdWebhook>;
 // ── Managed databases ─────────────────────────────────────────────────────
 export const createDatabase = z.object({
   name: z.string().min(1).max(100),
-  engine: z.enum(['postgres', 'mysql', 'mariadb', 'redis', 'mongo', 'valkey', 'clickhouse', 'meilisearch', 'rabbitmq']),
+  engine: z.enum(['postgres', 'mysql', 'mariadb', 'redis', 'mongo', 'valkey', 'clickhouse', 'meilisearch', 'rabbitmq', 'keydb', 'dragonfly']),
   version: z.string().optional(),
   projectId: z.number().int().optional(),
   /** Hub/template provisioning is retryable: resume a matching database owned

@@ -15,6 +15,7 @@ import { writeSecretFile } from '../lib/secretFile.js';
 import { createKeyedOperationGuard } from '../lib/keyedOperationGuard.js';
 import { acquireCrossProcessLock, LockUnavailableError, type CrossProcessLock } from '../lib/crossProcessLock.js';
 import { conflict } from '../lib/errors.js';
+import { dumpCommands, isRedisFamily, redisCliArgv, saveReplyProblem } from '../lib/databaseCommands.js';
 import { NETWORK } from './proxy.js';
 
 const swallow = () => {};
@@ -212,9 +213,12 @@ interface EngineConfig {
    *  data under /var/lib/postgresql/<major>/docker). */
   dataDir?: (version?: string) => string;
   env: (password: string) => Record<string, string>;
-  /** Engines that cannot take a password via env vars (redis/valkey) get it
-   *  as a `--requirepass` container-command argument instead. */
+  /** Engines that cannot take a password via env vars (redis/valkey/keydb/dragonfly)
+   *  get it as a `--requirepass` container-command argument instead. */
   authViaArg?: boolean;
+  /** 0.15.6: further container-command arguments after `--requirepass <pw>`
+   *  (keydb, dragonfly). Absent for every engine that existed before. */
+  extraArgs?: readonly string[];
   username: () => string | undefined;
   dbName: () => string | undefined;
   connectionString: (host: string, port: number, user: string, password: string, dbName: string | undefined) => string;
@@ -269,6 +273,14 @@ export function resolveVolumePath(cfg: EngineConfig, version?: string | null): s
 /** Resolve the engine's in-container data directory (defaults to the mount path). */
 export function resolveDataDir(cfg: EngineConfig, version?: string | null): string {
   return cfg.dataDir ? cfg.dataDir(version ?? undefined) : resolveVolumePath(cfg, version);
+}
+
+/** Dragonfly's default release tag (`v` prefix included), overridable per database row. */
+export const DRAGONFLY_DEFAULT_VERSION = 'v1.34.2';
+
+/** KeyDB's default tag for a CPU architecture (see the `keydb` engine above). */
+export function keydbDefaultTag(arch: string = process.arch): string {
+  return arch === 'arm64' ? 'arm64_v6.3.4' : 'x86_64_v6.3.4';
 }
 
 /**
@@ -333,6 +345,45 @@ export const ENGINES: Record<string, EngineConfig> = {
     dbName: () => undefined,
     connectionString: (h, prt, _u, p) => `valkey://:${enc(p)}@${h}:${prt}`,
   },
+  keydb: {
+    // KeyDB (Snap's multithreaded Redis fork) publishes arch-specific version
+    // tags only: `x86_64_v6.3.4` / `arm64_v6.3.4` (its multi-arch tag is
+    // `latest`, which is never used here). The default follows the panel
+    // host's CPU; set `version` on the row for a node of the other
+    // architecture or for another release.
+    image: (v) => `eqalpha/keydb:${v || keydbDefaultTag()}`,
+    port: 6379,
+    volumePath: '/data',
+    env: () => ({}),
+    authViaArg: true,
+    // `--dir /data` pins the RDB to the volume whatever the image's workdir is.
+    // `--server-threads` is left at KeyDB's own default.
+    extraArgs: ['--dir', '/data'],
+    username: () => undefined,
+    dbName: () => undefined,
+    // The `redis://` scheme: every Redis client library understands it, none knows `keydb://`.
+    connectionString: (h, prt, _u, p) => `redis://:${enc(p)}@${h}:${prt}`,
+  },
+  dragonfly: {
+    // Dragonfly is published on ghcr.io (docker.dragonflydb.io is a mirror of it).
+    image: (v) => `ghcr.io/dragonflydb/dragonfly:${v || DRAGONFLY_DEFAULT_VERSION}`,
+    port: 6379,
+    volumePath: '/data',
+    env: () => ({}),
+    authViaArg: true,
+    // Snapshots are written as a Redis-compatible RDB file, `/data/dump.rdb`,
+    // the one file every redis-family backup and restore moves: `--dbfilename
+    // dump` + `--df_snapshot_format=false` give that name and that format
+    // (Dragonfly's own default is a timestamped .dfs set). A graceful stop
+    // snapshots to it, and it is loaded again on start. `--snapshot_cron`
+    // adds the periodic snapshot Redis has by default (every 15 minutes).
+    // `--logtostderr` is the image's own default command line, which these
+    // arguments replace: without it the log goes to files, not `docker logs`.
+    extraArgs: ['--logtostderr', '--dir=/data', '--dbfilename=dump', '--df_snapshot_format=false', '--snapshot_cron=*/15 * * * *'],
+    username: () => undefined,
+    dbName: () => undefined,
+    connectionString: (h, prt, _u, p) => `redis://:${enc(p)}@${h}:${prt}`,
+  },
   mongo: {
     // Mongo 8.0 is the current GA track (8.3 is newer but still pre-LTS);
     // pin to `7.0` on a database row for the previous LTS.
@@ -385,7 +436,7 @@ export const ENGINES: Record<string, EngineConfig> = {
  *  the project publishes no version tags to Docker Hub; bump the digest
  *  deliberately (registry-1.docker.io manifest of `latest` as of 2026-09). */
 export function studioImageForEngine(engine: string): { image: string; containerPort: number } {
-  if (engine === 'redis' || engine === 'valkey') {
+  if (isRedisFamily(engine)) {
     return {
       image: 'rediscommander/redis-commander@sha256:19cd0c49f418779fa2822a0496c5e6516d0c792effc39ed20089e6268477e40a',
       containerPort: 8081,
@@ -418,7 +469,7 @@ export async function startDatabaseStudio(d: Database, port: number, log: (line:
     // the host while closing the exposure to the outside network.
     '-p', `127.0.0.1:${port}:${studio.containerPort}`,
   ];
-  if (d.engine === 'redis' || d.engine === 'valkey') {
+  if (isRedisFamily(d.engine)) {
     const host = d.internalHost || d.containerName || '';
     const redisPort = defaultPort(d.engine);
     // Managed Redis/Valkey always authenticates (a randomToken password on
@@ -516,7 +567,7 @@ export async function startDatabase(
   // FOLLOW the image — before it, `docker run` parses it as one of its own
   // flags and refuses to start ("unknown flag: --requirepass"). The images'
   // entrypoints prepend redis-server / valkey-server to a leading `--` arg.
-  if (cfg.authViaArg) args.push('--requirepass', password);
+  if (cfg.authViaArg) args.push('--requirepass', password, ...(cfg.extraArgs ?? []));
 
   log(`Starting ${d.engine} database ${d.name} (${d.containerName}) …`);
   let startFailed = false;
@@ -621,7 +672,7 @@ export async function volumeLabels(name: string): Promise<Record<string, string>
 
 /** Engines whose credentials live outside the data directory: the volume can
  *  be remounted under a new row with no re-key step at all. */
-const CREDENTIALS_OUTSIDE_VOLUME = new Set(['redis', 'valkey']);
+const CREDENTIALS_OUTSIDE_VOLUME = new Set(['redis', 'valkey', 'keydb', 'dragonfly']);
 /** Engines with an implemented automatic credential re-key (see below). */
 const REKEYABLE = new Set(['postgres']);
 
@@ -946,9 +997,9 @@ export async function databaseSize(d: Database): Promise<number> {
       const out = await capture('docker', ['exec', d.containerName, 'psql', '-U', cfg.username()!, '-d', cfg.dbName()!, '-tAc', "SELECT pg_database_size(current_database())"]);
       return Number(out.trim()) || 0;
     }
-    if (d.engine === 'redis' || d.engine === 'valkey') {
+    if (isRedisFamily(d.engine)) {
       const pass = decrypt(d.passwordEncrypted);
-      const out = await capture('docker', ['exec', d.containerName, 'redis-cli', '-a', pass, '--no-auth-warning', 'INFO', 'memory']);
+      const out = await capture('docker', redisCliArgv(d.engine, d.containerName, pass, 'INFO', 'memory'));
       const m = /used_memory:(\d+)/.exec(out);
       return m ? Number(m[1]) : 0;
     }
@@ -1025,9 +1076,20 @@ async function backupDatabaseUnlocked(d: Database, file: string, log: (line: str
       usesDumpTmp = true;
       await run('docker', ['exec', cn, dumper, '-uroot', `--password=${pass}`, '--single-transaction', '--quick', '--all-databases', `--result-file=${DUMP_TMP}`], {}, log);
       await run('docker', ['cp', `${cn}:${DUMP_TMP}`, file], {}, log);
-    } else if (d.engine === 'redis' || d.engine === 'valkey') {
+    } else if (isRedisFamily(d.engine)) {
       const pass = decrypt(d.passwordEncrypted);
-      await run('docker', ['exec', cn, 'redis-cli', '-a', pass, '--no-auth-warning', 'SAVE'], {}, log);
+      // The shared builder: redis/valkey/keydb `SAVE`, dragonfly `SAVE RDB` (see ENGINES.dragonfly).
+      if (d.engine === 'redis' || d.engine === 'valkey') {
+        await run('docker', dumpCommands(d.engine, cn, '', pass).dump, {}, log);
+      } else {
+        const reply: string[] = [];
+        await run('docker', dumpCommands(d.engine, cn, '', pass).dump, {}, (line) => {
+          reply.push(line);
+          log(line);
+        });
+        const problem = saveReplyProblem(d.engine, reply.join('\n'));
+        if (problem) throw new Error(problem);
+      }
       await run('docker', ['cp', `${cn}:/data/dump.rdb`, file], {}, log);
     } else if (d.engine === 'mongo') {
       // mongodump can write its binary archive straight to a file via
@@ -1085,14 +1147,16 @@ async function restoreDatabaseUnlocked(d: Database, file: string, log: (line: st
     d.engine !== 'mariadb' &&
     d.engine !== 'mongo' &&
     d.engine !== 'redis' &&
-    d.engine !== 'valkey'
+    d.engine !== 'valkey' &&
+    d.engine !== 'keydb' &&
+    d.engine !== 'dragonfly'
   ) {
     throw new Error(`restore not supported for ${d.engine}`);
   }
 
   const staged = await stageForRestore(file);
   try {
-    if (d.engine === 'redis' || d.engine === 'valkey') {
+    if (isRedisFamily(d.engine)) {
       // Stop BEFORE copying: a graceful redis shutdown SAVEs the in-memory
       // dataset to dump.rdb, so a copy-then-restart order lets the dying
       // process overwrite the backup we just staged — the "restored" server
@@ -1146,7 +1210,7 @@ async function restoreDatabaseUnlocked(d: Database, file: string, log: (line: st
     }
   } finally {
     staged.cleanup();
-    if (d.engine !== 'redis' && d.engine !== 'valkey') {
+    if (!isRedisFamily(d.engine)) {
       await run('docker', ['exec', cn, 'rm', '-f', RESTORE_TMP], {}, swallow).catch(() => undefined);
     }
   }
@@ -1302,7 +1366,7 @@ async function importDatabaseUnlocked(d: Database, file: string, plan: DatabaseI
   if (!ENGINES[d.engine] || !d.containerName) throw new Error('database not runnable');
   const cn = d.containerName;
   if (plan.format === 'rdb') {
-    if (d.engine !== 'redis' && d.engine !== 'valkey') throw new Error(`import of rdb is not supported for ${d.engine}`);
+    if (!isRedisFamily(d.engine)) throw new Error(`import of rdb is not supported for ${d.engine}`);
     // The restore sequence: stop first (a graceful shutdown SAVEs over the
     // file we are about to place), copy, and always start again (r232).
     await run('docker', ['stop', cn], {}, log);
@@ -1378,8 +1442,8 @@ export async function probeDatabaseCredentials(d: Database, attempts = 5, delayM
       ]);
       return out.trim() === '1';
     }
-    if (d.engine === 'redis' || d.engine === 'valkey') {
-      const out = await capture('docker', ['exec', cn, 'redis-cli', '-a', password, '--no-auth-warning', 'PING']);
+    if (isRedisFamily(d.engine)) {
+      const out = await capture('docker', redisCliArgv(d.engine, cn, password, 'PING'));
       return out.trim() === 'PONG';
     }
     return false;

@@ -206,6 +206,8 @@ describe('AttachmentsCard', () => {
       { id: 27, name: 'kv', engine: 'valkey', status: 'running' },
       { id: 28, name: 'raw', engine: 'mongo', status: 'running' },
       { id: 29, name: 'sql', engine: 'mysql', status: 'running' },
+      { id: 30, name: 'sessions', engine: 'keydb', status: 'running' },
+      { id: 31, name: 'queue', engine: 'dragonfly', status: 'running' },
     ]);
     renderCard();
     await waitFor(() => expect(screen.getByText('docs (mongodb)')).toBeInTheDocument());
@@ -221,6 +223,8 @@ describe('AttachmentsCard', () => {
       ['27', 'REDIS_URL'],
       ['28', 'MONGODB_URI'],
       ['29', 'MYSQL_URL'],
+      ['30', 'REDIS_URL'],
+      ['31', 'REDIS_URL'],
     ];
     for (const [value, alias] of expected) {
       await user.selectOptions(screen.getByRole('combobox'), value);

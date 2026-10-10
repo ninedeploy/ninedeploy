@@ -309,6 +309,9 @@ describe('databases module additions (M7)', () => {
     ['redis', 'none', /^redis:\/\/:s3cret@panel\.example\.test:16379$/],
     ['redis', 'terminate', /^rediss:\/\/:s3cret@panel\.example\.test:16379$/],
     ['valkey', 'terminate', /^valkeys:\/\//],
+    ['keydb', 'none', /^redis:\/\/:s3cret@panel\.example\.test:16379$/],
+    ['keydb', 'terminate', /^rediss:\/\/:s3cret@panel\.example\.test:16379$/],
+    ['dragonfly', 'terminate', /^rediss:\/\/:s3cret@panel\.example\.test:16379$/],
     ['mongo', 'terminate', /^mongodb:\/\/nine:s3cret@panel\.example\.test:16379\/\?tls=true$/],
     ['mysql', 'none', /^mysql:\/\/root:s3cret@panel\.example\.test:16379\/app$/],
   ])('%s with tlsMode %s', async (engine, tlsMode, expected) => {

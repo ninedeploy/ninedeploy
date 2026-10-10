@@ -66,6 +66,8 @@ const ENGINE_PORTS: Record<string, number> = {
   mariadb: 3306,
   redis: 6379,
   valkey: 6379,
+  keydb: 6379,
+  dragonfly: 6379,
   mongo: 27017,
 };
 

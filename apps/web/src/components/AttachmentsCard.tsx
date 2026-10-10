@@ -11,6 +11,8 @@ function aliasFor(engine: string | undefined): string {
   switch (engine.toLowerCase()) {
     case 'redis':
     case 'valkey':
+    case 'keydb':
+    case 'dragonfly':
       return 'REDIS_URL';
     case 'mongo':
     case 'mongodb':
@@ -34,6 +36,8 @@ const ENGINE_COLORS: Record<string, string> = {
   postgresql: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20',
   redis: 'text-rose-400 bg-rose-500/10 border-rose-500/20',
   valkey: 'text-rose-400 bg-rose-500/10 border-rose-500/20',
+  keydb: 'text-rose-400 bg-rose-500/10 border-rose-500/20',
+  dragonfly: 'text-rose-400 bg-rose-500/10 border-rose-500/20',
   mysql: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
   mariadb: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
   mongo: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',

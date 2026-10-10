@@ -4,6 +4,8 @@ import {
   dumpTmpPath,
   importTmpPath,
   isDatabaseEngine,
+  isRedisFamily,
+  saveReplyProblem,
   mysqlHelpCommand,
   probeCommand,
   REDIS_DUMP_PATH,
@@ -149,7 +151,10 @@ export const dbDumpKind: StreamKindHandler = {
       direction: 'agent-to-panel',
       async start() {
         try {
-          await mustDocker(plan.dump, 'the dump', DB_LONG_TIMEOUT_MS);
+          const reply = await mustDocker(plan.dump, 'the dump', DB_LONG_TIMEOUT_MS);
+          // keydb / dragonfly: an error reply to SAVE exits 0 and would stream a stale file (redis / valkey: unchanged).
+          const problem = saveReplyProblem(engine, reply.join('\n'));
+          if (problem) throw new Error(problem);
         } catch (err) {
           if (plan.cleanup) await docker(plan.cleanup).catch(() => undefined);
           throw err;
@@ -188,6 +193,8 @@ const IMPORT_FORMATS: Readonly<Record<string, readonly string[]>> = {
   mongo: ['mongo_archive'],
   redis: ['rdb'],
   valkey: ['rdb'],
+  keydb: ['rdb'],
+  dragonfly: ['rdb'],
 };
 
 const optBool = (params: Params, key: string): boolean | undefined => {
@@ -197,7 +204,7 @@ const optBool = (params: Params, key: string): boolean | undefined => {
   return v;
 };
 
-/** redis/valkey: stop (a graceful shutdown SAVEs over the file), copy, always start again (r232). */
+/** redis/valkey/keydb/dragonfly: stop (a graceful shutdown SAVEs over the file), copy, always start again (r232). */
 async function replaceRedisData(cn: string, file: string): Promise<void> {
   await mustDocker(['stop', cn], 'docker stop');
   try {
@@ -233,7 +240,7 @@ export const dbRestoreKind: StreamKindHandler = {
     if (mode !== 'restore' && mode !== 'import') throw new Error('Invalid restore mode');
     let apply: (file: string) => Promise<void>;
     if (mode === 'restore') {
-      if (engine === 'redis' || engine === 'valkey') apply = (file) => replaceRedisData(cn, file);
+      if (isRedisFamily(engine)) apply = (file) => replaceRedisData(cn, file);
       else {
         const tmp = restoreTmpPath(randomUUID());
         const argv = restoreCommand(engine, cn, tmp, password);

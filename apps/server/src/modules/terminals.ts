@@ -114,6 +114,11 @@ function databaseClient(d: Database): { cmd: string[]; env: string[] } {
       return { cmd: ['redis-cli'], env: [`REDISCLI_AUTH=${password}`] };
     case 'valkey':
       return { cmd: ['valkey-cli'], env: [`REDISCLI_AUTH=${password}`, `VALKEYCLI_AUTH=${password}`] };
+    case 'keydb':
+      return { cmd: ['keydb-cli'], env: [`REDISCLI_AUTH=${password}`] };
+    case 'dragonfly':
+      // The Dragonfly image ships a real redis-cli; REDISCLI_AUTH is honoured like for Redis.
+      return { cmd: ['redis-cli'], env: [`REDISCLI_AUTH=${password}`] };
     default:
       throw err(422, 'client_mode_unsupported', `No interactive client for ${d.engine}: open a shell (mode "shell") instead.`);
   }

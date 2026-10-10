@@ -73,6 +73,14 @@ Swarm services **keep serving** after the rollback (they degrade instead of bein
 - `/v1/orchestrators` still lists the stacks. A downgraded node agent refuses join and leave, but the node stays in the swarm, because membership lives in the node's Docker daemon.
 - **Node labels stay:** `nd.member=1` and `nd.preload.<slug>=<image id prefix>` remain on the nodes, and a running stack keeps requiring them, so its tasks stay where they are. They are harmless once the stacks are gone; remove them with `docker node update --label-rm nd.member <node>` (and the same for each `nd.preload.<slug>`) when you clean up. The per-deploy registry config directories under `<dataDir>/swarm/.docker-*` are removed after each deploy; a crash can leave one behind, which only the newer release sweeps at boot, so delete any you find there.
 
+## KeyDB and Dragonfly databases → a release before 0.15.6
+
+A KeyDB or Dragonfly database (engine `keydb` / `dragonfly`) needs no migration; its row is an ordinary `databases` row whose `engine` text an older release does not know. The container keeps serving, but the older panel cannot manage it:
+
+- **The Databases list answers HTTP 500 for instance operators** while a *running* row of an unknown engine exists (the older release builds the connection string for every running row and throws on the engine name). Members' lists still load. Fix it before you roll back: delete the KeyDB / Dragonfly databases (their volumes are retained), or stop them from the panel so the row is no longer `running`.
+- Scheduled backups of such a database are recorded as failed every night; manual backup, restore, start and Studio fail with an unknown-engine error. A service attached to it fails its deploy when the older panel builds its environment.
+- Rolling forward again restores everything; the data lives in the volume `nd-db-<slug>-data` (`/data/dump.rdb`, a standard RDB file that Redis can also read, up to the RDB version Redis understands).
+
 ## 0.15 → 0.14
 
 0.14 boots on 0.15 data. Migration 0071 stays recorded, and its three tables (`access_grants`, `terminal_sessions`, `traffic_rollups`) are left untouched and ignored, as are the 0.15 settings keys. Upgrading to 0.15 again picks everything up where it was. Every effect below is a **loss** of access or of a feature, never a gain.

@@ -443,6 +443,27 @@ describe('lib/backupDrill', () => {
       expect(dockerCall('create')!.args.slice(-4)).toEqual(['--entrypoint', 'valkey-check-rdb', 'valkey/valkey:9.1', '/tmp/ninedeploy-drill.dump']);
     });
 
+    it('runs keydb-check-rdb inside the KeyDB image', async () => {
+      const db = buildDb();
+      seed('keydb', await dumpFile('dump.rdb', 'REDIS0009'), 'x86_64_v6.3.4');
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('passed');
+      expect(result.details).toMatchObject({ tool: 'keydb-check-rdb', image: 'eqalpha/keydb:x86_64_v6.3.4' });
+      expect(dockerCall('create')!.args.slice(-4)).toEqual(['--entrypoint', 'keydb-check-rdb', 'eqalpha/keydb:x86_64_v6.3.4', '/tmp/ninedeploy-drill.dump']);
+    });
+
+    it('is unverifiable when the KeyDB image does not carry keydb-check-rdb', async () => {
+      const db = buildDb();
+      seed('keydb', await dumpFile('dump.rdb', 'REDIS0009'), 'x86_64_v6.3.4');
+      execState.handler = dockerReplies({
+        lines: ['Error response from daemon: OCI runtime create failed: exec: "keydb-check-rdb": executable file not found in $PATH: unknown'],
+        throw: new Error('`docker start -a cid123` exited with code 1'),
+      });
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('unverifiable');
+      expect(result.error).toMatch(/keydb-check-rdb is not present in eqalpha\/keydb:x86_64_v6\.3\.4/);
+    });
+
     it('fails when the checker rejects the file, and still removes the container', async () => {
       const db = buildDb();
       seed('redis', await dumpFile('dump.rdb', 'REDIS0012'));
@@ -476,6 +497,35 @@ describe('lib/backupDrill', () => {
       expect(result.status).toBe('unverifiable');
       expect(result.error).toMatch(/valkey-check-rdb is not present in valkey\/valkey:9\.1/);
       expect(dockerCall('rm')).toBeTruthy();
+    });
+
+    // Dragonfly's image ships redis-check-rdb: the drill runs it there, like every other redis-family engine.
+    // A Dragonfly dump is zero-padded to a multiple of 4096 bytes (a 1-key dump is exactly 4096), so the host
+    // must never judge the file's last byte; the image's checker alone decides.
+    it('dragonfly: runs redis-check-rdb inside the Dragonfly image, and a zero-padded dump is not reported as truncated', async () => {
+      const db = buildDb();
+      const padded = Buffer.concat([Buffer.from('REDIS0009'), Buffer.from('payload'), Buffer.alloc(4096 - 16)]);
+      expect(padded.length).toBe(4096);
+      seed('dragonfly', await dumpFile('df-padded.rdb', padded), 'v1.34.2');
+      execState.handler = dockerReplies({ lines: ['[offset 0] Checking RDB file dump.rdb', '\\o/ RDB looks OK! \\o/'] });
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('passed');
+      expect(result.details).toMatchObject({ tool: 'redis-check-rdb', image: 'ghcr.io/dragonflydb/dragonfly:v1.34.2' });
+      expect(dockerCall('create')!.args.slice(-4)).toEqual(['--entrypoint', 'redis-check-rdb', 'ghcr.io/dragonflydb/dragonfly:v1.34.2', '/tmp/ninedeploy-drill.dump']);
+      expect(dockerCall('cp')!.args).toEqual(['cp', expect.stringMatching(/df-padded\.rdb$/), 'cid123:/tmp/ninedeploy-drill.dump']);
+    });
+
+    it('dragonfly: a dump the image\'s checker rejects (exit 1, truncated) fails, and the container is removed', async () => {
+      const db = buildDb();
+      seed('dragonfly', await dumpFile('df-trunc.rdb', Buffer.from('REDIS0009half')), 'v1.34.2');
+      execState.handler = dockerReplies({
+        lines: ['--- RDB ERROR DETECTED ---', '[offset 13] Unexpected EOF reading RDB file'],
+        throw: new Error('`docker start -a cid123` exited with code 1'),
+      });
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('failed');
+      expect(result.error).toMatch(/redis-check-rdb rejected the file: .*Unexpected EOF/);
+      expect(dockerCall('rm')!.args).toEqual(['rm', '-f', 'cid123']);
     });
 
     it('is unverifiable when the check times out', async () => {
