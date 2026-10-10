@@ -162,6 +162,61 @@ describe('upstream file conversion', () => {
   });
 });
 
+// Coolify-only compose keys make Docker Compose reject the whole file
+// ("additional properties 'exclude_from_hc' not allowed"), so they cannot ship.
+describe('Coolify-only keys and variables', () => {
+  const convert = (raw: string) => {
+    const result = convertCoolifyComposeFile('x.yaml', raw);
+    if (result.skip) throw new Error(`skipped: ${result.reason}`);
+    return result.template;
+  };
+
+  it('removes exclude_from_hc and is_directory and keeps everything around them', () => {
+    const raw = [
+      '# port: 80',
+      'services:',
+      '  app:',
+      '    image: a:1',
+      '    exclude_from_hc: true # one-shot job',
+      '    volumes:',
+      '      - type: bind',
+      '        source: ./data',
+      '        target: /data',
+      '        is_directory: true',
+      '  job:',
+      '    image: j:1',
+      '    exclude_from_hc: false',
+      '',
+    ].join('\n');
+    const out = convert(raw).composeContent!;
+    expect(out).not.toMatch(/exclude_from_hc|is_directory/);
+    const doc = yaml.load(out) as { services: Record<string, { image: string; volumes?: unknown[] }> };
+    expect(doc.services.app?.image).toBe('a:1');
+    expect(doc.services.app?.volumes).toEqual([{ type: 'bind', source: './data', target: '/data' }]);
+    expect(doc.services.job?.image).toBe('j:1');
+  });
+
+  it('leaves a file without those keys byte-for-byte alone', () => {
+    const raw = '# port: 80\nservices:\n  app:\n    image: a:1\n';
+    expect(convert(raw).composeContent).toBe(raw);
+  });
+
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: compose interpolation is the literal under test
+  it('shows the default tag of an interpolated image instead of the variable', () => {
+    const raw = '# port: 80\nservices:\n  app:\n    image: ghcr.io/x/server:${APP_TAG:-2026.5.6}\n';
+    expect(convert(raw).image).toBe('ghcr.io/x/server:2026.5.6');
+    // the stack itself keeps the variable, so an operator can still pin a tag
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: compose interpolation is the literal under test
+    expect(convert(raw).composeContent).toContain('${APP_TAG:-2026.5.6}');
+  });
+
+  it('skips a stack that needs a variable only Coolify provides', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: compose interpolation is the literal under test
+    const raw = "# port: 80\nservices:\n  app:\n    image: a:1\n    volumes:\n      - '${COOLIFY_VOLUME_APP}:/data'\n";
+    expect(convertCoolifyComposeFile('kv.yaml', raw)).toEqual({ skip: true, reason: 'uses COOLIFY_VOLUME_APP, a variable only Coolify provides' });
+  });
+});
+
 // Coolify declares the named volumes of a stack itself, so an upstream file may
 // reference `data:/x` with no top-level `volumes:` entry. Docker Compose
 // refuses such a file ("refers to undefined volume"), so the converter must

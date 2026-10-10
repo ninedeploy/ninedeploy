@@ -129,6 +129,23 @@ export function pickMainService(
   return { name: (appCandidates[0] ?? names[0])!, via: 'first-service' };
 }
 
+/**
+ * Keys Coolify adds to the compose format. Docker Compose rejects the whole file
+ * for either one, and neither changes what runs: `exclude_from_hc` only keeps
+ * a one-shot job out of Coolify's own status check, and `is_directory` tells
+ * Coolify to create the bind-mount source (Docker does that on its own).
+ */
+const COOLIFY_ONLY_KEY = /^[ \t]*(?:exclude_from_hc|is_directory):[ \t]*\S+[ \t]*(?:#.*)?\r?\n/gm;
+
+export function stripCoolifyOnlyKeys(raw: string): string {
+  return raw.replace(COOLIFY_ONLY_KEY, '');
+}
+
+/** Shows `image:tag` for an image written `image:${TAG:-tag}`; the stack keeps the variable. */
+function displayImage(image: string): string {
+  return image.replace(/\$\{[A-Za-z_][A-Za-z0-9_]*:-([^}$]*)\}/g, '$1');
+}
+
 /** A volume source that is a plain name (not a path, not interpolated). */
 const NAMED_VOLUME = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 
@@ -253,6 +270,9 @@ export function convertCoolifyComposeFile(fileName: string, raw: string): Mirror
     }
   }
 
+  const coolifyVar = /\bCOOLIFY_[A-Z0-9_]+\b/.exec(raw);
+  if (coolifyVar) return { skip: true, reason: `uses ${coolifyVar[0]}, a variable only Coolify provides` };
+
   const pre = preflightCompose(raw);
   if (!pre.ok) return { skip: true, reason: pre.reasons[0]! };
 
@@ -267,9 +287,9 @@ export function convertCoolifyComposeFile(fileName: string, raw: string): Mirror
     emoji: CATEGORY_EMOJI[(header.category ?? '').toLowerCase()] ?? '🧩',
     // Display/routing surface of the MAIN service only; the stack deploys
     // from composeContent regardless.
-    image: typeof services[main.name]?.image === 'string' ? services[main.name]!.image as string : `docker.io/library/${main.name}`,
+    image: typeof services[main.name]?.image === 'string' ? displayImage(services[main.name]!.image as string) : `docker.io/library/${main.name}`,
     port,
-    composeContent: declareImplicitVolumes(raw),
+    composeContent: declareImplicitVolumes(stripCoolifyOnlyKeys(raw)),
     composeService: main.name,
     docs: header.documentation,
     requires: `Coolify mirror · routed service: ${main.name} (${main.via}) · not runtime-verified`,
