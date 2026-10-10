@@ -1135,4 +1135,58 @@ describe('Resend channel', () => {
     expect(row.status).toBe('failed');
     expect(row.error).toBe('Resend 429: Too many requests');
   });
+
+  describe('system email (password reset, invitations)', () => {
+    it('goes to the account address, not the channel recipients, when Resend is the only email route', async () => {
+      fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: 'em_2' }) });
+      const { db, lastValues } = makeDb([
+        { id: 51, type: 'resend', targetEncrypted: encrypt(target), eventFilter: '', active: true },
+      ]);
+      await expect(sendSystemEmail(db as never, 'reset@example.com', 'NineDeploy password reset', 'body')).resolves.toBe(true);
+      const [url, init] = fetchMock.mock.calls[0]! as [string, RequestInit];
+      expect(url).toBe('https://api.resend.com/emails');
+      expect(JSON.parse(init.body as string)).toEqual({
+        from: 'NineDeploy <alerts@example.com>',
+        to: ['reset@example.com'],
+        subject: 'NineDeploy password reset',
+        text: 'body',
+      });
+      expect(lastValues()).toHaveBeenCalledWith(expect.objectContaining({ channelId: 51, status: 'sent', event: 'email.system' }));
+    });
+
+    it('keeps preferring an SMTP channel when both exist, so existing installs behave as before', async () => {
+      const sendMail = vi.fn(async () => ({ messageId: '1' }));
+      vi.doMock('nodemailer', () => ({ createTransport: () => ({ sendMail, close: vi.fn() }) }));
+      const smtp = JSON.stringify({ host: 'smtp.example.com', port: 587, from: 'a@example.com', to: 'b@example.com' });
+      const { db } = makeDb([
+        { id: 52, type: 'resend', targetEncrypted: encrypt(target), eventFilter: '', active: true },
+        { id: 53, type: 'email', targetEncrypted: encrypt(smtp), eventFilter: '', active: true },
+      ]);
+      await expect(sendSystemEmail(db as never, 'u@example.com', 's', 't')).resolves.toBe(true);
+      expect(sendMail).toHaveBeenCalledTimes(1);
+      expect(fetchMock).not.toHaveBeenCalled();
+      vi.doUnmock('nodemailer');
+    });
+
+    it('skips an inactive Resend channel', async () => {
+      const { db } = makeDb([{ id: 54, type: 'resend', targetEncrypted: encrypt(target), eventFilter: '', active: false }]);
+      await expect(sendSystemEmail(db as never, 'u@example.com', 's', 't')).resolves.toBe(false);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('logs a failed delivery without the key and returns false', async () => {
+      vi.useFakeTimers();
+      fetchMock.mockResolvedValue({ ok: false, status: 403, json: async () => ({ message: 'The example.com domain is not verified.' }) });
+      const { db, lastValues } = makeDb([
+        { id: 55, type: 'resend', targetEncrypted: encrypt(target), eventFilter: '', active: true },
+      ]);
+      const pending = sendSystemEmail(db as never, 'u@example.com', 's', 't');
+      await vi.advanceTimersByTimeAsync(10_000);
+      await expect(pending).resolves.toBe(false);
+      const row = lastValues().mock.calls[0]![0] as { status: string; error: string };
+      expect(row.status).toBe('failed');
+      expect(row.error).toBe('Resend 403: The example.com domain is not verified.');
+      expect(row.error).not.toContain('re_key123');
+    });
+  });
 });

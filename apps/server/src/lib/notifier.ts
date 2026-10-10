@@ -418,12 +418,15 @@ export function buildResendPayload(cfg: { from: string; to: string[] }, subject:
 }
 
 /** Send through Resend's HTTPS API (target = JSON config, API key encrypted at rest). */
-async function sendResend(target: string, subject: string, message: string): Promise<void> {
+async function sendResend(target: string, subject: string, message: string, recipient?: string): Promise<void> {
   const cfg = parseResendTarget(target);
+  // A system email (reset link, invitation) goes to the account it was issued
+  // for, never to the channel's shared recipients.
+  const to = recipient ? [recipient] : cfg.to;
   const res = await guardedFetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.apiKey}` },
-    body: JSON.stringify(buildResendPayload(cfg, subject, message)),
+    body: JSON.stringify(buildResendPayload({ from: cfg.from, to }, subject, message)),
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!res.ok) {
@@ -702,15 +705,19 @@ export async function notifyEvent(db: DB, event: AppEvent): Promise<void> {
 }
 
 /**
- * Send an ad-hoc email through the first active email channel. `recipient` is
- * deliberately separate from the channel's configured fallback address: reset
- * links and invitations must go to the account they were issued for, never to
- * a shared operations mailbox. Returns false when no email channel exists.
+ * Send an ad-hoc email through the first active email channel, or, when the
+ * install has no SMTP channel, the first active Resend channel (SMTP stays
+ * first so installs that already work keep the route they have). `recipient`
+ * is deliberately separate from the channel's configured fallback address:
+ * reset links and invitations must go to the account they were issued for,
+ * never to a shared operations mailbox. Returns false when no email channel
+ * exists.
  */
 export async function sendSystemEmail(db: DB, recipient: string, subject: string, text: string): Promise<boolean> {
   let channel: NotificationChannel | undefined;
   try {
-    channel = (await db.query.notificationChannels.findMany()).find((c) => c.active && c.type === 'email');
+    const channels = (await db.query.notificationChannels.findMany()).filter((c) => c.active);
+    channel = channels.find((c) => c.type === 'email') ?? channels.find((c) => c.type === 'resend');
   } catch {
     return false; // table might not exist yet
   }
@@ -720,7 +727,9 @@ export async function sendSystemEmail(db: DB, recipient: string, subject: string
     // `failed` and return false, not reject past every caller's catch.
     const target = decrypt(channel.targetEncrypted);
     // F115: log the real attempt count, not a hard-coded 1.
-    const attempts = await withRetry(() => sendEmail(target, subject, text, recipient));
+    const attempts = await withRetry(() =>
+      channel.type === 'resend' ? sendResend(target, subject, text, recipient) : sendEmail(target, subject, text, recipient),
+    );
     await db.insert(notificationLog).values({ channelId: channel.id, event: 'email.system', entity: subject, status: 'sent', attempts });
     return true;
   } catch (err) {
