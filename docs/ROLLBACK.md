@@ -81,6 +81,10 @@ A KeyDB or Dragonfly database (engine `keydb` / `dragonfly`) needs no migration;
 - Scheduled backups of such a database are recorded as failed every night; manual backup, restore, start and Studio fail with an unknown-engine error. A service attached to it fails its deploy when the older panel builds its environment.
 - Rolling forward again restores everything; the data lives in the volume `nd-db-<slug>-data` (`/data/dump.rdb`, a standard RDB file that Redis can also read, up to the RDB version Redis understands).
 
+## Source host key pinning → a release before 0.15.8
+
+Migration 0073 adds two columns to `sources` (`pin_host_keys`, `host_keys`); an older release never reads them and boots on the migrated file. **Pinning stops being enforced**: clones are back to the per-job accept-new policy, so a Git host that presents a different key is accepted again. The pinned keys stay in the table and count again after you upgrade. If you pinned a source to be safe against a host you suspect, do not roll back past 0.15.8 until that is settled.
+
 ## 0.15 → 0.14
 
 0.14 boots on 0.15 data. Migration 0071 stays recorded, and its three tables (`access_grants`, `terminal_sessions`, `traffic_rollups`) are left untouched and ignored, as are the 0.15 settings keys. Upgrading to 0.15 again picks everything up where it was. Every effect below is a **loss** of access or of a feature, never a gain.
