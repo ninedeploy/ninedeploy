@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Pin a Git host's SSH keys (opt-in, per source).** Sources → *Pin git host keys*, or `ninedeploy sources pin-host-keys <id> on|off`. The first clone after switching it on learns the host keys (only after the clone succeeded, which needs the deploy key); every later clone refuses a host that presents a different key, and the deploy log says `pinned host key changed` with what to do. Switching it on needs nothing extra. Switching it off and resetting the pinned keys (`sources reset-host-keys <id>`) let a changed key through, so both need an interactive session and your password, and are audited. The panel shows fingerprints only (`sources host-keys <id>`), never the keys. It applies to clones the panel makes with the SSH deploy key; a clone on a remote node keeps its per-job policy.
+- **Pin a Git host's SSH keys (opt-in, per source).** Sources → *Pin git host keys*, or `ninedeploy sources pin-host-keys <id> on|off`. The first clone after switching it on learns the host keys (only after the clone succeeded, which needs the deploy key); every later clone refuses a host that presents a different key, and the deploy log says `pinned host key changed` with what to do. Switching it on needs nothing extra. Switching it off and resetting the pinned keys (`sources reset-host-keys <id>`) let a changed key through, so both need an interactive session and your password (or a sign-in from the last 10 minutes, as for every step-up), and are audited. The panel shows fingerprints only (`sources host-keys <id>`), never the keys. It applies to clones the panel makes with the SSH deploy key; a clone on a remote node keeps its per-job policy.
 
 ### Fixed
 
