@@ -16,7 +16,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: '2026-10-10',
     title: 'Git host key pinning, deploys watch exit code',
     changes: [
-      'Optional pinning of a Git host's SSH keys for a deploy-key source (Sources card, or ninedeploy sources pin-host-keys). Off for every existing source. The first clone learns the keys, later clones refuse a host that presents a different one; switching it off or resetting needs your password. Migration 0073 adds two columns.',
+      'Optional pinning of the SSH keys of a Git host for a deploy-key source (Sources card, or ninedeploy sources pin-host-keys). Off for every existing source. The first clone learns the keys, later clones refuse a host that presents a different one; switching it off or resetting needs your password. Migration 0073 adds two columns.',
       'ninedeploy deploys watch now exits 1 when the deploy ended failed or cancelled; before, a clean end of the log stream always exited 0.',
       'Rolling back to 0.15.7 is supported; pinning stops being enforced and the pinned keys are kept.',
     ],
