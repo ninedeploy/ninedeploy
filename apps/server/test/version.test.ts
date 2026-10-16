@@ -1,4 +1,5 @@
-﻿import { describe, expect, it } from 'vitest';
+﻿import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
 import { ABOUT, CHANGELOG, VERSION } from '../src/version.js';
 
 describe('version', () => {
@@ -39,6 +40,43 @@ describe('version', () => {
     }
     const versions = CHANGELOG.map((e) => e.version);
     expect(versions.filter((v, i) => versions.indexOf(v) !== i)).toEqual([]);
+  });
+
+  it('every changelog.json entry has the ChangelogEntry shape', () => {
+    // changelog.json is plain data imported into a typed array, so tsc does not
+    // check it field by field — a hand edit with a typo'd key, an empty title or
+    // a non-string change would only surface as a broken About page.
+    // Read the raw file (not the typed CHANGELOG) so extra keys are visible too.
+    const raw: unknown = JSON.parse(readFileSync(new URL('../src/changelog.json', import.meta.url), 'utf8'));
+    expect(Array.isArray(raw)).toBe(true);
+    const entries = raw as Array<Record<string, unknown>>;
+    expect(entries.length).toBeGreaterThan(0);
+    entries.forEach((entry, i) => {
+      const where = `changelog.json[${i}] (${String(entry?.version)})`;
+      expect(entry, where).toBeTypeOf('object');
+      expect(Object.keys(entry).sort(), where).toEqual(['changes', 'date', 'title', 'version']);
+      expect(entry.version, where).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(entry.date, where).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(Number.isNaN(Date.parse(String(entry.date))), `${where}: date`).toBe(false);
+      expect(typeof entry.title, where).toBe('string');
+      expect(String(entry.title).trim(), `${where}: title`).not.toBe('');
+      expect(Array.isArray(entry.changes), `${where}: changes`).toBe(true);
+      const changes = entry.changes as unknown[];
+      expect(changes.length, `${where}: changes`).toBeGreaterThan(0);
+      for (const change of changes) {
+        expect(typeof change, `${where}: change`).toBe('string');
+        expect(String(change).trim(), `${where}: change`).not.toBe('');
+      }
+    });
+  });
+
+  it('changelog.json is ordered newest first (strictly descending versions)', () => {
+    const parts = (v: string) => v.split('.').map(Number) as [number, number, number];
+    for (let i = 1; i < CHANGELOG.length; i++) {
+      const [a, b] = [parts(CHANGELOG[i - 1]!.version), parts(CHANGELOG[i]!.version)];
+      const cmp = a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+      expect(cmp, `${CHANGELOG[i - 1]!.version} must be newer than ${CHANGELOG[i]!.version}`).toBeGreaterThan(0);
+    }
   });
 
   it('VERSION is a semver-shaped string', () => {
