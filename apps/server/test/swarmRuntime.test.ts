@@ -241,7 +241,7 @@ const READERS: Record<string, { branch: true } | { exempt: string }> = {
   'modules/volumeBackups.ts': { exempt: 'volumes are refused for Swarm' },
   'openapi/specs/services.ts': { exempt: 'documentation' },
   'plugins/worker.ts': { exempt: 'crash recovery removes containers by their deployment label; Swarm task containers carry none' },
-  'version.ts': { exempt: 'release notes' },
+  // Release notes moved to changelog.json (not scanned: the walk reads .ts only).
 };
 
 describe('every runtimeId reader has a Swarm branch or an exemption (static)', () => {

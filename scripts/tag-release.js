@@ -10,7 +10,8 @@
 // Usage: pnpm release:tag vX.Y.Z [commit]   (commit defaults to HEAD)
 //
 // Refuses unless: clean working tree; the tag, every package.json, the
-// panel's VERSION literal and CHANGELOG[0] all agree; no Placeholder stub
+// panel's VERSION literal and CHANGELOG[0] (apps/server/src/changelog.json)
+// all agree; no Placeholder stub
 // survives; the tag does not already exist; and `tsc --noEmit` passes on the
 // server (the exact step an unescaped-apostrophe version.ts fails).
 
@@ -94,13 +95,21 @@ import { PACKAGE_JSONS as packageJsons } from './lib/package-list.mjs';for (cons
 const versionTs = show('apps/server/src/version.ts');
 const versionMatch = versionTs.match(/export const VERSION = '([^']*)';/);
 if (!versionMatch) die(`could not read VERSION from ${commitish}:apps/server/src/version.ts`);
-const changelogHead = versionTs.match(/version: '([^']*)',/);
 if (versionMatch[1] !== bare) die(`version.ts VERSION on ${commitish} says ${versionMatch[1]}, tag says ${bare}.`);
-if (!changelogHead || changelogHead[1] !== bare) {
-  die(`CHANGELOG[0].version on ${commitish} says ${changelogHead ? changelogHead[1] : '?'}, tag says ${bare} — fill the changelog entry first.`);
+// The About-page changelog lives in changelog.json (imported by version.ts).
+const changelogRaw = show('apps/server/src/changelog.json');
+let changelog;
+try {
+  changelog = JSON.parse(changelogRaw);
+} catch (err) {
+  die(`apps/server/src/changelog.json on ${commitish} is not valid JSON — (${String(err).split('\n')[0]})`);
 }
-if (versionTs.includes('Placeholder')) {
-  die(`version.ts on ${commitish} still carries a Placeholder stub — fill it before tagging.`);
+const changelogHead = Array.isArray(changelog) ? changelog[0]?.version : undefined;
+if (changelogHead !== bare) {
+  die(`CHANGELOG[0].version on ${commitish} says ${changelogHead ?? '?'}, tag says ${bare} — fill the changelog entry first.`);
+}
+if (changelogRaw.includes('Placeholder')) {
+  die(`changelog.json on ${commitish} still carries a Placeholder stub — fill it before tagging.`);
 }
 
 // 4. The gates that would have caught the 0.10.30 escape: typecheck (an

@@ -205,8 +205,11 @@ describe('r573: release publishing and version bumping', () => {
       for (const rel of PACKAGES) put(rel, `${JSON.stringify({ name: rel, version: '0.0.1' }, null, 2)}\n`);
       put(
         'apps/server/src/version.ts',
-        `${opts.versionLiteral ? "export const VERSION = '0.0.1';\n" : '// VERSION literal missing\n'}` +
-          "export const CHANGELOG = [\n  {\n    version: '0.0.1',\n    date: '2026-01-01',\n    title: 'x',\n    changes: [\n      'y',\n    ],\n  },\n];\n",
+        opts.versionLiteral ? "export const VERSION = '0.0.1';\n" : '// VERSION literal missing\n',
+      );
+      put(
+        'apps/server/src/changelog.json',
+        `${JSON.stringify([{ version: '0.0.1', date: '2026-01-01', title: 'x', changes: ['y'] }], null, 2)}\n`,
       );
       put('apps/web/src/routes/About.tsx', 'install.sh --version v0.0.1\n');
       put('docs/QUICKSTART.md', 'install.sh --version v0.0.1\n');
@@ -233,7 +236,12 @@ describe('r573: release publishing and version bumping', () => {
       expect(versions(root)).toEqual(PACKAGES.map(() => '0.10.99'));
       const ts = readFileSync(join(root, 'apps/server/src/version.ts'), 'utf8');
       expect(ts).toContain("export const VERSION = '0.10.99';");
-      expect(ts.indexOf("version: '0.10.99'")).toBeLessThan(ts.indexOf("version: '0.0.1'"));
+      const changelog = JSON.parse(readFileSync(join(root, 'apps/server/src/changelog.json'), 'utf8')) as Array<{ version: string }>;
+      expect(changelog.map((e) => e.version)).toEqual(['0.10.99', '0.0.1']);
+      // Idempotent: a second bump to the same version stacks no second stub.
+      expect(bump(root).status).toBe(0);
+      const again = JSON.parse(readFileSync(join(root, 'apps/server/src/changelog.json'), 'utf8')) as Array<{ version: string }>;
+      expect(again.map((e) => e.version)).toEqual(['0.10.99', '0.0.1']);
       expect(readFileSync(join(root, 'apps/web/src/routes/About.tsx'), 'utf8')).toContain('--version v0.10.99');
       expect(readFileSync(join(root, 'docs/QUICKSTART.md'), 'utf8')).toContain('--version v0.10.99');
       expect(readFileSync(join(root, 'README.md'), 'utf8')).toBe('Release-0.10.99-blue --version v0.10.99 newest release tag (**0.10.99**)\n');

@@ -86,52 +86,43 @@ function replaceInFile(rel, regex, replacement, critical = false) {
 replaceInFile('apps/server/src/version.ts', /export const VERSION = '.*?';/, `export const VERSION = '${newVersion}';`, true);
 
 // 3. Prepend a new ChangelogEntry stub so CHANGELOG[0].version === VERSION
-//    (guarded by test/version.test.ts: "ABOUT links to the changelog")
+//    (guarded by test/version.test.ts: "ABOUT links to the changelog").
+//    The entries live in apps/server/src/changelog.json (version.ts imports
+//    it), so this is a JSON edit, not a source-text splice.
+const CHANGELOG_JSON = 'apps/server/src/changelog.json';
 function prependChangelogEntry() {
-  const rel = 'apps/server/src/version.ts';
-  const content = current(rel);
+  let entries;
+  try {
+    entries = JSON.parse(current(CHANGELOG_JSON));
+  } catch (err) {
+    failures.push(`✗ ${CHANGELOG_JSON}: not readable as JSON (${String(err).split('\n')[0]}) — the release would ship without a changelog entry.`);
+    return;
+  }
+  if (!Array.isArray(entries)) {
+    failures.push(`✗ ${CHANGELOG_JSON}: expected a JSON array of changelog entries.`);
+    return;
+  }
   // Idempotent: re-running the bump for the same version must not stack a
   // second stub (v0.10.0 shipped with two "Placeholder" entries on the About
   // page because the script ran more than once).
-  if (content.includes(`version: '${newVersion}',`)) {
-    console.log(`✓ version.ts already has a ChangelogEntry for v${newVersion} — not adding a stub`);
+  if (entries.some((e) => e && e.version === newVersion)) {
+    console.log(`✓ changelog.json already has an entry for v${newVersion} — not adding a stub`);
     return;
   }
   const today = new Date().toISOString().slice(0, 10);
-  const stub = `{\n    version: '${newVersion}',\n    date: '${today}',\n    title: 'Release ${newVersion}',\n    changes: [\n      'Placeholder — fill in from CHANGELOG.md before tagging',\n    ],\n  },\n`;
-  // Insert BEFORE the first object in the CHANGELOG array by matching the start
-  // of the array. The pattern `changes: [` is unambiguous — it appears at the
-  // ChangelogEntry interface boundary, not inside the `changes` string array.
-  // Using `indexOf` avoids any regex anchoring issues across OS line endings.
-  const marker = 'changes: [';
-  const markerPos = content.indexOf(marker);
-  if (markerPos === -1) {
-    console.warn('⚠ version.ts: could not find "changes: [" in version.ts — skipping CHANGELOG stub');
-    return;
-  }
-  // Walk back to the opening `{` of the first ChangelogEntry.
-  // The `{` of the first entry is always immediately before `\n    version:`.
-  const beforeVersion = content.lastIndexOf('\n    version:', markerPos);
-  if (beforeVersion === -1) {
-    console.warn('⚠ version.ts: could not find start of first ChangelogEntry — skipping CHANGELOG stub');
-    return;
-  }
-  const entryStart = content.lastIndexOf('{', beforeVersion);
-  if (entryStart === -1) {
-    console.warn('⚠ version.ts: could not find opening brace of first ChangelogEntry — skipping CHANGELOG stub');
-    return;
-  }
-  const newContent = content.slice(0, entryStart) + stub + content.slice(entryStart);
-  stage(rel, newContent, `✓ Prepended ChangelogEntry stub for v${newVersion} to version.ts`);
+  entries.unshift({
+    version: newVersion,
+    date: today,
+    title: `Release ${newVersion}`,
+    changes: ['Placeholder — fill in from CHANGELOG.md before tagging'],
+  });
+  stage(CHANGELOG_JSON, `${JSON.stringify(entries, null, 2)}\n`, `✓ Prepended changelog stub for v${newVersion} to ${CHANGELOG_JSON}`);
 }
 // Only meaningful once the VERSION literal itself was found.
 if (failures.length === 0) prependChangelogEntry();
 
-// NOTE: do NOT add a `/version: '.*?',/` rule for version.ts here — that shape
-// is the ChangelogEntry literal inside the file, and rewriting its FIRST
-// occurrence would relabel the newest changelog entry instead of anything
-// meant to track the released version. ABOUT.version reads the VERSION
-// constant, so there is nothing else to sync in that file.
+// ABOUT.version reads the VERSION constant, so there is nothing else to sync
+// in version.ts.
 // The CLI and the MCP server read their version from their own package.json
 // at runtime (r195), so there is no literal to rewrite in their sources; the
 // package.json bump above is what they report.
