@@ -254,6 +254,8 @@ describe('domains routes', () => {
         ipAllowlist: null,
         rateLimitAverage: null,
         rateLimitBurst: null,
+        // 0.16.1: no redirect rules on a pre-0.16.1 row.
+        redirects: [],
         status: 'active',
         verifiedAt: null,
         createdAt: '2026-01-01T00:00:00.000Z',
