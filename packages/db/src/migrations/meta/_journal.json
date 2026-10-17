@@ -519,6 +519,13 @@
       "when": 1792275336792,
       "tag": "0074_build_and_runtime_options",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "6",
+      "when": 1792279661211,
+      "tag": "0075_status_badge",
+      "breakpoints": true
     }
   ]
 }

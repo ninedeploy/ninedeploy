@@ -513,6 +513,9 @@ function paramValue(url: string, param: string, r: Res): string {
     // ── end 0.16 T6 ──
     // ── 0.16 T7 swarm ──
     // ── end 0.16 T7 ──
+    // 0.16.1 status badge: an unminted token (the route answers a 404 badge).
+    case 'badge':
+      return 'zzbadge.svg';
     case '*':
       return '';
     case 'id': {
@@ -767,6 +770,10 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/services/:id/deploys': R('viewer'),
   'POST /v1/services/:id/deploys': R('member', { body: () => ({}) }),
   'GET /v1/services/:id/source': R('viewer'),
+  'GET /v1/services/:id/badge': R('member', { note: 'the badge URL is its credential, so even reading it needs a member seat' }),
+  'POST /v1/services/:id/badge': R('member'),
+  'DELETE /v1/services/:id/badge': R('member'),
+  'GET /v1/badges/:badge': R('token', { allow404: 'no badge is minted in the shared seed; the token lookup is covered by test/badges.test.ts' }),
   'POST /v1/services/:id/source': R('member', {
     body: () => ({}),
     note: 'the matrix service has a source of its own, so the at-floor call is a 409 from the onRequest guard; archive handling is covered by test/sourceUpload.test.ts',

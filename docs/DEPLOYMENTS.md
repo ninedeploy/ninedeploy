@@ -96,11 +96,23 @@ Nixpacks, Railpack and the static pack build with the whole environment; a Docke
 
 ---
 
+---
+
 ## ⏪ 5. Rollbacks & Deployment History
 
 - Every deployment records an immutable image digest and exact configuration snapshot.
 - Rollback redeploys that exact verified digest — preventing unexpected changes from floating `:latest` tags.
 - Deployment history stays honest: when a new deploy goes live, older rows are settled into a `superseded` state instead of lingering as "Running", both at finalize time and during a reconciliation pass at panel boot.
+
+### Deploy status badge (0.16.1)
+
+**Service → Settings → Status badge** gives a public SVG to embed in a README:
+
+```markdown
+[![deploy](https://panel.example.com/v1/badges/<token>.svg)](https://panel.example.com/v1/badges/<token>.svg)
+```
+
+It reads `running`, `deploying`, `failed` (the newest deployment failed, even while the previous one still serves), `stopped` or `not deployed`, and nothing else: no service name, host or commit. `?label=prod` replaces the "deploy" label. The badge is off until a member turns it on; the token is its only credential, so anyone with the URL sees the state. **New URL** rotates the token (the old URL then shows "not found"); turning it off retires the URL.
 
 ---
 

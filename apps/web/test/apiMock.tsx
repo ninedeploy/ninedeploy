@@ -87,6 +87,11 @@ export function createFakeApiModule() {
       remove: vi.fn(),
       clone: vi.fn(),
       uploadSource: vi.fn(),
+      badge: {
+        get: vi.fn().mockResolvedValue({ enabled: false, url: null }),
+        enable: vi.fn(),
+        disable: vi.fn(),
+      },
       sourceUploads: vi.fn().mockResolvedValue({ uploadSourced: true, maxBytes: 104857600, uploads: [] }),
       stop: vi.fn(),
       start: vi.fn(),

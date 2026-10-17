@@ -42,6 +42,35 @@ export const deploysSpecs: RouteSpecMap = {
     responseType:
       "{ sha: string; format: 'zip' | 'tar.gz'; bytes: number; uploadedAt: string; entries: number; deploymentId: number | null }",
   },
+  'GET /v1/services/:id/badge': {
+    summary: 'Whether the status badge is on, and its public URL',
+    tag: 'deploys',
+    description: 'The URL is the badge credential, so reading it takes a member seat. Added in 0.16.1.',
+    floor: 'member',
+    responseType: '{ enabled: boolean; url: string | null }',
+  },
+  'POST /v1/services/:id/badge': {
+    summary: 'Turn the status badge on, or rotate its URL',
+    tag: 'deploys',
+    description: 'Mints a new token; a previous badge URL stops working. Audited service.badge.enable / service.badge.rotate. Added in 0.16.1.',
+    floor: 'member',
+    responseType: '{ enabled: boolean; url: string | null }',
+  },
+  'DELETE /v1/services/:id/badge': {
+    summary: 'Turn the status badge off',
+    tag: 'deploys',
+    description: 'The badge URL answers 404 from now on. Audited service.badge.disable. Added in 0.16.1.',
+    floor: 'member',
+    responseType: '{ enabled: boolean; url: string | null }',
+  },
+  'GET /v1/badges/:badge': {
+    summary: 'A deploy status badge (SVG) for a README',
+    tag: 'deploys',
+    description:
+      '`:badge` is `<token>.svg`; the token is the credential (no session). The badge reads running, deploying, failed, stopped or not deployed, and nothing else about the service. `?label=` replaces the "deploy" label (letters, digits, spaces and `._-`, up to 32). An unknown token answers 404 with a "not found" badge. Added in 0.16.1.',
+    floor: 'token',
+    responseType: 'string (image/svg+xml)',
+  },
   'DELETE /v1/services/:id/deploys/:depId': {
     summary: 'Remove a finished deployment and its build log',
     tag: 'deploys',

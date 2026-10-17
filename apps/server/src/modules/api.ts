@@ -28,6 +28,7 @@ import { domainsRoutes } from './domains.js';
 import { domainTransferStartRoutes, domainTransferTokenRoutes } from './domainTransfers.js';
 import { envRoutes, envSearchRoutes, projectEnvRoutes } from './env.js';
 import { sourceUploadRoutes } from './sourceUploads.js';
+import { publicBadgeRoutes, serviceBadgeRoutes } from './badges.js';
 import { hookReceiveRoutes, webhookMgmtRoutes } from './hooks.js';
 import { githubAppHookRoutes } from './githubAppHooks.js';
 import { serviceGithubRoutes } from './serviceGithub.js';
@@ -209,6 +210,9 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(envRoutes, { prefix: '/services' });
   // 0.16.1: deploy from an uploaded .zip / .tar.gz (own body parser and limit).
   await app.register(sourceUploadRoutes, { prefix: '/services' });
+  // 0.16.1 status badges: management (member) and the public SVG (token).
+  await app.register(serviceBadgeRoutes, { prefix: '/services' });
+  await app.register(publicBadgeRoutes, { prefix: '/badges' });
   await app.register(serviceInsightsRoutes, { prefix: '/services' });
   // Historical CPU/memory series for one service. `metricRoutes` is a separate
   // export from stats.ts and was never registered: `GET /v1/services/:id/metrics`

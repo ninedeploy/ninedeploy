@@ -76,6 +76,15 @@ export interface ServicesApi {
       archive: Uint8Array,
       opts?: { deploy?: boolean },
     ) => Promise<SourceUpload & { entries: number; deploymentId: number | null }>;
+    /**
+     * 0.16.1 deploy status badge (member). `enable` turns it on or rotates its
+     * URL; `disable` turns it off. The URL is the badge's only credential.
+     */
+    badge: {
+      get: (id: number) => Promise<{ enabled: boolean; url: string | null }>;
+      enable: (id: number) => Promise<{ enabled: boolean; url: string | null }>;
+      disable: (id: number) => Promise<{ enabled: boolean; url: string | null }>;
+    };
     /** 0.16.1: the kept uploads (newest first) and whether the service takes uploads. */
     sourceUploads: (id: number) => Promise<{ uploadSourced: boolean; maxBytes: number; uploads: SourceUpload[] }>;
     importBundle: (bundle: unknown) => Promise<{ ok: boolean; serviceId: number; slug: string; message: string }>;
@@ -200,6 +209,11 @@ export function servicesApi(t: Transport): ServicesApi {
           // An upload of up to 100 MiB may outlast the default budget.
           10 * 60_000,
         ),
+      badge: {
+        get: (id) => get<{ enabled: boolean; url: string | null }>(`/v1/services/${id}/badge`),
+        enable: (id) => send<{ enabled: boolean; url: string | null }>('POST', `/v1/services/${id}/badge`),
+        disable: (id) => request<{ enabled: boolean; url: string | null }>(`/v1/services/${id}/badge`, { method: 'DELETE' }),
+      },
       sourceUploads: (id) => get<{ uploadSourced: boolean; maxBytes: number; uploads: SourceUpload[] }>(`/v1/services/${id}/source`),
       importBundle: (bundle) => send<{ ok: boolean; serviceId: number; slug: string; message: string }>('POST', '/v1/services/import', bundle),
       manifest: {

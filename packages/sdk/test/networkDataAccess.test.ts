@@ -122,6 +122,18 @@ describe('0.14 route mapping', () => {
     expect(calls[2]).toMatchObject({ method: 'GET', url: '/v1/services/7/source' });
   });
 
+  it('0.16.1: reads, turns on (or rotates) and turns off the status badge', async () => {
+    const { api, calls } = client();
+    await api.services.badge.get(3);
+    await api.services.badge.enable(3);
+    await api.services.badge.disable(3);
+    expect(calls.map((c) => [c.method, c.url])).toEqual([
+      ['GET', '/v1/services/3/badge'],
+      ['POST', '/v1/services/3/badge'],
+      ['DELETE', '/v1/services/3/badge'],
+    ]);
+  });
+
   it('keeps the custom-config refusal findings as error details', async () => {
     const issue = { path: 'http.routers.a', message: 'name must start with custom-' };
     const { api } = client(({ url }) =>

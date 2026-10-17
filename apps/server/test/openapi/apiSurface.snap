@@ -29,6 +29,7 @@ DELETE /v1/scim/tokens/:id operator -
 DELETE /v1/servers/:id operator -
 DELETE /v1/services/:id admin nd://scope/write/services
 DELETE /v1/services/:id/attachments/:attId member nd://scope/write/services
+DELETE /v1/services/:id/badge member nd://scope/write/services
 DELETE /v1/services/:id/deploys/:depId admin nd://scope/write/deploys
 DELETE /v1/services/:id/domains/:domainId member nd://scope/write/domains
 DELETE /v1/services/:id/env/:varId member nd://scope/write/env
@@ -76,6 +77,7 @@ GET /v1/backup-destinations operator nd://scope/read/backups
 GET /v1/backup-destinations/:id/objects operator nd://scope/read/backups
 GET /v1/backups authed nd://scope/read/backups
 GET /v1/backups/:bid/download admin nd://scope/read/backups
+GET /v1/badges/:badge token -
 GET /v1/branding authed -
 GET /v1/build-cache/stats authed -
 GET /v1/config operator nd://scope/read/config
@@ -141,6 +143,7 @@ GET /v1/servers/:id/stats operator -
 GET /v1/services authed nd://scope/read/services
 GET /v1/services/:id viewer nd://scope/read/services
 GET /v1/services/:id/attachments viewer nd://scope/read/services
+GET /v1/services/:id/badge member nd://scope/read/services
 GET /v1/services/:id/deploys viewer nd://scope/read/deploys
 GET /v1/services/:id/deploys/:depId/diff viewer nd://scope/read/deploys
 GET /v1/services/:id/deploys/:depId/logs viewer nd://scope/read/deploys
@@ -340,6 +343,7 @@ POST /v1/servers/ssh-bootstrap operator -
 POST /v1/servers/ssh-test operator -
 POST /v1/services member nd://scope/write/services
 POST /v1/services/:id/attachments admin nd://scope/write/services
+POST /v1/services/:id/badge member nd://scope/write/services
 POST /v1/services/:id/clone admin nd://scope/write/services
 POST /v1/services/:id/deploys member nd://scope/write/deploys
 POST /v1/services/:id/deploys/:depId/cancel member nd://scope/write/deploys

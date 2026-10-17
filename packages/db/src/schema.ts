@@ -472,6 +472,9 @@ export const services = sqliteTable(
     // /dev/shm size, init, open-file limit, added capabilities). Null = none,
     // the `docker run` line every deploy used before.
     runtimeOptions: text('runtime_options', { mode: 'json' }).$type<ServiceRuntimeOptions>(),
+    // 0.16.1: the secret in the public status-badge URL
+    // (`/v1/badges/<token>.svg`). Null = no badge, the default.
+    badgeToken: text('badge_token'),
     // Runtime identifier: pm2 process name or docker container name.
     runtimeId: text('runtime_id'),
     // Resource limits (0 = unlimited). cpuShares maps to docker --cpu-shares
@@ -543,6 +546,8 @@ export const services = sqliteTable(
   // instead of a bare constraint error.
   (t) => ({
     slugUnique: uniqueIndex('services_slug_unique').on(t.slug),
+    // The public badge route looks a service up by its token.
+    badgeTokenUnique: uniqueIndex('services_badge_token_unique').on(t.badgeToken),
     // SQLite does not auto-index FK columns; multi-server installs filter the
     // services list by the remote server on every panel page.
     serverIdx: index('services_server_idx').on(t.serverId),
