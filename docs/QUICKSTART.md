@@ -107,7 +107,7 @@ Re-running the installation script performs a seamless, zero-data-loss upgrade:
 curl -fsSL https://raw.githubusercontent.com/NineDeploy/NineDeploy/main/install.sh | bash
 
 # Pin to a specific version
-bash install.sh --version v0.15.8
+bash install.sh --version v0.16.0
 
 # Track edge (main branch)
 bash install.sh --channel main
@@ -165,7 +165,8 @@ On systemd bare-metal installations an operator can upgrade the panel from the d
 | `NINEDEPLOY_DB_PATH` | `./.data/ninedeploy.db` | Absolute path to SQLite database file |
 | `NINEDEPLOY_JWT_SECRET` | *(required)* | 32-byte hex key for signing user auth tokens |
 | `NINEDEPLOY_MASTER_KEYS` | *(optional)* | Key ring for AES-256-GCM secret rotation (e.g. `0:hex,1:hex`) |
-| `NINEDEPLOY_PUBLIC_URL` | `http://localhost:3000` | Public root URL for webhooks and OAuth redirects |
+| `NINEDEPLOY_PUBLIC_URL` | `http://localhost:3000` | Public root URL for webhooks and OAuth redirects (fresh 0.16 installs write `http://<server-ip>:3000`) |
+| `NINEDEPLOY_SETUP_TOKEN` | — | One-time token the first-admin signup requires (0.16; the installer generates it, production without it writes `DATA_DIR/setup-token`) |
 | `BUILDKIT_HOST` | *(unset)* | BuildKit daemon for the optional `railpack` build pack (e.g. `docker-container://buildkit`); the pack is refused while unset — see [Private repositories §6](./PRIVATE_REPO_GUIDE.md#6-how-the-build-pack-is-chosen) |
 
 ---

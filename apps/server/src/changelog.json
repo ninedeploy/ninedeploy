@@ -1,5 +1,20 @@
 [
   {
+    "version": "0.16.0",
+    "date": "2026-10-17",
+    "title": "Panel reachable after install, first-run setup token, npm packages",
+    "changes": [
+      "A fresh install now publishes the panel on 0.0.0.0 in both modes and prints http://<server-ip>:3000, so it opens straight away. Pass --private to keep it on 127.0.0.1. An upgrade keeps the bind it had.",
+      "Creating the first (operator) account needs a one-time setup token. The installer generates it and prints a link that fills it in. A bare docker run logs one at boot and keeps it in /data/setup-token. CLI: ninedeploy setup --setup-token <token>. Servers that already have users are not affected.",
+      "The npm packages (ninedeploy CLI, SDK, schemas, MCP, plugin SDK) are published with every release. They had stayed at 0.10.6.",
+      "Concurrency fixes: access-grant holds, the branding cache, duplicate PR previews, system export/import against panel backup, node volume creation and a stuck restore lock.",
+      "Redis and valkey backups fail when SAVE does not answer OK, instead of copying a possibly stale dump. Dump file names can no longer collide.",
+      "The master key file is created atomically, and a path that is not a regular file is refused. Every key that loaded before still loads; a key with characters after its 64 hex digits logs a warning.",
+      "Changing a Vault address or an AWS endpoint drops the stored credential, which must be entered again. Node volumes are created when they are attached, so attaching to an offline node fails.",
+      "Kernel, plugin and background logs go to the panel's structured log (and its drains) instead of the console."
+    ]
+  },
+  {
     "version": "0.15.8",
     "date": "2026-10-10",
     "title": "Git host key pinning, deploys watch exit code",

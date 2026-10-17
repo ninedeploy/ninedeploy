@@ -16,6 +16,14 @@ To rehearse the multi-node rollback below, run `node scripts/smoke-multinode.mjs
 
 ---
 
+## 0.16 → 0.15.8
+
+0.16 has no migration, so 0.15.8 boots on the same data.
+
+- **The setup token is ignored.** `NINEDEPLOY_SETUP_TOKEN` stays in `.env` and does nothing on 0.15.8. On an instance that still has no users, the first signup is open again.
+- **A fresh 0.16 Docker install keeps `NINEDEPLOY_BIND=0.0.0.0` in its `.env`.** After rolling back, the panel is still published on every interface, but 0.15.8 has no token gate in front of the first signup. Create the admin before rolling back, or set `NINEDEPLOY_BIND=127.0.0.1` and run `docker compose up -d`.
+- **Pinned host keys keep working.** A reset in 0.16 writes a `# ninedeploy-host-key-generation:…` line, and 0.15.8 skips `#` lines.
+
 ## 0.15.x multi-node rollback runbook
 
 The remote-node features arrived in three patch releases: **0.15.2** (migration 0072, Nixpacks and Railpack builds on nodes, PAT and deploy-key clones on nodes, node volumes), **0.15.3** (build placement and image transfer, the build-server role, managed databases on nodes) and **0.15.4** (Swarm). Rolling the panel back past one of them never makes the older release act on the wrong host: what it cannot handle, it refuses or ignores, and the containers already running keep running. Migration 0072 stays recorded, its columns and the `image_transfers` table stay in place and are ignored, and upgrading again picks everything up where it was.

@@ -10,7 +10,7 @@ the databases, certificates, secrets, backups and access rules around it — fro
 terminal CLI, a typed SDK, or an AI agent over MCP.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Release](https://img.shields.io/badge/Release-0.15.8-blue.svg)](./CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Release-0.16.0-blue.svg)](./CHANGELOG.md)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522.13-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7-blue.svg)](https://www.typescriptlang.org)
 [![Docker](https://img.shields.io/badge/Docker-required-blue.svg)](https://docker.com)
@@ -47,7 +47,7 @@ drive Docker on one host, and optionally on a handful of remote ones.
 | :--- | :--- |
 | **Host** | Linux. The installer handles Debian/Ubuntu end to end (signed APT repos for Node and Docker); other distributions work if Node and Docker are already present. |
 | **Runtime** | Node.js ≥ 22.13 (bare-metal mode only), Docker Engine + the Compose plugin. |
-| **Ports** | `80`/`443` free for Traefik. The panel listens on port `3000` over plain HTTP. **Bare metal binds `0.0.0.0` by default** (`NINEDEPLOY_HOST`); if you reach the panel through Traefik or a tunnel, set `NINEDEPLOY_HOST=127.0.0.1` in `.env` so it is not exposed directly. **Docker mode publishes it on `127.0.0.1` by default** (`NINEDEPLOY_BIND`). The panel's **Doctor** page (`GET /v1/doctor`) warns when the panel listens on a non-loopback address over plain HTTP. |
+| **Ports** | `80`/`443` free for Traefik. The panel listens on port `3000` over plain HTTP. **Since 0.16 a fresh install publishes it on `0.0.0.0` in both modes** and prints `http://<server-ip>:3000` plus a one-time **setup token** that the first-admin form requires (pass `--private` to keep it on `127.0.0.1`). Upgrades keep their bind: older Docker installs stay on `127.0.0.1` (`NINEDEPLOY_BIND`), bare metal on `NINEDEPLOY_HOST`. Once a domain with HTTPS is attached, set the bind to `127.0.0.1`. The panel's **Doctor** page (`GET /v1/doctor`) warns when the panel listens on a non-loopback address over plain HTTP. |
 | **Privileges** | `sudo` for the installer in **both** modes. Bare metal uses it for the systemd unit, firewall and optional PM2. Docker mode still uses it for base packages and Docker itself (`apt-get`, `systemctl enable docker`), swap, `ufw` rules for 22/80/443, stopping a stock `apache2`/`nginx` that holds 80/443 on a fresh host, and creating `/opt/ninedeploy-docker`. Membership in the `docker` group is enough only for running and upgrading the stack with `docker compose` afterwards. |
 
 ---
@@ -70,12 +70,12 @@ runs the SQLite migrations, and starts a hardened `systemd` unit (`ProtectSystem
 Re-running the same command is the upgrade path; it snapshots `.data` before touching anything.
 
 ```bash
-./install.sh --version v0.15.8     # pin an exact tag
+./install.sh --version v0.16.0     # pin an exact tag
 ./install.sh --channel main       # track edge
 ./install.sh --force              # discard local edits + stale build artifacts, then rebuild
 ```
 
-> **Where `main` stands:** the default channel installs the newest release tag (**0.15.8**).
+> **Where `main` stands:** the default channel installs the newest release tag (**0.16.0**).
 > Work lands on `main` before it is tagged — see [`CHANGELOG.md`](./CHANGELOG.md) under *Unreleased*
 > (empty right now), or run `--channel main` to get it today.
 
@@ -186,8 +186,12 @@ pnpm dev:web    # Vite dashboard on :5173 against that API
 
 ### First boot
 
-1. Open `http://<host>:3000`. **The first account created becomes the instance operator** and owns a
-   personal workspace; every later signup is an ordinary member until someone grants more.
+1. Open the URL the installer printed (`http://<server-ip>:3000/login#setup-token=…` pre-fills the
+   token). **The first account created becomes the instance operator**, so since 0.16 creating it
+   needs the installer's setup token (`NINEDEPLOY_SETUP_TOKEN` in `.env`; a bare `docker run` logs a
+   generated one at boot and keeps it in `/data/setup-token`). The CLI takes it too:
+   `ninedeploy setup --setup-token <token>`. It owns a personal workspace; every later signup is an
+   ordinary member until someone grants more.
 2. Point a wildcard DNS record (`*.apps.example.com`) at the host and set the ACME email under
    **Settings → System**; Traefik issues certificates from there on, DNS-01 wildcards included.
 3. `ninedeploy doctor` from your laptop, or the **About** page in the panel, reports what is missing.

@@ -9,6 +9,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-17
+
+> A fresh install answers on `http://<server-ip>:3000` straight away, behind a one-time setup token. The npm packages ship with every release again.
+
+### Upgrade notes
+
+- **No migration** (0073 is still the latest).
+- **Your panel's bind does not change on upgrade.** Docker installs whose `.env` has no `NINEDEPLOY_BIND` stay on `127.0.0.1`; bare metal keeps its `NINEDEPLOY_HOST`. Only a fresh install (no `.env` yet) gets `0.0.0.0`, and only when the release it installs is 0.16.0 or newer, so the installer on `main` never exposes an older pinned release without the token gate.
+- **The setup token only matters while the instance has no users.** A server that already has an admin never asks for it. A production server that was installed but never set up writes `DATA_DIR/setup-token` and logs the token at boot. Bare metal: `journalctl -u ninedeploy`. Docker: `docker compose logs ninedeploy`.
+- **The master key loads as before.** It is now created atomically, and a symlink is read only when it points at a regular file. A key with characters after its 64 hex digits, which used to be accepted silently, still loads and now logs a warning. Rewrite it to exactly 64 hex characters when convenient.
+- **Behaviour changes to know about:**
+  - A redis or valkey backup whose `SAVE` does not answer OK now fails instead of copying a possibly stale dump.
+  - Saving a Vault or AWS secret provider with a new address or endpoint drops the stored credential, so enter it again.
+  - Creating a volume on a node now happens when it is attached, so attaching fails while the node is offline or runs an agent without `volume.manage`.
+  - A system export started during an import answers 409.
+  - The agent refuses to start when it cannot write its replay cache.
+- **Rolling back to 0.15.8 is supported.** There is no schema change. A pinned host-key list written by 0.16 starts with a `#` generation line, which 0.15.8 skips.
+
+### Added
+
+- **Panel reachable after install.** Fresh installs publish the panel on `0.0.0.0` (Docker: `NINEDEPLOY_BIND=0.0.0.0` in `.env`; bare metal: `NINEDEPLOY_HOST`). They set `NINEDEPLOY_PUBLIC_URL` to the detected server address (`NINEDEPLOY_PUBLIC_IP` overrides the detection) and print that URL. They also warn when an active ufw blocks the port. `--private` (or `NINEDEPLOY_PRIVATE=1`) keeps the panel on `127.0.0.1` and prints the SSH-tunnel command.
+- **First-run setup token.** The first account on an empty instance becomes the instance operator, so creating it now needs `NINEDEPLOY_SETUP_TOKEN`. The installer generates it, and the installer's `…/login#setup-token=…` link fills it in. The token is in the URL fragment, so it never reaches a request log. The gate covers `POST /v1/setup`, the first `/v1/auth/register` and the first SSO auto-enrolment. Without the variable, a production server writes `DATA_DIR/setup-token` and logs it at boot; development keeps the open bootstrap. `GET /v1/auth/status` reports `setupTokenRequired`. The CLI asks for the token, takes `--setup-token` or `NINEDEPLOY_SETUP_TOKEN`, and reads it from a local panel container on its own.
+- **npm packages ship with each release.** A new `publish-npm` job publishes `ninedeploy`, `@ninedeploy/sdk`, `@ninedeploy/schemas`, `@ninedeploy/mcp` and `@ninedeploy/plugin-sdk` with provenance, after the release is promoted. An older tag is published as `previous`, so `latest` never moves backwards.
+
+### Fixed
+
+- Concurrency:
+  - Access-grant holds are serialised per workspace.
+  - A stale branding read can no longer overwrite the cache after a save.
+  - Duplicate PR-preview creation no longer returns 500.
+  - System export, import and panel backup exclude each other.
+  - Node volume creation is serialised per name.
+  - A failed restore setup no longer leaves the backup lock held.
+- Backups:
+  - Redis and valkey check the `SAVE` reply.
+  - Dump file names carry a unique suffix.
+  - A lowered preview cap evicts enough previews to fit.
+- Host-key reset writes a generation marker, so a deploy that started before the reset cannot pin the old keys again.
+- Smaller fixes:
+  - Dashboard probes have a deadline.
+  - Stale image-transfer archives are swept.
+  - The terminal keeps output that arrives after the process exits.
+  - GitHub App URLs starting with `HTTP:` are refused like `http:`.
+  - `ninedeploy panel-backup` decryption no longer destroys an existing output file on a wrong passphrase.
+- Kernel, plugin, sandbox and background logs go through the panel's structured logger.
+
 ## [0.15.8] - 2026-10-10
 
 > Optional pinning of a Git host's SSH keys for deploy-key sources, and `deploys watch` that exits non-zero after a failed deploy.
