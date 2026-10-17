@@ -131,6 +131,37 @@ describe('Login', () => {
     await waitFor(() => expect(setup).toHaveBeenCalledWith('a@b.c', 'secret', 'Boss'));
   });
 
+  it('0.16: asks for the setup token when the instance requires one', async () => {
+    const user = userEvent.setup();
+    const setup = vi.fn().mockResolvedValue(undefined);
+    mockOf(api.auth.status).mockResolvedValue({ initialized: false, setupTokenRequired: true } as never);
+    mockOf(useAuth).mockReturnValue(authValue({ setup }) as never);
+    renderWithProviders(<Login />);
+    await screen.findByRole('heading', { name: 'Create admin account' });
+    await user.type(await screen.findByPlaceholderText('Printed by the installer'), ' tok-123 ');
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'a@b.c');
+    await user.type(screen.getByPlaceholderText('••••••••'), 'secret');
+    await user.click(screen.getByRole('button', { name: /Create account/ }));
+    await waitFor(() => expect(setup).toHaveBeenCalledWith('a@b.c', 'secret', undefined, 'tok-123'));
+  });
+
+  it('0.16: pre-fills the setup token from the #setup-token fragment and drops it from the URL', async () => {
+    window.history.replaceState(null, '', '/login#setup-token=from-link');
+    mockOf(api.auth.status).mockResolvedValue({ initialized: false, setupTokenRequired: true } as never);
+    mockOf(useAuth).mockReturnValue(authValue() as never);
+    renderWithProviders(<Login />);
+    expect(await screen.findByPlaceholderText('Printed by the installer')).toHaveValue('from-link');
+    expect(window.location.hash).toBe('');
+  });
+
+  it('hides the setup token field when the instance does not require one', async () => {
+    mockOf(api.auth.status).mockResolvedValue({ initialized: false } as never);
+    mockOf(useAuth).mockReturnValue(authValue() as never);
+    renderWithProviders(<Login />);
+    await screen.findByRole('heading', { name: 'Create admin account' });
+    expect(screen.queryByPlaceholderText('Printed by the installer')).not.toBeInTheDocument();
+  });
+
   it('creates the admin without a display name', async () => {
     const user = userEvent.setup();
     const setup = vi.fn().mockResolvedValue(undefined);

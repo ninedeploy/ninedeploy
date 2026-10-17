@@ -148,12 +148,14 @@ program
 program
   .command('init')
   .description('Initialize local instance and setup admin user (alias for setup)')
-  .action(() => setupAction());
+  .option('--setup-token <token>', 'One-time setup token printed by the installer (or NINEDEPLOY_SETUP_TOKEN)')
+  .action((opts?: { setupToken?: string }) => setupAction(opts));
 
 program
   .command('setup')
   .description('Create the first admin user on a fresh instance')
-  .action(() => setupAction());
+  .option('--setup-token <token>', 'One-time setup token printed by the installer (or NINEDEPLOY_SETUP_TOKEN)')
+  .action((opts?: { setupToken?: string }) => setupAction(opts));
 
 program
   .command('login')

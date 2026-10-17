@@ -27,6 +27,10 @@
 #                       every build artifact before rebuilding. Use this when
 #                       an upgrade left a stale panel bundle behind.
 #                       NINEDEPLOY_FORCE=1 works too.
+#   --private           fresh installs only: keep the panel on 127.0.0.1
+#                       instead of publishing it on 0.0.0.0:3000 (reach it
+#                       through an SSH tunnel or a Traefik domain).
+#                       NINEDEPLOY_PRIVATE=1 works too.
 #
 # Release integrity (r702): a release since v0.10.43 is installed from its own
 # archive only when it matches the release's SHA256SUMS; with cosign on the
@@ -358,6 +362,87 @@ resolve_data_dir() {
   printf '%s' "$DATA_DIR"
 }
 
+# ── Panel reachability (0.16) ───────────────────────────────────────────────
+#
+# A fresh install publishes the panel on 0.0.0.0 (both modes) so the operator
+# can open http://<server-ip>:3000 straight away; `--private` (or
+# NINEDEPLOY_PRIVATE=1) keeps it on loopback for tunnel/Traefik-only access.
+# Upgrades never change an existing bind. Because an exposed, empty panel
+# hands the instance-operator account to whoever registers first, the
+# installer also writes a one-time NINEDEPLOY_SETUP_TOKEN that the first-run
+# form requires (apps/server/src/lib/setupToken.ts).
+
+# The address this host is reached on: NINEDEPLOY_PUBLIC_IP, else the source
+# address of the default route (no packet is sent), else the first
+# `hostname -I` address. Empty when none can be found (macOS, no network).
+detect_server_ip() {
+  local _ip="${NINEDEPLOY_PUBLIC_IP:-}"
+  if [ -z "$_ip" ] && command -v ip >/dev/null 2>&1; then
+    _ip="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)"
+  fi
+  if [ -z "$_ip" ]; then
+    _ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  fi
+  printf '%s' "$_ip"
+}
+
+# http://<ip>:<port> for a wildcard bind, http://localhost:<port> otherwise.
+#   $1 bind address  $2 port
+panel_default_url() {
+  local _ip=""
+  case "$1" in
+    0.0.0.0|::|"[::]") _ip="$(detect_server_ip)" ;;
+    127.0.0.1|localhost|"") ;;
+    *) _ip="$1" ;;
+  esac
+  printf 'http://%s:%s' "${_ip:-localhost}" "$2"
+}
+
+# True when the release being installed gates its first admin on the setup
+# token (0.16+, or the main channel). The installer on main is what
+# `curl … main/install.sh` runs, so it also installs OLDER pinned releases —
+# those must not get the 0.0.0.0 bind without the gate behind it.
+#   $1 ref (main or vX.Y.Z)
+ref_has_setup_token() {
+  [ "$1" = "main" ] && return 0
+  printf '%s' "$1" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || return 1
+  local _major _minor
+  _major="$(printf '%s' "${1#v}" | cut -d. -f1)"
+  _minor="$(printf '%s' "${1#v}" | cut -d. -f2)"
+  [ "$_major" -gt 0 ] || [ "$_minor" -ge 16 ]
+}
+
+gen_setup_token() {
+  if command -v openssl >/dev/null 2>&1; then openssl rand -hex 18
+  else head -c 18 /dev/urandom | od -An -tx1 | tr -d ' \n'; fi
+}
+
+# Firewall hint: an active ufw that does not allow the panel port makes the
+# new 0.0.0.0 bind look broken from outside.
+#   $1 port
+warn_if_firewalled() {
+  command -v ufw >/dev/null 2>&1 || return 0
+  local _status
+  _status="$(ufw status 2>/dev/null || true)"
+  printf '%s' "$_status" | grep -q '^Status: active' || return 0
+  printf '%s' "$_status" | grep -Eq "^$1(/tcp)?[[:space:]]" && return 0
+  warn "ufw is active and does not allow port $1 — open it with: sudo ufw allow $1/tcp"
+}
+
+# Ask the panel whether it still needs its first admin, and if so print the
+# setup token with a link that pre-fills it (a URL fragment, so it never
+# reaches a request log).
+#   $1 probe base (http://127.0.0.1:<port>)  $2 public URL  $3 token
+print_setup_token_hint() {
+  local _status
+  [ -n "$3" ] || return 0
+  _status="$(curl -fsS -m 5 "$1/v1/auth/status" 2>/dev/null || true)"
+  printf '%s' "$_status" | grep -q '"initialized":false' || return 0
+  echo -e "  ${CYAN}Setup token:${NC} $3"
+  echo -e "  ${CYAN}First run:${NC}  $2/login#setup-token=$3"
+  echo -e "              (the first account created becomes the instance operator)"
+}
+
 # ── Release integrity (r702) ────────────────────────────────────────────────
 #
 # Since v0.10.43 every GitHub Release carries, besides CHANGELOG.md:
@@ -456,6 +541,7 @@ CHANNEL="${NINEDEPLOY_CHANNEL:-release}"
 PINNED_VERSION="${NINEDEPLOY_VERSION:-}"
 FORCE_REFRESH="${NINEDEPLOY_FORCE:-0}"
 INSTALL_MODE_FLAG=""
+PANEL_PRIVATE="${NINEDEPLOY_PRIVATE:-0}"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -487,6 +573,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --force|-f)
       FORCE_REFRESH=1
+      shift
+      ;;
+    --private)
+      PANEL_PRIVATE=1
       shift
       ;;
     v[0-9]*)
@@ -1295,6 +1385,10 @@ install_docker_mode() {
   local old_umask jwt_secret docker_gid
   old_umask=$(umask)
   umask 077
+  # 0.16: a first install (no .env yet) gets the 0.0.0.0 bind, a detected
+  # panel URL and a setup token; an upgrade keeps whatever it had.
+  local fresh_env=false
+  [ -f .env ] || fresh_env=true
   [ -f .env ] || touch .env
   jwt_secret="$(sed -n 's/^NINEDEPLOY_JWT_SECRET=//p' .env | tail -1)"
   [ -n "${NINEDEPLOY_JWT_SECRET:-}" ] && jwt_secret="$NINEDEPLOY_JWT_SECRET"
@@ -1321,6 +1415,25 @@ install_docker_mode() {
   # silently rebind on the next manual `docker compose up -d` without this.
   if [ -n "${NINEDEPLOY_BIND:-}" ] && ! grep -q '^NINEDEPLOY_BIND=' .env; then
     printf 'NINEDEPLOY_BIND=%s\n' "$NINEDEPLOY_BIND" >> .env
+  elif [ "$fresh_env" = true ] && ! grep -q '^NINEDEPLOY_BIND=' .env; then
+    # 0.16: publish the panel on every interface unless --private. Existing
+    # installs without the line keep the compose file's loopback default.
+    if [ "$PANEL_PRIVATE" = "1" ]; then
+      printf 'NINEDEPLOY_BIND=127.0.0.1\n' >> .env
+    elif ref_has_setup_token "$REF"; then
+      printf 'NINEDEPLOY_BIND=0.0.0.0\n' >> .env
+    else
+      # A pre-0.16 release has no setup-token gate: keep its loopback bind.
+      printf 'NINEDEPLOY_BIND=127.0.0.1\n' >> .env
+    fi
+  fi
+  # 0.16: one-time first-admin token (see the helpers near the top).
+  if ! grep -q '^NINEDEPLOY_SETUP_TOKEN=' .env; then
+    if [ -n "${NINEDEPLOY_SETUP_TOKEN:-}" ]; then
+      upsert_env NINEDEPLOY_SETUP_TOKEN "$NINEDEPLOY_SETUP_TOKEN"
+    elif [ "$fresh_env" = true ]; then
+      upsert_env NINEDEPLOY_SETUP_TOKEN "$(gen_setup_token)"
+    fi
   fi
   # Optional integrations: written only when provided by the environment and
   # never overwritten once present, so operator edits survive upgrades.
@@ -1330,12 +1443,15 @@ install_docker_mode() {
       printf '%s=%s\n' "$_var" "$_val" >> .env
     fi
   done
-  # The direct port is LOOPBACK-bound (see docker-compose.prod.yml), so the
-  # truthful default panel URL is localhost:port — not the host's LAN name.
-  # Once the operator attaches a domain and an ACME email, Traefik serves
-  # HTTPS on :443 and NINEDEPLOY_PUBLIC_URL should be set to that origin.
+  # The default panel URL follows the bind: http://<server-ip>:port when the
+  # port is published on 0.0.0.0 (0.16 fresh installs), localhost:port for
+  # the loopback bind older installs keep. Once the operator attaches a
+  # domain and an ACME email, Traefik serves HTTPS on :443 and
+  # NINEDEPLOY_PUBLIC_URL should be set to that origin.
+  local panel_bind
+  panel_bind="$(sed -n 's/^NINEDEPLOY_BIND=//p' .env | tail -1)"
   grep -q '^NINEDEPLOY_PUBLIC_URL=' .env \
-    || upsert_env NINEDEPLOY_PUBLIC_URL "http://localhost:${panel_port}"
+    || upsert_env NINEDEPLOY_PUBLIC_URL "$(panel_default_url "${panel_bind:-127.0.0.1}" "$panel_port")"
   chmod 600 .env
   umask "$old_umask"
 
@@ -1454,6 +1570,14 @@ install_docker_mode() {
   echo -e "${BOLD}╚══════════════════════════════════════════╝${NC}"
   echo ""
   echo -e "  ${CYAN}Dashboard:${NC}  ${PUBLIC_URL:-http://localhost:${HEALTH_PORT}}"
+  print_setup_token_hint "http://${HEALTH_HOST}:${HEALTH_PORT}" "${PUBLIC_URL:-http://localhost:${HEALTH_PORT}}" \
+    "$(sed -n 's/^NINEDEPLOY_SETUP_TOKEN=//p' .env | tail -1)"
+  case "$(sed -n 's/^NINEDEPLOY_BIND=//p' .env | tail -1)" in
+    ""|127.0.0.1|localhost)
+      echo -e "  ${CYAN}Access:${NC}     the panel port is bound to 127.0.0.1 — use an SSH tunnel (ssh -L ${HEALTH_PORT}:127.0.0.1:${HEALTH_PORT} <server>)"
+      echo -e "              or set NINEDEPLOY_BIND=0.0.0.0 in $DOCKER_INSTALL_DIR/.env and run: docker compose up -d" ;;
+    *) warn_if_firewalled "$HEALTH_PORT" ;;
+  esac
   echo -e "  ${CYAN}Mode:${NC}       Docker container (compose project 'ninedeploy', restart: unless-stopped)"
   echo -e "  ${CYAN}Directory:${NC}  $DOCKER_INSTALL_DIR (secrets in .env, mode 0600)"
   echo ""
@@ -2135,6 +2259,18 @@ if [ ! -f ".env" ]; then
   MASTER_KEY=$(openssl rand -hex 32 2>/dev/null || node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
   sed -i.bak "s|^NINEDEPLOY_MASTER_KEY=.*|NINEDEPLOY_MASTER_KEY=${MASTER_KEY}|" .env && rm -f .env.bak
 
+  # 0.16: the panel listens on 0.0.0.0 (the template default) unless
+  # --private; the public URL is the detected server address, and the first
+  # admin needs the one-time setup token printed at the end of this run.
+  _nd_host="${NINEDEPLOY_HOST:-0.0.0.0}"
+  [ "$PANEL_PRIVATE" = "1" ] && _nd_host="127.0.0.1"
+  sed -i.bak "s|^NINEDEPLOY_HOST=.*|NINEDEPLOY_HOST=${_nd_host}|" .env && rm -f .env.bak
+  _nd_port="${NINEDEPLOY_PORT:-3000}"
+  sed -i.bak "s|^NINEDEPLOY_PORT=.*|NINEDEPLOY_PORT=${_nd_port}|" .env && rm -f .env.bak
+  _nd_url="${NINEDEPLOY_PUBLIC_URL:-$(panel_default_url "$_nd_host" "$_nd_port")}"
+  sed -i.bak "s|^NINEDEPLOY_PUBLIC_URL=.*|NINEDEPLOY_PUBLIC_URL=${_nd_url}|" .env && rm -f .env.bak
+  printf 'NINEDEPLOY_SETUP_TOKEN=%s\n' "${NINEDEPLOY_SETUP_TOKEN:-$(gen_setup_token)}" >> .env
+
   chmod 600 .env
   umask "$_nd_old_umask"
 
@@ -2501,7 +2637,19 @@ fi
 
 HOST="${NINEDEPLOY_HOST:-0.0.0.0}"
 PORT="${NINEDEPLOY_PORT:-3000}"
-PUBLIC_URL="${NINEDEPLOY_PUBLIC_URL:-http://localhost:3000}"
+PUBLIC_URL="${NINEDEPLOY_PUBLIC_URL:-$(panel_default_url "$HOST" "$PORT")}"
+# 0.16: an upgraded install that predates the setup token and was never set
+# up uses the token the server generated in its data directory.
+SETUP_TOKEN="${NINEDEPLOY_SETUP_TOKEN:-}"
+if [ -z "$SETUP_TOKEN" ]; then
+  _nd_token_file="$(resolve_data_dir "$INSTALL_DIR" 2>/dev/null)/setup-token"
+  [ -f "$_nd_token_file" ] && SETUP_TOKEN="$(tr -d '[:space:]' < "$_nd_token_file")"
+fi
+case "$HOST" in
+  ""|0.0.0.0|::|"[::]"|127.0.0.1|localhost) PROBE_HOST="127.0.0.1" ;;
+  *:*) PROBE_HOST="[${HOST#[}"; PROBE_HOST="${PROBE_HOST%]}]" ;;
+  *) PROBE_HOST="$HOST" ;;
+esac
 
 echo ""
 echo -e "${BOLD}╔══════════════════════════════════════════╗${NC}"
@@ -2510,6 +2658,11 @@ echo -e "${BOLD}╚════════════════════�
 echo ""
 echo -e "  ${CYAN}Dashboard:${NC}  ${PUBLIC_URL}"
 echo -e "  ${CYAN}API:${NC}       ${PUBLIC_URL}/health"
+print_setup_token_hint "http://${PROBE_HOST}:${PORT}" "$PUBLIC_URL" "$SETUP_TOKEN"
+case "$HOST" in
+  127.0.0.1|localhost) echo -e "  ${CYAN}Access:${NC}     the panel listens on 127.0.0.1 only — use an SSH tunnel (ssh -L ${PORT}:127.0.0.1:${PORT} <server>)" ;;
+  *) [ "$(uname -s)" = "Linux" ] && warn_if_firewalled "$PORT" ;;
+esac
 echo ""
 echo -e "  ${YELLOW}Next steps:${NC}"
 echo -e "  1. Open ${PUBLIC_URL} in your browser"

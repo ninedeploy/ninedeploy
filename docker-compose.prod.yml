@@ -48,11 +48,12 @@ services:
     stop_grace_period: 90s
     ports:
       # Host-side port is variable; the container always listens on 3000.
-      # Bound to LOOPBACK by default: this port speaks plain HTTP, and login
-      # plus bearer/refresh tokens cross it — anyone on the network could
-      # read them. Terminate TLS (Traefik on :80/:443, or your own proxy) and
-      # reach the panel through it; set NINEDEPLOY_BIND=0.0.0.0 only if you
-      # explicitly accept plaintext exposure on the LAN.
+      # Bound to LOOPBACK when NINEDEPLOY_BIND is unset: this port speaks
+      # plain HTTP, and login plus bearer/refresh tokens cross it. Since 0.16
+      # the installer writes NINEDEPLOY_BIND=0.0.0.0 on FRESH installs (not
+      # with --private) so http://<server-ip>:3000 works out of the box, and
+      # gates the first admin on NINEDEPLOY_SETUP_TOKEN. Once a domain with
+      # HTTPS is attached, set NINEDEPLOY_BIND=127.0.0.1 and use the domain.
       - "${NINEDEPLOY_BIND:-127.0.0.1}:${NINEDEPLOY_PORT:-3000}:3000"
     environment:
       NODE_ENV: production
@@ -60,6 +61,9 @@ services:
       # known defaults (see apps/server/src/env.ts).
       NINEDEPLOY_JWT_SECRET: "${NINEDEPLOY_JWT_SECRET:?generate one: openssl rand -hex 32}"
       NINEDEPLOY_PUBLIC_URL: ${NINEDEPLOY_PUBLIC_URL:-http://localhost:3000}
+      # One-time token the first-run admin form requires (0.16; empty = the
+      # panel generates one in /data/setup-token and logs it).
+      NINEDEPLOY_SETUP_TOKEN: ${NINEDEPLOY_SETUP_TOKEN:-}
       # Optional integrations (set in .env; empty values are treated as unset):
       NINEDEPLOY_ACME_EMAIL: ${NINEDEPLOY_ACME_EMAIL:-}
       NINEDEPLOY_DNS_PROVIDER: ${NINEDEPLOY_DNS_PROVIDER:-}

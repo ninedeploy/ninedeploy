@@ -20,6 +20,7 @@ const h = vi.hoisted(() => {
     isServerReachable: vi.fn(),
     startServerContainer: vi.fn(),
     waitForServerReady: vi.fn(),
+    readLocalSetupToken: vi.fn(),
   };
 });
 
@@ -34,6 +35,7 @@ vi.mock('../src/lib/serverRunner.js', () => ({
   isServerReachable: h.isServerReachable,
   startServerContainer: h.startServerContainer,
   waitForServerReady: h.waitForServerReady,
+  readLocalSetupToken: h.readLocalSetupToken,
   normalizeServerUrl: (u: string) => u || 'http://default:3000',
 }));
 
@@ -81,6 +83,57 @@ describe('setupAction', () => {
     expect(logSpy).toHaveBeenCalledWith('✓ Admin account created: admin@x.io');
     expect(logSpy).toHaveBeenCalledWith('  Credentials saved — you are logged in.');
     expect(process.exitCode).toBe(0);
+  });
+
+  it('asks for the setup token when the server requires one (0.16)', async () => {
+    const setup = vi.fn().mockResolvedValue({ tokens: { accessToken: 't' }, user: { email: 'admin@x.io' } });
+    const status = vi.fn().mockResolvedValue({ initialized: false, setupTokenRequired: true });
+    h.createClient.mockReturnValue({ auth: { setup, status } });
+    h.prompt.mockResolvedValueOnce('  tok-from-installer  ');
+
+    await setupAction();
+
+    expect(h.prompt).toHaveBeenNthCalledWith(4, 'Setup token (printed by the installer)');
+    expect(setup).toHaveBeenCalledWith({ email: 'admin@x.io', password: 'secret-pass', name: 'Ada', setupToken: 'tok-from-installer' });
+  });
+
+  it('reads the token from a local panel container instead of prompting', async () => {
+    h.prompt.mockReset();
+    h.prompt
+      .mockResolvedValueOnce('http://localhost:3000')
+      .mockResolvedValueOnce('admin@x.io')
+      .mockResolvedValueOnce('Ada');
+    h.readLocalSetupToken.mockResolvedValue('container-token');
+    const setup = vi.fn().mockResolvedValue({ tokens: { accessToken: 't' }, user: { email: 'admin@x.io' } });
+    const status = vi.fn().mockResolvedValue({ initialized: false, setupTokenRequired: true });
+    h.createClient.mockReturnValue({ auth: { setup, status } });
+
+    await setupAction();
+
+    expect(h.prompt).toHaveBeenCalledTimes(3);
+    expect(setup).toHaveBeenCalledWith({ email: 'admin@x.io', password: 'secret-pass', name: 'Ada', setupToken: 'container-token' });
+  });
+
+  it('uses --setup-token without probing or prompting', async () => {
+    const setup = vi.fn().mockResolvedValue({ tokens: { accessToken: 't' }, user: { email: 'admin@x.io' } });
+    const status = vi.fn();
+    h.createClient.mockReturnValue({ auth: { setup, status } });
+
+    await setupAction({ setupToken: 'flag-token' });
+
+    expect(status).not.toHaveBeenCalled();
+    expect(h.prompt).toHaveBeenCalledTimes(3);
+    expect(setup).toHaveBeenCalledWith({ email: 'admin@x.io', password: 'secret-pass', name: 'Ada', setupToken: 'flag-token' });
+  });
+
+  it('sends no token when the server does not ask for one', async () => {
+    const setup = vi.fn().mockResolvedValue({ tokens: { accessToken: 't' }, user: { email: 'admin@x.io' } });
+    const status = vi.fn().mockResolvedValue({ initialized: false, setupTokenRequired: false });
+    h.createClient.mockReturnValue({ auth: { setup, status } });
+
+    await setupAction();
+
+    expect(setup).toHaveBeenCalledWith({ email: 'admin@x.io', password: 'secret-pass', name: 'Ada' });
   });
 
   it('omits the display name when not provided', async () => {

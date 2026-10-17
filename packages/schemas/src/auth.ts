@@ -4,6 +4,8 @@ export const register = z.object({
   email: z.email().max(255),
   password: z.string().min(8).max(128),
   name: z.string().min(1).max(100).optional(),
+  /** First-run setup token (0.16): required by the bootstrap of an empty production instance. */
+  setupToken: z.string().max(200).optional(),
 });
 export type Register = z.infer<typeof register>;
 

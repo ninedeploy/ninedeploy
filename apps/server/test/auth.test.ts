@@ -1,4 +1,4 @@
-﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
+﻿import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 import { authRoutes, createFirstAdmin, registerAccount } from '../src/modules/auth.js';
 import { asUser, buildTestApp, captureAudits, createFakeDb, sessionRow, tokenRow, userRow } from './helpers.js';
 
@@ -60,6 +60,52 @@ describe('auth module helpers', () => {  it('createFirstAdmin succeeds when no u
     const result = await createFirstAdmin(db, validRegister as never);
     expect(result.user).toMatchObject({ id: 1, email: 'new@example.com', isOperator: true });
     expect(result.tokens).toEqual({ accessToken: F.accessToken, refreshToken: F.refreshToken, expiresIn: 900 });
+  });
+
+  describe('0.16 setup token', () => {
+    const TOKEN = ['setup', 'token', 'fixture', 'value'].join('-');
+    beforeEach(() => {
+      process.env['NINEDEPLOY_SETUP_TOKEN'] = TOKEN;
+    });
+    afterEach(() => {
+      delete process.env['NINEDEPLOY_SETUP_TOKEN'];
+    });
+    const emptyDb = () => createFakeDb({
+      counts: { users: [{ n: 0 }] },
+      insert: { users: [userRow({ id: 1, email: 'new@example.com' })] },
+    });
+
+    it('createFirstAdmin refuses the bootstrap without the token', async () => {
+      await expect(createFirstAdmin(emptyDb(), validRegister as never)).rejects.toMatchObject({ statusCode: 403, code: 'setup_token_required' });
+    });
+
+    it('createFirstAdmin refuses a wrong token', async () => {
+      await expect(createFirstAdmin(emptyDb(), { ...validRegister, setupToken: `${TOKEN}x` } as never))
+        .rejects.toMatchObject({ statusCode: 403, code: 'setup_token_required' });
+    });
+
+    it('createFirstAdmin accepts the token', async () => {
+      const result = await createFirstAdmin(emptyDb(), { ...validRegister, setupToken: TOKEN } as never);
+      expect(result.user).toMatchObject({ id: 1, isOperator: true });
+    });
+
+    it('the first /register is gated too, later ones are not', async () => {
+      await expect(registerAccount(emptyDb(), validRegister as never)).rejects.toMatchObject({ statusCode: 403 });
+      const later = createFakeDb({
+        counts: { users: [{ n: 1 }] },
+        insert: { users: [userRow({ id: 2, email: 'new@example.com', isOperator: false })] },
+      });
+      await expect(registerAccount(later, validRegister as never)).resolves.toMatchObject({ user: { id: 2 } });
+    });
+
+    it('status asks for the token only while uninitialized', async () => {
+      const fresh = await buildTestApp({ db: createFakeDb({ counts: { users: [{ n: 0 }] } }) });
+      await fresh.register(authRoutes);
+      expect((await fresh.inject({ method: 'GET', url: '/status' })).json()).toMatchObject({ setupTokenRequired: true });
+      const done = await buildTestApp({ db: createFakeDb({ counts: { users: [{ n: 1 }] } }) });
+      await done.register(authRoutes);
+      expect((await done.inject({ method: 'GET', url: '/status' })).json()).toMatchObject({ setupTokenRequired: false });
+    });
   });
 
   it('createFirstAdmin conflicts when users already exist', async () => {
@@ -130,21 +176,21 @@ describe('auth routes', () => {
     await app.register(authRoutes);
     const res = await app.inject({ method: 'GET', url: '/status' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ initialized: false, allowRegistration: false });
+    expect(res.json()).toEqual({ initialized: false, allowRegistration: false, setupTokenRequired: false });
   });
 
   it('reports initialized when users exist', async () => {
     const app = await buildTestApp({ db: createFakeDb({ counts: { users: [{ n: 3 }] } }) });
     await app.register(authRoutes);
     const res = await app.inject({ method: 'GET', url: '/status' });
-    expect(res.json()).toEqual({ initialized: true, allowRegistration: false });
+    expect(res.json()).toEqual({ initialized: true, allowRegistration: false, setupTokenRequired: false });
   });
 
   it('treats a missing count row as zero users', async () => {
     const app = await buildTestApp({ db: createFakeDb({ counts: {} }) });
     await app.register(authRoutes);
     const res = await app.inject({ method: 'GET', url: '/status' });
-    expect(res.json()).toEqual({ initialized: false, allowRegistration: false });
+    expect(res.json()).toEqual({ initialized: false, allowRegistration: false, setupTokenRequired: false });
   });
 
   it('registers a user', async () => {
@@ -198,7 +244,7 @@ describe('auth routes', () => {
     });
     await app.register(authRoutes);
     const res = await app.inject({ method: 'GET', url: '/status' });
-    expect(res.json()).toEqual({ initialized: true, allowRegistration: false });
+    expect(res.json()).toEqual({ initialized: true, allowRegistration: false, setupTokenRequired: false });
   });
 
   it('rejects an invalid register payload', async () => {

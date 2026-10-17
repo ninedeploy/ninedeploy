@@ -8,7 +8,8 @@ interface AuthContextValue {
   user: PublicUser | null;
   loading: boolean;
   login: (email: string, password: string, totpCode?: string) => Promise<void>;
-  setup: (email: string, password: string, name?: string) => Promise<void>;
+  /** `setupToken` (0.16): the installer's one-time token, when the instance requires one. */
+  setup: (email: string, password: string, name?: string, setupToken?: string) => Promise<void>;
   /** Passwordless sign-in with a registered passkey (WebAuthn). */
   loginWithPasskey: () => Promise<void>;
   logout: () => void;
@@ -85,8 +86,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSessionTokens(session.tokens.accessToken, session.tokens.refreshToken);
       setUser(session.user);
     },
-    setup: async (email, password, name) => {
-      const session = await api.auth.setup({ email, password, name });
+    setup: async (email, password, name, setupToken) => {
+      const session = await api.auth.setup(setupToken ? { email, password, name, setupToken } : { email, password, name });
       sessionRevision.current++;
       queryClient.clear();
       setSessionTokens(session.tokens.accessToken, session.tokens.refreshToken);

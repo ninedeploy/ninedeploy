@@ -19,6 +19,7 @@ import { generateSecret, otpauthUri } from '../lib/totp.js';
 import { consumeTotpCode } from '../lib/totpReplay.js';
 import { audit } from '../lib/audit.js';
 import { assertStepUp } from '../lib/stepUp.js';
+import { assertSetupToken, clearSetupTokenFile, requiredSetupToken } from '../lib/setupToken.js';
 import { getSetting } from '../lib/settings.js';
 import { findLiveSession, issueSessionTokens, refreshSessionTokens, revokeAllSessions, revokeApiTokens } from '../lib/sessions.js';
 import { beginAuthentication, beginRegistration, finishAuthentication, finishRegistration, legacyCredentialId } from '../lib/webauthn.js';
@@ -160,6 +161,9 @@ async function userCount(db: Pick<DB, 'select'>): Promise<number> {
 export async function createFirstAdmin(db: DB, input: Register) {
   const result = await db.transaction(async (tx) => {
     if ((await userCount(tx)) > 0) throw conflict('Instance is already initialized');
+    // 0.16: the bootstrap mints the instance operator — gate it on the
+    // one-time setup token (lib/setupToken.ts).
+    assertSetupToken(input.setupToken);
     const email = normalizeEmail(input.email);
     const passwordHash = await hashPassword(input.password);
     const [user] = await tx
@@ -176,6 +180,7 @@ export async function createFirstAdmin(db: DB, input: Register) {
     await ensureDefaultWorkspace(tx, user);
     return { user: toUser(user, true), tokens: await issueSessionTokens(tx, user), rawUser: user };
   });
+  clearSetupTokenFile();
   // r222: a new account (or the first admin) is a security event of its own.
   void audit(db, result.rawUser.id, 'auth.register', result.rawUser.email);
   return { user: result.user, tokens: result.tokens };
@@ -188,6 +193,7 @@ export async function registerAccount(db: DB, input: Register) {
   // between two simultaneous first registrations must not create two users.
   const result = await db.transaction(async (tx) => {
     const isFirst = (await userCount(tx)) === 0;
+    if (isFirst) assertSetupToken(input.setupToken);
     // r159: the unique index on users.email is case-sensitive, while login,
     // invitations and domain transfers match on lower(email). Registering
     // `Victim@corp.com` next to `victim@corp.com` auto-accepted the victim's
@@ -216,8 +222,9 @@ export async function registerAccount(db: DB, input: Register) {
       await ensureDefaultWorkspace(tx, user);
       operator = true;
     }
-    return { user: toUser(user, operator), tokens: await issueSessionTokens(tx, user), rawUser: user };
+    return { user: toUser(user, operator), tokens: await issueSessionTokens(tx, user), rawUser: user, isFirst };
   });
+  if (result.isFirst) clearSetupTokenFile();
   // r222: a new account (or the first admin) is a security event of its own.
   void audit(db, result.rawUser.id, 'auth.register', result.rawUser.email);
   return { user: result.user, tokens: result.tokens };
@@ -242,10 +249,16 @@ const FORGOT_LIMIT = { max: 5, timeWindow: '1 minute' };
 export const authRoutes: FastifyPluginAsync = async (app) => {
   // Public: whether the instance has any users yet (drives first-run setup UI)
   // and whether open registration is currently allowed (drives the register form).
-  app.get('/status', async () => ({
-    initialized: (await userCount(app.db)) > 0,
-    allowRegistration: await getSetting(app.db, 'allow_registration', ALLOW_REGISTRATION_DEFAULT),
-  }));
+  // 0.16: `setupTokenRequired` tells the first-run form to ask for the
+  // installer's one-time setup token (lib/setupToken.ts).
+  app.get('/status', async () => {
+    const initialized = (await userCount(app.db)) > 0;
+    return {
+      initialized,
+      allowRegistration: await getSetting(app.db, 'allow_registration', ALLOW_REGISTRATION_DEFAULT),
+      setupTokenRequired: !initialized && requiredSetupToken() !== null,
+    };
+  });
 
   /**
    * `GET /v1/auth/token` — introspect the current bearer

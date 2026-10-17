@@ -1,5 +1,6 @@
 import { buildApp } from './app.js';
 import { config } from './config.js';
+import { announceSetupToken } from './lib/setupToken.js';
 
 async function main(): Promise<void> {
   // r175: the image's default command is this file. A node started with
@@ -18,6 +19,7 @@ async function main(): Promise<void> {
   try {
     await app.listen({ host: config.host, port: config.port });
     app.log.info(`NineDeploy API listening on http://${config.host}:${config.port}`);
+    await announceSetupToken(app.db, app.log).catch((err: unknown) => app.log.error({ err }, 'setup token check failed'));
   } catch (err) {
     app.log.error(err);
     process.exit(1);

@@ -5,13 +5,14 @@ import {
   isDockerAvailable,
   isServerReachable,
   normalizeServerUrl,
+  readLocalSetupToken,
   startServerContainer,
   waitForServerReady,
 } from '../lib/serverRunner.js';
 import { spinner, success } from '../lib/format.js';
 
 /** `ninedeploy setup` — create the first admin user on a fresh instance. */
-export async function setupAction(): Promise<void> {
+export async function setupAction(opts: { setupToken?: string } = {}): Promise<void> {
   const existing = loadConfig();
   const rawUrl = await prompt('Server URL', existing.baseUrl);
   const baseUrl = normalizeServerUrl(rawUrl);
@@ -58,8 +59,20 @@ export async function setupAction(): Promise<void> {
   }
 
   const client = createClient({ baseUrl });
+  // 0.16: a fresh production instance gates the bootstrap on the installer's
+  // one-time setup token. Ask only when the server says it needs one (an
+  // older server has no such field and takes none).
+  let setupToken = (opts.setupToken ?? process.env['NINEDEPLOY_SETUP_TOKEN'] ?? '').trim();
+  if (!setupToken) {
+    const status = await Promise.resolve().then(() => client.auth.status()).catch(() => null);
+    if (status?.setupTokenRequired) {
+      // A panel this CLI started locally keeps its generated token in the container.
+      if (isLocal) setupToken = (await readLocalSetupToken()) ?? '';
+      if (!setupToken) setupToken = (await prompt('Setup token (printed by the installer)')).trim();
+    }
+  }
   try {
-    const session = await client.auth.setup({ email, password, name });
+    const session = await client.auth.setup(setupToken ? { email, password, name, setupToken } : { email, password, name });
     // Both tokens: the access token alone dies with the 15-minute TTL.
     saveConfig({ baseUrl, token: session.tokens.accessToken, refreshToken: session.tokens.refreshToken });
     console.log(`✓ Admin account created: ${session.user.email}`);
@@ -68,6 +81,7 @@ export async function setupAction(): Promise<void> {
     if (err instanceof NineDeployError) {
       console.error(`✗ Setup failed (${err.status}): ${err.message}`);
       if (err.status === 409) console.error('  The instance already has an admin user.');
+      if (err.status === 403) console.error('  Pass the setup token the installer printed: ninedeploy setup --setup-token <token>');
     } else {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('✗ Setup failed:', msg);

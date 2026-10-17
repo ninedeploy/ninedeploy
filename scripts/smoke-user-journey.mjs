@@ -1050,6 +1050,8 @@ async function main() {
     docker(['run', '-d', '--name', PANEL, '--network', NET, `-p`, `127.0.0.1:${PANEL_PORT}:3000`,
       '-v', `${VOLUME}:/data`,
       '-e', `NINEDEPLOY_JWT_SECRET=${jwt}`,
+      // 0.16: the first admin needs the setup token (lib/setupToken.ts).
+      '-e', 'NINEDEPLOY_SETUP_TOKEN=nd-smoke-setup-token',
       '-e', `NINEDEPLOY_MASTER_KEY=${key}`,
       '-e', `DOCKER_HOST=tcp://${DIND}:2375`,
       IMAGE]);
@@ -1078,7 +1080,7 @@ async function main() {
   // ── register the first admin ────────────────────────────────────────────
   const email = `journey-${suffix}@nd.local`;
   const password = 'Journey-0123456!';
-  const reg = await api('/v1/auth/register', { method: 'POST', body: { email, password, name: 'Journey' } });
+  const reg = await api('/v1/auth/register', { method: 'POST', body: { email, password, name: 'Journey', setupToken: 'nd-smoke-setup-token' } });
   if (reg.status !== 200 || !reg.json?.tokens?.accessToken) fail(`register failed: ${reg.status} ${reg.text.slice(0, 200)}`);
   const token = reg.json.tokens.accessToken;
   step('first admin registered (operator)');

@@ -115,6 +115,21 @@ export async function getContainerState(containerName = 'ninedeploy'): Promise<C
 }
 
 /** Start or run the NineDeploy server Docker container. */
+/**
+ * The setup token a local panel container generated (0.16: a production
+ * panel without NINEDEPLOY_SETUP_TOKEN writes it to /data/setup-token).
+ * Null when the container is not there or has no token file.
+ */
+export async function readLocalSetupToken(containerName = 'ninedeploy'): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync('docker', ['exec', containerName, 'cat', '/data/setup-token']);
+    const token = String(stdout).trim();
+    return token || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function startServerContainer(
   opts: ServerRunnerOptions = {},
 ): Promise<{ port: number; newlyCreated: boolean }> {

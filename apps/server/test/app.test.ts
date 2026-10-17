@@ -106,6 +106,28 @@ describe('buildApp', () => {
     await app.close();
   });
 
+  it('kernel/lib loggers write to the app pino logger while it runs, and to the console again after close', async () => {
+    const app = await buildApp();
+    await app.ready();
+    // Same module instance buildApp wired (buildApp() above reset the registry, then imported app.js).
+    const { createLogger } = await import('../src/lib/log.js');
+    const child = { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
+    const childSpy = vi.spyOn(app.log, 'child').mockReturnValue(child as never);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const err = new Error('listener blew up');
+    createLogger('EventBus-probe').error('listener failed:', err);
+    expect(childSpy).toHaveBeenCalledWith({ scope: 'EventBus-probe' });
+    expect(child.error).toHaveBeenCalledWith({ err }, 'listener failed:');
+    expect(consoleError).not.toHaveBeenCalled();
+
+    await app.close();
+    createLogger('EventBus-probe').error('after close');
+    expect(consoleError).toHaveBeenCalledWith('[EventBus-probe] after close');
+    expect(child.error).toHaveBeenCalledTimes(1);
+    childSpy.mockRestore();
+    consoleError.mockRestore();
+  });
+
   it('0.15: the route registry records the live route table from the first plugin on', async () => {
     const app = await buildApp();
     await app.ready();
@@ -122,7 +144,7 @@ describe('buildApp', () => {
     await createUsersTable(app);
     const res = await app.inject({ method: 'GET', url: '/v1/auth/status' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ initialized: false, allowRegistration: false });
+    expect(res.json()).toEqual({ initialized: false, allowRegistration: false, setupTokenRequired: false });
     await app.close();
   });
 

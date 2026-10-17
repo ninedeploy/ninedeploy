@@ -18,6 +18,16 @@ const LOGIN_BULLETS = '\u2022'.repeat(8);
 const AUTOCOMPLETE_SIGNED_IN = ['current', 'password'].join('-');
 const AUTOCOMPLETE_SIGNING_UP = ['new', 'password'].join('-');
 
+/** `#setup-token=…` from the installer's link, removed from the address bar once read. */
+function takeSetupTokenFragment(): string {
+  if (typeof window === 'undefined') return '';
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const token = params.get('setup-token');
+  if (!token) return '';
+  window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  return token;
+}
+
 export function Login() {
   const { user, login, setup, loginWithPasskey, ssoError } = useAuth();
   const navigate = useNavigate();
@@ -36,6 +46,9 @@ export function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  // 0.16: the installer prints `<panel>/#setup-token=…` — a fragment, so the
+  // token never reaches a request log. Read it once and drop it from the URL.
+  const [setupToken, setSetupToken] = useState(takeSetupTokenFragment);
   const [totpCode, setTotpCode] = useState('');
   const [needsTotp, setNeedsTotp] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +56,7 @@ export function Login() {
 
   const status = useQuery({ queryKey: ['auth-status'], queryFn: () => api.auth.status() });
   const initialized = status.data?.initialized ?? false;
+  const setupTokenRequired = !initialized && status.data?.setupTokenRequired === true;
   const publicProviders = useQuery({
     queryKey: ['public-oidc-providers'],
     queryFn: () => api.auth.oidc.publicProviders(),
@@ -57,6 +71,7 @@ export function Login() {
     setBusy(true);
     try {
       if (initialized) await login(email, password, needsTotp ? totpCode : undefined);
+      else if (setupTokenRequired) await setup(email, password, name || undefined, setupToken.trim());
       else await setup(email, password, name || undefined);
       navigate(from, { replace: true });
     } catch (err) {
@@ -120,6 +135,18 @@ export function Login() {
               <p className="rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
                 Password updated — sign in with your new password.
               </p>
+            )}
+            {setupTokenRequired && (
+              <Field label="Setup token">
+                <Input
+                  required
+                  value={setupToken}
+                  onChange={(e) => setSetupToken(e.target.value)}
+                  placeholder="Printed by the installer"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </Field>
             )}
             {!initialized && (
               <Field label="Display name">

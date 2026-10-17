@@ -44,7 +44,8 @@ import type { Transport } from '../transport.js';
 
 export interface AuthApi {
   auth: {
-    status: () => Promise<{ initialized: boolean }>;
+    /** `setupTokenRequired` (0.16): the first-run bootstrap needs the installer's setup token. */
+    status: () => Promise<{ initialized: boolean; allowRegistration?: boolean; setupTokenRequired?: boolean }>;
     /**
      * Introspect the current bearer token. Returns the
      * token's id (when opaque), name, scopes, expiry and
@@ -224,7 +225,7 @@ export function authApi(t: Transport): AuthApi {
   const { get, send, request } = t;
   return {
     auth: {
-      status: () => get<{ initialized: boolean }>('/v1/auth/status'),
+      status: () => get<{ initialized: boolean; allowRegistration?: boolean; setupTokenRequired?: boolean }>('/v1/auth/status'),
       introspectToken: () => get<TokenIntrospection>('/v1/auth/token'),
       setup: (input) => send<Session>('POST', '/v1/setup', input),
       register: (input) => send<Session>('POST', '/v1/auth/register', input),

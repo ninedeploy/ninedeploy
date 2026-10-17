@@ -3,6 +3,7 @@ import { oauthIdentities, users, type DB, type OidcProvider } from '@ninedeploy/
 import { hashPassword, randomToken, sha256 } from './crypto.js';
 import { normalizeEmail, SSO_TOTP_REFUSAL } from './authHelpers.js';
 import { forbidden, HttpError, unauthorized } from './errors.js';
+import { requiredSetupToken } from './setupToken.js';
 import { findLiveSession } from './sessions.js';
 import type { OAuthLinkContext, OidcUserInfo } from './oauth.js';
 
@@ -42,6 +43,11 @@ export async function resolveOAuthIdentity(db: DB, provider: OidcProvider, info:
       if (identity) throw new HttpError(403, 'account_link_required', 'This SSO identity must be linked again from account settings');
       const [total] = await tx.select({ n: count() }).from(users);
       const firstUser = (total?.n ?? 0) === 0;
+      // 0.16: SSO cannot carry the setup token, so it never bootstraps an
+      // instance that requires one — the operator signs up with the token first.
+      if (firstUser && requiredSetupToken() !== null) {
+        throw new HttpError(403, 'setup_token_required', 'Create the first admin account with the setup token before signing in with SSO');
+      }
       const [created] = await tx.insert(users).values({
         email: normalizeEmail(info.email),
         passwordHash: await hashPassword(randomToken(32)),
