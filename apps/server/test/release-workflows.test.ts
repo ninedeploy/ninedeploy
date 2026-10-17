@@ -14,7 +14,8 @@ describe('release delivery invariants', () => {
   it('never deletes historical registry versions during publication', () => {
     const workflow = readWorkflow('release-publish.yml');
     for (const job of Object.values(workflow.jobs)) {
-      for (const step of job.steps) expect(step.run ?? '').not.toMatch(/gh api --method DELETE/);
+      // A reusable-workflow job (`uses:`) has no steps of its own.
+      for (const step of job.steps ?? []) expect(step.run ?? '').not.toMatch(/gh api --method DELETE/);
     }
   });
 
@@ -254,7 +255,7 @@ describe('r581: publication is gated on the end-to-end smokes', () => {
   type Job = {
     needs?: string | string[];
     permissions?: Record<string, string>;
-    steps: Array<Step & { id?: string; if?: string; 'timeout-minutes'?: number }>;
+    steps?: Array<Step & { id?: string; if?: string; 'timeout-minutes'?: number }>;
   };
   const jobs = () => readWorkflow('release-publish.yml').jobs as unknown as Record<string, Job>;
   const needsOf = (job: Job) => [job.needs ?? []].flat();
@@ -329,17 +330,34 @@ describe('r581: publication is gated on the end-to-end smokes', () => {
     for (const [name, job] of Object.entries(all)) {
       if (name === 'promote-release') continue;
       expect(job.permissions?.['contents'], name).toBe('read');
-      expect(job.steps.some((s) => s.run?.includes('gh release')), name).toBe(false);
-      expect(job.steps.some((s) => s.run?.includes('imagetools create')), name).toBe(false);
+      expect((job.steps ?? []).some((s) => s.run?.includes('gh release')), name).toBe(false);
+      expect((job.steps ?? []).some((s) => s.run?.includes('imagetools create')), name).toBe(false);
     }
   });
 
   it('every action stays pinned to a full commit SHA', () => {
     for (const job of Object.values(jobs())) {
-      for (const step of job.steps) {
+      for (const step of job.steps ?? []) {
         if (step.uses) expect(step.uses).toMatch(/@[0-9a-f]{40}$/);
       }
     }
+  });
+
+  it('0.16: npm packages publish only after promotion, through the retryable publish-npm.yml', () => {
+    const job = jobs()['publish-npm'] as unknown as { needs: string[]; uses: string; with: Record<string, string>; secrets: string; permissions: Record<string, string> };
+    expect(needsOf(job as never)).toEqual(['promote-release']);
+    expect(job.uses).toBe('./.github/workflows/publish-npm.yml');
+    expect(job.with['move_latest']).toContain('needs.promote-release.outputs.move_latest');
+    expect(job.secrets).toBe('inherit');
+    expect(job.permissions['id-token']).toBe('write');
+    const npm = readWorkflow('publish-npm.yml') as unknown as { on: Record<string, unknown>; jobs: Record<string, Job> };
+    expect(Object.keys(npm.on)).toEqual(expect.arrayContaining(['workflow_call', 'workflow_dispatch']));
+    const publish = npm.jobs['publish']!.steps!.find((step) => step.run?.includes('npm publish'))!;
+    // npm's provenance check compares repository.url case-sensitively with the
+    // repository the run belongs to; v0.16.0's first publish died on it (E422).
+    expect(publish.run).toContain('git+https://github.com/${GITHUB_REPOSITORY}.git');
+    expect(publish.run).toContain('--provenance');
+    expect(publish.run).toMatch(/npm view "\$name@\$version"/);
   });
 
   it('the upgrade smoke pulls both images up front and fails loudly on a missing FROM release', () => {

@@ -1,0 +1,129 @@
+name: Publish npm packages
+
+# The npm half of a release (0.16): `ninedeploy` (CLI), @ninedeploy/schemas,
+# @ninedeploy/plugin-sdk, @ninedeploy/sdk and @ninedeploy/mcp, packed from the
+# release TAG and published with provenance (GitHub OIDC).
+#
+# release-publish.yml calls it after promote-release. It is also dispatchable
+# on its own (`gh workflow run publish-npm.yml -f tag=vX.Y.Z`) so a failed npm
+# step can be retried without re-running the image job, which would rebuild
+# and re-push the already signed `:vX.Y.Z`. Versions already on the registry
+# are skipped, so a retry is safe.
+#
+# repository.url: npm's provenance check compares it, case-sensitively, with
+# the repository the workflow ran in (`ninedeploy/ninedeploy`). v0.16.0's
+# manifests say `NineDeploy/NineDeploy` and cannot change, so the packed
+# manifests are pointed at $GITHUB_REPOSITORY before packing.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      move_latest:
+        description: 'Whether this tag is the highest release (npm dist-tag latest)'
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish (e.g. v0.16.0)'
+        required: true
+        type: string
+      move_latest:
+        description: 'Publish under dist-tag latest (true) or previous (false)'
+        required: true
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-npm-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # npm provenance: the job's OIDC token signs the package attestation.
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - name: Validate tag format (^v\d+\.\d+\.\d+$)
+        run: |
+          if ! printf '%s' "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::'$RELEASE_TAG' is not a vX.Y.Z tag"
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
+          cache: pnpm
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the published packages
+        run: pnpm --filter '@ninedeploy/schemas...' --filter '@ninedeploy/plugin-sdk...' --filter '@ninedeploy/sdk...' --filter '@ninedeploy/mcp...' --filter 'ninedeploy...' build
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          MOVE_LATEST: ${{ inputs.move_latest }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::error::The NPM_TOKEN repository secret is not set."
+            exit 1
+          fi
+          dist_tag=latest
+          [ "$MOVE_LATEST" = "true" ] || dist_tag=previous
+          repo_url="git+https://github.com/${GITHUB_REPOSITORY}.git"
+          out="$(mktemp -d)"
+          # Dependency order: a package is on the registry before anything
+          # that depends on it.
+          for dir in packages/schemas packages/plugin-sdk packages/sdk packages/mcp apps/cli; do
+            name="$(node -p "require('./$dir/package.json').name")"
+            version="$(node -p "require('./$dir/package.json').version")"
+            if [ "v$version" != "$RELEASE_TAG" ]; then
+              echo "::error::$name is $version, the release is $RELEASE_TAG"
+              exit 1
+            fi
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "::notice::$name@$version is already on npm — skipped."
+              continue
+            fi
+            REPO_URL="$repo_url" node -e '
+              const fs = require("fs");
+              const file = process.argv[1];
+              const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
+              pkg.repository = { ...(pkg.repository || {}), type: "git", url: process.env.REPO_URL };
+              fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
+            ' "$dir/package.json"
+            (cd "$dir" && pnpm pack --pack-destination "$out" >/dev/null)
+            tarball="$out/$(printf '%s' "$name" | sed 's|^@||; s|/|-|')-$version.tgz"
+            [ -f "$tarball" ] || { echo "::error::pnpm pack did not produce $tarball"; ls -l "$out"; exit 1; }
+            if tar -xOzf "$tarball" package/package.json | grep -q '"workspace:'; then
+              echo "::error::$name: the packed package.json still has a workspace: range"
+              exit 1
+            fi
+            npm publish "$tarball" --access public --provenance --tag "$dist_tag"
+            echo "Published $name@$version ($dist_tag)."
+          done

@@ -580,74 +580,19 @@ jobs:
   # were published by hand and sat at 0.10.6 while the panel reached 0.15.8 —
   # `npx ninedeploy` (which the installer's summary tells operators to run)
   # spoke to every new server with a five-release-old client. They now ship
-  # with the release, after promotion, from the same tag. `pnpm pack`
-  # rewrites the workspace:* ranges to this version; `npm publish` adds
-  # provenance (GitHub OIDC). A version that is already on the registry is
-  # skipped, so a re-run of the workflow is safe. An older tag (not the
-  # highest) is published under the `previous` dist-tag so `latest` never
-  # moves backwards (same r573 rule as `:latest`).
+  # with the release, after promotion, from the same tag. The steps live in
+  # publish-npm.yml so a failed npm publish can be retried on its own
+  # (`gh workflow run publish-npm.yml -f tag=vX.Y.Z`) without rebuilding the
+  # signed image. An older tag (not the highest) goes to the `previous`
+  # dist-tag so `latest` never moves backwards (same r573 rule as `:latest`).
   publish-npm:
     needs: [promote-release]
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
     permissions:
       contents: read
-      # npm provenance: the job's OIDC token signs the package attestation.
       id-token: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ env.RELEASE_TAG }}
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-
-      - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 26
-          cache: pnpm
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build the published packages
-        run: pnpm --filter '@ninedeploy/schemas...' --filter '@ninedeploy/plugin-sdk...' --filter '@ninedeploy/sdk...' --filter '@ninedeploy/mcp...' --filter 'ninedeploy...' build
-
-      - name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          MOVE_LATEST: ${{ needs.promote-release.outputs.move_latest }}
-        run: |
-          set -euo pipefail
-          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "::error::The NPM_TOKEN repository secret is not set."
-            exit 1
-          fi
-          dist_tag=latest
-          [ "$MOVE_LATEST" = "true" ] || dist_tag=previous
-          out="$(mktemp -d)"
-          # Dependency order: a package is on the registry before anything
-          # that depends on it.
-          for dir in packages/schemas packages/plugin-sdk packages/sdk packages/mcp apps/cli; do
-            name="$(node -p "require('./$dir/package.json').name")"
-            version="$(node -p "require('./$dir/package.json').version")"
-            if [ "v$version" != "$RELEASE_TAG" ]; then
-              echo "::error::$name is $version, the release is $RELEASE_TAG"
-              exit 1
-            fi
-            if npm view "$name@$version" version >/dev/null 2>&1; then
-              echo "::notice::$name@$version is already on npm — skipped."
-              continue
-            fi
-            (cd "$dir" && pnpm pack --pack-destination "$out" >/dev/null)
-            tarball="$out/$(printf '%s' "$name" | sed 's|^@||; s|/|-|')-$version.tgz"
-            [ -f "$tarball" ] || { echo "::error::pnpm pack did not produce $tarball"; ls -l "$out"; exit 1; }
-            if tar -xOzf "$tarball" package/package.json | grep -q '"workspace:'; then
-              echo "::error::$name: the packed package.json still has a workspace: range"
-              exit 1
-            fi
-            npm publish "$tarball" --access public --provenance --tag "$dist_tag"
-            echo "Published $name@$version ($dist_tag)."
-          done
+    uses: ./.github/workflows/publish-npm.yml
+    with:
+      # `env` is not available here; same expression as RELEASE_TAG above.
+      tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      move_latest: ${{ needs.promote-release.outputs.move_latest }}
+    secrets: inherit
