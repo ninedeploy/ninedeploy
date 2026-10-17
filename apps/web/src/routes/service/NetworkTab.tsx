@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, Globe, Plus, Radio, Shield, Trash2, Wand2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { DomainRedirects } from './DomainRedirects.js';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, ConfirmDialog, Input, Skeleton, cn } from '../../components/ui.js';
@@ -566,7 +567,7 @@ function DomainItemRow({
                 ? 'bg-amber-500/15 text-amber-300 ring-amber-500/20 hover:bg-amber-500/25'
                 : 'bg-slate-500/15 text-slate-400 ring-slate-500/20 hover:bg-slate-500/25',
             )}
-            title="Configure Basic Auth, IP Whitelist & Rate Limiting"
+            title="Configure Basic Auth, IP allowlist, rate limiting and redirects"
           >
             <Shield size={10} />
             Security
@@ -681,6 +682,12 @@ function DomainItemRow({
               Save Security Settings
             </Button>
           </div>
+          {/* 0.16.1: shown only by a panel that reports the field. */}
+          {Array.isArray(d.redirects) && (
+            <div className="border-t border-white/5 pt-3">
+              <DomainRedirects serviceId={serviceId} domain={d} />
+            </div>
+          )}
         </div>
       )}
     </div>

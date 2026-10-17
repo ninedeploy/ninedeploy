@@ -3,6 +3,7 @@ import { createHash, randomUUID, X509Certificate } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { domains, serviceTargets, servers, services, type DB } from '@ninedeploy/db';
+import { redirectRegexProblem } from '@ninedeploy/schemas';
 import { eq } from 'drizzle-orm';
 import { config } from '../config.js';
 import { capture, run, sleep } from '../lib/exec.js';
@@ -1119,6 +1120,21 @@ export async function renderDynamicConfig(
       ? `HostRegexp(\`^[a-zA-Z0-9-]+\\.${escapeRegexp(host.slice(2))}$\`)`
       : `Host(\`${host}\`)`;
     if (wwwPair) hostMatcher = `Host(\`${apexHost}\`) || Host(\`www.${apexHost}\`)`;
+    // 0.16.1 redirect rules, first in the chain: a redirected request needs
+    // no auth, headers or rate limit. A stored regex Go's RE2 would refuse is
+    // skipped — one bad rule must not take the whole dynamic file down.
+    (d.redirects ?? []).forEach((rule, i) => {
+      if (!rule?.regex || !rule.replacement || redirectRegexProblem(rule.regex)) return;
+      const mw = `mw_${key}_redirect_${i}`;
+      mwList.push(mw);
+      middlewares.push(
+        `    ${mw}:\n` +
+          '      redirectRegex:\n' +
+          `        regex: "${yamlDoubleQuoted(rule.regex)}"\n` +
+          `        replacement: "${yamlDoubleQuoted(rule.replacement.replace(/[\r\n]/g, ''))}"\n` +
+          `        permanent: ${rule.permanent === true}\n`,
+      );
+    });
     const headerList = parseHeaders(d.headers);
     if (headerList.length > 0) {
       const mw = `mw_${key}_headers`;

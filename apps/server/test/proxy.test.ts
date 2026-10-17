@@ -1629,6 +1629,9 @@ describe('http→https redirect (r637)', () => {
   });
 });
 
+/** Traefik's first-capture placeholder, spelled so it is not read as a template string. */
+const CAPTURE_1 = '\u0024{1}';
+
 // ── r638 golden: the rendered dynamic config only uses what Traefik v3 has ──
 // A middleware TYPE Traefik does not know (r631's `sticky`), an unknown field
 // or a mis-indented key (the replica `healthCheck`) makes the file provider
@@ -1682,6 +1685,7 @@ describe('golden dynamic config is valid Traefik v3 (r638)', () => {
             ipAllowlist: '10.0.0.0/8, 1.2.3.4/32',
             rateLimitAverage: 10,
             rateLimitBurst: 20,
+            redirects: [{ regex: '^https://example\\.com/old/(.*)', replacement: `https://example.com/new/${CAPTURE_1}`, permanent: true }],
           },
           { id: 2, serviceId: 1, hostname: '*.example.com', path: '/', ssl: true, status: 'active' },
           { id: 3, serviceId: 2, hostname: 'api.example.com', path: '/v1', ssl: false, status: 'active' },
@@ -1764,6 +1768,68 @@ describe('golden dynamic config is valid Traefik v3 (r638)', () => {
       h.config.acmeEmail = null;
       Object.assign(h.config, { dnsProvider: null, dnsToken: null, wildcardDomain: '' });
     }
+  });
+});
+
+// ── 0.16.1 redirect rules ───────────────────────────────────────────────────
+describe('domain redirect rules (0.16.1)', () => {
+  type RDoc = { http: { routers: Record<string, { middlewares?: string[] }>; middlewares: Record<string, { redirectRegex?: Record<string, unknown> }> } };
+
+  it('renders each rule as a redirectRegex middleware, first in the router chain, with quotes and backslashes intact', async () => {
+    const db = stickyDb(
+      [
+        {
+          id: 1, serviceId: 1, hostname: 'example.com', path: '/', ssl: false, status: 'active',
+          ipAllowlist: '10.0.0.0/8',
+          redirects: [
+            { regex: '^http://example\\.com/old/(.*)', replacement: `http://example.com/new/${CAPTURE_1}`, permanent: true },
+            { regex: '^http://example\\.com/"q"', replacement: 'https://other.example/"x"\\y', permanent: false },
+          ],
+        },
+      ],
+      [svc(1, 'web')],
+      {},
+      {},
+    );
+    const yaml = await renderDynamicConfig(db as never, { serverId: null });
+    const doc = load(yaml) as RDoc;
+    expect(doc.http.middlewares['mw_web_1_redirect_0']?.redirectRegex).toEqual({
+      regex: '^http://example\\.com/old/(.*)',
+      replacement: `http://example.com/new/${CAPTURE_1}`,
+      permanent: true,
+    });
+    expect(doc.http.middlewares['mw_web_1_redirect_1']?.redirectRegex).toEqual({
+      regex: '^http://example\\.com/"q"',
+      replacement: 'https://other.example/"x"\\y',
+      permanent: false,
+    });
+    expect(doc.http.routers['web_1']?.middlewares).toEqual(['mw_web_1_redirect_0', 'mw_web_1_redirect_1', 'mw_web_1_ip']);
+  });
+
+  it('skips a stored rule Go RE2 would refuse instead of breaking the whole file', async () => {
+    const db = stickyDb(
+      [
+        {
+          id: 1, serviceId: 1, hostname: 'example.com', path: '/', ssl: false, status: 'active',
+          redirects: [
+            { regex: '^http://example\\.com/(?!keep)(.*)', replacement: 'http://example.com/', permanent: false },
+            { regex: '^http://example\\.com/a$', replacement: 'http://example.com/b', permanent: false },
+          ],
+        },
+      ],
+      [svc(1, 'web')],
+      {},
+      {},
+    );
+    const doc = load(await renderDynamicConfig(db as never, { serverId: null })) as RDoc;
+    expect(doc.http.middlewares['mw_web_1_redirect_0']).toBeUndefined();
+    expect(doc.http.routers['web_1']?.middlewares).toEqual(['mw_web_1_redirect_1']);
+  });
+
+  it('control: a domain without rules renders no redirect middleware', async () => {
+    const db = stickyDb([{ id: 1, serviceId: 1, hostname: 'example.com', path: '/', ssl: false, status: 'active' }], [svc(1, 'web')], {}, {});
+    const doc = load(await renderDynamicConfig(db as never, { serverId: null })) as RDoc;
+    expect(doc.http.routers['web_1']?.middlewares).toBeUndefined();
   });
 });
 

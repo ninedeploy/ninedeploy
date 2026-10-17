@@ -203,3 +203,70 @@ describe('NetworkTab path routing (0.16.1)', () => {
     expect(await screen.findByText(/already routed to another service/)).toBeInTheDocument();
   });
 });
+
+describe('NetworkTab domain redirects (0.16.1)', () => {
+  /** Traefik's first-capture placeholder, spelled so it is not read as a template string. */
+  const CAPTURE_1 = '\u0024{1}';
+  afterEach(cleanup);
+  const row = { id: 7, hostname: 'example.com', path: '/', ssl: true, redirectWww: false, status: 'active', redirects: [] as unknown[] };
+  beforeEach(() => {
+    vi.clearAllMocks();
+    apiMock.api.ports.list.mockResolvedValue([]);
+    apiMock.api.domains.update.mockResolvedValue({});
+  });
+
+  it('adds a moved-path rule, edits it and saves the list', async () => {
+    apiMock.api.domains.list.mockResolvedValue([row]);
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: /Security/ }));
+    expect(screen.getByText('No redirect rules.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Moved path/ }));
+    expect(screen.getByLabelText('Redirect 1 pattern')).toHaveValue('^https?://example\\.com/old/(.*)');
+    expect(screen.getByLabelText('Redirect 1 target')).toHaveValue(`https://example.com/new/${CAPTURE_1}`);
+    expect(screen.getByLabelText('Redirect 1 permanent')).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: /^Rule$/ }));
+    fireEvent.change(screen.getByLabelText('Redirect 2 pattern'), { target: { value: '^https://example\\.com/x$' } });
+    fireEvent.change(screen.getByLabelText('Redirect 2 target'), { target: { value: 'https://example.com/y' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save redirects' }));
+    await waitFor(() =>
+      expect(apiMock.api.domains.update).toHaveBeenCalledWith(1, 7, {
+        redirects: [
+          { regex: '^https?://example\\.com/old/(.*)', replacement: `https://example.com/new/${CAPTURE_1}`, permanent: true },
+          { regex: '^https://example\\.com/x$', replacement: 'https://example.com/y', permanent: false },
+        ],
+      }),
+    );
+    expect(await screen.findByText('2 redirect rules saved')).toBeInTheDocument();
+  });
+
+  it('flags a pattern Traefik cannot run and blocks saving; removing the rule clears it', async () => {
+    apiMock.api.domains.list.mockResolvedValue([{ ...row, redirects: [{ regex: '^a$', replacement: 'https://b/', permanent: false }] }]);
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: /Security/ }));
+    fireEvent.change(screen.getByLabelText('Redirect 1 pattern'), { target: { value: '^https://a/(?!keep)' } });
+    expect(screen.getByText(/lookahead \/ lookbehind are not supported/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save redirects' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Redirect 1 target'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove redirect 1' }));
+    expect(screen.getByRole('button', { name: 'Save redirects' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Save redirects' }));
+    await waitFor(() => expect(apiMock.api.domains.update).toHaveBeenCalledWith(1, 7, { redirects: [] }));
+    expect(await screen.findByText('Redirect rules removed')).toBeInTheDocument();
+  });
+
+  it("shows the server's refusal, and is absent on a panel without the field", async () => {
+    apiMock.api.domains.list.mockResolvedValue([row]);
+    apiMock.api.domains.update.mockRejectedValue(new Error('redirects.0.regex: not a valid regular expression'));
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: /Security/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Moved path/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save redirects' }));
+    expect(await screen.findByText(/not a valid regular expression/)).toBeInTheDocument();
+    cleanup();
+    const { redirects: _r, ...older } = row;
+    apiMock.api.domains.list.mockResolvedValue([older]);
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: /Security/ }));
+    expect(screen.queryByRole('button', { name: 'Save redirects' })).not.toBeInTheDocument();
+  });
+});

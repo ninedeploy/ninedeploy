@@ -651,6 +651,13 @@ export const deployments = sqliteTable(
   }),
 );
 
+/** One `domains.redirects` rule (0.16.1); validated by `redirectRule` in @ninedeploy/schemas. */
+export interface DomainRedirectRule {
+  regex: string;
+  replacement: string;
+  permanent: boolean;
+}
+
 /** `services.runtime_options` (0.16.1); validated by `runtimeOptions` in @ninedeploy/schemas. */
 export interface ServiceRuntimeOptions {
   /** `--gpus`: every GPU, or how many. */
@@ -769,6 +776,9 @@ export const domains = sqliteTable(
     rateLimitAverage: integer('rate_limit_average'),
     // Rate limit: burst peak requests allowed (0 or null = disabled)
     rateLimitBurst: integer('rate_limit_burst'),
+    // 0.16.1: redirect rules (JSON [{regex, replacement, permanent}]) rendered
+    // as Traefik redirectRegex middlewares on this domain's router. Null = none.
+    redirects: text('redirects', { mode: 'json' }).$type<DomainRedirectRule[]>(),
     status: text('status', { enum: domainStatus }).notNull().default('pending'),
     // H-2 layer 2: proof that the claimant controls the DNS zone. A hostname
     // outside this instance's own zone stays `pending` — and unrouted — until

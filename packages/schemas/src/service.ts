@@ -432,6 +432,39 @@ export const createDomain = z.object({
 });
 export type CreateDomainInput = z.input<typeof createDomain>;
 
+/**
+ * Why a redirect regex cannot go to Traefik, or null. Traefik compiles it
+ * with Go's RE2, which has no lookaround and no backreferences — and a regex
+ * Traefik refuses takes the whole dynamic config file down with it, so these
+ * are refused when saved. The rest is checked by compiling it here.
+ */
+export function redirectRegexProblem(regex: string): string | null {
+  if (/\(\?<?[=!]/.test(regex)) return 'lookahead / lookbehind are not supported (Traefik uses Go RE2)';
+  if (/\\[1-9]/.test(regex)) return 'backreferences such as \\1 are not supported (Traefik uses Go RE2)';
+  try {
+    new RegExp(regex);
+  } catch (err) {
+    return `not a valid regular expression (${err instanceof Error ? err.message : String(err)})`;
+  }
+  return null;
+}
+
+/** 0.16.1 one redirect rule of a domain (Dokploy's "Redirects"): Traefik `redirectRegex`. */
+export const redirectRule = z
+  .object({
+    /** Matched against the full request URL, e.g. `^https://example.com/old/(.*)`. */
+    regex: z.string().min(1).max(1000),
+    /** The target; `${1}` inserts the first capture group. */
+    replacement: z.string().min(1).max(2000).regex(/^[^\r\n]*$/, 'one line'),
+    /** 301/308 when true, 302/307 when false. */
+    permanent: z.boolean().default(false),
+  })
+  .superRefine((r, ctx) => {
+    const problem = redirectRegexProblem(r.regex);
+    if (problem) ctx.addIssue({ code: 'custom', path: ['regex'], message: problem });
+  });
+export type RedirectRule = z.infer<typeof redirectRule>;
+
 /** PATCHable routing extras for an existing domain. */
 export const domainPatch = z.object({
   ssl: z.boolean().optional(),
@@ -441,6 +474,8 @@ export const domainPatch = z.object({
   ipAllowlist: z.string().max(4000).optional().nullable(),
   rateLimitAverage: z.number().int().min(0).max(100000).optional().nullable(),
   rateLimitBurst: z.number().int().min(0).max(100000).optional().nullable(),
+  /** 0.16.1: redirect rules, applied in order; null or [] removes them. */
+  redirects: z.array(redirectRule).max(10).optional().nullable(),
 });
 export type DomainPatch = z.input<typeof domainPatch>;
 
@@ -456,6 +491,8 @@ export const domain = z.object({
   ipAllowlist: z.string().nullable().optional(),
   rateLimitAverage: z.number().nullable().optional(),
   rateLimitBurst: z.number().nullable().optional(),
+  /** 0.16.1 redirect rules (absent on older panels). */
+  redirects: z.array(z.object({ regex: z.string(), replacement: z.string(), permanent: z.boolean() })).optional(),
   status: z.string(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),

@@ -170,6 +170,7 @@ function serialize(d: Domain, showAuth = true) {
     ipAllowlist: d.ipAllowlist ?? null,
     rateLimitAverage: d.rateLimitAverage ?? null,
     rateLimitBurst: d.rateLimitBurst ?? null,
+    redirects: d.redirects ?? [],
     status: d.status,
     verifiedAt: d.verifiedAt ? d.verifiedAt.toISOString() : null,
     createdAt: d.createdAt.toISOString(),
@@ -514,6 +515,9 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
     if (input.ipAllowlist !== undefined) values.ipAllowlist = input.ipAllowlist;
     if (input.rateLimitAverage !== undefined) values.rateLimitAverage = input.rateLimitAverage;
     if (input.rateLimitBurst !== undefined) values.rateLimitBurst = input.rateLimitBurst;
+    // 0.16.1: validated by the schema (Go-RE2-compatible regex, one-line
+    // target); none left is stored as null, the pre-0.16.1 row.
+    if (input.redirects !== undefined) values.redirects = input.redirects && input.redirects.length > 0 ? input.redirects : null;
     const [d] = await app.db
       .update(domains)
       .set(values)

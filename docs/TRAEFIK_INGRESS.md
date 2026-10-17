@@ -34,6 +34,20 @@ A domain can route only a path prefix to a service, so several services share on
 - The request keeps its path: the API service receives `/api/users`, not `/users`, so it must serve under the prefix.
 - Every service already routing the host must be one you can manage (`member` on it); you cannot stack a path on another tenant's host.
 
+### Redirect rules (0.16.1)
+
+Each domain can carry up to 10 redirect rules (Network tab → the domain's **Security** panel → **Redirects**, or `redirects` on `PATCH /v1/services/:id/domains/:domainId`). A rule is a regular expression matched against the full request URL, a target, and whether the redirect is permanent (301/308) or temporary (302/307):
+
+| Pattern | Target | Effect |
+| --- | --- | --- |
+| `^https?://example\.com/blog/(.*)` | `https://blog.example.com/${1}` | moves the blog to its own host, keeping the path |
+| `^https?://example\.com/old-pricing$` | `https://example.com/pricing` | one page renamed |
+
+- Rules become Traefik `redirectRegex` middlewares and run in order, before the domain's Basic Auth, headers, IP allowlist and rate limit.
+- Traefik uses Go's RE2: lookahead, lookbehind and backreferences are refused when a rule is saved. A stored rule RE2 would refuse is skipped when the config is written, so one bad rule never takes routing down.
+- A target that matches its own pattern makes browsers loop; anchor the pattern (`$`) or make the target fall outside it.
+- The www → apex redirect is the domain's own toggle; it is not one of these rules.
+
 ---
 
 ## 🔒 2. Let's Encrypt SSL Certificates
