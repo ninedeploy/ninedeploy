@@ -320,6 +320,19 @@ If you ever need to override:
 
 The CLI's `deploy create-from-github` shows the analysis result and lets you override the choice interactively; the wizard does the same.
 
+### Build-time variables (0.16.1)
+
+Nixpacks, Railpack and the static pack see every variable of the service while they build, so `NEXT_PUBLIC_*` values are inlined by `next build` without any setup. A **Dockerfile** build receives only the variables you name under **Service → Settings → Build → Build arguments** (`build.buildArgs` in the API), each as `--build-arg NAME=value`. The Dockerfile reads them with `ARG`:
+
+```dockerfile
+ARG NEXT_PUBLIC_API_URL
+RUN npm run build
+```
+
+- A listed name that has no value in the service's environment is skipped and named in the deploy log.
+- Build arguments stay readable in the image's history (`docker history`). Do not list credentials; use a [BuildKit secret mount](https://docs.docker.com/build/building/secrets/) for those. A secret listed anyway is flagged in the log, and a build that pushes its image to a registry refuses it.
+- A Dockerfile build on a remote node does not pass build arguments yet; the deploy log says so. Build on the panel host to use them.
+
 ### When to choose what
 
 | Repo shape | Recommended `buildPack` | Why |

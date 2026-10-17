@@ -11,6 +11,7 @@ import { githubAppCloneHint, resolveCloneCreds } from '../lib/sourceCreds.js';
 import { classifyCloneFailure, redactGitOutput } from '../lib/cloneFailure.js';
 import { detectDeployHints } from '../lib/deployHints.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
+import { extractSourceUpload, isUploadSourced } from '../lib/sourceUpload.js';
 import { cloneCredentialKind, remoteDatabaseRefusal, remoteDeploySupported, remoteDeployUnsupportedReason, remoteHookRefusal, remoteServiceRefusal } from '../lib/remoteDeploy.js';
 import { nodeGitCredentialSource } from '../lib/nodeGitCredential.js';
 import { agentOp } from '../lib/agentClient.js';
@@ -52,12 +53,15 @@ import type { BuildContext, Builder, DeployRuntime } from './types.js';
 import { reconcileTemplateDependencies } from './templateDependencies.js';
 import { applyManifestToService } from '../lib/applyManifestToService.js';
 import { audit } from '../lib/audit.js';
+import { autoHostFor } from '../lib/autoUrl.js';
 import { loadNinedeployManifest } from '../lib/ninedeployManifest.js';
 import { applyManifestToBuildConfig, findMissingRequiredEnv } from '../lib/ninedeployApply.js';
 import type { NinedeployManifest } from '@ninedeploy/schemas';
 
 const builders: Record<string, Builder> = { docker: dockerBuilder, pm2: pm2Builder, compose: composeBuilder };
 const DEPLOY_HEARTBEAT_MS = 20_000;
+/** The healthcheck deadline a service without its own (`healthTimeoutSeconds`) gets. */
+const DEFAULT_HEALTH_TIMEOUT_S = 300;
 
 /**
  * Short stable fingerprint per resolved managed-database env value. Stored on
@@ -931,51 +935,63 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     } else if (service.image) {
       log(`Image deploy from ${service.image}`);
     } else {
-      // 0.13: one resolver for the pipeline and the insights routes — a
-      // GitHub App link/source mints a repo-scoped installation token; every
-      // other source resolves exactly as before.
-      let creds: CloneCreds | undefined;
-      try {
-        creds = await resolveCloneCreds(db, service);
-      } catch (err) {
-        if (err instanceof GithubAppError) log(githubAppCloneHint());
-        throw err;
-      }
-      try {
-        sha = await checkoutCommit(service.repoUrl ?? '', service.branch, dep.commitSha ?? undefined, workDir, log, creds);
-      } catch (err) {
-        // The clone error itself is often a bare "repository not found" —
-        // git says that for BOTH a nonexistent repo and a private one read
-        // anonymously. Say which fix applies to THIS service's setup.
-        //
-        // F1012: name the reason class (the analysis route's classifier) in
-        // the log AND in the failure message (audit → notifications, feed).
-        // F1013: git's text never leaves here unredacted — a failed submodule
-        // clone prints its URL resolved against the tokenized origin.
-        const gitText = redactGitOutput(msg(err), creds);
-        const failure = classifyCloneFailure(err, service.branch, creds, service.repoUrl ?? '');
-        const failMessage = failure
-          ? `Clone failed (reason: ${failure.reason}): ${failure.advice}${
-              failure.submodule ? ' The failing clone was a submodule of this repository; the credential needs access to that repository too.' : ''
-            }`
-          : null;
-        if (failMessage) {
-          log(`✗ ${failMessage}`);
-          log(`git output (credentials removed): ${gitText}`);
-        } else {
-          log(`✗ Clone failed: ${gitText}`);
+      if (isUploadSourced(service)) {
+        // 0.16.1: no repository — the code is the archive uploaded for this
+        // service (POST /v1/services/:id/source, `ninedeploy deploy`). A
+        // redeploy of an older deployment extracts that upload again.
+        const uploaded = await extractSourceUpload(service.id, dep.commitSha ?? null, workDir);
+        sha = uploaded.sha;
+        log(
+          `Uploaded source ${sha.slice(0, 7)}: ${uploaded.files} entries` +
+            (uploaded.strippedFolder ? ` (built from inside the folder "${uploaded.strippedFolder}")` : ''),
+        );
+      } else {
+        // 0.13: one resolver for the pipeline and the insights routes — a
+        // GitHub App link/source mints a repo-scoped installation token; every
+        // other source resolves exactly as before.
+        let creds: CloneCreds | undefined;
+        try {
+          creds = await resolveCloneCreds(db, service);
+        } catch (err) {
+          if (err instanceof GithubAppError) log(githubAppCloneHint());
+          throw err;
         }
-        if (!creds) {
-          log('hint: no Git credential is attached to this service. If the repository is PRIVATE, attach one: System → Sources (PAT or generate a deploy key), then select it under Service → Settings → Git credential and redeploy. Public repos need no credential.');
-        } else if (creds.type === 'github_app') {
-          log(githubAppCloneHint());
-        } else if (creds.deployKey && !creds.token) {
-          log('hint: cloning used this source\u2019s SSH deploy key. Confirm the PUBLIC key is registered as a deploy key on the provider (repo → Settings → Deploy keys, read access is enough) and that the repo URL is reachable over SSH.');
-        } else if (creds.token) {
-          log('hint: cloning used the source\u2019s access token. Check that the token is still valid and has read access to this repository (System → Sources → Test).');
+        try {
+          sha = await checkoutCommit(service.repoUrl ?? '', service.branch, dep.commitSha ?? undefined, workDir, log, creds);
+        } catch (err) {
+          // The clone error itself is often a bare "repository not found" —
+          // git says that for BOTH a nonexistent repo and a private one read
+          // anonymously. Say which fix applies to THIS service's setup.
+          //
+          // F1012: name the reason class (the analysis route's classifier) in
+          // the log AND in the failure message (audit → notifications, feed).
+          // F1013: git's text never leaves here unredacted — a failed submodule
+          // clone prints its URL resolved against the tokenized origin.
+          const gitText = redactGitOutput(msg(err), creds);
+          const failure = classifyCloneFailure(err, service.branch, creds, service.repoUrl ?? '');
+          const failMessage = failure
+            ? `Clone failed (reason: ${failure.reason}): ${failure.advice}${
+                failure.submodule ? ' The failing clone was a submodule of this repository; the credential needs access to that repository too.' : ''
+              }`
+            : null;
+          if (failMessage) {
+            log(`✗ ${failMessage}`);
+            log(`git output (credentials removed): ${gitText}`);
+          } else {
+            log(`✗ Clone failed: ${gitText}`);
+          }
+          if (!creds) {
+            log('hint: no Git credential is attached to this service. If the repository is PRIVATE, attach one: System → Sources (PAT or generate a deploy key), then select it under Service → Settings → Git credential and redeploy. Public repos need no credential.');
+          } else if (creds.type === 'github_app') {
+            log(githubAppCloneHint());
+          } else if (creds.deployKey && !creds.token) {
+            log('hint: cloning used this source\u2019s SSH deploy key. Confirm the PUBLIC key is registered as a deploy key on the provider (repo → Settings → Deploy keys, read access is enough) and that the repo URL is reachable over SSH.');
+          } else if (creds.token) {
+            log('hint: cloning used the source\u2019s access token. Check that the token is still valid and has read access to this repository (System → Sources → Test).');
+          }
+          if (failMessage) throw new Error(failMessage);
+          throw gitText === msg(err) ? err : new Error(gitText);
         }
-        if (failMessage) throw new Error(failMessage);
-        throw gitText === msg(err) ? err : new Error(gitText);
       }
       await db.update(deployments).set({ commitSha: sha }).where(eq(deployments.id, deploymentId));
 
@@ -1241,8 +1257,17 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
 
     log('##[stage:HEALTHCHECK:running] Probing container HTTP healthcheck');
     log('Running healthcheck …');
-    const healthy = await builder.isHealthy(runtime, 300_000, 10_000, log);
-    if (!healthy) throw new Error('Healthcheck failed — service did not become ready in time');
+    // 0.16.1: the deadline is per service (Settings → Healthcheck timeout);
+    // unset keeps the 5 minutes every deploy had before.
+    const healthTimeoutS = service.healthTimeoutSeconds ?? DEFAULT_HEALTH_TIMEOUT_S;
+    if (service.healthTimeoutSeconds != null) log(`Healthcheck timeout: ${healthTimeoutS}s`);
+    const healthy = await builder.isHealthy(runtime, healthTimeoutS * 1000, 10_000, log);
+    if (!healthy) {
+      throw new Error(
+        `Healthcheck failed — service did not become ready within ${healthTimeoutS}s. ` +
+          'A slow first boot (migrations, model downloads) can raise the limit under Service → Settings → Healthcheck timeout.',
+      );
+    }
     log('##[stage:HEALTHCHECK:success]');
 
     if (buildConfig?.postDeployCmd) {
@@ -1439,20 +1464,22 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     .set({ status: 'superseded' })
     .where(and(eq(deployments.serviceId, service.id), eq(deployments.status, 'running'), ne(deployments.id, deploymentId)));
 
-  // Auto-provision wildcard domain if configured and not already present.
+  // Auto-provision the service's automatic URL if one is configured and not
+  // already present: the env wildcard, or Settings → Automatic URLs (a base
+  // domain or a free sslip.io name — lib/autoUrl.ts).
   // Isolated: a failure here must not affect the already-running container.
-  if (config.wildcardDomain) {
-    try {
-      const wildcardHost = `${service.slug}.${config.wildcardDomain}`;
-      const existing = await db.query.domains.findFirst({ where: and(eq(domains.serviceId, service.id), eq(domains.hostname, wildcardHost)) });
+  try {
+    const auto = await autoHostFor(db, service);
+    if (auto) {
+      const existing = await db.query.domains.findFirst({ where: and(eq(domains.serviceId, service.id), eq(domains.hostname, auto.hostname)) });
       if (!existing) {
-        const ssl = !!(await getAcmeEmail(db));
-        await db.insert(domains).values({ serviceId: service.id, hostname: wildcardHost, path: '/', ssl, status: 'active' });
-        log(`🌐 Auto-assigned URL: ${ssl ? 'https' : 'http'}://${wildcardHost}`);
+        const ssl = auto.ssl === 'acme' ? !!(await getAcmeEmail(db)) : false;
+        await db.insert(domains).values({ serviceId: service.id, hostname: auto.hostname, path: '/', ssl, status: 'active' });
+        log(`🌐 Auto-assigned URL: ${ssl ? 'https' : 'http'}://${auto.hostname}`);
       }
-    } catch (err) {
-      log(`warning: could not auto-assign wildcard domain: ${msg(err)}`);
     }
+  } catch (err) {
+    log(`warning: could not auto-assign the automatic URL: ${msg(err)}`);
   }
 
   // Flip routing to the NEW container first, then stop the old one (blue-green

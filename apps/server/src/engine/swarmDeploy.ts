@@ -148,6 +148,10 @@ export function createSwarmBuilder(db: DB, slug: string, deps: SwarmBuilderDeps 
       const constraints = [SWARM_MEMBER_CONSTRAINT, ...(image.local ? await preloadImage(db, ctx, image, deps, info.nodeId) : [])];
       const network = await ensureSwarmNetwork(slug, log);
 
+      // 0.16.1: a Swarm service spec carries none of the container options.
+      if (ctx.service.runtimeOptions && Object.keys(ctx.service.runtimeOptions).length > 0) {
+        ctx.log('⚠ Container options (GPUs, shared memory, init, ulimit, capabilities) are not applied to a Swarm service.');
+      }
       const spec: StackSpec = {
         name: swarmStackName(slug),
         services: [

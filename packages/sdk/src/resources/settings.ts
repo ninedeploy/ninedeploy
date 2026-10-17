@@ -15,6 +15,40 @@ import type {
 import type { VaultAllowlistView, VaultSettings, EmailTemplateName, EmailTemplateEntry, EmailTemplateRender } from '../types.js';
 import type { Transport } from '../transport.js';
 
+export type AutoUrlMode = 'off' | 'domain' | 'sslip';
+export interface AutoUrlEffective {
+  mode: AutoUrlMode;
+  domain: string | null;
+  ip: string | null;
+  source: 'env' | 'setting';
+}
+export interface AutoUrlSettings {
+  effective: AutoUrlEffective;
+  stored: { mode: string; domain: string | null; ip: string | null };
+  envWildcard: string | null;
+  /** The installer's address (NINEDEPLOY_PUBLIC_URL), offered for sslip.io. */
+  suggestedIp: string | null;
+}
+
+export type OnboardingStepId =
+  | 'auto_url'
+  | 'git_source'
+  | 'first_service'
+  | 'first_deploy'
+  | 'custom_domain'
+  | 'https'
+  | 'notifications'
+  | 'backups';
+export interface OnboardingStatus {
+  steps: { id: OnboardingStepId; done: boolean; optional: boolean }[];
+  completed: number;
+  total: number;
+  /** Every required step is done. */
+  ready: boolean;
+  dismissed: boolean;
+  autoUrl: AutoUrlEffective;
+}
+
 export interface SettingsApi {
   settings: {
     get: () => Promise<{ allowRegistration: boolean; acmeEmail: string | null; templatesSource: string | null; dnsProvider: string | null; hasDnsToken: boolean; wildcardApex: string | null; panelDomain: string | null }>;
@@ -24,6 +58,17 @@ export interface SettingsApi {
     setTemplatesSource: (source: string) => Promise<{ ok: boolean; templatesSource: string | null }>;
     /** Configure the ACME DNS-01 challenge (wildcard certificates). */
     setDns: (input: { provider: string; token?: string; wildcardApex: string }) => Promise<{ ok: boolean; dnsProvider: string | null; wildcardApex: string | null; applied: string }>;
+    /**
+     * 0.16.1 Automatic URLs: how a service gets its own URL with no DNS work —
+     * `<slug>.<domain>` or a free `<slug>.<ip>.sslip.io`. `envWildcard`
+     * (NINEDEPLOY_WILDCARD_DOMAIN) wins over the stored choice when set.
+     */
+    autoUrl: {
+      get: () => Promise<AutoUrlSettings>;
+      set: (input: { mode: AutoUrlMode; domain?: string; ip?: string }) => Promise<{ ok: boolean; effective: AutoUrlEffective }>;
+      /** Asks a public echo service which IPv4 this host egresses from. */
+      detectIp: () => Promise<{ ip: string; public: boolean }>;
+    };
     /** Vault provider (deploy-time secret resolution). */
     vault: {
       get: () => Promise<VaultSettings>;
@@ -150,6 +195,11 @@ export interface SettingsApi {
     testChannel: (id: number) => Promise<{ ok: boolean }>;
     log: () => Promise<Array<{ id: number; channelId: number | null; event: string; entity: string | null; status: string; error: string | null; ts: string }>>;
   };
+  /** 0.16.1: the operator's Getting started checklist (Dashboard card). */
+  onboarding: {
+    get: () => Promise<OnboardingStatus>;
+    setDismissed: (dismissed: boolean) => Promise<{ ok: boolean; dismissed: boolean }>;
+  };
 }
 
 export function settingsApi(t: Transport): SettingsApi {
@@ -167,6 +217,11 @@ export function settingsApi(t: Transport): SettingsApi {
         send<{ ok: boolean; templatesSource: string | null }>('PUT', '/v1/settings/templates-source', { source }),
       setDns: (input) =>
         send<{ ok: boolean; dnsProvider: string | null; wildcardApex: string | null; applied: string }>('PUT', '/v1/settings/dns', input),
+      autoUrl: {
+        get: () => get<AutoUrlSettings>('/v1/settings/auto-url'),
+        set: (input) => send<{ ok: boolean; effective: AutoUrlEffective }>('PUT', '/v1/settings/auto-url', input),
+        detectIp: () => send<{ ip: string; public: boolean }>('POST', '/v1/settings/auto-url/detect-ip', {}),
+      },
       vault: {
         get: () => get<VaultSettings>('/v1/settings/vault'),
         set: (input) => send<{ ok: boolean; provider: string | null }>('PUT', '/v1/settings/vault', input),
@@ -270,6 +325,10 @@ export function settingsApi(t: Transport): SettingsApi {
       removeChannel: async (id) => { await request(`/v1/notifications/channels/${id}`, { method: 'DELETE' }); },
       testChannel: (id) => send('POST', `/v1/notifications/channels/${id}/test`),
       log: () => get('/v1/notifications/log'),
+    },
+    onboarding: {
+      get: () => get<OnboardingStatus>('/v1/onboarding'),
+      setDismissed: (dismissed) => send<{ ok: boolean; dismissed: boolean }>('PUT', '/v1/onboarding/dismissed', { dismissed }),
     },
   };
 }

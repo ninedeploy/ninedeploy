@@ -97,6 +97,7 @@ import {
   webhooksAdd, webhooksList, webhooksRemove, webhooksShow,
 } from './commands/webhooks.js';
 import { deployFromGithub } from './commands/deploy.js';
+import { deployUp, type DeployUpOptions } from './commands/upload.js';
 import { manifestApply, manifestInit, manifestShow, manifestValidate } from './commands/manifest.js';
 import { templatesInit } from './commands/templates.js';
 import {
@@ -1179,6 +1180,14 @@ deploy.command('create-from-github [url]')
   .description('One-shot: add source (PAT), analyse repo, create service, set env, trigger deploy, optional webhook')
   .alias('from-github')
   .action((url?: string) => deployFromGithub(getClient(), url));
+deploy.command('up [path]')
+  .description('Deploy a local folder, .zip or .tar.gz as a service source (no Git repository needed)')
+  .option('-s, --service <idOrSlug>', 'An existing service created without a repository or image')
+  .option('-c, --create <name>', 'Create a new docker service for this source')
+  .option('-p, --port <port>', 'Container port, with --create')
+  .option('-x, --exclude <pattern...>', 'Extra paths to leave out (.git, node_modules, .env… are always left out)')
+  .option('--no-deploy', 'Only upload; deploy later')
+  .action((dir: string | undefined, opts: DeployUpOptions) => deployUp(getClient(), dir, opts));
 /* v8 ignore stop */
 
 // ── Webhooks (auto-deploy on push) ─────────────────────────────────────────

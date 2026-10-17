@@ -29,8 +29,26 @@ import { getDnsRecordsConfig, setDnsRecordsConfig, testCloudflareToken } from '.
 import { getNamecheapConfig, setNamecheapConfig } from '../lib/namecheap.js';
 import { config } from '../config.js';
 import { ALLOW_REGISTRATION_DEFAULT } from './auth.js';
+import { getAutoUrlConfig, isIpv4, isPublicIpv4, setAutoUrlConfig, SSLIP_ZONE } from '../lib/autoUrl.js';
+import { detectPublicIp } from '../lib/cloudflare.js';
 
 const togglePatch = z.object({ enabled: z.boolean() });
+// 0.16.1 Automatic URLs (lib/autoUrl.ts). The base domain is a bare name
+// (`apps.example.com`); the sslip.io address an IPv4 the names resolve to.
+const autoUrlPatch = z
+  .object({
+    mode: z.enum(['off', 'domain', 'sslip']),
+    domain: z.union([z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]$/).max(200), z.literal('')]).optional(),
+    ip: z.union([z.string().refine(isIpv4, 'Enter an IPv4 address'), z.literal('')]).optional(),
+  })
+  .strict()
+  .superRefine((v, ctx) => {
+    if (v.mode === 'domain' && !v.domain) ctx.addIssue({ code: 'custom', path: ['domain'], message: 'Enter the base domain' });
+    if (v.mode === 'sslip' && !v.ip) ctx.addIssue({ code: 'custom', path: ['ip'], message: 'Enter the server IPv4 address' });
+    if (v.mode === 'domain' && v.domain && v.domain.toLowerCase().endsWith(SSLIP_ZONE)) {
+      ctx.addIssue({ code: 'custom', path: ['domain'], message: 'Use the sslip.io mode for sslip.io names' });
+    }
+  });
 const emailPatch = z.object({ email: z.union([z.string().email().max(254), z.literal('')]) });
 const domainPatch = z.object({
   domain: z.union([z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]$/).max(255), z.literal('')]),
@@ -188,6 +206,53 @@ export const settingsRoutes: FastifyPluginAsync = async (app) => {
     void audit(app.db, req.user!.id, 'settings.dns', `${input.provider || 'none'}${input.wildcardApex ? ` (*.${input.wildcardApex})` : ''}`);
     scheduleTraefikSettingsApply();
     return { ok: true, dnsProvider: input.provider || null, wildcardApex: input.wildcardApex || null, applied: 'live' };
+  });
+
+  // 0.16.1: Automatic URLs — what a service gets as its own URL without any
+  // DNS work. `envWildcard` reports NINEDEPLOY_WILDCARD_DOMAIN, which wins.
+  app.get('/auto-url', async () => {
+    const effective = await getAutoUrlConfig(app.db);
+    const stored = {
+      mode: (await getSettingString(app.db, 'auto_url_mode', null)) ?? 'off',
+      domain: (await getSettingString(app.db, 'auto_url_domain', null)) || null,
+      ip: (await getSettingString(app.db, 'auto_url_ip', null)) || null,
+    };
+    let suggestedIp: string | null = null;
+    try {
+      // The installer's guess (http://<ip>:3000), offered as the sslip.io address.
+      const host = new URL(config.publicUrl).hostname;
+      suggestedIp = isIpv4(host) && !host.startsWith('127.') ? host : null;
+    } catch {
+      suggestedIp = null;
+    }
+    return { effective, stored, envWildcard: config.wildcardDomain || null, suggestedIp };
+  });
+
+  app.put('/auto-url', async (req) => {
+    const input = autoUrlPatch.parse(req.body);
+    const effective = await setAutoUrlConfig(app.db, {
+      mode: input.mode,
+      ...(input.domain !== undefined ? { domain: input.domain } : {}),
+      ...(input.ip !== undefined ? { ip: input.ip } : {}),
+    });
+    void audit(
+      app.db,
+      req.user!.id,
+      'settings.auto_url',
+      input.mode === 'domain' ? `domain (*.${input.domain})` : input.mode === 'sslip' ? `sslip (${input.ip})` : 'off',
+    );
+    return { ok: true, effective };
+  });
+
+  // Ask a public echo service which address this host egresses from — only
+  // on an operator's click; the panel never phones out for this by itself.
+  app.post('/auto-url/detect-ip', async () => {
+    try {
+      const ip = await detectPublicIp();
+      return { ip, public: isPublicIpv4(ip) };
+    } catch (err) {
+      throw unprocessable(`Could not detect the public IP: ${err instanceof Error ? err.message : String(err)}`);
+    }
   });
 
   app.put('/acme-email', async (req) => {

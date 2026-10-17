@@ -169,6 +169,19 @@ export const operationsSpecs: RouteSpecMap = {
     floor: 'authed',
     responseType: 'StatsSnapshot',
   },
+  'GET /v1/onboarding': {
+    summary: "The operator's Getting started checklist",
+    tag: 'dashboard',
+    floor: 'operator',
+  },
+  'PUT /v1/onboarding/dismissed': {
+    summary: 'Hide or show the Getting started checklist',
+    tag: 'dashboard',
+    floor: 'operator',
+    localBody: 'onboarding.ts#dismissBody',
+    responseType: '{ ok: boolean; dismissed: boolean }',
+    validation: 'zod',
+  },
   'GET /v1/dashboard': {
     summary: 'Dashboard overview',
     tag: 'metrics',

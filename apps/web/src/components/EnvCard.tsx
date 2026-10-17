@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useMemo, useState } from 'react';
-import { FileCode, GitPullRequest, KeyRound, Lock, Plus, Rows3, Save, Trash2 } from 'lucide-react';
+import { FileCode, GitPullRequest, KeyRound, Layers, Lock, Plus, Rows3, Save, Trash2 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { downloadBlob } from '../lib/format.js';
 import { useToast } from './Toast.js';
@@ -58,6 +58,10 @@ export function parseEnvText(text: string): { entries: Array<{ key: string; valu
  * `variant="preview"` (0.12) edits the service's preview-only set: values only
  * its PR previews receive, through `/env/preview` — same table UI, its own
  * query key, and no vault references (a preview never resolves one).
+ *
+ * `variant="project"` (0.16.1) edits a project's shared variables through
+ * `/projects/:id/env`; `serviceId` is then the PROJECT id. Every service in
+ * the project receives them; a service's own variable of the same name wins.
  */
 export function EnvCard({
   serviceId,
@@ -67,12 +71,13 @@ export function EnvCard({
 }: {
   serviceId: number;
   literalNewlines?: boolean;
-  variant?: 'service' | 'preview';
+  variant?: 'service' | 'preview' | 'project';
   previewsEnabled?: boolean;
 }) {
   const preview = variant === 'preview';
-  const envApi = preview ? api.previewEnv : api.env;
-  const queryKey = preview ? ['preview-env', serviceId] : ['env', serviceId];
+  const shared = variant === 'project';
+  const envApi = preview ? api.previewEnv : shared ? api.projectEnv : api.env;
+  const queryKey = preview ? ['preview-env', serviceId] : shared ? ['project-env', serviceId] : ['env', serviceId];
   const qc = useQueryClient();
   const { toast } = useToast();
   const [key, setKey] = useState('');
@@ -175,6 +180,10 @@ export function EnvCard({
               <>
                 <GitPullRequest size={15} className="text-slate-500" /> Preview deployments
               </>
+            ) : shared ? (
+              <>
+                <Layers size={15} className="text-slate-500" /> Shared variables
+              </>
             ) : (
               <>
                 <KeyRound size={15} className="text-slate-500" /> Environment
@@ -204,7 +213,7 @@ export function EnvCard({
                   .join('\n')}\n`;
                 // downloadBlob delays the URL revoke — a synchronous revoke
                 // cancels the download in Safari (r409).
-                downloadBlob(content, preview ? '.env.preview' : '.env', 'text/plain');
+                downloadBlob(content, preview ? '.env.preview' : shared ? '.env.shared' : '.env', 'text/plain');
               }}
               disabled={(env.data?.length ?? 0) === 0}
               className="flex items-center gap-1.5 rounded-lg bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400 ring-1 ring-inset ring-white/10 transition hover:bg-white/[0.08] hover:text-slate-200 disabled:opacity-30"
@@ -287,6 +296,12 @@ export function EnvCard({
                   <p className="text-amber-300/80">PR previews are off for this service — turn them on under Settings.</p>
                 )}
               </div>
+            ) : shared ? (
+              <p className="mb-2 text-[11px] leading-relaxed text-slate-500">
+                Every service in this project receives these on its next deploy. A service&apos;s own variable with the same
+                name wins. PR previews get the non-secret ones only. Values may reference an external secret store:{' '}
+                <code className="rounded bg-white/5 px-1 font-mono text-[10px] text-slate-500">{REF_INFISICAL}</code>
+              </p>
             ) : (
               <p className="mb-2 text-[11px] text-slate-600">
                 Values may reference an external secret store and are resolved at deploy time:{' '}

@@ -24,7 +24,29 @@ const COMPOSE_PLACEHOLDER = [
 
 interface EnvRow { key: string; value: string; secret: boolean }
 
-export function DeployWizard({ template, onClose }: { template?: Template; onClose: () => void }) {
+export type BuildPack = 'auto' | 'nixpacks' | 'railpack' | 'dockerfile' | 'static';
+
+/**
+ * 0.16.1: what the /new resource picker (or a `?deploy=<kind>` link, see
+ * lib/deployLauncher.tsx) pre-selects. Everything stays editable.
+ */
+export interface DeployPreset {
+  type?: 'docker' | 'pm2' | 'compose';
+  mode?: 'repo' | 'image' | 'paste';
+  buildPack?: BuildPack;
+  /** Pre-select the first credential of this kind once the list loads. */
+  source?: 'github_app';
+}
+
+const BUILD_PACKS: { id: BuildPack; label: string; hint: string }[] = [
+  { id: 'auto', label: 'Auto-detect', hint: 'Dockerfile if the repo has one, otherwise Nixpacks' },
+  { id: 'nixpacks', label: 'Nixpacks', hint: 'Zero-config builds for Node, Python, Go, PHP, Ruby, Rust, Java…' },
+  { id: 'railpack', label: 'Railpack', hint: "Railway's successor to Nixpacks — needs a BuildKit daemon (BUILDKIT_HOST) on the panel" },
+  { id: 'dockerfile', label: 'Dockerfile', hint: 'Build the Dockerfile in the repository' },
+  { id: 'static', label: 'Static site', hint: 'Build, then serve the output folder with nginx (SPA-ready)' },
+];
+
+export function DeployWizard({ template, preset, onClose }: { template?: Template; preset?: DeployPreset; onClose: () => void }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -106,7 +128,7 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
   // r208: what a failed repo deploy already created. The create → env → trigger
   // sequence is not atomic; a retry after a failed env row or trigger used to
   // re-POST the service and die on `slug_taken`, stranding a half-made service.
-  const createdRef = useRef<{ serviceId: number; envDone: Set<string>; githubLinked?: boolean } | null>(null);
+  const createdRef = useRef<{ serviceId: number; envDone: Set<string>; githubLinked?: boolean; domainDone?: boolean } | null>(null);
   const onCloseRef = useRef(onClose);
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -122,8 +144,27 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
       window.removeEventListener('keydown', onKey);
     };
   }, []);
-  const [type, setType] = useState<'docker' | 'pm2' | 'compose'>('docker');
-  const [mode, setMode] = useState<'repo' | 'image' | 'paste'>(template ? 'image' : 'repo');
+  // Compose and PM2 are operator-only: a member following such a preset link
+  // lands on the Docker type instead of a form the API would refuse.
+  const presetType = preset?.type && (preset.type === 'docker' || isAdmin) ? preset.type : 'docker';
+  const [type, setType] = useState<'docker' | 'pm2' | 'compose'>(template ? 'docker' : presetType);
+  const [mode, setMode] = useState<'repo' | 'image' | 'paste'>(() => {
+    if (template) return 'image';
+    const m = preset?.mode ?? 'repo';
+    // Keep the type/mode pairs the Source toggle can show.
+    if (presetType === 'compose') return m === 'image' ? 'repo' : m;
+    return m === 'paste' ? 'repo' : m;
+  });
+  const [buildPack, setBuildPack] = useState<BuildPack>(preset?.buildPack ?? 'auto');
+  const [dockerfilePath, setDockerfilePath] = useState('');
+  const [outputDir, setOutputDir] = useState('');
+  // Where the service lands: a project tag and a deployment lane (both optional).
+  const [projectId, setProjectId] = useState('');
+  const [environmentId, setEnvironmentId] = useState('');
+  // A domain of the user's own, added right after the service is created.
+  const [customDomain, setCustomDomain] = useState('');
+  const projects = useQuery({ queryKey: ['projects'], queryFn: () => api.projects.list(), enabled: !template });
+  const environments = useQuery({ queryKey: ['environments'], queryFn: () => api.environments.list(), enabled: !template });
   // Inline compose stack: the pasted YAML and the service the router points
   // at. `composeService` starts empty and follows the server's suggestion
   // until the user picks one themselves.
@@ -132,6 +173,14 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
   const [repoUrl, setRepoUrl] = useState('');
   const [branch, setBranch] = useState('main');
   const [sourceId, setSourceId] = useState('');
+  // Preset "GitHub App": select the first installation once the list arrives
+  // (only while the user has not picked a credential themselves).
+  const presetSource = preset?.source;
+  useEffect(() => {
+    if (!presetSource) return;
+    const first = sources.data?.find((s) => s.type === presetSource);
+    if (first) setSourceId((cur) => cur || String(first.id));
+  }, [presetSource, sources.data]);
   const remoteRepos = useQuery({
     queryKey: ['source-repos', sourceId],
     queryFn: () => api.sources.reposWithDiagnostics(Number(sourceId)),
@@ -338,6 +387,9 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
     setSuggestionsApplied(true);
   };
 
+  // A build pack only means something for a Docker service built from a repo.
+  const buildPackSent: BuildPack = type === 'docker' && mode === 'repo' ? buildPack : 'auto';
+
   const deploy = useMutation({
     onMutate: () => {
       // While the deploy mutation is in flight (service+env+db+trigger),
@@ -418,9 +470,14 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
         ...(composeDeploy ? {} : { publishedPort: toInt(publishedPort), cpuShares: toInt(cpuShares), memLimitMb: toInt(memLimitMb) }),
         volumeMount: volumeMount || undefined,
         healthPath: healthPath || undefined,
-        ...(trimmedBaseDir || cmdSource.install || cmdSource.build || cmdSource.start
+        ...(toInt(projectId) ? { tagProjectIds: [toInt(projectId)!] } : {}),
+        ...(toInt(environmentId) ? { environmentId: toInt(environmentId)! } : {}),
+        ...(trimmedBaseDir || cmdSource.install || cmdSource.build || cmdSource.start || buildPackSent !== 'auto'
           ? {
               build: {
+                ...(buildPackSent !== 'auto' ? { buildPack: buildPackSent } : {}),
+                ...(buildPackSent === 'dockerfile' && dockerfilePath.trim() ? { dockerfilePath: dockerfilePath.trim() } : {}),
+                ...(buildPackSent === 'static' && outputDir.trim() ? { outputDir: outputDir.trim() } : {}),
                 ...(trimmedBaseDir ? { baseDir: trimmedBaseDir } : {}),
                 ...(cmdSource.install ? { installCmd: cmdSource.install } : {}),
                 ...(cmdSource.build ? { buildCmd: cmdSource.build } : {}),
@@ -431,6 +488,19 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
       });
       createdRef.current ??= { serviceId: svc.id, envDone: new Set() };
       const progress = createdRef.current;
+      // The user's own domain. Best effort, like the GitHub link below: the
+      // service exists either way, and the Network tab can add it later. A
+      // member's name outside the instance zone comes back pending a TXT proof.
+      const host = cleanHost(customDomain);
+      if (host && !progress.domainDone) {
+        try {
+          const created = await api.domains.create(svc.id, { hostname: host });
+          if (created.status === 'pending') toast(`${host} needs a DNS TXT proof — see the service's Network tab`, 'info');
+        } catch (err) {
+          toast(`Domain ${host} skipped: ${err instanceof Error ? err.message : String(err)}`, 'error');
+        }
+        progress.domainDone = true;
+      }
       // 0.13: a GitHub App source links the service to the picked repository
       // by its numeric id, so App webhooks route to it from the first push.
       // Best effort: the first clone links it lazily anyway, so a refusal
@@ -913,6 +983,42 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
                     />
                   </L>
 
+                  {/* Build pack — Coolify/Dokploy ask this up front; before
+                      0.16.1 it was only reachable in Settings after a
+                      first (possibly wrong) build. Docker type only. */}
+                  {type === 'docker' && (
+                    <div className="space-y-2">
+                      <L label="Build pack">
+                        <Select aria-label="Build pack" value={buildPack} onChange={(e) => setBuildPack(e.target.value as BuildPack)}>
+                          {BUILD_PACKS.map((b) => (
+                            <option key={b.id} value={b.id}>{b.label}</option>
+                          ))}
+                        </Select>
+                      </L>
+                      <p className="-mt-1 text-[11px] text-slate-500">{BUILD_PACKS.find((b) => b.id === buildPack)?.hint}</p>
+                      {buildPack === 'dockerfile' && (
+                        <L label="Dockerfile path">
+                          <Input
+                            value={dockerfilePath}
+                            onChange={(e) => setDockerfilePath(e.target.value)}
+                            placeholder="Dockerfile (relative to the base directory)"
+                            className="font-mono text-xs"
+                          />
+                        </L>
+                      )}
+                      {buildPack === 'static' && (
+                        <L label="Output directory">
+                          <Input
+                            value={outputDir}
+                            onChange={(e) => setOutputDir(e.target.value)}
+                            placeholder="dist (default) — build, out, public…"
+                            className="font-mono text-xs"
+                          />
+                        </L>
+                      )}
+                    </div>
+                  )}
+
                   {repoList && repoList.length > 0 && (
                     <L label="Branch">
                       {remoteBranches.data && remoteBranches.data.length > 0 ? (
@@ -1206,6 +1312,44 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
               <L label={template ? 'Registry-managed volume mount' : 'Persistent Volume Mount'}><Input value={volumeMount} disabled={!!template} onChange={(e) => setVolumeMount(e.target.value)} placeholder="/app/data" className="font-mono text-xs" /></L>
               <L label="Healthcheck Path"><Input value={healthPath} onChange={(e) => setHealthPath(e.target.value)} placeholder="/" className="font-mono text-xs" /></L>
 
+              {/* 0.16.1: where the service lands and how it is reached —
+                  asked up front, like Coolify's project/environment step. */}
+              {!template && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <L label="Project (optional)">
+                      <Select aria-label="Project" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+                        <option value="">No project</option>
+                        {(projects.data ?? []).map((p) => (
+                          <option key={p.id} value={String(p.id)}>{p.name}</option>
+                        ))}
+                      </Select>
+                    </L>
+                    <L label="Environment (optional)">
+                      <Select aria-label="Environment" value={environmentId} onChange={(e) => setEnvironmentId(e.target.value)}>
+                        <option value="">None</option>
+                        {(environments.data ?? []).map((env) => (
+                          <option key={env.id} value={String(env.id)}>{env.name}</option>
+                        ))}
+                      </Select>
+                    </L>
+                  </div>
+                  <L label="Domain (optional)">
+                    <Input
+                      value={customDomain}
+                      onChange={(e) => setCustomDomain(e.target.value)}
+                      placeholder="app.example.com"
+                      aria-label="Custom domain"
+                      className="font-mono text-xs"
+                    />
+                    <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+                      Point its DNS A record at this server. Leave empty to use only the automatic URL, when automatic
+                      URLs are on (Settings → Automatic URLs).
+                    </p>
+                  </L>
+                </>
+              )}
+
               {/* Remote-node deploys (operators only, like `serverId` on create). */}
               {nodeChoice && (
                 <L label="Target Server Node">
@@ -1343,6 +1487,14 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
                   /* v8 ignore stop */
                 />
               )}
+              {buildPackSent !== 'auto' && (
+                <Row label="Build pack" value={BUILD_PACKS.find((b) => b.id === buildPackSent)?.label ?? buildPackSent} />
+              )}
+              {projectId && <Row label="Project" value={projects.data?.find((p) => String(p.id) === projectId)?.name ?? `#${projectId}`} />}
+              {environmentId && (
+                <Row label="Environment" value={environments.data?.find((e) => String(e.id) === environmentId)?.name ?? `#${environmentId}`} />
+              )}
+              {cleanHost(customDomain) && <Row label="Domain" value={cleanHost(customDomain)} />}
               {(installCmd || buildCmd || startCmd) && (
                 <Row label="Build commands" value={[installCmd, buildCmd, startCmd].filter(Boolean).join('  →  ')} />
               )}
@@ -1370,6 +1522,21 @@ export function DeployWizard({ template, onClose }: { template?: Template; onClo
     </div>
   );
   return wizardContent;
+}
+
+/** A pasted URL or `host:port` reduced to the hostname the domains API takes. */
+function cleanHost(raw: string): string {
+  let value = raw.trim().toLowerCase();
+  if (!value) return '';
+  if (/^[a-z][a-z0-9+.-]*:\/\//.test(value)) {
+    try {
+      value = new URL(value).hostname;
+    } catch {
+      // Malformed URL: fall through to the scheme-less cleanup below.
+    }
+  }
+  value = value.split(/[/?#]/)[0] ?? '';
+  return value.replace(/:\d+$/, '').replace(/\.$/, '');
 }
 
 function L({ label, children }: { label: string; children: React.ReactNode }) {

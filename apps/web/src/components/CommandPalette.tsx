@@ -1,14 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
-  Activity, Building2, Cloud, Container, Database, FileCode, FolderKanban, Globe, HardDrive, HelpCircle, KeyRound,
-  Layers, LayoutDashboard, type LucideIcon, Network, Rocket, Search, Server,
+  Activity, Building2, Cloud, Container, Database, FileCode, FolderKanban, GitBranch, Globe, HardDrive, HelpCircle, KeyRound,
+  Layers, LayoutDashboard, type LucideIcon, Network, Plus, Rocket, Search, Server,
   Settings as SettingsIcon, Shield, Sparkles, Tag, Users,
 } from 'lucide-react';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
 import { menuTarget, usePluginMenus } from '../lib/pluginMenus.js';
+import { deployHref } from '../lib/deployLauncher.js';
 import { ICON_MAP } from './Layout.js';
 import { cn, useDialogFocus } from './ui.js';
 
@@ -51,6 +52,7 @@ const NAV_COMMANDS: Cmd[] = [
 
 export function CommandPalette({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(0);
   const { user } = useAuth();
@@ -101,8 +103,27 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       }),
     ];
 
-    const all = [...NAV_COMMANDS.filter((c) => !c.operatorOnly || user?.isOperator === true), ...dynamic];
-    if (!query.trim()) return all.slice(0, 8);
+    // First in the list: opening the palette is the fastest way to start a
+    // deploy, and "deploy" / "new" / "create" should all find it.
+    const newService: Cmd = {
+      type: 'Action', label: 'Deploy new service', sub: 'New resource: Git repo, Docker image, Compose, database or one-click app',
+      to: '/new', icon: Plus,
+    };
+    // Straight into the wizard for one source; still found by "deploy"/"new".
+    const quickActions: Cmd[] = [
+      { type: 'Action', label: 'Deploy a Git repository', sub: 'Nixpacks, Railpack, Dockerfile or static', to: deployHref(location.pathname, location.search, 'git'), icon: GitBranch },
+      { type: 'Action', label: 'Deploy a Docker image', sub: 'From Docker Hub, GHCR or a private registry', to: deployHref(location.pathname, location.search, 'image'), icon: Container },
+      { type: 'Action', label: 'Deploy a Compose stack', sub: 'Paste a docker-compose.yml', to: deployHref(location.pathname, location.search, 'compose'), icon: Layers, operatorOnly: true },
+      { type: 'Action', label: 'Create a database', sub: 'PostgreSQL, MySQL, Redis, MongoDB and more', to: '/new', icon: Database },
+    ];
+    const all = [
+      newService,
+      ...NAV_COMMANDS.filter((c) => !c.operatorOnly || user?.isOperator === true),
+      ...quickActions.filter((c) => !c.operatorOnly || user?.isOperator === true),
+      ...dynamic,
+    ];
+    // The deploy action plus the first 8 navigations.
+    if (!query.trim()) return all.slice(0, 9);
     const q = query.toLowerCase();
 
     // Rank before truncating. Every nav entry carries the type 'Navigate', so
@@ -126,7 +147,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       .sort((a, b) => a.r - b.r)
       .slice(0, 24)
       .map((e) => e.c);
-  }, [query, user?.isOperator, services.data, databases.data, templates.data, plugins.data, menus.data]);
+  }, [query, location.pathname, location.search, user?.isOperator, services.data, databases.data, templates.data, plugins.data, menus.data]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally keyed on query — the selection must reset whenever the search text changes, even though the body only touches the setter.
   useEffect(() => {

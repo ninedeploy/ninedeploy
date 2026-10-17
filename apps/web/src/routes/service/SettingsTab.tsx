@@ -10,6 +10,8 @@ import { Button, Card, CardBody, cn, ErrorCard, Field, Input, Select, Skeleton, 
 import { ServiceTagsCard } from './ServiceTagsCard.js';
 import { GithubCard } from './GithubCard.js';
 import { BuildPlacementCard, OrchestratorCard } from './PlacementCards.js';
+import { BuildArgsField, parseBuildArgNames } from './BuildArgsField.js';
+import { ContainerOptionsCard } from './ContainerOptionsCard.js';
 
 /** Service fields, build configuration, lifecycle hooks, PR previews, and resource limits. */
 export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: ServiceDetail }) {
@@ -24,6 +26,7 @@ export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: Servic
       <BuildPlacementCard svc={svc} />
       <OrchestratorCard svc={svc} />
       <LimitsCard svc={svc} />
+      <ContainerOptionsCard svc={svc} />
       <ScalingCard svc={svc} />
     </div>
   );
@@ -150,10 +153,10 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
 
   const [form, setForm] = useState<{
     name: string; branch: string; repoUrl: string; image: string; port: string;
-    healthPath: string; volumeMount: string; sourceId: string;
+    healthPath: string; healthTimeout: string; volumeMount: string; sourceId: string;
     buildPack: string; baseDir: string; installCmd: string; buildCmd: string; startCmd: string; dockerfilePath: string; outputDir: string;
     preDeployCmd: string; postDeployCmd: string; preStopCmd: string;
-    restartPolicy: string; stopGraceSeconds: string;
+    restartPolicy: string; stopGraceSeconds: string; buildArgs: string;
   } | null>(null);
   useEffect(() => {
     if (!svc || form) return;
@@ -164,6 +167,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
       image: svc.image ?? '',
       port: svc.port ? String(svc.port) : '',
       healthPath: svc.healthPath ?? '',
+      healthTimeout: svc.healthTimeoutSeconds != null ? String(svc.healthTimeoutSeconds) : '',
       volumeMount: svc.volumeMount ?? '',
       sourceId: svc.sourceId ? String(svc.sourceId) : '',
       buildPack: svc.build?.buildPack ?? 'auto',
@@ -178,6 +182,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
       preStopCmd: svc.build?.preStopCmd ?? '',
       restartPolicy: svc.build?.restartPolicy ?? 'unless-stopped',
       stopGraceSeconds: String(svc.build?.stopGraceSeconds ?? 5),
+      buildArgs: (svc.build?.buildArgs ?? []).join(', '),
     });
   }, [svc, form]);
 
@@ -200,6 +205,10 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
         image: clearable(f.image, svc?.image),
         port: orUndef(f.port) ? toInt(f.port) : undefined,
         healthPath: orUndef(f.healthPath),
+        // 0.16.1: blank restores the 300 s default. Sent only once the panel
+        // reported the field, so an older server never sees it.
+        healthTimeoutSeconds:
+          svc?.healthTimeoutSeconds !== undefined ? (f.healthTimeout.trim() ? toInt(f.healthTimeout, 300) : null) : undefined,
         volumeMount: clearable(f.volumeMount, svc?.volumeMount),
         // Admins may attach or clear the credential; members keep the current
         // one (an omitted key leaves it untouched server-side).
@@ -223,6 +232,9 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
           preStopCmd: isAdmin ? f.preStopCmd : undefined,
           restartPolicy: f.restartPolicy,
           stopGraceSeconds: toInt(f.stopGraceSeconds, 5)!,
+          // 0.16.1. Sent only once the panel reported the field, so saving
+          // against an older server never sends a key it would ignore.
+          buildArgs: svc?.build?.buildArgs !== undefined ? parseBuildArgNames(f.buildArgs).names : undefined,
         },
       });
     },
@@ -231,7 +243,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
       qc.invalidateQueries({ queryKey: ['services'] });
       toast('Settings saved — redeploy to apply', 'success');
     },
-    onError: () => toast('Could not save settings', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : 'Could not save settings', 'error'),
   });
 
   if (!svc || !form) return <Card><CardBody><Skeleton className="h-40 w-full" /></CardBody></Card>;
@@ -311,6 +323,11 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
           )}
           <Field label="Container port (Traefik target)"><Input value={form.port} onChange={set('port')} inputMode="numeric" autoComplete="off" placeholder="3000" className="h-9 font-mono text-xs" /></Field>
           <Field label="Health path"><Input value={form.healthPath} onChange={set('healthPath')} placeholder="/" className="h-9 font-mono text-xs" /></Field>
+          {svc.healthTimeoutSeconds !== undefined && (
+            <Field label="Healthcheck timeout (seconds)" hint="How long a deploy waits for the new container to answer, 10–3600. Blank = 300.">
+              <Input value={form.healthTimeout} onChange={set('healthTimeout')} inputMode="numeric" placeholder="300" className="h-9 font-mono text-xs" />
+            </Field>
+          )}
           <Field label="Volume mount"><Input value={form.volumeMount} onChange={set('volumeMount')} placeholder="/app/data" className="h-9 font-mono text-xs" /></Field>
 
           <div className="col-span-full mt-2 border-t border-white/5 pt-4 text-xs font-medium uppercase tracking-wide text-slate-500">
@@ -341,6 +358,10 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
               service. An inline stack ignores it — it always deploys the YAML
               stored on the service (Compose File tab). */}
           <Field label="Dockerfile / compose file path"><Input value={form.dockerfilePath} onChange={set('dockerfilePath')} placeholder="./Dockerfile" className="h-9 font-mono text-xs" /></Field>
+          {/* Build arguments reach Dockerfile builds only; auto may resolve to one. */}
+          {svc.type === 'docker' && (form.buildPack === 'auto' || form.buildPack === 'dockerfile') && svc.build?.buildArgs !== undefined && (
+            <BuildArgsField serviceId={serviceId} value={form.buildArgs} onChange={(next) => setForm({ ...form, buildArgs: next })} />
+          )}
 
           {/* Lifecycle hooks execute binaries on the HOST (engine/pipeline.ts),
               so the API restricts them to admins. Showing them to a member
@@ -397,7 +418,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
           </Field>
 
           <div className="col-span-full">
-            <Button type="submit" size="sm" disabled={save.isPending}>
+            <Button type="submit" size="sm" disabled={save.isPending || parseBuildArgNames(form.buildArgs).invalid.length > 0}>
               {save.isPending ? 'Saving…' : 'Save settings'}
             </Button>
             <span className="ml-3 text-xs text-slate-500">Build + runtime changes apply on the next deploy.</span>

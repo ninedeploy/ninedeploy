@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+> First deploy, the Coolify way: every page has a **New** button that opens a searchable resource picker, a service gets a working URL without any DNS work, and the Dashboard walks a new operator through setup.
+
+### Upgrade notes
+
+- **One additive migration, `0074_build_and_runtime_options`:** three nullable columns, `build_configs.build_args`, `services.health_timeout_seconds` and `services.runtime_options`. No row is touched, so every existing service builds and runs with exactly the `docker build` / `docker run` line it had and keeps the 300 s healthcheck deadline. Rolling back to 0.16.0 ignores the columns. The other new settings are rows in the existing `settings` table.
+- **Automatic URLs stay off on an upgraded panel.** Without an `auto_url_mode` setting nothing changes, and `NINEDEPLOY_WILDCARD_DOMAIN` keeps working exactly as before and wins over the new setting. Only a fresh install turns on sslip.io URLs, and only when the installer recorded a public IPv4 for the panel.
+- **The Settings → Security "Wildcard Domain" card is gone.** It showed the DNS-01 certificate apex as if it gave services URLs, which only the environment variable ever did. The apex itself is unchanged and still set in the DNS challenge form.
+
+### Added
+
+- **New resource picker (`/new`).** One page to start anything, like Coolify's New Resource: applications (Git repository, GitHub App, Docker image, Dockerfile, static site, and for operators Docker Compose and PM2), the 11 database engines, and the one-click app catalog, with search (`/` focuses it) and category tabs. The top bar, the rail and the Deploy menu all lead here; ⌘K adds "Deploy a Git repository", "Deploy a Docker image", "Deploy a Compose stack" and "Create a database". `?deploy=<kind>` on any page opens the wizard pre-set (`git`, `github-app`, `image`, `compose`, `dockerfile`, `static`, `pm2`, or `new`).
+- **Automatic URLs** (Settings → Security). Every service gets its own URL when it deploys: a free `<slug>.<server-ip>.sslip.io` test URL with no DNS to set up, or `<slug>.<your base domain>` behind a wildcard DNS record. A node-pinned service resolves to the node's address. The names are reserved per service, so another tenant cannot claim one. API: `GET`/`PUT /v1/settings/auto-url`, `POST /v1/settings/auto-url/detect-ip` (asks a public echo service, only when clicked).
+- **Generate URL** on a service's Network tab (`POST /v1/services/:id/domains/auto`) adds the automatic URL now instead of on the next deploy.
+- **Getting started checklist** on the Dashboard for the instance operator (`GET /v1/onboarding`, `PUT /v1/onboarding/dismissed`): a URL for services, a Git provider, the first service and its first live deploy, then the optional own domain, HTTPS, notifications and backups. Every step is read from the panel's own state; hiding it leaves a one-line link to bring it back.
+- **Deploy Wizard:** asks for the build pack up front (Auto, Nixpacks, Railpack, Dockerfile with its path, Static with its output directory), the project and environment the service lands in, and an optional domain, which is added before the first deploy.
+- **Deploy from anywhere:** an empty Dashboard opens with a "Deploy your first app" card (your code, a template, or the Next.js demo); `?deploy=new` is a deep link to the wizard.
+- **Dockerfile build arguments** (Service → Settings → Build). Pick which of the service's variables a Dockerfile build receives as `--build-arg`, like Coolify's build variables; the service's variables are offered as chips. Opt-in by name: a service gets none until you list some. The values travel as argv and are masked in every log line; a secret among them is flagged, because build arguments stay readable in `docker history`, and a build that pushes its image to a registry refuses one. Nixpacks and Railpack builds already saw every variable. API: `build.buildArgs` on create, PATCH and the service response. A Dockerfile build on a remote node does not pass them yet and says so in the log.
+- **Deploy without Git: uploaded source** (like Dokploy's Drop and Railway's `up`). New → **Upload source** takes a `.zip` or `.tar.gz` of a project folder, creates a docker service and deploys it; the service's Deploys tab takes new versions. From a terminal: `ninedeploy deploy up ./my-app --create my-app` (or `--service <id|slug>`), which packs the folder without `.git`, `node_modules`, `.env` and build caches. The build is the usual one: a Dockerfile wins, otherwise Nixpacks. A single top-level folder in the archive becomes the root. The last five uploads are kept, and redeploying an older deployment rebuilds the upload it came from. API: `POST /v1/services/:id/source` (raw body, up to 100 MiB, `?deploy=false` to only store it) and `GET /v1/services/:id/source`; SDK `services.uploadSource` / `services.sourceUploads`.
+  - The archive is checked completely before it is kept: regular files and directories only (no symlinks, hardlinks or devices), relative paths without `..`, at most 50 000 entries and 1 GiB extracted, no encrypted or zip64 zips. Authentication and the service checks run before the body is read.
+  - Uploads build on the panel host; a service pinned to a remote node is refused. Deleting the service deletes its uploads.
+  - A docker service created with neither a repository nor an image used to fail its deploy at `git clone ''`; it now says to upload its source.
+- **Container options** (Service → Settings, operator only): GPUs (`--gpus all` or a count), shared memory (`--shm-size`, for browsers, Puppeteer and PyTorch), an init process (`--init`), the open-file limit (`--ulimit nofile`) and extra capabilities from a short allowlist (`NET_ADMIN`, `NET_RAW`, `SYS_PTRACE`, `SYS_NICE`, `SYS_RESOURCE`, `IPC_LOCK`, `SYS_TIME`). Structured fields, never free-form flags, so privileged mode, host mounts or the host network cannot be asked for, and `SYS_ADMIN`-class capabilities are not offered. Members see what is set and can still redeploy; a member's clone and a PR preview start without them. Applied on the panel host, in both the `docker run` path and the compose bridge; a remote node or Swarm deploy says in its log that they were not applied. API: `runtimeOptions` on `PATCH /v1/services/:id` and the service response.
+- **Healthcheck timeout per service** (Service → Settings). A deploy waited a fixed 5 minutes for the new container; a slow first boot (migrations, model downloads) can now get up to an hour, and a quick one can fail faster. The failure message names the limit and where to raise it. PR previews keep the parent's value. API: `healthTimeoutSeconds` (10–3600, `null` = 300).
+- **Shared variables UI.** Projects → Shared variables (`/projects?env=<id>`) edits the project-wide variables every service in the project receives. The API already had them, but nothing in the panel used it. A service's Environment tab lists what it inherits, with a link to the project and an "overridden" mark where its own variable wins.
+- **Path routing in the panel.** The Network tab's domain form takes an optional path (`/api`), so several services can share one host. Pasting `https://app.example.com/api` fills both fields. The API has accepted `path` all along.
+- SDK: `settings.autoUrl`, `domains.generate`, `onboarding`.
+
+### Fixed
+
+- `PATCH /v1/services/:id` with only a `build` object (no service field) answered 500 "No values to set".
+- A PR preview of a static-pack service lost the parent's output directory and SPA setting, so it built with the defaults.
+- The add-domain form showed "Could not add the domain" for every refusal; it now shows the server's reason (taken, outside the zone, reserved).
+
 ## [0.16.0] - 2026-10-17
 
 > A fresh install answers on `http://<server-ip>:3000` straight away, behind a one-time setup token. The npm packages ship with every release again.

@@ -10,6 +10,30 @@ NineDeploy embeds Traefik as its reverse proxy and ingress controller, providing
 - **Health-Gated Routing**: Traefik only sends traffic to containers marked healthy by NineDeploy's health monitoring loop.
 - **WebSocket & HTTP/2 Support**: Native bidirectional streaming for WebSockets, SSE, and HTTP/2 multiplexing.
 
+### Automatic URLs (0.16.1)
+
+A service can get a URL of its own the moment it deploys, before any domain is set up. Configure it under **Settings → Security → Automatic URLs** (operator only) or with `PUT /v1/settings/auto-url`:
+
+| Mode | A service named `shop` gets | DNS you set up | TLS |
+| --- | --- | --- | --- |
+| Free test URLs (`sslip`) | `http://shop.203.0.113.10.sslip.io` | none — sslip.io answers `*.<ip>.sslip.io` with that address | plain HTTP, meant for testing |
+| Your wildcard domain (`domain`) | `https://shop.apps.example.com` | one wildcard record, `*.apps.example.com` → the server | ACME per name, or one wildcard certificate via DNS-01 |
+| Off (`off`) | only the domains you add | — | — |
+
+- The URL is added when the service's deploy goes live. **Generate URL** on the service's Network tab (`POST /v1/services/:id/domains/auto`) adds it at once.
+- A service pinned to a node uses the node's address in sslip mode. A node registered by hostname has no sslip.io name.
+- Each service's automatic name is reserved for it: another tenant's claim on `shop.<zone>` is refused, as is a wildcard over the zone. Names inside the zone need no DNS proof.
+- `NINEDEPLOY_WILDCARD_DOMAIN` still works exactly as before and wins over the setting.
+- **Upgrades:** an upgraded panel stays `off`. A fresh install turns on sslip.io when the installer recorded a public IPv4 (`NINEDEPLOY_PUBLIC_URL=http://<ip>:3000`). **Detect** asks a public echo service for the address, and only when clicked.
+
+### Path routing
+
+A domain can route only a path prefix to a service, so several services share one host: `app.example.com` → the web service, `app.example.com/api` → the API. Type the path next to the hostname on the service's Network tab (pasting `https://app.example.com/api` fills both), or send `path` to `POST /v1/services/:id/domains`.
+
+- The router matches `Host(…) && PathPrefix(/api)`; a longer rule wins over the bare host.
+- The request keeps its path: the API service receives `/api/users`, not `/users`, so it must serve under the prefix.
+- Every service already routing the host must be one you can manage (`member` on it); you cannot stack a path on another tenant's host.
+
 ---
 
 ## 🔒 2. Let's Encrypt SSL Certificates

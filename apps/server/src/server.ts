@@ -1,6 +1,7 @@
 import { buildApp } from './app.js';
 import { config } from './config.js';
 import { announceSetupToken } from './lib/setupToken.js';
+import { getAutoUrlConfig } from './lib/autoUrl.js';
 
 async function main(): Promise<void> {
   // r175: the image's default command is this file. A node started with
@@ -20,6 +21,9 @@ async function main(): Promise<void> {
     await app.listen({ host: config.host, port: config.port });
     app.log.info(`NineDeploy API listening on http://${config.host}:${config.port}`);
     await announceSetupToken(app.db, app.log).catch((err: unknown) => app.log.error({ err }, 'setup token check failed'));
+    // Prime the Automatic URLs copy the synchronous own-zone checks read
+    // (lib/autoUrl.ts); every domain claim also refreshes it first.
+    await getAutoUrlConfig(app.db).catch((err: unknown) => app.log.warn({ err }, 'could not load automatic URL settings'));
   } catch (err) {
     app.log.error(err);
     process.exit(1);

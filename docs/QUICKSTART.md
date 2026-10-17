@@ -75,6 +75,12 @@ docker run -d --name ninedeploy \
 > backups work identically — the panel drives them as host sibling containers
 > through the mounted socket.
 
+### Your first deploy
+
+After the first admin signs in, the Dashboard shows a **Getting started** checklist and a **Deploy your first app** card. The **New** button (top bar, or `/new`) opens the resource picker: a Git repository, a Docker image, a Dockerfile, an uploaded `.zip` / `.tar.gz` of a project folder, a static site, a Compose stack, one of 11 database engines, or a one-click app from the catalog. Without a Git repository, `ninedeploy deploy up ./my-app --create my-app` deploys a local folder ([details](./DEPLOYMENTS.md#deploy-without-git-uploaded-source-0161)).
+
+On a fresh install with a public IP, services get a free test URL right away — `http://<service>.<server-ip>.sslip.io` — so the first deploy is reachable before any DNS work. Switch to your own wildcard domain, or turn it off, under **Settings → Security → Automatic URLs** ([details](./TRAEFIK_INGRESS.md#automatic-urls-0161)).
+
 ---
 
 ## 💻 3. Local Development from Source
@@ -167,6 +173,7 @@ On systemd bare-metal installations an operator can upgrade the panel from the d
 | `NINEDEPLOY_MASTER_KEYS` | *(optional)* | Key ring for AES-256-GCM secret rotation (e.g. `0:hex,1:hex`) |
 | `NINEDEPLOY_PUBLIC_URL` | `http://localhost:3000` | Public root URL for webhooks and OAuth redirects (fresh 0.16 installs write `http://<server-ip>:3000`) |
 | `NINEDEPLOY_SETUP_TOKEN` | — | One-time token the first-admin signup requires (0.16; the installer generates it, production without it writes `DATA_DIR/setup-token`) |
+| `NINEDEPLOY_WILDCARD_DOMAIN` | — | Base domain for automatic service URLs (`<slug>.<domain>`); wins over Settings → Automatic URLs — see [Automatic URLs](./TRAEFIK_INGRESS.md#automatic-urls-0161) |
 | `BUILDKIT_HOST` | *(unset)* | BuildKit daemon for the optional `railpack` build pack (e.g. `docker-container://buildkit`); the pack is refused while unset — see [Private repositories §6](./PRIVATE_REPO_GUIDE.md#6-how-the-build-pack-is-chosen) |
 
 ---

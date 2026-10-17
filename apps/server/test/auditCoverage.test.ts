@@ -20,6 +20,7 @@ const EXEMPT: Record<string, string> = {
   'backupDestinations.ts POST /:id/test': 'connectivity probe, no state change',
   'settings.ts POST /vault/test': 'connectivity probe, no state change',
   'settings.ts POST /dns-records/test': 'connectivity probe, no state change',
+  'settings.ts POST /auto-url/detect-ip': 'asks a public echo service for the host IP; reads only, nothing is stored',
   'notifications.ts POST /channels/:id/test': 'sends a test message, no state change',
   'emailTemplates.ts POST /:wid/email-templates/preview': 'renders a preview, no state change',
   'services.ts POST /compose/preview': 'analyses YAML, no state change',

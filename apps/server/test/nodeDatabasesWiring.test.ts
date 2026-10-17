@@ -47,7 +47,9 @@ describe('the runtime dispatch reaches every caller (M17)', () => {
     const pipeline = read('../src/engine/pipeline.ts');
     const join = pipeline.indexOf('await connectServiceToNodeDatabases(db, service.serverId, runtime.runtimeId, onNode, log);');
     expect(join).toBeGreaterThan(pipeline.indexOf('runtime = await builder.buildAndRun(ctx, previous);'));
-    expect(join).toBeLessThan(pipeline.indexOf("const healthy = await builder.isHealthy(runtime, 300_000, 10_000, log);"));
+    const healthcheck = pipeline.indexOf('const healthy = await builder.isHealthy(runtime, healthTimeoutS * 1000, 10_000, log);');
+    expect(healthcheck).toBeGreaterThan(-1);
+    expect(join).toBeLessThan(healthcheck);
   });
 
   it('D5: a sidecar publishes only a non-default port', () => {

@@ -125,15 +125,27 @@ export interface PlacedBuildDeps {
  * and Nixpacks keeps it in the image config as ENV (and in the build-arg
  * history). On a registry push that image is readable by everyone with pull
  * access, so a Nixpacks build with secret variables is refused before anything
- * is built or logged in. Dockerfile builds get no service env, and Railpack
- * hands its values to BuildKit as secrets, so neither is affected; a service
- * that ships by stream relay keeps the image on hosts that hold the env anyway.
+ * is built or logged in. A Dockerfile build gets only the variables named as
+ * its build arguments (0.16.1), which the image history keeps too — so the
+ * same refusal covers a secret among those. Railpack hands its values to
+ * BuildKit as secrets and is not affected; a service that ships by stream
+ * relay keeps the image on hosts that hold the env anyway.
  */
 async function assertNoSecretsInPushedImage(ctx: BuildContext): Promise<void> {
-  const keys = (ctx.buildSecretKeys ?? []).filter((key) => key in ctx.env);
-  if (keys.length === 0) return;
+  const secretKeys = (ctx.buildSecretKeys ?? []).filter((key) => key in ctx.env);
+  if (secretKeys.length === 0) return;
   const { pack } = await primaryBuildPack(ctx.workDir, ctx.buildConfig);
+  if (pack === 'dockerfile') {
+    const buildArgs = ctx.buildConfig?.buildArgs ?? [];
+    const baked = secretKeys.filter((key) => buildArgs.includes(key));
+    if (baked.length === 0) return;
+    throw new BuildPlacementError(
+      `These secret variables are build arguments of this service, and build arguments stay readable in the image history; the image would be pushed to a registry where anyone who can pull it could read them: ${baked.slice(0, 10).join(', ')}. ` +
+        'Nothing was built or pushed. Remove them from the build arguments (Service → Settings → Build), or clear the push registry to ship by stream relay.',
+    );
+  }
   if (pack !== 'nixpacks') return;
+  const keys = secretKeys;
   const shown = keys.slice(0, 10).join(', ') + (keys.length > 10 ? `, … (${keys.length} in all)` : '');
   throw new BuildPlacementError(
     `This service builds with Nixpacks, which bakes its environment into the image, and the image would be pushed to a registry where anyone who can pull it could read these secret variables: ${shown}. ` +

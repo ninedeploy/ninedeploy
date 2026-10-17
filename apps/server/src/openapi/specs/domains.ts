@@ -45,6 +45,12 @@ export const domainsSpecs: RouteSpecMap = {
     floor: 'member',
     responseType: 'DomainVerifyResult',
   },
+  'POST /v1/services/:id/domains/auto': {
+    summary: "Add the service's automatic URL now (Settings → Automatic URLs)",
+    tag: 'domains',
+    floor: 'member',
+    responseType: 'Domain & { created: boolean }',
+  },
   'GET /v1/domains': {
     summary: 'Every domain the caller can see',
     tag: 'domains',

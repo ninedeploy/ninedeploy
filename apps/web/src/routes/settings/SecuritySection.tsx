@@ -6,6 +6,7 @@ import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, ErrorCard, cn } from '../../components/ui.js';
 import { useAuth } from '../../lib/auth.js';
 import { TerminalsCard } from './TerminalsCard.js';
+import { AutoUrlCard } from './AutoUrlCard.js';
 
 /** Security: open registration, ACME, template source, DNS-01 and wildcard domain. */
 export function SecuritySection() {
@@ -264,28 +265,9 @@ export function SecuritySection() {
         </CardBody>
       </Card>
 
-      {/* Wildcard Domain — reads the configured apex from the settings API */}
-      <Card className="mb-5">
-        <CardBody>
-          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Wildcard Domain</h2>
-          <p className="mb-3 text-xs text-slate-500">
-            Set a wildcard domain so every service automatically gets a URL like <code className="text-emerald-300">my-app.yourdomain.com</code>.
-            Configure a wildcard DNS <code className="text-slate-400">*.yourdomain.com</code> → server IP, then set it here.
-          </p>
-          <div className="rounded-lg bg-white/[0.02] px-3 py-2 ring-1 ring-inset ring-white/5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-500">Current</span>
-              <span className="font-mono text-sm text-emerald-300">
-                {wildcardApex ? `*.${wildcardApex}` : 'not configured'}
-              </span>
-            </div>
-            <p className="mt-1.5 text-[11px] text-slate-600">
-              Set via <code className="text-slate-500">NINEDEPLOY_WILDCARD_DOMAIN</code> env var and restart.
-              Example: <code className="text-slate-500">NINEDEPLOY_WILDCARD_DOMAIN=ninedeploy.dev</code>
-            </p>
-          </div>
-        </CardBody>
-      </Card>
+      {/* 0.16.1: the old read-only "Wildcard Domain" card showed the DNS-01
+          apex as if it gave services URLs; this one actually configures them. */}
+      {isOperator && <AutoUrlCard />}
 
       {isOperator && (
         <div className="mb-5">

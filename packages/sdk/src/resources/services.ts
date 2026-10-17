@@ -32,6 +32,15 @@ import { apiGetUrl } from '../apiPath.js';
 import type { ApplyManifestResult, ApplyManifestInput, ServiceDetail } from '../types.js';
 import type { Transport } from '../transport.js';
 
+/** 0.16.1: one kept upload of a service's source archive. */
+export interface SourceUpload {
+  /** First 40 hex chars of the archive's SHA-256 (the deployment's `commitSha`). */
+  sha: string;
+  format: 'zip' | 'tar.gz';
+  bytes: number;
+  uploadedAt: string;
+}
+
 export interface ServicesApi {
   services: {
     /**
@@ -57,6 +66,18 @@ export interface ServicesApi {
     logs: (id: number) => Promise<{ lines: string }>;
     clone: (id: number, input?: { name?: string; slug?: string }) => Promise<Service>;
     exportUrl: (id: number) => string;
+    /**
+     * 0.16.1: send a `.zip` / `.tar.gz` (up to 100 MiB) as the source of a
+     * docker service created without a repository or image, and deploy it
+     * (`deploy: false` only stores it). A panel older than 0.16.1 answers 404.
+     */
+    uploadSource: (
+      id: number,
+      archive: Uint8Array,
+      opts?: { deploy?: boolean },
+    ) => Promise<SourceUpload & { entries: number; deploymentId: number | null }>;
+    /** 0.16.1: the kept uploads (newest first) and whether the service takes uploads. */
+    sourceUploads: (id: number) => Promise<{ uploadSourced: boolean; maxBytes: number; uploads: SourceUpload[] }>;
     importBundle: (bundle: unknown) => Promise<{ ok: boolean; serviceId: number; slug: string; message: string }>;
     /**
      * `.ninedeploy` manifest endpoints. The server applies
@@ -172,6 +193,14 @@ export function servicesApi(t: Transport): ServicesApi {
       logs: (id) => get<{ lines: string }>(`/v1/services/${id}/logs`),
       clone: (id, input) => send<Service>('POST', `/v1/services/${id}/clone`, input ?? {}),
       exportUrl: (id) => `/v1/services/${id}/export`,
+      uploadSource: (id, archive, opts) =>
+        request<SourceUpload & { entries: number; deploymentId: number | null }>(
+          `/v1/services/${id}/source${opts?.deploy === false ? '?deploy=false' : ''}`,
+          { method: 'POST', raw: archive },
+          // An upload of up to 100 MiB may outlast the default budget.
+          10 * 60_000,
+        ),
+      sourceUploads: (id) => get<{ uploadSourced: boolean; maxBytes: number; uploads: SourceUpload[] }>(`/v1/services/${id}/source`),
       importBundle: (bundle) => send<{ ok: boolean; serviceId: number; slug: string; message: string }>('POST', '/v1/services/import', bundle),
       manifest: {
         apply: (serviceId, input) =>

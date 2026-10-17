@@ -205,6 +205,22 @@ describe('ServiceDetail', () => {
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('clone failed', 'error'));
   });
 
+  it('0.16.1: a docker service with no repository or image takes uploads on its Deploys tab; a repo service does not', async () => {
+    mockOf(api.services.get).mockResolvedValue({ ...service, repoUrl: null, image: null, composeContent: null } as never);
+    mockOf(api.services.sourceUploads).mockResolvedValue({ uploadSourced: true, maxBytes: 1, uploads: [] } as never);
+    renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+    await openTab('Deploys');
+    expect(await screen.findByText('Uploaded source')).toBeInTheDocument();
+    expect(screen.getByLabelText('Upload new version')).toBeInTheDocument();
+  });
+
+  it('control: a repository service has no upload card', async () => {
+    renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+    await openTab('Deploys');
+    await screen.findAllByRole('button');
+    expect(screen.queryByText('Uploaded source')).not.toBeInTheDocument();
+  });
+
   it('jumps the log panel to a clicked pipeline stage', async () => {
     mockOf((await import('../src/lib/useDeployLogs.js')).useDeployLogs).mockReturnValue({
       lines: 'booting\n##[stage:BUILD:success] image built\nserving',
@@ -961,7 +977,7 @@ describe('ServiceDetail', () => {
     ] as never);
     mockOf(api.deploys.rollback).mockRejectedValue(new Error('x'));
     mockOf(api.services.remove).mockRejectedValue(new Error('x'));
-    mockOf(api.domains.create).mockRejectedValue(new Error('x'));
+    mockOf(api.domains.create).mockRejectedValue(new Error('That hostname is reserved for the NineDeploy panel'));
     mockOf(api.domains.remove).mockRejectedValue(new Error('x'));
     mockOf(api.webhooks.create).mockRejectedValue(new Error('x'));
     mockOf(api.webhooks.remove).mockRejectedValue(new Error('x'));
@@ -978,7 +994,8 @@ describe('ServiceDetail', () => {
     await openTab('Network');
     await user.type(screen.getByPlaceholderText('app.example.com'), 'x.example.com');
     fireEvent.click(screen.getByRole('button', { name: /Add/ }));
-    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Could not add the domain', 'error'));
+    // 0.16.1: the server's reason, not a generic line.
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('That hostname is reserved for the NineDeploy panel', 'error'));
     fireEvent.click(screen.getByTitle('Remove domain'));
     fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Could not remove the domain', 'error'));
@@ -1148,11 +1165,12 @@ describe('ServiceDetail', () => {
   });
 
   it('reports settings save failures', async () => {
-    mockOf(api.services.update).mockRejectedValue(new Error('x'));
+    mockOf(api.services.update).mockRejectedValue(new Error('build.buildArgs.0: must be a valid environment variable name'));
     renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
     await openTab('Settings');
     fireEvent.click(await screen.findByRole('button', { name: /Save settings/ }));
-    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Could not save settings', 'error'));
+    // 0.16.1: the server's reason, not a generic line.
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('build.buildArgs.0: must be a valid environment variable name', 'error'));
   });
 
   it('saves resource limits from the settings tab', async () => {

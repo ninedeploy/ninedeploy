@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, CheckCircle2, Cpu, Database, Globe, HardDrive, Link2, MemoryStick, Package, Rocket, Server, Sparkles, Upload, XCircle } from 'lucide-react';
+import { AlertCircle, ArrowRight, CheckCircle2, Cpu, Database, GitBranch, Globe, HardDrive, Link2, MemoryStick, Package, Rocket, Server, Sparkles, Upload, XCircle } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { api } from '../lib/api.js';
@@ -9,6 +9,8 @@ import { Button, Card, CardBody, ErrorCard, Skeleton, cn } from '../components/u
 import { formatBytes, formatDateTime } from '../lib/format.js';
 import { ServiceDomainLauncher } from '../components/ServiceDomainLauncher.js';
 import { PluginSlot } from '../components/PluginSlot.js';
+import { useOpenDeploy } from '../lib/deployLauncher.js';
+import { GettingStartedCard } from '../components/GettingStartedCard.js';
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -16,6 +18,8 @@ export function Dashboard() {
   const { toast } = useToast();
   const { user } = useAuth();
   const isOperator = user?.isOperator === true;
+  const openDeployWizard = useOpenDeploy();
+  const openDeploy = () => openDeployWizard();
   const dash = useQuery({ queryKey: ['dashboard'], queryFn: () => api.dashboard.get(), refetchInterval: 5000 });
   const snapshot = useQuery({
     queryKey: ['live-stats-snapshot'],
@@ -105,6 +109,13 @@ export function Dashboard() {
         </Button>
       </div>
       <FetchBar show={dash.isFetching} />
+      {/* Setup lands a fresh install here: until something is deployed, the
+          way to deploy it is the first thing on the page. */}
+      {s.services === 0 && (
+        <FirstDeployCard onDeploy={openDeploy} onDemo={() => seedDemo.mutate()} demoPending={seedDemo.isPending} />
+      )}
+      {/* The instance operator's setup checklist (its routes are operator-only). */}
+      {isOperator && <GettingStartedCard />}
       <div
         className={cn(
           'relative overflow-hidden rounded-2xl border p-5',
@@ -211,8 +222,8 @@ export function Dashboard() {
 
       {/* Quick Actions Hub */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Link to="/hub" className="group">
-          <Card interactive className="p-4 transition-all duration-200 group-hover:border-indigo-500/30 group-hover:bg-indigo-500/[0.03]">
+        <button type="button" onClick={openDeploy} className="group text-left">
+          <Card interactive className="h-full p-4 transition-all duration-200 group-hover:border-indigo-500/30 group-hover:bg-indigo-500/[0.03]">
             <div className="flex items-center gap-3">
               <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-indigo-500/10 text-indigo-400 ring-1 ring-inset ring-indigo-500/20 group-hover:bg-indigo-500/20 group-hover:scale-105 transition-transform">
                 <Rocket size={18} />
@@ -223,7 +234,7 @@ export function Dashboard() {
               </div>
             </div>
           </Card>
-        </Link>
+        </button>
 
         <Link to="/databases" className="group">
           <Card interactive className="p-4 transition-all duration-200 group-hover:border-emerald-500/30 group-hover:bg-emerald-500/[0.03]">
@@ -279,7 +290,7 @@ export function Dashboard() {
       <div>
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Service Health</h2>
         {data.health.length === 0 ? (
-          <Card><CardBody><p className="py-6 text-center text-sm text-slate-500">No services yet. Deploy from the <Link to="/hub" className="text-indigo-400 hover:underline">Hub</Link>.</p></CardBody></Card>
+          <Card><CardBody><p className="py-6 text-center text-sm text-slate-500">No services yet. <button type="button" onClick={openDeploy} className="text-indigo-400 hover:underline">Deploy a new service</button> or start from a template in the <Link to="/hub" className="text-indigo-400 hover:underline">Hub</Link>.</p></CardBody></Card>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {data.health.map((h) => {
@@ -409,6 +420,51 @@ export function Dashboard() {
             </tbody>
           </table>
         </Card>
+      </div>
+    </div>
+  );
+}
+
+function FirstDeployCard({ onDeploy, onDemo, demoPending }: { onDeploy: () => void; onDemo: () => void; demoPending: boolean }) {
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-indigo-500/25 bg-gradient-to-br from-indigo-500/[0.10] via-indigo-500/[0.03] to-transparent p-6">
+      <div className="flex items-start gap-4">
+        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-indigo-500 text-white shadow-lg shadow-indigo-500/30">
+          <Rocket size={22} />
+        </div>
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-indigo-300">Get started</p>
+          <h2 className="text-lg font-semibold text-white">Deploy your first app</h2>
+          <p className="mt-0.5 text-sm text-slate-400">
+            Point NineDeploy at a Git repository, a Dockerfile or a container image — it builds it, gives it a URL and keeps it running.
+          </p>
+        </div>
+      </div>
+      <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+        <button type="button" onClick={onDeploy} className="group rounded-xl border border-indigo-500/40 bg-indigo-500/15 p-4 text-left transition hover:bg-indigo-500/25">
+          <GitBranch size={18} className="text-indigo-300" />
+          <div className="mt-2 text-sm font-semibold text-white">From your code</div>
+          <div className="text-xs text-slate-400">Git repo, Dockerfile or image</div>
+          <div className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-indigo-300">
+            Start deploy <ArrowRight size={12} className="transition group-hover:translate-x-0.5" />
+          </div>
+        </button>
+        <Link to="/hub" className="group rounded-xl border border-white/10 bg-white/[0.03] p-4 transition hover:bg-white/[0.06]">
+          <Sparkles size={18} className="text-amber-300" />
+          <div className="mt-2 text-sm font-semibold text-white">From a template</div>
+          <div className="text-xs text-slate-400">One-click apps from the Hub</div>
+          <div className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-slate-300">
+            Browse templates <ArrowRight size={12} className="transition group-hover:translate-x-0.5" />
+          </div>
+        </Link>
+        <button type="button" onClick={onDemo} disabled={demoPending} className="group rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left transition hover:bg-white/[0.06] disabled:opacity-60">
+          <Package size={18} className="text-emerald-300" />
+          <div className="mt-2 text-sm font-semibold text-white">Try the demo</div>
+          <div className="text-xs text-slate-400">A sample Next.js app, built for you</div>
+          <div className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-slate-300">
+            {demoPending ? 'Creating demo…' : 'Load demo'} <ArrowRight size={12} className="transition group-hover:translate-x-0.5" />
+          </div>
+        </button>
       </div>
     </div>
   );

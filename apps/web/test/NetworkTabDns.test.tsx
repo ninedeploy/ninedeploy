@@ -19,6 +19,7 @@ const apiMock = vi.hoisted(() => ({
       update: vi.fn(),
       dnsCheck: vi.fn(),
       verify: vi.fn(),
+      generate: vi.fn(),
     },
     ports: { list: vi.fn() },
   },
@@ -128,5 +129,77 @@ describe('NetworkTab domain ownership (r345)', () => {
     renderTab();
     fireEvent.click(await screen.findByRole('button', { name: 'Verify' }));
     expect(await screen.findByText('nope')).toBeInTheDocument();
+  });
+});
+
+describe('NetworkTab Generate URL (0.16.1)', () => {
+  afterEach(cleanup);
+  beforeEach(() => {
+    vi.clearAllMocks();
+    apiMock.api.domains.list.mockResolvedValue([]);
+    apiMock.api.ports.list.mockResolvedValue([]);
+  });
+
+  it('adds the automatic URL and refreshes the list', async () => {
+    apiMock.api.domains.generate.mockResolvedValue({ id: 3, hostname: 'web.203.0.113.10.sslip.io', created: true });
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: /Generate URL/ }));
+    await waitFor(() => expect(apiMock.api.domains.generate).toHaveBeenCalledWith(1));
+    expect(await screen.findByText('web.203.0.113.10.sslip.io is routed to this service')).toBeInTheDocument();
+    await waitFor(() => expect(apiMock.api.domains.list.mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it("shows the server's reason when automatic URLs are off", async () => {
+    apiMock.api.domains.generate.mockRejectedValue(new Error('Automatic URLs are off. An operator turns them on under Settings → Automatic URLs.'));
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: /Generate URL/ }));
+    expect(await screen.findByText(/Automatic URLs are off/)).toBeInTheDocument();
+  });
+});
+
+describe('NetworkTab path routing (0.16.1)', () => {
+  afterEach(cleanup);
+  beforeEach(() => {
+    vi.clearAllMocks();
+    apiMock.api.domains.list.mockResolvedValue([]);
+    apiMock.api.ports.list.mockResolvedValue([]);
+    apiMock.api.domains.create.mockResolvedValue({ id: 9, hostname: 'app.example.com', path: '/api', status: 'active' });
+  });
+
+  it('sends a typed path, normalised', async () => {
+    renderTab();
+    const host = await screen.findByLabelText('Domain');
+    fireEvent.change(host, { target: { value: 'app.example.com' } });
+    fireEvent.change(screen.getByLabelText('Path'), { target: { value: 'api/v1/?x=1' } });
+    fireEvent.submit(host.closest('form')!);
+    await waitFor(() => expect(apiMock.api.domains.create).toHaveBeenCalledWith(1, { hostname: 'app.example.com', path: '/api/v1' }));
+  });
+
+  it("moves a pasted URL's path into the path field", async () => {
+    renderTab();
+    const host = await screen.findByLabelText('Domain');
+    fireEvent.change(host, { target: { value: 'https://App.Example.com/api/' } });
+    fireEvent.blur(host);
+    expect(host).toHaveValue('app.example.com');
+    expect(screen.getByLabelText('Path')).toHaveValue('/api');
+    fireEvent.submit(host.closest('form')!);
+    await waitFor(() => expect(apiMock.api.domains.create).toHaveBeenCalledWith(1, { hostname: 'app.example.com', path: '/api' }));
+  });
+
+  it('a bare host routes the whole host, sent exactly as before', async () => {
+    renderTab();
+    const host = await screen.findByLabelText('Domain');
+    fireEvent.change(host, { target: { value: 'app.example.com' } });
+    fireEvent.submit(host.closest('form')!);
+    await waitFor(() => expect(apiMock.api.domains.create).toHaveBeenCalledWith(1, { hostname: 'app.example.com' }));
+  });
+
+  it("shows the server's reason when the add is refused", async () => {
+    apiMock.api.domains.create.mockRejectedValue(new Error('That hostname is already routed to another service'));
+    renderTab();
+    const host = await screen.findByLabelText('Domain');
+    fireEvent.change(host, { target: { value: 'taken.example.com' } });
+    fireEvent.submit(host.closest('form')!);
+    expect(await screen.findByText(/already routed to another service/)).toBeInTheDocument();
   });
 });

@@ -246,9 +246,12 @@ export function armTimeout(child: ChildProcess, timeoutMs: number, onTimeout: ()
  * put it in the deploy log, HTTP 400 bodies and the server log verbatim.
  */
 const REDACT_NEXT_FLAGS = new Set(['-p', '-a', '--password', '-e', '--requirepass']);
-function redactedLabel(cmd: string, args: string[]): string {
+export function redactedLabel(cmd: string, args: string[]): string {
   const parts: string[] = [cmd];
   let maskNext = false;
+  // 0.16.1: `--build-arg KEY=VALUE` keeps the name (the log should say which
+  // arguments a build received) and masks the value.
+  let maskValueNext = false;
   // r664: ssh's last argv element is the REMOTE command line. The node
   // bootstrap's carries the agent token hash — the node's sealing key — and a
   // failed bootstrap put it into the operator's 400 and the server log.
@@ -257,6 +260,22 @@ function redactedLabel(cmd: string, args: string[]): string {
     if (maskNext) {
       parts.push('***');
       maskNext = false;
+      continue;
+    }
+    if (maskValueNext) {
+      const eq = arg.indexOf('=');
+      parts.push(eq === -1 ? arg : `${arg.slice(0, eq)}=***`);
+      maskValueNext = false;
+      continue;
+    }
+    if (arg === '--build-arg') {
+      parts.push(arg);
+      maskValueNext = true;
+      continue;
+    }
+    if (arg.startsWith('--build-arg=')) {
+      const eq = arg.indexOf('=', 12);
+      parts.push(eq === -1 ? arg : `${arg.slice(0, eq)}=***`);
       continue;
     }
     if (arg.startsWith('--password=')) {

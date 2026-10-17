@@ -28,6 +28,7 @@ const Domains = lazy(() => import('./routes/Domains.js').then((m) => ({ default:
 const DomainTransferAccept = lazy(() =>
   import('./routes/DomainTransferAccept.js').then((m) => ({ default: m.DomainTransferAccept })),
 );
+const NewResource = lazy(() => import('./routes/NewResource.js').then((m) => ({ default: m.NewResource })));
 const Hub = lazy(() => import('./routes/Hub.js').then((m) => ({ default: m.Hub })));
 const ManifestCreator = lazy(() => import('./routes/ManifestCreator.js').then((m) => ({ default: m.ManifestCreator })));
 const ServiceDetail = lazy(() => import('./routes/service/index.js').then((m) => ({ default: m.ServiceDetail })));
@@ -123,6 +124,7 @@ export default function App() {
           <Route path="projects" element={<Projects />} />
           <Route path="labels" element={<Labels />} />
           <Route path="services" element={<ServicesList />} />
+          <Route path="new" element={<NewResource />} />
           <Route path="hub" element={<Hub />} />
           <Route path="manifest-creator" element={<ManifestCreator />} />
           <Route path="deploys" element={<Deploys />} />

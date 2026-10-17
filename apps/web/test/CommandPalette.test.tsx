@@ -26,14 +26,14 @@ vi.mock('../src/lib/auth.js', () => ({
 
 function LocationProbe() {
   const location = useLocation();
-  return <div data-testid="location">{location.pathname}</div>;
+  return <div data-testid="location">{location.pathname}{location.search}</div>;
 }
 
-function renderPalette(onClose = vi.fn()) {
+function renderPalette(onClose = vi.fn(), at = '/current') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const utils = render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/current']}>
+      <MemoryRouter initialEntries={[at]}>
         <CommandPalette onClose={onClose} />
         <Routes>
           <Route path="*" element={<LocationProbe />} />
@@ -59,12 +59,43 @@ describe('CommandPalette', () => {
     apiMock.api.menus.list.mockResolvedValue({ items: [] });
   });
 
-  it('lists the first 8 nav commands when the query is empty', async () => {
+  it('lists the deploy action first, then the first 8 nav commands, when the query is empty', async () => {
     renderPalette();
     await waitFor(() => expect(screen.getByText('Hub')).toBeInTheDocument());
+    expect(screen.getAllByRole('option')[0]).toHaveTextContent('Deploy new service');
     expect(screen.getByText('Services')).toBeInTheDocument();
     expect(screen.getByText('Databases')).toBeInTheDocument();
     expect(screen.getAllByText('Navigate')).toHaveLength(8);
+  });
+
+  it('"deploy" and "new" find the /new resource picker first', async () => {
+    const { onClose } = renderPalette(vi.fn(), '/services/4?tab=env');
+    await waitFor(() => expect(screen.getByText('Hub')).toBeInTheDocument());
+    for (const q of ['deploy', 'new']) {
+      fireEvent.change(screen.getByPlaceholderText(/Search services/), { target: { value: q } });
+      expect(screen.getAllByRole('option')[0]).toHaveTextContent('Deploy new service');
+    }
+    key('Enter');
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/new$/));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('a quick action opens the wizard pre-set over the current page, keeping its query', async () => {
+    renderPalette(vi.fn(), '/services/4?tab=env');
+    await waitFor(() => expect(screen.getByText('Hub')).toBeInTheDocument());
+    fireEvent.change(screen.getByPlaceholderText(/Search services/), { target: { value: 'docker image' } });
+    fireEvent.click(await screen.findByText('Deploy a Docker image'));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/services/4?tab=env&deploy=image'));
+    fireEvent.change(screen.getByPlaceholderText(/Search services/), { target: { value: 'create' } });
+    expect(screen.getAllByRole('option')[0]).toHaveTextContent('Create a database');
+  });
+
+  it('offers the Compose quick action to operators only', async () => {
+    authState.user = { id: 7, isOperator: false };
+    renderPalette();
+    await waitFor(() => expect(screen.getByText('Hub')).toBeInTheDocument());
+    fireEvent.change(screen.getByPlaceholderText(/Search services/), { target: { value: 'compose' } });
+    expect(screen.queryByText('Deploy a Compose stack')).not.toBeInTheDocument();
   });
 
   it('r472: a member never sees operator-only navigations offered', async () => {
@@ -159,6 +190,7 @@ describe('CommandPalette', () => {
   it('executes the selected command with Enter and closes', async () => {
     const { onClose } = renderPalette();
     await waitFor(() => expect(screen.getByText('Hub')).toBeInTheDocument());
+    key('ArrowDown'); // Hub (the deploy action is first)
     key('Enter');
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/hub'));
     expect(onClose).toHaveBeenCalled();
@@ -167,9 +199,10 @@ describe('CommandPalette', () => {
   it('navigates with arrow keys and Enter', async () => {
     const { onClose } = renderPalette();
     await waitFor(() => expect(screen.getByText('Hub')).toBeInTheDocument());
-    key('ArrowDown'); // Services
+    key('ArrowDown'); // Hub
+    key('ArrowDown'); // Dashboard
     key('Enter');
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/'));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/));
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -178,7 +211,7 @@ describe('CommandPalette', () => {
     await waitFor(() => expect(screen.getByText('Hub')).toBeInTheDocument());
     key('ArrowUp');
     key('Enter');
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/hub'));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/new$/));
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -203,7 +236,7 @@ describe('CommandPalette', () => {
     expect(input).toHaveFocus();
     const listbox = screen.getByRole('listbox', { name: 'Results' });
     expect(input).toHaveAttribute('aria-controls', listbox.id);
-    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(8));
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(9));
     const options = screen.getAllByRole('option');
     expect(options[0]).toHaveAttribute('aria-selected', 'true');
     expect(input).toHaveAttribute('aria-activedescendant', options[0]!.id);

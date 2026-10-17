@@ -465,6 +465,13 @@ export const services = sqliteTable(
     // Direct host port mapping (e.g. 8080) for domain-less external access.
     publishedPort: integer('published_port'),
     healthPath: text('health_path').notNull().default('/'),
+    // 0.16.1: how long a deploy waits for the new container to answer its
+    // healthcheck, in seconds. Null = the 300 s every deploy used before.
+    healthTimeoutSeconds: integer('health_timeout_seconds'),
+    // 0.16.1: operator-set container options for docker services (GPUs,
+    // /dev/shm size, init, open-file limit, added capabilities). Null = none,
+    // the `docker run` line every deploy used before.
+    runtimeOptions: text('runtime_options', { mode: 'json' }).$type<ServiceRuntimeOptions>(),
     // Runtime identifier: pm2 process name or docker container name.
     runtimeId: text('runtime_id'),
     // Resource limits (0 = unlimited). cpuShares maps to docker --cpu-shares
@@ -558,6 +565,9 @@ export const buildConfigs = sqliteTable('build_configs', {
   // whether the nginx conf gets SPA history fallback (try_files -> index.html).
   outputDir: text('output_dir'),
   staticSpa: integer('static_spa', { mode: 'boolean' }).notNull().default(true),
+  // 0.16.1: names of the service's env vars a Dockerfile build receives as
+  // `--build-arg` (JSON string[]). Null/empty = none, the behaviour before.
+  buildArgs: text('build_args', { mode: 'json' }).$type<string[]>(),
   // CI/CD Lifecycle Hooks
   preDeployCmd: text('pre_deploy_cmd'),
   postDeployCmd: text('post_deploy_cmd'),
@@ -635,6 +645,20 @@ export const deployments = sqliteTable(
     createdIdx: index('deployments_created_idx').on(t.createdAt),
   }),
 );
+
+/** `services.runtime_options` (0.16.1); validated by `runtimeOptions` in @ninedeploy/schemas. */
+export interface ServiceRuntimeOptions {
+  /** `--gpus`: every GPU, or how many. */
+  gpus?: 'all' | number | null;
+  /** `--shm-size` in MiB (Docker's default is 64). */
+  shmSizeMb?: number | null;
+  /** `--init`: a tiny init as PID 1 that reaps zombies and forwards signals. */
+  init?: boolean;
+  /** `--ulimit nofile=N:N`. */
+  ulimitNofile?: number | null;
+  /** `--cap-add`, from an allowlist. */
+  capAdd?: string[];
+}
 
 // ─── env vars & secrets ───────────────────────────────────────────────────
 // scope='service' (default): per-service, serviceId set.

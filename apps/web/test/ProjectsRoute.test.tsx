@@ -106,6 +106,29 @@ describe('Projects route', () => {
     await waitFor(() => expect(screen.queryByText('g@x.test')).toBeNull());
   });
 
+  it('0.16.1: opens the shared variables of a project and adds one', async () => {
+    mockOf(api.projectEnv.list).mockResolvedValue([{ id: 4, key: 'SENTRY_DSN', value: 'https://sentry', isSecret: false }] as never);
+    mockOf(api.projectEnv.create).mockResolvedValue({ id: 5, key: 'REGION', value: 'eu', isSecret: false } as never);
+    renderWithProviders(<Projects />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Shared variables' }));
+    expect(await screen.findByText('Acme Web · shared variables')).toBeInTheDocument();
+    expect(await screen.findByText('SENTRY_DSN')).toBeInTheDocument();
+    expect(api.projectEnv.list).toHaveBeenCalledWith(1);
+    expect(screen.getByText(/Every service in this project receives these/)).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText('KEY'), { target: { value: 'REGION' } });
+    fireEvent.change(screen.getByPlaceholderText('value'), { target: { value: 'eu' } });
+    fireEvent.submit(screen.getByPlaceholderText('KEY').closest('form')!);
+    await waitFor(() => expect(api.projectEnv.create).toHaveBeenCalledWith(1, { key: 'REGION', value: 'eu', isSecret: false }));
+    expect(api.env.create).not.toHaveBeenCalled();
+  });
+
+  it('0.16.1: /projects?env=<id> opens that project’s shared variables directly; closing drops the param', async () => {
+    renderWithProviders(<Projects />, { route: '/projects?env=1' });
+    expect(await screen.findByText('Acme Web · shared variables')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /close/i }));
+    await waitFor(() => expect(screen.queryByText('Acme Web · shared variables')).toBeNull());
+  });
+
   it('labels an unscoped project and omits a missing description', async () => {
     mockOf(api.projects.list).mockResolvedValue([
       project({ id: 2, name: 'Shared', workspaceId: null, description: null }),

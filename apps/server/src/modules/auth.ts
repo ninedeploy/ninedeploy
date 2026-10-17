@@ -20,6 +20,7 @@ import { consumeTotpCode } from '../lib/totpReplay.js';
 import { audit } from '../lib/audit.js';
 import { assertStepUp } from '../lib/stepUp.js';
 import { assertSetupToken, clearSetupTokenFile, requiredSetupToken } from '../lib/setupToken.js';
+import { seedFreshInstallAutoUrl } from '../lib/autoUrl.js';
 import { getSetting } from '../lib/settings.js';
 import { findLiveSession, issueSessionTokens, refreshSessionTokens, revokeAllSessions, revokeApiTokens } from '../lib/sessions.js';
 import { beginAuthentication, beginRegistration, finishAuthentication, finishRegistration, legacyCredentialId } from '../lib/webauthn.js';
@@ -181,6 +182,8 @@ export async function createFirstAdmin(db: DB, input: Register) {
     return { user: toUser(user, true), tokens: await issueSessionTokens(tx, user), rawUser: user };
   });
   clearSetupTokenFile();
+  // 0.16.1: a fresh install with a public IP gets free sslip.io service URLs.
+  await seedFreshInstallAutoUrl(db);
   // r222: a new account (or the first admin) is a security event of its own.
   void audit(db, result.rawUser.id, 'auth.register', result.rawUser.email);
   return { user: result.user, tokens: result.tokens };
@@ -224,7 +227,10 @@ export async function registerAccount(db: DB, input: Register) {
     }
     return { user: toUser(user, operator), tokens: await issueSessionTokens(tx, user), rawUser: user, isFirst };
   });
-  if (result.isFirst) clearSetupTokenFile();
+  if (result.isFirst) {
+    clearSetupTokenFile();
+    await seedFreshInstallAutoUrl(db);
+  }
   // r222: a new account (or the first admin) is a security event of its own.
   void audit(db, result.rawUser.id, 'auth.register', result.rawUser.email);
   return { user: result.user, tokens: result.tokens };

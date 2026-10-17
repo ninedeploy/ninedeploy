@@ -10,6 +10,7 @@ import { EnvCard } from '../../components/EnvCard.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, ConfirmDialog, Input, Skeleton, cn } from '../../components/ui.js';
 import { SecretRow } from './SecretRow.js';
+import { InheritedEnvCard } from './InheritedEnvCard.js';
 
 /** Environment variables, auto-deploy webhooks, file attachments and cron jobs. */
 export function EnvironmentTab({
@@ -17,7 +18,14 @@ export function EnvironmentTab({
   svc,
 }: {
   serviceId: number;
-  svc?: { type: string; repoUrl?: string | null; isEphemeralPreview?: boolean; previewDeploymentsEnabled?: boolean };
+  svc?: {
+    type: string;
+    repoUrl?: string | null;
+    isEphemeralPreview?: boolean;
+    previewDeploymentsEnabled?: boolean;
+    /** Resolved project tags (detail responses); their shared variables are shown read-only. */
+    projects?: Array<{ id: number; name: string }>;
+  };
 }) {
   // 0.12: a PR preview is created only for a git-backed service (the webhook
   // needs `repoUrl`), and a preview has no previews of its own.
@@ -29,6 +37,7 @@ export function EnvironmentTab({
             through; the plain docker builder's env-file cannot carry real
             newlines — let the editor say so when one shows up (r409). */}
         <EnvCard serviceId={serviceId} literalNewlines={svc?.type === 'docker'} />
+        <InheritedEnvCard serviceId={serviceId} projects={svc?.projects ?? []} />
         {previewsPossible && (
           <EnvCard
             serviceId={serviceId}

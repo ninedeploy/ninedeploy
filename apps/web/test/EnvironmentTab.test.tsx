@@ -6,6 +6,7 @@ import { createQueryClient, renderWithProviders } from './web-utils.js';
 const apiMock = vi.hoisted(() => ({
   api: {
     env: { list: vi.fn().mockResolvedValue([]) },
+    projectEnv: { list: vi.fn().mockResolvedValue([]) },
     attachments: { list: vi.fn().mockResolvedValue([]), create: vi.fn(), remove: vi.fn() },
     webhooks: { list: vi.fn(), create: vi.fn(), remove: vi.fn() },
     jobs: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), run: vi.fn() },
@@ -29,6 +30,7 @@ function renderTab() {
 beforeEach(() => {
   vi.clearAllMocks();
   apiMock.api.env.list.mockResolvedValue([]);
+  apiMock.api.projectEnv.list.mockResolvedValue([]);
   apiMock.api.attachments.list.mockResolvedValue([]);
   apiMock.api.webhooks.list.mockResolvedValue([]);
   apiMock.api.jobs.list.mockResolvedValue([]);
@@ -127,5 +129,43 @@ describe('EnvironmentTab — scheduled jobs card', () => {
     fireEvent.submit(form);
     await new Promise((r) => setTimeout(r, 20));
     expect(apiMock.api.jobs.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('EnvironmentTab — variables inherited from projects (0.16.1)', () => {
+  const svc = (projects: Array<{ id: number; name: string }>) => ({ type: 'docker', projects });
+
+  it('lists each project’s shared variables, masks secrets and marks the ones the service overrides', async () => {
+    apiMock.api.env.list.mockResolvedValue([{ id: 1, key: 'REGION', value: 'us', isSecret: false }]);
+    apiMock.api.projectEnv.list.mockImplementation(async (id: number) =>
+      id === 2
+        ? [
+            { id: 10, key: 'REGION', value: 'eu', isSecret: false },
+            { id: 11, key: 'SENTRY_DSN', value: 'hidden-value', isSecret: true },
+          ]
+        : [{ id: 12, key: 'LOG_LEVEL', value: 'info', isSecret: false }],
+    );
+    renderWithProviders(<EnvironmentTab serviceId={7} svc={svc([{ id: 2, name: 'Acme' }, { id: 3, name: 'Ops' }])} />, { queryClient: createQueryClient() });
+    expect(await screen.findByText('From projects')).toBeInTheDocument();
+    expect(await screen.findByText('SENTRY_DSN')).toBeInTheDocument();
+    expect(screen.getByText('LOG_LEVEL')).toBeInTheDocument();
+    expect(screen.getByText('•••• secret')).toBeInTheDocument();
+    expect(screen.queryByText('hidden-value')).not.toBeInTheDocument();
+    expect(await screen.findByText('overridden')).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: /Acme/ })[0]).toHaveAttribute('href', '/projects?env=2');
+    expect(apiMock.api.projectEnv.list).toHaveBeenCalledWith(2);
+    expect(apiMock.api.projectEnv.list).toHaveBeenCalledWith(3);
+  });
+
+  it('points at the project when it has none yet, and is absent for a service in no project', async () => {
+    renderWithProviders(<EnvironmentTab serviceId={7} svc={svc([{ id: 2, name: 'Acme' }])} />, { queryClient: createQueryClient() });
+    expect(await screen.findByRole('link', { name: 'Add shared variables' })).toHaveAttribute('href', '/projects?env=2');
+  });
+
+  it('renders nothing without projects', async () => {
+    renderWithProviders(<EnvironmentTab serviceId={7} svc={svc([])} />, { queryClient: createQueryClient() });
+    await screen.findByText('Scheduled jobs');
+    expect(screen.queryByText('From projects')).not.toBeInTheDocument();
+    expect(apiMock.api.projectEnv.list).not.toHaveBeenCalled();
   });
 });

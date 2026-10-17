@@ -322,6 +322,14 @@ export async function buildSourceOnNode(
     log(`Building ${target} with Railpack on the node …`);
     await agent('build.railpack', params, sink);
   } else {
+    // 0.16.1: the agent's `docker.build` op takes no build arguments yet —
+    // say so instead of building as if they had been passed.
+    if ((buildConfig?.buildArgs ?? []).length > 0) {
+      log(
+        `⚠ Build arguments (${(buildConfig?.buildArgs ?? []).join(', ')}) are not passed to a Dockerfile build on a node yet. ` +
+          'Build on the panel host (Service → Settings → Build on: panel) to use them.',
+      );
+    }
     log(`Building ${target} from ${plan.dockerfile} on the node …`);
     await agent('docker.build', { workspace, tag: target, dockerfile: plan.dockerfile, context: plan.context }, sink);
   }
@@ -447,6 +455,15 @@ export function createRemoteDockerBuilder(
           runService = { ...service, port };
         }
         if (env['PORT'] === undefined) runEnv = { ...env, PORT: String(port) };
+      }
+
+      // 0.16.1: the agent's run ops take no container options yet — say so
+      // instead of starting the container as if they had been applied.
+      if (service.runtimeOptions && Object.keys(service.runtimeOptions).length > 0) {
+        log(
+          '⚠ Container options (GPUs, shared memory, init, ulimit, capabilities) are not applied on a remote node yet. ' +
+            'Deploy the service on the panel host to use them.',
+        );
       }
 
       // The run phase (env-file, `docker.runEnv`, cleanup) lives in

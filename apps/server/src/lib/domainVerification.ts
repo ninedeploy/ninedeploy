@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { services, type DB } from '@ninedeploy/db';
 import { config } from '../config.js';
 import { DEFAULT_PREVIEW_DOMAIN_PATTERN, previewBaseDomain } from './previewDomain.js';
+import { autoUrlRelativeLabel, autoUrlZones, getAutoUrlConfig } from './autoUrl.js';
 
 /**
  * H-2, second layer: prove control of the DNS zone before a hostname routes.
@@ -50,7 +51,8 @@ export function newChallengeToken(): string {
 
 /** The instance's own zone(s) — hostnames here need no proof. */
 function ownZones(): string[] {
-  return [config.wildcardDomain, (config.publicUrl ? safeHost(config.publicUrl) : '')]
+  // 0.16.1: plus the Settings → Automatic URLs zone (lib/autoUrl.ts).
+  return [config.wildcardDomain, (config.publicUrl ? safeHost(config.publicUrl) : ''), ...autoUrlZones()]
     .map((z) => (z ?? '').trim().toLowerCase().replace(/^\*\./, '').replace(/\.$/, ''))
     .filter(Boolean);
 }
@@ -81,12 +83,15 @@ export function isOwnZone(hostname: string): boolean {
  *    the automatic ones on rule length).
  */
 export async function ownZoneClaimRefusal(db: DB, serviceId: number, hostname: string): Promise<string | null> {
+  // Re-read the Automatic URLs setting so this check — and the synchronous
+  // `isOwnZone` calls later in the same claim — never act on a stale zone.
+  await getAutoUrlConfig(db);
   if (!isOwnZone(hostname)) return null;
   const host = hostname.trim().toLowerCase().replace(/\.$/, '');
   if (host.startsWith('*.')) return 'is a wildcard on the instance zone (operator-only)';
-  const zone = (config.wildcardDomain ?? '').trim().toLowerCase().replace(/^\*\./, '').replace(/\.$/, '');
-  if (!zone || !host.endsWith(`.${zone}`)) return null;
-  const label = host.slice(0, -(zone.length + 1));
+  // The env wildcard, the Settings domain or an sslip.io address (lib/autoUrl.ts).
+  const label = autoUrlRelativeLabel(host);
+  if (label === null) return null;
   if (!label.includes('.')) {
     const owner = await db.query.services.findFirst({ where: eq(services.slug, label) });
     if (owner) return owner.id !== serviceId ? `is reserved as the automatic domain of service "${owner.name}"` : null;

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
-import { Edit2, FolderKanban, Plus, Trash2, Users } from 'lucide-react';
-import { useNavigate } from 'react-router';
+import { Edit2, FolderKanban, KeyRound, Plus, Trash2, Users } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
 import { useWorkspace } from '../lib/workspace.js';
@@ -11,6 +11,7 @@ import { Badge, Button, Card, ConfirmDialog, EmptyState, ErrorCard, Field, Input
 import { formatDateTime } from '../lib/format.js';
 import type { ProjectEntry } from '@ninedeploy/sdk';
 import { ProjectAccessModal } from '../components/access/ProjectAccessModal.js';
+import { EnvCard } from '../components/EnvCard.js';
 
 /**
  * Projects page.
@@ -50,6 +51,21 @@ export function Projects() {
   const [pendingDelete, setPendingDelete] = useState<ProjectEntry | null>(null);
   // 0.15: who reaches a project and why (project admins; the server decides).
   const [accessFor, setAccessFor] = useState<ProjectEntry | null>(null);
+  // 0.16.1: shared variables, deep-linkable as /projects?env=<id> (the
+  // service Environment tab links here for the variables it inherits).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const envProjectId = Number(searchParams.get('env')) || null;
+  const envProject = envProjectId != null ? (projects.find((p) => p.id === envProjectId) ?? null) : null;
+  const openEnv = (id: number | null) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (id == null) next.delete('env');
+        else next.set('env', String(id));
+        return next;
+      },
+      { replace: true },
+    );
 
   const openCreate = () => {
     setEditing(null);
@@ -213,6 +229,16 @@ export function Projects() {
                     </td>
                     <td className="px-5 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => openEnv(p.id)}
+                          title="Shared variables: every service in this project receives them"
+                          className="h-7 w-7 p-0"
+                          aria-label="Shared variables"
+                        >
+                          <KeyRound size={13} />
+                        </Button>
                         {p.workspaceId != null && (
                           <Button
                             variant="secondary"
@@ -345,6 +371,12 @@ export function Projects() {
       />
 
       {accessFor && <ProjectAccessModal project={accessFor} onClose={() => setAccessFor(null)} />}
+
+      {envProject && (
+        <Modal wide onClose={() => openEnv(null)} title={`${envProject.name} · shared variables`}>
+          <EnvCard serviceId={envProject.id} variant="project" />
+        </Modal>
+      )}
     </div>
   );
 }

@@ -58,6 +58,14 @@ const sleepMock = execMock;
 vi.mock('../src/lib/exec.js', () => execMock);
 vi.mock('../src/lib/crypto.js', () => ({ decrypt: h.decrypt }));
 vi.mock('../src/lib/git.js', () => ({ checkoutCommit: h.checkoutCommit }));
+// 0.16.1: the uploaded-source extraction is stubbed; which service takes it is the real rule.
+const uploadMock = vi.hoisted(() => ({
+  extractSourceUpload: vi.fn(async (..._args: unknown[]) => ({ sha: 'c0ffee'.padEnd(40, '0'), files: 3, strippedFolder: 'myapp' as string | null })),
+}));
+vi.mock('../src/lib/sourceUpload.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/sourceUpload.js')>()),
+  extractSourceUpload: uploadMock.extractSourceUpload,
+}));
 vi.mock('../src/lib/githubApp.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/githubApp.js')>()),
   installationToken: h.installationToken,
@@ -237,6 +245,29 @@ function baseSetup(db: FakeDb, over: Record<string, unknown> = {}) {
   db.query.envVars.findMany.mockResolvedValue([]);
   db.query.databaseAttachments.findMany.mockResolvedValue([]);
 }
+
+describe('0.16.1 uploaded source', () => {
+  it('a service with no repository or image builds the uploaded archive the deployment names; git is not touched', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { repoUrl: null, image: null });
+    db.query.deployments.findFirst.mockResolvedValue({ ...dep, commitSha: 'c0ffee'.padEnd(40, '0') });
+    const lines = collectLogs(1);
+    await runDeployment(db as never, 1);
+    expect(uploadMock.extractSourceUpload).toHaveBeenCalledWith(5, 'c0ffee'.padEnd(40, '0'), expect.stringMatching(/5$/));
+    expect(h.checkoutCommit).not.toHaveBeenCalled();
+    expect(lines).toContain('Uploaded source c0ffee0: 3 entries (built from inside the folder "myapp")');
+    const ctx = h.builder.buildAndRun.mock.calls.at(-1)![0] as { commitSha: string };
+    expect(ctx.commitSha).toBe('c0ffee'.padEnd(40, '0'));
+  });
+
+  it('control: a repository service still clones, and never reads an upload', async () => {
+    const { db } = makeDb();
+    baseSetup(db);
+    await runDeployment(db as never, 1);
+    expect(h.checkoutCommit).toHaveBeenCalled();
+    expect(uploadMock.extractSourceUpload).not.toHaveBeenCalled();
+  });
+});
 
 describe('runDeployment env merging', () => {
   it('merges project-scope shared env under service env', async () => {
@@ -760,7 +791,9 @@ describe('runDeployment', () => {
 
   it('builds creds with undefined token/deployKey when the source has none and defaults the repoUrl', async () => {
     const { db } = makeDb();
-    baseSetup(db, { sourceId: 7, repoUrl: null });
+    // 0.16.1: a repo-less DOCKER service builds its uploaded source instead
+    // (see "0.16.1 uploaded source"); a pm2 service still takes the git path.
+    baseSetup(db, { sourceId: 7, repoUrl: null, type: 'pm2' });
     db.query.sources.findFirst.mockResolvedValue({
       id: 7,
       type: 'custom',
@@ -1021,7 +1054,7 @@ describe('runDeployment', () => {
 
     await runDeployment(db as never, 1);
 
-    expect(lines).toContain('warning: could not auto-assign wildcard domain: unique constraint');
+    expect(lines).toContain('warning: could not auto-assign the automatic URL: unique constraint');
     expect(lines).toContain('✓ Deployment successful');
   });
 
@@ -1133,6 +1166,17 @@ describe('runDeployment', () => {
     expect(h.builder.stop).not.toHaveBeenCalled();
   });
 
+  it('0.16.1: waits as long as the service says for the healthcheck, and names that limit when it fails', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { healthTimeoutSeconds: 900 });
+    h.builder.isHealthy.mockResolvedValue(false);
+    const lines = collectLogs(1);
+    await runDeployment(db as never, 1);
+    expect(h.builder.isHealthy.mock.calls[0]![1]).toBe(900_000);
+    expect(lines).toContain('Healthcheck timeout: 900s');
+    expect(lines.some((l) => l.includes('did not become ready within 900s'))).toBe(true);
+  });
+
   it('fails the deployment when the healthcheck never passes', async () => {
     const { db, updates } = makeDb();
     baseSetup(db);
@@ -1142,7 +1186,9 @@ describe('runDeployment', () => {
 
     await runDeployment(db as never, 1);
 
-    expect(lines).toContain('✗ Deployment failed: Healthcheck failed — service did not become ready in time');
+    expect(lines.some((l) => l.startsWith('✗ Deployment failed: Healthcheck failed — service did not become ready within 300s.'))).toBe(true);
+    // The pre-0.16.1 deadline, unchanged for a service that sets none.
+    expect(h.builder.isHealthy.mock.calls[0]![1]).toBe(300_000);
     expect(h.builder.stop).toHaveBeenCalledWith('c-1');
     expect(updates.some((u) => u.table === deployments && u.values.status === 'failed')).toBe(true);
     expect(updates.some((u) => u.table === services && u.values.status === 'error')).toBe(true);

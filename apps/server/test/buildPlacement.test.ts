@@ -658,6 +658,25 @@ describe('buildElsewhere / retention (design §6.3 steps 1, 2, 6)', () => {
       expect((err as Error).message).toMatch(/stream relay/);
     });
 
+    it('0.16.1: refuses push + Dockerfile when a secret is one of the build arguments; other build arguments build', async () => {
+      const { buildElsewhere, BuildPlacementError } = await import('../src/engine/buildPlacement.js');
+      const svc = await pushService();
+      const buildOnNode = vi.fn(async () => ({ target: 'x', builtWithNixpacks: false }));
+      const env = { DATABASE_URL: 'postgres://u:p@db/x', NEXT_PUBLIC_API: 'https://api' };
+      const err = await buildElsewhere(db, { kind: 'server', serverId: builder }, ctxWith(svc, { env, buildConfig: { buildPack: 'dockerfile', buildArgs: ['NEXT_PUBLIC_API', 'DATABASE_URL'] }, buildSecretKeys: ['DATABASE_URL'] }), { deps: { buildOnNode } }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(BuildPlacementError);
+      expect((err as Error).message).toMatch(/build arguments/);
+      expect((err as Error).message).toMatch(/DATABASE_URL/);
+      expect((err as Error).message).not.toMatch(/NEXT_PUBLIC_API/);
+      expect((err as Error).message).not.toContain('postgres://');
+      expect(buildOnNode).not.toHaveBeenCalled();
+
+      replyOk();
+      const built = await buildElsewhere(db, { kind: 'server', serverId: builder }, ctxWith(svc, { env, buildConfig: { buildPack: 'dockerfile', buildArgs: ['NEXT_PUBLIC_API'] }, buildSecretKeys: ['DATABASE_URL'] }), { deps: { buildOnNode } });
+      expect(buildOnNode).toHaveBeenCalledTimes(1);
+      expect(built.registry?.digest).toBe(DIGEST);
+    });
+
     it('control: Dockerfile, Railpack, no secret keys, or no push registry all build as before', async () => {
       const { buildElsewhere } = await import('../src/engine/buildPlacement.js');
       replyOk();

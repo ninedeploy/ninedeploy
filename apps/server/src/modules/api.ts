@@ -6,6 +6,7 @@ import { aboutRoutes } from './about.js';
 import { activityRoutes } from './activity.js';
 import { alertRoutes } from './alerts.js';
 import { dashboardRoutes } from './dashboard.js';
+import { onboardingRoutes } from './onboarding.js';
 import { attachmentRoutes, databasesRoutes } from './databases.js';
 import { environmentRoutes } from './environments.js';
 import { aiRoutes } from './ai.js';
@@ -26,6 +27,7 @@ import { domainPresetsRoutes } from './domainPresets.js';
 import { domainsRoutes } from './domains.js';
 import { domainTransferStartRoutes, domainTransferTokenRoutes } from './domainTransfers.js';
 import { envRoutes, envSearchRoutes, projectEnvRoutes } from './env.js';
+import { sourceUploadRoutes } from './sourceUploads.js';
 import { hookReceiveRoutes, webhookMgmtRoutes } from './hooks.js';
 import { githubAppHookRoutes } from './githubAppHooks.js';
 import { serviceGithubRoutes } from './serviceGithub.js';
@@ -168,6 +170,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(terminalRoutes, { prefix: '/terminals' });
   await app.register(statsRoutes, { prefix: '/stats' });
   await app.register(dashboardRoutes, { prefix: '/dashboard' });
+  // 0.16.1: the operator's Getting started checklist (Dashboard card).
+  await app.register(onboardingRoutes, { prefix: '/onboarding' });
   await app.register(systemRoutes, { prefix: '/system' });
   await app.register(panelBackupRoutes, { prefix: '/system/panel-backup' });
   await app.register(sourcesRoutes, { prefix: '/sources' });
@@ -203,6 +207,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(serviceGithubRoutes, { prefix: '/services' });
   await app.register(attachmentRoutes, { prefix: '/services' });
   await app.register(envRoutes, { prefix: '/services' });
+  // 0.16.1: deploy from an uploaded .zip / .tar.gz (own body parser and limit).
+  await app.register(sourceUploadRoutes, { prefix: '/services' });
   await app.register(serviceInsightsRoutes, { prefix: '/services' });
   // Historical CPU/memory series for one service. `metricRoutes` is a separate
   // export from stats.ts and was never registered: `GET /v1/services/:id/metrics`

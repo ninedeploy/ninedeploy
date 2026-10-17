@@ -342,3 +342,26 @@ describe('DatabaseWizard', () => {
     expect(screen.queryByRole('button', { name: 'Create Now' })).not.toBeInTheDocument();
   });
 });
+
+describe('DatabaseWizard from the /new picker (0.16.1)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    apiMock.api.databases.create.mockResolvedValue({ id: 31 });
+    apiMock.api.volumes.list.mockResolvedValue([]);
+  });
+
+  it('starts on Details with the engine chosen, and reports the created id', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const onCreated = vi.fn();
+    renderWithProviders(<DatabaseWizard onClose={onClose} initialEngine="mongo" onCreated={onCreated} />, {
+      queryClient: createQueryClient(),
+    });
+    await user.type(screen.getByPlaceholderText('my-database'), 'docs');
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.click(screen.getByRole('button', { name: /create database/i }));
+    await waitFor(() => expect(apiMock.api.databases.create).toHaveBeenCalledWith(expect.objectContaining({ name: 'docs', engine: 'mongo' })));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith({ id: 31 }));
+    expect(onClose).toHaveBeenCalled();
+  });
+});

@@ -21,6 +21,12 @@ export interface DomainsApi {
      * answers `verified: true`) and safe to poll while DNS propagates.
      */
     verify: (serviceId: number, domainId: number) => Promise<DomainVerifyResult>;
+    /**
+     * 0.16.1 "Generate domain": add the service's automatic URL (Settings →
+     * Automatic URLs: a base domain or a free sslip.io name) now, instead of
+     * on its next deploy. Idempotent: `created: false` when it already exists.
+     */
+    generate: (serviceId: number) => Promise<Domain & { created: boolean }>;
     remove: (serviceId: number, domainId: number) => Promise<void>;
     /**
      * DNS status for a domain: does the hostname resolve to the addresses
@@ -98,6 +104,7 @@ export function domainsApi(t: Transport): DomainsApi {
       create: (serviceId, input) => send<CreatedDomain>('POST', `/v1/services/${serviceId}/domains`, input),
       verify: (serviceId, domainId) =>
         send<DomainVerifyResult>('POST', `/v1/services/${serviceId}/domains/${domainId}/verify`, {}),
+      generate: (serviceId) => send<Domain & { created: boolean }>('POST', `/v1/services/${serviceId}/domains/auto`, {}),
       dnsCheck: (serviceId, domainId) =>
         get<{
           hostname: string;

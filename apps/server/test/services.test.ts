@@ -1354,7 +1354,7 @@ describe('services routes', () => {
           id: 1, name: 'ghost', slug: 'ghost', cmd: ['node', 'server.js'], templateId: 'ghost',
           templateDatabaseEnv: { database__connection__host: 'host' }, cpuLimitMilli: 1500, replicas: 3, environmentId: 4,
         }),
-        buildConfigs: { serviceId: 1, buildPack: 'static', outputDir: 'dist', staticSpa: true } as any,
+        buildConfigs: { serviceId: 1, buildPack: 'static', outputDir: 'dist', staticSpa: true, buildArgs: ['NODE_VERSION'] } as any,
       },
       findMany: { envVars: [] as any },
       insert: {
@@ -1381,7 +1381,7 @@ describe('services routes', () => {
       cmd: ['node', 'server.js'], templateId: 'ghost', templateDatabaseEnv: { database__connection__host: 'host' },
       cpuLimitMilli: 1500, replicas: 3, environmentId: 4,
     });
-    expect(values[1]).toMatchObject({ outputDir: 'dist', staticSpa: true });
+    expect(values[1]).toMatchObject({ outputDir: 'dist', staticSpa: true, buildArgs: ['NODE_VERSION'] });
   });
 
   it('strips the operator-managed sourceId from a member-owned clone (create gate, clone path)', async () => {

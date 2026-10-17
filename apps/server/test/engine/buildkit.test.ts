@@ -22,7 +22,9 @@ const log: (line: string) => void = () => {};
 
 let runMock: ReturnType<typeof vi.fn>;
 let captureMock: ReturnType<typeof vi.fn>;
-vi.mock('../../src/lib/exec.js', () => ({
+vi.mock('../../src/lib/exec.js', async (importOriginal) => ({
+  // The real masking: the BuildKit log line goes through it (0.16.1).
+  redactedLabel: (await importOriginal<typeof import('../../src/lib/exec.js')>()).redactedLabel,
   run: (...args: unknown[]) => runMock(...args),
   capture: (...args: unknown[]) => captureMock(...args),
   buildEnv: (extra?: Record<string, string>) => ({ ...(extra ?? {}) }),

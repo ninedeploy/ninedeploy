@@ -48,6 +48,24 @@ export const settingsSpecs: RouteSpecMap = {
     responseType: '{ ok: boolean; dnsProvider: string | null; wildcardApex: string | null; applied: string }',
     validation: 'zod',
   },
+  'GET /v1/settings/auto-url': {
+    summary: 'Automatic service URL settings (base domain or sslip.io)',
+    tag: 'settings',
+    floor: 'operator',
+  },
+  'PUT /v1/settings/auto-url': {
+    summary: 'Set how services get an automatic URL',
+    tag: 'settings',
+    floor: 'operator',
+    localBody: 'settings.ts#autoUrlPatch',
+    validation: 'zod',
+  },
+  'POST /v1/settings/auto-url/detect-ip': {
+    summary: "Detect this host's public IPv4 (asks a public echo service)",
+    tag: 'settings',
+    floor: 'operator',
+    responseType: '{ ip: string; public: boolean }',
+  },
   'GET /v1/settings/dns-records': {
     summary: 'Cloudflare DNS record automation settings',
     tag: 'settings',

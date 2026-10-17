@@ -787,7 +787,8 @@ describe('DeployWizard — repository analysis & Git credential guidance', () =>
     expect(screen.getByText('ssr')).toBeInTheDocument();
     expect(screen.getByText('pnpm')).toBeInTheDocument();
     expect(screen.getByText('Node 22')).toBeInTheDocument();
-    expect(screen.getByText('Dockerfile')).toBeInTheDocument();
+    // The detection badge (the build-pack <option> shares the word).
+    expect(screen.getByText('Dockerfile', { selector: 'span' })).toBeInTheDocument();
     expect(screen.getByText('monorepo')).toBeInTheDocument();
     expect(screen.getByText('Deploy pipeline for this repository')).toBeInTheDocument();
     expect(screen.getByText(/49 packages/)).toBeInTheDocument();

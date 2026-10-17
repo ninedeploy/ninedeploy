@@ -15,6 +15,7 @@ import { ArchitectureTab } from './ArchitectureTab.js';
 import { ManifestTab } from './ManifestTab.js';
 import { ComposeTab } from './ComposeTab.js';
 import { DeploysTab, IN_FLIGHT } from './DeploysTab.js';
+import { UploadSourceCard } from '../../components/UploadSource.js';
 import { EnvironmentTab } from './EnvironmentTab.js';
 import { NetworkTab } from './NetworkTab.js';
 import { VolumesTab } from './VolumesTab.js';
@@ -403,6 +404,10 @@ export function ServiceDetail() {
           {tab === 'architecture' && <ArchitectureTab service={svc} />}
           {tab === 'manifest' && <ManifestTab service={svc} />}
           {tab === 'compose' && svc.composeContent && <ComposeTab service={svc} />}
+          {tab === 'deploys' && svc.type === 'docker' && !svc.repoUrl && !svc.image && !svc.composeContent && (
+            // 0.16.1: a service built from uploaded archives takes new versions here.
+            <UploadSourceCard serviceId={id} />
+          )}
           {tab === 'deploys' && (
             <DeploysTab
               serviceId={id}

@@ -261,6 +261,10 @@ export async function handlePullRequest(
         composeContent: parent.composeContent,
         port: parent.port,
         healthPath: parent.healthPath,
+        // 0.16.1: a slow first boot is as slow in a preview. The parent's
+        // container options (GPUs, capabilities) are an operator's grant to
+        // the service and stay off untrusted PR code.
+        healthTimeoutSeconds: parent.healthTimeoutSeconds,
         cpuShares: parent.cpuShares,
         memLimitMb: parent.memLimitMb,
         isEphemeralPreview: true,
@@ -308,6 +312,11 @@ export async function handlePullRequest(
         buildCmd: parentBuild.buildCmd,
         startCmd: parentBuild.startCmd,
         dockerfilePath: parentBuild.dockerfilePath,
+        // A static-pack parent's output dir and SPA fallback, and its
+        // build-argument names (values come from the preview's own env).
+        outputDir: parentBuild.outputDir,
+        staticSpa: parentBuild.staticSpa,
+        buildArgs: parentBuild.buildArgs,
         preDeployCmd: parentBuild.preDeployCmd,
         postDeployCmd: parentBuild.postDeployCmd,
         preStopCmd: parentBuild.preStopCmd,

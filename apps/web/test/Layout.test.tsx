@@ -1,7 +1,7 @@
 ﻿import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeWebSocket } from './web-utils.js';
 
@@ -52,6 +52,24 @@ vi.mock('../src/lib/theme.js', () => ({ useTheme: themeMock.useTheme }));
 vi.mock('../src/lib/mode.js', () => ({ useExperienceMode: modeMock.useExperienceMode }));
 vi.mock('../src/lib/workspace.js', () => ({ useWorkspace: workspaceMock.useWorkspace }));
 vi.mock('../src/lib/api.js', () => apiMock);
+// The real wizard has its own suite; here it only has to prove who opens and
+// closes it. Its success path navigates to the new service, THEN closes.
+vi.mock('../src/components/DeployWizard.js', () => ({
+  DeployWizard: ({ onClose, preset }: { onClose: () => void; preset?: unknown }) => {
+    const navigate = useNavigate();
+    return (
+      <div role="dialog" aria-label="Deploy wizard" data-preset={JSON.stringify(preset ?? null)}>
+        <button type="button" onClick={onClose}>close wizard</button>
+        <button type="button" onClick={() => { navigate('/services/9?tab=deploys'); onClose(); }}>finish wizard</button>
+      </div>
+    );
+  },
+}));
+
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location">{location.pathname}{location.search}</div>;
+}
 
 import { Layout } from '../src/components/Layout.js';
 import { ProjectScopeProvider, TagScopeProvider } from '../src/lib/projects.js';
@@ -66,7 +84,7 @@ function renderLayout(path = '/databases') {
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route element={<Layout />}>
-            <Route path="*" element={<div data-testid="outlet">page</div>} />
+            <Route path="*" element={<div data-testid="outlet">page<LocationProbe /></div>} />
           </Route>
         </Routes>
       </MemoryRouter>
@@ -729,6 +747,42 @@ describe('Layout', () => {
     );
     FakeWebSocket.instances.at(-1)!.open();
     expect(await screen.findByText(/● live/)).toBeInTheDocument();
+  });
+
+  describe('new resource entry points', () => {
+    it('the top bar, rail and Deploy-group buttons all lead to the /new picker', async () => {
+      renderLayout('/services');
+      const buttons = screen.getAllByRole('button', { name: 'New resource' });
+      // top bar, rail, and the Deploy group's panel (open on /services)
+      expect(buttons).toHaveLength(3);
+      for (const b of buttons) {
+        fireEvent.click(b);
+        await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/new$/));
+      }
+    });
+
+    it('?deploy=<kind> opens the wizard pre-set on any page and is consumed', async () => {
+      renderLayout('/domains?deploy=image&q=1');
+      const dialog = await screen.findByRole('dialog', { name: 'Deploy wizard' });
+      expect(dialog).toHaveAttribute('data-preset', JSON.stringify({ type: 'docker', mode: 'image' }));
+      await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/domains\?q=1$/));
+      fireEvent.click(screen.getByRole('button', { name: 'close wizard' }));
+      expect(screen.queryByRole('dialog', { name: 'Deploy wizard' })).not.toBeInTheDocument();
+      expect(screen.getByTestId('location')).toHaveTextContent(/^\/domains\?q=1$/);
+    });
+
+    it('an unknown kind opens the plain wizard', async () => {
+      renderLayout('/databases?deploy=bogus');
+      const dialog = await screen.findByRole('dialog', { name: 'Deploy wizard' });
+      expect(dialog).toHaveAttribute('data-preset', '{}');
+    });
+
+    it('closing after the wizard navigated to the new service stays on that service', async () => {
+      renderLayout('/databases?deploy=new');
+      fireEvent.click(await screen.findByRole('button', { name: 'finish wizard' }));
+      await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/services/9?tab=deploys'));
+      expect(screen.queryByRole('dialog', { name: 'Deploy wizard' })).not.toBeInTheDocument();
+    });
   });
 });
 

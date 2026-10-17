@@ -410,7 +410,8 @@ describe('program registration', () => {
     // 0.14: + 3 database commands, `certificates custom` (5), `proxy config` (6), `secrets providers` (7).
     // 0.15: + `terminals` (3), `terminal` (4), `traffic` (3), `access` (grants 4 + me).
     // 0.16 T8: + 3 service commands, `volumes create`, `servers` (2), `swarm` (6), `sources allow-on-nodes`; 0.15.8: + `sources pin-host-keys`, `reset-host-keys`, `host-keys`.
-    expect(h.FakeCommand.instances).toHaveLength(263);
+    // 0.16.1: + `deploy up`.
+    expect(h.FakeCommand.instances).toHaveLength(264);
     expect(findCommand('servers').children).toHaveLength(2);
     expect(findCommand('swarm').children).toHaveLength(6);
     expect(findCommand('terminals').children).toHaveLength(3);

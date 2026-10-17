@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { run } from '../../lib/exec.js';
+import { redactedLabel, run } from '../../lib/exec.js';
 import { buildCacheKey } from '../../lib/buildCacheKey.js';
 import { isBuildCacheRef } from '../../kernel/drivers/inlineBuildCache.js';
 import type { IBuildCache } from '../../kernel/types.js';
@@ -23,6 +23,8 @@ export interface BuildKitBuildOptions {
   cache?: IBuildCache;
   /** Progress line sink — same shape `engine/builders/docker.ts` uses. */
   log: (line: string) => void;
+  /** 0.16.1: `--build-arg KEY=VALUE` pairs (engine/builders/docker.ts `dockerBuildArgs`). */
+  buildArgs?: string[];
   /**
    * Optional sink for `build.cache.*` bus events. Supplied by the worker so
    * the events carry the key this build actually consulted and the result it
@@ -158,9 +160,11 @@ export async function buildWithBuildKit(opts: BuildKitBuildOptions): Promise<Bui
     args.push('--cache-from', `type=registry,ref=${cacheFromRef}`);
   }
   args.push('--cache-to', 'type=inline');
+  args.push(...(opts.buildArgs ?? []));
   args.push(opts.baseDir);
 
-  opts.log(`BuildKit: docker ${args.join(' ')}`);
+  // The values of build arguments never reach the log (redactedLabel masks them).
+  opts.log(`BuildKit: ${redactedLabel('docker', args)}`);
   await run('docker', args, {
     cwd: opts.workDir,
     env: { DOCKER_BUILDKIT: '1' },

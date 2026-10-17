@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { BuildContext, Builder } from '../types.js';
-import type { BuildConfig } from '@ninedeploy/db';
+import type { BuildConfig, ServiceRuntimeOptions } from '@ninedeploy/db';
 import type { NinedeployManifest } from '@ninedeploy/schemas';
 import { generateNixpacksToml } from '../../lib/ninedeployToNixpacks.js';
 import { buildEnv, capture, run, sleep } from '../../lib/exec.js';
@@ -262,6 +262,53 @@ interface RuntimeComposeInput {
   envFile: string | null;
   /** r593: container labels (deployment / service ids) — see dockerNames.ts. */
   labels?: Array<[string, string]>;
+  /** 0.16.1 operator container options (see {@link runtimeOptionArgs}). */
+  runtimeOptions?: ServiceRuntimeOptions | null;
+}
+
+/**
+ * 0.16.1: the `docker run` flags for a service's advanced container options
+ * (Service → Settings → Container options, operator only). Every value was
+ * range- and allowlist-checked by the `runtimeOptions` schema when it was
+ * saved; nothing here is a free-form flag. Null/empty → no flags, the line
+ * every deploy had before.
+ */
+export function runtimeOptionArgs(opts: ServiceRuntimeOptions | null | undefined): string[] {
+  if (!opts) return [];
+  const args: string[] = [];
+  if (opts.gpus != null) args.push('--gpus', String(opts.gpus));
+  if (opts.shmSizeMb != null) args.push('--shm-size', `${opts.shmSizeMb}m`);
+  if (opts.init) args.push('--init');
+  if (opts.ulimitNofile != null) args.push('--ulimit', `nofile=${opts.ulimitNofile}:${opts.ulimitNofile}`);
+  for (const cap of opts.capAdd ?? []) args.push('--cap-add', cap);
+  return args;
+}
+
+/** The same options as compose service keys, for the compose bridge (r465). */
+function runtimeOptionCompose(opts: ServiceRuntimeOptions | null | undefined): string[] {
+  if (!opts) return [];
+  const out: string[] = [];
+  if (opts.shmSizeMb != null) out.push(`    shm_size: ${JSON.stringify(`${opts.shmSizeMb}m`)}`);
+  if (opts.init) out.push('    init: true');
+  if (opts.ulimitNofile != null) {
+    out.push('    ulimits:', '      nofile:', `        soft: ${opts.ulimitNofile}`, `        hard: ${opts.ulimitNofile}`);
+  }
+  if (opts.capAdd?.length) {
+    out.push('    cap_add:');
+    for (const cap of opts.capAdd) out.push(`      - ${JSON.stringify(cap)}`);
+  }
+  if (opts.gpus != null) {
+    out.push(
+      '    deploy:',
+      '      resources:',
+      '        reservations:',
+      '          devices:',
+      '            - driver: "nvidia"',
+      `              count: ${opts.gpus === 'all' ? '"all"' : opts.gpus}`,
+      '              capabilities: ["gpu"]',
+    );
+  }
+  return out;
 }
 
 /**
@@ -308,6 +355,7 @@ export function renderRuntimeCompose(input: RuntimeComposeInput): string {
     svc.push('    labels:');
     for (const [k, v] of input.labels) svc.push(`      ${JSON.stringify(k)}: ${composeScalar(v)}`);
   }
+  svc.push(...runtimeOptionCompose(input.runtimeOptions));
 
   const out: string[] = ['services:', ...svc];
   out.push('networks:', '  default:', `    name: ${JSON.stringify(input.bridge)}`, '    external: true');
@@ -335,6 +383,53 @@ export function renderRuntimeCompose(input: RuntimeComposeInput): string {
  */
 export function nixpacksEnvArgs(env: Record<string, string>): string[] {
   return Object.entries(env).flatMap(([k, v]) => ['--env', `${k}=${v.replace(/\r\n?|\n/g, '\\n')}`]);
+}
+
+/**
+ * 0.16.1: the `--build-arg` argv for a Dockerfile build — the env-var names the
+ * service opted in (Service → Settings → Build → Build arguments) with their
+ * deploy-time values. Before this, a Dockerfile build received no service env
+ * at all, so `ARG NEXT_PUBLIC_API_URL` stayed empty while a Nixpacks build of
+ * the same repository saw it.
+ *
+ * Values travel as argv, like Nixpacks' `--env`, not through the docker CLI's
+ * own environment: there a name such as PATH or LD_PRELOAD would steer the
+ * panel's docker process itself. lib/exec.ts masks the values wherever the
+ * command line is shown. A listed name with no value in the environment is
+ * skipped and named; a secret is passed but flagged, because build arguments
+ * stay readable in the image history.
+ */
+export function dockerBuildArgs(
+  names: readonly string[] | null | undefined,
+  env: Record<string, string>,
+  log: (line: string) => void,
+  secretKeys: readonly string[] = [],
+): string[] {
+  if (!names || names.length === 0) return [];
+  const passed: string[] = [];
+  const missing: string[] = [];
+  const args: string[] = [];
+  for (const name of new Set(names)) {
+    const value = env[name];
+    if (value === undefined) {
+      missing.push(name);
+      continue;
+    }
+    passed.push(name);
+    args.push('--build-arg', `${name}=${value}`);
+  }
+  if (passed.length > 0) log(`Build arguments: ${passed.join(', ')}`);
+  if (missing.length > 0) {
+    log(`⚠ Build argument(s) with no value in the service environment, not passed: ${missing.join(', ')}`);
+  }
+  const secrets = passed.filter((name) => secretKeys.includes(name));
+  if (secrets.length > 0) {
+    log(
+      `⚠ ${secrets.join(', ')} ${secrets.length === 1 ? 'is a secret' : 'are secrets'}: build arguments stay readable in the image history (docker history). ` +
+        'Prefer a BuildKit secret mount for credentials.',
+    );
+  }
+  return args;
 }
 
 /** Shared no-op sinks (EPIPE guards / best-effort log drains). */
@@ -737,6 +832,7 @@ export async function buildSourceImage(
       // `docker build` path stays the default until an operator
       // opts in, because the BuildKit invocation is incompatible
       // with hosts that ship the legacy builder only.
+      const buildArgs = dockerBuildArgs(buildConfig?.buildArgs, env, log, ctx.buildSecretKeys);
       if (ctx.useBuildKit) {
         const result = await buildWithBuildKit({
           workDir,
@@ -748,13 +844,14 @@ export async function buildSourceImage(
           serviceId: service.id,
           cache: ctx.buildCache,
           onCacheEvent: ctx.onBuildCacheEvent,
+          buildArgs,
           log,
         });
         log(`BuildKit finished: ${result.imageDigest}${result.cacheHit ? ' (cache hit)' : ''}`);
       } else {
         await run(
           'docker',
-          ['build', '-t', target, '-f', dockerfile, baseDir],
+          ['build', '-t', target, '-f', dockerfile, ...buildArgs, baseDir],
           {
             cwd: workDir,
             env: { DOCKER_BUILDKIT: '1' },
@@ -1001,6 +1098,12 @@ export const dockerBuilder: Builder = {
     // limit, so a "512 MiB" service could really take 512 MiB RAM + 512 MiB
     // swap. A limit means a limit.
     if (service.memLimitMb > 0) args.push('--memory', `${service.memLimitMb}m`, '--memory-swap', `${service.memLimitMb}m`);
+    // 0.16.1 operator container options (GPUs, /dev/shm, init, ulimit, caps).
+    const optionArgs = runtimeOptionArgs(service.runtimeOptions);
+    if (optionArgs.length > 0) {
+      log(`Container options: ${optionArgs.join(' ')}`);
+      args.push(...optionArgs);
+    }
     if (service.volumeMount) args.push('-v', `nd-svc-${service.slug}-data:${service.volumeMount}`);
     // r321: the Volumes tab's attachments. The pipeline loads them into
     // ctx.volumeAttachments and the attach route queues a redeploy for them,
@@ -1041,6 +1144,7 @@ export const dockerBuilder: Builder = {
             cmd: service.cmd?.length ? service.cmd : null,
             envFile: composeEnvFile.path,
             labels,
+            runtimeOptions: service.runtimeOptions,
           }),
         )
       : null;
@@ -1163,6 +1267,7 @@ export const dockerBuilder: Builder = {
                   cmd: service.cmd?.length ? service.cmd : null,
                   envFile: replicaEnvFile.path,
                   labels,
+                  runtimeOptions: service.runtimeOptions,
                 }),
               );
               await run(

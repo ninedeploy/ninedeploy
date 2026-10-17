@@ -125,6 +125,31 @@ describe('preview create race (F1020)', () => {
     expect(await rows(deployments)).toBe(2);
   });
 
+  it('0.16.1: the preview inherits the parent’s static output dir, SPA flag and build-argument names', async () => {
+    const [parent] = await db
+      .insert(services)
+      .values({ name: 'Site', slug: 'site', type: 'docker', repoUrl: 'https://github.com/acme/site.git', branch: 'main', previewDeploymentsEnabled: true, previewMaxActive: 5 })
+      .returning();
+    await db.insert(buildConfigs).values({ serviceId: parent!.id, buildPack: 'static', outputDir: 'build', staticSpa: false, buildArgs: ['PUBLIC_API'] });
+    const res = await handlePullRequest(db, parent!, pr(3, 'sha-3', 'feature'), 'github', log);
+    expect(res['action']).toBe('preview_deployment_queued');
+    const preview = (await db.query.services.findFirst({ where: eq(services.slug, 'site-pr-3') }))!;
+    const build = await db.query.buildConfigs.findFirst({ where: eq(buildConfigs.serviceId, preview.id) });
+    expect(build).toMatchObject({ buildPack: 'static', outputDir: 'build', staticSpa: false, buildArgs: ['PUBLIC_API'] });
+  });
+
+  it('0.16.1: the preview keeps the parent’s healthcheck timeout but not its container options', async () => {
+    const [parent] = await db
+      .insert(services)
+      .values({ name: 'Llm', slug: 'llm', type: 'docker', repoUrl: 'https://github.com/acme/llm.git', branch: 'main', previewDeploymentsEnabled: true, previewMaxActive: 5, healthTimeoutSeconds: 1800, runtimeOptions: { gpus: 'all', capAdd: ['NET_ADMIN'] } })
+      .returning();
+    await db.insert(buildConfigs).values({ serviceId: parent!.id });
+    await handlePullRequest(db, parent!, pr(4, 'sha-4', 'feature'), 'github', log);
+    const preview = (await db.query.services.findFirst({ where: eq(services.slug, 'llm-pr-4') }))!;
+    expect(preview.healthTimeoutSeconds).toBe(1800);
+    expect(preview.runtimeOptions).toBeNull();
+  });
+
   it('evicts enough oldest previews when the active cap was lowered', async () => {
     const [parent] = await db
       .insert(services)

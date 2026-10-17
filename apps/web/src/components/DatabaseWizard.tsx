@@ -9,7 +9,7 @@ import { registeredNodes } from '../lib/multiNode.js';
 import { Button, Input, cn, useEscapeToClose } from './ui.js';
 import { useToast } from './Toast.js';
 
-const ENGINES = [
+export const ENGINES = [
   { id: 'postgres', label: 'PostgreSQL', emoji: '🐘', hint: 'Relational · SQL · pgvector' },
   { id: 'mysql', label: 'MySQL', emoji: '🐬', hint: 'Relational · SQL' },
   { id: 'mariadb', label: 'MariaDB', emoji: '🦭', hint: 'Relational · SQL' },
@@ -25,14 +25,28 @@ const ENGINES = [
 
 const STEPS = ['Engine', 'Details', 'Review'];
 
-export function DatabaseWizard({ onClose }: { onClose: () => void }) {
+export type DatabaseEngineId = (typeof ENGINES)[number]['id'];
+
+/**
+ * `initialEngine` (0.16.1, from the /new resource picker) skips the engine
+ * step; `onCreated` lets that page open the new database afterwards.
+ */
+export function DatabaseWizard({
+  onClose,
+  initialEngine,
+  onCreated,
+}: {
+  onClose: () => void;
+  initialEngine?: DatabaseEngineId;
+  onCreated?: (created: { id: number }) => void;
+}) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { isAdvanced } = useExperienceMode();
   const { user } = useAuth();
   const isOperator = user?.isOperator === true;
-  const [step, setStep] = useState(0);
-  const [engine, setEngine] = useState<typeof ENGINES[number]['id'] | null>(null);
+  const [step, setStep] = useState(initialEngine ? 1 : 0);
+  const [engine, setEngine] = useState<DatabaseEngineId | null>(initialEngine ?? null);
   const [name, setName] = useState('');
   const [version, setVersion] = useState('');
   const [selectedVolume, setSelectedVolume] = useState<string>('');
@@ -80,9 +94,10 @@ export function DatabaseWizard({ onClose }: { onClose: () => void }) {
         extensions: pgvector && engine === 'postgres' ? ['pgvector'] : undefined,
         ...(host === '' ? {} : { serverId: Number(host) }),
       }),
-    onSuccess: () => {
+    onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: ['databases'] });
       qc.invalidateQueries({ queryKey: ['volumes'] });
+      if (created && typeof created.id === 'number') onCreated?.(created);
       onClose();
     },
     // r211: a taken slug or an operator-only volume re-attach was swallowed —

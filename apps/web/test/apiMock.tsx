@@ -86,6 +86,8 @@ export function createFakeApiModule() {
       update: vi.fn(),
       remove: vi.fn(),
       clone: vi.fn(),
+      uploadSource: vi.fn(),
+      sourceUploads: vi.fn().mockResolvedValue({ uploadSourced: true, maxBytes: 104857600, uploads: [] }),
       stop: vi.fn(),
       start: vi.fn(),
       restart: vi.fn(),
@@ -132,6 +134,7 @@ export function createFakeApiModule() {
       list: vi.fn(),
       create: vi.fn(),
       remove: vi.fn(),
+      generate: vi.fn(),
       all: vi.fn().mockResolvedValue([]),
       setSsl: vi.fn(),
       update: vi.fn(),
@@ -170,7 +173,19 @@ export function createFakeApiModule() {
       dnsRecords: { get: vi.fn(), set: vi.fn(), test: vi.fn() },
       namecheap: { get: vi.fn(), set: vi.fn() },
       vault: { get: vi.fn(), set: vi.fn(), test: vi.fn(), setAllowlist: vi.fn() },
+      autoUrl: {
+        get: vi.fn().mockResolvedValue({
+          effective: { mode: 'off', domain: null, ip: null, source: 'setting' },
+          stored: { mode: 'off', domain: null, ip: null },
+          envWildcard: null,
+          suggestedIp: null,
+        }),
+        set: vi.fn(),
+        detectIp: vi.fn(),
+      },
     },
+    // null = no checklist rendered; Dashboard/GettingStarted tests stub it.
+    onboarding: { get: vi.fn().mockResolvedValue(null), setDismissed: vi.fn() },
     about: { get: vi.fn() },
     branding: {
       get: vi.fn().mockResolvedValue({ logoUrl: null, primaryColor: null, supportEmail: null, footerHtml: null }),
@@ -235,6 +250,7 @@ export function createFakeApiModule() {
     },
     attachments: { list: vi.fn(), create: vi.fn(), remove: vi.fn() },
     env: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() },
+    projectEnv: { list: vi.fn().mockResolvedValue([]), create: vi.fn(), update: vi.fn(), remove: vi.fn() },
     stats: {
       // Defaults keep react-query v5 happy ("query data cannot be undefined")
       // for every page that renders live stats without an explicit mock.

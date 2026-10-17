@@ -3,7 +3,8 @@ import { audit } from '../lib/audit.js';
 import { domains, type Domain } from '@ninedeploy/db';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { createDomain, domainPatch } from '@ninedeploy/schemas';
-import { parseHeaders, writeDynamicConfig } from '../engine/proxy.js';
+import { getAcmeEmail, parseHeaders, writeDynamicConfig } from '../engine/proxy.js';
+import { autoHostFor } from '../lib/autoUrl.js';
 import { createDnsRecord, deleteDnsRecord, detectPublicIp, getDnsRecordsConfig, listDnsRecordsByName } from '../lib/cloudflare.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { assertServiceRole, roleAtLeast, serviceRole } from '../lib/resourceAccess.js';
@@ -210,6 +211,44 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
     const showAuth = role !== null && roleAtLeast(role, 'member');
     const rows = await app.db.query.domains.findMany({ where: eq(domains.serviceId, id) });
     return rows.map((d) => serialize(d, showAuth));
+  });
+
+  /**
+   * 0.16.1 "Generate domain": add the service's automatic URL now instead of
+   * on its next deploy (the pipeline adds the same row at finalize). The name
+   * is the one reserved for this service (lib/autoUrl.ts, `ownZoneClaimRefusal`),
+   * so it skips the per-service own-zone cap and does not count as a claim.
+   */
+  app.post('/:id/domains/auto', async (req) => {
+    const id = num((req.params as { id: string }).id);
+    const svc = await loadServiceForUser(app.db, id, req.user!);
+    await assertServiceRole(app.db, svc, req.user!, 'member');
+    const auto = await autoHostFor(app.db, svc);
+    if (!auto) {
+      throw conflict(
+        svc.serverId != null
+          ? 'No automatic URL applies to this service: its node is registered by hostname, and sslip.io names need an IPv4 address.'
+          : 'Automatic URLs are off. An operator turns them on under Settings → Automatic URLs.',
+      );
+    }
+    const existing = await app.db.query.domains.findFirst({ where: eq(domains.hostname, auto.hostname) });
+    if (existing) {
+      if (existing.serviceId === id) return { ...serialize(existing), created: false };
+      throw conflict(`${auto.hostname} is already routed to another service`);
+    }
+    const ssl = auto.ssl === 'acme' ? !!(await getAcmeEmail(app.db)) : false;
+    const [d] = await app.db
+      .insert(domains)
+      .values({ serviceId: id, hostname: auto.hostname, path: '/', ssl, status: 'active', verifiedAt: new Date() })
+      .returning()
+      .catch((err: unknown) => {
+        if (isUniqueViolation(err)) return [] as Domain[];
+        throw err;
+      });
+    if (!d) throw conflict(`${auto.hostname} is already routed to another service`);
+    await writeDynamicConfig(app.db);
+    void audit(app.db, req.user!.id, 'domain.auto', auto.hostname, { serviceId: id });
+    return { ...serialize(d), created: true };
   });
 
   app.post('/:id/domains', async (req) => {

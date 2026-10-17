@@ -25,6 +25,23 @@ export const deploysSpecs: RouteSpecMap = {
     floor: 'member',
     responseType: '{ deploymentId: number; alreadyInProgress?: boolean }',
   },
+  'GET /v1/services/:id/source': {
+    summary: 'List the uploaded source archives a service keeps',
+    tag: 'deploys',
+    description: 'The last five uploads, newest first. `uploadSourced` says whether the service takes uploads (a docker service with no repository, image or inline stack). Added in 0.16.1.',
+    floor: 'viewer',
+    responseType:
+      "{ uploadSourced: boolean; maxBytes: number; uploads: Array<{ sha: string; format: 'zip' | 'tar.gz'; bytes: number; uploadedAt: string }> }",
+  },
+  'POST /v1/services/:id/source': {
+    summary: 'Upload a .zip or .tar.gz as the service source and deploy it',
+    tag: 'deploys',
+    description:
+      'The request body is the raw archive (application/zip or application/gzip, up to 100 MiB), not JSON. It is checked completely before it is kept: only regular files and directories, relative paths without `..`, at most 50 000 entries and 1 GiB extracted. A single top-level folder becomes the build root. `?deploy=false` only stores it. 409 for a service with a repository, image or inline stack. Added in 0.16.1.',
+    floor: 'member',
+    responseType:
+      "{ sha: string; format: 'zip' | 'tar.gz'; bytes: number; uploadedAt: string; entries: number; deploymentId: number | null }",
+  },
   'DELETE /v1/services/:id/deploys/:depId': {
     summary: 'Remove a finished deployment and its build log',
     tag: 'deploys',

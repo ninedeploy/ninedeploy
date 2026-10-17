@@ -4,6 +4,43 @@ import { containerPath, dockerVolumeName, envVarName, gitBranch, gitRepoUrl, htt
 export const serviceType = z.enum(['pm2', 'docker', 'compose']);
 export const buildPack = z.enum(['auto', 'nixpacks', 'dockerfile', 'railpack', 'static']);
 
+/**
+ * 0.16.1: names of the service's environment variables a Dockerfile build
+ * receives as `--build-arg` (the Dockerfile reads them with `ARG`). Opt-in per
+ * name: a build gets none unless listed. Nixpacks and Railpack builds already
+ * see the whole environment.
+ */
+export const buildArgNames = z.array(envVarName.max(100)).max(100);
+
+/**
+ * 0.16.1: capabilities a docker service may add. Deliberately short: the ones
+ * real workloads ask for (VPNs, packet capture, profilers, realtime audio,
+ * mlock). SYS_ADMIN, SYS_MODULE, DAC_READ_SEARCH and the like are left out —
+ * each is a known path out of the container.
+ */
+export const runtimeCapability = z.enum(['NET_ADMIN', 'NET_RAW', 'SYS_PTRACE', 'SYS_NICE', 'SYS_RESOURCE', 'IPC_LOCK', 'SYS_TIME']);
+
+/**
+ * 0.16.1 advanced container options for docker services (operator only):
+ * structured fields, never free-form `docker run` flags, so nothing outside
+ * this list (privileged, host mounts, host network…) can be asked for.
+ */
+export const runtimeOptions = z
+  .object({
+    /** `--gpus all` or `--gpus <n>` (needs the NVIDIA container toolkit on the host). */
+    gpus: z.union([z.literal('all'), z.number().int().min(1).max(16)]).nullable().optional(),
+    /** `--shm-size` in MiB; browsers and PyTorch data loaders outgrow Docker's 64. */
+    shmSizeMb: z.number().int().min(1).max(65_536).nullable().optional(),
+    /** `--init`: reaps zombie processes and forwards signals to the app. */
+    init: z.boolean().optional(),
+    /** `--ulimit nofile=N:N`. */
+    ulimitNofile: z.number().int().min(1024).max(1_048_576).nullable().optional(),
+    /** `--cap-add`. */
+    capAdd: z.array(runtimeCapability).max(7).optional(),
+  })
+  .strict();
+export type RuntimeOptions = z.infer<typeof runtimeOptions>;
+
 /** Optional project/workspace/label tag IDs for new service creation. */
 const tagIds = z.array(z.number().int().positive()).optional();
 
@@ -74,6 +111,8 @@ export const createService = z.object({
       restartPolicy: z.string().regex(/^(no|always|unless-stopped|on-failure(?::\d{1,3})?)$/).optional(),
       // Seconds between SIGTERM and SIGKILL on stop (docker stop -t).
       stopGraceSeconds: z.number().int().min(0).max(300).optional(),
+      /** Env-var names passed to a Dockerfile build as `--build-arg`. */
+      buildArgs: buildArgNames.optional(),
     })
     .default({ buildPack: 'auto', baseDir: '/' }),
 }).superRefine((value, ctx) => {
@@ -134,6 +173,10 @@ export const updateService = z.object({
   /** Horizontal replica count for docker services (Traefik load-balances). */
   replicas: z.number().int().min(1).max(10).optional(),
   healthPath: httpPath.optional(),
+  /** Seconds a deploy waits for the healthcheck (10–3600); null restores the 300 s default. */
+  healthTimeoutSeconds: z.number().int().min(10).max(3600).nullable().optional(),
+  /** Operator only: advanced container options; null clears them all. */
+  runtimeOptions: runtimeOptions.nullable().optional(),
   port: z.number().int().min(1).max(65535).optional(),
   publishedPort: z.number().int().min(1).max(65535).nullable().optional(),
   previewDeploymentsEnabled: z.boolean().optional(),
@@ -159,6 +202,8 @@ export const updateService = z.object({
       preStopCmd: z.string().nullable().optional(),
       restartPolicy: z.string().regex(/^(no|always|unless-stopped|on-failure(?::\d{1,3})?)$/).optional(),
       stopGraceSeconds: z.number().int().min(0).max(300).optional(),
+      /** Env-var names passed to a Dockerfile build as `--build-arg`; [] clears. */
+      buildArgs: buildArgNames.optional(),
     })
     .optional(),
 });
@@ -209,6 +254,10 @@ export const service = z.object({
   commitSha: z.string().nullable(),
   runtimeId: z.string().nullable(),
   healthPath: z.string(),
+  /** Healthcheck deadline in seconds; null = the 300 s default (0.16.1). */
+  healthTimeoutSeconds: z.number().int().nullable().optional(),
+  /** Advanced container options (0.16.1); null = none. */
+  runtimeOptions: runtimeOptions.nullable().optional(),
   autoUrl: z.string().nullable(),
   port: z.number().int().nullable(),
   publishedPort: z.number().int().nullable().optional(),
@@ -242,6 +291,8 @@ export const service = z.object({
       preStopCmd: z.string().nullable().optional(),
       restartPolicy: z.string(),
       stopGraceSeconds: z.number().int(),
+      /** Env-var names a Dockerfile build receives as `--build-arg` (0.16.1). */
+      buildArgs: z.array(z.string()).optional(),
     })
     .nullable(),
   createdAt: z.string().datetime(),

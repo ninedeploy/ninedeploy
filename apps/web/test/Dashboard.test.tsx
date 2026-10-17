@@ -3,6 +3,12 @@ import { screen, waitFor, fireEvent } from '@testing-library/react';
 import { Dashboard } from '../src/routes/Dashboard.js';
 import { api } from '../src/lib/api.js';
 import { renderWithProviders, mockOf } from './helpers.js';
+import { useLocation } from 'react-router';
+
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location">{location.pathname}{location.search}</div>;
+}
 
 vi.mock('../src/lib/api.js', async () => {
   // Must be './apiMock.js', not './helpers.js' — see the note in apiMock.ts.
@@ -263,5 +269,25 @@ it('shows an error card with retry when the dashboard query fails', async () => 
 
     await screen.findByText(/No services yet/);
     expect(screen.getAllByText('0%').length).toBe(2);
+  });
+
+  it('puts the first deploy front and centre while nothing is deployed', async () => {
+    mockOf(api.dashboard.get).mockResolvedValue({
+      ...dashData, stats: { ...dashData.stats, services: 0 }, health: [], recentDeploys: [],
+    } as never);
+    renderWithProviders(<><Dashboard /><LocationProbe /></>);
+    await screen.findByText('Deploy your first app');
+    expect(screen.getByRole('link', { name: /From a template/ })).toHaveAttribute('href', '/hub');
+    fireEvent.click(screen.getByRole('button', { name: /From your code/ }));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/?deploy=new'));
+  });
+
+  it('hides the first-deploy card once a service exists; the quick action still opens the wizard', async () => {
+    mockOf(api.dashboard.get).mockResolvedValue(dashData as never);
+    renderWithProviders(<><Dashboard /><LocationProbe /></>);
+    await screen.findByText('1 service need attention');
+    expect(screen.queryByText('Deploy your first app')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Deploy New Service/ }));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/?deploy=new'));
   });
 });

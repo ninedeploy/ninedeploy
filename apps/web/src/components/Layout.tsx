@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity, Building2, ChevronLeft, ChevronRight, Clock, Cloud, Container, Database, FolderKanban, Globe, HardDrive,
-  FileCode, Info, KeyRound, Layers, LayoutDashboard, LifeBuoy, ListOrdered, Moon, Network, Shield, Stethoscope, Tag, type LucideIcon,
+  FileCode, Info, KeyRound, Layers, LayoutDashboard, LifeBuoy, ListOrdered, Moon, Network, Plus, Shield, Stethoscope, Tag, type LucideIcon,
   Rocket, Search, Server, Settings as SettingsIcon, Sparkles, SquareTerminal, Sun, Users, X,
 } from 'lucide-react';
 import { Link, Outlet, useLocation } from 'react-router';
@@ -22,6 +22,7 @@ import { useExperienceMode } from '../lib/mode.js';
 import { installPanelAutofillGuard } from '../lib/autofill.js';
 import { useBranding } from '../lib/branding.js';
 import { menuTarget, usePluginMenus } from '../lib/pluginMenus.js';
+import { DeployLauncher, useNewResource } from '../lib/deployLauncher.js';
 
 interface NavItem { to: string; label: string; icon: LucideIcon; advancedOnly?: boolean; operatorOnly?: boolean }
 
@@ -153,6 +154,8 @@ export function Layout() {
   const { isSimple } = useExperienceMode();
   const location = useLocation();
   const branding = useBranding();
+  // Every "New" entry point leads to the /new resource picker (0.16.1).
+  const openDeploy = useNewResource();
 
   useLayoutEffect(() => installPanelAutofillGuard(document), []);
 
@@ -259,6 +262,19 @@ export function Layout() {
           )}
         </div>
 
+        {/* New resource — the one action every page offers, so it sits above
+            the group icons rather than inside one of them. */}
+        <button type="button"
+          onClick={openDeploy}
+          aria-label="New resource"
+          className="group relative mb-3 grid h-10 w-10 place-items-center rounded-xl bg-indigo-500 text-white shadow-lg shadow-indigo-500/25 transition hover:bg-indigo-400"
+        >
+          <Plus size={19} />
+          <span className="pointer-events-none absolute left-full top-1/2 ml-2.5 z-50 -translate-y-1/2 whitespace-nowrap rounded-md border border-slate-700/80 bg-slate-900 px-2 py-1 text-xs font-medium text-slate-100 shadow-2xl opacity-0 transition-all duration-150 group-hover:opacity-100">
+            New resource
+          </span>
+        </button>
+
         {/* Group icons */}
         {navGroups.map((g) => {
           const Icon = g.icon;
@@ -322,6 +338,15 @@ export function Layout() {
 
           {/* Items */}
           <nav className="flex-1 overflow-y-auto px-2 py-1">
+            {currentGroup.id === 'deploy' && (
+              <button type="button"
+                onClick={openDeploy}
+                className="mb-2 flex w-full items-center gap-2.5 rounded-lg bg-indigo-500/15 px-2.5 py-2 text-sm font-medium text-indigo-200 ring-1 ring-inset ring-indigo-500/30 transition hover:bg-indigo-500/25 hover:text-white"
+              >
+                <Plus size={16} className="text-indigo-300" />
+                New resource
+              </button>
+            )}
             {currentGroup.items.map((item) => {
               const active = matchItem(item, location.pathname);
               const Icon = item.icon;
@@ -367,6 +392,15 @@ export function Layout() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            <button type="button"
+              onClick={openDeploy}
+              className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm shadow-indigo-500/30 transition hover:bg-indigo-400"
+              title="New: deploy an app, start a database or install a one-click app"
+              aria-label="New resource"
+            >
+              <Rocket size={13} />
+              <span className="hidden sm:inline">New</span>
+            </button>
             <ModeToggle />
             <button type="button"
               onClick={toggleTheme}
@@ -410,6 +444,7 @@ export function Layout() {
       {/* ── Right drawer (activity) ──────────────────────── */}
       {drawerOpen && <ActivityDrawer onClose={() => setDrawerOpen(false)} />}
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
+      <DeployLauncher />
       {/* Help drawer mounts itself; it reads open state from HelpProvider. */}
       <HelpDrawer />
     </div>

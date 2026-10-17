@@ -13,6 +13,26 @@ When deploying a containerized service:
 4. **Traefik Traffic Flip**: Once the new container passes health verification, Traefik dynamically routes incoming traffic to the new container.
 5. **Graceful Drain**: The old container receives `SIGTERM` and is stopped after draining in-flight requests.
 
+### Healthcheck timeout (0.16.1)
+
+The gate in step 3 accepts any answer below 500 on the health path and waits **300 seconds** by default. Set **Service → Settings → Healthcheck timeout** (`healthTimeoutSeconds`, 10–3600) for an app whose first boot runs long migrations or downloads a model; leave it blank for the default. A failed deploy names the limit it hit. The old container keeps serving until the new one passes.
+
+### Container options (0.16.1, operator only)
+
+**Service → Settings → Container options** adds these to a docker service's container, on its next deploy:
+
+| Option | Docker flag | Typical use |
+| --- | --- | --- |
+| GPUs | `--gpus all` / `--gpus <n>` | Ollama, vLLM, Stable Diffusion (needs the NVIDIA container toolkit) |
+| Shared memory | `--shm-size <n>m` | Chromium / Puppeteer, PyTorch data loaders |
+| Init process | `--init` | apps that spawn children and leave zombies |
+| Open files limit | `--ulimit nofile=<n>:<n>` | databases, proxies, file watchers |
+| Extra capabilities | `--cap-add` | `NET_ADMIN`/`NET_RAW` (VPN, ping), `SYS_PTRACE` (profilers), `SYS_NICE`, `SYS_RESOURCE`, `IPC_LOCK` (mlock), `SYS_TIME` |
+
+- These are structured fields, not free-form flags: privileged mode, host mounts and the host network cannot be requested, and capabilities that lead out of the container (`SYS_ADMIN`, `SYS_MODULE`, …) are not offered.
+- Only an operator changes them; members see them and can redeploy. A member's clone and every PR preview start without them.
+- They apply on the panel host. A remote node or a Swarm service deploys without them and says so in the deploy log.
+
 ---
 
 ## ⚡ 2. Pipeline Cancellation
@@ -27,6 +47,36 @@ When deploying a containerized service:
 - **Push Webhooks**: Automatic deployments on GitHub/GitLab pushes with HMAC-SHA256 signature verification.
 - **Monorepo Watch-Paths**: Set glob patterns (e.g. `apps/api/**`, `packages/shared/**`). Deployments trigger only when matching files change in the commit diff.
 - **CI Opt-Out**: Commits containing `[skip ci]` or `[skip cd]` in the commit message are ignored by webhook triggers.
+
+### Deploy without Git: uploaded source (0.16.1)
+
+A docker service created with neither a repository nor an image builds from an archive you upload:
+
+- **Panel:** New → **Upload source** (name, `.zip` / `.tar.gz`, optional port) creates the service and deploys the upload. Later versions go in on the service's **Deploys** tab.
+- **CLI:** `ninedeploy deploy up [path] --create <name>` for a new service, or `--service <id|slug>` for an existing one. A folder is packed without `.git`, `node_modules`, `.env`, `.env.*` and common build caches; add more with `--exclude <pattern>`. A ready `.zip` / `.tar.gz` is sent as is. `--no-deploy` only uploads.
+- **API:** `POST /v1/services/:id/source` with the archive as the raw body (`Content-Type: application/zip` or `application/gzip`), `?deploy=false` to only store it.
+
+The build is the same as for a repository: a Dockerfile in the archive wins, otherwise Nixpacks (or the build pack set under Settings), and a `.ninedeploy` file is read. When the archive holds a single top-level folder (a zipped directory), that folder is the root.
+
+| Limit | Value |
+| --- | --- |
+| Archive size | 100 MiB |
+| Extracted size | 1 GiB (one zip member: 256 MiB; use `.tar.gz` for larger files) |
+| Entries | 50 000 |
+| Kept uploads per service | 5 (redeploying an older deployment rebuilds its upload while it is kept) |
+
+Only regular files and directories are accepted: symlinks, hardlinks, devices, absolute paths and `..` are refused, as are encrypted and zip64 zips, before anything is stored. Uploads build on the panel host; a service pinned to a remote node is refused. Deleting the service deletes its uploads.
+
+### Where a deploy's variables come from
+
+Each deploy assembles the environment in this order; a later source wins over an earlier one for the same name:
+
+1. **Shared variables of the service's projects** (Projects → Shared variables, `/v1/projects/:id/env`). Every service in the project receives them. The service's Environment tab lists them under **From projects**, marking the ones it overrides.
+2. **The service's own variables** (Service → Environment).
+3. A PR preview's **preview-only** set (§4).
+4. **Attached managed databases** (`DATABASE_URL` and friends).
+
+Nixpacks, Railpack and the static pack build with the whole environment; a Dockerfile build receives only the names listed as build arguments ([PRIVATE_REPO_GUIDE.md §6](./PRIVATE_REPO_GUIDE.md#build-time-variables-0161)).
 
 ---
 

@@ -16,8 +16,9 @@ import {
   sources,
   type DB,
   type Service,
+  type ServiceRuntimeOptions,
 } from '@ninedeploy/db';
-import { composePreviewRequest, createService, sameImageRepository, setLimits, updateService } from '@ninedeploy/schemas';
+import { composePreviewRequest, createService, type RuntimeOptions, sameImageRepository, setLimits, updateService } from '@ninedeploy/schemas';
 import { findCatalogTemplate } from '../templates/catalog.js';
 
 /** Fan-out target set for a service — up to 10 extra nodes, operator-set. */
@@ -28,7 +29,7 @@ import { targetsForService, teardownTargets, type FanoutTarget } from '../engine
 import { audit } from '../lib/audit.js';
 import { agentOp } from '../lib/agentClient.js';
 import { removeNodeWorkspace } from '../lib/agentCapabilities.js';
-import { config } from '../config.js';
+import { autoUrlPreview } from '../lib/autoUrl.js';
 import { getStickyEnabledForService } from '../engine/proxy.js';
 import { setSettingString } from '../lib/settings.js';
 import { badRequest, conflict, forbidden, HttpError, isUniqueViolation, notFound, parseId as num } from '../lib/errors.js';
@@ -45,6 +46,7 @@ import { visibleProjectIds } from './projects.js';
 import { visibleWorkspaceIds } from './workspaces.js';
 import { visibleLabelIds } from './labels.js';
 import { assertMayUseHostPrivilege } from '../lib/hostPrivilege.js';
+import { removeSourceUploads } from '../lib/sourceUpload.js';
 import { assertMayPublishPort } from '../lib/hostPort.js';
 import { slugify, slugifyWithSuffix } from '../lib/slug.js';
 import { assertPrimaryVolumeNotAttachedElsewhere, assertSlugVolumeNotRetained } from '../lib/retainedSlugVolume.js';
@@ -129,9 +131,11 @@ function serialize(s: Service, sourceName: string | null = null, tags: TagIds = 
     runtimeId: s.runtimeId,
     serverId: s.serverId ?? null,
     healthPath: s.healthPath,
+    healthTimeoutSeconds: s.healthTimeoutSeconds ?? null,
+    runtimeOptions: s.runtimeOptions ?? null,
     port: s.port,
     publishedPort: s.publishedPort ?? null,
-    autoUrl: config.wildcardDomain ? `${s.slug}.${config.wildcardDomain}` : null,
+    autoUrl: autoUrlPreview(s.slug, s.serverId ?? null),
     cpuShares: s.cpuShares,
     cpuLimitMilli: s.cpuLimitMilli,
     memLimitMb: s.memLimitMb,
@@ -147,6 +151,25 @@ function serialize(s: Service, sourceName: string | null = null, tags: TagIds = 
     createdAt: s.createdAt.toISOString(),
     updatedAt: s.updatedAt.toISOString(),
   };
+}
+
+/** Runtime options as stored: unset, false and empty fields dropped; nothing left → null (the pre-0.16.1 row). */
+export function normalizeRuntimeOptions(input: ServiceRuntimeOptions | null | undefined): ServiceRuntimeOptions | null {
+  if (!input) return null;
+  const out: ServiceRuntimeOptions = {};
+  if (input.gpus != null) out.gpus = input.gpus;
+  if (input.shmSizeMb != null) out.shmSizeMb = input.shmSizeMb;
+  if (input.init) out.init = true;
+  if (input.ulimitNofile != null) out.ulimitNofile = input.ulimitNofile;
+  const caps = [...new Set(input.capAdd ?? [])].sort();
+  if (caps.length > 0) out.capAdd = caps;
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/** Build-argument names as stored: de-duplicated, in order; none → null (the pre-0.16.1 row). */
+function uniqueBuildArgs(names: readonly string[] | undefined): string[] | null {
+  const unique = [...new Set((names ?? []).map((n) => n.trim()).filter(Boolean))];
+  return unique.length > 0 ? unique : null;
 }
 
 /** Build-config row → API representation. */
@@ -165,6 +188,7 @@ function serializeBuild(b: typeof buildConfigs.$inferSelect) {
     preStopCmd: b.preStopCmd,
     restartPolicy: b.restartPolicy,
     stopGraceSeconds: b.stopGraceSeconds,
+    buildArgs: b.buildArgs ?? [],
   };
 }
 
@@ -516,6 +540,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         preStopCmd: input.build.preStopCmd ?? null,
         restartPolicy: input.build.restartPolicy ?? 'unless-stopped',
         stopGraceSeconds: input.build.stopGraceSeconds ?? 5,
+        buildArgs: uniqueBuildArgs(input.build.buildArgs),
       });
     if (input.composeContent) {
       // Write the workspace copy now so the very first deploy has it, and
@@ -607,6 +632,22 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       );
     }
     const { build, ...patch } = updateService.parse(req.body ?? {});
+    // 0.16.1 advanced container options: GPUs, a bigger /dev/shm and added
+    // capabilities draw on the host and widen what the container may do, so
+    // only an operator sets them (an unchanged re-send stays allowed). Once
+    // set, a member may still redeploy the service, as with resource limits.
+    if (patch.runtimeOptions !== undefined) {
+      const next = normalizeRuntimeOptions(patch.runtimeOptions);
+      const changed = JSON.stringify(next) !== JSON.stringify(normalizeRuntimeOptions(existing.runtimeOptions ?? null));
+      if (changed && !req.user!.isOperator) {
+        throw forbidden('Operator access required: advanced container options (GPUs, shared memory, capabilities) draw on the host.');
+      }
+      if (next && (patch.type ?? existing.type) !== 'docker') {
+        throw badRequest('Advanced container options apply to docker services only');
+      }
+      // Validated by the schema above; normalising only drops fields.
+      patch.runtimeOptions = next as RuntimeOptions | null;
+    }
     // r182: the slug is an identity, not a label — it names the data volume
     // (`nd-svc-<slug>-data`), the private bridge and the auto-domain. A rename
     // made the next deploy mount a fresh EMPTY volume, left the old one
@@ -812,7 +853,9 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     if (moving && existing.serverId != null) {
       await removeNodeWorkspace(app.db, existing.serverId, existing.slug, (msg) => req.log.warn({ serviceId: id }, msg));
     }
-    const [svc] = await app.db.update(services).set(servicePatch).where(eq(services.id, id)).returning();
+    // updatedAt is always set: a PATCH carrying only `build` leaves the service
+    // patch empty, and drizzle refuses an empty SET ("No values to set", a 500).
+    const [svc] = await app.db.update(services).set({ ...servicePatch, updatedAt: new Date() }).where(eq(services.id, id)).returning();
     if (!svc) throw notFound('Service not found');
     // r512: an OPERATOR attaching a registry source or changing the image of
     // a service that uses one binds the credential to that registry host.
@@ -829,6 +872,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       if (build.stopGraceSeconds !== undefined) values.stopGraceSeconds = build.stopGraceSeconds;
       if (build.outputDir !== undefined) values.outputDir = build.outputDir === '' ? null : build.outputDir;
       if (build.staticSpa !== undefined) values.staticSpa = build.staticSpa;
+      if (build.buildArgs !== undefined) values.buildArgs = uniqueBuildArgs(build.buildArgs);
       for (const key of ['installCmd', 'buildCmd', 'startCmd', 'dockerfilePath', 'preDeployCmd', 'postDeployCmd', 'preStopCmd'] as const) {
         const v = build[key];
         if (v !== undefined) values[key] = v === '' ? null : v;
@@ -967,6 +1011,12 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // leave a live row whose runtime has already been destroyed.
     await app.db.delete(services).where(eq(services.id, id));
     for (const row of orphanLogs) deleteLog(row.id);
+    // 0.16.1: the archives uploaded as this service's source go with it.
+    try {
+      removeSourceUploads(id);
+    } catch (err) {
+      req.log.warn({ err, serviceId: id }, 'could not remove the uploaded source archives');
+    }
     // Rewrite Traefik routing — the service's domains cascade-deleted with the
     // row, so its routers/services drop out of the dynamic config. Routing must
     // never block delete, so failures are logged, not thrown.
@@ -1469,6 +1519,10 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         // materialised below so the copy is deployable before its first run.
         composeContent: svc.composeContent,
         healthPath: svc.healthPath,
+        healthTimeoutSeconds: svc.healthTimeoutSeconds,
+        // 0.16.1: operator-set container options are the operator's to hand
+        // out; a member's copy starts without them (like sourceId above).
+        runtimeOptions: req.user!.isOperator ? svc.runtimeOptions : null,
         port: svc.port,
         publishedPort: null, // do not collide host port
         cpuShares: svc.cpuShares,
@@ -1521,6 +1575,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         preStopCmd: b.preStopCmd,
         restartPolicy: b.restartPolicy,
         stopGraceSeconds: b.stopGraceSeconds,
+        buildArgs: b.buildArgs,
       });
     }
 

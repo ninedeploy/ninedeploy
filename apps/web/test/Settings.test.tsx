@@ -152,7 +152,8 @@ describe('Settings', () => {
     expect(screen.getByText('200 MB reclaimable')).toBeInTheDocument();
     // wildcard domain (Security section) read from the configured settings API apex
     await openSection('Security');
-    expect(await screen.findByText('*.nd.local')).toBeInTheDocument();
+    // 0.16.1: the read-only "Wildcard Domain" card is gone; the apex lives in the DNS challenge form.
+    expect(await screen.findByDisplayValue('nd.local')).toBeInTheDocument();
     // notification channels with type badges
     await openSection('Notifications');
     expect(await screen.findByText('telegram-main')).toBeInTheDocument();
@@ -187,7 +188,7 @@ describe('Settings', () => {
     await screen.findByText('Docker daemon not reachable.');
     expect(screen.getByText('ninedeploy')).toBeInTheDocument(); // network fallback
     await openSection('Security');
-    expect(await screen.findByText('not configured')).toBeInTheDocument(); // wildcard apex unset
+    expect(await screen.findByRole('radiogroup', { name: 'Automatic URL mode' })).toBeInTheDocument();
     await openSection('Notifications');
     expect(await screen.findByText('No notification channels configured.')).toBeInTheDocument();
   });

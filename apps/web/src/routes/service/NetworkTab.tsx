@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, Globe, Plus, Radio, Shield, Trash2 } from 'lucide-react';
+import { ExternalLink, Globe, Plus, Radio, Shield, Trash2, Wand2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
@@ -250,6 +250,38 @@ function cleanDomainInput(raw: string): string {
   return value.replace(/:\d+$/, '').replace(/\.$/, '');
 }
 
+/**
+ * 0.16.1 path routing: the path a pasted URL carries (`https://x.dev/api/` →
+ * `/api`), or a typed one normalised the same way — leading slash, no query
+ * or fragment, no trailing slash. Empty means the whole host (`/`).
+ */
+export function cleanPathInput(raw: string): string {
+  let value = raw.trim();
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
+    try {
+      value = new URL(value).pathname;
+    } catch {
+      return '/';
+    }
+  }
+  value = (value.split(/[?#]/)[0] ?? '').replace(/\/{2,}/g, '/');
+  if (!value.startsWith('/')) value = `/${value}`;
+  if (value.length > 1) value = value.replace(/\/+$/, '');
+  return value || '/';
+}
+
+/** The path part of a pasted URL or `host/path` (`''` when there is none or it is `/`). */
+function pastedPath(raw: string): string {
+  const value = raw.trim();
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `http://${value}`;
+  try {
+    const p = new URL(withScheme).pathname;
+    return p === '/' ? '' : p;
+  } catch {
+    return '';
+  }
+}
+
 /** The TXT record a `pending` domain must publish to prove ownership. */
 type DomainChallenge = DomainVerificationChallenge;
 
@@ -257,13 +289,15 @@ function DomainsCard({ serviceId }: { serviceId: number }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [hostname, setHostname] = useState('');
+  const [path, setPath] = useState('');
   // r345: the TXT challenge is only in the create / verify responses (the
   // list omits it), so keep the latest one per domain for display.
   const [challenges, setChallenges] = useState<Record<number, DomainChallenge>>({});
 
   const domains = useQuery({ queryKey: ['domains', serviceId], queryFn: () => api.domains.list(serviceId) });
   const add = useMutation({
-    mutationFn: (host: string) => api.domains.create(serviceId, { hostname: host }),
+    mutationFn: ({ host, routePath }: { host: string; routePath: string }) =>
+      api.domains.create(serviceId, routePath === '/' ? { hostname: host } : { hostname: host, path: routePath }),
     onSuccess: (created) => {
       const verification = (created as { verification?: DomainChallenge | null } | undefined)?.verification;
       if (created && verification) {
@@ -271,25 +305,51 @@ function DomainsCard({ serviceId }: { serviceId: number }) {
         toast(`${created.hostname} added — publish the TXT record to bring it live`, 'info');
       }
       setHostname('');
+      setPath('');
       qc.invalidateQueries({ queryKey: ['domains', serviceId] });
       qc.invalidateQueries({ queryKey: ['domains-all'] });
     },
-    onError: () => toast('Could not add the domain', 'error'),
+    // The server says why (taken by another service, outside the zone …).
+    onError: (err) => toast(err instanceof Error && err.message ? err.message : 'Could not add the domain', 'error'),
+  });
+  // 0.16.1: the service's automatic URL (Settings → Automatic URLs) now,
+  // instead of on its next deploy. The server explains when none applies.
+  const generate = useMutation({
+    mutationFn: () => api.domains.generate(serviceId),
+    onSuccess: (d) => {
+      toast(d.created ? `${d.hostname} is routed to this service` : `${d.hostname} is already attached`, d.created ? 'success' : 'info');
+      qc.invalidateQueries({ queryKey: ['domains', serviceId] });
+      qc.invalidateQueries({ queryKey: ['domains-all'] });
+    },
+    onError: (err: Error) => toast(err.message, 'error'),
   });
 
   return (
     <Card>
       <CardBody>
-        <div className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-300">
-          <Globe size={15} className="text-slate-500" /> Domains
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
+            <Globe size={15} className="text-slate-500" /> Domains
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => generate.mutate()}
+            disabled={generate.isPending}
+            title="Add this service's automatic URL (a free sslip.io name or <slug>.<your base domain>)"
+          >
+            <Wand2 size={13} /> {generate.isPending ? 'Generating…' : 'Generate URL'}
+          </Button>
         </div>
 
         <form
           onSubmit={(e) => {
             e.preventDefault();
             const host = cleanDomainInput(hostname);
+            const routePath = cleanPathInput(path || pastedPath(hostname));
             setHostname(host);
-            if (host.includes('.')) add.mutate(host);
+            if (host.includes('.')) add.mutate({ host, routePath });
           }}
           className="flex gap-2"
         >
@@ -297,12 +357,25 @@ function DomainsCard({ serviceId }: { serviceId: number }) {
             value={hostname}
             onChange={(e) => setHostname(e.target.value)}
             onBlur={() => {
+              // A pasted URL's path moves into the path field.
+              const carried = pastedPath(hostname);
+              if (carried && !path) setPath(cleanPathInput(carried));
               const host = cleanDomainInput(hostname);
               if (host !== hostname) setHostname(host);
             }}
             placeholder="app.example.com"
-            title="You can paste a full URL; only the hostname is kept."
+            aria-label="Domain"
+            title="You can paste a full URL; its path goes to the path field."
             className="h-9"
+          />
+          <Input
+            value={path}
+            onChange={(e) => setPath(e.target.value)}
+            onBlur={() => path && setPath(cleanPathInput(path))}
+            placeholder="/path"
+            aria-label="Path"
+            title="Optional. Route only this path prefix to the service (e.g. /api); the request keeps its path."
+            className="h-9 w-28 shrink-0 font-mono text-xs"
           />
           <Button type="submit" size="sm" variant="secondary" disabled={!hostname.trim() || add.isPending}>
             <Plus size={14} /> Add

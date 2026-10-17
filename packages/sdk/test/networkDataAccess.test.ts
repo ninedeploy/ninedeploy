@@ -109,6 +109,19 @@ describe('0.14 route mapping', () => {
     expect(call.body).toBe(chunk);
   });
 
+  it('0.16.1: uploads a source archive raw, deploying unless told not to, and lists the kept uploads', async () => {
+    const { api, calls } = client();
+    const archive = new Uint8Array([0x50, 0x4b, 3, 4]);
+    await api.services.uploadSource(7, archive);
+    await api.services.uploadSource(7, archive, { deploy: false });
+    await api.services.sourceUploads(7);
+    expect(calls[0]).toMatchObject({ method: 'POST', url: '/v1/services/7/source' });
+    expect(calls[0]!.headers['Content-Type']).toBe('application/octet-stream');
+    expect(calls[0]!.body).toBe(archive);
+    expect(calls[1]).toMatchObject({ method: 'POST', url: '/v1/services/7/source?deploy=false' });
+    expect(calls[2]).toMatchObject({ method: 'GET', url: '/v1/services/7/source' });
+  });
+
   it('keeps the custom-config refusal findings as error details', async () => {
     const issue = { path: 'http.routers.a', message: 'name must start with custom-' };
     const { api } = client(({ url }) =>
