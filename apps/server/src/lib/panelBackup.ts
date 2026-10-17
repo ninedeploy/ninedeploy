@@ -407,8 +407,8 @@ export async function runPanelBackup(
   opts: { trigger: 'schedule' | 'manual'; actorUserId: number | null; log?: (line: string) => void },
 ): Promise<PanelBackupRunResult> {
   const log = opts.log ?? (() => undefined);
-  if (busy) {
-    const reason = busy === 'restore' ? 'a restore is in progress' : 'the previous run is still in progress';
+  if (busy || systemImportInFlight()) {
+    const reason = busy === 'restore' ? 'a restore is in progress' : busy ? 'the previous run is still in progress' : 'a system import is in progress';
     log(`panel backup skipped: ${reason}`);
     void audit(db, opts.actorUserId, 'backup.panel.skipped', reason, { trigger: opts.trigger });
     return { status: 'skipped', reason };
@@ -520,7 +520,15 @@ export async function restorePanelBackup(
   if (busy) throw conflict('A panel backup or restore is already running — wait for it to finish');
   if (systemImportInFlight()) throw conflict('Another import is already running — wait for it to finish');
   busy = 'restore';
-  const dir = workDir();
+  let dir: string;
+  try {
+    dir = workDir();
+  } catch (err) {
+    // Not yet inside the try/finally below: a mkdir failure (disk full, read-only
+    // data dir) must not keep every later backup and restore locked out.
+    busy = null;
+    throw err;
+  }
   const stamp = `${process.pid}-${Date.now()}`;
   const sealed = path.join(dir, `restore-${stamp}.ndpb`);
   const plain = path.join(dir, `restore-${stamp}.tar.gz`);

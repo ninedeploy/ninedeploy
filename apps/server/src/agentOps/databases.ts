@@ -152,7 +152,7 @@ export const dbDumpKind: StreamKindHandler = {
       async start() {
         try {
           const reply = await mustDocker(plan.dump, 'the dump', DB_LONG_TIMEOUT_MS);
-          // keydb / dragonfly: an error reply to SAVE exits 0 and would stream a stale file (redis / valkey: unchanged).
+          // Redis-family clients can exit 0 on a SAVE error reply; never stream a stale RDB.
           const problem = saveReplyProblem(engine, reply.join('\n'));
           if (problem) throw new Error(problem);
         } catch (err) {

@@ -28,7 +28,7 @@ const { githubAppsRoutes, resetManifestNoncesForTests } = await import('../../sr
 const { clearGithubAppCaches } = await import('../../src/lib/githubApp.js');
 const { decrypt } = await import('../../src/lib/crypto.js');
 const { asUser, buildTestApp } = await import('../helpers.js');
-const { fakeGithub, json, migratedDb, rsaKeyPair, seedApp, seedInstallation } = await import('../lib/githubAppKit.js');
+const { closeMigratedDb, fakeGithub, json, migratedDb, rsaKeyPair, seedApp, seedInstallation } = await import('../lib/githubAppKit.js');
 
 const key = rsaKeyPair('pkcs1');
 const otherKey = rsaKeyPair('pkcs1');
@@ -52,6 +52,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  closeMigratedDb(db);
   vi.restoreAllMocks();
   delete process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'];
 });
@@ -144,14 +145,25 @@ describe('POST /manifest', () => {
     expect(res.json().error.code).toBe('panel_origin_local');
   });
 
-  it('refuses an http GitHub base unless private egress is allowed', async () => {
+  it('refuses an http GitHub base regardless of scheme casing unless private egress is allowed', async () => {
     const app = await server();
-    const payload = { target: 'user', webBaseUrl: 'http://ghe.lan' };
-    const refused = await app.inject({ method: 'POST', url: '/manifest', headers: asUser(1), payload });
-    expect(refused.statusCode).toBe(400);
-    expect(refused.json().error.code).toBe('insecure_base_url');
+    for (const scheme of ['http', 'HTTP', 'HtTp']) {
+      const refused = await app.inject({
+        method: 'POST',
+        url: '/manifest',
+        headers: asUser(1),
+        payload: { target: 'user', webBaseUrl: `${scheme}://ghe.lan` },
+      });
+      expect(refused.statusCode, scheme).toBe(400);
+      expect(refused.json().error.code, scheme).toBe('insecure_base_url');
+    }
     process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'] = '1';
-    const allowed = await app.inject({ method: 'POST', url: '/manifest', headers: asUser(1), payload });
+    const allowed = await app.inject({
+      method: 'POST',
+      url: '/manifest',
+      headers: asUser(1),
+      payload: { target: 'user', webBaseUrl: 'HTTP://ghe.lan' },
+    });
     expect(allowed.statusCode).toBe(200);
   });
 

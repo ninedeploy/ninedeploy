@@ -19,6 +19,7 @@ const h = vi.hoisted(() => {
 vi.mock('../src/lib/audit.js', () => ({ audit: h.audit }));
 
 const { sourcesRoutes } = await import('../src/modules/sources.js');
+const { resolveCloneCreds } = await import('../src/lib/sourceCreds.js');
 const { encrypt, hashPassword } = await import('../src/lib/crypto.js');
 const { asUser, buildTestApp } = await import('./helpers.js');
 
@@ -114,8 +115,38 @@ describe('host key pinning on a source', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ pinHostKeys: true, pinnedHostKeys: [] });
     const after = await row(keyId);
-    expect([after.pinHostKeys, after.hostKeys]).toEqual([true, null]);
+    expect(after.pinHostKeys).toBe(true);
+    expect(after.hostKeys).toMatch(/^# ninedeploy-host-key-generation:[0-9a-f-]{36}\n$/);
     expect(audits('source.reset_host_keys')[0]!.slice(1, 5)).toEqual([1, 'source.reset_host_keys', 'key', { sourceId: keyId, forgotten: 2 }]);
+  });
+
+  it.each([null, `github.com ${GITHUB_KEY}\n`])('a clone started before reset cannot restore the old trust state (%s)', async (initialKeys) => {
+    await db.update(sources).set({ pinHostKeys: true, hostKeys: initialKeys }).where(eq_(keyId));
+    const stale = await resolveCloneCreds(db, { sourceId: keyId, repoUrl: 'git@github.com:acme/repo.git' });
+    expect(stale?.onHostKeys).toBeTypeOf('function');
+    expect((await patch(keyId, { resetHostKeys: true, password: PASSWORD })).statusCode).toBe(200);
+    await stale!.onHostKeys!(`github.com ${GITHUB_KEY}\n`);
+    expect((await row(keyId)).pinHostKeys).toBe(true);
+    expect((await row(keyId)).hostKeys).not.toContain(GITHUB_KEY);
+  });
+
+  it('a clone started before pinning is disabled cannot restore the old trust state', async () => {
+    await db.update(sources).set({ pinHostKeys: true, hostKeys: `github.com ${GITHUB_KEY}\n` }).where(eq_(keyId));
+    const stale = await resolveCloneCreds(db, { sourceId: keyId, repoUrl: 'git@github.com:acme/repo.git' });
+    expect((await patch(keyId, { pinHostKeys: false, password: PASSWORD })).statusCode).toBe(200);
+    await stale!.onHostKeys!(`github.com ${GITHUB_KEY}\n`);
+    expect((await row(keyId)).hostKeys).not.toContain(GITHUB_KEY);
+  });
+
+  it('a clone started after reset may learn keys, but cannot restore them after a second reset', async () => {
+    await db.update(sources).set({ pinHostKeys: true }).where(eq_(keyId));
+    expect((await patch(keyId, { resetHostKeys: true, password: PASSWORD })).statusCode).toBe(200);
+    const fresh = await resolveCloneCreds(db, { sourceId: keyId, repoUrl: 'git@github.com:acme/repo.git' });
+    await fresh!.onHostKeys!(`github.com ${GITHUB_KEY}\n`);
+    expect((await row(keyId)).hostKeys).toContain(GITHUB_KEY);
+    expect((await patch(keyId, { resetHostKeys: true, password: PASSWORD })).statusCode).toBe(200);
+    await fresh!.onHostKeys!(`github.com ${GITHUB_KEY}\n`);
+    expect((await row(keyId)).hostKeys).not.toContain(GITHUB_KEY);
   });
 
   it('switching it off forgets the keys too, so turning it on again starts from scratch', async () => {
@@ -123,7 +154,8 @@ describe('host key pinning on a source', () => {
     const res = await patch(keyId, { pinHostKeys: false, password: PASSWORD });
     expect(res.statusCode).toBe(200);
     const after = await row(keyId);
-    expect([after.pinHostKeys, after.hostKeys]).toEqual([false, null]);
+    expect(after.pinHostKeys).toBe(false);
+    expect(after.hostKeys).toMatch(/^# ninedeploy-host-key-generation:[0-9a-f-]{36}\n$/);
     expect(audits('source.pin_host_keys')[0]![4]).toEqual({ sourceId: keyId, previous: true, pinHostKeys: false });
   });
 

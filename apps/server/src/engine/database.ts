@@ -1079,17 +1079,13 @@ async function backupDatabaseUnlocked(d: Database, file: string, log: (line: str
     } else if (isRedisFamily(d.engine)) {
       const pass = decrypt(d.passwordEncrypted);
       // The shared builder: redis/valkey/keydb `SAVE`, dragonfly `SAVE RDB` (see ENGINES.dragonfly).
-      if (d.engine === 'redis' || d.engine === 'valkey') {
-        await run('docker', dumpCommands(d.engine, cn, '', pass).dump, {}, log);
-      } else {
-        const reply: string[] = [];
-        await run('docker', dumpCommands(d.engine, cn, '', pass).dump, {}, (line) => {
-          reply.push(line);
-          log(line);
-        });
-        const problem = saveReplyProblem(d.engine, reply.join('\n'));
-        if (problem) throw new Error(problem);
-      }
+      const reply: string[] = [];
+      await run('docker', dumpCommands(d.engine, cn, '', pass).dump, {}, (line) => {
+        reply.push(line);
+        log(line);
+      });
+      const problem = saveReplyProblem(d.engine, reply.join('\n'));
+      if (problem) throw new Error(problem);
       await run('docker', ['cp', `${cn}:/data/dump.rdb`, file], {}, log);
     } else if (d.engine === 'mongo') {
       // mongodump can write its binary archive straight to a file via

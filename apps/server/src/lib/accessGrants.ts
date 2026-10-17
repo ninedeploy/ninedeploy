@@ -10,6 +10,7 @@ import {
   type DB,
 } from '@ninedeploy/db';
 import { audit } from './audit.js';
+import { createKeyedOperationGuard } from './keyedOperationGuard.js';
 import { getSettingJson, setSettingJson } from './settings.js';
 
 /**
@@ -270,6 +271,13 @@ export async function deleteGrantsForMember(
 type IdpHolds = Record<string, number[]>;
 const idpHoldKey = (workspaceId: number) => `access_grants.idp_suspended.ws${workspaceId}`;
 const adminHoldKey = (workspaceId: number) => `access_grants.admin_suspended.ws${workspaceId}`;
+/**
+ * Both hold rows are read, changed and written back whole, so overlapping
+ * mutations in one workspace would lose one of the changes (an admin hold
+ * the IdP's reinstatement then lifts, or an IdP hold that never comes back).
+ * Every entry point that writes them runs under this per-workspace guard.
+ */
+const holdGuard = createKeyedOperationGuard<number>();
 const intList = (v: unknown): number[] => (Array.isArray(v) ? v.filter((n): n is number => Number.isInteger(n)) : []);
 
 async function readIdpHolds(db: DbLike, workspaceId: number): Promise<IdpHolds> {
@@ -295,32 +303,40 @@ export async function adminHeldGrantIds(db: DbLike, workspaceId: number): Promis
 }
 
 /** Add an admin hold. Returns false when the grant was already admin-held. */
-export async function addAdminHold(db: DbLike, workspaceId: number, grantId: number): Promise<boolean> {
-  const held = await adminHeldGrantIds(db, workspaceId);
-  if (held.includes(grantId)) return false;
-  await setSettingJson(db as DB, adminHoldKey(workspaceId), [...held, grantId]);
-  return true;
+export function addAdminHold(db: DbLike, workspaceId: number, grantId: number): Promise<boolean> {
+  return holdGuard(workspaceId, async () => {
+    const held = await adminHeldGrantIds(db, workspaceId);
+    if (held.includes(grantId)) return false;
+    await setSettingJson(db as DB, adminHoldKey(workspaceId), [...held, grantId]);
+    return true;
+  });
 }
 
 /** Remove admin holds. Returns the ids that were held. */
-export async function releaseAdminHolds(db: DbLike, workspaceId: number, grantIds: number[]): Promise<number[]> {
-  const held = await adminHeldGrantIds(db, workspaceId);
-  const released = held.filter((id) => grantIds.includes(id));
-  if (released.length > 0) {
-    await setSettingJson(
-      db as DB,
-      adminHoldKey(workspaceId),
-      held.filter((id) => !grantIds.includes(id)),
-    );
-  }
-  return released;
+export function releaseAdminHolds(db: DbLike, workspaceId: number, grantIds: number[]): Promise<number[]> {
+  return holdGuard(workspaceId, async () => {
+    const held = await adminHeldGrantIds(db, workspaceId);
+    const released = held.filter((id) => grantIds.includes(id));
+    if (released.length > 0) {
+      await setSettingJson(
+        db as DB,
+        adminHoldKey(workspaceId),
+        held.filter((id) => !grantIds.includes(id)),
+      );
+    }
+    return released;
+  });
 }
 
 /**
  * SCIM deactivation in W: every grant the user holds in W gets an IdP hold
  * and stops counting until the IdP re-enables the user.
  */
-export async function suspendGrantsForMember(db: DbLike, workspaceId: number, userId: number): Promise<number> {
+export function suspendGrantsForMember(db: DbLike, workspaceId: number, userId: number): Promise<number> {
+  return holdGuard(workspaceId, () => suspendGrantsForMemberLocked(db, workspaceId, userId));
+}
+
+async function suspendGrantsForMemberLocked(db: DbLike, workspaceId: number, userId: number): Promise<number> {
   const all = ids(
     await db
       .select({ id: accessGrants.id })
@@ -347,7 +363,11 @@ export async function suspendGrantsForMember(db: DbLike, workspaceId: number, us
  * SCIM re-activation in W: the IdP's holds on the user's grants in W go.
  * A grant a workspace admin also holds stays suspended.
  */
-export async function reinstateGrantsForMember(db: DbLike, workspaceId: number, userId: number): Promise<number> {
+export function reinstateGrantsForMember(db: DbLike, workspaceId: number, userId: number): Promise<number> {
+  return holdGuard(workspaceId, () => reinstateGrantsForMemberLocked(db, workspaceId, userId));
+}
+
+async function reinstateGrantsForMemberLocked(db: DbLike, workspaceId: number, userId: number): Promise<number> {
   const held = await idpHeldGrantIds(db, workspaceId, userId);
   if (held.length === 0) return 0;
   await writeIdpHolds(db, workspaceId, userId, []);

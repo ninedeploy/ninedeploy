@@ -45,9 +45,12 @@ interface CacheEntry {
 }
 
 let cache: CacheEntry | null = null;
+/** Bumped by every invalidation: a read that started before one must not publish its values. */
+let generation = 0;
 
 function invalidate(): void {
   cache = null;
+  generation++;
 }
 
 export const brandingRoutes: FastifyPluginAsync = async (app) => {
@@ -58,6 +61,7 @@ export const brandingRoutes: FastifyPluginAsync = async (app) => {
     if (cache && cache.expiresAt > now) {
       return cache.value;
     }
+    const startedAt = generation;
     const [logoUrl, primaryColor, supportEmail, footerHtml] = await Promise.all([
       app.kernel.configCenter.get<string | null>(`${NS}:logoUrl`, null),
       app.kernel.configCenter.get<string | null>(`${NS}:primaryColor`, null),
@@ -70,7 +74,8 @@ export const brandingRoutes: FastifyPluginAsync = async (app) => {
       supportEmail: typeof supportEmail === 'string' && supportEmail.length > 0 ? supportEmail : null,
       footerHtml: typeof footerHtml === 'string' && footerHtml.length > 0 ? footerHtml : null,
     };
-    cache = { value, expiresAt: now + CACHE_TTL_MS };
+    // A save that landed while this read was in flight made `value` stale: serve it, do not keep it.
+    if (generation === startedAt) cache = { value, expiresAt: now + CACHE_TTL_MS };
     return value;
   });
 

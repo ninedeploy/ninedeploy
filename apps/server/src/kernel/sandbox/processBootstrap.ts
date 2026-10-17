@@ -51,8 +51,18 @@ function thrownReason(err: unknown): string {
   let text = '';
   try {
     text = String((err as Error | null)?.message || err);
-  } catch {}
+  } catch {
+    // An unprintable thrown value (a Proxy, a throwing toString): fall through
+    // to the fixed reason — there is nothing else to report.
+  }
   return text || 'sandbox hook handler failed';
+}
+
+// This file runs in a `--permission` child that may read only its own
+// directory, so it cannot import the panel's lib/log.ts; a swallowed failure
+// is reported to the host over the LOG protocol instead, which the host logs.
+function bestEffortReport(label: string, err: unknown): void {
+  post({ type: 'LOG', payload: { level: 'debug', message: `${label} failed (ignored): ${thrownReason(err)}` } });
 }
 
 const hookHandlers = new Map<string, (payload: any) => Promise<any> | any>();
@@ -218,7 +228,9 @@ process.on('message', async (msg: MainToWorkerMessage) => {
         if (activePlugin && typeof activePlugin.destroy === 'function') {
           try {
             await activePlugin.destroy();
-          } catch {}
+          } catch (err) {
+            bestEffortReport('plugin destroy on SHUTDOWN', err);
+          }
         }
         process.exit(0);
       }

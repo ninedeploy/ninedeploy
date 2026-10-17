@@ -9,6 +9,7 @@ import { scimRoutes } from './modules/scim.js';
 import { eventRoutes } from './modules/events.js';
 import { healthRoutes } from './modules/health.js';
 import { panelAllowedOrigins } from './lib/allowedOrigins.js';
+import { pinoSink, setLogSink } from './lib/log.js';
 import { attachRouteRegistry } from './lib/routeRegistry.js';
 import { websocketServerOptions } from './lib/websocketOptions.js';
 import authPlugin from './plugins/auth.js';
@@ -70,6 +71,15 @@ export async function buildApp(): Promise<FastifyInstance> {
     // Keep the default request budget small. The only legitimate large upload
     // is system import, which declares its own route-level limit below.
     bodyLimit: 1024 * 1024,
+  });
+
+  // Kernel, event buses and background libs log through lib/log.ts; from here
+  // on their entries go to this pino logger (structured, levelled, drained)
+  // instead of the console. Restored on close so a closed app's logger never
+  // receives a later instance's entries (tests build many apps per process).
+  const previousSink = setLogSink(pinoSink(app.log));
+  app.addHook('onClose', async () => {
+    setLogSink(previousSink);
   });
 
   // The live route table for the OpenAPI document (0.15, DESIGN §3.1). The

@@ -1,4 +1,4 @@
-﻿import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+﻿import { existsSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createHash, randomBytes } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
@@ -127,6 +127,115 @@ describe('master key resolution from the key file', () => {
     const mod = await import('../../src/lib/crypto.js');
     expect(() => mod.encrypt('x')).toThrow('must decode to 32 bytes');
   });
+
+  it.each([
+    ['empty', ''],
+    ['short', 'a'.repeat(63)],
+    ['long', 'a'.repeat(66)],
+    ['non-hex', `${'a'.repeat(62)}zz`],
+  ])('rejects a malformed $label file-backed master key', async (label, contents) => {
+    const dir = fsTempDir();
+    const keyFile = path.join(dir, 'master.key');
+    writeFileSync(keyFile, contents, { mode: 0o600 });
+    vi.resetModules();
+    vi.stubEnv('NINEDEPLOY_MASTER_KEY', '');
+    vi.stubEnv('NINEDEPLOY_MASTER_KEYS', '');
+    vi.stubEnv('NINEDEPLOY_DATA_DIR', dir);
+    const mod = await import('../../src/lib/crypto.js');
+    expect(() => mod.encrypt(label)).toThrow(/master key file.*64 hexadecimal characters/i);
+    expect(readFileSync(keyFile, 'utf8')).toBe(contents);
+  });
+
+  it('refuses a directory at the master-key path', async () => {
+    const dir = fsTempDir();
+    mkdirSync(path.join(dir, 'master.key'));
+    vi.resetModules();
+    vi.stubEnv('NINEDEPLOY_MASTER_KEY', '');
+    vi.stubEnv('NINEDEPLOY_MASTER_KEYS', '');
+    vi.stubEnv('NINEDEPLOY_DATA_DIR', dir);
+    const mod = await import('../../src/lib/crypto.js');
+    expect(() => mod.encrypt('x')).toThrow(/not a regular file/i);
+  });
+
+  it('0.16 compat: reads a symlinked master key (a Docker secret) without overwriting it', async () => {
+    const dir = fsTempDir();
+    const outside = fsTempDir();
+    const target = path.join(outside, 'outside.key');
+    const winner = 'b'.repeat(64);
+    writeFileSync(target, winner, { mode: 0o600 });
+    symlinkSync(target, path.join(dir, 'master.key'), 'file');
+    vi.resetModules();
+    vi.stubEnv('NINEDEPLOY_MASTER_KEY', '');
+    vi.stubEnv('NINEDEPLOY_MASTER_KEYS', '');
+    vi.stubEnv('NINEDEPLOY_DATA_DIR', dir);
+    const mod = await import('../../src/lib/crypto.js');
+    const viaLink = mod.encrypt('x');
+    expect(readFileSync(target, 'utf8')).toBe(winner);
+    vi.resetModules();
+    vi.stubEnv('NINEDEPLOY_MASTER_KEY', winner);
+    const direct = await import('../../src/lib/crypto.js');
+    expect(direct.decrypt(viaLink)).toBe('x');
+  });
+
+  // POSIX O_EXCL fails on any existing link; Windows creates through it.
+  it.runIf(process.platform !== 'win32')('refuses a dangling master-key symlink instead of creating its target', async () => {
+    const dir = fsTempDir();
+    const outside = fsTempDir();
+    const target = path.join(outside, 'missing.key');
+    symlinkSync(target, path.join(dir, 'master.key'), 'file');
+    vi.resetModules();
+    vi.stubEnv('NINEDEPLOY_MASTER_KEY', '');
+    vi.stubEnv('NINEDEPLOY_MASTER_KEYS', '');
+    vi.stubEnv('NINEDEPLOY_DATA_DIR', dir);
+    const mod = await import('../../src/lib/crypto.js');
+    expect(() => mod.encrypt('x')).toThrow();
+    expect(existsSync(target)).toBe(false);
+  });
+
+  it.each([
+    ['an extra digit', `${'c'.repeat(64)}d`],
+    ['a second line', `${'c'.repeat(64)}\n# rotated 2026-01`],
+    ['surrounding whitespace', `  ${'c'.repeat(64)}\n`],
+  ])('0.16 compat: accepts a key with %s', async (_label, value) => {
+    const dir = fsTempDir();
+    vi.resetModules();
+    vi.stubEnv('NINEDEPLOY_MASTER_KEYS', '');
+    vi.stubEnv('NINEDEPLOY_DATA_DIR', dir);
+    vi.stubEnv('NINEDEPLOY_MASTER_KEY', value);
+    const fromEnv = await import('../../src/lib/crypto.js');
+    const ct = fromEnv.encrypt('compat');
+    writeFileSync(path.join(dir, 'master.key'), value, { mode: 0o600 });
+    vi.resetModules();
+    vi.stubEnv('NINEDEPLOY_MASTER_KEY', '');
+    const fromFile = await import('../../src/lib/crypto.js');
+    expect(fromFile.decrypt(ct)).toBe('compat');
+    vi.resetModules();
+    vi.stubEnv('NINEDEPLOY_MASTER_KEY', 'c'.repeat(64));
+    const exact = await import('../../src/lib/crypto.js');
+    expect(exact.decrypt(ct)).toBe('compat');
+  });
+
+  it('uses the environment key without touching the configured key path', async () => {
+    const dir = fsTempDir();
+    vi.resetModules();
+    vi.stubEnv('NINEDEPLOY_MASTER_KEY', KEY_HEX);
+    vi.stubEnv('NINEDEPLOY_MASTER_KEYS', '');
+    vi.stubEnv('NINEDEPLOY_DATA_DIR', dir);
+    const mod = await import('../../src/lib/crypto.js');
+    expect(mod.decrypt(mod.encrypt('from-env'))).toBe('from-env');
+    expect(existsSync(path.join(dir, 'master.key'))).toBe(false);
+  });
+
+  it.runIf(process.platform !== 'win32')('creates the file with owner-only permissions on POSIX', async () => {
+    const dir = fsTempDir();
+    vi.resetModules();
+    vi.stubEnv('NINEDEPLOY_MASTER_KEY', '');
+    vi.stubEnv('NINEDEPLOY_MASTER_KEYS', '');
+    vi.stubEnv('NINEDEPLOY_DATA_DIR', dir);
+    const mod = await import('../../src/lib/crypto.js');
+    mod.activeKeyVersion();
+    expect(statSync(path.join(dir, 'master.key')).mode & 0o777).toBe(0o600);
+  });
 });
 
 describe('key rotation (versioned key ring)', () => {
@@ -237,8 +346,15 @@ describe('key rotation (versioned key ring)', () => {
   });
 });
 
+const ownedTempDirs: string[] = [];
+
+afterAll(() => {
+  for (const dir of ownedTempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
 function fsTempDir(): string {
   const dir = path.join(os.tmpdir(), `ninedeploy-crypto-${process.pid}-${Math.random().toString(36).slice(2)}`);
   mkdirSync(dir, { recursive: true });
+  ownedTempDirs.push(dir);
   return dir;
 }

@@ -16,6 +16,9 @@
  * before a real delete.
  */
 import { capture, run } from './exec.js';
+import { createLogger } from './log.js';
+
+const log = createLogger('images');
 
 export interface ImageInfo {
   /** Repo name (e.g. `nginx`, `ghcr.io/org/app`). */
@@ -275,8 +278,7 @@ export async function pruneImages(opts: PruneOptions = {}): Promise<PruneResult>
       // re-inspect the chunk and credit what actually went away, instead of
       // reporting removed=0 after freeing gigabytes (r406).
       const msg = err instanceof Error ? err.message : String(err);
-      // eslint-disable-next-line no-console
-      console.warn(`[images] prune chunk failed: ${msg}`);
+      log.warn(`prune chunk failed: ${msg}`);
       for (const c of slice) {
         if (await stillExists(c.id)) continue;
         removed.push(c.id);

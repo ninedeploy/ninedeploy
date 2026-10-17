@@ -1,4 +1,7 @@
 import { EventEmitter } from 'node:events';
+import { createLogger } from './log.js';
+
+const log = createLogger('events');
 
 export interface AppEvent {
   id: number;
@@ -94,7 +97,7 @@ class EventBus extends EventEmitter {
   private dispatch(name: string, payload: unknown, meta?: Record<string, unknown>): void {
     if (name === 'error') {
       try { this.emit(name, payload); }
-      catch (err) { console.error(`[events] listener for "${name}" threw:`, err); }
+      catch (err) { log.error(`listener for "${name}" threw:`, err); }
       return;
     }
     // Preserve once wrappers and a snapshot even when callbacks alter listeners.
@@ -103,7 +106,7 @@ class EventBus extends EventEmitter {
         if (meta === undefined) listener.call(this, payload);
         else listener.call(this, payload, meta);
       }
-      catch (err) { console.error(`[events] listener for "${name}" threw:`, err); }
+      catch (err) { log.error(`listener for "${name}" threw:`, err); }
     }
   }
 

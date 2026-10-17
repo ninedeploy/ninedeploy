@@ -93,6 +93,7 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  vi.useRealTimers();
   vi.clearAllMocks();
 });
 
@@ -177,6 +178,25 @@ describe('database backup routes (per-database)', () => {
     // The lib updates the row to `completed` after the engine
     // succeeds — the setter was called with `status: 'completed'`.
     expect(seenStates).toContain('completed');
+  });
+
+  it('gives two backups of one database different paths in the same millisecond', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-14T01:00:00.123Z'));
+    let nextId = 20;
+    const db = createFakeDb({
+      findFirst: { databases: dbRow(), backups: backupRow({ id: 20, status: 'completed' }) },
+      insert: { backups: (value: unknown) => [backupRow({ id: nextId++, status: 'running', path: (value as { path: string }).path })] },
+    });
+    const app = await buildApp({ db });
+    await app.register(databaseBackupRoutes);
+    const first = await app.inject({ method: 'POST', url: '/1/backups', headers: asUser() });
+    const second = await app.inject({ method: 'POST', url: '/1/backups', headers: asUser() });
+    expect([first.statusCode, second.statusCode]).toEqual([200, 200]);
+    const paths = mocks.backupDatabase.mock.calls.map((call) => call[1] as string);
+    expect(paths).toHaveLength(2);
+    expect(new Set(paths).size).toBe(2);
+    await app.close();
   });
 
   it('POST /:id/backups marks the row `failed` and surfaces a 400 on engine error', async () => {

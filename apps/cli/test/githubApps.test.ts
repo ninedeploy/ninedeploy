@@ -364,3 +364,22 @@ describe('services github', () => {
     expect(client.services.github.get).not.toHaveBeenCalled();
   });
 });
+
+describe('relayed GitHub error text (F1028)', () => {
+  it('prints a GitHub API message without terminal control sequences', async () => {
+    const client = makeClient();
+    const relayed = `GitHub refused the App credentials: Bad credentials${ESC}[2J${ESC}[1;1H${ESC}[32m✓ saved${ESC}[0m${ESC}]8;;https://evil.example${String.fromCharCode(7)}`;
+    client.githubApps.syncInstallations.mockRejectedValue(new Error(relayed));
+    client.githubApps.rotateKey.mockRejectedValue(new Error(`bad${String.fromCharCode(10)}✓ forged line`));
+    await githubAppSync(client as never, '1');
+    expect(err()).toContain('Bad credentials');
+    expect(err()).not.toContain(`${ESC}[2J`);
+    expect(err()).not.toContain(`${ESC}[32m✓`);
+    expect(err()).not.toContain(`${ESC}]8`);
+    h.prompt.mockResolvedValue('');
+    process.env['NINEDEPLOY_GITHUB_APP_KEY'] = 'k';
+    await githubAppRotateKey(client as never, '1');
+    expect(err()).not.toContain(`${String.fromCharCode(10)}✓ forged line`);
+    expect(err()).toContain('bad✓ forged line');
+  });
+});

@@ -1,5 +1,9 @@
 import 'dotenv/config';
 import { z } from 'zod';
+import { createLogger } from './lib/log.js';
+
+// Runs at import time, before buildApp: these lines reach the console sink.
+const log = createLogger('env');
 
 /** The insecure dev-only JWT secret. Never permitted in production. */
 export const INSECURE_JWT_SECRET = 'dev-insecure-secret-change-me';
@@ -64,8 +68,7 @@ export type Env = z.infer<typeof schema>;
 function parseEnv(): Env {
   const parsed = schema.safeParse(process.env);
   if (!parsed.success) {
-    // eslint-disable-next-line no-console
-    console.error('❌ Invalid environment variables:\n', parsed.error.flatten().fieldErrors);
+    log.error('❌ Invalid environment variables:\n', parsed.error.flatten().fieldErrors);
     process.exit(1);
   }
   // Hard guard: the publicly-known default JWT secret would let anyone forge
@@ -82,8 +85,7 @@ function parseEnv(): Env {
     parsed.data.NODE_ENV === 'production' &&
     KNOWN_INSECURE_JWT_SECRETS.has(parsed.data.NINEDEPLOY_JWT_SECRET)
   ) {
-    // eslint-disable-next-line no-console
-    console.error(
+    log.error(
       '❌ NINEDEPLOY_JWT_SECRET must be set to a strong, unique secret in production. The insecure default is not allowed.',
     );
     process.exit(1);
@@ -117,8 +119,7 @@ function parseEnv(): Env {
         /^0+$/.test(key) ||
         /change[-_]?me/i.test(key);
       if (weak) {
-        // eslint-disable-next-line no-console
-        console.error(
+        log.error(
           `❌ ${label} must be a strong 32-byte hex secret (64 hex chars) in production. The configured value is too weak.`,
         );
         process.exit(1);

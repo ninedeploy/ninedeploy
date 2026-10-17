@@ -1,3 +1,5 @@
+import { existsSync, mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Readable, Writable } from 'node:stream';
 import { gzipSync } from 'node:zlib';
@@ -39,6 +41,8 @@ const caps = await import('../src/lib/agentCapabilities.js');
 const { resolveBuildPlacement, BUILD_SERVER_REMOVED, railpackBuildsOnCapableNode, primaryBuildPack } = await import('../src/engine/buildPlacement.js');
 const { createBuildSlots, buildSlotKey } = await import('../src/engine/buildSlots.js');
 const { shipImageByStream, resolvePushTarget, pushImage, pullImageByDigest, buildTag } = await import('../src/lib/imageTransfer.js');
+const { STREAM_HARD_CAP_MS } = await import('../src/lib/agentStream.js');
+const { config } = await import('../src/config.js');
 const { HttpError } = await import('../src/lib/errors.js');
 const { encrypt } = await import('../src/lib/crypto.js');
 const { setBoundRegistryHosts } = await import('../src/lib/registryBinding.js');
@@ -319,6 +323,33 @@ describe('stream relay (design §6.3, §6.4)', () => {
     await expect(
       shipImageByStream(db, spec(svc.id, { target: null }), () => undefined, { openStream: (async () => saveHandle(gzipSync(Buffer.from('tar')))) as never, panelLoad }),
     ).rejects.toThrow(/traefik/);
+  });
+
+  it('sweeps only abandoned transfer archives before buffering a node image', async () => {
+    const svc = await service();
+    const dir = path.join(config.paths.dataDir, 'transfers');
+    mkdirSync(dir, { recursive: true });
+    const stale = path.join(dir, `${'a'.repeat(32)}.tar`);
+    const fresh = path.join(dir, `${'b'.repeat(32)}.tar`);
+    const unrelated = path.join(dir, `keep-${process.pid}.txt`);
+    writeFileSync(stale, 'stale');
+    writeFileSync(fresh, 'fresh');
+    writeFileSync(unrelated, 'unrelated');
+    const old = new Date(Date.now() - 4 * STREAM_HARD_CAP_MS - 1_000);
+    utimesSync(stale, old, old);
+    try {
+      await shipImageByStream(db, spec(svc.id, { target: null }), () => undefined, {
+        openStream: (async () => saveHandle(gzipSync(Buffer.from('tar')))) as never,
+        panelLoad: vi.fn(async () => undefined),
+      });
+      expect(existsSync(stale)).toBe(false);
+      expect(existsSync(fresh)).toBe(true);
+      expect(existsSync(unrelated)).toBe(true);
+    } finally {
+      rmSync(stale, { force: true });
+      rmSync(fresh, { force: true });
+      rmSync(unrelated, { force: true });
+    }
   });
 
   it('the build tag is per deployment, so concurrent targets never race on a tag', () => {

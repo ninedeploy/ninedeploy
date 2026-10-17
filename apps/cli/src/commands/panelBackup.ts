@@ -8,8 +8,10 @@ import type { NineDeployClient } from '../client.js';
 import { error, fmtBytes, fmtTime, header, info, kv, success, table } from '../lib/format.js';
 import { decryptPanelBackup } from '../lib/panelBackupFile.js';
 import { promptHidden } from '../prompts.js';
+import { plain } from './sources.js';
 
-const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+// Destination errors are relayed provider text: they pass through the F1011 sanitiser.
+const message = (err: unknown): string => plain(err instanceof Error ? err.message : String(err));
 
 function printStatus(s: PanelBackupStatus): void {
   kv('Enabled', s.settings.enabled ? 'yes' : 'no');
@@ -21,8 +23,8 @@ function printStatus(s: PanelBackupStatus): void {
   kv('Running', s.running ? 'yes' : 'no');
   if (s.lastRun) {
     kv('Last run', `${s.lastRun.status} (${s.lastRun.trigger}) ${fmtTime(s.lastRun.finishedAt ?? s.lastRun.startedAt)}`);
-    if (s.lastRun.error) kv('Last error', s.lastRun.error);
-    if (s.lastRun.warning) kv('Warning', s.lastRun.warning);
+    if (s.lastRun.error) kv('Last error', plain(s.lastRun.error));
+    if (s.lastRun.warning) kv('Warning', plain(s.lastRun.warning));
   }
   kv('Last success', s.lastSuccessAt ? fmtTime(s.lastSuccessAt) : 'never');
   if (s.masterKeyFromEnv) {

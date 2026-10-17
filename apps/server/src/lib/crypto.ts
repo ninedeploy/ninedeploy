@@ -1,8 +1,9 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual, type CipherGCM, type DecipherGCM } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { hash as argonHash, verify as argonVerify } from '@node-rs/argon2';
 import { config } from '../config.js';
+import { createLogger } from './log.js';
 
 /** Argon2id password hashing (recommended defaults from @node-rs/argon2). */
 export async function hashPassword(password: string): Promise<string> {
@@ -84,16 +85,98 @@ interface KeyRing {
 
 let keyRing: KeyRing | null = null;
 
+function hasErrorCode(error: unknown, code: string): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error && error.code === code;
+}
+
+const keyLog = createLogger('crypto');
+
+function decodeMasterKeyHex(value: string, source: string): Buffer {
+  const trimmed = value.trim();
+  if (/^[0-9a-fA-F]{64}$/.test(trimmed)) return Buffer.from(trimmed, 'hex');
+  // 0.16 upgrade compatibility: before the strict check the key was decoded
+  // with a bare Buffer.from(value, 'hex'), which reads the leading hex pairs
+  // and ignores the rest — so a key followed by a stray character, a second
+  // line or one extra digit worked. Refusing that now would leave an upgraded
+  // server unable to decrypt its own secrets. Accept exactly what decoded to
+  // 32 bytes before, and say how to fix it.
+  const legacy = Buffer.from(value, 'hex');
+  if (legacy.length === 32) {
+    keyLog.warn(`${source} has characters after its 64 hexadecimal digits; only the first 64 are used. Rewrite it to exactly 64 hexadecimal characters.`);
+    return legacy;
+  }
+  throw new Error(`${source} must decode to 32 bytes (exactly 64 hexadecimal characters)`);
+}
+
+/**
+ * A symlinked master.key (e.g. to a Docker secret) loaded before 0.16 and
+ * must keep loading: read it through the link, but only when it resolves to a
+ * regular file. Creation never writes through a link (the exclusive `wx`
+ * create in loadSingleKey fails on any existing path, links included).
+ */
+function readSymlinkedMasterKey(file: string): Buffer {
+  const target = statSync(file);
+  if (!target.isFile()) throw new Error(`Master key path "${file}" is a symbolic link to something that is not a regular file`);
+  keyLog.warn(`Master key path "${file}" is a symbolic link; reading the file it points to.`);
+  return decodeMasterKeyHex(readFileSync(file, 'utf8'), `Master key file "${file}"`);
+}
+
+function readMasterKeyFile(file: string): Buffer {
+  const before = lstatSync(file);
+  if (before.isSymbolicLink()) return readSymlinkedMasterKey(file);
+  if (!before.isFile()) throw new Error(`Master key path "${file}" is not a regular file`);
+
+  const noFollow = process.platform === 'win32' ? 0 : constants.O_NOFOLLOW;
+  const fd = openSync(file, constants.O_RDONLY | noFollow);
+  try {
+    const opened = fstatSync(fd);
+    if (!opened.isFile()) throw new Error(`Master key path "${file}" is not a regular file`);
+    if (before.dev !== opened.dev || before.ino !== opened.ino) {
+      throw new Error(`Master key file "${file}" changed while being opened`);
+    }
+    return decodeMasterKeyHex(readFileSync(fd, 'utf8'), `Master key file "${file}"`);
+  } finally {
+    closeSync(fd);
+  }
+}
+
 /** Load the single legacy master key from env or the master.key file (auto-creating it). */
 function loadSingleKey(): Buffer {
   const envKey = process.env['NINEDEPLOY_MASTER_KEY'];
-  if (envKey) return Buffer.from(envKey, 'hex');
+  if (envKey) return decodeMasterKeyHex(envKey, 'NINEDEPLOY_MASTER_KEY');
+
   const file = config.paths.masterKeyFile;
-  if (existsSync(file)) return Buffer.from(readFileSync(file, 'utf8').trim(), 'hex');
-  mkdirSync(path.dirname(file), { recursive: true });
-  const generated = randomBytes(32);
-  writeFileSync(file, generated.toString('hex'), { mode: 0o600 });
-  return generated;
+  try {
+    mkdirSync(path.dirname(file), { recursive: true });
+  } catch (cause) {
+    throw new Error(`Could not prepare master key directory for "${file}"`, { cause });
+  }
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const generated = randomBytes(32);
+    try {
+      writeFileSync(file, generated.toString('hex'), {
+        encoding: 'utf8',
+        flag: 'wx',
+        mode: 0o600,
+        flush: true,
+      });
+      return generated;
+    } catch (cause) {
+      if (!hasErrorCode(cause, 'EEXIST')) {
+        throw new Error(`Could not create master key file "${file}"`, { cause });
+      }
+      try {
+        return readMasterKeyFile(file);
+      } catch (readError) {
+        if (attempt === 0 && hasErrorCode(readError, 'ENOENT')) continue;
+        if (attempt === 1 && hasErrorCode(readError, 'ENOENT')) break;
+        throw readError;
+      }
+    }
+  }
+
+  throw new Error(`Master key file "${file}" disappeared during initialization`);
 }
 
 function getKeyRing(): KeyRing {

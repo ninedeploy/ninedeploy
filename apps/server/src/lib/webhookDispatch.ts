@@ -229,10 +229,15 @@ export async function handlePullRequest(
       orderBy: [desc(services.id)],
     });
     if (activePreviews.length >= parent.previewMaxActive && activePreviews.length > 0) {
-      const oldest = activePreviews[activePreviews.length - 1]!;
-      // Same teardown as a PR close — otherwise every cap eviction leaks
-      // the preview's bridge network, log files and Traefik route (r036).
-      await destroyPreviewService(db, log, oldest);
+      // Oldest first, as many as it takes for the new preview to fit the cap:
+      // evicting a single one left the count above a cap that was lowered
+      // after the previews were created, for every PR that followed.
+      const evict = Math.min(activePreviews.length, activePreviews.length - parent.previewMaxActive + 1);
+      for (const oldest of activePreviews.slice(activePreviews.length - evict).reverse()) {
+        // Same teardown as a PR close — otherwise every cap eviction leaks
+        // the preview's bridge network, log files and Traefik route (r036).
+        await destroyPreviewService(db, log, oldest);
+      }
     }
 
     const previewSlug = `${parent.slug}-pr-${pr.prNumber}`;
@@ -283,9 +288,18 @@ export async function handlePullRequest(
       })) ?? undefined
     );
 
+    // The loser of that race (created is undefined) finds the winner's row,
+    // which the winner provisions: re-running the one-time copies below would
+    // trip env_vars_service_key_idx (a 500, so the provider redelivers) or
+    // write a second build config. It only refreshes the preview, exactly as
+    // a redelivery that sees the preview does.
+    if (!created && targetService) {
+      await db.update(services).set({ branch: branch.data, commitSha: pr.sha }).where(eq(services.id, targetService.id));
+    }
+
     // Copy parent build config
     const parentBuild = await db.query.buildConfigs.findFirst({ where: eq(buildConfigs.serviceId, parent.id) });
-    if (parentBuild && targetService) {
+    if (parentBuild && targetService && created) {
       await db.insert(buildConfigs).values({
         serviceId: targetService.id,
         buildPack: parentBuild.buildPack,
@@ -303,7 +317,7 @@ export async function handlePullRequest(
     }
 
     // Copy parent service-scoped env vars
-    if (targetService) {
+    if (targetService && created) {
       // Inherit the parent's tag memberships (project + workspace + label)
       // so a preview deploy is visible to the same audiences as the parent.
       const parentTags = await getServiceTags(db, parent.id);

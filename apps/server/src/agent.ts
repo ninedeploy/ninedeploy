@@ -1,4 +1,5 @@
-import { appendFileSync, existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { appendFileSync, existsSync, lstatSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join as joinPath, relative as relativePath, resolve as resolvePath, sep as pathSep } from 'node:path';
 import { agentStreamRoute, agentWebsocketOptions, buildAgentApp } from './agentApp.js';
 import { advertisedCapabilities, AGENT_OPS, registeredCapabilities, runRegisteredOp } from './agentOps/index.js';
@@ -1526,8 +1527,9 @@ export const AGENT_NONCE_FILE = '.agent-nonces';
 
 /**
  * r668: reload the unexpired nonces persisted by {@link recordSeenNonce} and
- * rewrite the file with just those. A missing or unreadable file starts empty
- * — the in-memory protection still applies from the first request on.
+ * rewrite the file with just those. A missing file starts empty; an unreadable
+ * or unwritable cache refuses agent startup, because replay protection must
+ * survive a restart before the agent executes another sealed request.
  */
 export function loadSeenNonces(file: string, into: Map<string, number>): void {
   const now = Date.now();
@@ -1543,25 +1545,28 @@ export function loadSeenNonces(file: string, into: Map<string, number>): void {
     }
     persistSeenNonces(file, into);
   } catch (err) {
-    console.warn(`[NineDeploy Agent] Could not restore the replay cache from ${file}: ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(`Could not restore the agent replay cache from ${file}: ${err instanceof Error ? err.message : String(err)}`, { cause: err });
   }
 }
 
 /** r668: rewrite the file with exactly the live entries (compaction). */
 function persistSeenNonces(file: string, seen: Map<string, number>): void {
-  writeFileSync(file, [...seen].map(([n, e]) => `${n} ${e}\n`).join(''), { mode: 0o600 });
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, [...seen].map(([n, e]) => `${n} ${e}\n`).join(''), { mode: 0o600, flag: 'wx' });
+    renameSync(temporary, file);
+  } catch (err) {
+    try { rmSync(temporary, { force: true }); } catch { /* the original cache remains authoritative */ }
+    throw err;
+  }
 }
 
 /** r668: appends between two compactions, so the file stays near the live set's size. */
 const NONCE_COMPACT_EVERY = 5_000;
 
-/** r668: append one seen nonce (best effort — the in-memory map is authoritative while running). */
+/** Append one seen nonce before running the operation; a failed write refuses it. */
 function recordSeenNonce(file: string, nonce: string, expiry: number): void {
-  try {
-    appendFileSync(file, `${nonce} ${expiry}\n`, { mode: 0o600 });
-  } catch {
-    /* disk full / read-only — protection holds until the next restart */
-  }
+  appendFileSync(file, `${nonce} ${expiry}\n`, { mode: 0o600 });
 }
 
 /**
@@ -1637,15 +1642,15 @@ export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: 
       const expiry = now + 2 * MAX_SKEW_MS;
       seenNonces.set(input.nonce, expiry);
       if (nonceFile !== undefined) {
-        if (++appendedSinceCompact >= NONCE_COMPACT_EVERY) {
-          appendedSinceCompact = 0;
-          try {
+        try {
+          if (++appendedSinceCompact >= NONCE_COMPACT_EVERY) {
+            appendedSinceCompact = 0;
             persistSeenNonces(nonceFile, seenNonces);
-          } catch {
-            /* best effort, like the append */
+          } else {
+            recordSeenNonce(nonceFile, input.nonce, expiry);
           }
-        } else {
-          recordSeenNonce(nonceFile, input.nonce, expiry);
+        } catch {
+          return reply.code(503).send({ error: { code: 'replay_cache_unavailable', message: 'Agent replay protection is unavailable' } });
         }
       }
     }

@@ -23,7 +23,8 @@ import {
 } from '../lib/resourceAccess.js';
 import { badRequest, conflict, forbidden, HttpError, isUniqueViolation, notFound, parseId as num } from '../lib/errors.js';
 import { assertNodeCapability, nodeLabel } from '../lib/agentCapabilities.js';
-import { nodeVolumeExists } from '../lib/nodeVolumes.js';
+import { createNodeVolume, nodeVolumeExists } from '../lib/nodeVolumes.js';
+import { nodeVolumeLabels } from '../lib/remoteVolumes.js';
 import { containerRunning, listManagedVolumeNames, HELPER_IMAGE } from '../lib/inventory.js';
 import type { DB } from '@ninedeploy/db';
 
@@ -303,11 +304,13 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
       // victim's data (r096). A name that already exists on the host gets the
       // same ownership decision as an explicit `volumeName`. If docker cannot
       // be asked, decide as if it exists (fail closed).
-      const onHost = await listManagedVolumeNames().then(
-        (names) => names.includes(volumeName),
-        () => true,
-      );
-      if (onHost) await assertVolumeOwnership(app.db, req.user!, volumeName);
+      if (svc.serverId == null) {
+        const onHost = await listManagedVolumeNames().then(
+          (names) => names.includes(volumeName),
+          () => true,
+        );
+        if (onHost) await assertVolumeOwnership(app.db, req.user!, volumeName);
+      }
       // F550: and a name another service already has attached is never a
       // "new" volume — for anyone, operators included (the ownership guard
       // skips them). `shop` + `api-uploads` pre-attached spells `shop-api` +
@@ -373,12 +376,16 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
 
     // For create-on-attach, provision the named volume now so subsequent
     // /volumes inventory reads (and the user-facing file manager) see it.
-    // 0.16 (T5, D9): only for a panel-host service. A node service's volume
-    // exists only on its node; ensureNodeVolumes creates it there before the
-    // container of the redeploy queued below starts.
-    if (input.create?.label && svc.serverId == null) {
+    // A create request must establish a NEW volume on the service's host.
+    // Deferring node creation to the deploy would silently adopt a retained
+    // volume already present there under the same name.
+    if (input.create?.label) {
       try {
-        await createDockerVolume(volumeName, (line) => req.log.info(line));
+        if (svc.serverId == null) {
+          await createDockerVolume(volumeName, (line) => req.log.info(line));
+        } else {
+          await createNodeVolume(app.db, svc.serverId, volumeName, nodeVolumeLabels({ serviceId: svc.id, userId: svc.ownerUserId ?? null }));
+        }
       } catch (err) {
         // Provisioning failed — undo the row so we do not end up with a
         // phantom attachment the next deploy will fail on.

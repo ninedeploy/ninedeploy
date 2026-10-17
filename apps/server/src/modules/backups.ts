@@ -93,7 +93,7 @@ export const databaseBackupRoutes: FastifyPluginAsync = async (app) => {
     const d = await getDb(app, id, req.user!);
     await assertDatabaseRole(app.db, d, req.user!, 'admin');
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    const file = path.join(config.paths.backupsDir, `${d.slug}-${ts}.dump`);
+    const file = path.join(config.paths.backupsDir, `${d.slug}-${ts}-${randomUUID()}.dump`);
     const log = (line: string) => app.log.info({ component: 'backup' }, line);
 
     // 0.16 T6: a node database's dump records the node it was taken on (backups.server_id; NULL = the panel host).

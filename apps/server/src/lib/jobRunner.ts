@@ -7,6 +7,9 @@ import { assertMayDeployStoredService } from './hostPrivilege.js';
 import { isOperator } from './resourceAccess.js';
 import { backupServiceVolumes } from '../modules/volumeBackups.js';
 import { localSwarmTaskFor, swarmRuntimeOf } from './swarm.js';
+import { createLogger } from './log.js';
+
+const log = createLogger('scheduled backup');
 
 const MAX_OUTPUT = 60_000; // ~60 KB of captured output per run
 
@@ -143,7 +146,7 @@ async function runJobInner(db: DB, jobId: number, opts: RunJobOptions): Promise<
     // Snapshot the service's primary volume (when set) plus every row in
     // `service_volume_attachments`. The route path takes a single volume;
     // the scheduled sweep iterates the full set.
-    const sink = (line: string) => console.log(`[scheduled backup] ${line}`);
+    const sink = (line: string) => log.info(line);
     try {
       const result = await backupServiceVolumes({ db } as never, svc.id, sink);
       void audit(db, null, result.failed > 0 ? 'job.backup_failed' : 'job.backup', `${job.name} (${result.created} ok, ${result.failed} failed)`);

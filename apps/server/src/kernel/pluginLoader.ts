@@ -4,6 +4,9 @@ import { eq } from 'drizzle-orm';
 import type { InstallPluginInput, MarketplacePluginItem } from '@ninedeploy/schemas';
 import type { KernelContext, KernelPlugin } from './types.js';
 import { SandboxPlugin } from './sandbox/sandboxPlugin.js';
+import { createLogger } from '../lib/log.js';
+
+const log = createLogger('PluginLoader');
 
 /**
  * The roadmap index the Plugins page renders. `builtIn.path` is a PANEL route,
@@ -980,14 +983,14 @@ export async function loadInstalledPlugins(db: DB, kernel: KernelContext): Promi
     // reporting `active`. Never fatal: boot continues with the rest.
     const conflict = bootRestoreConflict(row.id);
     if (conflict) {
-      console.error(`[PluginLoader] ${conflict}`);
+      log.error(`${conflict}`);
       try {
         await db
           .update(installedPlugins)
           .set({ status: 'errored', error: conflict.slice(0, 500), updatedAt: new Date() })
           .where(eq(installedPlugins.id, row.id));
       } catch (err) {
-        console.error(`[PluginLoader] Could not record the conflict on plugin "${row.id}":`, err);
+        log.error(`Could not record the conflict on plugin "${row.id}":`, err);
       }
       continue;
     }
@@ -996,7 +999,7 @@ export async function loadInstalledPlugins(db: DB, kernel: KernelContext): Promi
         await restorePluginFromRow(row, kernel);
         loaded++;
       } catch (err) {
-        console.error(`[PluginLoader] Failed to restore plugin "${row.id}":`, err);
+        log.error(`Failed to restore plugin "${row.id}":`, err);
       }
     }
   }

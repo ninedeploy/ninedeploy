@@ -5,6 +5,7 @@ import { createFakeDb } from '../helpers.js';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { writeFileSync, unlinkSync, existsSync } from 'node:fs';
+import { Worker } from 'node:worker_threads';
 
 describe('SandboxPlugin (Worker Threads)', () => {
   const mockConfig = { paths: { dataDir: '/tmp/test' } } as any;
@@ -496,8 +497,13 @@ import { fileURLToPath } from 'node:url';
 const COMPILED_BOOTSTRAP = join(
   dirname(fileURLToPath(import.meta.url)), '..', '..', 'dist', 'kernel', 'sandbox', 'processBootstrap.js',
 );
+const COMPILED_WORKER_BOOTSTRAP = join(
+  dirname(fileURLToPath(import.meta.url)), '..', '..', 'dist', 'kernel', 'sandbox', 'workerBootstrap.js',
+);
 
-describe.skipIf(!existsSync(COMPILED_BOOTSTRAP))('processBootstrap — the compiled handshake, for real (r470)', () => {
+describe.skipIf(!existsSync(COMPILED_BOOTSTRAP) || !existsSync(COMPILED_WORKER_BOOTSTRAP))(
+  'sandbox bootstraps — compiled handshakes, for real (r470)',
+  () => {
   function forkSandbox(code: string) {
     // allowReads mirrors initProcessTransport's computation 1:1 — if the
     // plugin's allowlist is ever wrong, THIS is the test that cannot boot.
@@ -593,6 +599,52 @@ describe.skipIf(!existsSync(COMPILED_BOOTSTRAP))('processBootstrap — the compi
     }
   }, 20000);
 
+  it('reports ignored destroy failures at debug level before both runtimes exit cleanly', async () => {
+    const code = `return { async destroy() { throw new Error('destroy-boom'); } };`;
+
+    const { child, waitFor } = forkSandbox(code);
+    const processExit = new Promise<number | null>((resolve) => child.on('exit', resolve));
+    try {
+      await waitFor((m) => m.type === 'READY');
+      child.send({ type: 'SHUTDOWN', payload: {} });
+      const logged = await waitFor((m) => m.type === 'LOG' && String(m.payload?.message).includes('plugin destroy on SHUTDOWN'));
+      expect(logged.payload).toMatchObject({ level: 'debug' });
+      expect(String(logged.payload?.message)).toContain('destroy-boom');
+      expect(await processExit).toBe(0);
+    } finally {
+      await stop(child);
+    }
+
+    const worker = new Worker(COMPILED_WORKER_BOOTSTRAP);
+    const messages: Array<{ type: string; payload?: any }> = [];
+    const waitForWorker = (pred: (m: { type: string; payload?: any }) => boolean, ms = 10_000) =>
+      new Promise<{ type: string; payload?: any }>((resolve, reject) => {
+        const existing = messages.find(pred);
+        if (existing) return resolve(existing);
+        const timer = setTimeout(() => reject(new Error(`worker bootstrap never answered; saw: ${messages.map((m) => m.type).join(',') || 'nothing'}`)), ms);
+        const check = (m: { type: string; payload?: any }) => {
+          messages.push(m);
+          if (!pred(m)) return;
+          clearTimeout(timer);
+          worker.off('message', check);
+          resolve(m);
+        };
+        worker.on('message', check);
+      });
+    const workerExit = new Promise<number>((resolve) => worker.on('exit', resolve));
+    try {
+      worker.postMessage({ type: 'INIT', payload: { pluginId: 'destroy-probe', code } });
+      await waitForWorker((m) => m.type === 'READY');
+      worker.postMessage({ type: 'SHUTDOWN', payload: {} });
+      const logged = await waitForWorker((m) => m.type === 'LOG' && String(m.payload?.message).includes('plugin destroy on SHUTDOWN'));
+      expect(logged.payload).toMatchObject({ level: 'debug' });
+      expect(String(logged.payload?.message)).toContain('destroy-boom');
+      expect(await workerExit).toBe(0);
+    } finally {
+      await worker.terminate();
+    }
+  }, 20000);
+
   it('plugin code CANNOT read the filesystem from inside the real bootstrap', async () => {
     // This test file itself lives in test/kernel — far outside the bootstrap's
     // allowlist — so reading it must come back ERR_ACCESS_DENIED.
@@ -614,4 +666,5 @@ describe.skipIf(!existsSync(COMPILED_BOOTSTRAP))('processBootstrap — the compi
       await stop(child);
     }
   }, 20000);
-});
+  },
+);

@@ -162,15 +162,15 @@ describe('0.15.6: keydb and dragonfly share the redis family builders', () => {
     });
   }
 
-  it('a SAVE reply is checked for keydb and dragonfly only', () => {
-    for (const engine of ['keydb', 'dragonfly']) {
+  it('a SAVE reply is checked for every Redis-family engine', () => {
+    for (const engine of ['redis', 'valkey', 'keydb', 'dragonfly']) {
       expect(saveReplyProblem(engine, 'OK\n')).toBeNull();
       expect(saveReplyProblem(engine, 'warning\nOK')).toBeNull();
       expect(saveReplyProblem(engine, '(error) ERR nope')).toBe('SAVE did not answer OK: (error) ERR nope');
       expect(saveReplyProblem(engine, '')).toBe('SAVE did not answer OK: no reply');
       expect(saveReplyProblem(engine, 'x'.repeat(500))).toBe(`SAVE did not answer OK: ${'x'.repeat(300)}`);
     }
-    for (const engine of ['redis', 'valkey', 'postgres']) expect(saveReplyProblem(engine, '(error) ERR nope')).toBeNull();
+    expect(saveReplyProblem('postgres', '(error) ERR nope')).toBeNull();
   });
 
   it('dragonfly goes through docker exec redis-cli like redis (no client container), keydb through keydb-cli; the password rides after -a', () => {

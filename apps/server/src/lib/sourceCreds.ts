@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import {
   githubAppInstallations,
   githubApps,
@@ -12,6 +12,7 @@ import {
 import { audit } from './audit.js';
 import { decrypt } from './crypto.js';
 import { type CloneCreds, hostKeyLines } from './git.js';
+import { hostKeyGeneration } from './hostKeyPinning.js';
 import { GithubAppError, githubApi, installationToken, revokeInstallationToken } from './githubApp.js';
 
 /**
@@ -270,16 +271,29 @@ export async function resolveCloneCreds(
   // exactly the block above; a credential sent to a node never pins (the node
   // keeps its per-job accept-new policy).
   if (!src.pinHostKeys || opts.perJob) return base;
+  const generation = hostKeyGeneration(src.hostKeys);
   return {
     ...base,
     pinHostKeys: true,
     hostKeys: src.hostKeys,
-    // Merged with what is stored now, so two deploys that each learnt a
-    // different host cannot erase one another's.
+    // A reset changes the trust generation, invalidating callbacks captured
+    // before it. Compare-and-swap also prevents simultaneous deploys from
+    // overwriting one another's newly learned keys.
     onHostKeys: async (lines: string) => {
-      const current = await db.query.sources.findFirst({ where: eq(sources.id, src.id) });
-      const merged = hostKeyLines([...hostKeyLines(current?.hostKeys), ...hostKeyLines(lines)].join('\n'));
-      await db.update(sources).set({ hostKeys: `${merged.join('\n')}\n` }).where(eq(sources.id, src.id));
+      for (;;) {
+        const current = await db.query.sources.findFirst({ where: eq(sources.id, src.id) });
+        if (!current?.pinHostKeys || hostKeyGeneration(current.hostKeys) !== generation) return;
+        const merged = hostKeyLines([...hostKeyLines(current.hostKeys), ...hostKeyLines(lines)].join('\n'));
+        const changed = await db.update(sources)
+          .set({ hostKeys: `${generation ? `${generation}\n` : ''}${merged.join('\n')}\n` })
+          .where(and(
+            eq(sources.id, src.id),
+            eq(sources.pinHostKeys, true),
+            current.hostKeys === null ? isNull(sources.hostKeys) : eq(sources.hostKeys, current.hostKeys),
+          ))
+          .returning({ id: sources.id });
+        if (changed.length > 0) return;
+      }
     },
   };
 }

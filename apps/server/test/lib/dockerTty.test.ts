@@ -628,7 +628,7 @@ describe('openCliPipeTty (TLS / ssh transports)', () => {
     expect(child.stdout.pause).toHaveBeenCalled();
     expect(child.stderr.resume).toHaveBeenCalled();
     const ended = new Promise<number | null>((resolve) => tty.onEnd(resolve));
-    child.emit('exit', 2);
+    child.emit('close', 2);
     expect(await ended).toBe(2);
     await tty.kill();
     expect(child.kill).toHaveBeenCalled();
@@ -647,7 +647,7 @@ describe('openCliPipeTty (TLS / ssh transports)', () => {
     const ended = new Promise<number | null>((resolve) => tty.onEnd(resolve));
     child.emit('error', new Error('spawn docker ENOENT'));
     expect(await ended).toBeNull();
-    child.emit('exit', null);
+    child.emit('close', null);
     await expect(tty.kill()).resolves.toBeUndefined();
   });
 });

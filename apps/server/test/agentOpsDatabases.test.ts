@@ -144,6 +144,14 @@ describe('the db.dump stream kind', () => {
     expect(h.calls.at(-1)?.slice(0, 4)).toEqual(['exec', 'nd-db-pg', 'rm', '-f']);
     expect(h.streams).toEqual([]);
   });
+
+  it.each(['redis', 'valkey'])('refuses a %s SAVE error before streaming a stale RDB', async (engine) => {
+    h.saveReply = '(error) ERR disk full';
+    const prepared = await dbDumpKind.prepare({ container: 'nd-db-cache', engine, password: 'pw' }, { maxBytes: 1024 });
+    if (prepared.direction !== 'agent-to-panel') throw new Error('direction');
+    await expect(prepared.start()).rejects.toThrow('SAVE did not answer OK: (error) ERR disk full');
+    expect(h.streams).toEqual([]);
+  });
 });
 
 describe('the db.restore stream kind', () => {
@@ -224,7 +232,7 @@ describe('0.15.6: keydb and dragonfly on a node (the shared redis-family builder
     }
   });
 
-  it('db.dump: an error reply to SAVE fails the dump instead of streaming a stale dump.rdb (redis keeps its unchecked SAVE)', async () => {
+  it('db.dump: an error reply to SAVE fails the dump instead of streaming a stale dump.rdb', async () => {
     h.saveReply = '(error) ERR Background save already in progress';
     for (const [cn, engine] of [['nd-db-kdb', 'keydb'], ['nd-db-dfly', 'dragonfly']] as const) {
       h.streams.length = 0;
@@ -235,10 +243,8 @@ describe('0.15.6: keydb and dragonfly on a node (the shared redis-family builder
     }
     const redis = await dbDumpKind.prepare({ container: 'nd-db-cache', engine: 'redis', password: 'pw' }, { maxBytes: 1024 });
     if (redis.direction !== 'agent-to-panel') throw new Error('direction');
-    const source = await redis.start();
-    for await (const _ of source.stream) void _;
-    await source.done;
-    expect(h.streams).toEqual([['exec', 'nd-db-cache', 'cat', '/data/dump.rdb']]);
+    await expect(redis.start()).rejects.toThrow('SAVE did not answer OK: (error) ERR Background save already in progress');
+    expect(h.streams).toEqual([]);
   });
 
   it('db.restore: stop, copy over dump.rdb, start, in both modes; the import format is rdb only', async () => {

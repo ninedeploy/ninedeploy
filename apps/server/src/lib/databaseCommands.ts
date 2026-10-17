@@ -192,11 +192,11 @@ export function restoreCommand(engine: string, cn: string, tmp: string, password
 /**
  * Why a `SAVE` did not take, or null. `redis-cli` exits 0 on an error reply,
  * and `docker cp` of `/data/dump.rdb` would then copy a STALE file as the
- * backup. keydb and dragonfly (0.15.6) therefore check the reply; redis and
- * valkey keep their 0.15.0 behaviour unchanged (no check).
+ * backup. Every Redis-family engine must check the reply before copying the
+ * RDB file, including redis and valkey.
  */
 export function saveReplyProblem(engine: string, output: string): string | null {
-  if (engine !== 'keydb' && engine !== 'dragonfly') return null;
+  if (!isRedisFamily(engine)) return null;
   const text = output.trim();
   return /^OK$/m.test(text) ? null : `SAVE did not answer OK: ${text.slice(0, 300) || 'no reply'}`;
 }

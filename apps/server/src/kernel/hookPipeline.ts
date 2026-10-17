@@ -1,4 +1,7 @@
 import type { HookDefinitions, IHookPipeline, KernelContext } from './types.js';
+import { createLogger } from '../lib/log.js';
+
+const log = createLogger('HookPipeline');
 
 interface HookHandlerEntry {
   id?: string;
@@ -81,7 +84,7 @@ export class HookPipeline implements IHookPipeline {
           try {
             await entry.rollback(currentPayload, ctx, triggerError);
           } catch (rbErr) {
-            console.error(`[HookPipeline] Error executing rollback for hook "${hookName}" ${entry.id ? `(${entry.id})` : ''}:`, rbErr);
+            log.error(`Error executing rollback for hook "${hookName}" ${entry.id ? `(${entry.id})` : ''}:`, rbErr);
           }
         }
       }
@@ -120,7 +123,7 @@ export class HookPipeline implements IHookPipeline {
           clearTimeout(timer);
         }
       } catch (err) {
-        console.error(`[HookPipeline] Error executing hook "${hookName}":`, err);
+        log.error(`Error executing hook "${hookName}":`, err);
         await executeRollback(err instanceof Error ? err : new Error(String(err)));
         // r237: what was rolled back is no longer "executed". Keeping it in
         // the list meant a second failing handler rolled the same entries

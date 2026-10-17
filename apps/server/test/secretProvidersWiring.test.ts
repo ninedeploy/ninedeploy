@@ -199,14 +199,15 @@ describe('/v1/settings/secret-providers routes', () => {
     expect(row!.createdByUserId).toBe(1);
 
     // Omitted credentials keep the stored token.
-    expect((await put({ enabled: false, config: { address: 'https://vault2.invalid', authMethod: 'token', mount: 'kv' } })).json()).toMatchObject({
+    expect((await put({ enabled: false, config: { address: 'https://vault.invalid', authMethod: 'token', mount: 'kv' } })).json()).toMatchObject({
       enabled: false,
       configured: false,
       hasCredential: true,
     });
     const [after] = await db.select().from(secretProviders);
     expect(JSON.parse(decrypt(after!.credentialEncrypted))).toEqual({ token: 'hvs.TOPSECRET' });
-    expect(after!.configJson).toMatchObject({ address: 'https://vault2.invalid', mount: 'kv' });
+    expect(after!.configJson).toMatchObject({ address: 'https://vault.invalid', mount: 'kv' });
+
 
     // Switching the auth method needs that method's credentials; the old token is not carried.
     const approle = await put({ config: { address: 'https://vault.invalid', authMethod: 'approle' } });
@@ -220,6 +221,25 @@ describe('/v1/settings/secret-providers routes', () => {
     expect(trail).toHaveLength(3);
     expect(JSON.stringify(trail)).not.toMatch(/TOPSECRET|vault\.invalid/);
     expect(trail[0]!.meta).toMatchObject({ kind: 'vault', authMethod: 'token', created: true });
+  });
+
+  it('vault: a stored credential stays bound to the address it was entered for (F1027)', async () => {
+    const app = await providerApp();
+    const put = (payload: unknown) => app.inject({ method: 'PUT', url: '/settings/secret-providers/vault', headers: OP, payload });
+    expect((await put({ config: { address: 'https://vault.invalid', authMethod: 'token' }, credentials: { token: 'hvs.TOPSECRET' } })).statusCode).toBe(200);
+    // Repointing the provider needs a new token (400, nothing changes).
+    expect((await put({ config: { address: 'https://vault2.invalid', authMethod: 'token' } })).statusCode).toBe(400);
+    const [kept] = await db.select().from(secretProviders);
+    expect(kept!.configJson).toMatchObject({ address: 'https://vault.invalid' });
+    expect(JSON.parse(decrypt(kept!.credentialEncrypted))).toEqual({ token: 'hvs.TOPSECRET' });
+    // The same server spelled differently keeps it; another address with its own token replaces it.
+    expect((await put({ config: { address: 'HTTPS://Vault.Invalid/', authMethod: 'token' } })).statusCode).toBe(200);
+    expect((await put({ config: { address: 'https://vault2.invalid', authMethod: 'token' }, credentials: { token: 'hvs.NEW' } })).statusCode).toBe(200);
+    const [moved] = await db.select().from(secretProviders);
+    expect(JSON.parse(decrypt(moved!.credentialEncrypted))).toEqual({ token: 'hvs.NEW' });
+    expect(
+      (await put({ config: { address: 'https://vault.invalid', authMethod: 'token', mount: 'kv' }, credentials: { token: 'hvs.TOPSECRET' } })).statusCode,
+    ).toBe(200);
   });
 
   it('vault: refuses http without private egress, accepts it with', async () => {

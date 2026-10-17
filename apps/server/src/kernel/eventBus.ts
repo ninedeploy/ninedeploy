@@ -1,4 +1,7 @@
 import type { DomainEvents, EventOrigin, IEventBus } from './types.js';
+import { createLogger } from '../lib/log.js';
+
+const log = createLogger('EventBus');
 
 type Listener = (payload: any, event?: string, origin?: EventOrigin) => Promise<void> | void;
 
@@ -46,11 +49,11 @@ export class EventBus implements IEventBus {
           if (result && typeof result.catch === 'function') {
             result.catch((err: unknown) => {
               // Error boundary: listener errors never crash the event emitter
-              console.error(`[EventBus] Uncaught async error in listener for event "${event}":`, err);
+              log.error(`Uncaught async error in listener for event "${event}":`, err);
             });
           }
         } catch (err) {
-          console.error(`[EventBus] Uncaught synchronous error in listener for event "${event}":`, err);
+          log.error(`Uncaught synchronous error in listener for event "${event}":`, err);
         }
       }
     }
@@ -65,11 +68,11 @@ export class EventBus implements IEventBus {
             const result = listener(payload, event, origin);
             if (result && typeof result.catch === 'function') {
               result.catch((err: unknown) => {
-                console.error(`[EventBus] Uncaught async error in listener for event "${event}":`, err);
+                log.error(`Uncaught async error in listener for event "${event}":`, err);
               });
             }
           } catch (err) {
-            console.error(`[EventBus] Uncaught synchronous error in listener for event "${event}":`, err);
+            log.error(`Uncaught synchronous error in listener for event "${event}":`, err);
           }
         }
       }

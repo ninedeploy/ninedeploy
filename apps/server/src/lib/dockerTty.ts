@@ -770,7 +770,9 @@ class CliPipeTty extends BaseTty {
     this.child.stdout?.on('data', (c: Buffer) => this.emitData(Buffer.from(c)));
     this.child.stderr?.on('data', (c: Buffer) => this.emitData(Buffer.from(c)));
     this.child.on('error', () => this.emitEnd(null));
-    this.child.on('exit', (code) => this.emitEnd(typeof code === 'number' ? code : null));
+    // 'close', not 'exit': at 'exit' the stdio pipes may still hold output (and the bridge pauses
+    // them under backpressure), and the session is over the moment the end is reported.
+    this.child.on('close', (code) => this.emitEnd(typeof code === 'number' ? code : null));
   }
 
   write(data: Buffer): void {

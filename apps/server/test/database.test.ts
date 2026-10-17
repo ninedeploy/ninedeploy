@@ -69,7 +69,7 @@ vi.mock('../src/config.js', () => ({ config: h.config }));
 beforeEach(() => {
   vi.clearAllMocks();
   h.run.mockImplementation(async (_cmd: string, _args: unknown[], _opts: unknown, sink?: (line: string) => void) => {
-    sink?.('');
+    sink?.(_args.includes('SAVE') ? 'OK' : '');
   });
   h.capture.mockResolvedValue('[]');
   h.pullDockerImage.mockResolvedValue(undefined);
@@ -723,10 +723,22 @@ describe('backupDatabase', () => {
     writeFileSync(file, 'RDB-BYTES'); // the (mocked) docker cp lands here
     const log = vi.fn();
     await backupDatabase(dbRow({ engine: 'redis' }), file, log);
-    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'redis-cli', '-a', 'pw:enc', '--no-auth-warning', 'SAVE'], {}, log);
+    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'redis-cli', '-a', 'pw:enc', '--no-auth-warning', 'SAVE'], {}, expect.any(Function));
+    expect(log).toHaveBeenCalledWith('OK');
     expect(h.run).toHaveBeenCalledWith('docker', ['cp', 'c:/data/dump.rdb', file], {}, log);
     expect(h.decrypt).toHaveBeenCalledWith('enc');
     expect(readFileSync(file).includes(Buffer.from('RDB-BYTES'))).toBe(true);
+  });
+
+  it.each(['redis', 'valkey'])('refuses a %s SAVE error instead of encrypting a stale RDB', async (engine) => {
+    const file = path.join(tmp, `${engine}-save-error.rdb`);
+    writeFileSync(file, 'STALE-RDB');
+    h.run.mockImplementation(async (_cmd: string, args: unknown[], _opts: unknown, sink?: (line: string) => void) => {
+      if (args.includes('SAVE')) sink?.('(error) ERR disk full');
+    });
+    await expect(backupDatabase(dbRow({ engine }), file, vi.fn())).rejects.toThrow('SAVE did not answer OK: (error) ERR disk full');
+    expect(h.run.mock.calls.some((call) => call[1][0] === 'cp')).toBe(false);
+    expect(existsSyncMock(file)).toBe(false);
   });
 
   it('backs up mongo via a static container temp file + docker cp, then encrypts', async () => {

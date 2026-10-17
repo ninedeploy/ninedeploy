@@ -27,7 +27,7 @@ function parseId(raw: string | undefined): number {
   return /^[1-9]\d*$/.test(t) && Number.isSafeInteger(Number(t)) ? Number(t) : 0;
 }
 
-const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+const message = (err: unknown): string => plain(err instanceof Error ? err.message : String(err));
 
 function installationState(inst: GithubAppInstallation): string {
   if (inst.removedAt) return c.red('removed');

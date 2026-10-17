@@ -12,10 +12,8 @@ import type { Database } from '@ninedeploy/db';
  * the retained-volume adoption, for every engine — recorded once from the
  * v0.15.0 code into `fixtures/databaseArgv015.json`.
  *
- * engine/database.ts and every module it shells out through (lib/exec,
- * lib/dockerPull, lib/serviceBridge, lib/secretFile, lib/crossProcessLock)
- * are byte-identical between v0.15.0 and the commit the fixture was taken at
- * (only two `export` keywords differ), so the fixture IS v0.15.0's argv.
+ * The fixture pins the argv and outcomes of successful operations, so safety
+ * checks may reject new failure modes without changing the Docker commands.
  *
  *  - `engine`: the engine functions, called directly, still produce it.
  *  - `runtime`: the same operations through `databaseRuntime(db, d)` (the
@@ -95,7 +93,7 @@ vi.mock('../src/lib/exec.js', () => ({
     h.events.push(norm({ fn: 'run', cmd, args, opts }));
     // `docker cp <container>:<path> <host file>` writes the host file.
     if (cmd === 'docker' && args[0] === 'cp' && /^[^/]+:\//.test(args[1] ?? '') && args[2]) writeFileSync(args[2], 'DUMP-BYTES');
-    sink?.('');
+    sink?.(args.includes('SAVE') ? 'OK' : '');
   },
   capture: async (cmd: string, args: string[], opts: Record<string, unknown> = {}, stdin?: Buffer) => {
     h.events.push(norm({ fn: 'capture', cmd, args, opts, ...(stdin ? { stdin: stdin.toString('utf8') } : {}) }));

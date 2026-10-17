@@ -73,13 +73,14 @@ async function probeUrl(url: string, timeoutMs = 3000): Promise<{ healthy: boole
  * (Docker Desktop / macOS / Windows) would otherwise mark every container
  * unhealthy even though it serves fine on the mesh.
  */
-async function probeViaMesh(runtimeId: string, port: number, path: string): Promise<boolean> {
+async function probeViaMesh(runtimeId: string, port: number, path: string, timeoutMs = PROBE_DEADLINE_MS): Promise<boolean> {
+  if (timeoutMs <= 0) return false;
   try {
     await capture('docker', [
       'exec', TRAEFIK_CONTAINER,
       'wget', '-q', '-O', '/dev/null', '-T', '3',
       `http://${runtimeId}:${port}${path}`,
-    ]);
+    ], { timeoutMs });
     return true;
   } catch {
     return false;
@@ -92,14 +93,22 @@ async function probeViaMesh(runtimeId: string, port: number, path: string): Prom
  * the target's network namespace, so 127.0.0.1:<port> lands directly on the
  * app regardless of how the container is networked.
  */
-async function probeViaNetns(runtimeId: string, port: number, path: string): Promise<boolean> {
+async function probeViaNetns(runtimeId: string, port: number, path: string, deadlineAt: number): Promise<boolean> {
   try {
-    await ensureDockerImage(NETNS_PROBE_IMAGE, () => undefined);
+    const remainingMs = () => Math.max(0, deadlineAt - Date.now());
+    if (remainingMs() === 0) return false;
+    // The image may be missing and shared preparation can take minutes. Stop
+    // waiting at this request's deadline so a completed pull cannot start a
+    // throwaway container for an old dashboard poll.
+    const ready = await withDeadline(ensureDockerImage(NETNS_PROBE_IMAGE, () => undefined).then(() => true), remainingMs(), false);
+    if (!ready) return false;
+    const timeoutMs = remainingMs();
+    if (timeoutMs === 0) return false;
     const out = await capture('docker', [
       'run', '--rm', '--network', `container:${runtimeId}`, NETNS_PROBE_IMAGE,
       '-s', '-o', '/dev/null', '-w', '%{http_code}', '-m', '3',
       `http://127.0.0.1:${port}${path}`,
-    ]);
+    ], { timeoutMs });
     const code = Number(out.trim());
     return code > 0 && code < 500;
   } catch {
@@ -124,6 +133,7 @@ async function probeService(svc: {
   slug?: string;
   orchestrator?: string | null;
 }): Promise<{ healthy: boolean | null; responseMs: number | null }> {
+  const deadlineAt = Date.now() + PROBE_DEADLINE_MS;
   // Never concatenate a stored healthPath onto an origin — see lib/probeUrl.ts.
   const path = safeProbePath(svc.healthPath);
   if (svc.type === 'pm2') return probeUrl(buildProbeUrl('127.0.0.1', svc.port, path));
@@ -135,10 +145,11 @@ async function probeService(svc: {
   if (svc.serverId != null) return { healthy: null, responseMs: null };
   // ── 0.16 T7 swarm ── a Swarm service has no container of its own name; Traefik reaches its VIP on the overlay.
   const swarmRuntime = swarmRuntimeOf(svc);
-  if (swarmRuntime) return { healthy: await probeViaMesh(swarmRuntime, svc.port, path), responseMs: null };
+  if (swarmRuntime) return { healthy: await probeViaMesh(swarmRuntime, svc.port, path, Math.max(0, deadlineAt - Date.now())), responseMs: null };
   // ── end 0.16 T7 ──
   const ip = await containerIp(runtimeId);
   if (!ip) return { healthy: false, responseMs: null }; // container not running
+  if (Date.now() >= deadlineAt) return { healthy: false, responseMs: null };
   // Race the transports: the direct fetch and the mesh probe run CONCURRENTLY
   // and the first healthy answer wins. Waiting for the doomed 1.2s direct
   // timeout before even starting the mesh probe is what made the dashboard
@@ -158,10 +169,10 @@ async function probeService(svc: {
         // Direct failed — containers outside the mesh need the netns probe.
         // F584: skip it once the mesh already answered; the throwaway
         // `docker run` would only produce a discarded result.
-        void probeViaNetns(runtimeId, svc.port, path).then((ok) => settle({ healthy: ok, responseMs: null }));
+        void probeViaNetns(runtimeId, svc.port, path, deadlineAt).then((ok) => settle({ healthy: ok, responseMs: null }));
       }
     });
-    void probeViaMesh(runtimeId, svc.port, path).then((ok) => {
+    void probeViaMesh(runtimeId, svc.port, path, Math.max(0, deadlineAt - Date.now())).then((ok) => {
       if (ok) settle({ healthy: true, responseMs: null });
     });
   });

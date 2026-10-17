@@ -7,8 +7,9 @@ const execMocks = vi.hoisted(() => ({
     (args as string[])[0] === 'inspect' ? 'running|172.18.0.2' : 'a\nb\n'),
   run: vi.fn(async (_c: unknown, _a: unknown, _o: unknown, sink?: (l: string) => void) => { sink?.('out'); }),
 }));
+const imageMocks = vi.hoisted(() => ({ ensureDockerImage: vi.fn(async () => undefined) }));
 vi.mock('../src/lib/exec.js', () => execMocks);
-vi.mock('../src/lib/dockerPull.js', () => ({ ensureDockerImage: vi.fn(async () => undefined) }));
+vi.mock('../src/lib/dockerPull.js', () => imageMocks);
 
 describe('dashboard routes', () => {
   beforeEach(() => {
@@ -137,6 +138,7 @@ describe('dashboard routes', () => {
     expect(execMocks.capture).toHaveBeenCalledWith(
       'docker',
       ['exec', 'ninedeploy-traefik', 'wget', '-q', '-O', '/dev/null', '-T', '3', 'http://c1:3000/'],
+      { timeoutMs: expect.any(Number) },
     );
   });
 
@@ -422,5 +424,55 @@ describe('dashboard probe lifecycle', () => {
     expect(body.health[0]).toMatchObject({ healthy: false, responseMs: null });
     expect(body.stats.containers).toBeNull();
     await vi.advanceTimersByTimeAsync(30 * 60_000 + 1); // drain the stalled fakes
+  });
+
+  it('reaps a wedged mesh probe after the dashboard has answered', async () => {
+    let pending = 0;
+    execMocks.capture.mockImplementation((_c: unknown, args: unknown[], opts?: { timeoutMs?: number }) => {
+      if ((args as string[])[0] === 'inspect') return Promise.resolve('running|172.18.0.2');
+      pending++;
+      return new Promise((_r, rej) => { setTimeout(() => { pending--; rej(new Error('timed out')); }, opts?.timeoutMs ?? 30 * 60_000); }) as never;
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => ({ status: 200, ok: true })) as unknown as typeof fetch);
+    const app = await buildTestApp({ db: createFakeDb({ select: { services: [runningSvc()] }, counts: {} }) });
+    await app.register(dashboardRoutes);
+    await app.ready();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const resP = app.inject({ method: 'GET', url: '/', headers: asUser() });
+    await vi.advanceTimersByTimeAsync(10_001);
+    expect((await resP).statusCode).toBe(200);
+    expect(pending).toBe(0);
+  });
+
+  it('does not start a netns container after its image preparation outlives the dashboard deadline', async () => {
+    let releaseImage!: () => void;
+    const imageReady = new Promise<void>((resolve) => { releaseImage = resolve; });
+    imageMocks.ensureDockerImage.mockImplementation(() => imageReady);
+    execMocks.capture.mockImplementation(async (_c: unknown, args: unknown[]) => {
+      const a = args as string[];
+      if (a[0] === 'inspect') return 'running|172.18.0.2';
+      if (a[0] === 'exec') throw new Error('mesh unavailable');
+      if (a[0] === 'run') return '200';
+      return 'c1\n';
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('bridge IP unavailable'); }) as unknown as typeof fetch);
+    const app = await buildTestApp({ db: createFakeDb({ select: { services: [runningSvc()] }, counts: {} }) });
+    await app.register(dashboardRoutes);
+    await app.ready();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const stale = app.inject({ method: 'GET', url: '/', headers: asUser() });
+    await vi.advanceTimersByTimeAsync(10_001);
+    expect((await stale).json().health[0]).toMatchObject({ healthy: false });
+
+    releaseImage();
+    await flush();
+    expect(execMocks.capture).not.toHaveBeenCalledWith('docker', expect.arrayContaining(['run']), expect.anything());
+
+    const fresh = await app.inject({ method: 'GET', url: '/', headers: asUser() });
+    expect(fresh.json().health[0]).toMatchObject({ healthy: true });
+    const runs = execMocks.capture.mock.calls.filter(([, args]) => (args as string[])[0] === 'run');
+    expect(runs).toHaveLength(1);
+    expect((runs[0]![2] as { timeoutMs: number }).timeoutMs).toBeGreaterThan(0);
+    expect((runs[0]![2] as { timeoutMs: number }).timeoutMs).toBeLessThanOrEqual(10_000);
   });
 });

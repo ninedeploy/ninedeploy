@@ -17,6 +17,7 @@ import { githubRepoFromUrl } from '../lib/sourceCreds.js';
 import { ensureRegistryBindingsInitialised, setBoundRegistryHosts, type RegistryBindings } from '../lib/registryBinding.js';
 import { assertStepUp } from '../lib/stepUp.js';
 import { hostKeyLines } from '../lib/git.js';
+import { newHostKeyGeneration } from '../lib/hostKeyPinning.js';
 import { sshKeyFingerprint } from '../engine/serverProvisioner.js';
 
 /** The known_hosts lines a source pinned, as `{ host, type, fingerprint }` — no key material. */
@@ -330,7 +331,7 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
       if (input.pinHostKeys !== undefined && input.pinHostKeys !== pinBefore) patch.pinHostKeys = input.pinHostKeys;
       if ((input.pinHostKeys === false && pinBefore) || input.resetHostKeys === true) {
         forgotten = hostKeyLines(current.hostKeys).length;
-        patch.hostKeys = null;
+        patch.hostKeys = newHostKeyGeneration();
       }
     }
     // A hosts-only PATCH (r512) changes no column — read the row instead of

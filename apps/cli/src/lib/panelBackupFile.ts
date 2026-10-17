@@ -1,5 +1,5 @@
 import { createDecipheriv, scrypt as scryptCb } from 'node:crypto';
-import { createReadStream, createWriteStream, unlinkSync } from 'node:fs';
+import { createReadStream, createWriteStream, renameSync, unlinkSync } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -52,12 +52,16 @@ export async function decryptPanelBackup(input: string, output: string, passphra
   decipher.setAAD(Buffer.from(header));
   decipher.setAuthTag(tag);
   const dataEnd = size - TAG_BYTES - 1;
+  // The plaintext goes to a sibling file and replaces `output` only once the tag has verified: a wrong
+  // passphrase must not destroy a file already at `output` (or the sealed input, when it is the same path).
+  const partial = `${output}.${process.pid}.partial`;
   try {
     const source = dataEnd < headerBytes ? Readable.from([]) : createReadStream(input, { start: headerBytes, end: dataEnd });
-    await pipeline(source, decipher, createWriteStream(output, { mode: 0o600 }));
+    await pipeline(source, decipher, createWriteStream(partial, { mode: 0o600, flags: 'wx' }));
+    renameSync(partial, output);
   } catch {
     // Nothing unauthenticated may be left behind for someone to import.
-    try { unlinkSync(output); } catch { /* absent */ }
+    try { unlinkSync(partial); } catch { /* absent */ }
     throw new Error(PANEL_BACKUP_DECRYPT_ERROR);
   }
 }

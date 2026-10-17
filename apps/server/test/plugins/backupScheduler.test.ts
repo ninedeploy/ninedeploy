@@ -111,6 +111,23 @@ it('keeps metadata for remote recovery points after local retention', async () =
 });
 
 describe('backup scheduler plugin', () => {
+  it('gives overlapping scheduler runs different paths in the same millisecond', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-14T01:00:00.123Z'));
+    const { db } = makeDb({ dbs: [{ id: 1, slug: 'main-db', name: 'Main', status: 'running' }] });
+    const first = await buildApp(db);
+    const second = await buildApp(db);
+    try {
+      await vi.advanceTimersByTimeAsync(DAY_MS);
+      const paths = engineMock.backupDatabase.mock.calls.map((call) => String(call[1]));
+      expect(paths).toHaveLength(2);
+      expect(new Set(paths).size).toBe(2);
+      for (const file of paths) expect(file).toMatch(/main-db-2026-10-15T01-00-00-123Z-[0-9a-f-]{36}\.dump$/);
+    } finally {
+      await Promise.all([first.close(), second.close()]);
+    }
+  });
+
   it('preserves successful recovery points when newer scheduled attempts failed', async () => {
     vi.useFakeTimers();
     const successfulPath = path.join(tmp, 'last-good.dump');

@@ -66,10 +66,26 @@ function view(kind: SecretProviderKind, row: SecretProvider | undefined): Secret
 }
 
 /**
+ * Where the stored credential is sent: the Vault address, or a custom Secrets
+ * Manager endpoint (the AWS default endpoints are AWS's own whatever the
+ * region). null when the config does not name a usable one.
+ */
+function credentialTarget(kind: SecretProviderKind, config: Record<string, unknown> | null | undefined): string | null {
+  try {
+    if (kind === 'vault') return vaultBaseUrl(String(config?.['address'] ?? ''));
+    return config?.['endpoint'] ? secretsManagerEndpoint(config as { region: string; endpoint?: string; roleSessionName: string }) : 'aws';
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The credential set after a save: submitted fields win, omitted ones keep
  * the stored value — except where the stored value belonged to something
- * the save replaced (a different auth method, role id or access key id),
- * which must then come with its own secret.
+ * the save replaced (a different auth method, role id, access key id, or the
+ * address it would be sent to), which must then come with its own secret: an
+ * operator can never read a stored credential, so repointing the provider at
+ * another server must not carry it along.
  */
 function mergeCredentials(
   kind: SecretProviderKind,
@@ -77,10 +93,12 @@ function mergeCredentials(
   submitted: Record<string, string | undefined> | undefined,
   storedAuthMethod: unknown,
   nextAuthMethod: unknown,
+  sameTarget: boolean,
 ): Record<string, string> {
   const base: Record<string, string> = {};
   const keepStored =
     stored !== null &&
+    sameTarget &&
     (kind === 'aws' || storedAuthMethod === nextAuthMethod) &&
     !(kind === 'aws' && submitted?.['accessKeyId'] && submitted['accessKeyId'] !== stored['accessKeyId']) &&
     !(kind === 'vault' && submitted?.['roleId'] && submitted['roleId'] !== stored['roleId']);
@@ -132,6 +150,7 @@ export const secretProviderRoutes: FastifyPluginAsync = async (app) => {
       input.credentials as Record<string, string | undefined> | undefined,
       existing?.configJson?.['authMethod'],
       config['authMethod'],
+      !existing || (credentialTarget(kind, existing.configJson) !== null && credentialTarget(kind, existing.configJson) === credentialTarget(kind, config)),
     );
     if (!credentialsComplete(kind, config, credentials)) {
       const need =

@@ -4,8 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { PassThrough, Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { backups, createDb, databases, type DB, runMigrations, servers, services, serviceVolumeAttachments } from '@ninedeploy/db';
+import { eq } from 'drizzle-orm';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { backups, createDb, databases, type DB, runMigrations, servers, services, serviceVolumeAttachments, users } from '@ninedeploy/db';
 import { MULTI_NODE_CAPABILITIES } from '@ninedeploy/schemas';
 
 /**
@@ -35,6 +36,7 @@ const h = vi.hoisted(() => ({
   ops: [] as Array<{ op: string; params: Record<string, unknown> }>,
   /** Volumes on the fake node. */
   volumes: new Map<string, Record<string, string>>(),
+  createFails: false,
   /** `docker.volumeUsage` lines. */
   usage: [] as string[],
   usageThrows: false,
@@ -68,6 +70,7 @@ vi.mock('../src/lib/agentClient.js', async (importOriginal) => ({
       case 'docker.volumeInspect':
         return answer(h.volumes.has(params['name'] as string) ? 0 : 1);
       case 'docker.volumeCreate':
+        if (h.createFails) return answer(1, ['docker daemon unavailable']);
         if (params['ifExists'] === 'fail' && h.volumes.has(params['name'] as string)) return answer(3, [`ND-VOLUME-EXISTS ${params['name']}`]);
         h.volumes.set(params['name'] as string, (params['labels'] as Record<string, string>) ?? {});
         return answer(0, [params['name'] as string]);
@@ -163,6 +166,7 @@ const CAPS_015 = pingLine('0.15.1', CAPS_015_LIST);
 const CAPS_ALL = pingLine('0.15.2', [...CAPS_015_LIST, ...MULTI_NODE_CAPABILITIES]);
 
 let db: DB;
+let client: NonNullable<ReturnType<typeof createDb>['client']>;
 let node: number;
 let other: number;
 let web: number;
@@ -173,6 +177,7 @@ beforeEach(async () => {
   h.sealed = true;
   h.ops = [];
   h.volumes = new Map();
+  h.createFails = false;
   h.usage = [];
   h.usageThrows = false;
   h.exportBytes = Buffer.from('a gzipped tar of the volume, as the agent streams it');
@@ -184,7 +189,9 @@ beforeEach(async () => {
   engine.restored = [];
   vi.clearAllMocks();
   caps.resetNodeCapabilityCache();
-  ({ db } = createDb({ url: ':memory:' }));
+  const created = createDb({ url: ':memory:' });
+  db = created.db;
+  client = created.client!;
   await runMigrations(db, fileURLToPath(new URL('../../../packages/db/src/migrations', import.meta.url)));
   const [n1] = await db.insert(servers).values({ name: 'edge-1', host: '10.0.0.5', port: 4600, tokenEncrypted: encrypt('t'), status: 'online' }).returning();
   const [n2] = await db.insert(servers).values({ name: 'edge-2', host: '10.0.0.6', port: 4600, tokenEncrypted: encrypt('t'), status: 'online' }).returning();
@@ -195,6 +202,8 @@ beforeEach(async () => {
   web = w!.id;
   api = a!.id;
 });
+
+afterEach(() => client.close());
 
 const ops = () => h.ops.map((o) => o.op);
 const webRow = async () => (await db.query.services.findFirst({ where: (s, { eq }) => eq(s.id, web) }))!;
@@ -451,6 +460,42 @@ describe('0.16: attaching an existing volume by name to a node service (POST /se
   };
   const attached = async (serviceId: number) =>
     (await db.select().from(serviceVolumeAttachments)).filter((a) => a.serviceId === serviceId).map((a) => a.volumeName);
+
+  it('does not adopt a retained node volume through create.label', async () => {
+    await db.insert(users).values({ id: 7, email: 'member@example.test', passwordHash: 'x' });
+    await db.update(services).set({ ownerUserId: 7 }).where(eq(services.id, web));
+    h.volumes.set('nd-svc-web-media', { 'ninedeploy.managed': 'volume', 'ninedeploy.owner': '99' });
+    const { serviceVolumesRoutes } = await import('../src/modules/serviceVolumes.js');
+    const app = await buildTestApp({ db });
+    await app.register(serviceVolumesRoutes, { prefix: '/services' });
+    const headers = asUser({ id: 7, isOperator: false });
+
+    const refused = await app.inject({ method: 'POST', url: `/services/${web}/volumes`, headers, payload: { create: { label: 'media' }, containerPath: '/media' } });
+    expect(refused.statusCode).toBe(409);
+    expect(await attached(web)).toEqual([]);
+
+    const fresh = await app.inject({ method: 'POST', url: `/services/${web}/volumes`, headers, payload: { create: { label: 'uploads' }, containerPath: '/uploads' } });
+    expect(fresh.statusCode).toBe(200);
+    expect(await attached(web)).toEqual(['nd-svc-web-uploads']);
+    expect(h.volumes.get('nd-svc-web-uploads')).toMatchObject({ 'ninedeploy.managed': 'volume', 'ninedeploy.service': String(web) });
+
+    engine.panelVolumes.add('nd-svc-web-cache');
+    const panelNamesake = await app.inject({ method: 'POST', url: `/services/${web}/volumes`, headers, payload: { create: { label: 'cache' }, containerPath: '/cache' } });
+    expect(panelNamesake.statusCode).toBe(200);
+    expect(h.volumes.has('nd-svc-web-cache')).toBe(true);
+    await app.close();
+  });
+
+  it('rolls back the attachment when node volume creation fails', async () => {
+    h.createFails = true;
+    const { serviceVolumesRoutes } = await import('../src/modules/serviceVolumes.js');
+    const app = await buildTestApp({ db });
+    await app.register(serviceVolumesRoutes, { prefix: '/services' });
+    const res = await app.inject({ method: 'POST', url: `/services/${web}/volumes`, headers: asUser(), payload: { create: { label: 'media' }, containerPath: '/media' } });
+    expect(res.statusCode).toBe(500);
+    expect(await attached(web)).toEqual([]);
+    await app.close();
+  });
 
   it('a volume that exists only on the node is found there, not looked up on the panel host', async () => {
     h.volumes.set('nd-svc-web-media', {});

@@ -11,11 +11,18 @@ import { createDb, githubAppInstallations, githubApps, sources, type DB, type Gi
 import { encrypt } from '../../src/lib/crypto.js';
 
 const MIGRATIONS = fileURLToPath(new URL('../../../../packages/db/src/migrations', import.meta.url));
+const clients = new WeakMap<DB, NonNullable<ReturnType<typeof createDb>['client']>>();
 
 export async function migratedDb(): Promise<DB> {
-  const { db } = createDb({ url: ':memory:' });
+  const { db, client } = createDb({ url: ':memory:' });
+  clients.set(db, client!);
   await migrate(db, { migrationsFolder: MIGRATIONS });
   return db;
+}
+
+export function closeMigratedDb(db: DB): void {
+  clients.get(db)?.close();
+  clients.delete(db);
 }
 
 export function rsaKeyPair(type: 'pkcs1' | 'pkcs8' = 'pkcs1'): { privateKey: string; publicKey: string } {

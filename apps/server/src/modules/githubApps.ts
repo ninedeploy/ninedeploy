@@ -132,7 +132,8 @@ async function publicOrigin(db: DB): Promise<string> {
 
 /** https only; http is accepted only with NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1 (a lab GHES). */
 function assertSecureBase(url: string, field: string): void {
-  if (url.startsWith('http:') && !privateEgressAllowed()) {
+  // A URL scheme is case-insensitive, and the schema keeps it as typed (`HTTP://…`).
+  if (/^http:/i.test(url) && !privateEgressAllowed()) {
     throw badRequest(`${field} must use https (http is allowed only with NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1)`, 'insecure_base_url');
   }
 }

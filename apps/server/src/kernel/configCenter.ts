@@ -3,6 +3,9 @@ import type { DB } from '@ninedeploy/db';
 import { configEntries } from '@ninedeploy/db';
 import { decrypt, encrypt } from '../lib/crypto.js';
 import type { ConfigDefinition, IConfigCenter, IScopedConfig } from './types.js';
+import { createLogger } from '../lib/log.js';
+
+const log = createLogger('ConfigCenter');
 
 type Watcher = (newVal: unknown) => void;
 
@@ -167,7 +170,7 @@ export class ConfigCenter implements IConfigCenter {
         try {
           cb(value);
         } catch (err) {
-          console.error(`[ConfigCenter] Error in watcher for key "${key}":`, err);
+          log.error(`Error in watcher for key "${key}":`, err);
         }
       }
     }

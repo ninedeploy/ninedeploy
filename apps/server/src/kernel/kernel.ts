@@ -15,6 +15,9 @@ import type {
   KernelPlugin,
   KernelState,
 } from './types.js';
+import { createLogger } from '../lib/log.js';
+
+const log = createLogger('NineDeployKernel');
 
 export class NineDeployKernel implements KernelContext {
   private _state: KernelState = 'INIT';
@@ -131,7 +134,7 @@ export class NineDeployKernel implements KernelContext {
       try {
         await plugin.destroy(this);
       } catch (err) {
-        console.error(`[NineDeployKernel] Error in destroy for plugin "${id}":`, err);
+        log.error(`Error in destroy for plugin "${id}":`, err);
       }
     }
 
@@ -174,7 +177,7 @@ export class NineDeployKernel implements KernelContext {
           await plugin.onReady(this);
           this.events.emit('plugin.status_changed', { pluginId, status: 'active' });
         } catch (err) {
-          console.error(`[NineDeployKernel] Error in onReady for plugin "${pluginId}":`, err);
+          log.error(`Error in onReady for plugin "${pluginId}":`, err);
           this.events.emit('plugin.status_changed', { pluginId, status: 'errored' });
         }
       }
@@ -198,7 +201,7 @@ export class NineDeployKernel implements KernelContext {
         try {
           await plugin.onShutdown(this);
         } catch (err) {
-          console.error(`[NineDeployKernel] Error in onShutdown for plugin "${pluginId}":`, err);
+          log.error(`Error in onShutdown for plugin "${pluginId}":`, err);
         }
       }
       // F252: destroy() is the teardown plugins actually implement (a sandbox
@@ -208,7 +211,7 @@ export class NineDeployKernel implements KernelContext {
         try {
           await plugin.destroy(this);
         } catch (err) {
-          console.error(`[NineDeployKernel] Error in destroy for plugin "${pluginId}":`, err);
+          log.error(`Error in destroy for plugin "${pluginId}":`, err);
         }
       }
     }
@@ -257,7 +260,7 @@ export class NineDeployKernel implements KernelContext {
         for (const v of visiting) broken.add(v);
         visiting.clear();
         broken.add(id);
-        console.error(`[NineDeployKernel] Skipping plugin "${id}" at boot:`, (err as Error).message);
+        log.error(`Skipping plugin "${id}" at boot:`, (err as Error).message);
       }
     }
     for (const id of broken) this.events.emit('plugin.status_changed', { pluginId: id, status: 'errored' });

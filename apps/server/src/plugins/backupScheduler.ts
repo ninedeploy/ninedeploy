@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync, statSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { Cron } from 'croner';
@@ -135,7 +136,7 @@ export default fp(
 
     const dumpOne = async (d: DatabaseRow, policy: DatabaseBackupPolicy | null) => {
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
-      const file = path.join(config.paths.backupsDir, `${d.slug}-${ts}.dump`);
+      const file = path.join(config.paths.backupsDir, `${d.slug}-${ts}-${randomUUID()}.dump`);
       const log = (line: string) => fastify.log.info({ component: 'backup' }, line);
       // 0.16 T6: a node database is dumped on its node (no local fallback:
       // an unreachable node records a failed backup) and its rows record the

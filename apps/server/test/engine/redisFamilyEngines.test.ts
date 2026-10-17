@@ -254,16 +254,13 @@ describe('size, probe, backup, restore and import', () => {
     expect(existsSync(file)).toBe(false);
   });
 
-  it('redis and valkey keep their unchecked SAVE: the reply is only logged', async () => {
+  it('redis and valkey reject a SAVE error before copying a stale RDB', async () => {
     for (const engine of ['redis', 'valkey']) {
       h.run.mockClear();
       const file = path.join(tmp, `${engine}-unchecked.dump`);
       landDumpOnCp('(error) ERR whatever');
-      await backupDatabase(row(engine), file, vi.fn());
-      expect(dockerCalls()).toEqual([
-        ['exec', 'nd-db-x', 'redis-cli', '-a', 'pw:enc', '--no-auth-warning', 'SAVE'],
-        ['cp', 'nd-db-x:/data/dump.rdb', file],
-      ]);
+      await expect(backupDatabase(row(engine), file, vi.fn())).rejects.toThrow('SAVE did not answer OK: (error) ERR whatever');
+      expect(dockerCalls()).toEqual([['exec', 'nd-db-x', 'redis-cli', '-a', 'pw:enc', '--no-auth-warning', 'SAVE']]);
     }
   });
 

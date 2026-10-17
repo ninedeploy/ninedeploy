@@ -1,5 +1,5 @@
 import { createCipheriv, randomBytes, scryptSync } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,6 +14,7 @@ vi.mock('../src/lib/format.js', () => ({
 
 const {
   panelBackupDecryptAction,
+  panelBackupStatusAction,
   panelBackupListAction,
   panelBackupNowAction,
   panelBackupSetBody,
@@ -49,6 +50,20 @@ describe('offline decrypt (NDPB1)', () => {
     writeFileSync(path.join(dir, 'b.ndpb'), seal(Buffer.from('secret db'), 'recovery phrase'));
     await expect(decryptPanelBackup(path.join(dir, 'b.ndpb'), path.join(dir, 'b.tar.gz'), 'nope')).rejects.toThrow(PANEL_BACKUP_DECRYPT_ERROR);
     expect(existsSync(path.join(dir, 'b.tar.gz'))).toBe(false);
+  });
+
+  it('a failed decrypt keeps a file already at the output path, and the sealed input when it is the output (F1031)', async () => {
+    const sealed = seal(Buffer.from('secret db'), 'recovery phrase');
+    writeFileSync(path.join(dir, 'k.ndpb'), sealed);
+    writeFileSync(path.join(dir, 'k.tar.gz'), 'PRECIOUS');
+    await expect(decryptPanelBackup(path.join(dir, 'k.ndpb'), path.join(dir, 'k.tar.gz'), 'nope')).rejects.toThrow(PANEL_BACKUP_DECRYPT_ERROR);
+    expect(readFileSync(path.join(dir, 'k.tar.gz'), 'utf8')).toBe('PRECIOUS');
+    await expect(decryptPanelBackup(path.join(dir, 'k.ndpb'), path.join(dir, 'k.ndpb'), 'nope')).rejects.toThrow(PANEL_BACKUP_DECRYPT_ERROR);
+    expect(readFileSync(path.join(dir, 'k.ndpb')).equals(sealed)).toBe(true);
+    // the right passphrase replaces the old output, and no partial file stays behind
+    await decryptPanelBackup(path.join(dir, 'k.ndpb'), path.join(dir, 'k.tar.gz'), 'recovery phrase');
+    expect(readFileSync(path.join(dir, 'k.tar.gz'), 'utf8')).toBe('secret db');
+    expect(readdirSync(dir).filter((n) => n.endsWith('.partial'))).toEqual([]);
   });
 
   it('refuses files that are not panel backups', async () => {
@@ -110,5 +125,27 @@ describe('panel-backup now / list', () => {
     await panelBackupListAction({ system: { panelBackup: { list } } } as never, { destination: '3' });
     expect(list).toHaveBeenCalledWith(3);
     expect(h.table).toHaveBeenCalledWith([{ name: 'x.ndpb', size: '9 B', date: 't', key: 'nd/panel-backups/x.ndpb' }], ['name', 'size', 'date', 'key']);
+  });
+});
+
+describe('relayed destination text (F1029)', () => {
+  const ESC = String.fromCharCode(27);
+  const bad = `AccessDenied${ESC}[2J${ESC}[32m✓ Uploaded${ESC}[0m`;
+  const status = (lastRun: Record<string, unknown>) => ({
+    settings: { enabled: true, cron: '0 3 * * *', destinationId: 1, retain: 7, hasPassphrase: true },
+    nextRunAt: null,
+    running: false,
+    lastRun,
+    lastSuccessAt: null,
+    masterKeyFromEnv: false,
+  });
+
+  it('strips terminal controls from the last run error, warning and request errors', async () => {
+    const run = { status: 'failed', trigger: 'manual', startedAt: '2026-10-14T00:00:00Z', finishedAt: null, error: bad, warning: bad };
+    await panelBackupStatusAction({ system: { panelBackup: { get: vi.fn().mockResolvedValue(status(run)) } } } as never);
+    const shown = h.kv.mock.calls.filter(([k]) => k === 'Last error' || k === 'Warning').map(([, v]) => String(v));
+    expect(shown).toEqual(['AccessDenied✓ Uploaded', 'AccessDenied✓ Uploaded']);
+    await panelBackupStatusAction({ system: { panelBackup: { get: vi.fn().mockRejectedValue(new Error(bad)) } } } as never);
+    expect(h.error).toHaveBeenLastCalledWith('AccessDenied✓ Uploaded');
   });
 });

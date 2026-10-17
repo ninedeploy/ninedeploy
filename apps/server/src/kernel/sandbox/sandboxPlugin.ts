@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { audit } from '../../lib/audit.js';
 import { makeLineSplitter } from '../../lib/exec.js';
+import { bestEffort, createLogger, type Logger } from '../../lib/log.js';
 import type { EventOrigin, KernelContext, KernelPlugin } from '../types.js';
 import type { MainToWorkerMessage, WorkerToMainMessage } from './protocol.js';
 import { redactForSandbox } from './redact.js';
@@ -100,6 +101,8 @@ export class SandboxPlugin implements KernelPlugin {
    * nobody will ever call, write config, or emit for a stopped plugin.
    */
   private transportGen = 0;
+  /** Scoped `Sandbox:<id>`, the prefix these lines always carried. */
+  private readonly log: Logger;
 
   /** r530: how many out-of-namespace emissions this load refused. */
   get rejectedEmitCount(): number {
@@ -116,6 +119,7 @@ export class SandboxPlugin implements KernelPlugin {
     this.code = opts.code;
     this.manifest = opts.manifest;
     this.workerPath = opts.workerPath;
+    this.log = createLogger(`Sandbox:${this.id}`);
   }
 
   async init(ctx: KernelContext): Promise<void> {
@@ -207,13 +211,13 @@ export class SandboxPlugin implements KernelPlugin {
     this.child.stdout?.resume();
     const stderrLines = makeLineSplitter();
     this.child.stderr?.on('data', (d: Buffer) => {
-      for (const l of stderrLines.feed(d)) console.error(`[Sandbox:${this.id}] (stderr) ${l}`);
+      for (const l of stderrLines.feed(d)) this.log.error(`(stderr) ${l}`);
     });
     // A crash report killed mid-write ends without a newline — flush the
     // trailing partial line on exit or the last (often only) clue is lost.
     this.child.once('exit', () => {
       const tail = stderrLines.flush();
-      if (tail) console.error(`[Sandbox:${this.id}] (stderr) ${tail}`);
+      if (tail) this.log.error(`(stderr) ${tail}`);
     });
 
     const send = (msg: MainToWorkerMessage) => {
@@ -317,11 +321,11 @@ export class SandboxPlugin implements KernelPlugin {
               }
             });
           } catch (dispatchErr) {
-            console.error(`[Sandbox:${this.id}] Error handling sandbox message:`, dispatchErr);
+            this.log.error(`Error handling sandbox message:`, dispatchErr);
           }
         },
         (err) => {
-          console.error(`[Sandbox:${this.id}] Sandbox fatal error:`, err);
+          this.log.error(`Sandbox fatal error:`, err);
           ctx.events.emit('plugin.status_changed', { pluginId: this.id, status: 'errored' });
 
           // Immediately reject any in-flight hook promises to trigger hook pipeline rollback without waiting for timeout
@@ -339,7 +343,7 @@ export class SandboxPlugin implements KernelPlugin {
         },
         (code) => {
           if (code !== 0) {
-            console.warn(`[Sandbox:${this.id}] Sandbox exited with code ${code}`);
+            this.log.warn(`Sandbox exited with code ${code}`);
             ctx.events.emit('plugin.status_changed', { pluginId: this.id, status: 'disabled' });
           }
 
@@ -391,7 +395,7 @@ export class SandboxPlugin implements KernelPlugin {
           rawSchema !== undefined && (!Array.isArray(rawSchema) || rawSchema.some((d) => !d || typeof d.key !== 'string'));
         const schema = Array.isArray(rawSchema) ? rawSchema.filter((d) => d && typeof d.key === 'string') : [];
         if (malformedSchema) {
-          console.warn(`[Sandbox:${this.id}] READY carried malformed configSchema entries — skipped`);
+          this.log.warn(`READY carried malformed configSchema entries — skipped`);
         }
         if (schema.length > 0) {
           this.configSchema = schema;
@@ -410,7 +414,7 @@ export class SandboxPlugin implements KernelPlugin {
           rawMenu !== undefined && (!Array.isArray(rawMenu) || rawMenu.some((i) => !i || typeof i.id !== 'string' || typeof i.route !== 'string'));
         const menu = Array.isArray(rawMenu) ? rawMenu.filter((i) => i && typeof i.id === 'string' && typeof i.route === 'string') : [];
         if (malformedMenu) {
-          console.warn(`[Sandbox:${this.id}] READY carried malformed menuItems — skipped`);
+          this.log.warn(`READY carried malformed menuItems — skipped`);
         }
         if (menu.length > 0) {
           this.menuItems = menu;
@@ -428,9 +432,9 @@ export class SandboxPlugin implements KernelPlugin {
 
       case 'LOG': {
         const { level, message } = msg.payload;
-        if (level === 'error') console.error(`[Sandbox:${this.id}]`, message);
-        else if (level === 'warn') console.warn(`[Sandbox:${this.id}]`, message);
-        else console.log(`[Sandbox:${this.id}]`, message);
+        if (level === 'error') this.log.error(message);
+        else if (level === 'warn') this.log.warn(message);
+        else this.log.info(message);
         break;
       }
 
@@ -548,7 +552,7 @@ export class SandboxPlugin implements KernelPlugin {
       }
 
       case 'ERROR': {
-        console.error(`[Sandbox:${this.id}] Sandbox reported error:`, msg.payload.error);
+        this.log.error(`Sandbox reported error:`, msg.payload.error);
         ctx.events.emit('plugin.status_changed', { pluginId: this.id, status: 'errored' });
         break;
       }
@@ -566,8 +570,8 @@ export class SandboxPlugin implements KernelPlugin {
     const name = typeof event === 'string' ? event.slice(0, MAX_EVENT_NAME_LENGTH) : `<${typeof event}>`;
     if (!this.rejectedEventNames.has(name) && this.rejectedEventNames.size < MAX_LOGGED_REJECTIONS) {
       this.rejectedEventNames.add(name);
-      console.warn(
-        `[Sandbox:${this.id}] refused to emit "${name}": sandbox plugins may only emit events named ` +
+      this.log.warn(
+        `refused to emit "${name}": sandbox plugins may only emit events named ` +
           `"${sandboxEventNamespace(this.id)}<name>" — kernel events cannot be emitted by a plugin`,
       );
     }
@@ -582,9 +586,7 @@ export class SandboxPlugin implements KernelPlugin {
   async destroy(_ctx?: KernelContext): Promise<void> {
     this.transportGen++;
     for (const unsub of this.unsubs) {
-      try {
-        unsub();
-      } catch {}
+      bestEffort('sandbox unsubscribe', unsub, this.log);
     }
     this.unsubs.length = 0;
     // F141: fail in-flight calls now, as the error/exit paths do — clearing
@@ -595,17 +597,15 @@ export class SandboxPlugin implements KernelPlugin {
     this.pendingHookCalls.clear();
 
     if (this.child) {
-      try {
-        this.child.send({ type: 'SHUTDOWN' });
-      } catch {}
+      const child = this.child;
+      bestEffort('sandbox SHUTDOWN (child)', () => child.send({ type: 'SHUTDOWN' }), this.log);
       await new Promise((res) => setTimeout(res, 50));
       this.terminate();
       return;
     }
     if (this.worker) {
-      try {
-        this.worker.postMessage({ type: 'SHUTDOWN' });
-      } catch {}
+      const worker = this.worker;
+      bestEffort('sandbox SHUTDOWN (worker)', () => worker.postMessage({ type: 'SHUTDOWN' }), this.log);
       await new Promise((res) => setTimeout(res, 50));
       this.terminate();
     }
@@ -614,23 +614,26 @@ export class SandboxPlugin implements KernelPlugin {
   private terminate(): void {
     if (this.child) {
       const c = this.child;
-      try {
-        c.kill('SIGTERM');
-        // r470: `killed` only records that a signal was SENT — it is already
-        // true from the SIGTERM above, so the old `!c.killed` guard made this
-        // SIGKILL dead code and a wedged child outlived its plugin forever.
-        // Arm it unconditionally and disarm it when the child actually exits.
-        const escalation = setTimeout(() => c.kill('SIGKILL'), CHILD_KILL_GRACE_MS);
-        escalation.unref();
-        c.once('exit', () => clearTimeout(escalation));
-      } catch {}
+      bestEffort(
+        'sandbox child kill',
+        () => {
+          c.kill('SIGTERM');
+          // r470: `killed` only records that a signal was SENT — it is already
+          // true from the SIGTERM above, so the old `!c.killed` guard made this
+          // SIGKILL dead code and a wedged child outlived its plugin forever.
+          // Arm it unconditionally and disarm it when the child actually exits.
+          const escalation = setTimeout(() => c.kill('SIGKILL'), CHILD_KILL_GRACE_MS);
+          escalation.unref();
+          c.once('exit', () => clearTimeout(escalation));
+        },
+        this.log,
+      );
       this.child = undefined;
       return;
     }
     if (this.worker) {
-      try {
-        this.worker.terminate();
-      } catch {}
+      const worker = this.worker;
+      bestEffort('sandbox worker terminate', () => worker.terminate(), this.log);
       this.worker = undefined;
     }
   }

@@ -283,9 +283,9 @@ describe('service volume attachments', () => {
       expect(dbEngineMocks.createDockerVolume).toHaveBeenCalledWith('nd-svc-web-uploads', expect.any(Function));
     });
 
-    it('0.16: create.label on a node service records the attachment but creates nothing on the panel host (D9)', async () => {
-      // A node service's volume exists only on its node: ensureNodeVolumes
-      // pre-creates it there on the redeploy this attach queues.
+    it('a node service with no registered node cannot create an attachment or touch the panel host', async () => {
+      // The fake database has no server #4. A node volume must be created on
+      // that registered node before the attachment can queue a deployment.
       const app = await buildTestApp({
         db: createFakeDb({
           findFirst: { services: svcRow({ id: 1, slug: 'web', serverId: 4 }) },
@@ -303,8 +303,7 @@ describe('service volume attachments', () => {
         headers: asUser(),
         payload: { create: { label: 'media' }, containerPath: '/media' },
       });
-      expect(res.statusCode).toBe(200);
-      expect(res.json()).toMatchObject({ attachment: { volumeName: 'nd-svc-web-media' }, deploymentId: 42 });
+      expect(res.statusCode).toBe(404);
       expect(dbEngineMocks.createDockerVolume).not.toHaveBeenCalled();
       // Control: the same request on a panel-host service still creates it there.
       const host = await buildTestApp({

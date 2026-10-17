@@ -3,6 +3,9 @@ import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { config } from '../config.js';
 import { VERSION } from '../version.js';
+import { createLogger } from './log.js';
+
+const log = createLogger('update-check');
 
 export interface UpdateCheckResult {
   current: string;
@@ -281,7 +284,7 @@ async function probe(): Promise<UpdateCheckResult> {
     }
   }
   const detail = failures.join(' | ').slice(0, DETAIL_MAX);
-  console.warn(`[update-check] every release source failed — ${detail}`);
+  log.warn(`every release source failed — ${detail}`);
   const previous = loadLastGood();
   const result = previous ? verdict(previous, { stale: true, detail }) : unknownResult('unreachable', detail);
   cached = { result, at: Date.now(), isFailure: true };

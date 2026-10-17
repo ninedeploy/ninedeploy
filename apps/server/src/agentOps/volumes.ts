@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { HELPER_IMAGE } from '../lib/inventory.js';
 import { AGENT_LONG_OP_TIMEOUT_MS } from '../lib/agentClient.js';
+import { createKeyedOperationGuard } from '../lib/keyedOperationGuard.js';
 import { spawnValidated, spawnValidatedStream } from '../lib/spawnValidated.js';
 import type { AgentOpModule } from './index.js';
 import { isManagedVolume, type Params, str, validated } from './operands.js';
@@ -41,6 +42,7 @@ const volumeExists = async (name: string): Promise<boolean> => (await spawnValid
 
 /** Exit code `docker.volumeCreate` answers when `ifExists: 'fail'` met an existing volume. */
 export const VOLUME_EXISTS_EXIT = 3;
+const withVolumeCreate = createKeyedOperationGuard<string>();
 
 /**
  * `docker.volumeCreate {name, labels?, ifExists?}`. Idempotent like the
@@ -53,11 +55,13 @@ async function volumeCreateOp(params: Params, onLine: (line: string) => void): P
   const labels = volumeLabels(params['labels']);
   const ifExists = params['ifExists'] ?? 'ok';
   if (ifExists !== 'ok' && ifExists !== 'fail') throw new Error('Invalid ifExists');
-  if (ifExists === 'fail' && (await volumeExists(name))) {
-    onLine(`ND-VOLUME-EXISTS ${name}`);
-    return VOLUME_EXISTS_EXIT;
-  }
-  return spawnValidated('docker', ['volume', 'create', ...labels, name], onLine);
+  return withVolumeCreate(name, async () => {
+    if (ifExists === 'fail' && (await volumeExists(name))) {
+      onLine(`ND-VOLUME-EXISTS ${name}`);
+      return VOLUME_EXISTS_EXIT;
+    }
+    return spawnValidated('docker', ['volume', 'create', ...labels, name], onLine);
+  });
 }
 
 /** `docker.volumeList`: one JSON line per volume (a literal format string, never the caller's). */

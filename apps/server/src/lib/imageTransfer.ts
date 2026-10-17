@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { createWriteStream, mkdirSync, rmSync, statfsSync } from 'node:fs';
+import { createWriteStream, mkdirSync, readdirSync, rmSync, statfsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -10,7 +10,7 @@ import { type DB, imageTransfers, sources } from '@ninedeploy/db';
 import { config } from '../config.js';
 import { agentOp, agentTransportSealed } from './agentClient.js';
 import { type AgentCaller, capabilityRefusal, nodeLabel } from './agentCapabilities.js';
-import { openAgentStream } from './agentStream.js';
+import { openAgentStream, STREAM_HARD_CAP_MS } from './agentStream.js';
 import { decrypt } from './crypto.js';
 import { HttpError } from './errors.js';
 import { buildEnv, capture, run } from './exec.js';
@@ -128,6 +128,31 @@ function panelSave(imageId: string): { stream: Readable; done: Promise<void>; ki
   };
 }
 
+const RE_TRANSFER_ARCHIVE = /^[0-9a-f]{32}.tar$/;
+/** An archive idle this long outlived every transfer that could own it (a stream lives at most STREAM_HARD_CAP_MS). */
+const STALE_ARCHIVE_MS = 4 * STREAM_HARD_CAP_MS;
+
+/**
+ * Remove buffered archives a panel that died mid-transfer (SIGKILL, OOM, power
+ * loss) never got to delete in `relayOnce`'s finally. Only our own
+ * `<32 hex>.tar` names, and only after a margin far past any live transfer.
+ */
+function sweepStaleArchives(dir: string): void {
+  try {
+    for (const name of readdirSync(dir)) {
+      if (!RE_TRANSFER_ARCHIVE.test(name)) continue;
+      const file = path.join(dir, name);
+      try {
+        if (Date.now() - statSync(file).mtimeMs > STALE_ARCHIVE_MS) rmSync(file, { force: true });
+      } catch {
+        /* gone, or its owner finished meanwhile */
+      }
+    }
+  } catch {
+    /* best effort: a sweep never fails a transfer */
+  }
+}
+
 /** Free bytes on the filesystem that holds `dir`, or null when unknown. */
 function freeBytes(dir: string): number | null {
   try {
@@ -229,6 +254,7 @@ async function relayOnce(db: DB, spec: RelaySpec, log: (line: string) => void, d
       // Node → panel: buffered once on the panel's disk (gunzipped), verified, loaded, removed.
       const dir = path.join(config.paths.dataDir, 'transfers');
       mkdirSync(dir, { recursive: true, mode: 0o700 });
+      sweepStaleArchives(dir);
       const free = freeBytes(dir);
       if (free !== null && spec.sizeBytes && free < spec.sizeBytes + PANEL_DISK_HEADROOM) {
         throw new Error(`Not enough free disk space on the panel host for this image (${free} bytes free, ${spec.sizeBytes + PANEL_DISK_HEADROOM} needed)`);

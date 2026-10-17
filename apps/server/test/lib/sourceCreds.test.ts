@@ -160,6 +160,20 @@ describe('non-App sources: byte-identical to the pre-0.13 block', () => {
       expect((await db.query.sources.findFirst({ where: eq(sources.id, id) }))!.hostKeys).toBe(`${LINE}\ngithub.com ssh-ed25519 AAAAOTHER\n`);
     });
 
+    it('merges host keys from simultaneous clone callbacks', async () => {
+      const id = await source({ type: 'gitlab', name: 'pin-concurrent', deployKeyEncrypted: encrypt(DEPLOY_KEY), pinHostKeys: true });
+      const [first, second] = await Promise.all([
+        resolveCloneCreds(db, { sourceId: id, repoUrl: 'git@gitlab.com:a/b.git' }),
+        resolveCloneCreds(db, { sourceId: id, repoUrl: 'git@gitlab.com:a/b.git' }),
+      ]);
+      await Promise.all([
+        first!.onHostKeys!(`${LINE}\n`),
+        second!.onHostKeys!('github.com ssh-ed25519 AAAAOTHER\n'),
+      ]);
+      expect((await db.query.sources.findFirst({ where: eq(sources.id, id) }))!.hostKeys)
+        .toBe(`${LINE}\ngithub.com ssh-ed25519 AAAAOTHER\n`);
+    });
+
     it('never rides along on a credential sent to a node', async () => {
       const id = await source({ type: 'gitlab', name: 'pin-node', deployKeyEncrypted: encrypt(DEPLOY_KEY), pinHostKeys: true, hostKeys: LINE });
       const creds = await resolveCloneCreds(db, { sourceId: id, repoUrl: 'git@gitlab.com:a/b.git' }, { perJob: true });

@@ -29,6 +29,34 @@ beforeEach(() => {
 });
 
 describe('T5 agent ops (registered, on volume.manage)', () => {
+  it('serializes simultaneous create-if-absent requests for the same volume', async () => {
+    let enterInspect!: () => void;
+    let releaseInspect!: () => void;
+    const inspecting = new Promise<void>((resolve) => { enterInspect = resolve; });
+    const gate = new Promise<void>((resolve) => { releaseInspect = resolve; });
+    let exists = false;
+    spawnMock.mockImplementation(async (_bin: unknown, args: string[]) => {
+      if (args[0] === 'volume' && args[1] === 'inspect') {
+        enterInspect();
+        await gate;
+        return exists ? 0 : 1;
+      }
+      if (args[0] === 'volume' && args[1] === 'create') {
+        exists = true;
+        return 0;
+      }
+      return 0;
+    });
+    const params = { name: 'nd-svc-shop-api-data', ifExists: 'fail' };
+    const first = run('docker.volumeCreate', params);
+    await inspecting;
+    const second = run('docker.volumeCreate', params);
+    releaseInspect();
+
+    expect([(await first).code, (await second).code]).toEqual([0, 3]);
+    expect(argvs().filter((args) => args[0] === 'volume' && args[1] === 'create')).toHaveLength(1);
+  });
+
   it('are in the registry, in the T5 block, gated on volume.manage, unsealed allowed', () => {
     expect(registry.AGENT_OP_MODULES).toContain(nodeVolumeOps);
     for (const op of ['docker.volumeUsage', 'docker.volumeSize']) {

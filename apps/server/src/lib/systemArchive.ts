@@ -7,6 +7,7 @@ import { databases, deployments, services, users, type DB } from '@ninedeploy/db
 import type { FastifyInstance } from 'fastify';
 import { config } from '../config.js';
 import { audit } from './audit.js';
+import { conflict } from './errors.js';
 
 /**
  * The panel's own full-state archive: the format `GET /system/export` streams
@@ -39,6 +40,18 @@ export async function createSystemArchive(
   db: DB,
   opts: { warn?: (msg: string) => void; extraMeta?: Record<string, unknown> } = {},
 ): Promise<SystemArchive> {
+  // The archive pairs a database snapshot with the master key, .env and
+  // traefik/ read a moment later: an import swapping those files in between
+  // would yield an archive whose key no longer opens its database.
+  if (importInFlight) throw conflict('A system import is running — wait for it to finish');
+  archiveBuilds++;
+  let building = true;
+  const endBuild = () => {
+    if (building) {
+      building = false;
+      archiveBuilds--;
+    }
+  };
   const files: string[] = [];
   // Unique temp names so two concurrent exports can't delete each other's
   // artifacts mid-stream via the cleanup. pid+ms alone is not unique: two
@@ -120,6 +133,8 @@ export async function createSystemArchive(
   } catch (err) {
     cleanup();
     throw err;
+  } finally {
+    endBuild();
   }
 }
 
@@ -137,6 +152,8 @@ export interface SystemImportOutcome {
  * and a panel-backup restore alike) and the loser gets an explicit 409.
  */
 let importInFlight: Promise<unknown> | null = null;
+/** Archive builds currently reading the data dir (an import must not swap files under them). */
+let archiveBuilds = 0;
 
 /** True while an import is swapping files — callers report it as a 409. */
 export function systemImportInFlight(): boolean {
@@ -156,10 +173,17 @@ export async function importSystemArchive(
   source: Buffer | { file: string },
   actorUserId: number | null,
 ): Promise<SystemImportOutcome> {
-  if (importInFlight) {
+  if (importInFlight || archiveBuilds > 0) {
     return {
       status: 409,
-      body: { error: { code: 'conflict', message: 'Another import is already running — wait for it to finish' } },
+      body: {
+        error: {
+          code: 'conflict',
+          message: importInFlight
+            ? 'Another import is already running — wait for it to finish'
+            : 'An export or panel backup is reading the system state — wait for it to finish',
+        },
+      },
     };
   }
   let release: () => void = () => {};

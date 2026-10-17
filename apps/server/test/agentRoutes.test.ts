@@ -1,5 +1,5 @@
 ﻿import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -370,6 +370,30 @@ describe('agent /agent/exec sealed transport', () => {
     // Fresh requests keep working after the restart.
     const fresh = seal(TOKEN_HASH, { op: 'docker.rm', params: { name: 'web-3' }, nonce: 'c0ffee00c0ffee01' });
     expect((await second.inject({ method: 'POST', url: '/agent/exec', payload: { sealed: fresh } })).statusCode).toBe(200);
+  });
+
+  it('refuses to boot when its replay cache cannot be persisted', async () => {
+    const app = await buildTestApp();
+    const nonceFile = path.join(tmp, 'missing-parent', 'nonces');
+    await expect((async () => {
+      await app.register(agentRoutes, { tokenHash: TOKEN_HASH, nonceFile });
+      await app.ready();
+    })()).rejects.toThrow(/replay cache/i);
+  });
+
+  it('refuses a sealed operation when its nonce cannot be persisted', async () => {
+    const nonceFile = path.join(tmp, 'r1018-nonces');
+    const app = await buildTestApp();
+    await app.register(agentRoutes, { tokenHash: TOKEN_HASH, nonceFile });
+    rmSync(nonceFile);
+    mkdirSync(nonceFile);
+    const res = await app.inject({
+      method: 'POST', url: '/agent/exec',
+      payload: { sealed: seal(TOKEN_HASH, { op: 'docker.stop', params: { name: 'web-3' }, nonce: 'r1018-persist-failure' }) },
+    });
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error.code).toBe('replay_cache_unavailable');
+    expect(spawnMock).not.toHaveBeenCalled();
   });
 
   it('r668: expired entries are dropped when the replay file is reloaded', async () => {
