@@ -479,6 +479,13 @@ export const services = sqliteTable(
     // 0.16.1: the secret in the public status-badge URL
     // (`/v1/badges/<token>.svg`). Null = no badge, the default.
     badgeToken: text('badge_token'),
+    // 0.16.1+ deploy hook: the secret in `POST /v1/deploy-hooks/<token>` (a CI
+    // redeploy without a Git webhook). Null = no hook, the default. The hook
+    // runs as the member who created it, re-checked on every call, and never
+    // with more operator authority than that request had.
+    deployHookToken: text('deploy_hook_token'),
+    deployHookUserId: integer('deploy_hook_user_id').references((): AnySQLiteColumn => users.id, { onDelete: 'set null' }),
+    deployHookOperator: integer('deploy_hook_operator', { mode: 'boolean' }).notNull().default(false),
     // 0.16.1: extra host ports of a docker service, TCP or UDP, single or
     // ranges, optionally on one host IP (`-p 203.0.113.7:27015-27030:27015-27030/udp`).
     // Null = none, the default.
@@ -556,6 +563,7 @@ export const services = sqliteTable(
     slugUnique: uniqueIndex('services_slug_unique').on(t.slug),
     // The public badge route looks a service up by its token.
     badgeTokenUnique: uniqueIndex('services_badge_token_unique').on(t.badgeToken),
+    deployHookTokenUnique: uniqueIndex('services_deploy_hook_token_unique').on(t.deployHookToken),
     // SQLite does not auto-index FK columns; multi-server installs filter the
     // services list by the remote server on every panel page.
     serverIdx: index('services_server_idx').on(t.serverId),

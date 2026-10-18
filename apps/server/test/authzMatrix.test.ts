@@ -779,6 +779,10 @@ export const MATRIX: Record<string, Rule> = {
   'POST /v1/services/:id/badge': R('member'),
   'DELETE /v1/services/:id/badge': R('member'),
   'GET /v1/services/:id/host-addresses': R('member'),
+  'GET /v1/services/:id/deploy-hook': R('member', { note: 'the hook URL is its credential' }),
+  'POST /v1/services/:id/deploy-hook': R('member'),
+  'DELETE /v1/services/:id/deploy-hook': R('member'),
+  'POST /v1/deploy-hooks/:token': R('token', { allow404: 'no hook is minted in the shared seed; the token path is covered by test/deployHooks.test.ts' }),
   'GET /v1/badges/:badge': R('token', { allow404: 'no badge is minted in the shared seed; the token lookup is covered by test/badges.test.ts' }),
   'POST /v1/services/:id/source': R('member', {
     body: () => ({}),

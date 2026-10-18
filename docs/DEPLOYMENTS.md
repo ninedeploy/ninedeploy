@@ -131,6 +131,19 @@ Nixpacks, Railpack and the static pack build with the whole environment; a Docke
 - Rollback redeploys that exact verified digest — preventing unexpected changes from floating `:latest` tags.
 - Deployment history stays honest: when a new deploy goes live, older rows are settled into a `superseded` state instead of lingering as "Running", both at finalize time and during a reconciliation pass at panel boot.
 
+### Deploy hook: redeploy from CI (0.16.2)
+
+**Service → Settings → Deploy hook** gives the service a secret URL; a POST to it queues a deploy, the same as the Deploy button:
+
+```bash
+curl -fsS -X POST https://panel.example.com/v1/deploy-hooks/<token>
+```
+
+- It answers `202 { "deploymentId": 42 }`, or the running deployment with `"alreadyInProgress": true` when a build is already underway.
+- The hook deploys **as the member who turned it on**, and every check a manual deploy makes runs again on each call: a member who lost the service (403) or whose account was deleted (404) leaves a hook that no longer works. A hook never deploys with more operator authority than the request that created it had, so one made through a scope-restricted API token stays restricted.
+- POST only, so a link preview or a crawler that sees the URL deploys nothing. Rotating gives a new URL and the old one answers 404; turning it off does the same. Treat the URL like a password.
+- API: `GET`/`POST`/`DELETE /v1/services/:id/deploy-hook` (member), public `POST /v1/deploy-hooks/:token`; SDK `services.deployHook`; CLI `ninedeploy services deploy-hook <id> [--enable|--disable]`.
+
 ### Deploy status badge (0.16.1)
 
 **Service → Settings → Status badge** gives a public SVG to embed in a README:

@@ -233,6 +233,42 @@ export async function servicesPortsAction(client: NineDeployClient, idStr: strin
   if (result.changed) success('Saved. Redeploy the service to apply.');
 }
 
+/**
+ * Pure entry point for `ninedeploy services deploy-hook <id> [--enable|--disable]`:
+ * no flag shows the hook; --enable turns it on (or rotates its URL); --disable turns it off.
+ */
+export async function servicesDeployHook(
+  client: NineDeployClient,
+  idStr: string,
+  opts: { enable?: boolean; disable?: boolean } = {},
+): Promise<{ enabled: boolean; url: string | null; changed: boolean }> {
+  const id = Number(idStr);
+  if (!id) throw new Error('Usage: ninedeploy services deploy-hook <id> [--enable|--disable]');
+  if (opts.enable && opts.disable) throw new Error('Specify only one of --enable or --disable');
+  if (opts.enable) return { ...(await client.services.deployHook.enable(id)), changed: true };
+  if (opts.disable) return { ...(await client.services.deployHook.disable(id)), changed: true };
+  return { ...(await client.services.deployHook.get(id)), changed: false };
+}
+
+/** Formatted wrapper for the CLI. */
+export async function servicesDeployHookAction(client: NineDeployClient, idStr: string, opts: { enable?: boolean; disable?: boolean } = {}): Promise<void> {
+  header('Deploy hook');
+  let result: Awaited<ReturnType<typeof servicesDeployHook>>;
+  try {
+    result = await servicesDeployHook(client, idStr, opts);
+  } catch (err) {
+    error(err instanceof Error ? err.message : String(err));
+    process.exitCode = 1;
+    return;
+  }
+  if (!result.enabled || !result.url) {
+    info(result.changed ? 'Deploy hook off.' : 'No deploy hook. Turn one on with --enable.');
+    return;
+  }
+  if (result.changed) success('Deploy hook on. Treat the URL like a password; --enable again gives a new one.');
+  info(`curl -fsS -X POST ${result.url}`);
+}
+
 /** `ninedeploy services export <id>` */
 export async function servicesExport(client: NineDeployClient, idStr: string): Promise<void> {
   const id = Number(idStr);

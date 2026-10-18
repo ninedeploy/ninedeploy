@@ -13,6 +13,7 @@ import { BuildPlacementCard, OrchestratorCard } from './PlacementCards.js';
 import { BuildArgsField, parseBuildArgNames } from './BuildArgsField.js';
 import { ContainerOptionsCard } from './ContainerOptionsCard.js';
 import { StatusBadgeCard } from './StatusBadgeCard.js';
+import { DeployHookCard } from './DeployHookCard.js';
 
 /** Service fields, build configuration, lifecycle hooks, PR previews, and resource limits. */
 export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: ServiceDetail }) {
@@ -29,6 +30,7 @@ export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: Servic
       <LimitsCard svc={svc} />
       <ContainerOptionsCard svc={svc} />
       <StatusBadgeCard serviceId={serviceId} serviceName={svc.name} />
+      <DeployHookCard serviceId={serviceId} />
       <ScalingCard svc={svc} />
     </div>
   );

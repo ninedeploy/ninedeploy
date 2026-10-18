@@ -11,6 +11,7 @@ import {
   servicesGet, servicesInspect, servicesLifecycle, servicesList, servicesLogs,
   servicesStickyAction,
   servicesPortsAction,
+  servicesDeployHookAction,
 } from './commands/services.js';
 import {
   dbCreate, dbList, deploysCancel, deploysList, deploysQueue, deploysRemove, deploysRollback,
@@ -271,6 +272,13 @@ services.command('sticky <id>')
   .option('--enable', 'Route every request to the same backend container')
   .option('--disable', 'Remove the sticky-cookie middleware')
   .action((id: string, opts: { enable?: boolean; disable?: boolean }) => servicesStickyAction(getClient(), id, opts));
+
+// A secret URL that redeploys the service on POST (for CI).
+services.command('deploy-hook <id>')
+  .description('Show, turn on (or rotate) or turn off the deploy hook URL for CI')
+  .option('--enable', 'Turn the hook on, or give it a new URL')
+  .option('--disable', 'Turn the hook off')
+  .action((id: string, opts: { enable?: boolean; disable?: boolean }) => servicesDeployHookAction(getClient(), id, opts));
 
 // 0.16.1: extra host ports, TCP or UDP, ranges, an optional dedicated IP.
 services.command('ports <id> [mappings...]')

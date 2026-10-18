@@ -379,7 +379,7 @@ describe('program registration', () => {
     expect(findCommand('server').children).toHaveLength(4);
     // 0.13: + `services github <id>`.
     // 0.16 T8: + `services placement|transfers|swarm <id>`.
-    expect(findCommand('services').children).toHaveLength(18);
+    expect(findCommand('services').children).toHaveLength(19);
     // 0.14: + public-access, import, imports.
     expect(findCommand('databases').children).toHaveLength(7);
     expect(findCommand('templates').children).toHaveLength(4);
@@ -411,7 +411,7 @@ describe('program registration', () => {
     // 0.15: + `terminals` (3), `terminal` (4), `traffic` (3), `access` (grants 4 + me).
     // 0.16 T8: + 3 service commands, `volumes create`, `servers` (2), `swarm` (6), `sources allow-on-nodes`; 0.15.8: + `sources pin-host-keys`, `reset-host-keys`, `host-keys`.
     // 0.16.1: + `deploy up`.
-    expect(h.FakeCommand.instances).toHaveLength(269);
+    expect(h.FakeCommand.instances).toHaveLength(270);
     expect(findCommand('servers').children).toHaveLength(2);
     expect(findCommand('swarm').children).toHaveLength(6);
     expect(findCommand('terminals').children).toHaveLength(3);

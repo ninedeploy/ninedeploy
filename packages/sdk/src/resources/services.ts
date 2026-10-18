@@ -80,6 +80,15 @@ export interface ServicesApi {
      * 0.16.1 deploy status badge (member). `enable` turns it on or rotates its
      * URL; `disable` turns it off. The URL is the badge's only credential.
      */
+    /**
+     * Deploy hook (member): a secret URL that redeploys the service on POST,
+     * for CI. `enable` turns it on or rotates the URL; `disable` turns it off.
+     */
+    deployHook: {
+      get: (id: number) => Promise<{ enabled: boolean; url: string | null }>;
+      enable: (id: number) => Promise<{ enabled: boolean; url: string | null }>;
+      disable: (id: number) => Promise<{ enabled: boolean; url: string | null }>;
+    };
     badge: {
       get: (id: number) => Promise<{ enabled: boolean; url: string | null }>;
       enable: (id: number) => Promise<{ enabled: boolean; url: string | null }>;
@@ -211,6 +220,11 @@ export function servicesApi(t: Transport): ServicesApi {
           // An upload of up to 100 MiB may outlast the default budget.
           10 * 60_000,
         ),
+      deployHook: {
+        get: (id) => get<{ enabled: boolean; url: string | null }>(`/v1/services/${id}/deploy-hook`),
+        enable: (id) => send<{ enabled: boolean; url: string | null }>('POST', `/v1/services/${id}/deploy-hook`),
+        disable: (id) => request<{ enabled: boolean; url: string | null }>(`/v1/services/${id}/deploy-hook`, { method: 'DELETE' }),
+      },
       badge: {
         get: (id) => get<{ enabled: boolean; url: string | null }>(`/v1/services/${id}/badge`),
         enable: (id) => send<{ enabled: boolean; url: string | null }>('POST', `/v1/services/${id}/badge`),

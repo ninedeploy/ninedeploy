@@ -134,6 +134,18 @@ describe('0.14 route mapping', () => {
     ]);
   });
 
+  it('reads, turns on (or rotates) and turns off the deploy hook', async () => {
+    const { api, calls } = client();
+    await api.services.deployHook.get(3);
+    await api.services.deployHook.enable(3);
+    await api.services.deployHook.disable(3);
+    expect(calls.map((c) => [c.method, c.url])).toEqual([
+      ['GET', '/v1/services/3/deploy-hook'],
+      ['POST', '/v1/services/3/deploy-hook'],
+      ['DELETE', '/v1/services/3/deploy-hook'],
+    ]);
+  });
+
   it('0.16.1: lists the panel host addresses for a port mapping', async () => {
     const { api, calls } = client();
     await api.services.hostAddresses(3);

@@ -31,6 +31,7 @@ DELETE /v1/servers/:id operator -
 DELETE /v1/services/:id admin nd://scope/write/services
 DELETE /v1/services/:id/attachments/:attId member nd://scope/write/services
 DELETE /v1/services/:id/badge member nd://scope/write/services
+DELETE /v1/services/:id/deploy-hook member nd://scope/write/services
 DELETE /v1/services/:id/deploys/:depId admin nd://scope/write/deploys
 DELETE /v1/services/:id/domains/:domainId member nd://scope/write/domains
 DELETE /v1/services/:id/env/:varId member nd://scope/write/env
@@ -147,6 +148,7 @@ GET /v1/services authed nd://scope/read/services
 GET /v1/services/:id viewer nd://scope/read/services
 GET /v1/services/:id/attachments viewer nd://scope/read/services
 GET /v1/services/:id/badge member nd://scope/read/services
+GET /v1/services/:id/deploy-hook member nd://scope/read/services
 GET /v1/services/:id/deploys viewer nd://scope/read/deploys
 GET /v1/services/:id/deploys/:depId/diff viewer nd://scope/read/deploys
 GET /v1/services/:id/deploys/:depId/logs viewer nd://scope/read/deploys
@@ -296,6 +298,7 @@ POST /v1/databases/:id/start member nd://scope/write/databases
 POST /v1/databases/:id/stop member nd://scope/write/databases
 POST /v1/databases/:id/studio operator nd://scope/write/databases
 POST /v1/demo/seed operator -
+POST /v1/deploy-hooks/:token token -
 POST /v1/doctor/fix operator -
 POST /v1/domain-presets/apply operator nd://scope/write/domains
 POST /v1/domain-transfers/:token/accept token nd://scope/write/domains_transfer
@@ -350,6 +353,7 @@ POST /v1/services member nd://scope/write/services
 POST /v1/services/:id/attachments admin nd://scope/write/services
 POST /v1/services/:id/badge member nd://scope/write/services
 POST /v1/services/:id/clone admin nd://scope/write/services
+POST /v1/services/:id/deploy-hook member nd://scope/write/services
 POST /v1/services/:id/deploys member nd://scope/write/deploys
 POST /v1/services/:id/deploys/:depId/cancel member nd://scope/write/deploys
 POST /v1/services/:id/deploys/:depId/rollback member nd://scope/write/deploys

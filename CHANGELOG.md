@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Upgrade notes
+
+- **One additive migration.** `0079_deploy_hooks` adds three columns to `services` (a null token, a null creator and `deploy_hook_operator = false`) and a unique index over the token. No service has a hook until a member turns one on.
+
+### Added
+
+- **Deploy hook** (Service → Settings → Deploy hook), like Coolify's and Dokploy's deploy webhooks: a secret URL that redeploys the service when a CI job POSTs to it (`curl -fsS -X POST …`). It deploys as the member who made it, re-checking their access on every call, and never with more operator authority than that request had. Rotate it or turn it off from the same card. API: `GET`/`POST`/`DELETE /v1/services/:id/deploy-hook`, public `POST /v1/deploy-hooks/:token`; SDK `services.deployHook`; CLI `ninedeploy services deploy-hook <id> [--enable|--disable]`.
+
 ## [0.16.1] - 2026-10-18
 
 > First deploy, the Coolify way: a **New** button on every page, working URLs without DNS work and a setup checklist. Port forwarding grows up: UDP, port ranges, a dedicated IP, allow lists, several IPs per server and HTTP/3. Also: deploy from an uploaded folder, Dockerfile build arguments, container options, status badges and redirect rules.

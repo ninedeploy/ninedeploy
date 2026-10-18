@@ -71,6 +71,36 @@ export const deploysSpecs: RouteSpecMap = {
     floor: 'member',
     responseType: '{ detected: boolean; addresses: Array<{ ip: string; family: 4 | 6; iface: string }> }',
   },
+  'GET /v1/services/:id/deploy-hook': {
+    summary: 'Whether the deploy hook is on, and its secret URL',
+    tag: 'deploys',
+    description: 'The URL is the hook credential, so reading it takes a member seat. Added in 0.16.2.',
+    floor: 'member',
+    responseType: '{ enabled: boolean; url: string | null }',
+  },
+  'POST /v1/services/:id/deploy-hook': {
+    summary: 'Turn the deploy hook on, or rotate its URL',
+    tag: 'deploys',
+    description:
+      'Mints a new token (the previous URL stops working). The hook will deploy as the caller, with every check a manual deploy makes re-done on each call and never with more operator authority than this request has. Audited service.deploy_hook.enable / rotate. Added in 0.16.2.',
+    floor: 'member',
+    responseType: '{ enabled: boolean; url: string | null }',
+  },
+  'DELETE /v1/services/:id/deploy-hook': {
+    summary: 'Turn the deploy hook off',
+    tag: 'deploys',
+    description: 'The hook URL answers 404 from now on. Audited service.deploy_hook.disable. Added in 0.16.2.',
+    floor: 'member',
+    responseType: '{ enabled: boolean; url: string | null }',
+  },
+  'POST /v1/deploy-hooks/:token': {
+    summary: 'Redeploy a service from CI (deploy hook)',
+    tag: 'deploys',
+    description:
+      'No session: the token in the path is the credential. Queues a deploy as the member who made the hook and answers 202 `{ deploymentId }`, or the running deployment with `alreadyInProgress: true`. 404 for an unknown token or a hook whose creator was deleted; 403 when that member lost the service. Audited deploy.trigger (via deploy_hook). Added in 0.16.2.',
+    floor: 'token',
+    responseType: '{ deploymentId: number; alreadyInProgress?: boolean }',
+  },
   'GET /v1/badges/:badge': {
     summary: 'A deploy status badge (SVG) for a README',
     tag: 'deploys',
