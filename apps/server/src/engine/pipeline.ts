@@ -37,6 +37,9 @@ import { createSwarmBuilder, isSwarmService, swarmDeployRefusal, withSwarmRetire
 import { swarmRuntimeOf } from '../lib/swarm.js';
 import { fileMountRefusal, prepareFileMounts } from '../lib/serviceFiles.js';
 
+/** 0.16.3: why a node or Swarm service with custom Docker labels is not deployed. */
+export const DOCKER_LABELS_PANEL_ONLY =
+  'Custom Docker labels work for docker services on the panel host only in this release; remove them (Service → Settings) or run the service on the panel host.';
 /** 0.16.3: why a node or Swarm service with the command healthcheck is not deployed. */
 export const COMMAND_HEALTHCHECK_PANEL_ONLY =
   'The command healthcheck works for docker services on the panel host only in this release; choose another healthcheck (Service → Settings) or run the service on the panel host.';
@@ -776,9 +779,12 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   // is built, never started without its files.
   // The command healthcheck (`docker exec` on the panel host) the same way:
   // a node or Swarm deploy would otherwise fall back to a probe it never chose.
+  // Custom labels too: a node agent takes only the panel's own labels.
+  const offPanel = service.type !== 'docker' || service.serverId != null || onSwarm;
   const fileRefusal =
     (await fileMountRefusal(db, service)) ??
-    (service.healthCheck === 'command' && (service.type !== 'docker' || service.serverId != null || onSwarm) ? COMMAND_HEALTHCHECK_PANEL_ONLY : null);
+    (offPanel && service.healthCheck === 'command' ? COMMAND_HEALTHCHECK_PANEL_ONLY : null) ??
+    (offPanel && Object.keys(service.dockerLabels ?? {}).length > 0 ? DOCKER_LABELS_PANEL_ONLY : null);
   if (fileRefusal) {
     log(`✗ ${fileRefusal}`);
     await safeFail(db, deploymentId, service.id, service.runtimeId);
@@ -1757,6 +1763,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
           const files = await fileMountRefusal(db, onTarget);
           if (files) return files;
           if (service.healthCheck === 'command') return COMMAND_HEALTHCHECK_PANEL_ONLY;
+          if (Object.keys(service.dockerLabels ?? {}).length > 0) return DOCKER_LABELS_PANEL_ONLY;
           if (remoteHookRefusal(buildConfig)) {
             log(`⚠ deploy hooks run on the primary only; target ${await nodeLabel(db, target.serverId)} was deployed without them`);
           }

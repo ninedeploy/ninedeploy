@@ -25,6 +25,15 @@ When an HTTP answer does not prove the app is ready (a database, a worker that n
 - Docker services on the panel host only, like file mounts: a node or Swarm service with it is refused at deploy time (and the setting is refused for one), and fan-out nodes are refused while the primary deploys.
 - API: `healthCheck: 'command'` with `healthCommand` (one line, up to 1000 characters) on `PATCH /v1/services/:id`. PR previews and clones keep it.
 
+### Docker labels (0.16.3)
+
+**Service → Settings → Docker labels** puts your own labels on the container, one `key=value` per line, for tools on the host that read them (Prometheus or Vector service discovery, backup agents, cost tagging). They apply on the next deploy and on every replica.
+
+- Up to 50 labels; keys use letters, digits and `. _ / -`; values are one line of up to 1000 characters.
+- `ninedeploy.*` (the panel finds and cleans up its containers by them), `com.docker.*` and `traefik.*` are reserved. Routing does not read labels here: the panel's Traefik uses its file provider.
+- Docker services on the panel host only: a node agent sets only the panel's own labels, so a node or Swarm service with labels is refused at deploy time (and the setting is refused for one).
+- API: `dockerLabels` (an object; `{}` clears) on `PATCH /v1/services/:id`. PR previews and clones keep them.
+
 ### Container options (0.16.1, operator only)
 
 **Service → Settings → Container options** adds these to a docker service's container, on its next deploy:

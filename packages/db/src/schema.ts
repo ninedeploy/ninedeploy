@@ -475,6 +475,8 @@ export const services = sqliteTable(
     healthCheck: text('health_check').$type<'http' | 'running' | 'command'>(),
     // 0.16.3: the shell command of the 'command' healthcheck (`sh -c`); null otherwise.
     healthCommand: text('health_command'),
+    // 0.16.3: user Docker labels on the container (JSON object); null = none.
+    dockerLabels: text('docker_labels', { mode: 'json' }).$type<Record<string, string>>(),
     // 0.16.1: operator-set container options for docker services (GPUs,
     // /dev/shm size, init, open-file limit, added capabilities). Null = none,
     // the `docker run` line every deploy used before.

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { dockerLabels } from './dockerLabels.js';
 import { containerPath, dockerVolumeName, envVarName, gitBranch, gitRepoUrl, httpPath, providerBaseUrl, repoBaseDir, repoRelativePath, slug } from './common.js';
 
 export const serviceType = z.enum(['pm2', 'docker', 'compose']);
@@ -385,6 +386,8 @@ export const updateService = z.object({
   healthCheck: healthCheckMode.nullable().optional(),
   /** 0.16.3: the command of the 'command' healthcheck; null clears it. */
   healthCommand: healthCommand.nullable().optional(),
+  /** 0.16.3: custom container labels; {} or null clears them. */
+  dockerLabels: dockerLabels.nullable().optional(),
   /** Operator only: advanced container options; null clears them all. */
   runtimeOptions: runtimeOptions.nullable().optional(),
   port: z.number().int().min(1).max(65535).optional(),
@@ -474,6 +477,8 @@ export const service = z.object({
   healthCheck: healthCheckMode.optional(),
   /** The 'command' healthcheck's shell command (0.16.3); null = none. */
   healthCommand: z.string().nullable().optional(),
+  /** Custom container labels (0.16.3); {} = none. */
+  dockerLabels: z.record(z.string(), z.string()).optional(),
   /** Advanced container options (0.16.1); null = none. */
   runtimeOptions: runtimeOptions.nullable().optional(),
   autoUrl: z.string().nullable(),

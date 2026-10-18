@@ -2169,6 +2169,19 @@ describe('runDeployment on a remote-server target', () => {
     logBus.removeAllListeners();
   });
 
+  it('0.16.3: a node service with custom Docker labels is refused before anything is built or sent to the node', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { ownerUserId: 42, image: 'nginx:latest', serverId: 4, dockerLabels: { 'com.example.team': 'x' } });
+    const lines = collectLogs(1);
+    h.agentOp.mockClear();
+    h.builder.buildAndRun.mockClear();
+    await runDeployment(db as never, 1);
+    expect(h.agentOp).not.toHaveBeenCalled();
+    expect(h.builder.buildAndRun).not.toHaveBeenCalled();
+    expect(lines.join(' ')).toMatch(/Custom Docker labels work for docker services on the panel host only/);
+    logBus.removeAllListeners();
+  });
+
   it('0.16.3: a node service with the command healthcheck is refused before anything is built or sent to the node', async () => {
     const { db, inserts } = makeDb();
     baseSetup(db, { ownerUserId: 42, image: 'nginx:latest', serverId: 4, healthCheck: 'command', healthCommand: 'true' });

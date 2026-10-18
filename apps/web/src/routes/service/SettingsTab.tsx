@@ -1,13 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Cpu, GitPullRequest, Layers, Server, Settings, Tag } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { dockerBuildTarget } from '@ninedeploy/schemas';
+import { dockerBuildTarget, formatDockerLabels, parseDockerLabels } from '@ninedeploy/schemas';
 import type { Service, ServiceDetail } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { useAuth } from '../../lib/auth.js';
 import { toInt } from '../../lib/format.js';
 import { useToast } from '../../components/Toast.js';
-import { Button, Card, CardBody, cn, ErrorCard, Field, Input, Select, Skeleton, Switch } from '../../components/ui.js';
+import { Button, Card, CardBody, cn, ErrorCard, Field, Input, Select, Skeleton, Switch, Textarea } from '../../components/ui.js';
 import { ServiceTagsCard } from './ServiceTagsCard.js';
 import { GithubCard } from './GithubCard.js';
 import { BuildPlacementCard, OrchestratorCard } from './PlacementCards.js';
@@ -158,7 +158,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
 
   const [form, setForm] = useState<{
     name: string; branch: string; repoUrl: string; image: string; port: string;
-    healthPath: string; healthTimeout: string; healthCheck: string; healthCommand: string; volumeMount: string; sourceId: string;
+    healthPath: string; healthTimeout: string; healthCheck: string; healthCommand: string; dockerLabels: string; volumeMount: string; sourceId: string;
     buildPack: string; baseDir: string; installCmd: string; buildCmd: string; startCmd: string; dockerfilePath: string; outputDir: string;
     preDeployCmd: string; postDeployCmd: string; preStopCmd: string;
     restartPolicy: string; stopGraceSeconds: string; buildArgs: string; buildTarget: string;
@@ -175,6 +175,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
       healthTimeout: svc.healthTimeoutSeconds != null ? String(svc.healthTimeoutSeconds) : '',
       healthCheck: svc.healthCheck ?? 'http',
       healthCommand: svc.healthCommand ?? '',
+      dockerLabels: formatDockerLabels(svc.dockerLabels),
       volumeMount: svc.volumeMount ?? '',
       sourceId: svc.sourceId ? String(svc.sourceId) : '',
       buildPack: svc.build?.buildPack ?? 'auto',
@@ -221,6 +222,11 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
         healthCheck: svc?.healthCheck !== undefined && f.healthCheck !== svc.healthCheck ? (f.healthCheck as 'http' | 'running' | 'command') : undefined,
         // 0.16.3, same rule; blank clears it.
         healthCommand: svc?.healthCommand !== undefined && f.healthCommand.trim() !== (svc.healthCommand ?? '') ? f.healthCommand.trim() || null : undefined,
+        // 0.16.3, same rule: sent only when the parsed labels changed.
+        dockerLabels:
+          svc?.dockerLabels !== undefined && formatDockerLabels(parseDockerLabels(f.dockerLabels).labels) !== formatDockerLabels(svc.dockerLabels)
+            ? parseDockerLabels(f.dockerLabels).labels
+            : undefined,
         volumeMount: clearable(f.volumeMount, svc?.volumeMount),
         // Admins may attach or clear the credential; members keep the current
         // one (an omitted key leaves it untouched server-side).
@@ -263,6 +269,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
   if (!svc || !form) return <Card><CardBody><Skeleton className="h-40 w-full" /></CardBody></Card>;
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm({ ...form, [k]: e.target.value });
   const buildTargetInvalid = form.buildTarget.trim() !== '' && !dockerBuildTarget.safeParse(form.buildTarget.trim()).success;
+  const labelProblems = parseDockerLabels(form.dockerLabels).invalid;
 
   return (
     <Card>
@@ -356,6 +363,18 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
                   <option value="command">Command inside the container</option>
                 )}
               </Select>
+            </Field>
+          )}
+          {svc.type === 'docker' && svc.dockerLabels !== undefined && (svc.serverId == null || form.dockerLabels.trim() !== '') && (
+            <Field
+              label="Docker labels"
+              hint={
+                labelProblems.length > 0
+                  ? `Not a label: ${labelProblems.join(', ')} (key=value; ninedeploy.*, com.docker.* and traefik.* are reserved)`
+                  : 'key=value per line, for tools on the host that read container labels. Routing is not affected. Applies on the next deploy.'
+              }
+            >
+              <Textarea value={form.dockerLabels} onChange={set('dockerLabels')} rows={3} placeholder="com.example.team=payments" spellCheck={false} className="font-mono text-xs" />
             </Field>
           )}
           {svc.type === 'docker' && form.healthCheck === 'command' && (
@@ -468,7 +487,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
           </Field>
 
           <div className="col-span-full">
-            <Button type="submit" size="sm" disabled={save.isPending || parseBuildArgNames(form.buildArgs).invalid.length > 0 || buildTargetInvalid || (form.healthCheck === 'command' && !form.healthCommand.trim())}>
+            <Button type="submit" size="sm" disabled={save.isPending || parseBuildArgNames(form.buildArgs).invalid.length > 0 || buildTargetInvalid || labelProblems.length > 0 || (form.healthCheck === 'command' && !form.healthCommand.trim())}>
               {save.isPending ? 'Saving…' : 'Save settings'}
             </Button>
             <span className="ml-3 text-xs text-slate-500">Build + runtime changes apply on the next deploy.</span>

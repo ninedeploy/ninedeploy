@@ -140,6 +140,7 @@ function serialize(s: Service, sourceName: string | null = null, tags: TagIds = 
     healthTimeoutSeconds: s.healthTimeoutSeconds ?? null,
     healthCheck: s.healthCheck === 'running' || s.healthCheck === 'command' ? s.healthCheck : 'http',
     healthCommand: s.healthCommand ?? null,
+    dockerLabels: s.dockerLabels ?? {},
     runtimeOptions: s.runtimeOptions ?? null,
     port: s.port,
     publishedPort: s.publishedPort ?? null,
@@ -685,6 +686,16 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         throw badRequest('The "container running" healthcheck applies to docker services only');
       }
       patch.healthCheck = patch.healthCheck === 'running' || patch.healthCheck === 'command' ? patch.healthCheck : null;
+    }
+    // 0.16.3 custom labels: set by `docker run` on the panel host only (a node
+    // agent takes the panel's own labels, Swarm has its own); {} is stored as null.
+    if (patch.dockerLabels !== undefined) {
+      const labels = patch.dockerLabels && Object.keys(patch.dockerLabels).length > 0 ? patch.dockerLabels : null;
+      const serverId = patch.serverId !== undefined ? patch.serverId : existing.serverId;
+      if (labels && ((patch.type ?? existing.type) !== 'docker' || serverId != null || existing.orchestrator === 'swarm')) {
+        throw badRequest('Custom Docker labels apply to docker services on the panel host only');
+      }
+      patch.dockerLabels = labels;
     }
     // 0.16.3 command healthcheck: a docker container on the panel host (the
     // deploy runs it with `docker exec`), and never without its command.
@@ -1628,6 +1639,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         healthTimeoutSeconds: svc.healthTimeoutSeconds,
         healthCheck: svc.healthCheck,
         healthCommand: svc.healthCommand,
+        dockerLabels: svc.dockerLabels,
         // 0.16.1: operator-set container options are the operator's to hand
         // out; a member's copy starts without them (like sourceId above).
         runtimeOptions: req.user!.isOperator ? svc.runtimeOptions : null,

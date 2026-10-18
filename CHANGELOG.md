@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Upgrade notes
 
-- **Three additive migrations.** `0081_recovery_codes` adds the empty `user_recovery_codes` table. Accounts with 2FA sign in exactly as before; they have no recovery codes until they create a set under Settings → Account. `0082_service_files` adds the empty `service_files` table, so every container starts with exactly the mounts it had. `0083_health_command` adds the nullable `services.health_command`; every service keeps its healthcheck.
+- **Four additive migrations.** `0081_recovery_codes` adds the empty `user_recovery_codes` table. Accounts with 2FA sign in exactly as before; they have no recovery codes until they create a set under Settings → Account. `0082_service_files` adds the empty `service_files` table, so every container starts with exactly the mounts it had. `0083_health_command` adds the nullable `services.health_command`; every service keeps its healthcheck. `0084_docker_labels` adds the nullable `services.docker_labels`; containers keep exactly the labels they had.
 
 ### Added
 
@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CLI:** `ninedeploy services logs <id> --tail N --grep text`.
 - **File mounts** (Service → Volumes → Files), like Coolify's and Dokploy's: text files (an nginx.conf, a config.yaml) kept encrypted by the panel and mounted read-only at a path in the container; up to 20 per service, 256 KiB each, applied on the next deploy. Docker services on the panel host; a node, Swarm or compose service with files is refused rather than started without them. API `/v1/services/:id/files`; SDK `services.files`.
 - **Healthcheck command** (Service → Settings → Healthcheck → Command inside the container): the deploy runs a command such as `pg_isready` or `curl -fsS localhost:3000/up` with `sh -c` in the new container until it exits 0, logging failed attempts. Docker services on the panel host; API `healthCheck: 'command'` with `healthCommand`.
+- **Docker labels** (Service → Settings → Docker labels): your own `key=value` labels on the container and its replicas, for host tools that read them; `ninedeploy.*`, `com.docker.*` and `traefik.*` are reserved. Docker services on the panel host; API `dockerLabels`.
 - **API tokens page** (Settings → Security → API tokens): create a token for the CLI, CI or an MCP client with a name, an access level (read only, read & write, or full access for operators) and a lifetime; it is shown once. The list shows each token's access, last use and expiry, flags legacy unrestricted and expired tokens, and revokes after a confirmation. The API existed; the docs pointed to this page before it did.
 
 ### Fixed

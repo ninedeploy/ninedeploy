@@ -335,6 +335,28 @@ describe('PATCH /services/:id portMappings', () => {
     await compose.app.close();
   });
 
+  it('0.16.3 custom Docker labels: stored and read back; {} clears; reserved keys, nodes and compose are refused', async () => {
+    const { app, id, row, patch } = await setup();
+    const read = async () => ((await app.inject({ method: 'GET', url: `/services/${id}`, headers: member })).json() as { dockerLabels: Record<string, string> }).dockerLabels;
+    expect(await read()).toEqual({});
+    expect((await patch({ dockerLabels: { 'com.example.team': 'payments' } }, member)).statusCode).toBe(200);
+    expect((await row()).dockerLabels).toEqual({ 'com.example.team': 'payments' });
+    expect(await read()).toEqual({ 'com.example.team': 'payments' });
+    expect((await patch({ dockerLabels: { 'traefik.http.routers.x.rule': 'Host(`evil`)' } })).statusCode).toBe(400);
+    expect((await patch({ dockerLabels: {} })).statusCode).toBe(200);
+    expect((await row()).dockerLabels).toBeNull();
+    await app.close();
+
+    const [node] = await db.insert(servers).values({ name: 'n3', host: '198.51.100.22', tokenEncrypted: 'v1:x' }).returning();
+    const onNode = await setup({ name: 'remote2', slug: 'remote2', serverId: node!.id });
+    expect((await onNode.patch({ dockerLabels: { a: 'b' } })).statusCode).toBe(400);
+    expect((await onNode.patch({ dockerLabels: {} })).statusCode).toBe(200);
+    await onNode.app.close();
+    const compose = await setup({ name: 'stack3', slug: 'stack3', type: 'compose', image: null });
+    expect((await compose.patch({ dockerLabels: { a: 'b' } })).statusCode).toBe(400);
+    await compose.app.close();
+  });
+
   it("0.16.3 healthCheck: 'command' needs a command, a docker service and the panel host; the command is stored and read back", async () => {
     const { app, id, row, patch } = await setup();
     const read = async () => (await app.inject({ method: 'GET', url: `/services/${id}`, headers: member })).json() as { healthCheck: string; healthCommand: string | null };

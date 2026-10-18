@@ -215,6 +215,22 @@ describe('dockerBuilder.buildAndRun', () => {
     expect(mounts).toEqual(['nd-svc-web-data:/data', 'nd-svc-web-uploads:/uploads', 'shared-assets:/assets:ro']);
   });
 
+  it('0.16.3: adds the custom labels after the recovery labels, sorted; a reserved or malformed stored one is dropped', async () => {
+    const ctx = makeCtx({
+      service: {
+        id: 7, slug: 'web', image: 'nginx:1.25', port: 3000, cpuShares: 0, memLimitMb: 0, healthPath: '/',
+        dockerLabels: { 'com.example.team': 'payments', 'a.b': '1', 'ninedeploy.service': '99', 'bad key': 'x' },
+      },
+    });
+    await dockerBuilder.buildAndRun(ctx as never);
+    const runArgs = h.run.mock.calls.find(([, argv]) => (argv as unknown[])[0] === 'run')![1] as string[];
+    const labels = runArgs.flatMap((a, i) => (a === '--label' ? [runArgs[i + 1]] : []));
+    expect(labels.slice(-2)).toEqual(['a.b=1', 'com.example.team=payments']);
+    expect(labels).toContain('ninedeploy.service=7');
+    expect(labels).not.toContain('ninedeploy.service=99');
+    expect(labels.some((l) => l.startsWith('bad key'))).toBe(false);
+  });
+
   it('0.16.3: bind-mounts the file mounts read-only after the volumes', async () => {
     const ctx = makeCtx({
       service: { slug: 'web', image: 'nginx:1.25', port: 3000, cpuShares: 0, memLimitMb: 0, volumeMount: '/data', healthPath: '/' },

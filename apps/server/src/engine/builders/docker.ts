@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'no
 import path from 'node:path';
 import type { BuildContext, Builder } from '../types.js';
 import type { BuildConfig, ServicePortMapping, ServiceRuntimeOptions } from '@ninedeploy/db';
-import { formatPortMapping, type NinedeployManifest } from '@ninedeploy/schemas';
+import { dockerLabelKeyProblem, dockerLabelValue, formatPortMapping, type NinedeployManifest } from '@ninedeploy/schemas';
 import { generateNixpacksToml } from '../../lib/ninedeployToNixpacks.js';
 import { buildEnv, capture, run, sleep } from '../../lib/exec.js';
 import { composeScalar, dotenvValue } from './compose.js';
@@ -557,6 +557,13 @@ export async function holdsRunning(runtimeId: string, timeoutMs: number, log: (l
   }
   await logContainerDiagnostic(runtimeId, log);
   return false;
+}
+
+/** 0.16.3: a service's custom labels in a stable order; anything a save would refuse is dropped. */
+export function userDockerLabels(labels: Record<string, string> | null | undefined): Array<[string, string]> {
+  return Object.entries(labels ?? {})
+    .filter(([k, v]) => dockerLabelKeyProblem(k) === null && dockerLabelValue.safeParse(v).success)
+    .sort(([a], [b]) => a.localeCompare(b));
 }
 
 /** 0.16.3 `healthCheck: command`: seconds between attempts, and the most one attempt may take. */
@@ -1193,7 +1200,9 @@ export const dockerBuilder: Builder = {
     // r593: label the generation with its deployment (and service) id so a
     // panel restart mid-deploy can find and remove exactly this candidate at
     // boot. Replicas clone `args`, so they carry the same labels.
-    const labels = deploymentLabels(deploymentId, service.id);
+    // 0.16.3: then the service's own labels (reserved prefixes are refused
+    // at save, so they never shadow the recovery labels).
+    const labels = [...deploymentLabels(deploymentId, service.id), ...userDockerLabels(service.dockerLabels)];
     for (const [k, v] of labels) args.push('--label', `${k}=${v}`);
     // NOTE: no `-p` host port is published at all. Public traffic enters
     // exclusively through Traefik, which reaches the container by name over the

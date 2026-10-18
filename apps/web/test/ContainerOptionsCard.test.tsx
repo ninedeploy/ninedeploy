@@ -215,6 +215,37 @@ describe('Healthcheck mode field (0.16.1)', () => {
     expect(patch.healthCommand).toBeUndefined();
   }, TIMEOUT);
 
+  it('0.16.3: Docker labels are edited as key=value lines, sent only when changed, and a bad line blocks saving', async () => {
+    renderTab(serviceWith({ healthCheck: 'http', dockerLabels: { 'com.example.team': 'payments' } }));
+    const field = await screen.findByLabelText('Docker labels');
+    expect(field).toHaveValue('com.example.team=payments');
+    fireEvent.submit(screen.getByRole('button', { name: /Save settings/ }).closest('form')!);
+    expect((await lastPatch()).dockerLabels).toBeUndefined();
+
+    vi.clearAllMocks();
+    fireEvent.change(field, { target: { value: 'traefik.enable=true' } });
+    expect(screen.getByText(/Not a label: traefik.enable=true/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Save settings/ })).toBeDisabled();
+    fireEvent.change(field, { target: { value: '# team\ncom.example.team = billing\nprometheus.io/scrape=true' } });
+    fireEvent.submit(screen.getByRole('button', { name: /Save settings/ }).closest('form')!);
+    expect((await lastPatch()).dockerLabels).toEqual({ 'com.example.team': 'billing', 'prometheus.io/scrape': 'true' });
+
+    vi.clearAllMocks();
+    fireEvent.change(field, { target: { value: '' } });
+    fireEvent.submit(screen.getByRole('button', { name: /Save settings/ }).closest('form')!);
+    expect((await lastPatch()).dockerLabels).toEqual({});
+  }, TIMEOUT);
+
+  it('0.16.3: Docker labels are not offered on a node service without any, nor by an older panel', async () => {
+    renderTab(serviceWith({ healthCheck: 'http', dockerLabels: {}, serverId: 4 }));
+    await screen.findByLabelText('Healthcheck');
+    expect(screen.queryByLabelText('Docker labels')).not.toBeInTheDocument();
+    cleanup();
+    renderTab(serviceWith({ healthCheck: 'http' }));
+    await screen.findByLabelText('Healthcheck');
+    expect(screen.queryByLabelText('Docker labels')).not.toBeInTheDocument();
+  }, TIMEOUT);
+
   it('0.16.3: not offered on a node service, nor by a panel that does not report the command', async () => {
     renderTab(serviceWith({ healthCheck: 'http', healthCommand: null, serverId: 4 }));
     const select = await screen.findByLabelText('Healthcheck');

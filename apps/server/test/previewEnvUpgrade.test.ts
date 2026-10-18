@@ -110,6 +110,7 @@ const {
   deployHookUserId: _dhu,
   deployHookOperator: _dho,
   healthCommand: _hcmd,
+  dockerLabels: _dl,
   ...SERVICE_COLUMNS_015
 } = getTableColumns(services);
 const serviceRow = async (db: DB, id: number) =>
