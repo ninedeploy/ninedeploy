@@ -106,7 +106,7 @@ ninedeploy services list               # List all running services
 ninedeploy services create             # Interactive wizard (Git repo or Docker image)
 ninedeploy services get <id>           # Detailed service inspection
 ninedeploy services deploy <id>        # Trigger a blue-green zero-downtime deployment
-ninedeploy services logs <id>          # Stream runtime container logs
+ninedeploy services logs <id>          # Newest runtime log lines (--tail N, --grep text)
 ninedeploy services compose <id>       # View generated Docker Compose YAML
 ninedeploy services stop <id>          # Stop a service
 ninedeploy services start <id>         # Start a stopped service

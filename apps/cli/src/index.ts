@@ -251,7 +251,11 @@ services.command('get <id>').description('Show service details').action((id: str
 
 services.command('deploy <id>').description('Trigger a new deployment').action((id: string) => servicesDeploy(getClient(), id));
 
-services.command('logs <id>').description('View runtime container logs').action((id: string) => servicesLogs(getClient(), id));
+services.command('logs <id>')
+  .description('View runtime container logs (the newest lines)')
+  .option('--tail <n>', 'Number of lines, 1 to 5000 (default 50)')
+  .option('--grep <text>', 'Only lines containing this text (case-insensitive)')
+  .action((id: string, opts: { tail?: string; grep?: string }) => servicesLogs(getClient(), id, opts));
 
 services.command('stop <id>').description('Stop a running service').action((id: string) => servicesLifecycle(getClient(), 'stop', id));
 

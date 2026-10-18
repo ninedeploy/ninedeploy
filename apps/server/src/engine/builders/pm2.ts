@@ -250,7 +250,7 @@ export async function pm2Resurrect(): Promise<void> {
 const LOG_TAIL_WINDOW_BYTES = 1024 * 1024;
 
 /** Tail the last 300 lines of a process's combined stdout+stderr log files. */
-export async function pm2Logs(runtimeId: string): Promise<string> {
+export async function pm2Logs(runtimeId: string, lineCount = 300): Promise<string> {
   return withPm2(async () => {
     const procs = await new Promise<ProcessDescription[]>((res, rej) =>
       pm2.describe(runtimeId, (err, desc) => (err ? rej(err) : res(desc ?? []))),
@@ -276,7 +276,7 @@ export async function pm2Logs(runtimeId: string): Promise<string> {
         // A trailing newline yields a final empty element — drop it so joined
         // out+err logs don't end in a stray blank line.
         if (lines[lines.length - 1] === '') lines.pop();
-        return lines.slice(-300).join('\n');
+        return lines.slice(-lineCount).join('\n');
       } catch {
         return '';
       } finally {

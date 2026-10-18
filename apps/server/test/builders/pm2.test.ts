@@ -443,6 +443,10 @@ describe('pm2 lifecycle helpers', () => {
       expect(logs).toContain('out-20'); // the first 20 lines were trimmed
       expect(logs).not.toContain('out-0');
       expect(logs).toContain('boom');
+      // 0.16.3: the route's `?tail=N`.
+      h.pm2.describe.mockImplementationOnce((_n: string, cb: (err: Error | null, desc?: unknown[]) => void) =>
+        cb(null, [{ name: 'api-1', pm2_env: { pm_out_log_path: out, pm_err_log_path: err } }]));
+      expect(await pm2Logs('api-1', 2)).toBe('out-318\nout-319\nboom');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

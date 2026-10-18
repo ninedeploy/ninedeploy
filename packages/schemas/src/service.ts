@@ -12,6 +12,23 @@ export const buildPack = z.enum(['auto', 'nixpacks', 'dockerfile', 'railpack', '
  */
 export const buildArgNames = z.array(envVarName.max(100)).max(100);
 
+/** 0.16.3: the most runtime-log lines one read returns (search and download in the panel). */
+export const RUNTIME_LOG_TAIL_MAX = 5000;
+/** The runtime-log lines a read returns when none are asked for, as before 0.16.3. */
+export const RUNTIME_LOG_TAIL_DEFAULT = 300;
+
+/**
+ * 0.16.3 `GET /v1/services/:id/logs?tail=N`. Query params arrive as strings:
+ * an unusable `tail` reads as the default, and any number is clamped to
+ * 1..RUNTIME_LOG_TAIL_MAX.
+ */
+export const runtimeLogsQuery = z.object({
+  tail: z
+    .unknown()
+    .optional()
+    .transform((v) => Math.min(Math.max(Math.trunc(Number(v ?? RUNTIME_LOG_TAIL_DEFAULT)) || RUNTIME_LOG_TAIL_DEFAULT, 1), RUNTIME_LOG_TAIL_MAX)),
+});
+
 /**
  * 0.16.2: the stage of a multi-stage Dockerfile to build (`docker build
  * --target`), e.g. `runtime` or `prod`. Docker's own stage-name rule: a letter

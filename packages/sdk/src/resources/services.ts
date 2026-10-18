@@ -63,7 +63,8 @@ export interface ServicesApi {
     stop: (id: number) => Promise<{ ok: boolean; status: string }>;
     start: (id: number) => Promise<{ ok: boolean; status: string }>;
     restart: (id: number) => Promise<{ ok: boolean; status: string }>;
-    logs: (id: number) => Promise<{ lines: string }>;
+    /** The last `tail` runtime-log lines (default 300, at most 5000; 0.16.3). */
+    logs: (id: number, opts?: { tail?: number }) => Promise<{ lines: string }>;
     clone: (id: number, input?: { name?: string; slug?: string }) => Promise<Service>;
     exportUrl: (id: number) => string;
     /**
@@ -212,7 +213,7 @@ export function servicesApi(t: Transport): ServicesApi {
       stop: (id) => send<{ ok: boolean; status: string }>('POST', `/v1/services/${id}/stop`),
       start: (id) => send<{ ok: boolean; status: string }>('POST', `/v1/services/${id}/start`),
       restart: (id) => send<{ ok: boolean; status: string }>('POST', `/v1/services/${id}/restart`),
-      logs: (id) => get<{ lines: string }>(`/v1/services/${id}/logs`),
+      logs: (id, opts) => get<{ lines: string }>(`/v1/services/${id}/logs${opts?.tail ? `?tail=${opts.tail}` : ''}`),
       clone: (id, input) => send<Service>('POST', `/v1/services/${id}/clone`, input ?? {}),
       exportUrl: (id) => `/v1/services/${id}/export`,
       uploadSource: (id, archive, opts) =>

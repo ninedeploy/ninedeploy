@@ -20,7 +20,7 @@ import {
   type ServicePortMapping,
   type ServiceRuntimeOptions,
 } from '@ninedeploy/db';
-import { composePreviewRequest, createService, type PortMapping, type RuntimeOptions, sameImageRepository, setLimits, updateService } from '@ninedeploy/schemas';
+import { composePreviewRequest, createService, type PortMapping, type RuntimeOptions, runtimeLogsQuery, sameImageRepository, setLimits, updateService } from '@ninedeploy/schemas';
 import { findCatalogTemplate } from '../templates/catalog.js';
 
 /** Fan-out target set for a service — up to 10 extra nodes, operator-set. */
@@ -1518,12 +1518,14 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // Runtime logs: PM2 reads the daemon's log files; Docker reads container logs.
+  // 0.16.3: `?tail=N` (1..5000, default 300) for search and download in the panel.
   app.get('/:id/logs', async (req) => {
     const svc = await loadServiceForUser(app.db, num((req.params as { id: string }).id), req.user!);
     if (!svc?.runtimeId) throw notFound('Service not found or not deployed');
+    const { tail } = runtimeLogsQuery.parse(req.query ?? {});
     if (svc.type === 'pm2') {
       try {
-        return { lines: await pm2Logs(svc.runtimeId) };
+        return { lines: await pm2Logs(svc.runtimeId, tail) };
       } catch {
         return { lines: '' };
       }
@@ -1531,14 +1533,15 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     try {
       // ── 0.16 T7 swarm ── every task's logs, wherever it runs.
       const swarmRuntime = swarmRuntimeOf(svc);
-      if (swarmRuntime) return { lines: await swarmServiceLogs(swarmRuntime) };
+      if (swarmRuntime) return { lines: await swarmServiceLogs(swarmRuntime, tail) };
       // ── end 0.16 T7 ──
       if (svc.serverId != null) {
-        return { lines: await remoteDocker(svc.serverId, 'docker.logs', { name: svc.runtimeId }) };
+        // An agent before 0.16.3 ignores `tail` and returns the last 300 lines.
+        return { lines: await remoteDocker(svc.serverId, 'docker.logs', { name: svc.runtimeId, tail: String(tail) }) };
       }
       // r667: 300 LINES is no byte bound — a container printing one endless
       // line used to be buffered whole; past 8 MiB the read stops.
-      const out = await capture('docker', ['logs', '--tail', '300', '--timestamps', svc.runtimeId], { maxOutputBytes: 8 * 1024 * 1024 });
+      const out = await capture('docker', ['logs', '--tail', String(tail), '--timestamps', svc.runtimeId], { maxOutputBytes: 8 * 1024 * 1024 });
       return { lines: out };
     } catch {
       return { lines: '' };

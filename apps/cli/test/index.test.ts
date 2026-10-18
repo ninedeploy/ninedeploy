@@ -785,8 +785,8 @@ describe('delegating actions', () => {
     await cmds.get('deploy <id>')!.actionFn!('3');
     expect(h.servicesDeploy).toHaveBeenCalledWith(client, '3');
 
-    await cmds.get('logs <id>')!.actionFn!('9');
-    expect(h.servicesLogs).toHaveBeenCalledWith(client, '9');
+    await cmds.get('logs <id>')!.actionFn!('9', { tail: '100', grep: 'err' });
+    expect(h.servicesLogs).toHaveBeenCalledWith(client, '9', { tail: '100', grep: 'err' });
 
     await cmds.get('stop <id>')!.actionFn!('1');
     expect(h.servicesLifecycle).toHaveBeenCalledWith(client, 'stop', '1');

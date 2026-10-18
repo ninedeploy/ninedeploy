@@ -104,7 +104,7 @@ ninedeploy system dashboard
 ninedeploy services list
 ninedeploy services create
 ninedeploy services deploy <service-id>
-ninedeploy services logs <service-id>
+ninedeploy services logs <service-id>                 # the newest 50 lines; --tail 1000, --grep error (0.16.3)
 
 # Deployment history
 ninedeploy deploys list <service-id>

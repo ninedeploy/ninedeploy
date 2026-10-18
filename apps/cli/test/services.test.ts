@@ -358,6 +358,31 @@ describe('servicesLogs', () => {
     const text = logSpy.mock.calls.map((call) => call[0]).join('\n');
     expect(text).toContain('line one');
     expect(text).toContain('line two');
+    expect(client.services.logs).toHaveBeenCalledWith(9, { tail: 50 });
+  });
+
+  it('prints the NEWEST lines, filtered by --grep, and checks --tail', async () => {
+    // An older panel ignores tail and sends more lines than asked.
+    const lines = Array.from({ length: 300 }, (_, i) => `l${i}${i % 2 ? ' ERROR' : ''}`).join('\n');
+    const logs = vi.fn().mockResolvedValue({ lines });
+    const text = () => logSpy.mock.calls.map((call) => call[0]).join('\n');
+    await servicesLogs(makeClient({ services: { logs } }), '9', { tail: '2' });
+    expect(logs).toHaveBeenCalledWith(9, { tail: 2 });
+    expect(text()).toContain('l299');
+    expect(text()).toContain('l298');
+    expect(text()).not.toContain('l297');
+    logSpy.mockClear();
+    await servicesLogs(makeClient({ services: { logs } }), '9', { tail: '2', grep: 'error' });
+    expect(text()).toContain('l299 ERROR');
+    expect(text()).toContain('l297 ERROR');
+    expect(text()).not.toContain('l298');
+    await servicesLogs(makeClient({ services: { logs } }), '9', { grep: 'nope' });
+    expect(text()).toContain('No line contains "nope".');
+    for (const tail of ['0', '5001', 'all']) {
+      errorSpy.mockClear();
+      await servicesLogs(makeClient({ services: { logs } }), '9', { tail });
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('--tail takes a number'));
+    }
   });
 
   it('reports a failure', async () => {

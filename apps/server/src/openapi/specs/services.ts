@@ -4,6 +4,7 @@ import {
   createService,
   createServiceVolumeAttachment,
   metricQuery,
+  runtimeLogsQuery,
   serviceGithubFeedbackPatch,
   serviceGithubLinkPut,
   serviceGithubMigrate,
@@ -115,8 +116,11 @@ export const servicesSpecs: RouteSpecMap = {
   },
   'GET /v1/services/:id/logs': {
     summary: 'Recent runtime logs of a service',
+    description: 'The last `tail` lines (default 300, at most 5000) with timestamps. A node on an agent older than 0.16.3 returns the last 300.',
     tag: 'services',
     floor: 'viewer',
+    query: runtimeLogsQuery,
+    validation: 'zod',
     responseType: '{ lines: string }',
   },
   'GET /v1/services/:id/metrics': {

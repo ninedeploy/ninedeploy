@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Search and download for runtime logs** (Service → Runtime logs), like Coolify's and Dokploy's log viewers: filter to the lines that contain a text (case-insensitive, matches highlighted), load the last 300, 1000 or 5000 lines, pause the live refresh, and download what is loaded. API `GET /v1/services/:id/logs?tail=N` (1 to 5000, default 300 as before); SDK `services.logs(id, { tail })`. A node on an agent older than 0.16.3 returns the last 300 lines.
+- **CLI:** `ninedeploy services logs <id> --tail N --grep text`.
+
+### Fixed
+
+- **`ninedeploy services logs` printed the oldest 50 of the last 300 lines.** It now prints the newest lines.
+
 ## [0.16.2] - 2026-10-18
 
 > Redeploy from CI with a deploy hook, and build one stage of a multi-stage Dockerfile.

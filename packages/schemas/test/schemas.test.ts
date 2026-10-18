@@ -68,6 +68,8 @@ import {
   triggerDeploy,
   tunnelEntry,
   updateService,
+  runtimeLogsQuery,
+  RUNTIME_LOG_TAIL_MAX,
   updateServiceVolumeAttachment,
   upsertEnvVar,
   volumeEntry,
@@ -431,6 +433,15 @@ describe('service', () => {
       bad(createService, { name: 'Web', cpuShares: -1 });
       bad(createService, { name: 'Web', cpuShares: 262145 });
       bad(createService, { name: 'Web', memLimitMb: -5 });
+    });
+
+    it('runtimeLogsQuery: 300 by default, clamped to 1..5000, an unusable value reads as the default', () => {
+      expect(runtimeLogsQuery.parse({})).toEqual({ tail: 300 });
+      expect(runtimeLogsQuery.parse({ tail: '1000' })).toEqual({ tail: 1000 });
+      expect(runtimeLogsQuery.parse({ tail: '99999' })).toEqual({ tail: RUNTIME_LOG_TAIL_MAX });
+      expect(runtimeLogsQuery.parse({ tail: '-4' })).toEqual({ tail: 1 });
+      expect(runtimeLogsQuery.parse({ tail: 'all' })).toEqual({ tail: 300 });
+      expect(runtimeLogsQuery.parse({ tail: '12.7' })).toEqual({ tail: 12 });
     });
 
     it('takes a Dockerfile build stage by Docker stage-name rules; an update may clear it', () => {

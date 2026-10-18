@@ -99,11 +99,13 @@ describe('the runtime helpers (lib/swarm.ts)', () => {
     await swarm.scaleSwarmService('nd-web_web', 50);
     await swarm.restartSwarmService('nd-web_web');
     await swarm.swarmServiceLogs('nd-web_web');
+    await swarm.swarmServiceLogs('nd-web_web', 2000);
     expect(h.docker).toEqual([
       ['service', 'scale', '--detach', 'nd-web_web=0'],
       ['service', 'scale', '--detach', 'nd-web_web=10'],
       ['service', 'update', '--force', '--detach', 'nd-web_web'],
       ['service', 'logs', '--tail', '300', '--timestamps', 'nd-web_web'],
+      ['service', 'logs', '--tail', '2000', '--timestamps', 'nd-web_web'],
     ]);
   });
 

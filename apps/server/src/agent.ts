@@ -201,6 +201,12 @@ function guardWorkspacePaths(op: string, params: Params, base: string): Params {
   return params;
 }
 
+/** `docker logs --tail` operand: a panel-supplied line count, re-validated here. */
+function logTail(p: Params): string {
+  const tail = str(p, 'tail');
+  return tail !== undefined && /^\d{1,4}$/.test(tail) && Number(tail) >= 1 && Number(tail) <= 5000 ? String(Number(tail)) : '300';
+}
+
 /** `host:container` publish operand, numeric on both sides. */
 function publishArgs(p: Params): string[] {
   const spec = str(p, 'publish');
@@ -318,7 +324,8 @@ const OPS: Record<string, { exe: 'docker' | 'git'; build: Op }> = {
       return ['inspect', validated(str(p, 'name'), RE_NAME, 'name'), '--format', safe];
     },
   },
-  'docker.logs': { exe: 'docker', build: (p) => ['logs', '--tail', '300', '--timestamps', validated(str(p, 'name'), RE_NAME, 'name')] },
+  // 0.16.3: an optional `tail` (1..5000); anything else reads as the 300 lines every release returned.
+  'docker.logs': { exe: 'docker', build: (p) => ['logs', '--tail', logTail(p), '--timestamps', validated(str(p, 'name'), RE_NAME, 'name')] },
   'docker.login': {
     exe: 'docker',
     build: (p) => {

@@ -279,6 +279,8 @@ describe('createClient', () => {
 
       await client.services.logs(1);
       expect(last(calls)).toMatchObject({ url: '/v1/services/1/logs', init: { method: 'GET' } });
+      await client.services.logs(1, { tail: 2000 });
+      expect(last(calls).url).toBe('/v1/services/1/logs?tail=2000');
 
       await client.services.clone(1, { name: 'clone-app' });
       expect(last(calls).url).toBe('/v1/services/1/clone');

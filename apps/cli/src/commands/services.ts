@@ -114,15 +114,24 @@ export async function servicesDeploy(client: NineDeployClient, idStr: string): P
   } catch (err) { error(err instanceof Error ? err.message : String(err)); }
 }
 
-/** `ninedeploy services logs <id>` */
-export async function servicesLogs(client: NineDeployClient, idStr: string): Promise<void> {
+/**
+ * `ninedeploy services logs <id> [--tail N] [--grep text]`: the newest N lines
+ * (default 50, at most 5000), optionally only those containing `text`
+ * (case-insensitive). 0.16.3: it used to print the OLDEST 50 of 300.
+ */
+export async function servicesLogs(client: NineDeployClient, idStr: string, opts: { tail?: string; grep?: string } = {}): Promise<void> {
   const id = Number(idStr);
-  if (!id) return error('Usage: ninedeploy services logs <id>');
+  if (!id) return error('Usage: ninedeploy services logs <id> [--tail N] [--grep text]');
+  const tail = opts.tail === undefined ? 50 : Number(opts.tail);
+  if (!Number.isInteger(tail) || tail < 1 || tail > 5000) return error('--tail takes a number of lines from 1 to 5000');
   header('Runtime Logs');
   try {
-    const { lines } = await client.services.logs(id);
-    if (!lines.trim()) { info('No logs yet.'); return; }
-    console.log(lines.split('\n').slice(0, 50).map((l) => `  ${c.dim(l)}`).join('\n'));
+    const { lines } = await client.services.logs(id, { tail });
+    const needle = opts.grep?.toLowerCase();
+    // An older panel ignores `tail` and sends 300 lines: keep the newest.
+    const shown = lines.split('\n').filter((l) => l.trim() && (!needle || l.toLowerCase().includes(needle))).slice(-tail);
+    if (shown.length === 0) { info(needle ? `No line contains "${opts.grep}".` : 'No logs yet.'); return; }
+    console.log(shown.map((l) => `  ${c.dim(l)}`).join('\n'));
   } catch (err) { error(err instanceof Error ? err.message : String(err)); }
 }
 

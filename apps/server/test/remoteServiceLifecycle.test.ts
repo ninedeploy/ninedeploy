@@ -275,3 +275,21 @@ describe('r667: local container logs are byte-bounded', () => {
     );
   });
 });
+
+/** 0.16.3: `?tail=N` for search and download in the panel, clamped to 1..5000. */
+describe('runtime logs ?tail', () => {
+  it('reads the asked number of lines locally, clamped; an unusable value reads as 300', async () => {
+    const app = await appFor(remote({ serverId: null }));
+    for (const [query, tail] of [['?tail=2000', '2000'], ['?tail=99999', '5000'], ['?tail=all', '300']] as const) {
+      execMocks.capture.mockClear();
+      await app.inject({ method: 'GET', url: `/1/logs${query}`, headers: asUser() });
+      expect(execMocks.capture).toHaveBeenCalledWith('docker', ['logs', '--tail', tail, '--timestamps', 'web-1-17'], { maxOutputBytes: 8 * 1024 * 1024 });
+    }
+  });
+
+  it('passes it to the node agent as a string', async () => {
+    const app = await appFor(remote());
+    await app.inject({ method: 'GET', url: '/1/logs?tail=1000', headers: asUser() });
+    expect(ops()).toContain('4 docker.logs {"name":"web-1-17","tail":"1000"}');
+  });
+});

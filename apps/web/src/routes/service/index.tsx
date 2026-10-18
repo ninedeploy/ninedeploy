@@ -14,6 +14,7 @@ import { ServiceTrafficCard } from './ServiceTrafficCard.js';
 import { ArchitectureTab } from './ArchitectureTab.js';
 import { ManifestTab } from './ManifestTab.js';
 import { ComposeTab } from './ComposeTab.js';
+import { RuntimeLogsCard } from './RuntimeLogsCard.js';
 import { DeploysTab, IN_FLIGHT } from './DeploysTab.js';
 import { UploadSourceCard } from '../../components/UploadSource.js';
 import { EnvironmentTab } from './EnvironmentTab.js';
@@ -181,13 +182,6 @@ export function ServiceDetail() {
       toast('Export failed', 'error');
     }
   };
-  const runtimeLogs = useQuery({
-    queryKey: ['runtime-logs', id],
-    queryFn: () => api.services.logs(id),
-    enabled: showRuntimeLogs && !!service.data?.runtimeId,
-    refetchInterval: showRuntimeLogs ? 3000 : false,
-  });
-
   const svc = service.data;
   // The Compose File tab edits `composeContent`, which only an INLINE stack
   // has: a git-repo compose service keeps its file in the repository, where
@@ -311,21 +305,7 @@ export function ServiceDetail() {
         </div>
       </div>
 
-      {showRuntimeLogs && (
-        <Card className="mt-5">
-          <CardBody>
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
-                <Terminal size={15} className="text-slate-500" /> Runtime logs
-              </div>
-              <span className="text-xs text-slate-600">live · auto-refresh 3s</span>
-            </div>
-            <pre className="h-72 overflow-auto rounded-lg bg-black/40 p-3 font-mono text-xs leading-relaxed text-slate-300 ring-1 ring-inset ring-white/5">
-              {runtimeLogs.data?.lines || 'No logs yet.'}
-            </pre>
-          </CardBody>
-        </Card>
-      )}
+      {showRuntimeLogs && svc.runtimeId && <RuntimeLogsCard serviceId={id} slug={svc.slug} />}
 
       {showExec && svc.runtimeId && tab !== 'terminal' && (
         <div className="mt-5">

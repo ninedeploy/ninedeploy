@@ -131,6 +131,9 @@ describe('agent typed-op argv templates', () => {
     expect(await argvOf('docker.stop', { name: 'c1' })).toEqual(['stop', '-t', '5', 'c1']);
     expect(await argvOf('docker.rm', { name: 'c1' })).toEqual(['rm', '-f', 'c1']);
     expect(await argvOf('docker.logs', { name: 'c1' })).toEqual(['logs', '--tail', '300', '--timestamps', 'c1']);
+    // 0.16.3 `tail`: re-validated on the agent; anything off-format is the old 300.
+    expect(await argvOf('docker.logs', { name: 'c1', tail: '1000' })).toEqual(['logs', '--tail', '1000', '--timestamps', 'c1']);
+    for (const tail of ['0', '5001', '-5', 'all', '0100x']) expect((await argvOf('docker.logs', { name: 'c1', tail }))[2]).toBe('300');
     expect((await argvOf('docker.inspect', { name: 'c1', format: 'state' }))[3]).toContain('{{.State.Status}}');
     expect((await argvOf('docker.inspect', { name: 'c1' }))[3]).toBe('{{.Image}}');
   });
