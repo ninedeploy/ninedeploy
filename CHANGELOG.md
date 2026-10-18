@@ -7,10 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [0.16.2] - 2026-10-18
+
+> Redeploy from CI with a deploy hook, and build one stage of a multi-stage Dockerfile.
 
 ### Upgrade notes
 
+- **Nothing changes until someone turns it on.** Node agents need no update; a node build with a build stage set is refused with a clear message.
 - **Two additive migrations.** `0079_deploy_hooks` adds three columns to `services` (a null token, a null creator and `deploy_hook_operator = false`) and a unique index over the token. No service has a hook until a member turns one on. `0080_build_target` adds the nullable `build_configs.build_target`, so every existing service builds its Dockerfile's last stage as before.
 
 ### Added

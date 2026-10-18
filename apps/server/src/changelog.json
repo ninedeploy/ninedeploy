@@ -1,5 +1,15 @@
 [
   {
+    "version": "0.16.2",
+    "date": "2026-10-18",
+    "title": "Deploy hooks for CI and Dockerfile build stages",
+    "changes": [
+      "Deploy hook (Service → Settings): a secret URL that redeploys the service when a CI job, a cron or a script POSTs to it. It deploys as the member who turned it on, re-checking their access on every call; only that member sees the URL, and another member can rotate it to make it theirs.",
+      "Build stage (Service → Settings → Build): build one stage of a multi-stage Dockerfile (docker build --target). Empty keeps building the last stage.",
+      "Fixed: nodes a service fans out to rebuilt its Dockerfile without the build arguments; they now get the image built on the panel."
+    ]
+  },
+  {
     "version": "0.16.1",
     "date": "2026-10-18",
     "title": "First deploy in a click, UDP and port ranges, several IPs per server",
