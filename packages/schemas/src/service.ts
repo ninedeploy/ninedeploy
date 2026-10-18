@@ -162,8 +162,10 @@ export function formatPortMapping(m: PortMappingLike): string {
  */
 export function parsePortMapping(text: string): PortMapping | string {
   // `…@10.0.0.0/8,203.0.113.4`: the allow list of a TCP port.
-  const [t = '', allowText, extra] = text.trim().split('@');
-  if (extra !== undefined) return `"${text.trim()}" has more than one @.`;
+  const parts = text.trim().split('@');
+  const t = parts[0]!;
+  const allowText = parts[1];
+  if (parts.length > 2) return `"${text.trim()}" has more than one @.`;
   const allowFrom = allowText === undefined ? null : allowText.split(',').map((e) => e.trim()).filter(Boolean);
   if (allowFrom && allowFrom.length === 0) return `"${text.trim()}": list the addresses after @ (10.0.0.0/8,203.0.113.4).`;
   const m = /^(?:(\d{1,3}(?:\.\d{1,3}){3})|\[([0-9A-Fa-f:.]+)\]):(\d{1,5})(?:-(\d{1,5}))?(?::(\d{1,5})(?:-(\d{1,5}))?)?(?:\/(tcp|udp))?$/i.exec(t)
@@ -619,7 +621,8 @@ export function redirectRegexProblem(regex: string): string | null {
   try {
     new RegExp(regex);
   } catch (err) {
-    return `not a valid regular expression (${err instanceof Error ? err.message : String(err)})`;
+    // RegExp only ever throws a SyntaxError here.
+    return `not a valid regular expression (${(err as Error).message})`;
   }
   return null;
 }

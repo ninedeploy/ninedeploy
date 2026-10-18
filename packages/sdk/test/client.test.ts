@@ -1088,6 +1088,37 @@ describe('createClient', () => {
     });
   });
 
+  describe('0.16.1 automatic URLs, onboarding and generated domains', () => {
+    it('reads and sets the automatic URL mode, and detects the public IP', async () => {
+      const { fetchMock, calls } = makeFetch(() => ok({}));
+      const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+      await client.settings.autoUrl.get();
+      expect(last(calls)).toMatchObject({ url: '/v1/settings/auto-url', init: { method: 'GET' } });
+      await client.settings.autoUrl.set({ mode: 'sslip', ip: '203.0.113.7' });
+      expect(last(calls)).toMatchObject({ url: '/v1/settings/auto-url', init: { method: 'PUT' } });
+      expect(JSON.parse(last(calls).init.body ?? '{}')).toEqual({ mode: 'sslip', ip: '203.0.113.7' });
+      await client.settings.autoUrl.detectIp();
+      expect(last(calls)).toMatchObject({ url: '/v1/settings/auto-url/detect-ip', init: { method: 'POST' } });
+    });
+
+    it('reads the onboarding checklist and hides it', async () => {
+      const { fetchMock, calls } = makeFetch(() => ok({}));
+      const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+      await client.onboarding.get();
+      expect(last(calls)).toMatchObject({ url: '/v1/onboarding', init: { method: 'GET' } });
+      await client.onboarding.setDismissed(true);
+      expect(last(calls)).toMatchObject({ url: '/v1/onboarding/dismissed', init: { method: 'PUT' } });
+      expect(JSON.parse(last(calls).init.body ?? '{}')).toEqual({ dismissed: true });
+    });
+
+    it("adds a service's automatic URL as a domain", async () => {
+      const { fetchMock, calls } = makeFetch(() => ok({}));
+      const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+      await client.domains.generate(4);
+      expect(last(calls)).toMatchObject({ url: '/v1/services/4/domains/auto', init: { method: 'POST' } });
+    });
+  });
+
   describe('settings (dns challenge)', () => {
     it('saves the DNS-01 challenge config', async () => {
       const { fetchMock, calls } = makeFetch(() => ok({}));
