@@ -7,12 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [0.16.1] - 2026-10-18
 
-> First deploy, the Coolify way: every page has a **New** button that opens a searchable resource picker, a service gets a working URL without any DNS work, and the Dashboard walks a new operator through setup.
+> First deploy, the Coolify way: a **New** button on every page, working URLs without DNS work and a setup checklist. Port forwarding grows up: UDP, port ranges, a dedicated IP, allow lists, several IPs per server and HTTP/3. Also: deploy from an uploaded folder, Dockerfile build arguments, container options, status badges and redirect rules.
 
 ### Upgrade notes
 
+- **Nothing changes until someone turns it on.** Every new setting defaults to the 0.16.0 behaviour; Traefik is not recreated by the upgrade.
+- **Node agents:** a node keeps working on its current agent. Port mappings on a node-pinned service need the node's agent at 0.16.1; an older one is told to update when such a service deploys.
 - **Five additive migrations.** `0078_host_ips` adds the empty `host_ips` table; `0077_port_mappings` adds the nullable `services.port_mappings` and `services.health_check`; `0076_domain_redirects` adds the nullable `domains.redirects`; `0075_status_badge` adds the nullable `services.badge_token` and its unique index. `0074_build_and_runtime_options` adds three nullable columns, `build_configs.build_args`, `services.health_timeout_seconds` and `services.runtime_options`. No row is touched, so every existing service builds and runs with exactly the `docker build` / `docker run` line it had and keeps the 300 s healthcheck deadline. Rolling back to 0.16.0 ignores the columns. The other new settings are rows in the existing `settings` table.
 - **Automatic URLs stay off on an upgraded panel.** Without an `auto_url_mode` setting nothing changes, and `NINEDEPLOY_WILDCARD_DOMAIN` keeps working exactly as before and wins over the new setting. Only a fresh install turns on sslip.io URLs, and only when the installer recorded a public IPv4 for the panel.
 - **The Settings → Security "Wildcard Domain" card is gone.** It showed the DNS-01 certificate apex as if it gave services URLs, which only the environment variable ever did. The apex itself is unchanged and still set in the DNS challenge form.

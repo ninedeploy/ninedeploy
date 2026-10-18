@@ -1,5 +1,20 @@
 [
   {
+    "version": "0.16.1",
+    "date": "2026-10-18",
+    "title": "First deploy in a click, UDP and port ranges, several IPs per server",
+    "changes": [
+      "A New button on every page opens one picker for apps, databases and one-click templates; ⌘K has deploy shortcuts. Services get an automatic URL (sslip.io or your wildcard domain) without DNS work, and the Dashboard shows a getting-started checklist.",
+      "Deploy without Git: upload a .zip or .tar.gz of a folder, or run `ninedeploy deploy up ./my-app`.",
+      "Port mappings (Network tab): UDP or TCP, single ports or ranges such as 27015-27030, on every address or one IP of the server, also on nodes (agent 0.16.1). A TCP port can take an allow list so only those addresses get in, which a host firewall cannot enforce on Docker ports.",
+      "Several IPs per server (Settings → Security → IP addresses): label them, pick the primary one for DNS hints and automatic URLs, and dedicate one to a service.",
+      "A \"container running\" healthcheck for services with no HTTP or TCP port, such as UDP game servers and workers, plus a healthcheck timeout per service.",
+      "HTTP/3 switch: Traefik always declared HTTP/3 but never published 443/udp; turning it on does.",
+      "Dockerfile build arguments, shared project variables in the panel, path routing, container options (GPUs, shared memory, init, ulimit, capabilities), README status badges and per-domain redirect rules.",
+      "Fixed: two services could save the same direct host port and the second failed its first deploy; a PATCH with only build settings answered 500."
+    ]
+  },
+  {
     "version": "0.16.0",
     "date": "2026-10-17",
     "title": "Panel reachable after install, first-run setup token, npm packages",
