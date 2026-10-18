@@ -160,8 +160,9 @@ describe('assertStepUp lives in lib/stepUp.ts (M6)', () => {
     const auth = read('../src/modules/auth.ts');
     expect(auth).toMatch(/import \{ assertStepUp \} from '\.\.\/lib\/stepUp\.js';/);
     expect(auth).not.toMatch(/function assertStepUp\b/);
-    // The four step-up call sites (2FA setup/enable, passkey options/verify) are still there.
-    expect(auth.match(/await assertStepUp\(app\.db, req, user,/g)).toHaveLength(4);
+    // The step-up call sites (2FA setup/enable, passkey options/verify, and
+    // 0.16.3's recovery-code regeneration) are all still there.
+    expect(auth.match(/await assertStepUp\(app\.db, req, user,/g)).toHaveLength(5);
   });
 
   it('lib/stepUp.ts exports it with the 10-minute freshness window', async () => {

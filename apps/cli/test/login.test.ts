@@ -164,6 +164,19 @@ describe('r197: two-factor login', () => {
     expect(process.exitCode).toBe(0);
   });
 
+  it('0.16.3: anything but six digits is sent as a recovery code', async () => {
+    const login = vi
+      .fn()
+      .mockRejectedValueOnce(new h.NineDeployError(401, 'Two-factor code required', 'totp_required'))
+      .mockResolvedValueOnce({ tokens: { accessToken: 'a', refreshToken: 'r' }, user: { email: 'op@x.io', isOperator: false } });
+    h.createClient.mockReturnValue({ auth: { login } });
+    h.prompt.mockResolvedValueOnce('http://srv').mockResolvedValueOnce('op@x.io').mockResolvedValueOnce(' k7m2-9q4x-p0ab-3hrt ');
+    h.promptHidden.mockResolvedValueOnce('pw');
+    await loginAction();
+    expect(login).toHaveBeenLastCalledWith({ email: 'op@x.io', password: 'pw', recoveryCode: 'k7m2-9q4x-p0ab-3hrt' });
+    expect(process.exitCode).toBe(0);
+  });
+
   it('gives up cleanly on a blank code', async () => {
     const login = vi.fn().mockRejectedValueOnce(new h.NineDeployError(401, 'Two-factor code required', 'totp_required'));
     h.createClient.mockReturnValue({ auth: { login } });

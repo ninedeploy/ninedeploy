@@ -224,6 +224,27 @@ describe('Login', () => {
     await waitFor(() => expect(login).toHaveBeenLastCalledWith('a@b.c', 'secret', '123456'));
   });
 
+  it('0.16.3: a lost authenticator signs in with a recovery code, and can switch back', async () => {
+    const user = userEvent.setup();
+    const totpRequired = Object.assign(new Error('Two-factor code required'), { code: 'totp_required' });
+    const login = vi.fn().mockRejectedValueOnce(totpRequired).mockResolvedValueOnce(undefined);
+    mockOf(api.auth.status).mockResolvedValue({ initialized: true } as never);
+    mockOf(useAuth).mockReturnValue(authValue({ login }) as never);
+    renderWithProviders(<Login />);
+    await user.type(await screen.findByPlaceholderText('you@example.com'), 'a@b.c');
+    await user.type(screen.getByPlaceholderText('••••••••'), 'secret');
+    await user.click(screen.getByRole('button', { name: /Sign in/ }));
+    await user.click(await screen.findByRole('button', { name: /Use a recovery code/ }));
+    expect(screen.queryByPlaceholderText('123456')).not.toBeInTheDocument();
+    // Back and forth keeps both fields reachable.
+    await user.click(screen.getByRole('button', { name: /Use the code from your authenticator app/ }));
+    expect(screen.getByPlaceholderText('123456')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Use a recovery code/ }));
+    await user.type(screen.getByPlaceholderText('xxxx-xxxx-xxxx-xxxx'), ' k7m2-9q4x-p0ab-3hrt ');
+    await user.click(screen.getByRole('button', { name: /Verify & sign in/ }));
+    await waitFor(() => expect(login).toHaveBeenLastCalledWith('a@b.c', 'secret', undefined, 'k7m2-9q4x-p0ab-3hrt'));
+  });
+
   it('shows the error when the two-factor code is wrong', async () => {
     const user = userEvent.setup();
     const totpRequired = Object.assign(new Error('Two-factor code required'), { code: 'totp_required' });

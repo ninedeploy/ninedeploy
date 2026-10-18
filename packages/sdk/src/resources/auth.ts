@@ -74,9 +74,17 @@ export interface AuthApi {
        * sign-in from the last 10 minutes (else 403 `reauth_required`).
        */
       setup: (input?: { password: string }) => Promise<{ secret: string; otpauthUri: string }>;
-      /** Turn 2FA on. `password` is the r502 step-up proof (see `setup`). */
-      enable: (code: string, password?: string) => Promise<{ ok: boolean; totpEnabled: boolean }>;
+      /**
+       * Turn 2FA on. `password` is the r502 step-up proof (see `setup`).
+       * 0.16.3: the answer carries the ten single-use recovery codes, shown only here.
+       */
+      enable: (code: string, password?: string) => Promise<{ ok: boolean; totpEnabled: boolean; recoveryCodes?: string[] }>;
       disable: (input: { password: string; code: string }) => Promise<{ ok: boolean; totpEnabled: boolean }>;
+      /** 0.16.3 recovery codes: how many are unused, and a new set (password + a current code) that replaces the old one. */
+      recoveryCodes: {
+        status: () => Promise<{ totpEnabled: boolean; remaining: number }>;
+        regenerate: (input: { code: string; password?: string }) => Promise<{ recoveryCodes: string[] }>;
+      };
     };
     me: () => Promise<PublicUser>;
     tokens: {
@@ -239,8 +247,12 @@ export function authApi(t: Transport): AuthApi {
       twoFactor: {
         setup: (input?: { password: string }) => send<{ secret: string; otpauthUri: string }>('POST', '/v1/auth/2fa/setup', input ?? {}),
         enable: (code, password) =>
-          send<{ ok: boolean; totpEnabled: boolean }>('POST', '/v1/auth/2fa/enable', password ? { code, password } : { code }),
+          send<{ ok: boolean; totpEnabled: boolean; recoveryCodes?: string[] }>('POST', '/v1/auth/2fa/enable', password ? { code, password } : { code }),
         disable: (input) => send<{ ok: boolean; totpEnabled: boolean }>('POST', '/v1/auth/2fa/disable', input),
+        recoveryCodes: {
+          status: () => get<{ totpEnabled: boolean; remaining: number }>('/v1/auth/2fa/recovery-codes'),
+          regenerate: (input) => send<{ recoveryCodes: string[] }>('POST', '/v1/auth/2fa/recovery-codes', input),
+        },
       },
       me: () => get<PublicUser>('/v1/auth/me'),
       tokens: {

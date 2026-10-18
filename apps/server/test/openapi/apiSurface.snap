@@ -65,6 +65,7 @@ GET /v1/about public -
 GET /v1/activity operator -
 GET /v1/ai/config authed -
 GET /v1/alerts authed nd://scope/read/alerts
+GET /v1/auth/2fa/recovery-codes self -
 GET /v1/auth/me self -
 GET /v1/auth/oidc/:slug/callback token -
 GET /v1/auth/oidc/:slug/login public -
@@ -263,6 +264,7 @@ POST /v1/ai/suggest-manifest operator -
 POST /v1/alerts operator nd://scope/write/alerts
 POST /v1/auth/2fa/disable self -
 POST /v1/auth/2fa/enable self -
+POST /v1/auth/2fa/recovery-codes self -
 POST /v1/auth/2fa/setup self -
 POST /v1/auth/forgot-password public -
 POST /v1/auth/login public -

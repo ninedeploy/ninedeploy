@@ -51,6 +51,9 @@ export function Login() {
   const [setupToken, setSetupToken] = useState(takeSetupTokenFragment);
   const [totpCode, setTotpCode] = useState('');
   const [needsTotp, setNeedsTotp] = useState(false);
+  // 0.16.3: a lost authenticator signs in with a single-use recovery code instead.
+  const [useRecovery, setUseRecovery] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -70,7 +73,8 @@ export function Login() {
     setError(null);
     setBusy(true);
     try {
-      if (initialized) await login(email, password, needsTotp ? totpCode : undefined);
+      if (initialized && needsTotp && useRecovery) await login(email, password, undefined, recoveryCode.trim());
+      else if (initialized) await login(email, password, needsTotp ? totpCode : undefined);
       else if (setupTokenRequired) await setup(email, password, name || undefined, setupToken.trim());
       else await setup(email, password, name || undefined);
       navigate(from, { replace: true });
@@ -174,7 +178,7 @@ export function Login() {
               />
             </Field>
 
-            {needsTotp && (
+            {needsTotp && !useRecovery && (
               <Field label="Two-factor code">
                 <Input
                   inputMode="numeric"
@@ -187,6 +191,33 @@ export function Login() {
                   autoFocus
                 />
               </Field>
+            )}
+            {needsTotp && useRecovery && (
+              <Field label="Recovery code" hint="One of the codes you saved when you turned two-factor on. Each works once.">
+                <Input
+                  required
+                  maxLength={40}
+                  value={recoveryCode}
+                  onChange={(e) => setRecoveryCode(e.target.value)}
+                  placeholder="xxxx-xxxx-xxxx-xxxx"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="font-mono"
+                  autoFocus
+                />
+              </Field>
+            )}
+            {needsTotp && (
+              <button
+                type="button"
+                onClick={() => {
+                  setUseRecovery((v) => !v);
+                  setError(null);
+                }}
+                className="text-xs text-slate-400 underline-offset-2 hover:text-slate-200 hover:underline"
+              >
+                {useRecovery ? 'Use the code from your authenticator app' : 'Lost your authenticator? Use a recovery code'}
+              </button>
             )}
 
             {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-300">{error}</p>}

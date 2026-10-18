@@ -49,6 +49,7 @@ function Probe() {
       <span data-testid="email">{user?.email ?? 'none'}</span>
       <button type="button" onClick={() => void login('a@b.c', 'pw')}>login</button>
       <button type="button" onClick={() => void login('a@b.c', 'pw', '123456')}>login-2fa</button>
+      <button type="button" onClick={() => void login('a@b.c', 'pw', undefined, 'k7m2-9q4x-p0ab-3hrt')}>login-recovery</button>
       <button type="button" onClick={() => void setup('a@b.c', 'pw', 'Ann')}>setup</button>
       <button type="button" onClick={logout}>logout</button>
       <button type="button" onClick={() => void loginWithPasskey().catch(() => undefined)}>login-passkey</button>
@@ -237,6 +238,13 @@ describe('AuthProvider', () => {
     await user.click(screen.getByText('login-2fa'));
     expect(apiMock.api.auth.login).toHaveBeenCalledWith({ email: 'a@b.c', password: 'pw', totpCode: '123456' });
     await waitFor(() => expect(apiMock.setSessionTokens).toHaveBeenCalledWith(ACCESS_1, REFRESH_1));
+  });
+
+  it('0.16.3: logs in with a recovery code in place of the two-factor code', async () => {
+    const user = userEvent.setup();
+    renderAuth();
+    await user.click(screen.getByText('login-recovery'));
+    expect(apiMock.api.auth.login).toHaveBeenCalledWith({ email: 'a@b.c', password: 'pw', recoveryCode: 'k7m2-9q4x-p0ab-3hrt' });
   });
 
   it('propagates login failures', async () => {

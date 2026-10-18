@@ -13,6 +13,7 @@ import {
   stepUp,
   twoFactorDisable,
   twoFactorEnable,
+  twoFactorRecoveryRegenerate,
   twoFactorSetup,
 } from '@ninedeploy/schemas';
 import type { RouteSpecMap } from '../types.js';
@@ -145,8 +146,25 @@ export const authSpecs: RouteSpecMap = {
     tag: 'auth',
     floor: 'self',
     body: twoFactorEnable,
-    responseType: '{ ok: boolean; totpEnabled: boolean }',
+    description: 'Returns the ten single-use recovery codes, shown only here.',
+    responseType: '{ ok: boolean; totpEnabled: boolean; recoveryCodes: string[] }',
     validation: 'zod',
+    sensitive: true,
+  },
+  'GET /v1/auth/2fa/recovery-codes': {
+    summary: 'How many unused 2FA recovery codes the signed-in user has',
+    tag: 'auth',
+    floor: 'self',
+    responseType: '{ totpEnabled: boolean; remaining: number }',
+  },
+  'POST /v1/auth/2fa/recovery-codes': {
+    summary: 'Replace the 2FA recovery codes (step-up and a current code required)',
+    tag: 'auth',
+    floor: 'self',
+    body: twoFactorRecoveryRegenerate,
+    responseType: '{ recoveryCodes: string[] }',
+    validation: 'zod',
+    sensitive: true,
   },
   'POST /v1/auth/2fa/disable': {
     summary: 'Disable TOTP two-factor authentication',

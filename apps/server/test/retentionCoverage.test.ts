@@ -33,6 +33,8 @@ const RETENTION: Record<string, Retention> = {
   image_transfers: { swept: 'image-transfers' },
   // 0.16.1 (migration 0078)
   host_ips: { config: "bounded by the panel host's addresses: one row per address an operator annotated (unique ip)" },
+  // 0.16.3 (migration 0081)
+  user_recovery_codes: { config: 'bounded by users: one set of ten per account, replaced on regenerate, deleted with 2FA and cascading with the user' },
 };
 
 /** The tables of v0.14.0 (migrations through 0070), frozen. */

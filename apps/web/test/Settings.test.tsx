@@ -961,6 +961,61 @@ describe('Settings', () => {
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Two-factor authentication enabled', 'success'));
   });
 
+  // ── 0.16.3 recovery codes ─────────────────────────────────────────────
+  const CODES = Array.from({ length: 10 }, (_, i) => `abcd-efgh-jkmn-pq${String(i).padStart(2, '0')}`);
+
+  it('shows the recovery codes once after enabling, to copy or download', async () => {
+    const user = userEvent.setup();
+    mockOf(api.auth.twoFactor.setup).mockResolvedValue({ secret: 'S', otpauthUri: 'otpauth://totp/x' } as never);
+    mockOf(api.auth.twoFactor.enable).mockResolvedValue({ ok: true, totpEnabled: true, recoveryCodes: CODES } as never);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    renderWithProviders(<Settings />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Set up 2FA' }));
+    fireEvent.change(await screen.findByPlaceholderText('Password'), { target: { value: PW } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await user.type(await screen.findByPlaceholderText('123456'), '123456');
+    fireEvent.click(screen.getByRole('button', { name: 'Enable 2FA' }));
+    expect(await screen.findByText('Save your recovery codes')).toBeInTheDocument();
+    expect(screen.getAllByRole('listitem').filter((li) => CODES.includes(li.textContent ?? ''))).toHaveLength(10);
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(CODES.join('\n')));
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+    expect(URL.createObjectURL).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'I saved them' }));
+    expect(screen.queryByText('Save your recovery codes')).not.toBeInTheDocument();
+  });
+
+  it('warns when none are left and creates a new set with the password and a current code', async () => {
+    mockOf(api.auth.twoFactor.recoveryCodes.status).mockResolvedValue({ totpEnabled: true, remaining: 0 } as never);
+    mockOf(api.auth.twoFactor.recoveryCodes.regenerate)
+      .mockRejectedValueOnce(new Error('Invalid two-factor code'))
+      .mockResolvedValueOnce({ recoveryCodes: CODES } as never);
+    renderWithProviders(<Settings />);
+    expect(await screen.findByText(/No recovery codes/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create recovery codes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create recovery codes' }));
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: PW } });
+    fireEvent.change(screen.getByLabelText('Authenticator code'), { target: { value: '12a3456' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create new codes' }));
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Invalid two-factor code', 'error'));
+    fireEvent.click(screen.getByRole('button', { name: 'Create new codes' }));
+    await waitFor(() => expect(api.auth.twoFactor.recoveryCodes.regenerate).toHaveBeenLastCalledWith({ code: '123456', password: PW }));
+    expect(await screen.findByText('Save your recovery codes')).toBeInTheDocument();
+  });
+
+  it('counts the codes left; nothing shows without 2FA', async () => {
+    mockOf(api.auth.twoFactor.recoveryCodes.status).mockResolvedValue({ totpEnabled: true, remaining: 1 } as never);
+    const { unmount } = renderWithProviders(<Settings />);
+    expect(await screen.findByText('1 recovery code left.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New recovery codes' })).toBeInTheDocument();
+    unmount();
+    mockOf(api.auth.twoFactor.recoveryCodes.status).mockResolvedValue({ totpEnabled: true, remaining: 7 } as never);
+    renderWithProviders(<Settings />);
+    expect(await screen.findByText('7 recovery codes left.')).toBeInTheDocument();
+  });
+
   it('r502: surfaces a step-up refusal from enable instead of blaming the code', async () => {
     const user = userEvent.setup();
     mockOf(api.auth.twoFactor.setup).mockResolvedValue({ secret: 'S', otpauthUri: 'otpauth://totp/x' } as never);

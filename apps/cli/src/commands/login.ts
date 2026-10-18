@@ -31,13 +31,14 @@ export async function loginAction(): Promise<void> {
       session = await client.auth.login({ email, password });
     } catch (err) {
       if (!(err instanceof NineDeployError) || err.code !== 'totp_required') throw err;
-      const totpCode = (await prompt('Two-factor code')).trim();
-      if (!totpCode) {
+      const code = (await prompt('Two-factor code (or a recovery code)')).trim();
+      if (!code) {
         console.error('Two-factor code is required.');
         process.exitCode = 1;
         return;
       }
-      session = await client.auth.login({ email, password, totpCode });
+      // 0.16.3: six digits are the authenticator's; anything else is a recovery code.
+      session = await client.auth.login(/^\d{6}$/.test(code) ? { email, password, totpCode: code } : { email, password, recoveryCode: code });
     }
     // Both tokens: the access token alone dies with the 15-minute TTL and
     // every scripted session used to die with it (client.ts now refreshes).

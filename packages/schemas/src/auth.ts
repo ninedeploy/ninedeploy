@@ -18,6 +18,8 @@ export const login = z.object({
   password: z.string().min(1),
   /** Required when the account has 2FA enabled. */
   totpCode: z.string().regex(/^\d{6}$/).optional(),
+  /** 0.16.3: a single-use recovery code in place of `totpCode` (lost authenticator). */
+  recoveryCode: z.string().min(1).max(64).optional(),
 });
 export type Login = z.infer<typeof login>;
 
@@ -41,6 +43,10 @@ export type StepUp = z.infer<typeof stepUp>;
 /** Turning 2FA on: the code from the authenticator + the step-up proof (r502). */
 export const twoFactorEnable = twoFactorCode.extend({ password: z.string().min(1).max(1024).optional() });
 export type TwoFactorEnable = z.infer<typeof twoFactorEnable>;
+
+/** 0.16.3: a new set of recovery codes needs the step-up proof AND a current authenticator code. */
+export const twoFactorRecoveryRegenerate = twoFactorEnable;
+export type TwoFactorRecoveryRegenerate = TwoFactorEnable;
 
 export const twoFactorDisable = z.object({
   password: z.string().min(1),

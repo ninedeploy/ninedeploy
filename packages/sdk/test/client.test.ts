@@ -222,6 +222,11 @@ describe('createClient', () => {
       expect(JSON.parse(last(calls).init.body ?? '{}')).toEqual({ code: '123456', password: 'pw' });
       await client.auth.twoFactor.disable({ password: 'p', code: '123456' });
       expect(last(calls).url).toBe('/v1/auth/2fa/disable');
+      await client.auth.twoFactor.recoveryCodes.status();
+      expect(last(calls)).toMatchObject({ url: '/v1/auth/2fa/recovery-codes', init: { method: 'GET' } });
+      await client.auth.twoFactor.recoveryCodes.regenerate({ code: '123456', password: 'pw' });
+      expect(last(calls)).toMatchObject({ url: '/v1/auth/2fa/recovery-codes', init: { method: 'POST' } });
+      expect(JSON.parse(last(calls).init.body ?? '{}')).toEqual({ code: '123456', password: 'pw' });
 
       await client.auth.me();
       expect(last(calls).url).toBe('/v1/auth/me');

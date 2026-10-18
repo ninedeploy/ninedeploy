@@ -650,6 +650,8 @@ export const MATRIX: Record<string, Rule> = {
   'POST /v1/auth/2fa/setup': R('self', { noPositive: 'step-up: needs the current password' }),
   'POST /v1/auth/2fa/enable': R('self'),
   'POST /v1/auth/2fa/disable': R('self'),
+  'GET /v1/auth/2fa/recovery-codes': R('self'),
+  'POST /v1/auth/2fa/recovery-codes': R('self', { noPositive: 'step-up and a live TOTP code' }),
   'GET /v1/auth/passkey': R('self'),
   'DELETE /v1/auth/passkey/:id': R('self'),
   'POST /v1/auth/passkey/register/options': R('self', { noPositive: 'step-up: needs the current password' }),

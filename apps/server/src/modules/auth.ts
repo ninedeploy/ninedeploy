@@ -2,7 +2,7 @@ import { and, count, eq, sql } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
 import { apiTokens, type DB, oauthIdentities, oidcProviders, type OidcProvider, sessions as sessionsTable, settings, users, webauthnCredentials, type User } from '@ninedeploy/db';
 import type { PublicUser, Register } from '@ninedeploy/schemas';
-import { createApiToken, forgotPassword, login, oidcProviderCreate, oidcProviderUpdate, type OidcProviderEntry, type OidcPublicProvider, passkeyLoginVerify, passkeyRegisterVerify, passwordChange, passwordResetWithToken, refresh, register, stepUp, twoFactorDisable, twoFactorEnable, twoFactorSetup } from '@ninedeploy/schemas';
+import { createApiToken, forgotPassword, login, oidcProviderCreate, oidcProviderUpdate, type OidcProviderEntry, type OidcPublicProvider, passkeyLoginVerify, passkeyRegisterVerify, passwordChange, passwordResetWithToken, refresh, register, stepUp, twoFactorDisable, twoFactorEnable, twoFactorRecoveryRegenerate, twoFactorSetup } from '@ninedeploy/schemas';
 import { config } from '../config.js';
 import { decrypt, encrypt, hashPassword, randomToken, secretEquals, sha256, verifyPassword } from '../lib/crypto.js';
 import { normalizeEmail } from '../lib/authHelpers.js';
@@ -17,6 +17,7 @@ import { getSettingJson, setSettingJson, setSettingString } from '../lib/setting
 import { STUDIO_EPOCH_KEY } from './studioProxy.js';
 import { generateSecret, otpauthUri } from '../lib/totp.js';
 import { consumeTotpCode } from '../lib/totpReplay.js';
+import { clearRecoveryCodes, consumeRecoveryCode, issueRecoveryCodes, remainingRecoveryCodes } from '../lib/recoveryCodes.js';
 import { audit } from '../lib/audit.js';
 import { assertStepUp } from '../lib/stepUp.js';
 import { assertSetupToken, clearSetupTokenFile, requiredSetupToken } from '../lib/setupToken.js';
@@ -348,13 +349,24 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     // 2FA: a missing code gets a distinct (but non-enumerating) error; a wrong
     // code counts as a failed login for lockout purposes.
     if (user.totpEnabled && user.totpSecretEncrypted) {
-      if (!input.totpCode) throw unauthorized('Two-factor code required', 'totp_required');
-      // L-10: consume, don't just verify — a replayed code is refused even
-      // though it is still inside its drift window.
-      if (!(await consumeTotpCode(app.db, user, input.totpCode))) {
-        const locked = recordFailure(input.email, req.ip);
-        if (locked) void audit(app.db, null, 'auth.lockout', input.email);
-        throw unauthorized('Invalid two-factor code', 'totp_invalid');
+      if (!input.totpCode && input.recoveryCode) {
+        // 0.16.3: a lost authenticator. A wrong recovery code counts toward
+        // lockout like a wrong TOTP code; a right one is spent for good.
+        if (!(await consumeRecoveryCode(app.db, user.id, input.recoveryCode))) {
+          const locked = recordFailure(input.email, req.ip);
+          if (locked) void audit(app.db, null, 'auth.lockout', input.email);
+          throw unauthorized('Invalid recovery code', 'recovery_code_invalid');
+        }
+        void audit(app.db, user.id, 'auth.recovery_code_used', user.email, { remaining: await remainingRecoveryCodes(app.db, user.id) });
+      } else {
+        if (!input.totpCode) throw unauthorized('Two-factor code required', 'totp_required');
+        // L-10: consume, don't just verify — a replayed code is refused even
+        // though it is still inside its drift window.
+        if (!(await consumeTotpCode(app.db, user, input.totpCode))) {
+          const locked = recordFailure(input.email, req.ip);
+          if (locked) void audit(app.db, null, 'auth.lockout', input.email);
+          throw unauthorized('Invalid two-factor code', 'totp_invalid');
+        }
       }
     }
     // SCIM-deprovisioned accounts verify fine (their credentials were hashed
@@ -565,6 +577,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       .update(users)
       .set({ totpSecretEncrypted: encrypt(secret), totpEnabled: false })
       .where(eq(users.id, user.id));
+    // The old set belonged to the old enrolment; enabling issues a new one.
+    await clearRecoveryCodes(app.db, user.id);
     void audit(app.db, user.id, 'auth.2fa_setup', user.email);
     return { secret, otpauthUri: otpauthUri(secret, user.email) };
   });
@@ -576,8 +590,30 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     await assertStepUp(app.db, req, user, input.password);
     if (!(await consumeTotpCode(app.db, user, input.code))) throw badRequest('Invalid two-factor code');
     await app.db.update(users).set({ totpEnabled: true }).where(eq(users.id, user.id));
+    // 0.16.3: shown once, here; only their hashes are kept.
+    const recoveryCodes = await issueRecoveryCodes(app.db, user.id);
     void audit(app.db, user.id, 'auth.2fa_enabled', user.email);
-    return { ok: true, totpEnabled: true };
+    return { ok: true, totpEnabled: true, recoveryCodes };
+  });
+
+  // 0.16.3 recovery codes: how many are left, and a new set (which replaces
+  // the old one) for the holder of the password and the authenticator.
+  app.get('/2fa/recovery-codes', { onRequest: [app.authenticate] }, async (req) => {
+    const user = await app.db.query.users.findFirst({ where: eq(users.id, req.user!.id), columns: { id: true, totpEnabled: true } });
+    if (!user) throw unauthorized();
+    return { totpEnabled: user.totpEnabled, remaining: user.totpEnabled ? await remainingRecoveryCodes(app.db, user.id) : 0 };
+  });
+
+  app.post('/2fa/recovery-codes', { onRequest: [app.authenticate, app.requireInteractive], config: { rateLimit: AUTH_LIMIT } }, async (req) => {
+    const input = twoFactorRecoveryRegenerate.parse(req.body);
+    const user = await app.db.query.users.findFirst({ where: eq(users.id, req.user!.id) });
+    if (!user) throw unauthorized();
+    if (!user.totpEnabled || !user.totpSecretEncrypted) throw badRequest('Turn two-factor authentication on first');
+    await assertStepUp(app.db, req, user, input.password);
+    if (!(await consumeTotpCode(app.db, user, input.code))) throw badRequest('Invalid two-factor code');
+    const recoveryCodes = await issueRecoveryCodes(app.db, user.id);
+    void audit(app.db, user.id, 'auth.recovery_codes_regenerated', user.email);
+    return { recoveryCodes };
   });
 
   app.post('/2fa/disable', { onRequest: [app.authenticate, app.requireInteractive], config: { rateLimit: AUTH_LIMIT } }, async (req) => {
@@ -596,6 +632,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       .set({ totpEnabled: false, totpSecretEncrypted: null, tokenVersion: sql`${users.tokenVersion} + 1` })
       .where(eq(users.id, user.id));
     await revokeAllSessions(app.db, user.id);
+    await clearRecoveryCodes(app.db, user.id);
     void audit(app.db, user.id, 'auth.2fa_disabled', user.email);
     return { ok: true, totpEnabled: false };
   });

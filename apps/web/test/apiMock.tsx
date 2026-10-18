@@ -31,7 +31,12 @@ export function createFakeApiModule() {
       changePassword: vi.fn(),
       forgotPassword: vi.fn(),
       resetPasswordWithToken: vi.fn(),
-      twoFactor: { setup: vi.fn(), enable: vi.fn(), disable: vi.fn() },
+      twoFactor: {
+        setup: vi.fn(),
+        enable: vi.fn(),
+        disable: vi.fn(),
+        recoveryCodes: { status: vi.fn().mockResolvedValue({ totpEnabled: false, remaining: 0 }), regenerate: vi.fn() },
+      },
       passkeys: {
         list: vi.fn(),
         registerOptions: vi.fn(),

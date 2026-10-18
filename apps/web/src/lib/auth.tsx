@@ -7,7 +7,8 @@ import { clearSsoFragmentResult, takeSsoFragment, type SsoFragmentResult } from 
 interface AuthContextValue {
   user: PublicUser | null;
   loading: boolean;
-  login: (email: string, password: string, totpCode?: string) => Promise<void>;
+  /** `recoveryCode` (0.16.3) stands in for `totpCode` when the authenticator is lost. */
+  login: (email: string, password: string, totpCode?: string, recoveryCode?: string) => Promise<void>;
   /** `setupToken` (0.16): the installer's one-time token, when the instance requires one. */
   setup: (email: string, password: string, name?: string, setupToken?: string) => Promise<void>;
   /** Passwordless sign-in with a registered passkey (WebAuthn). */
@@ -79,8 +80,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     ssoError: sso.kind === 'refused' ? sso.message : null,
     ssoReturnTo: sso.kind === 'accepted' ? sso.returnTo : null,
-    login: async (email, password, totpCode) => {
-      const session = await api.auth.login(totpCode ? { email, password, totpCode } : { email, password });
+    login: async (email, password, totpCode, recoveryCode) => {
+      const session = await api.auth.login(
+        totpCode ? { email, password, totpCode } : recoveryCode ? { email, password, recoveryCode } : { email, password },
+      );
       sessionRevision.current++;
       queryClient.clear();
       setSessionTokens(session.tokens.accessToken, session.tokens.refreshToken);

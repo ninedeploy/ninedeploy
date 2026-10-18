@@ -5,7 +5,7 @@ import { api, setSessionTokens } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
 import { QrCode as QrCodeImage } from '../../components/QrCode.js';
 import { Button, Card, CardBody, Skeleton } from '../../components/ui.js';
-import { formatDateTime, useCopy } from '../../lib/format.js';
+import { downloadBlob, formatDateTime, useCopy } from '../../lib/format.js';
 
 /** Account: self-service password change + two-factor authentication. */
 export function AccountSection() {
@@ -332,6 +332,9 @@ function TwoFactorCard() {
   const [disablePassword, setDisablePassword] = useState('');
   const [disableCode, setDisableCode] = useState('');
   const [showDisable, setShowDisable] = useState(false);
+  // 0.16.3: recovery codes are shown once — right after enabling or regenerating.
+  const [shownCodes, setShownCodes] = useState<string[] | null>(null);
+  const qc = useQueryClient();
 
   // The server requires the account password when regenerating the secret of
   // an already-enabled 2FA — always offer the field.
@@ -348,10 +351,12 @@ function TwoFactorCard() {
   });
   const enable = useMutation({
     mutationFn: () => api.auth.twoFactor.enable(code, stepPassword || undefined),
-    onSuccess: () => {
+    onSuccess: (res) => {
       setSetup(null);
       setCode('');
       setStepPassword('');
+      setShownCodes(res.recoveryCodes ?? null);
+      void qc.invalidateQueries({ queryKey: ['2fa-recovery'] });
       toast('Two-factor authentication enabled', 'success');
     },
     onError: (err) => {
@@ -392,6 +397,10 @@ function TwoFactorCard() {
         <p className="mb-4 text-xs text-slate-500">
           Require a time-based one-time code (TOTP) from an authenticator app in addition to your password.
         </p>
+
+        {shownCodes && <RecoveryCodesShown codes={shownCodes} onDone={() => setShownCodes(null)} />}
+
+        {!setup && !showDisable && !showSetupPassword && !shownCodes && <RecoveryCodesStatus onIssued={setShownCodes} />}
 
         {!setup && !showDisable && !showSetupPassword && (
           <div className="flex gap-2">
@@ -540,5 +549,120 @@ function TwoFactorCard() {
         )}
       </CardBody>
     </Card>
+  );
+}
+
+
+// ── Two-factor recovery codes (0.16.3) ───────────────────────────────────
+/** How many codes are left, a warning at none, and a new set (password + a current code). */
+function RecoveryCodesStatus({ onIssued }: { onIssued: (codes: string[]) => void }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  // An older panel has no such route: the read fails and nothing is shown.
+  const status = useQuery({ queryKey: ['2fa-recovery'], queryFn: () => api.auth.twoFactor.recoveryCodes.status(), retry: false });
+  const regenerate = useMutation({
+    mutationFn: () => api.auth.twoFactor.recoveryCodes.regenerate({ code, password }),
+    onSuccess: (res) => {
+      setOpen(false);
+      setPassword('');
+      setCode('');
+      onIssued(res.recoveryCodes);
+      void qc.invalidateQueries({ queryKey: ['2fa-recovery'] });
+    },
+    onError: (err: Error) => toast(err.message || 'Could not create new recovery codes', 'error'),
+  });
+
+  if (!status.data?.totpEnabled) return null;
+  const { remaining } = status.data;
+  return (
+    <div className="mb-4 max-w-md rounded-lg border border-white/[0.06] bg-white/[0.02] p-3 text-xs">
+      <div className="flex items-center justify-between gap-3">
+        <span className={remaining === 0 ? 'text-amber-300' : 'text-slate-400'}>
+          {remaining === 0
+            ? 'No recovery codes. Create a set so a lost phone does not lock you out.'
+            : `${remaining} recovery code${remaining === 1 ? '' : 's'} left.`}
+        </span>
+        {!open && (
+          <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
+            {remaining === 0 ? 'Create recovery codes' : 'New recovery codes'}
+          </Button>
+        )}
+      </div>
+      {open && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (password && code.length === 6) regenerate.mutate();
+          }}
+          className="mt-3 grid gap-2"
+        >
+          <p className="text-slate-500">A new set replaces the old one: the codes you saved before stop working.</p>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            aria-label="Password"
+            autoComplete="current-password"
+            className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+          />
+          <input
+            type="text"
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+            placeholder="6-digit code"
+            aria-label="Authenticator code"
+            inputMode="numeric"
+            className="w-36 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 font-mono text-sm outline-none focus:border-indigo-500"
+          />
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" disabled={!password || code.length !== 6 || regenerate.isPending}>
+              {regenerate.isPending ? 'Creating…' : 'Create new codes'}
+            </Button>
+            <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-400 hover:underline">
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
+/** The codes of a new set, shown once, to copy or download. */
+function RecoveryCodesShown({ codes, onDone }: { codes: string[]; onDone: () => void }) {
+  const { toast } = useToast();
+  const { copy } = useCopy();
+  const text = codes.join('\n');
+  return (
+    <div className="mb-4 max-w-md space-y-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.04] p-5">
+      <div>
+        <p className="text-sm font-semibold text-emerald-200">Save your recovery codes</p>
+        <p className="mt-1 text-xs text-slate-400">
+          If you lose your authenticator, sign in with one of these instead of a code. Each works once. They are shown only now.
+        </p>
+      </div>
+      <ul className="grid grid-cols-2 gap-1.5 font-mono text-xs text-slate-200" aria-label="Recovery codes">
+        {codes.map((c) => (
+          <li key={c} className="rounded bg-black/40 px-2 py-1 text-center">
+            {c}
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="secondary" onClick={() => void copy(text).then((ok) => toast(ok ? 'Copied' : 'Copy failed', ok ? 'success' : 'error'))}>
+          Copy
+        </Button>
+        <Button size="sm" variant="secondary" onClick={() => downloadBlob(`${text}\n`, 'ninedeploy-recovery-codes.txt', 'text/plain')}>
+          Download
+        </Button>
+        <Button size="sm" onClick={onDone}>
+          I saved them
+        </Button>
+      </div>
+    </div>
   );
 }

@@ -129,7 +129,9 @@ describe('auth two-factor routes', () => {
     await app.register(authRoutes);
     const res = await app.inject({ method: 'POST', url: '/2fa/enable', headers: asUser(), payload: { code: '123456', password: GOOD } });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ ok: true, totpEnabled: true });
+    // 0.16.3: and hands out the recovery codes, once.
+    expect(res.json()).toEqual({ ok: true, totpEnabled: true, recoveryCodes: expect.any(Array) });
+    expect(res.json().recoveryCodes).toHaveLength(10);
   });
 
   it('enable rejects without a prior setup', async () => {

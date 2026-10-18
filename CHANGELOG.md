@@ -9,7 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- **One additive migration.** `0081_recovery_codes` adds the empty `user_recovery_codes` table. Accounts with 2FA sign in exactly as before; they have no recovery codes until they create a set under Settings → Account.
+
 ### Added
+
+- **Two-factor recovery codes**: turning 2FA on hands out ten single-use codes, shown once to copy or download. At sign-in, one stands in for the authenticator code (web and CLI). Settings → Account shows how many are left and creates a new set (password and a current code). The help text already promised them; the panel had none.
 
 - **Search and download for runtime logs** (Service → Runtime logs), like Coolify's and Dokploy's log viewers: filter to the lines that contain a text (case-insensitive, matches highlighted), load the last 300, 1000 or 5000 lines, pause the live refresh, and download what is loaded. API `GET /v1/services/:id/logs?tail=N` (1 to 5000, default 300 as before); SDK `services.logs(id, { tail })`. A node on an agent older than 0.16.3 returns the last 300 lines.
 - **CLI:** `ninedeploy services logs <id> --tail N --grep text`.

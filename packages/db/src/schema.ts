@@ -1991,6 +1991,19 @@ export const passwordResetTokens = sqliteTable('password_reset_tokens', {
   createdAt: tsUpdatable('created_at'),
 }, (t) => [index('password_reset_tokens_user_idx').on(t.userId)]);
 
+// 0.16.3: single-use 2FA recovery codes. A set of ten is issued when 2FA is
+// turned on (or regenerated) and replaces the previous set; turning 2FA off
+// or re-enrolling deletes it. Only the sha256 of each code is stored.
+export const userRecoveryCodes = sqliteTable('user_recovery_codes', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  codeHash: text('code_hash').notNull(),
+  usedAt: integer('used_at', { mode: 'timestamp' }),
+  createdAt: ts('created_at'),
+}, (t) => [index('user_recovery_codes_user_idx').on(t.userId)]);
+
 // ─── configuration center & plugins ──────────────────────────────────────────
 export const configEntries = sqliteTable(
   'config_entries',
