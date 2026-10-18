@@ -388,6 +388,8 @@ export const updateService = z.object({
   healthCommand: healthCommand.nullable().optional(),
   /** 0.16.3: custom container labels; {} or null clears them. */
   dockerLabels: dockerLabels.nullable().optional(),
+  /** 0.16.3: fetch Git LFS files after checkout (builds on the panel host). */
+  gitLfs: z.boolean().optional(),
   /** Operator only: advanced container options; null clears them all. */
   runtimeOptions: runtimeOptions.nullable().optional(),
   port: z.number().int().min(1).max(65535).optional(),
@@ -479,6 +481,8 @@ export const service = z.object({
   healthCommand: z.string().nullable().optional(),
   /** Custom container labels (0.16.3); {} = none. */
   dockerLabels: z.record(z.string(), z.string()).optional(),
+  /** Git LFS files are fetched after checkout (0.16.3). */
+  gitLfs: z.boolean().optional(),
   /** Advanced container options (0.16.1); null = none. */
   runtimeOptions: runtimeOptions.nullable().optional(),
   autoUrl: z.string().nullable(),

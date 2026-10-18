@@ -102,6 +102,16 @@ Each rule becomes one `docker run -p` operand (`-p 203.0.113.7:27015-27030:27015
 - **Monorepo Watch-Paths**: Set glob patterns (e.g. `apps/api/**`, `packages/shared/**`). Deployments trigger only when matching files change in the commit diff.
 - **CI Opt-Out**: Commits containing `[skip ci]` or `[skip cd]` in the commit message are ignored by webhook triggers.
 
+### Git LFS (0.16.3)
+
+A repository that keeps models, media or datasets in Git LFS checks out *pointer files* (a few lines of text) in their place. Turn on **Service → Settings → Git LFS** and each deploy replaces them with their content before the build.
+
+- The files come from the repository's own LFS server, `<repository URL>.git/info/lfs`, with the service's Git credential (an access token or a GitHub App). A repository's `.lfsconfig` is ignored, so a repository cannot point the panel at another server. HTTPS repositories only; an SSH (deploy key) repository is refused with a message.
+- Every request, including each download and each redirect to object storage, passes the same egress check as the clone (no private or link-local addresses), and the credential is sent to the repository host only.
+- Each file is checked against its SHA-256 and size. Limits: 10,000 objects, 2 GiB per object, 5 GiB per deploy.
+- Builds on the panel host only (Build on: panel, or a service that runs there). A build on a node or a build server clones the repository again and would get pointer files, so it is refused; extra fan-out nodes receive the image built on the panel.
+- API: `gitLfs` on `PATCH /v1/services/:id`. PR previews and clones keep it.
+
 ### Deploy without Git: uploaded source (0.16.1)
 
 A docker service created with neither a repository nor an image builds from an archive you upload:

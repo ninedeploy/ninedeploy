@@ -246,6 +246,26 @@ describe('Healthcheck mode field (0.16.1)', () => {
     expect(screen.queryByLabelText('Docker labels')).not.toBeInTheDocument();
   }, TIMEOUT);
 
+  it('0.16.3: the Git LFS switch on a repository service is sent only when flipped; hidden for an image service or an older panel', async () => {
+    renderTab(serviceWith({ healthCheck: 'http', image: null, repoUrl: 'https://github.com/acme/app', gitLfs: false }));
+    const toggle = await screen.findByRole('switch', { name: 'Git LFS' });
+    fireEvent.submit(screen.getByRole('button', { name: /Save settings/ }).closest('form')!);
+    expect((await lastPatch()).gitLfs).toBeUndefined();
+    vi.clearAllMocks();
+    fireEvent.click(toggle);
+    fireEvent.submit(screen.getByRole('button', { name: /Save settings/ }).closest('form')!);
+    expect((await lastPatch()).gitLfs).toBe(true);
+
+    cleanup();
+    renderTab(serviceWith({ healthCheck: 'http', gitLfs: false }));
+    await screen.findByLabelText('Healthcheck');
+    expect(screen.queryByRole('switch', { name: 'Git LFS' })).not.toBeInTheDocument();
+    cleanup();
+    renderTab(serviceWith({ healthCheck: 'http', image: null, repoUrl: 'https://github.com/acme/app' }));
+    await screen.findByLabelText('Healthcheck');
+    expect(screen.queryByRole('switch', { name: 'Git LFS' })).not.toBeInTheDocument();
+  }, TIMEOUT);
+
   it('0.16.3: not offered on a node service, nor by a panel that does not report the command', async () => {
     renderTab(serviceWith({ healthCheck: 'http', healthCommand: null, serverId: 4 }));
     const select = await screen.findByLabelText('Healthcheck');

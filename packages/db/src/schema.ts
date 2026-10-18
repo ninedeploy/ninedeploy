@@ -477,6 +477,9 @@ export const services = sqliteTable(
     healthCommand: text('health_command'),
     // 0.16.3: user Docker labels on the container (JSON object); null = none.
     dockerLabels: text('docker_labels', { mode: 'json' }).$type<Record<string, string>>(),
+    // 0.16.3: replace Git LFS pointer files with their content after checkout
+    // (lib/gitLfs.ts). Off = the pointers are built as they are, as before.
+    gitLfs: integer('git_lfs', { mode: 'boolean' }).notNull().default(false),
     // 0.16.1: operator-set container options for docker services (GPUs,
     // /dev/shm size, init, open-file limit, added capabilities). Null = none,
     // the `docker run` line every deploy used before.

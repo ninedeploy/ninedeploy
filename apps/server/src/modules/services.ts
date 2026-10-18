@@ -141,6 +141,7 @@ function serialize(s: Service, sourceName: string | null = null, tags: TagIds = 
     healthCheck: s.healthCheck === 'running' || s.healthCheck === 'command' ? s.healthCheck : 'http',
     healthCommand: s.healthCommand ?? null,
     dockerLabels: s.dockerLabels ?? {},
+    gitLfs: s.gitLfs ?? false,
     runtimeOptions: s.runtimeOptions ?? null,
     port: s.port,
     publishedPort: s.publishedPort ?? null,
@@ -1640,6 +1641,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         healthCheck: svc.healthCheck,
         healthCommand: svc.healthCommand,
         dockerLabels: svc.dockerLabels,
+        gitLfs: svc.gitLfs,
         // 0.16.1: operator-set container options are the operator's to hand
         // out; a member's copy starts without them (like sourceId above).
         runtimeOptions: req.user!.isOperator ? svc.runtimeOptions : null,

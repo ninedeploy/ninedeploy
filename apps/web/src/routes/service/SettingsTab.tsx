@@ -158,7 +158,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
 
   const [form, setForm] = useState<{
     name: string; branch: string; repoUrl: string; image: string; port: string;
-    healthPath: string; healthTimeout: string; healthCheck: string; healthCommand: string; dockerLabels: string; volumeMount: string; sourceId: string;
+    healthPath: string; healthTimeout: string; healthCheck: string; healthCommand: string; dockerLabels: string; gitLfs: boolean; volumeMount: string; sourceId: string;
     buildPack: string; baseDir: string; installCmd: string; buildCmd: string; startCmd: string; dockerfilePath: string; outputDir: string;
     preDeployCmd: string; postDeployCmd: string; preStopCmd: string;
     restartPolicy: string; stopGraceSeconds: string; buildArgs: string; buildTarget: string;
@@ -176,6 +176,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
       healthCheck: svc.healthCheck ?? 'http',
       healthCommand: svc.healthCommand ?? '',
       dockerLabels: formatDockerLabels(svc.dockerLabels),
+      gitLfs: svc.gitLfs === true,
       volumeMount: svc.volumeMount ?? '',
       sourceId: svc.sourceId ? String(svc.sourceId) : '',
       buildPack: svc.build?.buildPack ?? 'auto',
@@ -222,6 +223,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
         healthCheck: svc?.healthCheck !== undefined && f.healthCheck !== svc.healthCheck ? (f.healthCheck as 'http' | 'running' | 'command') : undefined,
         // 0.16.3, same rule; blank clears it.
         healthCommand: svc?.healthCommand !== undefined && f.healthCommand.trim() !== (svc.healthCommand ?? '') ? f.healthCommand.trim() || null : undefined,
+        gitLfs: svc?.gitLfs !== undefined && f.gitLfs !== svc.gitLfs ? f.gitLfs : undefined,
         // 0.16.3, same rule: sent only when the parsed labels changed.
         dockerLabels:
           svc?.dockerLabels !== undefined && formatDockerLabels(parseDockerLabels(f.dockerLabels).labels) !== formatDockerLabels(svc.dockerLabels)
@@ -287,6 +289,18 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
           <Field label="Name"><Input value={form.name} onChange={set('name')} className="h-9" /></Field>
           <Field label="Branch"><Input value={form.branch} onChange={set('branch')} className="h-9" /></Field>
           <Field label="Repo URL"><Input value={form.repoUrl} onChange={set('repoUrl')} placeholder="https://github.com/…" className="h-9 font-mono text-xs" /></Field>
+          {/* 0.16.3: shown once the panel reports the field, for repository services. */}
+          {svc.gitLfs !== undefined && !!(svc.repoUrl || form.repoUrl) && (
+            <div className="flex items-center justify-between gap-3 rounded-lg bg-white/[0.02] px-3 py-2 ring-1 ring-inset ring-white/5 md:col-span-2">
+              <div>
+                <div className="text-xs font-medium text-slate-300">Git LFS</div>
+                <div className="mt-0.5 text-[11px] text-slate-500">
+                  Fetch the repository&apos;s LFS files (models, media) after checkout, from its own HTTPS LFS server. Builds on the panel host only.
+                </div>
+              </div>
+              <Switch checked={form.gitLfs} onChange={(v) => setForm({ ...form, gitLfs: v })} label="Git LFS" />
+            </div>
+          )}
           <Field label="Git credential (private repos)" hint="Used for cloning, analysis and webhook deploys">
             {isAdmin ? (
               <Select value={form.sourceId} onChange={set('sourceId')} className="h-9">

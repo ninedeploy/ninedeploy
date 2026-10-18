@@ -36,6 +36,7 @@ import { remoteVolumeRefusal } from '../lib/remoteVolumes.js';
 import { createSwarmBuilder, isSwarmService, swarmDeployRefusal, withSwarmRetirement } from './swarmDeploy.js';
 import { swarmRuntimeOf } from '../lib/swarm.js';
 import { fileMountRefusal, prepareFileMounts } from '../lib/serviceFiles.js';
+import { fetchLfsObjects, GIT_LFS_PANEL_ONLY } from '../lib/gitLfs.js';
 
 /** 0.16.3: why a node or Swarm service with custom Docker labels is not deployed. */
 export const DOCKER_LABELS_PANEL_ONLY =
@@ -821,6 +822,15 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   }
   /** The placement of a build that runs away from where the service runs. */
   const buildAway = placement.kind === 'target' ? null : placement;
+  // 0.16.3: LFS files are fetched into the panel's checkout; a build that
+  // clones again on a node or a build server would get bare pointer files.
+  const buildsOnPanel = buildAway ? buildAway.kind === 'panel' : service.serverId == null;
+  if (service.gitLfs && service.repoUrl && !service.image && !buildsOnPanel) {
+    log(`✗ ${GIT_LFS_PANEL_ONLY}`);
+    await safeFail(db, deploymentId, service.id, service.runtimeId);
+    await auditOutcome(db, service, deploymentId, 'failed', GIT_LFS_PANEL_ONLY);
+    return;
+  }
   // ── end 0.16 T4 ──
 
   let builder = builders[service.type];
@@ -960,6 +970,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     } else if (service.image) {
       log(`Image deploy from ${service.image}`);
     } else {
+      // 0.16.3: the checkout's credential, reused for the Git LFS API below.
+      let lfsCreds: CloneCreds | undefined;
       if (isUploadSourced(service)) {
         // 0.16.1: no repository — the code is the archive uploaded for this
         // service (POST /v1/services/:id/source, `ninedeploy deploy`). A
@@ -977,6 +989,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
         let creds: CloneCreds | undefined;
         try {
           creds = await resolveCloneCreds(db, service);
+          lfsCreds = creds;
         } catch (err) {
           if (err instanceof GithubAppError) log(githubAppCloneHint());
           throw err;
@@ -1019,6 +1032,13 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
         }
       }
       await db.update(deployments).set({ commitSha: sha }).where(eq(deployments.id, deploymentId));
+
+      // 0.16.3: Git LFS pointers → content, from the repository's own LFS API
+      // only, before anything reads the checkout (analysis, the build).
+      if (service.gitLfs && !isUploadSourced(service)) {
+        const auth = lfsCreds?.token ? { username: lfsCreds.type === 'gitlab' ? 'oauth2' : 'x-access-token', password: lfsCreds.token } : null;
+        await fetchLfsObjects(workDir, service.repoUrl ?? '', auth, log);
+      }
 
       // Framework analysis powers the service-detail cards and gives the deploy
       // log a human-readable "what is this repo" line. Best-effort by design —
@@ -1669,7 +1689,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       // A target node's `docker.build` takes neither build arguments nor a
       // stage, so a Dockerfile build that uses them ships the primary's image
       // like the other packs (D2) instead of building something different.
-      const shapedDockerfile = !!fanoutBuildConfig?.buildTarget || (fanoutBuildConfig?.buildArgs ?? []).length > 0;
+      const shapedDockerfile = !!fanoutBuildConfig?.buildTarget || (fanoutBuildConfig?.buildArgs ?? []).length > 0 || service.gitLfs === true;
       if (primary.pack === 'dockerfile' && !shapedDockerfile) {
         // 0.13 (T5): only a STATIC credential (PAT / deploy key) stays on the
         // panel; a GitHub App repository fans out with a per-job token per target.

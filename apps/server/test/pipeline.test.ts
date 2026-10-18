@@ -59,6 +59,12 @@ vi.mock('../src/lib/exec.js', () => execMock);
 vi.mock('../src/lib/crypto.js', () => ({ decrypt: h.decrypt }));
 vi.mock('../src/lib/git.js', () => ({ checkoutCommit: h.checkoutCommit }));
 // 0.16.1: the uploaded-source extraction is stubbed; which service takes it is the real rule.
+// 0.16.3: the LFS fetch itself has its own tests (test/gitLfs.test.ts).
+const lfsMock = vi.hoisted(() => ({ fetchLfsObjects: vi.fn(async (..._args: unknown[]) => ({ files: 0, bytes: 0 })) }));
+vi.mock('../src/lib/gitLfs.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/gitLfs.js')>()),
+  fetchLfsObjects: lfsMock.fetchLfsObjects,
+}));
 const uploadMock = vi.hoisted(() => ({
   extractSourceUpload: vi.fn(async (..._args: unknown[]) => ({ sha: 'c0ffee'.padEnd(40, '0'), files: 3, strippedFolder: 'myapp' as string | null })),
 }));
@@ -2166,6 +2172,37 @@ describe('runDeployment on a remote-server target', () => {
     expect(h.builder.buildAndRun).not.toHaveBeenCalled();
     expect(lines.join(' ')).toMatch(/File mounts work for docker services on the panel host only/);
     expect(inserts.filter((i) => i.table === auditLog).map((i) => i.values)[0]).toMatchObject({ action: 'deploy.failed' });
+    logBus.removeAllListeners();
+  });
+
+  it('0.16.3: a Git LFS service on the panel fetches the LFS files after checkout, before the build; off by default', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { gitLfs: true });
+    lfsMock.fetchLfsObjects.mockClear();
+    h.builder.buildAndRun.mockClear();
+    await runDeployment(db as never, 1);
+    expect(lfsMock.fetchLfsObjects).toHaveBeenCalledWith(expect.stringMatching(/5$/), service.repoUrl, null, expect.any(Function));
+    expect(lfsMock.fetchLfsObjects.mock.invocationCallOrder[0]!).toBeLessThan(h.builder.buildAndRun.mock.invocationCallOrder[0]!);
+    logBus.removeAllListeners();
+
+    const plain = makeDb();
+    baseSetup(plain.db);
+    lfsMock.fetchLfsObjects.mockClear();
+    await runDeployment(plain.db as never, 1);
+    expect(lfsMock.fetchLfsObjects).not.toHaveBeenCalled();
+    logBus.removeAllListeners();
+  });
+
+  it('0.16.3: a Git LFS service that builds on its node is refused before anything is cloned there', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { ownerUserId: 42, serverId: 4, gitLfs: true });
+    const lines = collectLogs(1);
+    h.agentOp.mockClear();
+    h.builder.buildAndRun.mockClear();
+    await runDeployment(db as never, 1);
+    expect(h.agentOp).not.toHaveBeenCalled();
+    expect(h.builder.buildAndRun).not.toHaveBeenCalled();
+    expect(lines.join(' ')).toMatch(/Git LFS files are fetched for builds on the panel host only/);
     logBus.removeAllListeners();
   });
 

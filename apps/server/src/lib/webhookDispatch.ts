@@ -269,6 +269,7 @@ export async function handlePullRequest(
         // 0.16.3: it runs inside the preview's own container only.
         healthCommand: parent.healthCommand,
         dockerLabels: parent.dockerLabels,
+        gitLfs: parent.gitLfs,
         cpuShares: parent.cpuShares,
         memLimitMb: parent.memLimitMb,
         isEphemeralPreview: true,
