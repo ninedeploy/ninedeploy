@@ -27,6 +27,9 @@ import type {
   ServicePlacementInput,
   ServicePlacementView,
   ServiceSwarmStatus,
+  ServiceFile,
+  ServiceFileEntry,
+  ServiceFilePut,
 } from '@ninedeploy/schemas';
 import { apiGetUrl } from '../apiPath.js';
 import type { ApplyManifestResult, ApplyManifestInput, ServiceDetail } from '../types.js';
@@ -81,6 +84,17 @@ export interface ServicesApi {
      * 0.16.1 deploy status badge (member). `enable` turns it on or rotates its
      * URL; `disable` turns it off. The URL is the badge's only credential.
      */
+    /**
+     * 0.16.3 file mounts: files the panel keeps (encrypted) and mounts read-only
+     * in a docker service's container on the panel host. `list` has no content;
+     * `get` (member) does. Changes apply on the next deploy.
+     */
+    files: {
+      list: (id: number) => Promise<ServiceFileEntry[]>;
+      get: (id: number, fileId: number) => Promise<ServiceFile>;
+      put: (id: number, input: ServiceFilePut) => Promise<ServiceFileEntry>;
+      remove: (id: number, fileId: number) => Promise<{ ok: boolean }>;
+    };
     /**
      * Deploy hook (member): a secret URL that redeploys the service on POST,
      * for CI. `enable` turns it on or rotates the URL; `disable` turns it off.
@@ -223,6 +237,12 @@ export function servicesApi(t: Transport): ServicesApi {
           // An upload of up to 100 MiB may outlast the default budget.
           10 * 60_000,
         ),
+      files: {
+        list: (id) => get<ServiceFileEntry[]>(`/v1/services/${id}/files`),
+        get: (id, fileId) => get<ServiceFile>(`/v1/services/${id}/files/${fileId}`),
+        put: (id, input) => send<ServiceFileEntry>('PUT', `/v1/services/${id}/files`, input),
+        remove: (id, fileId) => request<{ ok: boolean }>(`/v1/services/${id}/files/${fileId}`, { method: 'DELETE' }),
+      },
       deployHook: {
         get: (id) => get<{ enabled: boolean; url: string | null; mine: boolean }>(`/v1/services/${id}/deploy-hook`),
         enable: (id) => send<{ enabled: boolean; url: string | null; mine: boolean }>('POST', `/v1/services/${id}/deploy-hook`),

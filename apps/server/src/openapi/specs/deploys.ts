@@ -1,3 +1,4 @@
+import { serviceFilePut } from '@ninedeploy/schemas';
 import type { RouteSpecMap } from '../types.js';
 
 /**
@@ -86,6 +87,34 @@ export const deploysSpecs: RouteSpecMap = {
       'Mints a new token (the previous URL stops working). The hook will deploy as the caller, with every check a manual deploy makes re-done on each call and never with more operator authority than this request has. Audited service.deploy_hook.enable / rotate. Added in 0.16.2.',
     floor: 'member',
     responseType: '{ enabled: boolean; url: string | null; mine: boolean }',
+  },
+  'GET /v1/services/:id/files': {
+    summary: "List a service's file mounts (path and size, no content)",
+    tag: 'services',
+    floor: 'viewer',
+    responseType: 'ServiceFileEntry[]',
+  },
+  'GET /v1/services/:id/files/:fileId': {
+    summary: 'Read one file mount with its content',
+    tag: 'services',
+    floor: 'member',
+    responseType: 'ServiceFile',
+    sensitive: true,
+  },
+  'PUT /v1/services/:id/files': {
+    summary: 'Create or replace the file mounted read-only at a container path (applies on the next deploy)',
+    description: 'Docker services on the panel host only; at most 20 files of 256 KiB each.',
+    tag: 'services',
+    floor: 'member',
+    body: serviceFilePut,
+    responseType: 'ServiceFileEntry',
+    validation: 'zod',
+  },
+  'DELETE /v1/services/:id/files/:fileId': {
+    summary: 'Remove a file mount (applies on the next deploy)',
+    tag: 'services',
+    floor: 'member',
+    responseType: '{ ok: boolean }',
   },
   'DELETE /v1/services/:id/deploy-hook': {
     summary: 'Turn the deploy hook off',

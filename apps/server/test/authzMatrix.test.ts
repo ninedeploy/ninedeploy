@@ -521,6 +521,9 @@ function paramValue(url: string, param: string, r: Res): string {
     // 0.16.1 IP inventory: an address the faked host does not have.
     case 'ip':
       return '198.51.100.250';
+    // 0.16.3 file mounts: no file is seeded (the write route makes its own).
+    case 'fileId':
+      return '999999';
     case '*':
       return '';
     case 'id': {
@@ -784,6 +787,10 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/services/:id/deploy-hook': R('member', { note: 'the hook URL is its credential' }),
   'POST /v1/services/:id/deploy-hook': R('member'),
   'DELETE /v1/services/:id/deploy-hook': R('member'),
+  'GET /v1/services/:id/files': R('viewer'),
+  'GET /v1/services/:id/files/:fileId': R('member', { allow404: 'no file is seeded; reads are covered by test/serviceFiles.test.ts' }),
+  'PUT /v1/services/:id/files': R('member', { body: () => ({ path: '/app/authz.conf', content: 'x' }) }),
+  'DELETE /v1/services/:id/files/:fileId': R('member', { allow404: 'no file is seeded; deletes are covered by test/serviceFiles.test.ts' }),
   'POST /v1/deploy-hooks/:token': R('token', { allow404: 'no hook is minted in the shared seed; the token path is covered by test/deployHooks.test.ts' }),
   'GET /v1/badges/:badge': R('token', { allow404: 'no badge is minted in the shared seed; the token lookup is covered by test/badges.test.ts' }),
   'POST /v1/services/:id/source': R('member', {

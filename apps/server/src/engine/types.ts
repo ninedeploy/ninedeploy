@@ -56,6 +56,11 @@ export interface BuildContext {
    */
   volumeAttachments?: ServiceVolumeAttachment[];
   /**
+   * 0.16.3: files the docker builder bind-mounts read-only (`-v host:container:ro`),
+   * already written for this deployment by `prepareFileMounts`. Absent or empty: none.
+   */
+  fileMounts?: Array<{ hostPath: string; containerPath: string }>;
+  /**
    * The repo's `.ninedeploy` manifest, when it ships one.
    *
    * The pipeline has already folded the manifest's `build.*` fields into

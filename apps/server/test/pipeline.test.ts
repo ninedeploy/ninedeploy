@@ -2,7 +2,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { auditLog, deployments, domains, services, serviceTargets, serviceVolumeAttachments } from '@ninedeploy/db';
+import { auditLog, deployments, domains, serviceFiles, services, serviceTargets, serviceVolumeAttachments } from '@ninedeploy/db';
 import { logBus } from '../src/engine/logs.js';
 import { filterTrustworthyProjectLinks, runDeployment, splitHookCommand } from '../src/engine/pipeline.js';
 import { GithubAppError } from '../src/lib/githubApp.js';
@@ -2140,6 +2140,33 @@ describe('runDeployment on a remote-server target', () => {
       expect(audits[0]).toMatchObject({ action: 'deploy.failed' });
       logBus.removeAllListeners();
     }
+  });
+
+  it('0.16.3: a node service with file mounts is refused before anything is built or sent to the node', async () => {
+    const { db, inserts } = makeDb();
+    baseSetup(db, { ownerUserId: 42, image: 'nginx:latest', serverId: 4 });
+    db.select.mockImplementation(() => ({
+      from: vi.fn((table: unknown) => {
+        const rows = table === serviceFiles ? [{ n: 1 }] : [];
+        return {
+          where: vi.fn(() => Object.assign(Promise.resolve(rows), { limit: vi.fn(() => Promise.resolve(rows)) })),
+          leftJoin: vi.fn(() => Promise.resolve([])),
+          innerJoin: vi.fn(() => Promise.resolve([])),
+          orderBy: vi.fn(() => Promise.resolve([])),
+          // biome-ignore lint/suspicious/noThenProperty: intentional thenable — the fake DB query result must be awaitable by the code under test.
+          then: (ok: (v: unknown) => unknown) => ok(rows),
+        };
+      }),
+    }));
+    const lines = collectLogs(1);
+    h.agentOp.mockClear();
+    h.builder.buildAndRun.mockClear();
+    await runDeployment(db as never, 1);
+    expect(h.agentOp).not.toHaveBeenCalled();
+    expect(h.builder.buildAndRun).not.toHaveBeenCalled();
+    expect(lines.join(' ')).toMatch(/File mounts work for docker services on the panel host only/);
+    expect(inserts.filter((i) => i.table === auditLog).map((i) => i.values)[0]).toMatchObject({ action: 'deploy.failed' });
+    logBus.removeAllListeners();
   });
 
   it('r266 relaxed: an agent advertising docker.runSpec (sealed) runs the same container as the panel would', async () => {

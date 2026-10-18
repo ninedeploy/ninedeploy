@@ -215,6 +215,24 @@ describe('dockerBuilder.buildAndRun', () => {
     expect(mounts).toEqual(['nd-svc-web-data:/data', 'nd-svc-web-uploads:/uploads', 'shared-assets:/assets:ro']);
   });
 
+  it('0.16.3: bind-mounts the file mounts read-only after the volumes', async () => {
+    const ctx = makeCtx({
+      service: { slug: 'web', image: 'nginx:1.25', port: 3000, cpuShares: 0, memLimitMb: 0, volumeMount: '/data', healthPath: '/' },
+      fileMounts: [
+        { hostPath: '/var/lib/ninedeploy/service-files/web/d7/1', containerPath: '/etc/nginx/nginx.conf' },
+        { hostPath: '/var/lib/ninedeploy/service-files/web/d7/2', containerPath: '/app/config.yaml' },
+      ],
+    });
+    await dockerBuilder.buildAndRun(ctx as never);
+    const runArgs = h.run.mock.calls.find(([, argv]) => (argv as unknown[])[0] === 'run')![1] as string[];
+    const mounts = runArgs.flatMap((a, i) => (a === '-v' ? [runArgs[i + 1]] : []));
+    expect(mounts).toEqual([
+      'nd-svc-web-data:/data',
+      '/var/lib/ninedeploy/service-files/web/d7/1:/etc/nginx/nginx.conf:ro',
+      '/var/lib/ninedeploy/service-files/web/d7/2:/app/config.yaml:ro',
+    ]);
+  });
+
   it('logs a pull warning when the rejection is not an Error instance', async () => {
     h.run.mockRejectedValueOnce('network down').mockResolvedValueOnce(undefined);
     const ctx = makeCtx({ service: { slug: 'web', image: 'nginx:1.25', port: 3000, cpuShares: 0, memLimitMb: 0, volumeMount: null, healthPath: '/health' } });

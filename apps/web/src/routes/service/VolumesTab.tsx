@@ -10,6 +10,7 @@ import { Button, Card, cn, useEscapeToClose } from '../../components/ui.js';
 import { formatBytes } from '../../lib/format.js';
 import { VolumeBrowser } from '../../components/VolumeBrowser.js';
 import { VolumeBackupsPanel } from '../../components/VolumeBackupsPanel.js';
+import { FileMountsCard } from './FileMountsCard.js';
 
 /** Wire shape returned by GET /v1/services/:id/volumes — extends the SDK
  *  attachment type with runtime-computed fields (size, in-use, sharing). */
@@ -387,6 +388,9 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
       {browsingVolume && (
         <VolumeBrowser volume={browsingVolume} onClose={() => setBrowsingVolume(null)} />
       )}
+
+      {/* 0.16.3: files mounted read-only in the container. */}
+      <FileMountsCard serviceId={serviceId} svc={svc} />
 
       {attaching && (
         <AttachVolumeModal serviceId={serviceId} existingPaths={getExistingPaths(svc, svcVolumeAttachments)} onClose={() => setAttaching(false)} />

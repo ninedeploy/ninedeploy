@@ -568,6 +568,13 @@
       "when": 1792355022878,
       "tag": "0081_recovery_codes",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "6",
+      "when": 1792357821137,
+      "tag": "0082_service_files",
+      "breakpoints": true
     }
   ]
 }

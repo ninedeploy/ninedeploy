@@ -136,10 +136,18 @@ describe('0.14 route mapping', () => {
 
   it('reads, turns on (or rotates) and turns off the deploy hook', async () => {
     const { api, calls } = client();
+    await api.services.files.list(3);
+    await api.services.files.get(3, 4);
+    await api.services.files.put(3, { path: '/app/x.conf', content: 'x' });
+    await api.services.files.remove(3, 4);
     await api.services.deployHook.get(3);
     await api.services.deployHook.enable(3);
     await api.services.deployHook.disable(3);
     expect(calls.map((c) => [c.method, c.url])).toEqual([
+      ['GET', '/v1/services/3/files'],
+      ['GET', '/v1/services/3/files/4'],
+      ['PUT', '/v1/services/3/files'],
+      ['DELETE', '/v1/services/3/files/4'],
       ['GET', '/v1/services/3/deploy-hook'],
       ['POST', '/v1/services/3/deploy-hook'],
       ['DELETE', '/v1/services/3/deploy-hook'],

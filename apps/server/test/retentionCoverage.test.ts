@@ -34,6 +34,8 @@ const RETENTION: Record<string, Retention> = {
   // 0.16.1 (migration 0078)
   host_ips: { config: "bounded by the panel host's addresses: one row per address an operator annotated (unique ip)" },
   // 0.16.3 (migration 0081)
+  // 0.16.3 (migration 0082)
+  service_files: { config: 'bounded by services: at most 20 files per service (MAX_SERVICE_FILES), cascading with the service' },
   user_recovery_codes: { config: 'bounded by users: one set of ten per account, replaced on regenerate, deleted with 2FA and cascading with the user' },
 };
 

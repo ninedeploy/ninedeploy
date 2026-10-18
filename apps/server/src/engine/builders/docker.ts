@@ -255,6 +255,8 @@ interface RuntimeComposeInput {
   dataVolume: string | null;
   dataMount: string | null;
   attachments: Array<{ volumeName: string; containerPath: string; readOnly?: boolean | null }>;
+  /** 0.16.3: read-only file binds (absent on older callers). */
+  fileMounts?: Array<{ hostPath: string; containerPath: string }>;
   publishedPort: number | null;
   containerPort: number | null;
   dockerSocket: boolean;
@@ -344,6 +346,7 @@ export function renderRuntimeCompose(input: RuntimeComposeInput): string {
   const volumes: string[] = [];
   if (input.dataVolume && input.dataMount) volumes.push(`${input.dataVolume}:${input.dataMount}`);
   for (const a of input.attachments) volumes.push(`${a.volumeName}:${a.containerPath}${a.readOnly ? ':ro' : ''}`);
+  for (const f of input.fileMounts ?? []) volumes.push(`${f.hostPath}:${f.containerPath}:ro`);
   if (input.dockerSocket) volumes.push('/var/run/docker.sock:/var/run/docker.sock');
   if (volumes.length > 0) {
     svc.push('    volumes:');
@@ -1180,6 +1183,9 @@ export const dockerBuilder: Builder = {
     for (const a of ctx.volumeAttachments ?? []) {
       args.push('-v', `${a.volumeName}:${a.containerPath}${a.readOnly ? ':ro' : ''}`);
     }
+    // 0.16.3 file mounts: read-only binds of files the pipeline wrote under
+    // the data directory. Replicas clone these args too.
+    for (const f of ctx.fileMounts ?? []) args.push('-v', `${f.hostPath}:${f.containerPath}:ro`);
     // Direct host port mapping (e.g. 8080:3000) for domain-less external access.
     if (service.publishedPort) {
       const containerPort = resolvedPort ?? service.publishedPort;
@@ -1207,6 +1213,7 @@ export const dockerBuilder: Builder = {
             dataVolume: service.volumeMount ? `nd-svc-${service.slug}-data` : null,
             dataMount: service.volumeMount ?? null,
             attachments: ctx.volumeAttachments ?? [],
+            fileMounts: ctx.fileMounts ?? [],
             publishedPort: service.publishedPort ?? null,
             containerPort: service.publishedPort ? (resolvedPort ?? service.publishedPort) : null,
             dockerSocket: service.dockerSocket === true,

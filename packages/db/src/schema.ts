@@ -1766,6 +1766,27 @@ export const serviceVolumeAttachments = sqliteTable(
   }),
 );
 
+// 0.16.3 file mounts: a text file the panel keeps (encrypted, like env vars)
+// and mounts read-only at `container_path` in a docker service's container.
+// The deploy writes it under the data directory; nothing here touches a host
+// path a user chose.
+export const serviceFiles = sqliteTable(
+  'service_files',
+  {
+    id: id(),
+    serviceId: integer('service_id')
+      .notNull()
+      .references(() => services.id, { onDelete: 'cascade' }),
+    containerPath: text('container_path').notNull(),
+    contentEncrypted: text('content_encrypted').notNull(),
+    // UTF-8 bytes, kept so the list never decrypts.
+    size: integer('size').notNull(),
+    createdAt: ts('created_at'),
+    updatedAt: tsUpdatable('updated_at'),
+  },
+  (t) => [uniqueIndex('service_files_svc_path_idx').on(t.serviceId, t.containerPath)],
+);
+
 // ─── cloudflare tunnels ───────────────────────────────────────────────────
 export const tunnelStatus = ['running', 'stopped', 'error'] as const;
 

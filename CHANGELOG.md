@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Upgrade notes
 
-- **One additive migration.** `0081_recovery_codes` adds the empty `user_recovery_codes` table. Accounts with 2FA sign in exactly as before; they have no recovery codes until they create a set under Settings → Account.
+- **Two additive migrations.** `0081_recovery_codes` adds the empty `user_recovery_codes` table. Accounts with 2FA sign in exactly as before; they have no recovery codes until they create a set under Settings → Account. `0082_service_files` adds the empty `service_files` table, so every container starts with exactly the mounts it had.
 
 ### Added
 
@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Search and download for runtime logs** (Service → Runtime logs), like Coolify's and Dokploy's log viewers: filter to the lines that contain a text (case-insensitive, matches highlighted), load the last 300, 1000 or 5000 lines, pause the live refresh, and download what is loaded. API `GET /v1/services/:id/logs?tail=N` (1 to 5000, default 300 as before); SDK `services.logs(id, { tail })`. A node on an agent older than 0.16.3 returns the last 300 lines.
 - **CLI:** `ninedeploy services logs <id> --tail N --grep text`.
+- **File mounts** (Service → Volumes → Files), like Coolify's and Dokploy's: text files (an nginx.conf, a config.yaml) kept encrypted by the panel and mounted read-only at a path in the container; up to 20 per service, 256 KiB each, applied on the next deploy. Docker services on the panel host; a node, Swarm or compose service with files is refused rather than started without them. API `/v1/services/:id/files`; SDK `services.files`.
 - **API tokens page** (Settings → Security → API tokens): create a token for the CLI, CI or an MCP client with a name, an access level (read only, read & write, or full access for operators) and a lifetime; it is shown once. The list shows each token's access, last use and expiry, flags legacy unrestricted and expired tokens, and revokes after a confirmation. The API existed; the docs pointed to this page before it did.
 
 ### Fixed

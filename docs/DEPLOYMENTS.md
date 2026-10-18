@@ -62,6 +62,16 @@ Each rule becomes one `docker run -p` operand (`-p 203.0.113.7:27015-27030:27015
 
 ---
 
+### File mounts (0.16.3)
+
+**Service → Volumes → Files** keeps text files the container reads, such as an `nginx.conf`, a `config.yaml` or a CA bundle, without baking them into the image. Each file has a path inside the container and its content; the panel stores the content encrypted (like an environment variable) and mounts the file **read-only** at that path. A change applies on the next deploy.
+
+- Up to 20 files per service, 256 KiB each. The path must be absolute, name a file (not a directory), and stay out of what Docker manages (`/proc`, `/sys`, `/dev`, `/etc/hosts`, `/etc/hostname`, `/etc/resolv.conf`, the Docker socket). It may not be the path of the service's data volume or of an attached volume.
+- Each deploy writes its own copy under the data directory (`service-files/<slug>/d<deployment>/`), so during a blue-green release the outgoing container keeps the content it started with. The three newest copies are kept; deleting the service removes them.
+- Docker services on the panel host only. A node, Swarm or compose service that has files is refused at deploy time with a message, never started without them; an extra fan-out node is refused the same way while the primary deploys.
+- Reading a file's content needs a member seat (it can hold secrets); a viewer sees the paths and sizes.
+- API: `GET`/`PUT /v1/services/:id/files`, `GET`/`DELETE /v1/services/:id/files/:fileId`; SDK `services.files`.
+
 ## ⚡ 2. Pipeline Cancellation
 
 - In-flight deployments can be safely cancelled at any stage (clone, build, image pull, healthcheck).

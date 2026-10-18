@@ -50,6 +50,7 @@ import { visibleLabelIds } from './labels.js';
 import { assertMayUseHostPrivilege } from '../lib/hostPrivilege.js';
 import { removeSourceUploads } from '../lib/sourceUpload.js';
 import { portProxyDir, removePortProxy } from '../lib/portProxy.js';
+import { removeServiceFilesDir } from '../lib/serviceFiles.js';
 import { assertMayPublishMappings, assertMayPublishPort, hostPortConflict } from '../lib/hostPort.js';
 import { listHostAddresses } from '../lib/hostAddresses.js';
 import { normaliseAllowlist } from '../lib/ipAllowlist.js';
@@ -1094,6 +1095,12 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // 0.16.1: the allow-list port proxy goes with it (nothing when it never had one).
     if (existsSync(portProxyDir(svc.slug))) {
       await removePortProxy(svc.slug).catch((err: unknown) => req.log.warn({ err, serviceId: id }, 'could not remove the port proxy'));
+      // 0.16.3: the written copies of its file mounts (the rows cascade).
+      try {
+        removeServiceFilesDir(svc.slug);
+      } catch (err) {
+        req.log.warn({ err, serviceId: id }, 'could not remove the file mounts directory');
+      }
     }
     // 0.16.1: the archives uploaded as this service's source go with it.
     try {

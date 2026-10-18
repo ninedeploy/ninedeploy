@@ -35,6 +35,7 @@ import { shipImageByStream } from '../lib/imageTransfer.js';
 import { remoteVolumeRefusal } from '../lib/remoteVolumes.js';
 import { createSwarmBuilder, isSwarmService, swarmDeployRefusal, withSwarmRetirement } from './swarmDeploy.js';
 import { swarmRuntimeOf } from '../lib/swarm.js';
+import { fileMountRefusal, prepareFileMounts } from '../lib/serviceFiles.js';
 import { analyzeRepo, summarizeInsights } from '../lib/frameworks.js';
 import { upsertInsights } from './repoInsights.js';
 import { connectionString, ENGINES } from './database.js';
@@ -766,6 +767,16 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     }
   }
   // ── end 0.16 T7 ──
+  // 0.16.3: file mounts are written and mounted on the panel host only; a
+  // node, Swarm or compose service that has them is refused before anything
+  // is built, never started without its files.
+  const fileRefusal = await fileMountRefusal(db, service);
+  if (fileRefusal) {
+    log(`✗ ${fileRefusal}`);
+    await safeFail(db, deploymentId, service.id, service.runtimeId);
+    await auditOutcome(db, service, deploymentId, 'failed', fileRefusal);
+    return;
+  }
 
   // ── 0.16 T4 build placement (M5) ──
   // Where the image is built (design §6.2, §6.3), decided before the builder
@@ -1187,6 +1198,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
         .select()
         .from(serviceVolumeAttachments)
         .where(eq(serviceVolumeAttachments.serviceId, service.id)),
+      // 0.16.3: this deployment's copy of the service's files (none: []).
+      fileMounts: service.type === 'docker' && service.serverId == null ? await prepareFileMounts(db, service, deploymentId, log) : [],
       log,
       // Sprint 4 G-01 PR-B: the worker pipeline supplies these when the
       // operator has flipped the `engine.use_buildkit` flag and the
@@ -1732,6 +1745,9 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
           if (dbRefusal) return dbRefusal;
           const volume = await remoteVolumeRefusal(db, onTarget);
           if (volume) return volume.message;
+          // 0.16.3: a target would start without the service's files.
+          const files = await fileMountRefusal(db, onTarget);
+          if (files) return files;
           if (remoteHookRefusal(buildConfig)) {
             log(`⚠ deploy hooks run on the primary only; target ${await nodeLabel(db, target.serverId)} was deployed without them`);
           }

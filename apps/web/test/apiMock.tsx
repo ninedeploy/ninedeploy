@@ -92,6 +92,7 @@ export function createFakeApiModule() {
       remove: vi.fn(),
       clone: vi.fn(),
       uploadSource: vi.fn(),
+      files: { list: vi.fn().mockResolvedValue([]), get: vi.fn(), put: vi.fn(), remove: vi.fn() },
       deployHook: {
         get: vi.fn().mockResolvedValue({ enabled: false, url: null }),
         enable: vi.fn(),

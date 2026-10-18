@@ -32,6 +32,7 @@ import { publicBadgeRoutes, serviceBadgeRoutes } from './badges.js';
 import { hostAddressRoutes } from './hostAddresses.js';
 import { hostIpRoutes } from './hostIps.js';
 import { publicDeployHookRoutes, serviceDeployHookRoutes } from './deployHooks.js';
+import { serviceFileRoutes } from './serviceFiles.js';
 import { hookReceiveRoutes, webhookMgmtRoutes } from './hooks.js';
 import { githubAppHookRoutes } from './githubAppHooks.js';
 import { serviceGithubRoutes } from './serviceGithub.js';
@@ -222,6 +223,7 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(hostIpRoutes, { prefix: '/host-ips' });
   // Deploy hooks: management (member) and the public POST (token).
   await app.register(serviceDeployHookRoutes, { prefix: '/services' });
+  await app.register(serviceFileRoutes, { prefix: '/services' });
   await app.register(publicDeployHookRoutes, { prefix: '/deploy-hooks' });
   await app.register(serviceInsightsRoutes, { prefix: '/services' });
   // Historical CPU/memory series for one service. `metricRoutes` is a separate

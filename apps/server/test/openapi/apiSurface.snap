@@ -36,6 +36,7 @@ DELETE /v1/services/:id/deploys/:depId admin nd://scope/write/deploys
 DELETE /v1/services/:id/domains/:domainId member nd://scope/write/domains
 DELETE /v1/services/:id/env/:varId member nd://scope/write/env
 DELETE /v1/services/:id/env/preview/:varId member nd://scope/write/env
+DELETE /v1/services/:id/files/:fileId member nd://scope/write/services
 DELETE /v1/services/:id/github operator nd://scope/write/services
 DELETE /v1/services/:id/jobs/:jobId member nd://scope/write/services
 DELETE /v1/services/:id/volumes/:attId admin nd://scope/write/volumes
@@ -161,6 +162,8 @@ GET /v1/services/:id/env/export admin nd://scope/read/env
 GET /v1/services/:id/env/preview viewer nd://scope/read/env
 GET /v1/services/:id/exec operator nd://scope/read/services
 GET /v1/services/:id/export operator nd://scope/read/services
+GET /v1/services/:id/files viewer nd://scope/read/services
+GET /v1/services/:id/files/:fileId member nd://scope/read/services
 GET /v1/services/:id/github viewer nd://scope/read/services
 GET /v1/services/:id/host-addresses member nd://scope/read/services
 GET /v1/services/:id/image-transfers viewer nd://scope/read/services
@@ -430,6 +433,7 @@ PUT /v1/databases/:id/public-access operator nd://scope/write/databases
 PUT /v1/github-apps/:id/private-key operator -
 PUT /v1/host-ips/:ip operator -
 PUT /v1/onboarding/dismissed operator -
+PUT /v1/services/:id/files member nd://scope/write/services
 PUT /v1/services/:id/github operator nd://scope/write/services
 PUT /v1/services/:id/placement operator nd://scope/write/services
 PUT /v1/services/:id/tags admin nd://scope/write/services
