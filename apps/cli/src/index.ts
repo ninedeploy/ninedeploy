@@ -274,7 +274,7 @@ services.command('sticky <id>')
 
 // 0.16.1: extra host ports, TCP or UDP, ranges, an optional dedicated IP.
 services.command('ports <id> [mappings...]')
-  .description('List or replace extra host-port mappings (e.g. 27015-27030/udp, 203.0.113.7:8443:443)')
+  .description('List or replace extra host-port mappings (e.g. 27015-27030/udp, 203.0.113.7:8443:443, 5432@10.0.0.0/8)')
   .option('--clear', 'Remove every port mapping')
   .action((id: string, mappings: string[], opts: { clear?: boolean }) => servicesPortsAction(getClient(), id, mappings, opts));
 

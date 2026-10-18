@@ -335,6 +335,42 @@ describe('PATCH /services/:id portMappings', () => {
     await compose.app.close();
   });
 
+  it('an allow list on a TCP port is normalised and stored; UDP, ranges, /0 and node services are refused', async () => {
+    const { app, row, patch } = await setup();
+    const ok = await patch({ portMappings: [{ hostPort: 5432, containerPort: 5432, allowFrom: [' 10.1.2.3/8 ', '203.0.113.4', '10.0.0.0/8'] }] }, member);
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect((await row()).portMappings).toEqual([
+      { hostIp: null, hostPort: 5432, hostPortEnd: null, containerPort: 5432, protocol: 'tcp', allowFrom: ['10.0.0.0/8', '203.0.113.4/32'] },
+    ]);
+    // Re-sending the same list is not a change.
+    expect((await patch({ portMappings: [{ hostPort: 5432, containerPort: 5432, allowFrom: ['10.0.0.0/8', '203.0.113.4/32'] }], healthTimeoutSeconds: 600 }, member)).statusCode).toBe(200);
+
+    const udp = await patch({ portMappings: [{ hostPort: 53, containerPort: 53, protocol: 'udp', allowFrom: ['10.0.0.0/8'] }] });
+    expect(udp.statusCode).toBe(400);
+    expect(udp.body).toMatch(/allow list works on one TCP port/);
+    expect((await patch({ portMappings: [{ hostPort: 6000, hostPortEnd: 6001, containerPort: 6000, allowFrom: ['10.0.0.0/8'] }] })).statusCode).toBe(400);
+    const everyone = await patch({ portMappings: [{ hostPort: 5432, containerPort: 5432, allowFrom: ['0.0.0.0/0'] }] });
+    expect(everyone.statusCode).toBe(400);
+    expect(everyone.body).toMatch(/\/0 is refused/);
+    expect((await patch({ portMappings: [{ hostPort: 5432, containerPort: 5432, allowFrom: ['not-an-ip'] }] })).statusCode).toBe(400);
+    await app.close();
+
+    const [node] = await db.insert(servers).values({ name: 'n1', host: '198.51.100.20', tokenEncrypted: 'v1:x' }).returning();
+    const onNode = await setup({ name: 'edge', slug: 'edge', serverId: node!.id });
+    const refused = await onNode.patch({ portMappings: [{ hostPort: 5432, containerPort: 5432, allowFrom: ['10.0.0.0/8'] }] });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.body).toMatch(/allow list on a port mapping works on the panel host only/);
+    await onNode.app.close();
+  });
+
+  it('parses and formats an allow list in the text form', () => {
+    expect(parsePortMapping('5432@10.0.0.0/8, 203.0.113.4')).toMatchObject({ hostPort: 5432, protocol: 'tcp', allowFrom: ['10.0.0.0/8', '203.0.113.4'] });
+    expect(parsePortMapping('5432@')).toMatch(/list the addresses after @/);
+    expect(parsePortMapping('5432@a@b')).toMatch(/more than one @/);
+    // The docker -p operand never carries it.
+    expect(formatPortMapping({ hostPort: 5432, containerPort: 5432, allowFrom: ['10.0.0.0/8'] })).toBe('5432:5432/tcp');
+  });
+
   it('Swarm refuses a service with mappings', async () => {
     const reason = await swarmServiceRefusal(db, { id: 1, type: 'docker', image: 'x', portMappings: [udpRange] });
     expect(reason).toMatch(/Port mappings are refused on Swarm/);

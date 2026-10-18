@@ -273,7 +273,12 @@ interface RuntimeComposeInput {
  * and IP-checked by the `portMappings` schema when they were saved.
  */
 export function portMappingArgs(mappings: readonly ServicePortMapping[] | null | undefined): string[] {
-  return (mappings ?? []).flatMap((m) => ['-p', formatPortMapping(m)]);
+  return publishedByContainer(mappings).flatMap((m) => ['-p', formatPortMapping(m)]);
+}
+
+/** The mappings the container publishes itself: every one without an allow list (those go through lib/portProxy.ts). */
+export function publishedByContainer(mappings: readonly ServicePortMapping[] | null | undefined): ServicePortMapping[] {
+  return (mappings ?? []).filter((m) => !m.allowFrom?.length);
 }
 
 /**
@@ -346,7 +351,7 @@ export function renderRuntimeCompose(input: RuntimeComposeInput): string {
   }
   const ports = [
     ...(input.publishedPort && input.containerPort ? [`${input.publishedPort}:${input.containerPort}`] : []),
-    ...(input.portMappings ?? []).map(formatPortMapping),
+    ...publishedByContainer(input.portMappings).map(formatPortMapping),
   ];
   if (ports.length > 0) {
     svc.push('    ports:');
@@ -1086,7 +1091,8 @@ export const dockerBuilder: Builder = {
     // redeploy.
     const hostPorts = [
       ...(service.publishedPort ? [String(service.publishedPort)] : []),
-      ...(service.portMappings ?? []).map(formatPortMapping),
+      // Allow-listed ones are held by the port proxy, not by this container.
+      ...publishedByContainer(service.portMappings).map(formatPortMapping),
     ];
     if (hostPorts.length > 0 && previous?.runtimeId && previous.runtimeId !== name) {
       log(

@@ -757,13 +757,13 @@ describe('servicesPortsAction', () => {
       id: 5,
       portMappings: [
         { hostIp: '203.0.113.7', hostPort: 53, hostPortEnd: null, containerPort: 53, protocol: 'udp' },
-        { hostIp: null, hostPort: 9000, hostPortEnd: null, containerPort: 9000, protocol: 'tcp' },
+        { hostIp: null, hostPort: 9000, hostPortEnd: null, containerPort: 9000, protocol: 'tcp', allowFrom: ['10.0.0.0/8'] },
       ],
     });
-    await servicesPortsAction(makeClient({ services: { update } }), '5', ['203.0.113.7:53/udp', '9000']);
+    await servicesPortsAction(makeClient({ services: { update } }), '5', ['203.0.113.7:53/udp', '9000@10.0.0.0/8']);
     const out = logSpy.mock.calls.flat().join(' ');
     expect(out).toMatch(/203\.0\.113\.7:53:53\/udp/);
-    expect(out).toMatch(/every address/);
+    expect(out).toMatch(/every address, only from 10\.0\.0\.0\/8/);
     expect(out).toMatch(/Redeploy the service/);
   });
 

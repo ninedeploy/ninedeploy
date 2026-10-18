@@ -34,6 +34,10 @@ describe('rowToMapping', () => {
     expect(rowToMapping({ ip: ' 2001:db8::7 ', host: '53', container: '5353', protocol: 'tcp' })).toMatchObject({ hostIp: '2001:db8::7', containerPort: 5353 });
     expect(rowToMapping({ ip: '', host: ' ', container: '', protocol: 'tcp' })).toMatch(/host port/);
     expect(rowToMapping({ ip: '0.0.0.0', host: '80', container: '', protocol: 'tcp' })).toMatch(/not an address/);
+    expect(rowToMapping({ ip: '', host: '5432', container: '', protocol: 'tcp', allow: '10.0.0.0/8, 203.0.113.4' })).toMatchObject({ allowFrom: ['10.0.0.0/8', '203.0.113.4'] });
+    // A UDP row or a range never carries one, even with text left in the field.
+    expect(rowToMapping({ ip: '', host: '53', container: '', protocol: 'udp', allow: '10.0.0.0/8' })).not.toHaveProperty('allowFrom');
+    expect(rowToMapping({ ip: '', host: '6000-6001', container: '', protocol: 'tcp', allow: '10.0.0.0/8' })).not.toHaveProperty('allowFrom');
   });
 });
 
@@ -86,6 +90,21 @@ describe('PortMappingsCard', () => {
     mockOf(api.services.update).mockRejectedValue(new Error(''));
     fireEvent.click(screen.getByRole('button', { name: 'Save mappings' }));
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Could not save the port mappings', 'error'));
+  });
+
+  it('a single TCP port takes an allow list and goes through the proxy; UDP rows offer none', async () => {
+    renderWithProviders(<PortMappingsCard serviceId={3} svc={svc({ portMappings: [udp, { hostIp: null, hostPort: 5432, hostPortEnd: null, containerPort: 5432, protocol: 'tcp', allowFrom: ['10.0.0.0/8'] }] })} />);
+    expect(screen.queryByLabelText('Mapping 1 allow from')).not.toBeInTheDocument();
+    const allow = screen.getByLabelText('Mapping 2 allow from');
+    expect(allow).toHaveValue('10.0.0.0/8');
+    expect(screen.getByText('5432:5432/tcp via the allow-list proxy')).toBeInTheDocument();
+    fireEvent.change(allow, { target: { value: '10.0.0.0/8, 198.51.100.0/24' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save mappings' }));
+    await waitFor(() =>
+      expect(api.services.update).toHaveBeenCalledWith(3, {
+        portMappings: [udp, { hostIp: null, hostPort: 5432, hostPortEnd: null, containerPort: 5432, protocol: 'tcp', allowFrom: ['10.0.0.0/8', '198.51.100.0/24'] }],
+      }),
+    );
   });
 
   it("offers the panel host's IPs in the Host IP field", async () => {

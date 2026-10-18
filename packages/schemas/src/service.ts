@@ -94,12 +94,19 @@ export const portMapping = z
     hostPortEnd: z.number().int().min(1).max(65535).nullable().optional(),
     containerPort: z.number().int().min(1).max(65535),
     protocol: z.enum(['tcp', 'udp']).default('tcp'),
+    /**
+     * TCP, one port: only these addresses or CIDR ranges may connect. The port
+     * is then published by a small Traefik proxy in front of the service
+     * instead of Docker's `-p`, which a host firewall cannot restrict.
+     */
+    allowFrom: z.array(z.string().trim().min(1).max(64)).min(1).max(100).nullable().optional(),
   })
   .strict();
 export type PortMapping = z.infer<typeof portMapping>;
 type PortMappingLike = Pick<PortMapping, 'hostPort' | 'hostPortEnd' | 'containerPort'> & {
   hostIp?: string | null;
   protocol?: 'tcp' | 'udp';
+  allowFrom?: readonly string[] | null;
 };
 
 /** How many host ports a mapping publishes. */
@@ -125,6 +132,9 @@ export function portMappingsProblem(list: readonly PortMappingLike[]): string | 
     if (end < m.hostPort) return `Mapping ${i + 1} (${label}): the range ends before it starts.`;
     if (m.containerPort + (end - m.hostPort) > 65535) return `Mapping ${i + 1} (${label}): the container range runs past 65535.`;
     total += end - m.hostPort + 1;
+    if (m.allowFrom?.length && ((m.protocol ?? 'tcp') !== 'tcp' || end !== m.hostPort)) {
+      return `Mapping ${i + 1} (${label}): an allow list works on one TCP port (UDP and ranges cannot be filtered by source).`;
+    }
     const other = list.slice(0, i).find((o) => portMappingsOverlap(o, m));
     if (other) {
       return `Mapping ${i + 1} (${label}) overlaps ${formatPortMapping(other)}: a host port can be published once per address and protocol.`;
@@ -145,13 +155,17 @@ export function formatPortMapping(m: PortMappingLike): string {
 }
 
 /**
- * Parse `27015-27030:27015/udp`, `8080:80`, `53/udp`, `10000-10100/udp`
+ * Parse `27015-27030:27015/udp`, `8080:80`, `5432@10.0.0.0/8`, `53/udp`, `10000-10100/udp`
  * (no colon = the same ports inside the container), optionally after an IP:
  * `203.0.113.7:53/udp`, `[2001:db8::7]:8080:80`. A container range must be as
  * long as the host range. Returns the mapping, or why the text is not one.
  */
 export function parsePortMapping(text: string): PortMapping | string {
-  const t = text.trim();
+  // `…@10.0.0.0/8,203.0.113.4`: the allow list of a TCP port.
+  const [t = '', allowText, extra] = text.trim().split('@');
+  if (extra !== undefined) return `"${text.trim()}" has more than one @.`;
+  const allowFrom = allowText === undefined ? null : allowText.split(',').map((e) => e.trim()).filter(Boolean);
+  if (allowFrom && allowFrom.length === 0) return `"${text.trim()}": list the addresses after @ (10.0.0.0/8,203.0.113.4).`;
   const m = /^(?:(\d{1,3}(?:\.\d{1,3}){3})|\[([0-9A-Fa-f:.]+)\]):(\d{1,5})(?:-(\d{1,5}))?(?::(\d{1,5})(?:-(\d{1,5}))?)?(?:\/(tcp|udp))?$/i.exec(t)
     ?? /^()()(\d{1,5})(?:-(\d{1,5}))?(?::(\d{1,5})(?:-(\d{1,5}))?)?(?:\/(tcp|udp))?$/i.exec(t);
   if (!m) return `"${t}" is not a port mapping (examples: 8080:80, 27015-27030:27015/udp, 203.0.113.7:53/udp).`;
@@ -172,6 +186,7 @@ export function parsePortMapping(text: string): PortMapping | string {
     hostPortEnd: hostPortEnd !== null && hostPortEnd !== hostPort ? hostPortEnd : null,
     containerPort,
     protocol: (m[7]?.toLowerCase() ?? 'tcp') as 'tcp' | 'udp',
+    ...(allowFrom ? { allowFrom } : {}),
   };
 }
 

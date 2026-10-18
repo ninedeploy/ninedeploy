@@ -188,7 +188,7 @@ export async function servicesStickyAction(
 /**
  * Pure entry point for `ninedeploy services ports <id> [mappings...]` (0.16.1):
  * no mappings lists them; mappings replace the list; `--clear` removes them.
- * Each mapping is `[ip:]host[-end][:container][/tcp|udp]`.
+ * Each mapping is `[ip:]host[-end][:container][/tcp|udp][@allowed,ranges]`.
  */
 export async function servicesPorts(
   client: NineDeployClient,
@@ -227,7 +227,9 @@ export async function servicesPortsAction(client: NineDeployClient, idStr: strin
     return;
   }
   if (result.mappings.length === 0) info(result.changed ? `Port mappings removed from service #${result.id}.` : `Service #${result.id} publishes no extra ports.`);
-  for (const m of result.mappings) kv(formatPortMapping(m), m.hostIp ? `on ${m.hostIp}` : 'on every address');
+  for (const m of result.mappings) {
+    kv(formatPortMapping(m), `${m.hostIp ? `on ${m.hostIp}` : 'on every address'}${m.allowFrom?.length ? `, only from ${m.allowFrom.join(', ')}` : ''}`);
+  }
   if (result.changed) success('Saved. Redeploy the service to apply.');
 }
 

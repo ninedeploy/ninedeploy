@@ -677,6 +677,8 @@ export interface ServicePortMapping {
   /** First container port; the container range is as long as the host range. */
   containerPort: number;
   protocol: 'tcp' | 'udp';
+  /** TCP, one port: the only sources allowed in (normalised CIDRs); the port proxy publishes it. */
+  allowFrom?: string[] | null;
 }
 
 export interface ServiceRuntimeOptions {

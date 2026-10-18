@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { and, desc, eq, inArray, isNotNull, lt, ne } from 'drizzle-orm';
 import { buildConfigs, databaseAttachments, databases, type DB, deployments, domains, envVars, previewEnvVars, projects, services, serviceProjects, serviceVolumeAttachments, workspaceMembers } from '@ninedeploy/db';
@@ -1555,6 +1555,21 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       }
       await auditOutcome(db, service, deploymentId, 'failed', `proxy config write failed: ${msg(err)}`);
       return;
+    }
+  }
+  // 0.16.1 allow-listed port mappings: the port proxy follows the routing
+  // flip to the new containers (and is removed once no mapping needs it).
+  // Only on the panel host, and only for a service that has or had one, so
+  // every other deploy runs exactly as before.
+  if (routingFlipped && service.type === 'docker' && service.serverId == null) {
+    const { portProxyDir, restrictedMappings, syncPortProxy } = await import('../lib/portProxy.js');
+    if (restrictedMappings(service.portMappings).length > 0 || existsSync(portProxyDir(service.slug))) {
+      const { replicaNames } = await import('./dockerNames.js');
+      try {
+        await syncPortProxy(service, replicaNames(newRuntimeId, runtime!.replicas ?? 1), log);
+      } catch (err) {
+        log(`⚠ Port proxy: ${msg(err)} — the allow-listed ports are not reachable until the next deploy.`);
+      }
     }
   }
   if (previous && !inPlaceRedeploy) {

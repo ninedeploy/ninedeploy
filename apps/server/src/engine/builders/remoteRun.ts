@@ -85,6 +85,10 @@ export async function runRemoteContainer(agent: AgentCall, input: RemoteRunInput
   // 0.16.1 port mappings travel as `docker.runSpec`'s `ports`, which only an
   // agent advertising `docker.ports` accepts; an older one is told to update
   // before the env-file reaches the node.
+  // The allow-list proxy is a panel-host feature; the PATCH route refuses it on a node.
+  if (service.portMappings?.some((m) => m.allowFrom?.length)) {
+    throw new Error('A port mapping with an allow list works on the panel host only in this release.');
+  }
   const ports = (service.portMappings ?? []).map(formatPortMapping);
   if (ports.length > 0) {
     const refusal = await capabilityRefusal(agent, input.nodeLabel ?? `#${service.serverId ?? '?'}`, input.sealed ?? true, {

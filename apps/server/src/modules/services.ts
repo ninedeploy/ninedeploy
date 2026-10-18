@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { FastifyPluginAsync } from 'fastify';
@@ -48,8 +49,10 @@ import { visibleWorkspaceIds } from './workspaces.js';
 import { visibleLabelIds } from './labels.js';
 import { assertMayUseHostPrivilege } from '../lib/hostPrivilege.js';
 import { removeSourceUploads } from '../lib/sourceUpload.js';
+import { portProxyDir, removePortProxy } from '../lib/portProxy.js';
 import { assertMayPublishMappings, assertMayPublishPort, hostPortConflict } from '../lib/hostPort.js';
 import { listHostAddresses } from '../lib/hostAddresses.js';
+import { normaliseAllowlist } from '../lib/ipAllowlist.js';
 import { slugify, slugifyWithSuffix } from '../lib/slug.js';
 import { assertPrimaryVolumeNotAttachedElsewhere, assertSlugVolumeNotRetained } from '../lib/retainedSlugVolume.js';
 import { composeBuilder } from '../engine/builders/compose.js';
@@ -179,6 +182,8 @@ export function normalizePortMapping(m: PortMapping): ServicePortMapping {
     hostPortEnd: end !== null && end !== m.hostPort ? end : null,
     containerPort: m.containerPort,
     protocol: m.protocol ?? 'tcp',
+    // Same rules as a database's public access list (node:net, /0 refused).
+    ...(m.allowFrom?.length ? { allowFrom: normaliseAllowlist(m.allowFrom) } : {}),
   };
 }
 
@@ -696,6 +701,10 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       mappingsAfter = next;
     }
     if (mappingsAfter?.length && (mappingsChanged || movingHost)) {
+      // The allow-list proxy runs on the panel host; a node's agent has no such op.
+      if (serverAfter != null && mappingsAfter.some((m) => m.allowFrom?.length)) {
+        throw badRequest('An allow list on a port mapping works on the panel host only in this release.', 'remote_deploy_unsupported');
+      }
       // On a node the agent's own port is taken too (SSH, 80 and 443 are for every host).
       const node = serverAfter != null ? await app.db.query.servers.findFirst({ where: eq(servers.id, serverAfter) }) : null;
       assertMayPublishMappings(req.user!, mappingsAfter, node ? [node.port] : []);
@@ -1079,6 +1088,10 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // leave a live row whose runtime has already been destroyed.
     await app.db.delete(services).where(eq(services.id, id));
     for (const row of orphanLogs) deleteLog(row.id);
+    // 0.16.1: the allow-list port proxy goes with it (nothing when it never had one).
+    if (existsSync(portProxyDir(svc.slug))) {
+      await removePortProxy(svc.slug).catch((err: unknown) => req.log.warn({ err, serviceId: id }, 'could not remove the port proxy'));
+    }
     // 0.16.1: the archives uploaded as this service's source go with it.
     try {
       removeSourceUploads(id);

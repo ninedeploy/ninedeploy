@@ -12,6 +12,8 @@ export interface PortRow {
   host: string;
   container: string;
   protocol: 'tcp' | 'udp';
+  /** Comma-separated addresses or CIDR ranges; empty = anyone. TCP, one port. */
+  allow?: string;
 }
 
 const toRow = (m: PortMapping): PortRow => ({
@@ -19,6 +21,7 @@ const toRow = (m: PortMapping): PortRow => ({
   host: m.hostPortEnd ? `${m.hostPort}-${m.hostPortEnd}` : String(m.hostPort),
   container: String(m.containerPort),
   protocol: m.protocol ?? 'tcp',
+  allow: (m.allowFrom ?? []).join(', '),
 });
 
 /** Short label for a list of mappings: the first one's host side, and how many more (`27015-27030/udp +1`). */
@@ -35,8 +38,12 @@ export function rowToMapping(r: PortRow): PortMapping | string {
   if (!r.host.trim()) return 'Enter a host port or range.';
   const prefix = ip ? (ip.includes(':') ? `[${ip}]:` : `${ip}:`) : '';
   const container = r.container.trim() ? `:${r.container.trim()}` : '';
-  return parsePortMapping(`${prefix}${r.host.trim()}${container}/${r.protocol}`);
+  const allow = allowable(r) && r.allow?.trim() ? `@${r.allow.trim()}` : '';
+  return parsePortMapping(`${prefix}${r.host.trim()}${container}/${r.protocol}${allow}`);
 }
+
+/** Whether a row can take an allow list: one TCP port. */
+const allowable = (r: PortRow) => r.protocol === 'tcp' && !r.host.includes('-');
 
 /**
  * 0.16.1 Network → Port mappings: extra host ports of a docker service, TCP
@@ -113,7 +120,8 @@ export function PortMappingsCard({ serviceId, svc }: { serviceId: number; svc?: 
         <p className="mb-3 text-xs text-slate-400">
           Publish extra host ports straight to the container, outside Traefik: game servers, VoIP/RTP, DNS, VPNs. A range such as{' '}
           <span className="font-mono text-slate-300">27015-27030</span> maps onto the same number of container ports starting at the container
-          port (empty = the same ports). Leave the IP empty to listen on every address of the host, or enter one of its IPs to dedicate that
+          port (empty = the same ports). A single TCP port can take an allow list: only those addresses get in, which a host firewall
+          cannot enforce on Docker ports. Leave the IP empty to listen on every address of the host, or enter one of its IPs to dedicate that
           address. At most {MAX_MAPPED_PORTS} ports in total; the next deploy applies the change, stopping the old container first.
         </p>
         {onNode && (
@@ -161,6 +169,16 @@ export function PortMappingsCard({ serviceId, svc }: { serviceId: number; svc?: 
                     <option value="udp">UDP</option>
                     <option value="tcp">TCP</option>
                   </Select>
+                  {allowable(r) && (
+                    <Input
+                      value={r.allow ?? ''}
+                      onChange={(e) => update(i, { allow: e.target.value })}
+                      placeholder="allow from: anyone"
+                      title="Only these addresses or CIDR ranges may connect (comma-separated). The port is then published through a small proxy that filters the source address."
+                      aria-label={`Mapping ${i + 1} allow from`}
+                      className="h-8 w-48 font-mono text-[11px]"
+                    />
+                  )}
                   <button
                     type="button"
                     onClick={() => setRows((prev) => prev.filter((_, j) => j !== i))}
@@ -170,7 +188,11 @@ export function PortMappingsCard({ serviceId, svc }: { serviceId: number; svc?: 
                     <Trash2 size={13} />
                   </button>
                   {typeof parsed[i] !== 'string' && (
-                    <span className="font-mono text-[11px] text-slate-500">-p {formatPortMapping(parsed[i] as PortMapping)}</span>
+                    <span className="font-mono text-[11px] text-slate-500">
+                      {(parsed[i] as PortMapping).allowFrom?.length
+                        ? `${formatPortMapping(parsed[i] as PortMapping)} via the allow-list proxy`
+                        : `-p ${formatPortMapping(parsed[i] as PortMapping)}`}
+                    </span>
                   )}
                 </div>
                 {rowProblems[i] && <p className="text-[11px] text-rose-300/90">{rowProblems[i]}</p>}

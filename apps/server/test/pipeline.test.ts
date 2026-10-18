@@ -85,6 +85,11 @@ vi.mock('../src/engine/proxy.js', () => ({
   writeDynamicConfig: h.writeDynamicConfig,
   getAcmeEmail: h.getAcmeEmail,
 }));
+const portProxyMock = vi.hoisted(() => ({ syncPortProxy: vi.fn(async (..._a: unknown[]) => undefined) }));
+vi.mock('../src/lib/portProxy.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/portProxy.js')>()),
+  ...portProxyMock,
+}));
 vi.mock('../src/engine/templateDependencies.js', () => ({
   reconcileTemplateDependencies: h.reconcileTemplateDependencies,
 }));
@@ -266,6 +271,35 @@ describe('0.16.1 uploaded source', () => {
     await runDeployment(db as never, 1);
     expect(h.checkoutCommit).toHaveBeenCalled();
     expect(uploadMock.extractSourceUpload).not.toHaveBeenCalled();
+  });
+});
+
+describe('0.16.1 allow-listed port mappings', () => {
+  const restricted = [{ hostIp: null, hostPort: 5432, hostPortEnd: null, containerPort: 5432, protocol: 'tcp', allowFrom: ['10.0.0.0/8'] }];
+
+  it('after the routing flip the port proxy is pointed at the new containers (replicas included)', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { portMappings: restricted });
+    h.builder.buildAndRun.mockImplementationOnce(async () => ({ runtimeId: 'web-9', port: 3000, healthPath: '/', replicas: 2 }));
+    await runDeployment(db as never, 1);
+    expect(portProxyMock.syncPortProxy).toHaveBeenCalledWith(expect.objectContaining({ id: 5, slug: 'web', portMappings: restricted }), ['web-9', 'web-9-r2'], expect.any(Function));
+    expect(portProxyMock.syncPortProxy.mock.invocationCallOrder[0]!).toBeGreaterThan(h.writeDynamicConfig.mock.invocationCallOrder.at(-1)!);
+  });
+
+  it('a proxy failure is a warning, not a failed deploy', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { portMappings: restricted });
+    portProxyMock.syncPortProxy.mockRejectedValueOnce(new Error('port is already allocated'));
+    const lines = collectLogs(1);
+    await runDeployment(db as never, 1);
+    expect(lines).toContain('⚠ Port proxy: port is already allocated — the allow-listed ports are not reachable until the next deploy.');
+  });
+
+  it('control: a service that never had an allow list never touches the proxy', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { portMappings: [{ ...restricted[0], allowFrom: undefined }] });
+    await runDeployment(db as never, 1);
+    expect(portProxyMock.syncPortProxy).not.toHaveBeenCalled();
   });
 });
 
