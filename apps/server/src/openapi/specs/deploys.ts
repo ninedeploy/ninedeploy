@@ -63,6 +63,14 @@ export const deploysSpecs: RouteSpecMap = {
     floor: 'member',
     responseType: '{ enabled: boolean; url: string | null }',
   },
+  'GET /v1/services/:id/host-addresses': {
+    summary: 'The panel host IPs a port mapping can be bound to',
+    tag: 'deploys',
+    description:
+      'Global-scope addresses of the panel host (loopback, link-local and Docker bridges left out), read with `ip -o addr` in a host-network container and cached for a minute. `detected: false` when the host could not be asked; a node service gets none, since port mappings are published on the panel host only. Added in 0.16.1.',
+    floor: 'member',
+    responseType: '{ detected: boolean; addresses: Array<{ ip: string; family: 4 | 6; iface: string }> }',
+  },
   'GET /v1/badges/:badge': {
     summary: 'A deploy status badge (SVG) for a README',
     tag: 'deploys',

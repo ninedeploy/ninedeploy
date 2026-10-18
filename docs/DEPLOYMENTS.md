@@ -33,6 +33,29 @@ The gate in step 3 accepts any answer below 500 on the health path and waits **3
 - Only an operator changes them; members see them and can redeploy. A member's clone and every PR preview start without them.
 - They apply on the panel host. A remote node or a Swarm service deploys without them and says so in the deploy log.
 
+### Port mappings: UDP, ranges and a dedicated IP (0.16.1)
+
+Traefik carries HTTP(S) and the TCP routes in front of a service. Anything else (game servers, VoIP/RTP, DNS, WireGuard, syslog) needs the host port itself. **Service → Network → Port Mappings** publishes extra host ports straight to a docker service's container:
+
+| Field | Example | Meaning |
+| --- | --- | --- |
+| Host IP | empty, `203.0.113.7`, `2001:db8::7` | Empty listens on every address of the host; an IP dedicates that address to these ports |
+| Host ports | `27015` or `27015-27030` | One port or a range |
+| Container port | empty or `27015` | Where the range starts inside the container; empty = the same numbers |
+| Protocol | UDP / TCP | One protocol per rule; add a second rule for both |
+
+Each rule becomes one `docker run -p` operand (`-p 203.0.113.7:27015-27030:27015-27030/udp`), and the compose bridge renders the same `ports:` entries. From a terminal: `ninedeploy services ports <id> 27015-27030/udp 203.0.113.7:53/udp` replaces the list, `--clear` removes it, and no mapping lists it. API: `portMappings` on `PATCH /v1/services/:id` and the service response.
+
+- Up to 20 rules and 1000 host ports per service. Docker runs one proxy process per published port and protocol, so a 10 000-port RTP range would cost 10 000 processes on the host.
+- The rules of one service may not overlap on the same address and protocol. Saving a port another panel-host service or a database's public access already holds is refused with the owner's name (409). The same port on two different IPs is allowed.
+- The single direct host port (Network → Direct Host Port Publishing) is held to the same rule now: a port another service on the same host (the panel host, or the same node) already publishes is refused when it is saved or the service is created, instead of failing the first deploy with "port is already allocated".
+- The same privilege rules as the direct host port: ports below 1024 need an operator, and the panel's port, 22, 80 and 443 are refused for every protocol.
+- The Host IP field offers the panel host's own addresses (`GET /v1/services/:id/host-addresses`, read with `ip -o addr` in a host-network container, so it works for both the systemd and the Docker install). Saving an IP the host does not have is refused (`host_ip_unknown`); when the host cannot be asked, any address is taken and Docker refuses a wrong one when the container starts.
+- The next deploy applies a change. A service with host ports cannot run blue-green: Docker binds a port once, so the old container stops before the new one starts. Replicas get none of the ports; only the primary publishes them.
+- **A service with no HTTP or TCP port** (a UDP game server, VoIP, a queue worker) would fail the deploy healthcheck, which probes the container port. Set **Service → Settings → Healthcheck** to *Container running*: the deploy then only waits for the container to stay up for 10 one-second samples without a restart, and fails at once if it exits. The Port Mappings card offers the switch when only UDP is published. API: `healthCheck: 'http' | 'running'` on `PATCH /v1/services/:id`; PR previews and clones keep it. Remote nodes already check "running and stable".
+- Docker services on the panel host only, in this release: a node's agent has no port list yet, so mappings are refused on a node-pinned service, on a move to a node, and on Swarm. A fan-out target deploys without them and says so in its log.
+- Docker publishes ports through its own iptables chain, ahead of `ufw`, so a rule on the panel's Firewall page does not close a mapped port. Restrict one with the cloud provider's firewall or the Host IP field.
+
 ---
 
 ## ⚡ 2. Pipeline Cancellation
@@ -266,7 +289,7 @@ example with a leaked token, never runs a NineDeploy task.
   limit) and **no CPU shares**: neither can be expressed in a stack file.
 - **Refused on Swarm:** compose stacks, PM2, a service pinned to a node, the
   persistent volume and volume attachments (named volumes are per node), the
-  Docker socket, a published host port, managed databases, and fan-out targets.
+  Docker socket, a published host port or port mappings, managed databases, and fan-out targets.
   A PR preview of a Swarm service runs as a normal container.
 - **Logs** come from `docker service logs`; **restart** is a rolling restart;
   **stop/start** scale the service to 0 and back; the **terminal** opens a task

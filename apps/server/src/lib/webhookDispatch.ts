@@ -265,6 +265,7 @@ export async function handlePullRequest(
         // container options (GPUs, capabilities) are an operator's grant to
         // the service and stay off untrusted PR code.
         healthTimeoutSeconds: parent.healthTimeoutSeconds,
+        healthCheck: parent.healthCheck,
         cpuShares: parent.cpuShares,
         memLimitMb: parent.memLimitMb,
         isEphemeralPreview: true,

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { isIP } from 'node:net';
 import path from 'node:path';
-import { and, eq, inArray, ne } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne } from 'drizzle-orm';
 import {
   type DB,
   type Database,
@@ -17,6 +17,7 @@ import {
   PUBLIC_ACCESS_PORT_MIN,
   type PublicAccessStatus,
   type PublicAccessTlsMode,
+  portMappingsOverlap,
   publicAccessEngines,
 } from '@ninedeploy/schemas';
 import { config } from '../config.js';
@@ -237,8 +238,14 @@ export async function assertPublicPortAvailable(db: DB, port: number, databaseId
     where: and(eq(databasePublicAccess.publicPort, port), ne(databasePublicAccess.databaseId, databaseId)),
   });
   if (other) throw conflict(`Host port ${port} is already used by another database's public access`);
-  const svc = await db.query.services.findFirst({ where: eq(services.publishedPort, port) });
+  // Panel-host services only: a node service's port is bound on the node.
+  const svc = await db.query.services.findFirst({ where: and(eq(services.publishedPort, port), isNull(services.serverId)) });
   if (svc) throw conflict(`Host port ${port} is already published by a service`);
+  // 0.16.1: a panel-host service's TCP port mappings bind the host too.
+  const mapped = await db.select({ portMappings: services.portMappings }).from(services).where(isNull(services.serverId));
+  if (mapped.some((r) => (r.portMappings ?? []).some((m) => portMappingsOverlap(m, { hostPort: port, containerPort: port, protocol: 'tcp' })))) {
+    throw conflict(`Host port ${port} is already published by a service's port mapping`);
+  }
 }
 
 // ── rendering ──────────────────────────────────────────────────────────────

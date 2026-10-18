@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, Globe, Plus, Radio, Shield, Trash2, Wand2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { DomainRedirects } from './DomainRedirects.js';
+import { PortMappingsCard } from './PortMappingsCard.js';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, ConfirmDialog, Input, Skeleton, cn } from '../../components/ui.js';
@@ -14,6 +15,7 @@ export function NetworkTab({ serviceId, svc }: { serviceId: number; svc?: Servic
     <div className="mt-5 max-w-3xl space-y-5">
       <ContainerPortCard serviceId={serviceId} svc={svc} />
       <DirectPortCard serviceId={serviceId} svc={svc} />
+      <PortMappingsCard serviceId={serviceId} svc={svc} />
       <DomainsCard serviceId={serviceId} />
     </div>
   );

@@ -468,6 +468,10 @@ export const services = sqliteTable(
     // 0.16.1: how long a deploy waits for the new container to answer its
     // healthcheck, in seconds. Null = the 300 s every deploy used before.
     healthTimeoutSeconds: integer('health_timeout_seconds'),
+    // 0.16.1: 'running' = the deploy's healthcheck only waits for the
+    // container to stay up (UDP game servers, workers with no HTTP or TCP
+    // port). Null = the HTTP/TCP probe every deploy used before.
+    healthCheck: text('health_check').$type<'http' | 'running'>(),
     // 0.16.1: operator-set container options for docker services (GPUs,
     // /dev/shm size, init, open-file limit, added capabilities). Null = none,
     // the `docker run` line every deploy used before.
@@ -475,6 +479,10 @@ export const services = sqliteTable(
     // 0.16.1: the secret in the public status-badge URL
     // (`/v1/badges/<token>.svg`). Null = no badge, the default.
     badgeToken: text('badge_token'),
+    // 0.16.1: extra host ports of a docker service, TCP or UDP, single or
+    // ranges, optionally on one host IP (`-p 203.0.113.7:27015-27030:27015-27030/udp`).
+    // Null = none, the default.
+    portMappings: text('port_mappings', { mode: 'json' }).$type<ServicePortMapping[]>(),
     // Runtime identifier: pm2 process name or docker container name.
     runtimeId: text('runtime_id'),
     // Resource limits (0 = unlimited). cpuShares maps to docker --cpu-shares
@@ -659,6 +667,18 @@ export interface DomainRedirectRule {
 }
 
 /** `services.runtime_options` (0.16.1); validated by `runtimeOptions` in @ninedeploy/schemas. */
+/** One `services.port_mappings` entry (0.16.1); validated by `portMapping` in @ninedeploy/schemas. */
+export interface ServicePortMapping {
+  /** Host address to bind; null = every address of the host. */
+  hostIp?: string | null;
+  hostPort: number;
+  /** Last host port of a range; null = the single `hostPort`. */
+  hostPortEnd?: number | null;
+  /** First container port; the container range is as long as the host range. */
+  containerPort: number;
+  protocol: 'tcp' | 'udp';
+}
+
 export interface ServiceRuntimeOptions {
   /** `--gpus`: every GPU, or how many. */
   gpus?: 'all' | number | null;

@@ -164,3 +164,32 @@ describe('Healthcheck timeout field', () => {
     expect((await lastPatch()).healthTimeoutSeconds).toBeUndefined();
   }, TIMEOUT);
 });
+
+describe('Healthcheck mode field (0.16.1)', () => {
+  afterEach(cleanup);
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authMock.user = { id: 5, isOperator: false, email: 'm@test', name: 'M' };
+    apiMock.api.environments.list.mockResolvedValue([]);
+    apiMock.api.env.list.mockResolvedValue([]);
+  });
+
+  it('switches a docker service to "container running" and back, sending only a change', async () => {
+    renderTab(serviceWith({ healthCheck: 'http' }));
+    const select = await screen.findByLabelText('Healthcheck');
+    expect(select).toHaveValue('http');
+    fireEvent.submit(screen.getByRole('button', { name: /Save settings/ }).closest('form')!);
+    expect((await lastPatch()).healthCheck).toBeUndefined();
+
+    vi.clearAllMocks();
+    fireEvent.change(select, { target: { value: 'running' } });
+    fireEvent.submit(screen.getByRole('button', { name: /Save settings/ }).closest('form')!);
+    expect((await lastPatch()).healthCheck).toBe('running');
+  }, TIMEOUT);
+
+  it('is not offered on a panel that does not report it', async () => {
+    renderTab(serviceWith({}));
+    await screen.findByText('Service settings');
+    expect(screen.queryByLabelText('Healthcheck')).not.toBeInTheDocument();
+  }, TIMEOUT);
+});

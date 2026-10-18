@@ -1,4 +1,5 @@
 import { NineDeployError } from '@ninedeploy/sdk';
+import { formatPortMapping, type PortMapping, parsePortMapping, portMappingsProblem } from '@ninedeploy/schemas';
 import type { NineDeployClient } from '../client.js';
 import { c, error, fmtTime, header, info, kv, spinner, statusColor, success, table } from '../lib/format.js';
 import { prompt } from '../prompts.js';
@@ -91,8 +92,9 @@ export async function servicesGet(client: NineDeployClient, idStr: string): Prom
     kv('Image', svc.image ?? '—');
     kv('Port', svc.port ?? '—');
     if (svc.publishedPort) kv('Host Port', c.green(`:${svc.publishedPort}`));
+    if (svc.portMappings?.length) kv('Port Mappings', c.green(svc.portMappings.map(formatPortMapping).join(', ')));
     kv('Volume', svc.volumeMount ?? '—');
-    kv('Health', svc.healthPath);
+    kv('Health', svc.healthCheck === 'running' ? 'container running (no port probe)' : svc.healthPath);
     kv('Runtime', svc.runtimeId ?? '—');
     kv('Commit', svc.commitSha ?? '—');
     if (svc.autoUrl) kv('URL', c.cyan(`http://${svc.autoUrl}`));
@@ -181,6 +183,52 @@ export async function servicesStickyAction(
   success(result.enabled
     ? `Sticky session enabled for service #${result.id} (Traefik will pick this up on the next reload)`
     : `Sticky session disabled for service #${result.id}`);
+}
+
+/**
+ * Pure entry point for `ninedeploy services ports <id> [mappings...]` (0.16.1):
+ * no mappings lists them; mappings replace the list; `--clear` removes them.
+ * Each mapping is `[ip:]host[-end][:container][/tcp|udp]`.
+ */
+export async function servicesPorts(
+  client: NineDeployClient,
+  idStr: string,
+  specs: string[] = [],
+  opts: { clear?: boolean } = {},
+): Promise<{ id: number; mappings: PortMapping[]; changed: boolean }> {
+  const id = Number(idStr);
+  if (!id) throw new Error('Usage: ninedeploy services ports <id> [mapping...] [--clear]');
+  if (opts.clear && specs.length > 0) throw new Error('Give mappings or --clear, not both');
+  if (!opts.clear && specs.length === 0) {
+    const svc = await client.services.get(id);
+    return { id, mappings: svc.portMappings ?? [], changed: false };
+  }
+  const mappings: PortMapping[] = [];
+  for (const spec of specs) {
+    const parsed = parsePortMapping(spec);
+    if (typeof parsed === 'string') throw new Error(parsed);
+    mappings.push(parsed);
+  }
+  const problem = portMappingsProblem(mappings);
+  if (problem) throw new Error(problem);
+  const svc = await client.services.update(id, { portMappings: opts.clear ? null : mappings });
+  return { id, mappings: svc.portMappings ?? [], changed: true };
+}
+
+/** Formatted wrapper for the CLI. */
+export async function servicesPortsAction(client: NineDeployClient, idStr: string, specs: string[] = [], opts: { clear?: boolean } = {}): Promise<void> {
+  header('Port mappings');
+  let result: Awaited<ReturnType<typeof servicesPorts>>;
+  try {
+    result = await servicesPorts(client, idStr, specs, opts);
+  } catch (err) {
+    error(err instanceof Error ? err.message : String(err));
+    process.exitCode = 1;
+    return;
+  }
+  if (result.mappings.length === 0) info(result.changed ? `Port mappings removed from service #${result.id}.` : `Service #${result.id} publishes no extra ports.`);
+  for (const m of result.mappings) kv(formatPortMapping(m), m.hostIp ? `on ${m.hostIp}` : 'on every address');
+  if (result.changed) success('Saved. Redeploy the service to apply.');
 }
 
 /** `ninedeploy services export <id>` */

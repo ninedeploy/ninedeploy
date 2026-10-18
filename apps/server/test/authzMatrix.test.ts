@@ -54,6 +54,8 @@ const hoisted = vi.hoisted(() => {
   return { fp, volumes, routes, effects };
 });
 const noop = (name: string) => ({ default: hoisted.fp(async () => undefined, name) });
+// 0.16.1: the host-address route would start a host-network container.
+vi.mock('../src/lib/hostAddresses.js', () => ({ listHostAddresses: async () => [], parseIpAddr: () => [], resetHostAddressCache: () => undefined }));
 vi.mock('../src/plugins/worker.js', () => noop('ninedeploy-worker'));
 vi.mock('../src/plugins/traefik.js', () => noop('ninedeploy-traefik'));
 vi.mock('../src/plugins/backupScheduler.js', () => noop('authz-backups'));
@@ -773,6 +775,7 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/services/:id/badge': R('member', { note: 'the badge URL is its credential, so even reading it needs a member seat' }),
   'POST /v1/services/:id/badge': R('member'),
   'DELETE /v1/services/:id/badge': R('member'),
+  'GET /v1/services/:id/host-addresses': R('member'),
   'GET /v1/badges/:badge': R('token', { allow404: 'no badge is minted in the shared seed; the token lookup is covered by test/badges.test.ts' }),
   'POST /v1/services/:id/source': R('member', {
     body: () => ({}),

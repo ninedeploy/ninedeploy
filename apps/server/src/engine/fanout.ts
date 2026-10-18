@@ -103,6 +103,7 @@ export interface FanoutContext {
     memLimitMb: number;
     volumeMount: string | null;
     publishedPort: number | null;
+    portMappings?: unknown[] | null;
     // ── 0.16 T4 (D1): what a target runs with, instead of dropping it ──
     cmd?: string[] | null;
     dockerSocket?: boolean | null;
@@ -287,6 +288,9 @@ export async function deployToTargets(
         await agent('docker.stop', { name: runtimeId }, () => undefined).catch(() => undefined);
         await agent('docker.rm', { name: runtimeId }, () => undefined).catch(() => undefined);
       };
+      // 0.16.1: port mappings belong to the panel-host primary; a target's
+      // agent run op cannot publish them.
+      if (ctx.service.portMappings?.length) log(`⚠ Port mappings are not published on fan-out target ${target.serverId}; only the panel host publishes them.`);
       const sequential = Boolean(ctx.service.publishedPort && ctx.service.port);
       if (target.runtimeId && sequential) await retire(target.runtimeId);
       const envName = `${ctx.service.slug}-t${target.serverId}-${ctx.deploymentId}`;

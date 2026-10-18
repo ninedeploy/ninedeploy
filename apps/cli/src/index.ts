@@ -10,6 +10,7 @@ import {
   servicesCompose, servicesCreate, servicesDelete, servicesDeploy, servicesExport,
   servicesGet, servicesInspect, servicesLifecycle, servicesList, servicesLogs,
   servicesStickyAction,
+  servicesPortsAction,
 } from './commands/services.js';
 import {
   dbCreate, dbList, deploysCancel, deploysList, deploysQueue, deploysRemove, deploysRollback,
@@ -269,6 +270,12 @@ services.command('sticky <id>')
   .option('--enable', 'Route every request to the same backend container')
   .option('--disable', 'Remove the sticky-cookie middleware')
   .action((id: string, opts: { enable?: boolean; disable?: boolean }) => servicesStickyAction(getClient(), id, opts));
+
+// 0.16.1: extra host ports, TCP or UDP, ranges, an optional dedicated IP.
+services.command('ports <id> [mappings...]')
+  .description('List or replace extra host-port mappings (e.g. 27015-27030/udp, 203.0.113.7:8443:443)')
+  .option('--clear', 'Remove every port mapping')
+  .action((id: string, mappings: string[], opts: { clear?: boolean }) => servicesPortsAction(getClient(), id, mappings, opts));
 
 // 0.13: the service's GitHub App link (show, feedback, migrate/finalize/revert).
 services.command('github <id>')

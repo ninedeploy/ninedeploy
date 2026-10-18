@@ -1,3 +1,6 @@
+import { and, eq, isNull, ne } from 'drizzle-orm';
+import { databasePublicAccess, type DB, type ServicePortMapping, services } from '@ninedeploy/db';
+import { formatPortMapping, portMappingsOverlap } from '@ninedeploy/schemas';
 import { config } from '../config.js';
 import { forbidden } from './errors.js';
 import type { AuthedUser } from './resourceAccess.js';
@@ -53,4 +56,67 @@ export function assertMayPublishPort(user: AuthedUser, port: number | null | und
       `Operator access required: host ports below 1024 are privileged. Publish on ${port + 1024} or above, or route the service through a domain instead.`,
     );
   }
+}
+
+/**
+ * 0.16.1 port mappings: the same rules as one published port, over every
+ * port of every range. Reserved ports are refused for both protocols.
+ */
+export function assertMayPublishMappings(user: AuthedUser, mappings: readonly ServicePortMapping[] | null | undefined): void {
+  for (const m of mappings ?? []) {
+    const end = m.hostPortEnd ?? m.hostPort;
+    const reserved = reservedHostPorts().find((p) => p >= m.hostPort && p <= end);
+    if (reserved !== undefined) {
+      throw forbidden(
+        `Host port ${reserved} (in ${formatPortMapping(m)}) is reserved by NineDeploy (panel, Traefik or SSH) and cannot be published by a service.`,
+      );
+    }
+    if (!user.isOperator && m.hostPort < 1024) {
+      throw forbidden(`Operator access required: host ports below 1024 are privileged (${formatPortMapping(m)}).`);
+    }
+  }
+}
+
+/** A host socket range one owner holds. */
+type PortClaim = { hostIp?: string | null; hostPort: number; hostPortEnd?: number | null; containerPort: number; protocol: 'tcp' | 'udp'; owner: string };
+
+const claimsOf = (publishedPort: number | null | undefined, mappings: readonly ServicePortMapping[] | null | undefined, owner: string): PortClaim[] => [
+  ...(publishedPort ? [{ hostPort: publishedPort, containerPort: publishedPort, protocol: 'tcp' as const, owner }] : []),
+  ...(mappings ?? []).map((m) => ({ ...m, protocol: m.protocol ?? 'tcp', owner })),
+];
+
+/**
+ * Why the host cannot publish these ports for `serviceId`, or null: the
+ * direct port inside one of the service's own mappings, another service on
+ * the same host (`serverId`, null = the panel host), or a database's public
+ * access port (Traefik sidecars bind those on the panel host). Docker would
+ * refuse the same at deploy time with "port is already allocated"; saying it
+ * when the port is saved names the owner. `serviceId` 0 = a service being
+ * created.
+ */
+export async function hostPortConflict(
+  db: DB,
+  serviceId: number,
+  serverId: number | null | undefined,
+  publishedPort: number | null | undefined,
+  mappings: readonly ServicePortMapping[] | null | undefined,
+): Promise<string | null> {
+  const mine = claimsOf(publishedPort, mappings, '');
+  if (mine.length === 0) return null;
+  const own = publishedPort ? (mappings ?? []).find((m) => portMappingsOverlap(m, { hostPort: publishedPort, containerPort: publishedPort, protocol: 'tcp' })) : undefined;
+  if (own) return `Host port ${publishedPort}/tcp is already this service's direct host port.`;
+  const others = await db
+    .select({ name: services.name, publishedPort: services.publishedPort, portMappings: services.portMappings })
+    .from(services)
+    .where(and(ne(services.id, serviceId), serverId == null ? isNull(services.serverId) : eq(services.serverId, serverId)));
+  const taken: PortClaim[] = others.flatMap((s) => claimsOf(s.publishedPort, s.portMappings, `service "${s.name}"`));
+  if (serverId == null) {
+    const publicDbs = await db.select({ port: databasePublicAccess.publicPort }).from(databasePublicAccess);
+    taken.push(...publicDbs.map((d) => ({ hostPort: d.port, containerPort: d.port, protocol: 'tcp' as const, owner: "a database's public access" })));
+  }
+  for (const c of mine) {
+    const hit = taken.find((t) => portMappingsOverlap(c, t));
+    if (hit) return `Host port ${Math.max(c.hostPort, hit.hostPort)}/${c.protocol} is already published by ${hit.owner}.`;
+  }
+  return null;
 }

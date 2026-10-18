@@ -8,6 +8,8 @@ import { Button, Card, EmptyState, ErrorCard, Input, PageHeader, Skeleton, Statu
 import { DeployWizard } from '../components/DeployWizard.js';
 import { LanesModal } from '../components/LanesModal.js';
 import { ServiceDomainLauncher } from '../components/ServiceDomainLauncher.js';
+import { formatPortMapping } from '@ninedeploy/schemas';
+import { portMappingLabel } from './service/PortMappingsCard.js';
 
 export function ServicesList() {
   const [wizard, setWizard] = useState(false);
@@ -262,11 +264,19 @@ export function ServicesList() {
                             <GitBranch size={11} /> {s.branch}
                           </span>
                         </div>
-                        {s.publishedPort ? (
-                          <span className="font-mono text-emerald-400 font-semibold">:{s.publishedPort}</span>
-                        ) : s.port ? (
-                          <span className="font-mono">:{s.port}</span>
-                        ) : null}
+                        <span className="flex items-center gap-2">
+                          {s.publishedPort ? (
+                            <span className="font-mono text-emerald-400 font-semibold">:{s.publishedPort}</span>
+                          ) : s.port ? (
+                            <span className="font-mono">:{s.port}</span>
+                          ) : null}
+                          {/* 0.16.1 port mappings, e.g. "27015-27030/udp", the first one and a count. */}
+                          {s.portMappings && s.portMappings.length > 0 && (
+                            <span className="font-mono text-emerald-400/80" title={s.portMappings.map(formatPortMapping).join(', ')}>
+                              {portMappingLabel(s.portMappings)}
+                            </span>
+                          )}
+                        </span>
                       </div>
                     </Card>
                     </Link>

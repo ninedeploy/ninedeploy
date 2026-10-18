@@ -156,6 +156,7 @@ GET /v1/services/:id/env/preview viewer nd://scope/read/env
 GET /v1/services/:id/exec operator nd://scope/read/services
 GET /v1/services/:id/export operator nd://scope/read/services
 GET /v1/services/:id/github viewer nd://scope/read/services
+GET /v1/services/:id/host-addresses member nd://scope/read/services
 GET /v1/services/:id/image-transfers viewer nd://scope/read/services
 GET /v1/services/:id/insights viewer nd://scope/read/manifests
 GET /v1/services/:id/jobs viewer nd://scope/read/services

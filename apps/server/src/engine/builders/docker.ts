@@ -1,8 +1,8 @@
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { BuildContext, Builder } from '../types.js';
-import type { BuildConfig, ServiceRuntimeOptions } from '@ninedeploy/db';
-import type { NinedeployManifest } from '@ninedeploy/schemas';
+import type { BuildConfig, ServicePortMapping, ServiceRuntimeOptions } from '@ninedeploy/db';
+import { formatPortMapping, type NinedeployManifest } from '@ninedeploy/schemas';
 import { generateNixpacksToml } from '../../lib/ninedeployToNixpacks.js';
 import { buildEnv, capture, run, sleep } from '../../lib/exec.js';
 import { composeScalar, dotenvValue } from './compose.js';
@@ -264,6 +264,16 @@ interface RuntimeComposeInput {
   labels?: Array<[string, string]>;
   /** 0.16.1 operator container options (see {@link runtimeOptionArgs}). */
   runtimeOptions?: ServiceRuntimeOptions | null;
+  /** 0.16.1 extra host ports, TCP/UDP, ranges, optional host IP (see {@link portMappingArgs}). */
+  portMappings?: ServicePortMapping[] | null;
+}
+
+/**
+ * 0.16.1: one `-p` operand per port mapping. The values were range-, overlap-
+ * and IP-checked by the `portMappings` schema when they were saved.
+ */
+export function portMappingArgs(mappings: readonly ServicePortMapping[] | null | undefined): string[] {
+  return (mappings ?? []).flatMap((m) => ['-p', formatPortMapping(m)]);
 }
 
 /**
@@ -334,8 +344,13 @@ export function renderRuntimeCompose(input: RuntimeComposeInput): string {
     svc.push('    volumes:');
     for (const v of volumes) svc.push(`      - ${composeScalar(v)}`);
   }
-  if (input.publishedPort && input.containerPort) {
-    svc.push('    ports:', `      - ${JSON.stringify(`${input.publishedPort}:${input.containerPort}`)}`);
+  const ports = [
+    ...(input.publishedPort && input.containerPort ? [`${input.publishedPort}:${input.containerPort}`] : []),
+    ...(input.portMappings ?? []).map(formatPortMapping),
+  ];
+  if (ports.length > 0) {
+    svc.push('    ports:');
+    for (const p of ports) svc.push(`      - ${JSON.stringify(p)}`);
   }
   if (input.cpuShares > 0) svc.push(`    cpu_shares: ${input.cpuShares}`);
   if (input.cpuLimitMilli > 0) svc.push(`    cpus: ${input.cpuLimitMilli / 1000}`);
@@ -499,6 +514,43 @@ export function sanitiseRuntimeLogs(raw: string): string {
 }
 
 /** Inspect and log why a container is not reachable. Returns its state. */
+/** 0.16.1 `healthCheck: running`: consecutive 1 s samples the container must hold `running` without a restart. */
+export const RUNNING_STABLE_SAMPLES = 10;
+
+/**
+ * The healthcheck of a service with no port to probe (UDP game servers,
+ * VoIP, workers): the container must reach `running` and stay there, with an
+ * unchanged restart count, for {@link RUNNING_STABLE_SAMPLES} samples. A
+ * crash on boot under `--restart unless-stopped` shows up as `restarting` or
+ * a new restart count and starts the count again; an exit fails at once.
+ */
+export async function holdsRunning(runtimeId: string, timeoutMs: number, log: (line: string) => void): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  let stable = 0;
+  let restarts: string | null = null;
+  while (Date.now() < deadline) {
+    let status = '';
+    let count = '';
+    try {
+      const raw = await capture('docker', ['inspect', runtimeId, '--format', '{{.State.Status}} {{.RestartCount}}'], { timeoutMs: DOCKER_READ_TIMEOUT_MS });
+      [status = '', count = ''] = raw.trim().split(/\s+/);
+    } catch {
+      /* still being created */
+    }
+    if (status === 'exited' || status === 'dead') {
+      await logContainerDiagnostic(runtimeId, log);
+      return false;
+    }
+    if (status === 'running' && (restarts === null || count === restarts)) stable += 1;
+    else stable = 0;
+    restarts = status === 'running' ? count : null;
+    if (stable >= RUNNING_STABLE_SAMPLES) return true;
+    await sleep(1000);
+  }
+  await logContainerDiagnostic(runtimeId, log);
+  return false;
+}
+
 async function logContainerDiagnostic(name: string, log: (line: string) => void): Promise<DockerContainerState | null> {
   try {
     // F936: bounded — past it the diagnostic is skipped (null), never the deploy held.
@@ -1032,9 +1084,13 @@ export const dockerBuilder: Builder = {
     // first version forever. Retire the previous runtime FIRST and deploy
     // sequentially — a short, deliberate gap beats a permanently failing
     // redeploy.
-    if (service.publishedPort && previous?.runtimeId && previous.runtimeId !== name) {
+    const hostPorts = [
+      ...(service.publishedPort ? [String(service.publishedPort)] : []),
+      ...(service.portMappings ?? []).map(formatPortMapping),
+    ];
+    if (hostPorts.length > 0 && previous?.runtimeId && previous.runtimeId !== name) {
       log(
-        `Host port ${service.publishedPort} is published — retiring previous runtime ${previous.runtimeId} before start (sequential deploy, no blue-green)`,
+        `Host port${hostPorts.length === 1 ? '' : 's'} ${hostPorts.join(', ')} ${hostPorts.length === 1 ? 'is' : 'are'} published — retiring previous runtime ${previous.runtimeId} before start (sequential deploy, no blue-green)`,
       );
       await run('docker', ['rm', '-f', previous.runtimeId], {}, swallowLine);
     }
@@ -1119,6 +1175,9 @@ export const dockerBuilder: Builder = {
       const containerPort = resolvedPort ?? service.publishedPort;
       args.push('-p', `${service.publishedPort}:${containerPort}`);
     }
+    // 0.16.1 extra host ports (UDP, ranges, a dedicated IP). Stripped from
+    // replicas below with the direct port: only the primary may bind them.
+    args.push(...portMappingArgs(service.portMappings));
     // Template-only flag (registry is admin-controlled): expose Docker control.
     if (service.dockerSocket) args.push('-v', '/var/run/docker.sock:/var/run/docker.sock');
 
@@ -1145,6 +1204,7 @@ export const dockerBuilder: Builder = {
             envFile: composeEnvFile.path,
             labels,
             runtimeOptions: service.runtimeOptions,
+            portMappings: service.portMappings,
           }),
         )
       : null;
@@ -1322,13 +1382,25 @@ export const dockerBuilder: Builder = {
       /* non-fatal — digest is best-effort */
     }
 
-    return { runtimeId: name, port: resolvedPort, healthPath: service.healthPath ?? '/', imageDigest: digest, replicas: achievedReplicas };
+    return {
+      runtimeId: name,
+      port: resolvedPort,
+      healthPath: service.healthPath ?? '/',
+      ...(service.healthCheck === 'running' ? { healthCheck: 'running' as const } : {}),
+      imageDigest: digest,
+      replicas: achievedReplicas,
+    };
   },
 
   // 5-minute deadline: first boots (model downloads, DB migrations) are slow.
   async isHealthy(runtime, timeoutMs = 300_000, directGraceMs = 10_000, log: (line: string) => void = () => undefined) {
     // Sanitised, then assembled structurally — a stored healthPath must not
     // be able to redirect the probe at another host (see lib/probeUrl.ts).
+    // 0.16.1: a service with nothing to probe only has to stay up.
+    if (runtime.healthCheck === 'running') {
+      log(`Healthcheck: container running (no port probe) — waiting for ${runtime.runtimeId} to stay up ${RUNNING_STABLE_SAMPLES}s`);
+      return holdsRunning(runtime.runtimeId, timeoutMs, log);
+    }
     const healthPath = safeProbePath(runtime.healthPath);
     const deadline = Date.now() + timeoutMs;
     // Direct host→container-IP probing works on Linux bridges but NOT on

@@ -80,6 +80,14 @@ export async function runRemoteContainer(agent: AgentCall, input: RemoteRunInput
   const { service, deploymentId, env, name, image: target, previous, log } = input;
   const sink = (line: string) => log(line);
 
+  // 0.16.1: the agent's run op takes one `publish` operand, no port list.
+  // The PATCH route refuses mappings on a node service; this catches a row
+  // that got them another way, loudly instead of starting without them,
+  // before the env-file reaches the node.
+  if (service.portMappings?.length) {
+    throw new Error('Port mappings are published on the panel host only in this release: clear them under Network, or run the service on the panel host.');
+  }
+
   // ── 0.16 T5 node volumes ──
   // Decided, checked and prepared BEFORE the env-file is written, so a
   // refused deploy leaves no secret on the node and starts nothing.

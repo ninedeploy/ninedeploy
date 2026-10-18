@@ -134,6 +134,12 @@ describe('0.14 route mapping', () => {
     ]);
   });
 
+  it('0.16.1: lists the panel host addresses for a port mapping', async () => {
+    const { api, calls } = client();
+    await api.services.hostAddresses(3);
+    expect(calls.map((c) => [c.method, c.url])).toEqual([['GET', '/v1/services/3/host-addresses']]);
+  });
+
   it('keeps the custom-config refusal findings as error details', async () => {
     const issue = { path: 'http.routers.a', message: 'name must start with custom-' };
     const { api } = client(({ url }) =>

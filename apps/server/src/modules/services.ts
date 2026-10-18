@@ -16,9 +16,10 @@ import {
   sources,
   type DB,
   type Service,
+  type ServicePortMapping,
   type ServiceRuntimeOptions,
 } from '@ninedeploy/db';
-import { composePreviewRequest, createService, type RuntimeOptions, sameImageRepository, setLimits, updateService } from '@ninedeploy/schemas';
+import { composePreviewRequest, createService, type PortMapping, type RuntimeOptions, sameImageRepository, setLimits, updateService } from '@ninedeploy/schemas';
 import { findCatalogTemplate } from '../templates/catalog.js';
 
 /** Fan-out target set for a service — up to 10 extra nodes, operator-set. */
@@ -47,7 +48,8 @@ import { visibleWorkspaceIds } from './workspaces.js';
 import { visibleLabelIds } from './labels.js';
 import { assertMayUseHostPrivilege } from '../lib/hostPrivilege.js';
 import { removeSourceUploads } from '../lib/sourceUpload.js';
-import { assertMayPublishPort } from '../lib/hostPort.js';
+import { assertMayPublishMappings, assertMayPublishPort, hostPortConflict } from '../lib/hostPort.js';
+import { listHostAddresses } from '../lib/hostAddresses.js';
 import { slugify, slugifyWithSuffix } from '../lib/slug.js';
 import { assertPrimaryVolumeNotAttachedElsewhere, assertSlugVolumeNotRetained } from '../lib/retainedSlugVolume.js';
 import { composeBuilder } from '../engine/builders/compose.js';
@@ -132,9 +134,11 @@ function serialize(s: Service, sourceName: string | null = null, tags: TagIds = 
     serverId: s.serverId ?? null,
     healthPath: s.healthPath,
     healthTimeoutSeconds: s.healthTimeoutSeconds ?? null,
+    healthCheck: s.healthCheck === 'running' ? 'running' : 'http',
     runtimeOptions: s.runtimeOptions ?? null,
     port: s.port,
     publishedPort: s.publishedPort ?? null,
+    portMappings: s.portMappings ?? [],
     autoUrl: autoUrlPreview(s.slug, s.serverId ?? null),
     cpuShares: s.cpuShares,
     cpuLimitMilli: s.cpuLimitMilli,
@@ -164,6 +168,18 @@ export function normalizeRuntimeOptions(input: ServiceRuntimeOptions | null | un
   const caps = [...new Set(input.capAdd ?? [])].sort();
   if (caps.length > 0) out.capAdd = caps;
   return Object.keys(out).length > 0 ? out : null;
+}
+
+/** A port mapping as stored: every key present, a one-port range collapsed, the IP lower-cased. */
+export function normalizePortMapping(m: PortMapping): ServicePortMapping {
+  const end = m.hostPortEnd ?? null;
+  return {
+    hostIp: m.hostIp ? m.hostIp.toLowerCase() : null,
+    hostPort: m.hostPort,
+    hostPortEnd: end !== null && end !== m.hostPort ? end : null,
+    containerPort: m.containerPort,
+    protocol: m.protocol ?? 'tcp',
+  };
 }
 
 /** Build-argument names as stored: de-duplicated, in order; none → null (the pre-0.16.1 row). */
@@ -321,6 +337,12 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       build: input.build,
     });
     assertMayPublishPort(req.user!, input.publishedPort);
+    // 0.16.1: a direct port another service on the same host holds fails
+    // the first deploy with "port is already allocated"; say it now.
+    if (input.publishedPort) {
+      const taken = await hostPortConflict(app.db, 0, input.serverId ?? null, input.publishedPort, null);
+      if (taken) throw conflict(taken);
+    }
     // F985: create is held to the same rule as PATCH and /limits (F961) — a
     // compose row would store these and nothing would ever apply them.
     if (input.type === 'compose') {
@@ -647,6 +669,48 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       }
       // Validated by the schema above; normalising only drops fields.
       patch.runtimeOptions = next as RuntimeOptions | null;
+    }
+    // 0.16.1 healthcheck mode: 'http' is stored as null, the pre-0.16.1 row.
+    if (patch.healthCheck !== undefined) {
+      if (patch.healthCheck === 'running' && (patch.type ?? existing.type) !== 'docker') {
+        throw badRequest('The "container running" healthcheck applies to docker services only');
+      }
+      patch.healthCheck = patch.healthCheck === 'running' ? 'running' : null;
+    }
+    // 0.16.1 extra host ports (TCP/UDP, ranges, an optional dedicated IP).
+    // Same privilege rules as the single published port, checked only when
+    // the list changes, so a member can still edit a service an operator
+    // gave port 53/udp. [] is stored as null, the pre-0.16.1 row.
+    if (patch.portMappings !== undefined) {
+      const next = patch.portMappings?.length ? patch.portMappings.map(normalizePortMapping) : null;
+      if (next && JSON.stringify(next) !== JSON.stringify(existing.portMappings ?? null)) {
+        if ((patch.type ?? existing.type) !== 'docker') throw badRequest('Port mappings apply to docker services only; a compose stack publishes its own ports.');
+        assertMayPublishMappings(req.user!, next);
+        // A dedicated IP must be one the panel host has; Docker would only
+        // say so when the container starts. Skipped when the host cannot be
+        // asked (no Docker here): the deploy then reports it.
+        const ips = [...new Set(next.flatMap((m) => (m.hostIp ? [m.hostIp] : [])))];
+        const known = ips.length > 0 ? await listHostAddresses() : null;
+        const unknown = known ? ips.find((ip) => !known.some((a) => a.ip === ip)) : undefined;
+        if (known && unknown) {
+          throw badRequest(
+            `${unknown} is not an address of the panel host (it has ${known.map((a) => a.ip).join(', ') || 'no public or LAN address'}).`,
+            'host_ip_unknown',
+          );
+        }
+      }
+      patch.portMappings = next;
+    }
+    const mappingsAfter = patch.portMappings !== undefined ? patch.portMappings : (existing.portMappings ?? null);
+    const serverAfter = patch.serverId !== undefined ? patch.serverId : existing.serverId;
+    // Refused when the PATCH sets mappings on a node service or moves a
+    // service with mappings to a node: the agent's run op has no port list.
+    if (mappingsAfter?.length && serverAfter != null && (patch.portMappings !== undefined || patch.serverId !== undefined)) {
+      throw badRequest('Port mappings are published on the panel host only in this release; clear them or keep the service on the panel host.', 'remote_deploy_unsupported');
+    }
+    if (patch.portMappings !== undefined || patch.publishedPort !== undefined) {
+      const taken = await hostPortConflict(app.db, existing.id, serverAfter, patch.publishedPort !== undefined ? patch.publishedPort : existing.publishedPort, mappingsAfter);
+      if (taken) throw conflict(taken);
     }
     // r182: the slug is an identity, not a label — it names the data volume
     // (`nd-svc-<slug>-data`), the private bridge and the auto-domain. A rename
@@ -1520,6 +1584,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         composeContent: svc.composeContent,
         healthPath: svc.healthPath,
         healthTimeoutSeconds: svc.healthTimeoutSeconds,
+        healthCheck: svc.healthCheck,
         // 0.16.1: operator-set container options are the operator's to hand
         // out; a member's copy starts without them (like sourceId above).
         runtimeOptions: req.user!.isOperator ? svc.runtimeOptions : null,

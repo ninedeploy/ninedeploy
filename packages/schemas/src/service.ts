@@ -41,6 +41,158 @@ export const runtimeOptions = z
   .strict();
 export type RuntimeOptions = z.infer<typeof runtimeOptions>;
 
+/**
+ * 0.16.1: the most host ports one service may publish through `portMappings`.
+ * Docker starts one userland proxy process per published port and protocol,
+ * so a 10 000-port range costs 10 000 processes on the host.
+ */
+export const MAX_MAPPED_PORTS = 1000;
+/** Most port-mapping rules per service. */
+export const MAX_PORT_MAPPINGS = 20;
+
+const IPV4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+
+/**
+ * A literal IPv4 or IPv6 address a port can be bound to (no zone, no CIDR).
+ * The unspecified addresses are refused: an empty IP already means "every
+ * address", and two spellings of it would dodge the overlap check.
+ */
+export function isBindableIp(ip: string): boolean {
+  if (IPV4.test(ip)) return ip !== '0.0.0.0';
+  if (ip.length > 45) return false;
+  const halves = ip.split('::');
+  if (halves.length > 2) return false;
+  const groups = halves.flatMap((h) => (h === '' ? [] : h.split(':')));
+  let width = groups.length;
+  if (groups.length > 0 && IPV4.test(groups[groups.length - 1]!)) {
+    groups.pop();
+    width += 1; // an embedded IPv4 fills two groups
+  }
+  if (!groups.every((g) => /^[0-9A-Fa-f]{1,4}$/.test(g))) return false;
+  if (halves.length === 2 ? width > 7 : width !== 8) return false;
+  // `::`, `0::0`, `0:0:0:0:0:0:0:0`: the unspecified address.
+  return width !== groups.length || groups.some((g) => Number.parseInt(g, 16) !== 0);
+}
+
+/**
+ * 0.16.1 extra host-port mappings of a docker service: one port or a range,
+ * TCP or UDP, on every host address or one dedicated IP
+ * (`docker run -p 203.0.113.7:27015-27030:27015-27030/udp`). The container
+ * range starts at `containerPort` and is as long as the host range.
+ */
+export const portMapping = z
+  .object({
+    /** Host address to bind; null or omitted = every address of the host. */
+    hostIp: z
+      .string()
+      .max(45)
+      .refine(isBindableIp, 'hostIp must be one IPv4 or IPv6 address of the host (leave it empty for every address)')
+      .nullable()
+      .optional(),
+    hostPort: z.number().int().min(1).max(65535),
+    /** Last host port of a range; null or omitted = the single `hostPort`. */
+    hostPortEnd: z.number().int().min(1).max(65535).nullable().optional(),
+    containerPort: z.number().int().min(1).max(65535),
+    protocol: z.enum(['tcp', 'udp']).default('tcp'),
+  })
+  .strict();
+export type PortMapping = z.infer<typeof portMapping>;
+type PortMappingLike = Pick<PortMapping, 'hostPort' | 'hostPortEnd' | 'containerPort'> & {
+  hostIp?: string | null;
+  protocol?: 'tcp' | 'udp';
+};
+
+/** How many host ports a mapping publishes. */
+export const mappedPortCount = (m: Pick<PortMapping, 'hostPort' | 'hostPortEnd'>): number =>
+  Math.max(1, (m.hostPortEnd ?? m.hostPort) - m.hostPort + 1);
+
+/**
+ * Whether two mappings would bind the same host socket: same protocol,
+ * overlapping ports, and the same IP (or either on every address).
+ */
+export function portMappingsOverlap(a: PortMappingLike, b: PortMappingLike): boolean {
+  if ((a.protocol ?? 'tcp') !== (b.protocol ?? 'tcp')) return false;
+  if (a.hostIp && b.hostIp && a.hostIp.toLowerCase() !== b.hostIp.toLowerCase()) return false;
+  return a.hostPort <= (b.hostPortEnd ?? b.hostPort) && b.hostPort <= (a.hostPortEnd ?? a.hostPort);
+}
+
+/** Why a list of mappings cannot be published, or null. Shared by the server, the panel and the CLI. */
+export function portMappingsProblem(list: readonly PortMappingLike[]): string | null {
+  let total = 0;
+  for (const [i, m] of list.entries()) {
+    const end = m.hostPortEnd ?? m.hostPort;
+    const label = formatPortMapping(m);
+    if (end < m.hostPort) return `Mapping ${i + 1} (${label}): the range ends before it starts.`;
+    if (m.containerPort + (end - m.hostPort) > 65535) return `Mapping ${i + 1} (${label}): the container range runs past 65535.`;
+    total += end - m.hostPort + 1;
+    const other = list.slice(0, i).find((o) => portMappingsOverlap(o, m));
+    if (other) {
+      return `Mapping ${i + 1} (${label}) overlaps ${formatPortMapping(other)}: a host port can be published once per address and protocol.`;
+    }
+  }
+  if (total > MAX_MAPPED_PORTS) {
+    return `${total} host ports requested; at most ${MAX_MAPPED_PORTS} per service (Docker runs one proxy process per published port).`;
+  }
+  return null;
+}
+
+/** The `docker run -p` operand: `27015-27030:27015-27030/udp`, `203.0.113.7:53:53/udp`, `[2001:db8::7]:53:53/udp`. */
+export function formatPortMapping(m: PortMappingLike): string {
+  const span = (m.hostPortEnd ?? m.hostPort) - m.hostPort;
+  const range = (start: number) => (span > 0 ? `${start}-${start + span}` : String(start));
+  const ip = m.hostIp ? (m.hostIp.includes(':') ? `[${m.hostIp}]:` : `${m.hostIp}:`) : '';
+  return `${ip}${range(m.hostPort)}:${range(m.containerPort)}/${m.protocol ?? 'tcp'}`;
+}
+
+/**
+ * Parse `27015-27030:27015/udp`, `8080:80`, `53/udp`, `10000-10100/udp`
+ * (no colon = the same ports inside the container), optionally after an IP:
+ * `203.0.113.7:53/udp`, `[2001:db8::7]:8080:80`. A container range must be as
+ * long as the host range. Returns the mapping, or why the text is not one.
+ */
+export function parsePortMapping(text: string): PortMapping | string {
+  const t = text.trim();
+  const m = /^(?:(\d{1,3}(?:\.\d{1,3}){3})|\[([0-9A-Fa-f:.]+)\]):(\d{1,5})(?:-(\d{1,5}))?(?::(\d{1,5})(?:-(\d{1,5}))?)?(?:\/(tcp|udp))?$/i.exec(t)
+    ?? /^()()(\d{1,5})(?:-(\d{1,5}))?(?::(\d{1,5})(?:-(\d{1,5}))?)?(?:\/(tcp|udp))?$/i.exec(t);
+  if (!m) return `"${t}" is not a port mapping (examples: 8080:80, 27015-27030:27015/udp, 203.0.113.7:53/udp).`;
+  const hostIp = m[1] || m[2] || null;
+  if (hostIp && !isBindableIp(hostIp)) return `"${t}": ${hostIp} is not an address a port can be bound to.`;
+  const hostPort = Number(m[3]);
+  const hostPortEnd = m[4] ? Number(m[4]) : null;
+  const containerPort = m[5] ? Number(m[5]) : hostPort;
+  const ports = [hostPort, hostPortEnd ?? hostPort, containerPort];
+  if (ports.some((p) => p < 1 || p > 65535)) return `"${t}": ports run from 1 to 65535.`;
+  if (hostPortEnd !== null && hostPortEnd < hostPort) return `"${t}": the range ends before it starts.`;
+  if (m[6] && Number(m[6]) - containerPort !== (hostPortEnd ?? hostPort) - hostPort) {
+    return `"${t}": the container range must be as long as the host range.`;
+  }
+  return {
+    hostIp,
+    hostPort,
+    hostPortEnd: hostPortEnd !== null && hostPortEnd !== hostPort ? hostPortEnd : null,
+    containerPort,
+    protocol: (m[7]?.toLowerCase() ?? 'tcp') as 'tcp' | 'udp',
+  };
+}
+
+/** The PATCH field: rules checked together (ranges, overlaps, the port budget). */
+export const portMappings = z
+  .array(portMapping)
+  .max(MAX_PORT_MAPPINGS)
+  .superRefine((list, ctx) => {
+    const problem = portMappingsProblem(list);
+    if (problem) ctx.addIssue({ code: 'custom', message: problem });
+  });
+
+/**
+ * 0.16.1 deploy healthcheck: `http` probes the container port (an HTTP answer
+ * below 500, then a TCP connect); `running` only waits for the container to
+ * stay up, for services with no HTTP or TCP port to probe (UDP game servers,
+ * VoIP, queue workers).
+ */
+export const healthCheckMode = z.enum(['http', 'running']);
+export type HealthCheckMode = z.infer<typeof healthCheckMode>;
+
 /** Optional project/workspace/label tag IDs for new service creation. */
 const tagIds = z.array(z.number().int().positive()).optional();
 
@@ -175,10 +327,14 @@ export const updateService = z.object({
   healthPath: httpPath.optional(),
   /** Seconds a deploy waits for the healthcheck (10–3600); null restores the 300 s default. */
   healthTimeoutSeconds: z.number().int().min(10).max(3600).nullable().optional(),
+  /** 'running' = the deploy only waits for the container to stay up (UDP and other non-HTTP services); 'http' or null = the HTTP/TCP probe. */
+  healthCheck: healthCheckMode.nullable().optional(),
   /** Operator only: advanced container options; null clears them all. */
   runtimeOptions: runtimeOptions.nullable().optional(),
   port: z.number().int().min(1).max(65535).optional(),
   publishedPort: z.number().int().min(1).max(65535).nullable().optional(),
+  /** Extra host ports, TCP or UDP, single or ranges (docker services on the panel host); null or [] clears them. */
+  portMappings: portMappings.nullable().optional(),
   previewDeploymentsEnabled: z.boolean().optional(),
   previewAutoDestroyOnClose: z.boolean().optional(),
   previewDomainPattern: z.string().nullable().optional(),
@@ -256,11 +412,15 @@ export const service = z.object({
   healthPath: z.string(),
   /** Healthcheck deadline in seconds; null = the 300 s default (0.16.1). */
   healthTimeoutSeconds: z.number().int().nullable().optional(),
+  /** How a deploy decides the new container is ready (0.16.1). */
+  healthCheck: healthCheckMode.optional(),
   /** Advanced container options (0.16.1); null = none. */
   runtimeOptions: runtimeOptions.nullable().optional(),
   autoUrl: z.string().nullable(),
   port: z.number().int().nullable(),
   publishedPort: z.number().int().nullable().optional(),
+  /** Extra host-port mappings, TCP or UDP (0.16.1); [] = none. */
+  portMappings: z.array(portMapping).optional(),
   cpuShares: z.number().int(),
   cpuLimitMilli: z.number().int(),
   memLimitMb: z.number().int(),

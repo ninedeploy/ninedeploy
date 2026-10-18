@@ -155,7 +155,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
 
   const [form, setForm] = useState<{
     name: string; branch: string; repoUrl: string; image: string; port: string;
-    healthPath: string; healthTimeout: string; volumeMount: string; sourceId: string;
+    healthPath: string; healthTimeout: string; healthCheck: string; volumeMount: string; sourceId: string;
     buildPack: string; baseDir: string; installCmd: string; buildCmd: string; startCmd: string; dockerfilePath: string; outputDir: string;
     preDeployCmd: string; postDeployCmd: string; preStopCmd: string;
     restartPolicy: string; stopGraceSeconds: string; buildArgs: string;
@@ -170,6 +170,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
       port: svc.port ? String(svc.port) : '',
       healthPath: svc.healthPath ?? '',
       healthTimeout: svc.healthTimeoutSeconds != null ? String(svc.healthTimeoutSeconds) : '',
+      healthCheck: svc.healthCheck ?? 'http',
       volumeMount: svc.volumeMount ?? '',
       sourceId: svc.sourceId ? String(svc.sourceId) : '',
       buildPack: svc.build?.buildPack ?? 'auto',
@@ -211,6 +212,8 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
         // reported the field, so an older server never sees it.
         healthTimeoutSeconds:
           svc?.healthTimeoutSeconds !== undefined ? (f.healthTimeout.trim() ? toInt(f.healthTimeout, 300) : null) : undefined,
+        // 0.16.1, docker services on a panel that reports it; sent only when changed.
+        healthCheck: svc?.healthCheck !== undefined && f.healthCheck !== svc.healthCheck ? (f.healthCheck as 'http' | 'running') : undefined,
         volumeMount: clearable(f.volumeMount, svc?.volumeMount),
         // Admins may attach or clear the credential; members keep the current
         // one (an omitted key leaves it untouched server-side).
@@ -328,6 +331,17 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
           {svc.healthTimeoutSeconds !== undefined && (
             <Field label="Healthcheck timeout (seconds)" hint="How long a deploy waits for the new container to answer, 10–3600. Blank = 300.">
               <Input value={form.healthTimeout} onChange={set('healthTimeout')} inputMode="numeric" placeholder="300" className="h-9 font-mono text-xs" />
+            </Field>
+          )}
+          {svc.type === 'docker' && svc.healthCheck !== undefined && (
+            <Field
+              label="Healthcheck"
+              hint="Container running: the deploy only waits for the container to stay up 10 s, for services with no HTTP or TCP port (UDP game servers, VoIP, workers)."
+            >
+              <Select value={form.healthCheck} onChange={set('healthCheck')} className="h-9" aria-label="Healthcheck">
+                <option value="http">HTTP / TCP probe of the container port</option>
+                <option value="running">Container running (no port probe)</option>
+              </Select>
             </Field>
           )}
           <Field label="Volume mount"><Input value={form.volumeMount} onChange={set('volumeMount')} placeholder="/app/data" className="h-9 font-mono text-xs" /></Field>

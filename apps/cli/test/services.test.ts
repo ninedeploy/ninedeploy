@@ -12,6 +12,8 @@ import {
   servicesLogs,
   servicesSticky,
   servicesStickyAction,
+  servicesPorts,
+  servicesPortsAction,
 } from '../src/commands/services.js';
 
 const h = vi.hoisted(() => {
@@ -244,6 +246,8 @@ describe('servicesGet', () => {
       image: 'nginx',
       port: 3000,
       publishedPort: 8080,
+      portMappings: [{ hostIp: '203.0.113.7', hostPort: 27015, hostPortEnd: 27030, containerPort: 27015, protocol: 'udp' }],
+      healthCheck: 'running',
       volumeMount: '/data',
       healthPath: '/health',
       runtimeId: 'rt-1',
@@ -261,6 +265,8 @@ describe('servicesGet', () => {
     expect(text).toContain('api');
     expect(text).toContain(':8080');
     expect(text).toContain('http://api.example.com');
+    expect(text).toContain('203.0.113.7:27015-27030:27015-27030/udp');
+    expect(text).toContain('container running (no port probe)');
   });
 
   it('prints dashes for missing fields and skips the URL when absent', async () => {
@@ -707,6 +713,70 @@ describe('servicesStickyAction', () => {
     const client = makeClient({ domains: { setStickySession } });
     await servicesStickyAction(client, '5', { enable: true });
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('plain failure'));
+    expect(process.exitCode).toBe(1);
+  });
+});
+
+describe('servicesPorts', () => {
+  const udp = { hostIp: null, hostPort: 27015, hostPortEnd: 27030, containerPort: 27015, protocol: 'udp' as const };
+
+  it('requires a numeric id, and mappings or --clear but not both', async () => {
+    await expect(servicesPorts(makeClient(), 'abc')).rejects.toThrow(/Usage:/);
+    await expect(servicesPorts(makeClient(), '5', ['53/udp'], { clear: true })).rejects.toThrow(/not both/);
+  });
+
+  it('lists the stored mappings without a change', async () => {
+    const get = vi.fn().mockResolvedValue({ id: 5, portMappings: [udp] });
+    expect(await servicesPorts(makeClient({ services: { get } }), '5')).toEqual({ id: 5, mappings: [udp], changed: false });
+    const none = vi.fn().mockResolvedValue({ id: 5 });
+    expect((await servicesPorts(makeClient({ services: { get: none } }), '5')).mappings).toEqual([]);
+  });
+
+  it('parses and replaces the list, or clears it', async () => {
+    const update = vi.fn().mockResolvedValue({ id: 5, portMappings: [udp] });
+    await servicesPorts(makeClient({ services: { update } }), '5', ['27015-27030/udp', '203.0.113.7:8443:443']);
+    expect(update).toHaveBeenCalledWith(5, {
+      portMappings: [udp, { hostIp: '203.0.113.7', hostPort: 8443, hostPortEnd: null, containerPort: 443, protocol: 'tcp' }],
+    });
+    const cleared = vi.fn().mockResolvedValue({ id: 5, portMappings: [] });
+    expect((await servicesPorts(makeClient({ services: { update: cleared } }), '5', [], { clear: true })).changed).toBe(true);
+    expect(cleared).toHaveBeenCalledWith(5, { portMappings: null });
+  });
+
+  it('refuses a bad mapping or an overlapping list before calling the panel', async () => {
+    const update = vi.fn();
+    await expect(servicesPorts(makeClient({ services: { update } }), '5', ['nope'])).rejects.toThrow(/not a port mapping/);
+    await expect(servicesPorts(makeClient({ services: { update } }), '5', ['53/udp', '50-60/udp'])).rejects.toThrow(/overlaps/);
+    expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe('servicesPortsAction', () => {
+  it('prints each mapping with its address and asks for a redeploy', async () => {
+    const update = vi.fn().mockResolvedValue({
+      id: 5,
+      portMappings: [
+        { hostIp: '203.0.113.7', hostPort: 53, hostPortEnd: null, containerPort: 53, protocol: 'udp' },
+        { hostIp: null, hostPort: 9000, hostPortEnd: null, containerPort: 9000, protocol: 'tcp' },
+      ],
+    });
+    await servicesPortsAction(makeClient({ services: { update } }), '5', ['203.0.113.7:53/udp', '9000']);
+    const out = logSpy.mock.calls.flat().join(' ');
+    expect(out).toMatch(/203\.0\.113\.7:53:53\/udp/);
+    expect(out).toMatch(/every address/);
+    expect(out).toMatch(/Redeploy the service/);
+  });
+
+  it('says when nothing is published, and when the list was removed', async () => {
+    await servicesPortsAction(makeClient({ services: { get: vi.fn().mockResolvedValue({ id: 5, portMappings: [] }) } }), '5');
+    expect(logSpy.mock.calls.flat().join(' ')).toMatch(/publishes no extra ports/);
+    await servicesPortsAction(makeClient({ services: { update: vi.fn().mockResolvedValue({ id: 5, portMappings: [] }) } }), '5', [], { clear: true });
+    expect(logSpy.mock.calls.flat().join(' ')).toMatch(/Port mappings removed/);
+  });
+
+  it('surfaces an error and sets exitCode=1', async () => {
+    await servicesPortsAction(makeClient({ services: { get: vi.fn().mockRejectedValue('down') } }), '5');
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('down'));
     expect(process.exitCode).toBe(1);
   });
 });

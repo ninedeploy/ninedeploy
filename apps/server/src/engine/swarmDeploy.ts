@@ -59,6 +59,7 @@ type SwarmCandidate = {
   volumeMount?: string | null;
   dockerSocket?: boolean | null;
   publishedPort?: number | null;
+  portMappings?: unknown[] | null;
   templateDatabaseEnv?: unknown;
   image?: string | null;
   repoUrl?: string | null;
@@ -81,6 +82,7 @@ export async function swarmServiceRefusal(db: DB, svc: SwarmCandidate): Promise<
   if (svc.volumeMount) return `A persistent volume (${svc.volumeMount}) cannot follow Swarm replicas: named volumes are per node. ${fix}`;
   if (svc.dockerSocket) return `The Docker socket is not mounted into Swarm tasks. ${fix}`;
   if (svc.publishedPort != null) return `A published host port is refused on Swarm: Traefik is the only ingress (no --publish). ${fix}`;
+  if (svc.portMappings?.length) return `Port mappings are refused on Swarm: Traefik is the only ingress (no --publish). ${fix}`;
   const [attachment] = await db.select({ id: serviceVolumeAttachments.id }).from(serviceVolumeAttachments).where(eq(serviceVolumeAttachments.serviceId, svc.id)).limit(1);
   if (attachment) return `Volume attachments cannot follow Swarm replicas: named volumes are per node. ${fix}`;
   const [database] = await db.select({ id: databaseAttachments.id }).from(databaseAttachments).where(eq(databaseAttachments.serviceId, svc.id)).limit(1);

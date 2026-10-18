@@ -93,6 +93,7 @@ export function createFakeApiModule() {
         disable: vi.fn(),
       },
       sourceUploads: vi.fn().mockResolvedValue({ uploadSourced: true, maxBytes: 104857600, uploads: [] }),
+      hostAddresses: vi.fn().mockResolvedValue({ detected: false, addresses: [] }),
       stop: vi.fn(),
       start: vi.fn(),
       restart: vi.fn(),
