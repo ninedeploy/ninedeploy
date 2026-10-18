@@ -62,7 +62,14 @@ export async function prepareFileMounts(
   const root = serviceFilesDir(service.slug);
   const dir = path.join(root, `d${deploymentId}`);
   rmSync(dir, { recursive: true, force: true });
-  mkdirSync(dir, { recursive: true, mode: 0o755 });
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  // The content can hold secrets: every directory down to the files is the
+  // panel user's alone, so no other host account can reach them. The files
+  // stay 0644 for the container: the daemon resolves a bind source as root,
+  // and inside the container only the file's own mode counts, not its host
+  // parents'. chmod as well, since mkdir's mode is narrowed by the umask and
+  // never applied to a directory that already exists.
+  for (const d of [path.dirname(root), root, dir]) chmodSync(d, 0o700);
   const mounts: FileMount[] = [];
   for (const row of rows) {
     const file = path.join(dir, String(row.id));

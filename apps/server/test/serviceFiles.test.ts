@@ -132,6 +132,11 @@ describe('deploy-time file mounts', () => {
       expect(path.dirname(m.hostPath)).toBe(path.join(serviceFilesDir(svc.slug), 'd11'));
       if (process.platform !== 'win32') expect(statSync(m.hostPath).mode & 0o777).toBe(0o644);
     }
+    // No other host account can traverse to the files (the container reads them through the bind).
+    if (process.platform !== 'win32') {
+      const root = serviceFilesDir(svc.slug);
+      for (const d of [path.dirname(root), root, path.join(root, 'd11')]) expect(statSync(d).mode & 0o777, d).toBe(0o700);
+    }
     const nginx = mounts.find((m) => m.containerPath === '/etc/nginx/nginx.conf')!;
     expect(readFileSync(nginx.hostPath, 'utf8')).toBe('events {}');
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/^File mounts: .*\(read-only\)$/));
