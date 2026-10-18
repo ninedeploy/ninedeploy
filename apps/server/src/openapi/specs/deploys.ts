@@ -74,9 +74,10 @@ export const deploysSpecs: RouteSpecMap = {
   'GET /v1/services/:id/deploy-hook': {
     summary: 'Whether the deploy hook is on, and its secret URL',
     tag: 'deploys',
-    description: 'The URL is the hook credential, so reading it takes a member seat. Added in 0.16.2.',
+    description:
+      'The URL is the hook credential and carries the authority of the member it deploys as, so it is returned only to that member (`mine: true`); another member sees `enabled: true, url: null` and can rotate the hook to make it theirs. Added in 0.16.2.',
     floor: 'member',
-    responseType: '{ enabled: boolean; url: string | null }',
+    responseType: '{ enabled: boolean; url: string | null; mine: boolean }',
   },
   'POST /v1/services/:id/deploy-hook': {
     summary: 'Turn the deploy hook on, or rotate its URL',
@@ -84,14 +85,14 @@ export const deploysSpecs: RouteSpecMap = {
     description:
       'Mints a new token (the previous URL stops working). The hook will deploy as the caller, with every check a manual deploy makes re-done on each call and never with more operator authority than this request has. Audited service.deploy_hook.enable / rotate. Added in 0.16.2.',
     floor: 'member',
-    responseType: '{ enabled: boolean; url: string | null }',
+    responseType: '{ enabled: boolean; url: string | null; mine: boolean }',
   },
   'DELETE /v1/services/:id/deploy-hook': {
     summary: 'Turn the deploy hook off',
     tag: 'deploys',
     description: 'The hook URL answers 404 from now on. Audited service.deploy_hook.disable. Added in 0.16.2.',
     floor: 'member',
-    responseType: '{ enabled: boolean; url: string | null }',
+    responseType: '{ enabled: boolean; url: string | null; mine: boolean }',
   },
   'POST /v1/deploy-hooks/:token': {
     summary: 'Redeploy a service from CI (deploy hook)',

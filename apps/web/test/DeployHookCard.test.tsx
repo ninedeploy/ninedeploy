@@ -26,12 +26,12 @@ const URL_B = 'https://panel.example.com/v1/deploy-hooks/bbbbbbbbbbbbbbbbbbbbbbb
 beforeEach(() => {
   vi.clearAllMocks();
   Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
-  mockOf(api.services.deployHook.get).mockResolvedValue({ enabled: false, url: null });
+  mockOf(api.services.deployHook.get).mockResolvedValue({ enabled: false, url: null, mine: false });
 });
 
 describe('DeployHookCard', () => {
   it('turns the hook on and offers the curl line', async () => {
-    mockOf(api.services.deployHook.enable).mockResolvedValue({ enabled: true, url: URL_A });
+    mockOf(api.services.deployHook.enable).mockResolvedValue({ enabled: true, url: URL_A, mine: true });
     renderWithProviders(<DeployHookCard serviceId={3} />);
     const toggle = await screen.findByRole('switch', { name: 'Deploy hook' });
     expect(toggle).toHaveAttribute('aria-checked', 'false');
@@ -45,9 +45,9 @@ describe('DeployHookCard', () => {
   });
 
   it('rotates the URL only after confirming, then turns it off', async () => {
-    mockOf(api.services.deployHook.get).mockResolvedValue({ enabled: true, url: URL_A });
-    mockOf(api.services.deployHook.enable).mockResolvedValue({ enabled: true, url: URL_B });
-    mockOf(api.services.deployHook.disable).mockResolvedValue({ enabled: false, url: null });
+    mockOf(api.services.deployHook.get).mockResolvedValue({ enabled: true, url: URL_A, mine: true });
+    mockOf(api.services.deployHook.enable).mockResolvedValue({ enabled: true, url: URL_B, mine: true });
+    mockOf(api.services.deployHook.disable).mockResolvedValue({ enabled: false, url: null, mine: false });
     renderWithProviders(<DeployHookCard serviceId={3} />);
     fireEvent.click(await screen.findByRole('button', { name: 'New deploy hook URL' }));
     expect(api.services.deployHook.enable).not.toHaveBeenCalled();
@@ -63,6 +63,19 @@ describe('DeployHookCard', () => {
     expect(toastSpy.toast).toHaveBeenCalledWith('Deploy hook off', 'success');
   });
 
+  it("another member's hook shows no URL and can be taken over after confirming", async () => {
+    mockOf(api.services.deployHook.get).mockResolvedValue({ enabled: true, url: null, mine: false });
+    mockOf(api.services.deployHook.enable).mockResolvedValue({ enabled: true, url: URL_B, mine: true });
+    renderWithProviders(<DeployHookCard serviceId={3} />);
+    expect(await screen.findByText(/Turned on by another member/)).toBeInTheDocument();
+    expect(screen.queryByText(/curl -fsS/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Use my own URL/ }));
+    expect(screen.getByText(/deploys as you from now on/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'New URL' }));
+    expect(await screen.findByText(`curl -fsS -X POST ${URL_B}`)).toBeInTheDocument();
+    expect(api.services.deployHook.enable).toHaveBeenCalledWith(3);
+  });
+
   it('shows refusals, with a fallback message', async () => {
     mockOf(api.services.deployHook.enable).mockRejectedValue(new Error('Forbidden'));
     renderWithProviders(<DeployHookCard serviceId={3} />);
@@ -74,7 +87,7 @@ describe('DeployHookCard', () => {
   });
 
   it('shows a refusal to turn it off, with a fallback message', async () => {
-    mockOf(api.services.deployHook.get).mockResolvedValue({ enabled: true, url: URL_A });
+    mockOf(api.services.deployHook.get).mockResolvedValue({ enabled: true, url: URL_A, mine: true });
     mockOf(api.services.deployHook.disable).mockRejectedValue(new Error('nope'));
     renderWithProviders(<DeployHookCard serviceId={3} />);
     fireEvent.click(await screen.findByRole('switch', { name: 'Deploy hook' }));

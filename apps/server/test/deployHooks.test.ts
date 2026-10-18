@@ -49,10 +49,11 @@ async function setup(values: Record<string, unknown> = {}) {
 describe('deploy hook management', () => {
   it('is off until a member turns it on; rotating replaces the URL; off removes it', async () => {
     const { app, id, call } = await setup();
-    expect((await app.inject({ method: 'GET', url: `/services/${id}/deploy-hook`, headers: member })).json()).toEqual({ enabled: false, url: null });
+    expect((await app.inject({ method: 'GET', url: `/services/${id}/deploy-hook`, headers: member })).json()).toEqual({ enabled: false, url: null, mine: false });
 
-    const on = (await app.inject({ method: 'POST', url: `/services/${id}/deploy-hook`, headers: member })).json() as { enabled: boolean; url: string };
+    const on = (await app.inject({ method: 'POST', url: `/services/${id}/deploy-hook`, headers: member })).json() as { enabled: boolean; url: string; mine: boolean };
     expect(on.enabled).toBe(true);
+    expect(on.mine).toBe(true);
     expect(on.url).toMatch(/^https:\/\/panel\.example\.com\/v1\/deploy-hooks\/[A-Za-z0-9_-]{32}$/);
     expect(auditMock.audit).toHaveBeenCalledWith(db, OWNER, 'service.deploy_hook.enable', 'api', { serviceId: id });
     expect((await app.inject({ method: 'GET', url: `/services/${id}/deploy-hook`, headers: member })).json()).toEqual(on);
@@ -62,11 +63,32 @@ describe('deploy hook management', () => {
     expect(auditMock.audit).toHaveBeenCalledWith(db, OWNER, 'service.deploy_hook.rotate', 'api', { serviceId: id });
     expect((await call(tokenOf(on.url))).statusCode).toBe(404);
 
-    expect((await app.inject({ method: 'DELETE', url: `/services/${id}/deploy-hook`, headers: member })).json()).toEqual({ enabled: false, url: null });
+    expect((await app.inject({ method: 'DELETE', url: `/services/${id}/deploy-hook`, headers: member })).json()).toEqual({ enabled: false, url: null, mine: false });
     expect((await call(tokenOf(rotated.url))).statusCode).toBe(404);
     const row = await db.query.services.findFirst({ where: eq(services.id, id) });
     expect(row).toMatchObject({ deployHookToken: null, deployHookUserId: null, deployHookOperator: false });
     await app.close();
+  });
+
+  it("only the member a hook deploys as sees its URL; another member sees it is on and can take it over", async () => {
+    // An operator's hook on a compose stack would deploy what a plain member cannot.
+    const { app, id, call, queued } = await setup({ name: 'stack', slug: 'stack', type: 'compose', image: null, composeContent: 'services:\n  a:\n    image: nginx\n' });
+    const opHook = (await app.inject({ method: 'POST', url: `/services/${id}/deploy-hook`, headers: asUser() })).json() as { url: string };
+    expect((await app.inject({ method: 'GET', url: `/services/${id}/deploy-hook`, headers: member })).json()).toEqual({ enabled: true, url: null, mine: false });
+    expect((await app.inject({ method: 'GET', url: `/services/${id}/deploy-hook`, headers: asUser() })).json()).toEqual({ enabled: true, url: opHook.url, mine: true });
+    // Taking it over is a deploy-level act: a plain member cannot on this stack.
+    expect((await app.inject({ method: 'POST', url: `/services/${id}/deploy-hook`, headers: member })).statusCode).toBe(403);
+    expect((await call(tokenOf(opHook.url))).statusCode).toBe(202);
+    expect(await queued()).toHaveLength(1);
+    await app.close();
+
+    // On a plain docker service the other member may rotate it, and it is then theirs.
+    const plain = await setup();
+    await plain.app.inject({ method: 'POST', url: `/services/${plain.id}/deploy-hook`, headers: asUser() });
+    const mine = (await plain.app.inject({ method: 'POST', url: `/services/${plain.id}/deploy-hook`, headers: member })).json() as { url: string; mine: boolean };
+    expect(mine.mine).toBe(true);
+    expect((await db.query.services.findFirst({ where: eq(services.id, plain.id) }))).toMatchObject({ deployHookUserId: OWNER, deployHookOperator: false });
+    await plain.app.close();
   });
 
   it('needs a member seat on the service', async () => {

@@ -241,7 +241,7 @@ export async function servicesDeployHook(
   client: NineDeployClient,
   idStr: string,
   opts: { enable?: boolean; disable?: boolean } = {},
-): Promise<{ enabled: boolean; url: string | null; changed: boolean }> {
+): Promise<{ enabled: boolean; url: string | null; mine: boolean; changed: boolean }> {
   const id = Number(idStr);
   if (!id) throw new Error('Usage: ninedeploy services deploy-hook <id> [--enable|--disable]');
   if (opts.enable && opts.disable) throw new Error('Specify only one of --enable or --disable');
@@ -261,8 +261,13 @@ export async function servicesDeployHookAction(client: NineDeployClient, idStr: 
     process.exitCode = 1;
     return;
   }
-  if (!result.enabled || !result.url) {
+  if (!result.enabled) {
     info(result.changed ? 'Deploy hook off.' : 'No deploy hook. Turn one on with --enable.');
+    return;
+  }
+  if (!result.url) {
+    // Only the member a hook deploys as sees its URL.
+    info('A deploy hook is on, made by another member. --enable gives you a new URL that deploys as you (the old one stops working).');
     return;
   }
   if (result.changed) success('Deploy hook on. Treat the URL like a password; --enable again gives a new one.');

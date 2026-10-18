@@ -31,14 +31,19 @@ const TOKEN_RE = /^[A-Za-z0-9_-]{32}$/;
 export const serviceDeployHookRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', app.authenticate);
 
-  const view = async (token: string | null) =>
-    token ? { enabled: true, url: `${await panelOrigin(app.db)}/v1/deploy-hooks/${token}` } : { enabled: false, url: null };
+  // The URL is shown to the member it deploys as, and to nobody else: it
+  // carries that member's authority (an operator's hook on a compose stack
+  // deploys what a plain member could not), so another member sees only that
+  // a hook exists. Rotating it makes it theirs, with their own authority.
+  const view = async (token: string | null, mine: boolean) =>
+    token
+      ? { enabled: true, url: mine ? `${await panelOrigin(app.db)}/v1/deploy-hooks/${token}` : null, mine }
+      : { enabled: false, url: null, mine: false };
 
   app.get('/:id/deploy-hook', async (req) => {
     const svc = await loadServiceForUser(app.db, parseId((req.params as { id: string }).id), req.user!);
-    // The URL is the credential: reading it is a member's, like changing it.
     await assertServiceRole(app.db, svc, req.user!, 'member');
-    return view(svc.deployHookToken ?? null);
+    return view(svc.deployHookToken ?? null, svc.deployHookUserId === req.user!.id);
   });
 
   // Turn the hook on, or rotate its URL (the old one stops working). The
@@ -54,7 +59,7 @@ export const serviceDeployHookRoutes: FastifyPluginAsync = async (app) => {
       .set({ deployHookToken: token, deployHookUserId: req.user!.id, deployHookOperator: req.user!.isOperator })
       .where(eq(services.id, svc.id));
     void audit(app.db, req.user!.id, svc.deployHookToken ? 'service.deploy_hook.rotate' : 'service.deploy_hook.enable', svc.name, { serviceId: svc.id });
-    return view(token);
+    return view(token, true);
   });
 
   app.delete('/:id/deploy-hook', async (req) => {
@@ -62,7 +67,7 @@ export const serviceDeployHookRoutes: FastifyPluginAsync = async (app) => {
     await assertServiceRole(app.db, svc, req.user!, 'member');
     await app.db.update(services).set({ deployHookToken: null, deployHookUserId: null, deployHookOperator: false }).where(eq(services.id, svc.id));
     void audit(app.db, req.user!.id, 'service.deploy_hook.disable', svc.name, { serviceId: svc.id });
-    return view(null);
+    return view(null, false);
   });
 };
 

@@ -18,7 +18,7 @@ export function DeployHookCard({ serviceId }: { serviceId: number }) {
   const { copied, copy } = useCopy();
   const [confirmRotate, setConfirmRotate] = useState(false);
   const hook = useQuery({ queryKey: ['deploy-hook', serviceId], queryFn: () => api.services.deployHook.get(serviceId), retry: false });
-  const set = (data: { enabled: boolean; url: string | null }) => qc.setQueryData(['deploy-hook', serviceId], data);
+  const set = (data: { enabled: boolean; url: string | null; mine: boolean }) => qc.setQueryData(['deploy-hook', serviceId], data);
 
   const enable = useMutation({
     mutationFn: () => api.services.deployHook.enable(serviceId),
@@ -68,11 +68,24 @@ export function DeployHookCard({ serviceId }: { serviceId: number }) {
             </Button>
           </div>
         )}
+        {enabled && !url && (
+          // Only the member a hook deploys as sees its URL; taking it over gives a new one.
+          <div className="flex items-center justify-between gap-3 rounded bg-black/20 px-2 py-1.5 text-xs text-slate-400">
+            <span>Turned on by another member — it deploys as them, so only they see the URL.</span>
+            <Button size="sm" variant="secondary" onClick={() => setConfirmRotate(true)} disabled={busy}>
+              <RefreshCw size={13} /> Use my own URL
+            </Button>
+          </div>
+        )}
       </CardBody>
       <ConfirmDialog
         open={confirmRotate}
         title="New deploy hook URL?"
-        message="The current URL stops working; CI jobs that call it fail until you give them the new one."
+        message={
+          url
+            ? 'The current URL stops working; CI jobs that call it fail until you give them the new one.'
+            : 'The other member’s URL stops working, and the hook deploys as you from now on.'
+        }
         confirmLabel="New URL"
         onConfirm={() => {
           setConfirmRotate(false);

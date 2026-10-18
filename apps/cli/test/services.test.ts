@@ -786,9 +786,9 @@ describe('servicesPortsAction', () => {
 describe('servicesDeployHook', () => {
   const URL = 'https://panel.example.com/v1/deploy-hooks/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
   const hook = (over: Record<string, unknown> = {}) => ({
-    get: vi.fn().mockResolvedValue({ enabled: false, url: null }),
-    enable: vi.fn().mockResolvedValue({ enabled: true, url: URL }),
-    disable: vi.fn().mockResolvedValue({ enabled: false, url: null }),
+    get: vi.fn().mockResolvedValue({ enabled: false, url: null, mine: false }),
+    enable: vi.fn().mockResolvedValue({ enabled: true, url: URL, mine: true }),
+    disable: vi.fn().mockResolvedValue({ enabled: false, url: null, mine: false }),
     ...over,
   });
 
@@ -800,9 +800,9 @@ describe('servicesDeployHook', () => {
   it('shows, turns on and turns off', async () => {
     const deployHook = hook();
     const client = makeClient({ services: { deployHook } });
-    expect(await servicesDeployHook(client, '5')).toEqual({ enabled: false, url: null, changed: false });
-    expect(await servicesDeployHook(client, '5', { enable: true })).toEqual({ enabled: true, url: URL, changed: true });
-    expect(await servicesDeployHook(client, '5', { disable: true })).toEqual({ enabled: false, url: null, changed: true });
+    expect(await servicesDeployHook(client, '5')).toEqual({ enabled: false, url: null, mine: false, changed: false });
+    expect(await servicesDeployHook(client, '5', { enable: true })).toEqual({ enabled: true, url: URL, mine: true, changed: true });
+    expect(await servicesDeployHook(client, '5', { disable: true })).toEqual({ enabled: false, url: null, mine: false, changed: true });
     expect(deployHook.enable).toHaveBeenCalledWith(5);
     expect(deployHook.disable).toHaveBeenCalledWith(5);
   });
@@ -810,9 +810,11 @@ describe('servicesDeployHook', () => {
   it('prints the curl line, the off states and errors', async () => {
     await servicesDeployHookAction(makeClient({ services: { deployHook: hook() } }), '5', { enable: true });
     expect(logSpy.mock.calls.flat().join(' ')).toContain(`curl -fsS -X POST ${URL}`);
-    await servicesDeployHookAction(makeClient({ services: { deployHook: hook({ get: vi.fn().mockResolvedValue({ enabled: true, url: URL }) }) } }), '5');
+    await servicesDeployHookAction(makeClient({ services: { deployHook: hook({ get: vi.fn().mockResolvedValue({ enabled: true, url: URL, mine: true }) }) } }), '5');
     await servicesDeployHookAction(makeClient({ services: { deployHook: hook() } }), '5');
     expect(logSpy.mock.calls.flat().join(' ')).toMatch(/No deploy hook/);
+    await servicesDeployHookAction(makeClient({ services: { deployHook: hook({ get: vi.fn().mockResolvedValue({ enabled: true, url: null, mine: false }) }) } }), '5');
+    expect(logSpy.mock.calls.flat().join(' ')).toMatch(/made by another member/);
     await servicesDeployHookAction(makeClient({ services: { deployHook: hook() } }), '5', { disable: true });
     expect(logSpy.mock.calls.flat().join(' ')).toMatch(/Deploy hook off/);
     await servicesDeployHookAction(makeClient({ services: { deployHook: hook({ get: vi.fn().mockRejectedValue('down') }) } }), '5');

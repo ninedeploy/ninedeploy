@@ -141,6 +141,7 @@ curl -fsS -X POST https://panel.example.com/v1/deploy-hooks/<token>
 
 - It answers `202 { "deploymentId": 42 }`, or the running deployment with `"alreadyInProgress": true` when a build is already underway.
 - The hook deploys **as the member who turned it on**, and every check a manual deploy makes runs again on each call: a member who lost the service (403) or whose account was deleted (404) leaves a hook that no longer works. A hook never deploys with more operator authority than the request that created it had, so one made through a scope-restricted API token stays restricted.
+- Only the member it deploys as sees the URL. Another member of the service sees that a hook is on and can rotate it, which makes it theirs, running with their own access; the previous URL stops working.
 - POST only, so a link preview or a crawler that sees the URL deploys nothing. Rotating gives a new URL and the old one answers 404; turning it off does the same. Treat the URL like a password.
 - API: `GET`/`POST`/`DELETE /v1/services/:id/deploy-hook` (member), public `POST /v1/deploy-hooks/:token`; SDK `services.deployHook`; CLI `ninedeploy services deploy-hook <id> [--enable|--disable]`.
 

@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Deploy hook** (Service → Settings → Deploy hook), like Coolify's and Dokploy's deploy webhooks: a secret URL that redeploys the service when a CI job POSTs to it (`curl -fsS -X POST …`). It deploys as the member who made it, re-checking their access on every call, and never with more operator authority than that request had. Rotate it or turn it off from the same card. API: `GET`/`POST`/`DELETE /v1/services/:id/deploy-hook`, public `POST /v1/deploy-hooks/:token`; SDK `services.deployHook`; CLI `ninedeploy services deploy-hook <id> [--enable|--disable]`.
+- **Deploy hook** (Service → Settings → Deploy hook), like Coolify's and Dokploy's deploy webhooks: a secret URL that redeploys the service when a CI job POSTs to it (`curl -fsS -X POST …`). It deploys as the member who made it, re-checking their access on every call, and never with more operator authority than that request had. Only that member sees the URL; another member sees the hook is on and can rotate it to make it theirs. Rotate it or turn it off from the same card. API: `GET`/`POST`/`DELETE /v1/services/:id/deploy-hook`, public `POST /v1/deploy-hooks/:token`; SDK `services.deployHook`; CLI `ninedeploy services deploy-hook <id> [--enable|--disable]`.
 
 ## [0.16.1] - 2026-10-18
 
