@@ -379,55 +379,62 @@ export function Layout() {
       {/* ── Main ──────────────────────────────────────────── */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
-        <header className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.06] px-5">
-          <div className="flex items-center gap-2 text-sm">
+        {/* Two rows: the page title and the actions on top, the workspace /
+            project / label scope below — on one row the filters pushed the
+            actions off the bar. */}
+        <header className="shrink-0 border-b border-white/[0.06]">
+          <div className="flex h-12 items-center justify-between gap-3 px-5">
+            <div className="flex min-w-0 items-center gap-2 text-sm">
+              <span className="truncate font-medium text-slate-300">{currentGroup?.label ?? 'NineDeploy'}</span>
+              {currentItem && (
+                <>
+                  <span className="text-slate-700">/</span>
+                  <span className="text-slate-500">{pageTitle}</span>
+                </>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button"
+                onClick={openDeploy}
+                className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm shadow-indigo-500/30 transition hover:bg-indigo-400"
+                title="New: deploy an app, start a database or install a one-click app"
+                aria-label="New resource"
+              >
+                <Rocket size={13} />
+                <span className="hidden sm:inline">New</span>
+              </button>
+              <ModeToggle />
+              <button type="button"
+                onClick={toggleTheme}
+                className="rounded-lg p-2 text-slate-500 transition hover:bg-white/[0.06] hover:text-slate-300"
+                title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+              >
+                {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+              </button>
+              <button type="button"
+                onClick={() => setPaletteOpen(true)}
+                className="flex items-center gap-2 rounded-lg bg-white/[0.04] px-2.5 py-1.5 text-xs text-slate-500 transition hover:bg-white/[0.08] hover:text-slate-300"
+                title="Search (⌘K)"
+              >
+                <Search size={13} />
+                <span className="hidden sm:inline">Search</span>
+                <kbd className="rounded bg-white/[0.06] px-1 py-0.5 text-[9px]">⌘K</kbd>
+              </button>
+              <DeployQueueBadge />
+              <button type="button"
+                onClick={() => setDrawerOpen(true)}
+                className="relative rounded-lg p-2 text-slate-500 transition hover:bg-white/[0.06] hover:text-slate-300"
+                title="Activity"
+              >
+                <Activity size={16} />
+              </button>
+              <HelpButton />
+            </div>
+          </div>
+          <fieldset className="m-0 flex min-h-10 min-w-0 flex-wrap items-center gap-2 border-t border-white/[0.04] px-5 py-1.5 text-sm" aria-label="Scope filters">
             <WorkspaceSwitcher />
             <TopBarFilters />
-            <span className="font-medium text-slate-300">{currentGroup?.label ?? 'NineDeploy'}</span>
-            {currentItem && (
-              <>
-                <span className="text-slate-700">/</span>
-                <span className="text-slate-500">{pageTitle}</span>
-              </>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <button type="button"
-              onClick={openDeploy}
-              className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm shadow-indigo-500/30 transition hover:bg-indigo-400"
-              title="New: deploy an app, start a database or install a one-click app"
-              aria-label="New resource"
-            >
-              <Rocket size={13} />
-              <span className="hidden sm:inline">New</span>
-            </button>
-            <ModeToggle />
-            <button type="button"
-              onClick={toggleTheme}
-              className="rounded-lg p-2 text-slate-500 transition hover:bg-white/[0.06] hover:text-slate-300"
-              title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
-            >
-              {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-            </button>
-            <button type="button"
-              onClick={() => setPaletteOpen(true)}
-              className="flex items-center gap-2 rounded-lg bg-white/[0.04] px-2.5 py-1.5 text-xs text-slate-500 transition hover:bg-white/[0.08] hover:text-slate-300"
-              title="Search (⌘K)"
-            >
-              <Search size={13} />
-              <span className="hidden sm:inline">Search</span>
-              <kbd className="rounded bg-white/[0.06] px-1 py-0.5 text-[9px]">⌘K</kbd>
-            </button>
-            <DeployQueueBadge />
-            <button type="button"
-              onClick={() => setDrawerOpen(true)}
-              className="relative rounded-lg p-2 text-slate-500 transition hover:bg-white/[0.06] hover:text-slate-300"
-              title="Activity"
-            >
-              <Activity size={16} />
-            </button>
-            <HelpButton />
-          </div>
+          </fieldset>
         </header>
 
         {/* Self-update availability / progress / result (operators only) */}

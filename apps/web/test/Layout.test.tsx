@@ -1,4 +1,4 @@
-﻿import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+﻿import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router';
@@ -380,6 +380,18 @@ describe('Layout', () => {
     await user.click(deployBtn);
     await user.click(screen.getByRole('link', { name: /Hub/ }));
     expect(screen.getAllByText('Deploy').length).toBeGreaterThan(0);
+  });
+
+  it('keeps the actions on the top row and the workspace / project / label scope on a second row', () => {
+    renderLayout();
+    const scope = screen.getByRole('group', { name: 'Scope filters' });
+    expect(within(scope).getByText('Filter')).toBeInTheDocument();
+    expect(within(scope).queryByRole('button', { name: 'New resource' })).not.toBeInTheDocument();
+    const header = scope.closest('header')!;
+    const top = header.firstElementChild as HTMLElement;
+    expect(top).not.toBe(scope);
+    expect(within(top).getByRole('button', { name: 'New resource' })).toBeInTheDocument();
+    expect(within(top).getByTitle('Activity')).toBeInTheDocument();
   });
 
   it('toggles the theme from the header', async () => {
