@@ -8,6 +8,7 @@ import { useAuth } from '../../lib/auth.js';
 import { TerminalsCard } from './TerminalsCard.js';
 import { AutoUrlCard } from './AutoUrlCard.js';
 import { HostIpsCard } from './HostIpsCard.js';
+import { ApiTokensCard } from './ApiTokensCard.js';
 
 /** Security: open registration, ACME, template source, DNS-01 and wildcard domain. */
 export function SecuritySection() {
@@ -85,6 +86,8 @@ export function SecuritySection() {
 
   return (
     <>
+      {/* 0.16.3: every user's own tokens; the docs have pointed here since 0.10. */}
+      <ApiTokensCard />
       {instanceSettings.isError && !loaded && (
         <div className="mb-5">
           <ErrorCard title="Could not load the security settings" error={instanceSettings.error} onRetry={() => void instanceSettings.refetch()} />

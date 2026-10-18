@@ -50,7 +50,7 @@ export function createFakeApiModule() {
       // always calls me() on mount. An un-stubbed vi.fn() returns undefined and
       // the provider would crash on `.then`.
       me: vi.fn(async () => null),
-      tokens: { create: vi.fn(), list: vi.fn(), remove: vi.fn() },
+      tokens: { create: vi.fn(), list: vi.fn().mockResolvedValue([]), remove: vi.fn() },
       oidc: {
         link: vi.fn(),
         list: vi.fn(),

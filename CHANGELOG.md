@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Search and download for runtime logs** (Service → Runtime logs), like Coolify's and Dokploy's log viewers: filter to the lines that contain a text (case-insensitive, matches highlighted), load the last 300, 1000 or 5000 lines, pause the live refresh, and download what is loaded. API `GET /v1/services/:id/logs?tail=N` (1 to 5000, default 300 as before); SDK `services.logs(id, { tail })`. A node on an agent older than 0.16.3 returns the last 300 lines.
 - **CLI:** `ninedeploy services logs <id> --tail N --grep text`.
+- **API tokens page** (Settings → Security → API tokens): create a token for the CLI, CI or an MCP client with a name, an access level (read only, read & write, or full access for operators) and a lifetime; it is shown once. The list shows each token's access, last use and expiry, flags legacy unrestricted and expired tokens, and revokes after a confirmation. The API existed; the docs pointed to this page before it did.
 
 ### Fixed
 
