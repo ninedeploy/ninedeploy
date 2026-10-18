@@ -31,6 +31,8 @@ const RETENTION: Record<string, Retention> = {
   access_grants: { config: 'bounded by users × projects/environments; rows cascade with their user, workspace, project and environment' },
   // multi-node (migration 0072)
   image_transfers: { swept: 'image-transfers' },
+  // 0.16.1 (migration 0078)
+  host_ips: { config: "bounded by the panel host's addresses: one row per address an operator annotated (unique ip)" },
 };
 
 /** The tables of v0.14.0 (migrations through 0070), frozen. */

@@ -7,6 +7,7 @@ import { Button, Card, CardBody, ErrorCard, cn } from '../../components/ui.js';
 import { useAuth } from '../../lib/auth.js';
 import { TerminalsCard } from './TerminalsCard.js';
 import { AutoUrlCard } from './AutoUrlCard.js';
+import { HostIpsCard } from './HostIpsCard.js';
 
 /** Security: open registration, ACME, template source, DNS-01 and wildcard domain. */
 export function SecuritySection() {
@@ -268,6 +269,9 @@ export function SecuritySection() {
       {/* 0.16.1: the old read-only "Wildcard Domain" card showed the DNS-01
           apex as if it gave services URLs; this one actually configures them. */}
       {isOperator && <AutoUrlCard />}
+
+      {/* 0.16.1: the host's IP addresses (label, primary, dedicate). */}
+      {isOperator && <HostIpsCard />}
 
       {isOperator && (
         <div className="mb-5">

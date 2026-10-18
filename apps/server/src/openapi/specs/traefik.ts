@@ -40,6 +40,39 @@ export const traefikSpecs: RouteSpecMap = {
     responseType: '{ logs: string[] }',
     validation: 'handler',
   },
+  'GET /v1/host-ips': {
+    summary: "The panel host's IP addresses, detected and annotated",
+    tag: 'traefik',
+    description:
+      'Global-scope addresses read live from the host (`ip -o addr` in a host-network container), merged with what operators saved: a label, the primary mark (at most one) and the service an address is dedicated to. `detected: false` when the host could not be asked; saved addresses are still listed. Added in 0.16.1.',
+    floor: 'operator',
+    responseType:
+      '{ detected: boolean; addresses: Array<{ ip: string; family: 4 | 6; iface: string | null; detected: boolean; label: string | null; primary: boolean; dedicatedTo: { id: number; name: string } | null }> }',
+  },
+  'GET /v1/host-ips/primary': {
+    summary: 'The primary address of the panel host',
+    tag: 'traefik',
+    description: 'What DNS records should point at, for the DNS hints in the panel; null until an operator picks one. Added in 0.16.1.',
+    floor: 'authed',
+    responseType: '{ ip: string | null }',
+  },
+  'PUT /v1/host-ips/:ip': {
+    summary: 'Label an address, make it primary, or dedicate it to a service',
+    tag: 'traefik',
+    description:
+      'A new address must be one the host has (400 `host_ip_unknown`) unless the host cannot be asked. `primary: true` moves the mark from any other address. `serviceId` dedicates it to a docker service on the panel host, refused (409) while another service publishes ports on it explicitly; `null` shares it again. The port mappings of every other service are then refused the address. Audited host_ip.update. Added in 0.16.1.',
+    floor: 'operator',
+    localBody: 'hostIps.ts#patchBody',
+    validation: 'zod',
+    responseType: 'HostIpEntry | null',
+  },
+  'DELETE /v1/host-ips/:ip': {
+    summary: 'Forget what was saved about an address',
+    tag: 'traefik',
+    description: '404 when nothing was saved. Audited host_ip.delete. Added in 0.16.1.',
+    floor: 'operator',
+    responseType: '{ ok: boolean }',
+  },
   'GET /v1/traefik/http3': {
     summary: 'Whether the proxy publishes 443/udp for HTTP/3',
     tag: 'traefik',

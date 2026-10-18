@@ -122,6 +122,7 @@ import {
 import {
   egressClearAction, egressListAction, egressSetAction,
 } from './commands/egress.js';
+import { ipsForgetAction, ipsListAction, ipsSetAction } from './commands/hostIps.js';
 import {
   ssoAddAction, ssoListAction, ssoRemoveAction,
 } from './commands/sso.js';
@@ -591,6 +592,19 @@ brandingCmd
   });
 
 // ── Egress IP (G-15) ─────────────────────────────────────────────────────
+// 0.16.1: the panel host's IP addresses (label, primary, dedicate to a service).
+const ipsCmd = program.command('ips').description("Manage this server's IP addresses: label, primary, dedicate to a service");
+ipsCmd.command('list').description('List the IP addresses of the panel host').action(() => ipsListAction(getClient()));
+ipsCmd
+  .command('set <ip>')
+  .description('Label an address, make it primary, or dedicate it to a service')
+  .option('--label <text>', 'A label ("" clears it)')
+  .option('--primary', 'Make it the primary address')
+  .option('--service <id>', 'Dedicate it to a docker service on the panel host')
+  .option('--shared', 'Share it again (undo --service)')
+  .action((ip: string, opts: { label?: string; primary?: boolean; service?: string; shared?: boolean }) => ipsSetAction(getClient(), ip, opts));
+ipsCmd.command('forget <ip>').description('Forget what was saved about an address').action((ip: string) => ipsForgetAction(getClient(), ip));
+
 const egressCmd = program.command('egress').description('Manage per-project outbound IP rules (G-15)');
 egressCmd.command('list').description('Show every egress IP rule across every registered driver').action(() => egressListAction(getClient()));
 egressCmd

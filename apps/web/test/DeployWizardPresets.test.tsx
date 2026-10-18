@@ -24,6 +24,7 @@ const apiMock = vi.hoisted(() => ({
     environments: { list: vi.fn() },
     insights: { analyze: vi.fn() },
     templates: { prepare: vi.fn() },
+    hostIps: { primary: vi.fn() },
   },
 }));
 vi.mock('../src/lib/api.js', () => apiMock);
@@ -142,6 +143,25 @@ describe('build pack, project, environment and domain', () => {
     expect(apiMock.api.services.create.mock.calls[0]![0]).toMatchObject({ tagProjectIds: [5], environmentId: 2 });
     expect(apiMock.api.domains.create).toHaveBeenCalledWith(42, { hostname: 'app.example.com' });
     expect(apiMock.api.domains.create.mock.invocationCallOrder[0]!).toBeLessThan(apiMock.api.deploys.trigger.mock.invocationCallOrder[0]!);
+  });
+
+  it("names the primary IP in the DNS hint (AAAA for IPv6), or says 'this server' without one", async () => {
+    apiMock.api.hostIps.primary.mockResolvedValue({ ip: '2001:db8::7' });
+    const user = userEvent.setup();
+    const { unmount } = renderWizard({ mode: 'repo' });
+    await user.type(screen.getByPlaceholderText('my-app'), 'app');
+    await user.type(screen.getByPlaceholderText('https://github.com/you/repo'), 'https://github.com/acme/app');
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    expect(await screen.findByText('2001:db8::7')).toBeInTheDocument();
+    expect(screen.getByText(/Point its DNS AAAA record at/)).toBeInTheDocument();
+    unmount();
+
+    apiMock.api.hostIps.primary.mockResolvedValue({ ip: null });
+    renderWizard({ mode: 'repo' });
+    await user.type(screen.getByPlaceholderText('my-app'), 'app');
+    await user.type(screen.getByPlaceholderText('https://github.com/you/repo'), 'https://github.com/acme/app');
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    expect(await screen.findByText(/Point its DNS A record at this server/)).toBeInTheDocument();
   });
 
   it('a refused domain does not stop the deploy', async () => {

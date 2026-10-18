@@ -91,14 +91,22 @@ describe('PortMappingsCard', () => {
   it("offers the panel host's IPs in the Host IP field", async () => {
     mockOf(api.services.hostAddresses).mockResolvedValue({
       detected: true,
-      addresses: [{ ip: '203.0.113.7', family: 4, iface: 'eth0' }, { ip: '2001:db8::7', family: 6, iface: 'eth0' }],
+      addresses: [
+        { ip: '203.0.113.7', family: 4, iface: 'eth0', label: 'main', primary: true, dedicated: null },
+        { ip: '2001:db8::7', family: 6, iface: 'eth0', dedicated: 'self' },
+        { ip: '203.0.113.9', family: 4, iface: 'eth0', dedicated: 'other' },
+      ],
     });
     renderWithProviders(<PortMappingsCard serviceId={3} svc={svc({ portMappings: [udp] })} />);
-    expect(await screen.findByText('203.0.113.7, 2001:db8::7')).toBeInTheDocument();
+    expect(await screen.findByText('2001:db8::7, 203.0.113.7')).toBeInTheDocument();
     expect(api.services.hostAddresses).toHaveBeenCalledWith(3);
     const field = screen.getByLabelText('Mapping 1 host IP');
     expect(field).toHaveAttribute('list', 'host-ips-3');
-    expect(document.querySelectorAll('#host-ips-3 option')).toHaveLength(2);
+    const options = [...document.querySelectorAll('#host-ips-3 option')];
+    // Another service's dedicated address is not offered; this service's own comes first.
+    expect(options.map((o) => o.getAttribute('value'))).toEqual(['2001:db8::7', '203.0.113.7']);
+    expect(options[0]).toHaveTextContent('dedicated to this service, eth0, IPv6');
+    expect(options[1]).toHaveTextContent('main, primary, eth0, IPv4');
   });
 
   it('suggests the "container running" healthcheck when only UDP is published', async () => {

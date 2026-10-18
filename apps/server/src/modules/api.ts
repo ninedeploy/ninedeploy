@@ -30,6 +30,7 @@ import { envRoutes, envSearchRoutes, projectEnvRoutes } from './env.js';
 import { sourceUploadRoutes } from './sourceUploads.js';
 import { publicBadgeRoutes, serviceBadgeRoutes } from './badges.js';
 import { hostAddressRoutes } from './hostAddresses.js';
+import { hostIpRoutes } from './hostIps.js';
 import { hookReceiveRoutes, webhookMgmtRoutes } from './hooks.js';
 import { githubAppHookRoutes } from './githubAppHooks.js';
 import { serviceGithubRoutes } from './serviceGithub.js';
@@ -216,6 +217,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(publicBadgeRoutes, { prefix: '/badges' });
   // 0.16.1: the panel host's IPs, for a port mapping's Host IP field.
   await app.register(hostAddressRoutes, { prefix: '/services' });
+  // 0.16.1: the panel host's IP inventory (label, primary, dedicate).
+  await app.register(hostIpRoutes, { prefix: '/host-ips' });
   await app.register(serviceInsightsRoutes, { prefix: '/services' });
   // Historical CPU/memory series for one service. `metricRoutes` is a separate
   // export from stats.ts and was never registered: `GET /v1/services/:id/metrics`

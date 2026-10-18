@@ -164,6 +164,8 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
   // A domain of the user's own, added right after the service is created.
   const [customDomain, setCustomDomain] = useState('');
   const projects = useQuery({ queryKey: ['projects'], queryFn: () => api.projects.list(), enabled: !template });
+  // 0.16.1: the operator's primary address, named in the DNS hint (null until one is picked).
+  const primaryIp = useQuery({ queryKey: ['host-ip-primary'], queryFn: () => api.hostIps.primary(), retry: false, staleTime: 300_000 });
   const environments = useQuery({ queryKey: ['environments'], queryFn: () => api.environments.list(), enabled: !template });
   // Inline compose stack: the pasted YAML and the service the router points
   // at. `composeService` starts empty and follows the server's suggestion
@@ -1343,7 +1345,8 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                       className="font-mono text-xs"
                     />
                     <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
-                      Point its DNS A record at this server. Leave empty to use only the automatic URL, when automatic
+                      Point its DNS {primaryIp.data?.ip?.includes(':') ? 'AAAA' : 'A'} record at{' '}
+                      {primaryIp.data?.ip ? <span className="font-mono text-slate-300">{primaryIp.data.ip}</span> : 'this server'}. Leave empty to use only the automatic URL, when automatic
                       URLs are on (Settings → Automatic URLs).
                     </p>
                   </L>

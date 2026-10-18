@@ -2262,3 +2262,27 @@ export type NewInstalledPlugin = typeof installedPlugins.$inferInsert;
 export type LogDrain = typeof logDrains.$inferSelect;
 export type NewLogDrain = typeof logDrains.$inferInsert;
 
+// ─── 0.16.1 IP inventory of the panel host ───────────────────────────────────
+// What operators say about the host's addresses (lib/hostIps.ts). The
+// addresses themselves are read live from the host; a row exists only for an
+// address someone annotated, so a panel without rows behaves as before.
+// Panel host only: a node's address is `servers.host`.
+export const hostIps = sqliteTable(
+  'host_ips',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    /** A literal IPv4 or IPv6 address, lower-case. */
+    ip: text('ip').notNull(),
+    label: text('label'),
+    /** The address DNS records should point at; at most one row is true. */
+    isPrimary: integer('is_primary', { mode: 'boolean' }).notNull().default(false),
+    /** Dedicated to this service: no other service may publish ports on the address. */
+    serviceId: integer('service_id').references(() => services.id, { onDelete: 'set null' }),
+    createdAt: ts('created_at'),
+    updatedAt: tsUpdatable('updated_at'),
+  },
+  (t) => ({
+    ipUnique: uniqueIndex('host_ips_ip_unique').on(t.ip),
+  }),
+);
+export type HostIp = typeof hostIps.$inferSelect;

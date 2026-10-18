@@ -295,7 +295,13 @@ describe('PATCH /services/:id portMappings', () => {
     expect((await row()).portMappings?.[0]?.hostIp).toBe('2001:db8::7');
 
     const list = await app.inject({ method: 'GET', url: `/services/${id}/host-addresses`, headers: member });
-    expect(list.json()).toEqual({ detected: true, addresses: [{ ip: '203.0.113.7', family: 4, iface: 'eth0' }, { ip: '2001:db8::7', family: 6, iface: 'eth0' }] });
+    expect(list.json()).toEqual({
+      detected: true,
+      addresses: [
+        { ip: '203.0.113.7', family: 4, iface: 'eth0', label: null, primary: false, dedicated: null },
+        { ip: '2001:db8::7', family: 6, iface: 'eth0', label: null, primary: false, dedicated: null },
+      ],
+    });
     hostIps.listHostAddresses.mockResolvedValue(null);
     expect((await app.inject({ method: 'GET', url: `/services/${id}/host-addresses`, headers: member })).json()).toEqual({ detected: false, addresses: [] });
     // Unknown host: any address is taken, Docker checks it when the container starts.

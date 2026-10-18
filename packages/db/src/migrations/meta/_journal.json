@@ -540,6 +540,13 @@
       "when": 1792316260282,
       "tag": "0077_port_mappings",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "6",
+      "when": 1792322984063,
+      "tag": "0078_host_ips",
+      "breakpoints": true
     }
   ]
 }

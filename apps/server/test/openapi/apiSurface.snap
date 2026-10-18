@@ -19,6 +19,7 @@ DELETE /v1/egress/:projectId operator nd://scope/write/egress
 DELETE /v1/environments/:id admin -
 DELETE /v1/firewall/rules/:id operator nd://scope/write/firewall
 DELETE /v1/github-apps/:id operator -
+DELETE /v1/host-ips/:ip operator -
 DELETE /v1/labels/:id member -
 DELETE /v1/log-drains/:id operator -
 DELETE /v1/networks/:name operator -
@@ -114,6 +115,8 @@ GET /v1/firewall operator nd://scope/read/firewall
 GET /v1/github-apps operator -
 GET /v1/github-apps/:id operator -
 GET /v1/github-apps/:id/installations operator -
+GET /v1/host-ips operator -
+GET /v1/host-ips/primary authed -
 GET /v1/housekeeping/images operator nd://scope/read/housekeeping
 GET /v1/housekeeping/prune/config operator nd://scope/read/housekeeping
 GET /v1/invitations/:token token -
@@ -419,6 +422,7 @@ PUT /v1/databases/:id/backup-policy admin nd://scope/write/databases
 PUT /v1/databases/:id/imports/:importId/chunks/:index admin nd://scope/write/databases
 PUT /v1/databases/:id/public-access operator nd://scope/write/databases
 PUT /v1/github-apps/:id/private-key operator -
+PUT /v1/host-ips/:ip operator -
 PUT /v1/onboarding/dismissed operator -
 PUT /v1/services/:id/github operator nd://scope/write/services
 PUT /v1/services/:id/placement operator nd://scope/write/services

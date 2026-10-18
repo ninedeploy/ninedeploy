@@ -7,7 +7,29 @@ import type {
 } from '@ninedeploy/schemas';
 import type { Transport } from '../transport.js';
 
+/** 0.16.1: one address of the panel host, as `GET /v1/host-ips` lists it. */
+export interface HostIpEntry {
+  ip: string;
+  family: 4 | 6;
+  /** Interface the host reports it on; null when not detected (an address saved earlier). */
+  iface: string | null;
+  detected: boolean;
+  label: string | null;
+  primary: boolean;
+  dedicatedTo: { id: number; name: string } | null;
+}
+
 export interface NetworkApi {
+  /** 0.16.1 IP inventory of the panel host (operator, except `primary`). */
+  hostIps: {
+    list: () => Promise<{ detected: boolean; addresses: HostIpEntry[] }>;
+    /** The primary address, for DNS hints (any signed-in user). */
+    primary: () => Promise<{ ip: string | null }>;
+    /** Label it, make it primary, or dedicate it to a docker service on the panel host (`serviceId: null` shares it again). */
+    set: (ip: string, patch: { label?: string | null; primary?: boolean; serviceId?: number | null }) => Promise<HostIpEntry | null>;
+    /** Forget what was saved about an address. */
+    remove: (ip: string) => Promise<{ ok: boolean }>;
+  };
   networks: {
     list: () => Promise<{
       networks: Array<{
@@ -76,6 +98,12 @@ export interface NetworkApi {
 export function networkApi(t: Transport): NetworkApi {
   const { get, send, request } = t;
   return {
+    hostIps: {
+      list: () => get<{ detected: boolean; addresses: HostIpEntry[] }>('/v1/host-ips'),
+      primary: () => get<{ ip: string | null }>('/v1/host-ips/primary'),
+      set: (ip, patch) => send<HostIpEntry | null>('PUT', `/v1/host-ips/${encodeURIComponent(ip)}`, patch),
+      remove: (ip) => send<{ ok: boolean }>('DELETE', `/v1/host-ips/${encodeURIComponent(ip)}`),
+    },
     networks: {
       list: () => get<{ networks: Array<{ name: string; driver: string; members: string[] }>; remote: number | null }>('/v1/networks'),
       create: (input) => send<{ ok: boolean; name: string }>('POST', '/v1/networks', { driver: 'bridge', ...input }),

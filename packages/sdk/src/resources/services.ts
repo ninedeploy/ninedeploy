@@ -87,8 +87,8 @@ export interface ServicesApi {
     };
     /** 0.16.1: the kept uploads (newest first) and whether the service takes uploads. */
     sourceUploads: (id: number) => Promise<{ uploadSourced: boolean; maxBytes: number; uploads: SourceUpload[] }>;
-    /** 0.16.1: the panel host IPs a port mapping can be bound to (member); `detected: false` when the host could not be asked. */
-    hostAddresses: (id: number) => Promise<{ detected: boolean; addresses: Array<{ ip: string; family: 4 | 6; iface: string }> }>;
+    /** 0.16.1: the panel host IPs a port mapping can be bound to (member), with the operator's label, the primary mark and whether one is dedicated to this service or another; `detected: false` when the host could not be asked. */
+    hostAddresses: (id: number) => Promise<{ detected: boolean; addresses: Array<{ ip: string; family: 4 | 6; iface: string; label?: string | null; primary?: boolean; dedicated?: 'self' | 'other' | null }> }>;
     importBundle: (bundle: unknown) => Promise<{ ok: boolean; serviceId: number; slug: string; message: string }>;
     /**
      * `.ninedeploy` manifest endpoints. The server applies
@@ -217,7 +217,7 @@ export function servicesApi(t: Transport): ServicesApi {
         disable: (id) => request<{ enabled: boolean; url: string | null }>(`/v1/services/${id}/badge`, { method: 'DELETE' }),
       },
       sourceUploads: (id) => get<{ uploadSourced: boolean; maxBytes: number; uploads: SourceUpload[] }>(`/v1/services/${id}/source`),
-      hostAddresses: (id) => get<{ detected: boolean; addresses: Array<{ ip: string; family: 4 | 6; iface: string }> }>(`/v1/services/${id}/host-addresses`),
+      hostAddresses: (id) => get<{ detected: boolean; addresses: Array<{ ip: string; family: 4 | 6; iface: string; label?: string | null; primary?: boolean; dedicated?: 'self' | 'other' | null }> }>(`/v1/services/${id}/host-addresses`),
       importBundle: (bundle) => send<{ ok: boolean; serviceId: number; slug: string; message: string }>('POST', '/v1/services/import', bundle),
       manifest: {
         apply: (serviceId, input) =>

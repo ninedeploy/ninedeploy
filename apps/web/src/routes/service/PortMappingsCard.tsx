@@ -67,7 +67,10 @@ export function PortMappingsCard({ serviceId, svc }: { serviceId: number; svc?: 
     enabled: visible && !onNode,
     staleTime: 60_000,
   });
-  const addresses = hostIps.data?.addresses ?? [];
+  // An address dedicated to another service is not offered; this service's own comes first.
+  const addresses = (hostIps.data?.addresses ?? [])
+    .filter((a) => a.dedicated !== 'other')
+    .sort((a, b) => Number(b.dedicated === 'self') - Number(a.dedicated === 'self'));
 
   const runningCheck = useMutation({
     mutationFn: () => api.services.update(serviceId, { healthCheck: 'running' }),
@@ -178,7 +181,9 @@ export function PortMappingsCard({ serviceId, svc }: { serviceId: number; svc?: 
         {addresses.length > 0 && (
           <datalist id={`host-ips-${serviceId}`}>
             {addresses.map((a) => (
-              <option key={a.ip} value={a.ip}>{`${a.iface}, IPv${a.family}`}</option>
+              <option key={a.ip} value={a.ip}>
+                {[a.label, a.dedicated === 'self' ? 'dedicated to this service' : null, a.primary ? 'primary' : null, a.iface, `IPv${a.family}`].filter(Boolean).join(', ')}
+              </option>
             ))}
           </datalist>
         )}

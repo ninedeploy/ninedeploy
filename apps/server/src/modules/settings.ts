@@ -31,6 +31,7 @@ import { config } from '../config.js';
 import { ALLOW_REGISTRATION_DEFAULT } from './auth.js';
 import { getAutoUrlConfig, isIpv4, isPublicIpv4, setAutoUrlConfig, SSLIP_ZONE } from '../lib/autoUrl.js';
 import { detectPublicIp } from '../lib/cloudflare.js';
+import { primaryHostIp } from '../lib/hostIps.js';
 
 const togglePatch = z.object({ enabled: z.boolean() });
 // 0.16.1 Automatic URLs (lib/autoUrl.ts). The base domain is a bare name
@@ -225,6 +226,9 @@ export const settingsRoutes: FastifyPluginAsync = async (app) => {
     } catch {
       suggestedIp = null;
     }
+    // 0.16.1: the operator's primary address wins over the installer's guess.
+    const primary = await primaryHostIp(app.db);
+    if (primary && isIpv4(primary)) suggestedIp = primary;
     return { effective, stored, envWildcard: config.wildcardDomain || null, suggestedIp };
   });
 

@@ -335,6 +335,12 @@ export function createFakeApiModule() {
     },
     demo: { seed: vi.fn() },
     health: vi.fn(),
+    hostIps: {
+      list: vi.fn().mockResolvedValue({ detected: true, addresses: [] }),
+      primary: vi.fn().mockResolvedValue({ ip: null }),
+      set: vi.fn(),
+      remove: vi.fn(),
+    },
     firewall: {
       status: vi.fn().mockResolvedValue({
         installed: true,

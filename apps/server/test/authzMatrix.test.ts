@@ -518,6 +518,9 @@ function paramValue(url: string, param: string, r: Res): string {
     // 0.16.1 status badge: an unminted token (the route answers a 404 badge).
     case 'badge':
       return 'zzbadge.svg';
+    // 0.16.1 IP inventory: an address the faked host does not have.
+    case 'ip':
+      return '198.51.100.250';
     case '*':
       return '';
     case 'id': {
@@ -1039,6 +1042,10 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/traefik/logs': OP,
   'GET /v1/traefik/http3': OP,
   'PUT /v1/traefik/http3': OP,
+  'GET /v1/host-ips': OP,
+  'GET /v1/host-ips/primary': R('authed'),
+  'PUT /v1/host-ips/:ip': OP,
+  'DELETE /v1/host-ips/:ip': OP,
   'POST /v1/traefik/restart': OP,
   'GET /v1/traefik/status': OP,
   'POST /v1/traefik/update': OP,

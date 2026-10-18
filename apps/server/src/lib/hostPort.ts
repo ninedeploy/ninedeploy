@@ -1,6 +1,7 @@
 import { and, eq, isNull, ne } from 'drizzle-orm';
 import { databasePublicAccess, type DB, type ServicePortMapping, services } from '@ninedeploy/db';
 import { formatPortMapping, portMappingsOverlap } from '@ninedeploy/schemas';
+import { dedicatedHostIps } from './hostIps.js';
 import { config } from '../config.js';
 import { forbidden } from './errors.js';
 import type { AuthedUser } from './resourceAccess.js';
@@ -108,6 +109,14 @@ export async function hostPortConflict(
 ): Promise<string | null> {
   const mine = claimsOf(publishedPort, mappings, '');
   if (mine.length === 0) return null;
+  // 0.16.1: an address of the panel host dedicated to another service.
+  if (serverId == null) {
+    const dedicated = await dedicatedHostIps(db);
+    for (const m of mappings ?? []) {
+      const owner = m.hostIp ? dedicated.get(m.hostIp.toLowerCase()) : undefined;
+      if (owner && owner.id !== serviceId) return `${m.hostIp} is dedicated to service "${owner.name}"; pick another address or share it again (Settings → Security → IP addresses).`;
+    }
+  }
   const own = publishedPort ? (mappings ?? []).find((m) => portMappingsOverlap(m, { hostPort: publishedPort, containerPort: publishedPort, protocol: 'tcp' })) : undefined;
   if (own) return `Host port ${publishedPort}/tcp is already this service's direct host port.`;
   const others = await db

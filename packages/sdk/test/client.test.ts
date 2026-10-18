@@ -826,6 +826,16 @@ describe('createClient', () => {
     it('exercises list, create, remove, attach and detach', async () => {
       const { fetchMock, calls } = makeFetch(() => ok({ networks: [], remote: null }));
       const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+      // 0.16.1 IP inventory of the panel host.
+      await client.hostIps.list();
+      expect(last(calls)).toMatchObject({ url: '/v1/host-ips', init: { method: 'GET' } });
+      await client.hostIps.primary();
+      expect(last(calls)).toMatchObject({ url: '/v1/host-ips/primary', init: { method: 'GET' } });
+      await client.hostIps.set('2001:db8::7', { primary: true });
+      expect(last(calls)).toMatchObject({ url: '/v1/host-ips/2001%3Adb8%3A%3A7', init: { method: 'PUT', body: JSON.stringify({ primary: true }) } });
+      await client.hostIps.remove('203.0.113.7');
+      expect(last(calls)).toMatchObject({ url: '/v1/host-ips/203.0.113.7', init: { method: 'DELETE' } });
+
       await client.networks.list();
       expect(last(calls)).toMatchObject({ url: '/v1/networks', init: { method: 'GET' } });
       await client.networks.create({ name: 'net-a', driver: 'overlay' });
