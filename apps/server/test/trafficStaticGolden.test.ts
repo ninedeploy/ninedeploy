@@ -316,6 +316,12 @@ describe('traefikInputs: the one source of ensureTraefik inputs (recreate-flap g
     await expect(proxy.traefikInputs({} as never)).resolves.toMatchObject({ accessLog: 'stdout' });
   });
 
+  it('0.16.1: reads the HTTP/3 switch (absent = off)', async () => {
+    await expect(proxy.traefikInputs({} as never)).resolves.toMatchObject({ http3Udp: false });
+    h.settings.traefik_http3_udp = true;
+    await expect(proxy.traefikInputs({} as never)).resolves.toMatchObject({ http3Udp: true });
+  });
+
   it('a database error does not guess "off" (that would recreate an enabled proxy)', async () => {
     h.failSettings = true;
     await expect(proxy.traefikInputs({} as never)).rejects.toThrow('database is locked');
@@ -345,8 +351,8 @@ describe('traefikInputs: the one source of ensureTraefik inputs (recreate-flap g
         expect(src, rel).toMatch(new RegExp(`const ${t} = await traefikInputs\\(`));
       }
     }
-    // The three callers named in the design (M14), and no others.
-    expect(calls.sort()).toEqual(['modules/settings.ts', 'modules/traefik.ts', 'modules/traffic.ts', 'modules/traffic.ts', 'plugins/traefik.ts']);
+    // The three callers named in the design (M14), the 0.16.1 HTTP/3 switch (apply and restore), and no others.
+    expect(calls.sort()).toEqual(['modules/settings.ts', 'modules/traefik.ts', 'modules/traefik.ts', 'modules/traefik.ts', 'modules/traffic.ts', 'modules/traffic.ts', 'plugins/traefik.ts']);
   });
 
   it('node proxies and the custom-config preflight never render the analytics file', () => {
@@ -355,5 +361,33 @@ describe('traefikInputs: the one source of ensureTraefik inputs (recreate-flap g
       expect(src, rel).toMatch(/renderStaticConfig\(/);
       expect(src, rel).not.toMatch(/accessLog/);
     }
+  });
+});
+
+describe('0.16.1 HTTP/3: 443/udp is opt-in and off changes nothing', () => {
+  it('off (absent or false) keeps the golden fingerprint and argv, so an upgrade never recreates Traefik', async () => {
+    expect(proxy.traefikConfigFingerprint('ops@example.com', DNS, { accessLog: 'stdout', http3Udp: false })).toBe(golden.cases.acmeDns.fingerprint);
+    freshDocker('journald');
+    rmSync(path.join(base, 'traefik'), { recursive: true, force: true });
+    h.run.mockClear();
+    await proxy.ensureTraefik(() => undefined, 'ops@example.com', DNS, { accessLog: 'stdout', http3Udp: false });
+    const argv = h.run.mock.calls.map((c) => c[1] as string[]).find((a) => a[0] === 'run')!.map(norm);
+    expect(argv).toEqual(golden.cases.acmeDns.argv);
+  });
+
+  it('on: a new fingerprint (the container is recreated) and -p 443:443/udp after the TCP ports', async () => {
+    const on = proxy.traefikConfigFingerprint('ops@example.com', DNS, { accessLog: 'stdout', http3Udp: true });
+    expect(on).not.toBe(golden.cases.acmeDns.fingerprint);
+    freshDocker('journald');
+    rmSync(path.join(base, 'traefik'), { recursive: true, force: true });
+    h.run.mockClear();
+    const logs: string[] = [];
+    await proxy.ensureTraefik((l) => logs.push(l), 'ops@example.com', DNS, { accessLog: 'stdout', http3Udp: true });
+    const argv = h.run.mock.calls.map((c) => c[1] as string[]).find((a) => a[0] === 'run')!;
+    expect(argv[argv.indexOf('--label') + 1]).toMatch(new RegExp(`=${on}$`));
+    const want = [...golden.cases.acmeDns.argv];
+    want.splice(want.indexOf('443:443') + 1, 0, '-p', '443:443/udp');
+    expect(argv.map(norm).filter((a) => !a.includes('='))).toEqual(want.filter((a) => !a.includes('=')));
+    expect(logs).toContain('traefik started (http :80 / https :443 / http3 :443/udp) on shared network');
   });
 });

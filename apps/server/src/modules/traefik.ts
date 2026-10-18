@@ -12,9 +12,14 @@ import {
   legacyDynamicPath,
   readCertificates,
   TRAEFIK_CONTAINER,
+  TRAEFIK_HTTP3_UDP_KEY,
   TRAEFIK_IMAGE,
+  traefikHttp3UdpEnabled,
   traefikInputs,
 } from '../engine/proxy.js';
+import { HttpError } from '../lib/errors.js';
+import { setSetting } from '../lib/settings.js';
+import { z } from 'zod';
 import {
   buildCertificateInventory,
   expiringWithin,
@@ -459,6 +464,41 @@ export const traefikRoutes: FastifyPluginAsync = async (app) => {
   // Traefik'i yeniden başlat (admin only)
   // F612: POST routes authenticate at onRequest (before the body is read and
   // parsed, the r098 rule); a preHandler ran only after parsing.
+  // 0.16.1 HTTP/3: the static config has always declared `http3` on the
+  // websecure entrypoint, but QUIC needs 443/udp published, which the
+  // container never was. Turning it on (or off) recreates Traefik, about a
+  // second of refused connections; a failed recreate puts the switch back and
+  // the previous container with it, and answers 502.
+  app.get('/traefik/http3', { preHandler: [app.authenticate, app.requireAdmin] }, async () => ({
+    enabled: await traefikHttp3UdpEnabled(app.db),
+  }));
+
+  app.put('/traefik/http3', { onRequest: [app.authenticate], preHandler: [app.requireAdmin] }, async (req) => {
+    const { enabled } = z.object({ enabled: z.boolean() }).strict().parse(req.body ?? {});
+    const previous = await traefikHttp3UdpEnabled(app.db);
+    if (enabled === previous) return { enabled };
+    const log = (line: string) => app.log.info({ component: 'traefik-http3' }, line);
+    await setSetting(app.db, TRAEFIK_HTTP3_UDP_KEY, enabled);
+    try {
+      await ensureNetwork(log);
+      const t = await traefikInputs(app.db);
+      await ensureTraefik(log, t.acmeEmail, t.dns, t);
+    } catch (err) {
+      await setSetting(app.db, TRAEFIK_HTTP3_UDP_KEY, previous);
+      const message = (err instanceof Error ? err.message : String(err)).slice(0, 300);
+      try {
+        const t = await traefikInputs(app.db);
+        await ensureTraefik(log, t.acmeEmail, t.dns, t);
+      } catch (restoreErr) {
+        app.log.error({ err: restoreErr, component: 'traefik-http3' }, 'restoring the previous Traefik container failed');
+      }
+      void audit(app.db, req.user!.id, 'traefik.http3.update', 'traefik', { previous, requested: enabled, outcome: 'recreate_failed', error: message });
+      throw new HttpError(502, 'traefik_recreate_failed', `Traefik could not be recreated; HTTP/3 stays ${previous ? 'on' : 'off'}: ${message}`);
+    }
+    void audit(app.db, req.user!.id, 'traefik.http3.update', 'traefik', { previous, enabled });
+    return { enabled };
+  });
+
   app.post('/traefik/restart', { onRequest: [app.authenticate], preHandler: [app.requireAdmin] }, async (req) => {
     try {
       await capture('docker', ['restart', TRAEFIK_CONTAINER]);

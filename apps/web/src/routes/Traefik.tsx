@@ -9,6 +9,7 @@ import { Button, Card, ErrorCard, PageHeader, Skeleton, StatusBadge, Tabs, cn } 
 import { CertificatesCard } from './traefik/CertificatesCard.js';
 import { CustomConfigCard } from './traefik/CustomConfigCard.js';
 import { TrafficAnalyticsCard } from './traefik/TrafficAnalyticsCard.js';
+import { Http3Card } from './traefik/Http3Card.js';
 
 export function Traefik() {
   const { user: me } = useAuth();
@@ -68,6 +69,8 @@ export function Traefik() {
 
       <div className="mt-6">
         {activeTab === 'overview' && <OverviewTab data={info.data} isLoading={info.isLoading} />}
+        {/* 0.16.1: HTTP/3 over 443/udp, operator-only like its route. */}
+        {activeTab === 'overview' && isAdmin && <Http3Card />}
         {activeTab === 'certificates' && info.data && (
           <div className="space-y-6">
             <CertificatesTab certificates={info.data.certificates} />

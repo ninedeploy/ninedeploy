@@ -1037,6 +1037,8 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/traefik/certificates/inventory': OP,
   'GET /v1/traefik/config': OP,
   'GET /v1/traefik/logs': OP,
+  'GET /v1/traefik/http3': OP,
+  'PUT /v1/traefik/http3': OP,
   'POST /v1/traefik/restart': OP,
   'GET /v1/traefik/status': OP,
   'POST /v1/traefik/update': OP,

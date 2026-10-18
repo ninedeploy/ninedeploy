@@ -1562,6 +1562,12 @@ describe('createClient', () => {
 
       await client.traefik.backupCerts();
       expect(last(calls)).toMatchObject({ url: '/v1/traefik/backup-certs', init: { method: 'POST' } });
+
+      // 0.16.1 HTTP/3 switch.
+      await client.traefik.http3.get();
+      expect(last(calls)).toMatchObject({ url: '/v1/traefik/http3', init: { method: 'GET' } });
+      await client.traefik.http3.set(true);
+      expect(last(calls)).toMatchObject({ url: '/v1/traefik/http3', init: { method: 'PUT', body: JSON.stringify({ enabled: true }) } });
     });
 
     // r557: config / version / update had no SDK methods (the web called them raw).

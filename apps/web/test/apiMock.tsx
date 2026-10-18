@@ -304,7 +304,15 @@ export function createFakeApiModule() {
     },
     // Multi-node: Swarm on the panel host (Settings → Swarm).
     swarm: { get: vi.fn(), init: vi.fn(), settings: vi.fn() },
-    traefik: { get: vi.fn(), status: vi.fn(), certificates: vi.fn(), logs: vi.fn(), restart: vi.fn(), backupCerts: vi.fn() },
+    traefik: {
+      get: vi.fn(),
+      status: vi.fn(),
+      certificates: vi.fn(),
+      logs: vi.fn(),
+      restart: vi.fn(),
+      backupCerts: vi.fn(),
+      http3: { get: vi.fn().mockResolvedValue({ enabled: false }), set: vi.fn() },
+    },
     config: { list: vi.fn(), get: vi.fn(), set: vi.fn(), delete: vi.fn() },
     plugins: { list: vi.fn(), marketplace: vi.fn(), install: vi.fn(), enable: vi.fn(), disable: vi.fn(), reload: vi.fn(), inspect: vi.fn(), uninstall: vi.fn() },
     menus: { list: vi.fn() },

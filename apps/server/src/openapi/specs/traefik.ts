@@ -40,6 +40,21 @@ export const traefikSpecs: RouteSpecMap = {
     responseType: '{ logs: string[] }',
     validation: 'handler',
   },
+  'GET /v1/traefik/http3': {
+    summary: 'Whether the proxy publishes 443/udp for HTTP/3',
+    tag: 'traefik',
+    description: 'Off unless an operator turned it on. Added in 0.16.1.',
+    floor: 'operator',
+    responseType: '{ enabled: boolean }',
+  },
+  'PUT /v1/traefik/http3': {
+    summary: 'Turn HTTP/3 (QUIC on 443/udp) on or off',
+    tag: 'traefik',
+    description:
+      'Recreates Traefik on the panel host with or without `-p 443:443/udp` (about a second of refused connections). A failed recreate puts the switch and the previous container back and answers 502 `traefik_recreate_failed`. Audited traefik.http3.update. Nodes keep their proxy as it is. Added in 0.16.1.',
+    floor: 'operator',
+    responseType: '{ enabled: boolean }',
+  },
   'POST /v1/traefik/restart': {
     summary: 'Restart the proxy',
     tag: 'traefik',

@@ -207,6 +207,7 @@ GET /v1/traefik/certificates/expiring operator -
 GET /v1/traefik/certificates/inventory operator -
 GET /v1/traefik/config operator -
 GET /v1/traefik/custom-config operator -
+GET /v1/traefik/http3 operator -
 GET /v1/traefik/logs operator -
 GET /v1/traefik/status operator -
 GET /v1/traefik/version operator -
@@ -439,5 +440,6 @@ PUT /v1/swarm/settings operator -
 PUT /v1/system/panel-backup operator nd://scope/write/health
 PUT /v1/traefik/certificates/custom/:id operator -
 PUT /v1/traefik/custom-config operator -
+PUT /v1/traefik/http3 operator -
 PUT /v1/volumes/:name/files operator nd://scope/write/volumes
 PUT /v1/workspaces/:wid/email-templates/:name admin -

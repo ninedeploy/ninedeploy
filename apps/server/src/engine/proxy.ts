@@ -7,7 +7,7 @@ import { redirectRegexProblem } from '@ninedeploy/schemas';
 import { eq } from 'drizzle-orm';
 import { config } from '../config.js';
 import { capture, run, sleep } from '../lib/exec.js';
-import { getSettingString } from '../lib/settings.js';
+import { getSetting, getSettingString } from '../lib/settings.js';
 import { decrypt, encrypt } from '../lib/crypto.js';
 import { audit } from '../lib/audit.js';
 import { ensureDockerImage } from '../lib/dockerPull.js';
@@ -286,6 +286,15 @@ export interface TraefikInputs {
   acmeEmail: string | null;
   dns: DnsConfig | null;
   accessLog: TraefikAccessLogMode;
+  /** 0.16.1: publish 443/udp so HTTP/3 (QUIC) reaches the `websecure` entrypoint. */
+  http3Udp: boolean;
+}
+
+/** 0.16.1 setting: HTTP/3 over 443/udp on the panel's Traefik. Off (absent) = the 0.16.0 container. */
+export const TRAEFIK_HTTP3_UDP_KEY = 'traefik_http3_udp';
+
+export async function traefikHttp3UdpEnabled(db: DB): Promise<boolean> {
+  return getSetting(db, TRAEFIK_HTTP3_UDP_KEY, false);
 }
 
 /**
@@ -305,7 +314,9 @@ export async function traefikInputs(db: DB): Promise<TraefikInputs> {
   const acmeEmail = await getAcmeEmail(db).catch(() => null);
   const dns = await getDnsConfig(db).catch(() => null);
   const accessLog: TraefikAccessLogMode = (await trafficAnalyticsEnabled(db)) ? 'file' : 'stdout';
-  return { acmeEmail, dns, accessLog };
+  // Like the analytics switch: a read error throws instead of guessing "off".
+  const http3Udp = await traefikHttp3UdpEnabled(db);
+  return { acmeEmail, dns, accessLog, http3Udp };
 }
 
 /** Where every NineDeploy-managed Traefik (panel and nodes) reads its dynamic files. */
@@ -560,7 +571,8 @@ async function ensureTraefikUnlocked(
   migrateLegacyRoutes();
   const staticOpts = { accessLog: opts?.accessLog ?? 'stdout' } as const;
   const renderedStaticConfig = renderStaticConfig(acmeEmail, dns, staticOpts);
-  const configFingerprint = traefikConfigFingerprint(acmeEmail, dns, staticOpts);
+  const http3Udp = opts?.http3Udp === true;
+  const configFingerprint = traefikConfigFingerprint(acmeEmail, dns, { ...staticOpts, http3Udp });
   const staticConfigChanged =
     !existsSync(staticPath()) || readFileSync(staticPath(), 'utf8') !== renderedStaticConfig;
   if (staticConfigChanged) writeAtomic(staticPath(), renderedStaticConfig);
@@ -623,6 +635,9 @@ async function ensureTraefikUnlocked(
       '--label', `${TRAEFIK_CONFIG_LABEL}=${configFingerprint}`,
       '--add-host', 'host.docker.internal:host-gateway',
       '-p', '80:80', '-p', '443:443',
+      // 0.16.1: the static config has always declared `http3` on websecure;
+      // QUIC reaches it only when 443/udp is published too (opt-in).
+      ...(http3Udp ? ['-p', '443:443/udp'] : []),
       // r245: resolved to the HOST path when the panel itself runs in a container.
       '-v', `${hostConfigDir}:/etc/traefik:ro`,
     ];
@@ -681,7 +696,7 @@ async function ensureTraefikUnlocked(
       throw new Error(`traefik container did not stay running on network '${NETWORK}': ${logs.trim()}`);
     }
     legacyMirror = false;
-    log('traefik started (http :80 / https :443) on shared network');
+    log(`traefik started (http :80 / https :443${http3Udp ? ' / http3 :443/udp' : ''}) on shared network`);
     return true;
   } catch (err) {
     log(`traefik warning: ${err instanceof Error ? err.message : err}`);
@@ -738,6 +753,8 @@ let traefikEnsureTail: Promise<void> = Promise.resolve();
 /** The static options `ensureTraefik` renders with (0.15: the access-log mode). */
 export interface TraefikStaticOptions {
   accessLog: TraefikAccessLogMode;
+  /** 0.16.1: also publish 443/udp (HTTP/3). Absent or false = the 0.16.0 run line. */
+  http3Udp?: boolean;
 }
 
 /**
@@ -800,14 +817,17 @@ export function resetDockerLoggingDriverCache(): void {
 export function traefikConfigFingerprint(
   acmeEmail: string | null,
   dns: DnsConfig | null,
-  opts: { accessLog?: TraefikAccessLogMode } = {},
+  opts: { accessLog?: TraefikAccessLogMode; http3Udp?: boolean } = {},
 ): string {
   const dnsEnv = dns ? renderDnsEnvFile(dns) : null;
-  return createHash('sha256')
+  const hash = createHash('sha256')
     .update(renderStaticConfig(acmeEmail, dns, { accessLog: opts.accessLog }))
     .update('\0')
-    .update(dnsEnv ?? '')
-    .digest('hex');
+    .update(dnsEnv ?? '');
+  // 0.16.1: hashed only when on, so every container created before stays
+  // current and an upgrade never recreates Traefik for it.
+  if (opts.http3Udp) hash.update('\0http3-udp');
+  return hash.digest('hex');
 }
 
 /**

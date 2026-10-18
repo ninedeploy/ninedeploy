@@ -57,6 +57,11 @@ export interface TraefikApi {
      * 0.14: the operator's custom dynamic config (`custom.yml`). `set` throws
      * a NineDeployError whose `details` is `{ errors, warnings }` on a refusal.
      */
+    /** 0.16.1: HTTP/3 (QUIC on 443/udp) on the panel host's proxy (operator); `set` recreates Traefik. */
+    http3: {
+      get: () => Promise<{ enabled: boolean }>;
+      set: (enabled: boolean) => Promise<{ enabled: boolean }>;
+    };
     customConfig: {
       get: () => Promise<TraefikCustomConfig>;
       /** No state change. */
@@ -98,6 +103,10 @@ export function traefikApi(t: Transport): TraefikApi {
       config: () => get<TraefikRoutingConfig>('/v1/traefik/config'),
       version: () => get<TraefikVersionInfo>('/v1/traefik/version'),
       update: () => request<{ ok: boolean; newVersion: string | null }>('/v1/traefik/update', { method: 'POST' }, 10 * 60_000),
+      http3: {
+        get: () => get<{ enabled: boolean }>('/v1/traefik/http3'),
+        set: (enabled) => send<{ enabled: boolean }>('PUT', '/v1/traefik/http3', { enabled }),
+      },
       customConfig: {
         get: () => get<TraefikCustomConfig>('/v1/traefik/custom-config'),
         validate: (content) => send<TraefikCustomConfigValidation>('POST', '/v1/traefik/custom-config/validate', { content }),
