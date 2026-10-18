@@ -575,6 +575,13 @@
       "when": 1792357821137,
       "tag": "0082_service_files",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "6",
+      "when": 1792360470335,
+      "tag": "0083_health_command",
+      "breakpoints": true
     }
   ]
 }

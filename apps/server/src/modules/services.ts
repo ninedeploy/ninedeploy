@@ -138,7 +138,8 @@ function serialize(s: Service, sourceName: string | null = null, tags: TagIds = 
     serverId: s.serverId ?? null,
     healthPath: s.healthPath,
     healthTimeoutSeconds: s.healthTimeoutSeconds ?? null,
-    healthCheck: s.healthCheck === 'running' ? 'running' : 'http',
+    healthCheck: s.healthCheck === 'running' || s.healthCheck === 'command' ? s.healthCheck : 'http',
+    healthCommand: s.healthCommand ?? null,
     runtimeOptions: s.runtimeOptions ?? null,
     port: s.port,
     publishedPort: s.publishedPort ?? null,
@@ -683,7 +684,18 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       if (patch.healthCheck === 'running' && (patch.type ?? existing.type) !== 'docker') {
         throw badRequest('The "container running" healthcheck applies to docker services only');
       }
-      patch.healthCheck = patch.healthCheck === 'running' ? 'running' : null;
+      patch.healthCheck = patch.healthCheck === 'running' || patch.healthCheck === 'command' ? patch.healthCheck : null;
+    }
+    // 0.16.3 command healthcheck: a docker container on the panel host (the
+    // deploy runs it with `docker exec`), and never without its command.
+    const effectiveHealthCheck = patch.healthCheck !== undefined ? patch.healthCheck : existing.healthCheck;
+    if (effectiveHealthCheck === 'command' && (patch.healthCheck !== undefined || patch.healthCommand !== undefined || patch.serverId !== undefined || patch.type !== undefined)) {
+      const serverId = patch.serverId !== undefined ? patch.serverId : existing.serverId;
+      if ((patch.type ?? existing.type) !== 'docker' || serverId != null || existing.orchestrator === 'swarm') {
+        throw badRequest('The command healthcheck applies to docker services on the panel host only');
+      }
+      const command = patch.healthCommand !== undefined ? patch.healthCommand : existing.healthCommand;
+      if (!command) throw badRequest('The command healthcheck needs a command');
     }
     // 0.16.1 extra host ports (TCP/UDP, ranges, an optional dedicated IP).
     // Same privilege rules as the single published port, checked only when
@@ -1615,6 +1627,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         healthPath: svc.healthPath,
         healthTimeoutSeconds: svc.healthTimeoutSeconds,
         healthCheck: svc.healthCheck,
+        healthCommand: svc.healthCommand,
         // 0.16.1: operator-set container options are the operator's to hand
         // out; a member's copy starts without them (like sourceId above).
         runtimeOptions: req.user!.isOperator ? svc.runtimeOptions : null,

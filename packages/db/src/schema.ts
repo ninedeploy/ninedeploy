@@ -471,7 +471,10 @@ export const services = sqliteTable(
     // 0.16.1: 'running' = the deploy's healthcheck only waits for the
     // container to stay up (UDP game servers, workers with no HTTP or TCP
     // port). Null = the HTTP/TCP probe every deploy used before.
-    healthCheck: text('health_check').$type<'http' | 'running'>(),
+    // 0.16.3: 'command' = `health_command` must exit 0 inside the container.
+    healthCheck: text('health_check').$type<'http' | 'running' | 'command'>(),
+    // 0.16.3: the shell command of the 'command' healthcheck (`sh -c`); null otherwise.
+    healthCommand: text('health_command'),
     // 0.16.1: operator-set container options for docker services (GPUs,
     // /dev/shm size, init, open-file limit, added capabilities). Null = none,
     // the `docker run` line every deploy used before.

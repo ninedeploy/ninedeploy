@@ -435,6 +435,15 @@ describe('service', () => {
       bad(createService, { name: 'Web', memLimitMb: -5 });
     });
 
+    it('0.16.3: the command healthcheck takes one trimmed line of up to 1000 characters; null clears it', () => {
+      expect(updateService.parse({ healthCheck: 'command', healthCommand: '  pg_isready -U app  ' })).toMatchObject({ healthCheck: 'command', healthCommand: 'pg_isready -U app' });
+      expect(updateService.parse({ healthCommand: null }).healthCommand).toBeNull();
+      for (const bad of ['', '   ', 'a\nb', 'x'.repeat(1001), `a${String.fromCharCode(0)}`]) {
+        expect(updateService.safeParse({ healthCommand: bad }).success, JSON.stringify(bad)).toBe(false);
+      }
+      expect(updateService.safeParse({ healthCheck: 'exec' }).success).toBe(false);
+    });
+
     it('runtimeLogsQuery: 300 by default, clamped to 1..5000, an unusable value reads as the default', () => {
       expect(runtimeLogsQuery.parse({})).toEqual({ tail: 300 });
       expect(runtimeLogsQuery.parse({ tail: '1000' })).toEqual({ tail: 1000 });

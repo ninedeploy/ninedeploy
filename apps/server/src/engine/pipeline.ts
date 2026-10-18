@@ -36,6 +36,10 @@ import { remoteVolumeRefusal } from '../lib/remoteVolumes.js';
 import { createSwarmBuilder, isSwarmService, swarmDeployRefusal, withSwarmRetirement } from './swarmDeploy.js';
 import { swarmRuntimeOf } from '../lib/swarm.js';
 import { fileMountRefusal, prepareFileMounts } from '../lib/serviceFiles.js';
+
+/** 0.16.3: why a node or Swarm service with the command healthcheck is not deployed. */
+export const COMMAND_HEALTHCHECK_PANEL_ONLY =
+  'The command healthcheck works for docker services on the panel host only in this release; choose another healthcheck (Service → Settings) or run the service on the panel host.';
 import { analyzeRepo, summarizeInsights } from '../lib/frameworks.js';
 import { upsertInsights } from './repoInsights.js';
 import { connectionString, ENGINES } from './database.js';
@@ -770,7 +774,11 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   // 0.16.3: file mounts are written and mounted on the panel host only; a
   // node, Swarm or compose service that has them is refused before anything
   // is built, never started without its files.
-  const fileRefusal = await fileMountRefusal(db, service);
+  // The command healthcheck (`docker exec` on the panel host) the same way:
+  // a node or Swarm deploy would otherwise fall back to a probe it never chose.
+  const fileRefusal =
+    (await fileMountRefusal(db, service)) ??
+    (service.healthCheck === 'command' && (service.type !== 'docker' || service.serverId != null || onSwarm) ? COMMAND_HEALTHCHECK_PANEL_ONLY : null);
   if (fileRefusal) {
     log(`✗ ${fileRefusal}`);
     await safeFail(db, deploymentId, service.id, service.runtimeId);
@@ -1748,6 +1756,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
           // 0.16.3: a target would start without the service's files.
           const files = await fileMountRefusal(db, onTarget);
           if (files) return files;
+          if (service.healthCheck === 'command') return COMMAND_HEALTHCHECK_PANEL_ONLY;
           if (remoteHookRefusal(buildConfig)) {
             log(`⚠ deploy hooks run on the primary only; target ${await nodeLabel(db, target.serverId)} was deployed without them`);
           }

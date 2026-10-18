@@ -335,6 +335,29 @@ describe('PATCH /services/:id portMappings', () => {
     await compose.app.close();
   });
 
+  it("0.16.3 healthCheck: 'command' needs a command, a docker service and the panel host; the command is stored and read back", async () => {
+    const { app, id, row, patch } = await setup();
+    const read = async () => (await app.inject({ method: 'GET', url: `/services/${id}`, headers: member })).json() as { healthCheck: string; healthCommand: string | null };
+    expect(await read()).toMatchObject({ healthCheck: 'http', healthCommand: null });
+    expect((await patch({ healthCheck: 'command' }, member)).statusCode).toBe(400);
+    expect((await patch({ healthCheck: 'command', healthCommand: ' pg_isready ' }, member)).statusCode).toBe(200);
+    expect(await row()).toMatchObject({ healthCheck: 'command', healthCommand: 'pg_isready' });
+    expect(await read()).toMatchObject({ healthCheck: 'command', healthCommand: 'pg_isready' });
+    // Clearing the command while the mode needs it is refused; changing the mode back is fine.
+    expect((await patch({ healthCommand: null }, member)).statusCode).toBe(400);
+    expect((await patch({ healthCheck: 'http' }, member)).statusCode).toBe(200);
+    expect((await row()).healthCheck).toBeNull();
+    await app.close();
+
+    const [node] = await db.insert(servers).values({ name: 'n2', host: '198.51.100.21', tokenEncrypted: 'v1:x' }).returning();
+    const onNode = await setup({ name: 'remote', slug: 'remote', serverId: node!.id });
+    expect((await onNode.patch({ healthCheck: 'command', healthCommand: 'true' })).statusCode).toBe(400);
+    await onNode.app.close();
+    const compose = await setup({ name: 'stack2', slug: 'stack2', type: 'compose', image: null });
+    expect((await compose.patch({ healthCheck: 'command', healthCommand: 'true' })).statusCode).toBe(400);
+    await compose.app.close();
+  });
+
   it('an allow list on a TCP port is normalised and stored; UDP, ranges, /0 and node services are refused', async () => {
     const { app, row, patch } = await setup();
     const ok = await patch({ portMappings: [{ hostPort: 5432, containerPort: 5432, allowFrom: [' 10.1.2.3/8 ', '203.0.113.4', '10.0.0.0/8'] }] }, member);

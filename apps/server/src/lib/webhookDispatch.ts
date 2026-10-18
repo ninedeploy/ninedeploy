@@ -266,6 +266,8 @@ export async function handlePullRequest(
         // the service and stay off untrusted PR code.
         healthTimeoutSeconds: parent.healthTimeoutSeconds,
         healthCheck: parent.healthCheck,
+        // 0.16.3: it runs inside the preview's own container only.
+        healthCommand: parent.healthCommand,
         cpuShares: parent.cpuShares,
         memLimitMb: parent.memLimitMb,
         isEphemeralPreview: true,

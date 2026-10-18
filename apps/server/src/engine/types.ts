@@ -115,8 +115,12 @@ export interface DeployRuntime {
   runtimeId: string;
   port: number | null;
   healthPath: string;
-  /** 0.16.1: 'running' = no port probe, the container only has to stay up (local docker builder). */
-  healthCheck?: 'running';
+  /**
+   * 0.16.1: 'running' = no port probe, the container only has to stay up;
+   * 0.16.3: 'command' = `healthCommand` must exit 0 inside it (local docker builder).
+   */
+  healthCheck?: 'running' | 'command';
+  healthCommand?: string;
   /** Resolved image digest the runtime is actually running (for exact rollback). */
   imageDigest?: string;
   /** Replica count the deploy actually achieved (primary included). The

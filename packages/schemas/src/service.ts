@@ -231,10 +231,19 @@ export const portMappings = z
  * 0.16.1 deploy healthcheck: `http` probes the container port (an HTTP answer
  * below 500, then a TCP connect); `running` only waits for the container to
  * stay up, for services with no HTTP or TCP port to probe (UDP game servers,
- * VoIP, queue workers).
+ * VoIP, queue workers). 0.16.3 `command`: a shell command run inside the
+ * container (`sh -c`) must exit 0, e.g. `pg_isready` or `curl -f localhost/up`.
  */
-export const healthCheckMode = z.enum(['http', 'running']);
+export const healthCheckMode = z.enum(['http', 'running', 'command']);
 export type HealthCheckMode = z.infer<typeof healthCheckMode>;
+
+/** 0.16.3: the `command` healthcheck's shell command (one line). */
+export const healthCommand = z
+  .string()
+  .trim()
+  .min(1)
+  .max(1000)
+  .refine((v) => !/[\r\n\0]/.test(v), 'must be a single line');
 
 /** Optional project/workspace/label tag IDs for new service creation. */
 const tagIds = z.array(z.number().int().positive()).optional();
@@ -374,6 +383,8 @@ export const updateService = z.object({
   healthTimeoutSeconds: z.number().int().min(10).max(3600).nullable().optional(),
   /** 'running' = the deploy only waits for the container to stay up (UDP and other non-HTTP services); 'http' or null = the HTTP/TCP probe. */
   healthCheck: healthCheckMode.nullable().optional(),
+  /** 0.16.3: the command of the 'command' healthcheck; null clears it. */
+  healthCommand: healthCommand.nullable().optional(),
   /** Operator only: advanced container options; null clears them all. */
   runtimeOptions: runtimeOptions.nullable().optional(),
   port: z.number().int().min(1).max(65535).optional(),
@@ -461,6 +472,8 @@ export const service = z.object({
   healthTimeoutSeconds: z.number().int().nullable().optional(),
   /** How a deploy decides the new container is ready (0.16.1). */
   healthCheck: healthCheckMode.optional(),
+  /** The 'command' healthcheck's shell command (0.16.3); null = none. */
+  healthCommand: z.string().nullable().optional(),
   /** Advanced container options (0.16.1); null = none. */
   runtimeOptions: runtimeOptions.nullable().optional(),
   autoUrl: z.string().nullable(),

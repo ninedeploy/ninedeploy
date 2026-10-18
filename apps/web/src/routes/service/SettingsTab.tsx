@@ -158,7 +158,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
 
   const [form, setForm] = useState<{
     name: string; branch: string; repoUrl: string; image: string; port: string;
-    healthPath: string; healthTimeout: string; healthCheck: string; volumeMount: string; sourceId: string;
+    healthPath: string; healthTimeout: string; healthCheck: string; healthCommand: string; volumeMount: string; sourceId: string;
     buildPack: string; baseDir: string; installCmd: string; buildCmd: string; startCmd: string; dockerfilePath: string; outputDir: string;
     preDeployCmd: string; postDeployCmd: string; preStopCmd: string;
     restartPolicy: string; stopGraceSeconds: string; buildArgs: string; buildTarget: string;
@@ -174,6 +174,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
       healthPath: svc.healthPath ?? '',
       healthTimeout: svc.healthTimeoutSeconds != null ? String(svc.healthTimeoutSeconds) : '',
       healthCheck: svc.healthCheck ?? 'http',
+      healthCommand: svc.healthCommand ?? '',
       volumeMount: svc.volumeMount ?? '',
       sourceId: svc.sourceId ? String(svc.sourceId) : '',
       buildPack: svc.build?.buildPack ?? 'auto',
@@ -217,7 +218,9 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
         healthTimeoutSeconds:
           svc?.healthTimeoutSeconds !== undefined ? (f.healthTimeout.trim() ? toInt(f.healthTimeout, 300) : null) : undefined,
         // 0.16.1, docker services on a panel that reports it; sent only when changed.
-        healthCheck: svc?.healthCheck !== undefined && f.healthCheck !== svc.healthCheck ? (f.healthCheck as 'http' | 'running') : undefined,
+        healthCheck: svc?.healthCheck !== undefined && f.healthCheck !== svc.healthCheck ? (f.healthCheck as 'http' | 'running' | 'command') : undefined,
+        // 0.16.3, same rule; blank clears it.
+        healthCommand: svc?.healthCommand !== undefined && f.healthCommand.trim() !== (svc.healthCommand ?? '') ? f.healthCommand.trim() || null : undefined,
         volumeMount: clearable(f.volumeMount, svc?.volumeMount),
         // Admins may attach or clear the credential; members keep the current
         // one (an omitted key leaves it untouched server-side).
@@ -348,7 +351,19 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
               <Select value={form.healthCheck} onChange={set('healthCheck')} className="h-9" aria-label="Healthcheck">
                 <option value="http">HTTP / TCP probe of the container port</option>
                 <option value="running">Container running (no port probe)</option>
+                {/* 0.16.3: `docker exec` on the panel host; shown once the panel reports the field. */}
+                {svc.healthCommand !== undefined && (svc.serverId == null || form.healthCheck === 'command') && (
+                  <option value="command">Command inside the container</option>
+                )}
               </Select>
+            </Field>
+          )}
+          {svc.type === 'docker' && form.healthCheck === 'command' && (
+            <Field
+              label="Healthcheck command"
+              hint="Run with sh -c inside the container until it exits 0, e.g. pg_isready -U app or curl -fsS localhost:3000/up. The image needs a shell."
+            >
+              <Input value={form.healthCommand} onChange={set('healthCommand')} placeholder="curl -fsS localhost:3000/up" className="h-9 font-mono text-xs" maxLength={1000} />
             </Field>
           )}
           <Field label="Volume mount"><Input value={form.volumeMount} onChange={set('volumeMount')} placeholder="/app/data" className="h-9 font-mono text-xs" /></Field>
@@ -453,7 +468,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
           </Field>
 
           <div className="col-span-full">
-            <Button type="submit" size="sm" disabled={save.isPending || parseBuildArgNames(form.buildArgs).invalid.length > 0 || buildTargetInvalid}>
+            <Button type="submit" size="sm" disabled={save.isPending || parseBuildArgNames(form.buildArgs).invalid.length > 0 || buildTargetInvalid || (form.healthCheck === 'command' && !form.healthCommand.trim())}>
               {save.isPending ? 'Saving…' : 'Save settings'}
             </Button>
             <span className="ml-3 text-xs text-slate-500">Build + runtime changes apply on the next deploy.</span>

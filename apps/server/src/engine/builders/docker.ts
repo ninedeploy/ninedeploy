@@ -559,6 +559,47 @@ export async function holdsRunning(runtimeId: string, timeoutMs: number, log: (l
   return false;
 }
 
+/** 0.16.3 `healthCheck: command`: seconds between attempts, and the most one attempt may take. */
+export const COMMAND_HEALTH_INTERVAL_MS = 2_000;
+export const COMMAND_HEALTH_ATTEMPT_TIMEOUT_MS = 10_000;
+
+/**
+ * The 'command' healthcheck: `sh -c <command>` inside the container until it
+ * exits 0. The container exiting fails at once, like the other checks; a
+ * failing attempt's output is logged when it changes, so a typo shows up in
+ * the deploy log instead of only as a timeout.
+ */
+export async function commandSucceeds(runtimeId: string, command: string, timeoutMs: number, log: (line: string) => void): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  let lastFailure = '';
+  while (Date.now() < deadline) {
+    let status = '';
+    try {
+      status = (await capture('docker', ['inspect', runtimeId, '--format', '{{.State.Status}}'], { timeoutMs: DOCKER_READ_TIMEOUT_MS })).trim();
+    } catch {
+      /* still being created */
+    }
+    if (status === 'exited' || status === 'dead') {
+      await logContainerDiagnostic(runtimeId, log);
+      return false;
+    }
+    if (status === 'running') {
+      try {
+        await capture('docker', ['exec', runtimeId, 'sh', '-c', command], { timeoutMs: Math.min(COMMAND_HEALTH_ATTEMPT_TIMEOUT_MS, Math.max(1, deadline - Date.now())) });
+        log('Healthcheck command exited 0');
+        return true;
+      } catch (err) {
+        const failure = (err instanceof Error ? err.message : String(err)).split('\n').slice(0, 3).join(' ').slice(0, 300);
+        if (failure !== lastFailure) log(`Healthcheck command failed: ${failure}`);
+        lastFailure = failure;
+      }
+    }
+    await sleep(COMMAND_HEALTH_INTERVAL_MS);
+  }
+  await logContainerDiagnostic(runtimeId, log);
+  return false;
+}
+
 async function logContainerDiagnostic(name: string, log: (line: string) => void): Promise<DockerContainerState | null> {
   try {
     // F936: bounded — past it the diagnostic is skipped (null), never the deploy held.
@@ -1404,6 +1445,7 @@ export const dockerBuilder: Builder = {
       port: resolvedPort,
       healthPath: service.healthPath ?? '/',
       ...(service.healthCheck === 'running' ? { healthCheck: 'running' as const } : {}),
+      ...(service.healthCheck === 'command' && service.healthCommand ? { healthCheck: 'command' as const, healthCommand: service.healthCommand } : {}),
       imageDigest: digest,
       replicas: achievedReplicas,
     };
@@ -1417,6 +1459,11 @@ export const dockerBuilder: Builder = {
     if (runtime.healthCheck === 'running') {
       log(`Healthcheck: container running (no port probe) — waiting for ${runtime.runtimeId} to stay up ${RUNNING_STABLE_SAMPLES}s`);
       return holdsRunning(runtime.runtimeId, timeoutMs, log);
+    }
+    // 0.16.3: the service's own readiness command, inside the container.
+    if (runtime.healthCheck === 'command' && runtime.healthCommand) {
+      log(`Healthcheck: running "${runtime.healthCommand}" in ${runtime.runtimeId} until it exits 0`);
+      return commandSucceeds(runtime.runtimeId, runtime.healthCommand, timeoutMs, log);
     }
     const healthPath = safeProbePath(runtime.healthPath);
     const deadline = Date.now() + timeoutMs;

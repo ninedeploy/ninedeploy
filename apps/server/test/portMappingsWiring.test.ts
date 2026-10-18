@@ -173,3 +173,61 @@ describe("healthCheck 'running' (services with no port to probe)", () => {
     expect(await holdsRunning('game-5', 0, () => undefined)).toBe(false);
   });
 });
+
+describe("0.16.3 healthCheck 'command'", () => {
+  afterEach(() => execMocks.capture.mockReset());
+
+  it('the deploy runtime carries the command; a mode without a command is the HTTP probe', async () => {
+    const runtime = async (healthCheck: unknown, healthCommand: unknown) =>
+      dockerBuilder.buildAndRun(
+        {
+          deploymentId: 5,
+          service: {
+            id: 1, slug: 'db', name: 'Db', type: 'docker', status: 'idle', image: 'postgres:17', port: 5432, healthPath: '/',
+            volumeMount: null, cpuShares: 0, cpuLimitMilli: 0, memLimitMb: 0, replicas: 1, runtimeId: null, publishedPort: null,
+            dockerSocket: false, cmd: null, runtimeOptions: null, portMappings: null, healthCheck, healthCommand,
+          },
+          workDir: '/nonexistent', commitSha: '', env: {}, log: () => undefined,
+        } as never,
+        null as never,
+      );
+    expect(await runtime('command', 'pg_isready')).toMatchObject({ healthCheck: 'command', healthCommand: 'pg_isready' });
+    expect((await runtime('command', null)).healthCheck).toBeUndefined();
+  });
+
+  it('runs the command with sh -c inside the container until it exits 0, logging a changed failure once', async () => {
+    const execs = [new Error('no response'), new Error('no response'), new Error('rejecting connections'), ''];
+    execMocks.capture.mockImplementation(async (_cmd: unknown, args: unknown) => {
+      const argv = args as string[];
+      if (argv[0] === 'inspect') return 'running';
+      const next = execs.shift();
+      if (next instanceof Error) throw next;
+      return next ?? '';
+    });
+    const logs: string[] = [];
+    const ok = await dockerBuilder.isHealthy({ runtimeId: 'db-5', port: 5432, healthPath: '/', healthCheck: 'command', healthCommand: 'pg_isready -U app' }, 60_000, 10_000, (l) => logs.push(l));
+    expect(ok).toBe(true);
+    const execCalls = execMocks.capture.mock.calls.filter((c) => (c[1] as string[])[0] === 'exec');
+    expect(execCalls).toHaveLength(4);
+    expect(execCalls[0]![1]).toEqual(['exec', 'db-5', 'sh', '-c', 'pg_isready -U app']);
+    expect(logs.filter((l) => l.startsWith('Healthcheck command failed'))).toEqual([
+      'Healthcheck command failed: no response',
+      'Healthcheck command failed: rejecting connections',
+    ]);
+    expect(logs.at(-1)).toBe('Healthcheck command exited 0');
+    expect(execMocks.run.mock.calls.some((c) => (c[1] as string[]).includes('nc'))).toBe(false);
+  });
+
+  it('waits for the container to run, and fails at once when it exits', async () => {
+    const states = ['', 'created', 'exited'];
+    execMocks.capture.mockImplementation(async (_cmd: unknown, args: unknown) => ((args as string[])[0] === 'inspect' ? (states.shift() ?? 'exited') : ''));
+    expect(await dockerBuilder.isHealthy({ runtimeId: 'db-5', port: null, healthPath: '/', healthCheck: 'command', healthCommand: 'true' }, 60_000)).toBe(false);
+    expect(execMocks.capture.mock.calls.some((c) => (c[1] as string[])[0] === 'exec')).toBe(false);
+  });
+
+  it('fails when the deadline passes first', async () => {
+    const { commandSucceeds } = await import('../src/engine/builders/docker.js');
+    execMocks.capture.mockImplementation(async () => 'running');
+    expect(await commandSucceeds('db-5', 'false', 0, () => undefined)).toBe(false);
+  });
+});

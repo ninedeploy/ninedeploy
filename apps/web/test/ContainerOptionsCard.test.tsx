@@ -192,4 +192,35 @@ describe('Healthcheck mode field (0.16.1)', () => {
     await screen.findByText('Service settings');
     expect(screen.queryByLabelText('Healthcheck')).not.toBeInTheDocument();
   }, TIMEOUT);
+
+  it('0.16.3: the command mode needs a command, sends it trimmed, and blank clears it', async () => {
+    renderTab(serviceWith({ healthCheck: 'http', healthCommand: null }));
+    const select = await screen.findByLabelText('Healthcheck');
+    expect(screen.queryByLabelText('Healthcheck command')).not.toBeInTheDocument();
+    fireEvent.change(select, { target: { value: 'command' } });
+    const save = screen.getByRole('button', { name: /Save settings/ });
+    expect(save).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Healthcheck command'), { target: { value: '  pg_isready -U app ' } });
+    expect(save).not.toBeDisabled();
+    fireEvent.submit(save.closest('form')!);
+    expect(await lastPatch()).toMatchObject({ healthCheck: 'command', healthCommand: 'pg_isready -U app' });
+
+    cleanup();
+    vi.clearAllMocks();
+    renderTab(serviceWith({ healthCheck: 'command', healthCommand: 'pg_isready' }));
+    fireEvent.change(await screen.findByLabelText('Healthcheck'), { target: { value: 'http' } });
+    fireEvent.submit(screen.getByRole('button', { name: /Save settings/ }).closest('form')!);
+    const patch = await lastPatch();
+    expect(patch.healthCheck).toBe('http');
+    expect(patch.healthCommand).toBeUndefined();
+  }, TIMEOUT);
+
+  it('0.16.3: not offered on a node service, nor by a panel that does not report the command', async () => {
+    renderTab(serviceWith({ healthCheck: 'http', healthCommand: null, serverId: 4 }));
+    const select = await screen.findByLabelText('Healthcheck');
+    expect(select.querySelector('option[value="command"]')).toBeNull();
+    cleanup();
+    renderTab(serviceWith({ healthCheck: 'http' }));
+    expect((await screen.findByLabelText('Healthcheck')).querySelector('option[value="command"]')).toBeNull();
+  }, TIMEOUT);
 });

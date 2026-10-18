@@ -17,6 +17,14 @@ When deploying a containerized service:
 
 The gate in step 3 accepts any answer below 500 on the health path and waits **300 seconds** by default. Set **Service → Settings → Healthcheck timeout** (`healthTimeoutSeconds`, 10–3600) for an app whose first boot runs long migrations or downloads a model; leave it blank for the default. A failed deploy names the limit it hit. The old container keeps serving until the new one passes.
 
+### Healthcheck command (0.16.3)
+
+When an HTTP answer does not prove the app is ready (a database, a worker that needs its queue, an app that answers before its migrations finish), set **Service → Settings → Healthcheck** to *Command inside the container* and give a command, for example `pg_isready -U app` or `curl -fsS localhost:3000/up`. The deploy runs it with `sh -c` inside the new container every 2 seconds (each attempt limited to 10 seconds) until it exits 0, within the healthcheck timeout above. A failing attempt's output goes to the deploy log, and the container exiting fails the deploy at once.
+
+- The image needs a shell (`sh`); a distroless image cannot run it.
+- Docker services on the panel host only, like file mounts: a node or Swarm service with it is refused at deploy time (and the setting is refused for one), and fan-out nodes are refused while the primary deploys.
+- API: `healthCheck: 'command'` with `healthCommand` (one line, up to 1000 characters) on `PATCH /v1/services/:id`. PR previews and clones keep it.
+
 ### Container options (0.16.1, operator only)
 
 **Service → Settings → Container options** adds these to a docker service's container, on its next deploy:
