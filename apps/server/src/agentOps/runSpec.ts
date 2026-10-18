@@ -1,3 +1,4 @@
+import { formatPortMapping, MAX_PORT_MAPPINGS, parsePortMapping, type PortMapping, portMappingsProblem } from '@ninedeploy/schemas';
 import { spawnValidated } from '../lib/spawnValidated.js';
 import type { AgentOpModule } from './index.js';
 import { intOperand, isManagedVolume, type Params, RE_IMAGE, RE_NAME, RE_PATH, switchedOff } from './operands.js';
@@ -27,9 +28,14 @@ const RE_LABEL_KEY = /^ninedeploy\.[a-z0-9][a-z0-9._-]{0,127}$/;
 /** Labels the op sets itself (r593 recovery labels); a spec cannot override them. */
 const RESERVED_LABELS = new Set(['ninedeploy.managed', 'ninedeploy.deployment', 'ninedeploy.service']);
 const SPEC_KEYS = new Set([
-  'name', 'image', 'envFile', 'restart', 'network', 'extraNetworks', 'volumes', 'dockerSocket', 'cmd', 'labels', 'publish',
+  'name', 'image', 'envFile', 'restart', 'network', 'extraNetworks', 'volumes', 'dockerSocket', 'cmd', 'labels', 'publish', 'ports',
   'cpuShares', 'cpuLimitMilli', 'memLimitMb', 'managed', 'deploymentId', 'serviceId',
 ]);
+
+/** Host ports a node's own listeners hold: SSH, the node Traefik, the agent itself. */
+export function nodeReservedPorts(env: NodeJS.ProcessEnv = process.env): number[] {
+  return [22, 80, 443, Number(env['NINEDEPLOY_AGENT_PORT'] ?? 4600)];
+}
 
 /** `NINEDEPLOY_AGENT_DOCKER_SOCKET=off`: the node's owner forbids socket mounts. */
 export function nodeDockerSocketForbidden(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -57,6 +63,8 @@ export interface RunSpec {
   cmd: string[];
   labels: Array<[string, string]>;
   publish: string | null;
+  /** 0.16.1 (`docker.ports`): `-p` operands in their canonical form, `[ip:]host[-end]:container[-end]/proto`. */
+  ports: string[];
   cpuShares: number | null;
   cpuLimitMilli: number | null;
   memLimitMb: number | null;
@@ -139,6 +147,21 @@ export function parseRunSpec(p: Params, env: NodeJS.ProcessEnv = process.env): R
     if (!m || ports.some((n) => n < 1 || n > 65535)) throw new Error('Invalid publish spec');
     publish = `${ports[0]}:${ports[1]}`;
   }
+  // 0.16.1 port mappings: every operand parsed and re-formatted, so only the
+  // canonical text the panel sends passes, never an extra flag or a range
+  // the panel did not check. The node's own listeners stay out of reach.
+  const rawPorts = p['ports'] ?? [];
+  if (!Array.isArray(rawPorts) || rawPorts.length > MAX_PORT_MAPPINGS) throw new Error('Invalid ports');
+  const mappings: PortMapping[] = rawPorts.map((text) => {
+    const m = typeof text === 'string' ? parsePortMapping(text) : 'not a string';
+    if (typeof m === 'string' || formatPortMapping(m) !== text) throw new Error('Invalid port mapping');
+    const end = m.hostPortEnd ?? m.hostPort;
+    const reserved = nodeReservedPorts(env).find((r) => r >= m.hostPort && r <= end);
+    if (reserved !== undefined) throw new Error(`Invalid port mapping: host port ${reserved} is reserved on this node`);
+    return m;
+  });
+  if (portMappingsProblem(mappings)) throw new Error('Invalid ports: overlapping or over the port budget');
+  const ports = mappings.map(formatPortMapping);
   const optInt = (key: string, max: number) => (p[key] === undefined ? null : intOperand(p[key], 1, max, key));
   return {
     name: name(p['name'], 'name'),
@@ -152,6 +175,7 @@ export function parseRunSpec(p: Params, env: NodeJS.ProcessEnv = process.env): R
     cmd,
     labels,
     publish,
+    ports,
     cpuShares: optInt('cpuShares', 262_144),
     cpuLimitMilli: optInt('cpuLimitMilli', 1_024_000),
     memLimitMb: optInt('memLimitMb', 4_194_304),
@@ -174,6 +198,7 @@ export function runSpecArgv(spec: RunSpec, verb: 'run' | 'create'): string[] {
   if (spec.dockerSocket) argv.push('-v', '/var/run/docker.sock:/var/run/docker.sock');
   if (spec.envFile !== null) argv.push('--env-file', spec.envFile);
   if (spec.publish !== null) argv.push('-p', spec.publish);
+  for (const port of spec.ports) argv.push('-p', port);
   argv.push(spec.image, ...spec.cmd);
   return argv;
 }
@@ -200,7 +225,8 @@ async function runSpecOp(params: Params, onLine: (line: string) => void): Promis
 
 export const runSpecOps: AgentOpModule = {
   name: 'agentOps/runSpec.ts',
-  caps: ['docker.runSpec'],
+  // `docker.ports` is a parameter-level capability: the `ports` field of docker.runSpec.
+  caps: ['docker.runSpec', 'docker.ports'],
   ops: {
     'docker.runSpec': { cap: 'docker.runSpec', sealedOnly: true, run: (p, onLine) => runSpecOp(p, onLine) },
   },

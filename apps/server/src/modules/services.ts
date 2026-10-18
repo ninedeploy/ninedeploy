@@ -679,36 +679,40 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     }
     // 0.16.1 extra host ports (TCP/UDP, ranges, an optional dedicated IP).
     // Same privilege rules as the single published port, checked only when
-    // the list changes, so a member can still edit a service an operator
-    // gave port 53/udp. [] is stored as null, the pre-0.16.1 row.
+    // the list changes (or the service moves to another host), so a member
+    // can still edit a service an operator gave port 53/udp. [] is stored as
+    // null, the pre-0.16.1 row.
+    const serverAfter = patch.serverId !== undefined ? patch.serverId : existing.serverId;
+    const movingHost = (serverAfter ?? null) !== (existing.serverId ?? null);
+    let mappingsAfter = existing.portMappings ?? null;
+    let mappingsChanged = false;
     if (patch.portMappings !== undefined) {
       const next = patch.portMappings?.length ? patch.portMappings.map(normalizePortMapping) : null;
-      if (next && JSON.stringify(next) !== JSON.stringify(existing.portMappings ?? null)) {
-        if ((patch.type ?? existing.type) !== 'docker') throw badRequest('Port mappings apply to docker services only; a compose stack publishes its own ports.');
-        assertMayPublishMappings(req.user!, next);
-        // A dedicated IP must be one the panel host has; Docker would only
-        // say so when the container starts. Skipped when the host cannot be
-        // asked (no Docker here): the deploy then reports it.
-        const ips = [...new Set(next.flatMap((m) => (m.hostIp ? [m.hostIp] : [])))];
-        const known = ips.length > 0 ? await listHostAddresses() : null;
-        const unknown = known ? ips.find((ip) => !known.some((a) => a.ip === ip)) : undefined;
-        if (known && unknown) {
-          throw badRequest(
-            `${unknown} is not an address of the panel host (it has ${known.map((a) => a.ip).join(', ') || 'no public or LAN address'}).`,
-            'host_ip_unknown',
-          );
-        }
+      mappingsChanged = JSON.stringify(next) !== JSON.stringify(existing.portMappings ?? null);
+      if (next && mappingsChanged && (patch.type ?? existing.type) !== 'docker') {
+        throw badRequest('Port mappings apply to docker services only; a compose stack publishes its own ports.');
       }
       patch.portMappings = next;
+      mappingsAfter = next;
     }
-    const mappingsAfter = patch.portMappings !== undefined ? patch.portMappings : (existing.portMappings ?? null);
-    const serverAfter = patch.serverId !== undefined ? patch.serverId : existing.serverId;
-    // Refused when the PATCH sets mappings on a node service or moves a
-    // service with mappings to a node: the agent's run op has no port list.
-    if (mappingsAfter?.length && serverAfter != null && (patch.portMappings !== undefined || patch.serverId !== undefined)) {
-      throw badRequest('Port mappings are published on the panel host only in this release; clear them or keep the service on the panel host.', 'remote_deploy_unsupported');
+    if (mappingsAfter?.length && (mappingsChanged || movingHost)) {
+      // On a node the agent's own port is taken too (SSH, 80 and 443 are for every host).
+      const node = serverAfter != null ? await app.db.query.servers.findFirst({ where: eq(servers.id, serverAfter) }) : null;
+      assertMayPublishMappings(req.user!, mappingsAfter, node ? [node.port] : []);
+      // A dedicated IP must be one the panel host has; Docker would only say
+      // so when the container starts. Skipped on a node and when the host
+      // cannot be asked (no Docker here): the deploy then reports it.
+      const ips = [...new Set(mappingsAfter.flatMap((m) => (m.hostIp ? [m.hostIp] : [])))];
+      const known = serverAfter == null && ips.length > 0 ? await listHostAddresses() : null;
+      const unknown = known ? ips.find((ip) => !known.some((a) => a.ip === ip)) : undefined;
+      if (known && unknown) {
+        throw badRequest(
+          `${unknown} is not an address of the panel host (it has ${known.map((a) => a.ip).join(', ') || 'no public or LAN address'}).`,
+          'host_ip_unknown',
+        );
+      }
     }
-    if (patch.portMappings !== undefined || patch.publishedPort !== undefined) {
+    if (patch.portMappings !== undefined || patch.publishedPort !== undefined || movingHost) {
       const taken = await hostPortConflict(app.db, existing.id, serverAfter, patch.publishedPort !== undefined ? patch.publishedPort : existing.publishedPort, mappingsAfter);
       if (taken) throw conflict(taken);
     }

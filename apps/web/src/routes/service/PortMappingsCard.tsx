@@ -41,7 +41,8 @@ export function rowToMapping(r: PortRow): PortMapping | string {
 /**
  * 0.16.1 Network → Port mappings: extra host ports of a docker service, TCP
  * or UDP, single ports or ranges, on every address or one dedicated IP
- * (`docker run -p`). Applied by the next deploy, on the panel host only.
+ * (`docker run -p`). Applied by the next deploy, on the panel host or the
+ * service's node (agent `docker.ports`).
  * Rendered only on a panel that reports `portMappings`.
  */
 export function PortMappingsCard({ serviceId, svc }: { serviceId: number; svc?: Service | null }) {
@@ -100,7 +101,7 @@ export function PortMappingsCard({ serviceId, svc }: { serviceId: number; svc?: 
           <Button
             size="sm"
             variant="ghost"
-            disabled={onNode || rows.length >= MAX_PORT_MAPPINGS}
+            disabled={rows.length >= MAX_PORT_MAPPINGS}
             onClick={() => setRows((prev) => [...prev, { ip: '', host: '', container: '', protocol: 'udp' }])}
           >
             <Plus size={12} /> Mapping
@@ -114,7 +115,8 @@ export function PortMappingsCard({ serviceId, svc }: { serviceId: number; svc?: 
         </p>
         {onNode && (
           <p className="mb-3 text-xs text-amber-300/90">
-            This service runs on a node. Port mappings are published on the panel host only in this release.
+            This service runs on a node: the ports are published on the node's own addresses, and its agent must be v0.16.1 or newer
+            (an older one refuses the deploy and says so).
           </p>
         )}
         {rows.length === 0 ? (
@@ -203,7 +205,7 @@ export function PortMappingsCard({ serviceId, svc }: { serviceId: number; svc?: 
             size="sm"
             variant="secondary"
             onClick={() => save.mutate()}
-            disabled={onNode || save.isPending || rowProblems.some(Boolean) || Boolean(listProblem)}
+            disabled={save.isPending || rowProblems.some(Boolean) || Boolean(listProblem)}
           >
             Save mappings
           </Button>

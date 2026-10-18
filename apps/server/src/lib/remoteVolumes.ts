@@ -31,6 +31,8 @@ export const isNodeManagedVolume = (name: string): boolean => name.length <= 128
 /** What a refusal says the agent cannot do (nodeFeatureRefusals pins the wording). */
 export const NODE_RUN_SPEC_FEATURE = 'run a service with volume attachments, a command or the Docker socket';
 export const NODE_VOLUME_CREATE_FEATURE = 'create node volumes';
+/** 0.16.1: what a refusal says an agent without `docker.ports` cannot do. */
+export const NODE_PORTS_FEATURE = 'publish port mappings (UDP, port ranges, a host IP)';
 
 /** The attachment fields the node paths read (a `service_volume_attachments` row). */
 export interface NodeVolumeAttachment {
@@ -44,10 +46,11 @@ export interface NodeVolumeAttachment {
  * words a refusal uses. Empty: the 0.15 `docker.runEnv` path runs unchanged.
  */
 export function nodeRunNeeds(
-  service: { cmd?: string[] | null; dockerSocket?: boolean | null },
+  service: { cmd?: string[] | null; dockerSocket?: boolean | null; portMappings?: readonly unknown[] | null },
   attachments: readonly NodeVolumeAttachment[],
 ): string[] {
   const needs: string[] = [];
+  if (service.portMappings?.length) needs.push('port mappings');
   if (service.cmd?.length) needs.push('a container command');
   if (service.dockerSocket) needs.push('the Docker socket mount');
   if (attachments.length > 0) needs.push('attached volumes');

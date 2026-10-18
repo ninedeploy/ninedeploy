@@ -85,20 +85,45 @@ describe('port mappings on the docker run line', () => {
 });
 
 describe('port mappings on a node', () => {
-  it('refuse the deploy before anything reaches the node', async () => {
+  const pingLine = (version: string, list: readonly string[]) => `ND-AGENT ${JSON.stringify({ version, caps: list })}`;
+  const node = (caps: readonly string[]) => {
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const agent = vi.fn(async (op: string, params: Record<string, unknown>) => {
+      calls.push([op, params]);
+      if (op === 'agent.ping') return { exitCode: 0, lines: [pingLine('0.16.1', caps)] };
+      if (op === 'file.writeEnv') return { exitCode: 0, lines: ['wrote .agent-env/game-5.env'] };
+      return { exitCode: 0, lines: [] };
+    });
+    return { agent, calls };
+  };
+  const input = (previous?: { runtimeId: string }) => ({
+    service: { id: 1, slug: 'game', serverId: 3, port: 27015, cpuShares: 0, cpuLimitMilli: 0, memLimitMb: 0, portMappings: mappings } as never,
+    deploymentId: 5,
+    env: { SECRET: 'x' },
+    name: 'game-5',
+    image: 'game/server:1',
+    previous: previous as never,
+    log: () => undefined,
+  });
+
+  it('an agent without docker.ports is told to update before the env-file reaches the node', async () => {
     const { runRemoteContainer } = await import('../src/engine/builders/remoteRun.js');
-    const agent = vi.fn(async () => ({ exitCode: 0, lines: [] }));
-    await expect(
-      runRemoteContainer(agent as never, {
-        service: { id: 1, slug: 'game', serverId: 3, port: 27015, portMappings: mappings } as never,
-        deploymentId: 5,
-        env: { SECRET: 'x' },
-        name: 'game-5',
-        image: 'game/server:1',
-        log: () => undefined,
-      }),
-    ).rejects.toThrow(/panel host only/);
-    expect(agent).not.toHaveBeenCalled();
+    const { agent, calls } = node(['stream', 'docker.runSpec', 'volume.manage']);
+    await expect(runRemoteContainer(agent as never, input())).rejects.toThrow(/cannot publish port mappings .* Update the node agent to v0\.16\.1/);
+    expect(calls.map(([op]) => op)).toEqual(['agent.ping']);
+  });
+
+  it('a current agent gets the mappings as docker.runSpec ports, after the previous container is retired', async () => {
+    const { runRemoteContainer } = await import('../src/engine/builders/remoteRun.js');
+    const { agent, calls } = node(['stream', 'docker.runSpec', 'volume.manage', 'docker.ports']);
+    await runRemoteContainer(agent as never, input({ runtimeId: 'game-4' }));
+    const ops = calls.map(([op]) => op);
+    expect(ops.indexOf('docker.rm')).toBeLessThan(ops.indexOf('docker.runSpec'));
+    expect(calls.find(([op]) => op === 'docker.rm')?.[1]).toEqual({ name: 'game-4' });
+    expect(calls.find(([op]) => op === 'docker.runSpec')?.[1]).toMatchObject({
+      name: 'game-5',
+      ports: ['27015-27030:27015-27030/udp', '203.0.113.7:8443:443/tcp'],
+    });
   });
 });
 

@@ -209,22 +209,24 @@ describe('PATCH /services/:id portMappings', () => {
     await app.close();
   });
 
-  it('refuses mappings on a node service, and moving a service with mappings to a node', async () => {
-    const [node] = await db.insert(servers).values({ name: 'n1', host: '198.51.100.20', tokenEncrypted: 'v1:x' }).returning();
+  it("a node service publishes mappings on its node; the node agent's port is reserved, and a move re-checks the target host", async () => {
+    const [node] = await db.insert(servers).values({ name: 'n1', host: '198.51.100.20', port: 4600, tokenEncrypted: 'v1:x' }).returning();
+    await db.insert(services).values({ name: 'edge', slug: 'edge', type: 'docker', image: 'x', branch: 'main', ownerUserId: OWNER, serverId: node!.id, portMappings: [{ hostPort: 9000, containerPort: 9000, protocol: 'udp' }] } as never);
     const onNode = await setup({ serverId: node!.id });
-    const res = await onNode.patch({ portMappings: [udpRange] });
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toMatch(/panel host only/);
+    const ok = await onNode.patch({ portMappings: [{ ...udpRange, hostIp: '198.51.100.20' }] });
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect(hostIps.listHostAddresses).not.toHaveBeenCalled();
+    const agentPort = await onNode.patch({ portMappings: [{ hostPort: 4600, containerPort: 4600, protocol: 'tcp' }] });
+    expect(agentPort.statusCode).toBe(403);
+    expect(agentPort.body).toMatch(/Host port 4600 .* is reserved/);
+    expect((await onNode.patch({ portMappings: [{ hostPort: 9000, containerPort: 9000, protocol: 'udp' }] })).statusCode).toBe(409);
     await onNode.app.close();
 
-    await db.delete(services);
-    const local = await setup({ name: 'game2', slug: 'game2', portMappings: [udpRange] });
+    const local = await setup({ name: 'game2', slug: 'game2', portMappings: [{ hostPort: 9000, hostPortEnd: null, containerPort: 9000, protocol: 'udp' }] });
     const move = await local.patch({ serverId: node!.id });
-    expect(move.statusCode).toBe(400);
+    expect(move.statusCode).toBe(409);
+    expect(move.body).toMatch(/9000\/udp is already published by service \\"edge\\"/);
     expect((await local.row()).serverId).toBeNull();
-    const cleared = await local.patch({ serverId: node!.id, portMappings: null });
-    // Clearing them in the same PATCH lifts this refusal (the move then meets the node's own checks).
-    expect(cleared.body).not.toMatch(/panel host only/);
     await local.app.close();
   });
 

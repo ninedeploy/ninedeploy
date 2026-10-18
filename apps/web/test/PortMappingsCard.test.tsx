@@ -120,12 +120,12 @@ describe('PortMappingsCard', () => {
     expect(screen.queryByRole('button', { name: 'Use "container running"' })).not.toBeInTheDocument();
   });
 
-  it('is read-only on a node service, and does not ask the panel host for IPs', () => {
+  it("on a node service: names the agent it needs, and does not ask the panel host for IPs", async () => {
     renderWithProviders(<PortMappingsCard serviceId={3} svc={svc({ serverId: 4, portMappings: [udp] })} />);
+    expect(screen.getByText(/published on the node's own addresses/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save mappings' }));
+    await waitFor(() => expect(api.services.update).toHaveBeenCalledWith(3, { portMappings: [udp] }));
     expect(api.services.hostAddresses).not.toHaveBeenCalled();
-    expect(screen.getByText(/published on the panel host only/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Save mappings' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /Mapping/ })).toBeDisabled();
   });
 
   it('is hidden for compose and pm2 services and on a panel without the field', () => {

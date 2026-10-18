@@ -62,10 +62,15 @@ export function assertMayPublishPort(user: AuthedUser, port: number | null | und
  * 0.16.1 port mappings: the same rules as one published port, over every
  * port of every range. Reserved ports are refused for both protocols.
  */
-export function assertMayPublishMappings(user: AuthedUser, mappings: readonly ServicePortMapping[] | null | undefined): void {
+export function assertMayPublishMappings(
+  user: AuthedUser,
+  mappings: readonly ServicePortMapping[] | null | undefined,
+  /** Further ports the target host's own listeners hold (a node's agent port). */
+  extraReserved: readonly number[] = [],
+): void {
   for (const m of mappings ?? []) {
     const end = m.hostPortEnd ?? m.hostPort;
-    const reserved = reservedHostPorts().find((p) => p >= m.hostPort && p <= end);
+    const reserved = [...reservedHostPorts(), ...extraReserved].find((p) => p >= m.hostPort && p <= end);
     if (reserved !== undefined) {
       throw forbidden(
         `Host port ${reserved} (in ${formatPortMapping(m)}) is reserved by NineDeploy (panel, Traefik or SSH) and cannot be published by a service.`,

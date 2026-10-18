@@ -1,8 +1,10 @@
 import type { BuildContext, DeployRuntime } from '../types.js';
 import type { AgentCall } from './remoteDocker.js';
+import { formatPortMapping } from '@ninedeploy/schemas';
 import { capabilityRefusal } from '../../lib/agentCapabilities.js';
 import {
   ensureNodeVolumes,
+  NODE_PORTS_FEATURE,
   NODE_RUN_SPEC_FEATURE,
   type NodeVolumeAttachment,
   nodeRunCapabilities,
@@ -80,12 +82,17 @@ export async function runRemoteContainer(agent: AgentCall, input: RemoteRunInput
   const { service, deploymentId, env, name, image: target, previous, log } = input;
   const sink = (line: string) => log(line);
 
-  // 0.16.1: the agent's run op takes one `publish` operand, no port list.
-  // The PATCH route refuses mappings on a node service; this catches a row
-  // that got them another way, loudly instead of starting without them,
+  // 0.16.1 port mappings travel as `docker.runSpec`'s `ports`, which only an
+  // agent advertising `docker.ports` accepts; an older one is told to update
   // before the env-file reaches the node.
-  if (service.portMappings?.length) {
-    throw new Error('Port mappings are published on the panel host only in this release: clear them under Network, or run the service on the panel host.');
+  const ports = (service.portMappings ?? []).map(formatPortMapping);
+  if (ports.length > 0) {
+    const refusal = await capabilityRefusal(agent, input.nodeLabel ?? `#${service.serverId ?? '?'}`, input.sealed ?? true, {
+      cap: ['docker.runSpec', 'docker.ports'],
+      feature: NODE_PORTS_FEATURE,
+      sealedRequired: true,
+    });
+    if (refusal) throw new Error(refusal.message);
   }
 
   // ── 0.16 T5 node volumes ──
@@ -151,9 +158,10 @@ export async function runRemoteContainer(agent: AgentCall, input: RemoteRunInput
   // while the old generation kept the port. Same rule as the local builder
   // (docker.ts) and the fan-out (fanout.ts): retire the previous runtime
   // FIRST and deploy sequentially.
-  if (runParams['publish'] !== undefined && previous?.runtimeId && previous.runtimeId !== name) {
+  if ((runParams['publish'] !== undefined || ports.length > 0) && previous?.runtimeId && previous.runtimeId !== name) {
+    const held = [...(runParams['publish'] !== undefined ? [String(service.publishedPort)] : []), ...ports];
     log(
-      `Host port ${service.publishedPort} is published — retiring previous runtime ${previous.runtimeId} on the node before start (sequential deploy, no blue-green)`,
+      `Host port${held.length === 1 ? '' : 's'} ${held.join(', ')} ${held.length === 1 ? 'is' : 'are'} published — retiring previous runtime ${previous.runtimeId} on the node before start (sequential deploy, no blue-green)`,
     );
     await agent('docker.rm', { name: previous.runtimeId }, sink).catch((err: unknown) =>
       log(
@@ -176,6 +184,7 @@ export async function runRemoteContainer(agent: AgentCall, input: RemoteRunInput
           deploymentId,
           volumes: specVolumes,
           publish: runParams['publish'] as string | undefined,
+          ports,
         }),
         sink,
       );
@@ -217,6 +226,8 @@ export function runSpecParams(
     deploymentId: number;
     volumes: readonly SpecVolume[];
     publish?: string;
+    /** 0.16.1 `-p` operands of the service's port mappings (`docker.ports`). */
+    ports?: readonly string[];
   },
 ): Record<string, unknown> {
   // runSpec accepts only the agent's own env-file shape, which is what
@@ -237,6 +248,7 @@ export function runSpecParams(
   if (service.dockerSocket) spec['dockerSocket'] = true;
   if (service.cmd?.length) spec['cmd'] = [...service.cmd];
   if (run.publish !== undefined) spec['publish'] = run.publish;
+  if (run.ports?.length) spec['ports'] = [...run.ports];
   if (service.cpuShares > 0) spec['cpuShares'] = service.cpuShares;
   if (service.cpuLimitMilli > 0) spec['cpuLimitMilli'] = service.cpuLimitMilli;
   if (service.memLimitMb > 0) spec['memLimitMb'] = service.memLimitMb;

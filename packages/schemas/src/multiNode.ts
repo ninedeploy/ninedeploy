@@ -30,6 +30,8 @@ export const MULTI_NODE_CAPABILITIES = [
   'git.sshkey',
   'db.manage',
   'swarm',
+  // 0.16.1: `docker.runSpec` takes `ports` (UDP, ranges, a host IP).
+  'docker.ports',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;

@@ -33,7 +33,7 @@ import {
 } from '../src/index.js';
 
 describe('agent capabilities (multi-node §1.1)', () => {
-  it('lists the nine new capabilities in their advertised order', () => {
+  it('lists the ten new capabilities in their advertised order (docker.ports appended in 0.16.1)', () => {
     expect(MULTI_NODE_CAPABILITIES).toEqual([
       'stream',
       'docker.runSpec',
@@ -44,6 +44,7 @@ describe('agent capabilities (multi-node §1.1)', () => {
       'git.sshkey',
       'db.manage',
       'swarm',
+      'docker.ports',
     ]);
     expect(multiNodeCapability.parse('db.manage')).toBe('db.manage');
     // A 0.15 capability is not one of them.

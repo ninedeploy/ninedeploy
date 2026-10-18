@@ -64,6 +64,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'git.sshkey': 'clone with a deploy key',
   'db.manage': 'host a managed database',
   swarm: 'join the Swarm',
+  'docker.ports': 'publish port mappings (UDP, port ranges, a host IP)',
 };
 
 let db: DB;
