@@ -433,6 +433,19 @@ describe('service', () => {
       bad(createService, { name: 'Web', memLimitMb: -5 });
     });
 
+    it('takes a Dockerfile build stage by Docker stage-name rules; an update may clear it', () => {
+      expect(ok(createService, { name: 'Web', build: { buildTarget: 'runtime' } }).build.buildTarget).toBe('runtime');
+      ok(createService, { name: 'Web', build: { buildTarget: 'prod.v2_final-stage' } });
+      bad(createService, { name: 'Web', build: { buildTarget: '--push' } });
+      bad(createService, { name: 'Web', build: { buildTarget: '1st' } });
+      bad(createService, { name: 'Web', build: { buildTarget: 'a b' } });
+      bad(createService, { name: 'Web', build: { buildTarget: 'x'.repeat(129) } });
+      bad(createService, { name: 'Web', build: { buildTarget: '' } });
+      expect(ok(updateService, { build: { buildTarget: '' } }).build?.buildTarget).toBe('');
+      expect(ok(updateService, { build: { buildTarget: null } }).build?.buildTarget).toBeNull();
+      bad(updateService, { build: { buildTarget: '-t' } });
+    });
+
     it('accepts an inline compose stack on a compose service', () => {
       const data = ok(createService, {
         name: 'Stack',

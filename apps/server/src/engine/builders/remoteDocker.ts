@@ -281,6 +281,15 @@ export async function buildSourceOnNode(
       plan = legacyDockerfilePlan(buildConfig);
     }
   }
+  // 0.16.2: the agent's `docker.build` takes no stage. Building the last
+  // stage instead would ship a different image (often the dev or test one),
+  // so it is refused before anything is cloned.
+  if (plan.pack === 'dockerfile' && buildConfig?.buildTarget) {
+    throw new RemoteDeployUnsupportedError(
+      `A Dockerfile build stage ("${buildConfig.buildTarget}") cannot be built on a node yet. ` +
+        'Build on the panel host (Service → Settings → Build on: panel), or clear the build stage.',
+    );
+  }
   // ── end 0.16 T3 ──
   // 0.13 (T5): a GitHub App repository gets a repository-scoped token for
   // this checkout only — refused for an agent that cannot take it, and

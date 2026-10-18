@@ -11,11 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Upgrade notes
 
-- **One additive migration.** `0079_deploy_hooks` adds three columns to `services` (a null token, a null creator and `deploy_hook_operator = false`) and a unique index over the token. No service has a hook until a member turns one on.
+- **Two additive migrations.** `0079_deploy_hooks` adds three columns to `services` (a null token, a null creator and `deploy_hook_operator = false`) and a unique index over the token. No service has a hook until a member turns one on. `0080_build_target` adds the nullable `build_configs.build_target`, so every existing service builds its Dockerfile's last stage as before.
 
 ### Added
 
 - **Deploy hook** (Service → Settings → Deploy hook), like Coolify's and Dokploy's deploy webhooks: a secret URL that redeploys the service when a CI job POSTs to it (`curl -fsS -X POST …`). It deploys as the member who made it, re-checking their access on every call, and never with more operator authority than that request had. Only that member sees the URL; another member sees the hook is on and can rotate it to make it theirs. Rotate it or turn it off from the same card. API: `GET`/`POST`/`DELETE /v1/services/:id/deploy-hook`, public `POST /v1/deploy-hooks/:token`; SDK `services.deployHook`; CLI `ninedeploy services deploy-hook <id> [--enable|--disable]`.
+- **Build stage** (Service → Settings → Build → Build stage): build one stage of a multi-stage Dockerfile (`docker build --target`), like Coolify's and Dokploy's build target. API `build.buildTarget`. A node build with a stage set is refused before cloning, because the agent would build the last stage.
+
+### Fixed
+
+- **Fan-out nodes rebuilt a Dockerfile without its build arguments.** A service with build arguments (or a build stage) that deploys to extra nodes now ships the panel's image to them instead of a rebuild that would differ.
 
 ## [0.16.1] - 2026-10-18
 

@@ -589,6 +589,9 @@ export const buildConfigs = sqliteTable('build_configs', {
   // 0.16.1: names of the service's env vars a Dockerfile build receives as
   // `--build-arg` (JSON string[]). Null/empty = none, the behaviour before.
   buildArgs: text('build_args', { mode: 'json' }).$type<string[]>(),
+  // 0.16.2: the stage of a multi-stage Dockerfile to build (`--target`).
+  // Null = the last stage, the behaviour before.
+  buildTarget: text('build_target'),
   // CI/CD Lifecycle Hooks
   preDeployCmd: text('pre_deploy_cmd'),
   postDeployCmd: text('post_deploy_cmd'),

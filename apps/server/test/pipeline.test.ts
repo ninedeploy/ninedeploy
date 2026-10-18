@@ -3277,6 +3277,19 @@ describe('0.16 T4: fan-out targets get the primary’s rules and never a differe
     expect(build).toEqual({ workspace: 'web', tag: 'ninedeploy/web:t9-sha-123', dockerfile: 'Dockerfile', context: '.' });
   });
 
+  // A target's docker.build takes neither a stage nor build arguments, so it would build a different image.
+  for (const shaped of [{ buildTarget: 'runtime' }, { buildArgs: ['API'] }]) {
+    it(`D2: a Dockerfile primary built with ${Object.keys(shaped)[0]} ships its own image to the target instead of a rebuild`, async () => {
+      const { db } = makeDb();
+      baseSetup(db);
+      db.query.buildConfigs.findFirst.mockResolvedValue({ buildPack: 'dockerfile', baseDir: '/', ...shaped });
+      withTarget(db);
+      await runDeployment(db as never, 1);
+      expect(targetOps()).not.toContain('docker.build');
+      expect(h.shipImageByStream.mock.calls[0]![1]).toMatchObject({ source: null, target: 9 });
+    });
+  }
+
   it('upgrade safety: deploy hooks never refuse a target — it still deploys, and the log says it ran without them', async () => {
     const { db, updates } = makeDb();
     baseSetup(db, { image: 'nginx:1.27' });

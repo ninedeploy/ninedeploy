@@ -25,6 +25,8 @@ export interface BuildKitBuildOptions {
   log: (line: string) => void;
   /** 0.16.1: `--build-arg KEY=VALUE` pairs (engine/builders/docker.ts `dockerBuildArgs`). */
   buildArgs?: string[];
+  /** 0.16.2: the multi-stage Dockerfile stage to build (`--target`); absent = the last. */
+  buildTarget?: string | null;
   /**
    * Optional sink for `build.cache.*` bus events. Supplied by the worker so
    * the events carry the key this build actually consulted and the result it
@@ -161,6 +163,7 @@ export async function buildWithBuildKit(opts: BuildKitBuildOptions): Promise<Bui
   }
   args.push('--cache-to', 'type=inline');
   args.push(...(opts.buildArgs ?? []));
+  if (opts.buildTarget) args.push('--target', opts.buildTarget);
   args.push(opts.baseDir);
 
   // The values of build arguments never reach the log (redactedLabel masks them).

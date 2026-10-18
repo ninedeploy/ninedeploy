@@ -890,6 +890,9 @@ export async function buildSourceImage(
       // opts in, because the BuildKit invocation is incompatible
       // with hosts that ship the legacy builder only.
       const buildArgs = dockerBuildArgs(buildConfig?.buildArgs, env, log, ctx.buildSecretKeys);
+      // 0.16.2: stop at a named stage of a multi-stage Dockerfile.
+      const buildTarget = buildConfig?.buildTarget ?? null;
+      if (buildTarget) log(`Building stage "${buildTarget}" of ${dockerfile}`);
       if (ctx.useBuildKit) {
         const result = await buildWithBuildKit({
           workDir,
@@ -902,13 +905,14 @@ export async function buildSourceImage(
           cache: ctx.buildCache,
           onCacheEvent: ctx.onBuildCacheEvent,
           buildArgs,
+          buildTarget,
           log,
         });
         log(`BuildKit finished: ${result.imageDigest}${result.cacheHit ? ' (cache hit)' : ''}`);
       } else {
         await run(
           'docker',
-          ['build', '-t', target, '-f', dockerfile, ...buildArgs, baseDir],
+          ['build', '-t', target, '-f', dockerfile, ...buildArgs, ...(buildTarget ? ['--target', buildTarget] : []), baseDir],
           {
             cwd: workDir,
             env: { DOCKER_BUILDKIT: '1' },

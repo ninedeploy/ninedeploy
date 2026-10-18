@@ -13,6 +13,15 @@ export const buildPack = z.enum(['auto', 'nixpacks', 'dockerfile', 'railpack', '
 export const buildArgNames = z.array(envVarName.max(100)).max(100);
 
 /**
+ * 0.16.2: the stage of a multi-stage Dockerfile to build (`docker build
+ * --target`), e.g. `runtime` or `prod`. Docker's own stage-name rule: a letter
+ * first, then letters, digits, `_`, `.` or `-` (so it can never read as a flag).
+ */
+export const dockerBuildTarget = z
+  .string()
+  .regex(/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/, 'A stage name starts with a letter and holds letters, digits, _ . or -');
+
+/**
  * 0.16.1: capabilities a docker service may add. Deliberately short: the ones
  * real workloads ask for (VPNs, packet capture, profilers, realtime audio,
  * mlock). SYS_ADMIN, SYS_MODULE, DAC_READ_SEARCH and the like are left out —
@@ -282,6 +291,8 @@ export const createService = z.object({
       stopGraceSeconds: z.number().int().min(0).max(300).optional(),
       /** Env-var names passed to a Dockerfile build as `--build-arg`. */
       buildArgs: buildArgNames.optional(),
+      /** Stage of a multi-stage Dockerfile to build (`--target`); absent = the last stage. */
+      buildTarget: dockerBuildTarget.optional(),
     })
     .default({ buildPack: 'auto', baseDir: '/' }),
 }).superRefine((value, ctx) => {
@@ -377,6 +388,8 @@ export const updateService = z.object({
       stopGraceSeconds: z.number().int().min(0).max(300).optional(),
       /** Env-var names passed to a Dockerfile build as `--build-arg`; [] clears. */
       buildArgs: buildArgNames.optional(),
+      /** Stage of a multi-stage Dockerfile to build (`--target`); '' or null clears. */
+      buildTarget: z.union([dockerBuildTarget, z.literal('')]).nullable().optional(),
     })
     .optional(),
 });
@@ -470,6 +483,8 @@ export const service = z.object({
       stopGraceSeconds: z.number().int(),
       /** Env-var names a Dockerfile build receives as `--build-arg` (0.16.1). */
       buildArgs: z.array(z.string()).optional(),
+      /** Stage of a multi-stage Dockerfile the build stops at; null = the last (0.16.2). */
+      buildTarget: z.string().nullable().optional(),
     })
     .nullable(),
   createdAt: z.string().datetime(),

@@ -318,6 +318,7 @@ export async function handlePullRequest(
         outputDir: parentBuild.outputDir,
         staticSpa: parentBuild.staticSpa,
         buildArgs: parentBuild.buildArgs,
+        buildTarget: parentBuild.buildTarget,
         preDeployCmd: parentBuild.preDeployCmd,
         postDeployCmd: parentBuild.postDeployCmd,
         preStopCmd: parentBuild.preStopCmd,

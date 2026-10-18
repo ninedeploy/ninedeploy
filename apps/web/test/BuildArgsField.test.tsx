@@ -139,3 +139,49 @@ describe('Build arguments field', () => {
     expect((await savedBuild()).buildArgs).toBeUndefined();
   }, TIMEOUT);
 });
+
+describe('Build stage field (0.16.2)', () => {
+  afterEach(cleanup);
+  beforeEach(() => {
+    vi.clearAllMocks();
+    apiMock.api.environments.list.mockResolvedValue([]);
+    apiMock.api.sources.list.mockResolvedValue([]);
+    apiMock.api.limits.setService.mockResolvedValue({ cpuShares: 0, memLimitMb: 0 });
+    apiMock.api.env.list.mockResolvedValue([]);
+  });
+
+  it('prefills the stored stage and sends the edited one trimmed; blank clears', async () => {
+    renderTab(serviceWith({ buildTarget: 'runtime' }));
+    const input = await screen.findByLabelText('Build stage');
+    expect(input).toHaveValue('runtime');
+    fireEvent.change(input, { target: { value: ' prod ' } });
+    fireEvent.submit(screen.getByRole('button', { name: /Save settings/ }).closest('form')!);
+    expect((await savedBuild()).buildTarget).toBe('prod');
+    cleanup();
+    vi.clearAllMocks();
+    renderTab(serviceWith({ buildTarget: 'runtime' }));
+    fireEvent.change(await screen.findByLabelText('Build stage'), { target: { value: '' } });
+    fireEvent.submit(screen.getByRole('button', { name: /Save settings/ }).closest('form')!);
+    expect((await savedBuild()).buildTarget).toBe('');
+  }, TIMEOUT);
+
+  it('blocks saving a name Docker would not take', async () => {
+    renderTab(serviceWith({ buildTarget: null }));
+    fireEvent.change(await screen.findByLabelText('Build stage'), { target: { value: '--push' } });
+    expect(screen.getByText(/A stage name starts with a letter/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Save settings/ })).toBeDisabled();
+  }, TIMEOUT);
+
+  it('is not offered for a Nixpacks build, and never sent to a server without the field', async () => {
+    renderTab(serviceWith({ buildPack: 'nixpacks', buildTarget: null }));
+    await screen.findByText('Service settings');
+    expect(screen.queryByLabelText('Build stage')).not.toBeInTheDocument();
+    cleanup();
+    vi.clearAllMocks();
+    renderTab(serviceWith({}));
+    await screen.findByText('Service settings');
+    expect(screen.queryByLabelText('Build stage')).not.toBeInTheDocument();
+    fireEvent.submit(screen.getByRole('button', { name: /Save settings/ }).closest('form')!);
+    expect((await savedBuild()).buildTarget).toBeUndefined();
+  }, TIMEOUT);
+});

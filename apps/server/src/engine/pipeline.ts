@@ -1639,7 +1639,11 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       prebuilt = { ship: (target, l) => shipPlacedBuild(db, build, target.serverId, ids, l) };
     } else {
       const primary = await primaryBuildPack(workDir, fanoutBuildConfig ?? undefined);
-      if (primary.pack === 'dockerfile') {
+      // A target node's `docker.build` takes neither build arguments nor a
+      // stage, so a Dockerfile build that uses them ships the primary's image
+      // like the other packs (D2) instead of building something different.
+      const shapedDockerfile = !!fanoutBuildConfig?.buildTarget || (fanoutBuildConfig?.buildArgs ?? []).length > 0;
+      if (primary.pack === 'dockerfile' && !shapedDockerfile) {
         // 0.13 (T5): only a STATIC credential (PAT / deploy key) stays on the
         // panel; a GitHub App repository fans out with a per-job token per target.
         if ((await cloneCredentialKind(db, service)) === 'static') {

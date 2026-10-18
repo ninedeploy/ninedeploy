@@ -158,6 +158,14 @@ describe('the node build', () => {
     expect(a.find('docker.build')!.params).toEqual({ workspace: 'web', tag: 'ninedeploy/web:deadbee', dockerfile: 'Dockerfile', context: '.' });
   });
 
+  it('a Dockerfile build stage is refused before anything is cloned (the agent would build the last stage)', async () => {
+    const a = fakeAgent(CAPS_NOW);
+    await expect(createRemoteDockerBuilder(a.agent).buildAndRun(ctx(repo(['Dockerfile']), { buildPack: 'dockerfile', buildTarget: 'runtime' }))).rejects.toThrow(
+      RemoteDeployUnsupportedError,
+    );
+    expect(a.ops().filter((op) => op.startsWith('git.') || op === 'docker.build')).toEqual([]);
+  });
+
   it('nodeBuildEnv keeps what the agent takes and names what it leaves out', () => {
     const lines: string[] = [];
     expect(nodeBuildEnv({ OK: '1', 'a.b': '2', BIG: 'x'.repeat(40_000), NUL: 'a\0b' }, (l) => lines.push(l))).toEqual({ OK: '1' });

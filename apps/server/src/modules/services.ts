@@ -210,6 +210,7 @@ function serializeBuild(b: typeof buildConfigs.$inferSelect) {
     restartPolicy: b.restartPolicy,
     stopGraceSeconds: b.stopGraceSeconds,
     buildArgs: b.buildArgs ?? [],
+    buildTarget: b.buildTarget ?? null,
   };
 }
 
@@ -568,6 +569,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         restartPolicy: input.build.restartPolicy ?? 'unless-stopped',
         stopGraceSeconds: input.build.stopGraceSeconds ?? 5,
         buildArgs: uniqueBuildArgs(input.build.buildArgs),
+        buildTarget: input.build.buildTarget ?? null,
       });
     if (input.composeContent) {
       // Write the workspace copy now so the very first deploy has it, and
@@ -950,6 +952,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       if (build.outputDir !== undefined) values.outputDir = build.outputDir === '' ? null : build.outputDir;
       if (build.staticSpa !== undefined) values.staticSpa = build.staticSpa;
       if (build.buildArgs !== undefined) values.buildArgs = uniqueBuildArgs(build.buildArgs);
+      if (build.buildTarget !== undefined) values.buildTarget = build.buildTarget || null;
       for (const key of ['installCmd', 'buildCmd', 'startCmd', 'dockerfilePath', 'preDeployCmd', 'postDeployCmd', 'preStopCmd'] as const) {
         const v = build[key];
         if (v !== undefined) values[key] = v === '' ? null : v;
@@ -1658,6 +1661,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         restartPolicy: b.restartPolicy,
         stopGraceSeconds: b.stopGraceSeconds,
         buildArgs: b.buildArgs,
+        buildTarget: b.buildTarget,
       });
     }
 

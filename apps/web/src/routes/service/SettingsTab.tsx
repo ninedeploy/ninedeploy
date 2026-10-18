@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Cpu, GitPullRequest, Layers, Server, Settings, Tag } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { dockerBuildTarget } from '@ninedeploy/schemas';
 import type { Service, ServiceDetail } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { useAuth } from '../../lib/auth.js';
@@ -160,7 +161,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
     healthPath: string; healthTimeout: string; healthCheck: string; volumeMount: string; sourceId: string;
     buildPack: string; baseDir: string; installCmd: string; buildCmd: string; startCmd: string; dockerfilePath: string; outputDir: string;
     preDeployCmd: string; postDeployCmd: string; preStopCmd: string;
-    restartPolicy: string; stopGraceSeconds: string; buildArgs: string;
+    restartPolicy: string; stopGraceSeconds: string; buildArgs: string; buildTarget: string;
   } | null>(null);
   useEffect(() => {
     if (!svc || form) return;
@@ -188,6 +189,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
       restartPolicy: svc.build?.restartPolicy ?? 'unless-stopped',
       stopGraceSeconds: String(svc.build?.stopGraceSeconds ?? 5),
       buildArgs: (svc.build?.buildArgs ?? []).join(', '),
+      buildTarget: svc.build?.buildTarget ?? '',
     });
   }, [svc, form]);
 
@@ -242,6 +244,8 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
           // 0.16.1. Sent only once the panel reported the field, so saving
           // against an older server never sends a key it would ignore.
           buildArgs: svc?.build?.buildArgs !== undefined ? parseBuildArgNames(f.buildArgs).names : undefined,
+          // 0.16.2, same rule; blank clears back to the last stage.
+          buildTarget: svc?.build?.buildTarget !== undefined ? f.buildTarget.trim() : undefined,
         },
       });
     },
@@ -255,6 +259,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
 
   if (!svc || !form) return <Card><CardBody><Skeleton className="h-40 w-full" /></CardBody></Card>;
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm({ ...form, [k]: e.target.value });
+  const buildTargetInvalid = form.buildTarget.trim() !== '' && !dockerBuildTarget.safeParse(form.buildTarget.trim()).success;
 
   return (
     <Card>
@@ -380,6 +385,18 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
           {svc.type === 'docker' && (form.buildPack === 'auto' || form.buildPack === 'dockerfile') && svc.build?.buildArgs !== undefined && (
             <BuildArgsField serviceId={serviceId} value={form.buildArgs} onChange={(next) => setForm({ ...form, buildArgs: next })} />
           )}
+          {svc.type === 'docker' && (form.buildPack === 'auto' || form.buildPack === 'dockerfile') && svc.build?.buildTarget !== undefined && (
+            <Field
+              label="Build stage"
+              hint={
+                buildTargetInvalid
+                  ? 'A stage name starts with a letter and holds letters, digits, _ . or -'
+                  : 'For a multi-stage Dockerfile: the stage to build (docker build --target). Empty builds the last stage.'
+              }
+            >
+              <Input value={form.buildTarget} onChange={set('buildTarget')} placeholder="runtime" aria-label="Build stage" aria-invalid={buildTargetInvalid} className="h-9 font-mono text-xs" />
+            </Field>
+          )}
 
           {/* Lifecycle hooks execute binaries on the HOST (engine/pipeline.ts),
               so the API restricts them to admins. Showing them to a member
@@ -436,7 +453,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
           </Field>
 
           <div className="col-span-full">
-            <Button type="submit" size="sm" disabled={save.isPending || parseBuildArgNames(form.buildArgs).invalid.length > 0}>
+            <Button type="submit" size="sm" disabled={save.isPending || parseBuildArgNames(form.buildArgs).invalid.length > 0 || buildTargetInvalid}>
               {save.isPending ? 'Saving…' : 'Save settings'}
             </Button>
             <span className="ml-3 text-xs text-slate-500">Build + runtime changes apply on the next deploy.</span>
