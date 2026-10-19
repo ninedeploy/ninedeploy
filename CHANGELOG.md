@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.16.6] - 2026-10-19
+
+> Container options reach nodes and fan-out targets.
+
+### Upgrade notes
+
+- **No migrations, nothing to turn on, nothing refused.** A node service with container options deployed without them before 0.16.6; on an agent older than 0.16.6 it still does, and the deploy log now names the update. Update a node's agent to 0.16.6 to have them applied.
+- **New node switch:** `NINEDEPLOY_AGENT_RUNTIME_OPTIONS=off` on the agent refuses container options on that node (GPUs and added capabilities are the node owner's call). A service there deploys without them, with a log line naming the switch.
+
+### Added
+
+- **Container options on nodes and fan-out targets** (capability `docker.runtimeOptions`, agent 0.16.6). GPUs, shared memory, the init process, the open-files limit and the allowed extra capabilities travel on `docker.runSpec`'s new `runtimeOptions` field; the agent checks them against the panel's own strict schema and builds the same flags as the panel host. GPUs need the NVIDIA container toolkit on the node. Swarm services still start without them.
+
+### Fixed
+
+- **The API reference and the SDK** still described file mounts as panel-host only and Git LFS as building on the panel host only; they now say what 0.16.5 does.
+
 ## [0.16.5] - 2026-10-19
 
 > File mounts reach nodes and fan-out targets, and a node service with Git LFS deploys by building on the panel.

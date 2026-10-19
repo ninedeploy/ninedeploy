@@ -1,5 +1,15 @@
 [
   {
+    "version": "0.16.6",
+    "date": "2026-10-19",
+    "title": "Container options on nodes",
+    "changes": [
+      "Container options (GPUs, shared memory, init, the open-files limit, extra capabilities) now apply to services on a node and on the nodes a service fans out to, when the node's agent is 0.16.6 or newer.",
+      "On an older agent the service still deploys without them, as before, and the deploy log names the update. A node's owner can switch them off with NINEDEPLOY_AGENT_RUNTIME_OPTIONS=off.",
+      "The API reference and the SDK now describe file mounts and Git LFS on nodes as 0.16.5 shipped them."
+    ]
+  },
+  {
     "version": "0.16.5",
     "date": "2026-10-19",
     "title": "File mounts on nodes, Git LFS for node services",
