@@ -1,5 +1,18 @@
 [
   {
+    "version": "0.16.3",
+    "date": "2026-10-19",
+    "title": "Recovery codes, API tokens page, file mounts and Git LFS",
+    "changes": [
+      "Two-factor recovery codes: ten single-use codes when 2FA is turned on, usable at sign-in in place of the authenticator code. Settings → Account shows how many are left and creates a new set.",
+      "API tokens page (Settings → Security): create a token for the CLI, CI or an MCP client with an access level and a lifetime, see when each was last used, revoke it.",
+      "File mounts (Service → Volumes → Files): text files such as an nginx.conf kept encrypted and mounted read-only in the container.",
+      "Healthcheck command: the deploy can wait for a command such as pg_isready to succeed inside the new container. Custom Docker labels on the container.",
+      "Git LFS (off by default): LFS files are fetched from the repository's own server, checked and put in place before the build.",
+      "Runtime logs: search, up to 5000 lines, pause and download. The top bar now has the filters on a second row."
+    ]
+  },
+  {
     "version": "0.16.2",
     "date": "2026-10-18",
     "title": "Deploy hooks for CI and Dockerfile build stages",
