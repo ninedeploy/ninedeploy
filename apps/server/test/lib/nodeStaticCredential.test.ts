@@ -187,6 +187,20 @@ describe('the refusal matrix (queue time, remoteServiceRefusalDetail)', () => {
     expect(h.agentOp.mock.calls.map((c) => c[2])).toEqual(['agent.ping']);
   });
 
+  it('0.16.5: Git LFS with no placement builds on the panel: the node never clones (no credential refusal), it must receive an image', async () => {
+    const svc = await service({ gitLfs: true, sourceId: await source({ tokenEncrypted: encrypt(PAT) }) });
+    const current = probeFor(AGENTS.current);
+    expect(await rd.remoteServiceRefusalDetail(db, svc, { probe: current.probe })).toBeNull();
+    expect(current.a.ops()).toEqual(['agent.ping']);
+    resetNodeCapabilityCache();
+    const old = probeFor(AGENTS['0.15']);
+    const refusal = await rd.remoteServiceRefusalDetail(db, svc, { probe: old.probe });
+    expect(refusal).toMatchObject({ status: 422, code: 'node_agent_outdated' });
+    expect(refusal!.message).toMatch(/^A Git LFS service builds on the panel host and its image is shipped to the node: .*cannot receive an image/);
+    // A placement chosen on the service is kept: Build on: target still has the node clone (and refuses the PAT).
+    expect(await rd.remoteServiceRefusalDetail(db, { ...svc, buildOn: 'target' }, { probe: probeFor(AGENTS.current).probe })).toMatchObject({ message: rd.STATIC_CREDENTIAL_REFUSAL });
+  });
+
   it('a host mismatch is refused (400) without asking the node', async () => {
     const svc = await service({ repoUrl: 'https://github.com/acme/web.git', sourceId: await source({ tokenEncrypted: encrypt(PAT), allowOnNodes: true }) });
     const { a, probe } = probeFor(AGENTS.current);

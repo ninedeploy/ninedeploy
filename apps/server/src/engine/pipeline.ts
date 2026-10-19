@@ -65,7 +65,7 @@ import { audit } from '../lib/audit.js';
 import { autoHostFor } from '../lib/autoUrl.js';
 import { loadNinedeployManifest } from '../lib/ninedeployManifest.js';
 import { applyManifestToBuildConfig, findMissingRequiredEnv } from '../lib/ninedeployApply.js';
-import type { NinedeployManifest } from '@ninedeploy/schemas';
+import { lfsBuildsOnPanel, type NinedeployManifest } from '@ninedeploy/schemas';
 
 const builders: Record<string, Builder> = { docker: dockerBuilder, pm2: pm2Builder, compose: composeBuilder };
 const DEPLOY_HEARTBEAT_MS = 20_000;
@@ -822,6 +822,10 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   if (placement.kind !== 'target' && (service.image || !service.repoUrl)) {
     log('Build placement: this service runs a prebuilt image, so there is nothing to build — it is pulled where it runs.');
     placement = { kind: 'target' };
+  }
+  // 0.16.5: Git LFS on a node with no placement chosen (serviceBuildOn).
+  if (placement.kind === 'panel' && lfsBuildsOnPanel(service)) {
+    log('Git LFS: the LFS files are fetched on the panel host, so the image is built there and shipped to the node (no build placement is set).');
   }
   /** The placement of a build that runs away from where the service runs. */
   const buildAway = placement.kind === 'target' ? null : placement;

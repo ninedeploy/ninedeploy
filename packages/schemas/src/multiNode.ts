@@ -180,6 +180,38 @@ export function effectiveBuildOn(value: BuildOn | null | undefined): BuildOn {
   return value ?? 'target';
 }
 
+/**
+ * 0.16.5: where a service's image is built when its `build_on` is not chosen.
+ * NULL is `target` — except a node docker service built from a repository
+ * with Git LFS on: its LFS files are fetched into the panel's checkout (a
+ * node's own clone would hold pointer files), so it builds on the panel and
+ * the image is shipped to the node, as a fan-out target's already is. Such a
+ * deploy was refused before. A chosen placement is always kept.
+ */
+export function serviceBuildOn(service: {
+  buildOn?: string | null;
+  gitLfs?: boolean | null;
+  serverId?: number | null;
+  type?: string | null;
+  repoUrl?: string | null;
+  image?: string | null;
+}): BuildOn {
+  if (lfsBuildsOnPanel(service)) return 'panel';
+  return effectiveBuildOn((service.buildOn ?? null) as BuildOn | null);
+}
+
+/** Whether {@link serviceBuildOn} moves this service's build to the panel for Git LFS. */
+export function lfsBuildsOnPanel(service: Parameters<typeof serviceBuildOn>[0]): boolean {
+  return (
+    service.buildOn == null &&
+    service.gitLfs === true &&
+    service.serverId != null &&
+    (service.type ?? 'docker') === 'docker' &&
+    !!service.repoUrl &&
+    !service.image
+  );
+}
+
 /** The orchestrator a stored value means: NULL is today's `container`. */
 export function effectiveOrchestrator(value: ServiceOrchestrator | null | undefined): ServiceOrchestrator {
   return value ?? 'container';

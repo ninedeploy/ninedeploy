@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { and, desc, eq, lt } from 'drizzle-orm';
 import { type DB, deployments, servers } from '@ninedeploy/db';
-import { effectiveBuildOn } from '@ninedeploy/schemas';
+import { serviceBuildOn } from '@ninedeploy/schemas';
 import { agentOp, agentTransportSealed } from '../lib/agentClient.js';
 import { type AgentCaller, capabilityRefusal, nodeLabel } from '../lib/agentCapabilities.js';
 import { HttpError } from '../lib/errors.js';
@@ -41,6 +41,9 @@ export type BuildPlacement =
   /** Build on the build server `serverId`, then ship. */
   | { kind: 'server'; serverId: number };
 
+/** The service fields a placement reads (`gitLfs`, `type`, `repoUrl`, `image`: 0.16.5 {@link serviceBuildOn}). */
+type PlacedService = Parameters<typeof serviceBuildOn>[0] & { serverId?: number | null; buildServerId?: number | null };
+
 /** Why a placement cannot be honoured. The deploy fails; it never falls back to another host. */
 export class BuildPlacementError extends Error {
   constructor(message: string) {
@@ -55,9 +58,10 @@ export const BUILD_SERVER_REMOVED =
 
 export async function resolveBuildPlacement(
   db: DB,
-  service: { id: number; serverId?: number | null; buildOn?: string | null; buildServerId?: number | null },
+  service: PlacedService & { id: number },
 ): Promise<BuildPlacement> {
-  const buildOn = effectiveBuildOn((service.buildOn ?? null) as 'target' | 'panel' | 'server' | null);
+  // 0.16.5: a node service with Git LFS and no placement builds on the panel (serviceBuildOn).
+  const buildOn = serviceBuildOn(service);
   if (buildOn === 'target') return { kind: 'target' };
   const runsOn = service.serverId ?? null;
   if (buildOn === 'panel') return runsOn == null ? { kind: 'target' } : { kind: 'panel' };
@@ -382,9 +386,9 @@ export async function primaryImage(
  */
 export async function railpackBuildsOnCapableNode(
   db: DB,
-  service: { serverId?: number | null; buildOn?: string | null; buildServerId?: number | null },
+  service: PlacedService,
 ): Promise<boolean> {
-  const buildOn = effectiveBuildOn((service.buildOn ?? null) as 'target' | 'panel' | 'server' | null);
+  const buildOn = serviceBuildOn(service);
   const host = buildOn === 'target' ? (service.serverId ?? null) : buildOn === 'server' ? (service.buildServerId ?? null) : null;
   if (host == null) return false;
   const row = await db.query.servers.findFirst({ where: eq(servers.id, host) });

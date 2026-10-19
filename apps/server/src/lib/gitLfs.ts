@@ -33,7 +33,7 @@ const MAX_POINTER_BYTES = 1024;
 const POINTER_RE = /^version https:\/\/git-lfs\.github\.com\/spec\/v1\noid sha256:([0-9a-f]{64})\nsize (\d+)\n/;
 
 export const GIT_LFS_PANEL_ONLY =
-  'Git LFS files are fetched for builds on the panel host only in this release; build on the panel (Service → Settings → Build on: panel) or turn Git LFS off.';
+  'Git LFS files are fetched for builds on the panel host only; a build on a node or a build server would get pointer files. Build on the panel (Service → Settings → Build on: panel, or leave the placement unset) or turn Git LFS off.';
 
 export interface LfsPointer {
   path: string;

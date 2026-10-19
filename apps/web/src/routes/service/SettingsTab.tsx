@@ -295,7 +295,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
               <div>
                 <div className="text-xs font-medium text-slate-300">Git LFS</div>
                 <div className="mt-0.5 text-[11px] text-slate-500">
-                  Fetch the repository&apos;s LFS files (models, media) after checkout, from its own HTTPS LFS server. Builds on the panel host only.
+                  Fetch the repository&apos;s LFS files (models, media) after checkout, from its own HTTPS LFS server. The build runs on the panel host; on a node with no build placement set, the image is built there and shipped.
                 </div>
               </div>
               <Switch checked={form.gitLfs} onChange={(v) => setForm({ ...form, gitLfs: v })} label="Git LFS" />

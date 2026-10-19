@@ -110,7 +110,7 @@ A repository that keeps models, media or datasets in Git LFS checks out *pointer
 - The files come from the repository's own LFS server, `<repository URL>.git/info/lfs`, with the service's Git credential (an access token or a GitHub App). A repository's `.lfsconfig` is ignored, so a repository cannot point the panel at another server. HTTPS repositories only; an SSH (deploy key) repository is refused with a message.
 - Every request, including each download and each redirect to object storage, passes the same egress check as the clone (no private or link-local addresses), and the credential is sent to the repository host only.
 - Each file is checked against its SHA-256 and size. Limits: 10,000 objects, 2 GiB per object, 5 GiB per deploy.
-- Builds on the panel host only (Build on: panel, or a service that runs there). A build on a node or a build server clones the repository again and would get pointer files, so it is refused; extra fan-out nodes receive the image built on the panel.
+- Builds on the panel host only. A service that runs there builds there; a **node service with no build placement set builds on the panel too (0.16.5)** and the image is shipped to the node (the node needs `stream` and `image.manage`, agent 0.15.2+; checked when the deploy is queued), as with Build on: panel. A placement chosen on the node itself or on a build server clones the repository again and would get pointer files, so it is refused. Extra fan-out nodes receive the image built on the panel.
 - API: `gitLfs` on `PATCH /v1/services/:id`. PR previews and clones keep it.
 
 ### Deploy without Git: uploaded source (0.16.1)

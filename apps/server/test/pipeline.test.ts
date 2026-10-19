@@ -2230,9 +2230,9 @@ describe('runDeployment on a remote-server target', () => {
     logBus.removeAllListeners();
   });
 
-  it('0.16.3: a Git LFS service that builds on its node is refused before anything is cloned there', async () => {
+  it('0.16.3: a Git LFS service set to build on its node (Build on: target) is refused before anything is cloned there', async () => {
     const { db } = makeDb();
-    baseSetup(db, { ownerUserId: 42, serverId: 4, gitLfs: true });
+    baseSetup(db, { ownerUserId: 42, serverId: 4, gitLfs: true, buildOn: 'target' });
     const lines = collectLogs(1);
     h.agentOp.mockClear();
     h.builder.buildAndRun.mockClear();
@@ -3520,6 +3520,21 @@ describe('0.16 T4: build placement in the pipeline (design §6.3)', () => {
     const run = h.agentOp.mock.calls.find((c) => c[1] === 4 && c[2] === 'docker.runEnv')![3];
     expect(run).toMatchObject({ name: 'web-1', image: 'ninedeploy/web:sha-123-b1' });
     expect(buildHostWrite(updates)).toEqual({ buildHost: 'panel', imageId: IMG });
+  });
+
+  it('0.16.5: Git LFS on a node with no placement builds on the panel (LFS fetched there) and ships the image, as build_on = panel', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { serverId: 4, buildOn: null, gitLfs: true });
+    const lines = collectLogs(1);
+    lfsMock.fetchLfsObjects.mockClear();
+    await runDeployment(db as never, 1);
+    expect(lines).toContain('✓ Deployment successful');
+    expect(lines.join(' ')).toMatch(/Git LFS: the LFS files are fetched on the panel host, so the image is built there and shipped to the node/);
+    expect(lfsMock.fetchLfsObjects).toHaveBeenCalledTimes(1);
+    expect(lfsMock.fetchLfsObjects.mock.invocationCallOrder[0]!).toBeLessThan(h.buildSourceImage.mock.invocationCallOrder[0]!);
+    expect(h.shipImageByStream.mock.calls[0]![1]).toMatchObject({ source: null, target: 4 });
+    expect(opsOn(4)).not.toContain('git.ensure');
+    expect(opsOn(4)).not.toContain('docker.build');
   });
 
   it('build_on = panel keeps a PAT on the panel: a static credential is no refusal, the node never clones', async () => {

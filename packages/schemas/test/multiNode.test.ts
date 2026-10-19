@@ -7,6 +7,8 @@ import {
   effectiveBuildOn,
   effectiveOrchestrator,
   hostVolumeEntry,
+  lfsBuildsOnPanel,
+  serviceBuildOn,
   IMAGE_TRANSFERS_LIMIT_MAX,
   imageTransfer,
   imageTransfersQuery,
@@ -108,6 +110,20 @@ describe('build placement (multi-node §6)', () => {
     expect(effectiveOrchestrator(undefined)).toBe('container');
     expect(effectiveOrchestrator('swarm')).toBe('swarm');
     expect(buildOn.options).toEqual(['target', 'panel', 'server']);
+  });
+
+  it('0.16.5: a node docker service built from a repository with Git LFS and no placement builds on the panel', () => {
+    const lfs = { buildOn: null, gitLfs: true, serverId: 4, type: 'docker', repoUrl: 'https://git.example.com/a/b.git', image: null };
+    expect(serviceBuildOn(lfs)).toBe('panel');
+    expect(lfsBuildsOnPanel(lfs)).toBe(true);
+    expect(serviceBuildOn({ ...lfs, type: undefined })).toBe('panel');
+    // A chosen placement is kept; anything else keeps NULL = target.
+    expect(serviceBuildOn({ ...lfs, buildOn: 'target' })).toBe('target');
+    expect(serviceBuildOn({ ...lfs, buildOn: 'server' })).toBe('server');
+    for (const other of [{ gitLfs: false }, { gitLfs: null }, { serverId: null }, { type: 'compose' }, { repoUrl: null }, { image: 'nginx' }]) {
+      expect(serviceBuildOn({ ...lfs, ...other }), JSON.stringify(other)).toBe('target');
+    }
+    expect(serviceBuildOn({})).toBe('target');
   });
 
   it('accepts a partial, strict placement update with nulls', () => {

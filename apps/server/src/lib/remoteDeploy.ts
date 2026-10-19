@@ -6,6 +6,7 @@ import {
   serviceGithubLinks,
   sources,
 } from '@ninedeploy/db';
+import { lfsBuildsOnPanel, serviceBuildOn } from '@ninedeploy/schemas';
 import { agentOp, agentTransportSealed } from './agentClient.js';
 import { type AgentCaller, capabilityRefusal, gitCredentialRefusal, nodeLabel } from './agentCapabilities.js';
 import { badRequest, HttpError } from './errors.js';
@@ -238,6 +239,8 @@ export type RemoteServiceShape = {
   // 0.16 T4: where the image is built (NULL = where it runs, as before).
   buildOn?: string | null;
   buildServerId?: number | null;
+  // 0.16.5: Git LFS with no placement builds on the panel and ships the image (serviceBuildOn).
+  gitLfs?: boolean | null;
   // 0.16.4: custom labels and the command healthcheck need `docker.userLabels` / `docker.healthCmd`.
   dockerLabels?: Record<string, string> | null;
   healthCheck?: string | null;
@@ -276,7 +279,14 @@ export async function remoteServiceRefusalDetail(
   // before), the build server (`server`: the §2/§3 rules apply to it), or
   // none (`panel` — the credential stays on the panel, only the image
   // travels). A docker service only; compose stacks build where they run.
-  const buildOn = type === 'docker' ? (service.buildOn ?? 'target') : 'target';
+  const buildOn = type === 'docker' ? serviceBuildOn(service) : 'target';
+  // 0.16.5: the image built on the panel for Git LFS reaches the node by stream,
+  // as with Build on: panel (servicePlacement's check when that is chosen).
+  if (type === 'docker' && lfsBuildsOnPanel(service)) {
+    const p = await probe();
+    const why = await capabilityRefusal(p.agent, p.nodeLabel, p.sealed, { cap: ['stream', 'image.manage'], feature: 'receive an image', sealedRequired: true });
+    if (why) return { ...why, message: `A Git LFS service builds on the panel host and its image is shipped to the node: ${why.message}` };
+  }
   const buildNode = buildOn === 'panel' ? null : buildOn === 'server' ? (service.buildServerId ?? null) : serverId;
   const cloneProbe = (): Promise<RemoteAgentProbe> => probeOf(buildNode as number);
   // ── end 0.16 T4 ──

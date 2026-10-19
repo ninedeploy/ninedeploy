@@ -88,7 +88,7 @@ Where a docker service built from a repository is built (`PUT /v1/services/:id/p
 
 | `buildOn` | Builds | Then |
 | :--- | :--- | :--- |
-| `null` / `target` | where the service runs (the default, unchanged) | — |
+| `null` / `target` | where the service runs (the default, unchanged); 0.16.5: a `null` node service with Git LFS on builds on the panel, as `panel` | — |
 | `panel` | on the panel host, with every pack and credential the panel supports | the image is shipped to the node |
 | `server` + `buildServerId` | on a node with the build-server role | the image is shipped to where the service runs, the panel host included |
 
