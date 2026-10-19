@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.16.5",
+    "date": "2026-10-19",
+    "title": "File mounts on nodes, Git LFS for node services",
+    "changes": [
+      "File mounts (Service → Volumes → Files) now work for services on a node and on the nodes a service fans out to: the agent writes the files and mounts them read-only. A node needs agent 0.16.5; an older agent is refused when the deploy is queued, with the update named, before anything is written.",
+      "Git LFS on a node service with no build placement set: the image is built on the panel, where the LFS files are fetched, and shipped to the node. Such a deploy was refused before; a placement you chose is kept.",
+      "Fixed: deleting a service left its file mount copies on the panel host unless it had an allow-list port proxy.",
+      "Fixed: a file mount path with ':' was accepted, though Docker can never mount it; it is now refused when saved."
+    ]
+  },
+  {
     "version": "0.16.4",
     "date": "2026-10-19",
     "title": "Docker labels and the healthcheck command on nodes, a panel pass in both themes and on phones",

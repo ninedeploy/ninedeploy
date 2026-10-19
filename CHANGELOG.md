@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.16.5] - 2026-10-19
+
+> File mounts reach nodes and fan-out targets, and a node service with Git LFS deploys by building on the panel.
+
+### Upgrade notes
+
+- **No migrations, nothing to turn on.** Services deploy exactly as before unless they have file mounts or Git LFS on a node, which were refused until now.
+- **Node agents:** a node service (or a fan-out target) with file mounts needs agent 0.16.5 (capability `docker.fileMounts`). On an older agent the deploy is refused when it is queued, naming the update; nothing is written to the node. Services without files deploy on any agent as before.
+- **Git LFS on a node** with no build placement now builds on the panel and ships the image, so the node needs `stream` and `image.manage` (agent 0.15.2+); this is checked when the deploy is queued.
+
+### Added
+
+- **File mounts on nodes and fan-out targets.** The agent writes each file under its home (`/var/lib/ninedeploy-agent/.agent-files/<slug>/d<deployment>/`, directories 0700, the three newest deployments kept), one request per file over the sealed transport, and `docker.runSpec` mounts it read-only through its new `fileMounts` field. Only files the agent wrote there are mounted, and only when they exist, so Docker never mounts an empty directory in their place. Deleting the service removes the copies on its nodes.
+- **Git LFS on a node service.** With Build on left unset, the build runs on the panel host, where the LFS files are fetched and checked, and the image is shipped to the node (as with Build on: panel). The node never clones, so a PAT or deploy key stays on the panel. A placement chosen on the service is kept; building on the node itself or on a build server is still refused, since a fresh clone there holds pointer files.
+
+### Fixed
+
+- **Deleting a panel-host service left its file mount copies** under `service-files/<slug>/` unless it had an allow-list port proxy: the removal sat inside that branch.
+- **A file mount path containing `:` was accepted**, though `docker run -v` splits on it and the deploy could never mount it. It is now refused when the file is saved.
+
 ## [0.16.4] - 2026-10-19
 
 > Docker labels and the healthcheck command reach nodes, fan-out targets and Swarm, and the whole panel was gone over in dark and light themes, on desktop and on a phone.
