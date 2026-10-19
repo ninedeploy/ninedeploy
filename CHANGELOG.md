@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.16.4] - 2026-10-19
+
+> Docker labels and the healthcheck command reach nodes, fan-out targets and Swarm, and the whole panel was gone over in dark and light themes, on desktop and on a phone.
+
+### Upgrade notes
+
+- **No migrations, nothing to turn on.** Services keep exactly the labels and healthcheck they had.
+- **Node agents:** a node service (or a fan-out target) that uses custom Docker labels or the healthcheck command needs agent 0.16.4 (capabilities `docker.userLabels` and `docker.healthCmd`). On an older agent the deploy is refused when it is queued, naming the update; nothing starts without them. Services that use neither deploy on any agent as before.
+
+### Added
+
+- **Custom Docker labels on nodes, fan-out targets and Swarm.** `docker.runSpec` takes `userLabels`, validated like the panel's (`ninedeploy.*`, `com.docker.*` and `traefik.*` stay reserved); Swarm stacks put them on the service's containers.
+- **The healthcheck command on nodes, fan-out targets and Swarm.** There it runs as the container's own Docker healthcheck (`--health-cmd`, every 5s, 10s timeout, 3 retries; `CMD-SHELL` in a stack), and the deploy waits for the container to report healthy.
+- **Motion and art, at a modest scale:** animated SVG illustrations for empty states, a short rise when a page opens, staggered card grids, shimmering skeletons, and pulsing dots for running and in-progress statuses. All of it stops under `prefers-reduced-motion`.
+
+### Changed
+
+- **Phones:** below 768px the side menu is a drawer (it used to leave ~170px for the page), the service tabs scroll in one row with the active tab in view, Settings has a section picker, and the theme toggle and ⌘K hint step aside.
+- **Topology:** networks are laid out in a grid above the services column and only those a service or database is on are drawn; the rest sit behind a **+N more networks** tile that expands them. The duplicate React Flow zoom controls are gone (the page has its own).
+- **Field hints sit under the control** instead of beside the label, and button and badge labels never wrap.
+
+### Fixed
+
+- **Fields stretched past the width they were given.** Input, Select and Textarea joined their classes without merging, so the default `w-full`/`h-10` beat a caller's width: the domain row's path box took the whole row and pushed Add out of the card, and the environment KEY box squeezed the value. A caller's width, height, padding, colour and size now win (Button and Card too; icon buttons had shrunk to a dot). The domain row wraps on a phone; the env row splits 2:3.
+- **Light theme:** about 40 dark-tuned surfaces that stayed dark, native date and colour pickers drawn dark, the deploy pipeline and the topology/architecture views ignoring the theme, and unreadable text around the terminal.
+- **The server Docker page counted 0 images.** `docker system df` prints the count as `TotalCount`; the panel read `Total`, which current Docker CLIs no longer print (still read for older daemons).
+- **Settings → Labels hid instance-wide labels** while a workspace was selected.
+- Layout fixes on Monitoring limits, service cards, API tokens, Activity, Workspaces, Hub cards, the service overview and the database detail page; duplicate React keys on the Docker page.
+
 ## [0.16.3] - 2026-10-19
 
 > Recovery codes for 2FA, an API tokens page, and more of what Coolify and Dokploy offer per service: file mounts, a healthcheck command, Docker labels, Git LFS and searchable runtime logs.

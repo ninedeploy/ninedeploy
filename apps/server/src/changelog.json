@@ -1,5 +1,19 @@
 [
   {
+    "version": "0.16.4",
+    "date": "2026-10-19",
+    "title": "Docker labels and the healthcheck command on nodes, a panel pass in both themes and on phones",
+    "changes": [
+      "Custom Docker labels and the healthcheck command now work for services on a node, on the nodes a service fans out to and on Swarm. A node needs agent 0.16.4; an older agent is refused when the deploy is queued, with the update named.",
+      "On phones the side menu is a drawer, the service tabs scroll in one row and Settings has a section picker.",
+      "Light theme: native pickers, the deploy pipeline, the topology and architecture views follow the theme; many leftover dark surfaces fixed.",
+      "Topology: networks sit in a compact grid, only the ones in use; the rest are behind a '+N more networks' tile.",
+      "Fields keep the width they are given: the domain row, the environment KEY box and other fixed-width inputs no longer stretch or overflow. Hints sit under the field.",
+      "Empty states have small animated illustrations; pages and card grids ease in, loading skeletons shimmer, live statuses pulse. All of it stops under reduced motion.",
+      "Fixed: the server Docker page counted 0 images; Settings → Labels hid instance-wide labels."
+    ]
+  },
+  {
     "version": "0.16.3",
     "date": "2026-10-19",
     "title": "Recovery codes, API tokens page, file mounts and Git LFS",
