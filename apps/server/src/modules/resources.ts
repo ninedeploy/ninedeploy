@@ -80,7 +80,8 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
       for (const line of df.split('\n')) {
         const row = parseDf(line);
         if (row && row['Type'] === 'Images') {
-          summary = { total: row['Total'] ?? '0', active: row['Active'] ?? '0', size: row['Size'] ?? '—', reclaimable: row['Reclaimable'] ?? '—' };
+          // The CLI's JSON names the count TotalCount (Docker 20.10 and later); `Total` is kept for older daemons.
+          summary = { total: row['TotalCount'] ?? row['Total'] ?? '0', active: row['Active'] ?? '0', size: row['Size'] ?? '—', reclaimable: row['Reclaimable'] ?? '—' };
         }
       }
     } catch { /* docker unavailable */ }

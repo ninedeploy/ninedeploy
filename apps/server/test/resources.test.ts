@@ -248,6 +248,15 @@ describe('system resources routes', () => {
     for (const dir of createdDirs) fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('reads the image count from TotalCount, the field current Docker CLIs print', async () => {
+    execMocks.capture.mockImplementation((_cmd: string, args: string[]) =>
+      Promise.resolve(args[0] === 'system' ? '{"Active":"6","Reclaimable":"86.62MB (11%)","Size":"782.7MB","TotalCount":"7","Type":"Images"}\n' : ''),
+    );
+    const app = await appWith();
+    const res = await app.inject({ method: 'GET', url: '/resources', headers: asUser() });
+    expect(res.json().imagesSummary).toEqual({ total: '7', active: '6', size: '782.7MB', reclaimable: '86.62MB (11%)' });
+  });
+
   it('reports docker resources', async () => {
     execMocks.capture.mockImplementation((_cmd: string, args: string[]) => {
       if (args[0] === 'system') {
