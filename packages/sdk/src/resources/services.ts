@@ -86,7 +86,7 @@ export interface ServicesApi {
      */
     /**
      * 0.16.3 file mounts: files the panel keeps (encrypted) and mounts read-only
-     * in a docker service's container on the panel host. `list` has no content;
+     * in a docker service's container, on the panel host or (0.16.5) a node. `list` has no content;
      * `get` (member) does. Changes apply on the next deploy.
      */
     files: {

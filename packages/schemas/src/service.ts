@@ -388,7 +388,7 @@ export const updateService = z.object({
   healthCommand: healthCommand.nullable().optional(),
   /** 0.16.3: custom container labels; {} or null clears them. */
   dockerLabels: dockerLabels.nullable().optional(),
-  /** 0.16.3: fetch Git LFS files after checkout (builds on the panel host). */
+  /** 0.16.3: fetch Git LFS files after checkout (builds on the panel host; 0.16.5: a node service with no placement builds there too). */
   gitLfs: z.boolean().optional(),
   /** Operator only: advanced container options; null clears them all. */
   runtimeOptions: runtimeOptions.nullable().optional(),

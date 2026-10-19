@@ -103,7 +103,7 @@ export const deploysSpecs: RouteSpecMap = {
   },
   'PUT /v1/services/:id/files': {
     summary: 'Create or replace the file mounted read-only at a container path (applies on the next deploy)',
-    description: 'Docker services on the panel host only; at most 20 files of 256 KiB each.',
+    description: 'Docker services on the panel host or a node (agent 0.16.5+), not Swarm, compose or PM2; at most 20 files of 256 KiB each, the path without ":".',
     tag: 'services',
     floor: 'member',
     body: serviceFilePut,
