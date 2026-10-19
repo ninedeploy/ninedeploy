@@ -75,6 +75,47 @@ Shipped in 0.15.0; see [TERMINALS.md](./TERMINALS.md), [TRAEFIK_INGRESS.md §10]
 
 Shipped as patches, as the owner asked: 0.15.2 (builds, clones, volumes), 0.15.3 (build server, image transfer, node databases), 0.15.4 (Swarm, opt-in on both the panel and the node) and 0.15.5 (web, CLI, SDK and MCP, plus a two-host smoke). See [MULTI_NODE.md](MULTI_NODE.md).
 
+## 0.16.8 onward — ahead of the field
+
+Drawn up on 2026-10-20 from a second gap analysis against Coolify v4.4.6, Dokploy v0.30.8, Railway, Render, Fly.io, Vercel, Netlify, Kamal, Dokku, CapRover and Portainer, and against their most-voted open feature requests.
+
+**Already ahead.** Several of the most-voted open requests in Coolify and Dokploy already ship here:
+- zero-downtime blue-green deploys (Coolify's #1 open request, 161 votes);
+- replicas (102 and 64);
+- pre/post-deploy hooks (Dokploy, 42);
+- moving services between servers and workspaces, export/import bundles (85 and 38);
+- panel self-backup with offline restore (62);
+- image auto-update (45);
+- commit statuses and PR comments (50);
+- SSO/SAML/SCIM without a paid tier (Dokploy sells them).
+
+Each item below ships as its own patch release, opt-in, with the upgrade smoke extended to cover it.
+
+1. **Uptime monitors and public status pages** (done, 0.16.8; see [UPTIME.md](UPTIME.md)). HTTP, keyword and TCP checks from the panel, with response times, down/up alerts through the existing channels, and opt-in public status pages with a 90-day history. No competitor has this built in.
+2. **Canary releases.** Weighted traffic between the stable and the new release in steps (for example 10 → 50 → 100 %). Each step is gated on the health check and on the error rate and latency from traffic analytics, and an abort rolls back automatically. Only Vercel ships this among hosted platforms; no self-hosted tool does.
+3. **Autoscaling and scale-to-zero.** Replicas between a minimum and a maximum, driven by CPU, memory or requests per second. An idle service can sleep and is woken by its first request. This is the top open scaling request in both Coolify and Dokploy.
+4. **A database branch per preview.** Each PR preview gets its own copy of the parent's database (from the latest backup or a live dump), with migrations run by the preview's pre-deploy hook. It is dropped when the PR closes. Netlify has this as a hosted service; no self-hosted tool does.
+5. **Protected environments and deploy approvals.** Production variables and logs hidden from members while git deploys keep working. Approval before a production deploy, and before a preview of a fork's PR builds.
+6. **AI that fixes, not only explains:**
+   - a failed-deploy diagnosis that proposes a concrete change, applied in one click or opened as a PR through the GitHub App;
+   - an automatic investigation when an alert fires;
+   - runtime-log analysis;
+   - Claude as a first-class provider next to OpenAI-compatible endpoints.
+7. **Observability:**
+   - a Prometheus `/metrics` endpoint and OTLP export;
+   - per-container utilisation history (Coolify, 139 votes);
+   - error-rate and latency alerts;
+   - PagerDuty and Opsgenie channels.
+8. **Git:** commit statuses for GitLab, Gitea and Bitbucket, and "wait for CI", which skips an auto-deploy whose checks failed.
+9. **Usage and cost:** CPU-hours, memory, disk and bandwidth per workspace, project and service, priced from a per-server cost. No self-hosted tool has this.
+10. **The remaining node gaps:**
+    - port mappings with an allow list;
+    - node database public access, PgBouncer and Studio;
+    - the container terminal and file browser;
+    - log drains and metrics from nodes;
+    - file mounts and container options on Swarm.
+11. **Later:** Postgres point-in-time recovery (WAL-G), and Tailscale/WireGuard node networking.
+
 ## Ongoing, every release
 
 - Templates: 305 since 0.15.7 (175 stacks from the Coolify mirror converter, each smoke-deployed). Of the other 114 mirror stacks, about 80 were not attempted (68 duplicate a template we already have, the rest have more than six services or are database variants) and 35 were tried and dropped: private or pull-denied images (ente, formbricks, buzz, freescout), a broken upstream `latest` (hoppscotch's migration, vikunja's volume permissions), stacks that need a licence or an external service (foundryvtt, openclaw, unleash), and a routed port that disagrees with the app (wikijs). Each can come back when its upstream is fixed; `scripts/smoke-template-runtime.mjs --registry=<mirror bundle> --ids=…` retests one.

@@ -138,6 +138,11 @@ import {
   type PlacementOptions,
 } from './commands/multiNode.js';
 // ── end 0.16 T8 ──
+import {
+  monitorsAdd, monitorsCheck, monitorsList, monitorsRemove, monitorsSetEnabled, monitorsShow,
+  statusPagesAdd, statusPagesList, statusPagesNotice, statusPagesRemove, statusPagesSetPublished,
+  type MonitorAddOptions,
+} from './commands/uptime.js';
 
 const program = new Command();
 
@@ -1143,6 +1148,65 @@ swarmCmd.command('leave <serverId>')
   .description('Drain a node and take it out of the swarm')
   .option('-y, --yes', 'Skip the confirmation prompt')
   .action((serverId: string, opts: { yes?: boolean }) => swarmLeave(getClient(), serverId, opts));
+/* v8 ignore stop */
+
+// ── 0.16.8: uptime monitors and public status pages ──────────────────────
+const monitorsCmd = program.command('monitors').alias('monitor').description('Uptime monitors: HTTP(S) and TCP checks with up/down alerts');
+/* v8 ignore start -- exercised by test/uptime.test.ts. */
+monitorsCmd.command('list')
+  .description('List monitors with their status and uptime')
+  .option('--service <idOrSlug>', 'Only the monitors of this service')
+  .option('--json', 'Print raw JSON instead of the table')
+  .action((opts: { service?: string; json?: boolean }) => monitorsList(getClient(), opts));
+monitorsCmd.command('add <name> <target>')
+  .description('Add a monitor (operator): an http(s):// URL, or host:port for a TCP check')
+  .option('--tcp', 'TCP connect check (the default for a host:port target)')
+  .option('--service <idOrSlug>', 'Attach it to a service (its members can see it)')
+  .option('--interval <seconds>', 'Seconds between checks (30-3600, default 60)')
+  .option('--timeout <seconds>', 'Seconds before a check fails (1-60, default 10)')
+  .option('--failures <n>', 'Failed checks in a row before it is down (1-10, default 2)')
+  .option('--expect <codes>', 'Accepted HTTP status codes, e.g. 200-299,301 (default 200-399)')
+  .option('--keyword <text>', 'Text the response body must contain')
+  .option('--head', 'Send HEAD instead of GET')
+  .option('--no-follow-redirects', 'Do not follow redirects')
+  .option('--insecure', 'Accept a self-signed or expired certificate')
+  .option('--disabled', 'Create it paused')
+  .action((name: string, target: string, opts: MonitorAddOptions) => monitorsAdd(getClient(), name, target, opts));
+monitorsCmd.command('show <id>')
+  .description('Monitor details and the last 10 checks')
+  .option('--json', 'Print raw JSON')
+  .action((id: string, opts: { json?: boolean }) => monitorsShow(getClient(), id, opts));
+monitorsCmd.command('check <id>').description('Run a check now (operator)').action((id: string) => monitorsCheck(getClient(), id));
+monitorsCmd.command('pause <id>').description('Stop checking (operator)').action((id: string) => monitorsSetEnabled(getClient(), id, false));
+monitorsCmd.command('resume <id>').description('Start checking again (operator)').action((id: string) => monitorsSetEnabled(getClient(), id, true));
+monitorsCmd.command('rm <id>')
+  .alias('remove')
+  .description('Delete a monitor and its history (operator)')
+  .option('-y, --yes', 'Skip the confirmation prompt')
+  .action((id: string, opts: { yes?: boolean }) => monitorsRemove(getClient(), id, opts));
+/* v8 ignore stop */
+const statusPagesCmd = program.command('status-pages').alias('status-page').description('Public status pages showing a set of monitors (operator)');
+/* v8 ignore start -- exercised by test/uptime.test.ts. */
+statusPagesCmd.command('list')
+  .description('List status pages with their public URL')
+  .option('--json', 'Print raw JSON instead of the table')
+  .action((opts: { json?: boolean }) => statusPagesList(getClient(), opts));
+statusPagesCmd.command('add <slug> <title>')
+  .description('Create a status page (unpublished unless --publish)')
+  .option('--monitor <id...>', 'Monitors to show, in order')
+  .option('--publish', 'Publish it right away')
+  .action((slug: string, title: string, opts: { monitor?: string[]; publish?: boolean }) => statusPagesAdd(getClient(), slug, title, opts));
+statusPagesCmd.command('publish <id>').description('Make the page public').action((id: string) => statusPagesSetPublished(getClient(), id, true));
+statusPagesCmd.command('unpublish <id>').description('Take the page offline (404)').action((id: string) => statusPagesSetPublished(getClient(), id, false));
+statusPagesCmd.command('notice <id> [text]')
+  .description('Set the notice shown at the top (maintenance, an incident)')
+  .option('--clear', 'Remove the notice')
+  .action((id: string, text: string | undefined, opts: { clear?: boolean }) => statusPagesNotice(getClient(), id, text, opts));
+statusPagesCmd.command('rm <id>')
+  .alias('remove')
+  .description('Delete a status page')
+  .option('-y, --yes', 'Skip the confirmation prompt')
+  .action((id: string, opts: { yes?: boolean }) => statusPagesRemove(getClient(), id, opts));
 /* v8 ignore stop */
 
 deploys.command('watch <serviceId> <deployId>').description('Stream a deployment\'s build logs live').action((svcId: string, depId: string) => deploysWatch(svcId, depId));

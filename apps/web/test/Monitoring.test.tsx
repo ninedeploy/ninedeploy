@@ -16,6 +16,12 @@ const apiMock = vi.hoisted(() => ({
 
 vi.mock('../src/lib/api.js', () => apiMock);
 
+// 0.16.8 Uptime section: its own suite (UptimeSection.test) covers it.
+vi.mock('../src/lib/uptimeApi.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/uptimeApi.js')>()),
+  uptimeApi: (await import('./apiMock.js')).createUptimeApiMock(),
+}));
+
 const authMock = vi.hoisted(() => ({
   // helpers.tsx wraps rendered routes in AuthProvider, so the mock has to
   // export one — a passthrough is enough since useAuth is stubbed here.
@@ -85,7 +91,8 @@ describe('Monitoring', () => {
     ] as never);
     renderWithProviders(<Monitoring />);
     // The cluster bar only renders once a remote node exists.
-    fireEvent.click(await screen.findByRole('button', { name: /Local Host \(Primary\)/ }));
+    // A slow (loaded CI) runner needs more than findBy's 1s default for this page.
+    fireEvent.click(await screen.findByRole('button', { name: /Local Host \(Primary\)/ }, { timeout: 5000 }));
     // The "All" filter restores the unfiltered container list.
     fireEvent.click(screen.getAllByRole('button', { name: 'All' })[0]!);
   });

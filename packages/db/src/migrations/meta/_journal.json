@@ -596,6 +596,13 @@
       "when": 1792363995494,
       "tag": "0085_git_lfs",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "6",
+      "when": 1792444784915,
+      "tag": "0086_uptime_monitors",
+      "breakpoints": true
     }
   ]
 }

@@ -27,6 +27,7 @@ import { getDomainPolicy } from '../lib/domainPolicy.js';
 import { pruneTerminalSessions } from '../lib/terminalSessions.js';
 import { pruneTrafficRollups } from '../lib/trafficAnalytics.js';
 import { pruneImageTransfers } from '../lib/imageTransferRetention.js';
+import { pruneUptime } from '../lib/uptime.js';
 
 const swallow = () => {};
 const INTERVAL_MS = 60 * 60 * 1000; // hourly
@@ -512,6 +513,8 @@ export default fp(
         await step('traffic-rollups', () => pruneTrafficRollups(fastify.db, now));
         // Multi-node event table (design §8, mount point M4).
         await step('image-transfers', () => pruneImageTransfers(fastify.db, now));
+        // 0.16.8 uptime checks (7 days) and their daily rollups (400 days).
+        await step('uptime', () => pruneUptime(fastify.db, now));
         await step('dangling-images', () => pruneDanglingImages());
 
         await step('disk-auto-prune', async () => {

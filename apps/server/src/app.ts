@@ -6,6 +6,7 @@ import { config } from './config.js';
 import { ABOUT } from './version.js';
 import { apiRoutes } from './modules/api.js';
 import { scimRoutes } from './modules/scim.js';
+import { publicStatusHtmlRoutes } from './modules/uptime.js';
 import { eventRoutes } from './modules/events.js';
 import { healthRoutes } from './modules/health.js';
 import { panelAllowedOrigins } from './lib/allowedOrigins.js';
@@ -16,6 +17,7 @@ import authPlugin from './plugins/auth.js';
 import backupSchedulerPlugin from './plugins/backupScheduler.js';
 import autoUpdateSchedulerPlugin from './plugins/autoUpdateScheduler.js';
 import collectorPlugin from './plugins/collector.js';
+import uptimePlugin from './plugins/uptime.js';
 import dbPlugin from './plugins/db.js';
 import housekeepingPlugin from './plugins/housekeeping.js';
 import logShipperPlugin from './plugins/logShipper.js';
@@ -125,6 +127,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(eventRoutes);
   // Versioned API
   await app.register(apiRoutes, { prefix: '/v1' });
+  // 0.16.8 public status pages (HTML), outside /v1 like the SPA routes it sits beside
+  await app.register(publicStatusHtmlRoutes);
   // SCIM 2.0 lives OUTSIDE /v1: IdPs hardcode the RFC path `${base}/scim/v2`.
   await app.register(scimRoutes, { prefix: '/scim/v2' });
   // Background deploy worker
@@ -145,6 +149,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(runtimeStatePlugin);
   // Resource metrics collector
   await app.register(collectorPlugin);
+  // Uptime monitors (0.16.8): idle until an operator creates one
+  await app.register(uptimePlugin);
   // Scheduled database backups
   await app.register(backupSchedulerPlugin);
   // Image auto-update (watchtower-style digest watch, opt-in per service)

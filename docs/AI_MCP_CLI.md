@@ -225,7 +225,25 @@ ninedeploy swarm enable                              # prompts for your password
 ninedeploy swarm join <server-id>                    # the node's agent needs NINEDEPLOY_AGENT_SWARM_MANAGER set
 ninedeploy swarm leave <server-id> [-y]              # drains first (up to 5 minutes)
 ninedeploy services swarm <service-id>               # the service's Swarm tasks
+
+# Uptime monitors and public status pages (0.16.8; managing them is operator only)
+ninedeploy monitors list [--service <id|slug>] [--json]    # status, name, target, 24h, 30d, last ms, last checked
+ninedeploy monitors add <name> <url|host:port> [--tcp] [--service <id|slug>] [--interval 60] [--timeout 10] \
+  [--failures 2] [--expect 200-399] [--keyword <text>] [--head] [--no-follow-redirects] [--insecure] [--disabled]
+ninedeploy monitors show <id> [--json]                     # details and the last 10 checks
+ninedeploy monitors check <id>                             # run a check now (state and alerts follow it)
+ninedeploy monitors pause|resume <id>
+ninedeploy monitors rm <id> [-y]
+ninedeploy status-pages list [--json]                      # with the public URL (panel URL + /status/<slug>)
+ninedeploy status-pages add <slug> <title> [--monitor <id>...] [--publish]
+ninedeploy status-pages publish|unpublish <id>
+ninedeploy status-pages notice <id> <text> | --clear
+ninedeploy status-pages rm <id> [-y]
 ```
+
+`monitors add` checks HTTP unless `--tcp` is given or the target has no scheme
+and reads as `host:port`; the input is validated with the same schema as the
+API before anything is sent.
 
 `swarm join` answers `node_swarm_not_enabled` until the node's owner sets
 `NINEDEPLOY_AGENT_SWARM_MANAGER=<panel advertise address>:2377` in the agent's
@@ -361,6 +379,21 @@ const swarm = await client.swarm.get();               // { enabled, localState, 
 await client.servers.swarmJoin(nodeId);               // 422 node_swarm_not_enabled: set AGENT_SWARM_MANAGER_VAR on the node
 await client.servers.swarmLeave(nodeId);              // drains first; { drained, warnings? }
 const tasks = await client.services.swarm(serviceId); // any seat; { stack: null } when not on Swarm
+
+// 0.16.8: uptime monitors (reads follow service visibility; writes are operator only)
+const monitor = await client.monitors.create({ name: 'site', kind: 'http', target: 'https://app.example.com/health' });
+const monitors = await client.monitors.list({ serviceId });   // MonitorView[] with uptime { h24, d7, d30 }
+const checks = await client.monitors.checks(monitor.id, { hours: 24 });   // 1–168, newest first
+const { check } = await client.monitors.checkNow(monitor.id);  // { check, monitor }
+await client.monitors.update(monitor.id, { enabled: false });  // pause; true resumes
+await client.monitors.delete(monitor.id);
+
+// Status pages (operator); `public(slug)` needs no login and never returns a target
+const page = await client.statusPages.create({ slug: 'acme', title: 'Acme', monitorIds: [monitor.id], published: true });
+await client.statusPages.update(page.id, { notice: 'Maintenance at 22:00' });   // page.path = '/status/acme'
+const pages = await client.statusPages.list();
+const publicView = await client.statusPages.public('acme');   // PublicStatusPage
+await client.statusPages.delete(page.id);
 ```
 
 `GET /v1/servers` now carries `terminal: { host, container, reason? }` per node

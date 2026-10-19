@@ -20,6 +20,7 @@ import { accessGrantSpecs } from './accessGrants.js';
 import { terminalSpecs } from './terminals.js';
 import { trafficSpecs } from './traffic.js';
 import { multiNodeSpecs } from './multiNode.js';
+import { uptimeSpecs } from './uptime.js';
 
 /**
  * `ROUTE_SPECS`: every route's OpenAPI description, aggregated from one
@@ -70,6 +71,8 @@ export const SPEC_FRAGMENTS: Record<string, RouteSpecMap> = {
   accessGrants: accessGrantSpecs,
   // Multi-node routes (design §9 M3); one labelled block per task inside.
   multiNode: multiNodeSpecs,
+  // 0.16.8 uptime monitors and status pages.
+  uptime: uptimeSpecs,
 };
 
 export const ROUTE_SPECS: RouteSpecMap = mergeSpecFragments(SPEC_FRAGMENTS);

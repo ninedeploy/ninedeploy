@@ -30,3 +30,4 @@ export * from './accessGrants.js';
 export * from './multiNode.js';
 export * from './serviceFiles.js';
 export * from './dockerLabels.js';
+export * from './uptime.js';

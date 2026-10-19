@@ -12,6 +12,13 @@ vi.mock('../src/lib/api.js', async () => {
   return createFakeApiModule();
 });
 
+// 0.16.8: the Overview uptime card would otherwise take the first raw fetch
+// the export tests assert on.
+vi.mock('../src/lib/uptimeApi.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/uptimeApi.js')>()),
+  uptimeApi: (await import('./apiMock.js')).createUptimeApiMock(),
+}));
+
 vi.mock('../src/lib/useDeployLogs.js', () => ({
   useDeployLogs: vi.fn(() => ({ lines: '', open: false })),
 }));

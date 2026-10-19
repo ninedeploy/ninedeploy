@@ -154,6 +154,16 @@ ninedeploy system update-check         # Check for newer releases
 ninedeploy system prune                # Housekeeping prune (dangling containers & cache)
 ```
 
+### 📡 Uptime Monitors & Status Pages (0.16.8)
+```bash
+ninedeploy monitors list [--service <id|slug>] [--json]       # Status, 24h / 30d uptime, last response
+ninedeploy monitors add site https://app.example.com/health   # HTTP(S); host:port (or --tcp) is a TCP check
+ninedeploy monitors show|check|pause|resume|rm <id>           # Details + last 10 checks, check now, pause, delete
+ninedeploy status-pages add acme "Acme status" --monitor 1 2 --publish
+ninedeploy status-pages publish|unpublish|rm <id>
+ninedeploy status-pages notice <id> "Maintenance at 22:00"    # --clear removes it
+```
+
 ---
 
 ## 📄 License

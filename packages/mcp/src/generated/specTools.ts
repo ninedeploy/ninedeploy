@@ -150,6 +150,14 @@ export const SPEC_TOOLS: ToolDef[] = [
     handler: (c) => c.api.get('/v1/labels'),
   },
   {
+    name: 'list_monitors',
+    description: 'List uptime monitors with their state and uptime.',
+    input: z.object({}),
+    // GET /v1/monitors
+    coarseTokenOnly: true,
+    handler: (c) => c.api.get('/v1/monitors'),
+  },
+  {
     name: 'list_networks',
     description: 'User-defined Docker networks and their member containers. Operator only.',
     input: z.object({}),
@@ -224,6 +232,7 @@ export const SPEC_READ_ONLY_TOOL_NAMES: readonly string[] = [
   'list_image_transfers',
   'list_jobs',
   'list_labels',
+  'list_monitors',
   'list_networks',
   'list_servers',
   'list_terminal_sessions',

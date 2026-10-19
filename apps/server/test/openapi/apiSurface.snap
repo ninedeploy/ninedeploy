@@ -22,6 +22,7 @@ DELETE /v1/github-apps/:id operator -
 DELETE /v1/host-ips/:ip operator -
 DELETE /v1/labels/:id member -
 DELETE /v1/log-drains/:id operator -
+DELETE /v1/monitors/:id operator -
 DELETE /v1/networks/:name operator -
 DELETE /v1/notifications/channels/:id operator nd://scope/write/notifications
 DELETE /v1/projects/:id admin nd://scope/write/projects
@@ -46,6 +47,7 @@ DELETE /v1/settings/secret-providers/aws operator nd://scope/write/settings
 DELETE /v1/settings/secret-providers/vault operator nd://scope/write/settings
 DELETE /v1/sources/:id operator -
 DELETE /v1/sso/providers/:id operator nd://scope/write/sso
+DELETE /v1/status-pages/:id operator -
 DELETE /v1/templates/community/:id operator -
 DELETE /v1/traefik/certificates/custom/:id operator -
 DELETE /v1/traefik/custom-config operator -
@@ -62,6 +64,7 @@ GET /scim/v2/Schemas public -
 GET /scim/v2/ServiceProviderConfig public -
 GET /scim/v2/Users scim -
 GET /scim/v2/Users/:id scim -
+GET /status/:slug public -
 GET /v1/about public -
 GET /v1/activity operator -
 GET /v1/ai/config authed -
@@ -128,6 +131,9 @@ GET /v1/log-drains operator -
 GET /v1/log-drains/:id operator -
 GET /v1/menus authed -
 GET /v1/metric-history authed -
+GET /v1/monitors authed -
+GET /v1/monitors/:id authed -
+GET /v1/monitors/:id/checks authed -
 GET /v1/networks operator -
 GET /v1/networks/:name/members operator -
 GET /v1/notifications/channels operator nd://scope/read/notifications
@@ -197,6 +203,9 @@ GET /v1/sso/:name/callback authed nd://scope/read/sso
 GET /v1/sso/:name/login authed nd://scope/read/sso
 GET /v1/sso/providers operator nd://scope/read/sso
 GET /v1/stats authed -
+GET /v1/status-pages operator -
+GET /v1/status-pages/:id operator -
+GET /v1/status/:slug public -
 GET /v1/swarm operator -
 GET /v1/system/docker-events operator nd://scope/read/health
 GET /v1/system/export operator nd://scope/read/health
@@ -243,6 +252,7 @@ PATCH /v1/github-apps/:id operator -
 PATCH /v1/housekeeping/prune/config operator nd://scope/write/housekeeping
 PATCH /v1/labels/:id member -
 PATCH /v1/log-drains/:id operator -
+PATCH /v1/monitors/:id operator -
 PATCH /v1/notifications/channels/:id operator nd://scope/write/notifications
 PATCH /v1/projects/:id admin nd://scope/write/projects
 PATCH /v1/projects/:id/env/:varId member nd://scope/write/env
@@ -257,6 +267,7 @@ PATCH /v1/services/:id/limits member nd://scope/write/services
 PATCH /v1/services/:id/targets operator nd://scope/write/services
 PATCH /v1/services/:id/volumes/:attId member nd://scope/write/volumes
 PATCH /v1/sources/:id operator -
+PATCH /v1/status-pages/:id operator -
 PATCH /v1/users/:id/operator operator nd://scope/write/users
 PATCH /v1/users/:id/password operator nd://scope/write/users
 PATCH /v1/workspaces/:id admin -
@@ -331,6 +342,8 @@ POST /v1/log-drains operator -
 POST /v1/log-drains/:id/test operator -
 POST /v1/log-drains/search member -
 POST /v1/metric-history/flush operator -
+POST /v1/monitors operator -
+POST /v1/monitors/:id/check operator -
 POST /v1/networks operator -
 POST /v1/networks/attach operator -
 POST /v1/networks/detach operator -
@@ -397,6 +410,7 @@ POST /v1/sources operator -
 POST /v1/sources/:id/generate-deploy-key operator -
 POST /v1/sso/:name/saml-callback authed nd://scope/write/sso
 POST /v1/sso/providers operator nd://scope/write/sso
+POST /v1/status-pages operator -
 POST /v1/swarm/init operator -
 POST /v1/system/import operator nd://scope/write/health
 POST /v1/system/panel-backup/restore operator nd://scope/write/health

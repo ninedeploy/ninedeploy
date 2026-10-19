@@ -406,6 +406,37 @@ export function createFakeApiModule() {
   };
 }
 
+/**
+ * The `uptimeApi` object of `src/lib/uptimeApi.js` (0.16.8), every call a
+ * `vi.fn()`; listings resolve empty. Mock the module with the real query
+ * keys kept:
+ *
+ *     vi.mock('../src/lib/uptimeApi.js', async (importOriginal) => ({
+ *       ...(await importOriginal<typeof import('../src/lib/uptimeApi.js')>()),
+ *       uptimeApi: (await import('./apiMock.js')).createUptimeApiMock(),
+ *     }));
+ */
+export function createUptimeApiMock() {
+  return {
+    monitors: {
+      list: vi.fn().mockResolvedValue([]),
+      get: vi.fn(),
+      checks: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      update: vi.fn(),
+      remove: vi.fn(),
+      check: vi.fn(),
+    },
+    statusPages: {
+      list: vi.fn().mockResolvedValue([]),
+      get: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      remove: vi.fn(),
+    },
+  };
+}
+
 /** Mock module for `src/lib/auth.js`: `useAuth` is a controllable spy. */
 export function createAuthMock() {
   // `useAuth` resolves to a signed-out session by default. It used to be a bare

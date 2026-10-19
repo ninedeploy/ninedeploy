@@ -1041,6 +1041,33 @@ async function openapiChecks(token) {
 // 0.15.4: Docker Swarm, opt-in. An upgrade must not put the host in Swarm
 // mode or move an existing service onto a stack; nothing touches Swarm until
 // an operator runs init and enables it.
+// 0.16.8: on the upgraded data, a monitor on the panel's /health comes up, the
+// upgraded service's monitor list carries it, and a published status page
+// answers without a session. The tables are new in migration 0086, so this
+// also proves they exist after the upgrade.
+const UPTIME_IN = [0, 16, 8];
+async function uptimeChecks(token, serviceId) {
+  const created = await api('/v1/monitors', {
+    method: 'POST',
+    token,
+    body: { name: 'Upgraded health', kind: 'http', target: 'http://127.0.0.1:3000/health', serviceId },
+  });
+  if (created.status !== 201) fail(`${TO}: monitor create answered ${created.status} ${created.text.slice(0, 300)}`);
+  const id = created.json.id;
+  const up = await api(`/v1/monitors/${id}/check`, { method: 'POST', token });
+  if (up.status !== 200 || up.json?.monitor?.status !== 'up') fail(`${TO}: the /health monitor did not come up: ${up.status} ${up.text.slice(0, 300)}`);
+  const listed = await api(`/v1/monitors?serviceId=${serviceId}`, { token });
+  if (listed.status !== 200 || listed.json?.[0]?.id !== id) fail(`${TO}: monitor list for the upgraded service: ${listed.status} ${listed.text.slice(0, 200)}`);
+  const page = await api('/v1/status-pages', { method: 'POST', token, body: { slug: 'upgrade', title: 'Upgrade status', published: true, monitorIds: [id] } });
+  if (page.status !== 201) fail(`${TO}: status page create answered ${page.status} ${page.text.slice(0, 200)}`);
+  const pub = await api('/v1/status/upgrade');
+  if (pub.status !== 200 || pub.json?.overall !== 'operational') fail(`${TO}: public status page: ${pub.status} ${pub.text.slice(0, 300)}`);
+  for (const r of [await api(`/v1/status-pages/${page.json.id}`, { method: 'DELETE', token }), await api(`/v1/monitors/${id}`, { method: 'DELETE', token })]) {
+    if (r.status !== 200) fail(`${TO}: uptime teardown answered ${r.status}`);
+  }
+  step(`${TO}: uptime monitor on /health up on the upgraded data (${up.json.check.responseMs} ms); status page operational without a session; both deleted`);
+}
+
 const SWARM_IN = [0, 15, 4];
 
 // 0.15.7: the bundled catalog grew from 130 to 305 templates. An upgrade only
@@ -1591,6 +1618,7 @@ async function main() {
   step(`redeploy #${redeploy.id} green on ${TO}`);
   if (!olderThan(TO, SWARM_IN)) await swarmChecks(token, serviceId);
   if (!olderThan(TO, CATALOG_IN)) await catalogChecks(token);
+  if (!olderThan(TO, UPTIME_IN)) await uptimeChecks(token, serviceId);
 
   docker(['stop', PANEL]);
   const post = await inspectDb(TO);
@@ -1623,7 +1651,8 @@ async function main() {
   const summary015 = olderThan(TO, OPERATIONS_IN)
     ? (seeded015 ? '; the 0.15 rollback leaves 0071 alone, drops the traffic mount, refuses the guest and the helper runbook works' : '')
     : '; 0.15 leaves Traefik untouched, and terminals, traffic analytics, the OpenAPI document and access grants work on the upgraded data';
-  console.log(`\n✓ Upgrade green: ${FROM} → ${TO} keeps users, services, history, domains and running apps; migrates; recovers the interrupted deploy; deploys again; 0.12 backup policy, preview env, disk alert and panel-backup defaults work on the upgraded data; 0.13 GitHub App/Gitea surfaces answer without GitHub${summary014}${summary015}`);
+  const summary0168 = olderThan(TO, UPTIME_IN) ? '' : '; 0.16.8 uptime monitors and status pages work on the upgraded data';
+  console.log(`\n✓ Upgrade green: ${FROM} → ${TO} keeps users, services, history, domains and running apps; migrates; recovers the interrupted deploy; deploys again; 0.12 backup policy, preview env, disk alert and panel-backup defaults work on the upgraded data; 0.13 GitHub App/Gitea surfaces answer without GitHub${summary014}${summary015}${summary0168}`);
 }
 
 main()

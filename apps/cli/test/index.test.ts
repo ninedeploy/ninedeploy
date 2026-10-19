@@ -220,6 +220,14 @@ vi.mock('../src/commands/workspaces.js', () => ({
   workspacesCreate: h.workspacesCreate,
   workspacesDelete: h.workspacesDelete,
 }));
+// 0.16.8: uptime.ts loads the @ninedeploy/schemas runtime (zod); transforming it
+// here pushed this registration test past its timeout. Exercised by test/uptime.test.ts.
+vi.mock('../src/commands/uptime.js', () => ({
+  monitorsAdd: vi.fn(), monitorsCheck: vi.fn(), monitorsList: vi.fn(), monitorsRemove: vi.fn(),
+  monitorsSetEnabled: vi.fn(), monitorsShow: vi.fn(),
+  statusPagesAdd: vi.fn(), statusPagesList: vi.fn(), statusPagesNotice: vi.fn(), statusPagesRemove: vi.fn(),
+  statusPagesSetPublished: vi.fn(),
+}));
 vi.mock('../src/commands/housekeeping.js', () => ({
   housekeepingPrune: h.housekeepingPrune,
   positiveIntOption: h.positiveIntOption,
@@ -373,6 +381,8 @@ describe('program registration', () => {
       'terminals', 'terminal', 'traffic', 'access',
       // 0.16 T8: remote nodes and Swarm.
       'servers', 'swarm',
+      // 0.16.8: uptime monitors and status pages.
+      'monitors', 'status-pages',
       'doctor',
       'sources', 'github-app', 'deploy', 'webhooks', 'firewall', 'manifest',
     ]);
@@ -411,7 +421,14 @@ describe('program registration', () => {
     // 0.15: + `terminals` (3), `terminal` (4), `traffic` (3), `access` (grants 4 + me).
     // 0.16 T8: + 3 service commands, `volumes create`, `servers` (2), `swarm` (6), `sources allow-on-nodes`; 0.15.8: + `sources pin-host-keys`, `reset-host-keys`, `host-keys`.
     // 0.16.1: + `deploy up`.
-    expect(h.FakeCommand.instances).toHaveLength(270);
+    // 0.16.8: + `monitors` (7) and `status-pages` (6).
+    expect(h.FakeCommand.instances).toHaveLength(285);
+    expect(findCommand('monitors').children.map((c) => c.cmdName)).toEqual([
+      'list', 'add <name> <target>', 'show <id>', 'check <id>', 'pause <id>', 'resume <id>', 'rm <id>',
+    ]);
+    expect(findCommand('status-pages').children.map((c) => c.cmdName)).toEqual([
+      'list', 'add <slug> <title>', 'publish <id>', 'unpublish <id>', 'notice <id> [text]', 'rm <id>',
+    ]);
     expect(findCommand('servers').children).toHaveLength(2);
     expect(findCommand('swarm').children).toHaveLength(6);
     expect(findCommand('terminals').children).toHaveLength(3);

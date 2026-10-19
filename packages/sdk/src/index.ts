@@ -119,3 +119,4 @@ export type { NineDeployClient } from './client.js';
 export type { AutoUrlMode, AutoUrlEffective, AutoUrlSettings, OnboardingStatus, OnboardingStepId } from './resources/settings.js';
 export type { SourceUpload } from './resources/services.js';
 export type { HostIpEntry } from './resources/network.js';
+export type { MonitorCheckNowResult } from './resources/uptime.js';

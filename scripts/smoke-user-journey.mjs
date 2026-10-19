@@ -644,6 +644,60 @@ async function terminalChecks(token, serviceId) {
  * again. Anything that keeps a host shell from opening is recorded, not
  * failed: it is the documented 422 for an image without nsenter.
  */
+// 0.16.8: uptime monitors and a public status page, end to end in the shipped
+// image. The panel probes its own /health (up, keyword) and a closed TCP port
+// (down after one failure); the published page answers without a session,
+// names the monitors and never their targets.
+const UPTIME_IN = [0, 16, 8];
+async function uptimeChecks(token, serviceId) {
+  const mk = async (body) => {
+    const r = await api('/v1/monitors', { method: 'POST', token, body });
+    if (r.status !== 201) fail(`monitor create answered ${r.status} ${r.text.slice(0, 300)}`);
+    return r.json;
+  };
+  const health = await mk({ name: 'Panel health', kind: 'http', target: 'http://127.0.0.1:3000/health', keyword: '"ok"', serviceId });
+  const closed = await mk({ name: 'Closed port', kind: 'tcp', target: '127.0.0.1:1', failuresBeforeDown: 1 });
+  if (health.status !== 'pending' || closed.status !== 'pending') fail(`new monitors are not pending: ${health.status}/${closed.status}`);
+  const up = await api(`/v1/monitors/${health.id}/check`, { method: 'POST', token });
+  if (up.status !== 200 || up.json?.check?.ok !== true || up.json.monitor?.status !== 'up') fail(`the /health monitor did not come up: ${up.status} ${up.text.slice(0, 300)}`);
+  const down = await api(`/v1/monitors/${closed.id}/check`, { method: 'POST', token });
+  if (down.status !== 200 || down.json?.monitor?.status !== 'down' || !/ECONNREFUSED/.test(String(down.json.monitor.lastError))) {
+    fail(`the closed-port monitor did not go down with ECONNREFUSED: ${down.status} ${down.text.slice(0, 300)}`);
+  }
+  const listed = await api(`/v1/monitors?serviceId=${serviceId}`, { token });
+  if (listed.status !== 200 || listed.json?.length !== 1 || listed.json[0].uptime?.h24 !== 100) fail(`monitor list for the service: ${listed.status} ${listed.text.slice(0, 300)}`);
+  const checks = await api(`/v1/monitors/${health.id}/checks`, { token });
+  if (checks.status !== 200 || checks.json?.length !== 1) fail(`monitor checks: ${checks.status} ${checks.text.slice(0, 200)}`);
+
+  const slug = `journey-${suffix}`;
+  const page = await api('/v1/status-pages', { method: 'POST', token, body: { slug, title: 'Journey status', monitorIds: [health.id, closed.id] } });
+  if (page.status !== 201) fail(`status page create answered ${page.status} ${page.text.slice(0, 300)}`);
+  const hidden = await fetch(`http://127.0.0.1:${PANEL_PORT}/status/${slug}`);
+  if (hidden.status !== 404) fail(`an unpublished status page answered ${hidden.status}`);
+  const pub = await api(`/v1/status-pages/${page.json.id}`, { method: 'PATCH', token, body: { published: true } });
+  if (pub.status !== 200 || pub.json?.published !== true) fail(`publishing the status page answered ${pub.status} ${pub.text.slice(0, 200)}`);
+  const json = await api(`/v1/status/${slug}`);
+  if (json.status !== 200 || json.json?.overall !== 'degraded' || json.json.monitors?.map((m) => `${m.name}:${m.status}`).join(',') !== 'Panel health:up,Closed port:down') {
+    fail(`public status JSON: ${json.status} ${json.text.slice(0, 400)}`);
+  }
+  if (/127\.0\.0\.1|\/health|3000/.test(json.text)) fail('the public status page leaks a monitor target');
+  const html = await fetch(`http://127.0.0.1:${PANEL_PORT}/status/${slug}`);
+  const body = await html.text();
+  if (html.status !== 200 || !/text\/html/.test(html.headers.get('content-type') ?? '') || !body.includes('Journey status') || !body.includes('Some systems are down')) {
+    fail(`public status HTML: ${html.status} ${body.slice(0, 300)}`);
+  }
+  if (/127\.0\.0\.1|<script/.test(body)) fail('the public status HTML leaks a target or carries a script');
+  step(`uptime: /health monitor up (${up.json.check.responseMs} ms, keyword found), closed port down (ECONNREFUSED); status page /status/${slug} 404 until published, then degraded, names only`);
+  for (const r of [
+    await api(`/v1/status-pages/${page.json.id}`, { method: 'DELETE', token }),
+    await api(`/v1/monitors/${health.id}`, { method: 'DELETE', token }),
+    await api(`/v1/monitors/${closed.id}`, { method: 'DELETE', token }),
+  ]) {
+    if (r.status !== 200) fail(`uptime teardown answered ${r.status} ${r.text.slice(0, 200)}`);
+  }
+  step('uptime: status page and monitors deleted');
+}
+
 // 0.15.8: opt-in SSH host key pinning on a source. On only tightens; off and a
 // reset need the password. The clone side is covered by the unit tests
 // (test/lib/git.test.ts); this proves the shipped artifact serves and gates
@@ -1261,6 +1315,7 @@ async function main() {
     await trafficChecks(token, serviceId, `journey-${suffix}.test`);
     await openapiChecks(token);
     await grantChecks(token, serviceId);
+    if (!olderThan(String(health.version), UPTIME_IN)) await uptimeChecks(token, serviceId);
   } else {
     step(`${health.version} predates operations and API (0.15): 0.15 checks skipped`);
   }

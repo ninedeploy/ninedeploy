@@ -96,6 +96,12 @@ describe('mapAuditToDomainEvent', () => {
     expect(fired).toMatchObject({ name: 'alert.triggered', payload: { level: 'error' } });
     const cleared = mapAuditToDomainEvent(evt('alert.recovered', 'cpu > 90'));
     expect(cleared).toMatchObject({ name: 'alert.triggered', payload: { level: 'info' } });
+    // 0.16.8 uptime monitors.
+    expect(mapAuditToDomainEvent(evt('alert.monitor_down', 'API #3: status 503'))).toEqual({
+      name: 'alert.triggered',
+      payload: { title: 'Monitor down', message: 'API #3: status 503', level: 'error' },
+    });
+    expect(mapAuditToDomainEvent(evt('alert.monitor_up', 'API #3 is up again'))).toMatchObject({ payload: { title: 'Monitor up', level: 'info' } });
   });
 
   it('returns null for an action with no unambiguous mapping', () => {

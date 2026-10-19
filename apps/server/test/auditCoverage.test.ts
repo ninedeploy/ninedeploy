@@ -18,6 +18,8 @@ const EXEMPT: Record<string, string> = {
   'auth.ts POST /oidc/:slug/callback': 'SSO sign-in (session issuance), not a config change',
   'sso.ts POST /:name/saml-callback': 'SSO sign-in (session issuance), not a config change',
   'backupDestinations.ts POST /:id/test': 'connectivity probe, no state change',
+  'uptime.ts POST /:id/check':
+    'runs one check like the scheduler; a down/up transition it causes is audited by recordCheck (alert.monitor_down / alert.monitor_up)',
   'settings.ts POST /vault/test': 'connectivity probe, no state change',
   'settings.ts POST /dns-records/test': 'connectivity probe, no state change',
   'settings.ts POST /auto-url/detect-ip': 'asks a public echo service for the host IP; reads only, nothing is stored',

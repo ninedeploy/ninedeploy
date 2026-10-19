@@ -137,6 +137,18 @@ export function mapAuditToDomainEvent(event: AppEvent): MappedEvent | null {
     } as MappedEvent;
   }
 
+  // 0.16.8 uptime monitors: a transition is an alert like a rule's.
+  if (action === 'alert.monitor_down' || action === 'alert.monitor_up') {
+    return {
+      name: 'alert.triggered',
+      payload: {
+        title: action === 'alert.monitor_down' ? 'Monitor down' : 'Monitor up',
+        message: entity ?? '',
+        level: action === 'alert.monitor_down' ? 'error' : 'info',
+      },
+    } as MappedEvent;
+  }
+
   return null;
 }
 

@@ -5,6 +5,7 @@ import { authRoutes } from './auth.js';
 import { aboutRoutes } from './about.js';
 import { activityRoutes } from './activity.js';
 import { alertRoutes } from './alerts.js';
+import { monitorRoutes, publicStatusRoutes, statusPageRoutes } from './uptime.js';
 import { dashboardRoutes } from './dashboard.js';
 import { onboardingRoutes } from './onboarding.js';
 import { attachmentRoutes, databasesRoutes } from './databases.js';
@@ -225,6 +226,10 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(serviceDeployHookRoutes, { prefix: '/services' });
   await app.register(serviceFileRoutes, { prefix: '/services' });
   await app.register(publicDeployHookRoutes, { prefix: '/deploy-hooks' });
+  // 0.16.8 uptime monitors and status pages (operator), and the public page JSON.
+  await app.register(monitorRoutes, { prefix: '/monitors' });
+  await app.register(statusPageRoutes, { prefix: '/status-pages' });
+  await app.register(publicStatusRoutes, { prefix: '/status' });
   await app.register(serviceInsightsRoutes, { prefix: '/services' });
   // Historical CPU/memory series for one service. `metricRoutes` is a separate
   // export from stats.ts and was never registered: `GET /v1/services/:id/metrics`

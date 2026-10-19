@@ -37,6 +37,7 @@ import {
   cn,
 } from '../components/ui.js';
 import { Sparkline } from '../components/Sparkline.js';
+import { UptimeSection } from '../components/uptime/UptimeSection.js';
 import { formatBytes, formatRelative, toInt } from '../lib/format.js';
 
 export function Monitoring() {
@@ -513,6 +514,9 @@ export function Monitoring() {
           </Card>
         )}
       </div>
+
+      {/* 0.16.8 uptime monitors and status pages */}
+      <UptimeSection isOperator={me?.isOperator === true} />
 
       {/* Alert Rules Section */}
       <AlertRulesCard isAdmin={me?.isOperator === true} />

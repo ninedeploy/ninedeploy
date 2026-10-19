@@ -1926,6 +1926,108 @@ export const alertState = sqliteTable('alert_state', {
   updatedAt: tsUpdatable('updated_at'),
 });
 
+// ─── uptime monitors and status pages (0.16.8, migration 0086) ─────────────
+export const monitorKind = ['http', 'tcp'] as const;
+export const monitorStatus = ['pending', 'up', 'down', 'paused'] as const;
+
+/** A target probed from the panel host on an interval. Operator configuration. */
+export const uptimeMonitors = sqliteTable(
+  'uptime_monitors',
+  {
+    id: id(),
+    name: text('name').notNull(),
+    // Members who can see the service see the monitor; null = operator-only.
+    serviceId: integer('service_id').references(() => services.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: monitorKind }).notNull(),
+    /** http: the URL; tcp: `host:port`. */
+    target: text('target').notNull(),
+    method: text('method').notNull().default('GET'),
+    expectedStatus: text('expected_status').notNull().default('200-399'),
+    keyword: text('keyword'),
+    intervalSeconds: integer('interval_seconds').notNull().default(60),
+    timeoutSeconds: integer('timeout_seconds').notNull().default(10),
+    failuresBeforeDown: integer('failures_before_down').notNull().default(2),
+    followRedirects: integer('follow_redirects', { mode: 'boolean' }).notNull().default(true),
+    verifyTls: integer('verify_tls', { mode: 'boolean' }).notNull().default(true),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    // ── state, written by the checker ──
+    status: text('status', { enum: monitorStatus }).notNull().default('pending'),
+    statusSince: integer('status_since', { mode: 'timestamp' }),
+    consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+    lastCheckedAt: integer('last_checked_at', { mode: 'timestamp' }),
+    lastResponseMs: integer('last_response_ms'),
+    lastStatusCode: integer('last_status_code'),
+    lastError: text('last_error'),
+    certExpiresAt: integer('cert_expires_at', { mode: 'timestamp' }),
+    createdAt: ts('created_at'),
+    updatedAt: tsUpdatable('updated_at'),
+  },
+  (t) => ({ serviceIdx: index('uptime_monitors_service_idx').on(t.serviceId) }),
+);
+
+/** One row per check. An event table: kept for days, swept hourly (`uptime-checks`). */
+export const uptimeChecks = sqliteTable(
+  'uptime_checks',
+  {
+    id: id(),
+    monitorId: integer('monitor_id')
+      .notNull()
+      .references(() => uptimeMonitors.id, { onDelete: 'cascade' }),
+    ok: integer('ok', { mode: 'boolean' }).notNull(),
+    responseMs: integer('response_ms'),
+    statusCode: integer('status_code'),
+    error: text('error'),
+    ts: ts('ts'),
+  },
+  (t) => ({
+    monitorTsIdx: index('uptime_checks_monitor_ts_idx').on(t.monitorId, t.ts),
+    tsIdx: index('uptime_checks_ts_idx').on(t.ts),
+  }),
+);
+
+/** Per monitor and UTC day: what a status page's 90-day history reads. Swept by `uptime-daily`. */
+export const uptimeDaily = sqliteTable(
+  'uptime_daily',
+  {
+    id: id(),
+    monitorId: integer('monitor_id')
+      .notNull()
+      .references(() => uptimeMonitors.id, { onDelete: 'cascade' }),
+    /** `YYYY-MM-DD`, UTC. */
+    day: text('day').notNull(),
+    checks: integer('checks').notNull().default(0),
+    failures: integer('failures').notNull().default(0),
+    /** Sum of the successful checks' response times, for the day's average. */
+    responseMsSum: integer('response_ms_sum').notNull().default(0),
+  },
+  (t) => ({
+    monitorDayIdx: uniqueIndex('uptime_daily_monitor_day_idx').on(t.monitorId, t.day),
+    dayIdx: index('uptime_daily_day_idx').on(t.day),
+  }),
+);
+
+/** A public status page. Operator configuration; answers 404 until published. */
+export const statusPages = sqliteTable(
+  'status_pages',
+  {
+    id: id(),
+    slug: text('slug').notNull(),
+    title: text('title').notNull(),
+    description: text('description'),
+    notice: text('notice'),
+    published: integer('published', { mode: 'boolean' }).notNull().default(false),
+    showResponseTimes: integer('show_response_times', { mode: 'boolean' }).notNull().default(true),
+    /** Monitor ids in display order; ids of deleted monitors are skipped. */
+    monitorIds: text('monitor_ids', { mode: 'json' })
+      .$type<number[]>()
+      .notNull()
+      .default(sql`'[]'`),
+    createdAt: ts('created_at'),
+    updatedAt: tsUpdatable('updated_at'),
+  },
+  (t) => ({ slugIdx: uniqueIndex('status_pages_slug_idx').on(t.slug) }),
+);
+
 // ─── relations ────────────────────────────────────────────────────────────
 // ─── scheduled jobs (cron) ────────────────────────────────────────────────
 export const scheduledJobs = sqliteTable(
