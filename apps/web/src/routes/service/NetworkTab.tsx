@@ -354,7 +354,7 @@ function DomainsCard({ serviceId }: { serviceId: number }) {
             setHostname(host);
             if (host.includes('.')) add.mutate({ host, routePath });
           }}
-          className="flex gap-2"
+          className="flex flex-wrap gap-2 sm:flex-nowrap"
         >
           <Input
             value={hostname}
@@ -369,7 +369,7 @@ function DomainsCard({ serviceId }: { serviceId: number }) {
             placeholder="app.example.com"
             aria-label="Domain"
             title="You can paste a full URL; its path goes to the path field."
-            className="h-9"
+            className="h-9 min-w-0 flex-1 basis-full sm:basis-0"
           />
           <Input
             value={path}

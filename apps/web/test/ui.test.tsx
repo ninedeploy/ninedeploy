@@ -30,6 +30,7 @@ import {
   Textarea,
   Tooltip,
   cn,
+  fieldClass,
 } from '../src/components/ui.js';
 
 describe('cn', () => {
@@ -39,6 +40,32 @@ describe('cn', () => {
 
   it('returns an empty string for all-falsy input', () => {
     expect(cn(false, null)).toBe('');
+  });
+});
+
+describe('fieldClass', () => {
+  it("lets the caller's width, height, padding, text size, radius and background win over the field defaults", () => {
+    const base = 'w-full h-10 px-3 rounded-lg bg-black/30 text-sm text-slate-100 focus:bg-black/40 pr-8';
+    const out = fieldClass(base, 'w-28 h-9 text-[11px] shrink-0').split(' ');
+    expect(out).toContain('w-28');
+    expect(out).not.toContain('w-full');
+    expect(out).not.toContain('h-10');
+    expect(out).not.toContain('text-sm');
+    // A colour is not a size, and a variant class is never dropped.
+    expect(out).toEqual(expect.arrayContaining(['text-slate-100', 'focus:bg-black/40', 'px-3', 'pr-8', 'rounded-lg', 'bg-black/30']));
+    expect(fieldClass(base, 'px-2 pr-2 rounded-md bg-transparent text-xs').split(' ')).toEqual(
+      expect.not.arrayContaining(['px-3', 'pr-8', 'rounded-lg', 'bg-black/30', 'text-sm']),
+    );
+    expect(fieldClass(base)).toBe(base);
+    expect(fieldClass(base, 'font-mono')).toBe(`${base} font-mono`);
+  });
+
+  it('a field given a width renders without the default full width (the domain path box)', () => {
+    render(<Input aria-label="Path" className="h-9 w-28 shrink-0" />);
+    const cls = screen.getByLabelText('Path').className.split(' ');
+    expect(cls).toEqual(expect.arrayContaining(['w-28', 'h-9']));
+    expect(cls).not.toContain('w-full');
+    expect(cls).not.toContain('h-10');
   });
 });
 

@@ -312,13 +312,13 @@ export function EnvCard({
 
             <form onSubmit={onAdd} className="space-y-2">
               <div className="flex gap-2">
-                <Input value={key} onChange={(e) => setKey(e.target.value)} placeholder="KEY" className="h-9 font-mono text-xs" />
+                <Input value={key} onChange={(e) => setKey(e.target.value)} placeholder="KEY" className="h-9 min-w-0 flex-[2] font-mono text-xs" />
                 <Input
                   value={value}
                   onChange={(e) => setValue(e.target.value)}
                   placeholder={secret ? 'secret value' : 'value'}
                   type={secret ? 'password' : 'text'}
-                  className="h-9 min-w-0 flex-1 font-mono text-xs"
+                  className="h-9 min-w-0 flex-[3] font-mono text-xs"
                 />
                 <Button type="submit" size="sm" variant="secondary" disabled={!key.trim() || add.isPending}>
                   <Plus size={14} />

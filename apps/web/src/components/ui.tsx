@@ -101,6 +101,33 @@ export function CardBody({ className, children }: { className?: string; children
 const fieldBase =
   'w-full rounded-lg bg-black/30 px-3 text-sm text-slate-100 ring-1 ring-inset ring-white/10 placeholder:text-slate-500 transition focus:outline-none focus:ring-2 focus:ring-indigo-400/60 focus:bg-black/40';
 
+/**
+ * Utility groups where a field's caller overrides the default. `cn` only
+ * joins, and between two classes of one group the stylesheet's order wins,
+ * not the caller: `w-28` lost to the default `w-full` (a path box took the
+ * whole row and pushed the Add button out of its card), `h-9` to `h-10`.
+ */
+const FIELD_GROUPS: readonly RegExp[] = [
+  /^w-/,
+  /^h-/,
+  /^px-/,
+  /^py-/,
+  /^pl-/,
+  /^pr-/,
+  /^text-(?:xs|sm|base|lg|[2-9]?xl|\[[^\]]+\])$/,
+  /^rounded(?:-|$)/,
+  /^bg-/,
+];
+
+/** `base` then `extra`, minus every unprefixed `base` class whose group `extra` sets itself. */
+export function fieldClass(base: string, extra?: string): string {
+  if (!extra) return base;
+  const own = extra.split(/\s+/).filter(Boolean);
+  const overridden = FIELD_GROUPS.filter((g) => own.some((c) => g.test(c)));
+  const kept = base.split(/\s+/).filter((c) => c && !overridden.some((g) => g.test(c)));
+  return [...kept, ...own].join(' ');
+}
+
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input(
   { className, ...props },
   ref,
@@ -116,7 +143,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
       data-lpignore="true"
       data-bwignore="true"
       data-form-type="other"
-      className={cn(fieldBase, 'h-10', className)}
+      className={fieldClass(`${fieldBase} h-10`, className)}
       {...props}
     />
   );
@@ -177,7 +204,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
         data-lpignore="true"
         data-bwignore="true"
         data-form-type="other"
-        className={cn(fieldBase, 'py-2', className)}
+        className={fieldClass(`${fieldBase} py-2`, className)}
         {...props}
       />
     );
@@ -189,7 +216,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
   ref,
 ) {
   return (
-    <select ref={ref} className={cn(fieldBase, 'h-10 appearance-none pr-8', className)} {...props} />
+    <select ref={ref} className={fieldClass(`${fieldBase} h-10 appearance-none pr-8`, className)} {...props} />
   );
 });
 

@@ -236,10 +236,10 @@ describe('Healthcheck mode field (0.16.1)', () => {
     expect((await lastPatch()).dockerLabels).toEqual({});
   }, TIMEOUT);
 
-  it('0.16.3: Docker labels are not offered on a node service without any, nor by an older panel', async () => {
+  it('0.16.4: Docker labels are offered on a node service too; not by an older panel', async () => {
     renderTab(serviceWith({ healthCheck: 'http', dockerLabels: {}, serverId: 4 }));
     await screen.findByLabelText('Healthcheck');
-    expect(screen.queryByLabelText('Docker labels')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Docker labels')).toBeInTheDocument();
     cleanup();
     renderTab(serviceWith({ healthCheck: 'http' }));
     await screen.findByLabelText('Healthcheck');
@@ -266,10 +266,11 @@ describe('Healthcheck mode field (0.16.1)', () => {
     expect(screen.queryByRole('switch', { name: 'Git LFS' })).not.toBeInTheDocument();
   }, TIMEOUT);
 
-  it('0.16.3: not offered on a node service, nor by a panel that does not report the command', async () => {
-    renderTab(serviceWith({ healthCheck: 'http', healthCommand: null, serverId: 4 }));
+  it('0.16.4: offered on a node service too, with the node hint; not by a panel that does not report the command', async () => {
+    renderTab(serviceWith({ healthCheck: 'command', healthCommand: 'true', serverId: 4 }));
     const select = await screen.findByLabelText('Healthcheck');
-    expect(select.querySelector('option[value="command"]')).toBeNull();
+    expect(select.querySelector('option[value="command"]')).not.toBeNull();
+    expect(screen.getByText(/Runs as the container's Docker healthcheck/)).toBeInTheDocument();
     cleanup();
     renderTab(serviceWith({ healthCheck: 'http' }));
     expect((await screen.findByLabelText('Healthcheck')).querySelector('option[value="command"]')).toBeNull();
