@@ -1,5 +1,15 @@
 [
   {
+    "version": "0.16.7",
+    "date": "2026-10-19",
+    "title": "Uploaded source on nodes",
+    "changes": [
+      "Uploaded source (New → Upload source, ninedeploy deploy up) now works for services on a node: with no build placement set, the panel builds the archive and ships the image to the node, as Build on: panel does. Before, the upload was refused and a deploy failed.",
+      "The node must be able to receive an image (agent 0.15.2 or newer); this is checked when the upload's deploy is queued. A placement on the node itself or on a build server cannot fetch the archive and is refused with the fix named.",
+      "Nodes a service with uploaded source fans out to now receive the same image; before, they were skipped."
+    ]
+  },
+  {
     "version": "0.16.6",
     "date": "2026-10-19",
     "title": "Container options on nodes",

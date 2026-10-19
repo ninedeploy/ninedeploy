@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.16.7] - 2026-10-19
+
+> Uploaded source reaches nodes.
+
+### Upgrade notes
+
+- **No migrations, nothing to turn on, nothing that worked is refused.** A node service built from uploaded source was refused at upload and failed at deploy before 0.16.7. Its node needs agent 0.15.2 or newer (`stream`, `image.manage`) to receive the image; an older agent is refused when the deploy is queued, with the update named.
+
+### Added
+
+- **Uploaded source on nodes.** A docker service built from an uploaded archive and pinned to a node, with no build placement set, is built on the panel (which keeps the archive) and its image is shipped to the node, as with Build on: panel and Git LFS services since 0.16.5. `POST /v1/services/:id/source` takes uploads for node services; `?deploy=true` (the default) checks the node before anything is stored. A placement on the node itself or on a build server is refused (`400 remote_deploy_unsupported`), with Build on: panel named.
+- **Fan-out of uploaded source.** Fan-out targets of an uploaded-source service receive the primary's image; they never rebuild from the archive. Before, they were skipped silently.
+
 ## [0.16.6] - 2026-10-19
 
 > Container options reach nodes and fan-out targets.
