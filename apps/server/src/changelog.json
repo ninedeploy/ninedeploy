@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.16.8",
+    "date": "2026-10-20",
+    "title": "Uptime monitors and status pages",
+    "changes": [
+      "Uptime monitors (Monitoring → Uptime, or a service's Overview): HTTP checks on the status code, an optional keyword and the TLS certificate's expiry, and TCP port checks, run from the panel every 30 s to 1 h. Each monitor shows its response times and its 24-hour, 7-day and 30-day uptime.",
+      "A monitor that goes down sends alert.monitor_down, and one that recovers sends alert.monitor_up with how long it was down. Both go through your notification channels and the service's alert subscriptions; there are no repeats while it stays down.",
+      "Public status pages at /status/<slug>, opt-in per page. They show the names, current state and a 90-day history of the monitors you pick, never their targets. There is no JavaScript, and they can carry a notice for maintenance. The same data is at GET /v1/status/<slug> as JSON.",
+      "API, CLI (ninedeploy monitors, ninedeploy status-pages), SDK (client.monitors, client.statusPages) and the MCP tool list_monitors. Nothing runs until an operator creates a monitor."
+    ]
+  },
+  {
     "version": "0.16.7",
     "date": "2026-10-19",
     "title": "Uploaded source on nodes",

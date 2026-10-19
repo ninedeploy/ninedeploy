@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.16.8] - 2026-10-20
+
+> Uptime monitors and public status pages, built in.
+
+### Upgrade notes
+
+- **One additive migration (0086: `uptime_monitors`, `uptime_checks`, `uptime_daily`, `status_pages`), nothing to turn on, nothing that worked is refused.** No check runs and no page is served until an operator creates a monitor or publishes a page. Checks are kept 7 days and daily rollups 400 days, pruned by housekeeping.
+
+### Added
+
+- **Uptime monitors.** `http` monitors check the status code (default `200-399`, lists and ranges), an optional keyword in the first 1 MiB of the body, redirects (up to 5) and the TLS certificate's expiry. `tcp` monitors check that `host:port` opens. Checks run from the panel host every 30 s–1 h, with a 1–60 s timeout, at most 20 at once. A monitor goes down after 1–10 failures in a row and comes up on one success. `GET/POST /v1/monitors`, `GET/PATCH/DELETE /v1/monitors/:id`, `GET /v1/monitors/:id/checks`, `POST /v1/monitors/:id/check`. A monitor on a service is readable by everyone who can see that service; changes are operator-only.
+- **Down/up alerts.** `alert.monitor_down` (with the reason) and `alert.monitor_up` (with the downtime) go through notification channels, the service's `alert` subscriptions and the plugin bus as `alert.triggered`. A monitor that stays down does not repeat.
+- **Public status pages.** `/status/<slug>` (HTML, no scripts or external assets, light and dark) and `GET /v1/status/<slug>` (JSON), both cached for 30 s. A page shows names, state, 90 daily bars and optionally response times, never targets or errors. An unpublished page answers 404, like an unknown slug. Pages are managed with `/v1/status-pages`, operator-only.
+- **Clients.** CLI `ninedeploy monitors list|add|show|check|pause|resume|rm` and `ninedeploy status-pages list|add|publish|unpublish|notice|rm`; SDK `client.monitors` and `client.statusPages`; MCP `list_monitors`. See [docs/UPTIME.md](docs/UPTIME.md).
+
 ## [0.16.7] - 2026-10-19
 
 > Uploaded source reaches nodes.
