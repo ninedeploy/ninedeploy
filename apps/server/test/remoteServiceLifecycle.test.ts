@@ -46,6 +46,11 @@ vi.mock('../src/engine/proxy.js', () => ({
   TRAEFIK_IMAGE: 'traefik:3',
 }));
 vi.mock('../src/engine/logs.js', () => ({ deleteLog: vi.fn(() => true) }));
+const files = vi.hoisted(() => ({ removeServiceFilesDir: vi.fn() }));
+vi.mock('../src/lib/serviceFiles.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/serviceFiles.js')>()),
+  removeServiceFilesDir: files.removeServiceFilesDir,
+}));
 
 const { servicesRoutes } = await import('../src/modules/services.js');
 
@@ -111,6 +116,24 @@ describe('remote-node service lifecycle (r225)', () => {
       '4 docker.rm {"name":"web-1-17-r2"}',
       '4 workspace.remove {"workspace":"web"}',
     ]);
+  });
+
+  it('0.16.5: removes the copies of its file mounts on the node on delete, only when it had files; an older agent does not fail it', async () => {
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: remote() }, counts: { serviceFiles: [{ n: 2 }] } }) });
+    await app.register(servicesRoutes);
+    agent.agentOp.mockImplementation(async (_d, _s, op, params, sink, opts) => {
+      if (op === 'file.removeMounts') throw new Error('agent file.removeMounts failed (400): {"error":{"code":"unknown_op"}}');
+      return agentImpl(_d, _s, op, params, sink, opts);
+    });
+    const res = await app.inject({ method: 'DELETE', url: '/1', headers: asUser() });
+    expect(res.statusCode).toBe(204);
+    expect(ops().slice(-2)).toEqual(['4 workspace.remove {"workspace":"web"}', '4 file.removeMounts {"service":"web"}']);
+  });
+
+  it('0.16.5: a panel-host service without a port proxy has its file copies removed too (they stayed behind in 0.16.3–0.16.4)', async () => {
+    const app = await appFor(remote({ serverId: null }));
+    expect((await app.inject({ method: 'DELETE', url: '/1', headers: asUser() })).statusCode).toBe(204);
+    expect(files.removeServiceFilesDir).toHaveBeenCalledWith('web');
   });
 
   it('takes a remote compose stack down by its project on delete', async () => {

@@ -61,6 +61,11 @@ export interface BuildContext {
    */
   fileMounts?: Array<{ hostPath: string; containerPath: string }>;
   /**
+   * 0.16.5: a node docker service's files, for the remote builder to write on
+   * the node (`file.writeMount`) and mount through `docker.runSpec`. Absent or empty: none.
+   */
+  nodeFiles?: Array<{ id: number; containerPath: string; content: string }>;
+  /**
    * The repo's `.ninedeploy` manifest, when it ships one.
    *
    * The pipeline has already folded the manifest's `build.*` fields into

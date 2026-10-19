@@ -3,6 +3,7 @@ import path from 'node:path';
 import { count, eq } from 'drizzle-orm';
 import { type DB, serviceFiles } from '@ninedeploy/db';
 import { config } from '../config.js';
+import { agentOp } from './agentClient.js';
 import { decrypt } from './crypto.js';
 import { hostPathFor } from './hostPath.js';
 
@@ -12,11 +13,20 @@ import { hostPathFor } from './hostPath.js';
  * and the container bind-mounts each one read-only. A fresh directory per
  * deployment keeps the outgoing container (blue-green) on the content it
  * started with; older directories are pruned.
+ *
+ * 0.16.5: a docker service on a node (and each node it fans out to) gets them
+ * too: the agent writes the same layout under its home (`file.writeMount`)
+ * and `docker.runSpec` mounts them (agentOps/fileMounts.ts). An older agent
+ * is refused at queue time (lib/remoteVolumes.ts).
  */
 
 /** Why a deploy with file mounts is refused where it would run. */
-export const FILE_MOUNTS_PANEL_ONLY =
-  'File mounts work for docker services on the panel host only in this release; remove the files (Service → Volumes → Files) or run the service on the panel host.';
+export const FILE_MOUNTS_UNSUPPORTED =
+  'File mounts work for docker services only (on the panel host or a node), not for Swarm, compose or PM2 services; remove the files (Service → Volumes → Files) to deploy it.';
+
+/** Whether a service of this shape mounts its files (the panel host or a node; never Swarm, compose or PM2). */
+export const fileMountsSupported = (service: { type: string; orchestrator?: string | null }): boolean =>
+  service.type === 'docker' && service.orchestrator !== 'swarm';
 
 /** Deployment directories kept per service: the new one and the two before it. */
 const KEEP_DEPLOYMENTS = 3;
@@ -31,17 +41,62 @@ export async function serviceFileCount(db: DB, serviceId: number): Promise<numbe
 }
 
 /**
- * A service with file mounts that would not run as a panel-host docker
- * container (a node, Swarm, a compose stack, pm2) is refused rather than
- * started without its files.
+ * A service with file mounts that would not run as a docker container (Swarm,
+ * a compose stack, pm2) is refused rather than started without its files. A
+ * node's agent is checked by lib/remoteVolumes.ts.
  */
 export async function fileMountRefusal(
   db: DB,
-  service: { id: number; type: string; serverId?: number | null; orchestrator?: string | null },
+  service: { id: number; type: string; orchestrator?: string | null },
 ): Promise<string | null> {
-  const onPanel = service.type === 'docker' && service.serverId == null && service.orchestrator !== 'swarm';
-  if (onPanel) return null;
-  return (await serviceFileCount(db, service.id)) > 0 ? FILE_MOUNTS_PANEL_ONLY : null;
+  if (fileMountsSupported(service)) return null;
+  return (await serviceFileCount(db, service.id)) > 0 ? FILE_MOUNTS_UNSUPPORTED : null;
+}
+
+/** 0.16.5: a file as it travels to a node's `file.writeMount` (decrypted, in memory only). */
+export interface NodeServiceFile {
+  id: number;
+  containerPath: string;
+  content: string;
+}
+
+/** The service's files for a node deploy; [] for a service without files. */
+export async function loadNodeServiceFiles(db: DB, serviceId: number): Promise<NodeServiceFile[]> {
+  const rows = await db.select().from(serviceFiles).where(eq(serviceFiles.serviceId, serviceId));
+  return rows
+    .map((row) => ({ id: row.id, containerPath: row.containerPath, content: decrypt(row.contentEncrypted) }))
+    .sort((a, b) => a.containerPath.localeCompare(b.containerPath));
+}
+
+/** What `docker.runSpec` mounts: the file the agent wrote and its path in the container. */
+export interface NodeFileMount {
+  file: string;
+  mount: string;
+}
+
+/** How the node is called (remoteDocker's `AgentCall` / an `AgentCaller`). */
+type FileAgent = (op: string, params: Record<string, unknown>, sink: (line: string) => void) => Promise<{ lines: string[] }>;
+
+/**
+ * Write this deployment's files on the node, one `file.writeMount` each, and
+ * return `docker.runSpec`'s `fileMounts`. The caller has checked that the
+ * agent advertises `docker.fileMounts`.
+ */
+export async function writeNodeFileMounts(
+  agent: FileAgent,
+  service: { slug: string },
+  deploymentId: number,
+  files: readonly NodeServiceFile[],
+  log: (line: string) => void,
+): Promise<NodeFileMount[]> {
+  const mounts: NodeFileMount[] = [];
+  for (const f of files) {
+    const wrote = await agent('file.writeMount', { service: service.slug, deploymentId, id: f.id, content: f.content }, () => undefined);
+    const file = wrote.lines.find((l) => l.startsWith('wrote '))?.slice('wrote '.length) ?? `.agent-files/${service.slug}/d${deploymentId}/${f.id}`;
+    mounts.push({ file, mount: f.containerPath });
+  }
+  if (mounts.length > 0) log(`File mounts: ${mounts.map((m) => m.mount).join(', ')} (read-only)`);
+  return mounts;
 }
 
 export interface FileMount {
@@ -92,6 +147,19 @@ function pruneDeploymentDirs(root: string, current: number): void {
     .sort((a, b) => b - a);
   for (const id of ids.slice(KEEP_DEPLOYMENTS)) {
     if (id !== current) rmSync(path.join(root, `d${id}`), { recursive: true, force: true });
+  }
+}
+
+/**
+ * 0.16.5: remove a deleted service's file copies on a node (`file.removeMounts`).
+ * Best-effort: an agent without `docker.fileMounts` never wrote any.
+ */
+export async function removeNodeFileMounts(db: DB, serverId: number, slug: string, log: (line: string) => void): Promise<void> {
+  try {
+    await agentOp(db, serverId, 'file.removeMounts', { service: slug }, () => undefined);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (!message.includes('unknown_op')) log(`node #${serverId}: could not remove the file mounts .agent-files/${slug}: ${message}`);
   }
 }
 

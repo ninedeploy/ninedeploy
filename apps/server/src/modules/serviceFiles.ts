@@ -6,7 +6,7 @@ import { audit } from '../lib/audit.js';
 import { decrypt, encrypt } from '../lib/crypto.js';
 import { badRequest, conflict, notFound, parseId } from '../lib/errors.js';
 import { assertServiceRole } from '../lib/resourceAccess.js';
-import { FILE_MOUNTS_PANEL_ONLY } from '../lib/serviceFiles.js';
+import { FILE_MOUNTS_UNSUPPORTED, fileMountsSupported } from '../lib/serviceFiles.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 
 /**
@@ -47,7 +47,8 @@ export const serviceFileRoutes: FastifyPluginAsync = async (app) => {
     await assertServiceRole(app.db, svc, req.user!, 'member');
     const input = serviceFilePut.parse(req.body);
     // Stored where it would never be mounted is a silent no-op; say so instead.
-    if (svc.type !== 'docker' || svc.serverId != null || svc.orchestrator === 'swarm') throw badRequest(FILE_MOUNTS_PANEL_ONLY, 'file_mounts_unsupported');
+    // 0.16.5: a node service too; a deploy to a node whose agent predates file mounts is refused with the update named.
+    if (!fileMountsSupported(svc)) throw badRequest(FILE_MOUNTS_UNSUPPORTED, 'file_mounts_unsupported');
     // Docker refuses two mounts at one path; catch it here, not at deploy time.
     if (svc.volumeMount === input.path) throw conflict(`${input.path} is the service's data volume mount`);
     const attached = await app.db.query.serviceVolumeAttachments.findFirst({

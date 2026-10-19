@@ -23,6 +23,8 @@ const RESERVED = ['/proc', '/sys', '/dev', '/etc/hosts', '/etc/hostname', '/etc/
 /** Why `path` cannot be a file mount, or null. */
 export function serviceFilePathProblem(path: string): string | null {
   if (path === '/' || path.endsWith('/')) return 'must name a file, not a directory';
+  // 0.16.5: `docker run -v host:container:ro` splits on ':', so such a path never mounted.
+  if (path.includes(':')) return 'must not contain ":"';
   for (const r of RESERVED) {
     if (path === r || path.startsWith(`${r}/`)) return `${r} is managed by Docker and cannot be a file mount`;
   }

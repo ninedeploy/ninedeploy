@@ -6,7 +6,7 @@ import { PassThrough, Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { backups, createDb, databases, type DB, runMigrations, servers, services, serviceVolumeAttachments, users } from '@ninedeploy/db';
+import { backups, createDb, databases, type DB, runMigrations, servers, serviceFiles, services, serviceVolumeAttachments, users } from '@ninedeploy/db';
 import { MULTI_NODE_CAPABILITIES } from '@ninedeploy/schemas';
 
 /**
@@ -280,6 +280,20 @@ describe('remoteVolumeRefusal / assertRemoteVolumeSupported (replaces the r266 c
     expect(await rv.attachmentHostConflicts(db, { id: api, serverId: other }, [])).toEqual([]);
   });
 
+  it('0.16.5 file mounts: an agent without docker.fileMounts is refused naming v0.16.5; a current one passes', async () => {
+    await db.insert(serviceFiles).values({ serviceId: web, containerPath: '/etc/nginx/nginx.conf', contentEncrypted: encrypt('events {}'), size: 9 });
+    h.ping = pingLine('0.16.4', [...CAPS_015_LIST, ...MULTI_NODE_CAPABILITIES.filter((c) => c !== 'docker.fileMounts')]);
+    const refusal = await rv.remoteVolumeRefusal(db, await webRow(), { probe });
+    expect(refusal).toMatchObject({ status: 422, code: 'node_agent_outdated' });
+    expect(refusal!.message).toMatch(/\(version 0\.16\.4\) cannot mount files \(Service → Volumes → Files\)\. Update the node agent to v0\.16\.5 or newer/);
+    caps.resetNodeCapabilityCache();
+    h.ping = CAPS_ALL;
+    expect(await rv.remoteVolumeRefusal(db, await webRow(), { probe })).toBeNull();
+    // Files alone make a node service ask, even with nothing else new.
+    expect(await rv.remoteVolumeRefusal(db, { id: web, serverId: node }, { probe })).toBeNull();
+    expect(ops().filter((o) => o === 'agent.ping').length).toBeGreaterThan(0);
+  });
+
   it('the default probe asks the real node (agentOp) and persists the capability cache', async () => {
     h.ping = CAPS_015;
     await expect(rv.assertRemoteVolumeSupported(db, { ...(await webRow()), cmd: ['x'] })).rejects.toMatchObject({ statusCode: 422, code: 'node_agent_outdated' });
@@ -433,6 +447,33 @@ describe('runRemoteContainer on docker.runSpec (design §4.2, §1.6)', () => {
     const n = nodeAgent({ runFails: true });
     await expect(runRemoteContainer(n.agent, input(service({ dockerSocket: true })))).rejects.toThrow(/125/);
     expect(n.ops().slice(-3)).toEqual(['docker.runSpec', 'docker.rm', 'file.deleteEnv']);
+  });
+
+  it('0.16.5 file mounts: each file is written on the node before the env-file, then mounted by runSpec', async () => {
+    const n = nodeAgent();
+    const log: string[] = [];
+    const files = [
+      { id: 5, containerPath: '/etc/nginx/nginx.conf', content: 'events {}' },
+      { id: 6, containerPath: '/app/config.yaml', content: 'a: 1' },
+    ];
+    await runRemoteContainer(n.agent, input(service(), { files, log: (l: string) => log.push(l) }));
+    // Each capability check pings (as for labels and the healthcheck); nothing is written before them.
+    expect(n.ops()).toEqual(['agent.ping', 'agent.ping', 'file.writeMount', 'file.writeMount', 'file.writeEnv', 'docker.runSpec', 'file.deleteEnv']);
+    expect(n.calls.find((c) => c.op === 'file.writeMount')!.params).toEqual({ service: 'minio', deploymentId: 7, id: 5, content: 'events {}' });
+    // The agent answered no path: the panel uses the layout the agent writes.
+    expect(n.calls.find((c) => c.op === 'docker.runSpec')!.params['fileMounts']).toEqual([
+      { file: '.agent-files/minio/d7/5', mount: '/etc/nginx/nginx.conf' },
+      { file: '.agent-files/minio/d7/6', mount: '/app/config.yaml' },
+    ]);
+    expect(log).toContain('File mounts: /etc/nginx/nginx.conf, /app/config.yaml (read-only)');
+  });
+
+  it('0.16.5 file mounts on a 0.16.4 agent: refused naming v0.16.5, only agent.ping, nothing written', async () => {
+    const n = nodeAgent({ ping: pingLine('0.16.4', [...CAPS_015_LIST, ...MULTI_NODE_CAPABILITIES.filter((c) => c !== 'docker.fileMounts')]) });
+    await expect(runRemoteContainer(n.agent, input(service(), { files: [{ id: 5, containerPath: '/a', content: 'x' }], nodeLabel: '"edge-1" (#1)' }))).rejects.toThrow(
+      /cannot mount files \(Service → Volumes → Files\)\. Update the node agent to v0\.16\.5/,
+    );
+    expect(n.ops()).toEqual(['agent.ping']);
   });
 
   it('runSpecParams falls back to the computed env-file path when the agent answered another shape', () => {

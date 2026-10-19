@@ -6,6 +6,7 @@ import {
   ensureNodeVolumes,
   NODE_PORTS_FEATURE,
   NODE_RUN_SPEC_FEATURE,
+  nodeFileMountChecks,
   type NodeVolumeAttachment,
   nodeRunCapabilities,
   nodeRunExtras,
@@ -13,6 +14,7 @@ import {
   nodeRunNeeds,
   nodeVolumeLabels,
 } from '../../lib/remoteVolumes.js';
+import { type NodeFileMount, type NodeServiceFile, writeNodeFileMounts } from '../../lib/serviceFiles.js';
 
 /**
  * The RUN phase of a remote docker deploy: write the env-file on the node,
@@ -70,6 +72,8 @@ export interface RemoteRunInput {
    */
   sealed?: boolean;
   // ── end 0.16 T5 ──
+  /** 0.16.5: the service's file mounts (`ctx.nodeFiles`); absent or empty: none. */
+  files?: readonly NodeServiceFile[];
 }
 
 /** One volume a `docker.runSpec` container mounts. */
@@ -105,12 +109,14 @@ export async function runRemoteContainer(agent: AgentCall, input: RemoteRunInput
   // Decided, checked and prepared BEFORE the env-file is written, so a
   // refused deploy leaves no secret on the node and starts nothing.
   const attachments = input.volumeAttachments ?? [];
-  const runSpec = nodeRunNeeds(service, attachments).length > 0;
+  const files = input.files ?? [];
+  const runSpec = nodeRunNeeds(service, attachments, files.length).length > 0;
   const specVolumes: SpecVolume[] = [];
+  let fileMounts: NodeFileMount[] = [];
   if (runSpec) {
     const label = input.nodeLabel ?? `#${service.serverId ?? '?'}`;
-    // 0.16.4: custom labels and the command healthcheck, each named on its own.
-    for (const check of nodeRunExtrasChecks(service)) {
+    // 0.16.4: custom labels and the command healthcheck, each named on its own (0.16.5: file mounts too).
+    for (const check of [...nodeRunExtrasChecks(service), ...nodeFileMountChecks(files.length)]) {
       const refusal = await capabilityRefusal(agent, label, input.sealed ?? true, { ...check, sealedRequired: true });
       if (refusal) throw new Error(refusal.message);
     }
@@ -135,6 +141,8 @@ export async function runRemoteContainer(agent: AgentCall, input: RemoteRunInput
         );
       }
     }
+    // 0.16.5: the files are on the node before its container starts.
+    fileMounts = await writeNodeFileMounts(agent, service, deploymentId, files, log);
   }
   // ── end 0.16 T5 ──
 
@@ -196,6 +204,7 @@ export async function runRemoteContainer(agent: AgentCall, input: RemoteRunInput
           volumes: specVolumes,
           publish: runParams['publish'] as string | undefined,
           ports,
+          fileMounts,
         }),
         sink,
       );
@@ -239,6 +248,8 @@ export function runSpecParams(
     publish?: string;
     /** 0.16.1 `-p` operands of the service's port mappings (`docker.ports`). */
     ports?: readonly string[];
+    /** 0.16.5 (`docker.fileMounts`): the files `file.writeMount` wrote. */
+    fileMounts?: readonly NodeFileMount[];
   },
 ): Record<string, unknown> {
   // runSpec accepts only the agent's own env-file shape, which is what
@@ -260,6 +271,7 @@ export function runSpecParams(
   if (service.cmd?.length) spec['cmd'] = [...service.cmd];
   if (run.publish !== undefined) spec['publish'] = run.publish;
   if (run.ports?.length) spec['ports'] = [...run.ports];
+  if (run.fileMounts?.length) spec['fileMounts'] = run.fileMounts.map((f) => ({ file: f.file, mount: f.mount }));
   // 0.16.4 (`docker.userLabels`, `docker.healthCmd`): sent only when set, so
   // an older agent never sees a field it would refuse.
   Object.assign(spec, nodeRunExtras(service));

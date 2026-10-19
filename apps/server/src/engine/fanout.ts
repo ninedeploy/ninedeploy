@@ -6,6 +6,7 @@ import { agentTransportSealed } from '../lib/agentClient.js';
 import {
   ensureNodeVolumes,
   NODE_RUN_SPEC_FEATURE,
+  nodeFileMountChecks,
   type NodeVolumeAttachment,
   nodeRunCapabilities,
   nodeRunExtrasChecks,
@@ -13,6 +14,7 @@ import {
   nodeVolumeLabels,
 } from '../lib/remoteVolumes.js';
 import { acquireRegistryLock, registryLockKey } from '../lib/registryLock.js';
+import { type NodeServiceFile, writeNodeFileMounts } from '../lib/serviceFiles.js';
 import { assertCloneTargetAllowed } from '../lib/gitEgress.js';
 import type { NodeGitCredentialSource } from '../lib/nodeGitCredential.js';
 import { createRemoteDockerBuilder, envForAgent } from './builders/remoteDocker.js';
@@ -123,6 +125,8 @@ export interface FanoutContext {
   };
   /** 0.16 T4 (D1): the service's volume attachments; a target mounts them through `docker.runSpec`. */
   volumeAttachments?: readonly NodeVolumeAttachment[];
+  /** 0.16.5: the service's file mounts; each target writes them (`file.writeMount`) and mounts them through `docker.runSpec`. */
+  files?: readonly NodeServiceFile[];
   /**
    * 0.16 T4 (design §6.5, D2): the release is SHIPPED to each target rather
    * than pulled or rebuilt — the image the panel or a build server built, or
@@ -195,12 +199,17 @@ export async function deployToTargets(
     // A command, the Docker socket or volume attachments need the target's
     // `docker.runSpec` (sealed); asked before anything is sent, never dropped.
     const attachments = ctx.volumeAttachments ?? [];
-    const runSpec = nodeRunNeeds(ctx.service, attachments).length > 0;
+    const files = ctx.files ?? [];
+    const runSpec = nodeRunNeeds(ctx.service, attachments, files.length).length > 0;
     if (runSpec) {
       const label = await nodeLabel(db, target.serverId);
       const sealed = await agentTransportSealed(db, target.serverId);
       // 0.16.4: custom labels and the command healthcheck first, each named on its own.
-      const checks = [...nodeRunExtrasChecks(ctx.service), { cap: nodeRunCapabilities(ctx.service, attachments), feature: NODE_RUN_SPEC_FEATURE }];
+      const checks = [
+        ...nodeRunExtrasChecks(ctx.service),
+        ...nodeFileMountChecks(files.length),
+        { cap: nodeRunCapabilities(ctx.service, attachments), feature: NODE_RUN_SPEC_FEATURE },
+      ];
       let why: { message: string } | null = null;
       for (const check of checks) {
         why = await capabilityRefusal(agent, label, sealed, { ...check, sealedRequired: true }).catch((err: unknown) => ({
@@ -344,6 +353,8 @@ export async function deployToTargets(
               throw new Error(`Database volume ${missingDatabaseVolumes.join(', ')} does not exist on node #${target.serverId}`);
             }
           }
+          // 0.16.5: the files are on the target before its container starts.
+          const fileMounts = await writeNodeFileMounts(agent, ctx.service, ctx.deploymentId, files, log);
           await agent(
             'docker.runSpec',
             runSpecParams(ctx.service as never, {
@@ -354,6 +365,7 @@ export async function deployToTargets(
               deploymentId: ctx.deploymentId,
               volumes,
               publish: runParams['publish'] as string | undefined,
+              fileMounts,
             }),
             log,
           );

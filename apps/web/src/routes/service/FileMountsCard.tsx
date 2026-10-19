@@ -18,8 +18,9 @@ interface Draft {
 /**
  * 0.16.3 Service → Volumes → Files: text files the panel keeps (encrypted)
  * and mounts read-only in the container, e.g. an nginx.conf or a
- * config.yaml. Docker services on the panel host only; a change applies on
- * the next deploy. Hidden on a panel without the route.
+ * config.yaml. Docker services on the panel host or a node (0.16.5, agent
+ * 0.16.5+), not Swarm; a change applies on the next deploy. Hidden on a panel
+ * without the route.
  */
 export function FileMountsCard({ serviceId, svc }: { serviceId: number; svc: Pick<Service, 'type' | 'serverId'> & { orchestrator?: string | null } }) {
   const { toast } = useToast();
@@ -53,7 +54,7 @@ export function FileMountsCard({ serviceId, svc }: { serviceId: number; svc: Pic
   });
 
   if (files.isError || !files.data) return null;
-  const supported = svc.type === 'docker' && svc.serverId == null && svc.orchestrator !== 'swarm';
+  const supported = svc.type === 'docker' && svc.orchestrator !== 'swarm';
   const list = files.data;
   const pathProblem = draft && draft.path.trim() ? (draft.path.trim().startsWith('/') ? serviceFilePathProblem(draft.path.trim()) : 'must be an absolute path') : null;
   const tooBig = draft ? new Blob([draft.content]).size > MAX_SERVICE_FILE_BYTES : false;
@@ -78,11 +79,11 @@ export function FileMountsCard({ serviceId, svc }: { serviceId: number; svc: Pic
         </div>
         <p className="mb-3 text-xs text-slate-500">
           Text files mounted read-only in the container, such as an nginx.conf or a config.yaml. Stored encrypted; a change applies on the
-          next deploy.
+          next deploy.{svc.serverId != null && supported ? ' On a node they need agent 0.16.5 or newer.' : ''}
         </p>
         {!supported && (
           <p className="mb-3 rounded bg-amber-500/10 px-2 py-1.5 text-xs text-amber-200">
-            File mounts work for docker services on the panel host only{list.length > 0 ? '; this service will not deploy until they are removed' : ''}.
+            File mounts work for docker services only, not on Swarm{list.length > 0 ? '; this service will not deploy until they are removed' : ''}.
           </p>
         )}
 

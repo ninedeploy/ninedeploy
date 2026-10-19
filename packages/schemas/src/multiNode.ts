@@ -35,6 +35,8 @@ export const MULTI_NODE_CAPABILITIES = [
   // 0.16.4: `docker.runSpec` takes `userLabels` (custom labels) and `healthCmd` (the command healthcheck).
   'docker.userLabels',
   'docker.healthCmd',
+  // 0.16.5: `docker.runSpec` takes `fileMounts`, written by `file.writeMount`.
+  'docker.fileMounts',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;

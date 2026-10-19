@@ -473,6 +473,31 @@ describe('0.16 T4: fan-out runs what the primary runs (D1) and ships what it bui
     expect(spec).toMatchObject({ userLabels: { 'com.example.team': 'pay' }, healthCmd: 'pg_isready' });
   });
 
+  it('0.16.5: a target writes the service files and mounts them; an agent that predates them is refused by name', async () => {
+    const files = [{ id: 5, containerPath: '/etc/nginx/nginx.conf', content: 'events {}' }];
+    answer(CAPS_ALL);
+    const refused = await deployToTargets(
+      dbWithTargets([{ serverId: 5, runtimeId: 'web-t5-8' }]) as never,
+      { service: svc, files, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null },
+      vi.fn(),
+    );
+    expect(refused[0]).toMatchObject({ ok: false, error: expect.stringMatching(/cannot mount files \(Service → Volumes → Files\)\. Update the node agent to v0\.16\.5/) });
+    expect(ops()).toEqual(['agent.ping']);
+
+    vi.clearAllMocks();
+    answer(CAPS_ALL.replace('"image.manage"', '"image.manage","docker.fileMounts"'));
+    const results = await deployToTargets(
+      dbWithTargets([{ serverId: 5, runtimeId: null }]) as never,
+      { service: svc, files, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null },
+      vi.fn(),
+    );
+    expect(results[0]).toMatchObject({ ok: true });
+    expect(ops().indexOf('file.writeMount')).toBeLessThan(ops().indexOf('docker.runSpec'));
+    expect(agentMocks.agentOp.mock.calls.find((c) => c[2] === 'file.writeMount')![3]).toEqual({ service: 'web', deploymentId: 9, id: 5, content: 'events {}' });
+    const spec = agentMocks.agentOp.mock.calls.find((c) => c[2] === 'docker.runSpec')![3] as Record<string, unknown>;
+    expect(spec['fileMounts']).toEqual([{ file: '.agent-files/web/d9/5', mount: '/etc/nginx/nginx.conf' }]);
+  });
+
   it('a shipped release: the target receives it through `prebuilt.ship` — no pull, no clone, no build — and runs it', async () => {
     answer(CAPS_ALL);
     const db = dbWithTargets([{ serverId: 5, runtimeId: null }, { serverId: 6, runtimeId: null }]);

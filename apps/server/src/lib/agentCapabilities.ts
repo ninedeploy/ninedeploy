@@ -346,6 +346,8 @@ export const AGENT_SWARM_VERSION = '0.15.4';
 export const AGENT_PORTS_VERSION = '0.16.1';
 /** 0.16.4: `docker.userLabels` and `docker.healthCmd` (custom labels and the command healthcheck on `docker.runSpec`). */
 export const AGENT_RUN_EXTRAS_VERSION = '0.16.4';
+/** 0.16.5: `docker.fileMounts` (file mounts on `docker.runSpec`, written by `file.writeMount`). */
+export const AGENT_FILE_MOUNTS_VERSION = '0.16.5';
 export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, string>> = {
   // ── 0.16 T2 agent transport ──
   stream: AGENT_MULTI_NODE_VERSION,
@@ -367,6 +369,7 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
   'docker.ports': AGENT_PORTS_VERSION,
   'docker.userLabels': AGENT_RUN_EXTRAS_VERSION,
   'docker.healthCmd': AGENT_RUN_EXTRAS_VERSION,
+  'docker.fileMounts': AGENT_FILE_MOUNTS_VERSION,
 };
 
 /**

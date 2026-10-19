@@ -2148,12 +2148,12 @@ describe('runDeployment on a remote-server target', () => {
     }
   });
 
-  it('0.16.3: a node service with file mounts is refused before anything is built or sent to the node', async () => {
-    const { db, inserts } = makeDb();
-    baseSetup(db, { ownerUserId: 42, image: 'nginx:latest', serverId: 4 });
-    db.select.mockImplementation(() => ({
+  /** The fake DB answering one file mount: a count for the refusals, the row for the node deploy. */
+  const withNodeFile = (db: ReturnType<typeof makeDb>['db']) => {
+    db.select.mockImplementation((fields?: unknown) => ({
       from: vi.fn((table: unknown) => {
-        const rows = table === serviceFiles ? [{ n: 1 }] : [];
+        const rows =
+          table === serviceFiles ? (fields ? [{ n: 1 }] : [{ id: 5, serviceId: 1, containerPath: '/etc/nginx/nginx.conf', contentEncrypted: 'enc-nginx' }]) : [];
         return {
           where: vi.fn(() => Object.assign(Promise.resolve(rows), { limit: vi.fn(() => Promise.resolve(rows)) })),
           leftJoin: vi.fn(() => Promise.resolve([])),
@@ -2164,14 +2164,51 @@ describe('runDeployment on a remote-server target', () => {
         };
       }),
     }));
+  };
+  const NODE_CAPS_0164 = ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'docker.runSpec', 'volume.manage', 'docker.ports', 'docker.userLabels', 'docker.healthCmd'];
+
+  it('0.16.5: a node service with file mounts is refused for an agent that predates them, naming the update, before anything is sent', async () => {
+    const { db, inserts } = makeDb();
+    baseSetup(db, { ownerUserId: 42, image: 'nginx:latest', serverId: 4 });
+    withNodeFile(db);
     const lines = collectLogs(1);
+    h.agentTransportSealed.mockResolvedValue(true);
+    h.agentOp.mockImplementation(async (_db: unknown, _serverId: unknown, op: string) =>
+      op === 'agent.ping' ? { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.16.4', caps: NODE_CAPS_0164 })}`] } : { exitCode: 0, lines: [] },
+    );
     h.agentOp.mockClear();
-    h.builder.buildAndRun.mockClear();
     await runDeployment(db as never, 1);
-    expect(h.agentOp).not.toHaveBeenCalled();
-    expect(h.builder.buildAndRun).not.toHaveBeenCalled();
-    expect(lines.join(' ')).toMatch(/File mounts work for docker services on the panel host only/);
+    expect(new Set(h.agentOp.mock.calls.map((c) => c[2]))).toEqual(new Set(['agent.ping']));
+    expect(lines.join(' ')).toMatch(/cannot mount files \(Service → Volumes → Files\)\. Update the node agent to v0\.16\.5/);
     expect(inserts.filter((i) => i.table === auditLog).map((i) => i.values)[0]).toMatchObject({ action: 'deploy.failed' });
+    logBus.removeAllListeners();
+  });
+
+  it('0.16.5: a 0.16.5 agent writes each file on the node before the run, and docker.runSpec mounts it read-only', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { ownerUserId: 42, image: 'nginx:latest', serverId: 4 });
+    withNodeFile(db);
+    const lines = collectLogs(1);
+    h.agentTransportSealed.mockResolvedValue(true);
+    h.agentOp.mockImplementation(async (_db: unknown, _serverId: unknown, op: string, params: Record<string, unknown>) =>
+      op === 'agent.ping'
+        ? { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.16.5', caps: [...NODE_CAPS_0164, 'docker.fileMounts'] })}`] }
+        : op === 'file.writeMount'
+          ? { exitCode: 0, lines: [`wrote .agent-files/${params['service']}/d${params['deploymentId']}/${params['id']}`] }
+          : op === 'docker.inspect'
+            ? { exitCode: 0, lines: ['running|none|0|0'] }
+            : { exitCode: 0, lines: [] },
+    );
+    h.agentOp.mockClear();
+    await runDeployment(db as never, 1);
+    const ops = h.agentOp.mock.calls.map((c) => c[2]);
+    const write = h.agentOp.mock.calls.find((c) => c[2] === 'file.writeMount');
+    expect(write?.[3]).toEqual({ service: service.slug, deploymentId: 1, id: 5, content: 'dec:enc-nginx' });
+    const run = h.agentOp.mock.calls.find((c) => c[2] === 'docker.runSpec');
+    expect(run?.[3]).toMatchObject({ fileMounts: [{ file: `.agent-files/${service.slug}/d1/5`, mount: '/etc/nginx/nginx.conf' }] });
+    expect(ops.indexOf('file.writeMount')).toBeLessThan(ops.indexOf('docker.runSpec'));
+    expect(ops).not.toContain('docker.runEnv');
+    expect(lines.join(' ')).toMatch(/File mounts: \/etc\/nginx\/nginx\.conf \(read-only\)/);
     logBus.removeAllListeners();
   });
 

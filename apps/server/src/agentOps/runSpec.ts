@@ -9,6 +9,7 @@ import {
   portMappingsProblem,
 } from '@ninedeploy/schemas';
 import { spawnValidated } from '../lib/spawnValidated.js';
+import { assertFileMountsWritten, fileMountSource, parseFileMounts, type SpecFileMount } from './fileMounts.js';
 import type { AgentOpModule } from './index.js';
 import { intOperand, isManagedVolume, type Params, RE_IMAGE, RE_NAME, RE_PATH, switchedOff } from './operands.js';
 
@@ -39,6 +40,7 @@ const RESERVED_LABELS = new Set(['ninedeploy.managed', 'ninedeploy.deployment', 
 const SPEC_KEYS = new Set([
   'name', 'image', 'envFile', 'restart', 'network', 'extraNetworks', 'volumes', 'dockerSocket', 'cmd', 'labels', 'publish', 'ports',
   'cpuShares', 'cpuLimitMilli', 'memLimitMb', 'managed', 'deploymentId', 'serviceId', 'userLabels', 'healthCmd',
+  'fileMounts',
 ]);
 const MAX_HEALTH_CMD_CHARS = 1000;
 /**
@@ -82,6 +84,8 @@ export interface RunSpec {
   userLabels: Array<[string, string]>;
   /** 0.16.4 (`docker.healthCmd`): the command healthcheck's shell command. */
   healthCmd: string | null;
+  /** 0.16.5 (`docker.fileMounts`): files `file.writeMount` wrote, bind-mounted read-only. */
+  fileMounts: SpecFileMount[];
   publish: string | null;
   /** 0.16.1 (`docker.ports`): `-p` operands in their canonical form, `[ip:]host[-end]:container[-end]/proto`. */
   ports: string[];
@@ -138,6 +142,10 @@ export function parseRunSpec(p: Params, env: NodeJS.ProcessEnv = process.env): R
     throw new Error('Docker socket mounts are disabled on this node by its owner (NINEDEPLOY_AGENT_DOCKER_SOCKET=off)');
   }
   if (dockerSocket && volumes.some((v) => v.mount === '/var/run/docker.sock')) throw new Error('Invalid volumes: duplicate mount path');
+  // 0.16.5: Docker refuses two mounts at one path; the panel's files route refuses it too.
+  const fileMounts = parseFileMounts(p['fileMounts']);
+  const taken = new Set([...volumes.map((v) => v.mount), ...(dockerSocket ? ['/var/run/docker.sock'] : [])]);
+  if (fileMounts.some((f) => taken.has(f.mount))) throw new Error('Invalid fileMounts: duplicate mount path');
 
   const rawCmd = p['cmd'] ?? [];
   if (!Array.isArray(rawCmd) || rawCmd.length > MAX_CMD_ITEMS) throw new Error('Invalid cmd');
@@ -213,6 +221,7 @@ export function parseRunSpec(p: Params, env: NodeJS.ProcessEnv = process.env): R
     labels,
     userLabels,
     healthCmd,
+    fileMounts,
     publish,
     ports,
     cpuShares: optInt('cpuShares', 262_144),
@@ -237,6 +246,7 @@ export function runSpecArgv(spec: RunSpec, verb: 'run' | 'create'): string[] {
   if (spec.memLimitMb !== null) argv.push('--memory', `${spec.memLimitMb}m`, '--memory-swap', `${spec.memLimitMb}m`);
   for (const v of spec.volumes) argv.push('-v', `${v.name}:${v.mount}${v.readOnly ? ':ro' : ''}`);
   if (spec.dockerSocket) argv.push('-v', '/var/run/docker.sock:/var/run/docker.sock');
+  for (const f of spec.fileMounts) argv.push('-v', `${fileMountSource(f)}:${f.mount}:ro`);
   if (spec.envFile !== null) argv.push('--env-file', spec.envFile);
   if (spec.publish !== null) argv.push('-p', spec.publish);
   for (const port of spec.ports) argv.push('-p', port);
@@ -246,6 +256,7 @@ export function runSpecArgv(spec: RunSpec, verb: 'run' | 'create'): string[] {
 
 async function runSpecOp(params: Params, onLine: (line: string) => void): Promise<number> {
   const spec = parseRunSpec(params);
+  assertFileMountsWritten(spec.fileMounts);
   if (spec.extraNetworks.length === 0) return spawnValidated('docker', runSpecArgv(spec, 'run'), onLine);
   // Several networks: create, connect each, then start — `docker run` takes
   // one `--network` on every daemon this supports. A failure removes the
@@ -268,6 +279,7 @@ export const runSpecOps: AgentOpModule = {
   name: 'agentOps/runSpec.ts',
   // Parameter-level capabilities: `docker.ports` is the `ports` field of
   // docker.runSpec, `docker.userLabels` its `userLabels`, `docker.healthCmd` its `healthCmd`.
+  // `docker.fileMounts` (its `fileMounts` field and file ops) is declared by agentOps/fileMounts.ts.
   caps: ['docker.runSpec', 'docker.ports', 'docker.userLabels', 'docker.healthCmd'],
   ops: {
     'docker.runSpec': { cap: 'docker.runSpec', sealedOnly: true, run: (p, onLine) => runSpecOp(p, onLine) },

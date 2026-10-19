@@ -50,7 +50,7 @@ import { visibleLabelIds } from './labels.js';
 import { assertMayUseHostPrivilege } from '../lib/hostPrivilege.js';
 import { removeSourceUploads } from '../lib/sourceUpload.js';
 import { portProxyDir, removePortProxy } from '../lib/portProxy.js';
-import { removeServiceFilesDir } from '../lib/serviceFiles.js';
+import { removeNodeFileMounts, removeServiceFilesDir, serviceFileCount } from '../lib/serviceFiles.js';
 import { assertMayPublishMappings, assertMayPublishPort, hostPortConflict } from '../lib/hostPort.js';
 import { listHostAddresses } from '../lib/hostAddresses.js';
 import { normaliseAllowlist } from '../lib/ipAllowlist.js';
@@ -1104,6 +1104,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     } catch (err) {
       req.log.warn({ err, serviceId: id }, 'could not list attached databases to take off the service bridge');
     }
+    // 0.16.5: whether its nodes hold copies of its files, read before the rows cascade.
+    const hadFiles = (await serviceFileCount(app.db, id).catch(() => 0)) > 0;
     let orphanLogs: Array<{ id: number }> = [];
     try {
       orphanLogs = await app.db.select({ id: deployments.id }).from(deployments).where(eq(deployments.serviceId, id));
@@ -1118,12 +1120,14 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // 0.16.1: the allow-list port proxy goes with it (nothing when it never had one).
     if (existsSync(portProxyDir(svc.slug))) {
       await removePortProxy(svc.slug).catch((err: unknown) => req.log.warn({ err, serviceId: id }, 'could not remove the port proxy'));
-      // 0.16.3: the written copies of its file mounts (the rows cascade).
-      try {
-        removeServiceFilesDir(svc.slug);
-      } catch (err) {
-        req.log.warn({ err, serviceId: id }, 'could not remove the file mounts directory');
-      }
+    }
+    // 0.16.3: the written copies of its file mounts (the rows cascade). This
+    // sat inside the port-proxy branch above until 0.16.5, so only a service
+    // with an allow-list proxy had its copies removed.
+    try {
+      removeServiceFilesDir(svc.slug);
+    } catch (err) {
+      req.log.warn({ err, serviceId: id }, 'could not remove the file mounts directory');
     }
     // 0.16.1: the archives uploaded as this service's source go with it.
     try {
@@ -1152,6 +1156,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // r662: and every node checkout of it — the primary's and each target's.
     for (const serverId of new Set([...(svc.serverId != null ? [svc.serverId] : []), ...targetRows.map((t) => t.serverId)])) {
       await removeNodeWorkspace(app.db, serverId, svc.slug, (line) => req.log.warn({ serverId }, line));
+      // 0.16.5: and the copies of its file mounts there (only a service that had files asks).
+      if (hadFiles) await removeNodeFileMounts(app.db, serverId, svc.slug, (line) => req.log.warn({ serverId }, line));
     }
     // Model B: reap the service's private bridge. A no-op when a database is
     // still attached to it (so the DB keeps resolving the service's bridge

@@ -35,7 +35,7 @@ import { shipImageByStream } from '../lib/imageTransfer.js';
 import { remoteVolumeRefusal } from '../lib/remoteVolumes.js';
 import { createSwarmBuilder, isSwarmService, swarmDeployRefusal, withSwarmRetirement } from './swarmDeploy.js';
 import { swarmRuntimeOf } from '../lib/swarm.js';
-import { fileMountRefusal, prepareFileMounts } from '../lib/serviceFiles.js';
+import { fileMountRefusal, fileMountsSupported, loadNodeServiceFiles, prepareFileMounts } from '../lib/serviceFiles.js';
 import { fetchLfsObjects, GIT_LFS_PANEL_ONLY } from '../lib/gitLfs.js';
 
 /** 0.16.3: why a service that is not a docker service is not deployed with custom Docker labels (0.16.4: nodes and Swarm included). */
@@ -775,9 +775,10 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     }
   }
   // ── end 0.16 T7 ──
-  // 0.16.3: file mounts are written and mounted on the panel host only; a
-  // node, Swarm or compose service that has them is refused before anything
-  // is built, never started without its files.
+  // 0.16.3: file mounts are written and mounted for docker services (the
+  // panel host; 0.16.5 a node too, whose agent is checked by
+  // remoteVolumeRefusal); a Swarm, compose or PM2 service that has them is
+  // refused before anything is built, never started without its files.
   // The command healthcheck and custom labels belong to docker services: on
   // the panel host (`docker exec`, `docker run --label`), on a node (0.16.4,
   // `docker.runSpec` with `healthCmd` / `userLabels`, refused for an older
@@ -1236,6 +1237,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
         .where(eq(serviceVolumeAttachments.serviceId, service.id)),
       // 0.16.3: this deployment's copy of the service's files (none: []).
       fileMounts: service.type === 'docker' && service.serverId == null ? await prepareFileMounts(db, service, deploymentId, log) : [],
+      // 0.16.5: a node service's files travel to its node (remoteDocker → remoteRun).
+      nodeFiles: service.serverId != null && fileMountsSupported(service) ? await loadNodeServiceFiles(db, service.id) : [],
       log,
       // Sprint 4 G-01 PR-B: the worker pipeline supplies these when the
       // operator has flipped the `engine.use_buildkit` flag and the
@@ -1768,6 +1771,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
         gitCredential: buildableSource ? nodeGitCredentialSource(db, service) : undefined,
         prebuilt,
         volumeAttachments: fanoutAttachments,
+        // 0.16.5: each target writes and mounts the service's files (docker.fileMounts).
+        files: fileMountsSupported(service) ? await loadNodeServiceFiles(db, service.id) : [],
         // ── 0.16 T4 per-target refusal (M5, D1) ──
         // The checks a remote primary passes, per target, before anything is
         // sent to it: the database host rule, and volume attachments / a
@@ -1784,7 +1789,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
           if (dbRefusal) return dbRefusal;
           const volume = await remoteVolumeRefusal(db, onTarget);
           if (volume) return volume.message;
-          // 0.16.3: a target would start without the service's files.
+          // 0.16.3: a target would start without the service's files (0.16.5:
+          // a docker target mounts them; remoteVolumeRefusal checks its agent).
           const files = await fileMountRefusal(db, onTarget);
           if (files) return files;
           if (remoteHookRefusal(buildConfig)) {

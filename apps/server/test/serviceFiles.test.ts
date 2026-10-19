@@ -3,14 +3,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDb, type DB, runMigrations, serviceFiles, serviceVolumeAttachments, services, users } from '@ninedeploy/db';
+import { createDb, type DB, runMigrations, servers, serviceFiles, serviceVolumeAttachments, services, users } from '@ninedeploy/db';
 
 /**
  * 0.16.3 file mounts against a real migrated SQLite: the routes store the
  * content encrypted and keep it from viewers; a deploy writes each file into
  * its own per-deployment directory (older ones pruned) and the docker builder
- * mounts it read-only; anything that would not run as a panel-host docker
- * container is refused rather than started without its files.
+ * mounts it read-only; anything that would not run as a docker container
+ * (0.16.5: on the panel host or a node) is refused rather than started without its files.
  */
 
 const auditMock = vi.hoisted(() => ({ audit: vi.fn(async () => undefined) }));
@@ -19,7 +19,7 @@ vi.mock('../src/lib/audit.js', () => auditMock);
 vi.mock('../src/lib/hostPath.js', () => ({ hostPathFor: vi.fn(async (p: string) => p) }));
 
 const { serviceFileRoutes } = await import('../src/modules/serviceFiles.js');
-const { FILE_MOUNTS_PANEL_ONLY, fileMountRefusal, prepareFileMounts, removeServiceFilesDir, serviceFilesDir } = await import('../src/lib/serviceFiles.js');
+const { FILE_MOUNTS_UNSUPPORTED, fileMountRefusal, prepareFileMounts, removeServiceFilesDir, serviceFilesDir } = await import('../src/lib/serviceFiles.js');
 const { renderRuntimeCompose } = await import('../src/engine/builders/docker.js');
 const { asUser, buildTestApp } = await import('./helpers.js');
 
@@ -99,12 +99,19 @@ describe('file mount routes', () => {
     await app.close();
   });
 
+  it('takes a node service (0.16.5): its agent is checked when it deploys', async () => {
+    const [server] = await db.insert(servers).values({ name: 'edge', host: '10.0.0.4', port: 4600, tokenEncrypted: 'x' } as never).returning();
+    const { app, put } = await setup({ serverId: server!.id });
+    expect((await put({ path: '/app/x.conf', content: 'x' })).statusCode).toBe(200);
+    await app.close();
+  });
+
   it('refuses a service whose container would not get the files', async () => {
     for (const values of [{ serverId: null, type: 'compose', image: null }, { orchestrator: 'swarm' }]) {
       const { app, put } = await setup(values);
       const res = await put({ path: '/app/x.conf', content: 'x' });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error.message).toBe(FILE_MOUNTS_PANEL_ONLY);
+      expect(res.json().error.message).toBe(FILE_MOUNTS_UNSUPPORTED);
       await app.close();
     }
   });
@@ -156,16 +163,18 @@ describe('deploy-time file mounts', () => {
     await app.close();
   });
 
-  it('refuses a node, Swarm, compose or pm2 service that has files; never one without', async () => {
+  it('refuses a Swarm, compose or pm2 service that has files; never one without, never a docker service (0.16.5: a node too)', async () => {
     const { svc, put, app } = await setup();
     expect(await fileMountRefusal(db, svc)).toBeNull();
-    for (const shape of [{ serverId: 4 }, { orchestrator: 'swarm' }, { type: 'compose' }, { type: 'pm2' }]) {
+    for (const shape of [{ orchestrator: 'swarm' }, { type: 'compose' }, { type: 'pm2' }]) {
       expect(await fileMountRefusal(db, { ...svc, ...shape })).toBeNull();
     }
     await put({ path: '/app/x.conf', content: 'x' });
     expect(await fileMountRefusal(db, svc)).toBeNull();
-    for (const shape of [{ serverId: 4 }, { orchestrator: 'swarm' }, { type: 'compose' }, { type: 'pm2' }]) {
-      expect(await fileMountRefusal(db, { ...svc, ...shape })).toBe(FILE_MOUNTS_PANEL_ONLY);
+    // 0.16.5: a node's agent is checked by remoteVolumeRefusal instead.
+    expect(await fileMountRefusal(db, { ...svc, serverId: 4 } as never)).toBeNull();
+    for (const shape of [{ orchestrator: 'swarm' }, { type: 'compose' }, { type: 'pm2' }]) {
+      expect(await fileMountRefusal(db, { ...svc, ...shape })).toBe(FILE_MOUNTS_UNSUPPORTED);
     }
     await app.close();
   });

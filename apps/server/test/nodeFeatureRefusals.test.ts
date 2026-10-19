@@ -67,6 +67,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'docker.ports': 'publish port mappings (UDP, port ranges, a host IP)',
   'docker.userLabels': 'set custom Docker labels',
   'docker.healthCmd': 'run the command healthcheck',
+  'docker.fileMounts': 'mount files (Service → Volumes → Files)',
 };
 
 let db: DB;

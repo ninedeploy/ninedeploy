@@ -15,6 +15,8 @@ describe('file mounts (0.16.3)', () => {
     }
     expect(serviceFilePathProblem('/etc/hostname')).toMatch(/managed by Docker/);
     expect(serviceFilePathProblem('/srv/')).toMatch(/not a directory/);
+    // 0.16.5: `-v host:container:ro` splits on ':', so such a path never mounted.
+    expect(serviceFilePathProblem('/etc/a:b.conf')).toBe('must not contain ":"');
   });
 
   it('caps the content at 256 KiB of UTF-8 and refuses NUL bytes', () => {

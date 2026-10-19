@@ -4,6 +4,7 @@ import type { MultiNodeCapability } from '@ninedeploy/schemas';
 import { agentOp, agentTransportSealed } from './agentClient.js';
 import { type AgentCaller, type CapabilityRefusal, capabilityRefusal, nodeLabel } from './agentCapabilities.js';
 import { HttpError } from './errors.js';
+import { serviceFileCount } from './serviceFiles.js';
 
 /**
  * Volumes for services placed on nodes (multi-node, design §4).
@@ -48,6 +49,8 @@ export interface NodeVolumeAttachment {
 export function nodeRunNeeds(
   service: NodeRunExtrasService & { cmd?: string[] | null; dockerSocket?: boolean | null; portMappings?: readonly unknown[] | null },
   attachments: readonly NodeVolumeAttachment[],
+  /** 0.16.5: how many file mounts the service has (Service → Volumes → Files). */
+  fileCount = 0,
 ): string[] {
   const needs: string[] = [];
   if (service.portMappings?.length) needs.push('port mappings');
@@ -57,6 +60,7 @@ export function nodeRunNeeds(
   const extras = nodeRunExtras(service);
   if (extras.userLabels) needs.push('custom Docker labels');
   if (extras.healthCmd) needs.push('the command healthcheck');
+  if (fileCount > 0) needs.push('file mounts');
   return needs;
 }
 
@@ -90,6 +94,17 @@ export function nodeRunExtrasChecks(service: NodeRunExtrasService): Array<{ cap:
   return checks;
 }
 // ── end 0.16.4 ──
+
+// ── 0.16.5 file mounts on a node ──
+
+/** What a refusal says an agent without `docker.fileMounts` cannot do. */
+export const NODE_FILE_MOUNTS_FEATURE = 'mount files (Service → Volumes → Files)';
+
+/** The capability check file mounts add; [] for a service without files. */
+export function nodeFileMountChecks(fileCount: number): Array<{ cap: MultiNodeCapability[]; feature: string }> {
+  return fileCount > 0 ? [{ cap: ['docker.runSpec', 'docker.fileMounts'], feature: NODE_FILE_MOUNTS_FEATURE }] : [];
+}
+// ── end 0.16.5 ──
 
 /** The capabilities a node docker service of that shape needs. */
 export function nodeRunCapabilities(
@@ -267,8 +282,8 @@ export type RemoteVolumeRefusal =
   | { status: 409; code: 'attachment_host_mismatch'; message: string };
 
 /**
- * Why a node DOCKER service cannot run with its command, Docker socket or
- * volume attachments, or null when it can (design §4.2; replaces the r266
+ * Why a node DOCKER service cannot run with its command, Docker socket,
+ * volume attachments, labels, command healthcheck or file mounts, or null when it can (design §4.2; replaces the r266
  * clause of `remoteServiceRefusal`).
  *
  *  - A service needing none of them is null without asking the node anything
@@ -301,7 +316,8 @@ export async function remoteVolumeRefusal(
     .select({ volumeName: serviceVolumeAttachments.volumeName, containerPath: serviceVolumeAttachments.containerPath })
     .from(serviceVolumeAttachments)
     .where(eq(serviceVolumeAttachments.serviceId, service.id));
-  const needs = nodeRunNeeds(service, attachments);
+  const fileCount = await serviceFileCount(db, service.id);
+  const needs = nodeRunNeeds(service, attachments, fileCount);
   if (needs.length === 0) return null;
 
   const conflicts = await attachmentHostConflicts(db, service, attachments.map((a) => a.volumeName));
@@ -322,7 +338,7 @@ export async function remoteVolumeRefusal(
     sealed: await agentTransportSealed(db, id),
   })))(serverId);
   // 0.16.4: the narrower features first, so an older agent is told what it lacks.
-  for (const check of nodeRunExtrasChecks(service)) {
+  for (const check of [...nodeRunExtrasChecks(service), ...nodeFileMountChecks(fileCount)]) {
     const refusal = await capabilityRefusal(probe.agent, probe.nodeLabel, probe.sealed, { ...check, sealedRequired: true, persist: { db, serverId } });
     if (refusal) return refusal;
   }

@@ -488,6 +488,8 @@ export function createRemoteDockerBuilder(
         // 0.16 T5 integration (node volumes): the attachments `docker.runSpec` mounts.
         volumeAttachments: ctx.volumeAttachments ?? [],
         nodeLabel: opts.nodeLabel ?? `#${service.serverId ?? '?'}`,
+        // 0.16.5: file mounts, written on the node and mounted through docker.runSpec.
+        files: ctx.nodeFiles ?? [],
       });
 
       return {

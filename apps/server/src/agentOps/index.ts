@@ -1,6 +1,7 @@
 import { MULTI_NODE_CAPABILITIES, type MultiNodeCapability } from '@ninedeploy/schemas';
 import { buildOps } from './builds.js';
 import { databaseOps } from './databases.js';
+import { fileMountOps } from './fileMounts.js';
 import { gitKeyOps } from './gitCredential.js';
 import { imageOps } from './images.js';
 import type { Params } from './operands.js';
@@ -70,6 +71,8 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
   // ── 0.16 T7 swarm ── (agentOps/swarm.ts)
   swarmOps,
   // ── end 0.16 T7 ──
+  // 0.16.5 file mounts on a node (agentOps/fileMounts.ts; the `fileMounts` field of docker.runSpec)
+  fileMountOps,
 ];
 
 /**
