@@ -8,6 +8,7 @@ import {
   effectiveOrchestrator,
   hostVolumeEntry,
   lfsBuildsOnPanel,
+  uploadBuildsOnPanel,
   serviceBuildOn,
   IMAGE_TRANSFERS_LIMIT_MAX,
   imageTransfer,
@@ -125,6 +126,25 @@ describe('build placement (multi-node §6)', () => {
       expect(serviceBuildOn({ ...lfs, ...other }), JSON.stringify(other)).toBe('target');
     }
     expect(serviceBuildOn({})).toBe('target');
+  });
+
+  it('0.16.7: a node docker service built from an uploaded archive and no placement builds on the panel', () => {
+    const upload = { buildOn: null, serverId: 4, type: 'docker', repoUrl: null, image: null, composeContent: null };
+    expect(serviceBuildOn(upload)).toBe('panel');
+    expect(uploadBuildsOnPanel(upload)).toBe(true);
+    expect(lfsBuildsOnPanel(upload)).toBe(false);
+    expect(serviceBuildOn({ ...upload, repoUrl: '' })).toBe('panel');
+    // A chosen placement is kept; anything else keeps NULL = target.
+    expect(serviceBuildOn({ ...upload, buildOn: 'target' })).toBe('target');
+    expect(serviceBuildOn({ ...upload, buildOn: 'server' })).toBe('server');
+    for (const other of [{ serverId: null }, { type: 'compose' }, { type: undefined }, { repoUrl: 'https://git.example.com/a/b.git' }, { image: 'nginx' }, { composeContent: 'services: {}' }]) {
+      expect(serviceBuildOn({ ...upload, ...other }), JSON.stringify(other)).toBe('target');
+    }
+    // A shape that does not name the source fields is not an upload.
+    expect(uploadBuildsOnPanel({ serverId: 4, type: 'docker' })).toBe(false);
+    expect(uploadBuildsOnPanel({ serverId: 4, type: 'docker', repoUrl: null, image: null })).toBe(false);
+    expect(uploadBuildsOnPanel({ serverId: 4, type: 'docker', repoUrl: null, composeContent: null })).toBe(false);
+    expect(uploadBuildsOnPanel({ serverId: 4, type: 'docker', image: null, composeContent: null })).toBe(false);
   });
 
   it('accepts a partial, strict placement update with nulls', () => {

@@ -19,6 +19,7 @@ import {
   shipImageByStream,
 } from '../lib/imageTransfer.js';
 import { nodeGitCredentialSource } from '../lib/nodeGitCredential.js';
+import { isUploadSourced, UPLOAD_SOURCE_PANEL_BUILD } from '../lib/sourceUpload.js';
 import { type BuildSlots, buildSlotKey, createBuildSlots } from './buildSlots.js';
 import type { BuildContext } from './types.js';
 
@@ -41,7 +42,7 @@ export type BuildPlacement =
   /** Build on the build server `serverId`, then ship. */
   | { kind: 'server'; serverId: number };
 
-/** The service fields a placement reads (`gitLfs`, `type`, `repoUrl`, `image`: 0.16.5 {@link serviceBuildOn}). */
+/** The service fields a placement reads (`gitLfs`, `type`, `repoUrl`, `image`: 0.16.5 {@link serviceBuildOn}; `composeContent`: 0.16.7). */
 type PlacedService = Parameters<typeof serviceBuildOn>[0] & { serverId?: number | null; buildServerId?: number | null };
 
 /** Why a placement cannot be honoured. The deploy fails; it never falls back to another host. */
@@ -60,7 +61,8 @@ export async function resolveBuildPlacement(
   db: DB,
   service: PlacedService & { id: number },
 ): Promise<BuildPlacement> {
-  // 0.16.5: a node service with Git LFS and no placement builds on the panel (serviceBuildOn).
+  // 0.16.5: a node service with Git LFS and no placement builds on the panel (serviceBuildOn);
+  // 0.16.7: so does one built from uploaded source.
   const buildOn = serviceBuildOn(service);
   if (buildOn === 'target') return { kind: 'target' };
   const runsOn = service.serverId ?? null;
@@ -173,12 +175,15 @@ export async function buildElsewhere(
   opts: { slots?: BuildSlots; deps?: PlacedBuildDeps } = {},
 ): Promise<PlacedBuild> {
   const { service, log } = ctx;
-  if (service.type !== 'docker' || service.image || service.composeContent || !service.repoUrl) {
+  // 0.16.7: an uploaded archive is built on the panel host, which keeps it.
+  const uploaded = isUploadSourced(service);
+  if (service.type !== 'docker' || service.image || service.composeContent || (!service.repoUrl && !uploaded)) {
     throw new BuildPlacementError(
       'Building on the panel or a build server applies to docker services built from a repository; this service builds where it runs. Set Build on: target.',
     );
   }
   const host = placementHost(placement);
+  if (uploaded && host != null) throw new BuildPlacementError(UPLOAD_SOURCE_PANEL_BUILD);
   const tag = buildTag(service.slug, ctx.commitSha, ctx.deploymentId);
   const pushTarget = await resolvePushTarget(db, service);
   if (pushTarget) await assertNoSecretsInPushedImage(ctx);

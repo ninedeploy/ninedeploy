@@ -189,6 +189,10 @@ export function effectiveBuildOn(value: BuildOn | null | undefined): BuildOn {
  * node's own clone would hold pointer files), so it builds on the panel and
  * the image is shipped to the node, as a fan-out target's already is. Such a
  * deploy was refused before. A chosen placement is always kept.
+ *
+ * 0.16.7: the same for a node docker service whose code is an uploaded
+ * archive ({@link uploadBuildsOnPanel}): the archive is kept on the panel and
+ * no node can fetch it.
  */
 export function serviceBuildOn(service: {
   buildOn?: string | null;
@@ -197,9 +201,31 @@ export function serviceBuildOn(service: {
   type?: string | null;
   repoUrl?: string | null;
   image?: string | null;
+  composeContent?: string | null;
 }): BuildOn {
-  if (lfsBuildsOnPanel(service)) return 'panel';
+  if (lfsBuildsOnPanel(service) || uploadBuildsOnPanel(service)) return 'panel';
   return effectiveBuildOn((service.buildOn ?? null) as BuildOn | null);
+}
+
+/**
+ * 0.16.7: whether {@link serviceBuildOn} moves this service's build to the
+ * panel because its code is an uploaded archive: a node docker service with
+ * no repository, image or inline stack, and no placement chosen. The shape
+ * must name all three source fields; a partial one (a save-time check that
+ * passes only `serverId`) is never read as an upload.
+ */
+export function uploadBuildsOnPanel(service: Parameters<typeof serviceBuildOn>[0]): boolean {
+  return (
+    service.buildOn == null &&
+    service.serverId != null &&
+    service.type === 'docker' &&
+    service.repoUrl !== undefined &&
+    service.image !== undefined &&
+    service.composeContent !== undefined &&
+    !service.repoUrl &&
+    !service.image &&
+    !service.composeContent
+  );
 }
 
 /** Whether {@link serviceBuildOn} moves this service's build to the panel for Git LFS. */

@@ -11,7 +11,7 @@ import { githubAppCloneHint, resolveCloneCreds } from '../lib/sourceCreds.js';
 import { classifyCloneFailure, redactGitOutput } from '../lib/cloneFailure.js';
 import { detectDeployHints } from '../lib/deployHints.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
-import { extractSourceUpload, isUploadSourced } from '../lib/sourceUpload.js';
+import { extractSourceUpload, isUploadSourced, UPLOAD_SOURCE_PANEL_BUILD } from '../lib/sourceUpload.js';
 import { cloneCredentialKind, remoteDatabaseRefusal, remoteDeploySupported, remoteDeployUnsupportedReason, remoteHookRefusal, remoteServiceRefusal } from '../lib/remoteDeploy.js';
 import { nodeGitCredentialSource } from '../lib/nodeGitCredential.js';
 import { agentOp } from '../lib/agentClient.js';
@@ -65,7 +65,7 @@ import { audit } from '../lib/audit.js';
 import { autoHostFor } from '../lib/autoUrl.js';
 import { loadNinedeployManifest } from '../lib/ninedeployManifest.js';
 import { applyManifestToBuildConfig, findMissingRequiredEnv } from '../lib/ninedeployApply.js';
-import { lfsBuildsOnPanel, type NinedeployManifest } from '@ninedeploy/schemas';
+import { lfsBuildsOnPanel, type NinedeployManifest, uploadBuildsOnPanel } from '@ninedeploy/schemas';
 
 const builders: Record<string, Builder> = { docker: dockerBuilder, pm2: pm2Builder, compose: composeBuilder };
 const DEPLOY_HEARTBEAT_MS = 20_000;
@@ -819,13 +819,17 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     await auditOutcome(db, service, deploymentId, 'failed', reason);
     return;
   }
-  if (placement.kind !== 'target' && (service.image || !service.repoUrl)) {
+  if (placement.kind !== 'target' && (service.image || (!service.repoUrl && !isUploadSourced(service)))) {
     log('Build placement: this service runs a prebuilt image, so there is nothing to build — it is pulled where it runs.');
     placement = { kind: 'target' };
   }
   // 0.16.5: Git LFS on a node with no placement chosen (serviceBuildOn).
   if (placement.kind === 'panel' && lfsBuildsOnPanel(service)) {
     log('Git LFS: the LFS files are fetched on the panel host, so the image is built there and shipped to the node (no build placement is set).');
+  }
+  // 0.16.7: uploaded source on a node with no placement chosen (serviceBuildOn).
+  if (placement.kind === 'panel' && uploadBuildsOnPanel(service)) {
+    log('Uploaded source: the archive is kept on the panel host, so the image is built there and shipped to the node (no build placement is set).');
   }
   /** The placement of a build that runs away from where the service runs. */
   const buildAway = placement.kind === 'target' ? null : placement;
@@ -836,6 +840,13 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     log(`✗ ${GIT_LFS_PANEL_ONLY}`);
     await safeFail(db, deploymentId, service.id, service.runtimeId);
     await auditOutcome(db, service, deploymentId, 'failed', GIT_LFS_PANEL_ONLY);
+    return;
+  }
+  // 0.16.7: no node or build server can fetch an uploaded archive.
+  if (service.serverId != null && isUploadSourced(service) && !buildsOnPanel) {
+    log(`✗ ${UPLOAD_SOURCE_PANEL_BUILD}`);
+    await safeFail(db, deploymentId, service.id, service.runtimeId);
+    await auditOutcome(db, service, deploymentId, 'failed', UPLOAD_SOURCE_PANEL_BUILD);
     return;
   }
   // ── end 0.16 T4 ──
@@ -1684,7 +1695,10 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   // is skipped with a deploy-log line (the target would clone it); a shipped
   // image needs no clone, so the credential never matters there.
   // ── 0.16 T4 fan-out (design §6.5; D1, D2, D8) ──
-  const sourceBuild = service.type === 'docker' && !service.image && !!service.repoUrl && !!sha;
+  // 0.16.7: uploaded source fans out too, always as the shipped image (no
+  // target can fetch the archive).
+  const uploadSourced = isUploadSourced(service);
+  const sourceBuild = service.type === 'docker' && !service.image && (!!service.repoUrl || uploadSourced) && !!sha;
   const extra = service.type === 'docker' && (service.image || sourceBuild) ? await targetsForService(db, service.id) : [];
   let buildableSource: FanoutContext['source'];
   let prebuilt: FanoutContext['prebuilt'];
@@ -1699,7 +1713,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       // stage, so a Dockerfile build that uses them ships the primary's image
       // like the other packs (D2) instead of building something different.
       const shapedDockerfile = !!fanoutBuildConfig?.buildTarget || (fanoutBuildConfig?.buildArgs ?? []).length > 0 || service.gitLfs === true;
-      if (primary.pack === 'dockerfile' && !shapedDockerfile) {
+      if (primary.pack === 'dockerfile' && !shapedDockerfile && !uploadSourced) {
         // 0.13 (T5): only a STATIC credential (PAT / deploy key) stays on the
         // panel; a GitHub App repository fans out with a per-job token per target.
         if ((await cloneCredentialKind(db, service)) === 'static') {

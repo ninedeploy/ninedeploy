@@ -299,7 +299,8 @@ describe('deploys routes', () => {
     // r037: docker services now route through the node's agent, so the
     // queue-time guard must let them through rather than 400.
     const app = await buildTestApp({
-      db: createFakeDb({ findFirst: { services: svcRow({ id: 1, serverId: 4, type: 'docker' }) } }),
+      // 0.16.7: with a repository; one with none builds uploaded source on the panel and asks the node first.
+      db: createFakeDb({ findFirst: { services: svcRow({ id: 1, serverId: 4, type: 'docker', repoUrl: 'https://github.com/acme/web.git' }) } }),
     });
     await app.register(deploysRoutes, { prefix: '/services' });
     const res = await app.inject({ method: 'POST', url: '/services/1/deploys', headers: asUser() });

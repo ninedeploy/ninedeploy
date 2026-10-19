@@ -588,6 +588,21 @@ describe('buildElsewhere / retention (design §6.3 steps 1, 2, 6)', () => {
     expect(built).toMatchObject({ buildHost: builder, imageId: IMG, sizeBytes: 2048 });
   });
 
+  it('0.16.7: uploaded source builds on the panel; a build server cannot fetch the archive', async () => {
+    const { buildElsewhere, BuildPlacementError } = await import('../src/engine/buildPlacement.js');
+    const up = await service({ serverId: node, repoUrl: null });
+    expect(await resolveBuildPlacement(db, up)).toEqual({ kind: 'panel' });
+    const buildOnPanel = vi.fn(async () => ({ builtWithNixpacks: false, builtStatic: false }));
+    const panelImageInfo = vi.fn(async () => ({ id: IMG, size: 10 }));
+    expect(await buildElsewhere(db, { kind: 'panel' }, ctxFor(up), { deps: { buildOnPanel, panelImageInfo } })).toMatchObject({ buildHost: null, imageId: IMG });
+    const buildOnNode = vi.fn();
+    const onServer = buildElsewhere(db, { kind: 'server', serverId: builder }, ctxFor({ ...up, buildOn: 'server', buildServerId: builder }), { deps: { buildOnNode } });
+    await expect(onServer).rejects.toBeInstanceOf(BuildPlacementError);
+    await expect(onServer).rejects.toThrow(/a node or a build server cannot fetch the archive/);
+    expect(buildOnNode).not.toHaveBeenCalled();
+    expect(h.ops).toEqual([]);
+  });
+
   it('an image service or a compose stack never builds elsewhere', async () => {
     const { buildElsewhere, BuildPlacementError } = await import('../src/engine/buildPlacement.js');
     const img = await service({ image: 'nginx:1.27', repoUrl: null });

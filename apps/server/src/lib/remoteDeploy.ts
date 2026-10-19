@@ -6,12 +6,13 @@ import {
   serviceGithubLinks,
   sources,
 } from '@ninedeploy/db';
-import { lfsBuildsOnPanel, serviceBuildOn } from '@ninedeploy/schemas';
+import { lfsBuildsOnPanel, serviceBuildOn, uploadBuildsOnPanel } from '@ninedeploy/schemas';
 import { agentOp, agentTransportSealed } from './agentClient.js';
 import { type AgentCaller, capabilityRefusal, gitCredentialRefusal, nodeLabel } from './agentCapabilities.js';
 import { badRequest, HttpError } from './errors.js';
 import { remoteDatabaseRefusal } from './remoteDatabaseRefusal.js';
 import { remoteVolumeRefusal } from './remoteVolumes.js';
+import { UPLOAD_SOURCE_PANEL_BUILD } from './sourceUpload.js';
 
 // r229/r269: moved to its own file (multi-node T1, a pure move) so node
 // databases relax it there; re-exported so every caller keeps this path.
@@ -239,7 +240,8 @@ export type RemoteServiceShape = {
   // 0.16 T4: where the image is built (NULL = where it runs, as before).
   buildOn?: string | null;
   buildServerId?: number | null;
-  // 0.16.5: Git LFS with no placement builds on the panel and ships the image (serviceBuildOn).
+  // 0.16.5: Git LFS with no placement builds on the panel and ships the image (serviceBuildOn);
+  // 0.16.7: so does uploaded source (composeContent, repoUrl and image name it).
   gitLfs?: boolean | null;
   // 0.16.4: custom labels and the command healthcheck need `docker.userLabels` / `docker.healthCmd`.
   dockerLabels?: Record<string, string> | null;
@@ -282,10 +284,17 @@ export async function remoteServiceRefusalDetail(
   const buildOn = type === 'docker' ? serviceBuildOn(service) : 'target';
   // 0.16.5: the image built on the panel for Git LFS reaches the node by stream,
   // as with Build on: panel (servicePlacement's check when that is chosen).
-  if (type === 'docker' && lfsBuildsOnPanel(service)) {
+  // 0.16.7: so does a service built from an uploaded archive.
+  const uploaded = type === 'docker' && uploadBuildsOnPanel(service);
+  if (type === 'docker' && (lfsBuildsOnPanel(service) || uploaded)) {
     const p = await probe();
     const why = await capabilityRefusal(p.agent, p.nodeLabel, p.sealed, { cap: ['stream', 'image.manage'], feature: 'receive an image', sealedRequired: true });
-    if (why) return { ...why, message: `A Git LFS service builds on the panel host and its image is shipped to the node: ${why.message}` };
+    const what = uploaded ? 'A service built from uploaded source' : 'A Git LFS service';
+    if (why) return { ...why, message: `${what} builds on the panel host and its image is shipped to the node: ${why.message}` };
+  }
+  // A placement chosen for it that is not the panel cannot fetch the archive.
+  if (type === 'docker' && buildOn !== 'panel' && uploadBuildsOnPanel({ ...service, buildOn: null })) {
+    return unsupported(UPLOAD_SOURCE_PANEL_BUILD);
   }
   const buildNode = buildOn === 'panel' ? null : buildOn === 'server' ? (service.buildServerId ?? null) : serverId;
   const cloneProbe = (): Promise<RemoteAgentProbe> => probeOf(buildNode as number);

@@ -45,6 +45,14 @@ export class SourceArchiveError extends Error {
   }
 }
 
+/**
+ * 0.16.7: why a node service's uploaded source cannot be built where its
+ * placement says. The archive is kept on the panel host, so the panel builds
+ * it and ships the image (a NULL placement does that by itself, serviceBuildOn).
+ */
+export const UPLOAD_SOURCE_PANEL_BUILD =
+  'Uploaded source is kept on the panel host, so it is built there and the image is shipped to the node; a node or a build server cannot fetch the archive. Build on the panel (Service → Settings → Build on: panel, or leave the placement unset).';
+
 /** A docker service whose code comes from uploads: no repository, image or inline stack. */
 export function isUploadSourced(service: {
   type: string;

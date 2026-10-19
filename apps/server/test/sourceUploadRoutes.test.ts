@@ -7,11 +7,15 @@ import { createDb, type DB, deployments, runMigrations, services, users } from '
 /**
  * 0.16.1 `POST/GET /v1/services/:id/source` against a real migrated SQLite:
  * an upload-sourced service takes an archive and queues a deploy of exactly
- * that upload; every other service, a remote one and a broken archive are
- * refused, the first two before the body is read.
+ * that upload; every other service, a node service whose placement cannot
+ * fetch it and a broken archive are refused, the first two before the body
+ * is read.
  */
 
 vi.mock('../src/lib/audit.js', () => ({ audit: vi.fn(async () => undefined) }));
+// 0.16.7: a node service's deploy is checked against the node (it pings it).
+const remote = vi.hoisted(() => ({ assertRemoteServiceSupported: vi.fn(async (_db: unknown, _svc: unknown) => undefined) }));
+vi.mock('../src/lib/remoteDeploy.js', () => remote);
 
 const { sourceUploadRoutes } = await import('../src/modules/sourceUploads.js');
 const { listSourceUploads, removeSourceUploads } = await import('../src/lib/sourceUpload.js');
@@ -110,13 +114,49 @@ describe('POST /services/:id/source', () => {
     }
   });
 
-  it('a service on a remote node is refused (panel host only)', async () => {
+  it('0.16.7: a node service takes uploads (built on the panel, shipped); its deploy is checked against the node first', async () => {
     const { servers } = await import('@ninedeploy/db');
+    const { HttpError } = await import('../src/lib/errors.js');
     const [node] = await db.insert(servers).values({ name: 'n1', host: '10.0.0.2', tokenEncrypted: 'v1:x' } as never).returning();
     const { app, id } = await setup({ serverId: node!.id });
-    const res = await app.inject(upload(id, zipOf('a', 'x')));
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error.message).toMatch(/panel host only/);
+    remote.assertRemoteServiceSupported.mockClear();
+    const res = await app.inject(upload(id, zipOf('Dockerfile', 'FROM nginx\n')));
+    expect(res.statusCode, res.body).toBe(201);
+    expect(remote.assertRemoteServiceSupported).toHaveBeenCalledTimes(1);
+    expect(remote.assertRemoteServiceSupported.mock.calls[0]![1]).toMatchObject({ id, serverId: node!.id });
+    const dep = await db.query.deployments.findFirst({ where: eq(deployments.id, res.json().deploymentId) });
+    expect(dep).toMatchObject({ serviceId: id, status: 'queued' });
+
+    // ?deploy=false only keeps it: the node is not asked.
+    remote.assertRemoteServiceSupported.mockClear();
+    expect((await app.inject(upload(id, zipOf('a.txt', 'y'), '?deploy=false'))).statusCode).toBe(201);
+    expect(remote.assertRemoteServiceSupported).not.toHaveBeenCalled();
+
+    // A node that cannot receive an image refuses before anything is kept.
+    remote.assertRemoteServiceSupported.mockRejectedValueOnce(new HttpError(422, 'node_agent_outdated', 'Node "n1" cannot receive an image'));
+    const kept = listSourceUploads(id).length;
+    const old = await app.inject(upload(id, zipOf('b.txt', 'z')));
+    expect(old.statusCode).toBe(422);
+    expect(old.json().error).toMatchObject({ code: 'node_agent_outdated' });
+    expect(listSourceUploads(id)).toHaveLength(kept);
+    await app.close();
+  });
+
+  it('0.16.7: a node service whose placement is the node or a build server is refused (it cannot fetch the archive)', async () => {
+    const { servers } = await import('@ninedeploy/db');
+    const [node] = await db.insert(servers).values({ name: 'n1', host: '10.0.0.2', tokenEncrypted: 'v1:x' } as never).returning();
+    for (const buildOn of ['target', 'server']) {
+      const { app, id } = await setup({ serverId: node!.id, buildOn });
+      const res = await app.inject(upload(id, zipOf('a', 'x')));
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatchObject({ code: 'remote_deploy_unsupported' });
+      expect(res.json().error.message).toMatch(/a node or a build server cannot fetch the archive/);
+      expect(listSourceUploads(id)).toEqual([]);
+      await app.close();
+    }
+    // Build on: panel, chosen, takes it.
+    const { app, id } = await setup({ serverId: node!.id, buildOn: 'panel' });
+    expect((await app.inject(upload(id, zipOf('a', 'x'), '?deploy=false'))).statusCode).toBe(201);
     await app.close();
   });
 

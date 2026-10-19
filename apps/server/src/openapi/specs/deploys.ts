@@ -38,7 +38,7 @@ export const deploysSpecs: RouteSpecMap = {
     summary: 'Upload a .zip or .tar.gz as the service source and deploy it',
     tag: 'deploys',
     description:
-      'The request body is the raw archive (application/zip or application/gzip, up to 100 MiB), not JSON. It is checked completely before it is kept: only regular files and directories, relative paths without `..`, at most 50 000 entries and 1 GiB extracted. A single top-level folder becomes the build root. `?deploy=false` only stores it. 409 for a service with a repository, image or inline stack. Added in 0.16.1.',
+      'The request body is the raw archive (application/zip or application/gzip, up to 100 MiB), not JSON. It is checked completely before it is kept: only regular files and directories, relative paths without `..`, at most 50 000 entries and 1 GiB extracted. A single top-level folder becomes the build root. `?deploy=false` only stores it. 409 for a service with a repository, image or inline stack. A service on a node (0.16.7) is built on the panel and its image shipped: 400 `remote_deploy_unsupported` when its build placement is the node or a build server, and a deploy is first checked against the node (422 `node_agent_outdated` when it cannot receive an image). Added in 0.16.1.',
     floor: 'member',
     responseType:
       "{ sha: string; format: 'zip' | 'tar.gz'; bytes: number; uploadedAt: string; entries: number; deploymentId: number | null }",

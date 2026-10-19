@@ -34,6 +34,7 @@ vi.mock('../../src/lib/audit.js', () => ({ audit: vi.fn(async () => undefined) }
 const { nodeGitCredentialSource, staticTokenUsername } = await import('../../src/lib/nodeGitCredential.js');
 const rd = await import('../../src/lib/remoteDeploy.js');
 const { resetNodeCapabilityCache } = await import('../../src/lib/agentCapabilities.js');
+const { UPLOAD_SOURCE_PANEL_BUILD } = await import('../../src/lib/sourceUpload.js');
 const { encrypt } = await import('../../src/lib/crypto.js');
 const { createRemoteDockerBuilder } = await import('../../src/engine/builders/remoteDocker.js');
 const { migratedDb } = await import('./githubAppKit.js');
@@ -199,6 +200,30 @@ describe('the refusal matrix (queue time, remoteServiceRefusalDetail)', () => {
     expect(refusal!.message).toMatch(/^A Git LFS service builds on the panel host and its image is shipped to the node: .*cannot receive an image/);
     // A placement chosen on the service is kept: Build on: target still has the node clone (and refuses the PAT).
     expect(await rd.remoteServiceRefusalDetail(db, { ...svc, buildOn: 'target' }, { probe: probeFor(AGENTS.current).probe })).toMatchObject({ message: rd.STATIC_CREDENTIAL_REFUSAL });
+  });
+
+  it('0.16.7: uploaded source with no placement builds on the panel: the node must receive an image; a node or build-server placement is refused', async () => {
+    const svc = await service({ repoUrl: null });
+    expect(svc).toMatchObject({ image: null, composeContent: null });
+    const current = probeFor(AGENTS.current);
+    expect(await rd.remoteServiceRefusalDetail(db, svc, { probe: current.probe })).toBeNull();
+    expect(current.a.ops()).toEqual(['agent.ping']);
+    resetNodeCapabilityCache();
+    const old = probeFor(AGENTS['0.15']);
+    const refusal = await rd.remoteServiceRefusalDetail(db, svc, { probe: old.probe });
+    expect(refusal).toMatchObject({ status: 422, code: 'node_agent_outdated' });
+    expect(refusal!.message).toMatch(/^A service built from uploaded source builds on the panel host and its image is shipped to the node: .*cannot receive an image/);
+    for (const buildOn of ['target', 'server'] as const) {
+      const none = probeFor(AGENTS.current);
+      expect(await rd.remoteServiceRefusalDetail(db, { ...svc, buildOn }, { probe: none.probe })).toMatchObject({
+        status: 400,
+        code: 'remote_deploy_unsupported',
+        message: UPLOAD_SOURCE_PANEL_BUILD,
+      });
+      expect(none.a.ops()).toEqual([]);
+    }
+    // Build on: panel, chosen: the placement route checked the node when it was set.
+    expect(await rd.remoteServiceRefusalDetail(db, { ...svc, buildOn: 'panel' }, { probe: probeFor(AGENTS['0.13']).probe })).toBeNull();
   });
 
   it('a host mismatch is refused (400) without asking the node', async () => {

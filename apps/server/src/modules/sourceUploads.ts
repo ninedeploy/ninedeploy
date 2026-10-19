@@ -1,10 +1,12 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { deployments, type Service } from '@ninedeploy/db';
+import { serviceBuildOn } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
 import { enqueueUserDeploy } from '../lib/deployQueue.js';
 import { badRequest, conflict, parseId } from '../lib/errors.js';
 import { assertMayDeployStoredService } from '../lib/hostPrivilege.js';
+import { assertRemoteServiceSupported } from '../lib/remoteDeploy.js';
 import { assertServiceRole } from '../lib/resourceAccess.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import {
@@ -13,6 +15,7 @@ import {
   SOURCE_UPLOAD_MAX_BYTES,
   SourceArchiveError,
   storeSourceUpload,
+  UPLOAD_SOURCE_PANEL_BUILD,
 } from '../lib/sourceUpload.js';
 
 /** Body types an archive may be sent as; the format is decided by its magic bytes. */
@@ -26,8 +29,8 @@ const ARCHIVE_TYPES = ['application/zip', 'application/gzip', 'application/x-gzi
  *    kept, and deployed unless `?deploy=false`.
  *
  * Only a docker service with no repository, image or inline stack takes
- * uploads (lib/sourceUpload.ts `isUploadSourced`), and only on the panel
- * host. Authentication, the member check and those service rules all run at
+ * uploads (lib/sourceUpload.ts `isUploadSourced`); on a node (0.16.7) the
+ * panel builds it and ships the image. Authentication, the member check and those service rules all run at
  * `onRequest`, before a byte of the (up to 100 MiB) body is read; the route's
  * own `bodyLimit` lifts the app-wide 1 MiB for this route alone (past it,
  * Fastify's 413 goes through the global error envelope).
@@ -59,8 +62,13 @@ export const sourceUploadRoutes: FastifyPluginAsync = async (app) => {
           : 'This service deploys from a repository, an image or an inline stack. Uploads are for a service created without one (New → Upload source).',
       );
     }
+    // 0.16.7: on a node the panel builds the archive and ships the image
+    // (serviceBuildOn); a placement chosen elsewhere cannot fetch it, and a
+    // deploy is checked against the node (it must receive an image) before a
+    // byte of the body is read.
     if (svc.serverId != null) {
-      throw badRequest('Uploaded source builds on the panel host only; this service runs on a remote node. Clear its target server first.');
+      if (serviceBuildOn(svc) !== 'panel') throw badRequest(UPLOAD_SOURCE_PANEL_BUILD, 'remote_deploy_unsupported');
+      if ((req.query as { deploy?: string }).deploy !== 'false') await assertRemoteServiceSupported(app.db, svc);
     }
     target.set(req, svc);
   };

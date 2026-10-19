@@ -85,11 +85,11 @@ The panel resolves the build pack on its own checkout of the commit, with the pa
 
 ## 5. Build placement and image transfer (0.15.3)
 
-Where a docker service built from a repository is built (`PUT /v1/services/:id/placement`, operator; `GET` for anyone who can see the service; Service → Settings → Build):
+Where a docker service built from a repository (or, 0.16.7, from uploaded source: `panel` only) is built (`PUT /v1/services/:id/placement`, operator; `GET` for anyone who can see the service; Service → Settings → Build):
 
 | `buildOn` | Builds | Then |
 | :--- | :--- | :--- |
-| `null` / `target` | where the service runs (the default, unchanged); 0.16.5: a `null` node service with Git LFS on builds on the panel, as `panel` | — |
+| `null` / `target` | where the service runs (the default, unchanged); 0.16.5: a `null` node service with Git LFS on builds on the panel, as `panel`; 0.16.7: so does one built from uploaded source | — |
 | `panel` | on the panel host, with every pack and credential the panel supports | the image is shipped to the node |
 | `server` + `buildServerId` | on a node with the build-server role | the image is shipped to where the service runs, the panel host included |
 

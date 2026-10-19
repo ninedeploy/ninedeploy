@@ -130,7 +130,9 @@ The build is the same as for a repository: a Dockerfile in the archive wins, oth
 | Entries | 50 000 |
 | Kept uploads per service | 5 (redeploying an older deployment rebuilds its upload while it is kept) |
 
-Only regular files and directories are accepted: symlinks, hardlinks, devices, absolute paths and `..` are refused, as are encrypted and zip64 zips, before anything is stored. Uploads build on the panel host; a service pinned to a remote node is refused. Deleting the service deletes its uploads.
+Only regular files and directories are accepted: symlinks, hardlinks, devices, absolute paths and `..` are refused, as are encrypted and zip64 zips, before anything is stored. Deleting the service deletes its uploads.
+
+Uploads build on the panel host, which keeps them. From 0.16.7 a service pinned to a remote node takes uploads too: with no build placement set, the panel builds the archive and ships the image to the node, as with Build on: panel (the node needs `stream` and `image.manage`, agent 0.15.2+; checked when the upload is sent). A placement chosen on the node itself or on a build server cannot fetch the archive, so it is refused. Extra fan-out nodes receive the same image.
 
 ### Where a deploy's variables come from
 

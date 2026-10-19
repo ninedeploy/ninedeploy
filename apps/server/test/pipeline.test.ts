@@ -3450,6 +3450,20 @@ describe('0.16 T4: fan-out targets get the primary’s rules and never a differe
     expect(lines).toContain('✓ Deployment successful');
   });
 
+  it('0.16.7: an uploaded-source primary fans out by shipping its image — a target cannot fetch the archive, even with a Dockerfile in it', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { repoUrl: null, image: null, composeContent: null });
+    mkdirSync(path.join(reposDir, '5'), { recursive: true });
+    writeFileSync(path.join(reposDir, '5', 'Dockerfile'), 'FROM nginx\n');
+    withTarget(db);
+    await runDeployment(db as never, 1);
+    expect(uploadMock.extractSourceUpload).toHaveBeenCalledTimes(1);
+    expect(targetOps()).not.toContain('git.ensure');
+    expect(targetOps()).not.toContain('docker.build');
+    expect(h.shipImageByStream.mock.calls[0]![1]).toMatchObject({ source: null, target: 9, tag: 'ninedeploy/web:c0ffee0' });
+    expect(targetRow(updates)).toMatchObject({ status: 'running' });
+  });
+
   it('control: a plain image service still fans out with docker.runEnv and nothing new is asked', async () => {
     const { db, updates } = makeDb();
     baseSetup(db, { image: 'nginx:1.27' });
@@ -3535,6 +3549,34 @@ describe('0.16 T4: build placement in the pipeline (design §6.3)', () => {
     expect(h.shipImageByStream.mock.calls[0]![1]).toMatchObject({ source: null, target: 4 });
     expect(opsOn(4)).not.toContain('git.ensure');
     expect(opsOn(4)).not.toContain('docker.build');
+  });
+
+  it('0.16.7: uploaded source on a node with no placement builds on the panel (the archive is kept there) and ships the image', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { serverId: 4, buildOn: null, repoUrl: null, image: null, composeContent: null });
+    const lines = collectLogs(1);
+    await runDeployment(db as never, 1);
+    expect(lines).toContain('✓ Deployment successful');
+    expect(lines.join(' ')).toMatch(/Uploaded source: the archive is kept on the panel host, so the image is built there and shipped to the node/);
+    expect(uploadMock.extractSourceUpload).toHaveBeenCalledTimes(1);
+    expect(h.checkoutCommit).not.toHaveBeenCalled();
+    expect(h.buildSourceImage).toHaveBeenCalledTimes(1);
+    expect(h.buildSourceImage.mock.calls[0]![1]).toBe('ninedeploy/web:c0ffee0-b1');
+    expect(h.shipImageByStream.mock.calls[0]![1]).toMatchObject({ source: null, target: 4, tag: 'ninedeploy/web:c0ffee0-b1' });
+    expect(opsOn(4)).not.toContain('git.ensure');
+    expect(opsOn(4)).not.toContain('docker.build');
+    expect(buildHostWrite(updates)).toEqual({ buildHost: 'panel', imageId: IMG });
+  });
+
+  it('0.16.7: uploaded source with Build on: target on a node is refused before anything is extracted or built', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { serverId: 4, buildOn: 'target', repoUrl: null, image: null, composeContent: null });
+    const lines = collectLogs(1);
+    await runDeployment(db as never, 1);
+    expect(lines.join(' ')).toMatch(/✗ Uploaded source is kept on the panel host.*a node or a build server cannot fetch the archive/);
+    expect(uploadMock.extractSourceUpload).not.toHaveBeenCalled();
+    expect(h.buildSourceImage).not.toHaveBeenCalled();
+    expect(opsOn(4)).not.toContain('docker.runEnv');
   });
 
   it('build_on = panel keeps a PAT on the panel: a static credential is no refusal, the node never clones', async () => {
