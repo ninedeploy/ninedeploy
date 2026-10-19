@@ -169,7 +169,7 @@ describe('VolumeBrowser', () => {
     // loading: a never-resolving query keeps the skeleton mounted
     mockOf(api.volumes.listFiles).mockReturnValue(new Promise(() => {}) as never);
     const { unmount } = renderWithProviders(<VolumeBrowser volume="nd-svc-web-data" onClose={vi.fn()} />);
-    expect(document.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('.nd-shimmer, .animate-pulse').length).toBeGreaterThan(0);
     unmount();
 
     mockOf(api.volumes.listFiles).mockRejectedValue(new Error('docker down') as never);

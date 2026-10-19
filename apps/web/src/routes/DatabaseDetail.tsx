@@ -591,42 +591,6 @@ function OverviewPanel({
         </Card>
         )}
 
-        {/* Runtime info card */}
-        <Card className="p-5 space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Runtime &amp; Storage</h2>
-          <dl className="space-y-2 text-xs">
-            <div className="flex justify-between border-b border-white/[0.04] pb-1.5">
-              <dt className="text-slate-500">Container</dt>
-              <dd className="font-mono text-slate-200">{db.containerName ?? `nd-db-${db.slug}`}</dd>
-            </div>
-            <div className="flex justify-between border-b border-white/[0.04] pb-1.5">
-              <dt className="text-slate-500">Volume</dt>
-              <dd className="font-mono text-slate-200">{db.volumeName ?? `nd-db-${db.slug}-data`}</dd>
-            </div>
-            {db.extensions && db.extensions.length > 0 && (
-              <div className="flex justify-between border-b border-white/[0.04] pb-1.5">
-                <dt className="text-slate-500">Extensions</dt>
-                <dd className="flex gap-1.5">
-                  {db.extensions.map((ext) => (
-                    <span key={ext} className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[11px] font-medium text-emerald-300">
-                      {ext}
-                    </span>
-                  ))}
-                </dd>
-              </div>
-            )}
-            <div className="flex justify-between border-b border-white/[0.04] pb-1.5">
-              <dt className="text-slate-500">Created</dt>
-              <dd className="text-slate-300">{formatDateTime(db.createdAt)}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-slate-500">CPU / RAM Limit</dt>
-              <dd className="font-mono text-slate-200">
-                {db.cpuLimitMilli ? `${db.cpuLimitMilli / 1000} cores` : db.cpuShares ? `${db.cpuShares} shares` : 'Unlimited'} / {db.memLimitMb ? `${db.memLimitMb} MB` : 'Unlimited'}
-              </dd>
-            </div>
-          </dl>
-        </Card>
       </div>
 
       {/* Linked services */}
@@ -665,6 +629,44 @@ function OverviewPanel({
               ))}
             </div>
           )}
+        </Card>
+
+        {/* Beside the linked services, so the two columns stay balanced. */}
+        {/* Runtime info card */}
+        <Card className="p-5 space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Runtime &amp; Storage</h2>
+          <dl className="space-y-2 text-xs">
+            <div className="flex justify-between border-b border-white/[0.04] pb-1.5">
+              <dt className="text-slate-500">Container</dt>
+              <dd className="font-mono text-slate-200">{db.containerName ?? `nd-db-${db.slug}`}</dd>
+            </div>
+            <div className="flex justify-between border-b border-white/[0.04] pb-1.5">
+              <dt className="text-slate-500">Volume</dt>
+              <dd className="font-mono text-slate-200">{db.volumeName ?? `nd-db-${db.slug}-data`}</dd>
+            </div>
+            {db.extensions && db.extensions.length > 0 && (
+              <div className="flex justify-between border-b border-white/[0.04] pb-1.5">
+                <dt className="text-slate-500">Extensions</dt>
+                <dd className="flex gap-1.5">
+                  {db.extensions.map((ext) => (
+                    <span key={ext} className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[11px] font-medium text-emerald-300">
+                      {ext}
+                    </span>
+                  ))}
+                </dd>
+              </div>
+            )}
+            <div className="flex justify-between border-b border-white/[0.04] pb-1.5">
+              <dt className="text-slate-500">Created</dt>
+              <dd className="text-slate-300">{formatDateTime(db.createdAt)}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-slate-500">CPU / RAM Limit</dt>
+              <dd className="font-mono text-slate-200">
+                {db.cpuLimitMilli ? `${db.cpuLimitMilli / 1000} cores` : db.cpuShares ? `${db.cpuShares} shares` : 'Unlimited'} / {db.memLimitMb ? `${db.memLimitMb} MB` : 'Unlimited'}
+              </dd>
+            </div>
+          </dl>
         </Card>
       </div>
     </div>

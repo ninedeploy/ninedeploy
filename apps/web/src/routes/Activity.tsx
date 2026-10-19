@@ -342,12 +342,13 @@ export function Activity() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <User size={12} className="text-slate-500" />
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <User size={12} className="shrink-0 text-slate-500" />
                         {row.userName ? (
-                          <span className="font-medium text-slate-300">
-                            {row.userName}
-                            {row.userEmail && <span className="ml-1 text-slate-500">({row.userEmail})</span>}
+                          // The name on one line, the address under it (it split "Ada / Admin" before).
+                          <span className="min-w-0 font-medium text-slate-300">
+                            <span className="block whitespace-nowrap">{row.userName}</span>
+                            {row.userEmail && <span className="block max-w-[14rem] truncate text-[11px] font-normal text-slate-500">({row.userEmail})</span>}
                           </span>
                         ) : row.userId ? (
                           <span className="text-slate-400">User #{row.userId}</span>

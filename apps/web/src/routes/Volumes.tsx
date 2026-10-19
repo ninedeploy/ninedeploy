@@ -161,7 +161,7 @@ export function Volumes() {
       ) : !list.data || list.data.length === 0 ? (
         <Card><EmptyState icon={<HardDrive size={26} />} title="No volumes" hint="Deploy a service with a volume or create a database." /></Card>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="nd-stagger grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {list.data.map((v) => {
             const isRetained = !v.owner;
             const ownerHref = v.owner?.id
@@ -324,7 +324,7 @@ function DockerResources() {
           <Trash2 size={13} /> Prune images
         </Button>
       </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="nd-stagger grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Metric label="Network" value={res.data?.network ?? '—'} />
         <Metric label="Containers" value={String(res.data?.containers ?? '—')} />
         <Metric label="Volumes" value={String(res.data?.volumes ?? '—')} />

@@ -109,7 +109,7 @@ describe('DatabaseDetail', () => {
   it('renders loading skeleton', () => {
     mockOf(api.databases.get).mockReturnValue(new Promise(() => {}));
     renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1' });
-    expect(document.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('.nd-shimmer, .animate-pulse').length).toBeGreaterThan(0);
   });
 
   it('renders error card when database is not found or fails to load', async () => {

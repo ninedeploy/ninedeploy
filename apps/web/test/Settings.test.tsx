@@ -198,7 +198,7 @@ describe('Settings', () => {
     renderWithProviders(<Settings />);
     await openSection('System');
     await screen.findByText('Host Resources');
-    expect(document.querySelector('.animate-pulse')).not.toBeNull();
+    expect(document.querySelector('.nd-shimmer, .animate-pulse')).not.toBeNull();
   });
 
   it('renders the update-check row for each availability state', async () => {
@@ -1415,7 +1415,7 @@ describe('Settings', () => {
     renderWithProviders(<Settings />);
     // Personal sections stay.
     expect(await screen.findAllByText('Account')).not.toHaveLength(0);
-    expect(screen.getByText('Appearance')).toBeInTheDocument();
+    expect(screen.getAllByText('Appearance').length).toBeGreaterThan(0);
     // Operator sections are neither in the sidebar…
     expect(screen.queryByText('Firewall (UFW)')).not.toBeInTheDocument();
     expect(screen.queryByText('System')).not.toBeInTheDocument();

@@ -33,7 +33,7 @@ describe('Sources', () => {
   it('shows skeleton while loading', () => {
     mockOf(api.sources.list).mockReturnValue(new Promise(() => {}));
     renderWithProviders(<Sources />);
-    expect(document.querySelectorAll('.animate-pulse').length).toBe(2);
+    expect(document.querySelectorAll('.nd-shimmer, .animate-pulse').length).toBe(2);
   });
 
   it('shows empty state when there are no sources', async () => {

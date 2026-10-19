@@ -61,14 +61,14 @@ it('shows an error card with retry when the dashboard query fails', async () => 
     mockOf(api.dashboard.get).mockReturnValue(new Promise(() => {}));
     renderWithProviders(<Dashboard />);
     // 5 skeletons + the top fetch bar
-      expect(document.querySelectorAll('.animate-pulse').length).toBe(7);
+      expect(document.querySelectorAll('.nd-shimmer, .animate-pulse').length).toBe(7);
   });
 
   it('returns null when dashboard data is missing', async () => {
     mockOf(api.dashboard.get).mockResolvedValue(null as never);
     const { container } = renderWithProviders(<Dashboard />);
     // wait for the query to settle (loading skeleton disappears)
-    await waitFor(() => expect(container.querySelector('.animate-pulse')).toBeNull());
+    await waitFor(() => expect(container.querySelector('.nd-shimmer, .animate-pulse')).toBeNull());
     expect(container.querySelector('.nd-fade')).toBeNull();
   });
 

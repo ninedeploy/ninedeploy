@@ -1055,16 +1055,16 @@ describe('Config Center & Plugins Frontend Components', () => {
       renderWithProviders(<Settings />);
 
       await waitFor(() => {
-        expect(screen.getByText('Config Center')).toBeInTheDocument();
-        expect(screen.getByText('Plugins')).toBeInTheDocument();
+        expect(screen.getByRole('tab', { name: /Config Center/ })).toBeInTheDocument();
+        expect(screen.getByRole('tab', { name: /Plugins/ })).toBeInTheDocument();
       });
 
-      await user.click(screen.getByText('Config Center'));
+      await user.click(screen.getByRole('tab', { name: /Config Center/ }));
       await waitFor(() => {
         expect(screen.getByText('Configuration Center')).toBeInTheDocument();
       });
 
-      await user.click(screen.getByText('Plugins'));
+      await user.click(screen.getByRole('tab', { name: /Plugins/ }));
       await waitFor(() => {
         expect(screen.getByText('Plugin Ecosystem')).toBeInTheDocument();
       });

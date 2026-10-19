@@ -39,7 +39,7 @@ describe('Users', () => {
   it('shows skeleton while loading', () => {
     mockOf(api.users.list).mockReturnValue(new Promise(() => {}));
     renderWithProviders(<Users />);
-    expect(document.querySelector('.animate-pulse')).not.toBeNull();
+    expect(document.querySelector('.nd-shimmer, .animate-pulse')).not.toBeNull();
   });
 
   it('creates a user via the add-user form', async () => {

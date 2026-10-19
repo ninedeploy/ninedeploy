@@ -203,7 +203,7 @@ export function EnvCard({
                 Multi-line values (PEM keys, JSON documents) are delivered with real line breaks on panels ≥0.10.21; on older panels they arrived as a literal <code className="font-mono">\n</code> — base64-encode them there, or upgrade the server.
               </p>
             )}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => {

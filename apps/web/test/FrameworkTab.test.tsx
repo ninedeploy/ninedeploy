@@ -133,7 +133,7 @@ describe('FrameworkTab', () => {
   it('renders a skeleton while the analysis loads', () => {
     mockOf(api.insights.get).mockReturnValue(new Promise(() => {}) as never);
     renderWithProviders(<FrameworkTab serviceId={1} svc={svc()} />);
-    expect(document.querySelector('.animate-pulse')).not.toBeNull();
+    expect(document.querySelector('.nd-shimmer, .animate-pulse')).not.toBeNull();
   });
 
   it('shows the not-analyzed state, runs the analysis and surfaces the result', async () => {

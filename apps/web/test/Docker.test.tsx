@@ -179,7 +179,7 @@ describe('DockerDashboard', () => {
     apiMock.api.system.dockerEvents.mockReturnValue(new Promise(() => {}));
     apiMock.api.stats.snapshot.mockReturnValue(new Promise(() => {}));
     renderDashboard();
-    expect(document.querySelector('.animate-pulse')).not.toBeNull();
+    expect(document.querySelector('.nd-shimmer, .animate-pulse')).not.toBeNull();
   });
 
   it('renders empty-state variants', async () => {

@@ -52,7 +52,7 @@ describe('Databases', () => {
   it('shows skeleton cards while loading', () => {
     mockOf(api.databases.list).mockReturnValue(new Promise(() => {}));
     renderWithProviders(<Databases />);
-    expect(document.querySelectorAll('.animate-pulse').length).toBe(6);
+    expect(document.querySelectorAll('.nd-shimmer, .animate-pulse').length).toBe(6);
   });
 
   it('shows empty state when there are no databases', async () => {

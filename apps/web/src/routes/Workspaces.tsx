@@ -244,7 +244,7 @@ export function Workspaces() {
           <Select
             value={currentWorkspace?.id ? String(currentWorkspace.id) : ''}
             onChange={(e) => switchWorkspace(Number(e.target.value))}
-            className="w-56"
+            className="w-auto min-w-56 max-w-sm"
           >
             {workspaces.map((w) => (
               <option key={w.id} value={w.id}>
@@ -321,9 +321,9 @@ export function Workspaces() {
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {/* Search filter */}
-            <div className="relative w-48">
+            <div className="relative w-full sm:w-48">
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
               <Input
                 type="text"

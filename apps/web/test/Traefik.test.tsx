@@ -216,7 +216,7 @@ describe('Traefik route', () => {
     const { container } = renderWithProviders(<Traefik />);
     await screen.findByText('Traefik Running');
     fireEvent.click(screen.getByRole('tab', { name: 'Logs' }));
-    expect(container.querySelector('.animate-pulse')).not.toBeNull();
+    expect(container.querySelector('.nd-shimmer, .animate-pulse')).not.toBeNull();
   });
 
   it('restarts Traefik via restart button mutation', async () => {

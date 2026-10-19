@@ -151,7 +151,7 @@ export function NewResource() {
       {show('apps') && apps.length > 0 && (
         <section aria-labelledby="new-apps">
           <h2 id="new-apps" className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Applications</h2>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="nd-stagger grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {apps.map((a) => (
               <AppSourceCard
                 key={a.kind}
@@ -200,7 +200,7 @@ export function NewResource() {
           ) : tplShown.length === 0 ? (
             !nothing && <p className="text-xs text-slate-500">No one-click app matches “{query}”.</p>
           ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="nd-stagger grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {tplShown.map((t) => (
                 <button
                   key={t.id}

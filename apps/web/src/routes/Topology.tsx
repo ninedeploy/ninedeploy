@@ -4,7 +4,6 @@ import { Link } from 'react-router';
 import {
   Background,
   BackgroundVariant,
-  Controls,
   Handle,
   MiniMap,
   Panel,
@@ -40,6 +39,7 @@ import {
   Maximize2,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { useThemeMode } from '../lib/theme.js';
 import { useAuth } from '../lib/auth.js';
 import type { TopologyGraph } from '@ninedeploy/sdk';
 import { Button, ErrorCard, PageHeader, StatusBadge, cn } from '../components/ui.js';
@@ -57,11 +57,17 @@ const LAYOUT = {
   GATEWAY_X: 290,
   SERVICE_X: 600,
   DB_X: 1040,
-  NETWORK_X: 290, // networks share the gateway's x for a clean left column
 
   // Y tiers (top to bottom)
   NETWORK_Y: 0,
   NETWORK_H: 60,
+  // Networks sit in a grid above the services column (at most NET_COLS per
+  // row) instead of one row that grew with every network on the host.
+  NET_COLS: 4,
+  NET_W: 176, // the network node's fixed width (w-44)
+  NET_SPACING_X: 196,
+  NET_ROW_H: 64,
+  SERVICE_W: 256, // the service node's width (w-64)
   MAIN_Y_START: 170, // first service/row y
   MAIN_ROW_SPACING: 165, // vertical gap between service rows
   VOLUME_Y_OFFSET: 120, // distance from owner top to first volume
@@ -114,6 +120,12 @@ type VolumeData = {
 type NetworkData = {
   name: string;
   containers: number;
+};
+
+type NetworkSummaryData = {
+  /** Networks folded away (no service or database of this view is on them). */
+  hidden: number;
+  expanded: boolean;
 };
 
 type GatewayData = {
@@ -275,18 +287,38 @@ function VolumeNode(props: NodeProps) {
 
 function NetworkNode(props: NodeProps) {
   const data = props.data as NetworkData;
+  // Fixed width: a long name is truncated (full name on hover) so nodes in
+  // the grid never overlap.
   return (
-    <div className="rounded-xl border border-cyan-500/40 bg-slate-900/95 px-3 py-2 shadow-lg backdrop-blur-md">
+    <div className="w-44 rounded-xl border border-cyan-500/40 bg-slate-900/95 px-3 py-2 shadow-lg backdrop-blur-md" title={data.name}>
       <Handle type="source" position={Position.Bottom} style={{ background: '#06b6d4', width: 7, height: 7 }} />
-      <div className="flex items-center gap-2">
-        <span className="grid h-6 w-6 place-items-center rounded-lg bg-cyan-500/15 text-cyan-300">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-cyan-500/15 text-cyan-300">
           <Waypoints size={13} />
         </span>
-        <div>
-          <span className="font-mono text-xs font-bold text-slate-200 block">{data.name}</span>
-          <span className="font-mono text-[10px] text-cyan-300">bridge · {data.containers} container(s)</span>
+        <div className="min-w-0">
+          <span className="block truncate font-mono text-xs font-bold text-slate-200">{data.name}</span>
+          <span className="block truncate font-mono text-[10px] text-cyan-300">
+            {data.containers} container{data.containers === 1 ? '' : 's'}
+          </span>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** The "+N more networks" tile; a click shows them all (and folds them back). */
+function NetworkSummaryNode(props: NodeProps) {
+  const data = props.data as NetworkSummaryData;
+  return (
+    <div
+      className="w-44 cursor-pointer rounded-xl border border-dashed border-cyan-500/40 bg-slate-900/80 px-3 py-2 text-center shadow-lg backdrop-blur-md transition hover:border-cyan-400"
+      title={data.expanded ? 'Show only the networks your services and databases use' : 'Show every network on the host'}
+    >
+      <span className="font-mono text-xs font-semibold text-cyan-300">
+        {data.expanded ? 'Show fewer networks' : `+${data.hidden} more network${data.hidden === 1 ? '' : 's'}`}
+      </span>
+      <span className="block text-[10px] text-slate-500">{data.expanded ? 'hide unused' : 'not used by these services'}</span>
     </div>
   );
 }
@@ -294,7 +326,7 @@ function NetworkNode(props: NodeProps) {
 function GatewayNode(props: NodeProps) {
   const data = props.data as GatewayData;
   return (
-    <div className="w-48 rounded-2xl border-2 border-sky-500/50 bg-slate-900/95 p-3.5 shadow-2xl shadow-sky-500/10 backdrop-blur-md">
+    <div className="w-56 rounded-2xl border-2 border-sky-500/50 bg-slate-900/95 p-3.5 shadow-2xl shadow-sky-500/10 backdrop-blur-md">
       <Handle type="target" position={Position.Left} style={{ background: '#0ea5e9', width: 8, height: 8 }} />
       <Handle type="source" position={Position.Right} style={{ background: '#0ea5e9', width: 8, height: 8 }} />
       <div className="flex items-center justify-between">
@@ -303,8 +335,8 @@ function GatewayNode(props: NodeProps) {
             <ShieldCheck size={18} />
           </span>
           <div>
-            <p className="font-bold text-slate-100 text-xs">Traefik v3</p>
-            <p className="text-[10px] text-sky-300 font-mono">HTTP/3 · QUIC</p>
+            <p className="whitespace-nowrap font-bold text-slate-100 text-xs">Traefik v3</p>
+            <p className="whitespace-nowrap text-[10px] text-sky-300 font-mono">HTTP/3 · QUIC</p>
           </div>
         </div>
         <StatusBadge status={data.running ? 'running' : 'stopped'} />
@@ -323,6 +355,7 @@ const nodeTypes = {
   domain: DomainNode,
   volume: VolumeNode,
   network: NetworkNode,
+  networkSummary: NetworkSummaryNode,
   gateway: GatewayNode,
 };
 
@@ -336,6 +369,8 @@ function computeTopologyLayout(
     layerFilter: 'all' | 'compute' | 'storage' | 'network';
     containerStats: Map<string, { cpuPct: number; memMb: number }>;
     volumeSizes: Map<string, number>;
+    /** Every host network, not only those a service or database of this view is on. */
+    showAllNetworks?: boolean;
   },
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
@@ -369,8 +404,25 @@ function computeTopologyLayout(
   // Build the main row positions: one Y per service, evenly spaced. We
   // expand the row height when a service has many domains so its stack
   // never overlaps the next row.
+  // Networks: those a service or database of this view is on, the rest
+  // folded into one "+N more" tile (a host carries many: bridge, host,
+  // other stacks); laid out in a grid so the canvas keeps its shape.
+  const members = new Set<string>();
+  for (const s of services) {
+    if (s.runtimeId) members.add(s.runtimeId);
+    members.add(`nd-svc-${s.slug}`);
+  }
+  for (const d of databases) if (d.host) members.add(d.host);
+  const usedNets = networks.filter((n) => n.containers.some((c) => members.has(c)));
+  const foldable = networks.length - usedNets.length;
+  const shownNets = options.showAllNetworks ? networks : usedNets;
+  const netTiles = showNetwork ? shownNets.length + (foldable > 0 ? 1 : 0) : 0;
+  const netCols = Math.min(LAYOUT.NET_COLS, Math.max(netTiles, 1));
+  const netRows = Math.ceil(netTiles / LAYOUT.NET_COLS);
+  const mainYStart = Math.max(LAYOUT.MAIN_Y_START, LAYOUT.NETWORK_Y + netRows * LAYOUT.NET_ROW_H + 110);
+
   const serviceRowY = new Map<number, number>();
-  let cursorY = LAYOUT.MAIN_Y_START;
+  let cursorY = mainYStart;
   for (const s of services) {
     serviceRowY.set(s.id, cursorY);
     const stackH = Math.max(
@@ -381,16 +433,30 @@ function computeTopologyLayout(
   }
   const mainTierEnd = cursorY;
 
-  // Networks — top band, spread horizontally
-  if (showNetwork) {
-    networks.forEach((n, i) => {
+  // Networks — a grid centred over the services column
+  if (netTiles > 0) {
+    const gridW = (netCols - 1) * LAYOUT.NET_SPACING_X + LAYOUT.NET_W;
+    const startX = LAYOUT.SERVICE_X + LAYOUT.SERVICE_W / 2 - gridW / 2;
+    const at = (i: number) => ({
+      x: startX + (i % netCols) * LAYOUT.NET_SPACING_X,
+      y: LAYOUT.NETWORK_Y + Math.floor(i / netCols) * LAYOUT.NET_ROW_H,
+    });
+    shownNets.forEach((n, i) => {
       nodes.push({
         id: `net-${n.name}`,
         type: 'network',
-        position: { x: LAYOUT.NETWORK_X + i * 180, y: LAYOUT.NETWORK_Y },
+        position: at(i),
         data: { name: n.name, containers: n.containers.length },
       });
     });
+    if (foldable > 0) {
+      nodes.push({
+        id: 'net-more',
+        type: 'networkSummary',
+        position: at(shownNets.length),
+        data: { hidden: foldable, expanded: options.showAllNetworks === true },
+      });
+    }
   }
 
   // Domains — left column, stacked above each service's row start
@@ -425,11 +491,11 @@ function computeTopologyLayout(
     /* v8 ignore start */
     if (domains.length > 0 || services.length > 0) {
     /* v8 ignore stop */
-      const gatewayY = LAYOUT.MAIN_Y_START + (mainTierEnd - LAYOUT.MAIN_Y_START) / 2 - 40;
+      const gatewayY = mainYStart + (mainTierEnd - mainYStart) / 2 - 40;
       nodes.push({
         id: 'gateway',
         type: 'gateway',
-        position: { x: LAYOUT.GATEWAY_X, y: Math.max(gatewayY, LAYOUT.MAIN_Y_START) },
+        position: { x: LAYOUT.GATEWAY_X, y: Math.max(gatewayY, mainYStart) },
         data: {
           running: graph.gateway?.running === true,
           activeRoutes: domains.length,
@@ -503,7 +569,7 @@ function computeTopologyLayout(
   // Databases — right column, aligned with their attached service(s)
   if (showCompute || showStorage) {
     const dbRowY = new Map<number, number>();
-    let dbCursor = LAYOUT.MAIN_Y_START;
+    let dbCursor = mainYStart;
     for (const d of databases) {
       // Rendered both with and without attachments across the tests; the
       // instrumenter cannot see the nullish arm.
@@ -586,7 +652,7 @@ function computeTopologyLayout(
 
   // Network → Service edges (only when network layer is visible)
   if (showNetwork) {
-    for (const n of networks) {
+    for (const n of shownNets) {
       for (const c of n.containers) {
         const target = services.find((s) => s.runtimeId === c || `nd-svc-${s.slug}` === c);
         if (!target) continue;
@@ -1018,16 +1084,17 @@ function TopologyFlowGate(props: {
   onSelectNode: (node: { id: string; type?: string; data: any }) => void;
 }) {
   const { graph, layerFilter, containerStatsMap, volumeSizeMap, onSelectNode } = props;
+  const [showAllNetworks, setShowAllNetworks] = useState(false);
   const { nodes, edges } = useMemo(
-    () => computeTopologyLayout(graph, { layerFilter, containerStats: containerStatsMap, volumeSizes: volumeSizeMap }),
-    [graph, layerFilter, containerStatsMap, volumeSizeMap],
+    () => computeTopologyLayout(graph, { layerFilter, containerStats: containerStatsMap, volumeSizes: volumeSizeMap, showAllNetworks }),
+    [graph, layerFilter, containerStatsMap, volumeSizeMap, showAllNetworks],
   );
 
   return (
     <TopologyCanvasWithClick
       nodes={nodes}
       edges={edges}
-      onSelectNode={onSelectNode}
+      onSelectNode={(node) => (node.type === 'networkSummary' ? setShowAllNetworks((v) => !v) : onSelectNode(node))}
     />
   );
 }
@@ -1037,6 +1104,7 @@ function TopologyCanvasWithClick(props: {
   edges: Edge[];
   onSelectNode: (node: { id: string; type?: string; data: any }) => void;
 }) {
+  const colorMode = useThemeMode();
   const [nodes, setNodes] = useState<Node[]>(props.nodes);
   const [edges, setEdges] = useState<Edge[]>(props.edges);
   const [, setUserMoved] = useState(false);
@@ -1114,6 +1182,7 @@ function TopologyCanvasWithClick(props: {
       fitView
       fitViewOptions={{ padding: 0.18, duration: 600, maxZoom: 1.0 }}
       proOptions={{ hideAttribution: true }}
+      colorMode={colorMode}
       defaultEdgeOptions={defaultEdgeOptions}
       snapToGrid
       snapGrid={LAYOUT.SNAP_GRID}
@@ -1128,12 +1197,7 @@ function TopologyCanvasWithClick(props: {
       panOnDrag
       deleteKeyCode={null}
     >
-      <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color="#334155" />
-
-      <Controls
-        className="!border-white/10 !bg-slate-900/90 !rounded-xl overflow-hidden shadow-xl"
-        showInteractive={false}
-      />
+      <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color={colorMode === 'light' ? '#cbd5e1' : '#334155'} />
 
       <Panel position="top-right" className="nodrag nopan mt-2 mr-2">
         <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-slate-900/90 p-1 shadow-xl backdrop-blur-md">
@@ -1187,8 +1251,8 @@ function TopologyCanvasWithClick(props: {
           if (n.type === 'domain') return '#38bdf8';
           return '#06b6d4';
         }}
-        className="!bg-slate-950/80 !border-white/10 !rounded-2xl !overflow-hidden !shadow-2xl hidden md:block"
-        maskColor="rgba(15, 23, 42, 0.75)"
+        className="!rounded-2xl !overflow-hidden !shadow-2xl hidden md:block"
+        maskColor={colorMode === 'light' ? 'rgba(241, 245, 249, 0.7)' : 'rgba(15, 23, 42, 0.75)'}
         pannable
         zoomable
       />

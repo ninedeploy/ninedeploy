@@ -119,7 +119,7 @@ describe('Hub', () => {
   it('shows skeleton while loading', () => {
     mockOf(api.templates.list).mockReturnValue(new Promise(() => {}));
     renderWithProviders(<Hub />);
-    expect(document.querySelectorAll('.animate-pulse').length).toBe(4);
+    expect(document.querySelectorAll('.nd-shimmer, .animate-pulse').length).toBe(4);
   });
 
   it('shows an error card with retry when the templates query fails', async () => {
@@ -425,7 +425,7 @@ describe('Hub', () => {
 
       renderWithProviders(<Hub />);
       await user.click(screen.getByRole('button', { name: /Extension Marketplace/ }));
-      expect(document.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
+      expect(document.querySelectorAll('.nd-shimmer, .animate-pulse').length).toBeGreaterThan(0);
     });
 
     it('shows error state with retry in marketplace tab', async () => {

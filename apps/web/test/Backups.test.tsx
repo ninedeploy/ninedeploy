@@ -45,7 +45,7 @@ describe('Backups', () => {
   it('shows skeleton while loading', () => {
     mockOf(api.backups.list).mockReturnValue(new Promise(() => {}));
     renderWithProviders(<Backups />);
-    expect(document.querySelector('.animate-pulse')).not.toBeNull();
+    expect(document.querySelector('.nd-shimmer, .animate-pulse')).not.toBeNull();
   });
 
   it('shows empty state when there are no backups', async () => {

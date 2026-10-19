@@ -34,7 +34,7 @@ describe('Domains', () => {
   it('shows skeleton while loading', () => {
     mockOf(api.domains.all).mockReturnValue(new Promise(() => {}));
     renderWithProviders(<Domains />);
-    expect(document.querySelector('.animate-pulse')).not.toBeNull();
+    expect(document.querySelector('.nd-shimmer, .animate-pulse')).not.toBeNull();
   });
 
   it('shows empty state when there are no domains', async () => {

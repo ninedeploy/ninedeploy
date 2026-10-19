@@ -103,7 +103,7 @@ describe('Monitoring', () => {
     const never = new Promise(() => {});
     apiMock.api.stats.snapshot.mockReturnValueOnce(never as never);
     const { unmount } = renderWithProviders(<Monitoring />);
-    expect(document.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('.nd-shimmer, .animate-pulse').length).toBeGreaterThan(0);
     unmount();
 
     apiMock.api.stats.snapshot.mockResolvedValue({ host: null, containers: [] } as never);
@@ -146,7 +146,7 @@ describe('Monitoring', () => {
     // service sparkline renders an svg
     expect(document.querySelectorAll('svg').length).toBeGreaterThan(0);
     // limits form for service — mem is prefilled with the current limit (512)
-    const cpuInput = screen.getAllByPlaceholderText('cpu shares')[0]!;
+    const cpuInput = screen.getAllByPlaceholderText('shares')[0]!;
     const memInput = screen.getAllByPlaceholderText('mem MB')[0]!;
     expect(memInput).toHaveValue('512');
     await userEvent.type(cpuInput, '512');
@@ -163,7 +163,7 @@ describe('Monitoring', () => {
     apiMock.api.limits.setService.mockResolvedValue({} as never);
     renderWithProviders(<Monitoring />);
     expect((await screen.findAllByText('api')).length).toBeGreaterThan(0);
-    const cpuInput = screen.getAllByPlaceholderText('cpu shares')[0]!;
+    const cpuInput = screen.getAllByPlaceholderText('shares')[0]!;
     await userEvent.clear(screen.getAllByPlaceholderText('mem MB')[0]!);
     fireEvent.submit(cpuInput.closest('form')!);
     await waitFor(() => expect(apiMock.api.limits.setService).toHaveBeenCalledWith(1, { memLimitMb: null }));
@@ -180,7 +180,7 @@ describe('Monitoring', () => {
     apiMock.api.limits.setService.mockResolvedValue({ cpuShares: null, memLimitMb: null } as never);
     renderWithProviders(<Monitoring />);
     expect((await screen.findAllByText('api')).length).toBeGreaterThan(0);
-    const cpuInput = screen.getAllByPlaceholderText('cpu shares')[0]!;
+    const cpuInput = screen.getAllByPlaceholderText('shares')[0]!;
     await userEvent.clear(screen.getAllByPlaceholderText('mem MB')[0]!);
     fireEvent.submit(cpuInput.closest('form')!);
     await waitFor(() => expect(apiMock.api.limits.setService).toHaveBeenCalledWith(1, { memLimitMb: null }));
@@ -191,7 +191,7 @@ describe('Monitoring', () => {
     apiMock.api.limits.setService.mockReturnValue(new Promise(() => {}) as never);
     renderWithProviders(<Monitoring />);
     expect((await screen.findAllByText('api')).length).toBeGreaterThan(0);
-    const cpuInput = screen.getAllByPlaceholderText('cpu shares')[0]!;
+    const cpuInput = screen.getAllByPlaceholderText('shares')[0]!;
     await userEvent.type(cpuInput, '256');
     fireEvent.submit(cpuInput.closest('form')!);
     expect(await screen.findByText('Saving…')).toBeInTheDocument();
@@ -221,7 +221,7 @@ describe('Monitoring', () => {
     apiMock.api.limits.setService.mockRejectedValue(new Error('denied') as never);
     renderWithProviders(<Monitoring />);
     expect((await screen.findAllByText('api')).length).toBeGreaterThan(0);
-    fireEvent.submit(screen.getAllByPlaceholderText('cpu shares')[0]!.closest('form')!);
+    fireEvent.submit(screen.getAllByPlaceholderText('shares')[0]!.closest('form')!);
     await waitFor(() => expect(apiMock.api.limits.setService).toHaveBeenCalled());
   });
 

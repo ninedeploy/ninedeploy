@@ -114,7 +114,7 @@ export function StorageSection() {
       {/* Disk Usage Overview */}
       <Card>
         <CardBody className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
                 <HardDrive size={20} />

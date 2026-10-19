@@ -148,13 +148,13 @@ export function DockerDashboard() {
                   setSelectedContainer(manualContainer.trim());
                 }
               }}
-              className="flex items-center gap-2"
+              className="flex w-full items-center gap-2 sm:w-auto"
             >
               <Input
                 value={manualContainer}
                 onChange={(e) => setManualContainer(e.target.value)}
                 placeholder="Inspect container name…"
-                className="h-8 w-48 text-xs font-mono"
+                className="h-8 min-w-0 flex-1 text-xs font-mono sm:w-48 sm:flex-none"
               />
               <Button type="submit" variant="secondary" size="sm" className="h-8 text-xs">
                 <Search size={13} className="mr-1" /> Inspect
@@ -335,8 +335,9 @@ export function DockerDashboard() {
             <p className="text-xs text-slate-600">No images.</p>
           ) : (
             <ul className="space-y-1">
-              {r.images.slice(0, 15).map((img) => (
-                <li key={`${img.repo}:${img.tag}`} className="flex items-center justify-between rounded-lg bg-white/[0.02] px-3 py-2 text-xs ring-1 ring-inset ring-white/5">
+              {r.images.slice(0, 15).map((img, i) => (
+                // Untagged images all read <none>:<none>; the position keeps keys unique.
+                <li key={`${i}-${img.repo}:${img.tag}`} className="flex items-center justify-between rounded-lg bg-white/[0.02] px-3 py-2 text-xs ring-1 ring-inset ring-white/5">
                   <span className="min-w-0 truncate font-mono text-slate-300">
                     {img.repo}<span className="text-slate-600">:{img.tag}</span>
                   </span>
@@ -355,8 +356,9 @@ export function DockerDashboard() {
             <EmptyState icon={<Radio size={22} />} title="No recent events" hint="Auto-refreshes every 20s." />
           ) : (
             <ul className="max-h-96 space-y-1 overflow-y-auto">
-              {events.data.events.map((e) => (
-                <li key={`${e.time}-${e.type}-${e.action}-${e.name}`} className="flex items-center justify-between rounded-lg bg-white/[0.02] px-3 py-1.5 font-mono text-[11px] ring-1 ring-inset ring-white/5">
+              {events.data.events.map((e, i) => (
+                // Two events of one kind can share a second (a volume mounted twice).
+                <li key={`${i}-${e.time}-${e.type}-${e.action}-${e.name}`} className="flex items-center justify-between rounded-lg bg-white/[0.02] px-3 py-1.5 font-mono text-[11px] ring-1 ring-inset ring-white/5">
                   <span className="min-w-0 truncate text-slate-400">
                     <span className="text-slate-600">{e.type}</span> <span className="text-indigo-300">{e.action}</span> {e.name}
                   </span>

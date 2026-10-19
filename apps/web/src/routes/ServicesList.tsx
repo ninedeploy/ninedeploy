@@ -4,7 +4,7 @@ import { Cpu, GitBranch, HardDrive, Layers, MemoryStick, Play, Plus, Search, Ser
 import { Link } from 'react-router';
 import { api } from '../lib/api.js';
 import { useTagScope } from '../lib/projects.js';
-import { Button, Card, EmptyState, ErrorCard, Input, PageHeader, Skeleton, StatusBadge } from '../components/ui.js';
+import { Button, Card, EmptyState, ErrorCard, Input, PageHeader, Skeleton, StatusBadge, cn } from '../components/ui.js';
 import { DeployWizard } from '../components/DeployWizard.js';
 import { LanesModal } from '../components/LanesModal.js';
 import { ServiceDomainLauncher } from '../components/ServiceDomainLauncher.js';
@@ -203,7 +203,7 @@ export function ServicesList() {
               />
             </Card>
           ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="nd-stagger grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {filteredServices.map((s) => {
                 const liveStat = snapshot.data?.containers.find((c) => c.refId === s.id && c.kind === 'service');
                 const isRunning = s.status === 'running';
@@ -257,7 +257,13 @@ export function ServicesList() {
                         )}
                       </div>
 
-                      <div className="mt-4 flex items-center justify-between border-t border-white/[0.04] pt-3 pr-12 text-xs text-slate-500">
+                      {/* Room for the stop/start button (bottom-left) and the domain launcher (bottom-right) laid over it. */}
+                      <div
+                        className={cn(
+                          'mt-4 flex items-center justify-between gap-2 border-t border-white/[0.04] pt-3 pr-16 text-xs text-slate-500',
+                          (isRunning || s.status === 'stopped') && 'pl-9',
+                        )}
+                      >
                         <div className="flex items-center gap-3">
                           <span className="font-mono uppercase tracking-wide text-slate-400 text-[10px]">{s.type}</span>
                           <span className="flex items-center gap-1 font-mono text-[11px]">

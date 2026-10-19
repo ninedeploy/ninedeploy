@@ -93,7 +93,7 @@ export function ApiTokensCard() {
           </div>
         )}
 
-        <form onSubmit={submit} className="mb-5 grid gap-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-end">
+        <form onSubmit={submit} className="mb-5 grid gap-3 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,0.8fr)_auto] sm:items-start">
           <Field label="Name">
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="github-actions" maxLength={100} />
           </Field>
@@ -115,9 +115,12 @@ export function ApiTokensCard() {
               ))}
             </Select>
           </Field>
-          <Button type="submit" size="md" disabled={create.isPending}>
-            {create.isPending ? 'Creating…' : 'Create token'}
-          </Button>
+          {/* Lined up with the fields, under their labels. */}
+          <div className="sm:pt-[22px]">
+            <Button type="submit" size="md" disabled={create.isPending} className="w-full sm:w-auto">
+              {create.isPending ? 'Creating…' : 'Create token'}
+            </Button>
+          </div>
         </form>
 
         {tokens.isLoading ? (

@@ -104,8 +104,10 @@ export function PipelineStepper({
   const isZeroDowntimeLive = deployStatus === 'running';
   const completedStages = stages.filter((stage) => stage.status === 'success').length;
 
+  // Theme surfaces (bg-slate-950/*), never a fixed hex: in light mode the
+  // fixed navy left the heading dark on dark.
   return (
-    <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#0c0f17] shadow-lg shadow-black/10">
+    <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-slate-950/60 shadow-lg shadow-black/10">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/[0.06] px-4 py-3.5">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-emerald-500/20 bg-emerald-500/10 text-emerald-400">
@@ -139,7 +141,7 @@ export function PipelineStepper({
       </div>
 
       <div className="overflow-x-auto px-4 py-4">
-        <div className="grid min-w-[42rem] grid-cols-7">
+        <div className="grid min-w-[30rem] grid-cols-7">
           {stages.map((st, index) => {
           const Icon = st.icon;
           const isPending = st.status === 'pending';
@@ -159,11 +161,11 @@ export function PipelineStepper({
                 {index > 0 && (
                   <span className={cn(
                     'absolute right-1/2 top-[17px] h-px w-full -translate-y-1/2',
-                    isSuccess || isRunning ? 'bg-emerald-500/40' : isFailed ? 'bg-rose-500/40' : 'bg-white/[0.08]',
+                    isSuccess ? 'bg-emerald-500/40' : isRunning ? 'nd-shimmer bg-blue-400/40' : isFailed ? 'bg-rose-500/40' : 'bg-white/[0.08]',
                   )} />
                 )}
                 <div className={cn(
-                  'relative z-10 flex h-9 w-9 items-center justify-center rounded-full border bg-[#0c0f17] transition group-hover:scale-105',
+                  'relative z-10 flex h-9 w-9 items-center justify-center rounded-full border bg-slate-950 transition group-hover:scale-105',
                   isRunning && 'border-blue-400/60 text-blue-300 shadow-[0_0_18px_rgba(96,165,250,0.2)]',
                   isSuccess && 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400',
                   isFailed && 'border-rose-500/50 bg-rose-500/10 text-rose-400',

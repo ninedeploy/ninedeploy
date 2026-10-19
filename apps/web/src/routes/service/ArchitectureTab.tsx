@@ -6,7 +6,6 @@ import {
   BackgroundVariant,
   Controls,
   Handle,
-  MiniMap,
   Position,
   ReactFlow,
   type Edge,
@@ -35,6 +34,7 @@ import {
 } from 'lucide-react';
 import type { Service } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
+import { useThemeMode } from '../../lib/theme.js';
 import { Button, Card, CardBody, StatusBadge } from '../../components/ui.js';
 import { useCopy } from '../../lib/format.js';
 
@@ -278,6 +278,7 @@ const nodeTypes = {
 };
 
 export function ArchitectureTab({ service }: { service: Service }) {
+  const colorMode = useThemeMode();
   const { copied, copy } = useCopy();
   const [selectedNode, setSelectedNode] = useState<{ id: string; type?: string; data: any } | null>(null);
 
@@ -507,24 +508,13 @@ export function ArchitectureTab({ service }: { service: Service }) {
               onNodeClick={(_event, node) => setSelectedNode({ id: node.id, type: node.type, data: node.data })}
               onPaneClick={() => setSelectedNode(null)}
               fitView
-              fitViewOptions={{ padding: 0.2 }}
+              fitViewOptions={{ padding: 0.12, maxZoom: 1.1 }}
               proOptions={{ hideAttribution: true }}
-              defaultEdgeOptions={{ style: { stroke: '#475569' } }}
+              colorMode={colorMode}
+              defaultEdgeOptions={{ style: { stroke: colorMode === 'light' ? '#94a3b8' : '#475569' } }}
             >
-              <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color="#334155" />
-              <Controls className="!border-white/10 !bg-slate-900/90 !rounded-xl overflow-hidden shadow-xl" showInteractive={false} />
-              <MiniMap
-                nodeColor={(n) => {
-                  if (n.type === 'svcMain') return '#6366f1';
-                  if (n.type === 'svcDb') return '#10b981';
-                  if (n.type === 'svcGateway') return '#0ea5e9';
-                  if (n.type === 'svcStorage') return '#f59e0b';
-                  if (n.type === 'svcDomain') return '#38bdf8';
-                  return '#64748b';
-                }}
-                className="!bg-slate-950/80 !border-white/10 !rounded-2xl !overflow-hidden !shadow-2xl hidden md:block"
-                maskColor="rgba(15, 23, 42, 0.75)"
-              />
+              <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color={colorMode === 'light' ? '#cbd5e1' : '#334155'} />
+              <Controls className="!rounded-xl overflow-hidden shadow-xl" showInteractive={false} />
             </ReactFlow>
           </ReactFlowProvider>
         </div>

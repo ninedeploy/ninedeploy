@@ -213,7 +213,7 @@ it('shows an error state with retry when the graph query fails', async () => {
       expect(flow.getAttribute('data-edges')).toBe('6');
       expect(screen.getByTestId('flow-provider')).toBeInTheDocument();
       expect(screen.getByTestId('background')).toBeInTheDocument();
-      expect(screen.getByTestId('controls')).toBeInTheDocument();
+      expect(screen.queryByTestId('controls')).not.toBeInTheDocument(); // the page's own zoom panel replaces React Flow's
       // node components rendered via nodeTypes with their data
       expect(screen.getByTestId('react-flow')).toHaveTextContent('api');
       expect(screen.getByTestId('react-flow')).toHaveTextContent('worker');

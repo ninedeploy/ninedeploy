@@ -100,6 +100,31 @@ html[data-theme='light'][data-accent='violet']  { --nd-accent-soft: #7c3aed; --n
   ::selection { background: color-mix(in srgb, var(--nd-accent) 35%, transparent); }
 }
 
+/* ── Native controls ──────────────────────────────────────────────────────
+   color-scheme tells the browser which palette its own widgets use (the
+   time and date pickers' icons, select popups, scrollbars), so they never
+   draw a black icon on the dark theme. Checkboxes, radios and ranges take
+   the accent instead of the browser blue; the file input gets a button. */
+html { color-scheme: dark; }
+html[data-theme='light'] { color-scheme: light; }
+input[type='checkbox'], input[type='radio'], input[type='range'], progress { accent-color: var(--nd-accent); }
+input[type='file'] { font-size: 0.75rem; color: rgb(148 163 184); }
+input[type='file']::file-selector-button {
+  margin-right: 0.75rem;
+  border: 0;
+  border-radius: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  font: inherit;
+  font-weight: 500;
+  color: var(--nd-accent-soft-text);
+  background: var(--nd-accent-soft-bg);
+  box-shadow: inset 0 0 0 1px var(--nd-accent-soft-ring);
+  cursor: pointer;
+  transition: filter .15s;
+}
+input[type='file']::file-selector-button:hover { filter: brightness(1.15); }
+html[data-theme='light'] input[type='file'] { color: #475569; }
+
 /* ── Scrollbars ────────────────────────────────────────────────────────── */
 @layer utilities {
   * { scrollbar-width: thin; scrollbar-color: rgba(148,163,184,.25) transparent; }
@@ -417,6 +442,64 @@ html[data-theme='light'] body [role='tablist'] button[aria-selected='true'] {
   box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.08);
 }
 
+/* ── Remaining dark-tuned utilities (found by a scan of every class in use) ──
+   Hover and group-hover text that turned white on white, slate borders and
+   fills that drew dark frames and switches, and the translucent white
+   steps the ladders above did not list. */
+html[data-theme='light'] body :is(
+  .hover\:text-white:hover, .hover\:text-slate-100:hover, .hover\:text-slate-200:hover,
+  .hover\:text-slate-300:hover, .group:hover .group-hover\:text-white,
+  .group:hover .group-hover\:text-slate-100, .group:hover .group-hover\:text-slate-200
+) { color: #0f172a; }
+html[data-theme='light'] body .hover\:text-slate-400:hover { color: #334155; }
+html[data-theme='light'] body :is(.hover\:text-sky-200:hover, .group:hover .group-hover\:text-sky-300) { color: #0369a1; }
+html[data-theme='light'] body :is(.hover\:text-amber-200:hover, .group:hover .group-hover\:text-amber-300) { color: #b45309; }
+html[data-theme='light'] body .group:hover .group-hover\:text-emerald-300 { color: #047857; }
+html[data-theme='light'] body :is(.text-rose-100, .text-rose-200\/80, .text-rose-300\/90) { color: #be123c; }
+html[data-theme='light'] body .text-emerald-100 { color: #047857; }
+html[data-theme='light'] body :is(.text-amber-300\/70, .text-amber-300\/80) { color: #b45309; }
+html[data-theme='light'] body .text-blue-200 { color: #1d4ed8; }
+html[data-theme='light'] body :is(.text-fuchsia-200, .text-fuchsia-300, .text-fuchsia-400) { color: #a21caf; }
+
+html[data-theme='light'] body :is(
+  .border-slate-700, .border-slate-700\/50, .border-slate-700\/60, .border-slate-700\/80,
+  .border-white\/20, .border-white\/\[0\.15\], .hover\:border-white\/20:hover, .hover\:border-slate-700:hover
+) { border-color: #cbd5e1; }
+html[data-theme='light'] body :is(.border-slate-800, .border-white\/\[0\.07\], .hover\:border-white\/10:hover) { border-color: #e2e8f0; }
+html[data-theme='light'] body .bg-slate-700 { background-color: #cbd5e1; }
+html[data-theme='light'] body :is(.bg-slate-800\/40, .hover\:bg-slate-800\/80:hover) { background-color: #eef2f7; }
+html[data-theme='light'] body :is(.bg-white\/\[0\.05\], .bg-white\/\[0\.07\]) { background-color: #f1f5f9; }
+html[data-theme='light'] body .bg-white\/\[0\.01\] { background-color: #fbfcfd; }
+html[data-theme='light'] body :is(
+  .hover\:bg-white\/\[0\.01\]:hover, .hover\:bg-white\/\[0\.02\]:hover, .hover\:bg-white\/\[0\.03\]:hover,
+  .hover\:bg-white\/\[0\.05\]:hover, .hover\:bg-white\/\[0\.12\]:hover
+) { background-color: #f1f5f9; }
+html[data-theme='light'] body :is(.bg-black\/25, .hover\:bg-black\/30:hover, .focus\:bg-black\/40:focus) { background-color: #f8fafc; }
+html[data-theme='light'] body .bg-indigo-950\/20 { background-color: color-mix(in srgb, var(--nd-accent) 6%, #ffffff); }
+html[data-theme='light'] body :is(
+  .ring-white\/\[0\.05\], .ring-white\/\[0\.06\], .ring-white\/\[0\.08\],
+  .hover\:ring-white\/15:hover, .group:hover .group-hover\:ring-white\/20
+) { --tw-ring-color: #e2e8f0; }
+html[data-theme='light'] body :is(.divide-white\/\[0\.04\], .divide-white\/\[0\.05\], .divide-white\/\[0\.06\]) > :not([hidden]) ~ :not([hidden]) { border-color: #e2e8f0; }
+
+/* Dark islands (the terminal): they stay dark in the light theme, so the
+   light mappings above are undone inside them — otherwise the forced dark
+   text lands on the island's navy ("Web frontend · shell" was invisible). */
+html[data-theme='light'] body .nd-dark-island { color: #e2e8f0; }
+html[data-theme='light'] body .nd-dark-island :is(.text-white, .text-slate-100) { color: #f1f5f9; }
+html[data-theme='light'] body .nd-dark-island .text-slate-200 { color: #e2e8f0; }
+html[data-theme='light'] body .nd-dark-island .text-slate-300 { color: #cbd5e1; }
+html[data-theme='light'] body .nd-dark-island .text-slate-400 { color: #94a3b8; }
+html[data-theme='light'] body .nd-dark-island .text-slate-500 { color: #64748b; }
+html[data-theme='light'] body .nd-dark-island .text-slate-600 { color: #475569; }
+html[data-theme='light'] body .nd-dark-island :is(.bg-white\/5, .bg-white\/10, .bg-white\/\[0\.04\], .bg-white\/\[0\.06\], .bg-white\/\[0\.08\]) {
+  background-color: rgba(255, 255, 255, 0.06);
+  box-shadow: none;
+}
+html[data-theme='light'] body .nd-dark-island :is(.border-white\/5, .border-white\/10, .border-white\/15) { border-color: rgba(255, 255, 255, 0.1); }
+html[data-theme='light'] body .nd-dark-island :is(.hover\:bg-white\/10:hover, .hover\:bg-white\/5:hover) { background-color: rgba(255, 255, 255, 0.1); }
+html[data-theme='light'] body .nd-dark-island :is(.hover\:text-white:hover, .hover\:text-slate-200:hover) { color: #ffffff; }
+
 /* Scrollbars in light mode */
 html[data-theme='light'] * { scrollbar-color: rgba(148, 163, 184, 0.4) transparent; }
 html[data-theme='light'] *::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.35); }
@@ -442,6 +525,69 @@ html[data-theme='light'] *::-webkit-scrollbar-thumb { background: rgba(148, 163,
   to   { opacity: 1; }
 }
 .nd-fade { animation: nd-fade-in .25s ease-out both; }
+
+/* Entrance: a short rise. Fill mode `backwards` only holds the start frame
+   during a delay; once it ends no transform is left behind (see the note
+   above), so a modal opened from inside never lands off-screen. */
+@keyframes nd-rise-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.nd-rise { animation: nd-rise-in .35s cubic-bezier(.2, .7, .2, 1) backwards; }
+/* Children of a grid or list come in one after another (the first twelve). */
+.nd-stagger > :nth-child(n) { animation: nd-rise-in .35s cubic-bezier(.2, .7, .2, 1) backwards; }
+.nd-stagger > :nth-child(2) { animation-delay: 40ms; }
+.nd-stagger > :nth-child(3) { animation-delay: 80ms; }
+.nd-stagger > :nth-child(4) { animation-delay: 120ms; }
+.nd-stagger > :nth-child(5) { animation-delay: 160ms; }
+.nd-stagger > :nth-child(6) { animation-delay: 200ms; }
+.nd-stagger > :nth-child(7) { animation-delay: 240ms; }
+.nd-stagger > :nth-child(8) { animation-delay: 280ms; }
+.nd-stagger > :nth-child(9) { animation-delay: 320ms; }
+.nd-stagger > :nth-child(10) { animation-delay: 360ms; }
+.nd-stagger > :nth-child(11) { animation-delay: 400ms; }
+.nd-stagger > :nth-child(n + 12) { animation-delay: 440ms; }
+
+/* Skeleton: a soft light sweep instead of a blink. */
+@keyframes nd-shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+.nd-shimmer {
+  background-image: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.07) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: nd-shimmer 1.4s ease-in-out infinite;
+}
+html[data-theme='light'] .nd-shimmer { background-image: linear-gradient(90deg, transparent 0%, rgba(15, 23, 42, 0.06) 50%, transparent 100%); }
+
+/* Status dots: work in progress pulses, a live service breathes. */
+@keyframes nd-ping { 0% { box-shadow: 0 0 0 0 currentColor; } 70%, 100% { box-shadow: 0 0 0 5px transparent; } }
+.nd-dot-busy { animation: nd-ping 1.4s ease-out infinite; }
+@keyframes nd-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+.nd-dot-live { animation: nd-breathe 2.4s ease-in-out infinite; }
+
+/* SVG art (empty states, illustrations): transforms here stay inside the
+   SVG, so they are safe to loop. */
+@keyframes nd-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+.nd-float { animation: nd-float 4s ease-in-out infinite; }
+@keyframes nd-orbit { to { transform: rotate(360deg); } }
+.nd-orbit { transform-box: view-box; transform-origin: center; animation: nd-orbit 18s linear infinite; }
+.nd-orbit-rev { transform-box: view-box; transform-origin: center; animation: nd-orbit 26s linear infinite reverse; }
+@keyframes nd-dash { to { stroke-dashoffset: -24; } }
+.nd-flow { stroke-dasharray: 4 8; animation: nd-dash 1.2s linear infinite; }
+@keyframes nd-twinkle { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+.nd-twinkle { animation: nd-twinkle 2.6s ease-in-out infinite; }
+
+/* In-progress bars: moving stripes. */
+@keyframes nd-stripes { to { background-position: 28px 0; } }
+.nd-stripes {
+  background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.18) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, 0.18) 50%, rgba(255, 255, 255, 0.18) 75%, transparent 75%, transparent);
+  background-size: 28px 28px;
+  animation: nd-stripes .9s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nd-fade, .nd-rise, .nd-stagger > :nth-child(n), .nd-shimmer, .nd-dot-busy, .nd-dot-live, .nd-float, .nd-orbit, .nd-orbit-rev, .nd-flow, .nd-twinkle, .nd-stripes {
+    animation: none;
+  }
+}
 
 /* ── Terminal (XTerm.js) ─────────────────────────────────────────────────── */
 .terminal-container .xterm {

@@ -6,7 +6,6 @@ import {
   BackgroundVariant,
   Controls,
   Handle,
-  MiniMap,
   Position,
   ReactFlow,
   type Edge,
@@ -24,6 +23,7 @@ import {
 } from 'lucide-react';
 import type { DatabaseDetail as IDatabaseDetail } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
+import { useThemeMode } from '../../lib/theme.js';
 import { Card, CardBody, StatusBadge } from '../../components/ui.js';
 
 type ConsumerNodeData = { id: number; name: string; slug: string; type?: string };
@@ -133,6 +133,7 @@ const nodeTypes = {
 };
 
 export function DatabaseTopologyTab({ db }: { db: IDatabaseDetail }) {
+  const colorMode = useThemeMode();
   const backups = useQuery({ queryKey: ['backups'], queryFn: () => api.backups.list() });
 
   const { nodes, edges } = useMemo(() => {
@@ -240,23 +241,13 @@ export function DatabaseTopologyTab({ db }: { db: IDatabaseDetail }) {
               edges={edges}
               nodeTypes={nodeTypes}
               fitView
-              fitViewOptions={{ padding: 0.25 }}
+              fitViewOptions={{ padding: 0.18, maxZoom: 1.1 }}
               proOptions={{ hideAttribution: true }}
-              defaultEdgeOptions={{ style: { stroke: '#475569' } }}
+              colorMode={colorMode}
+              defaultEdgeOptions={{ style: { stroke: colorMode === 'light' ? '#94a3b8' : '#475569' } }}
             >
-              <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color="#334155" />
-              <Controls className="!border-white/10 !bg-slate-900/90 !rounded-xl overflow-hidden shadow-xl" showInteractive={false} />
-              <MiniMap
-                nodeColor={(n) => {
-                  if (n.type === 'dbCenter') return '#10b981';
-                  if (n.type === 'dbConsumer') return '#6366f1';
-                  if (n.type === 'dbVolume') return '#f59e0b';
-                  if (n.type === 'dbBackup') return '#38bdf8';
-                  return '#64748b';
-                }}
-                className="!bg-slate-950/80 !border-white/10 !rounded-2xl !overflow-hidden !shadow-2xl hidden md:block"
-                maskColor="rgba(15, 23, 42, 0.75)"
-              />
+              <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color={colorMode === 'light' ? '#cbd5e1' : '#334155'} />
+              <Controls className="!rounded-xl overflow-hidden shadow-xl" showInteractive={false} />
             </ReactFlow>
           </ReactFlowProvider>
         </div>

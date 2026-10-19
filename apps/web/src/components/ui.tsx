@@ -58,12 +58,15 @@ export const Button = forwardRef<
   return (
     <button
       ref={ref}
-      className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all duration-150',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/70 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950',
-        'disabled:opacity-50 disabled:pointer-events-none active:scale-[0.98]',
-        VARIANTS[variant],
-        SIZES[size],
+      className={fieldClass(
+        cn(
+          // A label never wraps: a squeezed "Delete service" read as two buttons.
+          'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg font-medium transition-all duration-150',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/70 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950',
+          'disabled:opacity-50 disabled:pointer-events-none active:scale-[0.98]',
+          VARIANTS[variant],
+          SIZES[size],
+        ),
         className,
       )}
       {...props}
@@ -80,11 +83,13 @@ export function Card({
 }: React.HTMLAttributes<HTMLDivElement> & { interactive?: boolean }) {
   return (
     <div
-      className={cn(
-        'rounded-2xl border border-white/[0.08] bg-white/[0.025] backdrop-blur-sm',
-        interactive &&
-          'cursor-pointer transition-all duration-200 hover:border-white/15 hover:bg-white/[0.04] hover:shadow-xl hover:shadow-black/40',
-        className,
+      className={fieldClass(
+        cn(
+          'rounded-2xl border border-white/[0.08] bg-white/[0.025] backdrop-blur-sm',
+          interactive &&
+            'cursor-pointer transition-all duration-200 hover:border-white/15 hover:bg-white/[0.04] hover:shadow-xl hover:shadow-black/40',
+        ),
+        className ?? undefined,
       )}
       {...props}
     >
@@ -101,30 +106,41 @@ export function CardBody({ className, children }: { className?: string; children
 const fieldBase =
   'w-full rounded-lg bg-black/30 px-3 text-sm text-slate-100 ring-1 ring-inset ring-white/10 placeholder:text-slate-500 transition focus:outline-none focus:ring-2 focus:ring-indigo-400/60 focus:bg-black/40';
 
+const COLOR =
+  '(?:white|black|transparent|current|slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)(?:-\\d{2,3})?(?:/\\S+)?';
+
 /**
- * Utility groups where a field's caller overrides the default. `cn` only
- * joins, and between two classes of one group the stylesheet's order wins,
- * not the caller: `w-28` lost to the default `w-full` (a path box took the
- * whole row and pushed the Add button out of its card), `h-9` to `h-10`.
+ * Utility groups where a component's caller overrides the default. `cn`
+ * only joins, and between two classes of one group the stylesheet's order
+ * wins, not the caller: `w-28` lost to an input's `w-full` (a path box took
+ * the whole row and pushed the Add button out of its card), `h-9` to
+ * `h-10`, and an icon button's `p-0` to the button's `px-3` (its icon
+ * shrank to a dot). Each entry: the caller's classes that override, and the
+ * defaults they replace.
  */
-const FIELD_GROUPS: readonly RegExp[] = [
-  /^w-/,
-  /^h-/,
-  /^px-/,
-  /^py-/,
-  /^pl-/,
-  /^pr-/,
-  /^text-(?:xs|sm|base|lg|[2-9]?xl|\[[^\]]+\])$/,
-  /^rounded(?:-|$)/,
-  /^bg-/,
+const OVERRIDE_GROUPS: ReadonlyArray<readonly [own: RegExp, base: RegExp]> = [
+  [/^w-/, /^w-/],
+  [/^h-/, /^h-/],
+  // `p-*` sets every side, so it replaces the axis and side defaults too.
+  [/^p-/, /^p[xytblr]?-/],
+  [/^px-/, /^px-/],
+  [/^py-/, /^py-/],
+  [/^pl-/, /^pl-/],
+  [/^pr-/, /^pr-/],
+  [/^text-(?:xs|sm|base|lg|[2-9]?xl|\[[^\]]+\])$/, /^text-(?:xs|sm|base|lg|[2-9]?xl|\[[^\]]+\])$/],
+  [new RegExp(`^text-${COLOR}$`), new RegExp(`^text-${COLOR}$`)],
+  [new RegExp(`^border-${COLOR}$`), new RegExp(`^border-${COLOR}$`)],
+  [new RegExp(`^ring-${COLOR}$`), new RegExp(`^ring-${COLOR}$`)],
+  [/^rounded(?:-|$)/, /^rounded(?:-|$)/],
+  [/^bg-/, /^bg-/],
 ];
 
 /** `base` then `extra`, minus every unprefixed `base` class whose group `extra` sets itself. */
 export function fieldClass(base: string, extra?: string): string {
   if (!extra) return base;
   const own = extra.split(/\s+/).filter(Boolean);
-  const overridden = FIELD_GROUPS.filter((g) => own.some((c) => g.test(c)));
-  const kept = base.split(/\s+/).filter((c) => c && !overridden.some((g) => g.test(c)));
+  const replaced = OVERRIDE_GROUPS.filter(([mine]) => own.some((c) => mine.test(c))).map(([, theirs]) => theirs);
+  const kept = base.split(/\s+/).filter((c) => c && !replaced.some((g) => g.test(c)));
   return [...kept, ...own].join(' ');
 }
 
@@ -247,21 +263,22 @@ export function Field({
   // The label must point at the id the control will ACTUALLY carry: a
   // caller-provided id wins over the generated one.
   const controlId = control ? ((control.props as { id?: string }).id ?? id) : id;
+  // The hint sits under the control: beside the label it squeezed the label
+  // onto three lines ("HEALTHCHECK / TIMEOUT / (SECONDS)") and, in a row of
+  // fields, the control itself down to a sliver.
   return (
-    <div>
-      <div className="flex items-center justify-between mb-1.5">
-        {control ? (
-          <label htmlFor={controlId} className={labelClass}>
-            {label}
-          </label>
-        ) : (
-          <span className={labelClass}>{label}</span>
-        )}
-        {hint && <span className="text-[11px] text-slate-500">{hint}</span>}
-      </div>
+    <div className="min-w-0">
+      {control ? (
+        <label htmlFor={controlId} className={cn(labelClass, 'mb-1.5')}>
+          {label}
+        </label>
+      ) : (
+        <span className={cn(labelClass, 'mb-1.5')}>{label}</span>
+      )}
       {control
         ? cloneElement(control as ReactElement<{ id?: string }>, { id: controlId })
         : children}
+      {hint && <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">{hint}</p>}
       {error != null && <p className="mt-1.5 text-[11px] leading-relaxed text-rose-300">{error}</p>}
     </div>
   );
@@ -317,15 +334,24 @@ const STATUS_TONES: Record<string, string> = {
   pending: 'bg-amber-500/15 text-amber-300 ring-amber-500/20',
 };
 
+/** States with work in flight: their dot pulses. */
+const BUSY_STATUSES = new Set(['deploying', 'building', 'queued', 'pending', 'deleting']);
+
 export function StatusBadge({ status }: { status: string }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset',
+        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset',
         STATUS_TONES[status] ?? 'bg-slate-500/15 text-slate-300 ring-slate-500/20',
       )}
     >
-      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+      <span
+        className={cn(
+          'h-1.5 w-1.5 rounded-full bg-current',
+          BUSY_STATUSES.has(status) && 'nd-dot-busy',
+          (status === 'running' || status === 'active') && 'nd-dot-live',
+        )}
+      />
       {status}
     </span>
   );
@@ -351,19 +377,55 @@ export function FullScreenSpinner() {
 }
 
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn('animate-pulse rounded-md bg-white/[0.06]', className)} />;
+  return <div className={cn('nd-shimmer rounded-md bg-white/[0.06]', className)} />;
+}
+
+/**
+ * The art behind an empty state's icon: a soft accent glow, two slow
+ * orbits with a satellite each and a few twinkling sparks. Decorative only
+ * (aria-hidden); the motion stops under prefers-reduced-motion.
+ */
+export function EmptyStateArt({ children }: { children?: ReactNode }) {
+  const id = useId().replace(/:/g, '');
+  return (
+    <div className="relative mb-3 grid h-28 w-36 place-items-center">
+      <svg viewBox="0 0 144 112" className="absolute inset-0 h-full w-full text-indigo-400" aria-hidden="true" focusable="false">
+        <defs>
+          <radialGradient id={`nd-glow-${id}`} cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="currentColor" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
+          </radialGradient>
+        </defs>
+        <circle cx="72" cy="56" r="54" fill={`url(#nd-glow-${id})`} />
+        <g className="nd-orbit">
+          <ellipse cx="72" cy="56" rx="58" ry="40" fill="none" stroke="currentColor" strokeOpacity="0.18" strokeDasharray="2 7" />
+          <circle cx="130" cy="56" r="3" fill="currentColor" fillOpacity="0.8" />
+        </g>
+        <g className="nd-orbit-rev">
+          <circle cx="72" cy="56" r="34" fill="none" stroke="currentColor" strokeOpacity="0.14" />
+          <circle cx="72" cy="22" r="2" fill="currentColor" fillOpacity="0.6" />
+        </g>
+        <g fill="currentColor">
+          <path className="nd-twinkle" d="M22 24l1.5 3.5L27 29l-3.5 1.5L22 34l-1.5-3.5L17 29l3.5-1.5z" />
+          <path className="nd-twinkle" style={{ animationDelay: '0.9s' }} d="M120 84l1.2 2.8L124 88l-2.8 1.2L120 92l-1.2-2.8L116 88l2.8-1.2z" />
+          <circle className="nd-twinkle" style={{ animationDelay: '1.6s' }} cx="116" cy="18" r="1.5" />
+        </g>
+      </svg>
+      {children && (
+        <div className="nd-float relative grid h-14 w-14 place-items-center rounded-2xl bg-slate-950/80 text-indigo-300 shadow-lg shadow-black/20 ring-1 ring-inset ring-white/10 backdrop-blur-sm">
+          {children}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function EmptyState({ icon, title, hint, action }: { icon?: ReactNode; title: string; hint?: string; action?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-      {icon && (
-        <div className="mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-white/[0.04] text-slate-500 ring-1 ring-inset ring-white/10">
-          {icon}
-        </div>
-      )}
+    <div className="nd-rise flex flex-col items-center justify-center px-6 py-14 text-center">
+      {icon && <EmptyStateArt>{icon}</EmptyStateArt>}
       <p className="text-sm font-medium text-slate-200">{title}</p>
-      {hint && <p className="mt-1 max-w-xs text-sm text-slate-500">{hint}</p>}
+      {hint && <p className="mt-1 max-w-sm text-sm text-slate-500">{hint}</p>}
       {action && <div className="mt-5">{action}</div>}
     </div>
   );
@@ -728,7 +790,7 @@ const TONES = {
 } as const;
 
 export function Badge({ tone = 'neutral', className, children }: { tone?: keyof typeof TONES; className?: string; children: ReactNode }) {
-  return <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset', TONES[tone], className)}>{children}</span>;
+  return <span className={cn('inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset', TONES[tone], className)}>{children}</span>;
 }
 
 // ── Stat card ─────────────────────────────────────────────────────────────

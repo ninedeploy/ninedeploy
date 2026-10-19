@@ -78,7 +78,7 @@ describe('Doctor', () => {
   it('shows the skeleton while the scan is in flight', () => {
     mockOf(api.doctor.scan).mockReturnValue(new Promise(() => {}));
     renderWithProviders(<Doctor />);
-    expect(document.querySelector('.animate-pulse')).toBeInTheDocument();
+    expect(document.querySelector('.nd-shimmer, .animate-pulse')).toBeInTheDocument();
   });
 
   it('r562: a failed scan shows an error with retry instead of a blank page', async () => {

@@ -155,7 +155,7 @@ describe('ServiceDetail', () => {
   it('shows skeleton while the service loads', () => {
     mockOf(api.services.get).mockReturnValue(new Promise(() => {}));
     renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
-    expect(document.querySelector('.animate-pulse')).not.toBeNull();
+    expect(document.querySelector('.nd-shimmer, .animate-pulse')).not.toBeNull();
   });
 
   it('renders the repository analysis card and refreshes it', async () => {
@@ -1494,7 +1494,7 @@ describe('ServiceDetail', () => {
     mockOf(api.activity.list).mockReturnValue(new Promise(() => {}) as never);
     renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
     await openTab('Activity');
-    expect(document.querySelector('.animate-pulse')).not.toBeNull();
+    expect(document.querySelector('.nd-shimmer, .animate-pulse')).not.toBeNull();
   });
 
   it('redirects /services/abc to /services when the id is not a positive integer', async () => {
@@ -1514,7 +1514,7 @@ describe('ServiceDetail', () => {
     const first = renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
     await openTab('Deploys');
     fireEvent.click(await screen.findByText('Config diff vs previous deploy'));
-    expect(document.querySelector('.animate-pulse')).not.toBeNull();
+    expect(document.querySelector('.nd-shimmer, .animate-pulse')).not.toBeNull();
     first.unmount();
 
     // First recorded deployment — nothing to compare against.

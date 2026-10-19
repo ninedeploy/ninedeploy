@@ -110,10 +110,18 @@ describe('Labels route', () => {
     expect(navigate).toHaveBeenCalledWith('/services');
   });
 
-  it('scopes the query to the active workspace', async () => {
+  it("shows the active workspace's labels and the instance-wide ones, not another workspace's", async () => {
     withWorkspaces([workspace], workspace);
+    mockOf(api.labels.list).mockResolvedValue([
+      label({ id: 1, name: 'mine', workspaceId: 2 }),
+      label({ id: 2, name: 'everywhere', workspaceId: null }),
+      label({ id: 3, name: 'theirs', workspaceId: 9 }),
+    ] as never);
     renderWithProviders(<Labels />);
-    await waitFor(() => expect(api.labels.list).toHaveBeenCalledWith('?workspaceId=2'));
+    expect(await screen.findByText('mine')).toBeInTheDocument();
+    expect(screen.getByText('everywhere')).toBeInTheDocument();
+    expect(screen.queryByText('theirs')).not.toBeInTheDocument();
+    expect(api.labels.list).toHaveBeenCalledWith('');
   });
 
   it('shows the loading skeleton, then the empty state', async () => {
@@ -124,7 +132,7 @@ describe('Labels route', () => {
       }) as never,
     );
     const { container } = renderWithProviders(<Labels />);
-    expect(container.querySelector('.animate-pulse')).not.toBeNull();
+    expect(container.querySelector('.nd-shimmer, .animate-pulse')).not.toBeNull();
 
     release([]);
     expect(await screen.findByText('No labels yet')).toBeInTheDocument();

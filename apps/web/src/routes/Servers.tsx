@@ -351,7 +351,7 @@ export function Servers() {
       {/* Auto-Join Quick Instructions Banner */}
       <Card className="border-indigo-500/20 bg-indigo-500/[0.03]">
         <div className="p-5">
-          <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Sparkles className="text-indigo-400" size={16} />
               <h3 className="text-xs font-semibold uppercase tracking-wider text-indigo-300">

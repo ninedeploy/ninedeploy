@@ -8,6 +8,7 @@ import { Link, Outlet, useLocation } from 'react-router';
 import { useAuth } from '../lib/auth.js';
 import { eventsWsUrl, getToken } from '../lib/api.js';
 import { useTheme } from '../lib/theme.js';
+import { NARROW_QUERY, useMediaQuery } from '../lib/useMediaQuery.js';
 import { Logo } from './Logo.js';
 import { cn, useDialogFocus } from './ui.js';
 import { CommandPalette } from './CommandPalette.js';
@@ -205,7 +206,12 @@ export function Layout() {
     ];
   }, [menus.data, isSimple, user?.isOperator]);
 
+  // Below `md` the secondary panel is a drawer over the content: closed on
+  // first paint and after every navigation. Open beside the content it left
+  // a phone ~170px for the page, and every page overflowed.
+  const narrow = useMediaQuery(NARROW_QUERY);
   const [activeGroup, setActiveGroup] = useState<string | null>(() => {
+    if (window.matchMedia?.(NARROW_QUERY).matches) return null;
     // On first paint: if the current path matches a known group, open that
     // group; otherwise fall back to the second group ("Organize") so the
     // secondary panel always has something visible on a fresh load (the
@@ -230,11 +236,15 @@ export function Layout() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  // Auto-open the correct group when navigating.
+  // Auto-open the correct group when navigating (on a phone: close the drawer).
   useEffect(() => {
+    if (narrow) {
+      setActiveGroup(null);
+      return;
+    }
     const g = findGroup(location.pathname, navGroups);
     if (g) setActiveGroup(g);
-  }, [location.pathname, navGroups]);
+  }, [location.pathname, navGroups, narrow]);
 
   const currentGroup = navGroups.find((g) => g.id === activeGroup) ?? null;
 
@@ -328,8 +338,21 @@ export function Layout() {
       </div>
 
       {/* ── Secondary Panel (group items) ────────────────── */}
+      {currentGroup && narrow && (
+        <button
+          type="button"
+          aria-label="Close the menu"
+          onClick={() => setActiveGroup(null)}
+          className="nd-fade fixed inset-y-0 left-12 right-0 z-20 bg-black/50 backdrop-blur-[1px]"
+        />
+      )}
       {currentGroup && (
-        <div className="nd-flex nd-fade relative z-10 flex w-52 shrink-0 flex-col border-r border-white/[0.06] bg-white/[0.015] backdrop-blur-sm">
+        <div
+          className={cn(
+            'nd-flex nd-fade z-10 flex w-52 shrink-0 flex-col border-r border-white/[0.06] backdrop-blur-sm',
+            narrow ? 'fixed inset-y-0 left-12 z-30 bg-slate-950 shadow-2xl shadow-black/50' : 'relative bg-white/[0.015]',
+          )}
+        >
           {/* Group header */}
           <div className="flex items-center gap-2 px-4 pb-2 pt-4">
             <currentGroup.icon size={14} className="text-indigo-400" />
@@ -383,7 +406,7 @@ export function Layout() {
             project / label scope below — on one row the filters pushed the
             actions off the bar. */}
         <header className="shrink-0 border-b border-white/[0.06]">
-          <div className="flex h-12 items-center justify-between gap-3 px-5">
+          <div className="flex h-12 items-center justify-between gap-3 px-4 md:px-5">
             <div className="flex min-w-0 items-center gap-2 text-sm">
               <span className="truncate font-medium text-slate-300">{currentGroup?.label ?? 'NineDeploy'}</span>
               {currentItem && (
@@ -403,7 +426,10 @@ export function Layout() {
                 <Rocket size={13} />
                 <span className="hidden sm:inline">New</span>
               </button>
-              <ModeToggle />
+              {/* Room on a phone: the mode switch lives in Settings too. */}
+              <div className="hidden sm:block">
+                <ModeToggle />
+              </div>
               <button type="button"
                 onClick={toggleTheme}
                 className="rounded-lg p-2 text-slate-500 transition hover:bg-white/[0.06] hover:text-slate-300"
@@ -418,7 +444,7 @@ export function Layout() {
               >
                 <Search size={13} />
                 <span className="hidden sm:inline">Search</span>
-                <kbd className="rounded bg-white/[0.06] px-1 py-0.5 text-[9px]">⌘K</kbd>
+                <kbd className="hidden rounded bg-white/[0.06] px-1 py-0.5 text-[9px] sm:inline">⌘K</kbd>
               </button>
               <DeployQueueBadge />
               <button type="button"
@@ -431,7 +457,7 @@ export function Layout() {
               <HelpButton />
             </div>
           </div>
-          <fieldset className="m-0 flex min-h-10 min-w-0 flex-wrap items-center gap-2 border-t border-white/[0.04] px-5 py-1.5 text-sm" aria-label="Scope filters">
+          <fieldset className="m-0 flex min-h-10 min-w-0 flex-wrap items-center gap-2 border-t border-white/[0.04] px-4 py-1.5 text-sm md:px-5" aria-label="Scope filters">
             <WorkspaceSwitcher />
             <TopBarFilters />
           </fieldset>
@@ -442,7 +468,8 @@ export function Layout() {
 
         {/* Content */}
         <main className="nd-fade flex-1 overflow-auto">
-          <div className="mx-auto max-w-6xl px-5 py-7 md:px-8">
+          {/* Keyed by path: each page rises in once; a tab change (?tab=) does not. */}
+          <div key={location.pathname} className="nd-rise mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-7">
             <Outlet />
           </div>
         </main>

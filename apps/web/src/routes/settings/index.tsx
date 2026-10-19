@@ -37,7 +37,7 @@ import { SsoSection } from './SsoSection.js';
 import { FirewallSection } from './FirewallSection.js';
 import { PanelBackupSection } from './PanelBackupSection.js';
 import { SwarmSection } from './SwarmSection.js';
-import { AutofillRejectingInput, PageHeader, cn } from '../../components/ui.js';
+import { AutofillRejectingInput, PageHeader, Select, cn } from '../../components/ui.js';
 
 type SectionId =
   | 'account'
@@ -162,8 +162,29 @@ export function Settings() {
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        {/* Below lg: one picker instead of the sixteen-item list, which pushed
+            the section itself a whole phone screen down. */}
+        <div className="lg:hidden">
+          <Select
+            aria-label="Settings section"
+            value={section}
+            onChange={(e) => setSection(e.target.value as SectionId)}
+            className="h-10"
+          >
+            {baseGroups.map((group) => (
+              <optgroup key={group.category} label={group.category}>
+                {group.items.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </Select>
+        </div>
+
         {/* Categorized Vertical Sidebar */}
-        <aside className="lg:col-span-4 xl:col-span-3">
+        <aside className="hidden lg:col-span-4 lg:block xl:col-span-3">
           <div className="sticky top-6 space-y-4 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3 backdrop-blur-md">
             {/* Quick Filter Input */}
             <div className="relative">

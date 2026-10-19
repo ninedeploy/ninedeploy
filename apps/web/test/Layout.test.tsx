@@ -359,6 +359,30 @@ describe('Layout', () => {
     expect(screen.getByText('Collapse')).toBeInTheDocument();
   });
 
+  it('on a phone the panel is a drawer: closed at first, opened from the rail, closed by the backdrop and by navigating', async () => {
+    const listeners: Array<() => void> = [];
+    const media = { matches: true, addEventListener: (_: string, fn: () => void) => listeners.push(fn), removeEventListener: vi.fn() };
+    vi.stubGlobal('matchMedia', vi.fn(() => media));
+    const user = userEvent.setup();
+    renderLayout('/databases');
+    expect(screen.queryByText('Collapse')).not.toBeInTheDocument();
+    const dataBtn = screen.getAllByRole('button').find((b) => b.textContent === 'Data') as HTMLButtonElement;
+    await user.click(dataBtn);
+    expect(screen.getByText('Collapse')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Close the menu' }));
+    expect(screen.queryByText('Collapse')).not.toBeInTheDocument();
+    await user.click(dataBtn);
+    await user.click(screen.getByRole('link', { name: /Volumes/ }));
+    expect(screen.queryByText('Collapse')).not.toBeInTheDocument();
+    // Widening the window brings the panel back beside the content.
+    media.matches = false;
+    act(() => {
+      for (const fn of listeners) fn();
+    });
+    expect(screen.getByText('Collapse')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Close the menu' })).not.toBeInTheDocument();
+  });
+
   it('collapses the panel via the collapse button', async () => {
     const user = userEvent.setup();
     renderLayout('/databases');

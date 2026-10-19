@@ -52,7 +52,7 @@ describe('EnvCard', () => {
   it('shows a skeleton while loading', () => {
     apiMock.api.env.list.mockReturnValue(new Promise(() => {}));
     const { container } = renderCard();
-    expect(container.querySelector('.animate-pulse')).not.toBeNull();
+    expect(container.querySelector('.nd-shimmer, .animate-pulse')).not.toBeNull();
   });
 
   it('shows an empty state when there are no variables', async () => {

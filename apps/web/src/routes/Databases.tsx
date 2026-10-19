@@ -103,7 +103,7 @@ export function Databases() {
           />
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="nd-stagger grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {list.data.map((d) => (
             <Card key={d.id} interactive className="flex h-full flex-col p-5">
               <div className="flex items-start justify-between">

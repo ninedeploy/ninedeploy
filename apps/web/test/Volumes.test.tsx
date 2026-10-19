@@ -84,7 +84,7 @@ describe('Volumes', () => {
     mockOf(api.volumes.list).mockReturnValue(new Promise(() => {}));
     mockOf(api.system.resources).mockResolvedValue({} as never);
     renderWithProviders(<Volumes />);
-    expect(document.querySelectorAll('.animate-pulse').length).toBe(3);
+    expect(document.querySelectorAll('.nd-shimmer, .animate-pulse').length).toBe(3);
   });
 
   it('shows empty state when there are no volumes', async () => {

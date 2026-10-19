@@ -95,9 +95,9 @@ export function AttachmentsCard({ serviceId }: { serviceId: number }) {
   return (
     <Card>
       <CardBody className="space-y-4">
-        <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
-          <div className="flex items-center gap-2">
-            <div className="grid h-7 w-7 place-items-center rounded-lg bg-emerald-500/10 text-emerald-400 ring-1 ring-inset ring-emerald-500/20">
+        <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] pb-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-emerald-500/10 text-emerald-400 ring-1 ring-inset ring-emerald-500/20">
               <Database size={15} />
             </div>
             <div>
@@ -109,7 +109,7 @@ export function AttachmentsCard({ serviceId }: { serviceId: number }) {
           </div>
           <Link
             to="/databases"
-            className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-400 hover:text-indigo-300 transition"
+            className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] font-medium text-indigo-400 hover:text-indigo-300 transition"
           >
             <Plus size={12} /> New DB
           </Link>

@@ -147,7 +147,7 @@ export function Monitoring() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="nd-stagger grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {/* Primary Local Host Node */}
             <button
               type="button"
@@ -451,7 +451,7 @@ export function Monitoring() {
             />
           </Card>
         ) : viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="nd-stagger grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {filteredContainers.map((c) => (
               <ContainerCard key={`${c.kind}-${c.refId}`} c={c} />
             ))}
@@ -980,33 +980,36 @@ function LimitsRow({ kind, id, memLimitMb }: { kind: 'service' | 'database'; id:
   }, [id, memLimitMb]);
 
   return (
-    <form onSubmit={onSubmit} onClick={(e) => e.stopPropagation()} className="mt-4 flex items-center gap-2 border-t border-white/5 pt-3">
-      <span className="text-[10px] uppercase tracking-wide text-slate-500">Limits</span>
+    <form onSubmit={onSubmit} onClick={(e) => e.stopPropagation()} className="mt-4 flex items-center gap-1.5 border-t border-white/5 pt-3">
+      <span className="shrink-0 text-[10px] uppercase tracking-wide text-slate-500">Limits</span>
       <Input
         value={cpuCap}
         onChange={(e) => setCpuCap(e.target.value)}
         placeholder="cpus"
+        aria-label="CPU cap in cores"
         title="CPU cap in cores — blank keeps the current value, 0 removes it"
-        className="h-7 w-16 font-mono text-[11px]"
+        className="h-7 min-w-0 flex-1 px-2 font-mono text-[11px]"
       />
       <Input
         value={cpu}
         onChange={(e) => setCpu(e.target.value)}
-        placeholder="cpu shares"
+        placeholder="shares"
+        aria-label="CPU shares"
         title="Relative CPU weight — blank keeps the current value, 0 removes it"
-        className="h-7 w-20 font-mono text-[11px]"
+        className="h-7 min-w-0 flex-1 px-2 font-mono text-[11px]"
       />
       <Input
         value={mem}
         onChange={(e) => setMem(e.target.value)}
         placeholder="mem MB"
-        className="h-7 w-20 font-mono text-[11px]"
+        aria-label="Memory limit in MB"
+        className="h-7 min-w-0 flex-1 px-2 font-mono text-[11px]"
       />
       <Button
         type="submit"
         size="sm"
         variant="secondary"
-        className="ml-auto h-7 px-2.5 text-[11px] font-medium text-indigo-300 hover:text-white"
+        className="h-7 shrink-0 px-2.5 text-[11px] font-medium text-indigo-300 hover:text-white"
         disabled={save.isPending}
       >
         {save.isPending ? 'Saving…' : 'Save'}

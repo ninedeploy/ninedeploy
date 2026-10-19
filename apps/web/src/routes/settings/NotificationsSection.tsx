@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { CirclePause, CirclePlay, Pencil, Send, Trash2 } from 'lucide-react';
+import { BellRing, CirclePause, CirclePlay, Pencil, Send, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
-import { Button, Card, CardBody, Input, cn } from '../../components/ui.js';
+import { Button, Card, CardBody, EmptyState, Input, cn } from '../../components/ui.js';
 import { NotificationWizard } from '../../components/NotificationWizard.js';
 
 /** Shape of a Discord channel's `config_json` blob (G-18 PR-A + G-18B). */
@@ -184,7 +184,13 @@ export function NotificationsSection() {
               )}
             </div>
           ))}
-          {(!channels.data || channels.data.length === 0) && !showChannel && <p className="py-2 text-xs text-slate-600">No notification channels configured.</p>}
+          {(!channels.data || channels.data.length === 0) && !showChannel && (
+            <EmptyState
+              icon={<BellRing size={22} />}
+              title="No notification channels configured."
+              hint="Add a channel to hear about deploys, alerts, backups and domains where your team already is."
+            />
+          )}
         </div>
       </CardBody>
     </Card>

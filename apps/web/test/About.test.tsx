@@ -70,21 +70,21 @@ describe('About', () => {
   it('shows skeleton while loading', () => {
     mockOf(api.about.get).mockReturnValue(new Promise(() => {}));
     renderWithProviders(<About />);
-    expect(document.querySelector('.animate-pulse')).not.toBeNull();
+    expect(document.querySelector('.nd-shimmer, .animate-pulse')).not.toBeNull();
   });
 
   it('returns null when there is no data', async () => {
     mockOf(api.about.get).mockResolvedValue(null as never);
     const { container } = renderWithProviders(<About />);
     // wait for the query to settle (loading skeleton disappears)
-    await waitFor(() => expect(container.querySelector('.animate-pulse')).toBeNull());
+    await waitFor(() => expect(container.querySelector('.nd-shimmer, .animate-pulse')).toBeNull());
     expect(container.querySelector('.nd-fade')).toBeNull();
   });
 
   it('returns null when changelog is empty', async () => {
     mockOf(api.about.get).mockResolvedValue({ ...aboutData, changelog: [] } as never);
     const { container } = renderWithProviders(<About />);
-    await waitFor(() => expect(container.querySelector('.animate-pulse')).toBeNull());
+    await waitFor(() => expect(container.querySelector('.nd-shimmer, .animate-pulse')).toBeNull());
     expect(container.querySelector('.nd-fade')).toBeNull();
   });
 

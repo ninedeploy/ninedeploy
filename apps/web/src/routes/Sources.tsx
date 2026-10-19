@@ -368,7 +368,7 @@ export function Sources() {
           <EmptyState icon={<KeyRound size={26} />} title="No sources" hint="Add a GitHub/GitLab token or SSH deploy key to deploy private repos." />
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="nd-stagger grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {list.data.map((s) => (
             <Card key={s.id} className="p-5">
               <div className="flex items-start justify-between">

@@ -34,7 +34,7 @@ describe('ServicesList', () => {
   it('shows skeleton while loading', () => {
     mockOf(api.services.list).mockReturnValue(new Promise(() => {}));
     renderWithProviders(<ServicesList />);
-    expect(document.querySelectorAll('.animate-pulse').length).toBe(9);
+    expect(document.querySelectorAll('.nd-shimmer, .animate-pulse').length).toBe(9);
   });
 
   it('shows an error card with retry when the services query fails', async () => {

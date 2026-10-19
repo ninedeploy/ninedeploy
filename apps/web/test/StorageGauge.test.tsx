@@ -30,7 +30,7 @@ describe('StorageGauge', () => {
       queryClient: createQueryClient(),
     });
     expect(screen.getByText('…')).toBeInTheDocument();
-    expect(container.querySelector('.animate-pulse')).not.toBeNull();
+    expect(container.querySelector('.nd-shimmer, .animate-pulse')).not.toBeNull();
   });
 
   it('formats 0 bytes as 0 MB with the emerald fill', async () => {

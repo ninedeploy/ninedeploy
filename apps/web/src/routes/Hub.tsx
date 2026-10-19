@@ -220,7 +220,7 @@ export function Hub() {
             />
           </Card>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="nd-stagger grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {filteredTemplates.map((t) => (
               <Card
                 key={t.id}
@@ -239,12 +239,15 @@ export function Hub() {
                 className="group p-5"
               >
                 <div className="flex items-start gap-3">
-                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-white/[0.05] text-slate-400 ring-1 ring-inset ring-white/10">
-                    <Package size={20} />
+                  {/* The app's own emoji, as on the New page; a box only when it has none. */}
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-white/[0.05] text-slate-400 ring-1 ring-inset ring-white/10 transition group-hover:ring-indigo-500/40">
+                    {t.emoji ? <span className="text-xl leading-none" aria-hidden="true">{t.emoji}</span> : <Package size={20} />}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-100">{t.name}</span>
+                    {/* Name on its own line, badges under it: beside the badges a long
+                        name broke into three lines and a badge touched the card edge. */}
+                    <span className="block truncate font-semibold text-slate-100" title={t.name}>{t.name}</span>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
                       {t.runtimeVerified ? (
                         <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium uppercase text-emerald-300 ring-1 ring-inset ring-emerald-500/20">
                           <ShieldCheck size={9} /> verified
@@ -297,7 +300,7 @@ export function Hub() {
             />
           </Card>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="nd-stagger grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {filteredMarketplace.map((m) => (
               <Card key={m.id} className="flex flex-col justify-between p-5">
                 <div>

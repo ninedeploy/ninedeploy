@@ -264,7 +264,7 @@ export function TerminalPanel({ target, title, onClose }: TerminalPanelProps) {
     <>
       <div
         className={cn(
-          'flex flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#0a101b] shadow-2xl transition-all duration-200',
+          'nd-dark-island flex flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#0a101b] shadow-2xl transition-all duration-200',
           fullscreen ? 'hidden' : 'h-[520px] max-h-[70vh] w-full',
         )}
       >
@@ -279,7 +279,7 @@ export function TerminalPanel({ target, title, onClose }: TerminalPanelProps) {
               (!fullscreen || awaitingPassword) && 'hidden',
             )}
           >
-            <div className="flex h-[92vh] w-[95vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#0a101b] shadow-2xl">
+            <div className="nd-dark-island flex h-[92vh] w-[95vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#0a101b] shadow-2xl">
               {titlebar}
               <div ref={overlayScreenRef} className={screenClassName} />
             </div>

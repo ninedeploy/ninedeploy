@@ -200,19 +200,18 @@ function MetricsCard({ serviceId, svc }: { serviceId: number; svc: Service }) {
             <Activity size={16} className="text-indigo-400" />
             <span className="text-sm font-semibold text-slate-100">Live Resource Telemetry</span>
           </div>
-          <span className="rounded-full bg-white/[0.04] px-2 py-0.5 font-mono text-[10px] text-slate-400">
+          <span className="whitespace-nowrap rounded-full bg-white/[0.04] px-2 py-0.5 font-mono text-[10px] text-slate-400">
             {isOnline ? 'Live 5s' : 'Container Offline'}
           </span>
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="flex items-center gap-1.5 text-slate-400 font-medium">
-                <Cpu size={13} className="text-indigo-400" /> CPU Load
-              </span>
-              <span className="font-mono text-xs font-semibold text-slate-100">{displayCpu}</span>
-            </div>
+            {/* Label over value: side by side the value broke onto two lines ("4.5 / MiB"). */}
+            <span className="flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium text-slate-400">
+              <Cpu size={13} className="text-indigo-400" /> CPU Load
+            </span>
+            <span className="block whitespace-nowrap font-mono text-lg font-semibold tabular-nums text-slate-100">{displayCpu}</span>
             <div className="overflow-hidden rounded-lg">
               <Sparkline
                 points={cpuPoints.length > 0 ? cpuPoints : [0, 0]}
@@ -224,12 +223,10 @@ function MetricsCard({ serviceId, svc }: { serviceId: number; svc: Service }) {
           </div>
 
           <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="flex items-center gap-1.5 text-slate-400 font-medium">
-                <MemoryStick size={13} className="text-emerald-400" /> Memory Usage
-              </span>
-              <span className="font-mono text-xs font-semibold text-slate-100">{displayMem}</span>
-            </div>
+            <span className="flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium text-slate-400">
+              <MemoryStick size={13} className="text-emerald-400" /> Memory Usage
+            </span>
+            <span className="block whitespace-nowrap font-mono text-lg font-semibold tabular-nums text-slate-100">{displayMem}</span>
             <div className="overflow-hidden rounded-lg">
               <Sparkline
                 points={memPoints.length > 0 ? memPoints : [0, 0]}
@@ -273,9 +270,10 @@ function RuntimeInfoCard({ svc }: { svc: Service }) {
 
         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
           {rows.map(([k, v]) => (
-            <div key={k} className="rounded-lg bg-white/[0.02] border border-white/[0.04] p-2 flex items-center justify-between">
-              <dt className="text-slate-400 text-[11px] font-medium">{k}</dt>
-              <dd className="truncate font-mono text-[11px] text-slate-200" title={v}>{v}</dd>
+            // Label over value: side by side, long values were cut to "not dep…".
+            <div key={k} className="min-w-0 rounded-lg border border-white/[0.04] bg-white/[0.02] px-2.5 py-2">
+              <dt className="text-[10px] font-medium uppercase tracking-wide text-slate-500">{k}</dt>
+              <dd className="mt-0.5 truncate font-mono text-[12px] text-slate-200" title={v}>{v}</dd>
             </div>
           ))}
         </dl>

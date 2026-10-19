@@ -54,7 +54,7 @@ describe('Tunnels', () => {
   it('shows skeleton while loading', () => {
     mockOf(api.tunnels.list).mockReturnValue(new Promise(() => {}));
     renderWithProviders(<Tunnels />);
-    expect(document.querySelector('.animate-pulse')).not.toBeNull();
+    expect(document.querySelector('.nd-shimmer, .animate-pulse')).not.toBeNull();
   });
 
   it('shows empty state when there are no tunnels', async () => {

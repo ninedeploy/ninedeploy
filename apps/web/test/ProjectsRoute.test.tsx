@@ -164,7 +164,7 @@ describe('Projects route', () => {
       }) as never,
     );
     const { container } = renderWithProviders(<Projects />);
-    expect(container.querySelector('.animate-pulse')).not.toBeNull();
+    expect(container.querySelector('.nd-shimmer, .animate-pulse')).not.toBeNull();
 
     release([]);
     expect(await screen.findByText('No projects yet')).toBeInTheDocument();

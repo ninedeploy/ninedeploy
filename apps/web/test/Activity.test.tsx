@@ -101,7 +101,7 @@ describe('Activity Page', () => {
   it('renders loading skeleton when loading', () => {
     mockOf(api.activity.list).mockReturnValue(new Promise(() => {}));
     const { container } = renderWithProviders(<Activity />);
-    expect(container.querySelector('.animate-pulse')).toBeInTheDocument();
+    expect(container.querySelector('.nd-shimmer, .animate-pulse')).toBeInTheDocument();
   });
 
   it('renders empty state when there are no activity records', async () => {

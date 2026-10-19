@@ -189,6 +189,12 @@ export function ServiceDetail() {
   // reachable by `?tab=compose` either — for every other service.
   const visibleTabs = SERVICE_TABS.filter((t) => t.id !== 'compose' || !!svc?.composeContent);
   const tab: TabId = visibleTabs.some((t) => t.id === tabParam) ? (tabParam as TabId) : 'overview';
+  // In the one-row tab strip (below lg) the active tab may sit off-screen.
+  const activeTabRef = useRef<HTMLButtonElement | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run when the tab changes; the ref itself is stable.
+  useEffect(() => {
+    activeTabRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }, [tab]);
   // Redeploying a LIVE service is intentional but easy to hit by accident —
   // the button sits next to Restart/Stop — so a running service requires a
   // confirmation before the build is queued.
@@ -316,9 +322,11 @@ export function ServiceDetail() {
       {/* Service Detail Layout: Left Vertical Sidebar + Right Content Pane */}
       <div className="mt-6 flex flex-col lg:flex-row items-start gap-6">
         {/* Left Vertical Navigation Menu */}
-        <aside className="w-full lg:w-60 shrink-0">
-          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-2 space-y-1">
-            <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+        {/* Below lg: one scrolling row of tabs; as a list it pushed the tab's
+            content a whole phone screen down. */}
+        <aside className="w-full min-w-0 lg:w-60 shrink-0">
+          <div className="flex gap-1 overflow-x-auto rounded-2xl border border-white/[0.06] bg-white/[0.02] p-2 lg:block lg:space-y-1 lg:overflow-visible">
+            <div className="hidden px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 lg:block">
               Service Navigation
             </div>
             {visibleTabs.map((t) => {
@@ -333,9 +341,10 @@ export function ServiceDetail() {
                   role="tab"
                   aria-selected={isActive}
                   aria-controls="service-tab-panel"
+                  ref={isActive ? activeTabRef : undefined}
                   onClick={() => switchTab(t.id)}
                   className={cn(
-                    'w-full flex items-center gap-3 rounded-xl px-3 py-2 text-xs font-medium transition-all text-left',
+                    'flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-left text-xs font-medium transition-all lg:w-full lg:gap-3',
                     isActive
                       ? isDanger
                         ? 'bg-rose-500/15 text-rose-300 ring-1 ring-inset ring-rose-500/30 font-semibold'

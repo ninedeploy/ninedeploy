@@ -183,7 +183,7 @@ export function ConfigCenterSection() {
                 Centralized settings vault organized by plugin modules with AES-256-GCM encryption &amp; live config watchers.
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {isAdmin && (
                 <>
                   <Button

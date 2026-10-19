@@ -62,6 +62,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/** The active theme, or 'dark' outside a ThemeProvider (isolated renders, tests). */
+export function useThemeMode(): Theme {
+  return useContext(ThemeContext)?.theme ?? 'dark';
+}
+
 export function useTheme(): ThemeContextValue {
   const ctx = useContext(ThemeContext);
   if (!ctx) throw new Error('useTheme must be used within ThemeProvider');

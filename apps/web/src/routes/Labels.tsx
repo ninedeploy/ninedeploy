@@ -63,9 +63,13 @@ export function Labels() {
 
   const { data: labels = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['labels', activeWorkspaceId],
+    // The active workspace's labels and the instance-wide ones, which apply
+    // in every workspace. Asking the server for one workspace dropped the
+    // instance-wide labels an operator made: they existed, the page said
+    // "No labels yet".
     queryFn: async () => {
-      const list = await api.labels.list(activeWorkspaceId ? `?workspaceId=${activeWorkspaceId}` : '');
-      return list ?? [];
+      const list = (await api.labels.list('')) ?? [];
+      return activeWorkspaceId == null ? list : list.filter((l) => l.workspaceId == null || l.workspaceId === activeWorkspaceId);
     },
   });
 

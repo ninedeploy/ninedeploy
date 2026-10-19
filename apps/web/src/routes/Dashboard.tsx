@@ -64,7 +64,7 @@ export function Dashboard() {
       <div className="space-y-4">
         <FetchBar show />
         <Skeleton className="h-24 w-full" />
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="nd-stagger grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Skeleton className="h-20 w-full" />
           <Skeleton className="h-20 w-full" />
           <Skeleton className="h-20 w-full" />
@@ -143,7 +143,7 @@ export function Dashboard() {
 
       {/* Host Infrastructure Telemetry (CPU / RAM / Disk) */}
       {host && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="nd-stagger grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Card className="p-4 bg-white/[0.02]">
             <div className="flex items-center justify-between text-xs mb-2">
               <span className="flex items-center gap-1.5 text-slate-400 font-medium">
@@ -210,7 +210,7 @@ export function Dashboard() {
       )}
 
       {/* Stats grid */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="nd-stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard icon={<Server size={15} />} label="Services" value={s.services} sub={`${s.running} running`} tone="indigo" />
         <StatCard icon={<Database size={15} />} label="Databases" value={s.databases} sub={`${s.dbRunning} running`} tone="emerald" />
         <StatCard icon={<Rocket size={15} />} label="Deploys" value={s.deployments} sub="total" tone="sky" />
@@ -221,7 +221,7 @@ export function Dashboard() {
       </div>
 
       {/* Quick Actions Hub */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="nd-stagger grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <button type="button" onClick={openDeploy} className="group text-left">
           <Card interactive className="h-full p-4 transition-all duration-200 group-hover:border-indigo-500/30 group-hover:bg-indigo-500/[0.03]">
             <div className="flex items-center gap-3">
@@ -292,7 +292,7 @@ export function Dashboard() {
         {data.health.length === 0 ? (
           <Card><CardBody><p className="py-6 text-center text-sm text-slate-500">No services yet. <button type="button" onClick={openDeploy} className="text-indigo-400 hover:underline">Deploy a new service</button> or start from a template in the <Link to="/hub" className="text-indigo-400 hover:underline">Hub</Link>.</p></CardBody></Card>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="nd-stagger grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {data.health.map((h) => {
               const isRunning = h.status === 'running';
               // null = the runtime lives on a remote node the panel cannot

@@ -261,7 +261,7 @@ function OverviewTab({ data, isLoading }: { data: TraefikInfo | undefined; isLoa
   };
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="nd-stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <Card className="p-5">
         <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500">
           <Shield size={14} className="text-indigo-400" /> Certificates

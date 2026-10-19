@@ -305,7 +305,8 @@ function JobsCard({ serviceId }: { serviceId: number }) {
           }}
           className="space-y-2"
         >
-          <div className="grid grid-cols-2 gap-2">
+          {/* Stacked: the column is narrow, and side by side the action read "Redeploy the serv". */}
+          <div className="grid grid-cols-1 gap-2">
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="nightly-rebuild" aria-label="Job name" className="h-8 text-xs" />
             <select value={kind} onChange={(e) => setKind(e.target.value as 'deploy' | 'exec')} aria-label="Job action" className={selectCls}>
               <option value="deploy">Redeploy the service</option>
