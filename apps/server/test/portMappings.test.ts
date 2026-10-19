@@ -335,7 +335,7 @@ describe('PATCH /services/:id portMappings', () => {
     await compose.app.close();
   });
 
-  it('0.16.3 custom Docker labels: stored and read back; {} clears; reserved keys, nodes and compose are refused', async () => {
+  it('0.16.3 custom Docker labels: stored and read back; {} clears; reserved keys and compose are refused, a node service takes them (0.16.4)', async () => {
     const { app, id, row, patch } = await setup();
     const read = async () => ((await app.inject({ method: 'GET', url: `/services/${id}`, headers: member })).json() as { dockerLabels: Record<string, string> }).dockerLabels;
     expect(await read()).toEqual({});
@@ -349,7 +349,8 @@ describe('PATCH /services/:id portMappings', () => {
 
     const [node] = await db.insert(servers).values({ name: 'n3', host: '198.51.100.22', tokenEncrypted: 'v1:x' }).returning();
     const onNode = await setup({ name: 'remote2', slug: 'remote2', serverId: node!.id });
-    expect((await onNode.patch({ dockerLabels: { a: 'b' } })).statusCode).toBe(400);
+    expect((await onNode.patch({ dockerLabels: { a: 'b' } })).statusCode).toBe(200);
+    expect((await onNode.row()).dockerLabels).toEqual({ a: 'b' });
     expect((await onNode.patch({ dockerLabels: {} })).statusCode).toBe(200);
     await onNode.app.close();
     const compose = await setup({ name: 'stack3', slug: 'stack3', type: 'compose', image: null });
@@ -357,7 +358,7 @@ describe('PATCH /services/:id portMappings', () => {
     await compose.app.close();
   });
 
-  it("0.16.3 healthCheck: 'command' needs a command, a docker service and the panel host; the command is stored and read back", async () => {
+  it("0.16.3 healthCheck: 'command' needs a command and a docker service (0.16.4: a node service too); the command is stored and read back", async () => {
     const { app, id, row, patch } = await setup();
     const read = async () => (await app.inject({ method: 'GET', url: `/services/${id}`, headers: member })).json() as { healthCheck: string; healthCommand: string | null };
     expect(await read()).toMatchObject({ healthCheck: 'http', healthCommand: null });
@@ -373,7 +374,8 @@ describe('PATCH /services/:id portMappings', () => {
 
     const [node] = await db.insert(servers).values({ name: 'n2', host: '198.51.100.21', tokenEncrypted: 'v1:x' }).returning();
     const onNode = await setup({ name: 'remote', slug: 'remote', serverId: node!.id });
-    expect((await onNode.patch({ healthCheck: 'command', healthCommand: 'true' })).statusCode).toBe(400);
+    expect((await onNode.patch({ healthCheck: 'command', healthCommand: 'true' })).statusCode).toBe(200);
+    expect(await onNode.row()).toMatchObject({ healthCheck: 'command', healthCommand: 'true' });
     await onNode.app.close();
     const compose = await setup({ name: 'stack2', slug: 'stack2', type: 'compose', image: null });
     expect((await compose.patch({ healthCheck: 'command', healthCommand: 'true' })).statusCode).toBe(400);

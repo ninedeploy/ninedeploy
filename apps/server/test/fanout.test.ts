@@ -450,6 +450,29 @@ describe('0.16 T4: fan-out runs what the primary runs (D1) and ships what it bui
     expect(ops()).toEqual(['agent.ping']);
   });
 
+  it('0.16.4: a target runs with the labels and the healthcheck command; an agent that predates them is refused by name', async () => {
+    const shape = { dockerLabels: { 'com.example.team': 'pay' }, healthCheck: 'command', healthCommand: 'pg_isready' };
+    answer(CAPS_ALL);
+    const refused = await deployToTargets(
+      dbWithTargets([{ serverId: 5, runtimeId: 'web-t5-8' }]) as never,
+      { service: { ...svc, ...shape }, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null },
+      vi.fn(),
+    );
+    expect(refused[0]).toMatchObject({ ok: false, error: expect.stringMatching(/cannot set custom Docker labels\. Update the node agent to v0\.16\.4/) });
+    expect(ops()).toEqual(['agent.ping']);
+
+    vi.clearAllMocks();
+    answer(CAPS_ALL.replace('"image.manage"', '"image.manage","docker.userLabels","docker.healthCmd"'));
+    const results = await deployToTargets(
+      dbWithTargets([{ serverId: 5, runtimeId: null }]) as never,
+      { service: { ...svc, ...shape }, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null },
+      vi.fn(),
+    );
+    expect(results[0]).toMatchObject({ ok: true });
+    const spec = agentMocks.agentOp.mock.calls.find((c) => c[2] === 'docker.runSpec')![3] as Record<string, unknown>;
+    expect(spec).toMatchObject({ userLabels: { 'com.example.team': 'pay' }, healthCmd: 'pg_isready' });
+  });
+
   it('a shipped release: the target receives it through `prebuilt.ship` — no pull, no clone, no build — and runs it', async () => {
     answer(CAPS_ALL);
     const db = dbWithTargets([{ serverId: 5, runtimeId: null }, { serverId: 6, runtimeId: null }]);

@@ -50,6 +50,8 @@ The panel keeps the last answer in memory for up to 5 minutes, so after an agent
 | Managed databases | `db.manage`, `stream`, `docker.runSpec`, `volume.manage` | 0.15.3 | `NINEDEPLOY_AGENT_DATABASES=off` |
 | Swarm join and leave | `swarm` | 0.15.4 | **opt-in:** `NINEDEPLOY_AGENT_SWARM_MANAGER=<host:port>` |
 | Port mappings (UDP, port ranges, a host IP) | `docker.runSpec` + `docker.ports` | 0.16.1 | — (the agent refuses 22, 80, 443 and its own port) |
+| Custom Docker labels | `docker.runSpec` + `docker.userLabels` | 0.16.4 | — (the agent refuses `ninedeploy.*`, `com.docker.*`, `traefik.*`) |
+| Command healthcheck (as the container's Docker healthcheck) | `docker.runSpec` + `docker.healthCmd` | 0.16.4 | — |
 
 A switch counts as off when it is `off`, `false`, `0`, `no` or `disabled`. Switching a feature off removes its capability from the ping, and the agent refuses the operation too.
 

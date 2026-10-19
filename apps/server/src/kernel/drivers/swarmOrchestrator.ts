@@ -144,10 +144,16 @@ function renderService(
   if (svc.secrets.length > 0) out['secrets'] = svc.secrets.map((s) => ({ source: s, target: s }));
   if (svc.configs.length > 0) out['configs'] = svc.configs.map((c) => ({ source: c, target: `/${c}` }));
   if (typeof svc.stopGraceSeconds === 'number' && svc.stopGraceSeconds >= 0) out['stop_grace_period'] = `${Math.min(Math.floor(svc.stopGraceSeconds), 300)}s`;
+  // 0.16.4: the service's own labels go on the task containers; the panel's
+  // stay on the service (above), so the r593 cleanup never matches a task.
+  if (svc.containerLabels && Object.keys(svc.containerLabels).length > 0) out['labels'] = { ...svc.containerLabels };
   // No `ports:` — Traefik is the only ingress (D7c). No generated healthcheck:
   // the image's own HEALTHCHECK still applies, and the deploy flow probes the
   // service over the overlay (a generated `curl` check failed every image
   // without curl, and Swarm would roll such a service back on every deploy).
+  // 0.16.4: the command healthcheck the user chose is the one exception; Swarm
+  // starts a task's traffic only once it passes, and rolls back if it never does.
+  if (svc.healthCommand) out['healthcheck'] = { test: ['CMD-SHELL', svc.healthCommand], interval: '5s', timeout: '10s', retries: 3 };
   out['deploy'] = deploy;
   return out;
 }

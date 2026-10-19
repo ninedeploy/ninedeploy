@@ -341,6 +341,22 @@ describe('SwarmOrchestrator', () => {
       expect(file.services.api.env_file).toBeUndefined();
     });
 
+    it("0.16.4: renders the service's own labels on the task containers and the command healthcheck", async () => {
+      const file = JSON.parse(
+        renderStackFile(
+          stack({ services: [svc({ containerLabels: { 'com.example.team': 'pay$' }, healthCommand: 'pg_isready -U $USER' })] }),
+          { envFiles: {}, secrets: {}, configs: {} },
+        ),
+      ) as Record<string, any>;
+      expect(file.services.api.labels).toEqual({ 'com.example.team': 'pay$$' });
+      expect(file.services.api.healthcheck).toEqual({ test: ['CMD-SHELL', 'pg_isready -U $$USER'], interval: '5s', timeout: '10s', retries: 3 });
+      // The panel's own labels stay on the service, never on a task.
+      expect(file.services.api.deploy.labels).not.toHaveProperty('com.example.team');
+      const plain = JSON.parse(renderStackFile(stack({ services: [svc()] }), { envFiles: {}, secrets: {}, configs: {} })) as Record<string, any>;
+      expect(plain.services.api.labels).toBeUndefined();
+      expect(plain.services.api.healthcheck).toBeUndefined();
+    });
+
     it('a failed apply records the state with the error and returns it in the status', async () => {
       runMock.mockImplementation(async (_cmd: string, args: string[], _o: unknown, sink: (l: string) => void) => {
         if (args[1] === 'deploy') {

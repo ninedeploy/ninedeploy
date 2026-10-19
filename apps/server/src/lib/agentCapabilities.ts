@@ -344,6 +344,8 @@ export const AGENT_DB_MANAGE_VERSION = '0.15.3';
 export const AGENT_SWARM_VERSION = '0.15.4';
 /** 0.16.1: `docker.ports` (port mappings on `docker.runSpec`); an older agent refuses the `ports` field, so it is told to update. */
 export const AGENT_PORTS_VERSION = '0.16.1';
+/** 0.16.4: `docker.userLabels` and `docker.healthCmd` (custom labels and the command healthcheck on `docker.runSpec`). */
+export const AGENT_RUN_EXTRAS_VERSION = '0.16.4';
 export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, string>> = {
   // ── 0.16 T2 agent transport ──
   stream: AGENT_MULTI_NODE_VERSION,
@@ -363,6 +365,8 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
   swarm: AGENT_SWARM_VERSION,
   // ── end 0.16 T7 ──
   'docker.ports': AGENT_PORTS_VERSION,
+  'docker.userLabels': AGENT_RUN_EXTRAS_VERSION,
+  'docker.healthCmd': AGENT_RUN_EXTRAS_VERSION,
 };
 
 /**

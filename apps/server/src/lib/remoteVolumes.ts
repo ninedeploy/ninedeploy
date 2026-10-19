@@ -46,7 +46,7 @@ export interface NodeVolumeAttachment {
  * words a refusal uses. Empty: the 0.15 `docker.runEnv` path runs unchanged.
  */
 export function nodeRunNeeds(
-  service: { cmd?: string[] | null; dockerSocket?: boolean | null; portMappings?: readonly unknown[] | null },
+  service: NodeRunExtrasService & { cmd?: string[] | null; dockerSocket?: boolean | null; portMappings?: readonly unknown[] | null },
   attachments: readonly NodeVolumeAttachment[],
 ): string[] {
   const needs: string[] = [];
@@ -54,8 +54,42 @@ export function nodeRunNeeds(
   if (service.cmd?.length) needs.push('a container command');
   if (service.dockerSocket) needs.push('the Docker socket mount');
   if (attachments.length > 0) needs.push('attached volumes');
+  const extras = nodeRunExtras(service);
+  if (extras.userLabels) needs.push('custom Docker labels');
+  if (extras.healthCmd) needs.push('the command healthcheck');
   return needs;
 }
+
+// ── 0.16.4 labels and the command healthcheck on a node ──
+
+/** What a refusal says an agent without `docker.userLabels` / `docker.healthCmd` cannot do. */
+export const NODE_USER_LABELS_FEATURE = 'set custom Docker labels';
+export const NODE_HEALTH_CMD_FEATURE = 'run the command healthcheck';
+
+export interface NodeRunExtrasService {
+  dockerLabels?: Record<string, string> | null;
+  healthCheck?: string | null;
+  healthCommand?: string | null;
+}
+
+/** The `docker.runSpec` fields for the service's labels and command healthcheck (absent when unused). */
+export function nodeRunExtras(service: NodeRunExtrasService): { userLabels?: Record<string, string>; healthCmd?: string } {
+  const out: { userLabels?: Record<string, string>; healthCmd?: string } = {};
+  if (service.dockerLabels && Object.keys(service.dockerLabels).length > 0) out.userLabels = { ...service.dockerLabels };
+  const command = service.healthCommand?.trim();
+  if (service.healthCheck === 'command' && command) out.healthCmd = command;
+  return out;
+}
+
+/** The capability checks those fields add, each with its own wording; [] for a service using neither. */
+export function nodeRunExtrasChecks(service: NodeRunExtrasService): Array<{ cap: MultiNodeCapability[]; feature: string }> {
+  const extras = nodeRunExtras(service);
+  const checks: Array<{ cap: MultiNodeCapability[]; feature: string }> = [];
+  if (extras.userLabels) checks.push({ cap: ['docker.runSpec', 'docker.userLabels'], feature: NODE_USER_LABELS_FEATURE });
+  if (extras.healthCmd) checks.push({ cap: ['docker.runSpec', 'docker.healthCmd'], feature: NODE_HEALTH_CMD_FEATURE });
+  return checks;
+}
+// ── end 0.16.4 ──
 
 /** The capabilities a node docker service of that shape needs. */
 export function nodeRunCapabilities(
@@ -258,7 +292,7 @@ export async function remoteVolumeRefusal(
     cmd?: string[] | null;
     dockerSocket?: boolean | null;
     volumeMount?: string | null;
-  },
+  } & NodeRunExtrasService,
   opts: { probe?: (serverId: number) => Promise<RemoteVolumeProbe> } = {},
 ): Promise<RemoteVolumeRefusal | null> {
   if (service.serverId == null || (service.type ?? 'docker') !== 'docker') return null;
@@ -287,6 +321,11 @@ export async function remoteVolumeRefusal(
     nodeLabel: await nodeLabel(db, id),
     sealed: await agentTransportSealed(db, id),
   })))(serverId);
+  // 0.16.4: the narrower features first, so an older agent is told what it lacks.
+  for (const check of nodeRunExtrasChecks(service)) {
+    const refusal = await capabilityRefusal(probe.agent, probe.nodeLabel, probe.sealed, { ...check, sealedRequired: true, persist: { db, serverId } });
+    if (refusal) return refusal;
+  }
   return capabilityRefusal(probe.agent, probe.nodeLabel, probe.sealed, {
     cap: nodeRunCapabilities(service, attachments),
     feature: NODE_RUN_SPEC_FEATURE,

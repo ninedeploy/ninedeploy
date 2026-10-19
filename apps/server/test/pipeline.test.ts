@@ -2206,30 +2206,49 @@ describe('runDeployment on a remote-server target', () => {
     logBus.removeAllListeners();
   });
 
-  it('0.16.3: a node service with custom Docker labels is refused before anything is built or sent to the node', async () => {
-    const { db } = makeDb();
-    baseSetup(db, { ownerUserId: 42, image: 'nginx:latest', serverId: 4, dockerLabels: { 'com.example.team': 'x' } });
-    const lines = collectLogs(1);
-    h.agentOp.mockClear();
-    h.builder.buildAndRun.mockClear();
-    await runDeployment(db as never, 1);
-    expect(h.agentOp).not.toHaveBeenCalled();
-    expect(h.builder.buildAndRun).not.toHaveBeenCalled();
-    expect(lines.join(' ')).toMatch(/Custom Docker labels work for docker services on the panel host only/);
-    logBus.removeAllListeners();
+  it('0.16.4: a node service with custom labels or the command healthcheck is refused for an agent that predates them, naming the update', async () => {
+    for (const [shape, feature] of [
+      [{ dockerLabels: { 'com.example.team': 'x' } }, /cannot set custom Docker labels/],
+      [{ healthCheck: 'command', healthCommand: 'true' }, /cannot run the command healthcheck/],
+    ] as const) {
+      const { db, inserts } = makeDb();
+      baseSetup(db, { ownerUserId: 42, image: 'nginx:latest', serverId: 4, ...shape });
+      const lines = collectLogs(1);
+      h.agentTransportSealed.mockResolvedValue(true);
+      h.agentOp.mockImplementation(async (_db: unknown, _serverId: unknown, op: string) =>
+        op === 'agent.ping'
+          ? { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.16.3', caps: ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'docker.runSpec', 'volume.manage', 'docker.ports'] })}`] }
+          : { exitCode: 0, lines: [] },
+      );
+      h.agentOp.mockClear();
+      h.builder.buildAndRun.mockClear();
+      await runDeployment(db as never, 1);
+      expect(new Set(h.agentOp.mock.calls.map((c) => c[2]))).toEqual(new Set(['agent.ping']));
+      expect(lines.join(' ')).toMatch(feature);
+      expect(lines.join(' ')).toMatch(/0\.16\.4/);
+      expect(inserts.filter((i) => i.table === auditLog).map((i) => i.values)[0]).toMatchObject({ action: 'deploy.failed' });
+      logBus.removeAllListeners();
+    }
   });
 
-  it('0.16.3: a node service with the command healthcheck is refused before anything is built or sent to the node', async () => {
-    const { db, inserts } = makeDb();
-    baseSetup(db, { ownerUserId: 42, image: 'nginx:latest', serverId: 4, healthCheck: 'command', healthCommand: 'true' });
+  it('0.16.4: a 0.16.4 agent runs the container with the labels and the healthcheck command', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { ownerUserId: 42, image: 'nginx:latest', serverId: 4, dockerLabels: { 'com.example.team': 'payments' }, healthCheck: 'command', healthCommand: 'pg_isready -U app' });
     const lines = collectLogs(1);
+    h.agentTransportSealed.mockResolvedValue(true);
+    h.agentOp.mockImplementation(async (_db: unknown, _serverId: unknown, op: string) =>
+      op === 'agent.ping'
+        ? { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.16.4', caps: ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'docker.runSpec', 'volume.manage', 'docker.ports', 'docker.userLabels', 'docker.healthCmd'] })}`] }
+        : op === 'docker.inspect'
+          ? { exitCode: 0, lines: ['running|healthy|0|0'] }
+          : { exitCode: 0, lines: [] },
+    );
     h.agentOp.mockClear();
-    h.builder.buildAndRun.mockClear();
     await runDeployment(db as never, 1);
-    expect(h.agentOp).not.toHaveBeenCalled();
-    expect(h.builder.buildAndRun).not.toHaveBeenCalled();
-    expect(lines.join(' ')).toMatch(/The command healthcheck works for docker services on the panel host only/);
-    expect(inserts.filter((i) => i.table === auditLog).map((i) => i.values)[0]).toMatchObject({ action: 'deploy.failed' });
+    const run = h.agentOp.mock.calls.find((c) => c[2] === 'docker.runSpec');
+    expect(run?.[3]).toMatchObject({ userLabels: { 'com.example.team': 'payments' }, healthCmd: 'pg_isready -U app' });
+    expect(h.agentOp.mock.calls.map((c) => c[2])).not.toContain('docker.runEnv');
+    expect(lines.join(' ')).toMatch(/its healthcheck command passes/);
     logBus.removeAllListeners();
   });
 

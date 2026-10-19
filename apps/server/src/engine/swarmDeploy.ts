@@ -22,7 +22,7 @@ import {
   withDeployDockerConfig,
 } from '../lib/swarm.js';
 import { buildElsewhere, recordBuildHost } from './buildPlacement.js';
-import { dockerBuilder } from './builders/docker.js';
+import { dockerBuilder, userDockerLabels } from './builders/docker.js';
 import { pullableReleaseRef } from './fanout.js';
 import type { BuildContext, Builder, DeployRuntime } from './types.js';
 
@@ -177,6 +177,9 @@ export function createSwarmBuilder(db: DB, slug: string, deps: SwarmBuilderDeps 
             cpuLimitMilli: ctx.service.cpuLimitMilli ?? 0,
             memLimitMb: ctx.service.memLimitMb ?? 0,
             ...(typeof ctx.buildConfig?.stopGraceSeconds === 'number' ? { stopGraceSeconds: ctx.buildConfig.stopGraceSeconds } : {}),
+            // 0.16.4: custom labels and the command healthcheck.
+            ...(userDockerLabels(service.dockerLabels).length > 0 ? { containerLabels: Object.fromEntries(userDockerLabels(service.dockerLabels)) } : {}),
+            ...(service.healthCheck === 'command' && service.healthCommand?.trim() ? { healthCommand: service.healthCommand.trim() } : {}),
           },
         ],
         networks: [{ name: network, driver: 'overlay', attachable: true }],
@@ -223,6 +226,8 @@ export function createSwarmBuilder(db: DB, slug: string, deps: SwarmBuilderDeps 
         // The VIP balances across the tasks: Traefik needs one backend.
         replicas: 1,
         ...(imageDigest ? { imageDigest } : {}),
+        // 0.16.4: Swarm gated each task on the command; no HTTP probe after it.
+        ...(service.healthCheck === 'command' && service.healthCommand?.trim() ? { healthCheck: 'command' as const, healthCommand: service.healthCommand.trim() } : {}),
       };
     },
 
@@ -455,7 +460,7 @@ async function swarmHealthy(runtime: DeployRuntime, timeoutMs: number, log: (lin
   do {
     const counts = await replicaCounts(runtime.runtimeId);
     if (counts && counts.desired > 0 && counts.running >= counts.desired) {
-      if (!runtime.port || (await probeViaTraefik(runtime.runtimeId, runtime.port, path))) return true;
+      if (!runtime.port || runtime.healthCheck === 'command' || (await probeViaTraefik(runtime.runtimeId, runtime.port, path))) return true;
       if (noted !== 'port') log(`Swarm: ${counts.running}/${counts.desired} replicas running; waiting for port ${runtime.port} to answer through Traefik …`);
       noted = 'port';
     } else if (counts && noted !== `${counts.running}/${counts.desired}`) {

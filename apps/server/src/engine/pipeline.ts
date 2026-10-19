@@ -38,12 +38,12 @@ import { swarmRuntimeOf } from '../lib/swarm.js';
 import { fileMountRefusal, prepareFileMounts } from '../lib/serviceFiles.js';
 import { fetchLfsObjects, GIT_LFS_PANEL_ONLY } from '../lib/gitLfs.js';
 
-/** 0.16.3: why a node or Swarm service with custom Docker labels is not deployed. */
+/** 0.16.3: why a service that is not a docker service is not deployed with custom Docker labels (0.16.4: nodes and Swarm included). */
 export const DOCKER_LABELS_PANEL_ONLY =
-  'Custom Docker labels work for docker services on the panel host only in this release; remove them (Service → Settings) or run the service on the panel host.';
-/** 0.16.3: why a node or Swarm service with the command healthcheck is not deployed. */
+  'Custom Docker labels apply to docker services only; remove them (Service → Settings).';
+/** 0.16.3: why a service that is not a docker service is not deployed with the command healthcheck (0.16.4: nodes and Swarm included). */
 export const COMMAND_HEALTHCHECK_PANEL_ONLY =
-  'The command healthcheck works for docker services on the panel host only in this release; choose another healthcheck (Service → Settings) or run the service on the panel host.';
+  'The command healthcheck applies to docker services only; choose another healthcheck (Service → Settings).';
 import { analyzeRepo, summarizeInsights } from '../lib/frameworks.js';
 import { upsertInsights } from './repoInsights.js';
 import { connectionString, ENGINES } from './database.js';
@@ -778,14 +778,16 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   // 0.16.3: file mounts are written and mounted on the panel host only; a
   // node, Swarm or compose service that has them is refused before anything
   // is built, never started without its files.
-  // The command healthcheck (`docker exec` on the panel host) the same way:
-  // a node or Swarm deploy would otherwise fall back to a probe it never chose.
-  // Custom labels too: a node agent takes only the panel's own labels.
-  const offPanel = service.type !== 'docker' || service.serverId != null || onSwarm;
+  // The command healthcheck and custom labels belong to docker services: on
+  // the panel host (`docker exec`, `docker run --label`), on a node (0.16.4,
+  // `docker.runSpec` with `healthCmd` / `userLabels`, refused for an older
+  // agent) and on Swarm (0.16.4, the stack file). Any other type is refused
+  // rather than deployed with a probe it never chose.
+  const notDocker = service.type !== 'docker';
   const fileRefusal =
     (await fileMountRefusal(db, service)) ??
-    (offPanel && service.healthCheck === 'command' ? COMMAND_HEALTHCHECK_PANEL_ONLY : null) ??
-    (offPanel && Object.keys(service.dockerLabels ?? {}).length > 0 ? DOCKER_LABELS_PANEL_ONLY : null);
+    (notDocker && service.healthCheck === 'command' ? COMMAND_HEALTHCHECK_PANEL_ONLY : null) ??
+    (notDocker && Object.keys(service.dockerLabels ?? {}).length > 0 ? DOCKER_LABELS_PANEL_ONLY : null);
   if (fileRefusal) {
     log(`✗ ${fileRefusal}`);
     await safeFail(db, deploymentId, service.id, service.runtimeId);
@@ -1747,6 +1749,9 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
           cmd: service.cmd,
           dockerSocket: service.dockerSocket,
           ownerUserId: service.ownerUserId,
+          dockerLabels: service.dockerLabels,
+          healthCheck: service.healthCheck,
+          healthCommand: service.healthCommand,
         },
         deploymentId,
         image: service.image ? await pullableReleaseRef(service.image, runtime!.imageDigest) : undefined,
@@ -1782,8 +1787,6 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
           // 0.16.3: a target would start without the service's files.
           const files = await fileMountRefusal(db, onTarget);
           if (files) return files;
-          if (service.healthCheck === 'command') return COMMAND_HEALTHCHECK_PANEL_ONLY;
-          if (Object.keys(service.dockerLabels ?? {}).length > 0) return DOCKER_LABELS_PANEL_ONLY;
           if (remoteHookRefusal(buildConfig)) {
             log(`⚠ deploy hooks run on the primary only; target ${await nodeLabel(db, target.serverId)} was deployed without them`);
           }

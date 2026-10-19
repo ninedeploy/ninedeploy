@@ -372,14 +372,14 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
               <Select value={form.healthCheck} onChange={set('healthCheck')} className="h-9" aria-label="Healthcheck">
                 <option value="http">HTTP / TCP probe of the container port</option>
                 <option value="running">Container running (no port probe)</option>
-                {/* 0.16.3: `docker exec` on the panel host; shown once the panel reports the field. */}
-                {svc.healthCommand !== undefined && (svc.serverId == null || form.healthCheck === 'command') && (
+                {/* 0.16.3, nodes and Swarm 0.16.4; shown once the panel reports the field. */}
+                {svc.healthCommand !== undefined && (
                   <option value="command">Command inside the container</option>
                 )}
               </Select>
             </Field>
           )}
-          {svc.type === 'docker' && svc.dockerLabels !== undefined && (svc.serverId == null || form.dockerLabels.trim() !== '') && (
+          {svc.type === 'docker' && svc.dockerLabels !== undefined && (
             <Field
               label="Docker labels"
               hint={
@@ -394,7 +394,11 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
           {svc.type === 'docker' && form.healthCheck === 'command' && (
             <Field
               label="Healthcheck command"
-              hint="Run with sh -c inside the container until it exits 0, e.g. pg_isready -U app or curl -fsS localhost:3000/up. The image needs a shell."
+              hint={
+                svc.serverId != null
+                  ? "Runs as the container's Docker healthcheck (sh -c, every 5 s); the deploy waits until it reports healthy. Needs node agent 0.16.4+ and a shell in the image."
+                  : 'Run with sh -c inside the container until it exits 0, e.g. pg_isready -U app or curl -fsS localhost:3000/up. The image needs a shell.'
+              }
             >
               <Input value={form.healthCommand} onChange={set('healthCommand')} placeholder="curl -fsS localhost:3000/up" className="h-9 font-mono text-xs" maxLength={1000} />
             </Field>

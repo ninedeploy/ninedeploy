@@ -12,8 +12,8 @@ const base = { name: 'game-5', image: 'game/server:1' };
 const env = { NINEDEPLOY_AGENT_PORT: '4700' } as NodeJS.ProcessEnv;
 
 describe('docker.runSpec ports', () => {
-  it('declares docker.ports beside docker.runSpec', () => {
-    expect(runSpecOps.caps).toEqual(['docker.runSpec', 'docker.ports']);
+  it('declares docker.ports beside docker.runSpec (and the 0.16.4 labels and healthcheck command)', () => {
+    expect(runSpecOps.caps).toEqual(['docker.runSpec', 'docker.ports', 'docker.userLabels', 'docker.healthCmd']);
   });
 
   it('publishes each canonical operand after the other flags', () => {

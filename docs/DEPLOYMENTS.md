@@ -22,7 +22,7 @@ The gate in step 3 accepts any answer below 500 on the health path and waits **3
 When an HTTP answer does not prove the app is ready (a database, a worker that needs its queue, an app that answers before its migrations finish), set **Service → Settings → Healthcheck** to *Command inside the container* and give a command, for example `pg_isready -U app` or `curl -fsS localhost:3000/up`. The deploy runs it with `sh -c` inside the new container every 2 seconds (each attempt limited to 10 seconds) until it exits 0, within the healthcheck timeout above. A failing attempt's output goes to the deploy log, and the container exiting fails the deploy at once.
 
 - The image needs a shell (`sh`); a distroless image cannot run it.
-- Docker services on the panel host only, like file mounts: a node or Swarm service with it is refused at deploy time (and the setting is refused for one), and fan-out nodes are refused while the primary deploys.
+- Docker services only. On a node (0.16.4, the node agent must be 0.16.4 or later) and on Swarm the command runs as the container's own Docker healthcheck (`CMD-SHELL`, every 5 seconds, 10 seconds per attempt, unhealthy after 3 failures in a row) and the deploy waits until Docker reports the container healthy; it keeps running after the deploy, so `docker ps` shows the container's health. A node whose agent is older is refused when the deploy is queued, with the update named. Fan-out nodes run it the same way.
 - API: `healthCheck: 'command'` with `healthCommand` (one line, up to 1000 characters) on `PATCH /v1/services/:id`. PR previews and clones keep it.
 
 ### Docker labels (0.16.3)
@@ -31,7 +31,7 @@ When an HTTP answer does not prove the app is ready (a database, a worker that n
 
 - Up to 50 labels; keys use letters, digits and `. _ / -`; values are one line of up to 1000 characters.
 - `ninedeploy.*` (the panel finds and cleans up its containers by them), `com.docker.*` and `traefik.*` are reserved. Routing does not read labels here: the panel's Traefik uses its file provider.
-- Docker services on the panel host only: a node agent sets only the panel's own labels, so a node or Swarm service with labels is refused at deploy time (and the setting is refused for one).
+- Docker services only: on the panel host, on a node (0.16.4, the node agent must be 0.16.4 or later; an older one is refused when the deploy is queued, with the update named), on fan-out nodes, and on Swarm (0.16.4, on each task container).
 - API: `dockerLabels` (an object; `{}` clears) on `PATCH /v1/services/:id`. PR previews and clones keep them.
 
 ### Container options (0.16.1, operator only)

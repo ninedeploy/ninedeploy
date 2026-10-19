@@ -688,23 +688,22 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       }
       patch.healthCheck = patch.healthCheck === 'running' || patch.healthCheck === 'command' ? patch.healthCheck : null;
     }
-    // 0.16.3 custom labels: set by `docker run` on the panel host only (a node
-    // agent takes the panel's own labels, Swarm has its own); {} is stored as null.
+    // 0.16.3 custom labels: docker services only (0.16.4: on a node and on
+    // Swarm too; a node's agent must be 0.16.4+, checked when a deploy is
+    // queued); {} is stored as null.
     if (patch.dockerLabels !== undefined) {
       const labels = patch.dockerLabels && Object.keys(patch.dockerLabels).length > 0 ? patch.dockerLabels : null;
-      const serverId = patch.serverId !== undefined ? patch.serverId : existing.serverId;
-      if (labels && ((patch.type ?? existing.type) !== 'docker' || serverId != null || existing.orchestrator === 'swarm')) {
-        throw badRequest('Custom Docker labels apply to docker services on the panel host only');
+      if (labels && (patch.type ?? existing.type) !== 'docker') {
+        throw badRequest('Custom Docker labels apply to docker services only');
       }
       patch.dockerLabels = labels;
     }
-    // 0.16.3 command healthcheck: a docker container on the panel host (the
-    // deploy runs it with `docker exec`), and never without its command.
+    // 0.16.3 command healthcheck: a docker container (0.16.4: on a node and on
+    // Swarm too, as its Docker healthcheck), and never without its command.
     const effectiveHealthCheck = patch.healthCheck !== undefined ? patch.healthCheck : existing.healthCheck;
-    if (effectiveHealthCheck === 'command' && (patch.healthCheck !== undefined || patch.healthCommand !== undefined || patch.serverId !== undefined || patch.type !== undefined)) {
-      const serverId = patch.serverId !== undefined ? patch.serverId : existing.serverId;
-      if ((patch.type ?? existing.type) !== 'docker' || serverId != null || existing.orchestrator === 'swarm') {
-        throw badRequest('The command healthcheck applies to docker services on the panel host only');
+    if (effectiveHealthCheck === 'command' && (patch.healthCheck !== undefined || patch.healthCommand !== undefined || patch.type !== undefined)) {
+      if ((patch.type ?? existing.type) !== 'docker') {
+        throw badRequest('The command healthcheck applies to docker services only');
       }
       const command = patch.healthCommand !== undefined ? patch.healthCommand : existing.healthCommand;
       if (!command) throw badRequest('The command healthcheck needs a command');

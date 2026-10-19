@@ -1,4 +1,13 @@
-import { formatPortMapping, MAX_PORT_MAPPINGS, parsePortMapping, type PortMapping, portMappingsProblem } from '@ninedeploy/schemas';
+import {
+  dockerLabelKeyProblem,
+  dockerLabelValue,
+  formatPortMapping,
+  MAX_DOCKER_LABELS,
+  MAX_PORT_MAPPINGS,
+  parsePortMapping,
+  type PortMapping,
+  portMappingsProblem,
+} from '@ninedeploy/schemas';
 import { spawnValidated } from '../lib/spawnValidated.js';
 import type { AgentOpModule } from './index.js';
 import { intOperand, isManagedVolume, type Params, RE_IMAGE, RE_NAME, RE_PATH, switchedOff } from './operands.js';
@@ -29,8 +38,15 @@ const RE_LABEL_KEY = /^ninedeploy\.[a-z0-9][a-z0-9._-]{0,127}$/;
 const RESERVED_LABELS = new Set(['ninedeploy.managed', 'ninedeploy.deployment', 'ninedeploy.service']);
 const SPEC_KEYS = new Set([
   'name', 'image', 'envFile', 'restart', 'network', 'extraNetworks', 'volumes', 'dockerSocket', 'cmd', 'labels', 'publish', 'ports',
-  'cpuShares', 'cpuLimitMilli', 'memLimitMb', 'managed', 'deploymentId', 'serviceId',
+  'cpuShares', 'cpuLimitMilli', 'memLimitMb', 'managed', 'deploymentId', 'serviceId', 'userLabels', 'healthCmd',
 ]);
+const MAX_HEALTH_CMD_CHARS = 1000;
+/**
+ * 0.16.4 `docker.healthCmd`: the command healthcheck runs as the container's
+ * own Docker HEALTHCHECK (`CMD-SHELL`), which the panel's state poll already
+ * waits on. Every 5 s, 10 s per attempt; unhealthy after 3 failures in a row.
+ */
+export const HEALTH_CMD_FLAGS = ['--health-interval', '5s', '--health-timeout', '10s', '--health-retries', '3'] as const;
 
 /** Host ports a node's own listeners hold: SSH, the node Traefik, the agent itself. */
 export function nodeReservedPorts(env: NodeJS.ProcessEnv = process.env): number[] {
@@ -62,6 +78,10 @@ export interface RunSpec {
   dockerSocket: boolean;
   cmd: string[];
   labels: Array<[string, string]>;
+  /** 0.16.4 (`docker.userLabels`): the service's own labels, never in a reserved namespace. */
+  userLabels: Array<[string, string]>;
+  /** 0.16.4 (`docker.healthCmd`): the command healthcheck's shell command. */
+  healthCmd: string | null;
   publish: string | null;
   /** 0.16.1 (`docker.ports`): `-p` operands in their canonical form, `[ip:]host[-end]:container[-end]/proto`. */
   ports: string[];
@@ -140,6 +160,23 @@ export function parseRunSpec(p: Params, env: NodeJS.ProcessEnv = process.env): R
   if (p['deploymentId'] !== undefined) labels.push(['ninedeploy.deployment', String(intOperand(p['deploymentId'], 1, 2 ** 31 - 1, 'deploymentId'))]);
   if (p['serviceId'] !== undefined) labels.push(['ninedeploy.service', String(intOperand(p['serviceId'], 1, 2 ** 31 - 1, 'serviceId'))]);
 
+  // 0.16.4 user labels: the panel's rules again (schemas `dockerLabels`), so
+  // no request can set a ninedeploy.*, com.docker.* or traefik.* label.
+  const rawUserLabels = p['userLabels'] ?? {};
+  if (!isPlainObject(rawUserLabels) || Object.keys(rawUserLabels).length > MAX_DOCKER_LABELS) throw new Error('Invalid userLabels');
+  const userLabels: Array<[string, string]> = [];
+  for (const [key, value] of Object.entries(rawUserLabels).sort(([a], [b]) => a.localeCompare(b))) {
+    if (dockerLabelKeyProblem(key) !== null || !dockerLabelValue.safeParse(value).success) throw new Error(`Invalid user label ${key.slice(0, 128)}`);
+    userLabels.push([key, value as string]);
+  }
+
+  let healthCmd: string | null = null;
+  if (p['healthCmd'] !== undefined) {
+    const c = p['healthCmd'];
+    if (typeof c !== 'string' || c.length === 0 || c.length > MAX_HEALTH_CMD_CHARS || c.trim() !== c || /[\0\r\n]/.test(c)) throw new Error('Invalid healthCmd');
+    healthCmd = c;
+  }
+
   let publish: string | null = null;
   if (p['publish'] !== undefined) {
     const m = typeof p['publish'] === 'string' ? /^(\d{1,5}):(\d{1,5})$/.exec(p['publish']) : null;
@@ -174,6 +211,8 @@ export function parseRunSpec(p: Params, env: NodeJS.ProcessEnv = process.env): R
     dockerSocket,
     cmd,
     labels,
+    userLabels,
+    healthCmd,
     publish,
     ports,
     cpuShares: optInt('cpuShares', 262_144),
@@ -191,6 +230,8 @@ export function runSpecArgv(spec: RunSpec, verb: 'run' | 'create'): string[] {
   const argv = verb === 'run' ? ['run', '-d'] : ['create'];
   argv.push('--name', spec.name, '--restart', spec.restart, '--network', spec.network);
   for (const [key, value] of spec.labels) argv.push('--label', `${key}=${value}`);
+  for (const [key, value] of spec.userLabels) argv.push('--label', `${key}=${value}`);
+  if (spec.healthCmd !== null) argv.push('--health-cmd', spec.healthCmd, ...HEALTH_CMD_FLAGS);
   if (spec.cpuShares !== null) argv.push('--cpu-shares', String(spec.cpuShares));
   if (spec.cpuLimitMilli !== null) argv.push('--cpus', String(spec.cpuLimitMilli / 1000));
   if (spec.memLimitMb !== null) argv.push('--memory', `${spec.memLimitMb}m`, '--memory-swap', `${spec.memLimitMb}m`);
@@ -225,8 +266,9 @@ async function runSpecOp(params: Params, onLine: (line: string) => void): Promis
 
 export const runSpecOps: AgentOpModule = {
   name: 'agentOps/runSpec.ts',
-  // `docker.ports` is a parameter-level capability: the `ports` field of docker.runSpec.
-  caps: ['docker.runSpec', 'docker.ports'],
+  // Parameter-level capabilities: `docker.ports` is the `ports` field of
+  // docker.runSpec, `docker.userLabels` its `userLabels`, `docker.healthCmd` its `healthCmd`.
+  caps: ['docker.runSpec', 'docker.ports', 'docker.userLabels', 'docker.healthCmd'],
   ops: {
     'docker.runSpec': { cap: 'docker.runSpec', sealedOnly: true, run: (p, onLine) => runSpecOp(p, onLine) },
   },

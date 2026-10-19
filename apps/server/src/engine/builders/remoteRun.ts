@@ -8,6 +8,8 @@ import {
   NODE_RUN_SPEC_FEATURE,
   type NodeVolumeAttachment,
   nodeRunCapabilities,
+  nodeRunExtras,
+  nodeRunExtrasChecks,
   nodeRunNeeds,
   nodeVolumeLabels,
 } from '../../lib/remoteVolumes.js';
@@ -107,6 +109,11 @@ export async function runRemoteContainer(agent: AgentCall, input: RemoteRunInput
   const specVolumes: SpecVolume[] = [];
   if (runSpec) {
     const label = input.nodeLabel ?? `#${service.serverId ?? '?'}`;
+    // 0.16.4: custom labels and the command healthcheck, each named on its own.
+    for (const check of nodeRunExtrasChecks(service)) {
+      const refusal = await capabilityRefusal(agent, label, input.sealed ?? true, { ...check, sealedRequired: true });
+      if (refusal) throw new Error(refusal.message);
+    }
     const refusal = await capabilityRefusal(agent, label, input.sealed ?? true, {
       cap: nodeRunCapabilities(service, attachments),
       feature: NODE_RUN_SPEC_FEATURE,
@@ -253,6 +260,9 @@ export function runSpecParams(
   if (service.cmd?.length) spec['cmd'] = [...service.cmd];
   if (run.publish !== undefined) spec['publish'] = run.publish;
   if (run.ports?.length) spec['ports'] = [...run.ports];
+  // 0.16.4 (`docker.userLabels`, `docker.healthCmd`): sent only when set, so
+  // an older agent never sees a field it would refuse.
+  Object.assign(spec, nodeRunExtras(service));
   if (service.cpuShares > 0) spec['cpuShares'] = service.cpuShares;
   if (service.cpuLimitMilli > 0) spec['cpuLimitMilli'] = service.cpuLimitMilli;
   if (service.memLimitMb > 0) spec['memLimitMb'] = service.memLimitMb;

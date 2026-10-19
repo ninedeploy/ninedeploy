@@ -500,6 +500,10 @@ export function createRemoteDockerBuilder(
         // The node offers no repo-digest lookup, so an unpinned release
         // records none and rollback honestly means "this tag".
         imageDigest: service.image && /@sha256:[0-9a-f]{64}$/i.test(target) ? target : undefined,
+        // 0.16.4: the command runs as the container's Docker healthcheck; the state poll waits for "healthy".
+        ...(runService.healthCheck === 'command' && runService.healthCommand?.trim()
+          ? { healthCheck: 'command' as const, healthCommand: runService.healthCommand.trim() }
+          : {}),
       };
     },
 
@@ -559,8 +563,10 @@ export function createRemoteDockerBuilder(
             stable += 1;
             if (stable >= needed) {
               log(
-                `${runtime.runtimeId} is running on the node. Remote health is container state, not an ` +
-                  'HTTP probe: the panel is outside the node network.',
+                runtime.healthCheck === 'command'
+                  ? `${runtime.runtimeId} is running on the node and its healthcheck command passes.`
+                  : `${runtime.runtimeId} is running on the node. Remote health is container state, not an ` +
+                      'HTTP probe: the panel is outside the node network.',
               );
               return true;
             }

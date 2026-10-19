@@ -3,7 +3,15 @@ import { serviceTargets, servers, type DB } from '@ninedeploy/db';
 import { agentOp } from '../lib/agentClient.js';
 import { assertAgentGuardsBuildPaths, capabilityRefusal, nodeLabel } from '../lib/agentCapabilities.js';
 import { agentTransportSealed } from '../lib/agentClient.js';
-import { ensureNodeVolumes, NODE_RUN_SPEC_FEATURE, type NodeVolumeAttachment, nodeRunCapabilities, nodeRunNeeds, nodeVolumeLabels } from '../lib/remoteVolumes.js';
+import {
+  ensureNodeVolumes,
+  NODE_RUN_SPEC_FEATURE,
+  type NodeVolumeAttachment,
+  nodeRunCapabilities,
+  nodeRunExtrasChecks,
+  nodeRunNeeds,
+  nodeVolumeLabels,
+} from '../lib/remoteVolumes.js';
 import { acquireRegistryLock, registryLockKey } from '../lib/registryLock.js';
 import { assertCloneTargetAllowed } from '../lib/gitEgress.js';
 import type { NodeGitCredentialSource } from '../lib/nodeGitCredential.js';
@@ -108,6 +116,10 @@ export interface FanoutContext {
     cmd?: string[] | null;
     dockerSocket?: boolean | null;
     ownerUserId?: number | null;
+    // 0.16.4: a target runs with the service's labels and command healthcheck (`docker.runSpec`).
+    dockerLabels?: Record<string, string> | null;
+    healthCheck?: string | null;
+    healthCommand?: string | null;
   };
   /** 0.16 T4 (D1): the service's volume attachments; a target mounts them through `docker.runSpec`. */
   volumeAttachments?: readonly NodeVolumeAttachment[];
@@ -185,11 +197,17 @@ export async function deployToTargets(
     const attachments = ctx.volumeAttachments ?? [];
     const runSpec = nodeRunNeeds(ctx.service, attachments).length > 0;
     if (runSpec) {
-      const why = await capabilityRefusal(agent, await nodeLabel(db, target.serverId), await agentTransportSealed(db, target.serverId), {
-        cap: nodeRunCapabilities(ctx.service, attachments),
-        feature: NODE_RUN_SPEC_FEATURE,
-        sealedRequired: true,
-      }).catch((err: unknown) => ({ message: err instanceof Error ? err.message : String(err) }));
+      const label = await nodeLabel(db, target.serverId);
+      const sealed = await agentTransportSealed(db, target.serverId);
+      // 0.16.4: custom labels and the command healthcheck first, each named on its own.
+      const checks = [...nodeRunExtrasChecks(ctx.service), { cap: nodeRunCapabilities(ctx.service, attachments), feature: NODE_RUN_SPEC_FEATURE }];
+      let why: { message: string } | null = null;
+      for (const check of checks) {
+        why = await capabilityRefusal(agent, label, sealed, { ...check, sealedRequired: true }).catch((err: unknown) => ({
+          message: err instanceof Error ? err.message : String(err),
+        }));
+        if (why) break;
+      }
       if (why) {
         results.push({ serverId: target.serverId, runtimeId: target.runtimeId, ok: false, error: why.message });
         log(`✗ target node #${target.serverId}: ${why.message} — the primary release is unaffected`);

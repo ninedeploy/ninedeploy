@@ -65,6 +65,8 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'db.manage': 'host a managed database',
   swarm: 'join the Swarm',
   'docker.ports': 'publish port mappings (UDP, port ranges, a host IP)',
+  'docker.userLabels': 'set custom Docker labels',
+  'docker.healthCmd': 'run the command healthcheck',
 };
 
 let db: DB;

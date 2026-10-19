@@ -417,6 +417,10 @@ export interface StackServiceSpec {
   memLimitMb?: number;
   /** Seconds a task gets between SIGTERM and SIGKILL. */
   stopGraceSeconds?: number;
+  /** 0.16.4: the service's own labels on each task container (never ninedeploy.*, com.docker.*, traefik.*). */
+  containerLabels?: Record<string, string>;
+  /** 0.16.4: the command healthcheck, run by Docker in each task (`CMD-SHELL`). */
+  healthCommand?: string;
 }
 
 export interface StackNetworkSpec {

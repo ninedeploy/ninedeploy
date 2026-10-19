@@ -32,6 +32,9 @@ export const MULTI_NODE_CAPABILITIES = [
   'swarm',
   // 0.16.1: `docker.runSpec` takes `ports` (UDP, ranges, a host IP).
   'docker.ports',
+  // 0.16.4: `docker.runSpec` takes `userLabels` (custom labels) and `healthCmd` (the command healthcheck).
+  'docker.userLabels',
+  'docker.healthCmd',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;

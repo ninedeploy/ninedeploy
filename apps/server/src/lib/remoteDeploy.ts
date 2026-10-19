@@ -238,6 +238,10 @@ export type RemoteServiceShape = {
   // 0.16 T4: where the image is built (NULL = where it runs, as before).
   buildOn?: string | null;
   buildServerId?: number | null;
+  // 0.16.4: custom labels and the command healthcheck need `docker.userLabels` / `docker.healthCmd`.
+  dockerLabels?: Record<string, string> | null;
+  healthCheck?: string | null;
+  healthCommand?: string | null;
 };
 
 const unsupported = (message: string): RemoteServiceRefusal => ({ status: 400, code: 'remote_deploy_unsupported', message });
