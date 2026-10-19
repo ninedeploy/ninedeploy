@@ -1759,6 +1759,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
           dockerLabels: service.dockerLabels,
           healthCheck: service.healthCheck,
           healthCommand: service.healthCommand,
+          runtimeOptions: service.runtimeOptions,
         },
         deploymentId,
         image: service.image ? await pullableReleaseRef(service.image, runtime!.imageDigest) : undefined,

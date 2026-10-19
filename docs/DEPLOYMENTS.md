@@ -48,7 +48,7 @@ When an HTTP answer does not prove the app is ready (a database, a worker that n
 
 - These are structured fields, not free-form flags: privileged mode, host mounts and the host network cannot be requested, and capabilities that lead out of the container (`SYS_ADMIN`, `SYS_MODULE`, …) are not offered.
 - Only an operator changes them; members see them and can redeploy. A member's clone and every PR preview start without them.
-- They apply on the panel host. A remote node or a Swarm service deploys without them and says so in the deploy log.
+- They apply on the panel host, and (0.16.6) on a node and each fan-out target whose agent is 0.16.6 or newer (capability `docker.runtimeOptions`). A node's owner can refuse them with `NINEDEPLOY_AGENT_RUNTIME_OPTIONS=off` on the agent. On an older agent, a switched-off one, or a Swarm service, the container starts without them, as before 0.16.6, and the deploy log says why; such a deploy is never refused for them. GPUs need the NVIDIA container toolkit on the node itself.
 
 ### Port mappings: UDP, ranges and a dedicated IP (0.16.1)
 

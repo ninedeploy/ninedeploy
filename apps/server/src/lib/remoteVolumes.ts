@@ -1,9 +1,10 @@
 import { eq } from 'drizzle-orm';
-import { databases, type DB, services, serviceVolumeAttachments } from '@ninedeploy/db';
+import { databases, type DB, type ServiceRuntimeOptions, services, serviceVolumeAttachments } from '@ninedeploy/db';
 import type { MultiNodeCapability } from '@ninedeploy/schemas';
 import { agentOp, agentTransportSealed } from './agentClient.js';
 import { type AgentCaller, type CapabilityRefusal, capabilityRefusal, nodeLabel } from './agentCapabilities.js';
 import { HttpError } from './errors.js';
+import { hasRuntimeOptions } from './runtimeOptionArgs.js';
 import { serviceFileCount } from './serviceFiles.js';
 
 /**
@@ -105,6 +106,41 @@ export function nodeFileMountChecks(fileCount: number): Array<{ cap: MultiNodeCa
   return fileCount > 0 ? [{ cap: ['docker.runSpec', 'docker.fileMounts'], feature: NODE_FILE_MOUNTS_FEATURE }] : [];
 }
 // ── end 0.16.5 ──
+
+// ── 0.16.6 container options on a node ──
+
+/** What the warning says an agent without `docker.runtimeOptions` cannot do. */
+export const NODE_RUNTIME_OPTIONS_FEATURE = 'apply container options (GPUs, shared memory, init, ulimit, capabilities)';
+
+/**
+ * The container options a node container starts with, or null.
+ *
+ * Unlike labels or file mounts, an agent without `docker.runtimeOptions` is
+ * no refusal: until 0.16.6 a node service with container options deployed
+ * without them, with a warning, and it keeps deploying that way (upgrade
+ * safety). The warning now names why: the agent's version, or its owner's
+ * `NINEDEPLOY_AGENT_RUNTIME_OPTIONS=off`.
+ */
+export async function nodeRuntimeOptions(
+  agent: AgentCaller,
+  label: string,
+  sealed: boolean,
+  service: { runtimeOptions?: ServiceRuntimeOptions | null },
+  log: (line: string) => void,
+): Promise<ServiceRuntimeOptions | null> {
+  if (!hasRuntimeOptions(service.runtimeOptions)) return null;
+  const refusal = await capabilityRefusal(agent, label, sealed, {
+    cap: ['docker.runSpec', 'docker.runtimeOptions'],
+    feature: NODE_RUNTIME_OPTIONS_FEATURE,
+    sealedRequired: true,
+  }).catch((err: unknown) => ({ message: err instanceof Error ? err.message : String(err) }));
+  if (refusal) {
+    log(`⚠ Container options (GPUs, shared memory, init, ulimit, capabilities) are not applied on node ${label}: ${refusal.message}`);
+    return null;
+  }
+  return service.runtimeOptions;
+}
+// ── end 0.16.6 ──
 
 /** The capabilities a node docker service of that shape needs. */
 export function nodeRunCapabilities(

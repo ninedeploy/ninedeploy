@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'no
 import path from 'node:path';
 import type { BuildContext, Builder } from '../types.js';
 import type { BuildConfig, ServicePortMapping, ServiceRuntimeOptions } from '@ninedeploy/db';
+import { runtimeOptionArgs } from '../../lib/runtimeOptionArgs.js';
 import { dockerLabelKeyProblem, dockerLabelValue, formatPortMapping, type NinedeployManifest } from '@ninedeploy/schemas';
 import { generateNixpacksToml } from '../../lib/ninedeployToNixpacks.js';
 import { buildEnv, capture, run, sleep } from '../../lib/exec.js';
@@ -283,23 +284,8 @@ export function publishedByContainer(mappings: readonly ServicePortMapping[] | n
   return (mappings ?? []).filter((m) => !m.allowFrom?.length);
 }
 
-/**
- * 0.16.1: the `docker run` flags for a service's advanced container options
- * (Service → Settings → Container options, operator only). Every value was
- * range- and allowlist-checked by the `runtimeOptions` schema when it was
- * saved; nothing here is a free-form flag. Null/empty → no flags, the line
- * every deploy had before.
- */
-export function runtimeOptionArgs(opts: ServiceRuntimeOptions | null | undefined): string[] {
-  if (!opts) return [];
-  const args: string[] = [];
-  if (opts.gpus != null) args.push('--gpus', String(opts.gpus));
-  if (opts.shmSizeMb != null) args.push('--shm-size', `${opts.shmSizeMb}m`);
-  if (opts.init) args.push('--init');
-  if (opts.ulimitNofile != null) args.push('--ulimit', `nofile=${opts.ulimitNofile}:${opts.ulimitNofile}`);
-  for (const cap of opts.capAdd ?? []) args.push('--cap-add', cap);
-  return args;
-}
+// 0.16.6: shared with the node agent's docker.runSpec.
+export { runtimeOptionArgs } from '../../lib/runtimeOptionArgs.js';
 
 /** The same options as compose service keys, for the compose bridge (r465). */
 function runtimeOptionCompose(opts: ServiceRuntimeOptions | null | undefined): string[] {

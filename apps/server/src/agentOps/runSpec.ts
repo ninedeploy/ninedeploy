@@ -1,4 +1,5 @@
 import {
+  runtimeOptions as runtimeOptionsSchema,
   dockerLabelKeyProblem,
   dockerLabelValue,
   formatPortMapping,
@@ -8,10 +9,12 @@ import {
   type PortMapping,
   portMappingsProblem,
 } from '@ninedeploy/schemas';
+import { runtimeOptionArgs } from '../lib/runtimeOptionArgs.js';
 import { spawnValidated } from '../lib/spawnValidated.js';
 import { assertFileMountsWritten, fileMountSource, parseFileMounts, type SpecFileMount } from './fileMounts.js';
 import type { AgentOpModule } from './index.js';
 import { intOperand, isManagedVolume, type Params, RE_IMAGE, RE_NAME, RE_PATH, switchedOff } from './operands.js';
+import type { ServiceRuntimeOptions } from '@ninedeploy/db';
 
 /**
  * `docker.runSpec` (multi-node, capability `docker.runSpec`, design §1.6): a
@@ -40,7 +43,7 @@ const RESERVED_LABELS = new Set(['ninedeploy.managed', 'ninedeploy.deployment', 
 const SPEC_KEYS = new Set([
   'name', 'image', 'envFile', 'restart', 'network', 'extraNetworks', 'volumes', 'dockerSocket', 'cmd', 'labels', 'publish', 'ports',
   'cpuShares', 'cpuLimitMilli', 'memLimitMb', 'managed', 'deploymentId', 'serviceId', 'userLabels', 'healthCmd',
-  'fileMounts',
+  'fileMounts', 'runtimeOptions',
 ]);
 const MAX_HEALTH_CMD_CHARS = 1000;
 /**
@@ -86,6 +89,8 @@ export interface RunSpec {
   healthCmd: string | null;
   /** 0.16.5 (`docker.fileMounts`): files `file.writeMount` wrote, bind-mounted read-only. */
   fileMounts: SpecFileMount[];
+  /** 0.16.6 (`docker.runtimeOptions`): the panel's container options, under its own schema. */
+  runtimeOptions: ServiceRuntimeOptions | null;
   publish: string | null;
   /** 0.16.1 (`docker.ports`): `-p` operands in their canonical form, `[ip:]host[-end]:container[-end]/proto`. */
   ports: string[];
@@ -185,6 +190,18 @@ export function parseRunSpec(p: Params, env: NodeJS.ProcessEnv = process.env): R
     healthCmd = c;
   }
 
+  // 0.16.6 container options: the panel's schema again (strict, the capability
+  // allow-list), and the node owner's switch, as for the socket.
+  let runtimeOptions: ServiceRuntimeOptions | null = null;
+  if (p['runtimeOptions'] !== undefined) {
+    const parsed = runtimeOptionsSchema.safeParse(p['runtimeOptions']);
+    if (!parsed.success) throw new Error('Invalid runtimeOptions');
+    if (switchedOff(env['NINEDEPLOY_AGENT_RUNTIME_OPTIONS'])) {
+      throw new Error('Container options are disabled on this node by its owner (NINEDEPLOY_AGENT_RUNTIME_OPTIONS=off)');
+    }
+    runtimeOptions = parsed.data as ServiceRuntimeOptions;
+  }
+
   let publish: string | null = null;
   if (p['publish'] !== undefined) {
     const m = typeof p['publish'] === 'string' ? /^(\d{1,5}):(\d{1,5})$/.exec(p['publish']) : null;
@@ -222,6 +239,7 @@ export function parseRunSpec(p: Params, env: NodeJS.ProcessEnv = process.env): R
     userLabels,
     healthCmd,
     fileMounts,
+    runtimeOptions,
     publish,
     ports,
     cpuShares: optInt('cpuShares', 262_144),
@@ -244,6 +262,7 @@ export function runSpecArgv(spec: RunSpec, verb: 'run' | 'create'): string[] {
   if (spec.cpuShares !== null) argv.push('--cpu-shares', String(spec.cpuShares));
   if (spec.cpuLimitMilli !== null) argv.push('--cpus', String(spec.cpuLimitMilli / 1000));
   if (spec.memLimitMb !== null) argv.push('--memory', `${spec.memLimitMb}m`, '--memory-swap', `${spec.memLimitMb}m`);
+  argv.push(...runtimeOptionArgs(spec.runtimeOptions));
   for (const v of spec.volumes) argv.push('-v', `${v.name}:${v.mount}${v.readOnly ? ':ro' : ''}`);
   if (spec.dockerSocket) argv.push('-v', '/var/run/docker.sock:/var/run/docker.sock');
   for (const f of spec.fileMounts) argv.push('-v', `${fileMountSource(f)}:${f.mount}:ro`);
@@ -279,8 +298,9 @@ export const runSpecOps: AgentOpModule = {
   name: 'agentOps/runSpec.ts',
   // Parameter-level capabilities: `docker.ports` is the `ports` field of
   // docker.runSpec, `docker.userLabels` its `userLabels`, `docker.healthCmd` its `healthCmd`.
-  // `docker.fileMounts` (its `fileMounts` field and file ops) is declared by agentOps/fileMounts.ts.
-  caps: ['docker.runSpec', 'docker.ports', 'docker.userLabels', 'docker.healthCmd'],
+  // `docker.fileMounts` (its `fileMounts` field and file ops) is declared by agentOps/fileMounts.ts;
+  // `docker.runtimeOptions` is its `runtimeOptions` field (0.16.6).
+  caps: ['docker.runSpec', 'docker.ports', 'docker.userLabels', 'docker.healthCmd', 'docker.runtimeOptions'],
   ops: {
     'docker.runSpec': { cap: 'docker.runSpec', sealedOnly: true, run: (p, onLine) => runSpecOp(p, onLine) },
   },

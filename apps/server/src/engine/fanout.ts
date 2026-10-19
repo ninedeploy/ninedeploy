@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { serviceTargets, servers, type DB } from '@ninedeploy/db';
+import { serviceTargets, servers, type DB, type ServiceRuntimeOptions } from '@ninedeploy/db';
 import { agentOp } from '../lib/agentClient.js';
 import { assertAgentGuardsBuildPaths, capabilityRefusal, nodeLabel } from '../lib/agentCapabilities.js';
 import { agentTransportSealed } from '../lib/agentClient.js';
@@ -11,9 +11,11 @@ import {
   nodeRunCapabilities,
   nodeRunExtrasChecks,
   nodeRunNeeds,
+  nodeRuntimeOptions,
   nodeVolumeLabels,
 } from '../lib/remoteVolumes.js';
 import { acquireRegistryLock, registryLockKey } from '../lib/registryLock.js';
+import { hasRuntimeOptions } from '../lib/runtimeOptionArgs.js';
 import { type NodeServiceFile, writeNodeFileMounts } from '../lib/serviceFiles.js';
 import { assertCloneTargetAllowed } from '../lib/gitEgress.js';
 import type { NodeGitCredentialSource } from '../lib/nodeGitCredential.js';
@@ -122,6 +124,8 @@ export interface FanoutContext {
     dockerLabels?: Record<string, string> | null;
     healthCheck?: string | null;
     healthCommand?: string | null;
+    // 0.16.6: applied on a target whose agent can (docker.runtimeOptions); otherwise warned about.
+    runtimeOptions?: ServiceRuntimeOptions | null;
   };
   /** 0.16 T4 (D1): the service's volume attachments; a target mounts them through `docker.runSpec`. */
   volumeAttachments?: readonly NodeVolumeAttachment[];
@@ -200,7 +204,11 @@ export async function deployToTargets(
     // `docker.runSpec` (sealed); asked before anything is sent, never dropped.
     const attachments = ctx.volumeAttachments ?? [];
     const files = ctx.files ?? [];
-    const runSpec = nodeRunNeeds(ctx.service, attachments, files.length).length > 0;
+    // 0.16.6: the container options, when this target's agent applies them.
+    const runtimeOptions = hasRuntimeOptions(ctx.service.runtimeOptions)
+      ? await nodeRuntimeOptions(agent, await nodeLabel(db, target.serverId), await agentTransportSealed(db, target.serverId), ctx.service, log)
+      : null;
+    const runSpec = nodeRunNeeds(ctx.service, attachments, files.length).length > 0 || runtimeOptions !== null;
     if (runSpec) {
       const label = await nodeLabel(db, target.serverId);
       const sealed = await agentTransportSealed(db, target.serverId);
@@ -366,6 +374,7 @@ export async function deployToTargets(
               volumes,
               publish: runParams['publish'] as string | undefined,
               fileMounts,
+              runtimeOptions,
             }),
             log,
           );

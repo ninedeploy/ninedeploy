@@ -82,7 +82,7 @@ export function ContainerOptionsCard({ svc }: { svc: Service }) {
         </div>
         <p className="mb-4 text-xs text-slate-500">
           GPUs, shared memory and extra capabilities for this service&apos;s container, applied on the next deploy on the panel
-          host (not on remote nodes or Swarm yet). {operator ? 'Only operators can change them.' : 'Set by an operator.'}
+          host, or on a node whose agent is 0.16.6 or newer (not on Swarm). {operator ? 'Only operators can change them.' : 'Set by an operator.'}
         </p>
         {!operator ? (
           <p className="text-xs text-slate-300">{summary.length > 0 ? summary.join(' · ') : 'Docker defaults.'}</p>

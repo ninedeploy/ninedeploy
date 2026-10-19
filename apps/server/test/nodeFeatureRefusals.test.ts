@@ -68,6 +68,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'docker.userLabels': 'set custom Docker labels',
   'docker.healthCmd': 'run the command healthcheck',
   'docker.fileMounts': 'mount files (Service → Volumes → Files)',
+  'docker.runtimeOptions': 'apply container options (GPUs, shared memory, init, ulimit, capabilities)',
 };
 
 let db: DB;

@@ -498,6 +498,31 @@ describe('0.16 T4: fan-out runs what the primary runs (D1) and ships what it bui
     expect(spec['fileMounts']).toEqual([{ file: '.agent-files/web/d9/5', mount: '/etc/nginx/nginx.conf' }]);
   });
 
+  it('0.16.6: a target applies the container options when its agent can; an older one runs without them, warned', async () => {
+    const runtimeOptions = { init: true, shmSizeMb: 1024 };
+    answer(CAPS_ALL);
+    const log = vi.fn();
+    const older = await deployToTargets(
+      dbWithTargets([{ serverId: 5, runtimeId: null }]) as never,
+      { service: { ...svc, runtimeOptions }, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null },
+      log,
+    );
+    expect(older[0]).toMatchObject({ ok: true });
+    expect(ops()).toContain('docker.runEnv');
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/Container options .* are not applied on node .*Update the node agent to v0\.16\.6/));
+
+    vi.clearAllMocks();
+    answer(CAPS_ALL.replace('"image.manage"', '"image.manage","docker.runtimeOptions"'));
+    const results = await deployToTargets(
+      dbWithTargets([{ serverId: 5, runtimeId: null }]) as never,
+      { service: { ...svc, runtimeOptions }, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null },
+      vi.fn(),
+    );
+    expect(results[0]).toMatchObject({ ok: true });
+    const spec = agentMocks.agentOp.mock.calls.find((c) => c[2] === 'docker.runSpec')![3] as Record<string, unknown>;
+    expect(spec['runtimeOptions']).toEqual(runtimeOptions);
+  });
+
   it('a shipped release: the target receives it through `prebuilt.ship` — no pull, no clone, no build — and runs it', async () => {
     answer(CAPS_ALL);
     const db = dbWithTargets([{ serverId: 5, runtimeId: null }, { serverId: 6, runtimeId: null }]);

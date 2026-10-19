@@ -53,6 +53,7 @@ The panel keeps the last answer in memory for up to 5 minutes, so after an agent
 | Custom Docker labels | `docker.runSpec` + `docker.userLabels` | 0.16.4 | — (the agent refuses `ninedeploy.*`, `com.docker.*`, `traefik.*`) |
 | Command healthcheck (as the container's Docker healthcheck) | `docker.runSpec` + `docker.healthCmd` | 0.16.4 | — |
 | File mounts (Service → Volumes → Files) | `docker.runSpec` + `docker.fileMounts` | 0.16.5 | — (only files the agent wrote under `.agent-files/` are mounted, read-only) |
+| Container options (GPUs, shared memory, init, ulimit, capabilities) | `docker.runSpec` + `docker.runtimeOptions` | 0.16.6 | `NINEDEPLOY_AGENT_RUNTIME_OPTIONS=off`. Not a refusal: without it the container starts without them, as before, and the log says why |
 
 A switch counts as off when it is `off`, `false`, `0`, `no` or `disabled`. Switching a feature off removes its capability from the ping, and the agent refuses the operation too.
 

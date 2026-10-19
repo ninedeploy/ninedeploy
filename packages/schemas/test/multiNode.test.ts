@@ -35,7 +35,7 @@ import {
 } from '../src/index.js';
 
 describe('agent capabilities (multi-node §1.1)', () => {
-  it('lists the new capabilities in their advertised order (docker.ports appended in 0.16.1, labels and the healthcheck command in 0.16.4, file mounts in 0.16.5)', () => {
+  it('lists the new capabilities in their advertised order (docker.ports appended in 0.16.1, labels and the healthcheck command in 0.16.4, file mounts in 0.16.5, container options in 0.16.6)', () => {
     expect(MULTI_NODE_CAPABILITIES).toEqual([
       'stream',
       'docker.runSpec',
@@ -50,6 +50,7 @@ describe('agent capabilities (multi-node §1.1)', () => {
       'docker.userLabels',
       'docker.healthCmd',
       'docker.fileMounts',
+      'docker.runtimeOptions',
     ]);
     expect(multiNodeCapability.parse('db.manage')).toBe('db.manage');
     // A 0.15 capability is not one of them.

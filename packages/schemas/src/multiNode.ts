@@ -37,6 +37,8 @@ export const MULTI_NODE_CAPABILITIES = [
   'docker.healthCmd',
   // 0.16.5: `docker.runSpec` takes `fileMounts`, written by `file.writeMount`.
   'docker.fileMounts',
+  // 0.16.6: `docker.runSpec` takes `runtimeOptions` (GPUs, shared memory, init, ulimit, capabilities).
+  'docker.runtimeOptions',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;

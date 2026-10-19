@@ -466,14 +466,8 @@ export function createRemoteDockerBuilder(
         if (env['PORT'] === undefined) runEnv = { ...env, PORT: String(port) };
       }
 
-      // 0.16.1: the agent's run ops take no container options yet — say so
-      // instead of starting the container as if they had been applied.
-      if (service.runtimeOptions && Object.keys(service.runtimeOptions).length > 0) {
-        log(
-          '⚠ Container options (GPUs, shared memory, init, ulimit, capabilities) are not applied on a remote node yet. ' +
-            'Deploy the service on the panel host to use them.',
-        );
-      }
+      // 0.16.6: container options travel on docker.runSpec when the agent
+      // can apply them; otherwise runRemoteContainer warns, as 0.16.1 did.
 
       // The run phase (env-file, `docker.runEnv`, cleanup) lives in
       // remoteRun.ts, unchanged.

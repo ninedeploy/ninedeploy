@@ -348,6 +348,8 @@ export const AGENT_PORTS_VERSION = '0.16.1';
 export const AGENT_RUN_EXTRAS_VERSION = '0.16.4';
 /** 0.16.5: `docker.fileMounts` (file mounts on `docker.runSpec`, written by `file.writeMount`). */
 export const AGENT_FILE_MOUNTS_VERSION = '0.16.5';
+/** 0.16.6: `docker.runtimeOptions` (container options on `docker.runSpec`). */
+export const AGENT_RUNTIME_OPTIONS_VERSION = '0.16.6';
 export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, string>> = {
   // ── 0.16 T2 agent transport ──
   stream: AGENT_MULTI_NODE_VERSION,
@@ -370,6 +372,7 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
   'docker.userLabels': AGENT_RUN_EXTRAS_VERSION,
   'docker.healthCmd': AGENT_RUN_EXTRAS_VERSION,
   'docker.fileMounts': AGENT_FILE_MOUNTS_VERSION,
+  'docker.runtimeOptions': AGENT_RUNTIME_OPTIONS_VERSION,
 };
 
 /**
@@ -383,6 +386,7 @@ export const CAPABILITY_SWITCH: Readonly<Partial<Record<MultiNodeCapability, str
   'build.railpack': 'NINEDEPLOY_AGENT_BUILDS',
   'git.sshkey': 'NINEDEPLOY_AGENT_STATIC_CREDENTIALS',
   'db.manage': 'NINEDEPLOY_AGENT_DATABASES',
+  'docker.runtimeOptions': 'NINEDEPLOY_AGENT_RUNTIME_OPTIONS',
   // ── 0.16 T7 swarm ── opt-in (security review M2): unset means off.
   swarm: 'NINEDEPLOY_AGENT_SWARM_MANAGER',
   // ── end 0.16 T7 ──

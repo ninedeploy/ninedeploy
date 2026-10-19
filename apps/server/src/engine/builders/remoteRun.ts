@@ -12,8 +12,10 @@ import {
   nodeRunExtras,
   nodeRunExtrasChecks,
   nodeRunNeeds,
+  nodeRuntimeOptions,
   nodeVolumeLabels,
 } from '../../lib/remoteVolumes.js';
+import type { ServiceRuntimeOptions } from '@ninedeploy/db';
 import { type NodeFileMount, type NodeServiceFile, writeNodeFileMounts } from '../../lib/serviceFiles.js';
 
 /**
@@ -110,7 +112,9 @@ export async function runRemoteContainer(agent: AgentCall, input: RemoteRunInput
   // refused deploy leaves no secret on the node and starts nothing.
   const attachments = input.volumeAttachments ?? [];
   const files = input.files ?? [];
-  const runSpec = nodeRunNeeds(service, attachments, files.length).length > 0;
+  // 0.16.6: applied when the agent can; otherwise the container starts without them, as before.
+  const runtimeOptions = await nodeRuntimeOptions(agent, input.nodeLabel ?? `#${service.serverId ?? '?'}`, input.sealed ?? true, service, log);
+  const runSpec = nodeRunNeeds(service, attachments, files.length).length > 0 || runtimeOptions !== null;
   const specVolumes: SpecVolume[] = [];
   let fileMounts: NodeFileMount[] = [];
   if (runSpec) {
@@ -205,6 +209,7 @@ export async function runRemoteContainer(agent: AgentCall, input: RemoteRunInput
           publish: runParams['publish'] as string | undefined,
           ports,
           fileMounts,
+          runtimeOptions,
         }),
         sink,
       );
@@ -250,6 +255,8 @@ export function runSpecParams(
     ports?: readonly string[];
     /** 0.16.5 (`docker.fileMounts`): the files `file.writeMount` wrote. */
     fileMounts?: readonly NodeFileMount[];
+    /** 0.16.6 (`docker.runtimeOptions`): the container options, when the agent applies them. */
+    runtimeOptions?: ServiceRuntimeOptions | null;
   },
 ): Record<string, unknown> {
   // runSpec accepts only the agent's own env-file shape, which is what
@@ -272,6 +279,7 @@ export function runSpecParams(
   if (run.publish !== undefined) spec['publish'] = run.publish;
   if (run.ports?.length) spec['ports'] = [...run.ports];
   if (run.fileMounts?.length) spec['fileMounts'] = run.fileMounts.map((f) => ({ file: f.file, mount: f.mount }));
+  if (run.runtimeOptions) spec['runtimeOptions'] = { ...run.runtimeOptions };
   // 0.16.4 (`docker.userLabels`, `docker.healthCmd`): sent only when set, so
   // an older agent never sees a field it would refuse.
   Object.assign(spec, nodeRunExtras(service));
