@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.16.15",
+    "date": "2026-10-20",
+    "title": "Claude, and AI that reads runtime logs",
+    "changes": [
+      "Claude as an AI provider (Settings → AI assistant): pick Claude (Anthropic) or an OpenAI-compatible endpoint. Claude needs only a model and an API key; the base URL is optional. A configuration saved before keeps working as OpenAI-compatible.",
+      "Analyze runtime logs: on a running service, open Runtime logs and press Analyze. The configured model reads the newest lines and answers with the service's health, each problem with its log lines quoted, and next steps.",
+      "The logs are sanitized before they leave the panel, as for a failed-deploy diagnosis, and the same access rules apply, protected lanes included. The CLI has ninedeploy logs analyze; the SDK has ai.analyzeLogs.",
+      "Nothing changes until the operator configures a provider. See docs/AI.md."
+    ]
+  },
+  {
     "version": "0.16.14",
     "date": "2026-10-20",
     "title": "Pull requests from forks",

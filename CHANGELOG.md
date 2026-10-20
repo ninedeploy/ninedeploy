@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.16.15] - 2026-10-20
+
+> Claude as an AI provider, and AI that reads a running service's logs.
+
+### Upgrade notes
+
+- **No migration.** The AI configuration gains an optional `provider`. A configuration saved before has none and keeps working as an OpenAI-compatible endpoint, unchanged.
+- `GET /v1/ai/config` reports `provider`. `PUT /v1/ai/config` without `provider` means `openai` and still needs `baseUrl`.
+
+### Added
+
+- **Claude as a provider.** `provider: 'anthropic'` on `PUT /v1/ai/config` (Settings → AI assistant, which now has a provider selector).
+  - It calls the Anthropic Messages API (`POST <base>/v1/messages`, `x-api-key`, `anthropic-version: 2023-06-01`).
+  - `baseUrl` is optional and defaults to `https://api.anthropic.com`.
+  - Every AI feature uses it: failed-deploy diagnosis, manifest suggestions and the log analysis below. The provider code is shared (`lib/aiProvider.ts`), so the upstream body is still never relayed in an error.
+- **Runtime-log analysis.** `POST /v1/ai/services/:id/logs/analyze` with `{ tail? }` (20–5000, default 300).
+  - It reads the service's newest runtime log lines through the same reader as `GET /v1/services/:id/logs` (PM2, Swarm, nodes, the panel host), and applies the diagnosis sanitizer and its 16 KB cap.
+  - It answers the model's analysis (health, problems with the log lines quoted, next steps), the model, and how many lines were sent.
+  - Gates: `member` on the service, protected lanes, the AI spend rule, 10 calls a minute. It is audited as `ai.analyze_logs`.
+  - Web: an **Analyze** button on the runtime logs card when a provider is configured. CLI: `ninedeploy logs analyze <service> [--tail] [--json]`. SDK: `ai.analyzeLogs`.
+- **Docs:** [docs/AI.md](docs/AI.md) describes the providers, who may use them, what leaves the panel, and each feature.
+
 ## [0.16.14] - 2026-10-20
 
 > Pull requests from forks get a preview, held for approval and cloned with no credential.

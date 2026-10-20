@@ -10,7 +10,7 @@ the databases, certificates, secrets, backups and access rules around it — fro
 terminal CLI, a typed SDK, or an AI agent over MCP.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Release](https://img.shields.io/badge/Release-0.16.14-blue.svg)](./CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Release-0.16.15-blue.svg)](./CHANGELOG.md)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522.13-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7-blue.svg)](https://www.typescriptlang.org)
 [![Docker](https://img.shields.io/badge/Docker-required-blue.svg)](https://docker.com)
@@ -70,12 +70,12 @@ runs the SQLite migrations, and starts a hardened `systemd` unit (`ProtectSystem
 Re-running the same command is the upgrade path; it snapshots `.data` before touching anything.
 
 ```bash
-./install.sh --version v0.16.14     # pin an exact tag
+./install.sh --version v0.16.15     # pin an exact tag
 ./install.sh --channel main       # track edge
 ./install.sh --force              # discard local edits + stale build artifacts, then rebuild
 ```
 
-> **Where `main` stands:** the default channel installs the newest release tag (**0.16.14**).
+> **Where `main` stands:** the default channel installs the newest release tag (**0.16.15**).
 > Work lands on `main` before it is tagged — see [`CHANGELOG.md`](./CHANGELOG.md) under *Unreleased*
 > (empty right now), or run `--channel main` to get it today.
 
@@ -647,6 +647,7 @@ build, and the integration job.
 | [Security & SSO](./docs/SECURITY_SSO.md) | Vault design, OIDC, passkeys, TOTP, session handling |
 | [Databases & backups](./docs/DATABASES_BACKUPS.md) | Engines, injected connection strings, encryption, S3 destinations, restores, dump import |
 | [Ingress & tunnels](./docs/TRAEFIK_INGRESS.md) | Dynamic routing, ACME HTTP-01/DNS-01, middlewares, Cloudflare Tunnels, custom config, uploaded certificates, public database access, traffic analytics |
+| [AI assistant](./docs/AI.md) | Claude or an OpenAI-compatible provider, failed-deploy diagnosis, runtime-log analysis, what leaves the panel |
 | [Secret managers](./docs/SECRET_MANAGERS.md) | HashiCorp Vault / OpenBao and AWS Secrets Manager references, setup, limits |
 | [Roadmap](./docs/ROADMAP.md) | What shipped in each 0.12–0.16 line and what is still open |
 | [Rolling back](./docs/ROLLBACK.md) | What a rollback to the previous release leaves behind, and how to clean it up |
