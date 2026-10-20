@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.16.14",
+    "date": "2026-10-20",
+    "title": "Pull requests from forks",
+    "changes": [
+      "Build pull requests from forks (Service → Settings → Previews): a fork's pull request can get a preview too. Every deploy of it waits for an admin to approve it after reading the change, whatever lane the service is in.",
+      "A fork is cloned without the service's Git credential or GitHub App token, on the panel and on nodes, so only a public fork builds. It gets no database copies and none of the secret preview-only values. Docker services only, on the same git host as the repository.",
+      "GitLab merge requests and Bitbucket pull requests from a fork now clone the fork. Before, they cloned the target repository at the fork's branch name, which failed or built the wrong code.",
+      "Nothing changes until you turn it on: a fork's pull request is refused as before. The CLI has ninedeploy previews forks."
+    ]
+  },
+  {
     "version": "0.16.13",
     "date": "2026-10-20",
     "title": "Protected lanes and deploy approvals",

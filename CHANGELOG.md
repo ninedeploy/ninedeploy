@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.16.14] - 2026-10-20
+
+> Pull requests from forks get a preview, held for approval and cloned with no credential.
+
+### Upgrade notes
+
+- **One additive migration (0092: `services.preview_forks`, default off, and `services.preview_from_fork`, default false).** Nothing is turned on: a fork's pull request is refused as before, and every existing preview reads as one from the repository itself.
+- **GitLab and Bitbucket:** a merge request or pull request from a fork used to be read as coming from the target repository. Its preview cloned the target at the fork's branch name, which failed or built the wrong code. It is now recognised as a fork, so it is refused unless the service turns fork previews on. A merge request from the repository itself is read as before.
+
+### Added
+
+- **Previews of pull requests from forks.** `previewForks: true` on a service (Settings → Previews; `PATCH /v1/services/:id`; CLI `ninedeploy previews forks <service> on|off`) lets a fork's pull request create a preview:
+  - **Approval:** every deploy of a fork preview waits as `awaiting_approval`, whatever the lane says, until an admin approves or rejects it. In a lane, the lane's admins decide; outside a lane, `admin` on the service is enough. A newer push replaces the waiting deploy.
+  - **No credential:** the fork is cloned anonymously. Neither the service's Git credential nor a GitHub App token is resolved for it, on the panel or on a node, so only a public fork builds.
+  - **Less inherited:** the parent's non-secret variables and non-secret preview-only values; no secrets of any kind, no database copies.
+  - **Limits:** docker services without the Docker socket only (`fork_preview_unsupported_type` otherwise), and a fork on the repository's own git host (`fork_on_another_host` otherwise). The GitHub App tells a fork by repository id.
+  - **Clients:** the preview row carries `previewFromFork: true`. The web switch is in the preview settings, and `ninedeploy previews show` shows both. See [docs/DEPLOYMENTS.md](docs/DEPLOYMENTS.md#pull-requests-from-forks-01614).
+
+### Fixed
+
+- **GitLab and Bitbucket previews clone the source repository.** The merge request's `source` project and the pull request's `source.repository`, falling back to the target as before.
+- **Preview settings at create time.** A service created with `previewDatabaseCopy` (or the new `previewForks`) in its create request now stores it; the create route accepted the field but ignored it.
+
 ## [0.16.13] - 2026-10-20
 
 > Protected lanes and deploy approvals: production secrets stay with admins, and production deploys wait for one.
