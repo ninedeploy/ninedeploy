@@ -241,7 +241,7 @@ vi.mock('../src/commands/sleep.js', () => ({
   sleepNow: vi.fn(), sleepOff: vi.fn(), sleepSet: vi.fn(), sleepShow: vi.fn(), sleepWake: vi.fn(),
 }));
 // 0.16.12: previews.ts resolves services through uptime.ts. Exercised by test/previews.test.ts.
-vi.mock('../src/commands/previews.js', () => ({ previewsDatabaseCopies: vi.fn(), previewsShow: vi.fn() }));
+vi.mock('../src/commands/previews.js', () => ({ previewsDatabaseCopies: vi.fn(), previewsForks: vi.fn(), previewsShow: vi.fn() }));
 // 0.16.13: exercised by test/approvals.test.ts.
 vi.mock('../src/commands/approvals.js', () => ({ approvalsDecide: vi.fn(), approvalsList: vi.fn(), lanesList: vi.fn(), lanesSwitch: vi.fn() }));
 vi.mock('../src/commands/housekeeping.js', () => ({
@@ -454,7 +454,8 @@ describe('program registration', () => {
     // 0.16.11: + `sleep` (5).
     // 0.16.12: + `previews` (2).
     // 0.16.13: + `lanes` (3) and `approvals` (3).
-    expect(h.FakeCommand.instances).toHaveLength(311);
+    // 0.16.14: + `previews forks`.
+    expect(h.FakeCommand.instances).toHaveLength(312);
     expect(findCommand('monitors').children.map((c) => c.cmdName)).toEqual([
       'list', 'add <name> <target>', 'show <id>', 'check <id>', 'pause <id>', 'resume <id>', 'rm <id>',
     ]);
@@ -471,7 +472,7 @@ describe('program registration', () => {
       'show <service>', 'set <service> <minutes>', 'off <service>', 'now <service>', 'wake <service>',
     ]);
     expect(findCommand('previews').children.map((c) => c.cmdName)).toEqual([
-      'show <service>', 'database-copies <service> <onOff>',
+      'show <service>', 'database-copies <service> <onOff>', 'forks <service> <onOff>',
     ]);
     expect(findCommand('lanes').children.map((c) => c.cmdName)).toEqual([
       'list', 'protect <lane> <onOff>', 'require-approval <lane> <onOff>',

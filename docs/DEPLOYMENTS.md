@@ -269,6 +269,27 @@ With **Service → Settings → Previews → Give each preview its own database 
 - **Failure.** If a copy cannot be made, the half-made copy is removed and the preview's deploy fails with the reason. It never falls back to the production database.
 - **Size.** A copy takes the disk of the parent database again, and a restore briefly needs about three times the dump's size free. The `previewMaxActive` limit also bounds how many copies exist.
 
+### Pull requests from forks (0.16.14)
+
+A pull request from a fork is code from outside the repository, so by default it gets no preview: the webhook answers `skipped: external_pr_repository`. With **Service → Settings → Previews → Build pull requests from forks** on (`previewForks: true` on `PATCH /v1/services/:id`; CLI `ninedeploy previews forks <service> on|off`), a fork's pull request gets a preview too, under these rules:
+
+- **Every deploy waits for approval.** Each push to the fork's branch queues a deploy that waits as `awaiting approval`, whatever lane the service is in. An admin decides after reading the change. They do that on the preview's Deploys tab, on the Deploys page, or with `ninedeploy approvals approve|reject`.
+  - In a lane, the lane's admins decide. Outside a lane, anyone with `admin` on the service decides.
+  - A deploy an admin starts by hand goes straight through.
+  - A newer push replaces the waiting deploy, so nothing older is built after it.
+- **No credential.** The fork is cloned anonymously, on the panel or on a node. Neither the service's Git credential nor a GitHub App token is ever part of the checkout the fork's code builds from. So only a public fork builds; a private one fails at the clone, and the log says why.
+- **Less than a same-repository preview.** A fork preview gets:
+  - the parent's non-secret variables and the non-secret preview-only values;
+  - no secrets of any kind;
+  - no database copies, even with database copies on.
+- **Docker services only, on the same git host.** A service that runs on the host (PM2), a compose stack, or a service with the Docker socket never builds a fork (`fork_preview_unsupported_type`). A fork on another host than the service's repository is ignored (`fork_on_another_host`).
+- **Telling a fork from the repository.** The GitHub App compares repository ids, so a fork whose URL looks like the repository's is still a fork. A per-service webhook compares the head repository's URL with the service's.
+- **The preview row.** `previewFromFork: true` on the preview service. `ninedeploy previews show` says so.
+
+Turning the switch off refuses the fork's next push again, as before. Previews that already exist stay until their PR closes.
+
+0.16.14 also fixes how GitLab merge requests and Bitbucket pull requests are read: their preview now clones the source (fork) repository. Before, it cloned the target repository at the fork's branch name, which failed or built the wrong code. A merge request from the repository itself is read as before.
+
 ---
 
 ---
@@ -336,7 +357,7 @@ Having created the service is not enough. Otherwise a member could approve their
 - a protected service's previews are protected too;
 - an approval-gated service's previews wait for approval. A preview runs the PR's code with the parent's variables, so this is where the gate matters.
 
-Previews of pull requests from forks are still refused, as before.
+Previews of pull requests from forks are refused unless the service builds them (0.16.14, [below](#pull-requests-from-forks-01614)), and then each of their deploys waits for approval whatever the lane says.
 
 - API:
   - `PATCH /v1/environments/:id` with `{ protected, requireApproval }` (admin);

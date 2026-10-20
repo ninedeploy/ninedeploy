@@ -369,6 +369,7 @@ export default fp(
           ownerUserId: services.ownerUserId,
           environmentId: services.environmentId,
           previewParentServiceId: services.previewParentServiceId,
+          previewFromFork: services.previewFromFork,
           reviewedAt: deployments.reviewedAt,
         })
         .from(deployments)
@@ -381,7 +382,12 @@ export default fp(
         // waits for an admin instead of building. Gating here, not at each
         // insert, covers every trigger (webhook, schedule, image poll, API).
         if (await holdForApprovalIfNeeded(fastify.db, row)) {
-          logBus.publish(row.id, '⏸ Waiting for approval: this lane requires a workspace admin to approve each deploy');
+          logBus.publish(
+            row.id,
+            row.previewFromFork
+              ? '⏸ Waiting for approval: this preview builds a pull request from a fork, and each of its deploys needs an admin to approve it'
+              : '⏸ Waiting for approval: this lane requires a workspace admin to approve each deploy',
+          );
           // A newer waiting deploy replaces an older one: at most one waits
           // per service, and approving never ships older code.
           for (const staleId of await dropStaleApprovals(fastify.db, row.serviceId, row.id)) {

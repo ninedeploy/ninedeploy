@@ -236,11 +236,13 @@ async function routeRepositoryEvent(
   const repoId = posInt(repo?.['id']);
   if (!repo || !repoId) return { ok: 'ignored', reason: 'no_repository' };
 
+  // A fork's head is code from outside the repository. Compared by id: a URL
+  // can be made to look alike. 0.16.14: a fork PR reaches only services that
+  // turned `previewForks` on (handlePullRequest decides per service).
+  let fromFork = false;
   if (event === 'pull_request') {
-    // A fork's head is code from outside the repository; previews inherit the
-    // parent's environment. Compared by id: a URL can be made to look alike.
     const headRepoId = posInt(obj(obj(obj(body['pull_request'])?.['head'])?.['repo'])?.['id']);
-    if (headRepoId !== repoId) return { ok: 'skipped', reason: 'external_pr_repository' };
+    fromFork = headRepoId !== repoId;
   }
 
   const links = await db.query.serviceGithubLinks.findMany({
@@ -270,7 +272,7 @@ async function routeRepositoryEvent(
         ),
       );
     } else if (pr) {
-      results.push(await perService(svc.id, () => handlePullRequest(db, svc, pr, 'github', log)));
+      results.push(await perService(svc.id, () => handlePullRequest(db, svc, pr, 'github', log, { fromFork })));
     }
   }
   return { ok: true, event, results };

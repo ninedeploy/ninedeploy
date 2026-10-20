@@ -562,6 +562,12 @@ export const services = sqliteTable(
     // 0.16.12: each PR preview gets its own copy of this service's attached
     // databases (lib/previewDatabases.ts). Off = previews get none, as before.
     previewDatabaseCopy: integer('preview_database_copy', { mode: 'boolean' }).notNull().default(false),
+    // 0.16.14 (0092): build previews of pull requests from forks too. Off =
+    // fork PRs are refused, as before. A fork preview clones with no
+    // credential and every one of its deploys waits for approval.
+    previewForks: integer('preview_forks', { mode: 'boolean' }).notNull().default(false),
+    // On a preview: its PR comes from a fork (set once, at creation).
+    previewFromFork: integer('preview_from_fork', { mode: 'boolean' }).notNull().default(false),
     previewDomainPattern: text('preview_domain_pattern'),
     previewMaxActive: integer('preview_max_active').notNull().default(5),
     isEphemeralPreview: integer('is_ephemeral_preview', { mode: 'boolean' }).notNull().default(false),

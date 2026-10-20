@@ -1055,6 +1055,73 @@ async function approvalChecks(token, serviceId, hook) {
   if (gone.status !== 200) fail(`lane delete answered ${gone.status}`);
 }
 
+// 0.16.14: a pull request from a fork, end to end up to the approval gate. A
+// git service with previews and fork previews on gets a signed fork PR: the
+// preview is created as a fork (no credential), its deploy waits for
+// approval before anything is cloned, and the reject cancels it. With forks
+// off the same delivery is refused, as before 0.16.14.
+const FORKS_IN = [0, 16, 14];
+async function forkPreviewChecks(token) {
+  const created = await api('/v1/services', {
+    method: 'POST',
+    token,
+    body: {
+      name: `journey-forks-${suffix}`,
+      type: 'docker',
+      repoUrl: 'https://github.com/journey/app.git',
+      branch: 'main',
+      port: 80,
+      previewDeploymentsEnabled: true,
+      previewForks: true,
+    },
+  });
+  const parentId = created.json?.id ?? created.json?.service?.id;
+  if (!parentId || created.json?.previewForks !== true) fail(`fork-preview parent create answered ${created.status} ${created.text.slice(0, 300)}`);
+  const hook = await api(`/v1/services/${parentId}/webhooks`, { method: 'POST', token, body: {} });
+  if (!hook.json?.secret) fail(`webhook create on the fork-preview parent answered ${hook.status}`);
+  const deliver = async (n) => {
+    const body = JSON.stringify({
+      action: 'opened',
+      number: n,
+      pull_request: {
+        number: n,
+        title: `fork PR ${n}`,
+        user: { login: 'mallory' },
+        head: { ref: 'feature', sha: randomBytes(20).toString('hex'), repo: { clone_url: 'https://github.com/mallory/app.git' } },
+      },
+      repository: { full_name: 'journey/app', clone_url: 'https://github.com/journey/app.git' },
+    });
+    const sig = `sha256=${createHmac('sha256', hook.json.secret).update(body).digest('hex')}`;
+    const res = await fetch(`http://127.0.0.1:${PANEL_PORT}/v1/hooks/${hook.json.id}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-github-event': 'pull_request', 'x-hub-signature-256': sig },
+      body,
+    });
+    return { status: res.status, json: await res.json().catch(() => null) };
+  };
+  const opened = await deliver(31);
+  if (opened.status !== 200 || opened.json?.action !== 'preview_deployment_queued' || !opened.json.previewServiceId) {
+    fail(`a fork PR with forks on answered ${opened.status} ${JSON.stringify(opened.json)}`);
+  }
+  const preview = (await api(`/v1/services/${opened.json.previewServiceId}`, { token })).json;
+  if (preview?.previewFromFork !== true || preview.repoUrl !== 'https://github.com/mallory/app.git') fail(`the fork preview: ${JSON.stringify(preview).slice(0, 300)}`);
+  await waitStatus(token, preview.id, opened.json.deploymentId, 'awaiting_approval', 30_000);
+  const no = await api(`/v1/services/${preview.id}/deploys/${opened.json.deploymentId}/reject`, { method: 'POST', token });
+  if (no.status !== 200) fail(`rejecting the fork preview deploy answered ${no.status} ${no.text.slice(0, 200)}`);
+  step(`fork PRs: a signed fork PR built preview #${preview.id} as a fork (its own clone URL), its deploy #${opened.json.deploymentId} waited for approval and the reject cancelled it`);
+
+  const off = await api(`/v1/services/${parentId}`, { method: 'PATCH', token, body: { previewForks: false } });
+  if (off.status !== 200 || off.json?.previewForks !== false) fail(`previewForks off answered ${off.status}`);
+  const refused = await deliver(32);
+  if (refused.status !== 200 || refused.json?.reason !== 'external_pr_repository') fail(`a fork PR with forks off answered ${refused.status} ${JSON.stringify(refused.json)}`);
+  step('fork PRs: with the switch off the same delivery is refused (external_pr_repository), as before');
+
+  for (const id of [preview.id, parentId]) {
+    const del = await api(`/v1/services/${id}`, { method: 'DELETE', token });
+    if (del.status !== 200 && del.status !== 204) fail(`deleting service #${id} answered ${del.status}`);
+  }
+}
+
 async function pinHostKeyChecks(token, password) {
   const key = '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk=\n-----END OPENSSH PRIVATE KEY-----';
   const created = await api('/v1/sources', { method: 'POST', token, body: { name: `pin-${suffix}`, type: 'github', deployKey: key } });
@@ -1672,6 +1739,7 @@ async function main() {
     if (!olderThan(String(health.version), AUTOSCALE_IN)) await autoscaleChecks(token, serviceId, `journey-${suffix}.test`);
     if (!olderThan(String(health.version), SLEEP_IN)) await sleepChecks(token, serviceId, `journey-${suffix}.test`);
     if (!olderThan(String(health.version), APPROVALS_IN)) await approvalChecks(token, serviceId, { url: hookUrl, secret: hookSecret });
+    if (!olderThan(String(health.version), FORKS_IN)) await forkPreviewChecks(token);
   } else {
     step(`${health.version} predates operations and API (0.15): 0.15 checks skipped`);
   }
@@ -1688,7 +1756,7 @@ async function main() {
   }
   step('service deleted');
 
-  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → signed webhook redeploy → compose stack → managed postgres (+ backup policy) + redis (+ KeyDB and Dragonfly with backup, drill and restore from 0.15.6) → preview-only env → GitHub App/Gitea surfaces → 0.14 Traefik directory, custom config, certificates, public access, import, secret managers (≥0.14) → 0.15 terminals, host shell, traffic analytics, OpenAPI, access grants (≥0.15) → uptime monitors (≥0.16.8) → canary releases (≥0.16.9) → autoscaling (≥0.16.10) → scale to zero (≥0.16.11) → protected lanes and deploy approvals (≥0.16.13) → teardown');
+  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → signed webhook redeploy → compose stack → managed postgres (+ backup policy) + redis (+ KeyDB and Dragonfly with backup, drill and restore from 0.15.6) → preview-only env → GitHub App/Gitea surfaces → 0.14 Traefik directory, custom config, certificates, public access, import, secret managers (≥0.14) → 0.15 terminals, host shell, traffic analytics, OpenAPI, access grants (≥0.15) → uptime monitors (≥0.16.8) → canary releases (≥0.16.9) → autoscaling (≥0.16.10) → scale to zero (≥0.16.11) → protected lanes and deploy approvals (≥0.16.13) → fork PR previews behind approval (≥0.16.14) → teardown');
 }
 
 main()

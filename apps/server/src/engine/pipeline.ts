@@ -398,6 +398,12 @@ export async function loadRuntimeEnv(
   // preview created before the set existed picks it up on its next deploy.
   // Managed-database keys below still win, exactly as over service env.
   for (const r of await loadPreviewOnlyEnv(db, service)) {
+    // 0.16.14: a fork's PR is code from outside the repository — it gets
+    // the preview-only values that are not secret, and no others.
+    if (r.isSecret && service.previewFromFork === true) {
+      withheldFromPreview.push(`preview-only secret ${r.key}`);
+      continue;
+    }
     env[r.key] = decrypt(r.valueEncrypted);
     track(r.key, r.isSecret);
   }
@@ -1013,7 +1019,10 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
         // other source resolves exactly as before.
         let creds: CloneCreds | undefined;
         try {
-          creds = await resolveCloneCreds(db, service);
+          // 0.16.14: a fork's PR is cloned with no credential at all — the
+          // fork's own build would otherwise run next to the parent's token.
+          if (service.previewFromFork === true) log("Cloning a pull request from a fork without a credential: the parent's Git credential stays with the parent");
+          else creds = await resolveCloneCreds(db, service);
           lfsCreds = creds;
         } catch (err) {
           if (err instanceof GithubAppError) log(githubAppCloneHint());
@@ -1043,7 +1052,9 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
           } else {
             log(`✗ Clone failed: ${gitText}`);
           }
-          if (!creds) {
+          if (!creds && service.previewFromFork === true) {
+            log('hint: a fork is cloned without a credential, so only a public fork can be built.');
+          } else if (!creds) {
             log('hint: no Git credential is attached to this service. If the repository is PRIVATE, attach one: System → Sources (PAT or generate a deploy key), then select it under Service → Settings → Git credential and redeploy. Public repos need no credential.');
           } else if (creds.type === 'github_app') {
             log(githubAppCloneHint());

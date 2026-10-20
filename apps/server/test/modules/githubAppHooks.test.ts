@@ -414,8 +414,23 @@ describe('pull requests', () => {
   it('refuses a fork by repository id, before anything is created', async () => {
     const app = await server();
     const res = await appHook(app, 'pull_request', prPayload('opened', 999));
-    expect(res.body).toEqual({ ok: 'skipped', reason: 'external_pr_repository' });
+    expect(res.body).toMatchObject({ ok: true, results: [{ serviceId: svcId, ok: 'skipped', reason: 'external_pr_repository' }] });
     expect(await db.query.services.findMany({ where: eq(services.previewParentServiceId, svcId) })).toHaveLength(0);
+  });
+
+  it('0.16.14: builds a fork with previewForks on — known by id, cloned without a credential, waiting for approval', async () => {
+    await db.update(services).set({ previewForks: true }).where(eq(services.id, svcId));
+    const app = await server();
+    const res = await appHook(app, 'pull_request', prPayload('opened', 999));
+    expect(res.body).toMatchObject({ results: [{ serviceId: svcId, ok: true, action: 'preview_deployment_queued' }] });
+    const preview = await db.query.services.findFirst({ where: eq(services.previewParentServiceId, svcId) });
+    expect(preview).toMatchObject({ previewFromFork: true, sourceId: null, repoUrl: 'https://github.com/mallory/app.git' });
+    // Same URL, different id: still a fork.
+    const lookalike = prPayload('opened', 998, 8);
+    lookalike.pull_request.head.repo.clone_url = 'https://github.com/acme/app.git';
+    await appHook(app, 'pull_request', lookalike);
+    const second = await db.query.services.findFirst({ where: and(eq(services.previewParentServiceId, svcId), eq(services.prNumber, 8)) });
+    expect(second?.previewFromFork).toBe(true);
   });
 
   it('a same-repository PR creates the preview through the shared handler, and close tears it down', async () => {

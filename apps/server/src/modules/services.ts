@@ -164,10 +164,12 @@ function serialize(s: Service, sourceName: string | null = null, tags: TagIds = 
     previewDeploymentsEnabled: s.previewDeploymentsEnabled,
     previewAutoDestroyOnClose: s.previewAutoDestroyOnClose,
     previewDatabaseCopy: s.previewDatabaseCopy ?? false,
+    previewForks: s.previewForks ?? false,
     previewDomainPattern: s.previewDomainPattern,
     previewMaxActive: s.previewMaxActive,
     isEphemeralPreview: s.isEphemeralPreview,
     previewParentServiceId: s.previewParentServiceId,
+    previewFromFork: s.previewFromFork ?? false,
     prNumber: s.prNumber,
     environmentId: s.environmentId ?? null,
     createdAt: s.createdAt.toISOString(),
@@ -547,6 +549,10 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         templateDatabaseEnv: template?.databaseEnv ?? null,
         previewDeploymentsEnabled: input.previewDeploymentsEnabled ?? false,
         previewAutoDestroyOnClose: input.previewAutoDestroyOnClose ?? true,
+        // The create schema has accepted both since they shipped; the row
+        // ignored them until 0.16.14.
+        previewDatabaseCopy: input.previewDatabaseCopy ?? false,
+        previewForks: input.previewForks ?? false,
         previewDomainPattern: input.previewDomainPattern ?? null,
         previewMaxActive: input.previewMaxActive ?? 5,
         environmentId,
@@ -1757,6 +1763,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         previewDeploymentsEnabled: svc.previewDeploymentsEnabled,
         previewAutoDestroyOnClose: svc.previewAutoDestroyOnClose,
         previewDatabaseCopy: svc.previewDatabaseCopy,
+        previewForks: svc.previewForks,
         previewDomainPattern: svc.previewDomainPattern,
         previewMaxActive: svc.previewMaxActive,
       })

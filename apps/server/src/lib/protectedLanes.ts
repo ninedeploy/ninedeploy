@@ -69,6 +69,8 @@ type ServiceRef = {
   ownerUserId: number | null;
   environmentId?: number | null;
   previewParentServiceId?: number | null;
+  /** 0.16.14: a preview of a fork's PR, whose deploys always wait for approval. */
+  previewFromFork?: boolean | null;
 };
 
 /**
@@ -146,25 +148,37 @@ export async function approvalStamp(
   service: ServiceRef,
   user: AuthedUser,
 ): Promise<{ reviewedBy?: number; reviewedAt?: Date }> {
-  const lane = await laneRules(db, service);
-  if (!lane?.requireApproval) return {};
+  if (service.previewFromFork !== true) {
+    const lane = await laneRules(db, service);
+    if (!lane?.requireApproval) return {};
+  }
   if (!(await isLaneAdmin(db, service, user))) return {};
   return { reviewedBy: user.id, reviewedAt: new Date() };
 }
 
 /**
  * Called by the worker for a `queued` row it is about to claim. When the
- * service's lane requires approval and nobody reviewed the row yet, flip it
- * to `awaiting_approval` (only while still `queued`) and return true: the
+ * service's lane requires approval, or the service is a preview of a fork's
+ * PR (0.16.14), and nobody reviewed the row yet, flip it to
+ * `awaiting_approval` (only while still `queued`) and return true: the
  * worker skips it. Returns false when the row may build.
  */
 export async function holdForApprovalIfNeeded(
   db: DbLike,
-  row: { id: number; environmentId: number | null; previewParentServiceId: number | null; reviewedAt: Date | null },
+  row: {
+    id: number;
+    environmentId: number | null;
+    previewParentServiceId: number | null;
+    previewFromFork?: boolean | null;
+    reviewedAt: Date | null;
+  },
 ): Promise<boolean> {
-  if (row.reviewedAt != null || (row.environmentId == null && row.previewParentServiceId == null)) return false;
-  const lane = await laneRules(db, row);
-  if (!lane?.requireApproval) return false;
+  if (row.reviewedAt != null) return false;
+  if (row.previewFromFork !== true) {
+    if (row.environmentId == null && row.previewParentServiceId == null) return false;
+    const lane = await laneRules(db, row);
+    if (!lane?.requireApproval) return false;
+  }
   const held = await db
     .update(deployments)
     .set({ status: 'awaiting_approval' })

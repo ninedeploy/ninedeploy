@@ -39,6 +39,8 @@ export interface CloneCredsTarget {
   sourceId?: number | null;
   repoUrl?: string | null;
   previewParentServiceId?: number | null;
+  /** 0.16.14: a preview of a fork's PR — never cloned with a credential. */
+  previewFromFork?: boolean | null;
 }
 
 /**
@@ -252,6 +254,9 @@ export async function resolveCloneCreds(
   target: CloneCredsTarget,
   opts: CloneCredsOptions = {},
 ): Promise<ResolvedCloneCreds | undefined> {
+  // 0.16.14: the fork's own build runs where the checkout is, so no
+  // credential of the parent's may be part of it — not on a node either.
+  if (target.previewFromFork === true) return undefined;
   const linked = await activeLink(db, target);
   if (linked) {
     const app = await loadApp(db, linked.inst);

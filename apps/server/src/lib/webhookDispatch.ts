@@ -180,6 +180,8 @@ export async function handlePullRequest(
   pr: PullRequestEvent,
   provider: Provider,
   log: FastifyBaseLogger,
+  /** The GitHub App knows a fork by repository id, which a look-alike URL cannot fake. */
+  opts: { fromFork?: boolean } = {},
 ): Promise<DispatchResult> {
   if (!parent.previewDeploymentsEnabled) {
     return { ok: 'skipped', reason: 'preview_deployments_disabled' };
@@ -212,8 +214,19 @@ export async function handlePullRequest(
   if (!branch.success || !parentRepository || !previewRepository) {
     return { ok: 'ignored', reason: 'invalid_preview_source' };
   }
-  if (previewRepository !== parentRepository) {
-    return { ok: 'skipped', reason: 'external_pr_repository' };
+  // 0.16.14: a fork's PR builds only where the parent's owner turned
+  // `previewForks` on, and then only as a plain docker service on the same
+  // git host. Its deploys wait for approval and clone with no credential
+  // (worker + pipeline read `previewFromFork`).
+  const fromFork = opts.fromFork === true || previewRepository !== parentRepository;
+  if (fromFork) {
+    if (!parent.previewForks) return { ok: 'skipped', reason: 'external_pr_repository' };
+    if (previewRepository.split('/')[0] !== parentRepository.split('/')[0]) {
+      return { ok: 'ignored', reason: 'fork_on_another_host' };
+    }
+    if (parent.type !== 'docker' || parent.dockerSocket || parent.composeContent) {
+      return { ok: 'skipped', reason: 'fork_preview_unsupported_type' };
+    }
   }
 
   // Previews inherit the parent's build definition, including host-level
@@ -260,7 +273,9 @@ export async function handlePullRequest(
         repoUrl: previewRepoUrl,
         branch: branch.data,
         commitSha: pr.sha,
-        sourceId: parent.sourceId,
+        // A fork is cloned anonymously: the parent's credential would sit in
+        // a checkout the fork's own code builds from.
+        sourceId: fromFork ? null : parent.sourceId,
         image: parent.image,
         volumeMount: null,
         composeService: parent.composeService,
@@ -282,6 +297,7 @@ export async function handlePullRequest(
         memLimitMb: parent.memLimitMb,
         isEphemeralPreview: true,
         previewParentServiceId: parent.id,
+        previewFromFork: fromFork,
         prNumber: pr.prNumber,
       })
       .returning()

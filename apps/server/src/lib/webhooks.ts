@@ -316,8 +316,12 @@ export function parsePullRequest(
     const sourceBranch = source?.['branch'] as Record<string, unknown> | undefined;
     const sourceCommit = source?.['commit'] as Record<string, unknown> | undefined;
     const author = pr['author'] as Record<string, unknown> | undefined;
+    // 0.16.14: the SOURCE repository — a fork's PR read as the destination
+    // repository and its preview cloned the wrong repository at the fork's
+    // branch name. The top-level `repository` is the fallback.
+    const sourceRepo = source?.['repository'] as Record<string, unknown> | undefined;
     const repo = b['repository'] as Record<string, unknown> | undefined;
-    const fullName = String(repo?.['full_name'] ?? '');
+    const fullName = String(sourceRepo?.['full_name'] ?? repo?.['full_name'] ?? '');
     const prNumber = Number(pr['id']) || 0;
     const branch = String(sourceBranch?.['name'] ?? '');
     if (!prNumber || !branch) return null;
@@ -350,8 +354,16 @@ export function parsePullRequest(
     const sha = String(lastCommit?.['id'] ?? attrs['last_commit_id'] ?? '');
     const title = String(attrs['title'] ?? '');
     const author = String((attrs['author'] as Record<string, unknown> | undefined)?.['name'] ?? (lastCommit?.['author'] as Record<string, unknown> | undefined)?.['name'] ?? '');
+    // 0.16.14: the SOURCE project (`object_attributes.source`), which is the
+    // fork for a fork's MR; the target `project` is the fallback.
+    const sourceProject = attrs['source'] as Record<string, unknown> | undefined;
     const project = b['project'] as Record<string, unknown> | undefined;
-    const repoUrl = typeof project?.['git_http_url'] === 'string' ? (project['git_http_url'] as string) : undefined;
+    const repoUrl =
+      typeof sourceProject?.['git_http_url'] === 'string'
+        ? (sourceProject['git_http_url'] as string)
+        : typeof project?.['git_http_url'] === 'string'
+          ? (project['git_http_url'] as string)
+          : undefined;
     if (!prNumber || !branch) return null;
     return {
       action,

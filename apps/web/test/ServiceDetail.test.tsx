@@ -1267,6 +1267,20 @@ describe('ServiceDetail', () => {
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('PR Preview settings saved', 'success'));
   });
 
+  it('0.16.14: switches builds of fork pull requests, saying what a fork preview is denied', async () => {
+    const user = userEvent.setup();
+    mockOf(api.services.get).mockResolvedValue({ ...service, previewDeploymentsEnabled: true, previewForks: false } as never);
+    mockOf(api.services.update).mockResolvedValue(service as never);
+    renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+    await openTab('Settings');
+    const forks = await screen.findByRole('switch', { name: 'Build pull requests from forks' });
+    expect(screen.getByText(/every one of its deploys waits for an admin to approve it/)).toBeInTheDocument();
+    expect(screen.getByText(/cloned without this service's Git credential/)).toBeInTheDocument();
+    await user.click(forks);
+    await user.click(screen.getByRole('button', { name: /Save PR preview settings/ }));
+    await waitFor(() => expect(api.services.update).toHaveBeenCalledWith(1, expect.objectContaining({ previewForks: true })));
+  });
+
   it('reports PR preview save failures via toast and tests toggle and empty field fallbacks', async () => {
     const user = userEvent.setup();
     let resolveUpdate: (val: unknown) => void = () => {};

@@ -534,6 +534,8 @@ function PreviewEnvironmentsCard({ svc }: { svc: Service }) {
   const [autoDestroy, setAutoDestroy] = useState(svc.previewAutoDestroyOnClose ?? true);
   // 0.16.12: each preview gets its own copies of the attached databases.
   const [dbCopy, setDbCopy] = useState(svc.previewDatabaseCopy ?? false);
+  // 0.16.14: previews of PRs from forks (each deploy waits for approval).
+  const [forks, setForks] = useState(svc.previewForks ?? false);
   const [pattern, setPattern] = useState(svc.previewDomainPattern ?? 'pr-{{pr}}-{{slug}}.{{domain}}');
   const [maxActive, setMaxActive] = useState(String(svc.previewMaxActive ?? 5));
 
@@ -543,6 +545,8 @@ function PreviewEnvironmentsCard({ svc }: { svc: Service }) {
         previewDeploymentsEnabled: enabled,
         previewAutoDestroyOnClose: autoDestroy,
         previewDatabaseCopy: dbCopy,
+        // Sent only to a panel that reports the setting (0.16.14 or later).
+        ...(svc.previewForks !== undefined ? { previewForks: forks } : {}),
         // r205: an emptied pattern clears it (null) instead of being dropped.
         previewDomainPattern: pattern || null,
         previewMaxActive: parseInt(maxActive, 10) || 5,
@@ -616,6 +620,17 @@ function PreviewEnvironmentsCard({ svc }: { svc: Service }) {
               </div>
               <Switch checked={dbCopy} onChange={setDbCopy} label="Give each preview its own database copies" />
             </div>
+            {svc.previewForks !== undefined && (
+              <div className="col-span-full flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-xs text-slate-300">Build pull requests from forks</div>
+                  <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+                    A fork's pull request gets a preview too, but every one of its deploys waits for an admin to approve it, after reading the code. It is cloned without this service's Git credential, so only a public fork builds, and it gets no database copies and none of the secret preview-only values. Docker services only.
+                  </p>
+                </div>
+                <Switch checked={forks} onChange={setForks} label="Build pull requests from forks" />
+              </div>
+            )}
           </div>
         )}
 

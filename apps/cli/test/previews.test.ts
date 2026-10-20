@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { parseOnOff, previewsDatabaseCopies, previewsShow } from '../src/commands/previews.js';
+import { parseOnOff, previewsDatabaseCopies, previewsForks, previewsShow } from '../src/commands/previews.js';
 
 /** 0.16.12: `previews show|database-copies`. */
 
@@ -101,6 +101,11 @@ describe('previews show', () => {
     client.services.get.mockResolvedValue(service({ isEphemeralPreview: true, prNumber: null }));
     await previewsShow(asClient(client), '4');
     expect(out()).toContain('PR #?');
+
+    logSpy.mockClear();
+    client.services.get.mockResolvedValue(service({ isEphemeralPreview: true, prNumber: 3, previewFromFork: true }));
+    await previewsShow(asClient(client), '4');
+    expect(out()).toContain('The PR comes from a fork: each deploy waits for approval');
   });
 
   it('prints JSON', async () => {
@@ -111,6 +116,7 @@ describe('previews show', () => {
       previewDeploymentsEnabled: true,
       previewAutoDestroyOnClose: true,
       previewDatabaseCopy: true,
+      previewForks: false,
       previewDomainPattern: 'pr-{{pr}}-{{slug}}.{{domain}}',
       previewMaxActive: 5,
     });
@@ -122,6 +128,7 @@ describe('previews show', () => {
       previewDeploymentsEnabled: false,
       previewAutoDestroyOnClose: true,
       previewDatabaseCopy: false,
+      previewForks: false,
       previewDomainPattern: null,
       previewMaxActive: null,
     });
@@ -197,5 +204,46 @@ describe('previews database-copies', () => {
     await previewsDatabaseCopies(asClient(client), '4', 'on');
     expect(err()).toContain('Forbidden');
     expect(process.exitCode).toBe(1);
+  });
+});
+
+describe('previews forks (0.16.14)', () => {
+  it('shows the setting, and turns it on saying what a fork preview gets', async () => {
+    const client = makeClient();
+    client.services.get.mockResolvedValue(service({ previewForks: true }));
+    await previewsShow(asClient(client), '4');
+    expect(out()).toContain('each deploy waits for approval');
+    client.services.update.mockResolvedValue(service({ previewForks: true }));
+    await previewsForks(asClient(client), '4', 'on');
+    expect(client.services.update).toHaveBeenCalledWith(4, { previewForks: true });
+    expect(out()).toContain('previews of pull requests from forks on.');
+    expect(out()).toContain("cloned without this service's Git credential");
+    expect(out()).not.toContain(`${ESC}[2J`);
+  });
+
+  it('notes previews that are off, turns it off, and refuses a bad value', async () => {
+    const client = makeClient();
+    client.services.update.mockResolvedValue(service({ previewForks: true, previewDeploymentsEnabled: false }));
+    await previewsForks(asClient(client), '4', 'yes');
+    expect(out()).toContain('PR previews are off for this service');
+    client.services.update.mockResolvedValue(service({ previewForks: false }));
+    await previewsForks(asClient(client), '4', 'off');
+    expect(out()).toContain('previews of pull requests from forks off.');
+    client.services.update.mockClear();
+    await previewsForks(asClient(client), '4', 'maybe');
+    expect(client.services.update).not.toHaveBeenCalled();
+  });
+
+  it('says an older panel changed nothing, and reports an unknown service or a failure', async () => {
+    const client = makeClient();
+    client.services.update.mockResolvedValue(service());
+    await previewsForks(asClient(client), '4', 'on');
+    expect(err()).toContain('This panel predates fork previews (0.16.14); nothing was changed.');
+    client.services.list.mockResolvedValue([]);
+    await previewsForks(asClient(client), 'nope', 'on');
+    expect(err()).toContain('No service named "nope".');
+    client.services.update.mockRejectedValue(new Error('boom'));
+    await previewsForks(asClient(client), '4', 'on');
+    expect(err()).toContain('boom');
   });
 });

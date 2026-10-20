@@ -1067,6 +1067,20 @@ async function previewDatabaseChecks(token, serviceId) {
   step(`${TO}: preview database copies off by default on the upgraded service; the switch is stored and turned off again`);
 }
 
+// 0.16.14: the upgraded service builds no fork PRs (migration 0092's NOT NULL
+// DEFAULT false), and stores the switch.
+const FORKS_IN = [0, 16, 14];
+async function forkPreviewChecks(token, serviceId) {
+  const path = `/v1/services/${serviceId}`;
+  const before = await api(path, { token });
+  if (before.json?.previewForks !== false || before.json.previewFromFork !== false) fail(`${TO}: fork previews on the upgraded service should be off: ${before.text.slice(0, 200)}`);
+  const on = await api(path, { method: 'PATCH', token, body: { previewForks: true } });
+  if (on.status !== 200 || on.json?.previewForks !== true) fail(`${TO}: previewForks PATCH answered ${on.status} ${on.text.slice(0, 200)}`);
+  const off = await api(path, { method: 'PATCH', token, body: { previewForks: false } });
+  if (off.status !== 200 || off.json?.previewForks !== false) fail(`${TO}: previewForks off answered ${off.status}`);
+  step(`${TO}: fork PR previews off by default on the upgraded service; the switch is stored and turned off again`);
+}
+
 // 0.16.13: a lane from before the upgrade is neither protected nor gated
 // (migration 0091's NOT NULL DEFAULT false) — deploys into it never wait and
 // its values stay readable; the switches are stored and turned off again.
@@ -1719,6 +1733,7 @@ async function main() {
   if (!olderThan(TO, SLEEP_IN)) await sleepChecks(token, serviceId);
   if (!olderThan(TO, PREVIEW_DB_IN)) await previewDatabaseChecks(token, serviceId);
   if (!olderThan(TO, APPROVALS_IN)) await laneChecks(token, serviceId, laneId);
+  if (!olderThan(TO, FORKS_IN)) await forkPreviewChecks(token, serviceId);
 
   docker(['stop', PANEL]);
   const post = await inspectDb(TO);
@@ -1757,7 +1772,8 @@ async function main() {
   const summary01611 = olderThan(TO, SLEEP_IN) ? '' : '; 0.16.11 scale-to-zero settings work on the upgraded data';
   const summary01612 = olderThan(TO, PREVIEW_DB_IN) ? '' : '; 0.16.12 preview database copies are off by default and switch on the upgraded data';
   const summary01613 = olderThan(TO, APPROVALS_IN) ? '' : '; 0.16.13 lanes from before are neither protected nor gated';
-  console.log(`\n✓ Upgrade green: ${FROM} → ${TO} keeps users, services, history, domains and running apps; migrates; recovers the interrupted deploy; deploys again; 0.12 backup policy, preview env, disk alert and panel-backup defaults work on the upgraded data; 0.13 GitHub App/Gitea surfaces answer without GitHub${summary014}${summary015}${summary0168}${summary0169}${summary01610}${summary01611}${summary01612}${summary01613}`);
+  const summary01614 = olderThan(TO, FORKS_IN) ? '' : '; 0.16.14 fork PR previews are off by default';
+  console.log(`\n✓ Upgrade green: ${FROM} → ${TO} keeps users, services, history, domains and running apps; migrates; recovers the interrupted deploy; deploys again; 0.12 backup policy, preview env, disk alert and panel-backup defaults work on the upgraded data; 0.13 GitHub App/Gitea surfaces answer without GitHub${summary014}${summary015}${summary0168}${summary0169}${summary01610}${summary01611}${summary01612}${summary01613}${summary01614}`);
 }
 
 main()

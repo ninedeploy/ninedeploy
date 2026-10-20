@@ -303,6 +303,8 @@ export const createService = z.object({
   previewAutoDestroyOnClose: z.boolean().optional(),
   /** 0.16.12: each PR preview gets its own copy of the attached databases (postgres and the redis family on the panel host). */
   previewDatabaseCopy: z.boolean().optional(),
+  /** 0.16.14: build previews of PRs from forks too; each of their deploys waits for approval, and they clone with no credential. */
+  previewForks: z.boolean().optional(),
   previewDomainPattern: z.string().nullable().optional(),
   previewMaxActive: z.number().int().min(1).max(50).optional(),
   /** Deployment lane at create time (production / staging / …). */
@@ -414,6 +416,8 @@ export const updateService = z.object({
   previewAutoDestroyOnClose: z.boolean().optional(),
   /** 0.16.12: each PR preview gets its own copy of the attached databases (postgres and the redis family on the panel host). */
   previewDatabaseCopy: z.boolean().optional(),
+  /** 0.16.14: build previews of PRs from forks too; each of their deploys waits for approval, and they clone with no credential. */
+  previewForks: z.boolean().optional(),
   previewDomainPattern: z.string().nullable().optional(),
   previewMaxActive: z.number().int().min(1).max(50).optional(),
   /** Deployment lane (production / staging / …). null clears the assignment. */
@@ -522,10 +526,14 @@ export const service = z.object({
   previewAutoDestroyOnClose: z.boolean().optional(),
   /** 0.16.12: each PR preview gets its own copy of the attached databases (postgres and the redis family on the panel host). */
   previewDatabaseCopy: z.boolean().optional(),
+  /** 0.16.14: build previews of PRs from forks too; each of their deploys waits for approval, and they clone with no credential. */
+  previewForks: z.boolean().optional(),
   previewDomainPattern: z.string().nullable().optional(),
   previewMaxActive: z.number().int().optional(),
   isEphemeralPreview: z.boolean().optional(),
   previewParentServiceId: z.number().int().nullable().optional(),
+  /** 0.16.14: this preview's PR comes from a fork (absent on older panels). */
+  previewFromFork: z.boolean().optional(),
   prNumber: z.number().int().nullable().optional(),
   /** Deployment lane id (production / staging / …). Null = ungrouped. */
   environmentId: z.number().int().nullable().optional(),

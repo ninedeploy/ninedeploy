@@ -103,8 +103,10 @@ export type CloneCredentialKind = 'none' | 'github_app' | 'static';
 
 export async function cloneCredentialKind(
   db: DB,
-  service: { id?: number | null; sourceId?: number | null; previewParentServiceId?: number | null },
+  service: { id?: number | null; sourceId?: number | null; previewParentServiceId?: number | null; previewFromFork?: boolean | null },
 ): Promise<CloneCredentialKind> {
+  // 0.16.14: a fork's PR preview clones anonymously, wherever it builds.
+  if (service.previewFromFork === true) return 'none';
   for (const serviceId of [service.id, service.previewParentServiceId]) {
     if (typeof serviceId !== 'number') continue;
     const link = await db.query.serviceGithubLinks.findFirst({ where: eq(serviceGithubLinks.serviceId, serviceId) });

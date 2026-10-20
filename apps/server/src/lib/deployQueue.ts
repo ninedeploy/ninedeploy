@@ -32,6 +32,7 @@ export interface EnqueueTarget {
   ownerUserId?: number | null;
   environmentId?: number | null;
   previewParentServiceId?: number | null;
+  previewFromFork?: boolean | null;
 }
 
 /**
@@ -78,7 +79,7 @@ export async function enqueueUserDeploy(
   const review =
     opts.selfApproval !== false &&
     service.ownerUserId !== undefined &&
-    (service.environmentId != null || service.previewParentServiceId != null)
+    (service.environmentId != null || service.previewParentServiceId != null || service.previewFromFork === true)
       ? await approvalStamp(
           db,
           {
@@ -86,6 +87,7 @@ export async function enqueueUserDeploy(
             ownerUserId: service.ownerUserId,
             environmentId: service.environmentId,
             previewParentServiceId: service.previewParentServiceId,
+            previewFromFork: service.previewFromFork,
           },
           user,
         )

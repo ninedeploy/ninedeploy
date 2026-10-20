@@ -146,7 +146,7 @@ import {
 import { canaryOff, canaryPromote, canarySet, canaryShow, type CanarySetOptions } from './commands/canary.js';
 import { autoscaleOff, autoscaleSet, autoscaleShow, type AutoscaleSetOptions } from './commands/autoscale.js';
 import { sleepNow, sleepOff, sleepSet, sleepShow, sleepWake } from './commands/sleep.js';
-import { previewsDatabaseCopies, previewsShow } from './commands/previews.js';
+import { previewsDatabaseCopies, previewsForks, previewsShow } from './commands/previews.js';
 import { approvalsDecide, approvalsList, lanesList, lanesSwitch } from './commands/approvals.js';
 
 const program = new Command();
@@ -1282,6 +1282,9 @@ previewsCmd.command('show <service>')
 previewsCmd.command('database-copies <service> <onOff>')
   .description('Give each preview its own database copies (PostgreSQL and the Redis family): on | off')
   .action((service: string, onOff: string) => previewsDatabaseCopies(getClient(), service, onOff));
+previewsCmd.command('forks <service> <onOff>')
+  .description('Build pull requests from forks too, each deploy held for approval: on | off')
+  .action((service: string, onOff: string) => previewsForks(getClient(), service, onOff));
 /* v8 ignore stop */
 
 // ── 0.16.13: protected lanes and deploy approvals ────────────────────────

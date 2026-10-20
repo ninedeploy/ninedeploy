@@ -103,6 +103,11 @@ export async function ensurePreviewDatabaseCopies(
   if (!preview.isEphemeralPreview || preview.previewParentServiceId == null) return 0;
   const parent = await db.query.services.findFirst({ where: eq(services.id, preview.previewParentServiceId) });
   if (!parent?.previewDatabaseCopy) return 0;
+  // 0.16.14: a copy holds production data; a fork's code never gets one.
+  if (preview.previewFromFork) {
+    log('Preview database: no copies for a pull request from a fork (a copy holds production data)');
+    return 0;
+  }
   const attached = await db
     .select({ alias: databaseAttachments.envAlias, d: databases })
     .from(databaseAttachments)
