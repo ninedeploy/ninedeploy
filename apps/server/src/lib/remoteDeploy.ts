@@ -278,6 +278,13 @@ export async function remoteServiceRefusalDetail(
     return p;
   };
   const probe = (): Promise<RemoteAgentProbe> => probeOf(serverId);
+  if (type === 'docker' && (service.healthCheck === 'http-strict' || service.healthCheck === 'tcp')) {
+    const p = await probe();
+    const why = await capabilityRefusal(p.agent, p.nodeLabel, p.sealed, {
+      cap: 'docker.probe', feature: 'probe application readiness', sealedRequired: true,
+    });
+    if (why) return why;
+  }
   // ── 0.16 T4 build placement (design §6.3) ──
   // The node that CLONES and BUILDS: the target itself (NULL `build_on`, as
   // before), the build server (`server`: the §2/§3 rules apply to it), or

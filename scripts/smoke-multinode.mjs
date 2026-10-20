@@ -49,6 +49,9 @@
 //       next deploy runs it as a container, and the runbook commands work.
 //
 // Flags: --with-builds adds Nixpacks and Railpack builds (heavy: large base
+// --node-operations-only is a focused fresh-install check for readiness,
+// retained routing after a failed probe, persisted node metrics and log drains.
+// It does not exercise the remaining multi-node/build/Swarm feature suite.
 // images and the Railpack frontend): Nixpacks on the node; Railpack refused
 // with the fix on the node, whose DinD uses Docker's classic image store
 // (Railpack's frontend needs the containerd image store); then a second node
@@ -122,7 +125,7 @@ const USAGE =
   'usage: node scripts/smoke-multinode.mjs --image=<candidate> [--version=X.Y.Z]\n' +
   '   or: --from=v0.15.1 --to=<candidate tag> --to-image=<local image>          (upgrade)\n' +
   '   or: --from=<candidate tag> --from-image=<local image> --to=v0.15.1        (rollback rehearsal)\n' +
-  '   plus: [--with-builds] [--no-swarm] [--panel-port=4643]';
+  '   plus: [--with-builds] [--no-swarm] [--panel-port=4643] [--node-operations-only]';
 
 let MODE;
 if (IMAGE && !FROM && !TO) MODE = 'fresh';
@@ -170,6 +173,7 @@ const NODE = `nd-mn-node-${suffix}`;
 const AGENT = `nd-mn-agent-${suffix}`;
 const GIT = `nd-mn-git-${suffix}`;
 const GIT_INIT = `nd-mn-gitinit-${suffix}`;
+const LOG_RECEIVER = `nd-mn-logreceiver-${suffix}`;
 const DATA = `nd-mn-data-${suffix}`;
 const AGENT_DATA = `nd-mn-agentdata-${suffix}`;
 const GIT_DATA = `nd-mn-gitdata-${suffix}`;
@@ -177,7 +181,7 @@ const GIT_DATA = `nd-mn-gitdata-${suffix}`;
 const NODE2 = `nd-mn-node2-${suffix}`;
 const AGENT2 = `nd-mn-agent2-${suffix}`;
 const AGENT2_DATA = `nd-mn-agent2data-${suffix}`;
-const CONTAINERS = [AGENT, AGENT2, PANEL, GIT, GIT_INIT, NODE, NODE2, DIND];
+const CONTAINERS = [LOG_RECEIVER, AGENT, AGENT2, PANEL, GIT, GIT_INIT, NODE, NODE2, DIND];
 const VOLUMES = [DATA, AGENT_DATA, AGENT2_DATA, GIT_DATA];
 /** The first node and its agent; --with-builds adds a second (`node2`). */
 const NODE_1 = { node: NODE, agent: AGENT, data: AGENT_DATA };
@@ -598,6 +602,50 @@ async function nodeImageService(ctx, label) {
   const code = await routeServes(ctx.nodeIp, hostname, `${label}: node proxy`);
   step(`${label}: image service #${id} deployed to the node (#${dep.id}, ${svc.runtimeId}, only there); the node's proxy routes ${hostname} (${code})`);
   return { id, hostname, runtimeId: svc.runtimeId };
+}
+
+/** Focused real two-daemon proof for the node operations increment. */
+async function nodeOperationsChecks(ctx) {
+  section('HTTP readiness, node metric history and log drains');
+  const nodes = await api('/v1/servers');
+  const node = nodes.json?.find((s) => s.id === ctx.serverId);
+  if (!node?.features?.readinessProbe || !node.features.logDrains) fail('candidate agent did not advertise readiness and log drains');
+  if (nodeDaemon(['pull', 'busybox:1.36'], 120_000).status !== 0) fail('node could not pre-pull its probe helper');
+  const patch = async (body) => {
+    const result = await api(`/v1/services/${ctx.imgId}`, { method: 'PATCH', body });
+    if (result.status !== 200) fail(`node readiness settings: ${short(result)}`);
+  };
+  await patch({ healthCheck: 'http-strict', healthPath: '/', healthTimeoutSeconds: 20 });
+  await deploy(ctx.imgId, 'node HTTP 200 readiness');
+  const before = await serviceRow(ctx.imgId);
+  await patch({ healthPath: '/not-ready-node-operations', healthTimeoutSeconds: 10 });
+  await deploy(ctx.imgId, 'node HTTP 404 stays unready', { expect: 'failed', ms: 90_000 });
+  const after = await serviceRow(ctx.imgId);
+  if (after.runtimeId !== before.runtimeId || !containerRunning(nodeDaemon, before.runtimeId)) fail('failed readiness replaced the previous release');
+  await routeServes(ctx.nodeIp, `${after.slug}.test`, 'previous release after readiness failure');
+  await patch({ healthCheck: 'http', healthPath: '/', healthTimeoutSeconds: null });
+  step('HTTP 200 readiness passed through the sealed agent; HTTP 404 failed, and the previous node release kept serving');
+
+  const history = await until(async () => {
+    const result = await api(`/v1/services/${ctx.imgId}/metrics?kind=memory&minutes=5`);
+    return result.status === 200 && result.json?.points?.some((p) => p.value > 0);
+  }, { ms: 75_000, every: 2000 });
+  if (!history) fail('remote service memory never reached the history API');
+  const localStats = await api('/v1/stats');
+  if (localStats.status !== 200 || !Array.isArray(localStats.json?.containers)) fail(`panel-host stats: ${short(localStats)}`);
+  if (localStats.json.containers.some((c) => c.kind === 'service' && c.refId === ctx.imgId)) fail('the node workload leaked into the panel-host allocation view');
+  step('node service memory was persisted and read back through the history API; the Local Host view correctly excludes it');
+
+  docker(['run', '-d', '--name', LOG_RECEIVER, '--network', NET, '--entrypoint', 'node', CANDIDATE_IMAGE, '-e',
+    "require('node:http').createServer((q,s)=>{let b='';q.on('data',c=>b+=c);q.on('end',()=>{console.log(b);s.writeHead(204);s.end()})}).listen(9898,'0.0.0.0')"]);
+  const drain = await api('/v1/log-drains', { method: 'POST', body: { name: `node-logs-${suffix}`, type: 'http', url: `http://${LOG_RECEIVER}:9898/`, format: 'json', enabled: true, serviceId: ctx.imgId } });
+  if (drain.status !== 200 && drain.status !== 201) fail(`node log drain create: ${short(drain)}`);
+  const delivered = await until(() => {
+    nodeDaemon(['exec', after.runtimeId, 'sh', '-c', 'wget -qO- http://127.0.0.1/nd-node-log-marker >/dev/null 2>&1 || true']);
+    return docker(['logs', LOG_RECEIVER], { allowFail: true }).includes('nd-node-log-marker');
+  }, { ms: 75_000, every: 2000 });
+  if (!delivered) fail('node access-log marker never reached the HTTP drain');
+  step('an actual access-log line travelled from the node daemon over the sealed agent and reached the configured HTTP log drain');
 }
 
 /** The PAT source (type custom: any host) the private repositories need. */
@@ -1292,6 +1340,11 @@ async function main() {
     await currentAgentView(ctx.serverId, { swarm: false });
     const img = await nodeImageService(ctx, 'fresh');
     ctx.imgId = img.id;
+    if (flag('node-operations-only')) {
+      await nodeOperationsChecks(ctx);
+      console.log('\nPASS: focused node operations on separate panel/node Docker daemons (readiness, preserved release, history and log delivery).');
+      return;
+    }
     await nodeFeatureSuite(ctx);
   } else if (MODE === 'upgrade') {
     section(`${FROM} panel and agent`);

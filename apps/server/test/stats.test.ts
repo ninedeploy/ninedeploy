@@ -10,6 +10,30 @@ const containers = new Map<string, unknown>([
 ]);
 
 describe('stats routes', () => {
+  it('keeps the local host view local even when an owned node container has the same name', async () => {
+    const app = await buildTestApp({
+      db: createFakeDb({ select: {
+        services: (cols) => cols === undefined ? [
+          svcRow({ id: 1, ownerUserId: 7, runtimeId: 'c1', name: 'local' }),
+          svcRow({ id: 2, ownerUserId: 7, runtimeId: 'c1', name: 'node', serverId: 8, replicas: 1 }),
+          svcRow({ id: 3, ownerUserId: 9, runtimeId: 'c2', name: 'theirs', serverId: 9, replicas: 1 }),
+        ] : [{ id: 1 }, { id: 2 }], databases: [],
+      } }),
+      stats: { containers, host: { cpuCores: 8 } },
+    });
+    const snapshot = { containers, host: { cpuCores: 8 }, nodeContainers: new Map([
+      [8, new Map([['c1', { name: 'c1', cpuPct: 12, memBytes: 5 * 1024 ** 2, memLimitBytes: 0 }]])],
+      [9, new Map([['c2', { name: 'c2', cpuPct: 99, memBytes: 15 * 1024 ** 2, memLimitBytes: 0 }]])],
+    ]) };
+    app.stats.raw = () => snapshot as never;
+    await app.register(statsRoutes);
+    try {
+      const res = await app.inject({ method: 'GET', url: '/', headers: asUser({ id: 7, isOperator: false }) });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().host).toBeNull();
+      expect(res.json().containers).toEqual([expect.objectContaining({ refId: 1, cpuPct: 0.5, memMb: 120 })]);
+    } finally { await app.close(); }
+  });
   it('maps running containers to services and databases', async () => {
     const app = await buildTestApp({
       db: createFakeDb({
@@ -185,6 +209,22 @@ describe('stats routes', () => {
 });
 
 describe('metric routes', () => {
+  it('reads node history fallback from the right host and preserves resource visibility', async () => {
+    const app = await buildTestApp({ db: createFakeDb({ findMany: { metrics: [] }, findFirst: {
+      services: svcRow({ id: 1, ownerUserId: 7, serverId: 8, runtimeId: 'c1', replicas: 1 }),
+    } }), stats: { containers, host: null } });
+    app.stats.raw = () => ({ containers, host: null, nodeContainers: new Map([[8, new Map([
+      ['c1', { name: 'c1', cpuPct: 12, memBytes: 5 * 1024 ** 2, memLimitBytes: 0 }],
+    ])]]) }) as never;
+    await app.register(metricRoutes);
+    try {
+      const res = await app.inject({ method: 'GET', url: '/1/metrics?kind=memory', headers: asUser({ id: 7, isOperator: false }) });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().points).toEqual([expect.objectContaining({ value: 5 })]);
+      const denied = await app.inject({ method: 'GET', url: '/1/metrics', headers: asUser({ id: 9, isOperator: false }) });
+      expect(denied.statusCode).toBe(404);
+    } finally { await app.close(); }
+  });
   it('returns cpu points by default (storage pct×100 → display %)', async () => {
     const app = await buildTestApp({
       db: createFakeDb({ findMany: { metrics: [metricRow({ value: 325, ts: new Date('2026-01-01T00:01:00Z') })] }, findFirst: { services: svcRow({ id: 1 }) } }),

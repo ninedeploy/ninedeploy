@@ -145,7 +145,7 @@ function serialize(s: Service, sourceName: string | null = null, tags: TagIds = 
     serverId: s.serverId ?? null,
     healthPath: s.healthPath,
     healthTimeoutSeconds: s.healthTimeoutSeconds ?? null,
-    healthCheck: s.healthCheck === 'running' || s.healthCheck === 'command' ? s.healthCheck : 'http',
+    healthCheck: s.healthCheck ?? 'http',
     healthCommand: s.healthCommand ?? null,
     dockerLabels: s.dockerLabels ?? {},
     gitLfs: s.gitLfs ?? false,
@@ -718,10 +718,10 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     }
     // 0.16.1 healthcheck mode: 'http' is stored as null, the pre-0.16.1 row.
     if (patch.healthCheck !== undefined) {
-      if (patch.healthCheck === 'running' && (patch.type ?? existing.type) !== 'docker') {
+      if (['running', 'tcp', 'http-strict'].includes(patch.healthCheck ?? '') && (patch.type ?? existing.type) !== 'docker') {
         throw badRequest('The "container running" healthcheck applies to docker services only');
       }
-      patch.healthCheck = patch.healthCheck === 'running' || patch.healthCheck === 'command' ? patch.healthCheck : null;
+      patch.healthCheck = patch.healthCheck === 'http' ? null : patch.healthCheck;
     }
     // 0.16.3 custom labels: docker services only (0.16.4: on a node and on
     // Swarm too; a node's agent must be 0.16.4+, checked when a deploy is
@@ -736,6 +736,12 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // 0.16.3 command healthcheck: a docker container (0.16.4: on a node and on
     // Swarm too, as its Docker healthcheck), and never without its command.
     const effectiveHealthCheck = patch.healthCheck !== undefined ? patch.healthCheck : existing.healthCheck;
+    if ((effectiveHealthCheck === 'http-strict' || effectiveHealthCheck === 'tcp') && (patch.type ?? existing.type) !== 'docker') {
+      throw badRequest('HTTP/TCP readiness probes apply to docker services only.');
+    }
+    if ((effectiveHealthCheck === 'http-strict' || effectiveHealthCheck === 'tcp') && existing.orchestrator === 'swarm') {
+      throw badRequest('HTTP/TCP readiness probes apply to plain Docker containers. Use a command healthcheck for Swarm.');
+    }
     if (effectiveHealthCheck === 'command' && (patch.healthCheck !== undefined || patch.healthCommand !== undefined || patch.type !== undefined)) {
       if ((patch.type ?? existing.type) !== 'docker') {
         throw badRequest('The command healthcheck applies to docker services only');

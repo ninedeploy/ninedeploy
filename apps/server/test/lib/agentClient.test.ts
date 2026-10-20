@@ -107,6 +107,13 @@ describe('agentOp', () => {
     });
   });
 
+  it('honours cancellation before any request is sent', async () => {
+    const controller = new AbortController();
+    controller.abort(new Error('collector closed'));
+    await expect(agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'agent.stats', {}, () => undefined, { signal: controller.signal, timeoutMs: 20_000 })).rejects.toThrow('collector closed');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('falls back to the legacy transport only when the operator opted in, and says so out loud', async () => {
     process.env['NINEDEPLOY_AGENT_ALLOW_CLEARTEXT'] = '1';
     routeFetch({ sealed: false, exec: { lines: ['a'], exitCode: 0 } });

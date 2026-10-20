@@ -52,6 +52,7 @@ export function isSwarmService(service: { orchestrator?: string | null; isEpheme
 }
 
 type SwarmCandidate = {
+  healthCheck?: string | null;
   id: number;
   type: string;
   composeContent?: string | null;
@@ -71,6 +72,9 @@ type SwarmCandidate = {
  * again by every deploy.
  */
 export async function swarmServiceRefusal(db: DB, svc: SwarmCandidate): Promise<string | null> {
+  if (svc.healthCheck === 'http-strict' || svc.healthCheck === 'tcp') {
+    return 'HTTP/TCP readiness probes apply to plain Docker containers. Use a command healthcheck for Swarm.';
+  }
   const fix = 'Set the orchestrator back to plain containers, or change the service.';
   if (svc.type !== 'docker' || svc.composeContent) {
     return `Swarm runs docker services built from an image or a repository; a ${svc.composeContent ? 'compose stack' : `${svc.type} service`} cannot run on Swarm. ${fix}`;

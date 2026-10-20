@@ -373,6 +373,8 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
   'docker.healthCmd': AGENT_RUN_EXTRAS_VERSION,
   'docker.fileMounts': AGENT_FILE_MOUNTS_VERSION,
   'docker.runtimeOptions': AGENT_RUNTIME_OPTIONS_VERSION,
+  'docker.probe': '0.17.0',
+  'docker.logsSince': '0.17.0',
 };
 
 /**
@@ -582,6 +584,8 @@ type FeatureName = Exclude<keyof ServerFeatures, 'reason'>;
 
 /** The capabilities each `features` flag needs. */
 export const FEATURE_CAPABILITIES: Readonly<Record<FeatureName, readonly MultiNodeCapability[]>> = {
+  readinessProbe: ['docker.probe'],
+  logDrains: ['docker.logsSince'],
   nixpacks: ['build.nixpacks'],
   railpack: ['build.railpack'],
   privateClones: ['git.sshkey'],
@@ -591,6 +595,8 @@ export const FEATURE_CAPABILITIES: Readonly<Record<FeatureName, readonly MultiNo
   swarm: ['swarm'],
 };
 const FEATURE_LABEL: Readonly<Record<FeatureName, string>> = {
+  readinessProbe: 'HTTP/TCP readiness probes',
+  logDrains: 'node log drains',
   nixpacks: 'Nixpacks builds',
   railpack: 'Railpack builds',
   privateClones: 'private clones with a token or deploy key',

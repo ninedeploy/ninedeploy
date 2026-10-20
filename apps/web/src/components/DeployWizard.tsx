@@ -10,6 +10,7 @@ import { useExperienceMode } from '../lib/mode.js';
 import { registeredNodes } from '../lib/multiNode.js';
 import { useToast } from './Toast.js';
 import { Button, Input, Select, Textarea, cn } from './ui.js';
+import { DeploymentSupport } from './DeploymentSupport.js';
 
 const STEPS = ['Source', 'Runtime', 'Environment', 'Resources', 'Review'];
 
@@ -1353,6 +1354,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                 </>
               )}
 
+              {type === 'docker' && <DeploymentSupport node={chosenNode ?? undefined} />}
               {/* Remote-node deploys (operators only, like `serverId` on create). */}
               {nodeChoice && (
                 <L label="Target Server Node">

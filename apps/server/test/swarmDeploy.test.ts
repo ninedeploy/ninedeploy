@@ -156,6 +156,8 @@ describe('isSwarmService / refusals (design §7.1)', () => {
     await refuse({ type: 'compose' }, /compose service cannot run on Swarm/);
     await refuse({ composeContent: 'services: {}' }, /compose stack/);
     await refuse({ type: 'pm2' }, /pm2 service/);
+    await refuse({ healthCheck: 'http-strict' }, /Use a command healthcheck for Swarm/);
+    await refuse({ healthCheck: 'tcp' }, /Use a command healthcheck for Swarm/);
     await refuse({ serverId: 3 }, /pinned to a node/);
     await refuse({ volumeMount: '/data' }, /persistent volume/);
     await refuse({ dockerSocket: true }, /Docker socket/);

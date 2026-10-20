@@ -8,6 +8,7 @@ import { formatRelative } from '../lib/format.js';
 import { errorCode, errorMessage, missingFeatures, NODE_FEATURES, swarmOptInLine } from '../lib/multiNode.js';
 import { useToast } from './Toast.js';
 import { Badge, Button, ConfirmDialog, Input, Switch } from './ui.js';
+import { DeploymentSupport } from './DeploymentSupport.js';
 
 /** True when the panel sent any multi-node field for this node (an older panel sends none). */
 export function hasNodeDetails(s: ServerListEntry): boolean {
@@ -45,6 +46,7 @@ export function ServerNodePanel({
   return (
     <div className="grid gap-3 text-xs md:grid-cols-2" data-testid={`node-panel-${server.id}`}>
       <AgentRow server={server} />
+      <DeploymentSupport node={server} />
       {server.isBuildServer !== undefined && <BuildServerRow server={server} />}
       {(server.swarmNodeId !== undefined || server.features?.swarm !== undefined) && (
         <SwarmRow server={server} managerAddr={managerAddr} warnings={swarmWarnings ?? []} />

@@ -10,6 +10,7 @@ import type {
   QueueResponse,
   ApprovalsResponse,
   AiConfigStatus,
+  AiDiagnosisResult,
   RuntimeLogAnalysis,
   AiConfigUpdate,
   RepoInsights,
@@ -113,8 +114,13 @@ export interface DeploysApi {
     /** Never carries key material — only endpoint/model + hasApiKey. */
     getConfig: () => Promise<AiConfigStatus>;
     updateConfig: (input: AiConfigUpdate) => Promise<{ ok: boolean }>;
-    /** Ask the configured provider to diagnose a failed build log. */
-    diagnose: (serviceId: number, deploymentId: number) => Promise<{ diagnosis: string; model: string }>;
+    /**
+     * Ask the configured provider to diagnose a failed build log. 0.16.16: with
+     * `parts` and a `proposal` (settings to PATCH, file edits) when the model
+     * answered in the structured form; apply a settings proposal with
+     * `services.update`.
+     */
+    diagnose: (serviceId: number, deploymentId: number) => Promise<AiDiagnosisResult>;
     /** Describe the app in plain language, get a schema-valid .ninedeploy manifest. */
     suggestManifest: (description: string) => Promise<{ manifest: Record<string, unknown>; model: string }>;
     /**
@@ -189,7 +195,7 @@ export function deploysApi(t: Transport): DeploysApi {
       getConfig: () => get<AiConfigStatus>('/v1/ai/config'),
       updateConfig: (input) => send<{ ok: boolean }>('PUT', '/v1/ai/config', input),
       diagnose: (serviceId, deploymentId) =>
-        send<{ diagnosis: string; model: string }>(
+        send<AiDiagnosisResult>(
           'POST',
           `/v1/ai/services/${serviceId}/deploys/${deploymentId}/diagnose`,
         ),

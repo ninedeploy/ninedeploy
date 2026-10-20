@@ -5,6 +5,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { parseId as num } from '../lib/errors.js';
 import { loadServiceForUser, visibleDatabaseIds, visibleServiceIdSet } from '../lib/resourceAccess.js';
 import { swarmContainerStat, swarmRuntimeOf } from '../lib/swarm.js';
+import { nodeServiceStat } from '../lib/nodeMetrics.js';
 
 const MB = 1024 * 1024;
 
@@ -41,6 +42,9 @@ export const statsRoutes: FastifyPluginAsync = async (app) => {
     }> = [];
 
     for (const s of svcs) {
+      // Monitoring's Local Host card consumes this endpoint. Node telemetry
+      // belongs to /servers/:id/stats and the service's own history route.
+      if (s.serverId != null) continue;
       const cname = s.runtimeId ?? `nd-app-${s.slug}`;
       // 0.16 T7: a Swarm service's figure is its local tasks summed (design §7.4).
       const swarmRuntime = swarmRuntimeOf(s);
@@ -59,6 +63,7 @@ export const statsRoutes: FastifyPluginAsync = async (app) => {
       });
     }
     for (const d of dbs) {
+      if (d.serverId != null) continue;
       const cname = d.containerName ?? `nd-db-${d.name}`;
       const st = containers.get(cname);
       if (!st) continue;
@@ -109,7 +114,7 @@ export const metricRoutes: FastifyPluginAsync = async (app) => {
       if (svc) {
         // 0.16 T7: a Swarm service's figure is its local tasks summed.
         const swarmRuntime = swarmRuntimeOf(svc);
-        const st = swarmRuntime
+        const st = svc.serverId != null ? nodeServiceStat(svc, app.stats.raw().nodeContainers?.get(svc.serverId)) : swarmRuntime
           ? swarmContainerStat(containers, swarmRuntime)
           : ((svc.runtimeId ? containers.get(svc.runtimeId) : undefined) ?? containers.get(`nd-app-${svc.slug}`));
         if (st) {

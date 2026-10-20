@@ -92,6 +92,9 @@ jobs:
           # A manual run is dispatched from a BRANCH; without this pin the
           # job would build that branch's HEAD instead of the requested tag.
           ref: ${{ env.RELEASE_TAG }}
+          # Keep the preceding release tree available to the registry drift
+          # guard, just as main CI does. A shallow tag checkout skips it.
+          fetch-depth: 0
 
       # Fail fast on a non-semver tag (e.g. v0.4.0-foo, v0.4.0+meta).
       # The trigger filter `v*` accepts any v-prefixed ref, but
@@ -378,6 +381,10 @@ jobs:
       - name: User-journey smoke on the pushed image
         timeout-minutes: 20
         run: node scripts/smoke-user-journey.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
+
+      - name: Node readiness, resource history and log drain smoke on the pushed image
+        timeout-minutes: 10
+        run: node scripts/smoke-multinode.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --node-operations-only --no-swarm
 
   # r581: publication. Runs only when both smokes passed (needs: is
   # all-success by default), and changes nothing that was built — `:latest`

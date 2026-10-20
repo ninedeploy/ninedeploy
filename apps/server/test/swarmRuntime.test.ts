@@ -238,6 +238,7 @@ const READERS: Record<string, { branch: true } | { exempt: string }> = {
   'engine/proxy.ts': { exempt: 'renders runtimeId:port — the Swarm VIP resolves on the overlay Traefik joined, so no change is needed (design §7.4 step 7)' },
   'engine/types.ts': { exempt: 'types only' },
   'lib/inventory.ts': { exempt: 'names the owner of a volume or network for display; Swarm services own neither' },
+  'lib/nodeMetrics.ts': { exempt: 'node-only telemetry explicitly skips Swarm; Swarm services cannot be pinned to a node' },
   'lib/webhookDispatch.ts': { exempt: 'PR previews never run on Swarm (a preview row has no orchestrator)' },
   'modules/ai.ts': { exempt: 'checks only that the service runs; lib/runtimeLogs.ts reads the logs and branches on Swarm' },
   'modules/containers.ts': { exempt: 'node container access; Swarm services are never node-pinned' },

@@ -124,7 +124,7 @@ export interface DeployRuntime {
    * 0.16.1: 'running' = no port probe, the container only has to stay up;
    * 0.16.3: 'command' = `healthCommand` must exit 0 inside it (local docker builder).
    */
-  healthCheck?: 'running' | 'command';
+  healthCheck?: 'running' | 'command' | 'http-strict' | 'tcp';
   healthCommand?: string;
   /** Resolved image digest the runtime is actually running (for exact rollback). */
   imageDigest?: string;

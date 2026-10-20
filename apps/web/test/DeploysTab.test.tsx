@@ -219,6 +219,70 @@ describe('DeploysTab (per-service)', () => {
     expect(await screen.findByText(/Root cause: bad credentials\./)).toBeInTheDocument();
   });
 
+  it('0.16.16: shows a proposed settings change next to the current values, applies it and redeploys', async () => {
+    mockOf(api.ai.getConfig).mockResolvedValue({ configured: true, provider: 'anthropic', baseUrl: null, model: 'claude-sonnet-5-5', hasApiKey: true });
+    mockOf(api.services.get).mockResolvedValue({ id: 1, port: 3000, healthPath: '/', build: { buildPack: 'nixpacks', startCmd: null } } as never);
+    mockOf(api.ai.diagnose).mockResolvedValue({
+      diagnosis: 'Root cause: wrong port.',
+      model: 'claude-sonnet-5-5',
+      parts: { rootCause: 'wrong port.', evidence: [], steps: [] },
+      proposal: {
+        settings: { port: 8080, build: { startCmd: 'node server.js' } },
+        files: [{ path: 'package.json', find: '"node": "16"', replace: '"node": "20"', why: 'Node 18+ is required' }],
+      },
+    });
+    const updateSpy = vi.fn().mockResolvedValue({ id: 1 });
+    const triggerSpy = vi.fn().mockResolvedValue({ deploymentId: 9 });
+    mockOf(api.services.update).mockImplementation(updateSpy);
+    mockOf(api.deploys.trigger).mockImplementation(triggerSpy);
+    const onSelect = vi.fn();
+    renderWithProviders(
+      <DeploysTab serviceId={1} repoUrl={null} deploys={[baseDeploy({ id: 7, status: 'failed' })]} loading={false} activeId={7} onSelect={onSelect} />,
+    );
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Diagnose failure' }));
+    expect(await screen.findByText('Proposed settings change')).toBeInTheDocument();
+    expect(await screen.findByText('3000')).toBeInTheDocument();
+    expect(screen.getByText('8080')).toBeInTheDocument();
+    expect(screen.getByText('Start command')).toBeInTheDocument();
+    expect(screen.getByText('node server.js')).toBeInTheDocument();
+    expect(screen.getByText('package.json')).toBeInTheDocument();
+    expect(screen.getByText('Node 18+ is required')).toBeInTheDocument();
+    expect(screen.getByText(/- "node": "16"/)).toBeInTheDocument();
+    expect(screen.getByText(/\+ "node": "20"/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Apply and redeploy/ }));
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledWith(1, { port: 8080, build: { startCmd: 'node server.js' } }));
+    await waitFor(() => expect(triggerSpy).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(onSelect).toHaveBeenCalledWith(9));
+  });
+
+  it('0.16.16: copies a proposed file edit, and survives a refused apply', async () => {
+    mockOf(api.ai.getConfig).mockResolvedValue({ configured: true, baseUrl: null, model: 'm', hasApiKey: true });
+    mockOf(api.services.get).mockResolvedValue({ id: 1, port: null, healthPath: '', build: undefined } as never);
+    mockOf(api.ai.diagnose).mockResolvedValue({
+      diagnosis: 'Root cause: x.',
+      model: 'm',
+      proposal: { settings: { healthPath: '/health', build: { buildPack: 'dockerfile' } }, files: [{ path: 'Dockerfile', find: 'FROM node:16', replace: 'FROM node:20' }] },
+    });
+    mockOf(api.services.update).mockRejectedValue(new Error('Only operators may use the static build pack'));
+    renderWithProviders(
+      <DeploysTab serviceId={1} repoUrl={null} deploys={[baseDeploy({ id: 7, status: 'failed' })]} loading={false} activeId={7} onSelect={() => {}} />,
+    );
+    const user = userEvent.setup();
+    // After setup(): user-event installs its own clipboard stub.
+    const writeText = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('denied'));
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    await user.click(await screen.findByRole('button', { name: 'Diagnose failure' }));
+    await user.click(await screen.findByLabelText('Copy the replacement for Dockerfile'));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('FROM node:20'));
+    await user.click(screen.getByLabelText('Copy the replacement for Dockerfile'));
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2));
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: /Apply and redeploy/ }));
+    await waitFor(() => expect(api.services.update).toHaveBeenCalled());
+    expect(api.deploys.trigger).not.toHaveBeenCalled();
+  });
+
   it('hides the AI diagnosis card when no provider is configured', async () => {
     mockOf(api.ai.getConfig).mockResolvedValue({ configured: false, baseUrl: null, model: null, hasApiKey: false });
     renderWithProviders(

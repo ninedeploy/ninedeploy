@@ -16,6 +16,13 @@ const h = vi.hoisted(() => ({
   audit: vi.fn(async (..._a: unknown[]) => undefined),
 }));
 vi.mock('../src/lib/audit.js', () => ({ audit: h.audit }));
+// Stop uses exec directly, outside sleepDeps. Keep this route test independent
+// of a real Docker daemon, just like the sleep/wake operations below.
+vi.mock('../src/lib/exec.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/exec.js')>()),
+  run: h.run,
+  capture: h.capture,
+}));
 vi.mock('../src/lib/sleepRuntime.js', () => ({
   sleepDeps: (db: DB) => ({
     db,
@@ -152,6 +159,7 @@ describe('start and stop end a sleep', () => {
     await db.update(services).set({ asleepAt: new Date(0) });
     const res = await app.inject({ method: 'POST', url: '/v1/services/5/stop', headers: OWNER });
     expect(res.statusCode, res.body).toBe(200);
+    expect(h.capture).toHaveBeenCalledWith('docker', ['stop', '-t', '5', 'web-9']);
     expect(await row()).toMatchObject({ status: 'stopped', asleepAt: null });
     expect(h.writeDynamicConfig).toHaveBeenCalled();
   });

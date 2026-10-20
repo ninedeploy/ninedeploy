@@ -54,8 +54,12 @@ overrides:
   qs: "6.16.0"
   # hono <4.13.5 (GHSA-gqvv-2mrq-wpjv, GHSA-g6gw-c38x-mqfc, GHSA-crvj-82cr-hjcx)
   # arrives via the MCP SDK's @hono/node-server. Not reachable today — the MCP
-  # server is stdio-only — so this is defence in depth (r098).
-  hono: "^4.13.5"
+  # server is stdio-only — so this is defence in depth (r098). 4.13.11 also
+  # fixes serveStatic double decoding (GHSA-5r4p-p66f-jhc7).
+  hono: "^4.13.11"
+  # PM2's js-api transport: array-form credentials and sensitive-header regex
+  # escaping on cross-origin redirects (GHSA-q3jh-wrc6-jgq8, GHSA-8r9p-f939-6h3c).
+  "follow-redirects@>=1.16.0 <1.16.1": "1.16.1"
 
 # Dependencies allowed to run install scripts (pnpm 11 blocks these by default).
 # esbuild ships its native binary via postinstall; Vite/tsx need it.
@@ -93,4 +97,8 @@ patchedDependencies:
   # CJS (ERR_REQUIRE_ESM). Patch archiver-utils' range to ^13.0.6 instead: glob
   # 13 is already in the tree (fastify) and its sync API is a drop-in.
   archiver-utils@5.0.2: patches/archiver-utils@5.0.2.patch
+  # GHSA-vfj7-8cjw-p6xm has no upstream release: cap nested parse blocks and
+  # validate AST depth before recursive walkers. The raw audit still flags
+  # 3.0.3; dependencyDepth.test.ts exercises PM2's actual patched copy.
+  braces@3.0.3: patches/braces@3.0.3.patch
   drizzle-kit@0.31.10: patches/drizzle-kit@0.31.10.patch

@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.17.0] - 2026-10-20
+
+> Application readiness, node resource history and log drains, and AI that proposes a fix.
+
+### Upgrade notes
+
+- **No SQL migration.** AI features remain off without a configured provider. Node resource history and configured log drains become available with the updated panel/agent; readiness remains opt-in.
+- Existing healthcheck behaviour is unchanged. HTTP and TCP readiness are explicit opt-in modes for plain Docker services. Node readiness and log drains require a 0.17.0 agent with sealed transport; older agents keep their existing deploy behaviour.
+- `POST /v1/ai/services/:id/deploys/:depId/diagnose` still answers `diagnosis` and `model`. It may now add `parts` and `proposal`, which older clients ignore.
+
+### Added
+
+- **A diagnosis that proposes a change.** The model sees the service's current build settings and answers in a structured form:
+  - `parts`: the root cause, the quoted evidence and the steps;
+  - `proposal.settings`: port, health path, build pack, base directory, install, build or start command, or Dockerfile path;
+  - `proposal.files`: up to five exact find/replace edits to repository files, each with its reason.
+- **Validation.** Every part is checked against a strict schema. An invalid part is dropped on its own, and a value equal to the current one is removed. Lifecycle hooks can never be proposed, since they are host-privileged for non-operators. A prose answer still works: it is the diagnosis text, with no proposal.
+- **Apply and redeploy.** The diagnosis card shows each proposed setting next to its current value. Applying uses `PATCH /v1/services/:id`, so all its rules apply, and then starts a deploy. File edits are shown as a patch to copy; the panel never writes to the repository.
+- **Clients.** CLI: `ninedeploy deploys diagnose <service> <deployId> [--apply] [--json]`. SDK: `ai.diagnose` returns `AiDiagnosisResult`. See [docs/AI.md](docs/AI.md#a-proposed-fix-0170).
+- **HTTP/TCP readiness.** Plain Docker services on the panel host or a node can require an HTTP 2xx/3xx response, or a TCP connection, before taking traffic. HTTP readiness never falls back to an open TCP port. A bounded helper shares the workload's network namespace, publishes no host port, and is removed after the attempt. Unsupported nodes are refused before deploy side effects.
+- **Node service resource history.** CPU and memory samples from node agents are stored and evaluated by the existing alert rules. Cache identity includes the node, serving replicas are summed, and malformed/missing samples stay unknown. Node collection has bounded concurrency and cancellation; the Local Host monitoring view stays local.
+- **Node log drains.** Primary Docker/Compose runtimes and their named replicas can send logs through the sealed agent to configured drains. Reads and output are bounded. This remains a best-effort in-memory drain; restarts or excess volume can lose history. See [docs/NODE_OPERATIONS.md](docs/NODE_OPERATIONS.md) for modes, capabilities and limits.
+- **Feature availability.** Servers and the Docker deployment wizard show which features the selected host supports. Healthcheck choices are available in service settings and displayed by the CLI.
+
+### Fixed
+
+- **AI context redaction.** Current build commands and health paths now use the same credential sanitizer as logs before reaching the configured model. Proposed changes cannot replace credential-bearing settings or introduce redaction placeholders. A captured-provider-request regression verifies that inline URL passwords and tokens stay on the panel while ordinary settings remain useful.
+- **Dependency hardening.** PM2's `follow-redirects` is pinned to 1.16.1 for cross-origin credential stripping ([array-form headers](https://github.com/advisories/GHSA-q3jh-wrc6-jgq8), [sensitive-header matching](https://github.com/advisories/GHSA-8r9p-f939-6h3c)). Hono is at least 4.13.11 for [static-path double decoding](https://github.com/advisories/GHSA-5r4p-p66f-jhc7); the MCP server remains stdio-only. Upstream has no fixed `braces` release for [nested-pattern stack exhaustion](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm), so the package carries a local patch: parse nesting and caller-supplied ASTs are limited to 256 levels before recursive walkers. Ordinary patterns and the supported boundary are regression-tested through PM2's actual dependency. The raw audit still reports the upstream 3.0.3 advisory; it is not suppressed.
+- Failed log delivery retains its cursor and is retried. A destination that already accepted the batch may receive duplicates while another destination recovers.
+- Node container names no longer contaminate panel-host service statistics; service history remains scoped by service access.
+- The registry drift guard passes Git's tag glob without a shell, so POSIX expansion cannot silently skip the baseline. Release checks fetch the full tag history needed by that guard.
+- Release promotion also requires a real two-daemon node readiness/history/log-drain smoke on the pushed image, alongside the existing upgrade and user-journey smokes.
+- The scale-to-zero route test mocks the stop command and asserts its arguments, instead of depending on the developer's Docker daemon.
+
 ## [0.16.15] - 2026-10-20
 
 > Claude as an AI provider, and AI that reads a running service's logs.

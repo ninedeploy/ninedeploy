@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
-import { deployments, users, workspaces } from '@ninedeploy/db';
+import { buildConfigs, deployments, users, workspaces } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
-import { aiConfigUpdate, ninedeployManifest, RUNTIME_LOG_TAIL_MAX, type AiConfigStatus as AiConfigStatusT } from '@ninedeploy/schemas';
+import { aiConfigUpdate, ninedeployManifest, RUNTIME_LOG_TAIL_MAX, type AiConfigStatus as AiConfigStatusT, type AiDiagnosisResult } from '@ninedeploy/schemas';
 import { z } from 'zod';
 import { encrypt } from '../lib/crypto.js';
 import { HttpError, badRequest, forbidden, notFound, parseId as num } from '../lib/errors.js';
@@ -9,13 +9,13 @@ import { audit } from '../lib/audit.js';
 import { getSettingString, setSettingJson, setSettingString } from '../lib/settings.js';
 import { AI_CONFIG_KEY, AI_KEY_KEY, aiComplete, effectiveBaseUrl, loadAiConfig, loadStoredAiConfig } from '../lib/aiProvider.js';
 import { readRuntimeLogs } from '../lib/runtimeLogs.js';
+import { buildFixMessages, type FixContext, parseFixAnswer, renderDiagnosis } from '../lib/aiFix.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { assertServiceRole, roleAtLeast, serviceWorkspaceIds, userWorkspaceMemberships } from '../lib/resourceAccess.js';
 import { logBus } from '../engine/logs.js';
 import { assertMaySeeLaneSecrets } from '../lib/protectedLanes.js';
 import { redactEgressTarget } from '../lib/egressGuard.js';
 import {
-  buildDiagnosisMessages,
   buildRuntimeLogMessages,
   buildSuggestMessages,
   MAX_LOG_CHARS,
@@ -38,7 +38,8 @@ import {
  * blocked. Only the instance operator can set it.
  */
 
-const DIAGNOSIS_MAX_TOKENS = 700;
+// 0.16.16: the structured answer (parts + proposal) needs more room than the prose one did.
+const DIAGNOSIS_MAX_TOKENS = 1200;
 const LOG_ANALYSIS_MAX_TOKENS = 800;
 const SUGGEST_MAX_TOKENS = 900;
 
@@ -176,9 +177,33 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
     const raw = logBus.read(depId);
     if (!raw.trim()) throw badRequest('This deployment has no build log to diagnose');
 
-    const diagnosis = await aiComplete(cfg, asPrompt(buildDiagnosisMessages(logTailForAi(raw))), DIAGNOSIS_MAX_TOKENS);
-    void audit(app.db, req.user!.id, 'ai.diagnose', `service=${svc.name} deployment=${depId}`);
-    return { diagnosis, model: cfg.model };
+    // 0.16.16: the model sees the service's current build settings and may
+    // propose a change to them, or file edits. A prose answer still works:
+    // it is the diagnosis text, with no proposal.
+    const build = await app.db.query.buildConfigs.findFirst({ where: eq(buildConfigs.serviceId, svc.id) });
+    const context: FixContext = {
+      type: svc.type,
+      port: svc.port ?? null,
+      healthPath: svc.healthPath ?? null,
+      build: {
+        buildPack: build?.buildPack ?? null,
+        baseDir: build?.baseDir ?? null,
+        installCmd: build?.installCmd ?? null,
+        buildCmd: build?.buildCmd ?? null,
+        startCmd: build?.startCmd ?? null,
+        dockerfilePath: build?.dockerfilePath ?? null,
+      },
+    };
+    const answer = await aiComplete(cfg, asPrompt(buildFixMessages(logTailForAi(raw), context)), DIAGNOSIS_MAX_TOKENS);
+    const parsed = parseFixAnswer(answer, context);
+    void audit(app.db, req.user!.id, 'ai.diagnose', `service=${svc.name} deployment=${depId}`, {
+      serviceId: svc.id,
+      proposal: parsed?.proposal ? Object.keys(parsed.proposal) : [],
+    });
+    const result: AiDiagnosisResult = parsed
+      ? { diagnosis: renderDiagnosis(parsed.parts), model: cfg.model, parts: parsed.parts, proposal: parsed.proposal }
+      : { diagnosis: answer, model: cfg.model, parts: null, proposal: null };
+    return result;
   });
 
   // 0.16.15: what the model makes of a running service's recent runtime

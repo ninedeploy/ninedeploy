@@ -19,6 +19,29 @@ function setup(rows: { drains: unknown[]; services: unknown[] }) {
 }
 
 describe('log-drain shipper (r231)', () => {
+  it('keeps its cursor when a drain fails so the next tick can retry', async () => {
+    const { db, deps, readLogs, dispatch } = setup({ drains: [drain()], services: [svcRow({ id: 1, slug: 'web', status: 'running', type: 'docker', runtimeId: 'web-7', replicas: 1 })] });
+    const cursors: ShipperCursors = new Map([['web-7', '2026-09-18T10:00:00.000Z']]);
+    readLogs.mockResolvedValue(['2026-09-18T10:00:01.000Z retry me']);
+    dispatch.mockResolvedValue({ ok: false, status: 503 });
+    expect(await shipLogsOnce(db as never, cursors, deps)).toEqual({ shipped: 0, failed: 1 });
+    expect(cursors.get('web-7')).toBe('2026-09-18T10:00:00.000Z');
+  });
+  it('tails node containers on their own host with host-scoped cursors', async () => {
+    const { db, deps, readLogs, dispatch } = setup({
+      drains: [drain()],
+      services: [svcRow({ id: 1, slug: 'web', status: 'running', type: 'docker', runtimeId: 'web-7', replicas: 1, serverId: 4 })],
+    });
+    const readRemoteLogs = vi.fn(async () => ['2026-09-18T10:00:01.000Z from node']);
+    const remoteDeps = { ...deps, readRemoteLogs };
+    const cursors: ShipperCursors = new Map();
+    await shipLogsOnce(db as never, cursors, remoteDeps);
+    await shipLogsOnce(db as never, cursors, remoteDeps);
+    expect(readRemoteLogs).toHaveBeenCalledWith(4, 'web-7', '2026-09-18T10:00:00.000Z');
+    expect(readLogs).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(cursors.get('node:4:web-7')).toBe('2026-09-18T10:00:01.000Z');
+  });
   it('parses docker --timestamps lines', () => {
     expect(parseDockerLogLine('2026-09-18T10:00:01.123456789Z hello world')).toEqual({
       ts: '2026-09-18T10:00:01.123456789Z', line: 'hello world',

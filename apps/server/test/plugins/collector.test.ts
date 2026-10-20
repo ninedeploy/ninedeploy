@@ -20,6 +20,8 @@ const nodeHealthMock = vi.hoisted(() => ({
 vi.mock('../../src/lib/nodeHealth.js', () => ({ createNodeHealthWatch: () => ({ cycle: nodeHealthMock.cycle }) }));
 const alertingMock = vi.hoisted(() => ({ evaluateAlerts: vi.fn(async () => undefined) }));
 vi.mock('../../src/lib/alerting.js', () => alertingMock);
+const nodeMock = vi.hoisted(() => ({ agentOp: vi.fn() }));
+vi.mock('../../src/lib/agentClient.js', () => nodeMock);
 
 const collectorPlugin = (await import('../../src/plugins/collector.js')).default;
 
@@ -58,6 +60,20 @@ afterEach(() => {
 });
 
 describe('collector plugin', () => {
+  it('persists node metrics from that node, never from an identically named local container', async () => {
+    vi.useFakeTimers();
+    statsMock.collectContainerStats.mockResolvedValue(new Map([['web-7', { ...containerA, name: 'web-7', cpuPct: 99 }]]));
+    statsMock.collectHostStats.mockResolvedValue(host);
+    nodeMock.agentOp.mockResolvedValue({ exitCode: 0, lines: ['web-7|2.5%|10MiB / 1GiB'] });
+    const { db, insert } = makeDb([{ id: 4, runtimeId: 'web-7', serverId: 8, replicas: 1 } as never]);
+    const app = await buildApp(db);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(nodeMock.agentOp).toHaveBeenCalledWith(db, 8, 'agent.stats', {}, expect.any(Function), expect.objectContaining({ timeoutMs: expect.any(Number) }));
+    const rows = insert.mock.results.flatMap((r) => (r.value as { values: ReturnType<typeof vi.fn> }).values.mock.calls.flatMap((c) => c[0]));
+    expect(rows).toContainEqual({ serviceId: 4, kind: 'cpu', value: 250, ts: expect.any(Date) });
+    expect(rows).not.toContainEqual(expect.objectContaining({ serviceId: 4, kind: 'cpu', value: 9900 }));
+    await app.close();
+  });
   it('collects stats on the interval, persists metrics, and updates the cache', async () => {
     vi.useFakeTimers();
     statsMock.collectContainerStats.mockResolvedValue(new Map([['nd-web', containerA]]));

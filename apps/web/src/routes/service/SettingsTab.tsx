@@ -229,7 +229,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
         healthTimeoutSeconds:
           svc?.healthTimeoutSeconds !== undefined ? (f.healthTimeout.trim() ? toInt(f.healthTimeout, 300) : null) : undefined,
         // 0.16.1, docker services on a panel that reports it; sent only when changed.
-        healthCheck: svc?.healthCheck !== undefined && f.healthCheck !== svc.healthCheck ? (f.healthCheck as 'http' | 'running' | 'command') : undefined,
+        healthCheck: svc?.healthCheck !== undefined && f.healthCheck !== svc.healthCheck ? (f.healthCheck as 'http' | 'running' | 'command' | 'http-strict' | 'tcp') : undefined,
         // 0.16.3, same rule; blank clears it.
         healthCommand: svc?.healthCommand !== undefined && f.healthCommand.trim() !== (svc.healthCommand ?? '') ? f.healthCommand.trim() || null : undefined,
         gitLfs: svc?.gitLfs !== undefined && f.gitLfs !== svc.gitLfs ? f.gitLfs : undefined,
@@ -379,7 +379,9 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
               hint="Container running: the deploy only waits for the container to stay up 10 s, for services with no HTTP or TCP port (UDP game servers, VoIP, workers)."
             >
               <Select value={form.healthCheck} onChange={set('healthCheck')} className="h-9" aria-label="Healthcheck">
-                <option value="http">HTTP / TCP probe of the container port</option>
+                <option value="http">Default healthcheck (legacy behaviour)</option>
+                <option value="http-strict">HTTP readiness (2xx / 3xx response)</option>
+                <option value="tcp">TCP readiness (port accepts connections)</option>
                 <option value="running">Container running (no port probe)</option>
                 {/* 0.16.3, nodes and Swarm 0.16.4; shown once the panel reports the field. */}
                 {svc.healthCommand !== undefined && (

@@ -30,13 +30,26 @@ Logs are sanitized before they are sent:
 - passwords in URLs, `Authorization` headers and bearer tokens are masked;
 - so is the value of every assignment whose name says it is a credential (`…PASSWORD=`, `…TOKEN=`, `…SECRET=`, `--password`, …).
 
-Only the last 16 KB is sent. The sanitizer is a safety net: a build log is still output from your own code, so choose a provider you trust with it. Each call is audited (`ai.diagnose`, `ai.analyze_logs`, `ai.suggest`).
+Only the last 16 KB of logs is sent. A failed-deploy diagnosis also sends the current build settings, with the same sanitizer applied to each string before JSON encoding. Credential-bearing settings are excluded from proposed changes, and redaction markers cannot be applied as values. Store secrets in environment variables rather than inline commands. The sanitizer is a safety net: arbitrary unlabeled secrets in your output or settings can still escape its patterns, so choose a provider you trust with this data. Each call is audited (`ai.diagnose`, `ai.analyze_logs`, `ai.suggest`).
 
 ## Failed-deploy diagnosis
 
-On a failed deployment, **Service → Deploys → AI diagnosis** sends the build log's tail. The answer has three parts: the root cause, the decisive log lines, and numbered fix steps.
+On a failed deployment, **Service → Deploys → AI diagnosis** sends the build log's tail together with the service's current build settings. The answer has three parts: the root cause, the decisive log lines, and numbered fix steps.
 
-API: `POST /v1/ai/services/:id/deploys/:depId/diagnose`. SDK: `ai.diagnose`.
+### A proposed fix (0.17.0)
+
+The model may also propose a change. The panel validates every proposal; anything outside these limits is dropped before you see it.
+
+- **A settings change.** Only these fields can be proposed: port, health path, build pack, base directory, install, build and start command, and Dockerfile path. A value equal to the current one is dropped. Lifecycle hooks are never proposed: for a non-operator they run on the host.
+  - The card shows each setting's current and proposed value.
+  - **Apply and redeploy** saves it with the ordinary service update, so every rule of that update still applies (a member cannot pick the static build pack, for example). Then it starts a deploy.
+- **File edits.** Up to five, each an exact text to find in a repository file and its replacement, with the reason. They are shown as a patch to copy into your repository. The panel never writes to your repository.
+
+The model can be wrong, so read the change before you apply it. A model that answers in prose instead of the structured form still gives its diagnosis, with no proposal.
+
+- **API:** `POST /v1/ai/services/:id/deploys/:depId/diagnose` answers `{ diagnosis, model, parts?, proposal? }`.
+- **SDK:** `ai.diagnose`.
+- **CLI:** `ninedeploy deploys diagnose <service> <deployId> [--apply] [--json]`.
 
 ## Runtime-log analysis (0.16.15)
 

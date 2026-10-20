@@ -379,6 +379,13 @@ export function createRemoteDockerBuilder(
   return {
     async buildAndRun(ctx: BuildContext, previous?: DeployRuntime): Promise<DeployRuntime> {
       const { service, deploymentId, env, imageDigest, registryAuth, log } = ctx;
+      const probeProtocol = service.healthCheck === 'http-strict' ? 'http' : service.healthCheck === 'tcp' ? 'tcp' : undefined;
+      if (probeProtocol) {
+        const info = parseAgentCapabilities((await agent('agent.ping', {}, () => undefined)).lines);
+        const refusal = capabilityRefusalFor(info, opts.nodeLabel ?? `#${service.serverId ?? '?'}`, { cap: 'docker.probe', feature: 'probe application readiness' });
+        if (refusal) throw new RemoteDeployUnsupportedError(refusal.message);
+        if (!service.port && service.image) throw new RemoteDeployUnsupportedError('HTTP/TCP readiness needs a container port.');
+      }
 
       if (service.type !== 'docker') {
         throw new RemoteDeployUnsupportedError(
@@ -490,6 +497,7 @@ export function createRemoteDockerBuilder(
         runtimeId: name,
         port: resolvedPort,
         healthPath: service.healthPath ?? '/',
+        ...(probeProtocol ? { healthCheck: service.healthCheck as 'http-strict' | 'tcp' } : {}),
         // r270: only a real digest is a digest. Recording the mutable tag (or
         // the node-local build tag) here made the deployment row claim digest
         // pinning while a rollback re-pulled whatever the tag points at today.
@@ -556,10 +564,29 @@ export function createRemoteDockerBuilder(
             }
           }
           if (status === 'running' && (health === 'none' || health === 'healthy')) {
+            if (runtime.healthCheck === 'http-strict' || runtime.healthCheck === 'tcp') {
+              if (!runtime.port) return failWithLogs('HTTP/TCP readiness needs a container port.');
+              const result = await agent('docker.probe', {
+                name: runtime.runtimeId, port: runtime.port,
+                protocol: runtime.healthCheck === 'tcp' ? 'tcp' : 'http', path: runtime.healthPath,
+              }, () => undefined);
+              let ready = false;
+              for (const line of result.lines) {
+                if (!line.startsWith('ND-PROBE ')) continue;
+                try { ready = (JSON.parse(line.slice(9)) as { ready?: unknown }).ready === true; } catch { /* malformed response is not readiness */ }
+              }
+              if (!ready) {
+                stable = 0;
+                await new Promise((resolve) => setTimeout(resolve, pollMs));
+                continue;
+              }
+            }
             stable += 1;
             if (stable >= needed) {
               log(
-                runtime.healthCheck === 'command'
+                runtime.healthCheck === 'http-strict' || runtime.healthCheck === 'tcp'
+                  ? `${runtime.runtimeId} passed its ${runtime.healthCheck === 'tcp' ? 'TCP' : 'HTTP'} readiness probe on the node.`
+                  : runtime.healthCheck === 'command'
                   ? `${runtime.runtimeId} is running on the node and its healthcheck command passes.`
                   : `${runtime.runtimeId} is running on the node. Remote health is container state, not an ` +
                       'HTTP probe: the panel is outside the node network.',

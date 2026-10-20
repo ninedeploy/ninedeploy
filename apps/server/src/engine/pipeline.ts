@@ -797,6 +797,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   // rather than deployed with a probe it never chose.
   const notDocker = service.type !== 'docker';
   const fileRefusal =
+    (notDocker && (service.healthCheck === 'http-strict' || service.healthCheck === 'tcp') ? 'HTTP/TCP readiness probes apply to docker services only.' : null) ??
     (await fileMountRefusal(db, service)) ??
     (notDocker && service.healthCheck === 'command' ? COMMAND_HEALTHCHECK_PANEL_ONLY : null) ??
     (notDocker && Object.keys(service.dockerLabels ?? {}).length > 0 ? DOCKER_LABELS_PANEL_ONLY : null);

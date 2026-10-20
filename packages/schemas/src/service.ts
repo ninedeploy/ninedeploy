@@ -241,7 +241,7 @@ export const portMappings = z
  * VoIP, queue workers). 0.16.3 `command`: a shell command run inside the
  * container (`sh -c`) must exit 0, e.g. `pg_isready` or `curl -f localhost/up`.
  */
-export const healthCheckMode = z.enum(['http', 'running', 'command']);
+export const healthCheckMode = z.enum(['http', 'running', 'command', 'http-strict', 'tcp']);
 export type HealthCheckMode = z.infer<typeof healthCheckMode>;
 
 /** 0.16.3: the `command` healthcheck's shell command (one line). */

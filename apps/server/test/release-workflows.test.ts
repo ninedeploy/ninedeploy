@@ -67,6 +67,9 @@ describe('release delivery invariants', () => {
     const workflow = readWorkflow('release-publish.yml');
     const checkout = workflow.jobs['publish-image']!.steps.find((step) => String(step.uses ?? '').startsWith('actions/checkout'));
     expect(checkout?.with?.['ref']).toBe('${{ env.RELEASE_TAG }}');
+    // The registry drift guard needs the preceding release tag and its tree.
+    // A shallow tag checkout otherwise turns that guard into a skipped test.
+    expect(checkout?.with?.['fetch-depth']).toBe(0);
   });
 
   it('r475: the local gate runs the phases in CI order (typecheck, lint, build, then tests)', () => {
@@ -277,7 +280,7 @@ describe('r581: publication is gated on the end-to-end smokes', () => {
     expect(build.steps.some((s) => s.run?.includes('imagetools create'))).toBe(false);
   });
 
-  it('the smoke job needs the build and runs both smokes on the pushed tag', () => {
+  it('the smoke job needs the build and runs upgrade, journey and node operations on the pushed tag', () => {
     const smoke = jobs()['smoke-published-image']!;
     expect(needsOf(smoke)).toEqual(['publish-image']);
     expect(smoke.permissions).toEqual({ contents: 'read', packages: 'read' });
@@ -306,6 +309,11 @@ describe('r581: publication is gated on the end-to-end smokes', () => {
     expect(steps[journey]!.run).toBe('node scripts/smoke-user-journey.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"');
     expect(steps[journey]!.if).toBeUndefined();
     expect(steps[journey]!['timeout-minutes']).toBeGreaterThan(0);
+    const nodeOps = steps.findIndex((s) => s.run?.includes('scripts/smoke-multinode.mjs'));
+    expect(nodeOps).toBeGreaterThan(journey);
+    expect(steps[nodeOps]!.run).toBe('node scripts/smoke-multinode.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --node-operations-only --no-swarm');
+    expect(steps[nodeOps]!.if).toBeUndefined();
+    expect(steps[nodeOps]!['timeout-minutes']).toBeGreaterThan(0);
   });
 
   it(':latest and the GitHub Release come only after the smokes, as a retag of the smoked manifest', () => {

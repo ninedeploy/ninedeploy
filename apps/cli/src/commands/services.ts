@@ -94,7 +94,10 @@ export async function servicesGet(client: NineDeployClient, idStr: string): Prom
     if (svc.publishedPort) kv('Host Port', c.green(`:${svc.publishedPort}`));
     if (svc.portMappings?.length) kv('Port Mappings', c.green(svc.portMappings.map(formatPortMapping).join(', ')));
     kv('Volume', svc.volumeMount ?? '—');
-    kv('Health', svc.healthCheck === 'running' ? 'container running (no port probe)' : svc.healthPath);
+    kv('Health', svc.healthCheck === 'running' ? 'container running (no port probe)'
+      : svc.healthCheck === 'http-strict' ? `HTTP readiness (2xx/3xx) ${svc.healthPath}`
+      : svc.healthCheck === 'tcp' ? `TCP readiness on port ${svc.port ?? 'unset'}`
+      : svc.healthPath);
     kv('Runtime', svc.runtimeId ?? '—');
     kv('Commit', svc.commitSha ?? '—');
     if (svc.autoUrl) kv('URL', c.cyan(`http://${svc.autoUrl}`));

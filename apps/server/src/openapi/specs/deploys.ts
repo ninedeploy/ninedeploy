@@ -257,9 +257,11 @@ export const deploysSpecs: RouteSpecMap = {
   },
   'POST /v1/ai/services/:id/deploys/:depId/diagnose': {
     summary: 'AI diagnosis of a failed deployment',
+    description:
+      '`diagnosis` is always the readable text. 0.16.16: when the model answers in the structured form, `parts` holds the root cause, the quoted evidence and the steps, and `proposal` what it proposes to change: `settings` (port, health path, build pack, base directory, install/build/start command, Dockerfile path; only values that differ from the service) and `files` (up to five exact find/replace edits). Apply a settings proposal with `PATCH /v1/services/:id`, whose rules all apply; nothing is changed by this route.',
     tag: 'ai',
     floor: 'operator',
-    responseType: '{ diagnosis: string; model: string }',
+    responseType: 'AiDiagnosisResult',
   },
   'POST /v1/ai/services/:id/logs/analyze': {
     summary: "AI analysis of a running service's recent runtime logs",

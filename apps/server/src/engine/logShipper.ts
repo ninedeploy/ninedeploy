@@ -1,22 +1,23 @@
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { logDrains, services, type DB } from '@ninedeploy/db';
 import type { LogDrainFormat, LogDrainType } from '@ninedeploy/schemas';
 import { decrypt } from '../lib/crypto.js';
 import { run } from '../lib/exec.js';
 import { dispatchLogBatch, type LogPayloadEntry } from './logDrainManager.js';
 import { replicaNames } from './dockerNames.js';
+import { agentOp } from '../lib/agentClient.js';
 
 /**
  * r231: the log-drain shipper.
  *
  * Drains could be created, listed and "tested", and nothing ever sent them a
  * line: `dispatchLogToDrain` was called only by the connectivity test. This
- * tails every running LOCAL container runtime a drain covers (`docker logs
+ * tails every running container runtime a drain covers (`docker logs
  * --since`, per replica) and forwards new lines in batches.
  *
  * Scope and limits, on purpose:
- *  - local docker/compose runtimes only — a remote node's containers are not
- *    on this daemon, and PM2 logs are files, not a container stream;
+ *  - docker/compose runtimes on the panel or a node with docker.logsSince;
+ *    PM2 logs are files, not a container stream;
  *  - no backfill: a runtime's cursor starts when the shipper first sees it;
  *  - at most {@link MAX_LINES_PER_RUNTIME} lines per runtime per tick, so a
  *    chatty container cannot starve the others or the drain.
@@ -28,6 +29,7 @@ export const MAX_LINES_PER_RUNTIME = 1000;
 export type ShipperCursors = Map<string, string>;
 
 export interface ShipperDeps {
+  readRemoteLogs?: (serverId: number, container: string, since: string) => Promise<string[]>;
   /** Collect a container's log lines (docker adds the RFC3339Nano timestamp). */
   readLogs: (container: string, since: string) => Promise<string[]>;
   dispatch: typeof dispatchLogBatch;
@@ -76,7 +78,7 @@ export async function shipLogsOnce(
   const running = await db
     .select()
     .from(services)
-    .where(and(eq(services.status, 'running'), isNull(services.serverId), inArray(services.type, ['docker', 'compose'])));
+    .where(and(eq(services.status, 'running'), inArray(services.type, ['docker', 'compose'])));
 
   let shipped = 0;
   let failed = 0;
@@ -86,16 +88,21 @@ export async function shipLogsOnce(
     const covering = drains.filter((d) => d.serviceId == null || d.serviceId === svc.id);
     if (covering.length === 0) continue;
     for (const container of replicaNames(svc.runtimeId, svc.replicas)) {
-      live.add(container);
-      const since = cursors.get(container);
+      const cursor = svc.serverId == null ? container : `node:${svc.serverId}:${container}`;
+      live.add(cursor);
+      const since = cursors.get(cursor);
       if (since === undefined) {
         // First sight: start from now, never backfill a container's history.
-        cursors.set(container, deps.now().toISOString());
+        cursors.set(cursor, deps.now().toISOString());
         continue;
       }
       let raw: string[];
       try {
-        raw = await deps.readLogs(container, since);
+        raw = svc.serverId == null
+          ? await deps.readLogs(container, since)
+          : await (deps.readRemoteLogs
+            ? deps.readRemoteLogs(svc.serverId, container, since)
+            : agentOp(db, svc.serverId, 'docker.logsSince', { name: container, since }, () => undefined).then((r) => r.lines));
       } catch {
         continue; // container restarting/gone — the next tick retries
       }
@@ -110,8 +117,8 @@ export async function shipLogsOnce(
         last = parsed.ts;
         if (entries.length >= MAX_LINES_PER_RUNTIME) break;
       }
-      cursors.set(container, last);
       if (entries.length === 0) continue;
+      let delivered = true;
       for (const drain of covering) {
         const res = await deps.dispatch(
           {
@@ -122,10 +129,13 @@ export async function shipLogsOnce(
             headers: drain.headersJson ? (JSON.parse(drain.headersJson) as Record<string, string>) : null,
           },
           entries,
-        );
+        ).catch(() => ({ ok: false }));
         if (res.ok) shipped += entries.length;
-        else failed += entries.length;
+        else { failed += entries.length; delivered = false; }
       }
+      // At least once: a failed destination must not silently lose the batch.
+      // Successful destinations may see a repeated timestamp on a retry.
+      if (delivered) cursors.set(cursor, last);
     }
   }
   // Forget containers that stopped (a redeploy mints a new name).

@@ -59,6 +59,8 @@ export function agentChildTimeoutMs(op: string): number | undefined {
 
 /** How long the panel waits for `op`'s answer. */
 export function agentRequestTimeoutMs(op: string): number {
+  if (op === 'docker.probe') return 15_000;
+  if (op === 'docker.logsSince') return 20_000;
   return LONG_AGENT_OPS.has(op) ? AGENT_LONG_OP_TIMEOUT_MS + 30_000 : SHORT_OP_REQUEST_MS;
 }
 
@@ -87,11 +89,12 @@ function postWithoutHeadersTimeout(
   headers: Record<string, string>,
   body: string,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<ExecResponse> {
   return new Promise((resolve, reject) => {
     const req = httpRequest(
       url,
-      { method: 'POST', headers: { ...headers, 'content-length': String(Buffer.byteLength(body)) } },
+      { method: 'POST', headers: { ...headers, 'content-length': String(Buffer.byteLength(body)) }, ...(signal ? { signal } : {}) },
       (res) => {
         const chunks: Buffer[] = [];
         res.on('data', (c: Buffer) => chunks.push(c));
@@ -204,7 +207,7 @@ async function supportsSealed(serverId: number, host: string, port: number): Pro
  * refuses them too, but the panel must not send the join token in clear in
  * the first place.
  */
-export const SEALED_ONLY_AGENT_OPS: ReadonlySet<string> = new Set(['swarm.info', 'swarm.join', 'swarm.leave']);
+export const SEALED_ONLY_AGENT_OPS: ReadonlySet<string> = new Set(['swarm.info', 'swarm.join', 'swarm.leave', 'docker.probe', 'docker.logsSince']);
 export const isSealedOnlyAgentOp = (op: string): boolean => SEALED_ONLY_AGENT_OPS.has(op) || op.startsWith('swarm.');
 
 /**
@@ -238,8 +241,9 @@ export async function agentOp(
   op: string,
   params: Record<string, unknown>,
   sink: (line: string) => void,
-  opts?: { tolerateExit?: boolean },
+  opts?: { tolerateExit?: boolean; timeoutMs?: number; signal?: AbortSignal },
 ): Promise<AgentOpResult> {
+  opts?.signal?.throwIfAborted();
   const row = await db.query.servers.findFirst({ where: eq(servers.id, serverId) });
   if (!row) throw new Error('Unknown server');
   const token = decrypt(row.tokenEncrypted);
@@ -288,11 +292,12 @@ export async function agentOp(
     ? { 'content-type': 'application/json' }
     : { 'content-type': 'application/json', 'x-agent-token': token };
   const requestBody = JSON.stringify(sealedOk ? { sealed: seal(shared, { op, params, nonce }) } : { op, params });
-  const budgetMs = agentRequestTimeoutMs(op);
+  opts?.signal?.throwIfAborted();
+  const budgetMs = Math.min(agentRequestTimeoutMs(op), opts?.timeoutMs ?? Number.POSITIVE_INFINITY);
   let res: ExecResponse;
   try {
     res = LONG_AGENT_OPS.has(op)
-      ? await postWithoutHeadersTimeout(url, headers, requestBody, budgetMs)
+      ? await postWithoutHeadersTimeout(url, headers, requestBody, budgetMs, opts?.signal)
       : await fetch(url, {
           method: 'POST',
           // r526: an agent endpoint never redirects; following one would
@@ -301,7 +306,9 @@ export async function agentOp(
           redirect: 'error',
           headers,
           body: requestBody,
-          signal: AbortSignal.timeout(budgetMs),
+          signal: opts?.signal
+            ? AbortSignal.any([opts.signal, AbortSignal.timeout(budgetMs)])
+            : AbortSignal.timeout(budgetMs),
         });
   } catch (err) {
     if (isTimeoutError(err)) {

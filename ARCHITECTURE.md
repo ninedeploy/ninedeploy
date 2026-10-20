@@ -785,7 +785,11 @@ and since 0.10.38 (r581) **the end-to-end smokes gate publication**:
    --to=vX.Y.Z` (the previous release comes from the GitHub Releases API, not
    from git tags; with none, the upgrade smoke is skipped with a notice), and
    `scripts/smoke-user-journey.mjs --image=…:vX.Y.Z`.
-3. **promote-release** — only when both smokes pass: `:latest` is re-pointed
+   The 0.17.0 node-operations smoke also runs on the pushed image, with
+   separate panel and node Docker daemons: HTTP readiness must refuse an
+   unready candidate while keeping the prior release serving, node memory
+   must reach service history, and a node log line must reach its drain.
+3. **promote-release** — only when all smokes pass: `:latest` is re-pointed
    at the already-pushed manifest (registry retag, no rebuild; only when the
    tag is the highest `vX.Y.Z`, per r573), then the GitHub Release is created.
    Since 0.10.43 (r701) it first builds the release's integrity assets — a

@@ -1,5 +1,6 @@
 import { MULTI_NODE_CAPABILITIES, type MultiNodeCapability } from '@ninedeploy/schemas';
 import { buildOps } from './builds.js';
+import { observabilityOps } from './observability.js';
 import { databaseOps } from './databases.js';
 import { fileMountOps } from './fileMounts.js';
 import { gitKeyOps } from './gitCredential.js';
@@ -52,6 +53,7 @@ export interface AgentOpModule {
 }
 
 export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
+  observabilityOps,
   // ── 0.16 T2 agent transport ──
   streamOps,
   runSpecOps,

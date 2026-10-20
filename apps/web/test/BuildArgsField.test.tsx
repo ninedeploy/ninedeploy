@@ -110,6 +110,14 @@ describe('Build arguments field', () => {
     expect((await savedBuild()).buildArgs).toEqual(['NEXT_PUBLIC_API', 'NODE_VERSION']);
   }, TIMEOUT);
 
+  it.each(['http-strict', 'tcp'])('lets an operator select and save %s readiness', async (mode) => {
+    renderTab({ ...serviceWith({}), healthCheck: 'http' } as ReturnType<typeof serviceWith>);
+    const selector = await screen.findByRole('combobox', { name: 'Healthcheck' });
+    fireEvent.change(selector, { target: { value: mode } });
+    fireEvent.submit(screen.getByRole('button', { name: /Save settings/ }).closest('form')!);
+    await waitFor(() => expect(apiMock.api.services.update).toHaveBeenCalledWith(1, expect.objectContaining({ healthCheck: mode })), { timeout: 30_000 });
+  }, TIMEOUT);
+
   it("offers the service's variables as chips; a click adds one", async () => {
     renderTab(serviceWith({ buildArgs: [] }));
     const chip = await screen.findByRole('button', { name: /NODE_VERSION/ });

@@ -11,6 +11,8 @@ import { AGENT_SWARM_MANAGER_VAR, type ServerFeatures, type ServerListEntry } fr
 
 /** The `features` flags, in display order, with the label the UI shows. */
 export const NODE_FEATURES = [
+  ['readinessProbe', 'HTTP/TCP readiness'],
+  ['logDrains', 'Log drains'],
   ['nixpacks', 'Nixpacks'],
   ['railpack', 'Railpack'],
   ['privateClones', 'Private clones'],

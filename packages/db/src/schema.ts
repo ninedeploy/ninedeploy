@@ -481,7 +481,7 @@ export const services = sqliteTable(
     // container to stay up (UDP game servers, workers with no HTTP or TCP
     // port). Null = the HTTP/TCP probe every deploy used before.
     // 0.16.3: 'command' = `health_command` must exit 0 inside the container.
-    healthCheck: text('health_check').$type<'http' | 'running' | 'command'>(),
+    healthCheck: text('health_check').$type<'http' | 'running' | 'command' | 'http-strict' | 'tcp'>(),
     // 0.16.3: the shell command of the 'command' healthcheck (`sh -c`); null otherwise.
     healthCommand: text('health_command'),
     // 0.16.3: user Docker labels on the container (JSON object); null = none.

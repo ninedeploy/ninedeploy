@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { VERSION } from '../src/version.js';
@@ -41,10 +41,9 @@ const ALLOWED_VOLUME_REMOVALS = new Set<string>([
 ]);
 
 function previousTag(): string | null {
-  // No quotes around v*: execSync on Windows routes through cmd.exe, which
-  // passes single quotes literally and matches nothing. Unquoted is safe —
-  // git globs the pattern itself and no repo files start with "v".
-  const tags = execSync('git tag --list v* --sort=-v:refname', { encoding: 'utf8' })
+  // Pass the glob to Git directly. A shell expands v* to vitest.config.ts on
+  // POSIX, silently removing the released baseline and skipping this guard.
+  const tags = execFileSync('git', ['tag', '--list', 'v*', '--sort=-v:refname'], { encoding: 'utf8' })
     .split('\n')
     .map((t) => t.trim())
     .filter(Boolean);
@@ -61,7 +60,7 @@ function previousTag(): string | null {
 }
 
 function baselineTemplates(tag: string): Map<string, TemplateDef> {
-  const raw = execSync(`git show ${tag}:apps/server/src/templates/registry.json`, {
+  const raw = execFileSync('git', ['show', `${tag}:apps/server/src/templates/registry.json`], {
     encoding: 'utf8',
     maxBuffer: 16 * 1024 * 1024,
   });

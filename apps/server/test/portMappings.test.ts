@@ -156,6 +156,18 @@ describe('PATCH /services/:id portMappings', () => {
   }
   const member = asUser({ id: OWNER, isOperator: false });
 
+  it.each(['http-strict', 'tcp'])('stores and returns opted-in %s readiness and can restore the legacy default', async (mode) => {
+    const { app, id, row, patch } = await setup({ port: 3000 });
+    try {
+      expect((await patch({ healthCheck: mode }, member)).statusCode).toBe(200);
+      expect((await row()).healthCheck).toBe(mode);
+      const response = await app.inject({ method: 'GET', url: `/services/${id}`, headers: member });
+      expect(response.json().healthCheck).toBe(mode);
+      expect((await patch({ healthCheck: 'http' }, member)).statusCode).toBe(200);
+      expect((await row()).healthCheck).toBeNull();
+    } finally { await app.close(); }
+  });
+
   it('a pre-0.16.1 service lists no mappings', async () => {
     const { app, id } = await setup();
     const body = (await app.inject({ method: 'GET', url: `/services/${id}`, headers: asUser() })).json() as Record<string, unknown>;
@@ -326,7 +338,7 @@ describe('PATCH /services/:id portMappings', () => {
     expect(await read()).toBe('running');
     expect((await patch({ healthCheck: 'http' }, member)).statusCode).toBe(200);
     expect((await row()).healthCheck).toBeNull();
-    expect((await patch({ healthCheck: 'tcp' })).statusCode).toBe(400);
+    expect((await patch({ healthCheck: 'smtp' })).statusCode).toBe(400);
     await app.close();
 
     const compose = await setup({ name: 'stack', slug: 'stack', type: 'compose', image: null });

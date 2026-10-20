@@ -122,9 +122,12 @@ describe('the portMappings field', () => {
     expect(twice.error?.issues[0]?.message).toMatch(/overlaps/);
   });
 
-  it('healthCheckMode takes http or running', () => {
+  it('healthCheckMode preserves legacy modes and admits explicit HTTP/TCP readiness', () => {
     expect(healthCheckMode.parse('running')).toBe('running');
-    expect(healthCheckMode.safeParse('tcp').success).toBe(false);
+    expect(healthCheckMode.parse('tcp')).toBe('tcp');
+    expect(healthCheckMode.parse('http-strict')).toBe('http-strict');
+    expect(healthCheckMode.parse('http')).toBe('http');
+    expect(healthCheckMode.safeParse('smtp').success).toBe(false);
   });
 });
 

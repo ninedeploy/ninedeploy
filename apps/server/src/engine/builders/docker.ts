@@ -1460,6 +1460,7 @@ export const dockerBuilder: Builder = {
       runtimeId: name,
       port: resolvedPort,
       healthPath: service.healthPath ?? '/',
+      ...(service.healthCheck === 'http-strict' || service.healthCheck === 'tcp' ? { healthCheck: service.healthCheck } : {}),
       ...(service.healthCheck === 'running' ? { healthCheck: 'running' as const } : {}),
       ...(service.healthCheck === 'command' && service.healthCommand ? { healthCheck: 'command' as const, healthCommand: service.healthCommand } : {}),
       imageDigest: digest,
@@ -1469,6 +1470,24 @@ export const dockerBuilder: Builder = {
 
   // 5-minute deadline: first boots (model downloads, DB migrations) are slow.
   async isHealthy(runtime, timeoutMs = 300_000, directGraceMs = 10_000, log: (line: string) => void = () => undefined) {
+    if (runtime.healthCheck === 'http-strict' || runtime.healthCheck === 'tcp') {
+      if (!runtime.port) return false;
+      const { probeContainer } = await import('../../lib/containerProbe.js');
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        let ready = false;
+        try {
+          await probeContainer({ name: runtime.runtimeId, port: runtime.port,
+            protocol: runtime.healthCheck === 'tcp' ? 'tcp' : 'http', path: runtime.healthPath }, (line) => {
+            if (line.startsWith('ND-PROBE ')) ready = (JSON.parse(line.slice(9)) as { ready?: unknown }).ready === true;
+          });
+        } catch { /* retry until the readiness deadline */ }
+        if (ready) return true;
+        await sleep(1000);
+      }
+      log(`${runtime.runtimeId} did not pass ${runtime.healthCheck} readiness`);
+      return false;
+    }
     // Sanitised, then assembled structurally — a stored healthPath must not
     // be able to redirect the probe at another host (see lib/probeUrl.ts).
     // 0.16.1: a service with nothing to probe only has to stay up.

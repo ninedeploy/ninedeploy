@@ -149,6 +149,7 @@ import { sleepNow, sleepOff, sleepSet, sleepShow, sleepWake } from './commands/s
 import { previewsDatabaseCopies, previewsForks, previewsShow } from './commands/previews.js';
 import { approvalsDecide, approvalsList, lanesList, lanesSwitch } from './commands/approvals.js';
 import { logsAnalyze } from './commands/aiLogs.js';
+import { deploysDiagnose } from './commands/aiDiagnose.js';
 
 const program = new Command();
 
@@ -440,6 +441,13 @@ deploys.command('list <serviceId>').description('List deployments for a service'
 
 deploys.command('rollback <serviceId> <deployId>').description('Rollback to a previous deployment').action((svcId: string, depId: string) => deploysRollback(getClient(), svcId, depId));
 
+/* v8 ignore start -- exercised by test/aiDiagnose.test.ts. */
+deploys.command('diagnose <service> <deployId>')
+  .description('0.16.16: the configured AI provider diagnoses a failed deployment and may propose a settings change')
+  .option('--apply', 'Apply the proposed settings change and start a deploy')
+  .option('--json', 'Print raw JSON')
+  .action((service: string, depId: string, opts: { apply?: boolean; json?: boolean }) => deploysDiagnose(getClient(), service, depId, opts));
+/* v8 ignore stop */
 deploys.command('cancel <serviceId> <deployId>').description('Cancel a queued or in-flight deployment').action((svcId: string, depId: string) => deploysCancel(getClient(), svcId, depId));
 
 deploys.command('rm <serviceId> <deployId>')

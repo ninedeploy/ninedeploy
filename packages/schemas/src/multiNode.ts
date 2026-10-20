@@ -39,6 +39,8 @@ export const MULTI_NODE_CAPABILITIES = [
   'docker.fileMounts',
   // 0.16.6: `docker.runSpec` takes `runtimeOptions` (GPUs, shared memory, init, ulimit, capabilities).
   'docker.runtimeOptions',
+  'docker.probe',
+  'docker.logsSince',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;
@@ -117,6 +119,8 @@ export const serverTerminalCapability = z.object({
 
 /** `GET /v1/servers` → `features`: what the node can do today, and why not. */
 export const serverFeatures = z.object({
+  readinessProbe: z.boolean().optional(),
+  logDrains: z.boolean().optional(),
   nixpacks: z.boolean(),
   railpack: z.boolean(),
   privateClones: z.boolean(),

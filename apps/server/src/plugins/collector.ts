@@ -7,6 +7,7 @@ import { evaluateAlerts, type MetricSnapshot } from '../lib/alerting.js';
 import { createNodeHealthWatch } from '../lib/nodeHealth.js';
 import { readCertificates } from '../engine/proxy.js';
 import { swarmContainerStat, swarmRuntimeOf } from '../lib/swarm.js';
+import { collectNodeMetrics, type NodeContainerStats } from '../lib/nodeMetrics.js';
 
 const INTERVAL_MS = 30_000;
 const RETENTION_MS = 24 * 60 * 60 * 1000;
@@ -31,6 +32,7 @@ export function cpuDeltaPct(prev: ReturnType<typeof cpus> | null, now: ReturnTyp
 export interface StatsCache {
   containers: Map<string, ContainerStat>;
   host: HostStat | null;
+  nodeContainers?: NodeContainerStats;
 }
 
 declare module 'fastify' {
@@ -46,17 +48,27 @@ export default fp(
     let running = true;
     let timer: NodeJS.Timeout | undefined;
     let prevCpu: ReturnType<typeof cpus> | null = null;
+    const nodeContainers: NodeContainerStats = new Map();
+    const nodeAbort = new AbortController();
+    let nodeCycle: Promise<void> | undefined;
     const nodeHealth = createNodeHealthWatch();
 
     const tick = async () => {
       try {
         const containers = await collectContainerStats();
-        cache = { containers, host: await collectHostStats() };
+        cache = { containers, host: await collectHostStats(), nodeContainers };
 
         const all = await fastify.db.select().from(services);
+        if (!nodeCycle && running) {
+          nodeCycle = collectNodeMetrics(fastify.db, all, nodeContainers, nodeAbort.signal,
+            (err) => fastify.log.warn({ err }, 'node metrics collection failed'))
+            .catch((err) => fastify.log.warn({ err }, 'node metrics collection failed'))
+            .finally(() => { nodeCycle = undefined; });
+        }
         const now = new Date();
         const rows: Array<{ serviceId: number; kind: string; value: number; ts: Date }> = [];
         for (const s of all) {
+          if (s.serverId != null) continue;
           // 0.16 T7: a Swarm service's metrics are its local tasks summed (design §7.4).
           const swarmRuntime = swarmRuntimeOf(s);
           const st = swarmRuntime
@@ -119,6 +131,8 @@ export default fp(
     fastify.addHook('onClose', async () => {
       running = false;
       clearTimeout(timer);
+      nodeAbort.abort();
+      await nodeCycle;
     });
 
     timer = setTimeout(() => void tick(), 5000);

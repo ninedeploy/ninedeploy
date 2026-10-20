@@ -79,25 +79,31 @@ Shipped as patches, as the owner asked: 0.15.2 (builds, clones, volumes), 0.15.3
 
 Drawn up on 2026-10-20 from a second gap analysis against Coolify v4.4.6, Dokploy v0.30.8, Railway, Render, Fly.io, Vercel, Netlify, Kamal, Dokku, CapRover and Portainer, and against their most-voted open feature requests.
 
-**Already ahead.** Several of the most-voted open requests in Coolify and Dokploy already ship here:
-- zero-downtime blue-green deploys (Coolify's #1 open request, 161 votes);
-- replicas (102 and 64);
-- pre/post-deploy hooks (Dokploy, 42);
-- moving services between servers and workspaces, export/import bundles (85 and 38);
-- panel self-backup with offline restore (62);
-- image auto-update (45);
-- commit statuses and PR comments (50);
-- SSO/SAML/SCIM without a paid tier (Dokploy sells them).
+**Existing capabilities.** The following are implemented, subject to the runtime
+and host limits in their guides. Their presence alone does not establish
+superiority over another platform:
+- blue-green deploys for eligible Docker services, with readiness and application compatibility requirements;
+- replicas for supported runtimes;
+- pre/post-deploy hooks on the panel host;
+- moving services between servers and workspaces, export/import bundles;
+- panel self-backup with offline restore;
+- image auto-update;
+- GitHub commit statuses and PR comments;
+- SSO/SAML/SCIM in the self-hosted build.
+
+The unreleased readiness, node metric history, log-drain and availability work is
+tracked in [Node operations](NODE_OPERATIONS.md), including its verification and
+the remaining delivery/recovery priorities.
 
 Each item below ships as its own patch release, opt-in, with the upgrade smoke extended to cover it.
 
-1. **Uptime monitors and public status pages** (done, 0.16.8; see [UPTIME.md](UPTIME.md)). HTTP, keyword and TCP checks from the panel, with response times, down/up alerts through the existing channels, and opt-in public status pages with a 90-day history. No competitor has this built in.
-2. **Canary releases** (done, 0.16.9; see [DEPLOYMENTS.md](DEPLOYMENTS.md#canary-releases-0169)). Weighted traffic between the stable and the new release in steps (for example 10 → 50 → 100 %). Each step is gated on the health check and on the error rate and latency from traffic analytics, and an abort rolls back automatically. Only Vercel ships this among hosted platforms; no self-hosted tool does.
+1. **Uptime monitors and public status pages** (done, 0.16.8; see [UPTIME.md](UPTIME.md)). HTTP, keyword and TCP checks from the panel, with response times, down/up alerts through the existing channels, and opt-in public status pages with a 90-day history. Checks run from the panel; an independent external probe remains separate.
+2. **Canary releases** (done, 0.16.9; see [DEPLOYMENTS.md](DEPLOYMENTS.md#canary-releases-0169)). Weighted traffic between the stable and the new release in steps (for example 10 → 50 → 100 %). Each step is gated on the health check and on the error rate and latency from traffic analytics, and an abort rolls back automatically. Currently limited to plain Docker services on the panel host; node and Swarm canary are not implemented.
 3. **Autoscaling and scale-to-zero** (done: autoscaling in 0.16.10, scale to zero in 0.16.11; see [DEPLOYMENTS.md](DEPLOYMENTS.md#autoscaling-01610)). Replicas between a minimum and a maximum, driven by CPU, memory or requests per second. An idle service can sleep and is woken by its first request. This is the top open scaling request in both Coolify and Dokploy.
-4. **A database branch per preview** (done, 0.16.12, for PostgreSQL and the Redis family; see [DEPLOYMENTS.md](DEPLOYMENTS.md#a-database-copy-per-preview-01612)). Each PR preview gets its own copy of the parent's database (from the latest backup or a live dump), with migrations run by the preview's pre-deploy hook. It is dropped when the PR closes. Netlify has this as a hosted service; no self-hosted tool does.
+4. **A database copy per preview** (done, 0.16.12, for PostgreSQL and the Redis family; see [DEPLOYMENTS.md](DEPLOYMENTS.md#a-database-copy-per-preview-01612)). Each PR preview gets its own copy of the parent's database (from the latest backup or a live dump), with migrations run by the preview's pre-deploy hook. It is dropped when the PR closes. This is a full dump/restore copy, not copy-on-write branching; node databases and data masking are not supported.
 5. **Protected environments and deploy approvals** (done: lanes and approvals in 0.16.13, fork PR previews in 0.16.14; see [DEPLOYMENTS.md](DEPLOYMENTS.md#protected-lanes-and-deploy-approvals-01613)). Production variables and logs hidden from members while git deploys keep working. Approval before a production deploy, and before a preview of a fork's PR builds; a fork is cloned with no credential.
 6. **AI that fixes, not only explains:**
-   - a failed-deploy diagnosis that proposes a concrete change, applied in one click or opened as a PR through the GitHub App;
+   - a failed-deploy diagnosis that proposes a concrete change, applied in one click (done, 0.17.0; see [AI.md](AI.md#a-proposed-fix-0170)) or opened as a PR through the GitHub App;
    - an automatic investigation when an alert fires;
    - runtime-log analysis (done, 0.16.15; see [AI.md](AI.md));
    - Claude as a first-class provider next to OpenAI-compatible endpoints (done, 0.16.15).
@@ -109,9 +115,8 @@ Each item below ships as its own patch release, opt-in, with the upgrade smoke e
 8. **Git:** commit statuses for GitLab, Gitea and Bitbucket, and "wait for CI", which skips an auto-deploy whose checks failed.
 9. **Usage and cost:** CPU-hours, memory, disk and bandwidth per workspace, project and service, priced from a per-server cost. No self-hosted tool has this.
 10. **The remaining node gaps:**
-    - port mappings with an allow list;
     - node database public access, PgBouncer and Studio;
-    - the container terminal and file browser;
+    - container inspect and file browsing (node terminals already ship);
     - log drains and metrics from nodes;
     - file mounts and container options on Swarm.
 11. **Later:** Postgres point-in-time recovery (WAL-G), and Tailscale/WireGuard node networking.

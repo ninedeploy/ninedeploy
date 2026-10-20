@@ -1,6 +1,6 @@
 {
   "name": "@ninedeploy/web",
-  "version": "0.16.15",
+  "version": "0.17.0",
   "private": true,
   "type": "module",
   "scripts": {

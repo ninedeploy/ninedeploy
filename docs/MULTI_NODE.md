@@ -1,5 +1,8 @@
 # Remote nodes
 
+For the next release's opt-in HTTP/TCP readiness, node resource history, log
+drains and availability view, see [Node operations](NODE_OPERATIONS.md).
+
 A node is another host that runs the NineDeploy **agent**: the same image as the panel, started with `NINEDEPLOY_AGENT=1`. The panel drives it through typed operations over an encrypted ("sealed") transport. A `docker` or `compose` service with a `serverId` deploys to that node, and each node runs its own Traefik proxy for the services on it.
 
 From 0.15.2 a node can do almost everything the panel host does: Nixpacks and Railpack builds, private clones with a PAT or deploy key, volumes, managed databases (0.15.3), builds on another host with image transfer (0.15.3), and Docker Swarm (0.15.4). Every one of these is opt-in, and every one needs a node agent recent enough to offer it. Until you update a node's agent, that node behaves exactly as before.

@@ -10,11 +10,11 @@ the databases, certificates, secrets, backups and access rules around it — fro
 terminal CLI, a typed SDK, or an AI agent over MCP.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Release](https://img.shields.io/badge/Release-0.16.15-blue.svg)](./CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Release-0.17.0-blue.svg)](./CHANGELOG.md)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522.13-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7-blue.svg)](https://www.typescriptlang.org)
 [![Docker](https://img.shields.io/badge/Docker-required-blue.svg)](https://docker.com)
-[![Tests](https://img.shields.io/badge/Tests-11%2C685%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/Tests-13%2C000%20passing-brightgreen.svg)](#testing)
 [![CI](https://github.com/NineDeploy/NineDeploy/actions/workflows/ci.yml/badge.svg)](https://github.com/NineDeploy/NineDeploy/actions/workflows/ci.yml)
 
 [Website](https://ninedeploy.com) · [Quickstart](./docs/QUICKSTART.md) · [Architecture](./ARCHITECTURE.md) · [Templates](https://ninedeploy.com/templates) · [Changelog](./CHANGELOG.md)
@@ -70,12 +70,12 @@ runs the SQLite migrations, and starts a hardened `systemd` unit (`ProtectSystem
 Re-running the same command is the upgrade path; it snapshots `.data` before touching anything.
 
 ```bash
-./install.sh --version v0.16.15     # pin an exact tag
+./install.sh --version v0.17.0     # pin an exact tag
 ./install.sh --channel main       # track edge
 ./install.sh --force              # discard local edits + stale build artifacts, then rebuild
 ```
 
-> **Where `main` stands:** the default channel installs the newest release tag (**0.16.15**).
+> **Where `main` stands:** the default channel installs the newest release tag (**0.17.0**).
 > Work lands on `main` before it is tagged — see [`CHANGELOG.md`](./CHANGELOG.md) under *Unreleased*
 > (empty right now), or run `--channel main` to get it today.
 
@@ -609,15 +609,15 @@ pnpm build && RUN_INTEGRATION=1 pnpm --filter @ninedeploy/server exec vitest run
 
 | Package | Files | Tests | Coverage floor (stmts/branch/func/lines) |
 | :--- | ---: | ---: | :--- |
-| `apps/server` | 445 | 8,023 | 93.25 / 87.3 / 91 / 95.1 |
-| `apps/web` | 131 | 2,006 | 97.5 / 91.5 / 97.5 / 97.5 |
-| `apps/cli` | 44 | 821 | 83 / 80 / 80 / 83 |
-| `packages/schemas` | 17 | 427 | 100 |
-| `packages/sdk` | 11 | 299 | 100 |
+| `apps/server` | 500 | 8,734 | 93.25 / 87.3 / 91 / 95.1 |
+| `apps/web` | 162 | 2,332 | 97.5 / 91.5 / 97.5 / 97.5 |
+| `apps/cli` | 54 | 984 | 83 / 80 / 80 / 83 |
+| `packages/schemas` | 24 | 510 | 100 |
+| `packages/sdk` | 18 | 331 | 100 |
 | `packages/mcp` | 2 | 47 | 90 / 80 / 95 / 95 |
 | `packages/db` | 13 | 55 | 100 |
 | `packages/plugin-sdk` | 1 | 7 | 100 |
-| **Total** | **664** | **11,685** | |
+| **Total** | **774** | **13,000** | |
 
 Unit and route suites only — the server's seven testcontainers integration files (real Postgres,
 MySQL, Redis and MongoDB backup/restore, a deploy end-to-end, a compose-stack deploy and a volume
@@ -628,6 +628,13 @@ The server, web, CLI and MCP floors sit below 100, with the reasoning recorded i
 `vitest.config.ts` — an enforced gate beats an aspirational one that gets bypassed. CI runs
 typecheck → lint → build → test, a schema-drift check, a deprecated-dependency check, a Docker image
 build, and the integration job.
+
+The production dependency audit retains the upstream `braces@3.0.3` advisory
+([GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)). There is
+no fixed upstream release. NineDeploy applies a lockfile-pinned local patch
+that limits parse/AST nesting to 256 levels; the actual copy PM2 resolves is
+checked by `dependencyDepth.test.ts`. This advisory is documented, not ignored
+or reported as a clean audit. Remove the patch when an upstream fix is adopted.
 
 ---
 
@@ -675,7 +682,9 @@ Stated plainly, because finding these out during an incident is worse than readi
   feature its agent predates (`422 node_agent_outdated`). A PAT or deploy key reaches a node only
   when its source allows it; otherwise build on the panel. Node databases have no Studio, PgBouncer
   or public access yet. See [MULTI_NODE.md](./docs/MULTI_NODE.md).
-- **Remote health is container state, not an HTTP probe.** The panel sits outside the node's Docker
+- **Default remote health is container state.** Opt-in HTTP/TCP readiness for plain Docker services
+  runs inside the workload's network namespace on capable agents; see [Node operations](./docs/NODE_OPERATIONS.md).
+  Existing services keep their default behaviour. The panel sits outside the node's Docker
   network, and publishing a host port purely to be probed would expose every remote service on the
   node's public interface. A remote `docker` deploy is healthy when the container reaches — and
   stays in — `running`; a remote `compose` stack additionally has to pass its own declared

@@ -802,6 +802,7 @@ async function agentStatsOp(onLine: (l: string) => void): Promise<number> {
     'docker',
     ['stats', '--no-stream', '--format', '{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}'],
     onLine,
+    { timeoutMs: 15_000 },
   );
   // Node disk: df of the agent's own root — the workspaces and images live
   // on the same filesystem on a standard node. -P is the POSIX format (one
@@ -816,7 +817,7 @@ async function agentStatsOp(onLine: (l: string) => void): Promise<number> {
       return;
     }
     if (l.trim() !== '') onLine(`ND-DF ${l}`);
-  });
+  }, { timeoutMs: 3000 });
   return dockerStats !== 0 ? dockerStats : df;
 }
 

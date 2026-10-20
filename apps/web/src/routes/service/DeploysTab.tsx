@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, ArrowUpRight, Bot, GitCompare, RotateCcw, Trash2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import type { Deployment } from '@ninedeploy/sdk';
+import type { AiFixProposal, Deployment } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
 import { Card, CardBody, Button, ConfirmDialog, Skeleton, Spinner, StatusBadge, cn } from '../../components/ui.js';
+import { AiProposalCard } from './AiProposalCard.js';
 import { ApprovalCard } from './ApprovalCard.js';
 import { LogPanel } from './LogPanel.js';
 
@@ -167,7 +168,7 @@ export function DeploysTab({
 
       {activeId && !inFlight && <ConfigDiffCard serviceId={serviceId} deploymentId={activeId} />}
       {activeId && activeDeployRow?.status === 'failed' && (
-        <AiDiagnosisCard key={activeId} serviceId={serviceId} deploymentId={activeId} />
+        <AiDiagnosisCard key={activeId} serviceId={serviceId} deploymentId={activeId} onDeployed={onSelect} />
       )}
     </div>
   );
@@ -321,9 +322,19 @@ function PromoteCard({
 // Offered only for failed deployments AND only when the operator configured
 // a provider (the server enforces both; this decides whether to offer it).
 // Keyed by deployment id so switching rows resets the shown diagnosis.
-function AiDiagnosisCard({ serviceId, deploymentId }: { serviceId: number; deploymentId: number }) {
+function AiDiagnosisCard({
+  serviceId,
+  deploymentId,
+  onDeployed,
+}: {
+  serviceId: number;
+  deploymentId: number;
+  onDeployed: (deploymentId: number) => void;
+}) {
   const { toast } = useToast();
   const [diagnosis, setDiagnosis] = useState<string | null>(null);
+  // 0.16.16: what the model proposes to change, when it proposed anything.
+  const [proposal, setProposal] = useState<AiFixProposal | null>(null);
   const configQ = useQuery({
     queryKey: ['ai-config'],
     queryFn: () => api.ai.getConfig(),
@@ -334,6 +345,7 @@ function AiDiagnosisCard({ serviceId, deploymentId }: { serviceId: number; deplo
     mutationFn: () => api.ai.diagnose(serviceId, deploymentId),
     onSuccess: (res) => {
       setDiagnosis(res.diagnosis);
+      setProposal(res.proposal ?? null);
       toast(`Diagnosis ready (${res.model})`, 'info');
     },
     onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Diagnosis failed', 'error'),
@@ -363,6 +375,7 @@ function AiDiagnosisCard({ serviceId, deploymentId }: { serviceId: number; deplo
             {diagnosis}
           </pre>
         )}
+        {proposal && <AiProposalCard serviceId={serviceId} proposal={proposal} onDeployed={onDeployed} />}
       </CardBody>
     </Card>
   );

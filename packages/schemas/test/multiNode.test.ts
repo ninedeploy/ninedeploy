@@ -52,6 +52,8 @@ describe('agent capabilities (multi-node §1.1)', () => {
       'docker.healthCmd',
       'docker.fileMounts',
       'docker.runtimeOptions',
+      'docker.probe',
+      'docker.logsSince',
     ]);
     expect(multiNodeCapability.parse('db.manage')).toBe('db.manage');
     // A 0.15 capability is not one of them.

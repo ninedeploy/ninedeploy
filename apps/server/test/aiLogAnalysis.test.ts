@@ -11,6 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { migrate } from 'drizzle-orm/libsql/migrator';
+import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb, environments, services, serviceWorkspaces, users, workspaceMembers, workspaces, type DB } from '@ninedeploy/db';
@@ -74,6 +75,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await app.close();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   try {
     close();
@@ -198,5 +200,62 @@ describe('POST /ai/services/:id/logs/analyze', () => {
     expect((await app.inject({ method: 'POST', url: '/ai/services/5/logs/analyze', headers: OPERATOR })).statusCode).toBe(200);
     await setSettingJson(db, 'ai_diagnosis_config', { model: 'gpt-test' });
     expect((await app.inject({ method: 'POST', url: '/ai/services/5/logs/analyze', headers: OPERATOR })).json().error.message).toContain('not configured');
+  });
+});
+
+describe('POST /ai/services/:id/deploys/:depId/diagnose (0.16.16 structured)', () => {
+  it('redacts credentials in current settings and excludes credential-bearing settings from proposals', async () => {
+    const { logBus } = await import('../src/engine/logs.js');
+    const { deployments, buildConfigs } = await import('@ninedeploy/db');
+    const installCmd = 'curl https://builder:inline-url-password@example.test/setup';
+    const startCmd = 'NPM_TOKEN=inline-start-token npm start';
+    const healthPath = '/health?token=inline-probe-token';
+    await db.insert(buildConfigs).values({ serviceId: 5, buildPack: 'nixpacks', installCmd, startCmd, buildCmd: 'npm run build' } as never);
+    await db.update(services).set({ healthPath }).where(eq(services.id, 5));
+    const [dep] = await db.insert(deployments).values({ serviceId: 5, status: 'failed' }).returning();
+    vi.spyOn(logBus, 'read').mockReturnValue('Error: listen failed\n');
+    fetchMock.mockResolvedValueOnce(reply({ content: [{ type: 'text', text: JSON.stringify({
+      rootCause: 'The app listens on a different port.',
+      settings: { port: 8080, healthPath: '/health', build: { startCmd: 'node server.js', buildCmd: 'DATABASE_PASSWORD=proposed-password npm run build' } },
+    }) }] }));
+    const res = await app.inject({ method: 'POST', url: `/ai/services/5/deploys/${dep!.id}/diagnose`, headers: MEMBER });
+    expect(res.statusCode, res.body).toBe(200);
+    const sent = fetchMock.mock.calls[0]![1].body as string;
+    for (const secret of ['inline-url-password', 'inline-start-token', 'inline-probe-token']) expect(sent).not.toContain(secret);
+    expect(sent).toContain('npm run build');
+    expect(sent).toContain('***');
+    expect(res.json().proposal).toEqual({ settings: { port: 8080 } });
+    expect(await db.query.buildConfigs.findFirst()).toMatchObject({ installCmd, startCmd, buildCmd: 'npm run build' });
+    expect((await db.query.services.findFirst({ where: eq(services.id, 5) }))!.healthPath).toBe(healthPath);
+  });
+
+  it('answers the parts and a proposal that differs from the service, and the plain text for prose', async () => {
+    const { appendFileSync } = await import('node:fs');
+    const { config } = await import('../src/config.js');
+    const { deployments, buildConfigs } = await import('@ninedeploy/db');
+    await db.insert(buildConfigs).values({ serviceId: 5, buildPack: 'nixpacks', buildCmd: 'npm run build' } as never);
+    const [dep] = await db.insert(deployments).values({ serviceId: 5, status: 'failed' }).returning();
+    appendFileSync(path.join(config.paths.logsDir, `${dep!.id}.log`), 'Error: listen EADDRINUSE 3000\n');
+    const structured = JSON.stringify({
+      rootCause: 'The start command builds again instead of starting.',
+      evidence: ['Error: listen EADDRINUSE 3000'],
+      steps: ['Set the start command to node dist/server.js'],
+      settings: { build: { buildCmd: 'npm run build', startCmd: 'node dist/server.js' } },
+    });
+    fetchMock.mockResolvedValueOnce(reply({ content: [{ type: 'text', text: structured }] }));
+    const res = await app.inject({ method: 'POST', url: `/ai/services/5/deploys/${dep!.id}/diagnose`, headers: MEMBER });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json()).toEqual({
+      diagnosis: 'Root cause: The start command builds again instead of starting.\n\nEvidence:\n  Error: listen EADDRINUSE 3000\n\nFix:\n1. Set the start command to node dist/server.js',
+      model: 'claude-sonnet-5-5',
+      parts: { rootCause: 'The start command builds again instead of starting.', evidence: ['Error: listen EADDRINUSE 3000'], steps: ['Set the start command to node dist/server.js'] },
+      proposal: { settings: { build: { startCmd: 'node dist/server.js' } } },
+    });
+    const sent = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
+    expect(sent.messages[0].content).toContain('"buildPack":"nixpacks"');
+
+    fetchMock.mockResolvedValueOnce(reply({ content: [{ type: 'text', text: 'Root cause: the port.' }] }));
+    const prose = await app.inject({ method: 'POST', url: `/ai/services/5/deploys/${dep!.id}/diagnose`, headers: MEMBER });
+    expect(prose.json()).toEqual({ diagnosis: 'Root cause: the port.', model: 'claude-sonnet-5-5', parts: null, proposal: null });
   });
 });

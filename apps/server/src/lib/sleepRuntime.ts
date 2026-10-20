@@ -19,6 +19,7 @@ export function sleepDeps(db: DB, log: (line: string) => void): SleepDeps {
           port: svc.port ?? null,
           healthPath: svc.healthPath ?? '/',
           ...(svc.healthCheck === 'running' ? { healthCheck: 'running' as const } : {}),
+          ...(svc.healthCheck === 'http-strict' || svc.healthCheck === 'tcp' ? { healthCheck: svc.healthCheck } : {}),
           ...(svc.healthCheck === 'command' && svc.healthCommand ? { healthCheck: 'command' as const, healthCommand: svc.healthCommand } : {}),
         },
         timeoutMs,

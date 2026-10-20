@@ -143,6 +143,8 @@ describe("healthCheck 'running' (services with no port to probe)", () => {
         null as never,
       );
     expect((await runtime('running')).healthCheck).toBe('running');
+    expect((await runtime('http-strict')).healthCheck).toBe('http-strict');
+    expect((await runtime('tcp')).healthCheck).toBe('tcp');
     expect((await runtime(null)).healthCheck).toBeUndefined();
   });
 

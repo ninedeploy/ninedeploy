@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { httpPath, repoBaseDir, repoRelativePath } from './common.js';
+import { buildPack } from './service.js';
 
 /**
  * 0.16.15: who answers. `openai` is any OpenAI-compatible chat-completions
@@ -70,3 +72,67 @@ export const runtimeLogAnalysis = z.object({
 export type RuntimeLogAnalysis = z.infer<typeof runtimeLogAnalysis>;
 
 export type AiConfigStatus = z.infer<typeof aiConfigStatus>;
+
+/**
+ * 0.16.16: the service settings a diagnosis may propose — the ones that
+ * decide how the app is built and checked, all of them inside the build or
+ * the container. Lifecycle hooks are left out: for a non-operator they are
+ * host-privileged. Applied through the ordinary `PATCH /v1/services/:id`,
+ * so every rule of that route still holds.
+ */
+export const aiSettingsChange = z
+  .object({
+    port: z.number().int().min(1).max(65535).optional(),
+    healthPath: httpPath.optional(),
+    build: z
+      .object({
+        buildPack: buildPack.optional(),
+        baseDir: repoBaseDir.optional(),
+        installCmd: z.string().max(500).optional(),
+        buildCmd: z.string().max(500).optional(),
+        startCmd: z.string().max(500).optional(),
+        dockerfilePath: repoRelativePath.optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export type AiSettingsChange = z.infer<typeof aiSettingsChange>;
+
+/** 0.16.16: an edit to one repository file, as exact text to find and its replacement. */
+export const aiFileChange = z
+  .object({
+    path: repoRelativePath,
+    find: z.string().min(1).max(2000),
+    replace: z.string().max(4000),
+    why: z.string().max(300).optional(),
+  })
+  .strict();
+export type AiFileChange = z.infer<typeof aiFileChange>;
+
+/** 0.16.16: what a diagnosis proposes to change; either part may be absent. */
+export const aiFixProposal = z
+  .object({
+    settings: aiSettingsChange.optional(),
+    files: z.array(aiFileChange).max(5).optional(),
+  })
+  .strict();
+export type AiFixProposal = z.infer<typeof aiFixProposal>;
+
+/** 0.16.16: the diagnosis in parts, when the model answered in the structured form. */
+export const aiDiagnosisParts = z.object({
+  rootCause: z.string().min(1).max(600),
+  evidence: z.array(z.string().max(600)).max(10),
+  steps: z.array(z.string().max(600)).max(10),
+});
+export type AiDiagnosisParts = z.infer<typeof aiDiagnosisParts>;
+
+/** `POST /v1/ai/services/:id/deploys/:depId/diagnose`. `diagnosis` is always the readable text; the rest is 0.16.16. */
+export const aiDiagnosisResult = z.object({
+  diagnosis: z.string(),
+  model: z.string(),
+  parts: aiDiagnosisParts.nullable().optional(),
+  /** Null when the model proposed nothing that differs from the service's settings. */
+  proposal: aiFixProposal.nullable().optional(),
+});
+export type AiDiagnosisResult = z.infer<typeof aiDiagnosisResult>;

@@ -241,6 +241,36 @@ describe('remote docker builder — repository services', () => {
 });
 
 describe('remote docker builder — what it refuses', () => {
+  it('refuses opted-in readiness on an old agent before creating any runtime', async () => {
+    const { agent, ops } = fakeAgent();
+    await expect(createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1', healthCheck: 'http-strict' }) }))).rejects.toThrow(/Update the node agent/);
+    expect(ops()).toEqual(['agent.ping']);
+  });
+
+  it('keeps a running container unready until its HTTP readiness succeeds', async () => {
+    vi.useFakeTimers();
+    try {
+      let probes = 0;
+      const { agent: base } = fakeAgent();
+      const agent: AgentCall = async (op, params, sink) => op === 'docker.probe'
+        ? { exitCode: 0, lines: [`ND-PROBE ${JSON.stringify({ ready: ++probes >= 3, protocol: 'http' })}`] }
+        : base(op, params, sink);
+      const pending = createRemoteDockerBuilder(agent, { pollMs: 100 }).isHealthy({ runtimeId: 'web-7', port: 3000, healthPath: '/ready', healthCheck: 'http-strict' }, 5000, 0);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(await pending).toBe(true);
+      expect(probes).toBe(3);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('fails an always-unready application even while its container stays running', async () => {
+    vi.useFakeTimers();
+    try {
+      const { agent } = fakeAgent({ 'docker.probe': { exitCode: 0, lines: ['ND-PROBE {"ready":false,"protocol":"http","status":503}'] } });
+      const pending = createRemoteDockerBuilder(agent, { pollMs: 100 }).isHealthy({ runtimeId: 'web-7', port: 3000, healthPath: '/ready', healthCheck: 'http-strict' }, 300, 0);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(await pending).toBe(false);
+    } finally { vi.useRealTimers(); }
+  });
   it('refuses a Nixpacks build instead of pretending the node can do it', async () => {
     const { agent } = fakeAgent();
     await expect(

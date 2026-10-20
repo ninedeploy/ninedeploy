@@ -1,5 +1,23 @@
 [
   {
+    "version": "0.17.0",
+    "date": "2026-10-20",
+    "title": "Application readiness, node telemetry and proposed fixes",
+    "changes": [
+      "Opt-in HTTP and TCP readiness for plain Docker services on the panel host or a node. HTTP requires a 2xx/3xx response, never falls back to TCP, and an unready candidate does not replace the serving release. Existing healthcheck defaults stay unchanged; nodes need an updated agent and sealed transport.",
+      "Node service CPU and memory are persisted in history and evaluated by alert rules. Samples are keyed by node and serving replicas; missing data stays unknown and Local Host totals stay local.",
+      "Docker/Compose primary runtime logs and named replicas can reach log drains through the sealed node agent. Polls and output are bounded. Failed delivery retains the cursor for retry; drains remain best effort and may receive duplicates.",
+      "Servers and the Docker wizard show feature availability for the selected host. Service settings and the CLI expose the new readiness choices. See docs/NODE_OPERATIONS.md for scope and limits.",
+      "A failed deploy's AI diagnosis can now propose a concrete change: a settings change (port, health path, build pack, base directory, install, build or start command, Dockerfile path), shown next to the current values, or exact edits to repository files.",
+      "Apply and redeploy saves a proposed settings change with the ordinary service update, so every rule still applies, then starts a deploy. File edits are shown as a patch to copy; the panel never writes to your repository.",
+      "Every proposal is validated, and values equal to the current ones are dropped. Lifecycle hooks are never proposed. The CLI has ninedeploy deploys diagnose <service> <deploy> [--apply].",
+      "A model that answers in prose still gives its diagnosis, as before. Opening a proposed file edit as a pull request through the GitHub App comes next.",
+      "Release checks retain the preceding tag history, and the registry drift guard passes tag globs as Git arguments so the baseline is not silently skipped on POSIX.",
+      "Dependency hardening: follow-redirects 1.16.1 and Hono 4.13.11 or newer. A local braces 3.0.3 patch bounds string parsing and AST walkers to 256 nested levels; the upstream advisory remains visible in audit output because no upstream fix is published.",
+      "AI diagnosis also sanitizes credentials in current build settings before sending them to the model. Credential-bearing settings and redaction placeholders are excluded from proposed changes; ordinary settings remain available."
+    ]
+  },
+  {
     "version": "0.16.15",
     "date": "2026-10-20",
     "title": "Claude, and AI that reads runtime logs",
