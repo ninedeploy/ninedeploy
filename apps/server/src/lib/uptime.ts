@@ -90,6 +90,10 @@ interface HopResponse {
 
 function requestOnce(url: URL, m: ProbeTarget, signal: AbortSignal, readBody: boolean): Promise<HopResponse> {
   const lib = url.protocol === 'https:' ? https : http;
+  // SNI names a host, never an address: Node 26 refuses an IP `servername`
+  // outright (ERR_INVALID_ARG_VALUE), so an https monitor on an IP sends none.
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  const tls = url.protocol === 'https:' ? { rejectUnauthorized: m.verifyTls, ...(net.isIP(host) === 0 ? { servername: host } : {}) } : {};
   return new Promise((resolve, reject) => {
     const req = lib.request(
       url,
@@ -99,7 +103,7 @@ function requestOnce(url: URL, m: ProbeTarget, signal: AbortSignal, readBody: bo
         // A monitor connection is never reused, so each check measures a real connect.
         agent: false,
         signal,
-        ...(url.protocol === 'https:' ? { rejectUnauthorized: m.verifyTls, servername: url.hostname.replace(/^\[|\]$/g, '') } : {}),
+        ...tls,
       },
       (res) => {
         let certExpiresAt: Date | null = null;

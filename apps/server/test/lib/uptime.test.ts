@@ -121,8 +121,13 @@ describe('probeMonitor', () => {
 
   it('https: an untrusted certificate fails unless verifyTls is off; its expiry is read', async () => {
     const certs = fileURLToPath(new URL('../fixtures/certs/', import.meta.url));
-    const tls = https.createServer({ cert: readFileSync(`${certs}valid.crt`), key: readFileSync(`${certs}valid.key`) }, (_req, res) => res.end('secure'));
-    await new Promise<void>((r) => tls.listen(0, '127.0.0.1', r));
+    const sni: Array<string | false> = [];
+    const tls = https.createServer({ cert: readFileSync(`${certs}valid.crt`), key: readFileSync(`${certs}valid.key`) }, (req, res) => {
+      sni.push((req.socket as import('node:tls').TLSSocket).servername);
+      res.end('secure');
+    });
+    // Dual-stack: `localhost` may resolve to ::1 first.
+    await new Promise<void>((r) => tls.listen(0, r));
     try {
       const target = `https://127.0.0.1:${(tls.address() as AddressInfo).port}/`;
       const strict = await u.probeMonitor(http0({ target }));
@@ -131,6 +136,10 @@ describe('probeMonitor', () => {
       const lax = await u.probeMonitor(http0({ target, verifyTls: false, keyword: 'secure' }));
       expect(lax).toMatchObject({ ok: true, statusCode: 200 });
       expect(lax.certExpiresAt?.toISOString()).toBe('2099-12-31T00:00:00.000Z');
+      // SNI carries a hostname only: Node 26 refuses an IP servername, which failed every https monitor on an IP.
+      const named = await u.probeMonitor(http0({ target: target.replace('127.0.0.1', 'localhost'), verifyTls: false }));
+      expect(named.ok).toBe(true);
+      expect(sni).toEqual([false, 'localhost']);
     } finally {
       tls.closeAllConnections?.();
       await new Promise((r) => tls.close(r));
