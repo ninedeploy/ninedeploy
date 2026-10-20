@@ -17,6 +17,7 @@ import {
 } from '@ninedeploy/schemas';
 import { and, eq, sql } from 'drizzle-orm';
 import { config } from '../config.js';
+import { recordCanaryHit } from '../engine/canaryState.js';
 import { TRAEFIK_CONTAINER } from '../engine/dockerNames.js';
 import { audit } from './audit.js';
 import { run } from './exec.js';
@@ -106,6 +107,8 @@ export interface TrafficHit {
   startMs: number;
   /** Router name with any `@provider` suffix stripped; null when no router matched. */
   router: string | null;
+  /** 0.16.9: Traefik's `ServiceName` as logged (the weighted leaf during a canary); null when absent. */
+  service?: string | null;
   host: string | null;
   status: number;
   bytesOut: number;
@@ -141,6 +144,7 @@ export function parseAccessLogLine(line: string, nowMs: number = Date.now()): Tr
     status: Math.trunc(num(d.DownstreamStatus)),
     bytesOut: Math.trunc(num(d.DownstreamContentSize)),
     durationMs: num(d.Duration) / 1e6,
+    service: typeof d.ServiceName === 'string' && d.ServiceName ? d.ServiceName.slice(0, 300) : null,
   };
 }
 
@@ -551,6 +555,8 @@ export class TrafficTailer {
         continue;
       }
       agg.add(hit, scopeFor(hit, index));
+      // 0.16.9: a canary in progress measures each release from these lines.
+      recordCanaryHit(hit.service ?? null, hit.status, hit.durationMs, hit.startMs);
       count++;
     }
     return { lines: count, malformed };

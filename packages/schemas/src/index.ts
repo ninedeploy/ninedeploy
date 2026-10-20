@@ -31,3 +31,4 @@ export * from './multiNode.js';
 export * from './serviceFiles.js';
 export * from './dockerLabels.js';
 export * from './uptime.js';
+export * from './canary.js';

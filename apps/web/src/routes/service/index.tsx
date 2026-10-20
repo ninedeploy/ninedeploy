@@ -24,6 +24,7 @@ import { SettingsTab } from './SettingsTab.js';
 import { FrameworkTab } from './FrameworkTab.js';
 import { ActivityTab } from './ActivityTab.js';
 import { DangerZone } from './DangerZone.js';
+import { CanaryPanel } from './CanaryPanel.js';
 
 import { ContainerFileBrowser } from '../../components/ContainerFileBrowser.js';
 import { ServiceDomainLauncher } from '../../components/ServiceDomainLauncher.js';
@@ -310,6 +311,15 @@ export function ServiceDetail() {
           </Button>
         </div>
       </div>
+
+      {/* 0.16.9: a canary runs for minutes and needs Promote / Abort from
+          whichever tab is open, so it sits under the header, not in a tab.
+          Polled only while a deploy is in flight, on a panel that reports
+          canary settings for a docker service. */}
+      <CanaryPanel
+        serviceId={id}
+        enabled={svc.type === 'docker' && svc.canary !== undefined && (deploys.data ?? []).some((d) => IN_FLIGHT.includes(d.status))}
+      />
 
       {showRuntimeLogs && svc.runtimeId && <RuntimeLogsCard serviceId={id} slug={svc.slug} />}
 

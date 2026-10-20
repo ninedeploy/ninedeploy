@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { Link, Route, Routes, useLocation } from 'react-router';
 import { ServiceDetail } from '../src/routes/service/index.js';
 import { api, getToken } from '../src/lib/api.js';
+import { canaryApi } from '../src/lib/canaryApi.js';
 import { renderRoute, renderWithProviders, mockOf } from './helpers.js';
 
 vi.mock('../src/lib/api.js', async () => {
@@ -17,6 +18,13 @@ vi.mock('../src/lib/api.js', async () => {
 vi.mock('../src/lib/uptimeApi.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/uptimeApi.js')>()),
   uptimeApi: (await import('./apiMock.js')).createUptimeApiMock(),
+}));
+
+// 0.16.9: the canary panel polls its own route during a deploy; mocked so it
+// never takes a raw fetch either.
+vi.mock('../src/lib/canaryApi.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/canaryApi.js')>()),
+  canaryApi: (await import('./apiMock.js')).createCanaryApiMock(),
 }));
 
 vi.mock('../src/lib/useDeployLogs.js', () => ({
@@ -1980,6 +1988,35 @@ describe('ServiceDetail', () => {
       await screen.findByText('api');
       expect(screen.queryByLabelText('Compose file editor')).not.toBeInTheDocument();
       expect(screen.getByRole('tab', { name: /overview/i })).toHaveAttribute('aria-selected', 'true');
+    });
+  });
+
+  describe('0.16.9 canary releases', () => {
+    const canaryService = { ...service, canary: { steps: [10, 50], stepSeconds: 120, maxErrorRate: 5, maxP95Ms: null, minRequests: 20 } };
+
+    it('shows the live canary panel under the header while a deploy is in flight', async () => {
+      mockOf(api.services.get).mockResolvedValue(canaryService as never);
+      mockOf(api.deploys.list).mockResolvedValue([{ ...deploys[0], id: 6, status: 'deploying' }, ...deploys] as never);
+      mockOf(canaryApi.status).mockResolvedValue({
+        active: true, deploymentId: 6, step: 1, steps: 2, weight: 10, measured: false, promoting: false,
+      });
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+      expect(await screen.findByText('Canary release · deployment #6')).toBeInTheDocument();
+      expect(canaryApi.status).toHaveBeenCalledWith(1);
+    });
+
+    it('does not poll the canary when no deploy is in flight', async () => {
+      mockOf(api.services.get).mockResolvedValue(canaryService as never);
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+      await screen.findByText('api');
+      await waitFor(() => expect(api.deploys.list).toHaveBeenCalled());
+      expect(canaryApi.status).not.toHaveBeenCalled();
+    });
+
+    it('offers the Canary releases card on the Settings tab', async () => {
+      mockOf(api.services.get).mockResolvedValue(canaryService as never);
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1?tab=settings' });
+      expect(await screen.findByRole('switch', { name: 'Canary releases' })).toHaveAttribute('aria-checked', 'true');
     });
   });
 

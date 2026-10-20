@@ -245,6 +245,23 @@ ninedeploy status-pages rm <id> [-y]
 and reads as `host:port`; the input is validated with the same schema as the
 API before anything is sent.
 
+```bash
+# Canary releases (0.16.9; docker services on the panel host). <service> is an id, slug or name.
+ninedeploy canary show <service> [--json]                 # configuration, and the running canary: step i/n, share, time left,
+                                                          # requests / 5xx % / p95 for the new and the previous release
+ninedeploy canary set <service> [--steps 10,50] [--step-seconds 120] [--max-error-rate 5] \
+  [--max-p95 <ms>|off] [--min-requests 20] [--json]
+ninedeploy canary off <service>                           # sends { canary: null }
+ninedeploy canary promote <service> [--deployment <id>]   # default: the deployment the canary runs for
+ninedeploy deploys cancel <service-id> <deploy-id>        # stops a canary: all traffic goes back to the previous release
+```
+
+`canary set` keeps the current value of each option you do not give. On a
+service with no canary yet, it sends only what you gave, with steps `10,50`
+when `--steps` is missing, and the server fills in the rest. The values are
+checked with the API's schema before anything is sent. `canary show` says when
+traffic analytics is off: the steps are then judged on the healthcheck only.
+
 `swarm join` answers `node_swarm_not_enabled` until the node's owner sets
 `NINEDEPLOY_AGENT_SWARM_MANAGER=<panel advertise address>:2377` in the agent's
 environment and restarts it; the CLI prints that hint. Every node feature
@@ -394,6 +411,13 @@ await client.statusPages.update(page.id, { notice: 'Maintenance at 22:00' });   
 const pages = await client.statusPages.list();
 const publicView = await client.statusPages.public('acme');   // PublicStatusPage
 await client.statusPages.delete(page.id);
+
+// 0.16.9: canary releases (docker services on the panel host)
+await client.services.update(serviceId, { canary: { steps: [10, 50], maxP95Ms: 800 } });   // the server fills in the defaults
+await client.services.update(serviceId, { canary: null });                                 // off
+const canary = await client.deploys.canary(serviceId);   // CanaryStatusView: { active: false } or step, weight, canary/stable stats
+await client.deploys.promoteCanary(serviceId, canary.deploymentId!);   // 400 no_canary when none is running
+await client.deploys.cancel(serviceId, canary.deploymentId!);          // stops it: all traffic back to the previous release
 ```
 
 `GET /v1/servers` now carries `terminal: { host, container, reason? }` per node

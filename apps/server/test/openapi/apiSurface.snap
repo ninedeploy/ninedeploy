@@ -156,6 +156,7 @@ GET /v1/services authed nd://scope/read/services
 GET /v1/services/:id viewer nd://scope/read/services
 GET /v1/services/:id/attachments viewer nd://scope/read/services
 GET /v1/services/:id/badge member nd://scope/read/services
+GET /v1/services/:id/canary viewer nd://scope/read/services
 GET /v1/services/:id/deploy-hook member nd://scope/read/services
 GET /v1/services/:id/deploys viewer nd://scope/read/deploys
 GET /v1/services/:id/deploys/:depId/diff viewer nd://scope/read/deploys
@@ -373,6 +374,7 @@ POST /v1/services/:id/badge member nd://scope/write/services
 POST /v1/services/:id/clone admin nd://scope/write/services
 POST /v1/services/:id/deploy-hook member nd://scope/write/services
 POST /v1/services/:id/deploys member nd://scope/write/deploys
+POST /v1/services/:id/deploys/:depId/canary/promote member nd://scope/write/deploys
 POST /v1/services/:id/deploys/:depId/cancel member nd://scope/write/deploys
 POST /v1/services/:id/deploys/:depId/rollback member nd://scope/write/deploys
 POST /v1/services/:id/domains member nd://scope/write/domains

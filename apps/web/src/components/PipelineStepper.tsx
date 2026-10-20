@@ -1,9 +1,9 @@
-import { CheckCircle2, Clock, Flame, Globe, Layers, Loader2, RefreshCw, Server, ShieldCheck, XCircle } from 'lucide-react';
+import { CheckCircle2, Clock, Flame, Globe, Layers, Loader2, RefreshCw, Server, ShieldCheck, Split, XCircle } from 'lucide-react';
 import type React from 'react';
 import { useMemo } from 'react';
 import { cn } from './ui.js';
 
-export type StageId = 'PREPARE' | 'BUILD' | 'BOOT' | 'HEALTHCHECK' | 'PROXY_SWAP' | 'CLEANUP' | 'COMPLETE';
+export type StageId = 'PREPARE' | 'BUILD' | 'BOOT' | 'HEALTHCHECK' | 'CANARY' | 'PROXY_SWAP' | 'CLEANUP' | 'COMPLETE';
 export type StageStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped';
 
 export interface PipelineStageInfo {
@@ -20,6 +20,8 @@ const STAGE_DEFS: Array<Omit<PipelineStageInfo, 'status' | 'detail'>> = [
   { id: 'BUILD', label: 'Build', description: 'Build with Dockerfile or Nixpacks', icon: Flame },
   { id: 'BOOT', label: 'Boot', description: 'Start an isolated container', icon: Server },
   { id: 'HEALTHCHECK', label: 'Health', description: 'Verify the HTTP health check', icon: ShieldCheck },
+  // 0.16.9: shown only for a deploy whose log carries a CANARY marker.
+  { id: 'CANARY', label: 'Canary', description: 'Shift a growing share of requests to the new release', icon: Split },
   { id: 'PROXY_SWAP', label: 'Route', description: 'Shift live traffic with Traefik', icon: RefreshCw },
   { id: 'CLEANUP', label: 'Cleanup', description: 'Gracefully stop the old container', icon: Clock },
   { id: 'COMPLETE', label: 'Live', description: 'Serve production traffic', icon: Globe },
@@ -35,6 +37,7 @@ export function parsePipelineStages(rawLogs: string, deployStatus?: string): Pip
     BUILD: { status: isFinalSuccess ? 'success' : 'pending' },
     BOOT: { status: isFinalSuccess ? 'success' : 'pending' },
     HEALTHCHECK: { status: isFinalSuccess ? 'success' : 'pending' },
+    CANARY: { status: isFinalSuccess ? 'success' : 'pending' },
     PROXY_SWAP: { status: isFinalSuccess ? 'success' : 'pending' },
     CLEANUP: { status: isFinalSuccess ? 'success' : 'pending' },
     COMPLETE: { status: isFinalSuccess ? 'success' : 'pending' },
@@ -69,6 +72,10 @@ export function parsePipelineStages(rawLogs: string, deployStatus?: string): Pip
           currentRunningStage = stageName;
         } else if (stageStatus === 'success' && currentRunningStage === stageName) {
           currentRunningStage = null;
+        } else if (stageName === 'CANARY' && stageStatus === 'failed') {
+          // The abort line names the reason; the ERROR marker and the failed
+          // deploy status that follow must not replace it.
+          currentRunningStage = null;
         }
       }
     }
@@ -80,7 +87,9 @@ export function parsePipelineStages(rawLogs: string, deployStatus?: string): Pip
     stagesState[currentRunningStage].detail = isCancelled ? 'Deployment cancelled' : 'An error occurred';
   }
 
-  return STAGE_DEFS.map((def) => ({
+  // A deploy without a canary keeps the seven stages it always had.
+  const hasCanary = rawLogs.includes('##[stage:CANARY:');
+  return STAGE_DEFS.filter((def) => def.id !== 'CANARY' || hasCanary).map((def) => ({
     ...def,
     // Defensive: every STAGE_DEFS id exists in stagesState above, so the
     // fallback status is a type-level guard that cannot trigger at runtime.
@@ -141,7 +150,7 @@ export function PipelineStepper({
       </div>
 
       <div className="overflow-x-auto px-4 py-4">
-        <div className="grid min-w-[30rem] grid-cols-7">
+        <div className={cn('grid', stages.length > 7 ? 'min-w-[34rem] grid-cols-8' : 'min-w-[30rem] grid-cols-7')}>
           {stages.map((st, index) => {
           const Icon = st.icon;
           const isPending = st.status === 'pending';

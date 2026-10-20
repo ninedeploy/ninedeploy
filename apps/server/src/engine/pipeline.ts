@@ -52,6 +52,10 @@ import { composeBuilder } from './builders/compose.js';
 import { logBus } from './logs.js';
 import { pm2Builder } from './builders/pm2.js';
 import { getAcmeEmail, writeDynamicConfig } from './proxy.js';
+import { canaryConfig } from '@ninedeploy/schemas';
+import { canarySkipReason, runCanary } from './canary.js';
+import { canaryActive, endCanary } from './canaryState.js';
+import { trafficAnalyticsEnabled } from '../lib/trafficAnalytics.js';
 import { run, sleep } from '../lib/exec.js';
 import { hasVaultRef, resolveVaultRefs } from '../lib/vault.js';
 import { registryCredentialFor, registryCredentialForSourceBuild } from '../lib/registryBinding.js';
@@ -941,6 +945,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     : undefined;
 
   let runtime: DeployRuntime | undefined;
+  /** 0.16.9: a canary ran to the end and still holds its share of the traffic. */
+  let canaryHeld = false;
   // The resolved runtime env (lifted so the fan-out hook can push the same
   // secrets to every target node).
   let fanoutEnv: Record<string, string> = {};
@@ -1348,6 +1354,55 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
 
     // Cancel checkpoint: last one before the success writes.
     if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled();
+
+    // ── 0.16.9 canary releases ──
+    // With a canary configuration the new release takes a growing share of
+    // the traffic, step by step, before the switch below. A failed step
+    // routes everything back and throws, so the catch below stops the new
+    // container as for any failed deploy. A deploy that cannot be split
+    // (see canarySkipReason) switches all traffic at once, as before.
+    if (service.canary != null && runtime) {
+      const parsed = canaryConfig.safeParse(service.canary);
+      const routedDomains = (
+        await db.select({ id: domains.id }).from(domains).where(and(eq(domains.serviceId, service.id), eq(domains.status, 'active')))
+      ).length;
+      const skip = parsed.success
+        ? canarySkipReason({
+            config: parsed.data,
+            type: service.type,
+            serverId: service.serverId ?? null,
+            orchestrator: service.orchestrator ?? null,
+            previous,
+            runtime,
+            rollback: /^Rollback to #/.test(dep.message ?? ''),
+            // As the docker builder decides: a direct port or a mapping without an allow list (those the port proxy holds).
+            hostPorts: service.publishedPort != null || (service.portMappings ?? []).some((m) => !m.allowFrom?.length),
+            routedDomains,
+          })
+        : 'the stored canary settings are not valid; save them again under Service → Settings';
+      if (skip) {
+        log(`Canary release skipped: ${skip}. All traffic switches at once.`);
+      } else if (parsed.success) {
+        const live = runtime;
+        const liveBuilder = builder;
+        await runCanary({
+          serviceId: service.id,
+          slug: service.slug,
+          deploymentId,
+          config: parsed.data,
+          runtime: live,
+          log,
+          writeConfig: () => writeDynamicConfig(db),
+          probe: () => liveBuilder.isHealthy(live, 5_000, 0),
+          checkpoint: async () => {
+            if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled();
+          },
+          measured: await trafficAnalyticsEnabled(db).catch(() => false),
+        });
+        canaryHeld = true;
+      }
+    }
+    // ── end 0.16.9 ──
   } catch (err) {
     const cancelled = err instanceof DeploymentCancelled;
     log(cancelled ? '⏹ Deployment cancelled' : `✗ Deployment failed: ${msg(err)}`);
@@ -1361,6 +1416,12 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     // in-place redeploy (compose) reuses the previous runtime id — "the new
     // runtime" IS the service's only stack, and stopping it tore down the
     // running app on a cancel or a slow healthcheck.
+    // 0.16.9: a canary still holding a share of the traffic is routed back
+    // first (runCanary does this itself when a step fails).
+    if (canaryActive(service.id)) {
+      endCanary(service.id);
+      await writeDynamicConfig(db).catch((e: unknown) => log(`⚠ could not route the canary's traffic back: ${msg(e)}`));
+    }
     if (runtime && runtime.runtimeId !== previous?.runtimeId) {
       await builder.stop(runtime.runtimeId).catch(() => undefined);
     }
@@ -1483,9 +1544,14 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     })
     .where(and(eq(deployments.id, deploymentId), eq(deployments.status, 'building')))
     .returning({ id: deployments.id });
+  // 0.16.9: the canary is over either way. On success the routing flip below
+  // goes from the split straight to the new release; on a late cancel the
+  // split is written away before the new container stops.
+  if (canaryHeld) endCanary(service.id);
   if (finalized.length === 0) {
     if (!inPlaceRedeploy) {
       log('⏹ Cancelled just before finalizing — retiring the new container, the previous stays live');
+      if (canaryHeld) await writeDynamicConfig(db).catch((e: unknown) => log(`⚠ could not route the canary's traffic back: ${msg(e)}`));
       await builder.stop(newRuntimeId).catch(() => undefined);
       if (previous) {
         await db.update(services).set({ status: 'running', runtimeId: previous.runtimeId }).where(eq(services.id, service.id));

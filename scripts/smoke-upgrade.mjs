@@ -1045,6 +1045,23 @@ async function openapiChecks(token) {
 // upgraded service's monitor list carries it, and a published status page
 // answers without a session. The tables are new in migration 0086, so this
 // also proves they exist after the upgrade.
+// 0.16.9: the upgraded service stores a canary configuration (migration
+// 0087 added the column) and reads it back with its defaults; no canary runs
+// until a deploy, and turning it off restores the row.
+const CANARY_IN = [0, 16, 9];
+async function canaryChecks(token, serviceId) {
+  const path = `/v1/services/${serviceId}`;
+  const set = await api(path, { method: 'PATCH', token, body: { canary: { steps: [10, 50] } } });
+  if (set.status !== 200 || set.json?.canary?.steps?.join(',') !== '10,50' || set.json.canary.stepSeconds !== 120) {
+    fail(`${TO}: canary PATCH on the upgraded service answered ${set.status} ${set.text.slice(0, 300)}`);
+  }
+  const status = await api(`${path}/canary`, { token });
+  if (status.status !== 200 || status.json?.active !== false) fail(`${TO}: canary status on the upgraded service: ${status.status} ${status.text.slice(0, 200)}`);
+  const off = await api(path, { method: 'PATCH', token, body: { canary: null } });
+  if (off.status !== 200 || off.json?.canary !== null) fail(`${TO}: canary off answered ${off.status} ${off.text.slice(0, 200)}`);
+  step(`${TO}: canary settings stored on the upgraded service (10% → 50%, 120 s defaults), no canary running, turned off again`);
+}
+
 const UPTIME_IN = [0, 16, 8];
 async function uptimeChecks(token, serviceId) {
   const created = await api('/v1/monitors', {
@@ -1619,6 +1636,7 @@ async function main() {
   if (!olderThan(TO, SWARM_IN)) await swarmChecks(token, serviceId);
   if (!olderThan(TO, CATALOG_IN)) await catalogChecks(token);
   if (!olderThan(TO, UPTIME_IN)) await uptimeChecks(token, serviceId);
+  if (!olderThan(TO, CANARY_IN)) await canaryChecks(token, serviceId);
 
   docker(['stop', PANEL]);
   const post = await inspectDb(TO);
@@ -1652,7 +1670,8 @@ async function main() {
     ? (seeded015 ? '; the 0.15 rollback leaves 0071 alone, drops the traffic mount, refuses the guest and the helper runbook works' : '')
     : '; 0.15 leaves Traefik untouched, and terminals, traffic analytics, the OpenAPI document and access grants work on the upgraded data';
   const summary0168 = olderThan(TO, UPTIME_IN) ? '' : '; 0.16.8 uptime monitors and status pages work on the upgraded data';
-  console.log(`\n✓ Upgrade green: ${FROM} → ${TO} keeps users, services, history, domains and running apps; migrates; recovers the interrupted deploy; deploys again; 0.12 backup policy, preview env, disk alert and panel-backup defaults work on the upgraded data; 0.13 GitHub App/Gitea surfaces answer without GitHub${summary014}${summary015}${summary0168}`);
+  const summary0169 = olderThan(TO, CANARY_IN) ? '' : '; 0.16.9 canary settings work on the upgraded data';
+  console.log(`\n✓ Upgrade green: ${FROM} → ${TO} keeps users, services, history, domains and running apps; migrates; recovers the interrupted deploy; deploys again; 0.12 backup policy, preview env, disk alert and panel-backup defaults work on the upgraded data; 0.13 GitHub App/Gitea surfaces answer without GitHub${summary014}${summary015}${summary0168}${summary0169}`);
 }
 
 main()

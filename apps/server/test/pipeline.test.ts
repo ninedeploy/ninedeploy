@@ -99,6 +99,15 @@ vi.mock('../src/lib/portProxy.js', async (importOriginal) => ({
 vi.mock('../src/engine/templateDependencies.js', () => ({
   reconcileTemplateDependencies: h.reconcileTemplateDependencies,
 }));
+// 0.16.9: the canary stage itself is tested in test/engine/canary.test.ts;
+// here only its place in the pipeline. canarySkipReason stays real.
+const canaryMock = vi.hoisted(() => ({
+  runCanary: vi.fn<(...args: any[]) => Promise<'completed' | 'promoted'>>(async () => 'completed'),
+}));
+vi.mock('../src/engine/canary.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/engine/canary.js')>()),
+  runCanary: canaryMock.runCanary,
+}));
 
 const base = mkdtempSync(path.join(os.tmpdir(), 'nd-pipeline-'));
 const reposDir = path.join(base, 'repos');
@@ -3722,3 +3731,142 @@ describe('0.16 T6: attached databases are reachable from the service (D4, O7)', 
   });
 });
 // ── end 0.16 T6 ──
+
+// ── 0.16.9 canary releases ──
+describe('0.16.9 canary releases in the pipeline', () => {
+  const canary = { steps: [10, 50], stepSeconds: 30, maxErrorRate: 5, maxP95Ms: null, minRequests: 20 };
+
+  /** A db whose domain count for the service is `routed`. */
+  function canaryDb(routed: number) {
+    const made = makeDb();
+    made.db.select = vi.fn(() => ({
+      from: vi.fn((t: unknown) => ({
+        where: vi.fn(() => Promise.resolve(t === domains ? Array.from({ length: routed }, (_, i) => ({ id: i + 1 })) : [])),
+        leftJoin: vi.fn(() => Promise.resolve([])),
+        innerJoin: vi.fn(() => Promise.resolve([])),
+        orderBy: vi.fn(() => Promise.resolve([])),
+        // biome-ignore lint/suspicious/noThenProperty: intentional thenable — the fake DB query result must be awaitable by the code under test.
+        then: (ok: (v: unknown) => unknown) => ok([]),
+      })),
+    }));
+    return made;
+  }
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    logBus.removeAllListeners();
+    (await import('../src/engine/canaryState.js')).resetCanaryState();
+    h.builder.buildAndRun.mockImplementation(async () => ({ runtimeId: 'web-new', port: 3000, healthPath: '/' }));
+    h.builder.isHealthy.mockImplementation(async () => true);
+    h.builder.stop.mockImplementation(async () => undefined);
+    h.writeDynamicConfig.mockImplementation(async () => undefined);
+    canaryMock.runCanary.mockImplementation(async () => 'completed');
+  });
+
+  it('runs the canary after the healthcheck, then switches all traffic as usual', async () => {
+    const S = await import('../src/engine/canaryState.js');
+    const { db, updates } = canaryDb(1);
+    baseSetup(db, { image: 'nginx:latest', runtimeId: 'web-old', canary });
+    // The canary ends still holding its last split, as runCanary does.
+    canaryMock.runCanary.mockImplementation(async (deps: { serviceId: number }) => {
+      S.beginCanary(deps.serviceId, 'web', 1, 2, false);
+      S.setCanaryStep(deps.serviceId, 2, { runtimeId: 'web-new', replicas: 1, port: 3000, weight: 50 }, 0, 1);
+      return 'completed';
+    });
+    const lines = collectLogs(1);
+    await runDeployment(db as never, 1);
+    const deps = canaryMock.runCanary.mock.calls[0]![0] as Record<string, any>;
+    expect(deps).toMatchObject({ serviceId: 5, slug: 'web', deploymentId: 1, config: canary, runtime: { runtimeId: 'web-new' } });
+    // Its probe and config writer are the pipeline's own.
+    await deps.writeConfig();
+    expect(h.writeDynamicConfig).toHaveBeenCalledWith(db);
+    await expect(deps.probe()).resolves.toBe(true);
+    expect(h.builder.isHealthy).toHaveBeenLastCalledWith(expect.objectContaining({ runtimeId: 'web-new' }), 5000, 0);
+    await expect(deps.checkpoint()).resolves.toBeUndefined();
+    // The split is gone by the time the routing flips to the new release.
+    expect(S.canaryActive(5)).toBe(false);
+    expect(updates.find((u) => u.table === services && u.values.status === 'running')?.values).toMatchObject({ runtimeId: 'web-new' });
+    expect(h.builder.stop).toHaveBeenCalledWith('web-old', expect.anything());
+    expect(lines).toContain('✓ Deployment successful');
+  });
+
+  it("a cancel inside the canary surfaces as the pipeline's own cancellation", async () => {
+    const { db } = canaryDb(1);
+    baseSetup(db, { image: 'nginx:latest', runtimeId: 'web-old', canary });
+    let checkpoint: (() => Promise<void>) | undefined;
+    canaryMock.runCanary.mockImplementation(async (deps: { checkpoint: () => Promise<void> }) => {
+      checkpoint = deps.checkpoint;
+      return 'completed';
+    });
+    await runDeployment(db as never, 1);
+    db.query.deployments.findFirst.mockResolvedValue({ ...dep, status: 'cancelled' });
+    await expect(checkpoint!()).rejects.toThrow('Deployment cancelled');
+  });
+
+  it('an aborted canary fails the deploy and stops the new container; the previous keeps serving', async () => {
+    const { CanaryAborted } = await import('../src/engine/canary.js');
+    const { db, updates } = canaryDb(1);
+    baseSetup(db, { image: 'nginx:latest', runtimeId: 'web-old', canary });
+    canaryMock.runCanary.mockRejectedValue(new CanaryAborted('at 10%, 40% of 50 requests failed with a 5xx (the limit is 5%)'));
+    const lines = collectLogs(1);
+    await runDeployment(db as never, 1);
+    expect(lines).toContain(
+      '✗ Deployment failed: Canary aborted: at 10%, 40% of 50 requests failed with a 5xx (the limit is 5%). All traffic is back on the previous release.',
+    );
+    expect(h.builder.stop).toHaveBeenCalledWith('web-new');
+    expect(h.builder.stop).not.toHaveBeenCalledWith('web-old');
+    expect(updates.some((u) => u.table === services && u.values.runtimeId === 'web-new')).toBe(false);
+  });
+
+  it('a failure that leaves a split in place is routed back before the new container stops', async () => {
+    const S = await import('../src/engine/canaryState.js');
+    const { db } = canaryDb(1);
+    baseSetup(db, { image: 'nginx:latest', runtimeId: 'web-old', canary });
+    const order: string[] = [];
+    h.writeDynamicConfig.mockImplementation(async () => {
+      order.push(`write:${S.canaryRouteFor(5)?.weight ?? 'none'}`);
+    });
+    h.builder.stop.mockImplementation(async (id: string) => {
+      order.push(`stop:${id}`);
+    });
+    canaryMock.runCanary.mockImplementation(async (deps: { serviceId: number }) => {
+      S.beginCanary(deps.serviceId, 'web', 1, 1, false);
+      S.setCanaryStep(deps.serviceId, 1, { runtimeId: 'web-new', replicas: 1, port: 3000, weight: 10 }, 0, 1);
+      throw new Error('unexpected');
+    });
+    await runDeployment(db as never, 1);
+    expect(order.slice(0, 2)).toEqual(['write:none', 'stop:web-new']);
+    expect(S.canaryActive(5)).toBe(false);
+  });
+
+  it('names why a deploy switches all at once: no domain, a rollback, invalid stored settings, no previous release', async () => {
+    const cases: Array<[number, Record<string, unknown>, Record<string, unknown>, string]> = [
+      [0, {}, {}, 'no domain routes traffic to the service'],
+      [1, {}, { message: 'Rollback to #3' }, 'a rollback switches all traffic at once'],
+      [1, { canary: { steps: [50, 10] } }, {}, 'the stored canary settings are not valid; save them again under Service → Settings'],
+      [1, { runtimeId: null }, {}, 'there is no previous release to split traffic with'],
+    ];
+    for (const [routed, over, depOver, reason] of cases) {
+      canaryMock.runCanary.mockClear();
+      const { db, updates } = canaryDb(routed);
+      baseSetup(db, { image: 'nginx:latest', runtimeId: 'web-old', canary, ...over });
+      db.query.deployments.findFirst.mockResolvedValue({ ...dep, ...depOver });
+      const lines = collectLogs(1);
+      await runDeployment(db as never, 1);
+      expect(lines.join('\n')).toContain(`Canary release skipped: ${reason}. All traffic switches at once.`);
+      expect(canaryMock.runCanary).not.toHaveBeenCalled();
+      expect(updates.find((u) => u.table === services && u.values.status === 'running')?.values).toMatchObject({ runtimeId: 'web-new' });
+      logBus.removeAllListeners();
+    }
+  });
+
+  it('control: a service without a canary never reaches the stage', async () => {
+    const { db } = canaryDb(1);
+    baseSetup(db, { image: 'nginx:latest', runtimeId: 'web-old' });
+    const lines = collectLogs(1);
+    await runDeployment(db as never, 1);
+    expect(canaryMock.runCanary).not.toHaveBeenCalled();
+    expect(lines.some((l) => l.startsWith('Canary release'))).toBe(false);
+  });
+});
+// ── end 0.16.9 ──

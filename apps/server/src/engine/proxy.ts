@@ -30,6 +30,7 @@ import {
   renderCertificateEntries,
   servableCertificates,
 } from '../lib/customCertificates.js';
+import { canaryRouteFor } from './canaryState.js';
 import { MAX_REPLICAS, NETWORK, replicaNames, TRAEFIK_CONTAINER, TRAEFIK_IMAGE } from './dockerNames.js';
 
 // Defined in a leaf module and re-exported here: `proxy` and `serviceBridge`
@@ -1270,6 +1271,36 @@ export async function renderDynamicConfig(
       const sticky = (await getStickyEnabledForService(db, svc.id))
         ? '        sticky:\n          cookie:\n            name: "ninedeploy_sticky"\n            httpOnly: true\n'
         : '';
+      // 0.16.9 canary in progress (panel host only): the domain's service
+      // becomes a weighted split between two leaves, the release the row
+      // names (`_stable`) and the new one (`_canary`). The access log names
+      // the leaf that answered, which is how canary.ts measures each side.
+      const canary = !forNode && svc.type === 'docker' ? canaryRouteFor(svc.id) : null;
+      if (canary) {
+        const canaryReplicas = Math.max(1, Math.min(canary.replicas, MAX_REPLICAS));
+        const canaryServers = replicaNames(canary.runtimeId, canaryReplicas)
+          .map((n) => `          - url: "http://${n}:${canary.port ?? svc.port}"`)
+          .join('\n');
+        const canaryHealth =
+          canaryReplicas > 1
+            ? `\n        healthCheck:\n          path: "${yamlDoubleQuoted(healthPath)}"\n          interval: "10s"\n          timeout: "5s"`
+            : '';
+        // Sticky sessions keep a visitor on one release as well as one replica.
+        const weightedSticky = sticky
+          ? '        sticky:\n          cookie:\n            name: "ninedeploy_release"\n            httpOnly: true\n'
+          : '';
+        svcBlocks.push(
+          `    svc_${key}:\n` +
+            '      weighted:\n' +
+            weightedSticky +
+            '        services:\n' +
+            `          - name: svc_${key}_stable\n            weight: ${100 - canary.weight}\n` +
+            `          - name: svc_${key}_canary\n            weight: ${canary.weight}`,
+          `    svc_${key}_stable:\n` + '      loadBalancer:\n' + sticky + '        servers:\n' + servers + healthCheck,
+          `    svc_${key}_canary:\n` + '      loadBalancer:\n' + sticky + '        servers:\n' + canaryServers + canaryHealth,
+        );
+        continue;
+      }
       svcBlocks.push(
         `    svc_${key}:\n` +
           `      loadBalancer:\n` +

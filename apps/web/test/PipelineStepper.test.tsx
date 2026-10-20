@@ -129,4 +129,52 @@ describe('PipelineStepper', () => {
     );
     expect(screen.getByText('All traffic is now served by the new release.')).toBeInTheDocument();
   });
+
+  describe('0.16.9 canary stage', () => {
+    const before = `##[stage:PREPARE:success]
+##[stage:BUILD:success]
+##[stage:BOOT:success]
+##[stage:HEALTHCHECK:running] Probing
+##[stage:HEALTHCHECK:success]
+`;
+
+    it('is left out of a deploy without a canary, including a skipped one', () => {
+      const ids = parsePipelineStages(`${before}Canary release skipped: it is a rollback. All traffic switches at once.
+##[stage:PROXY_SWAP:running]`, 'deploying').map((s) => s.id);
+      expect(ids).toEqual(['PREPARE', 'BUILD', 'BOOT', 'HEALTHCHECK', 'PROXY_SWAP', 'CLEANUP', 'COMPLETE']);
+      const { container } = render(<PipelineStepper rawLogs={before} deployStatus="deploying" />);
+      expect(container.querySelector('.grid-cols-7')).not.toBeNull();
+      expect(screen.queryByText('Canary')).not.toBeInTheDocument();
+    });
+
+    it('sits between Health and Route and shows the latest step', () => {
+      const logs = `${before}##[stage:CANARY:running] Step 1/2: 10% of requests go to the new release for 120s
+##[stage:CANARY:running] Step 2/2: 50% of requests go to the new release for 120s`;
+      const stages = parsePipelineStages(logs, 'deploying');
+      expect(stages.map((s) => s.id)).toEqual(['PREPARE', 'BUILD', 'BOOT', 'HEALTHCHECK', 'CANARY', 'PROXY_SWAP', 'CLEANUP', 'COMPLETE']);
+      expect(stages[4]).toMatchObject({ status: 'running', detail: 'Step 2/2: 50% of requests go to the new release for 120s' });
+      const { container } = render(<PipelineStepper rawLogs={logs} deployStatus="deploying" />);
+      expect(container.querySelector('.grid-cols-8')).not.toBeNull();
+      expect(screen.getByRole('button', { name: 'Canary: Step 2/2: 50% of requests go to the new release for 120s' })).toBeInTheDocument();
+    });
+
+    it('passes when every step passed or the canary was promoted', () => {
+      for (const end of ['Every step passed', 'Promoted']) {
+        const stages = parsePipelineStages(`${before}##[stage:CANARY:running] Step 1/2: 10%
+##[stage:CANARY:success] ${end}
+##[stage:PROXY_SWAP:running]`, 'deploying');
+        expect(stages.find((s) => s.id === 'CANARY')).toMatchObject({ status: 'success', detail: end });
+        expect(stages.find((s) => s.id === 'PROXY_SWAP')?.status).toBe('running');
+      }
+    });
+
+    it('keeps the abort reason when the deploy then fails', () => {
+      const reason = 'Canary aborted: at 10%, 12% of 240 requests failed with a 5xx (the limit is 5%)';
+      const stages = parsePipelineStages(`${before}##[stage:CANARY:running] Step 1/2: 10%
+##[stage:CANARY:failed] ${reason}
+##[stage:ERROR:failed]`, 'failed');
+      expect(stages.find((s) => s.id === 'CANARY')).toMatchObject({ status: 'failed', detail: reason });
+      expect(stages.find((s) => s.id === 'PROXY_SWAP')?.status).toBe('pending');
+    });
+  });
 });

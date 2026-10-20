@@ -13,6 +13,7 @@ import { GithubCard } from './GithubCard.js';
 import { BuildPlacementCard, OrchestratorCard } from './PlacementCards.js';
 import { BuildArgsField, parseBuildArgNames } from './BuildArgsField.js';
 import { ContainerOptionsCard } from './ContainerOptionsCard.js';
+import { CanaryCard } from './CanaryCard.js';
 import { StatusBadgeCard } from './StatusBadgeCard.js';
 import { DeployHookCard } from './DeployHookCard.js';
 
@@ -30,6 +31,8 @@ export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: Servic
       <OrchestratorCard svc={svc} />
       <LimitsCard svc={svc} />
       <ContainerOptionsCard svc={svc} />
+      {/* 0.16.9: docker services on a panel that reports the field. */}
+      <CanaryCard svc={svc} />
       <StatusBadgeCard serviceId={serviceId} serviceName={svc.name} />
       <DeployHookCard serviceId={serviceId} />
       <ScalingCard svc={svc} />

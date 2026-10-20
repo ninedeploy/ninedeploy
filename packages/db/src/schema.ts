@@ -484,6 +484,9 @@ export const services = sqliteTable(
     // /dev/shm size, init, open-file limit, added capabilities). Null = none,
     // the `docker run` line every deploy used before.
     runtimeOptions: text('runtime_options', { mode: 'json' }).$type<ServiceRuntimeOptions>(),
+    // 0.16.9: canary releases (engine/canary.ts). Null = a deploy switches
+    // all traffic at once, as every deploy did before.
+    canary: text('canary', { mode: 'json' }).$type<ServiceCanaryConfig>(),
     // 0.16.1: the secret in the public status-badge URL
     // (`/v1/badges/<token>.svg`). Null = no badge, the default.
     badgeToken: text('badge_token'),
@@ -683,6 +686,15 @@ export interface DomainRedirectRule {
   regex: string;
   replacement: string;
   permanent: boolean;
+}
+
+/** `services.canary` (0.16.9); validated by `canaryConfig` in @ninedeploy/schemas. */
+export interface ServiceCanaryConfig {
+  steps: number[];
+  stepSeconds: number;
+  maxErrorRate: number;
+  maxP95Ms: number | null;
+  minRequests: number;
 }
 
 /** `services.runtime_options` (0.16.1); validated by `runtimeOptions` in @ninedeploy/schemas. */

@@ -164,6 +164,14 @@ ninedeploy status-pages publish|unpublish|rm <id>
 ninedeploy status-pages notice <id> "Maintenance at 22:00"    # --clear removes it
 ```
 
+### 🐤 Canary Releases (0.16.9)
+```bash
+ninedeploy canary show web [--json]                     # Configuration, and the running canary: step, share, 5xx %, p95
+ninedeploy canary set web --steps 10,50 --max-p95 800   # Options not given keep their value; --max-p95 off stops judging it
+ninedeploy canary off web                               # The next deploy switches all traffic at once
+ninedeploy canary promote web [--deployment <id>]       # Skip the remaining steps; stop one with `deploys cancel`
+```
+
 ---
 
 ## 📄 License

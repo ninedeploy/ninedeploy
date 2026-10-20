@@ -437,6 +437,23 @@ export function createUptimeApiMock() {
   };
 }
 
+/**
+ * The `canaryApi` object of `src/lib/canaryApi.js` (0.16.9). `status` resolves
+ * to no canary, so a page that polls it renders nothing extra. Mock the module
+ * with the real query keys kept:
+ *
+ *     vi.mock('../src/lib/canaryApi.js', async (importOriginal) => ({
+ *       ...(await importOriginal<typeof import('../src/lib/canaryApi.js')>()),
+ *       canaryApi: (await import('./apiMock.js')).createCanaryApiMock(),
+ *     }));
+ */
+export function createCanaryApiMock() {
+  return {
+    status: vi.fn().mockResolvedValue({ active: false }),
+    promote: vi.fn().mockResolvedValue({ ok: true }),
+  };
+}
+
 /** Mock module for `src/lib/auth.js`: `useAuth` is a controllable spy. */
 export function createAuthMock() {
   // `useAuth` resolves to a signed-out session by default. It used to be a bare

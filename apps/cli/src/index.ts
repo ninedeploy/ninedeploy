@@ -143,6 +143,7 @@ import {
   statusPagesAdd, statusPagesList, statusPagesNotice, statusPagesRemove, statusPagesSetPublished,
   type MonitorAddOptions,
 } from './commands/uptime.js';
+import { canaryOff, canaryPromote, canarySet, canaryShow, type CanarySetOptions } from './commands/canary.js';
 
 const program = new Command();
 
@@ -1207,6 +1208,29 @@ statusPagesCmd.command('rm <id>')
   .description('Delete a status page')
   .option('-y, --yes', 'Skip the confirmation prompt')
   .action((id: string, opts: { yes?: boolean }) => statusPagesRemove(getClient(), id, opts));
+/* v8 ignore stop */
+
+// ── 0.16.9: canary releases ──────────────────────────────────────────────
+const canaryCmd = program.command('canary').description('Canary releases: shift traffic to a new release in steps');
+/* v8 ignore start -- exercised by test/canary.test.ts. */
+canaryCmd.command('show <service>')
+  .description('The canary configuration and the canary running now')
+  .option('--json', 'Print raw JSON')
+  .action((service: string, opts: { json?: boolean }) => canaryShow(getClient(), service, opts));
+canaryCmd.command('set <service>')
+  .description('Turn canary releases on or change them (docker services); options not given keep their value')
+  .option('--steps <list>', 'Percent of requests per step, rising, 1-99, up to 5 (default 10,50)')
+  .option('--step-seconds <n>', 'Seconds per step (30-3600, default 120)')
+  .option('--max-error-rate <percent>', 'Highest share of 5xx responses the new release may have (default 5)')
+  .option('--max-p95 <ms>', 'Highest p95 response time in ms, or off (default off)')
+  .option('--min-requests <n>', 'Fewer requests in a step are not judged (default 20)')
+  .option('--json', 'Print the stored configuration as JSON')
+  .action((service: string, opts: CanarySetOptions) => canarySet(getClient(), service, opts));
+canaryCmd.command('off <service>').description('Turn canary releases off').action((service: string) => canaryOff(getClient(), service));
+canaryCmd.command('promote <service>')
+  .description('Skip the remaining steps and send all traffic to the new release now')
+  .option('--deployment <id>', 'The deployment to promote (default: the one running)')
+  .action((service: string, opts: { deployment?: string }) => canaryPromote(getClient(), service, opts));
 /* v8 ignore stop */
 
 deploys.command('watch <serviceId> <deployId>').description('Stream a deployment\'s build logs live').action((svcId: string, depId: string) => deploysWatch(svcId, depId));

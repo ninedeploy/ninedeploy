@@ -223,6 +223,8 @@ const READERS: Record<string, { branch: true } | { exempt: string }> = {
   'engine/builders/pm2.ts': { exempt: 'PM2 is refused for Swarm' },
   'engine/builders/remoteCompose.ts': { exempt: 'node-pinned services are refused for Swarm' },
   'engine/builders/remoteDocker.ts': { exempt: 'node-pinned services are refused for Swarm' },
+  'engine/canary.ts': { exempt: 'canary releases are refused for Swarm (canarySkipReason) before a runtime is split' },
+  'engine/canaryState.ts': { exempt: 'holds the canary route the pipeline set; Swarm services never get one' },
   'engine/builders/remoteRun.ts': { exempt: 'node-pinned services are refused for Swarm' },
   'engine/dockerNames.ts': { exempt: 'names only' },
   'engine/fanout.ts': { exempt: 'fan-out targets are refused for Swarm' },

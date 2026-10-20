@@ -100,6 +100,7 @@ describe('parseAccessLogLine', () => {
       status: 200,
       bytesOut: 100,
       durationMs: 12,
+      service: 'svc_web_1@file',
     });
   });
 
@@ -111,6 +112,7 @@ describe('parseAccessLogLine', () => {
       status: 0,
       bytesOut: 0,
       durationMs: 0,
+      service: null,
     });
     expect(T.parseAccessLogLine('{}', 1234)!.startMs).toBe(1234);
     expect(T.parseAccessLogLine(JSON.stringify({ StartUTC: 'garbage', DownstreamStatus: -1, Duration: 'x' }), 7)).toMatchObject({
@@ -249,6 +251,25 @@ describe('commitRollups', () => {
 });
 
 describe('TrafficTailer', () => {
+  it('0.16.9: feeds each line to a canary in progress, by the weighted leaf that answered', async () => {
+    const C = await import('../../src/engine/canaryState.js');
+    await seedDomains();
+    C.beginCanary(1, 'web', 9, 1, true);
+    C.setCanaryStep(1, 1, { runtimeId: 'web-9', replicas: 1, port: null, weight: 10 }, T0, T0 + 120_000);
+    writeFileSync(
+      live(),
+      line({ ServiceName: 'svc_web_1_canary@file', DownstreamStatus: 502 }) + line({ ServiceName: 'svc_web_1_stable@file' }) + line(),
+    );
+    try {
+      expect(await tailer().tick()).toMatchObject({ lines: 3 });
+      expect(C.canaryStats(1)).toMatchObject({ canary: { requests: 1, errors: 1 }, stable: { requests: 1, errors: 0 } });
+      // The rollups count every request by its router, the canary's too.
+      expect(await minuteRow('d:1')).toMatchObject({ requests: 3 });
+    } finally {
+      C.resetCanaryState();
+    }
+  });
+
   it('ingests complete lines, attributes them, and leaves a partial last line for the next tick', async () => {
     const { serviceId } = await seedDomains();
     writeFileSync(

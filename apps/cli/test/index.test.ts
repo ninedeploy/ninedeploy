@@ -228,6 +228,10 @@ vi.mock('../src/commands/uptime.js', () => ({
   statusPagesAdd: vi.fn(), statusPagesList: vi.fn(), statusPagesNotice: vi.fn(), statusPagesRemove: vi.fn(),
   statusPagesSetPublished: vi.fn(),
 }));
+// 0.16.9: canary.ts loads the schemas runtime too. Exercised by test/canary.test.ts.
+vi.mock('../src/commands/canary.js', () => ({
+  canaryOff: vi.fn(), canaryPromote: vi.fn(), canarySet: vi.fn(), canaryShow: vi.fn(),
+}));
 vi.mock('../src/commands/housekeeping.js', () => ({
   housekeepingPrune: h.housekeepingPrune,
   positiveIntOption: h.positiveIntOption,
@@ -383,6 +387,8 @@ describe('program registration', () => {
       'servers', 'swarm',
       // 0.16.8: uptime monitors and status pages.
       'monitors', 'status-pages',
+      // 0.16.9: canary releases.
+      'canary',
       'doctor',
       'sources', 'github-app', 'deploy', 'webhooks', 'firewall', 'manifest',
     ]);
@@ -422,12 +428,16 @@ describe('program registration', () => {
     // 0.16 T8: + 3 service commands, `volumes create`, `servers` (2), `swarm` (6), `sources allow-on-nodes`; 0.15.8: + `sources pin-host-keys`, `reset-host-keys`, `host-keys`.
     // 0.16.1: + `deploy up`.
     // 0.16.8: + `monitors` (7) and `status-pages` (6).
-    expect(h.FakeCommand.instances).toHaveLength(285);
+    // 0.16.9: + `canary` (4).
+    expect(h.FakeCommand.instances).toHaveLength(290);
     expect(findCommand('monitors').children.map((c) => c.cmdName)).toEqual([
       'list', 'add <name> <target>', 'show <id>', 'check <id>', 'pause <id>', 'resume <id>', 'rm <id>',
     ]);
     expect(findCommand('status-pages').children.map((c) => c.cmdName)).toEqual([
       'list', 'add <slug> <title>', 'publish <id>', 'unpublish <id>', 'notice <id> [text]', 'rm <id>',
+    ]);
+    expect(findCommand('canary').children.map((c) => c.cmdName)).toEqual([
+      'show <service>', 'set <service>', 'off <service>', 'promote <service>',
     ]);
     expect(findCommand('servers').children).toHaveLength(2);
     expect(findCommand('swarm').children).toHaveLength(6);

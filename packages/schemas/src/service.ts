@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { canaryConfig } from './canary.js';
 import { dockerLabels } from './dockerLabels.js';
 import { containerPath, dockerVolumeName, envVarName, gitBranch, gitRepoUrl, httpPath, providerBaseUrl, repoBaseDir, repoRelativePath, slug } from './common.js';
 
@@ -392,6 +393,8 @@ export const updateService = z.object({
   gitLfs: z.boolean().optional(),
   /** Operator only: advanced container options; null clears them all. */
   runtimeOptions: runtimeOptions.nullable().optional(),
+  /** 0.16.9: release new versions as a canary (docker services on the panel host); null turns it off. */
+  canary: canaryConfig.nullable().optional(),
   port: z.number().int().min(1).max(65535).optional(),
   publishedPort: z.number().int().min(1).max(65535).nullable().optional(),
   /** Extra host ports, TCP or UDP, single or ranges (docker services on the panel host); null or [] clears them. */
@@ -485,6 +488,8 @@ export const service = z.object({
   gitLfs: z.boolean().optional(),
   /** Advanced container options (0.16.1); null = none. */
   runtimeOptions: runtimeOptions.nullable().optional(),
+  /** Canary releases (0.16.9); null = every deploy switches all traffic at once. */
+  canary: canaryConfig.nullable().optional(),
   autoUrl: z.string().nullable(),
   port: z.number().int().nullable(),
   publishedPort: z.number().int().nullable().optional(),

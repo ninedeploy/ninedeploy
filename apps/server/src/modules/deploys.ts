@@ -10,6 +10,7 @@ import { diffLines, renderDiff } from '../lib/diff.js';
 import { buildEnv, capture } from '../lib/exec.js';
 import { audit } from '../lib/audit.js';
 import { deleteLog, logBus } from '../engine/logs.js';
+import { canaryStatus, requestCanaryPromote } from '../engine/canaryState.js';
 import { resolveUser } from '../lib/auth.js';
 import { authorizeWebsocketUser } from '../plugins/auth.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
@@ -307,6 +308,29 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     }
     void audit(app.db, req.user!.id, 'deploy.cancel', `#${depId}`);
     return { ok: true, status: 'cancelled' };
+  });
+
+  // 0.16.9 canary releases. The canary of a deploy in progress: its step,
+  // the new release's share of the traffic and each release's numbers. A
+  // canary is stopped with the cancel route above; this one ends it early
+  // the other way, switching all traffic to the new release.
+  app.get('/:id/canary', { onRequest: [app.authenticate] }, async (req) => {
+    const id = num((req.params as { id: string }).id);
+    await loadServiceForUser(app.db, id, req.user!);
+    return canaryStatus(id);
+  });
+
+  app.post('/:id/deploys/:depId/canary/promote', { onRequest: [app.authenticate] }, async (req) => {
+    const id = num((req.params as { id: string }).id);
+    const depId = num((req.params as { depId: string }).depId);
+    const target = await loadServiceForUser(app.db, id, req.user!);
+    await assertServiceRole(app.db, target, req.user!, 'member');
+    const dep = await app.db.query.deployments.findFirst({ where: eq(deployments.id, depId) });
+    if (!dep || dep.serviceId !== id) throw notFound('Deployment not found');
+    if (!requestCanaryPromote(id, depId)) throw badRequest('This deployment has no canary in progress', 'no_canary');
+    logBus.publish(depId, '⏩ Promote requested — switching all traffic to the new release');
+    void audit(app.db, req.user!.id, 'deploy.canary_promote', `${target.name} #${depId}`, { serviceId: id });
+    return { ok: true };
   });
 
   /**

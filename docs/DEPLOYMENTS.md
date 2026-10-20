@@ -13,6 +13,35 @@ When deploying a containerized service:
 4. **Traefik Traffic Flip**: Once the new container passes health verification, Traefik dynamically routes incoming traffic to the new container.
 5. **Graceful Drain**: The old container receives `SIGTERM` and is stopped after draining in-flight requests.
 
+### Canary releases (0.16.9)
+
+With a canary configuration (**Service → Settings → Canary releases**, or `canary` on `PATCH /v1/services/:id`), step 4 happens in stages instead of all at once. After the new container passes its healthcheck:
+
+1. Traefik sends the first step's share of requests to the new release (for example 10 %) and the rest to the previous one. Every routed domain of the service is split the same way.
+2. The step runs for `stepSeconds` (30–3600, default 120). The new release's healthcheck is probed every 15 s.
+3. At the end of the step, the step is judged. With traffic analytics on (**Traefik → Traffic**, an operator setting), the new release fails a step when:
+   - more than `maxErrorRate` percent (default 5) of its responses are 5xx, or
+   - its p95 response time is over `maxP95Ms` (off by default).
+
+   Both need at least `minRequests` requests (default 20) to the new release in that step; with fewer, the step passes on its healthcheck. With traffic analytics off, every step is judged on the healthcheck only, and the deploy log says so.
+4. The next step follows (`steps`, up to 5, rising, 1–99 %; default `10, 50`). After the last one, all traffic switches to the new release and the previous container stops, as in a normal deploy.
+
+A failed step sends all traffic back to the previous release, stops the new container and fails the deploy with the reason, for example `Canary aborted: at 10%, 12% of 240 requests failed with a 5xx (the limit is 5%)`. Notifications and alert subscriptions get it as a failed deploy.
+
+While a canary runs:
+- **Promote** (`POST /v1/services/:id/deploys/:depId/canary/promote`) skips the remaining steps and switches all traffic now.
+- **Cancel** stops it: all traffic goes back to the previous release.
+- `GET /v1/services/:id/canary` shows the step, the share and each release's requests, 5xx rate and p95 so far.
+- With sticky sessions on, a visitor stays on one release (cookie `ninedeploy_release`).
+
+A deploy switches all traffic at once, and its log names why, when:
+- it is a rollback;
+- the service has no previous release or no routed domain;
+- it publishes host ports (the previous release is stopped before the new one starts);
+- it runs on a node or on Swarm. Canary releases are for docker services on the panel host for now. A panel-host service that also fans out to nodes splits the panel's traffic only; the nodes get the new release when the canary has finished.
+
+The traffic log is read every 10 s, so the last few seconds of a step can count towards the next step. Nothing about a canary is stored: a panel restart during one fails that deploy (as any interrupted deploy), removes the new container, and routes everything to the previous release.
+
 ### Healthcheck timeout (0.16.1)
 
 The gate in step 3 accepts any answer below 500 on the health path and waits **300 seconds** by default. Set **Service → Settings → Healthcheck timeout** (`healthTimeoutSeconds`, 10–3600) for an app whose first boot runs long migrations or downloads a model; leave it blank for the default. A failed deploy names the limit it hit. The old container keeps serving until the new one passes.

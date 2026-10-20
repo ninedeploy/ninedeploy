@@ -3,6 +3,7 @@
 // surface is re-exported unchanged from there.
 import type {
   AnalyzeRepoInput,
+  CanaryStatusView,
   WebhookCreate,
   CreatedWebhook,
   Deployment,
@@ -56,6 +57,18 @@ export interface DeploysApi {
     /** Image transfers of one deployment (`GET /v1/deployments/:id/image-transfers`, any seat on its service). */
     imageTransfers: (deploymentId: number) => Promise<ImageTransfer[]>;
     // ── end 0.16 T8 ──
+    // ── 0.16.9 canary releases ──
+    /**
+     * The canary of the service's deploy in progress (`active: false` when
+     * none is running): step, traffic weight and what each release measured.
+     */
+    canary: (serviceId: number) => Promise<CanaryStatusView>;
+    /**
+     * Send all traffic to the canary release now and finish the deploy.
+     * Fails with `400 no_canary` when that deployment has no canary in
+     * progress. To stop a canary instead, `cancel` the deployment.
+     */
+    promoteCanary: (serviceId: number, deploymentId: number) => Promise<{ ok: true }>;
   };
   webhooks: {
     list: (serviceId: number) => Promise<Webhook[]>;
@@ -125,6 +138,9 @@ export function deploysApi(t: Transport): DeploysApi {
       // ── 0.16 T8 surfaces ──
       imageTransfers: (deploymentId) => get<ImageTransfer[]>(`/v1/deployments/${deploymentId}/image-transfers`),
       // ── end 0.16 T8 ──
+      canary: (serviceId) => get<CanaryStatusView>(`/v1/services/${serviceId}/canary`),
+      promoteCanary: (serviceId, deploymentId) =>
+        send<{ ok: true }>('POST', `/v1/services/${serviceId}/deploys/${deploymentId}/canary/promote`),
     },
     webhooks: {
       list: (serviceId) => get<Webhook[]>(`/v1/services/${serviceId}/webhooks`),

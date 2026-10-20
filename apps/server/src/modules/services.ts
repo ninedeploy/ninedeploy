@@ -143,6 +143,7 @@ function serialize(s: Service, sourceName: string | null = null, tags: TagIds = 
     dockerLabels: s.dockerLabels ?? {},
     gitLfs: s.gitLfs ?? false,
     runtimeOptions: s.runtimeOptions ?? null,
+    canary: s.canary ?? null,
     port: s.port,
     publishedPort: s.publishedPort ?? null,
     portMappings: s.portMappings ?? [],
@@ -680,6 +681,12 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       }
       // Validated by the schema above; normalising only drops fields.
       patch.runtimeOptions = next as RuntimeOptions | null;
+    }
+    // 0.16.9 canary releases: docker services only. Saved on a node or a
+    // Swarm service too, where a deploy logs why it switches all at once
+    // (engine/canary.ts canarySkipReason), so a later move needs no re-save.
+    if (patch.canary != null && (patch.type ?? existing.type) !== 'docker') {
+      throw badRequest('Canary releases apply to docker services only');
     }
     // 0.16.1 healthcheck mode: 'http' is stored as null, the pre-0.16.1 row.
     if (patch.healthCheck !== undefined) {

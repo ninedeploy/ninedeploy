@@ -151,6 +151,22 @@ export const deploysSpecs: RouteSpecMap = {
     floor: 'member',
     responseType: '{ ok: boolean; status: string }',
   },
+  'GET /v1/services/:id/canary': {
+    summary: "The canary of a service's deploy in progress",
+    description:
+      "0.16.9. `active: false` when no canary runs. Otherwise the step, the new release's share of the requests (`weight`, percent), when the step ends, and the step's requests, 5xx rate and p95 for the new release (`canary`) and the previous one (`stable`). `measured: false` means traffic analytics is off and steps are judged on the healthcheck only.",
+    tag: 'deploys',
+    floor: 'viewer',
+    responseType: 'CanaryStatusView',
+  },
+  'POST /v1/services/:id/deploys/:depId/canary/promote': {
+    summary: 'Promote a canary: switch all traffic to the new release now',
+    description:
+      '0.16.9. Skips the remaining canary steps; the deploy then finishes as usual. `400 no_canary` when the deployment has no canary in progress. To stop a canary instead, cancel the deployment: all traffic goes back to the previous release.',
+    tag: 'deploys',
+    floor: 'member',
+    responseType: '{ ok: boolean }',
+  },
   'POST /v1/services/:id/deploys/:depId/rollback': {
     summary: 'Roll back to a previous deployment',
     tag: 'deploys',

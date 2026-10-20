@@ -703,6 +703,102 @@ async function uptimeChecks(token, serviceId) {
 // (test/lib/git.test.ts); this proves the shipped artifact serves and gates
 // the setting.
 const PIN_IN = [0, 15, 8];
+// 0.16.9: a canary release through the panel's real Traefik. With traffic
+// analytics on, a redeploy holds at 50 %: the dynamic file carries a weighted
+// split, requests keep being served, and both releases are measured from the
+// access log. A promote finishes it; a second canary is cancelled and the
+// previous release keeps all traffic.
+const CANARY_IN = [0, 16, 9];
+const DEPLOY_DONE = new Set(['running', 'failed', 'cancelled', 'superseded']);
+async function deployEnded(token, serviceId, depId, ms) {
+  const end = Date.now() + ms;
+  for (;;) {
+    const all = (await api(`/v1/services/${serviceId}/deploys`, { token })).json;
+    const d = (Array.isArray(all) ? all : (all?.deploys ?? [])).find((x) => x.id === depId);
+    if (DEPLOY_DONE.has(d?.status)) return d.status;
+    if (Date.now() > end) return d?.status ?? 'missing';
+    await sleep(2000);
+  }
+}
+async function canaryRunning(token, serviceId, depId, ms) {
+  const end = Date.now() + ms;
+  for (;;) {
+    const s = (await api(`/v1/services/${serviceId}/canary`, { token })).json;
+    if (s?.active === true && s.deploymentId === depId && s.weight > 0) return s;
+    if (Date.now() > end) fail(`no canary of deploy #${depId} within ${ms / 1000} s: ${JSON.stringify(s)}`);
+    await sleep(2000);
+  }
+}
+async function canaryChecks(token, serviceId, hostname) {
+  const on = await api('/v1/traffic/settings', { method: 'PUT', token, body: { enabled: true } });
+  if (on.status !== 200 || on.json?.enabled !== true) fail(`canary: enabling traffic analytics answered ${on.status} ${on.text.slice(0, 200)}`);
+  let code = '';
+  for (let i = 0; i < 30 && !served(code); i++) {
+    code = routeStatuses(hostname, 1)[0] ?? '';
+    if (!served(code)) await sleep(1000);
+  }
+  if (!served(code)) fail(`canary: ${hostname} is not routed after Traefik was recreated (last ${code || 'none'})`);
+
+  const svcPath = `/v1/services/${serviceId}`;
+  const set = await api(svcPath, { method: 'PATCH', token, body: { canary: { steps: [50], stepSeconds: 60, minRequests: 5 } } });
+  if (set.status !== 200 || set.json?.canary?.stepSeconds !== 60 || set.json.canary.maxErrorRate !== 5) fail(`canary PATCH answered ${set.status} ${set.text.slice(0, 300)}`);
+  const before = (await api(svcPath, { token })).json?.runtimeId;
+
+  // Promote: the split is live and measured, then all traffic moves.
+  const d1 = (await api(`${svcPath}/deploys`, { method: 'POST', token, body: {} })).json?.deploymentId;
+  if (!d1) fail('canary: the redeploy was not queued');
+  const s1 = await canaryRunning(token, serviceId, d1, 240_000);
+  const split = traefikFile('dynamic/ninedeploy.yml');
+  if (!/weighted:/.test(split) || !/_canary:/.test(split) || !/weight: 50/.test(split)) fail(`canary: dynamic/ninedeploy.yml has no 50 % weighted split: ${split.slice(0, 600)}`);
+  const codes = routeStatuses(hostname, 30);
+  if (codes.length !== 30 || !codes.every(served)) fail(`canary: 30 requests during the split answered ${codes.join(',')}`);
+  const errors = traefikFileProviderErrors();
+  if (errors.length) fail(`canary: Traefik refused the weighted config: ${errors.join(' | ').slice(0, 400)}`);
+  let measured = null;
+  for (let i = 0; i < 20; i++) {
+    measured = (await api(`${svcPath}/canary`, { token })).json;
+    if (measured?.canary?.requests > 0 && measured?.stable?.requests > 0) break;
+    await sleep(2000);
+  }
+  if (measured?.measured !== true || !(measured.canary?.requests > 0) || !(measured.stable?.requests > 0)) {
+    fail(`canary: the access log did not measure both releases: ${JSON.stringify(measured).slice(0, 400)}`);
+  }
+  const promote = await api(`${svcPath}/deploys/${d1}/canary/promote`, { method: 'POST', token });
+  if (promote.status !== 200) fail(`canary promote answered ${promote.status} ${promote.text.slice(0, 200)}`);
+  const end1 = await deployEnded(token, serviceId, d1, 120_000);
+  if (end1 !== 'running') fail(`canary: the promoted deploy #${d1} ended '${end1}'`);
+  const after = (await api(svcPath, { token })).json?.runtimeId;
+  if (!after || after === before) fail(`canary: the promoted release is not live (${before} → ${after})`);
+  if ((await api(`${svcPath}/canary`, { token })).json?.active !== false) fail('canary: still active after the promoted deploy finished');
+  if (/weighted:/.test(traefikFile('dynamic/ninedeploy.yml'))) fail('canary: the weighted split outlived the promoted deploy');
+  const live = routeStatuses(hostname, 5);
+  if (!live.every(served)) fail(`canary: after the promote ${hostname} answered ${live.join(',')}`);
+  step(
+    `canary: deploy #${d1} held at ${s1.weight}% (weighted split in Traefik, 30/30 served; new ${measured.canary.requests} req / previous ${measured.stable.requests} req, ` +
+      `${measured.canary.errorRate}% 5xx), promoted, ${before} → ${after}`,
+  );
+
+  // Cancel: the previous release keeps everything.
+  const d2 = (await api(`${svcPath}/deploys`, { method: 'POST', token, body: {} })).json?.deploymentId;
+  if (!d2) fail('canary: the second redeploy was not queued');
+  await canaryRunning(token, serviceId, d2, 240_000);
+  const cancel = await api(`${svcPath}/deploys/${d2}/cancel`, { method: 'POST', token });
+  if (cancel.status !== 200) fail(`canary cancel answered ${cancel.status} ${cancel.text.slice(0, 200)}`);
+  const end2 = await deployEnded(token, serviceId, d2, 120_000);
+  if (end2 !== 'cancelled') fail(`canary: the cancelled deploy #${d2} ended '${end2}'`);
+  const kept = (await api(svcPath, { token })).json?.runtimeId;
+  if (kept !== after) fail(`canary: a cancelled canary changed the live release (${after} → ${kept})`);
+  if (/weighted:/.test(traefikFile('dynamic/ninedeploy.yml'))) fail('canary: the weighted split outlived the cancelled deploy');
+  const back = routeStatuses(hostname, 5);
+  if (!back.every(served)) fail(`canary: after the cancel ${hostname} answered ${back.join(',')}`);
+  step(`canary: deploy #${d2} cancelled during its step; ${after} kept all traffic (5/5 served), no split left`);
+
+  const off = await api(svcPath, { method: 'PATCH', token, body: { canary: null } });
+  if (off.status !== 200 || off.json?.canary !== null) fail(`canary off answered ${off.status} ${off.text.slice(0, 200)}`);
+  const trafficOff = await api('/v1/traffic/settings', { method: 'PUT', token, body: { enabled: false } });
+  if (trafficOff.status !== 200) fail(`canary: disabling traffic analytics answered ${trafficOff.status}`);
+}
+
 async function pinHostKeyChecks(token, password) {
   const key = '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk=\n-----END OPENSSH PRIVATE KEY-----';
   const created = await api('/v1/sources', { method: 'POST', token, body: { name: `pin-${suffix}`, type: 'github', deployKey: key } });
@@ -1316,6 +1412,7 @@ async function main() {
     await openapiChecks(token);
     await grantChecks(token, serviceId);
     if (!olderThan(String(health.version), UPTIME_IN)) await uptimeChecks(token, serviceId);
+    if (!olderThan(String(health.version), CANARY_IN)) await canaryChecks(token, serviceId, `journey-${suffix}.test`);
   } else {
     step(`${health.version} predates operations and API (0.15): 0.15 checks skipped`);
   }
@@ -1332,7 +1429,7 @@ async function main() {
   }
   step('service deleted');
 
-  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → signed webhook redeploy → compose stack → managed postgres (+ backup policy) + redis (+ KeyDB and Dragonfly with backup, drill and restore from 0.15.6) → preview-only env → GitHub App/Gitea surfaces → 0.14 Traefik directory, custom config, certificates, public access, import, secret managers (≥0.14) → 0.15 terminals, host shell, traffic analytics, OpenAPI, access grants (≥0.15) → teardown');
+  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → signed webhook redeploy → compose stack → managed postgres (+ backup policy) + redis (+ KeyDB and Dragonfly with backup, drill and restore from 0.15.6) → preview-only env → GitHub App/Gitea surfaces → 0.14 Traefik directory, custom config, certificates, public access, import, secret managers (≥0.14) → 0.15 terminals, host shell, traffic analytics, OpenAPI, access grants (≥0.15) → uptime monitors (≥0.16.8) → canary releases (≥0.16.9) → teardown');
 }
 
 main()
