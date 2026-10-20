@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.16.11",
+    "date": "2026-10-20",
+    "title": "Scale to zero",
+    "changes": [
+      "Sleep when idle (Service → Settings): a docker service can stop its containers after a set time without a request, from 5 minutes to a day, and start them again on the next request. The visitor waits a few seconds, then gets the page.",
+      "While a service sleeps, its domains reach the panel, which starts the containers, waits for the healthcheck and sends the request back to the app. A domain's password and IP allow list still apply first. A form post is answered with \"send again\", since its body cannot be replayed.",
+      "The service page shows Asleep, with Wake now and Sleep now buttons. Start, restart, stop and a deploy also end a sleep. The CLI has ninedeploy sleep show|set|off|now|wake, and the SDK client.services.sleep and wake.",
+      "Nothing sleeps until you turn it on. It needs traffic analytics on and a domain, and nothing sleeps if the panel cannot be reached from Traefik to wake it again."
+    ]
+  },
+  {
     "version": "0.16.10",
     "date": "2026-10-20",
     "title": "Autoscaling",

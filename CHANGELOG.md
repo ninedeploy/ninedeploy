@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.16.11] - 2026-10-20
+
+> Scale to zero: an idle service sleeps, and its next request wakes it.
+
+### Upgrade notes
+
+- **One additive migration (0089: nullable `services.sleep_after_minutes` and `services.asleep_at`), nothing to turn on, nothing that worked is refused.** No service sleeps after the upgrade. A Docker install whose panel is published on loopback (the default before 0.16) is reached through the `ninedeploy` network instead. The panel container joins it as `ninedeploy-panel`, but only when a service is first about to sleep, never at upgrade.
+
+### Added
+
+- **Scale to zero** for docker services on the panel host.
+  - **Setting:** `sleepAfterMinutes` (5–1440) on `PATCH /v1/services/:id`.
+  - **Going to sleep:** once the service's domains have had no request for that long, they are routed to the panel's wake endpoint (`/_nd/wake`, after the domain's basic auth and allow list) and its containers stop.
+  - **Waking:** the next request starts the containers, waits for the healthcheck and routes the domains back.
+    - A GET or HEAD gets `307` to the same URL.
+    - Other methods get `503` with `Retry-After`.
+    - A wake slower than 25 s answers a self-reloading "Waking up" page.
+  - **Requirements:** traffic analytics on (requests are counted from the traffic log) and a routed domain.
+  - **Audit:** events `service.sleep`, `service.wake` (with the trigger) and `service.sleep_now`.
+- **By hand.** `POST /v1/services/:id/sleep` and `POST /v1/services/:id/wake`. Start and restart wake a sleeping service; stop and a deploy end the sleep. The web app shows an Asleep badge with Wake now and Sleep now, and a Sleep when idle card in Settings. The CLI has `ninedeploy sleep show|set|off|now|wake`, and the SDK `client.services.sleep` and `client.services.wake`. See [docs/DEPLOYMENTS.md](docs/DEPLOYMENTS.md).
+- **A service that could not wake never sleeps.** Before anything sleeps, the panel checks that a request from inside the Traefik container reaches it. When it does not, the sleep is refused with the reason.
+
+### Changed
+
+- **The runtime reconcile and the autoscaler** leave a sleeping service alone.
+
 ## [0.16.10] - 2026-10-20
 
 > Autoscaling: containers follow the load, without a redeploy.
