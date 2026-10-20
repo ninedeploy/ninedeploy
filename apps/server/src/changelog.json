@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.16.9",
+    "date": "2026-10-20",
+    "title": "Canary releases",
+    "changes": [
+      "Canary releases (Service → Settings → Canary releases): a docker service can move to a new version in steps, for example 10% → 50% → 100% of the requests, instead of all at once. Each step runs for a set time while the new release's healthcheck is probed.",
+      "With traffic analytics on (Traefik → Traffic), a step also fails when the new release answers with too many 5xx responses or, if you set a limit, too slow a p95. A failed step sends all traffic back to the previous release and fails the deploy with the reason.",
+      "While a canary runs, the service page shows the step, the traffic share and both releases' numbers, with Promote (switch everything now) and Abort. The CLI has ninedeploy canary show|set|off|promote, and the SDK client.deploys.canary and promoteCanary.",
+      "Nothing changes until you turn it on. Rollbacks, and services on a node, on Swarm, with host ports or without a domain, switch all traffic at once as before, and the deploy log says why."
+    ]
+  },
+  {
     "version": "0.16.8",
     "date": "2026-10-20",
     "title": "Uptime monitors and status pages",

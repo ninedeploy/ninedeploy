@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.16.9] - 2026-10-20
+
+> Canary releases: a new version takes the traffic step by step, and backs out on its own.
+
+### Upgrade notes
+
+- **One additive migration (0087: a nullable `services.canary` column), nothing to turn on, nothing that worked is refused.** Every existing service has no canary configuration, so every deploy switches all traffic at once as before. A canary in progress is held in memory: a panel restart during one fails that deploy, like any interrupted deploy, and routes everything to the previous release.
+
+### Added
+
+- **Canary releases** for docker services on the panel host (`canary` on `PATCH /v1/services/:id`: `steps` rising 1–99 %, up to 5, default `10, 50`; `stepSeconds` 30–3600, default 120; `maxErrorRate` default 5 %; `maxP95Ms` optional; `minRequests` default 20). After the healthcheck, Traefik splits each routed domain between the previous release and the new one with a weighted service. Each step probes the new release's healthcheck every 15 s. With traffic analytics on, the step is then judged on the new release's 5xx share and p95, read per release from the access log. A failed step routes everything back, stops the new container and fails the deploy (`Canary aborted: at 10%, …`). Sticky sessions keep a visitor on one release.
+- **Canary control.** `GET /v1/services/:id/canary` (step, share, both releases' requests, 5xx rate and p95) and `POST /v1/services/:id/deploys/:depId/canary/promote`; cancelling the deploy aborts the canary. The service page shows a live panel with Promote and Abort, the deploy view a Canary stage, and Settings a Canary releases card. CLI `ninedeploy canary show|set|off|promote`, SDK `client.deploys.canary` and `client.deploys.promoteCanary`. See [docs/DEPLOYMENTS.md](docs/DEPLOYMENTS.md).
+- **Skipped with the reason in the log** for rollbacks, services on a node or on Swarm, services that publish host ports, and services with no previous release or no routed domain.
+
 ## [0.16.8] - 2026-10-20
 
 > Uptime monitors and public status pages, built in.
