@@ -256,6 +256,19 @@ Nixpacks, Railpack and the static pack build with the whole environment; a Docke
   The parent's own secrets are still never copied into a preview. Values in this set ARE handed to code from a pull-request branch, so put test or staging credentials here, never production ones. Reading needs `viewer` on the service (secret values masked), writing needs `member`; every change is audited (`env.preview.create|update|delete`, key only). The set is not part of a `.ninedeploy` manifest (manifests never carry env values), of a service clone, of a cross-server service migration bundle, or of the `/env/export` download. Deleting the service deletes its set.
 - When the PR is closed or merged, NineDeploy automatically tears down the containers, removes Traefik routes, and purges ephemeral storage.
 
+### A database copy per preview (0.16.12)
+
+With **Service → Settings → Previews → Give each preview its own database copies** on (`previewDatabaseCopy: true` on `PATCH /v1/services/:id`), every PR preview gets its own copy of each database attached to the parent service. The preview's `DATABASE_URL` (or whatever variable name the parent uses) then points at its copy: the preview runs against real-looking data, and production data is never touched.
+
+- **When.** The copies are made on the preview's first deploy, before its environment is assembled; the deploy log shows each step. Later deploys of the same PR keep the copy and its data.
+- **From what.** The parent database's latest completed backup (fetched from remote storage when the local file is gone). With no backup yet, a dump of the parent database is taken at that moment.
+- **The copy.** A new managed database named `<database> · PR #<n>`, with its own container, volume and credentials, the same engine, version and limits, owned by the preview's owner. It shows in the Databases list like any other database.
+- **Migrations.** Run them as the app normally does (its start command, or the pre-deploy hook): they apply to the copy.
+- **Removal.** Closing the PR (with auto-destroy on) or evicting the preview removes its copies: container, volume and backups. A copy left behind some other way, for example when the parent service is deleted, is removed by the hourly housekeeping. Copies get no daily built-in backups.
+- **Which databases.** PostgreSQL and the Redis family (Redis, Valkey, KeyDB, Dragonfly) on the panel host. MySQL, MariaDB and MongoDB dumps carry the server's own users, which would replace the copy's credentials, so they are not copied yet. Neither are databases on a node. The deploy log names each database that is left out, and the preview gets no variable for it.
+- **Failure.** If a copy cannot be made, the half-made copy is removed and the preview's deploy fails with the reason. It never falls back to the production database.
+- **Size.** A copy takes the disk of the parent database again, and a restore briefly needs about three times the dump's size free. The `previewMaxActive` limit also bounds how many copies exist.
+
 ---
 
 ---

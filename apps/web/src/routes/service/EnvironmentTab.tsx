@@ -49,7 +49,7 @@ export function EnvironmentTab({
         <WebhooksCard serviceId={serviceId} />
       </div>
       <div className="space-y-5">
-        <AttachmentsCard serviceId={serviceId} />
+        <AttachmentsCard serviceId={serviceId} isPreview={svc?.isEphemeralPreview === true} />
         <JobsCard serviceId={serviceId} />
       </div>
     </div>

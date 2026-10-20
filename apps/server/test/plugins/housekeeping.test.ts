@@ -33,6 +33,9 @@ vi.mock('../../src/engine/logs.js', () => ({
   deleteLog: logsMock.deleteLog,
 }));
 vi.mock('../../src/lib/exec.js', () => ({ run: execMock.run }));
+// 0.16.12: the preview-copy sweep (tested in test/lib/previewDatabases.test.ts).
+const previewCopies = vi.hoisted(() => ({ sweepOrphanPreviewCopies: vi.fn(async (..._a: unknown[]) => 0) }));
+vi.mock('../../src/lib/previewDatabases.js', () => previewCopies);
 const drillMock = vi.hoisted(() => ({ pruneDrillLeftovers: vi.fn(async () => 0) }));
 vi.mock('../../src/lib/backupDrill.js', () => drillMock);
 vi.mock('../../src/engine/autoPrune.js', () => ({

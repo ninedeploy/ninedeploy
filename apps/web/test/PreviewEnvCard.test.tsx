@@ -63,6 +63,23 @@ describe('Environment tab — preview deployments section (0.12)', () => {
     expect(apiMock.api.previewEnv.list).not.toHaveBeenCalled();
   });
 
+  it('0.16.12: marks a preview\'s own database copy in its attached databases', async () => {
+    apiMock.api.attachments.list.mockResolvedValue([
+      { id: 3, databaseId: 9, envAlias: 'DATABASE_URL', database: { name: 'pg · PR #12', engine: 'postgres', status: 'running' } },
+    ]);
+    const { unmount } = renderWithProviders(<EnvironmentTab serviceId={8} svc={{ ...GIT, isEphemeralPreview: true }} />, {
+      queryClient: createQueryClient(),
+    });
+    expect(await screen.findByText('pg · PR #12')).toBeInTheDocument();
+    expect(screen.getByText('Preview copy')).toBeInTheDocument();
+    unmount();
+
+    // The parent service shows no marker.
+    renderWithProviders(<EnvironmentTab serviceId={7} svc={GIT} />, { queryClient: createQueryClient() });
+    expect(await screen.findByText('pg · PR #12')).toBeInTheDocument();
+    expect(screen.queryByText('Preview copy')).toBeNull();
+  });
+
   it('says when previews are off for the service', async () => {
     renderWithProviders(<EnvironmentTab serviceId={7} svc={{ ...GIT, previewDeploymentsEnabled: false }} />, { queryClient: createQueryClient() });
     expect(await screen.findByText(/PR previews are off for this service/)).toBeInTheDocument();

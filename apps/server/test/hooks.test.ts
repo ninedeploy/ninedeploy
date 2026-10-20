@@ -17,6 +17,9 @@ const teardownMocks = vi.hoisted(() => ({
   }),
 }));
 vi.mock('../src/engine/logs.js', () => ({ deleteLog: teardownMocks.deleteLog }));
+// 0.16.12: a preview's database copies go with it (tested in test/lib/previewDatabases.test.ts).
+const previewDbMocks = vi.hoisted(() => ({ removePreviewDatabaseCopies: vi.fn(async (..._a: unknown[]) => 0) }));
+vi.mock('../src/lib/previewDatabases.js', () => previewDbMocks);
 vi.mock('../src/lib/serviceBridge.js', () => ({
   removeServiceBridgeIfEmpty: teardownMocks.removeServiceBridgeIfEmpty,
 }));
@@ -900,6 +903,7 @@ describe('webhook receiver', () => {
       payload: body,
     });
     expect(res.statusCode).toBe(200);
+    expect(previewDbMocks.removePreviewDatabaseCopies).toHaveBeenCalledWith(expect.anything(), 10, expect.any(Function));
     expect(res.json()).toEqual({
       ok: true,
       action: 'preview_destroyed',

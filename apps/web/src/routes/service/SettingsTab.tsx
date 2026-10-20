@@ -532,6 +532,8 @@ function PreviewEnvironmentsCard({ svc }: { svc: Service }) {
 
   const [enabled, setEnabled] = useState(svc.previewDeploymentsEnabled ?? false);
   const [autoDestroy, setAutoDestroy] = useState(svc.previewAutoDestroyOnClose ?? true);
+  // 0.16.12: each preview gets its own copies of the attached databases.
+  const [dbCopy, setDbCopy] = useState(svc.previewDatabaseCopy ?? false);
   const [pattern, setPattern] = useState(svc.previewDomainPattern ?? 'pr-{{pr}}-{{slug}}.{{domain}}');
   const [maxActive, setMaxActive] = useState(String(svc.previewMaxActive ?? 5));
 
@@ -540,6 +542,7 @@ function PreviewEnvironmentsCard({ svc }: { svc: Service }) {
       api.services.update(svc.id, {
         previewDeploymentsEnabled: enabled,
         previewAutoDestroyOnClose: autoDestroy,
+        previewDatabaseCopy: dbCopy,
         // r205: an emptied pattern clears it (null) instead of being dropped.
         previewDomainPattern: pattern || null,
         previewMaxActive: parseInt(maxActive, 10) || 5,
@@ -603,6 +606,15 @@ function PreviewEnvironmentsCard({ svc }: { svc: Service }) {
                 />
                 Auto-destroy ephemeral preview container and URL when PR is closed / merged
               </label>
+            </div>
+            <div className="col-span-full flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-xs text-slate-300">Give each preview its own database copies</div>
+                <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+                  Each PR preview gets a copy of the attached PostgreSQL and Redis-family databases, made from the latest backup, and the copies are removed with the preview. MySQL, MariaDB and MongoDB are not copied yet.
+                </p>
+              </div>
+              <Switch checked={dbCopy} onChange={setDbCopy} label="Give each preview its own database copies" />
             </div>
           </div>
         )}

@@ -116,6 +116,7 @@ const {
   autoscale: _as,
   sleepAfterMinutes: _sam,
   asleepAt: _sa,
+  previewDatabaseCopy: _pdc,
   ...SERVICE_COLUMNS_015
 } = getTableColumns(services);
 const serviceRow = async (db: DB, id: number) =>

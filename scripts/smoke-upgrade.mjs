@@ -1053,6 +1053,20 @@ async function openapiChecks(token) {
 // restores the row.
 // 0.16.11: the upgraded service stores sleepAfterMinutes (migration 0089),
 // is awake (asleepAt null), and refuses a wake it does not need.
+// 0.16.12: the upgraded service is off for preview database copies by
+// default (migration 0090's NOT NULL DEFAULT false), and stores the switch.
+const PREVIEW_DB_IN = [0, 16, 12];
+async function previewDatabaseChecks(token, serviceId) {
+  const path = `/v1/services/${serviceId}`;
+  const before = await api(path, { token });
+  if (before.status !== 200 || before.json?.previewDatabaseCopy !== false) fail(`${TO}: previewDatabaseCopy on the upgraded service should be false: ${before.text.slice(0, 200)}`);
+  const on = await api(path, { method: 'PATCH', token, body: { previewDatabaseCopy: true } });
+  if (on.status !== 200 || on.json?.previewDatabaseCopy !== true) fail(`${TO}: previewDatabaseCopy PATCH answered ${on.status} ${on.text.slice(0, 200)}`);
+  const off = await api(path, { method: 'PATCH', token, body: { previewDatabaseCopy: false } });
+  if (off.status !== 200 || off.json?.previewDatabaseCopy !== false) fail(`${TO}: previewDatabaseCopy off answered ${off.status}`);
+  step(`${TO}: preview database copies off by default on the upgraded service; the switch is stored and turned off again`);
+}
+
 const SLEEP_IN = [0, 16, 11];
 async function sleepChecks(token, serviceId) {
   const path = `/v1/services/${serviceId}`;
@@ -1670,6 +1684,7 @@ async function main() {
   if (!olderThan(TO, CANARY_IN)) await canaryChecks(token, serviceId);
   if (!olderThan(TO, AUTOSCALE_IN)) await autoscaleChecks(token, serviceId);
   if (!olderThan(TO, SLEEP_IN)) await sleepChecks(token, serviceId);
+  if (!olderThan(TO, PREVIEW_DB_IN)) await previewDatabaseChecks(token, serviceId);
 
   docker(['stop', PANEL]);
   const post = await inspectDb(TO);
@@ -1706,7 +1721,8 @@ async function main() {
   const summary0169 = olderThan(TO, CANARY_IN) ? '' : '; 0.16.9 canary settings work on the upgraded data';
   const summary01610 = olderThan(TO, AUTOSCALE_IN) ? '' : '; 0.16.10 autoscale settings work on the upgraded data';
   const summary01611 = olderThan(TO, SLEEP_IN) ? '' : '; 0.16.11 scale-to-zero settings work on the upgraded data';
-  console.log(`\n✓ Upgrade green: ${FROM} → ${TO} keeps users, services, history, domains and running apps; migrates; recovers the interrupted deploy; deploys again; 0.12 backup policy, preview env, disk alert and panel-backup defaults work on the upgraded data; 0.13 GitHub App/Gitea surfaces answer without GitHub${summary014}${summary015}${summary0168}${summary0169}${summary01610}${summary01611}`);
+  const summary01612 = olderThan(TO, PREVIEW_DB_IN) ? '' : '; 0.16.12 preview database copies are off by default and switch on the upgraded data';
+  console.log(`\n✓ Upgrade green: ${FROM} → ${TO} keeps users, services, history, domains and running apps; migrates; recovers the interrupted deploy; deploys again; 0.12 backup policy, preview env, disk alert and panel-backup defaults work on the upgraded data; 0.13 GitHub App/Gitea surfaces answer without GitHub${summary014}${summary015}${summary0168}${summary0169}${summary01610}${summary01611}${summary01612}`);
 }
 
 main()

@@ -64,6 +64,9 @@ describe('databases table — schema/migration drift guard', () => {
       'server_id',
       'node_container_name',
       'node_volume_name',
+      // 0.16.12 (0090): a PR preview's copy of another database.
+      'preview_copy_of',
+      'preview_service_id',
       'created_at',
       'updated_at',
     ];

@@ -301,6 +301,8 @@ export const createService = z.object({
   publishedPort: z.number().int().min(1).max(65535).nullable().optional(),
   previewDeploymentsEnabled: z.boolean().optional(),
   previewAutoDestroyOnClose: z.boolean().optional(),
+  /** 0.16.12: each PR preview gets its own copy of the attached databases (postgres and the redis family on the panel host). */
+  previewDatabaseCopy: z.boolean().optional(),
   previewDomainPattern: z.string().nullable().optional(),
   previewMaxActive: z.number().int().min(1).max(50).optional(),
   /** Deployment lane at create time (production / staging / …). */
@@ -410,6 +412,8 @@ export const updateService = z.object({
   portMappings: portMappings.nullable().optional(),
   previewDeploymentsEnabled: z.boolean().optional(),
   previewAutoDestroyOnClose: z.boolean().optional(),
+  /** 0.16.12: each PR preview gets its own copy of the attached databases (postgres and the redis family on the panel host). */
+  previewDatabaseCopy: z.boolean().optional(),
   previewDomainPattern: z.string().nullable().optional(),
   previewMaxActive: z.number().int().min(1).max(50).optional(),
   /** Deployment lane (production / staging / …). null clears the assignment. */
@@ -516,6 +520,8 @@ export const service = z.object({
   replicas: z.number().int(),
   previewDeploymentsEnabled: z.boolean().optional(),
   previewAutoDestroyOnClose: z.boolean().optional(),
+  /** 0.16.12: each PR preview gets its own copy of the attached databases (postgres and the redis family on the panel host). */
+  previewDatabaseCopy: z.boolean().optional(),
   previewDomainPattern: z.string().nullable().optional(),
   previewMaxActive: z.number().int().optional(),
   isEphemeralPreview: z.boolean().optional(),

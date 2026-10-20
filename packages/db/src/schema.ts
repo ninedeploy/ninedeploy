@@ -550,6 +550,9 @@ export const services = sqliteTable(
     // Ephemeral PR / MR Preview Deployments settings
     previewDeploymentsEnabled: integer('preview_deployments_enabled', { mode: 'boolean' }).notNull().default(false),
     previewAutoDestroyOnClose: integer('preview_auto_destroy_on_close', { mode: 'boolean' }).notNull().default(true),
+    // 0.16.12: each PR preview gets its own copy of this service's attached
+    // databases (lib/previewDatabases.ts). Off = previews get none, as before.
+    previewDatabaseCopy: integer('preview_database_copy', { mode: 'boolean' }).notNull().default(false),
     previewDomainPattern: text('preview_domain_pattern'),
     previewMaxActive: integer('preview_max_active').notNull().default(5),
     isEphemeralPreview: integer('is_ephemeral_preview', { mode: 'boolean' }).notNull().default(false),
@@ -1733,6 +1736,12 @@ export const databases = sqliteTable(
     // first attempt retries the adoption on the next deploy instead of
     // booting the deleted installation's credentials.
     initializedAt: integer('initialized_at', { mode: 'timestamp' }),
+    // 0.16.12: a PR preview's copy of another database (lib/previewDatabases.ts):
+    // the database it was copied from, and the preview it belongs to. A copy
+    // whose preview is gone (NULL here, copyOf set) is swept by housekeeping.
+    // NULL on every other database.
+    previewCopyOf: integer('preview_copy_of').references((): AnySQLiteColumn => databases.id, { onDelete: 'set null' }),
+    previewServiceId: integer('preview_service_id').references((): AnySQLiteColumn => services.id, { onDelete: 'set null' }),
     // ── 0.16 multi-node (migration 0072). NULL = the panel host (every
     // pre-0072 row). No ON DELETE action on purpose: with foreign_keys=ON a
     // server that hosts a database cannot be deleted.

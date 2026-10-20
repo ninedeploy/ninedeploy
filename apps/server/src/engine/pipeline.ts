@@ -54,6 +54,7 @@ import { pm2Builder } from './builders/pm2.js';
 import { getAcmeEmail, writeDynamicConfig } from './proxy.js';
 import { canaryConfig } from '@ninedeploy/schemas';
 import { canarySkipReason, runCanary } from './canary.js';
+import { ensurePreviewDatabaseCopies } from '../lib/previewDatabases.js';
 import { canaryActive, endCanary } from './canaryState.js';
 import { trafficAnalyticsEnabled } from '../lib/trafficAnalytics.js';
 import { run, sleep } from '../lib/exec.js';
@@ -1130,6 +1131,9 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       if (lateDbRefusal) throw new Error(lateDbRefusal);
     }
 
+    // 0.16.12: a PR preview of a parent with previewDatabaseCopy gets its own
+    // copies of the parent's databases before its environment is assembled.
+    if (service.isEphemeralPreview) await ensurePreviewDatabaseCopies(db, service, log);
     const runtimeEnvironment = await loadRuntimeEnv(db, service, templateDatabaseId, log);
     fanoutEnv = runtimeEnvironment.values;
     if (runtimeEnvironment.withheldFromPreview.length > 0) {

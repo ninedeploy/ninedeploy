@@ -297,6 +297,22 @@ domain, asleep already), `sleep_failed`, `not_asleep`, `wake_failed`.
 `services start` and `services restart` wake a sleeping service too; `services
 stop` ends the sleep. `--json` on `show` prints `{ sleepAfterMinutes, asleepAt }`.
 
+```bash
+# A database copy per PR preview (0.16.12). <service> is an id, slug or name.
+ninedeploy previews show <service> [--json]               # previews on/off, auto-destroy, database copies, domain pattern, max active
+ninedeploy previews database-copies <service> <on|off>    # sends { previewDatabaseCopy: true|false } (PATCH /v1/services/:id, member)
+```
+
+With database copies on, each PR preview gets its own copy of the attached
+PostgreSQL and Redis-family databases (Redis, Valkey, KeyDB, Dragonfly) on the
+panel host, made from the parent database's latest backup on the preview's
+first deploy, and named `<database> · PR #<n>`. The copies are removed with the
+preview. MySQL, MariaDB and MongoDB are not copied yet. `database-copies`
+checks the value (on/off, true/false, yes/no) before anything is sent.
+`--json` on `show` prints `{ previewDeploymentsEnabled, previewAutoDestroyOnClose,
+previewDatabaseCopy, previewDomainPattern, previewMaxActive }`. See
+[DEPLOYMENTS.md](./DEPLOYMENTS.md#a-database-copy-per-preview-01612).
+
 `swarm join` answers `node_swarm_not_enabled` until the node's owner sets
 `NINEDEPLOY_AGENT_SWARM_MANAGER=<panel advertise address>:2377` in the agent's
 environment and restarts it; the CLI prints that hint. Every node feature
@@ -464,6 +480,9 @@ await client.services.update(serviceId, { sleepAfterMinutes: 30 });     // 5-144
 const svc = await client.services.get(serviceId);                      // svc.sleepAfterMinutes, svc.asleepAt (ISO, null = awake)
 await client.services.sleep(serviceId);   // { ok: true, asleep: true }; 400 cannot_sleep (the message says why), 409 sleep_failed
 await client.services.wake(serviceId);    // { ok: true, status: 'running' }; 400 not_asleep, 409 wake_failed
+
+// 0.16.12: a database copy per PR preview (postgres and the redis family on the panel host)
+await client.services.update(serviceId, { previewDatabaseCopy: true });   // false = off (the default); member may change it
 ```
 
 `GET /v1/servers` now carries `terminal: { host, container, reason? }` per node

@@ -1246,11 +1246,20 @@ describe('ServiceDetail', () => {
     const autoDestroyCheckbox = screen.getByLabelText(/Auto-destroy ephemeral preview/i);
     await user.click(autoDestroyCheckbox);
 
+    // 0.16.12: the database-copy switch, with what it copies and what it does not.
+    const dbCopy = screen.getByRole('switch', { name: 'Give each preview its own database copies' });
+    expect(dbCopy).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByText(/attached PostgreSQL and Redis-family databases, made from the latest backup/)).toBeInTheDocument();
+    expect(screen.getByText(/MySQL, MariaDB and MongoDB are not copied yet/)).toBeInTheDocument();
+    await user.click(dbCopy);
+    expect(dbCopy).toHaveAttribute('aria-checked', 'true');
+
     await user.click(screen.getByRole('button', { name: /Save PR preview settings/ }));
     await waitFor(() =>
       expect(api.services.update).toHaveBeenCalledWith(1, {
         previewDeploymentsEnabled: true,
         previewAutoDestroyOnClose: false,
+        previewDatabaseCopy: true,
         previewDomainPattern: 'pr-{{pr}}.domain.io',
         previewMaxActive: 10,
       }),
@@ -1266,6 +1275,7 @@ describe('ServiceDetail', () => {
       previewDeploymentsEnabled: true,
       previewDomainPattern: 'preview-{{pr}}.example.com',
       previewMaxActive: 3,
+      previewDatabaseCopy: true,
     } as never);
     mockOf(api.services.update).mockImplementation(() => new Promise((resolve) => {
       resolveUpdate = resolve;
@@ -1288,6 +1298,7 @@ describe('ServiceDetail', () => {
     expect(api.services.update).toHaveBeenCalledWith(1, {
       previewDeploymentsEnabled: true,
       previewAutoDestroyOnClose: true,
+      previewDatabaseCopy: true,
       previewDomainPattern: null,
       previewMaxActive: 5,
     });

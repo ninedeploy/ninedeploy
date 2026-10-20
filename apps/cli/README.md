@@ -191,6 +191,13 @@ ninedeploy sleep wake web              # Wake it now; the next request, `service
 ```
 Docker services on the panel host. It needs traffic analytics on (Traefik → Traffic) and a routed domain: requests are counted from the traffic log, and a request through a domain wakes it. The containers, volumes and variables stay as they are while it sleeps.
 
+### 🧪 A Database Copy per PR Preview (0.16.12)
+```bash
+ninedeploy previews show web [--json]           # Previews on/off, auto-destroy, database copies, domain pattern, max active
+ninedeploy previews database-copies web on      # Give each preview its own database copies (off turns it off)
+```
+Each PR preview gets a copy of the attached PostgreSQL and Redis-family databases, made from the latest backup, named `<database> · PR #<n>`; the copies are removed with the preview. MySQL, MariaDB and MongoDB are not copied yet.
+
 ---
 
 ## 📄 License

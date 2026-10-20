@@ -162,6 +162,7 @@ function serialize(s: Service, sourceName: string | null = null, tags: TagIds = 
     replicas: s.replicas,
     previewDeploymentsEnabled: s.previewDeploymentsEnabled,
     previewAutoDestroyOnClose: s.previewAutoDestroyOnClose,
+    previewDatabaseCopy: s.previewDatabaseCopy ?? false,
     previewDomainPattern: s.previewDomainPattern,
     previewMaxActive: s.previewMaxActive,
     isEphemeralPreview: s.isEphemeralPreview,
@@ -1747,6 +1748,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         environmentId: svc.environmentId,
         previewDeploymentsEnabled: svc.previewDeploymentsEnabled,
         previewAutoDestroyOnClose: svc.previewAutoDestroyOnClose,
+        previewDatabaseCopy: svc.previewDatabaseCopy,
         previewDomainPattern: svc.previewDomainPattern,
         previewMaxActive: svc.previewMaxActive,
       })

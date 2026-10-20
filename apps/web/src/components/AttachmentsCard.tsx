@@ -4,7 +4,7 @@ import { Activity, Database, ExternalLink, Plus, Trash2 } from 'lucide-react';
 import { Link } from 'react-router';
 import { api } from '../lib/api.js';
 import { useToast } from './Toast.js';
-import { Button, Card, CardBody, Input, Select, Skeleton, StatusBadge, cn } from './ui.js';
+import { Button, Card, CardBody, Input, Select, Skeleton, StatusBadge, Tooltip, cn } from './ui.js';
 
 function aliasFor(engine: string | undefined): string {
   if (!engine) return 'DATABASE_URL';
@@ -47,7 +47,16 @@ const ENGINE_COLORS: Record<string, string> = {
   rabbitmq: 'text-orange-400 bg-orange-500/10 border-orange-500/20',
 };
 
-export function AttachmentsCard({ serviceId }: { serviceId: number }) {
+/**
+ * 0.16.12: a PR preview's own database copy is named `<database> · PR #<n>`.
+ * The API does not expose the copy marker, so the name (on a preview service)
+ * is what identifies it.
+ */
+export function isPreviewCopyName(name: string | undefined): boolean {
+  return !!name && / · PR #(\d+|\?)$/.test(name);
+}
+
+export function AttachmentsCard({ serviceId, isPreview = false }: { serviceId: number; isPreview?: boolean }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [dbId, setDbId] = useState<string>('');
@@ -195,6 +204,13 @@ export function AttachmentsCard({ serviceId }: { serviceId: number }) {
                       </Link>
                     ) : (
                       <span className="truncate text-xs font-semibold text-slate-100">database</span>
+                    )}
+                    {isPreview && isPreviewCopyName(a.database?.name) && (
+                      <Tooltip content="Removed with the preview">
+                        <span className="rounded border border-violet-500/20 bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium text-violet-300">
+                          Preview copy
+                        </span>
+                      </Tooltip>
                     )}
                     {a.database && <StatusBadge status={a.database.status} />}
                     {engine && (

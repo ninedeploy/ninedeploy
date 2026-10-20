@@ -28,6 +28,7 @@ import { pruneTerminalSessions } from '../lib/terminalSessions.js';
 import { pruneTrafficRollups } from '../lib/trafficAnalytics.js';
 import { pruneImageTransfers } from '../lib/imageTransferRetention.js';
 import { pruneUptime } from '../lib/uptime.js';
+import { sweepOrphanPreviewCopies } from '../lib/previewDatabases.js';
 
 const swallow = () => {};
 const INTERVAL_MS = 60 * 60 * 1000; // hourly
@@ -515,6 +516,8 @@ export default fp(
         await step('image-transfers', () => pruneImageTransfers(fastify.db, now));
         // 0.16.8 uptime checks (7 days) and their daily rollups (400 days).
         await step('uptime', () => pruneUptime(fastify.db, now));
+        // 0.16.12 database copies whose preview was removed without its teardown.
+        await step('preview-databases', () => sweepOrphanPreviewCopies(fastify.db, (line) => fastify.log.info({ component: 'housekeeping' }, line)));
         await step('dangling-images', () => pruneDanglingImages());
 
         await step('disk-auto-prune', async () => {

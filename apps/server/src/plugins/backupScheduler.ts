@@ -293,7 +293,8 @@ export default fp(
         // Rethrows a real read error (never treat a policy database as
         // built-in — that would prune it to KEEP_PER_DB); empty pre-0067.
         const policies = await loadBackupPolicies(fastify.db);
-        const dbs = (await fastify.db.select().from(databases)).filter((d) => d.status === 'running');
+        // 0.16.12: a preview's database copy is disposable; it gets no built-in backups.
+        const dbs = (await fastify.db.select().from(databases)).filter((d) => d.status === 'running' && d.previewCopyOf == null && d.previewServiceId == null);
         const budget: RemoteBudget = { remaining: Math.max(REMOTE_PRUNES_PER_TICK, 2 * dbs.length), deferred: 0 };
         // Missed-backup watchdog: fires BEFORE this tick's backups so it sees
         // the true age of the pipeline's last output. Covers the case the

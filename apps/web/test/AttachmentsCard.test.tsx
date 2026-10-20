@@ -17,7 +17,7 @@ const apiMock = vi.hoisted(() => ({
 
 vi.mock('../src/lib/api.js', () => apiMock);
 
-import { AttachmentsCard } from '../src/components/AttachmentsCard.js';
+import { AttachmentsCard, isPreviewCopyName } from '../src/components/AttachmentsCard.js';
 
 const DATABASES = [
   { id: 1, name: 'pg-main', engine: 'postgres', status: 'running' },
@@ -230,5 +230,38 @@ describe('AttachmentsCard', () => {
       await user.selectOptions(screen.getByRole('combobox'), value);
       expect(screen.getByPlaceholderText(alias)).toBeInTheDocument();
     }
+  });
+
+  describe('0.16.12 preview database copies', () => {
+    const COPY = {
+      id: 12,
+      databaseId: 7,
+      envAlias: 'DATABASE_URL',
+      database: { name: 'pg-main · PR #42', engine: 'postgres', status: 'running' },
+    };
+
+    it('recognises a copy by its name', () => {
+      expect(isPreviewCopyName('pg-main · PR #42')).toBe(true);
+      expect(isPreviewCopyName('pg-main · PR #?')).toBe(true);
+      expect(isPreviewCopyName('pg-main')).toBe(false);
+      expect(isPreviewCopyName('pg-main · PR #42 old')).toBe(false);
+      expect(isPreviewCopyName('pg-main PR #42')).toBe(false);
+      expect(isPreviewCopyName(undefined)).toBe(false);
+    });
+
+    it('marks a copy on a preview service, with a tooltip', async () => {
+      apiMock.api.attachments.list.mockResolvedValue([COPY, ATTACHMENTS[0]]);
+      renderWithProviders(<AttachmentsCard serviceId={5} isPreview />, { queryClient: createQueryClient() });
+      expect(await screen.findByText('pg-main · PR #42')).toBeInTheDocument();
+      expect(screen.getAllByText('Preview copy')).toHaveLength(1);
+      expect(screen.getByRole('tooltip')).toHaveTextContent('Removed with the preview');
+    });
+
+    it('does not mark it on a service that is not a preview', async () => {
+      apiMock.api.attachments.list.mockResolvedValue([COPY]);
+      renderCard();
+      expect(await screen.findByText('pg-main · PR #42')).toBeInTheDocument();
+      expect(screen.queryByText('Preview copy')).toBeNull();
+    });
   });
 });

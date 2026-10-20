@@ -1,3 +1,4 @@
+import { removePreviewDatabaseCopies } from './previewDatabases.js';
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import {
   buildConfigs,
@@ -118,6 +119,13 @@ export async function destroyPreviewService(
       .where(eq(deployments.serviceId, preview.id));
   } catch (err) {
     log.warn({ err, serviceId: preview.id }, 'could not list preview deploy logs to clean up');
+  }
+  // 0.16.12: the preview's database copies go with it — before the row, so
+  // their containers leave its bridge and the bridge can be removed below.
+  try {
+    await removePreviewDatabaseCopies(db, preview.id, (line) => log.info({ serviceId: preview.id }, line));
+  } catch (err) {
+    log.warn({ err, serviceId: preview.id }, 'could not remove the preview database copies; housekeeping sweeps them');
   }
   await db.delete(services).where(eq(services.id, preview.id));
   for (const row of previewLogs) deleteLog(row.id);

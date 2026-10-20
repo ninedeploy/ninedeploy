@@ -146,6 +146,7 @@ import {
 import { canaryOff, canaryPromote, canarySet, canaryShow, type CanarySetOptions } from './commands/canary.js';
 import { autoscaleOff, autoscaleSet, autoscaleShow, type AutoscaleSetOptions } from './commands/autoscale.js';
 import { sleepNow, sleepOff, sleepSet, sleepShow, sleepWake } from './commands/sleep.js';
+import { previewsDatabaseCopies, previewsShow } from './commands/previews.js';
 
 const program = new Command();
 
@@ -1268,6 +1269,18 @@ sleepCmd.command('set <service> <minutes>')
 sleepCmd.command('off <service>').description('Never sleep').action((service: string) => sleepOff(getClient(), service));
 sleepCmd.command('now <service>').description('Put the service to sleep now').action((service: string) => sleepNow(getClient(), service));
 sleepCmd.command('wake <service>').description('Wake a sleeping service').action((service: string) => sleepWake(getClient(), service));
+/* v8 ignore stop */
+
+// ── PR preview settings (0.16.12: a database copy per preview) ───────────
+const previewsCmd = program.command('previews').description('PR preview settings of a git-backed service');
+/* v8 ignore start -- exercised by test/previews.test.ts. */
+previewsCmd.command('show <service>')
+  .description('The PR preview settings, including database copies')
+  .option('--json', 'Print raw JSON')
+  .action((service: string, opts: { json?: boolean }) => previewsShow(getClient(), service, opts));
+previewsCmd.command('database-copies <service> <onOff>')
+  .description('Give each preview its own database copies (PostgreSQL and the Redis family): on | off')
+  .action((service: string, onOff: string) => previewsDatabaseCopies(getClient(), service, onOff));
 /* v8 ignore stop */
 
 deploys.command('watch <serviceId> <deployId>').description('Stream a deployment\'s build logs live').action((svcId: string, depId: string) => deploysWatch(svcId, depId));

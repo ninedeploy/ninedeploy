@@ -104,6 +104,9 @@ vi.mock('../src/engine/templateDependencies.js', () => ({
 const canaryMock = vi.hoisted(() => ({
   runCanary: vi.fn<(...args: any[]) => Promise<'completed' | 'promoted'>>(async () => 'completed'),
 }));
+// 0.16.12: the copies themselves are tested in test/lib/previewDatabases.test.ts.
+const previewDbMock = vi.hoisted(() => ({ ensurePreviewDatabaseCopies: vi.fn(async (..._a: unknown[]) => 0) }));
+vi.mock('../src/lib/previewDatabases.js', () => previewDbMock);
 vi.mock('../src/engine/canary.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/engine/canary.js')>()),
   runCanary: canaryMock.runCanary,
@@ -3872,3 +3875,37 @@ describe('0.16.9 canary releases in the pipeline', () => {
   });
 });
 // ── end 0.16.9 ──
+
+// ── 0.16.12 preview database copies ──
+describe('0.16.12 preview database copies in the pipeline', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    logBus.removeAllListeners();
+    h.builder.buildAndRun.mockImplementation(async () => ({ runtimeId: 'c-1', port: 3000, healthPath: '/' }));
+    h.builder.isHealthy.mockImplementation(async () => true);
+    previewDbMock.ensurePreviewDatabaseCopies.mockImplementation(async () => 0);
+  });
+
+  it('a preview asks for its copies before its environment is assembled', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { image: 'nginx:latest', isEphemeralPreview: true, previewParentServiceId: 4, prNumber: 9 });
+    await runDeployment(db as never, 1);
+    expect(previewDbMock.ensurePreviewDatabaseCopies).toHaveBeenCalledWith(db, expect.objectContaining({ id: 5, prNumber: 9 }), expect.any(Function));
+  });
+
+  it('a copy that cannot be made fails the deploy with the reason; a production service never asks', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { image: 'nginx:latest', isEphemeralPreview: true, previewParentServiceId: 4, prNumber: 9 });
+    previewDbMock.ensurePreviewDatabaseCopies.mockRejectedValueOnce(new Error('Could not copy database orders for the preview: disk full'));
+    const lines = collectLogs(1);
+    await runDeployment(db as never, 1);
+    expect(lines).toContain('✗ Deployment failed: Could not copy database orders for the preview: disk full');
+    expect(updates.some((u) => u.table === deployments && u.values.status === 'failed')).toBe(true);
+    previewDbMock.ensurePreviewDatabaseCopies.mockClear();
+    const prod = makeDb();
+    baseSetup(prod.db, { image: 'nginx:latest' });
+    await runDeployment(prod.db as never, 1);
+    expect(previewDbMock.ensurePreviewDatabaseCopies).not.toHaveBeenCalled();
+  });
+});
+// ── end 0.16.12 ──
